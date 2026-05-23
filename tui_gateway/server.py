@@ -653,8 +653,14 @@ def _normalize_completion_path(path_part: str) -> str:
 # Keep aligned with `INDICATOR_STYLES` / `DEFAULT_INDICATOR_STYLE` in
 # ``ui-tui/src/app/interfaces.ts`` — both ends validate against the
 # same shape so `config.get indicator` and the live TUI render agree.
-_INDICATOR_STYLES: tuple[str, ...] = ("ascii", "emoji", "kaomoji", "unicode")
+_INDICATOR_STYLES: tuple[str, ...] = ("ascii", "emoji", "markers", "unicode")
+_INDICATOR_ALIASES: dict[str, str] = {"kaomoji": "markers"}
 _INDICATOR_DEFAULT = "unicode"
+
+
+def _normalize_indicator_style(value: object) -> str:
+    raw = str(value).strip().lower()
+    return _INDICATOR_ALIASES.get(raw, raw)
 
 
 def _load_cfg() -> dict:
@@ -4153,7 +4159,7 @@ def _(rid, params: dict) -> dict:
         # Use an explicit None check rather than `value or ""` so falsy
         # non-string inputs (0, False, []) still surface as themselves
         # in the error message instead of looking like a blank value.
-        raw = ("" if value is None else str(value)).strip().lower()
+        raw = "" if value is None else _normalize_indicator_style(value)
         if raw not in _INDICATOR_STYLES:
             return _err(
                 rid,
@@ -4240,7 +4246,7 @@ def _(rid, params: dict) -> dict:
         # `_INDICATOR_DEFAULT` for the same inputs).  Otherwise
         # `/indicator` would print one thing while the UI shows another.
         raw = (_load_cfg().get("display") or {}).get("tui_status_indicator", "")
-        norm = str(raw).strip().lower()
+        norm = _normalize_indicator_style(raw)
         return _ok(
             rid,
             {"value": norm if norm in _INDICATOR_STYLES else _INDICATOR_DEFAULT},

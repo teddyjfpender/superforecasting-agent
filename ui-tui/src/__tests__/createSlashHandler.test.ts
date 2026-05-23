@@ -621,12 +621,21 @@ describe('createSlashHandler', () => {
   })
 
   it('hot-swaps the live indicator when /indicator <style> succeeds', async () => {
-    const rpc = vi.fn(() => Promise.resolve({ value: 'emoji' }))
+    const rpc = vi.fn(() => Promise.resolve({ value: 'markers' }))
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
-    expect(createSlashHandler(ctx)('/indicator emoji')).toBe(true)
-    expect(rpc).toHaveBeenCalledWith('config.set', { key: 'indicator', value: 'emoji' })
-    await vi.waitFor(() => expect(getUiState().indicatorStyle).toBe('emoji'))
+    expect(createSlashHandler(ctx)('/indicator markers')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('config.set', { key: 'indicator', value: 'markers' })
+    await vi.waitFor(() => expect(getUiState().indicatorStyle).toBe('markers'))
+  })
+
+  it('accepts the legacy kaomoji indicator name as a markers alias', async () => {
+    const rpc = vi.fn(() => Promise.resolve({ value: 'markers' }))
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/indicator kaomoji')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('config.set', { key: 'indicator', value: 'markers' })
+    await vi.waitFor(() => expect(getUiState().indicatorStyle).toBe('markers'))
   })
 
   it('rejects unknown indicator styles before hitting the gateway', () => {
@@ -635,7 +644,7 @@ describe('createSlashHandler', () => {
 
     expect(createSlashHandler(ctx)('/indicator sparkle')).toBe(true)
     expect(rpc).not.toHaveBeenCalled()
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('usage: /indicator [ascii|emoji|kaomoji|unicode]')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('usage: /indicator [ascii|emoji|markers|unicode]')
   })
 
   it('drops stale slash.exec output after a newer slash', async () => {

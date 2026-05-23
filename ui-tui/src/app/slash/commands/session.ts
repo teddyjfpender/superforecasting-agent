@@ -13,7 +13,12 @@ import type {
 import { formatVoiceRecordKey, parseVoiceRecordKey } from '../../../lib/platform.js'
 import { fmtK } from '../../../lib/text.js'
 import type { PanelSection } from '../../../types.js'
-import { DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES, type IndicatorStyle } from '../../interfaces.js'
+import {
+  DEFAULT_INDICATOR_STYLE,
+  INDICATOR_STYLE_ALIASES,
+  INDICATOR_STYLES,
+  type IndicatorStyle
+} from '../../interfaces.js'
 import { patchOverlayState } from '../../overlayStore.js'
 import { patchUiState } from '../../uiStore.js'
 import type { SlashCommand } from '../types.js'
@@ -324,19 +329,24 @@ export const sessionCommands: SlashCommand[] = [
   },
 
   {
-    help: 'pick the busy indicator: unicode (default), kaomoji, emoji, or ascii',
+    help: 'pick the busy indicator: unicode (default), markers, emoji, or ascii',
     name: 'indicator',
     usage: `/indicator [${INDICATOR_STYLES.join('|')}]`,
     run: (arg, ctx) => {
-      const value = arg.trim().toLowerCase()
+      const normalized = arg.trim().toLowerCase()
+      const value = (INDICATOR_STYLE_ALIASES[normalized] ?? normalized) as IndicatorStyle
 
       if (!value) {
         return ctx.gateway
           .rpc<ConfigGetValueResponse>('config.get', { key: 'indicator' })
           .then(
-            ctx.guarded<ConfigGetValueResponse>(r =>
-              ctx.transcript.sys(`indicator: ${r.value || DEFAULT_INDICATOR_STYLE}`)
-            )
+            ctx.guarded<ConfigGetValueResponse>(r => {
+              const rawValue = typeof r.value === 'string' ? r.value : ''
+              const displayValue =
+                INDICATOR_STYLE_ALIASES[rawValue.trim().toLowerCase()] || rawValue || DEFAULT_INDICATOR_STYLE
+
+              ctx.transcript.sys(`indicator: ${displayValue}`)
+            })
           )
       }
 
@@ -353,7 +363,7 @@ export const sessionCommands: SlashCommand[] = [
           // Hot-swap the running TUI immediately so the next render
           // uses the new style without waiting for the 5s mtime poll
           // to re-apply config.full.
-          patchUiState({ indicatorStyle: value as IndicatorStyle })
+          patchUiState({ indicatorStyle: value })
           ctx.transcript.sys(`indicator → ${r.value}`)
         })
       )

@@ -106,7 +106,7 @@ Type `/` in the CLI to open the autocomplete menu. Built-in commands are case-in
 | `/yolo` | Toggle YOLO mode — skip all dangerous command approval prompts. |
 | `/footer [on\|off\|status]` | Toggle the gateway runtime-metadata footer on final replies (shows model, tool counts, timing). |
 | `/busy [queue\|steer\|interrupt\|status]` | CLI-only: control what pressing Enter does while the forecast desk is working — queue the new message, steer mid-turn, or interrupt immediately. |
-| `/indicator [kaomoji\|emoji\|unicode\|ascii]` | CLI-only: pick the TUI busy-indicator style. |
+| `/indicator [ascii\|emoji\|markers\|unicode]` | CLI-only: pick the TUI busy-indicator style. |
 
 ### Tools & Skills
 

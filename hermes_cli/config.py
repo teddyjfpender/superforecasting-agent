@@ -1041,7 +1041,7 @@ DEFAULT_CONFIG = {
         # responses, log lines, tool outputs, or slash-command descriptions.
         # Supported: en, zh, ja, de, es, fr, tr, uk.  Unknown values fall back to en.
         "language": "en",
-        # TUI busy indicator style: unicode (default), kaomoji, emoji, or
+        # TUI busy indicator style: unicode (default), markers, emoji, or
         # ascii. Live-swappable via `/indicator <style>`.
         "tui_status_indicator": "unicode",
         "user_message_preview": {  # CLI: how many submitted user-message lines to echo back in scrollback

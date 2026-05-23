@@ -223,7 +223,8 @@ describe('normalizeBusyInputMode', () => {
 
 describe('normalizeIndicatorStyle', () => {
   it('passes through the canonical enum', () => {
-    expect(normalizeIndicatorStyle('kaomoji')).toBe('kaomoji')
+    expect(normalizeIndicatorStyle('markers')).toBe('markers')
+    expect(normalizeIndicatorStyle('kaomoji')).toBe('markers')
     expect(normalizeIndicatorStyle('emoji')).toBe('emoji')
     expect(normalizeIndicatorStyle('unicode')).toBe('unicode')
     expect(normalizeIndicatorStyle('ascii')).toBe('ascii')

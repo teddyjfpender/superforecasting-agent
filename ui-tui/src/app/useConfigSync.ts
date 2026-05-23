@@ -17,6 +17,7 @@ import { asRpcResult } from '../lib/rpc.js'
 import {
   type BusyInputMode,
   DEFAULT_INDICATOR_STYLE,
+  INDICATOR_STYLE_ALIASES,
   INDICATOR_STYLES,
   type IndicatorStyle,
   type StatusBarMode
@@ -62,7 +63,8 @@ export const normalizeIndicatorStyle = (raw: unknown): IndicatorStyle => {
     return DEFAULT_INDICATOR_STYLE
   }
 
-  const v = raw.trim().toLowerCase() as IndicatorStyle
+  const normalized = raw.trim().toLowerCase()
+  const v = (INDICATOR_STYLE_ALIASES[normalized] ?? normalized) as IndicatorStyle
 
   return INDICATOR_STYLE_SET.has(v) ? v : DEFAULT_INDICATOR_STYLE
 }

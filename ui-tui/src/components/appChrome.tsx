@@ -45,7 +45,7 @@ interface IndicatorRender {
 }
 
 const renderIndicator = (style: IndicatorStyle, tick: number): IndicatorRender => {
-  if (style === 'kaomoji') {
+  if (style === 'markers') {
     return { frame: FACES[tick % FACES.length] ?? '', intervalMs: FACE_TICK_MS, showVerb: true }
   }
 

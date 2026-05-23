@@ -4427,7 +4427,7 @@ def test_config_get_indicator_normalizes_casing_and_whitespace(monkeypatch):
 
     Frontend's `normalizeIndicatorStyle` lowercases + trims, so config.get
     must do the same — otherwise `/indicator` prints 'EMOJI ' while the
-    UI is actually rendering the kaomoji default."""
+    UI is actually rendering the unicode default."""
     monkeypatch.setattr(
         server, "_load_cfg", lambda: {"display": {"tui_status_indicator": " EMOJI "}}
     )
@@ -4435,6 +4435,16 @@ def test_config_get_indicator_normalizes_casing_and_whitespace(monkeypatch):
         {"id": "1", "method": "config.get", "params": {"key": "indicator"}}
     )
     assert resp["result"] == {"value": "emoji"}
+
+
+def test_config_get_indicator_maps_legacy_kaomoji_to_markers(monkeypatch):
+    monkeypatch.setattr(
+        server, "_load_cfg", lambda: {"display": {"tui_status_indicator": "kaomoji"}}
+    )
+    resp = server.handle_request(
+        {"id": "1", "method": "config.get", "params": {"key": "indicator"}}
+    )
+    assert resp["result"] == {"value": "markers"}
 
 
 def test_config_get_indicator_falls_back_to_default_for_unknown(monkeypatch):
@@ -4476,6 +4486,24 @@ def test_config_set_indicator_accepts_known_value(monkeypatch):
     )
     assert resp["result"] == {"key": "indicator", "value": "emoji"}
     assert written == {"display.tui_status_indicator": "emoji"}
+
+
+def test_config_set_indicator_accepts_legacy_kaomoji_alias(monkeypatch):
+    written: dict = {}
+    monkeypatch.setattr(
+        server,
+        "_write_config_key",
+        lambda k, v: written.update({k: v}),
+    )
+    resp = server.handle_request(
+        {
+            "id": "1",
+            "method": "config.set",
+            "params": {"key": "indicator", "value": "kaomoji"},
+        }
+    )
+    assert resp["result"] == {"key": "indicator", "value": "markers"}
+    assert written == {"display.tui_status_indicator": "markers"}
 
 
 def test_config_set_indicator_falsy_non_string_surfaces_in_error(monkeypatch):
