@@ -1,19 +1,76 @@
 ---
 sidebar_position: 1
 title: "CLI Commands Reference"
-description: "Authoritative reference for Hermes terminal commands and command families"
+description: "Reference for Superforecasting Agent forecast commands and inherited runtime command families."
 ---
 
 # CLI Commands Reference
 
-This page covers the **terminal commands** you run from your shell.
+This page covers the **terminal commands** you run from your shell. The fork-native product surface is the forecast desk:
+
+```bash
+forecast <subcommand>
+superforecasting-agent <command>
+```
+
+The inherited `hermes` command remains available for compatibility with the original runtime, gateways, plugins, and scripts.
 
 For in-chat slash commands, see [Slash Commands Reference](./slash-commands.md).
 
-## Global entrypoint
+## Forecast Desk Commands
+
+| Command | Purpose |
+|---|---|
+| `forecast` | Open the forecast desk dashboard. |
+| `forecast status` | Show active forecasts, alerts, review queue, schedule, calibration, and benchmark state. |
+| `forecast new` | Create a scoreable question with resolution criteria, outcome space, domain/topic, and review cadence. |
+| `forecast ingest` | Stage a URL or file as a forecast candidate before confirming it into the ledger. |
+| `forecast evidence add` | Add timestamped evidence or notes to a question. |
+| `forecast sources` | List built-in evidence/source adapters, import command shapes, and watched-source prefixes. |
+| `forecast import <source>` | Import evidence, baselines, market/crowd priors, or benchmark data from supported adapters. |
+| `forecast base-rate` | Add or inspect reference-class/base-rate work. |
+| `forecast model` | Record a quantitative model run. |
+| `forecast update` | Append a forecast snapshot with probability/distribution, confidence, rationale, evidence refs, and model refs. |
+| `forecast review` | Triage stale, high-impact, domain/topic, horizon, confidence, or close-date review work. |
+| `forecast watch add` | Attach a watched source that can create review alerts when it changes. |
+| `forecast alerts` | List and acknowledge forecast alerts. |
+| `forecast schedule` | Add, list, and run scheduled self-checks by question, domain, topic, horizon, or portfolio. Use `--stale-days` to tune stale evidence risk per schedule. |
+| `forecast resolve` | Resolve a question with explicit outcome, source, and confirmation state. |
+| `forecast score` | Score a resolved question. |
+| `forecast postmortem` | Record miss diagnosis and calibration lessons. |
+| `forecast calibration` | Inspect calibration by bucket, domain, horizon, and origin. |
+| `forecast errors` | Inspect domain/topic error profiles. |
+| `forecast lessons` | Inspect active, tentative, invalidated, and applied calibration lessons. |
+| `forecast backtest` | Replay resolved benchmark corpora with evidence cutoffs and baseline comparisons. |
+| `forecast performance` | Summarize recent benchmark performance, paired baseline edges, and evidence gaps for live-superiority claims. |
+| `forecast readiness` | Show live/backtest evidence gaps before stronger performance claims. Use `--require-evidence` to fail when gaps remain. |
+| `forecast pilot-report` | Check whether a tester ledger has the questions, evidence, schedules, scores, and postmortems needed for a small pilot. |
+| `forecast pilot-aggregate` | Aggregate tester JSON exports into live-score, evidence, source-type, domain, and postmortem counts. |
+| `forecast export` | Export auditable question or portfolio packets. |
+| `forecast about` | Show fork context and forecast-desk scope. |
+
+Common sources for `forecast import` include `data`, `rss`, `gdelt`, `fred`, `eia`, `treasury`, `bls`, `worldbank`, `stooq`, `sec`, `arxiv`, `openalex`, `wikipedia`, `wikipediapageviews`, `github`, `githubissues`, `hackernews`, `reddit`, `federalregister`, `nvd`, `cisakev`, `clinicaltrials`, `openfda`, `openmeteo`, `usgs`, `eonet`, `nws`, `owid`, `metaculus`, `manifold`, `polymarket`, `kalshi`, `benchmark`, and `tournament`. Run `forecast sources` or `forecast sources --json` for the current adapter list and watch-prefix guidance.
+
+Backtest probability sources include:
+
+| Source | Meaning |
+|---|---|
+| `dataset` | Replay the probability stored in the benchmark case. |
+| `baseline-ensemble` | Combine explicit market, crowd, base-rate, and imported baselines deterministically. |
+| `forecast-engine` | Generate a local desk-engine probability from pre-cutoff baselines, evidence stance metadata, base rates, and fixed extremization. |
+| `agent-protocol` | Generate probabilities through the forecast protocol using live `AIAgent` calls or captured agent JSONL outputs. |
+| `naive` | Use a 0.5 binary control forecast. |
+
+Captured agent-protocol replays use `--agent-response-jsonl <path>` with rows
+keyed by `case_id`, `id`, or `index`. Use `--agent-output-jsonl <path>` to
+write the responses used by a run for later deterministic replay. These runs
+are auditable benchmark evidence, not a live-superiority claim.
+
+## Runtime Entrypoints
 
 ```bash
-hermes [global-options] <command> [subcommand/options]
+superforecasting-agent [global-options] <command> [subcommand/options]
+hermes [global-options] <command> [subcommand/options]  # compatibility
 ```
 
 ### Global options
@@ -21,69 +78,52 @@ hermes [global-options] <command> [subcommand/options]
 | Option | Description |
 |--------|-------------|
 | `--version`, `-V` | Show version and exit. |
-| `--profile <name>`, `-p <name>` | Select which Hermes profile to use for this invocation. Overrides the sticky default set by `hermes profile use`. |
+| `--profile <name>`, `-p <name>` | Select which profile to use for this invocation. Overrides the sticky default set by `superforecasting-agent profile use`. |
 | `--resume <session>`, `-r <session>` | Resume a previous session by ID or title. |
 | `--continue [name]`, `-c [name]` | Resume the most recent session, or the most recent session matching a title. |
 | `--worktree`, `-w` | Start in an isolated git worktree for parallel-agent workflows. |
 | `--yolo` | Bypass dangerous-command approval prompts. |
 | `--pass-session-id` | Include the session ID in the agent's system prompt. |
-| `--ignore-user-config` | Ignore `~/.hermes/config.yaml` and fall back to built-in defaults. Credentials in `.env` are still loaded. |
+| `--ignore-user-config` | Ignore user config and fall back to built-in defaults. Credentials in `.env` are still loaded. |
 | `--ignore-rules` | Skip auto-injection of `AGENTS.md`, `SOUL.md`, `.cursorrules`, memory, and preloaded skills. |
 | `--tui` | Launch the [TUI](../user-guide/tui.md) instead of the classic CLI. Equivalent to `HERMES_TUI=1`. |
 | `--dev` | With `--tui`: run the TypeScript sources directly via `tsx` instead of the prebuilt bundle (for TUI contributors). |
 
-## Top-level commands
+## Inherited Runtime Commands
+
+These command families are still part of the runtime. Prefer the `superforecasting-agent` prefix in new docs and scripts; `hermes` remains an alias or compatibility command where installed.
 
 | Command | Purpose |
 |---------|---------|
-| `hermes chat` | Interactive or one-shot chat with the agent. |
-| `hermes model` | Interactively choose the default provider and model. |
-| `hermes fallback` | Manage fallback providers tried when the primary model errors. |
-| `hermes gateway` | Run or manage the messaging gateway service. |
-| `hermes proxy` | Local OpenAI-compatible proxy that attaches OAuth provider credentials. See [Subscription Proxy](../user-guide/features/subscription-proxy.md). |
-| `hermes lsp` | Manage Language Server Protocol integration (semantic diagnostics for write_file/patch). |
-| `hermes setup` | Interactive setup wizard for all or part of the configuration. |
-| `hermes whatsapp` | Configure and pair the WhatsApp bridge. |
-| `hermes slack` | Slack helpers (currently: generate the app manifest with every command as a native slash). |
-| `hermes auth` | Manage credentials — add, list, remove, reset, set strategy. Handles OAuth flows for Codex/Nous/Anthropic. |
-| `hermes login` / `logout` | **Deprecated** — use `hermes auth` instead. |
-| `hermes status` | Show agent, auth, and platform status. |
-| `hermes cron` | Inspect and tick the cron scheduler. |
-| `hermes kanban` | Multi-profile collaboration board (tasks, links, dispatcher). |
-| `hermes webhook` | Manage dynamic webhook subscriptions for event-driven activation. |
-| `hermes hooks` | Inspect, approve, or remove shell-script hooks declared in `config.yaml`. |
-| `hermes doctor` | Diagnose config and dependency issues. |
-| `hermes dump` | Copy-pasteable setup summary for support/debugging. |
-| `hermes debug` | Debug tools — upload logs and system info for support. |
-| `hermes backup` | Back up Hermes home directory to a zip file. |
-| `hermes checkpoints` | Inspect / prune / clear `~/.hermes/checkpoints/` (the shadow store used by `/rollback`). Run with no args for a status overview. |
-| `hermes import` | Restore a Hermes backup from a zip file. |
-| `hermes logs` | View, tail, and filter agent/gateway/error log files. |
-| `hermes config` | Show, edit, migrate, and query configuration files. |
-| `hermes pairing` | Approve or revoke messaging pairing codes. |
-| `hermes skills` | Browse, install, publish, audit, and configure skills. |
-| `hermes bundles` | Group several skills under a single `/<name>` slash command. See [Skill Bundles](../user-guide/features/skills.md#skill-bundles). |
-| `hermes curator` | Background skill maintenance — status, run, pause, pin. See [Curator](../user-guide/features/curator.md). |
-| `hermes memory` | Configure external memory provider. Plugin-specific subcommands (e.g. `hermes honcho`) register automatically when their provider is active. |
-| `hermes acp` | Run Hermes as an ACP server for editor integration. |
-| `hermes mcp` | Manage MCP server configurations and run Hermes as an MCP server. |
-| `hermes plugins` | Manage Hermes Agent plugins (install, enable, disable, remove). |
-| `hermes tools` | Configure enabled tools per platform. |
-| `hermes computer-use` | Install or check the cua-driver backend (macOS Computer Use). |
-| `hermes sessions` | Browse, export, prune, rename, and delete sessions. |
-| `hermes insights` | Show token/cost/activity analytics. |
-| `hermes claw` | OpenClaw migration helpers. |
-| `hermes dashboard` | Launch the web dashboard for managing config, API keys, and sessions. |
-| `hermes profile` | Manage profiles — multiple isolated Hermes instances. |
-| `hermes completion` | Print shell completion scripts (bash/zsh/fish). |
-| `hermes version` | Show version information. |
-| `hermes update` | Pull latest code and reinstall dependencies (git installs), or check PyPI and `pip install --upgrade` (pip installs). `--check` previews without installing; `--backup` takes a pre-pull `HERMES_HOME` snapshot. |
-| `hermes uninstall` | Remove Hermes from the system. |
+| `superforecasting-agent chat` | Inherited interactive or one-shot chat. Use for support work, not durable forecast state. |
+| `superforecasting-agent model` | Configure providers, OAuth, API keys, and default model. |
+| `superforecasting-agent setup` | Interactive setup wizard. |
+| `superforecasting-agent tools` | Configure enabled tools per platform. |
+| `superforecasting-agent cron` | Inspect and tick inherited cron jobs; forecast lifecycle schedules use `forecast schedule`. |
+| `superforecasting-agent gateway` | Run or manage messaging gateway services. |
+| `superforecasting-agent dashboard` | Launch the web dashboard. |
+| `superforecasting-agent auth` | Manage credentials and OAuth flows. |
+| `superforecasting-agent config` | Show, edit, migrate, and query configuration files. |
+| `superforecasting-agent plugins` | Manage plugins. |
+| `superforecasting-agent skills` | Browse, install, audit, and configure skills. |
+| `superforecasting-agent memory` | Configure inherited external memory providers. Forecast learning lives in the ledger. |
+| `superforecasting-agent mcp` | Manage MCP servers and runtime MCP mode. |
+| `superforecasting-agent logs` | View, tail, and filter logs. |
+| `superforecasting-agent doctor` | Diagnose config and dependency issues. |
+| `superforecasting-agent backup` | Back up runtime home data. |
+| `superforecasting-agent import` | Restore a backup archive. |
+| `superforecasting-agent sessions` | Browse, export, prune, rename, and delete chat/runtime sessions. |
+| `superforecasting-agent profile` | Manage isolated profiles. |
+| `superforecasting-agent completion` | Print shell completion scripts. |
+| `superforecasting-agent update` | Update a managed install where supported. |
+| `superforecasting-agent uninstall` | Remove the runtime install. |
 
-## `hermes chat`
+The sections below use `superforecasting-agent` as the primary command. Legacy `hermes` names, paths, and environment variables are called out only where the inherited runtime still accepts them during migration.
+
+## `superforecasting-agent chat`
 
 ```bash
-hermes chat [options]
+superforecasting-agent chat [options]
 ```
 
 Common options:
@@ -103,7 +143,7 @@ Common options:
 | `--checkpoints` | Enable filesystem checkpoints before destructive file changes. |
 | `--yolo` | Skip approval prompts. |
 | `--pass-session-id` | Pass the session ID into the system prompt. |
-| `--ignore-user-config` | Ignore `~/.hermes/config.yaml` and use built-in defaults. Credentials in `.env` are still loaded. Useful for isolated CI runs, reproducible bug reports, and third-party integrations. |
+| `--ignore-user-config` | Ignore `~/.superforecasting-agent/config.yaml` and use built-in defaults. Credentials in `.env` are still loaded. Legacy `~/.hermes/config.yaml` remains readable during migration. Useful for isolated CI runs, reproducible bug reports, and third-party integrations. |
 | `--ignore-rules` | Skip auto-injection of `AGENTS.md`, `SOUL.md`, `.cursorrules`, persistent memory, and preloaded skills. Combine with `--ignore-user-config` for a fully isolated run. |
 | `--source <tag>` | Session source tag for filtering (default: `cli`). Use `tool` for third-party integrations that should not appear in user session lists. |
 | `--max-turns <N>` | Maximum tool-calling iterations per conversation turn (default: 90, or `agent.max_turns` in config). |
@@ -111,48 +151,48 @@ Common options:
 Examples:
 
 ```bash
-hermes
-hermes chat -q "Summarize the latest PRs"
-hermes chat --provider openrouter --model anthropic/claude-sonnet-4.6
-hermes chat --toolsets web,terminal,skills
-hermes chat --quiet -q "Return only JSON"
-hermes chat --worktree -q "Review this repo and open a PR"
-hermes chat --ignore-user-config --ignore-rules -q "Repro without my personal setup"
+superforecasting-agent
+superforecasting-agent chat -q "Summarize the latest PRs"
+superforecasting-agent chat --provider openrouter --model anthropic/claude-sonnet-4.6
+superforecasting-agent chat --toolsets web,terminal,skills
+superforecasting-agent chat --quiet -q "Return only JSON"
+superforecasting-agent chat --worktree -q "Review this repo and open a PR"
+superforecasting-agent chat --ignore-user-config --ignore-rules -q "Repro without my personal setup"
 ```
 
-### `hermes -z <prompt>` — scripted one-shot
+### `superforecasting-agent -z <prompt>` — scripted one-shot
 
-For programmatic callers (shell scripts, CI, cron, parent processes piping in a prompt), `hermes -z` is the purest one-shot entry point: **single prompt in, final response text out, nothing else on stdout or stderr.** No banner, no spinner, no tool previews, no `Session:` line — just the agent's final reply as plain text.
+For programmatic callers (shell scripts, CI, cron, parent processes piping in a prompt), `superforecasting-agent -z` is the purest one-shot entry point: **single prompt in, final response text out, nothing else on stdout or stderr.** No banner, no spinner, no tool previews, no `Session:` line — just the agent's final reply as plain text.
 
 ```bash
-hermes -z "What's the capital of France?"
+superforecasting-agent -z "What's the capital of France?"
 # → Paris.
 
 # Parent scripts can cleanly capture the response:
-answer=$(hermes -z "summarize this" < /path/to/file.txt)
+answer=$(superforecasting-agent -z "summarize this" < /path/to/file.txt)
 ```
 
-Per-run overrides (no mutation to `~/.hermes/config.yaml`):
+Per-run overrides (no mutation to `~/.superforecasting-agent/config.yaml`):
 
-| Flag | Equivalent env var | Purpose |
+| Flag | Inherited env var | Purpose |
 |---|---|---|
 | `-m` / `--model <model>` | `HERMES_INFERENCE_MODEL` | Override the model for this run |
 | `--provider <provider>` | `HERMES_INFERENCE_PROVIDER` | Override the provider for this run |
 
 ```bash
-hermes -z "…" --provider openrouter --model openai/gpt-5.5
+superforecasting-agent -z "…" --provider openrouter --model openai/gpt-5.5
 # or:
-HERMES_INFERENCE_MODEL=anthropic/claude-sonnet-4.6 hermes -z "…"
+HERMES_INFERENCE_MODEL=anthropic/claude-sonnet-4.6 superforecasting-agent -z "…"
 ```
 
-Same agent, same tools, same skills — just strips every interactive / cosmetic layer. If you need tool output in the transcript too, use `hermes chat -q` instead; `-z` is explicitly for "I only want the final answer".
+Same agent, same tools, same skills — just strips every interactive / cosmetic layer. If you need tool output in the transcript too, use `superforecasting-agent chat -q` instead; `-z` is explicitly for "I only want the final answer".
 
-## `hermes model`
+## `superforecasting-agent model`
 
-Interactive provider + model selector. **This is the command for adding new providers, setting up API keys, and running OAuth flows.** Run it from your terminal — not from inside an active Hermes chat session.
+Interactive provider + model selector. **This is the command for adding new providers, setting up API keys, and running OAuth flows.** Run it from your terminal — not from inside an active Superforecasting Agent chat session.
 
 ```bash
-hermes model
+superforecasting-agent model
 ```
 
 Use this when you want to:
@@ -163,12 +203,12 @@ Use this when you want to:
 - configure a custom/self-hosted endpoint
 - save the new default into config
 
-:::warning hermes model vs /model — know the difference
-**`hermes model`** (run from your terminal, outside any Hermes session) is the **full provider setup wizard**. It can add new providers, run OAuth flows, prompt for API keys, and configure endpoints.
+:::warning superforecasting-agent model vs /model — know the difference
+**`superforecasting-agent model`** (run from your terminal, outside any Superforecasting Agent session) is the **full provider setup wizard**. It can add new providers, run OAuth flows, prompt for API keys, and configure endpoints.
 
-**`/model`** (typed inside an active Hermes chat session) can only **switch between providers and models you've already set up**. It cannot add new providers, run OAuth, or prompt for API keys.
+**`/model`** (typed inside an active Superforecasting Agent chat session) can only **switch between providers and models you've already set up**. It cannot add new providers, run OAuth, or prompt for API keys.
 
-**If you need to add a new provider:** Exit your Hermes session first (`Ctrl+C` or `/quit`), then run `hermes model` from your terminal prompt.
+**If you need to add a new provider:** Exit your Superforecasting Agent session first (`Ctrl+C` or `/quit`), then run `superforecasting-agent model` from your terminal prompt.
 :::
 
 ### `/model` slash command (mid-session)
@@ -192,15 +232,15 @@ By default, `/model` changes apply **to the current session only**. Add `--globa
 ```
 
 :::info What if I only see OpenRouter models?
-If you've only configured OpenRouter, `/model` will only show OpenRouter models. To add another provider (Anthropic, DeepSeek, Copilot, etc.), exit your session and run `hermes model` from the terminal.
+If you've only configured OpenRouter, `/model` will only show OpenRouter models. To add another provider (Anthropic, DeepSeek, Copilot, etc.), exit your session and run `superforecasting-agent model` from the terminal.
 :::
 
 Provider and base URL changes are persisted to `config.yaml` automatically. When switching away from a custom endpoint, the stale base URL is cleared to prevent it leaking into other providers.
 
-## `hermes gateway`
+## `superforecasting-agent gateway`
 
 ```bash
-hermes gateway <subcommand>
+superforecasting-agent gateway <subcommand>
 ```
 
 Subcommands:
@@ -221,16 +261,16 @@ Options:
 
 | Option | Description |
 |--------|-------------|
-| `--all` | On `start` / `restart` / `stop`: act on **every profile's** gateway, not just the active `HERMES_HOME`. Useful if you run multiple profiles side-by-side and want to restart them all after `hermes update`. |
+| `--all` | On `start` / `restart` / `stop`: act on **every profile's** gateway, not just the active profile home. Useful if you run multiple profiles side-by-side and want to restart them all after `superforecasting-agent update`. |
 
 :::tip WSL users
-Use `hermes gateway run` instead of `hermes gateway start` — WSL's systemd support is unreliable. Wrap it in tmux for persistence: `tmux new -s hermes 'hermes gateway run'`. See [WSL FAQ](/docs/reference/faq#wsl-gateway-keeps-disconnecting-or-hermes-gateway-start-fails) for details.
+Use `superforecasting-agent gateway run` instead of `superforecasting-agent gateway start` — WSL's systemd support is unreliable. Wrap it in tmux for persistence: `tmux new -s forecast-gateway 'superforecasting-agent gateway run'`. See [WSL FAQ](/docs/reference/faq#wsl-gateway-keeps-disconnecting-or-hermes-gateway-start-fails) for details.
 :::
 
-## `hermes lsp`
+## `superforecasting-agent lsp`
 
 ```bash
-hermes lsp <subcommand>
+superforecasting-agent lsp <subcommand>
 ```
 
 Manage the Language Server Protocol integration. LSP runs real
@@ -254,10 +294,10 @@ Subcommands:
 See [LSP — Semantic Diagnostics](/docs/user-guide/features/lsp) for
 the full guide, supported languages, and configuration knobs.
 
-## `hermes setup`
+## `superforecasting-agent setup`
 
 ```bash
-hermes setup [model|tts|terminal|gateway|tools|agent] [--non-interactive] [--reset] [--quick] [--reconfigure]
+superforecasting-agent setup [model|tts|terminal|gateway|tools|agent] [--non-interactive] [--reset] [--quick] [--reconfigure]
 ```
 
 **First run:** launches the first-time wizard.
@@ -281,22 +321,22 @@ Options:
 | `--quick` | On returning-user runs: only prompt for items that are missing or unset. Skip items you already have configured. |
 | `--non-interactive` | Use defaults / environment values without prompts. |
 | `--reset` | Reset configuration to defaults before setup. |
-| `--reconfigure` | Backwards-compat alias — bare `hermes setup` on an existing install now does this by default. |
+| `--reconfigure` | Backwards-compat alias — bare `superforecasting-agent setup` on an existing install now does this by default. |
 
-## `hermes whatsapp`
+## `superforecasting-agent whatsapp`
 
 ```bash
-hermes whatsapp
+superforecasting-agent whatsapp
 ```
 
 Runs the WhatsApp pairing/setup flow, including mode selection and QR-code pairing.
 
-## `hermes slack`
+## `superforecasting-agent slack`
 
 ```bash
-hermes slack manifest              # print manifest to stdout
-hermes slack manifest --write      # write to ~/.hermes/slack-manifest.json
-hermes slack manifest --slashes-only  # just the features.slash_commands array
+superforecasting-agent slack manifest              # print manifest to stdout
+superforecasting-agent slack manifest --write      # write to ~/.superforecasting-agent/slack-manifest.json
+superforecasting-agent slack manifest --slashes-only  # just the features.slash_commands array
 ```
 
 Generates a Slack app manifest that registers every gateway command in
@@ -309,44 +349,44 @@ reinstall if scopes or slash commands changed.
 
 | Flag | Default | Purpose |
 |------|---------|---------|
-| `--write [PATH]` | stdout | Write to a file instead of stdout. Bare `--write` writes `$HERMES_HOME/slack-manifest.json`. |
-| `--name NAME` | `Hermes` | Bot display name in Slack. |
+| `--write [PATH]` | stdout | Write to a file instead of stdout. Bare `--write` writes to the active profile home, defaulting to `~/.superforecasting-agent/slack-manifest.json`. |
+| `--name NAME` | `Superforecasting Agent` | Bot display name in Slack. |
 | `--description DESC` | default blurb | Bot description shown in the Slack app directory. |
 | `--slashes-only` | off | Emit only `features.slash_commands` for merging into a manually-maintained manifest. |
 
-Run `hermes slack manifest --write` again after `hermes update` to pick
+Run `superforecasting-agent slack manifest --write` again after `superforecasting-agent update` to pick
 up any new commands.
 
 
-## `hermes login` / `hermes logout` *(Deprecated)*
+## `superforecasting-agent login` / `superforecasting-agent logout` *(Deprecated)*
 
 :::caution
-`hermes login` has been removed. Use `hermes auth` to manage OAuth credentials, `hermes model` to select a provider, or `hermes setup` for full interactive setup.
+`superforecasting-agent login` has been removed. Use `superforecasting-agent auth` to manage OAuth credentials, `superforecasting-agent model` to select a provider, or `superforecasting-agent setup` for full interactive setup.
 :::
 
-## `hermes auth`
+## `superforecasting-agent auth`
 
 Manage credential pools for same-provider key rotation. See [Credential Pools](/docs/user-guide/features/credential-pools) for full documentation.
 
 ```bash
-hermes auth                                              # Interactive wizard
-hermes auth list                                         # Show all pools
-hermes auth list openrouter                              # Show specific provider
-hermes auth add openrouter --api-key sk-or-v1-xxx        # Add API key
-hermes auth add anthropic --type oauth                   # Add OAuth credential
-hermes auth remove openrouter 2                          # Remove by index
-hermes auth reset openrouter                             # Clear cooldowns
-hermes auth status anthropic                             # Show auth status for a provider
-hermes auth logout anthropic                             # Log out and clear stored auth state
-hermes auth spotify                                      # Authenticate Hermes with Spotify via PKCE
+superforecasting-agent auth                                              # Interactive wizard
+superforecasting-agent auth list                                         # Show all pools
+superforecasting-agent auth list openrouter                              # Show specific provider
+superforecasting-agent auth add openrouter --api-key sk-or-v1-xxx        # Add API key
+superforecasting-agent auth add anthropic --type oauth                   # Add OAuth credential
+superforecasting-agent auth remove openrouter 2                          # Remove by index
+superforecasting-agent auth reset openrouter                             # Clear cooldowns
+superforecasting-agent auth status anthropic                             # Show auth status for a provider
+superforecasting-agent auth logout anthropic                             # Log out and clear stored auth state
+superforecasting-agent auth spotify                                      # Authenticate Superforecasting Agent with Spotify via PKCE
 ```
 
 Subcommands: `add`, `list`, `remove`, `reset`, `status`, `logout`, `spotify`. When called with no subcommand, launches the interactive management wizard.
 
-## `hermes status`
+## `superforecasting-agent status`
 
 ```bash
-hermes status [--all] [--deep]
+superforecasting-agent status [--all] [--deep]
 ```
 
 | Option | Description |
@@ -354,10 +394,10 @@ hermes status [--all] [--deep]
 | `--all` | Show all details in a shareable redacted format. |
 | `--deep` | Run deeper checks that may take longer. |
 
-## `hermes cron`
+## `superforecasting-agent cron`
 
 ```bash
-hermes cron <list|create|edit|pause|resume|run|remove|status|tick>
+superforecasting-agent cron <list|create|edit|pause|resume|run|remove|status|tick>
 ```
 
 | Subcommand | Description |
@@ -372,28 +412,28 @@ hermes cron <list|create|edit|pause|resume|run|remove|status|tick>
 | `status` | Check whether the cron scheduler is running. |
 | `tick` | Run due jobs once and exit. |
 
-## `hermes kanban`
+## `superforecasting-agent kanban`
 
 ```bash
-hermes kanban [--board <slug>] <action> [options]
+superforecasting-agent kanban [--board <slug>] <action> [options]
 ```
 
-Multi-profile, multi-project collaboration board. Each install can host many boards (one per project, repo, or domain); each board is a standalone queue with its own SQLite DB and dispatcher scope. New installs start with one board called `default`, whose DB is `~/.hermes/kanban.db` for back-compat; additional boards live at `~/.hermes/kanban/boards/<slug>/kanban.db`. The gateway-embedded dispatcher sweeps every board per tick.
+Forecast work board for coordinating research, modeling, evidence review, postmortems, and other durable forecast-desk tasks. Each profile can host many boards (one per portfolio, domain, or tournament); each board is a standalone queue with its own SQLite DB and dispatcher scope. New installs start with one board called `default`, whose DB is `~/.superforecasting-agent/kanban.db`; additional boards live at `~/.superforecasting-agent/kanban/boards/<slug>/kanban.db`. Legacy `~/.hermes/kanban*` paths remain readable during migration.
 
 **Global flags (apply to every action below):**
 
 | Flag | Purpose |
 |------|---------|
-| `--board <slug>` | Operate on a specific board. Defaults to the current board (set via `hermes kanban boards switch`, the `HERMES_KANBAN_BOARD` env var, or `default`). |
+| `--board <slug>` | Operate on a specific board. Defaults to the current board (set via `superforecasting-agent kanban boards switch`, the inherited `HERMES_KANBAN_BOARD` env var, or `default`). |
 
-**This is the human / scripting surface.** Agent workers spawned by the dispatcher drive the board through a dedicated `kanban_*` [toolset](/docs/user-guide/features/kanban#how-workers-interact-with-the-board) (`kanban_show`, `kanban_complete`, `kanban_block`, `kanban_create`, `kanban_link`, `kanban_comment`, `kanban_heartbeat`; orchestrator profiles also get `kanban_list` and `kanban_unblock`) instead of shelling to `hermes kanban`. Workers have `HERMES_KANBAN_BOARD` pinned in their env so they physically cannot see other boards.
+**This is the human / scripting surface.** Agent workers spawned by the dispatcher drive the board through a dedicated `kanban_*` [toolset](/docs/user-guide/features/kanban#how-workers-interact-with-the-board) (`kanban_show`, `kanban_complete`, `kanban_block`, `kanban_create`, `kanban_link`, `kanban_comment`, `kanban_heartbeat`; orchestrator profiles also get `kanban_list` and `kanban_unblock`) instead of shelling to `superforecasting-agent kanban`. Workers have `HERMES_KANBAN_BOARD` pinned in their env so they physically cannot see other boards.
 
 | Action | Purpose |
 |--------|---------|
 | `init` | Create `kanban.db` if missing. Idempotent. |
 | `boards list` / `boards ls` | List all boards with task counts. `--json`, `--all` (include archived). |
 | `boards create <slug>` | Create a new board. Flags: `--name`, `--description`, `--icon`, `--color`, `--switch` (make active). Slug is kebab-case, auto-downcased. |
-| `boards switch <slug>` / `boards use` | Persist `<slug>` as the active board (writes `~/.hermes/kanban/current`). |
+| `boards switch <slug>` / `boards use` | Persist `<slug>` as the active board (writes `~/.superforecasting-agent/kanban/current`). |
 | `boards show` / `boards current` | Print the currently-active board's name, DB path, and task counts. |
 | `boards rename <slug> "<name>"` | Change a board's display name. Slug is immutable. |
 | `boards rm <slug>` | Archive (default) or hard-delete a board. `--delete` skips the archive step. Archived boards move to `boards/_archived/<slug>-<ts>/`. Refused for `default`. |
@@ -420,29 +460,29 @@ Multi-profile, multi-project collaboration board. Each install can host many boa
 Examples:
 
 ```bash
-# Create a second board and put a task on it without switching away.
-hermes kanban boards create atm10-server --name "ATM10 Server" --icon 🎮
-hermes kanban --board atm10-server create "Restart server" --assignee ops
+# Create a domain board and put a task on it without switching away.
+superforecasting-agent kanban boards create macro-2026 --name "Macro 2026"
+superforecasting-agent kanban --board macro-2026 create "Backtest inflation surprise forecasts" --assignee research
 
 # Switch the active board for subsequent calls.
-hermes kanban boards switch atm10-server
-hermes kanban list                  # shows atm10-server tasks
+superforecasting-agent kanban boards switch macro-2026
+superforecasting-agent kanban list                  # shows macro-2026 tasks
 
 # Archive a board (recoverable) or hard-delete it.
-hermes kanban boards rm atm10-server
-hermes kanban boards rm atm10-server --delete
+superforecasting-agent kanban boards rm macro-2026
+superforecasting-agent kanban boards rm macro-2026 --delete
 ```
 
-Board resolution order (highest precedence first): `--board <slug>` flag → `HERMES_KANBAN_BOARD` env var → `~/.hermes/kanban/current` file → `default`.
+Board resolution order (highest precedence first): `--board <slug>` flag → inherited `HERMES_KANBAN_BOARD` env var → `~/.superforecasting-agent/kanban/current` file → `default`.
 
 All actions are also available as a slash command in the gateway (`/kanban …`), with the same argument surface — including `boards` subcommands and the `--board` flag.
 
-For the full design — comparison with Cline Kanban / Paperclip / NanoClaw / Gemini Enterprise, eight collaboration patterns, four user stories, concurrency correctness proof — see `docs/hermes-kanban-v1-spec.pdf` in the repository or the [Kanban user guide](/docs/user-guide/features/kanban).
+For the forecast-desk operating model, see the [Kanban user guide](/docs/user-guide/features/kanban), [tutorial](/docs/user-guide/features/kanban-tutorial), and [worker lanes guide](/docs/user-guide/features/kanban-worker-lanes).
 
-## `hermes webhook`
+## `superforecasting-agent webhook`
 
 ```bash
-hermes webhook <subscribe|list|remove|test>
+superforecasting-agent webhook <subscribe|list|remove|test>
 ```
 
 Manage dynamic webhook subscriptions for event-driven agent activation. Requires the webhook platform to be enabled in config — if not configured, prints setup instructions.
@@ -454,10 +494,10 @@ Manage dynamic webhook subscriptions for event-driven agent activation. Requires
 | `remove` / `rm` | Delete a dynamic subscription. Static routes from config.yaml are not affected. |
 | `test` | Send a test POST to verify a subscription is working. |
 
-### `hermes webhook subscribe`
+### `superforecasting-agent webhook subscribe`
 
 ```bash
-hermes webhook subscribe <name> [options]
+superforecasting-agent webhook subscribe <name> [options]
 ```
 
 | Option | Description |
@@ -471,25 +511,25 @@ hermes webhook subscribe <name> [options]
 | `--secret` | Custom HMAC secret. Auto-generated if omitted. |
 | `--deliver-only` | Skip the agent — deliver the rendered `--prompt` as the literal message. Zero LLM cost, sub-second delivery. Requires `--deliver` to be a real target (not `log`). |
 
-Subscriptions persist to `~/.hermes/webhook_subscriptions.json` and are hot-reloaded by the webhook adapter without a gateway restart.
+Subscriptions persist to `~/.superforecasting-agent/webhook_subscriptions.json` and are hot-reloaded by the webhook adapter without a gateway restart. Legacy `~/.hermes/webhook_subscriptions.json` remains readable during migration.
 
-## `hermes doctor`
+## `superforecasting-agent doctor`
 
 ```bash
-hermes doctor [--fix]
+superforecasting-agent doctor [--fix]
 ```
 
 | Option | Description |
 |--------|-------------|
 | `--fix` | Attempt automatic repairs where possible. |
 
-## `hermes dump`
+## `superforecasting-agent dump`
 
 ```bash
-hermes dump [--show-keys]
+superforecasting-agent dump [--show-keys]
 ```
 
-Outputs a compact, plain-text summary of your entire Hermes setup. Designed to be copy-pasted into Discord, GitHub issues, or Telegram when asking for support — no ANSI colors, no special formatting, just data.
+Outputs a compact, plain-text summary of your entire Superforecasting Agent setup. Designed to be copy-pasted into Discord, GitHub issues, or Telegram when asking for support — no ANSI colors, no special formatting, just data.
 
 | Option | Description |
 |--------|-------------|
@@ -499,9 +539,9 @@ Outputs a compact, plain-text summary of your entire Hermes setup. Designed to b
 
 | Section | Details |
 |---------|---------|
-| **Header** | Hermes version, release date, git commit hash |
+| **Header** | Superforecasting Agent version, release date, git commit hash |
 | **Environment** | OS, Python version, OpenAI SDK version |
-| **Identity** | Active profile name, HERMES_HOME path |
+| **Identity** | Active profile name and Superforecasting Agent home path |
 | **Model** | Configured default model and provider |
 | **Terminal** | Backend type (local, docker, ssh, etc.) |
 | **API keys** | Presence check for all 22 provider/tool API keys |
@@ -513,13 +553,13 @@ Outputs a compact, plain-text summary of your entire Hermes setup. Designed to b
 ### Example output
 
 ```
---- hermes dump ---
+--- superforecasting-agent dump ---
 version:          0.8.0 (2026.4.8) [af4abd2f]
 os:               Linux 6.14.0-37-generic x86_64
 python:           3.11.14
 openai_sdk:       2.24.0
 profile:          default
-hermes_home:      ~/.hermes
+agent_home:       ~/.superforecasting-agent
 model:            anthropic/claude-opus-4.6
 provider:         openrouter
 terminal:         local
@@ -556,13 +596,13 @@ config_overrides:
 - Quick sanity check when something isn't working
 
 :::tip
-`hermes dump` is specifically designed for sharing. For interactive diagnostics, use `hermes doctor`. For a visual overview, use `hermes status`.
+`superforecasting-agent dump` is specifically designed for sharing. For interactive diagnostics, use `superforecasting-agent doctor`. For a visual overview, use `superforecasting-agent status`.
 :::
 
-## `hermes debug`
+## `superforecasting-agent debug`
 
 ```bash
-hermes debug share [options]
+superforecasting-agent debug share [options]
 ```
 
 Upload a debug report (system info + recent logs) to a paste service and get a shareable URL. Useful for quick support requests — includes everything a helper needs to diagnose your issue.
@@ -573,61 +613,61 @@ Upload a debug report (system info + recent logs) to a paste service and get a s
 | `--expire <days>` | Paste expiry in days (default: 7). |
 | `--local` | Print the report locally instead of uploading. |
 
-The report includes system info (OS, Python version, Hermes version), recent agent and gateway logs (512 KB limit per file), and redacted API key status. Keys are always redacted — no secrets are uploaded.
+The report includes system info (OS, Python version, Superforecasting Agent version), recent agent and gateway logs (512 KB limit per file), and redacted API key status. Keys are always redacted — no secrets are uploaded.
 
 Paste services tried in order: paste.rs, dpaste.com.
 
 ### Examples
 
 ```bash
-hermes debug share              # Upload debug report, print URL
-hermes debug share --lines 500  # Include more log lines
-hermes debug share --expire 30  # Keep paste for 30 days
-hermes debug share --local      # Print report to terminal (no upload)
+superforecasting-agent debug share              # Upload debug report, print URL
+superforecasting-agent debug share --lines 500  # Include more log lines
+superforecasting-agent debug share --expire 30  # Keep paste for 30 days
+superforecasting-agent debug share --local      # Print report to terminal (no upload)
 ```
 
-## `hermes backup`
+## `superforecasting-agent backup`
 
 ```bash
-hermes backup [options]
+superforecasting-agent backup [options]
 ```
 
-Create a zip archive of your Hermes configuration, skills, sessions, and data. The backup excludes the hermes-agent codebase itself.
+Create a zip archive of your Superforecasting Agent configuration, skills, sessions, and data. The backup excludes the Superforecasting Agent fork codebase itself.
 
 | Option | Description |
 |--------|-------------|
-| `-o`, `--output <path>` | Output path for the zip file (default: `~/hermes-backup-<timestamp>.zip`). |
+| `-o`, `--output <path>` | Output path for the zip file (default: `~/superforecasting-agent-backup-<timestamp>.zip`). |
 | `-q`, `--quick` | Quick snapshot: only critical state files (config.yaml, state.db, .env, auth, cron jobs). Much faster than a full backup. |
 | `-l`, `--label <name>` | Label for the snapshot (only used with `--quick`). |
 
-The backup uses SQLite's `backup()` API for safe copying, so it works correctly even when Hermes is running (WAL-mode safe).
+The backup uses SQLite's `backup()` API for safe copying, so it works correctly even when Superforecasting Agent is running (WAL-mode safe).
 
 **What's excluded from the zip:**
 
 - `*.db-wal`, `*.db-shm`, `*.db-journal` — SQLite's WAL / shared-memory / journal sidecars. The `*.db` file already got a consistent snapshot via `sqlite3.backup()`; shipping the live sidecars alongside it would let a restore see a half-committed state.
 - `checkpoints/` — per-session trajectory caches. Hash-keyed and regenerated per session; wouldn't port cleanly to another install anyway.
-- The `hermes-agent` code itself (this is a user-data backup, not a repo snapshot).
+- The Superforecasting Agent fork code itself (this is a user-data backup, not a repo snapshot).
 
 ### Examples
 
 ```bash
-hermes backup                           # Full backup to ~/hermes-backup-*.zip
-hermes backup -o /tmp/hermes.zip        # Full backup to specific path
-hermes backup --quick                   # Quick state-only snapshot
-hermes backup --quick --label "pre-upgrade"  # Quick snapshot with label
+superforecasting-agent backup                           # Full backup to ~/superforecasting-agent-backup-*.zip
+superforecasting-agent backup -o /tmp/forecast-desk.zip # Full backup to specific path
+superforecasting-agent backup --quick                   # Quick state-only snapshot
+superforecasting-agent backup --quick --label "pre-upgrade"  # Quick snapshot with label
 ```
 
-## `hermes checkpoints`
+## `superforecasting-agent checkpoints`
 
 ```bash
-hermes checkpoints [COMMAND]
+superforecasting-agent checkpoints [COMMAND]
 ```
 
-Inspect and manage the shadow git store at `~/.hermes/checkpoints/` — the storage layer behind the in-session `/rollback` command. Safe to run any time; does not require the agent to be running.
+Inspect and manage the shadow git store at `~/.superforecasting-agent/checkpoints/` — the storage layer behind the in-session `/rollback` command. Legacy `~/.hermes/checkpoints/` homes remain readable during migration. Safe to run any time; does not require the agent to be running.
 
 | Subcommand | Description |
 |------------|-------------|
-| `status` (default) | Show total size, project count, and per-project breakdown. Bare `hermes checkpoints` is equivalent. |
+| `status` (default) | Show total size, project count, and per-project breakdown. Bare `superforecasting-agent checkpoints` is equivalent. |
 | `list` | Alias for `status`. |
 | `prune` | Force a cleanup sweep — delete orphan and stale projects, GC the store, enforce the size cap. Ignores the 24h idempotency marker. |
 | `clear` | Delete the entire checkpoint base. Irreversible; asks for confirmation unless `-f`. |
@@ -646,22 +686,22 @@ Inspect and manage the shadow git store at `~/.hermes/checkpoints/` — the stor
 ### Examples
 
 ```bash
-hermes checkpoints                                  # status overview
-hermes checkpoints prune --retention-days 3         # aggressive cleanup
-hermes checkpoints prune --max-size-mb 200          # tighten size cap once
-hermes checkpoints clear-legacy -f                  # drop v1 archive dirs
-hermes checkpoints clear -f                         # wipe everything
+superforecasting-agent checkpoints                                  # status overview
+superforecasting-agent checkpoints prune --retention-days 3         # aggressive cleanup
+superforecasting-agent checkpoints prune --max-size-mb 200          # tighten size cap once
+superforecasting-agent checkpoints clear-legacy -f                  # drop v1 archive dirs
+superforecasting-agent checkpoints clear -f                         # wipe everything
 ```
 
 See [Checkpoints and `/rollback`](../user-guide/checkpoints-and-rollback.md) for the full architecture and the in-session commands.
 
-## `hermes import`
+## `superforecasting-agent import`
 
 ```bash
-hermes import <zipfile> [options]
+superforecasting-agent import <zipfile> [options]
 ```
 
-Restore a previously created Hermes backup into your Hermes home directory. All files in the archive overwrite existing files in your Hermes home; `--force` only skips the confirmation prompt that fires when the target already has a Hermes installation.
+Restore a previously created Superforecasting Agent backup into your Superforecasting Agent home directory. All files in the archive overwrite existing files in your Superforecasting Agent home; `--force` only skips the confirmation prompt that fires when the target already has a Superforecasting Agent installation.
 
 | Option | Description |
 |--------|-------------|
@@ -673,17 +713,17 @@ Stop the gateway before importing to avoid conflicts with running processes.
 
 ### Examples
 ```bash
-hermes import ~/hermes-backup-20260423.zip           # Prompts before overwriting existing config
-hermes import ~/hermes-backup-20260423.zip --force   # Overwrite without prompting
+superforecasting-agent import ~/superforecasting-agent-backup-20260423.zip           # Prompts before overwriting existing config
+superforecasting-agent import ~/superforecasting-agent-backup-20260423.zip --force   # Overwrite without prompting
 ```
 
-## `hermes logs`
+## `superforecasting-agent logs`
 
 ```bash
-hermes logs [log_name] [options]
+superforecasting-agent logs [log_name] [options]
 ```
 
-View, tail, and filter Hermes log files. All logs are stored in `~/.hermes/logs/` (or `<profile>/logs/` for non-default profiles).
+View, tail, and filter Superforecasting Agent log files. All logs are stored in `~/.superforecasting-agent/logs/` (or `<profile>/logs/` for non-default profiles). Legacy `~/.hermes/logs/` homes remain readable during migration.
 
 ### Log files
 
@@ -709,25 +749,25 @@ View, tail, and filter Hermes log files. All logs are stored in `~/.hermes/logs/
 
 ```bash
 # View the last 50 lines of agent.log (default)
-hermes logs
+superforecasting-agent logs
 
 # Follow agent.log in real time
-hermes logs -f
+superforecasting-agent logs -f
 
 # View the last 100 lines of gateway.log
-hermes logs gateway -n 100
+superforecasting-agent logs gateway -n 100
 
 # Show only warnings and errors from the last hour
-hermes logs --level WARNING --since 1h
+superforecasting-agent logs --level WARNING --since 1h
 
 # Filter by a specific session
-hermes logs --session abc123
+superforecasting-agent logs --session abc123
 
 # Follow errors.log, starting from 30 minutes ago
-hermes logs errors --since 30m -f
+superforecasting-agent logs errors --since 30m -f
 
 # List all log files with their sizes
-hermes logs list
+superforecasting-agent logs list
 ```
 
 ### Filtering
@@ -736,19 +776,19 @@ Filters can be combined. When multiple filters are active, a log line must pass 
 
 ```bash
 # WARNING+ lines from the last 2 hours containing session "tg-12345"
-hermes logs --level WARNING --since 2h --session tg-12345
+superforecasting-agent logs --level WARNING --since 2h --session tg-12345
 ```
 
 Lines without a parseable timestamp are included when `--since` is active (they may be continuation lines from a multi-line log entry). Lines without a detectable level are included when `--level` is active.
 
 ### Log rotation
 
-Hermes uses Python's `RotatingFileHandler`. Old logs are rotated automatically — look for `agent.log.1`, `agent.log.2`, etc. The `hermes logs list` subcommand shows all log files including rotated ones.
+Superforecasting Agent uses Python's `RotatingFileHandler`. Old logs are rotated automatically — look for `agent.log.1`, `agent.log.2`, etc. The `superforecasting-agent logs list` subcommand shows all log files including rotated ones.
 
-## `hermes config`
+## `superforecasting-agent config`
 
 ```bash
-hermes config <subcommand>
+superforecasting-agent config <subcommand>
 ```
 
 Subcommands:
@@ -763,10 +803,10 @@ Subcommands:
 | `check` | Check for missing or stale config. |
 | `migrate` | Add newly introduced options interactively. |
 
-## `hermes pairing`
+## `superforecasting-agent pairing`
 
 ```bash
-hermes pairing <list|approve|revoke|clear-pending>
+superforecasting-agent pairing <list|approve|revoke|clear-pending>
 ```
 
 | Subcommand | Description |
@@ -776,10 +816,10 @@ hermes pairing <list|approve|revoke|clear-pending>
 | `revoke <platform> <user-id>` | Revoke a user's access. |
 | `clear-pending` | Clear pending pairing codes. |
 
-## `hermes skills`
+## `superforecasting-agent skills`
 
 ```bash
-hermes skills <subcommand>
+superforecasting-agent skills <subcommand>
 ```
 
 Subcommands:
@@ -804,38 +844,38 @@ Subcommands:
 Common examples:
 
 ```bash
-hermes skills browse
-hermes skills browse --source official
-hermes skills search react --source skills-sh
-hermes skills search https://mintlify.com/docs --source well-known
-hermes skills inspect official/security/1password
-hermes skills inspect skills-sh/vercel-labs/json-render/json-render-react
-hermes skills install official/migration/openclaw-migration
-hermes skills install skills-sh/anthropics/skills/pdf --force
-hermes skills install https://sharethis.chat/SKILL.md                     # Direct URL (single-file SKILL.md)
-hermes skills install https://example.com/SKILL.md --name my-skill        # Override name when frontmatter has none
-hermes skills check
-hermes skills update
-hermes skills config
-hermes skills reset google-workspace
-hermes skills reset google-workspace --restore --yes
+superforecasting-agent skills browse
+superforecasting-agent skills browse --source official
+superforecasting-agent skills search react --source skills-sh
+superforecasting-agent skills search https://mintlify.com/docs --source well-known
+superforecasting-agent skills inspect official/security/1password
+superforecasting-agent skills inspect skills-sh/vercel-labs/json-render/json-render-react
+superforecasting-agent skills install official/migration/openclaw-migration
+superforecasting-agent skills install skills-sh/anthropics/skills/pdf --force
+superforecasting-agent skills install https://sharethis.chat/SKILL.md                     # Direct URL (single-file SKILL.md)
+superforecasting-agent skills install https://example.com/SKILL.md --name my-skill        # Override name when frontmatter has none
+superforecasting-agent skills check
+superforecasting-agent skills update
+superforecasting-agent skills config
+superforecasting-agent skills reset google-workspace
+superforecasting-agent skills reset google-workspace --restore --yes
 ```
 
 Notes:
 - `--force` can override non-dangerous policy blocks for third-party/community skills.
 - `--force` does not override a `dangerous` scan verdict.
 - `--source skills-sh` searches the public `skills.sh` directory.
-- `--source well-known` lets you point Hermes at a site exposing `/.well-known/skills/index.json`.
+- `--source well-known` lets you point Superforecasting Agent at a site exposing `/.well-known/skills/index.json`.
 - `--source browse-sh` searches [browse.sh](https://browse.sh)'s catalog of 200+ site-specific browser-automation skills. Identifiers look like `browse-sh/airbnb.com/search-listings-ddgioa`.
 - Passing an `http(s)://…/*.md` URL installs a single-file SKILL.md directly. When frontmatter has no `name:` and the URL slug isn't a valid identifier, an interactive terminal prompts for a name; non-interactive surfaces (`/skills install` inside the TUI, gateway platforms) require `--name <x>` instead.
 
-## `hermes bundles`
+## `superforecasting-agent bundles`
 
 ```bash
-hermes bundles <subcommand>
+superforecasting-agent bundles <subcommand>
 ```
 
-Skill bundles group several skills under one `/<bundle-name>` slash command. Invoking the bundle loads every referenced skill into a single combined user message. Storage: `~/.hermes/skill-bundles/<slug>.yaml`. See [Skill Bundles](../user-guide/features/skills.md#skill-bundles) for the YAML schema and behavior.
+Skill bundles group several skills under one `/<bundle-name>` slash command. Invoking the bundle loads every referenced skill into a single combined user message. Storage: `~/.superforecasting-agent/skill-bundles/<slug>.yaml`. See [Skill Bundles](../user-guide/features/skills.md#skill-bundles) for the YAML schema and behavior.
 
 Subcommands:
 
@@ -845,28 +885,28 @@ Subcommands:
 | `show <name>` | Show one bundle's name, description, skills, and file path |
 | `create <name>` | Create a new bundle. Pass `--skill <id>` (repeat) or omit for interactive entry. `--description`, `--instruction`, `--force` available. |
 | `delete <name>` | Remove a bundle file |
-| `reload` | Re-scan `~/.hermes/skill-bundles/` and report added/removed bundles |
+| `reload` | Re-scan `~/.superforecasting-agent/skill-bundles/` and report added/removed bundles |
 
 Examples:
 
 ```bash
-hermes bundles create backend-dev \
+superforecasting-agent bundles create backend-dev \
   --skill github-code-review \
   --skill test-driven-development \
   --skill github-pr-workflow \
   -d "Backend feature work"
 
-hermes bundles list
-hermes bundles show backend-dev
-hermes bundles delete backend-dev
+superforecasting-agent bundles list
+superforecasting-agent bundles show backend-dev
+superforecasting-agent bundles delete backend-dev
 ```
 
 In a chat session, `/bundles` lists installed bundles and `/<bundle-name>` loads one.
 
-## `hermes curator`
+## `superforecasting-agent curator`
 
 ```bash
-hermes curator <subcommand>
+superforecasting-agent curator <subcommand>
 ```
 
 The curator is an auxiliary-model background task that periodically reviews agent-created skills, prunes stale ones, consolidates overlaps, and archives obsolete skills. Bundled and hub-installed skills are never touched. Archives are recoverable; auto-deletion never happens.
@@ -877,8 +917,8 @@ The curator is an auxiliary-model background task that periodically reviews agen
 | `run` | Trigger a curator review now (blocks until the LLM pass finishes) |
 | `run --background` | Start the LLM pass in a background thread and return immediately |
 | `run --dry-run` | Preview only — produce the review report with no mutations |
-| `backup` | Take a manual tar.gz snapshot of `~/.hermes/skills/` (curator also snapshots automatically before every real run) |
-| `rollback` | Restore `~/.hermes/skills/` from a snapshot (defaults to newest) |
+| `backup` | Take a manual tar.gz snapshot of `~/.superforecasting-agent/skills/` (curator also snapshots automatically before every real run) |
+| `rollback` | Restore `~/.superforecasting-agent/skills/` from a snapshot (defaults to newest) |
 | `rollback --list` | List available snapshots |
 | `rollback --id <ts>` | Restore a specific snapshot by id |
 | `rollback -y` | Skip the confirmation prompt |
@@ -891,14 +931,14 @@ The curator is an auxiliary-model background task that periodically reviews agen
 | `prune` | Manually prune skills the curator would normally clean up |
 | `list-archived` | List archived skills (recoverable via `restore`) |
 
-On a fresh install the first scheduled pass is deferred by one full `interval_hours` (7 days by default) — the gateway will not curate immediately on the first tick after `hermes update`. Use `hermes curator run --dry-run` to preview before that happens.
+On a fresh install the first scheduled pass is deferred by one full `interval_hours` (7 days by default) — the gateway will not curate immediately on the first tick after `superforecasting-agent update`. Use `superforecasting-agent curator run --dry-run` to preview before that happens.
 
 See [Curator](../user-guide/features/curator.md) for behavior and config.
 
-## `hermes fallback`
+## `superforecasting-agent fallback`
 
 ```bash
-hermes fallback <subcommand>
+superforecasting-agent fallback <subcommand>
 ```
 
 Manage the fallback provider chain. Fallback providers are tried in order when the primary model fails with rate-limit, overload, or connection errors.
@@ -906,19 +946,19 @@ Manage the fallback provider chain. Fallback providers are tried in order when t
 | Subcommand | Description |
 |------------|-------------|
 | `list` (alias: `ls`) | Show the current fallback chain (default when no subcommand) |
-| `add` | Pick a provider + model (same picker as `hermes model`) and append to the chain |
+| `add` | Pick a provider + model (same picker as `superforecasting-agent model`) and append to the chain |
 | `remove` (alias: `rm`) | Pick an entry to delete from the chain |
 | `clear` | Remove all fallback entries |
 
 See [Fallback Providers](../user-guide/features/fallback-providers.md).
 
-## `hermes hooks`
+## `superforecasting-agent hooks`
 
 ```bash
-hermes hooks <subcommand>
+superforecasting-agent hooks <subcommand>
 ```
 
-Inspect shell-script hooks declared in `~/.hermes/config.yaml`, test them against synthetic payloads, and manage the first-use consent allowlist at `~/.hermes/shell-hooks-allowlist.json`.
+Inspect shell-script hooks declared in `~/.superforecasting-agent/config.yaml`, test them against synthetic payloads, and manage the first-use consent allowlist at `~/.superforecasting-agent/shell-hooks-allowlist.json`. Legacy `~/.hermes` hook files remain readable during migration.
 
 | Subcommand | Description |
 |------------|-------------|
@@ -929,10 +969,10 @@ Inspect shell-script hooks declared in `~/.hermes/config.yaml`, test them agains
 
 See [Hooks](../user-guide/features/hooks.md) for event signatures and payload shapes.
 
-## `hermes memory`
+## `superforecasting-agent memory`
 
 ```bash
-hermes memory <subcommand>
+superforecasting-agent memory <subcommand>
 ```
 
 Set up and manage external memory provider plugins. Available providers: honcho, openviking, mem0, hindsight, holographic, retaindb, byterover, supermemory. Only one external provider can be active at a time. Built-in memory (MEMORY.md/USER.md) is always active.
@@ -946,20 +986,22 @@ Subcommands:
 | `off` | Disable external provider (built-in only). |
 
 :::info Provider-specific subcommands
-When an external memory provider is active, it may register its own top-level `hermes <provider>` command for provider-specific management (e.g. `hermes honcho` when Honcho is active). Inactive providers do not expose their subcommands. Run `hermes --help` to see what's currently wired in.
+When an external memory provider is active, it may register its own top-level `superforecasting-agent <provider>` command for provider-specific management (for example, `superforecasting-agent honcho` when Honcho is active). Inactive providers do not expose their subcommands. Run `superforecasting-agent --help` to see what's currently wired in.
 :::
 
-## `hermes acp`
+## `superforecasting-agent acp`
 
 ```bash
-hermes acp
+superforecasting-agent acp
 ```
 
-Starts Hermes as an ACP (Agent Client Protocol) stdio server for editor integration.
+Starts Superforecasting Agent as an ACP (Agent Client Protocol) stdio server for editor integration.
 
 Related entrypoints:
 
 ```bash
+superforecasting-agent-acp
+superforecast-acp
 hermes-acp
 python -m acp_adapter
 ```
@@ -972,17 +1014,17 @@ pip install -e '.[acp]'
 
 See [ACP Editor Integration](../user-guide/features/acp.md) and [ACP Internals](../developer-guide/acp-internals.md).
 
-## `hermes mcp`
+## `superforecasting-agent mcp`
 
 ```bash
-hermes mcp <subcommand>
+superforecasting-agent mcp <subcommand>
 ```
 
-Manage MCP (Model Context Protocol) server configurations and run Hermes as an MCP server.
+Manage MCP (Model Context Protocol) server configurations and run the inherited messaging bridge as a stdio MCP server.
 
 | Subcommand | Description |
 |------------|-------------|
-| `serve [-v\|--verbose]` | Run Hermes as an MCP server — expose conversations to other agents. |
+| `serve [-v\|--verbose]` | Run the compatibility MCP server — expose conversations and approvals to other MCP clients. |
 | `add <name> [--url URL] [--command CMD] [--args ...] [--auth oauth\|header]` | Add an MCP server with automatic tool discovery. |
 | `remove <name>` (alias: `rm`) | Remove an MCP server from config. |
 | `list` (alias: `ls`) | List configured MCP servers. |
@@ -990,15 +1032,15 @@ Manage MCP (Model Context Protocol) server configurations and run Hermes as an M
 | `configure <name>` (alias: `config`) | Toggle tool selection for a server. |
 | `login <name>` | Force re-authentication for an OAuth-based MCP server. |
 
-See [MCP Config Reference](./mcp-config-reference.md), [Use MCP with Hermes](../guides/use-mcp-with-hermes.md), and [MCP Server Mode](../user-guide/features/mcp.md#running-hermes-as-an-mcp-server).
+See [MCP Config Reference](./mcp-config-reference.md), [Use MCP with the inherited runtime](../guides/use-mcp-with-hermes.md), and [MCP Server Mode](../user-guide/features/mcp.md#running-hermes-as-an-mcp-server).
 
-## `hermes plugins`
+## `superforecasting-agent plugins`
 
 ```bash
-hermes plugins [subcommand]
+superforecasting-agent plugins [subcommand]
 ```
 
-Unified plugin management — general plugins, memory providers, and context engines in one place. Running `hermes plugins` with no subcommand opens a composite interactive screen with two sections:
+Unified plugin management — general plugins, memory providers, and context engines in one place. Running `superforecasting-agent plugins` with no subcommand opens a composite interactive screen with two sections:
 
 - **General Plugins** — multi-select checkboxes to enable/disable installed plugins
 - **Provider Plugins** — single-select configuration for Memory Provider and Context Engine. Press ENTER on a category to open a radio picker.
@@ -1019,12 +1061,12 @@ Provider plugin selections are saved to `config.yaml`:
 
 General plugin disabled list is stored in `config.yaml` under `plugins.disabled`.
 
-See [Plugins](../user-guide/features/plugins.md) and [Build a Hermes Plugin](../guides/build-a-hermes-plugin.md).
+See [Plugins](../user-guide/features/plugins.md) and [Build a Superforecasting Agent Plugin](../guides/build-a-hermes-plugin.md).
 
-## `hermes tools`
+## `superforecasting-agent tools`
 
 ```bash
-hermes tools [--summary]
+superforecasting-agent tools [--summary]
 ```
 
 | Option | Description |
@@ -1033,10 +1075,10 @@ hermes tools [--summary]
 
 Without `--summary`, this launches the interactive per-platform tool configuration UI.
 
-## `hermes computer-use`
+## `superforecasting-agent computer-use`
 
 ```bash
-hermes computer-use <subcommand>
+superforecasting-agent computer-use <subcommand>
 ```
 
 Subcommands:
@@ -1047,22 +1089,22 @@ Subcommands:
 | `install --upgrade` | Re-run the installer even if cua-driver is already on PATH. The upstream script always pulls the latest release, so this performs an in-place upgrade. |
 | `status` | Print whether `cua-driver` is on `$PATH` and which version is installed. |
 
-`hermes computer-use install` is the stable entry point for installing the
+`superforecasting-agent computer-use install` is the stable entry point for installing the
 [cua-driver](https://github.com/trycua/cua) binary used by the
 `computer_use` toolset. It runs the same upstream installer that
-`hermes tools` invokes when you first enable Computer Use, so it's safe
+`superforecasting-agent tools` invokes when you first enable Computer Use, so it's safe
 to use for re-running the install if the toolset toggle didn't trigger
 it (for example, on returning-user setups).
 
-`hermes update` automatically re-runs the upstream installer at the end
+`superforecasting-agent update` automatically re-runs the upstream installer at the end
 of the update if cua-driver is on PATH, so most users will not need to
 call `--upgrade` manually. Use it when upstream ships a fix you want
-right now without waiting for the next Hermes update.
+right now without waiting for the next Superforecasting Agent update.
 
-## `hermes sessions`
+## `superforecasting-agent sessions`
 
 ```bash
-hermes sessions <subcommand>
+superforecasting-agent sessions <subcommand>
 ```
 
 Subcommands:
@@ -1077,10 +1119,10 @@ Subcommands:
 | `stats` | Show session-store statistics. |
 | `rename <session-id> <title>` | Set or change a session title. |
 
-## `hermes insights`
+## `superforecasting-agent insights` {#hermes-insights}
 
 ```bash
-hermes insights [--days N] [--source platform]
+superforecasting-agent insights [--days N] [--source platform]
 ```
 
 | Option | Description |
@@ -1088,21 +1130,21 @@ hermes insights [--days N] [--source platform]
 | `--days <n>` | Analyze the last `n` days (default: 30). |
 | `--source <platform>` | Filter by source such as `cli`, `telegram`, or `discord`. |
 
-## `hermes claw`
+## `superforecasting-agent claw`
 
 ```bash
-hermes claw migrate [options]
+superforecasting-agent claw migrate [options]
 ```
 
-Migrate your OpenClaw setup to Hermes. Reads from `~/.openclaw` (or a custom path) and writes to `~/.hermes`. Automatically detects legacy directory names (`~/.clawdbot`, `~/.moltbot`) and config filenames (`clawdbot.json`, `moltbot.json`).
+Migrate your OpenClaw setup to Superforecasting Agent. Reads from `~/.openclaw` (or a custom path) and writes to `~/.superforecasting-agent`. Automatically detects legacy directory names (`~/.clawdbot`, `~/.moltbot`) and config filenames (`clawdbot.json`, `moltbot.json`).
 
 | Option | Description |
 |--------|-------------|
 | `--dry-run` | Preview what would be migrated without writing anything. |
 | `--preset <name>` | Migration preset: `full` (all compatible settings) or `user-data` (excludes infrastructure config). Neither preset imports secrets — pass `--migrate-secrets` explicitly. |
-| `--overwrite` | Overwrite existing Hermes files on conflicts (default: refuse to apply when the plan has conflicts). |
+| `--overwrite` | Overwrite existing Superforecasting Agent files on conflicts (default: refuse to apply when the plan has conflicts). |
 | `--migrate-secrets` | Include API keys in migration. Required even under `--preset full`. |
-| `--no-backup` | Skip the pre-migration zip snapshot of `~/.hermes/` (by default a single restore-point archive is written to `~/.hermes/backups/pre-migration-*.zip` before apply; restorable with `hermes import`). |
+| `--no-backup` | Skip the pre-migration zip snapshot of `~/.superforecasting-agent/` (by default a single restore-point archive is written to `~/.superforecasting-agent/backups/pre-migration-*.zip` before apply; restorable with `superforecasting-agent import`). |
 | `--source <path>` | Custom OpenClaw directory (default: `~/.openclaw`). |
 | `--workspace-target <path>` | Target directory for workspace instructions (AGENTS.md). |
 | `--skill-conflict <mode>` | Handle skill name collisions: `skip` (default), `overwrite`, or `rename`. |
@@ -1110,7 +1152,7 @@ Migrate your OpenClaw setup to Hermes. Reads from `~/.openclaw` (or a custom pat
 
 ### What gets migrated
 
-The migration covers 30+ categories across persona, memory, skills, model providers, messaging platforms, agent behavior, session policies, MCP servers, TTS, and more. Items are either **directly imported** into Hermes equivalents or **archived** for manual review.
+The migration covers 30+ categories across persona, memory, skills, model providers, messaging platforms, agent behavior, session policies, MCP servers, TTS, and more. Items are either **directly imported** into Superforecasting Agent equivalents or **archived** for manual review.
 
 **Directly imported:** SOUL.md, MEMORY.md, USER.md, AGENTS.md, skills (4 source directories), default model, custom providers, MCP servers, messaging platform tokens and allowlists (Telegram, Discord, Slack, WhatsApp, Signal, Matrix, Mattermost), agent defaults (reasoning effort, compression, human delay, timezone, sandbox), session reset policies, approval rules, TTS config, browser settings, tool settings, exec timeout, command allowlist, gateway config, and API keys from 3 sources.
 
@@ -1124,57 +1166,61 @@ For the complete config key mapping, SecretRef handling details, and post-migrat
 
 ```bash
 # Preview what would be migrated
-hermes claw migrate --dry-run
+superforecasting-agent claw migrate --dry-run
 
 # Full migration (all compatible settings, no secrets)
-hermes claw migrate --preset full
+superforecasting-agent claw migrate --preset full
 
 # Full migration including API keys
-hermes claw migrate --preset full --migrate-secrets
+superforecasting-agent claw migrate --preset full --migrate-secrets
 
 # Migrate user data only (no secrets), overwrite conflicts
-hermes claw migrate --preset user-data --overwrite
+superforecasting-agent claw migrate --preset user-data --overwrite
 
 # Migrate from a custom OpenClaw path
-hermes claw migrate --source /home/user/old-openclaw
+superforecasting-agent claw migrate --source /home/user/old-openclaw
 ```
 
-## `hermes dashboard`
+## `superforecasting-agent dashboard`
 
 ```bash
-hermes dashboard [options]
+superforecasting-agent dashboard [options]
 ```
 
-Launch the web dashboard — a browser-based UI for managing configuration, API keys, and monitoring sessions. Requires `pip install hermes-agent[web]` (FastAPI + Uvicorn). The embedded browser Chat tab requires `--tui` plus the `pty` extra. See [Web Dashboard](/docs/user-guide/features/web-dashboard) for full documentation.
+Launch the web dashboard. The fork-native landing page is the forecast dashboard for active questions, review queue, calibration health, learning memory, and recent backtests. Requires `pip install superforecasting-agent[web]` (FastAPI + Uvicorn). The embedded Forecast Chat tab requires `--tui` plus the `pty` extra. See [Web Dashboard](/docs/user-guide/features/web-dashboard) for full documentation.
+
+`superforecasting-agent dashboard` remains accepted for inherited runtime compatibility.
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--port` | `9119` | Port to run the web server on |
 | `--host` | `127.0.0.1` | Bind address |
 | `--no-open` | — | Don't auto-open the browser |
-| `--tui` | off | Enable the in-browser Chat tab by running `hermes --tui` behind a PTY/WebSocket bridge. Requires `pip install 'hermes-agent[web,pty]'` and a POSIX PTY environment such as Linux, macOS, or WSL2. |
+| `--tui` | off | Enable the in-browser Forecast Chat tab by running `superforecasting-agent --tui` behind a PTY/WebSocket bridge. Requires `pip install 'superforecasting-agent[web,pty]'` and a POSIX PTY environment such as Linux, macOS, or WSL2. |
 | `--insecure` | off | Allow binding to non-localhost hosts. Exposes dashboard credentials on the network; use only behind trusted network controls. |
-| `--stop` | — | Stop running `hermes dashboard` processes and exit. |
-| `--status` | — | List running `hermes dashboard` processes and exit. |
+| `--stop` | — | Stop running dashboard processes and exit. |
+| `--status` | — | List running dashboard processes and exit. |
 
 ```bash
-# Default — opens browser to http://127.0.0.1:9119
-hermes dashboard
+# Default: opens browser to http://127.0.0.1:9119
+superforecasting-agent dashboard
 
 # Custom port, no browser
-hermes dashboard --port 8080 --no-open
+superforecasting-agent dashboard --port 8080 --no-open
 
-# Enable the browser Chat tab
-hermes dashboard --tui
+# Enable the browser Forecast Chat tab
+superforecasting-agent dashboard --tui
 ```
 
-## `hermes profile`
+## `superforecasting-agent profile`
 
 ```bash
-hermes profile <subcommand>
+superforecasting-agent profile <subcommand>
 ```
 
-Manage profiles — multiple isolated Hermes instances, each with its own config, sessions, skills, and home directory.
+Manage profiles: separate forecast workspaces with their own config, provider keys, forecast ledger, sessions, skills, cron jobs, logs, gateway state, and home directory.
+
+`hermes profile` remains accepted for inherited runtime compatibility. New docs and scripts should use `superforecasting-agent profile`.
 
 | Subcommand | Description |
 |------------|-------------|
@@ -1188,73 +1234,75 @@ Manage profiles — multiple isolated Hermes instances, each with its own config
 | `export <name> [-o FILE]` | Export a profile to a `.tar.gz` archive (local backup). |
 | `import <archive> [--name NAME]` | Import a profile from a `.tar.gz` archive (local restore). |
 | `install <source> [--name N] [--alias] [--force] [-y]` | Install a profile distribution from a git URL or local directory. |
-| `update <name> [--force-config] [-y]` | Re-pull a distribution; preserves user data (memories, sessions, auth). |
+| `update <name> [--force-config] [-y]` | Re-pull a distribution; preserves user data including `forecasting/`, memories, sessions, auth, and `.env`. |
 | `info <name>` | Show a profile's distribution manifest (version, requirements, source). |
 
 Examples:
 
 ```bash
-hermes profile list
-hermes profile create work --clone
-hermes profile use work
-hermes profile alias work --name h-work
-hermes profile export work -o work-backup.tar.gz
-hermes profile import work-backup.tar.gz --name restored
-hermes profile install github.com/user/my-distro --alias
-hermes profile update work
-hermes -p work chat -q "Hello from work profile"
+superforecasting-agent profile list
+superforecasting-agent profile create macro --clone
+superforecasting-agent profile use macro
+superforecasting-agent profile alias macro --name macro-desk
+superforecasting-agent profile export macro -o macro-backup.tar.gz
+superforecasting-agent profile import macro-backup.tar.gz --name restored
+superforecasting-agent profile install github.com/user/macro-forecast-desk --alias
+superforecasting-agent profile update macro
+superforecasting-agent -p macro forecast status
 ```
 
-## `hermes completion`
+## `superforecasting-agent completion`
 
 ```bash
-hermes completion [bash|zsh|fish]
+superforecasting-agent completion [bash|zsh|fish]
 ```
 
-Print a shell completion script to stdout. Source the output in your shell profile for tab-completion of Hermes commands, subcommands, and profile names.
+Print a shell completion script to stdout. Source the output in your shell profile for tab-completion of Superforecasting Agent commands, subcommands, and profile names.
+
+`hermes completion` remains accepted for inherited runtime compatibility.
 
 Examples:
 
 ```bash
 # Bash
-hermes completion bash >> ~/.bashrc
+superforecasting-agent completion bash >> ~/.bashrc
 
 # Zsh
-hermes completion zsh >> ~/.zshrc
+superforecasting-agent completion zsh >> ~/.zshrc
 
 # Fish
-hermes completion fish > ~/.config/fish/completions/hermes.fish
+superforecasting-agent completion fish > ~/.config/fish/completions/superforecasting-agent.fish
 ```
 
-## `hermes update`
+## `superforecasting-agent update`
 
 ```bash
-hermes update [--check] [--backup] [--restart-gateway]
+superforecasting-agent update [--check] [--backup] [--restart-gateway]
 ```
 
-Pulls the latest `hermes-agent` code and reinstalls dependencies in your venv, then re-runs the post-install hooks (MCP servers, skills sync, completion install). Safe to run on a live install.
+Pulls the latest Superforecasting Agent fork code and reinstalls dependencies in your venv, then re-runs the post-install hooks (MCP servers, skills sync, completion install). Safe to run on a live install.
 
-**pip installs:** `hermes update` detects pip-based installations automatically — it queries PyPI for the latest release and runs `pip install --upgrade hermes-agent` instead of `git pull`. PyPI releases track tagged versions (major/minor releases), not every commit on `main`. Use `--check` to see if a newer PyPI release is available without installing.
+**pip installs:** `superforecasting-agent update` detects pip-based installations automatically — it queries PyPI for the latest release and runs `pip install --upgrade superforecasting-agent` instead of `git pull`. PyPI releases track tagged versions (major/minor releases), not every commit on `main`. Use `--check` to see if a newer PyPI release is available without installing.
 
 | Option | Description |
 |--------|-------------|
 | `--check` | Print the current commit and the latest `origin/main` commit side by side, and exit 0 if in sync or 1 if behind. Does not pull, install, or restart anything. |
-| `--backup` | Create a labeled pre-update snapshot of `HERMES_HOME` (config, auth, sessions, skills, pairing data) before pulling. Default is **off** — the previous always-backup behavior was adding minutes to every update on large homes. Flip it on permanently via `update.backup: true` in `config.yaml`. |
+| `--backup` | Create a labeled pre-update snapshot of the active profile home (config, auth, sessions, skills, pairing data) before pulling. Default is **off** — the previous always-backup behavior was adding minutes to every update on large homes. Flip it on permanently via `update.backup: true` in `config.yaml`. |
 | `--restart-gateway` | After a successful update, restart the running gateway service. Implies `--all` semantics if multiple profiles are installed. |
 
 Additional behavior:
 
-- **Pairing data snapshot.** Even when `--backup` is off, `hermes update` takes a lightweight snapshot of `~/.hermes/pairing/` and the Feishu comment rules before `git pull`. You can roll it back with `hermes backup restore --state pre-update` if a pull rewrites a file you were editing.
-- **Legacy `hermes.service` warning.** If Hermes detects a pre-rename `hermes.service` systemd unit (instead of the current `hermes-gateway.service`), it prints a one-time migration hint so you can avoid flap-loop issues.
+- **Pairing data snapshot.** Even when `--backup` is off, `superforecasting-agent update` takes a lightweight snapshot of `~/.superforecasting-agent/pairing/` and the Feishu comment rules before `git pull`. You can roll it back with `superforecasting-agent backup restore --state pre-update` if a pull rewrites a file you were editing.
+- **Legacy `hermes.service` warning.** If Superforecasting Agent detects a pre-rename `hermes.service` systemd unit (instead of the current `superforecasting-agent-gateway.service`), it prints a one-time migration hint so you can avoid service-loop issues.
 - **Exit codes.** `0` on success, `1` on pull/install/post-install errors, `2` on unexpected working-tree changes that block `git pull`.
 
 ## Maintenance commands
 
 | Command | Description |
 |---------|-------------|
-| `hermes version` | Print version information. |
-| `hermes update` | Pull latest changes and reinstall dependencies. |
-| `hermes uninstall [--full] [--yes]` | Remove Hermes, optionally deleting all config/data. |
+| `superforecasting-agent version` | Print version information. |
+| `superforecasting-agent update` | Pull latest changes and reinstall dependencies. |
+| `superforecasting-agent uninstall [--full] [--yes]` | Remove Superforecasting Agent, optionally deleting all config/data. |
 
 ## See also
 

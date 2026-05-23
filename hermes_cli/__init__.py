@@ -1,14 +1,14 @@
 """
-Hermes CLI - Unified command-line interface for Hermes Agent.
+Superforecasting Agent CLI - unified command-line interface.
 
 Provides subcommands for:
-- hermes chat          - Interactive chat (same as ./hermes)
-- hermes gateway       - Run gateway in foreground
-- hermes gateway start - Start gateway service
-- hermes gateway stop  - Stop gateway service
-- hermes setup         - Interactive setup wizard
-- hermes status        - Show status of all components
-- hermes cron          - Manage cron jobs
+- superforecasting-agent chat          - Forecast-scoped interactive chat
+- superforecasting-agent gateway       - Run gateway in foreground
+- superforecasting-agent gateway start - Start gateway service
+- superforecasting-agent gateway stop  - Stop gateway service
+- superforecasting-agent setup         - Interactive setup wizard
+- superforecasting-agent status        - Show status of all components
+- superforecasting-agent cron          - Manage cron jobs
 """
 
 import os

@@ -1,16 +1,20 @@
 ---
 sidebar_position: 2
-title: "Skills System"
-description: "On-demand knowledge documents — progressive disclosure, agent-managed skills, and the Skills Hub"
+title: "Forecast Skills System"
+description: "Load procedural forecasting playbooks on demand."
 ---
 
-# Skills System
+# Forecast Skills System
 
-Skills are on-demand knowledge documents the agent can load when needed. They follow a **progressive disclosure** pattern to minimize token usage and are compatible with the [agentskills.io](https://agentskills.io/specification) open standard.
+Skills are on-demand instruction packs the forecast desk can load when a question needs a specialized workflow. They are useful for repeatable research procedures, source-specific adapters, modeling templates, backtest review checklists, domain postmortem routines, and team operating rules.
 
-All skills live in **`~/.hermes/skills/`** — the primary directory and source of truth. On fresh install, bundled skills are copied from the repo. Hub-installed and agent-created skills also go here. The agent can modify or delete any skill.
+Skills are not the forecast ledger. A skill can teach the agent how to inspect sources or run a model, but probabilities, evidence records, model runs, resolutions, scores, postmortems, calibration lessons, and domain/topic error profiles stay in the ledger and learning systems.
 
-You can also point Hermes at **external skill directories** — additional folders scanned alongside the local one. See [External Skill Directories](#external-skill-directories) below.
+The skill format remains compatible with the [agentskills.io](https://agentskills.io/specification) open standard.
+
+By default, local skills live in **`~/.superforecasting-agent/skills/`**. During migration, the runtime can still read legacy **`~/.hermes/skills/`** homes when the compatibility environment is configured.
+
+You can also point Superforecasting Agent at **external skill directories** scanned alongside the local skill home. See [External Skill Directories](#external-skill-directories).
 
 See also:
 
@@ -19,80 +23,115 @@ See also:
 
 ## Using Skills
 
-Every installed skill is automatically available as a slash command:
+Every installed skill is available as a slash command:
 
 ```bash
-# In the CLI or any messaging platform:
-/gif-search funny cats
-/axolotl help me fine-tune Llama 3 on my dataset
-/github-pr-workflow create a PR for the auth refactor
-/plan design a rollout for migrating our auth provider
+# In the CLI, TUI, dashboard chat, or a messaging gateway:
+/plan design the evidence plan for a credit-default forecast
+/research-arxiv find recent papers relevant to this resolution criterion
+/github-pr-workflow inspect release activity as evidence for a ship-date forecast
 
-# Just the skill name loads it and lets the agent ask what you need:
+# Just the skill name loads it and lets the agent ask what it needs:
 /excalidraw
 ```
 
-The bundled `plan` skill is a good example. Running `/plan [request]` loads the skill's instructions, telling Hermes to inspect context if needed, write a markdown implementation plan instead of executing the task, and save the result under `.hermes/plans/` relative to the active workspace/backend working directory.
+The bundled `plan` skill is a good example. Running `/plan [request]` loads its instructions and tells the agent to inspect context if needed, write a markdown plan instead of executing the work, and save the result under `.superforecasting-agent/plans/` relative to the active workspace or backend working directory.
 
-You can also interact with skills through natural conversation:
+You can also inspect skills through the CLI:
 
 ```bash
-hermes chat --toolsets skills -q "What skills do you have?"
-hermes chat --toolsets skills -q "Show me the axolotl skill"
+superforecasting-agent chat --toolsets skills -q "What skills do you have?"
+superforecasting-agent chat --toolsets skills -q "Show me the research-arxiv skill"
 ```
+
+## Forecasting Boundaries
+
+Use skills for procedure, not durable belief state.
+
+Good skill uses:
+
+- A domain checklist for election, credit, macro, policy, security, or product-launch forecasts.
+- A source procedure for SEC filings, RSS feeds, arXiv, GitHub releases, court dockets, or market pages.
+- A modeling recipe for reference classes, base rates, Bayesian updates, scenario trees, or time-series diagnostics.
+- A postmortem checklist that turns resolved misses into ledger-backed learning notes.
+- A backtest review routine that compares probability sources and flags leakage.
+
+Do not use skills to store:
+
+- Current probabilities or rationales for active questions.
+- Evidence items that should be timestamped and source-attributed.
+- Resolutions, scores, calibration adjustments, or domain error profiles.
+- Private secrets or account credentials.
+
+Those belong in the forecast ledger, configured providers, or local secret stores.
 
 ## Progressive Disclosure
 
 Skills use a token-efficient loading pattern:
 
-```
-Level 0: skills_list()           → [{name, description, category}, ...]   (~3k tokens)
-Level 1: skill_view(name)        → Full content + metadata       (varies)
-Level 2: skill_view(name, path)  → Specific reference file       (varies)
+```text
+Level 0: skills_list()           -> [{name, description, category}, ...]
+Level 1: skill_view(name)        -> Full SKILL.md content + metadata
+Level 2: skill_view(name, path)  -> Specific reference, template, or script file
 ```
 
-The agent only loads the full skill content when it actually needs it.
+The agent only loads full skill content when it actually needs it. This matters for a forecasting desk because active research already consumes a lot of context from evidence, model outputs, and prior forecast history.
 
 ## SKILL.md Format
 
 ```markdown
 ---
-name: my-skill
-description: Brief description of what this skill does
+name: forecast-reference-class
+description: Build comparable historical reference classes.
 version: 1.0.0
-platforms: [macos, linux]     # Optional — restrict to specific OS platforms
+platforms: [macos, linux]     # Optional OS gating
 metadata:
   hermes:
-    tags: [python, automation]
-    category: devops
-    fallback_for_toolsets: [web]    # Optional — conditional activation (see below)
-    requires_toolsets: [terminal]   # Optional — conditional activation (see below)
-    config:                          # Optional — config.yaml settings
-      - key: my.setting
-        description: "What this controls"
-        default: "value"
-        prompt: "Prompt for setup"
+    tags: [forecasting, base-rates]
+    category: research
+    fallback_for_toolsets: [web]    # Optional conditional activation
+    requires_toolsets: [terminal]   # Optional conditional activation
+    config:                         # Optional config.yaml settings
+      - key: reference_class.default_window_years
+        description: "Default lookback window for comparable events"
+        default: 10
+        prompt: "Reference-class lookback window"
 ---
 
-# Skill Title
+# Forecast Reference Class Skill
 
 ## When to Use
-Trigger conditions for this skill.
+Use when a question needs historical comparables before an inside-view estimate.
+
+## Prerequisites
+List required providers, toolsets, data files, or MCP servers.
+
+## How to Run
+Name the native tools or commands the agent should use.
+
+## Quick Reference
+Provide concise commands, schemas, or source patterns.
 
 ## Procedure
-1. Step one
-2. Step two
+1. Parse the outcome and resolution criteria.
+2. Define inclusion and exclusion rules.
+3. Gather comparable cases before the evidence cutoff.
+4. Estimate the base rate and uncertainty.
+5. Write results into the forecast ledger as a model run or evidence note.
 
 ## Pitfalls
-- Known failure modes and fixes
+- Do not mix post-resolution evidence into backtests.
+- Record ambiguous inclusion decisions as assumptions.
 
 ## Verification
-How to confirm it worked.
+Confirm the ledger has a timestamped model run and source links.
 ```
+
+The metadata namespace is still `metadata.hermes` for compatibility with the inherited loader. Treat that key as a runtime compatibility name, not product branding.
 
 ### Platform-Specific Skills
 
-Skills can restrict themselves to specific operating systems using the `platforms` field:
+Skills can restrict themselves to specific operating systems:
 
 | Value | Matches |
 |-------|---------|
@@ -101,64 +140,63 @@ Skills can restrict themselves to specific operating systems using the `platform
 | `windows` | Windows |
 
 ```yaml
-platforms: [macos]            # macOS only (e.g., iMessage, Apple Reminders, FindMy)
-platforms: [macos, linux]     # macOS and Linux
+platforms: [macos]
+platforms: [macos, linux]
 ```
 
-When set, the skill is automatically hidden from the system prompt, `skills_list()`, and slash commands on incompatible platforms. If omitted, the skill loads on all platforms.
+When set, the skill is hidden from the system prompt, `skills_list()`, and slash commands on incompatible platforms. If omitted, the skill loads on all platforms.
 
-## Skill output and media delivery
+## Skill Output and Media Delivery
 
-When a skill response (or any agent response) includes a bare absolute path to a media file — for example `/home/user/screenshots/diagram.png` — the gateway auto-detects it, strips it from the visible text, and delivers the file natively to the user's chat (Telegram photo, Discord attachment, etc.) instead of leaving the raw path in the message.
+When a skill response, or any agent response, includes a bare absolute path to a media file, the gateway can deliver that file natively to the user's chat instead of leaving the raw path in the text.
 
-For audio specifically, the `[[audio_as_voice]]` directive promotes audio files to native voice-message bubbles on platforms that support them (Telegram, WhatsApp).
+This is useful for forecast-desk artifacts such as:
 
-### Forcing document-style delivery: `[[as_document]]`
+- Calibration charts.
+- Backtest reports.
+- Evidence screenshots.
+- Scenario-tree diagrams.
+- Source-extraction bundles.
 
-Sometimes you want the **opposite** of inline preview: you want the file delivered as a downloadable attachment, not a re-compressed image bubble. The classic example is a high-resolution screenshot or chart — Telegram's `sendPhoto` recompresses it to ~200 KB at 1280 px, destroying readability. A 1-2 MB PNG sent via `sendDocument` keeps the original bytes intact.
+For audio, the `[[audio_as_voice]]` directive promotes audio files to native voice-message bubbles on platforms that support them.
 
-If a response (or any text inside it — typically the last line) contains the literal directive `[[as_document]]`, every media path extracted from that response is delivered as a document/file attachment rather than an image bubble:
+### Forcing Document Delivery: `[[as_document]]`
 
-```
-Here is your rendered chart:
+Use `[[as_document]]` when a chart, screenshot, or evidence pack should be sent as an intact file rather than a compressed image preview.
 
-/home/user/.hermes/cache/chart-q4-2025.png
+```text
+Here is the calibration chart:
+
+/home/user/.superforecasting-agent/cache/calibration-q4.png
 
 [[as_document]]
 ```
 
-The directive is stripped before delivery, so users never see it. Granularity is intentionally all-or-nothing per response: emit `[[as_document]]` once and every image path in the same response is delivered as a document. This mirrors the scope of `[[audio_as_voice]]`.
+The directive is stripped before delivery. It applies to every media path in the same response.
 
-Use it from a skill when:
+Media delivery does not write to the forecast ledger. If a screenshot, chart, or extracted file changes a forecast, follow it with an explicit evidence, model-run, update, resolution, score, or postmortem command.
 
-- You produce screenshots or charts the user needs as files (for editing in another tool, archiving, sharing intact).
-- The default lossy preview would obscure detail (small text, pixel-accurate diagrams, color-sensitive renders).
+## Conditional Activation
 
-Platforms without a separate document path (e.g. SMS) fall back to whatever attachment mechanism they have.
-
-### Conditional Activation (Fallback Skills)
-
-Skills can automatically show or hide themselves based on which tools are available in the current session. This is most useful for **fallback skills** — free or local alternatives that should only appear when a premium tool is unavailable.
+Skills can automatically show or hide themselves based on available toolsets or tools:
 
 ```yaml
 metadata:
   hermes:
-    fallback_for_toolsets: [web]      # Show ONLY when these toolsets are unavailable
-    requires_toolsets: [terminal]     # Show ONLY when these toolsets are available
-    fallback_for_tools: [web_search]  # Show ONLY when these specific tools are unavailable
-    requires_tools: [terminal]        # Show ONLY when these specific tools are available
+    fallback_for_toolsets: [web]
+    requires_toolsets: [terminal]
+    fallback_for_tools: [web_search]
+    requires_tools: [terminal]
 ```
 
 | Field | Behavior |
 |-------|----------|
-| `fallback_for_toolsets` | Skill is **hidden** when the listed toolsets are available. Shown when they're missing. |
-| `fallback_for_tools` | Same, but checks individual tools instead of toolsets. |
-| `requires_toolsets` | Skill is **hidden** when the listed toolsets are unavailable. Shown when they're present. |
+| `fallback_for_toolsets` | Hidden when the listed toolsets are available; shown when they are missing. |
+| `fallback_for_tools` | Same, but checks individual tools. |
+| `requires_toolsets` | Hidden when the listed toolsets are unavailable; shown when they are present. |
 | `requires_tools` | Same, but checks individual tools. |
 
-**Example:** The built-in `duckduckgo-search` skill uses `fallback_for_toolsets: [web]`. When you have `FIRECRAWL_API_KEY` set, the web toolset is available and the agent uses `web_search` — the DuckDuckGo skill stays hidden. If the API key is missing, the web toolset is unavailable and the DuckDuckGo skill automatically appears as a fallback.
-
-Skills without any conditional fields behave exactly as before — they're always shown.
+Example: a local search skill can use `fallback_for_toolsets: [web]`. When managed web search is available, the skill stays hidden. When web search is unavailable, the local fallback appears in the skill index.
 
 ## Secure Setup on Load
 
@@ -172,63 +210,65 @@ required_environment_variables:
     required_for: full functionality
 ```
 
-When a missing value is encountered, Hermes asks for it securely only when the skill is actually loaded in the local CLI. You can skip setup and keep using the skill. Messaging surfaces never ask for secrets in chat — they tell you to use `hermes setup` or `~/.hermes/.env` locally instead.
+When a missing value is encountered, Superforecasting Agent asks for it securely only when the skill is actually loaded in the local CLI. Messaging surfaces never ask for secrets in chat; they tell you to use `superforecasting-agent setup` or `~/.superforecasting-agent/.env` locally.
 
-Once set, declared env vars are **automatically passed through** to `execute_code` and `terminal` sandboxes — the skill's scripts can use `$TENOR_API_KEY` directly. For non-skill env vars, use the `terminal.env_passthrough` config option. See [Environment Variable Passthrough](/docs/user-guide/security#environment-variable-passthrough) for details.
+Once set, declared env vars are automatically passed through to `execute_code` and `terminal` sandboxes. For non-skill env vars, use the `terminal.env_passthrough` config option. See [Environment Variable Passthrough](/docs/user-guide/security#environment-variable-passthrough).
+
+Legacy `~/.hermes/.env` and `HERMES_*` runtime names may still appear in compatibility paths. New fork-native setup should prefer `~/.superforecasting-agent/.env` and the documented forecast-desk commands.
 
 ### Skill Config Settings
 
-Skills can also declare non-secret config settings (paths, preferences) stored in `config.yaml`:
+Skills can declare non-secret config settings stored in `config.yaml`:
 
 ```yaml
 metadata:
   hermes:
     config:
-      - key: myplugin.path
-        description: Path to the plugin data directory
-        default: "~/myplugin-data"
-        prompt: Plugin data directory path
+      - key: reference_class.default_window_years
+        description: Default lookback window for comparable cases
+        default: 10
+        prompt: Reference-class lookback window
 ```
 
-Settings are stored under `skills.config` in your config.yaml. `hermes config migrate` prompts for unconfigured settings, and `hermes config show` displays them. When a skill loads, its resolved config values are injected into the context so the agent knows the configured values automatically.
+Settings are stored under `skills.config` in `~/.superforecasting-agent/config.yaml`. `superforecasting-agent config migrate` prompts for unconfigured settings, and `superforecasting-agent config show` displays them. When a skill loads, resolved config values are injected into context so the agent knows the configured values.
 
-See [Skill Settings](/docs/user-guide/configuration#skill-settings) and [Creating Skills — Config Settings](/docs/developer-guide/creating-skills#config-settings-configyaml) for details.
+See [Skill Settings](/docs/user-guide/configuration#skill-settings) and [Creating Skills: Config Settings](/docs/developer-guide/creating-skills#config-settings-configyaml).
 
 ## Skill Directory Structure
 
 ```text
-~/.hermes/skills/                  # Single source of truth
-├── mlops/                         # Category directory
-│   ├── axolotl/
-│   │   ├── SKILL.md               # Main instructions (required)
-│   │   ├── references/            # Additional docs
-│   │   ├── templates/             # Output formats
-│   │   ├── scripts/               # Helper scripts callable from the skill
-│   │   └── assets/                # Supplementary files
-│   └── vllm/
+~/.superforecasting-agent/skills/       # Primary local skill home
+├── forecasting/
+│   ├── reference-class/
+│   │   ├── SKILL.md                    # Main instructions
+│   │   ├── references/                 # Supporting docs
+│   │   ├── templates/                  # Output formats
+│   │   ├── scripts/                    # Helper scripts
+│   │   └── assets/                     # Supplementary files
+│   └── postmortem-review/
 │       └── SKILL.md
-├── devops/
-│   └── deploy-k8s/                # Agent-created skill
+├── research/
+│   └── sec-filing-watch/
 │       ├── SKILL.md
 │       └── references/
-├── .hub/                          # Skills Hub state
+├── .hub/                               # Skills Hub state
 │   ├── lock.json
 │   ├── quarantine/
 │   └── audit.log
-└── .bundled_manifest              # Tracks seeded bundled skills
+└── .bundled_manifest                   # Tracks seeded bundled skills
 ```
+
+Legacy homes may still use `~/.hermes/skills/` during migration.
 
 ## External Skill Directories
 
-If you maintain skills outside of Hermes — for example, a shared `~/.agents/skills/` directory used by multiple AI tools — you can tell Hermes to scan those directories too.
-
-Add `external_dirs` under the `skills` section in `~/.hermes/config.yaml`:
+If you maintain skills outside the local Superforecasting Agent home, such as a shared `~/.agents/skills/` directory used by several AI tools, add them under `skills.external_dirs`:
 
 ```yaml
 skills:
   external_dirs:
     - ~/.agents/skills
-    - /home/shared/team-skills
+    - /home/shared/forecasting-skills
     - ${SKILLS_REPO}/skills
 ```
 
@@ -236,529 +276,504 @@ Paths support `~` expansion and `${VAR}` environment variable substitution.
 
 ### How it works
 
-- **Read-only**: External dirs are only scanned for skill discovery. When the agent creates or edits a skill, it always writes to `~/.hermes/skills/`.
-- **Local precedence**: If the same skill name exists in both the local dir and an external dir, the local version wins.
-- **Full integration**: External skills appear in the system prompt index, `skills_list`, `skill_view`, and as `/skill-name` slash commands — no different from local skills.
-- **Non-existent paths are silently skipped**: If a configured directory doesn't exist, Hermes ignores it without errors. Useful for optional shared directories that may not be present on every machine.
+- **Read-only**: External dirs are scanned for discovery. When the agent creates or edits a skill, it writes to `~/.superforecasting-agent/skills/`.
+- **Local precedence**: If the same skill name exists locally and externally, the local version wins.
+- **Full integration**: External skills appear in the system prompt index, `skills_list`, `skill_view`, and `/skill-name` slash commands.
+- **Silent skips**: Non-existent configured directories are skipped without errors.
 
 ### Example
 
 ```text
-~/.hermes/skills/               # Local (primary, read-write)
-├── devops/deploy-k8s/
+~/.superforecasting-agent/skills/       # Local, read-write
+├── forecasting/reference-class/
 │   └── SKILL.md
-└── mlops/axolotl/
+└── research/sec-filing-watch/
     └── SKILL.md
 
-~/.agents/skills/               # External (read-only, shared)
-├── my-custom-workflow/
+~/.agents/skills/                       # External, read-only, shared
+├── macro-policy-watch/
 │   └── SKILL.md
-└── team-conventions/
+└── team-source-rules/
     └── SKILL.md
 ```
 
-All four skills appear in your skill index. If you create a new skill called `my-custom-workflow` locally, it shadows the external version.
+All four skills appear in your skill index. If you create a local `macro-policy-watch` skill, it shadows the external version.
 
 ## Skill Bundles
 
-Skill bundles are tiny YAML files that group several skills under a single slash command. When you run `/<bundle-name>`, every skill listed in the bundle loads at once — useful when a particular task always benefits from the same set of skills together.
+Skill bundles are small YAML files that group several skills under one slash command. When you run `/<bundle-name>`, every listed skill loads at once.
+
+Bundles are useful for recurring forecast workflows where the same procedures should travel together, such as macro policy monitoring, election forecasting, release-risk forecasting, market-pricing review, or weekly calibration review.
 
 ### Quick example
 
 ```bash
-# Create a bundle for backend feature work
-hermes bundles create backend-dev \
-  --skill github-code-review \
-  --skill test-driven-development \
-  --skill github-pr-workflow \
-  -d "Backend feature work — review, test, PR workflow"
+superforecasting-agent bundles create macro-policy-watch \
+  --skill reference-class \
+  --skill web-search-review \
+  --skill postmortem-review \
+  -d "Macro policy forecast review workflow"
 ```
 
 Then in the CLI or any gateway platform:
 
-```
-/backend-dev refactor the auth middleware
+```text
+/macro-policy-watch review the current central-bank-rate forecast
 ```
 
-The agent receives all three skills loaded into one user message, with any text after the slash command attached as a user instruction.
+The agent receives all listed skills in one user message, with any text after the slash command attached as the user instruction.
 
 ### YAML schema
 
-Bundles live in **`~/.hermes/skill-bundles/<slug>.yaml`** and look like this:
+Bundles live in **`~/.superforecasting-agent/skill-bundles/<slug>.yaml`**:
 
 ```yaml
-name: backend-dev
-description: Backend feature work — review, test, PR workflow.
+name: macro-policy-watch
+description: Macro policy forecast review workflow.
 skills:
-  - github-code-review
-  - test-driven-development
-  - github-pr-workflow
+  - reference-class
+  - web-search-review
+  - postmortem-review
 instruction: |
-  Always start by writing failing tests, then implement.
-  Open the PR through the standard workflow with co-author tags.
+  Start from the active forecast ledger entry.
+  Keep new claims as evidence candidates until explicitly ledgered.
 ```
 
 Fields:
-- `name` (optional — defaults to the filename stem) — the bundle's display name. Normalized to a hyphen slug for the slash command (`Backend Dev` → `/backend-dev`).
-- `description` (optional) — short text shown in `/bundles` and `hermes bundles list`.
-- `skills` (required, non-empty list) — skill names or paths relative to your skills directory. Use the same identifier you'd pass to `/<skill-name>`.
-- `instruction` (optional) — extra guidance prepended to the loaded skill content. Useful for codifying "how we always use these together."
+
+- `name` defaults to the filename stem and normalizes to a slash-command slug.
+- `description` appears in `/bundles` and `superforecasting-agent bundles list`.
+- `skills` is a required non-empty list of skill names or paths.
+- `instruction` is optional extra guidance prepended to the loaded skill content.
 
 ### Managing bundles
 
 ```bash
-# List all installed bundles
-hermes bundles list
-
-# Inspect one bundle
-hermes bundles show backend-dev
-
-# Create a bundle interactively (omit --skill flags to enter them one per line)
-hermes bundles create research
-
-# Overwrite an existing bundle
-hermes bundles create backend-dev --skill ... --force
-
-# Delete a bundle
-hermes bundles delete backend-dev
-
-# Re-scan ~/.hermes/skill-bundles/ and report changes
-hermes bundles reload
+superforecasting-agent bundles list
+superforecasting-agent bundles show macro-policy-watch
+superforecasting-agent bundles create research
+superforecasting-agent bundles create macro-policy-watch --skill ... --force
+superforecasting-agent bundles delete macro-policy-watch
+superforecasting-agent bundles reload
 ```
 
-From inside a chat session, `/bundles` lists every installed bundle and its skills.
+Inside a session, `/bundles` lists every installed bundle and its skills.
 
 ### Behavior
 
-- **Bundles take precedence over individual skills** when slugs collide. If you name a bundle `research` and you also have a skill called `research`, `/research` invokes the bundle. This is intentional — you opted into the bundle by naming it.
-- **Missing skills are skipped, not fatal.** If a bundle lists `skill-foo` and you haven't installed it, the bundle still loads the skills that do resolve, and the agent gets a note listing what was skipped.
-- **Bundles work in every surface** — interactive CLI, TUI, dashboard chat, and every gateway platform (Telegram, Discord, Slack, …) — because dispatch is centralized in the same place as individual skill commands.
-- **Bundles do not invalidate the prompt cache.** They generate a fresh user message at invocation time, the same way `/<skill-name>` does — no system prompt mutation.
+- **Bundles take precedence over individual skills** when slugs collide.
+- **Missing skills are skipped, not fatal**; the agent receives a note listing skipped names.
+- **Bundles work in every surface** because dispatch is centralized with individual skill commands.
+- **Bundles do not invalidate the prompt cache**; they generate a user message at invocation time.
 
-### When bundles beat installing each skill manually
+## Agent-Managed Skills {#agent-managed-skills-skill_manage-tool}
 
-Use a bundle when:
-- You always pair the same skills for a recurring task (`/backend-dev`, `/release-prep`, `/incident-response`).
-- You want a one-character-shorter mental model than typing several `/skill` invocations in a row.
-- You want to ship a team-wide "task profile" by checking the bundle YAML into a shared dotfiles repo and symlinking it into `~/.hermes/skill-bundles/`.
+The agent can create, update, and delete local skills via the `skill_manage` tool. This is procedural memory: when the agent discovers a durable method, it can save that method as a skill for future use.
 
-A bundle is just a YAML alias — it doesn't install skills for you. The skills themselves must already be present (in `~/.hermes/skills/` or an external skill directory). Otherwise the bundle invocation just skips the missing ones.
+### When the agent should create skills
 
-## Agent-Managed Skills (skill_manage tool)
+- After a repeated source-inspection workflow becomes stable.
+- After a postmortem identifies a reusable process fix.
+- When the user corrects a recurring approach error.
+- When a domain-specific procedure should be preserved for future forecasts.
+- When a team wants to encode a standing operating rule.
 
-The agent can create, update, and delete its own skills via the `skill_manage` tool. This is the agent's **procedural memory** — when it figures out a non-trivial workflow, it saves the approach as a skill for future reuse.
+### When the agent should not create skills
 
-### When the Agent Creates Skills
-
-- After completing a complex task (5+ tool calls) successfully
-- When it hit errors or dead ends and found the working path
-- When the user corrected its approach
-- When it discovered a non-trivial workflow
+- To store a forecast's current probability.
+- To remember evidence that belongs in the ledger.
+- To encode a calibration adjustment that should live in learning memory.
+- To preserve secrets, tokens, cookies, or personal data.
 
 ### Actions
 
 | Action | Use for | Key params |
 |--------|---------|------------|
-| `create` | New skill from scratch | `name`, `content` (full SKILL.md), optional `category` |
-| `patch` | Targeted fixes (preferred) | `name`, `old_string`, `new_string` |
-| `edit` | Major structural rewrites | `name`, `content` (full SKILL.md replacement) |
-| `delete` | Remove a skill entirely | `name` |
-| `write_file` | Add/update supporting files | `name`, `file_path`, `file_content` |
+| `create` | New skill from scratch | `name`, `content`, optional `category` |
+| `patch` | Targeted fixes | `name`, `old_string`, `new_string` |
+| `edit` | Major structural rewrites | `name`, `content` |
+| `delete` | Remove a skill | `name` |
+| `write_file` | Add or update supporting files | `name`, `file_path`, `file_content` |
 | `remove_file` | Remove a supporting file | `name`, `file_path` |
 
-:::tip
-The `patch` action is preferred for updates — it's more token-efficient than `edit` because only the changed text appears in the tool call.
-:::
+Prefer `patch` for small updates because it is more token-efficient than replacing the full skill.
 
 ## Skills Hub
 
-Browse, search, install, and manage skills from online registries, `skills.sh`, direct well-known skill endpoints, and official optional skills.
+The Skills Hub lets you browse, search, install, update, audit, and publish skills from online registries, `skills.sh`, well-known skill endpoints, GitHub taps, direct URLs, and official optional skills.
 
 ### Common commands
 
 ```bash
-hermes skills browse                              # Browse all hub skills (official first)
-hermes skills browse --source official            # Browse only official optional skills
-hermes skills search kubernetes                   # Search all sources
-hermes skills search react --source skills-sh     # Search the skills.sh directory
-hermes skills search https://mintlify.com/docs --source well-known
-hermes skills inspect openai/skills/k8s           # Preview before installing
-hermes skills install openai/skills/k8s           # Install with security scan
-hermes skills install official/security/1password
-hermes skills install skills-sh/vercel-labs/json-render/json-render-react --force
-hermes skills install well-known:https://mintlify.com/docs/.well-known/skills/mintlify
-hermes skills install https://sharethis.chat/SKILL.md              # Direct URL (single-file SKILL.md)
-hermes skills install https://example.com/SKILL.md --name my-skill # Override name when frontmatter has none
-hermes skills list --source hub                   # List hub-installed skills
-hermes skills check                               # Check installed hub skills for upstream updates
-hermes skills update                              # Reinstall hub skills with upstream changes when needed
-hermes skills audit                               # Re-scan all hub skills for security
-hermes skills uninstall k8s                       # Remove a hub skill
-hermes skills reset google-workspace              # Un-stick a bundled skill from "user-modified" (see below)
-hermes skills reset google-workspace --restore    # Also restore the bundled version, deleting your local edits
-hermes skills publish skills/my-skill --to github --repo owner/repo
-hermes skills snapshot export setup.json          # Export skill config
-hermes skills tap add myorg/skills-repo           # Add a custom GitHub source
+superforecasting-agent skills browse
+superforecasting-agent skills browse --source official
+superforecasting-agent skills search forecasting
+superforecasting-agent skills search react --source skills-sh
+superforecasting-agent skills search https://mintlify.com/docs --source well-known
+superforecasting-agent skills inspect openai/skills/k8s
+superforecasting-agent skills install openai/skills/k8s
+superforecasting-agent skills install official/research/arxiv
+superforecasting-agent skills install skills-sh/vercel-labs/json-render/json-render-react --force
+superforecasting-agent skills install well-known:https://mintlify.com/docs/.well-known/skills/mintlify
+superforecasting-agent skills install https://example.com/SKILL.md --name my-skill
+superforecasting-agent skills list --source hub
+superforecasting-agent skills check
+superforecasting-agent skills update
+superforecasting-agent skills audit
+superforecasting-agent skills uninstall k8s
+superforecasting-agent skills reset research-arxiv
+superforecasting-agent skills reset research-arxiv --restore
+superforecasting-agent skills publish skills/my-skill --to github --repo owner/repo
+superforecasting-agent skills snapshot export setup.json
+superforecasting-agent skills tap add myorg/forecasting-skills
 ```
 
 ### Supported hub sources
 
 | Source | Example | Notes |
 |--------|---------|-------|
-| `official` | `official/security/1password` | Optional skills shipped with Hermes. |
-| `skills-sh` | `skills-sh/vercel-labs/agent-skills/vercel-react-best-practices` | Searchable via `hermes skills search <query> --source skills-sh`. Hermes resolves alias-style skills when the skills.sh slug differs from the repo folder. |
-| `well-known` | `well-known:https://mintlify.com/docs/.well-known/skills/mintlify` | Skills served directly from `/.well-known/skills/index.json` on a website. Search using the site or docs URL. |
-| `url` | `https://sharethis.chat/SKILL.md` | Direct HTTP(S) URL to a single-file `SKILL.md`. Name resolution: frontmatter → URL slug → interactive prompt → `--name` flag. |
+| `official` | `official/research/arxiv` | Optional skills shipped with the repo. |
+| `skills-sh` | `skills-sh/vercel-labs/agent-skills/vercel-react-best-practices` | Searchable via `superforecasting-agent skills search <query> --source skills-sh`. |
+| `well-known` | `well-known:https://mintlify.com/docs/.well-known/skills/mintlify` | Skills served directly from `/.well-known/skills/index.json`. |
+| `url` | `https://example.com/SKILL.md` | Direct HTTP(S) URL to a single-file `SKILL.md`. |
 | `github` | `openai/skills/k8s` | Direct GitHub repo/path installs and custom taps. |
 | `clawhub`, `lobehub`, `browse-sh`, `claude-marketplace` | Source-specific identifiers | Community or marketplace integrations. |
 
 ### Integrated hubs and registries
 
-Hermes currently integrates with these skills ecosystems and discovery sources:
+Superforecasting Agent currently integrates with these skill ecosystems and discovery sources.
 
 #### 1. Official optional skills (`official`)
 
-These are maintained in the Hermes repository itself and install with builtin trust.
+These are maintained in the repository and install with builtin trust.
 
 - Catalog: [Official Optional Skills Catalog](../../reference/optional-skills-catalog)
 - Source in repo: `optional-skills/`
-- Example:
 
 ```bash
-hermes skills browse --source official
-hermes skills install official/security/1password
+superforecasting-agent skills browse --source official
+superforecasting-agent skills install official/research/arxiv
 ```
 
 #### 2. skills.sh (`skills-sh`)
 
-This is Vercel's public skills directory. Hermes can search it directly, inspect skill detail pages, resolve alias-style slugs, and install from the underlying source repo.
+This is Vercel's public skills directory. Superforecasting Agent can search it directly, inspect skill detail pages, resolve alias-style slugs, and install from the underlying source repo.
 
 - Directory: [skills.sh](https://skills.sh/)
 - CLI/tooling repo: [vercel-labs/skills](https://github.com/vercel-labs/skills)
 - Official Vercel skills repo: [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills)
-- Example:
 
 ```bash
-hermes skills search react --source skills-sh
-hermes skills inspect skills-sh/vercel-labs/json-render/json-render-react
-hermes skills install skills-sh/vercel-labs/json-render/json-render-react --force
+superforecasting-agent skills search react --source skills-sh
+superforecasting-agent skills inspect skills-sh/vercel-labs/json-render/json-render-react
+superforecasting-agent skills install skills-sh/vercel-labs/json-render/json-render-react --force
 ```
 
 #### 3. Well-known skill endpoints (`well-known`)
 
-This is URL-based discovery from sites that publish `/.well-known/skills/index.json`. It is not a single centralized hub — it is a web discovery convention.
+This is URL-based discovery from sites that publish `/.well-known/skills/index.json`. It is a discovery convention, not a single central registry.
 
-- Example live endpoint: [Mintlify docs skills index](https://mintlify.com/docs/.well-known/skills/index.json)
-- Reference server implementation: [vercel-labs/skills-handler](https://github.com/vercel-labs/skills-handler)
-- Example:
+- Example endpoint: [Mintlify docs skills index](https://mintlify.com/docs/.well-known/skills/index.json)
+- Reference implementation: [vercel-labs/skills-handler](https://github.com/vercel-labs/skills-handler)
 
 ```bash
-hermes skills search https://mintlify.com/docs --source well-known
-hermes skills inspect well-known:https://mintlify.com/docs/.well-known/skills/mintlify
-hermes skills install well-known:https://mintlify.com/docs/.well-known/skills/mintlify
+superforecasting-agent skills search https://mintlify.com/docs --source well-known
+superforecasting-agent skills inspect well-known:https://mintlify.com/docs/.well-known/skills/mintlify
+superforecasting-agent skills install well-known:https://mintlify.com/docs/.well-known/skills/mintlify
 ```
 
 #### 4. Direct GitHub skills (`github`)
 
-Hermes can install directly from GitHub repositories and GitHub-based taps. This is useful when you already know the repo/path or want to add your own custom source repo.
+Superforecasting Agent can install directly from GitHub repositories and GitHub-based taps. This is useful when you already know the repo/path or want to add your own custom source repo.
 
-Default taps (browsable without any setup):
+Default taps that can be browsed without extra setup include:
+
 - [openai/skills](https://github.com/openai/skills)
 - [anthropics/skills](https://github.com/anthropics/skills)
 - [huggingface/skills](https://github.com/huggingface/skills)
 - [VoltAgent/awesome-agent-skills](https://github.com/VoltAgent/awesome-agent-skills)
 - [garrytan/gstack](https://github.com/garrytan/gstack)
 
-- Example:
-
 ```bash
-hermes skills install openai/skills/k8s
-hermes skills tap add myorg/skills-repo
+superforecasting-agent skills install openai/skills/k8s
+superforecasting-agent skills tap add myorg/forecasting-skills
 ```
 
 #### 5. ClawHub (`clawhub`)
 
-A third-party skills marketplace integrated as a community source.
+ClawHub is a third-party skills marketplace integrated as a community source.
 
 - Site: [clawhub.ai](https://clawhub.ai/)
-- Hermes source id: `clawhub`
+- Source id: `clawhub`
 
 #### 6. Claude marketplace-style repos (`claude-marketplace`)
 
-Hermes supports marketplace repos that publish Claude-compatible plugin/marketplace manifests.
+Superforecasting Agent supports marketplace repos that publish Claude-compatible plugin or marketplace manifests.
 
 Known integrated sources include:
+
 - [anthropics/skills](https://github.com/anthropics/skills)
 - [aiskillstore/marketplace](https://github.com/aiskillstore/marketplace)
 
-Hermes source id: `claude-marketplace`
+Source id: `claude-marketplace`
 
 #### 7. LobeHub (`lobehub`)
 
-Hermes can search and convert agent entries from LobeHub's public catalog into installable Hermes skills.
+Superforecasting Agent can search and convert agent entries from LobeHub's public catalog into installable skills.
 
 - Site: [LobeHub](https://lobehub.com/)
 - Public agents index: [chat-agents.lobehub.com](https://chat-agents.lobehub.com/)
 - Backing repo: [lobehub/lobe-chat-agents](https://github.com/lobehub/lobe-chat-agents)
-- Hermes source id: `lobehub`
+- Source id: `lobehub`
 
 #### 8. browse.sh (`browse-sh`)
 
-Hermes integrates with [browse.sh](https://browse.sh), Browserbase's catalog of 200+ site-specific browser-automation SKILL.md files (Airbnb, Amazon, arXiv, 12306.cn, Etsy, Xero, and many more). Each skill describes how to drive one website end-to-end and is suitable for use with Hermes' browser tools and any browser-automation skills you already have installed.
+Superforecasting Agent integrates with [browse.sh](https://browse.sh), Browserbase's catalog of site-specific browser-automation `SKILL.md` files. These can be useful for evidence discovery on websites that require structured browser interaction.
 
 - Site: [browse.sh](https://browse.sh/)
 - Catalog API: `https://browse.sh/api/skills`
-- Hermes source id: `browse-sh`
+- Source id: `browse-sh`
 - Trust level: `community`
 
 ```bash
-hermes skills search airbnb --source browse-sh
-hermes skills inspect browse-sh/airbnb.com/search-listings-ddgioa
-hermes skills install browse-sh/airbnb.com/search-listings-ddgioa
+superforecasting-agent skills search airbnb --source browse-sh
+superforecasting-agent skills inspect browse-sh/airbnb.com/search-listings-ddgioa
+superforecasting-agent skills install browse-sh/airbnb.com/search-listings-ddgioa
 ```
 
-Identifiers use the form `browse-sh/<hostname>/<task-id>` and match the slug exposed by the browse.sh catalog. Content is resolved through the per-skill detail endpoint (`/api/skills/<slug>` → `skillMdUrl`), not through the catalog's GitHub `sourceUrl`.
+Identifiers use `browse-sh/<hostname>/<task-id>`. Content is resolved through the per-skill detail endpoint, not through the catalog's GitHub `sourceUrl`.
 
 #### 9. Direct URL (`url`)
 
-Install a single-file `SKILL.md` directly from any HTTP(S) URL — useful when an author hosts a skill on their own site (no hub listing, no GitHub path to type). Hermes fetches the URL, parses the YAML frontmatter, security-scans it, and installs.
+Install a single-file `SKILL.md` directly from any HTTP(S) URL. This is useful when an author hosts a skill on their own site without a hub listing.
 
-- Hermes source id: `url`
-- Identifier: the URL itself (no prefix needed)
-- Scope: **single-file `SKILL.md`** only. Multi-file skills with `references/` or `scripts/` need a manifest and should be published via one of the other sources above.
+- Source id: `url`
+- Identifier: the URL itself
+- Scope: single-file `SKILL.md` only
 
 ```bash
-hermes skills install https://sharethis.chat/SKILL.md
-hermes skills install https://example.com/my-skill/SKILL.md --category productivity
+superforecasting-agent skills install https://example.com/SKILL.md
+superforecasting-agent skills install https://example.com/my-skill/SKILL.md --category productivity
 ```
 
-Name resolution, in order:
-1. `name:` field in the SKILL.md YAML frontmatter (recommended — every well-formed skill has one).
-2. Parent directory name from the URL path (e.g. `.../my-skill/SKILL.md` → `my-skill`, or `.../my-skill.md` → `my-skill`), when it's a valid identifier (`^[a-z][a-z0-9_-]*$`).
+Name resolution:
+
+1. `name:` field in the SKILL.md YAML frontmatter.
+2. Parent directory name from the URL path when valid.
 3. Interactive prompt on a terminal with a TTY.
-4. On non-interactive surfaces (the `/skills install` slash command inside the TUI, gateway platforms, scripts), a clean error pointing at the `--name` override.
+4. A clean error on non-interactive surfaces pointing at `--name`.
 
 ```bash
-# Frontmatter has no name and the URL slug is unhelpful — supply one:
-hermes skills install https://example.com/SKILL.md --name sharethis-chat
-
-# Or inside a chat session:
-/skills install https://example.com/SKILL.md --name sharethis-chat
+superforecasting-agent skills install https://example.com/SKILL.md --name source-watch
 ```
 
-Trust level is always `community` — the same security scan runs as for every other source. The URL is stored as the install identifier, so `hermes skills update` re-fetches from the same URL automatically when you want to refresh.
+Trust level is always `community`. The same security scan runs as for every other source. The URL is stored as the install identifier, so `superforecasting-agent skills update` re-fetches from the same URL.
 
-### Security scanning and `--force`
+### Security Scanning and `--force`
 
-All hub-installed skills go through a **security scanner** that checks for data exfiltration, prompt injection, destructive commands, supply-chain signals, and other threats.
+All hub-installed skills go through a security scanner that checks for data exfiltration, prompt injection, destructive commands, supply-chain signals, and other threats.
 
-`hermes skills inspect ...` now also surfaces upstream metadata when available:
-- repo URL
-- skills.sh detail page URL
-- install command
-- weekly installs
-- upstream security audit statuses
-- well-known index/endpoint URLs
+`superforecasting-agent skills inspect ...` also surfaces upstream metadata when available:
 
-Use `--force` when you have reviewed a third-party skill and want to override a non-dangerous policy block:
+- Repo URL.
+- Skills.sh detail page URL.
+- Install command.
+- Weekly installs.
+- Upstream security audit statuses.
+- Well-known index and endpoint URLs.
+
+Use `--force` only after reviewing a third-party skill and deciding a non-dangerous policy block is acceptable:
 
 ```bash
-hermes skills install skills-sh/anthropics/skills/pdf --force
+superforecasting-agent skills install skills-sh/anthropics/skills/pdf --force
 ```
 
 Important behavior:
-- `--force` can override policy blocks for caution/warn-style findings.
-- `--force` does **not** override a `dangerous` scan verdict.
-- Official optional skills (`official/...`) are treated as builtin trust and do not show the third-party warning panel.
 
-### Trust levels
+- `--force` can override caution or warning findings.
+- `--force` does not override a `dangerous` scan verdict.
+- Official optional skills are treated as builtin trust and do not show the third-party warning panel.
+
+### Trust Levels
 
 | Level | Source | Policy |
 |-------|--------|--------|
-| `builtin` | Ships with Hermes | Always trusted |
+| `builtin` | Bundled skills in the repo | Always trusted |
 | `official` | `optional-skills/` in the repo | Builtin trust, no third-party warning |
 | `trusted` | Trusted registries/repos such as `openai/skills`, `anthropics/skills`, `huggingface/skills` | More permissive policy than community sources |
-| `community` | Everything else (`skills.sh`, well-known endpoints, custom GitHub repos, most marketplaces) | Non-dangerous findings can be overridden with `--force`; `dangerous` verdicts stay blocked |
+| `community` | Everything else | Non-dangerous findings can be overridden with `--force`; `dangerous` verdicts stay blocked |
 
-### Update lifecycle
+### Update Lifecycle
 
-The hub now tracks enough provenance to re-check upstream copies of installed skills:
+The hub tracks enough provenance to re-check upstream copies of installed skills:
 
 ```bash
-hermes skills check          # Report which installed hub skills changed upstream
-hermes skills update         # Reinstall only the skills with updates available
-hermes skills update react   # Update one specific installed hub skill
+superforecasting-agent skills check
+superforecasting-agent skills update
+superforecasting-agent skills update react
 ```
 
 This uses the stored source identifier plus the current upstream bundle content hash to detect drift.
 
 :::tip GitHub rate limits
-Skills hub operations use the GitHub API, which has a rate limit of 60 requests/hour for unauthenticated users. If you see rate-limit errors during install or search, set `GITHUB_TOKEN` in your `.env` file to increase the limit to 5,000 requests/hour. The error message includes an actionable hint when this happens.
+Skills Hub operations use the GitHub API, which has a rate limit of 60 requests/hour for unauthenticated users. If you see rate-limit errors during install or search, set `GITHUB_TOKEN` in your `.env` file to increase the limit to 5,000 requests/hour. The error message includes an actionable hint when this happens.
 :::
 
-### Publishing a custom skill tap
+### Publishing a Custom Skill Tap
 
-If you want to share a curated set of skills — for your team, your org, or publicly — you can publish them as a **tap**: a GitHub repository other Hermes users add with `hermes skills tap add <owner/repo>`. No server, no registry sign-up, no release pipeline. Just a directory of `SKILL.md` files.
+If you want to share a curated set of skills with a team, organization, or public audience, publish them as a tap: a GitHub repository other users add with `superforecasting-agent skills tap add <owner/repo>`.
 
 #### Repo layout
 
-A tap is any GitHub repo (public or private — private needs `GITHUB_TOKEN`) laid out like this:
-
-```
+```text
 owner/repo
-├── skills/                       # default path; configurable per-tap
-│   ├── my-workflow/
-│   │   ├── SKILL.md              # required
-│   │   ├── references/           # optional supporting files
+├── skills/                       # Default path; configurable per tap
+│   ├── macro-policy-watch/
+│   │   ├── SKILL.md              # Required
+│   │   ├── references/
 │   │   ├── templates/
 │   │   └── scripts/
-│   ├── another-skill/
-│   │   └── SKILL.md
-│   └── third-skill/
+│   └── source-review/
 │       └── SKILL.md
-└── README.md                     # optional but helpful
+└── README.md
 ```
 
 Rules:
-- Each skill lives in its own directory under the tap's root path (default `skills/`).
-- The directory name becomes the skill's install slug.
-- Each skill directory must contain a `SKILL.md` with standard [SKILL.md frontmatter](#skillmd-format) (`name`, `description`, plus optional `metadata.hermes.tags`, `version`, `author`, `platforms`, `metadata.hermes.config`).
-- Subdirectories like `references/`, `templates/`, `scripts/`, `assets/` are downloaded alongside `SKILL.md` at install time.
-- Skills whose directory name starts with `.` or `_` are ignored.
 
-Hermes discovers skills by listing every subdirectory of the tap path and probing each for `SKILL.md`.
+- Each skill lives in its own directory under the tap root path.
+- The directory name becomes the install slug.
+- Each skill directory must contain `SKILL.md` with standard [SKILL.md frontmatter](#skillmd-format).
+- Supporting `references/`, `templates/`, `scripts/`, and `assets/` are downloaded at install time.
+- Directories starting with `.` or `_` are ignored.
+
+The runtime discovers skills by listing every subdirectory of the tap path and probing each for `SKILL.md`.
 
 #### Minimal tap example
 
-```
-my-org/hermes-skills
+```text
+my-org/forecasting-skills
 └── skills/
-    └── deploy-runbook/
+    └── source-review/
         └── SKILL.md
 ```
 
-`skills/deploy-runbook/SKILL.md`:
+`skills/source-review/SKILL.md`:
 
 ```markdown
 ---
-name: deploy-runbook
-description: Our deployment runbook — services, rollback, Slack channels
+name: source-review
+description: Review source quality before ledger import.
 version: 1.0.0
-author: My Org Platform Team
+author: My Org Forecasting Team
 metadata:
   hermes:
-    tags: [deployment, runbook, internal]
+    tags: [forecasting, evidence, review]
 ---
 
-# Deploy Runbook
+# Source Review
 
 Step 1: ...
 ```
 
-After pushing that to GitHub, any Hermes user can subscribe and install:
+After pushing that to GitHub, any user can subscribe and install:
 
 ```bash
-hermes skills tap add my-org/hermes-skills
-hermes skills search deploy
-hermes skills install my-org/hermes-skills/deploy-runbook
+superforecasting-agent skills tap add my-org/forecasting-skills
+superforecasting-agent skills search source-review
+superforecasting-agent skills install my-org/forecasting-skills/source-review
 ```
 
 #### Non-default paths
 
-If your skills don't live under `skills/` (common when you're adding a `skills/` subtree to an existing project), edit the tap entry in `~/.hermes/.hub/taps.json`:
+If your skills do not live under `skills/`, edit the tap entry in `~/.superforecasting-agent/.hub/taps.json`:
 
 ```json
 {
   "taps": [
-    {"repo": "my-org/platform-docs", "path": "internal/skills/"}
+    {"repo": "my-org/platform-docs", "path": "internal/forecasting-skills/"}
   ]
 }
 ```
 
-The `hermes skills tap add` CLI defaults new taps to `path: "skills/"`; edit the file directly if you need a different path. `hermes skills tap list` shows the effective path per tap.
+`superforecasting-agent skills tap add` defaults new taps to `path: "skills/"`. Edit the file directly if you need a different path. `superforecasting-agent skills tap list` shows the effective path per tap.
 
-#### Installing individual skills directly (without adding a tap)
+#### Installing individual skills directly
 
-Users can also install a single skill from any public GitHub repo without adding the whole repo as a tap:
+Users can also install one skill from a public GitHub repo without adding the full repo as a tap:
 
 ```bash
-hermes skills install owner/repo/skills/my-workflow
+superforecasting-agent skills install owner/repo/skills/my-workflow
 ```
-
-Useful when you want to share one skill without asking the user to subscribe to your whole registry.
 
 #### Trust levels for taps
 
-New taps are assigned `community` trust by default. Skills installed from them run through the standard security scan and show the third-party warning panel on first install. If your org or a widely-trusted source should get higher trust, add its repo to `TRUSTED_REPOS` in `tools/skills_hub.py` (requires a Hermes core PR).
+New taps are assigned `community` trust by default. Installed skills run through the security scan and show the third-party warning panel on first install. If your organization or a widely trusted source should get higher trust, add its repo to `TRUSTED_REPOS` in `tools/skills_hub.py`, which requires a core PR.
 
 #### Tap management
 
 ```bash
-hermes skills tap list                                # show all configured taps
-hermes skills tap add myorg/skills-repo               # add (default path: skills/)
-hermes skills tap remove myorg/skills-repo            # remove
+superforecasting-agent skills tap list
+superforecasting-agent skills tap add myorg/forecasting-skills
+superforecasting-agent skills tap remove myorg/forecasting-skills
 ```
 
 Inside a running session:
 
-```
+```text
 /skills tap list
-/skills tap add myorg/skills-repo
-/skills tap remove myorg/skills-repo
+/skills tap add myorg/forecasting-skills
+/skills tap remove myorg/forecasting-skills
 ```
 
-Taps are stored in `~/.hermes/.hub/taps.json` (created on demand).
+Taps are stored in `~/.superforecasting-agent/.hub/taps.json`. Legacy homes may store the same state under `~/.hermes/.hub/taps.json` during migration.
 
-## Bundled skill updates (`hermes skills reset`)
+## Bundled Skill Updates
 
-Hermes ships with a set of bundled skills in `skills/` inside the repo. On install and on every `hermes update`, a sync pass copies those into `~/.hermes/skills/` and records a manifest at `~/.hermes/skills/.bundled_manifest` mapping each skill name to the content hash at the time it was synced (the **origin hash**).
+Superforecasting Agent ships with bundled skills in `skills/` inside the repo. On install and on every managed update, a sync pass copies those into `~/.superforecasting-agent/skills/` and records a manifest at `~/.superforecasting-agent/skills/.bundled_manifest`.
 
-On each sync, Hermes recomputes the hash of your local copy and compares it to the origin hash:
+On each sync, the runtime recomputes the hash of your local copy and compares it to the origin hash:
 
-- **Unchanged** → safe to pull upstream changes, copy the new bundled version in, record the new origin hash.
-- **Changed** → treated as **user-modified** and skipped forever, so your edits never get stomped.
+- **Unchanged**: safe to pull upstream changes, copy the new bundled version in, and record the new origin hash.
+- **Changed**: treated as user-modified and skipped, so local edits are not overwritten.
 
-The protection is good, but it has one sharp edge. If you edit a bundled skill and then later want to abandon your changes and go back to the bundled version by just copy-pasting from `~/.hermes/hermes-agent/skills/`, the manifest still holds the *old* origin hash from whenever the last successful sync ran. Your fresh copy-paste contents (current bundled hash) won't match that stale origin hash, so sync keeps flagging it as user-modified.
-
-`hermes skills reset` is the escape hatch:
+If you edit a bundled skill and later want to restore the bundled version, use `superforecasting-agent skills reset`:
 
 ```bash
 # Safe: clears the manifest entry for this skill. Your current copy is preserved,
-# but the next sync re-baselines against it so future updates work normally.
-hermes skills reset google-workspace
+# and the next sync re-baselines against it.
+superforecasting-agent skills reset research-arxiv
 
-# Full restore: also deletes your local copy and re-copies the current bundled
-# version. Use this when you want the pristine upstream skill back.
-hermes skills reset google-workspace --restore
+# Full restore: also deletes your local copy and re-copies the current bundled version.
+superforecasting-agent skills reset research-arxiv --restore
 
-# Non-interactive (e.g. in scripts or TUI mode) — skip the --restore confirmation.
-hermes skills reset google-workspace --restore --yes
+# Non-interactive: skip the restore confirmation.
+superforecasting-agent skills reset research-arxiv --restore --yes
 ```
 
-The same command works in chat as a slash command:
+The same command works inside chat:
 
 ```text
-/skills reset google-workspace
-/skills reset google-workspace --restore
+/skills reset research-arxiv
+/skills reset research-arxiv --restore
 ```
 
 :::note Profiles
-Each profile has its own `.bundled_manifest` under its own `HERMES_HOME`, so `hermes -p coder skills reset <name>` only affects that profile.
+Each profile has its own `.bundled_manifest` under its own home, so `superforecasting-agent -p macro skills reset <name>` only affects that profile.
 :::
 
-### Slash commands (inside chat)
+### Slash Commands Inside Chat
 
-All the same commands work with `/skills`:
+The same Skills Hub commands work with `/skills`:
 
 ```text
 /skills browse
-/skills search react --source skills-sh
+/skills search forecasting --source official
 /skills search https://mintlify.com/docs --source well-known
 /skills inspect skills-sh/vercel-labs/json-render/json-render-react
 /skills install openai/skills/skill-creator --force
 /skills check
 /skills update
-/skills reset google-workspace
+/skills reset research-arxiv
 /skills list
 ```
 

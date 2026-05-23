@@ -1,0 +1,92 @@
+---
+sidebar_position: 3
+title: "Tester Smoke Test"
+description: "Run the local forecast lifecycle before external testing."
+---
+
+# Tester Smoke Test
+
+Use this smoke test before handing a build to testers. It exercises the forecast ledger, evidence capture, base rates, model-run records, probability updates, resolution, scoring, postmortem learning, scheduled self-check alerts, pilot-report and pilot-export aggregation coverage, and a built-in backtest without calling external APIs or an LLM provider.
+
+From the fork checkout:
+
+```bash
+source .venv/bin/activate
+python3 scripts/forecast_smoke_test.py
+```
+
+The expected final line is:
+
+```text
+[forecast-smoke] forecast smoke test passed
+```
+
+## Keep The Smoke Ledger
+
+By default the script uses a temporary ledger and removes it. Keep the database when you want to inspect the records:
+
+```bash
+python3 scripts/forecast_smoke_test.py --keep-db
+```
+
+Use an explicit ledger path for repeatable tester handoff:
+
+```bash
+python3 scripts/forecast_smoke_test.py --db /tmp/superforecasting-agent-smoke.db
+```
+
+Inspect it with normal forecast commands:
+
+```bash
+python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db status
+python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db list
+python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db calibration --by-origin --all
+python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db pilot-report
+python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db performance --last 3
+python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db readiness
+```
+
+## What It Covers
+
+- Creates a binary forecast question with resolution criteria.
+- Verifies the forecast source-adapter catalog, including generic data, news, market/crowd, market-price, economic, energy, fiscal, research, weather, policy, security, health, regulatory, software, and public-indicator adapters.
+- Verifies the packaged benchmark catalog, including the mini, synthetic, held-out, and public Manifold replay corpora.
+- Adds timestamped evidence and stores source reliability and relevance ratings.
+- Adds a reference-class base rate.
+- Records a Bayesian update model run.
+- Appends a cited forecast snapshot.
+- Resolves, scores, and postmortems the forecast.
+- Creates a calibration lesson from the postmortem.
+- Creates a second stale active forecast and verifies self-check alerts.
+- Adds and runs a scheduled self-check with learning flags enabled.
+- Verifies `forecast pilot-report --json` reports complete pilot-exit artifacts for the smoke ledger.
+- Exports the smoke ledger and verifies `forecast pilot-aggregate` counts the live score from the export packet.
+- Runs `builtin:mini-binary` through the local forecast engine.
+- Runs a local captured agent-protocol replay from JSONL responses without calling an LLM provider.
+- Prints readiness status, evidence gaps, and next actions without making a live superforecasting claim.
+- Fails if the smoke ledger incorrectly reports that live-superforecasting evidence is sufficient.
+
+## Useful Options
+
+```bash
+python3 scripts/forecast_smoke_test.py --verbose
+python3 scripts/forecast_smoke_test.py --skip-backtest
+python3 scripts/forecast_smoke_test.py --db /tmp/smoke.db --verbose
+```
+
+`--skip-backtest` is useful when you only need to verify lifecycle writes. Keep the default for tester builds because backtesting and readiness reporting are part of the product promise.
+
+## Tester-Ready Bar
+
+A build is ready for friendly testers when:
+
+- this smoke test passes on a fresh checkout
+- `forecast status --json` reports `Superforecasting Agent`; the smoke script checks this
+- `forecast sources --json` lists the built-in adapter set; the smoke script checks this
+- `forecast backtest --benchmarks` lists local benchmark datasets; the smoke script checks this
+- `forecast pilot-report` can summarize tester workflow artifacts; the smoke script checks this
+- `forecast pilot-aggregate` can count live-score evidence from tester exports; the smoke script checks this
+- `forecast readiness` clearly distinguishes smoke/backtest evidence from live superforecasting proof; the smoke script checks this
+- the tester can create, update, resolve, score, and postmortem one manual question without editing code
+
+This smoke test is not evidence that the agent beats superforecasters. It is a local acceptance check that the forecast desk can preserve the data needed to measure that claim later.

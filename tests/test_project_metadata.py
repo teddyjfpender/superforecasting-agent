@@ -4,11 +4,14 @@ from pathlib import Path
 import tomllib
 
 
-def _load_optional_dependencies():
+def _load_project():
     pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
     with pyproject_path.open("rb") as handle:
-        project = tomllib.load(handle)["project"]
-    return project["optional-dependencies"]
+        return tomllib.load(handle)["project"]
+
+
+def _load_optional_dependencies():
+    return _load_project()["optional-dependencies"]
 
 
 def _load_package_data():
@@ -16,6 +19,13 @@ def _load_package_data():
     with pyproject_path.open("rb") as handle:
         tool = tomllib.load(handle)["tool"]
     return tool["setuptools"]["package-data"]
+
+
+def _load_setuptools_find():
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    with pyproject_path.open("rb") as handle:
+        tool = tomllib.load(handle)["tool"]
+    return tool["setuptools"]["packages"]["find"]
 
 
 def test_matrix_extra_not_in_all():
@@ -31,7 +41,8 @@ def test_matrix_extra_not_in_all():
     """
     optional_dependencies = _load_optional_dependencies()
 
-    assert "matrix" in optional_dependencies, "[matrix] extra must still exist for explicit `pip install hermes-agent[matrix]`"
+    package_name = _load_project()["name"]
+    assert "matrix" in optional_dependencies, f"[matrix] extra must still exist for explicit `pip install {package_name}[matrix]`"
     # Must NOT appear in [all] in any form — neither unconditional nor
     # platform-gated. Lazy-install handles it.
     matrix_in_all = [
@@ -58,6 +69,7 @@ def test_lazy_installable_extras_excluded_from_all():
     add it to `LAZY_DEPS` instead so it installs at first use.
     """
     optional_dependencies = _load_optional_dependencies()
+    package_name = _load_project()["name"]
 
     # Hard-coded mirror of the extras that are in LAZY_DEPS as of
     # 2026-05-12. This list intentionally duplicates rather than
@@ -78,7 +90,7 @@ def test_lazy_installable_extras_excluded_from_all():
     for extra in lazy_covered_extras:
         offending = [
             spec for spec in all_extra_specs
-            if f"hermes-agent[{extra}]" in spec
+            if f"{package_name}[{extra}]" in spec
         ]
         assert not offending, (
             f"[{extra}] is in [all] but also in LAZY_DEPS. "
@@ -122,3 +134,586 @@ def test_dashboard_plugin_manifests_and_assets_are_packaged():
     assert "*/dashboard/manifest.json" in plugin_data
     assert "*/dashboard/dist/*" in plugin_data
     assert "*/dashboard/dist/**/*" in plugin_data
+
+
+def test_forecast_native_package_namespace_is_exposed():
+    project = _load_project()
+    scripts = project["scripts"]
+    include = _load_setuptools_find()["include"]
+
+    assert scripts["forecast"] == "superforecasting_agent.cli:main"
+    assert scripts["superforecast"] == "superforecasting_agent.cli:main"
+    assert scripts["superforecasting-agent"] == "superforecasting_agent.cli:main"
+    assert scripts["hermes-agent"] == "superforecasting_agent.cli:main"
+    assert "superforecasting_agent" in include
+    assert "superforecasting_agent.*" in include
+
+
+def test_web_locale_app_brand_is_forecast_native():
+    i18n_dir = Path(__file__).resolve().parents[1] / "web" / "src" / "i18n"
+    locale_files = []
+    for path in sorted(i18n_dir.glob("*.ts")):
+        text = path.read_text(encoding="utf-8")
+        if ": Translations = {" in text:
+            locale_files.append(path)
+
+    assert locale_files
+    for path in locale_files:
+        text = path.read_text(encoding="utf-8")
+        assert 'brand: "Superforecasting Agent"' in text, path
+        assert 'brand: "Hermes Agent"' not in text, path
+        assert "Hermes Agent ☤" not in text, path
+
+
+def test_web_dashboard_titles_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "web" / "index.html").read_text(encoding="utf-8")
+    assert "<title>Superforecasting Agent - Forecast Desk</title>" in text
+    assert "Hermes Agent - Dashboard" not in text
+
+
+def test_high_attention_docs_navigation_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    sidebars = (root / "website" / "sidebars.ts").read_text(encoding="utf-8")
+    docs_paths = [
+        root / "website" / "docs" / "developer-guide" / "web-search-provider-plugin.md",
+        root / "website" / "docs" / "developer-guide" / "image-gen-provider-plugin.md",
+        root / "website" / "docs" / "developer-guide" / "adding-tools.md",
+        root / "website" / "docs" / "developer-guide" / "contributing.md",
+        root / "website" / "docs" / "developer-guide" / "model-provider-plugin.md",
+        root / "website" / "docs" / "user-guide" / "features" / "hooks.md",
+    ]
+    docs_text = "\n".join(path.read_text(encoding="utf-8") for path in docs_paths)
+
+    assert "Using the Forecast Desk" in sidebars
+    assert "Using Hermes" not in sidebars
+    assert "Build a Superforecasting Agent Plugin" in docs_text
+    assert "Build a Hermes Plugin" not in docs_text
+    assert "Building a Hermes Plugin" not in docs_text
+
+
+def test_google_workspace_skill_docs_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "skills" / "productivity" / "google-workspace" / "SKILL.md",
+        root / "skills" / "productivity" / "google-workspace" / "scripts" / "_hermes_home.py",
+        root / "skills" / "productivity" / "google-workspace" / "scripts" / "setup.py",
+        root / "skills" / "productivity" / "google-workspace" / "scripts" / "gws_bridge.py",
+        root / "website" / "docs" / "user-guide" / "skills" / "google-workspace.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "productivity"
+            / "productivity-google-workspace.md"
+        ),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "Superforecasting Agent-managed OAuth" in text
+    assert "integration for Superforecasting Agent" in text
+    assert "ask Superforecasting Agent to set up Google Workspace" in text
+    assert "superforecasting-agent-google-client-secret.json" in text
+    assert "superforecasting-agent[google]" in text
+    assert "https://github.com/NousResearch/superforecasting-agent" in text
+    assert "default: ~/.superforecasting-agent" in text
+    assert "Google Workspace OAuth setup for Superforecasting Agent" in text
+    assert "integration for Hermes" not in text
+    assert "ask Hermes" not in text
+    assert "Hermes-managed OAuth" not in text
+    assert "pip install 'hermes-agent[google]'" not in text
+    assert "Google Workspace OAuth setup for Hermes" not in text
+    assert "same Hermes profile" not in text
+    assert "https://github.com/NousResearch/hermes-agent" not in text
+
+
+def test_superforecasting_agent_skill_metadata_points_to_fork():
+    root = Path(__file__).resolve().parents[1]
+    skill = root / "skills" / "autonomous-ai-agents" / "hermes-agent" / "SKILL.md"
+    text = skill.read_text(encoding="utf-8")
+
+    assert "homepage: https://github.com/NousResearch/superforecasting-agent" in text
+    assert "homepage: https://github.com/NousResearch/hermes-agent" not in text
+
+
+def test_himalaya_skill_docs_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "skills" / "email" / "himalaya" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "email"
+            / "email-himalaya.md"
+        ),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "Superforecasting Agent Integration Notes" in text
+    assert "from Superforecasting Agent" in text
+    assert "use this from Superforecasting Agent" in text
+    assert "Hermes Integration Notes" not in text
+    assert "from Hermes" not in text
+    assert "use this from Hermes" not in text
+
+
+def test_onepassword_skill_docs_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "optional-skills" / "security" / "1password" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "optional"
+            / "security"
+            / "security-1password.md"
+        ),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "enhanced by Superforecasting Agent" in text
+    assert "during Superforecasting Agent terminal calls" in text
+    assert "Service Account (recommended for Superforecasting Agent)" in text
+    assert "Superforecasting Agent Execution Pattern" in text
+    assert "Superforecasting Agent terminal commands" in text
+    assert "superforecasting-agent-tmux-sockets" in text
+    assert "superforecasting-agent-op.sock" in text
+    assert "enhanced by Hermes Agent" not in text
+    assert "during Hermes terminal calls" not in text
+    assert "recommended for Hermes" not in text
+    assert "Hermes Execution Pattern" not in text
+    assert "Hermes terminal commands" not in text
+    assert "hermes-tmux-sockets" not in text
+    assert "hermes-op.sock" not in text
+
+
+def test_skill_examples_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "optional-skills" / "mcp" / "mcporter" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "optional"
+            / "mcp"
+            / "mcp-mcporter.md"
+        ),
+        root / "skills" / "productivity" / "notion" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "productivity"
+            / "productivity-notion.md"
+        ),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "recommended for Superforecasting Agent" in text
+    assert "Hello from Superforecasting Agent!" in text
+    assert "recommended for Hermes" not in text
+    assert "Hello from Hermes!" not in text
+
+
+def test_github_auth_skill_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "skills" / "github" / "github-auth" / "SKILL.md",
+        root / "skills" / "github" / "github-auth" / "scripts" / "gh-env.sh",
+        root / "skills" / "github" / "github-code-review" / "SKILL.md",
+        root / "skills" / "github" / "github-repo-management" / "references" / "github-api-cheatsheet.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "github"
+            / "github-github-auth.md"
+        ),
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "github"
+            / "github-github-code-review.md"
+        ),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert 'name like "superforecasting-agent"' in text
+    assert 'title like "superforecasting-agent-' in text
+    assert "SUPERFORECASTING_AGENT_HOME" in text
+    assert "FORECAST_HOME" in text
+    assert "$HOME/.superforecasting-agent" in text
+    assert 'name like "hermes-agent"' not in text
+    assert 'title like "hermes-agent-' not in text
+    assert "$HOME/.hermes/.env" not in text
+    assert '${HERMES_HOME:-$HOME/.hermes}/skills/github/github-auth/scripts/gh-env.sh' not in text
+
+
+def test_skill_helper_runtime_copy_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (
+        root / "skills" / "red-teaming" / "godmode" / "scripts" / "auto_jailbreak.py"
+    ).read_text(encoding="utf-8")
+
+    assert "SUPERFORECASTING_AGENT_HOME" in text
+    assert "FORECAST_HOME" in text
+    assert "Restart Superforecasting Agent" in text
+    assert "Superforecasting Agent config.yaml" in text
+    assert "Path.home() / \".superforecasting-agent\"" in text
+    assert "Restart Hermes" not in text
+    assert "Hermes config paths" not in text
+    assert "Hermes config.yaml" not in text
+    assert "Path.home() / \".hermes\"" not in text
+
+
+def test_external_api_skill_helpers_use_fork_attribution():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "optional-skills" / "finance" / "stocks" / "scripts" / "stocks_client.py",
+        root / "optional-skills" / "blockchain" / "hyperliquid" / "scripts" / "hyperliquid_client.py",
+        root / "optional-skills" / "blockchain" / "solana" / "scripts" / "solana_client.py",
+        root / "skills" / "research" / "polymarket" / "scripts" / "polymarket.py",
+        root / "skills" / "research" / "arxiv" / "scripts" / "search_arxiv.py",
+        root / "skills" / "productivity" / "linear" / "scripts" / "linear_api.py",
+        root / "skills" / "productivity" / "maps" / "scripts" / "maps_client.py",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "superforecasting-agent/1.0" in text
+    assert "SuperforecastingAgent/1.0" in text
+    assert "superforecasting-agent-linear-skill/1.0" in text
+    assert "~/.superforecasting-agent/.env" in text
+    assert "SUPERFORECASTING_AGENT_HOME" in text
+    assert "FORECAST_HOME" in text
+    assert "hermes-agent/1.0" not in text
+    assert "HermesAgent/1.0" not in text
+    assert "hermes-agent-linear-skill/1.0" not in text
+    assert "~/.hermes/.env" not in text
+    assert "Path(os.environ.get(\"HERMES_HOME\", \"~/.hermes\"))" not in text
+    assert "hermes@agent.ai" not in text
+
+
+def test_watcher_skill_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "optional-skills" / "devops" / "watchers" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "optional"
+            / "devops"
+            / "devops-watchers.md"
+        ),
+        root / "optional-skills" / "devops" / "watchers" / "scripts" / "_watermark.py",
+        root / "optional-skills" / "devops" / "watchers" / "scripts" / "watch_github.py",
+        root / "optional-skills" / "devops" / "watchers" / "scripts" / "watch_http_json.py",
+        root / "optional-skills" / "devops" / "watchers" / "scripts" / "watch_rss.py",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "SuperforecastingAgent-Watcher/1.0" in text
+    assert "superforecasting-agent cron create" in text
+    assert "SUPERFORECASTING_AGENT_HOME" in text
+    assert "FORECAST_HOME" in text
+    assert "$AGENT_HOME/watcher-state/" in text
+    assert "NousResearch/superforecasting-agent" in text
+    assert "Hermes-Watcher/1.0" not in text
+    assert "hermes cron create" not in text
+    assert "$HERMES_HOME/watcher-state/" not in text
+    assert "$HERMES_HOME/skills/devops/watchers/scripts/" not in text
+    assert "NousResearch/hermes-agent" not in text
+    assert "~/.hermes/.env" not in text
+
+
+def test_telephony_skill_helper_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "optional-skills" / "productivity" / "telephony" / "SKILL.md",
+        root / "optional-skills" / "productivity" / "telephony" / "scripts" / "telephony.py",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "optional"
+            / "productivity"
+            / "productivity-telephony.md"
+        ),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "Superforecasting Agent telephony helper" in text
+    assert "SUPERFORECASTING_AGENT_HOME" in text
+    assert "FORECAST_HOME" in text
+    assert "~/.superforecasting-agent/.env" in text
+    assert "~/.superforecasting-agent/telephony_state.json" in text
+    assert "Hermes telephony helper" not in text
+    assert "Hermes optional telephony skill" not in text
+    assert "~/.hermes/.env" not in text
+    assert "Path(os.environ.get(\"HERMES_HOME\", \"~/.hermes\"))" not in text
+
+
+def test_memento_skill_storage_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "optional-skills" / "productivity" / "memento-flashcards" / "SKILL.md",
+        root / "optional-skills" / "productivity" / "memento-flashcards" / "scripts" / "memento_cards.py",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "optional"
+            / "productivity"
+            / "productivity-memento-flashcards.md"
+        ),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "SUPERFORECASTING_AGENT_HOME" in text
+    assert "FORECAST_HOME" in text
+    assert "Path.home() / \".superforecasting-agent\"" in text
+    assert "~/.superforecasting-agent/skills/productivity/memento-flashcards/data/cards.json" in text
+    assert "$HERMES_HOME/skills/productivity/memento-flashcards/data/cards.json" not in text
+    assert "Path.home() / \".hermes\"" not in text
+
+
+def test_canvas_skill_examples_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "optional-skills" / "productivity" / "canvas" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "optional"
+            / "productivity"
+            / "productivity-canvas.md"
+        ),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "SUPERFORECASTING_AGENT_HOME" in text
+    assert "FORECAST_HOME" in text
+    assert "$AGENT_HOME/skills/productivity/canvas/scripts/canvas_api.py" in text
+    assert "$HERMES_HOME/skills/productivity/canvas/scripts/canvas_api.py" not in text
+
+
+def test_osint_skill_helpers_use_fork_native_attribution():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "optional-skills" / "research" / "osint-investigation" / "SKILL.md",
+        root / "optional-skills" / "research" / "osint-investigation" / "scripts" / "_http.py",
+        root / "optional-skills" / "research" / "osint-investigation" / "scripts" / "fetch_usaspending.py",
+        root / "optional-skills" / "research" / "osint-investigation" / "scripts" / "fetch_icij_offshore.py",
+        (
+            root
+            / "optional-skills"
+            / "research"
+            / "osint-investigation"
+            / "references"
+            / "sources"
+            / "wikipedia.md"
+        ),
+        (
+            root
+            / "optional-skills"
+            / "research"
+            / "osint-investigation"
+            / "references"
+            / "sources"
+            / "icij-offshore.md"
+        ),
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "optional"
+            / "research"
+            / "research-osint-investigation.md"
+        ),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "superforecasting-agent-osint-investigation/0.2" in text
+    assert "https://github.com/NousResearch/superforecasting-agent" in text
+    assert "SUPERFORECASTING_AGENT_OSINT_UA" in text
+    assert "SUPERFORECASTING_AGENT_OSINT_CACHE" in text
+    assert "~/.cache/superforecasting-agent-osint/icij" in text
+    assert "superforecasting-agent osint-investigation" in text
+    assert "hermes-osint-investigation" not in text
+    assert "https://github.com/NousResearch/hermes-agent" not in text
+    assert "set HERMES_OSINT_UA" not in text
+    assert "$HERMES_OSINT_CACHE/icij" not in text
+    assert "~/.cache/hermes-osint/icij" not in text
+    assert "hermes-agent osint-investigation" not in text
+
+
+def test_classic_cli_visible_labels_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "cli.py").read_text(encoding="utf-8")
+
+    assert "Captain Hermes" not in text
+    assert "They call me Hermes" not in text
+    assert "[Hermes #" not in text
+    assert "while Hermes is busy" not in text
+    assert "run hermes -w" not in text
+    assert "Hermes-managed isolated debug" not in text
+
+
+def test_gateway_setup_copy_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "hermes_cli" / "gateway.py").read_text(encoding="utf-8")
+
+    assert "before the Hermes command" not in text
+    assert "Hermes will log in directly" not in text
+    assert "where Hermes delivers cron results" not in text
+    assert "dedicated email account for your Hermes agent" not in text
+    assert "email address Hermes will use" not in text
+    assert "Hermes connects via the BlueBubbles" not in text
+    assert "hermes pairing generate bluebubbles" not in text
+    assert "Hermes will connect automatically" not in text
+    assert 'signal-cli link -n "HermesAgent"' not in text
+
+
+def test_codex_runtime_switch_copy_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "hermes_cli" / "codex_runtime_switch.py").read_text(encoding="utf-8")
+
+    assert "Hermes tool callback registered" not in text
+    assert "default Hermes runtime" not in text
+    assert "Hermes tools available via MCP callback" not in text
+    assert "use the default Hermes runtime" not in text
+
+
+def test_model_tool_and_proxy_guidance_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    models = (root / "hermes_cli" / "models.py").read_text(encoding="utf-8")
+    tools_config = (root / "hermes_cli" / "tools_config.py").read_text(encoding="utf-8")
+    config = (root / "hermes_cli" / "config.py").read_text(encoding="utf-8")
+
+    assert "Hermes will still save" not in models
+    assert "Hermes cannot verify the model name" not in models
+    assert "Hermes routes X searches" not in tools_config
+    assert "remote Hermes API server" not in config
+    assert "Remote Hermes API server URL" not in config
+    assert "remote Superforecasting Agent API server" in config
+    assert "Superforecasting Agent auth store" in config
+
+
+def test_support_error_copy_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    profile_distribution = (
+        root / "hermes_cli" / "profile_distribution.py"
+    ).read_text(encoding="utf-8")
+    relaunch = (root / "hermes_cli" / "relaunch.py").read_text(encoding="utf-8")
+    hooks = (root / "hermes_cli" / "hooks.py").read_text(encoding="utf-8")
+    web_server = (root / "hermes_cli" / "web_server.py").read_text(encoding="utf-8")
+    auth = (root / "hermes_cli" / "auth.py").read_text(encoding="utf-8")
+    main = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
+    uninstall = (root / "hermes_cli" / "uninstall.py").read_text(encoding="utf-8")
+
+    assert "requires Hermes" not in profile_distribution
+    assert "Hermes distribution" not in profile_distribution
+    assert "Hermes relaunch failed" not in relaunch
+    assert "re-run hermes" not in relaunch
+    assert "Hermes wire shape" not in hooks
+    assert "Install Hermes inside WSL2" not in web_server
+    assert "rely on Hermes' lazy-install" not in auth
+    assert "Close Hermes Desktop" not in main
+    assert "No Hermes-owned PATH entries" not in uninstall
+    assert "No Hermes-set User env vars" not in uninstall
+
+
+def test_codex_migration_report_copy_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (
+        root / "hermes_cli" / "codex_runtime_plugin_migration.py"
+    ).read_text(encoding="utf-8")
+
+    assert "No MCP servers found in Hermes config" not in text
+    assert "unknown Hermes key" not in text
+    assert "configured by Hermes" not in text
+    assert "mcp_servers in Hermes config" not in text
+
+
+def test_readme_primary_links_are_fork_native():
+    root = Path(__file__).resolve().parents[1]
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    before_legacy_docs = readme.split("## Legacy Hermes Documentation", 1)[0]
+
+    assert "docs/plans/2026-05-20-superforecasting-agent-fork-prd.md" in before_legacy_docs
+    assert '<a href="LICENSE">' in before_legacy_docs
+    assert "github.com/NousResearch/hermes-agent/blob/main/LICENSE" not in before_legacy_docs
+    assert "github.com/NousResearch/hermes-agent/issues" not in readme
+
+
+def test_high_attention_help_docs_are_fork_local():
+    root = Path(__file__).resolve().parents[1]
+    main_py = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
+
+    assert "website/docs/user-guide/features/curator.md" in main_py
+    assert "website/docs/user-guide/features/fallback-providers.md" in main_py
+    assert "https://hermes-agent.nousresearch.com/docs/user-guide/features/curator" not in main_py
+    assert (
+        "https://hermes-agent.nousresearch.com/docs/user-guide/features/fallback-providers"
+        not in main_py
+    )
+
+
+def test_update_upstream_metadata_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    main_py = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
+
+    assert "https://github.com/NousResearch/superforecasting-agent.git" in main_py
+    assert "superforecasting-agent/archive/refs/heads" in main_py
+    assert "official Superforecasting Agent repository" in main_py
+    assert "https://github.com/NousResearch/hermes-agent.git" not in main_py
+    assert "hermes-agent/archive/refs/heads" not in main_py
+
+
+def test_model_catalog_default_url_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    config_py = (root / "hermes_cli" / "config.py").read_text(encoding="utf-8")
+    catalog_py = (root / "hermes_cli" / "model_catalog.py").read_text(encoding="utf-8")
+
+    expected = (
+        "https://raw.githubusercontent.com/NousResearch/"
+        "superforecasting-agent/main/website/static/api/model-catalog.json"
+    )
+    assert expected in config_py
+    assert expected in catalog_py
+    assert "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json" not in config_py
+    assert "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json" not in catalog_py

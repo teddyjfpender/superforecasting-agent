@@ -15,7 +15,12 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from hermes_cli.main import cmd_dashboard, _report_dashboard_status
+from hermes_cli.main import (
+    _configured_dashboard_web_dist,
+    _dashboard_tui_env_enabled,
+    cmd_dashboard,
+    _report_dashboard_status,
+)
 
 
 def _ns(**kw):
@@ -28,6 +33,34 @@ def _ns(**kw):
     return argparse.Namespace(**defaults)
 
 
+class TestForecastNativeDashboardEnv:
+    def test_web_dist_aliases_precede_legacy_hermes_env(self, monkeypatch):
+        monkeypatch.setenv("HERMES_WEB_DIST", "/legacy/dist")
+        monkeypatch.setenv("FORECAST_WEB_DIST", "/forecast/dist")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_WEB_DIST", "/superforecasting/dist")
+
+        assert _configured_dashboard_web_dist() == "/superforecasting/dist"
+
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_WEB_DIST")
+        assert _configured_dashboard_web_dist() == "/forecast/dist"
+
+        monkeypatch.delenv("FORECAST_WEB_DIST")
+        assert _configured_dashboard_web_dist() == "/legacy/dist"
+
+    def test_dashboard_tui_aliases_precede_legacy_hermes_env(self, monkeypatch):
+        monkeypatch.setenv("HERMES_DASHBOARD_TUI", "1")
+        monkeypatch.setenv("FORECAST_DASHBOARD_TUI", "0")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_DASHBOARD_TUI", "yes")
+
+        assert _dashboard_tui_env_enabled() is True
+
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_DASHBOARD_TUI")
+        assert _dashboard_tui_env_enabled() is False
+
+        monkeypatch.delenv("FORECAST_DASHBOARD_TUI")
+        assert _dashboard_tui_env_enabled() is True
+
+
 class TestDashboardStatus:
     def test_status_no_processes(self, capsys):
         with patch("hermes_cli.main._find_stale_dashboard_pids",
@@ -36,7 +69,7 @@ class TestDashboardStatus:
             cmd_dashboard(_ns(status=True))
         assert exc.value.code == 0
         out = capsys.readouterr().out
-        assert "No hermes dashboard processes running" in out
+        assert "No dashboard processes running" in out
 
     def test_status_with_processes(self, capsys):
         with patch("hermes_cli.main._find_stale_dashboard_pids",
@@ -46,7 +79,7 @@ class TestDashboardStatus:
         # Status is informational — always exits 0.
         assert exc.value.code == 0
         out = capsys.readouterr().out
-        assert "2 hermes dashboard process(es) running" in out
+        assert "2 dashboard process(es) running" in out
         assert "PID 12345" in out
         assert "PID 12346" in out
 
@@ -76,7 +109,7 @@ class TestDashboardStop:
             cmd_dashboard(_ns(stop=True))
         assert exc.value.code == 0
         out = capsys.readouterr().out
-        assert "No hermes dashboard processes running" in out
+        assert "No dashboard processes running" in out
 
     def test_stop_kills_and_exits_zero_when_all_killed(self, capsys):
         """After the kill, if the second scan returns empty we exit 0."""

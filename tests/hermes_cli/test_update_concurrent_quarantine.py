@@ -1,5 +1,5 @@
-"""Tests for issue #26670 — concurrent hermes.exe detection and improved
-quarantine retry / reboot-deferred fallback during `hermes update` on Windows.
+"""Tests for issue #26670 — concurrent CLI shim detection and improved
+quarantine retry / reboot-deferred fallback during Windows updates.
 
 These tests force ``_is_windows`` to return ``True`` via patching so the
 Windows-specific code paths can be exercised on any host.
@@ -31,7 +31,7 @@ pytestmark = pytest.mark.real_concurrent_gate
 # ---------------------------------------------------------------------------
 
 
-def _make_proc(pid: int, exe: str, name: str = "hermes.exe"):
+def _make_proc(pid: int, exe: str, name: str = "superforecasting-agent.exe"):
     """Build a duck-typed psutil Process stand-in with the .info dict."""
     proc = MagicMock()
     proc.info = {"pid": pid, "exe": exe, "name": name}
@@ -85,6 +85,21 @@ def test_detect_concurrent_finds_other_hermes_process(_winp, tmp_path):
 
 
 @patch.object(cli_main, "_is_windows", return_value=True)
+def test_detect_concurrent_finds_fork_native_process(_winp, tmp_path):
+    scripts_dir = tmp_path
+    shim = scripts_dir / "superforecasting-agent.exe"
+    shim.write_bytes(b"")
+
+    other_pid = os.getpid() + 10
+    procs = [_make_proc(other_pid, str(shim), "superforecasting-agent.exe")]
+    fake_psutil = types.SimpleNamespace(process_iter=lambda attrs: iter(procs))
+    with patch.dict(sys.modules, {"psutil": fake_psutil}):
+        result = cli_main._detect_concurrent_hermes_instances(scripts_dir)
+
+    assert result == [(other_pid, "superforecasting-agent.exe")]
+
+
+@patch.object(cli_main, "_is_windows", return_value=True)
 def test_detect_concurrent_matches_case_insensitively(_winp, tmp_path):
     scripts_dir = tmp_path
     shim = scripts_dir / "hermes.exe"
@@ -124,16 +139,17 @@ def test_detect_concurrent_is_noop_off_windows(_winp, tmp_path):
 
 
 def test_format_message_mentions_pids_and_remediation(tmp_path):
-    matches = [(1234, "hermes.exe"), (5678, "hermes.exe")]
+    matches = [(1234, "superforecasting-agent.exe"), (5678, "hermes.exe")]
     msg = cli_main._format_concurrent_instances_message(matches, tmp_path)
 
     assert "1234" in msg
     assert "5678" in msg
     assert "hermes.exe" in msg
-    assert "Hermes Desktop" in msg
+    assert "Superforecasting Agent" in msg
+    assert "superforecasting-agent.exe" in msg
     assert "--force" in msg
-    # Mentions the file that would have been overwritten
-    assert str(tmp_path / "hermes.exe") in msg
+    # Mentions the directory where generated shims would be overwritten.
+    assert str(tmp_path) in msg
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +265,7 @@ def test_quarantine_actionable_warning_when_everything_fails(
 
 @patch.object(cli_main, "_is_windows", return_value=True)
 def test_cmd_update_aborts_on_concurrent_instance(_winp, tmp_path, capsys):
-    """If another hermes.exe is running, the update bails out before
+    """If another CLI shim is running, the update bails out before
     touching the working tree (exit code 2)."""
     scripts_dir = tmp_path / "Scripts"
     scripts_dir.mkdir()
@@ -268,7 +284,7 @@ def test_cmd_update_aborts_on_concurrent_instance(_winp, tmp_path, capsys):
     ), patch.object(
         cli_main,
         "_detect_concurrent_hermes_instances",
-        return_value=[(4242, "hermes.exe")],
+        return_value=[(4242, "superforecasting-agent.exe")],
     ), patch.object(
         cli_main, "_run_pre_update_backup"
     ) as mock_backup, patch.object(

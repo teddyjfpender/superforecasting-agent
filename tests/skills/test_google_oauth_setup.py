@@ -258,7 +258,7 @@ class TestExchangeAuthCode:
         assert not setup_module.PENDING_AUTH_PATH.exists()
 
 
-class TestHermesConstantsFallback:
+class TestForecastHomeFallback:
     """Tests for _hermes_home.py fallback when hermes_constants is unavailable."""
 
     HELPER_PATH = (
@@ -275,41 +275,72 @@ class TestHermesConstantsFallback:
         spec.loader.exec_module(module)
         return module
 
+    def test_fallback_uses_superforecasting_agent_home_env_var(self, monkeypatch, tmp_path):
+        """When hermes_constants is missing, SUPERFORECASTING_AGENT_HOME wins."""
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path / "custom-agent"))
+        monkeypatch.setenv("FORECAST_HOME", str(tmp_path / "forecast"))
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "legacy"))
+        module = self._load_helper(monkeypatch)
+        assert module.get_hermes_home() == tmp_path / "custom-agent"
+
+    def test_fallback_uses_forecast_home_env_var(self, monkeypatch, tmp_path):
+        """FORECAST_HOME is the next fallback when the primary env var is unset."""
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_HOME", raising=False)
+        monkeypatch.setenv("FORECAST_HOME", str(tmp_path / "forecast"))
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "legacy"))
+        module = self._load_helper(monkeypatch)
+        assert module.get_hermes_home() == tmp_path / "forecast"
+
     def test_fallback_uses_hermes_home_env_var(self, monkeypatch, tmp_path):
-        """When hermes_constants is missing, HERMES_HOME comes from env var."""
+        """HERMES_HOME remains supported as the legacy compatibility env var."""
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_HOME", raising=False)
+        monkeypatch.delenv("FORECAST_HOME", raising=False)
         monkeypatch.setenv("HERMES_HOME", str(tmp_path / "custom-hermes"))
         module = self._load_helper(monkeypatch)
         assert module.get_hermes_home() == tmp_path / "custom-hermes"
 
-    def test_fallback_defaults_to_dot_hermes(self, monkeypatch):
-        """When hermes_constants is missing and HERMES_HOME unset, default to ~/.hermes."""
+    def test_fallback_defaults_to_dot_superforecasting_agent(self, monkeypatch):
+        """When hermes_constants is missing and env vars are unset, use the fork home."""
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_HOME", raising=False)
+        monkeypatch.delenv("FORECAST_HOME", raising=False)
         monkeypatch.delenv("HERMES_HOME", raising=False)
         module = self._load_helper(monkeypatch)
-        assert module.get_hermes_home() == Path.home() / ".hermes"
+        assert module.get_hermes_home() == Path.home() / ".superforecasting-agent"
 
     def test_fallback_ignores_empty_hermes_home(self, monkeypatch):
-        """Empty/whitespace HERMES_HOME is treated as unset."""
+        """Empty/whitespace home env vars are treated as unset."""
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", "  ")
+        monkeypatch.setenv("FORECAST_HOME", "  ")
         monkeypatch.setenv("HERMES_HOME", "  ")
         module = self._load_helper(monkeypatch)
-        assert module.get_hermes_home() == Path.home() / ".hermes"
+        assert module.get_hermes_home() == Path.home() / ".superforecasting-agent"
 
     def test_fallback_display_hermes_home_shortens_path(self, monkeypatch):
         """Fallback display_hermes_home() uses ~/ shorthand like the real one."""
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_HOME", raising=False)
+        monkeypatch.delenv("FORECAST_HOME", raising=False)
         monkeypatch.delenv("HERMES_HOME", raising=False)
         module = self._load_helper(monkeypatch)
-        assert module.display_hermes_home() == "~/.hermes"
+        assert module.display_hermes_home() == "~/.superforecasting-agent"
 
     def test_fallback_display_hermes_home_profile_path(self, monkeypatch):
         """Fallback display_hermes_home() handles profile paths under ~/."""
-        monkeypatch.setenv("HERMES_HOME", str(Path.home() / ".hermes/profiles/coder"))
+        monkeypatch.setenv(
+            "SUPERFORECASTING_AGENT_HOME",
+            str(Path.home() / ".superforecasting-agent/profiles/coder"),
+        )
+        monkeypatch.delenv("FORECAST_HOME", raising=False)
+        monkeypatch.delenv("HERMES_HOME", raising=False)
         module = self._load_helper(monkeypatch)
-        assert module.display_hermes_home() == "~/.hermes/profiles/coder"
+        assert module.display_hermes_home() == "~/.superforecasting-agent/profiles/coder"
 
     def test_fallback_display_hermes_home_custom_path(self, monkeypatch):
         """Fallback display_hermes_home() returns full path for non-home locations."""
-        monkeypatch.setenv("HERMES_HOME", "/opt/hermes-custom")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", "/opt/superforecasting-agent-custom")
+        monkeypatch.delenv("FORECAST_HOME", raising=False)
+        monkeypatch.delenv("HERMES_HOME", raising=False)
         module = self._load_helper(monkeypatch)
-        assert module.display_hermes_home() == "/opt/hermes-custom"
+        assert module.display_hermes_home() == "/opt/superforecasting-agent-custom"
 
     def test_delegates_to_hermes_constants_when_available(self):
         """When hermes_constants IS importable, _hermes_home delegates to it."""

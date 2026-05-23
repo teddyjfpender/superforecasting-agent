@@ -1,9 +1,9 @@
 """Nous Portal upstream adapter.
 
-Reads the user's Nous OAuth state from ``~/.hermes/auth.json`` through the
-shared runtime resolver, refreshes the access token and resolves the
-``agent_key`` compatibility credential when needed, then exposes the upstream
-base URL plus bearer for the proxy server to forward to.
+Reads the user's Nous OAuth state from the Superforecasting Agent auth store
+through the shared runtime resolver, refreshes the access token and resolves
+the ``agent_key`` compatibility credential when needed, then exposes the
+upstream base URL plus bearer for the proxy server to forward to.
 
 The ``agent_key`` field may hold either a NAS invoke JWT or the legacy
 opaque session key. The refresh helper handles both — see
@@ -49,6 +49,8 @@ _ALLOWED_PATHS: FrozenSet[str] = frozenset(
 
 class NousPortalAdapter(UpstreamAdapter):
     """Proxy upstream for the Nous Portal inference API."""
+
+    auth_hint = "superforecasting-agent auth add nous --type oauth"
 
     def __init__(self) -> None:
         # Serialize proxy requests in this process; cross-process token refresh
@@ -103,7 +105,8 @@ class NousPortalAdapter(UpstreamAdapter):
             state = self._read_state()
             if state is None:
                 raise RuntimeError(
-                    "Not logged into Nous Portal. Run `hermes login nous` first."
+                    "Not logged into Nous Portal. Run "
+                    "`superforecasting-agent auth add nous --type oauth` first."
                 )
 
             try:
@@ -134,7 +137,8 @@ class NousPortalAdapter(UpstreamAdapter):
             if not agent_key:
                 raise RuntimeError(
                     "Nous Portal refresh did not return a usable agent_key. "
-                    "Try `hermes login nous` to re-authenticate."
+                    "Try `superforecasting-agent auth add nous --type oauth` "
+                    "to re-authenticate."
                 )
 
             base_url = refreshed.get("base_url") or DEFAULT_NOUS_INFERENCE_URL

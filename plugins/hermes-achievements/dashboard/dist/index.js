@@ -263,7 +263,7 @@
     ctx.fillStyle = "#8b95a8";
     ctx.font = "600 20px ui-monospace, 'SF Mono', Menlo, monospace";
     ctx.textBaseline = "bottom";
-    ctx.fillText("HERMES AGENT  ·  hermes-agent.nousresearch.com", 70, H - 40);
+    ctx.fillText("SUPERFORECASTING AGENT  ·  superforecasting-agent.nousresearch.com", 70, H - 40);
 
     // "UNLOCKED" stamp upper-right
     ctx.textBaseline = "top";
@@ -341,11 +341,11 @@
     // paste in the same flow.
     function tweetText() {
       const tierPart = achievement.tier ? (achievement.tier + " tier ") : "";
-      const tmpl = tx(t, "share.tweet_text", "Just unlocked {tier_part}\"{name}\" in Hermes Agent ☤", {
+      const tmpl = tx(t, "share.tweet_text", "Just unlocked {tier_part}\"{name}\" in Superforecasting Agent", {
         tier_part: tierPart,
         name: achievement.name,
       });
-      return tmpl + "\n\n@NousResearch · https://hermes-agent.nousresearch.com";
+      return tmpl + "\n\n@NousResearch · https://superforecasting-agent.nousresearch.com";
     }
 
     function shareOnX() {

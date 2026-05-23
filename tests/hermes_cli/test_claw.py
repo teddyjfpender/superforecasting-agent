@@ -1,4 +1,4 @@
-"""Tests for hermes claw commands."""
+"""Tests for OpenClaw migration commands."""
 
 from argparse import Namespace
 import subprocess
@@ -186,8 +186,10 @@ class TestClawCommand:
         args = Namespace(claw_action=None)
         claw_mod.claw_command(args)
         captured = capsys.readouterr()
+        assert "Usage: superforecasting-agent claw <command> [options]" in captured.out
         assert "migrate" in captured.out
         assert "cleanup" in captured.out
+        assert "hermes claw" not in captured.out
 
 
 # ---------------------------------------------------------------------------

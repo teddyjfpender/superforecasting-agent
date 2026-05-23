@@ -66,8 +66,8 @@ export interface ConfigDisplayConfig {
   tui_compact?: boolean
   /** Legacy alias for display.mouse_tracking. */
   tui_mouse?: boolean | null | number | string
-  // Forward-compat: backend may send styles this client doesn't know yet —
-  // `normalizeIndicatorStyle` falls back to 'kaomoji' for those — but the
+  // Forward-compat: backend may send styles this client doesn't know yet.
+  // `normalizeIndicatorStyle` falls back to 'unicode' for those, but the
   // wire type is documented as `string` so consumers don't get a false
   // narrowing-and-autocomplete contract on a value that requires runtime
   // validation anyway.
@@ -177,6 +177,179 @@ export interface SessionUsageResponse {
 }
 
 export interface SessionStatusResponse {
+  output?: string
+}
+
+export interface ForecastDashboardResponse {
+  output?: string
+  summary?: ForecastDashboardSummary
+}
+
+export interface ForecastDashboardSummary {
+  active_count?: number
+  alerts?: ForecastDashboardAlert[]
+  calibration?: ForecastDashboardCalibration
+  evidence_status?: ForecastDashboardEvidenceStatus
+  learning?: ForecastDashboardLearning
+  open_alert_count?: number
+  product?: string
+  questions?: ForecastDashboardQuestion[]
+  review_queue?: ForecastDashboardReview[]
+  review_queue_count?: number
+  recent_backtests?: ForecastDashboardBacktest[]
+}
+
+export interface ForecastDashboardAlert {
+  acknowledged_at?: null | string
+  created_at?: string
+  id?: string
+  reason?: string
+  recommended_action?: string
+  scope_ref?: string
+  scope_type?: string
+  severity?: string
+}
+
+export interface ForecastDashboardEvidenceStatus {
+  backtests?: {
+    agent_protocol_scored_count?: number
+    distinct_dataset_count?: number
+    leakage_free_run_count?: number
+    positive_best_baseline_edge_run_count?: number
+    run_count?: number
+  }
+  can_claim_live_superforecasting?: boolean
+  gaps?: string[]
+  message?: string
+  next_actions?: Array<{
+    action?: string
+    requirement_id?: string
+  }>
+  requirements?: Array<{
+    description?: string
+    id?: string
+    observed?: number
+    passed?: boolean
+    required?: number
+    recommended_action?: string
+  }>
+  score_counts?: {
+    backtest?: number
+    imported_baseline?: number
+    live?: number
+  }
+  verdict?: string
+}
+
+export interface ForecastDashboardCalibration {
+  calibration_eligible?: boolean | null
+  count?: number
+  domain?: null | string
+  forecast_origin?: null | string
+  horizon?: null | string
+  mean_brier?: null | number
+  mean_log_score?: null | number
+  mean_sharpness?: null | number
+}
+
+export interface ForecastDashboardBacktest {
+  agent_edge?: null | number
+  agent_mean_brier?: null | number
+  best_baseline?: null | string
+  best_baseline_brier?: null | number
+  case_count?: number
+  claim_status?: ForecastDashboardClaimStatus
+  dataset?: string
+  id?: string
+  leakage_checks_passed?: boolean
+  paired_agent_edge?: null | number
+  paired_agent_edge_ci95_high?: null | number
+  paired_agent_edge_ci95_low?: null | number
+  paired_agent_wins?: number
+  paired_baseline_wins?: number
+  paired_count?: number
+  paired_ties?: number
+  probability_sources?: string[]
+}
+
+export interface ForecastDashboardClaimStatus {
+  can_claim_live_superforecasting?: boolean
+  case_count?: number
+  evidence_type?: string
+  leakage_checks_passed?: boolean
+  message?: string
+  scored_count?: number
+  verdict?: string
+}
+
+export interface ForecastDashboardErrorProfile {
+  domain?: null | string
+  id?: string
+  mean_brier?: null | number
+  question_type?: null | string
+  recommended_adjustments?: string[]
+  recurring_errors?: string[]
+  sample_count?: number
+  topic?: null | string
+  updated_at?: null | string
+}
+
+export interface ForecastDashboardLesson {
+  confidence?: null | number
+  id?: string
+  lesson?: string
+  recommended_adjustment?: Record<string, unknown>
+  scope_ref?: null | string
+  scope_type?: null | string
+  source_postmortem_count?: number
+  source_score_count?: number
+  status?: string
+  updated_at?: null | string
+}
+
+export interface ForecastDashboardLearning {
+  active_lessons?: number
+  invalidated_lessons?: number
+  recent_lessons?: ForecastDashboardLesson[]
+  tentative_lessons?: number
+  top_error_profiles?: ForecastDashboardErrorProfile[]
+  total_lessons?: number
+}
+
+export interface ForecastDashboardQuestion {
+  as_of?: null | string
+  baseline_count?: number
+  close_time?: null | string
+  confidence?: null | number
+  delta?: null | number
+  domain?: null | string
+  evidence_count?: number
+  id?: string
+  open_alert_count?: number
+  open_assumption_count?: number
+  probability?: null | number | Record<string, unknown> | string
+  resolution_time?: null | string
+  stale_assumption_count?: number
+  status?: string
+  title?: string
+  topics?: string[]
+}
+
+export interface ForecastDashboardReview {
+  as_of?: null | string
+  close_time?: null | string
+  domain?: null | string
+  id?: string
+  next_action?: string
+  priority?: number
+  probability?: null | number | Record<string, unknown> | string
+  reasons?: string[]
+  resolution_time?: null | string
+  title?: string
+}
+
+export interface ForecastCommandResponse {
+  code?: number
   output?: string
 }
 

@@ -1,21 +1,21 @@
 ---
 title: "Register a Microsoft Graph Application"
-description: "Azure portal walkthrough for creating the app registration that powers the Teams meeting pipeline"
+description: "Azure portal walkthrough for creating the app registration that powers Teams meeting evidence capture"
 ---
 
 # Register a Microsoft Graph Application
 
-The Teams meeting pipeline reads meeting transcripts, recordings, and related artifacts from Microsoft Graph using **app-only** (daemon) authentication — no user sign-in, no interactive consent per meeting. That requires an Azure AD application registration with admin-consented application permissions.
+The Teams meeting evidence pipeline reads meeting transcripts, recordings, and related artifacts from Microsoft Graph using **app-only** (daemon) authentication — no user sign-in, no interactive consent per meeting. That requires an Azure AD application registration with admin-consented application permissions.
 
 This guide walks through:
 
 1. Creating the app registration
 2. Creating a client secret
-3. Granting the Graph API permissions the pipeline needs
+3. Granting the Graph API permissions the evidence pipeline needs
 4. Admin-consenting those permissions
 5. (Optional) Scoping the app to specific users with an Application Access Policy
 
-You need **tenant admin rights** (or an admin to grant consent on your behalf) to finish this. Bookmark the values you collect — they go into `~/.hermes/.env` at the end.
+You need **tenant admin rights** (or an admin to grant consent on your behalf) to finish this. Bookmark the values you collect — they go into `~/.superforecasting-agent/.env` at the end.
 
 ## Prerequisites
 
@@ -29,7 +29,7 @@ You need **tenant admin rights** (or an admin to grant consent on your behalf) t
 2. Navigate to **Identity → Applications → App registrations**.
 3. Click **New registration**.
 4. Fill in:
-   - **Name:** `Hermes Teams Meeting Pipeline` (or any name you'll recognize).
+   - **Name:** `Superforecasting Agent Teams Evidence Pipeline` (or any name you'll recognize).
    - **Supported account types:** *Accounts in this organizational directory only (Single tenant)*.
    - **Redirect URI:** leave blank — app-only auth does not need one.
 5. Click **Register**.
@@ -43,7 +43,7 @@ You'll land on the app's overview page. Copy two values:
 
 1. In the left nav, open **Certificates & secrets**.
 2. Click **New client secret**.
-3. **Description:** `hermes-graph-secret`. **Expires:** pick a value that matches your rotation policy (6-24 months is typical).
+3. **Description:** `superforecasting-agent-graph-secret`. **Expires:** pick a value that matches your rotation policy (6-24 months is typical).
 4. Click **Add**.
 5. Copy the **Value** column immediately — it's only shown once. That value is `MSGRAPH_CLIENT_SECRET`.
 
@@ -51,14 +51,14 @@ You'll land on the app's overview page. Copy two values:
 
 ## Step 3: Grant Graph API Permissions
 
-The pipeline uses a minimum-viable set of application permissions. Add only what you need; each one widens what the app can read tenant-wide.
+The evidence pipeline uses a minimum-viable set of application permissions. Add only what you need; each one widens what the app can read tenant-wide.
 
 1. In the left nav, open **API permissions**.
 2. Click **Add a permission** → **Microsoft Graph** → **Application permissions**.
-3. Add the permissions from the table below that match what you want the pipeline to do.
+3. Add the permissions from the table below that match what you want the evidence pipeline to do.
 4. After adding, click **Grant admin consent for `<your tenant>`**. The Status column should flip to a green checkmark for every permission.
 
-### Required for transcript-first summaries
+### Required for transcript-first evidence capture
 
 | Permission | What it lets the app do |
 |------------|--------------------------|
@@ -72,9 +72,9 @@ The pipeline uses a minimum-viable set of application permissions. Add only what
 | `OnlineMeetingRecording.Read.All` | Download Teams meeting recordings for offline STT processing. |
 | `CallRecords.Read.All` | Resolve meetings from call records when only the join URL is known. |
 
-### Required for outbound summary delivery (Graph mode only)
+### Required for outbound review delivery (Graph mode only)
 
-If `platforms.teams.extra.delivery_mode` is `graph`, the pipeline posts summaries into a Teams channel or chat via the Graph API. Skip these if you use `incoming_webhook` delivery mode instead.
+If `platforms.teams.extra.delivery_mode` is `graph`, the pipeline posts review notices or evidence summaries into a Teams channel or chat via the Graph API. Skip these if you use `incoming_webhook` delivery mode instead.
 
 | Permission | What it lets the app do |
 |------------|--------------------------|
@@ -83,8 +83,8 @@ If `platforms.teams.extra.delivery_mode` is `graph`, the pipeline posts summarie
 
 ### Not recommended
 
-- `OnlineMeetings.ReadWrite.All` / `Chat.ReadWrite` without `.All` — broader than the pipeline needs.
-- Delegated permissions — the pipeline uses app-only (client-credentials) flow; delegated permissions won't work without user sign-in.
+- `OnlineMeetings.ReadWrite.All` / `Chat.ReadWrite` without `.All` — broader than the evidence pipeline needs.
+- Delegated permissions — the evidence pipeline uses app-only (client-credentials) flow; delegated permissions won't work without user sign-in.
 
 ## Step 4: (Recommended) Scope the App with an Application Access Policy
 
@@ -95,19 +95,19 @@ Microsoft provides **Application Access Policies** for Teams exactly for this. T
 From an admin PowerShell with the MicrosoftTeams module installed and connected (`Connect-MicrosoftTeams`):
 
 ```powershell
-# Create a policy scoped to the Hermes app
+# Create a policy scoped to the Superforecasting Agent app
 New-CsApplicationAccessPolicy `
-  -Identity "Hermes-Meeting-Pipeline-Policy" `
+  -Identity "SuperforecastingAgent-Meeting-Evidence-Policy" `
   -AppIds "<MSGRAPH_CLIENT_ID>" `
-  -Description "Restrict Hermes meeting pipeline to allow-listed users"
+  -Description "Restrict Superforecasting Agent meeting evidence capture to allow-listed users"
 
-# Grant the policy to specific users whose meetings the pipeline may read
+# Grant the policy to specific users whose meetings the evidence pipeline may read
 Grant-CsApplicationAccessPolicy `
-  -PolicyName "Hermes-Meeting-Pipeline-Policy" `
+  -PolicyName "SuperforecastingAgent-Meeting-Evidence-Policy" `
   -Identity "alice@example.com"
 
 Grant-CsApplicationAccessPolicy `
-  -PolicyName "Hermes-Meeting-Pipeline-Policy" `
+  -PolicyName "SuperforecastingAgent-Meeting-Evidence-Policy" `
   -Identity "bob@example.com"
 ```
 
@@ -121,7 +121,7 @@ Without the policy, **any** user's meetings are readable — that's what the per
 
 ## Step 5: Write the Credentials to Your Env File
 
-Put the three values you collected into `~/.hermes/.env`:
+Put the three values you collected into `~/.superforecasting-agent/.env`:
 
 ```bash
 MSGRAPH_TENANT_ID=<directory-tenant-id>
@@ -132,12 +132,12 @@ MSGRAPH_CLIENT_SECRET=<client-secret-value>
 Set file permissions so only you can read the secret:
 
 ```bash
-chmod 600 ~/.hermes/.env
+chmod 600 ~/.superforecasting-agent/.env
 ```
 
 ## Step 6: Verify the Token Flow
 
-Hermes ships a Graph auth smoke-test. From your Hermes install:
+Superforecasting Agent ships a Graph auth smoke test. From your fork checkout or installed environment:
 
 ```python
 python -c "
@@ -164,8 +164,8 @@ A successful run prints a long token string and a health dict showing `cached: T
 Azure client secrets have a hard expiry. Before yours expires:
 
 1. Create a second client secret in step 2 without deleting the first one.
-2. Update `MSGRAPH_CLIENT_SECRET` in `~/.hermes/.env` with the new value.
-3. Restart the gateway so the new secret is picked up: `hermes gateway restart`.
+2. Update `MSGRAPH_CLIENT_SECRET` in `~/.superforecasting-agent/.env` with the new value.
+3. Restart the gateway so the new secret is picked up: `superforecasting-agent gateway restart`.
 4. Verify with the smoke test above.
 5. Delete the old secret from the Azure portal.
 
@@ -174,7 +174,7 @@ Azure client secrets have a hard expiry. Before yours expires:
 Once credentials verify cleanly, continue with:
 
 - **Webhook listener setup** — stand up the `msgraph_webhook` gateway platform that receives Graph change notifications.
-- **Pipeline configuration** — configure the Teams meeting pipeline runtime and operator CLI.
-- **Outbound delivery** — wire summaries back into a Teams channel or chat.
+- **Pipeline configuration** — configure the Teams meeting evidence runtime and operator CLI.
+- **Outbound delivery** — wire evidence-review notices back into a Teams channel or chat.
 
 Those pages land alongside the PRs that add the corresponding runtime. This credentials setup is a standalone prerequisite and is safe to complete in advance.

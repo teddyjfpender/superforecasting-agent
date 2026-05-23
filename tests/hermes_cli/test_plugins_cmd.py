@@ -244,6 +244,28 @@ class TestCmdInstall:
             cmd_install("invalid")
         assert exc_info.value.code == 1
 
+    def test_install_missing_plugin_files_warning_is_forecast_native(
+        self,
+        monkeypatch,
+        tmp_path,
+        capsys,
+    ):
+        import hermes_cli.plugins_cmd as pc
+
+        target = tmp_path / "bad-plugin"
+        target.mkdir()
+
+        monkeypatch.setattr(pc, "_resolve_git_url", lambda identifier: "https://example.com/repo.git")
+        monkeypatch.setattr(pc, "_install_plugin_core", lambda identifier, force=False: (target, {}, "bad-plugin"))
+        monkeypatch.setattr(pc, "_prompt_plugin_env_vars", lambda manifest, console: None)
+        monkeypatch.setattr(pc, "_display_after_install", lambda target, identifier: None)
+
+        pc.cmd_install("owner/repo", enable=False)
+
+        out = capsys.readouterr().out
+        assert "valid Superforecasting Agent plugin" in out
+        assert "valid Hermes plugin" not in out
+
     @patch("hermes_cli.plugins_cmd._display_after_install")
     @patch("hermes_cli.plugins_cmd.shutil.move")
     @patch("hermes_cli.plugins_cmd.shutil.rmtree")

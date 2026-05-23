@@ -1,64 +1,92 @@
 ---
 sidebar_position: 11
 title: "ACP Editor Integration"
-description: "Use Hermes Agent inside ACP-compatible editors such as VS Code, Zed, and JetBrains"
+description: "Use the forecast desk inside ACP-compatible editors."
 ---
 
 # ACP Editor Integration
 
-Hermes Agent can run as an ACP server, letting ACP-compatible editors talk to Hermes over stdio and render:
+Superforecasting Agent can run as an [Agent Client Protocol](https://agentclientprotocol.com/) server so ACP-compatible editors can talk to the runtime over stdio and render:
 
-- chat messages
+- forecast-scoped chat messages
 - tool activity
 - file diffs
 - terminal commands
 - approval prompts
-- streamed thinking / response chunks
+- streamed reasoning and response chunks
 
-ACP is a good fit when you want Hermes to behave like an editor-native coding agent instead of a standalone CLI or messaging bot.
+ACP is an editor surface, not the primary product. Use it when forecast work naturally happens inside a repository or data workspace, such as source-adapter development, benchmark fixture review, model-script debugging, evidence extraction, or PR/release evidence analysis.
 
-## What Hermes exposes in ACP mode
+Durable forecast state still belongs in the forecast ledger. Editor chat, file diffs, and terminal output do not become scoreable evidence, model runs, forecast snapshots, resolutions, scores, postmortems, or calibration lessons unless an explicit forecast command or tool writes those records.
 
-Hermes runs with a curated `hermes-acp` toolset designed for editor workflows. It includes:
+## What ACP Exposes
+
+ACP runs with a curated `hermes-acp` toolset name for compatibility with the inherited runtime. The product-facing surface is Superforecasting Agent; the toolset identifier remains legacy.
+
+The ACP toolset is designed for editor workflows and includes:
 
 - file tools: `read_file`, `write_file`, `patch`, `search_files`
 - terminal tools: `terminal`, `process`
-- web/browser tools
-- memory, todo, session search
+- web and browser tools when configured
 - skills
-- execute_code and delegate_task
+- memory/session recall for non-scoreable context
+- `execute_code`
+- `delegate_task`
 - vision
 
-It intentionally excludes things that do not fit typical editor UX, such as messaging delivery and cronjob management.
+ACP intentionally excludes features that do not fit editor UX, such as messaging delivery and cron management. Use the CLI, TUI, dashboard, gateway, or `forecast schedule` for standing forecast review and alerting.
 
 ## Installation
 
-Install Hermes normally, then add the ACP extra:
+Install Superforecasting Agent normally, then add the ACP extra:
 
 ```bash
 pip install -e '.[acp]'
 ```
 
+or from the package:
+
+```bash
+pip install 'superforecasting-agent[acp]'
+```
+
 This installs the `agent-client-protocol` dependency and enables:
 
-- `hermes acp`
-- `hermes-acp`
+- `superforecasting-agent acp`
+- `superforecasting-agent-acp` and `superforecast-acp` as fork-native direct scripts
+- `hermes-acp` as the inherited compatibility script
 - `python -m acp_adapter`
 
-For Zed registry installs, Zed launches Hermes through the official ACP Registry entry. That entry uses a `uvx` distribution that runs:
+### Registry Compatibility
+
+The current source registry manifest under `acp_registry/agent.json` still targets the inherited ACP Registry entry:
 
 ```bash
 uvx --from 'hermes-agent[acp]==<version>' hermes-acp
 ```
 
-Make sure `uv` is available on `PATH` before using the registry install path.
-
-## Launching the ACP server
-
-Any of the following starts Hermes in ACP mode:
+That path is kept for compatibility with existing ACP registry clients and release tests. Fork-native manual setup should prefer:
 
 ```bash
-hermes acp
+superforecasting-agent acp
+```
+
+When a fork-native public ACP registry entry is published, it should point at `superforecasting-agent[acp]` while preserving a compatibility note for `hermes-acp`.
+
+## Launching the ACP Server
+
+Any of these starts the ACP server:
+
+```bash
+superforecasting-agent acp
+```
+
+```bash
+superforecasting-agent-acp
+```
+
+```bash
+superforecast-acp
 ```
 
 ```bash
@@ -69,83 +97,79 @@ hermes-acp
 python -m acp_adapter
 ```
 
-Hermes logs to stderr so stdout remains reserved for ACP JSON-RPC traffic.
+The adapter logs to stderr so stdout remains reserved for ACP JSON-RPC traffic.
 
 For non-interactive checks:
 
 ```bash
-hermes acp --version
-hermes acp --check
+superforecasting-agent acp --version
+superforecasting-agent acp --check
 ```
 
-### Browser tools (optional)
+### Browser Tools
 
-Browser tools (`browser_navigate`, `browser_click`, etc.) depend on the
-`agent-browser` npm package and Chromium, which aren't part of the Python
-wheel. Install them with:
+Browser tools such as `browser_navigate` and `browser_click` depend on the `agent-browser` npm package and Chromium. They are optional for ACP.
+
+Install them with:
 
 ```bash
-hermes acp --setup-browser           # interactive (prompts before ~400 MB download)
-hermes acp --setup-browser --yes     # accept the download non-interactively
+superforecasting-agent acp --setup-browser
+superforecasting-agent acp --setup-browser --yes
 ```
 
-This is the standalone command. The Zed registry's terminal-auth flow (`hermes acp --setup`) also offers the browser bootstrap as a follow-up question after model selection, so most users never need to run `--setup-browser` directly.
+The Zed registry terminal-auth flow may still invoke the compatibility command `hermes acp --setup`. It offers the same browser bootstrap after provider/model setup.
 
-What it does:
+What browser setup does:
 
-- Installs Node.js 22 LTS into `~/.hermes/node/` if missing
-- `npm install -g agent-browser @askjo/camofox-browser` into that prefix (no sudo needed — `npm`'s `--prefix` points at the user-writable Hermes-managed Node)
-- Installs Playwright Chromium, or uses a detected system Chrome/Chromium when available
+- Installs Node.js 22 LTS into `~/.superforecasting-agent/node/` when missing.
+- Installs `agent-browser` and `@askjo/camofox-browser` into that user-writable prefix.
+- Installs Playwright Chromium, or uses a detected system Chrome/Chromium.
 
-The bootstrap is idempotent — re-running it is fast and skips work that's already done.
+Legacy installs may use `~/.hermes/node/` during migration.
 
-## Editor setup
+## Editor Setup
 
 ### VS Code
 
-Install the [ACP Client](https://marketplace.visualstudio.com/items?itemName=formulahendry.acp-client) extension.
+Install an ACP-compatible client, such as the [ACP Client](https://marketplace.visualstudio.com/items?itemName=formulahendry.acp-client) extension.
 
-To connect:
-
-1. Open the ACP Client panel from the Activity Bar.
-2. Select **Hermes Agent** from the built-in agent list.
-3. Connect and start chatting.
-
-If you want to define Hermes manually, add it through VS Code settings under `acp.agents`:
+Manual settings example:
 
 ```json
 {
   "acp.agents": {
-    "Hermes Agent": {
-      "command": "hermes",
+    "Superforecasting Agent": {
+      "command": "superforecasting-agent",
       "args": ["acp"]
     }
   }
 }
 ```
 
+If your editor only has the old built-in entry, select **Hermes Agent** as a compatibility entry and confirm it launches the same local runtime.
+
 ### Zed
 
-Zed v0.221.x and newer installs external agents through the official ACP Registry.
+Zed v0.221.x and newer installs external agents through the ACP Registry.
 
 1. Open the Agent Panel.
-2. Click **Add Agent**, or run the `zed: acp registry` command.
-3. Search for **Hermes Agent**.
-4. Install it and start a new Hermes external-agent thread.
+2. Click **Add Agent**, or run `zed: acp registry`.
+3. Search for the available Superforecasting Agent entry. If only **Hermes Agent** is available, that is the current compatibility registry entry.
+4. Install it and start a new external-agent thread.
 
 Prerequisites:
 
-- Configure Hermes provider credentials first with `hermes model`, or set them in `~/.hermes/.env` / `~/.hermes/config.yaml`.
-- Install `uv` so the registry launcher can run `uvx --from 'hermes-agent[acp]==<version>' hermes-acp`.
+- Configure provider credentials with `superforecasting-agent model`, or set them in `~/.superforecasting-agent/.env` and `~/.superforecasting-agent/config.yaml`.
+- Install `uv` if launching from the registry entry.
 
-For local development before the registry entry is available, use a custom agent server in Zed settings:
+For local development, use a custom agent server:
 
 ```json
 {
   "agent_servers": {
-    "hermes-agent": {
+    "superforecasting-agent": {
       "type": "custom",
-      "command": "hermes",
+      "command": "superforecasting-agent",
       "args": ["acp"]
     }
   }
@@ -154,45 +178,52 @@ For local development before the registry entry is available, use a custom agent
 
 ### JetBrains
 
-Use an ACP-compatible plugin and point it at:
+Use an ACP-compatible plugin and point it at the local ACP adapter command:
 
 ```text
-/path/to/hermes-agent/acp_registry
+superforecasting-agent acp
 ```
 
-## Registry manifest
+If the plugin expects a registry directory, the inherited source copy currently lives at:
 
-The source copy of Hermes' official ACP Registry metadata lives at:
+```text
+acp_registry/
+```
+
+## Registry Manifest
+
+The source copy of ACP Registry metadata lives at:
 
 ```text
 acp_registry/agent.json
 acp_registry/icon.svg
 ```
 
-The upstream registry PR copies those files into the top-level `hermes-agent/` directory in `agentclientprotocol/registry`.
-
-The registry entry uses a `uvx` distribution that points directly at the `hermes-agent` PyPI release:
+At the time of this fork pass, the manifest is still the inherited registry entry and uses:
 
 ```text
 uvx --from 'hermes-agent[acp]==<version>' hermes-acp
 ```
 
-The registry CI verifies that the pinned version exists on PyPI, so the manifest's `version` and uvx `package` pin must always match `pyproject.toml`. `scripts/release.py` keeps them in lockstep automatically.
+That is a compatibility surface, not the desired long-term fork identity. The package-level fork already exposes `superforecasting-agent acp`; the registry manifest should move to `superforecasting-agent[acp]` when the public registry migration is ready and its tests are updated accordingly.
 
-## Configuration and credentials
+## Configuration and Credentials
 
-ACP mode uses the same Hermes configuration as the CLI:
+ACP mode uses the same runtime configuration as the CLI:
 
-- `~/.hermes/.env`
-- `~/.hermes/config.yaml`
-- `~/.hermes/skills/`
-- `~/.hermes/state.db`
+- `~/.superforecasting-agent/.env`
+- `~/.superforecasting-agent/config.yaml`
+- `~/.superforecasting-agent/skills/`
+- forecast ledger state under the active profile
+- runtime session/log state under the active profile
 
-Provider resolution uses Hermes' normal runtime resolver, so ACP inherits the currently configured provider and credentials. Hermes also advertises a terminal auth method (`--setup`) for first-run registry clients; this opens Hermes' interactive model/provider setup.
+Provider resolution uses the same model/provider resolver as the CLI, so ACP inherits configured providers, credentials, fallback settings, and auxiliary model settings. Registry clients can also trigger terminal setup, which runs the same interactive provider/model flow.
 
-## Session behavior
+Legacy registry clients and migrated homes may still read `~/.hermes/.env`, `~/.hermes/config.yaml`, and `~/.hermes/skills/`.
 
-ACP sessions are tracked by the ACP adapter's in-memory session manager while the server is running.
+## Session Behavior
+
+ACP sessions are tracked by the adapter's in-memory session manager while the server is running.
 
 Each session stores:
 
@@ -202,75 +233,92 @@ Each session stores:
 - current conversation history
 - cancel event
 
-The underlying `AIAgent` still uses Hermes' normal persistence/logging paths, but ACP `list/load/resume/fork` are scoped to the currently running ACP server process.
+The underlying `AIAgent` still uses the shared runtime persistence and logging paths. ACP `list`, `load`, `resume`, and `fork` are scoped to the currently running ACP server process.
 
-## Working directory behavior
+Conversation history is not forecast memory. To inspect or change durable forecast state from an editor, use `forecast show`, `forecast review`, `forecast evidence add`, `forecast update`, `forecast resolve`, `forecast score`, or the agent-facing forecast ledger tool.
 
-ACP sessions bind the editor's cwd to the Hermes task ID so file and terminal tools run relative to the editor workspace, not the server process cwd.
+## Working Directory Behavior
+
+ACP sessions bind the editor's cwd to the task ID so file and terminal tools run relative to the editor workspace, not the server process cwd.
+
+This is useful for:
+
+- editing source adapters
+- reviewing benchmark datasets
+- maintaining forecast-analysis scripts
+- inspecting repository events as evidence
+- writing or testing forecast skills
 
 ## Approvals
 
 Dangerous terminal commands can be routed back to the editor as approval prompts. ACP approval options are simpler than the CLI flow:
 
 - allow once
+- allow for session
 - allow always
 - deny
 
 On timeout or error, the approval bridge denies the request.
 
-### Session-scoped edit auto-approval
+### Session-Scoped Edit Auto-Approval
 
-ACP exposes a third tier between *allow once* and *allow always*: **Allow for session**. Picking it from the editor's permission prompt records the approval inside the current ACP session only — every subsequent matching command in that session goes through without prompting, but a new ACP session (or restarting the editor) resets the slate and re-prompts the first time.
+ACP exposes a middle tier between **allow once** and **allow always**: **Allow for session**.
 
 | Option | Editor label | Scope | Persisted across restarts |
-|---|---|---|---|
-| `allow_once` | Allow once | This one tool call | No |
-| `allow_session` | Allow for session | All matching calls in this ACP session | No — cleared when the session ends |
-| `allow_always` | Allow always | All future sessions | Yes (written to the Hermes permanent allowlist) |
-| `deny` | Deny | This one tool call | No |
+|--------|--------------|-------|---------------------------|
+| `allow_once` | Allow once | This tool call | No |
+| `allow_session` | Allow for session | Matching calls in this ACP session | No |
+| `allow_always` | Allow always | Matching calls in future sessions | Yes |
+| `deny` | Deny | This tool call | No |
 
-`allow_session` is the right default for an editor workflow where you trust an agent for the duration of a task but don't want to grant a long-lived allowlist entry. The safety trade-off is straightforward: the broader the scope, the less the editor will interrupt you, and the more damage a misbehaving agent (or prompt injection) can do before you notice. Start with `allow_once` for unfamiliar commands; promote to `allow_session` once you've seen the agent run the same pattern correctly a few times; reserve `allow_always` for truly idempotent commands you trust forever (e.g. `git status`).
+For forecast work, start with `allow_once` for unfamiliar commands. Promote to `allow_session` after you have seen the same pattern run safely. Reserve `allow_always` for idempotent commands such as `git status` or read-only inspection.
 
-The ACP bridge maps these options onto Hermes' internal approval semantics — `allow_always` writes a permanent allowlist entry the same way the CLI does, while `allow_session` only affects the in-process approval cache for the current ACP session.
+The ACP bridge maps these options onto the runtime's internal approval semantics. `allow_always` writes a permanent allowlist entry, while `allow_session` only affects the current ACP session.
 
 ## Troubleshooting
 
-### ACP agent does not appear in the editor
+### ACP Agent Does Not Appear in the Editor
 
 Check:
 
-- In Zed, open the ACP Registry with `zed: acp registry` and search for **Hermes Agent**.
-- For manual/local development, verify the custom `agent_servers` command points to `hermes acp`.
-- Hermes is installed and on your PATH.
-- The ACP extra is installed (`pip install -e '.[acp]'`).
-- `uv` is installed if launching from the official Zed registry entry.
+- In Zed, open the ACP Registry with `zed: acp registry`.
+- For manual/local development, verify the custom command points to `superforecasting-agent acp`.
+- Superforecasting Agent is installed and on your `PATH`.
+- The ACP extra is installed with `pip install -e '.[acp]'` or `pip install 'superforecasting-agent[acp]'`.
+- `uv` is installed if launching from a registry entry.
 
-### ACP starts but immediately errors
+### ACP Starts but Immediately Errors
 
-Try these checks:
-
-```bash
-hermes acp --version
-hermes acp --check
-hermes doctor
-hermes status
-```
-
-### Missing credentials
-
-ACP mode uses Hermes' existing provider setup. Configure credentials with:
+Try:
 
 ```bash
-hermes model
+superforecasting-agent acp --version
+superforecasting-agent acp --check
+superforecasting-agent doctor
+superforecasting-agent status
 ```
 
-or by editing `~/.hermes/.env`. Registry clients can also trigger Hermes' terminal auth flow, which runs the same interactive provider/model setup.
+If the editor launched the compatibility registry entry, also check:
 
-### Zed registry launcher cannot find uv
+```bash
+hermes-acp --version
+```
 
-Install `uv` from the official uv installation docs, then retry the Hermes Agent thread from Zed.
+### Missing Credentials
 
-## See also
+ACP mode uses the existing provider setup. Configure credentials with:
+
+```bash
+superforecasting-agent model
+```
+
+or by editing `~/.superforecasting-agent/.env`. Registry clients can also trigger terminal setup, which runs the same provider/model flow.
+
+### Zed Registry Launcher Cannot Find `uv`
+
+Install `uv` from the official uv installation docs, then retry the external-agent thread.
+
+## See Also
 
 - [ACP Internals](../../developer-guide/acp-internals.md)
 - [Provider Runtime Resolution](../../developer-guide/provider-runtime.md)

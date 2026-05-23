@@ -1,7 +1,11 @@
 # Trajectory Format
 
-Hermes Agent saves conversation trajectories in ShareGPT-compatible JSONL format
-for use as training data, debugging artifacts, and reinforcement learning datasets.
+Superforecasting Agent can save inherited conversation trajectories in
+ShareGPT-compatible JSONL format for training data, debugging artifacts, and
+reinforcement learning datasets. These trajectories capture conversation/tool
+behavior. They are **not** the forecast ledger and should not be used as the
+source of truth for probabilities, evidence, scores, postmortems, or
+calibration lessons.
 
 Source files: `agent/trajectory.py`, `run_agent.py` (search for `_save_trajectory`), `batch_runner.py`
 
@@ -165,7 +169,7 @@ turn with XML-wrapped JSON responses:
 ### System Message
 
 The system message is generated at save time (not taken from the conversation).
-It follows the Hermes function-calling prompt template with:
+It follows the inherited Hermes function-calling prompt template with:
 
 - Preamble explaining the function-calling protocol
 - `<tools>` XML block containing the JSON tool definitions
@@ -231,3 +235,7 @@ The batch runner always saves trajectories (that's its primary purpose).
 
 Samples with zero reasoning across all turns are automatically discarded by the
 batch runner to avoid polluting training data with non-reasoning examples.
+
+For forecasting evaluations, pair trajectories with ledger exports or audit
+packets. A trajectory can show how the agent reached a judgment, but only the
+ledger contains scoreable forecast state and resolution metadata.

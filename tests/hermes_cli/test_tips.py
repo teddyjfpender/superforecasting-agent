@@ -32,6 +32,14 @@ class TestTipsCorpus:
         for i, tip in enumerate(TIPS):
             assert tip == tip.strip(), f"Tip {i} has leading/trailing whitespace"
 
+    def test_visible_command_tips_are_forecast_native(self):
+        """Startup tips should not teach users the legacy command name."""
+        legacy = [
+            tip for tip in TIPS
+            if "hermes " in tip.lower() or "Hermes" in tip
+        ]
+        assert legacy == []
+
 
 class TestGetRandomTip:
     """Validate the get_random_tip() function."""

@@ -1,386 +1,363 @@
 ---
 sidebar_position: 4
-title: "Tutorial: Team Telegram Assistant"
-description: "Step-by-step guide to setting up a Telegram bot that your whole team can use for code help, research, system admin, and more"
+title: "Tutorial: Team Telegram Forecast Desk"
+description: "Set up a Telegram bot for shared forecast review, evidence alerts, and calibration learning."
 ---
 
-# Set Up a Team Telegram Assistant
+# Set Up a Team Telegram Forecast Desk
 
-This tutorial walks you through setting up a Telegram bot powered by Hermes Agent that multiple team members can use. By the end, your team will have a shared AI assistant they can message for help with code, research, system administration, and anything else — secured with per-user authorization.
+This tutorial walks through setting up a Telegram bot for a team that uses Superforecasting Agent. The CLI remains the primary product surface. Telegram is a delivery and collaboration layer for forecast review, watched-source alerts, resolution checks, and calibration learning.
 
 ## What We're Building
 
 A Telegram bot that:
 
-- **Any authorized team member** can DM for help — code reviews, research, shell commands, debugging
-- **Runs on your server** with full tool access — terminal, file editing, web search, code execution
-- **Per-user sessions** — each person gets their own conversation context
-- **Secure by default** — only approved users can interact, with two authorization methods
-- **Scheduled tasks** — daily standups, health checks, and reminders delivered to a team channel
+- Lets authorized team members ask forecast-scoped questions from chat.
+- Delivers scheduled review, watched-source, score, and postmortem alerts.
+- Keeps each user in a separate session while sharing the same forecast ledger.
+- Uses strict allowlists or pairing so only approved users can interact.
+- Supports daily forecast briefs, domain review reminders, and benchmark summaries.
 
----
+The bot should not become a broad do-anything team bot. Its job is to help the team maintain standing probabilistic beliefs and learn from resolved forecasts.
 
 ## Prerequisites
 
 Before starting, make sure you have:
 
-- **Hermes Agent installed** on a server or VPS (not your laptop — the bot needs to stay running). Follow the [installation guide](/docs/getting-started/installation) if you haven't yet.
-- **A Telegram account** for yourself (the bot owner)
-- **An LLM provider configured** — at minimum, an API key for OpenAI, Anthropic, or another supported provider in `~/.hermes/.env`
+- **Superforecasting Agent installed** on a server or VPS that can stay online. Follow the [installation guide](/docs/getting-started/installation) if needed.
+- **A Telegram account** for yourself as the bot owner.
+- **An LLM provider configured**, with keys in `~/.superforecasting-agent/.env`.
+- **A forecast ledger**, even if it starts empty. Run `superforecasting-agent status` to confirm the forecast desk can start.
 
-:::tip
-A $5/month VPS is plenty for running the gateway. Hermes itself is lightweight — the LLM API calls are what cost money, and those happen remotely.
+:::tip Server size
+A small VPS is usually enough for the gateway. The local process handles Telegram, scheduling, logs, and tool routing; model calls happen through your configured provider.
 :::
-
----
 
 ## Step 1: Create a Telegram Bot
 
-Every Telegram bot starts with **@BotFather** — Telegram's official bot for creating bots.
+Every Telegram bot starts with **@BotFather**, Telegram's official bot-management account.
 
-1. **Open Telegram** and search for `@BotFather`, or go to [t.me/BotFather](https://t.me/BotFather)
+1. Open Telegram and search for `@BotFather`, or go to [t.me/BotFather](https://t.me/BotFather).
+2. Send `/newbot`.
+3. Choose a display name, for example `Team Forecast Desk`.
+4. Choose a username ending in `bot`, for example `myteam_forecast_bot`.
+5. Copy the bot token. You will paste it into the gateway setup.
 
-2. **Send `/newbot`** — BotFather will ask you two things:
-   - **Display name** — what users see (e.g., `Team Hermes Assistant`)
-   - **Username** — must end in `bot` (e.g., `myteam_hermes_bot`)
+Set a short description:
 
-3. **Copy the bot token** — BotFather replies with something like:
-   ```
-   Use this token to access the HTTP API:
-   7123456789:AAH1bGciOiJSUzI1NiIsInR5cCI6Ikp...
-   ```
-   Save this token — you'll need it in the next step.
-
-4. **Set a description** (optional but recommended):
-   ```
-   /setdescription
-   ```
-   Choose your bot, then enter something like:
-   ```
-   Team AI assistant powered by Hermes Agent. DM me for help with code, research, debugging, and more.
-   ```
-
-5. **Set bot commands** (optional — gives users a command menu):
-   ```
-   /setcommands
-   ```
-   Choose your bot, then paste:
-   ```
-   new - Start a fresh conversation
-   model - Show or change the AI model
-   status - Show session info
-   help - Show available commands
-   stop - Stop the current task
-   ```
-
-:::warning
-Keep your bot token secret. Anyone with the token can control the bot. If it leaks, use `/revoke` in BotFather to generate a new one.
-:::
-
----
-
-## Step 2: Configure the Gateway
-
-You have two options: the interactive setup wizard (recommended) or manual configuration.
-
-### Option A: Interactive Setup (Recommended)
-
-```bash
-hermes gateway setup
+```text
+Team forecast desk for review alerts, evidence updates, and calibration summaries.
 ```
 
-This walks you through everything with arrow-key selection. Pick **Telegram**, paste your bot token, and enter your user ID when prompted.
+Set a command menu:
+
+```text
+forecast - Run forecast desk commands
+status - Show session and model status
+cron - Manage scheduled forecast reviews
+help - Show available commands
+stop - Stop the current task
+```
+
+:::warning
+Keep the bot token secret. Anyone with the token can control the bot. If it leaks, use `/revoke` in BotFather and update the gateway config.
+:::
+
+## Step 2: Configure The Gateway
+
+You can configure Telegram interactively or by editing environment variables.
+
+### Option A: Interactive Setup
+
+```bash
+superforecasting-agent gateway setup
+```
+
+Pick **Telegram**, paste the bot token, and enter your own numeric Telegram user ID when prompted.
 
 ### Option B: Manual Configuration
 
-Add these lines to `~/.hermes/.env`:
+Add the token and owner allowlist to `~/.superforecasting-agent/.env`:
 
 ```bash
-# Telegram bot token from BotFather
 TELEGRAM_BOT_TOKEN=7123456789:AAH1bGciOiJSUzI1NiIsInR5cCI6Ikp...
-
-# Your Telegram user ID (numeric)
 TELEGRAM_ALLOWED_USERS=123456789
 ```
 
-### Finding Your User ID
+Your Telegram user ID is numeric and separate from your `@username`.
 
-Your Telegram user ID is a numeric value (not your username). To find it:
+1. Message [@userinfobot](https://t.me/userinfobot).
+2. Copy the numeric user ID it returns.
+3. Put that number in `TELEGRAM_ALLOWED_USERS`.
 
-1. Message [@userinfobot](https://t.me/userinfobot) on Telegram
-2. It instantly replies with your numeric user ID
-3. Copy that number into `TELEGRAM_ALLOWED_USERS`
+Legacy installs may still read compatible `~/.hermes/.env` values during migration, but new forecast-desk setup should use `~/.superforecasting-agent`.
 
-:::info
-Telegram user IDs are permanent numbers like `123456789`. They're different from your `@username`, which can change. Always use the numeric ID for allowlists.
+## Step 3: Start The Gateway
+
+Run the gateway in the foreground first:
+
+```bash
+superforecasting-agent gateway
+```
+
+Open Telegram, message the bot, and ask for a forecast-scoped status check:
+
+```text
+/forecast status
+```
+
+If the bot responds, stop the foreground process with `Ctrl+C`.
+
+### Install As A Service
+
+For a deployment that survives logouts and reboots:
+
+```bash
+superforecasting-agent gateway install
+superforecasting-agent gateway start
+superforecasting-agent gateway status
+```
+
+On Linux servers where you want a boot-time system service:
+
+```bash
+sudo superforecasting-agent gateway install --system
+sudo superforecasting-agent gateway start --system
+sudo superforecasting-agent gateway status --system
+```
+
+On macOS:
+
+```bash
+superforecasting-agent gateway install
+superforecasting-agent gateway start
+tail -f ~/.superforecasting-agent/logs/gateway.log
+```
+
+:::tip Service names
+The managed service may still use a compatibility unit name such as `hermes-gateway`. Prefer `superforecasting-agent gateway status`, `start`, `stop`, and `restart` so the CLI chooses the correct profile and service scope.
 :::
-
----
-
-## Step 3: Start the Gateway
-
-### Quick Test
-
-Run the gateway in the foreground first to make sure everything works:
-
-```bash
-hermes gateway
-```
-
-You should see output like:
-
-```
-[Gateway] Starting Hermes Gateway...
-[Gateway] Telegram adapter connected
-[Gateway] Cron scheduler started (tick every 60s)
-```
-
-Open Telegram, find your bot, and send it a message. If it replies, you're in business. Press `Ctrl+C` to stop.
-
-### Production: Install as a Service
-
-For a persistent deployment that survives reboots:
-
-```bash
-hermes gateway install
-sudo hermes gateway install --system   # Linux only: boot-time system service
-```
-
-This creates a background service: a user-level **systemd** service on Linux by default, a **launchd** service on macOS, or a boot-time Linux system service if you pass `--system`.
-
-```bash
-# Linux — manage the default user service
-hermes gateway start
-hermes gateway stop
-hermes gateway status
-
-# View live logs
-journalctl --user -u hermes-gateway -f
-
-# Keep running after SSH logout
-sudo loginctl enable-linger $USER
-
-# Linux servers — explicit system-service commands
-sudo hermes gateway start --system
-sudo hermes gateway status --system
-journalctl -u hermes-gateway -f
-```
-
-```bash
-# macOS — manage the service
-hermes gateway start
-hermes gateway stop
-tail -f ~/.hermes/logs/gateway.log
-```
-
-:::tip macOS PATH
-The launchd plist captures your shell PATH at install time so gateway subprocesses can find tools like Node.js and ffmpeg. If you install new tools later, re-run `hermes gateway install` to update the plist.
-:::
-
-### Verify It's Running
-
-```bash
-hermes gateway status
-```
-
-Then send a test message to your bot on Telegram. You should get a response within a few seconds.
-
----
 
 ## Step 4: Set Up Team Access
 
-Now let's give your teammates access. There are two approaches.
+There are two good authorization models.
 
-### Approach A: Static Allowlist
+### Static Allowlist
 
-Collect each team member's Telegram user ID (have them message [@userinfobot](https://t.me/userinfobot)) and add them as a comma-separated list:
+Collect team members' numeric Telegram user IDs and add them to the allowlist:
 
 ```bash
-# In ~/.hermes/.env
 TELEGRAM_ALLOWED_USERS=123456789,987654321,555555555
 ```
 
-Restart the gateway after changes:
+Restart the gateway:
 
 ```bash
-hermes gateway stop && hermes gateway start
+superforecasting-agent gateway restart
 ```
 
-### Approach B: DM Pairing (Recommended for Teams)
+### DM Pairing
 
-DM pairing is more flexible — you don't need to collect user IDs upfront. Here's how it works:
+DM pairing is better when team membership changes often.
 
-1. **Teammate DMs the bot** — since they're not on the allowlist, the bot replies with a one-time pairing code:
-   ```
-   🔐 Pairing code: XKGH5N7P
-   Send this code to the bot owner for approval.
-   ```
-
-2. **Teammate sends you the code** (via any channel — Slack, email, in person)
-
-3. **You approve it** on the server:
-   ```bash
-   hermes pairing approve telegram XKGH5N7P
-   ```
-
-4. **They're in** — the bot immediately starts responding to their messages
-
-**Managing paired users:**
+1. A teammate DMs the bot.
+2. The bot returns a one-time pairing code.
+3. The teammate sends you that code out of band.
+4. You approve it on the server:
 
 ```bash
-# See all pending and approved users
-hermes pairing list
-
-# Revoke someone's access
-hermes pairing revoke telegram 987654321
-
-# Clear expired pending codes
-hermes pairing clear-pending
+superforecasting-agent pairing approve telegram XKGH5N7P
 ```
 
-:::tip
-DM pairing is ideal for teams because you don't need to restart the gateway when adding new users. Approvals take effect immediately.
-:::
+Manage paired users:
 
-### Security Considerations
+```bash
+superforecasting-agent pairing list
+superforecasting-agent pairing revoke telegram 987654321
+superforecasting-agent pairing clear-pending
+```
 
-- **Never set `GATEWAY_ALLOW_ALL_USERS=true`** on a bot with terminal access — anyone who finds your bot could run commands on your server
-- Pairing codes expire after **1 hour** and use cryptographic randomness
-- Rate limiting prevents brute-force attacks: 1 request per user per 10 minutes, max 3 pending codes per platform
-- After 5 failed approval attempts, the platform enters a 1-hour lockout
-- All pairing data is stored with `chmod 0600` permissions
+Security basics:
 
----
+- Do not set `GATEWAY_ALLOW_ALL_USERS=true` on a bot with tool access.
+- Pairing codes expire and are rate-limited.
+- Pairing data is stored with restricted file permissions.
+- Treat the Telegram bot as a shared operational surface, not a private scratchpad.
 
-## Step 5: Configure the Bot
+## Step 5: Configure The Team Forecast Desk
 
-### Set a Home Channel
+### Set A Home Channel
 
-A **home channel** is where the bot delivers cron job results and proactive messages. Without one, scheduled tasks have nowhere to send output.
+A home channel receives scheduled forecast reviews, alerts, score summaries, and backtest digests.
 
-**Option 1:** Use the `/sethome` command in any Telegram group or chat where the bot is a member.
-
-**Option 2:** Set it manually in `~/.hermes/.env`:
+Use `/sethome` in a Telegram group where the bot is present, or set it manually:
 
 ```bash
 TELEGRAM_HOME_CHANNEL=-1001234567890
-TELEGRAM_HOME_CHANNEL_NAME="Team Updates"
+TELEGRAM_HOME_CHANNEL_NAME="Forecast Desk"
 ```
 
-To find a channel ID, add [@userinfobot](https://t.me/userinfobot) to the group — it will report the group's chat ID.
+To find a group chat ID, add [@userinfobot](https://t.me/userinfobot) to the group and copy the reported chat ID.
 
-### Configure Tool Progress Display
+### Tune Tool Progress
 
-Control how much detail the bot shows when using tools. In `~/.hermes/config.yaml`:
+For team chat, brief progress is usually enough. In `~/.superforecasting-agent/config.yaml`:
 
 ```yaml
 display:
-  tool_progress: new    # off | new | all | verbose
+  tool_progress: new
 ```
 
-| Mode | What You See |
-|------|-------------|
-| `off` | Clean responses only — no tool activity |
-| `new` | Brief status for each new tool call (recommended for messaging) |
-| `all` | Every tool call with details |
-| `verbose` | Full tool output including command results |
+| Mode | Telegram behavior |
+|------|-------------------|
+| `off` | Final responses only |
+| `new` | Brief status for each new tool call |
+| `all` | More detailed tool activity |
+| `verbose` | Full tool output, useful for debugging |
 
-Users can also change this per-session with the `/verbose` command in chat.
+### Keep Style Separate From Forecast State
 
-### Set Up a Personality with SOUL.md
+`SOUL.md` can define communication style, but it should not store forecasts, priors, calibration lessons, or evidence. Those belong in the forecast ledger.
 
-Customize how the bot communicates by editing `~/.hermes/SOUL.md`:
-
-For a full guide, see [Use SOUL.md with Hermes](/docs/guides/use-soul-with-hermes).
-
-```markdown
+```markdown title="~/.superforecasting-agent/SOUL.md"
 # Soul
-You are a helpful team assistant. Be concise and technical.
-Use code blocks for any code. Skip pleasantries — the team
-values directness. When debugging, always ask for error logs
-before guessing at solutions.
+
+Be concise, technical, and audit-focused.
+For forecast updates, distinguish facts, assumptions, estimates, and rumors.
+Never change a probability unless the update is recorded in the forecast ledger.
+When evidence is stale, say so directly.
 ```
 
-### Add Project Context
+For a full style guide, see [Use SOUL.md](/docs/guides/use-soul-with-hermes).
 
-If your team works on specific projects, create context files so the bot knows your stack:
+### Add Team Context
 
-```markdown
-<!-- ~/.hermes/AGENTS.md -->
-# Team Context
-- We use Python 3.12 with FastAPI and SQLAlchemy
-- Frontend is React with TypeScript
-- CI/CD runs on GitHub Actions
-- Production deploys to AWS ECS
-- Always suggest writing tests for new code
+Use context files for stable team conventions, not live forecast state.
+
+```markdown title="~/.superforecasting-agent/AGENTS.md"
+# Team Forecast Desk Context
+
+- Primary domains: macro, policy, AI infrastructure, and company default risk.
+- Use `superforecasting-agent review --stale` before daily standup.
+- Probability updates must include evidence refs or source snapshots.
+- Resolutions require a cited resolution source and a postmortem if scoreable.
+- Do not treat Telegram chat history as forecast memory.
 ```
 
-:::info
-Context files are injected into every session's system prompt. Keep them concise — every character counts against your token budget.
-:::
+## Step 6: Add Forecast Workflows
 
----
+### Daily Forecast Review
 
-## Step 6: Set Up Scheduled Tasks
-
-With the gateway running, you can schedule recurring tasks that deliver results to your team channel.
-
-### Daily Standup Summary
-
-Message the bot on Telegram:
-
-```
-Every weekday at 9am, check the GitHub repository at
-github.com/myorg/myproject for:
-1. Pull requests opened/merged in the last 24 hours
-2. Issues created or closed
-3. Any CI/CD failures on the main branch
-Format as a brief standup-style summary.
-```
-
-The agent creates a cron job automatically and delivers results to the chat where you asked (or the home channel).
-
-### Server Health Check
-
-```
-Every 6 hours, check disk usage with 'df -h', memory with 'free -h',
-and Docker container status with 'docker ps'. Report anything unusual —
-partitions above 80%, containers that have restarted, or high memory usage.
-```
-
-### Managing Scheduled Tasks
+Create a recurring review delivered to the home channel:
 
 ```bash
-# From the CLI
-hermes cron list          # View all scheduled jobs
-hermes cron status        # Check if scheduler is running
+superforecasting-agent cron create "0 8 * * 1-5" \
+  "Run the daily team forecast review.
 
-# From Telegram chat
-/cron list                # View jobs
-/cron remove <job_id>     # Remove a job
+1. Run: superforecasting-agent review --stale --last 1d
+2. Run: superforecasting-agent alerts
+3. Run: superforecasting-agent lesson list --active
+4. Summarize:
+   - Forecasts that need research
+   - Open watched-source alerts
+   - Forecasts closing soon
+   - Active calibration lessons to apply
+5. Do not update probabilities from this briefing. If no action is needed, respond with [SILENT]." \
+  --name "Daily team forecast review" \
+  --deliver telegram
 ```
 
-:::warning
-Cron job prompts run in completely fresh sessions with no memory of prior conversations. Make sure each prompt contains **all** the context the agent needs — file paths, URLs, server addresses, and clear instructions.
-:::
+### Domain Learning Refresh
 
----
-
-## Production Tips
-
-### Use Docker for Safety
-
-On a shared team bot, use Docker as the terminal backend so agent commands run in a container instead of on your host:
+Use this for domains where resolved forecasts accumulate over time:
 
 ```bash
-# In ~/.hermes/.env
-TERMINAL_BACKEND=docker
-TERMINAL_DOCKER_IMAGE=nikolaik/python-nodejs:python3.11-nodejs20
+superforecasting-agent schedule add \
+  --domain macro \
+  --cadence "every 1d" \
+  --next-run-at "2026-05-23T06:00:00Z" \
+  --trigger-reason "team macro learning refresh" \
+  --auto-score \
+  --auto-postmortem
+
+superforecasting-agent schedule install-cron \
+  --schedule "every 1h" \
+  --name "Forecast self-check" \
+  --deliver telegram \
+  --auto-score \
+  --auto-postmortem
 ```
 
-Or in `~/.hermes/config.yaml`:
+### Watched Evidence Source
 
-```yaml
+Add watched sources for important questions or domains:
+
+```bash
+superforecasting-agent watch add "gdelt:central bank rate cut" \
+  --domain macro \
+  --topic rates \
+  --source-type gdelt
+
+superforecasting-agent watch add "fred:DFF" \
+  --domain macro \
+  --topic rates \
+  --source-type fred
+```
+
+Check manually from Telegram:
+
+```text
+/forecast watch check --domain macro --topic rates
+/forecast alerts
+```
+
+### Weekly Backtest Digest
+
+Use this to keep the team honest about whether the forecast process is improving:
+
+```bash
+superforecasting-agent cron create "0 9 * * 1" \
+  "Run the weekly team backtest and calibration digest.
+
+1. Run: superforecasting-agent backtest --all-benchmarks --probability-source forecast-engine
+2. Run: superforecasting-agent performance --last 10
+3. Run: superforecasting-agent calibration --by-origin
+4. Identify underperforming domains, horizons, or probability buckets.
+5. Recommend one calibration lesson to review or promote.
+6. Keep the report under 700 words." \
+  --name "Weekly team backtest digest" \
+  --deliver telegram
+```
+
+### Managing Scheduled Work
+
+From the server:
+
+```bash
+superforecasting-agent cron list
+superforecasting-agent cron status
+superforecasting-agent schedule list
+superforecasting-agent alerts
+```
+
+From Telegram:
+
+```text
+/cron list
+/cron remove <job_id>
+/forecast schedule list
+/forecast alerts
+```
+
+Cron prompts run in fresh sessions. Include all required paths, domains, topics, and commands in the prompt.
+
+## Production Safety
+
+### Use A Containerized Terminal Backend
+
+For shared bots, run terminal tools in a container:
+
+```yaml title="~/.superforecasting-agent/config.yaml"
 terminal:
   backend: docker
   container_cpu: 1
@@ -388,54 +365,52 @@ terminal:
   container_persistent: true
 ```
 
-This way, even if someone asks the bot to run something destructive, your host system is protected.
+This limits blast radius if a teammate asks the bot to run a risky command. It does not replace allowlists, approvals, or careful source handling.
 
-### Monitor the Gateway
+### Monitor The Gateway
 
 ```bash
-# Check if the gateway is running
-hermes gateway status
+superforecasting-agent gateway status
+superforecasting-agent logs gateway -f
+```
 
-# Watch live logs (Linux)
+On Linux, the service log may also be available through systemd:
+
+```bash
 journalctl --user -u hermes-gateway -f
-
-# Watch live logs (macOS)
-tail -f ~/.hermes/logs/gateway.log
 ```
 
-### Keep Hermes Updated
+That unit name is retained for compatibility. Use the CLI status command to find the profile-specific service if you run multiple installations.
 
-From Telegram, send `/update` to the bot — it will pull the latest version and restart. Or from the server:
+### Update Safely
+
+From the server:
 
 ```bash
-hermes update
-hermes gateway stop && hermes gateway start
+superforecasting-agent update
+superforecasting-agent gateway restart
 ```
 
-### Log Locations
+From Telegram, `/update` may be available if your gateway command policy allows it. For production forecast desks, prefer updating from the server so you can inspect logs and restart status.
+
+### Important Paths
 
 | What | Location |
 |------|----------|
-| Gateway logs | `journalctl --user -u hermes-gateway` (Linux) or `~/.hermes/logs/gateway.log` (macOS) |
-| Cron job output | `~/.hermes/cron/output/{job_id}/{timestamp}.md` |
-| Cron job definitions | `~/.hermes/cron/jobs.json` |
-| Pairing data | `~/.hermes/pairing/` |
-| Session history | `~/.hermes/sessions/` |
+| Gateway logs | `~/.superforecasting-agent/logs/gateway.log` |
+| Cron job output | `~/.superforecasting-agent/cron/output/{job_id}/{timestamp}.md` |
+| Cron job definitions | `~/.superforecasting-agent/cron/jobs.json` |
+| Pairing data | `~/.superforecasting-agent/pairing/` |
+| Session history | `~/.superforecasting-agent/sessions/` |
+| Forecast ledger | `~/.superforecasting-agent/forecasting/` or profile-scoped ledger path |
 
----
+Legacy `~/.hermes` paths may still exist after migration. New configuration should prefer `~/.superforecasting-agent`.
 
 ## Going Further
 
-You've got a working team Telegram assistant. Here are some next steps:
-
-- **[Security Guide](/docs/user-guide/security)** — deep dive into authorization, container isolation, and command approval
-- **[Messaging Gateway](/docs/user-guide/messaging)** — full reference for gateway architecture, session management, and chat commands
-- **[Telegram Setup](/docs/user-guide/messaging/telegram)** — platform-specific details including voice messages and TTS
-- **[Scheduled Tasks](/docs/user-guide/features/cron)** — advanced cron scheduling with delivery options and cron expressions
-- **[Context Files](/docs/user-guide/features/context-files)** — AGENTS.md, SOUL.md, and .cursorrules for project knowledge
-- **[Personality](/docs/user-guide/features/personality)** — built-in personality presets and custom persona definitions
-- **Add more platforms** — the same gateway can simultaneously run [Discord](/docs/user-guide/messaging/discord), [Slack](/docs/user-guide/messaging/slack), and [WhatsApp](/docs/user-guide/messaging/whatsapp)
-
----
-
-*Questions or issues? Open an issue on GitHub — contributions are welcome.*
+- [Messaging Gateway](/docs/user-guide/messaging) for platform architecture and session behavior.
+- [Telegram Setup](/docs/user-guide/messaging/telegram) for Telegram-specific options.
+- [Scheduled Tasks](/docs/user-guide/features/cron) for cron expressions and delivery options.
+- [Forecast Automation Templates](/docs/guides/automation-templates) for review, source-watch, backtest, and postmortem recipes.
+- [SOUL.md Style](/docs/guides/use-soul-with-hermes) for style customization without polluting forecast state.
+- [Discord](/docs/user-guide/messaging/discord), [Slack](/docs/user-guide/messaging/slack), and [WhatsApp](/docs/user-guide/messaging/whatsapp) if your team wants more delivery channels.

@@ -1,6 +1,6 @@
-"""Hermes Achievements dashboard plugin backend.
+"""Superforecasting Agent achievements dashboard plugin backend.
 
-Mounted at /api/plugins/hermes-achievements/ by Hermes dashboard.
+Mounted at /api/plugins/hermes-achievements/ by the dashboard plugin host.
 """
 from __future__ import annotations
 

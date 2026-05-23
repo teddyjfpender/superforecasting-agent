@@ -1,62 +1,63 @@
 ---
 sidebar_position: 4
 title: "MCP (Model Context Protocol)"
-description: "Connect Hermes Agent to external tool servers via MCP — and control exactly which MCP tools Hermes loads"
+description: "Connect Superforecasting Agent to external data and tool servers via MCP."
 ---
 
 # MCP (Model Context Protocol)
 
-MCP lets Hermes Agent connect to external tool servers so the agent can use tools that live outside Hermes itself — GitHub, databases, file systems, browser stacks, internal APIs, and more.
+MCP lets Superforecasting Agent connect to external tool servers: databases, GitHub, file systems, browser stacks, internal APIs, research corpora, market data services, and other systems that can support forecast research. The forecast ledger remains the source of truth for probabilities, evidence, assumptions, model runs, scores, postmortems, and calibration lessons; MCP tools are supporting connectors.
 
-If you have ever wanted Hermes to use a tool that already exists somewhere else, MCP is usually the cleanest way to do it.
+Use MCP when an existing server can provide source access or workflow automation without writing a native tool first.
 
-## What MCP gives you
+## What MCP Gives You
 
-- Access to external tool ecosystems without writing a native Hermes tool first
-- Local stdio servers and remote HTTP MCP servers in the same config
-- Automatic tool discovery and registration at startup
-- Utility wrappers for MCP resources and prompts when supported by the server
-- Per-server filtering so you can expose only the MCP tools you actually want Hermes to see
+- external data and tool ecosystems for forecast research
+- local stdio servers and remote HTTP MCP servers in one config
+- automatic tool discovery at startup
+- optional resource and prompt wrappers when the server supports them
+- per-server filtering so only forecast-relevant tools are exposed
+- runtime toolsets such as `mcp-github` that can be enabled or disabled explicitly
 
-## Quick start
+## Quick Start
 
-1. Install MCP support (already included if you used the standard install script):
+MCP support is included in the standard install. For editable checkouts:
 
 ```bash
-cd ~/.hermes/hermes-agent
+cd superforecasting-agent
 uv pip install -e ".[mcp]"
 ```
 
-2. Add an MCP server to `~/.hermes/config.yaml`:
+Add a server to `~/.superforecasting-agent/config.yaml`:
 
 ```yaml
 mcp_servers:
   filesystem:
     command: "npx"
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/projects"]
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/forecast-research"]
 ```
 
-3. Start Hermes:
+Start the CLI:
 
 ```bash
-hermes chat
+superforecasting-agent chat
 ```
 
-4. Ask Hermes to use the MCP-backed capability.
-
-For example:
+Then ask for a research action, not a silent probability update:
 
 ```text
-List the files in /home/user/projects and summarize the repo structure.
+Use the filesystem MCP server to inspect the election-data directory and summarize which files could support question F-142.
 ```
 
-Hermes will discover the MCP server's tools and use them like any other tool.
+The runtime discovers the MCP server's tools and makes them available like other tools. Forecast updates still need explicit ledger writes through the forecast workflow.
 
-## Two kinds of MCP servers
+Legacy `~/.hermes/config.yaml` and `hermes chat` remain compatibility paths where installed.
 
-### Stdio servers
+## Server Types
 
-Stdio servers run as local subprocesses and talk over stdin/stdout.
+### Stdio Servers
+
+Stdio servers run as local subprocesses and communicate over stdin/stdout.
 
 ```yaml
 mcp_servers:
@@ -67,33 +68,25 @@ mcp_servers:
       GITHUB_PERSONAL_ACCESS_TOKEN: "***"
 ```
 
-Use stdio servers when:
-- the server is installed locally
-- you want low-latency access to local resources
-- you are following MCP server docs that show `command`, `args`, and `env`
+Use stdio when the server is local, low-latency access matters, or upstream MCP docs show `command`, `args`, and `env`.
 
-### HTTP servers
+### HTTP Servers
 
-HTTP MCP servers are remote endpoints Hermes connects to directly.
+HTTP MCP servers are remote endpoints:
 
 ```yaml
 mcp_servers:
-  remote_api:
+  research_api:
     url: "https://mcp.example.com/mcp"
     headers:
       Authorization: "Bearer ***"
 ```
 
-Use HTTP servers when:
-- the MCP server is hosted elsewhere
-- your organization exposes internal MCP endpoints
-- you do not want Hermes spawning a local subprocess for that integration
+Use HTTP when your organization hosts the server, the data source is remote, or you do not want the forecast runtime spawning a local subprocess.
 
-## Basic configuration reference
+## Configuration Reference
 
-Hermes reads MCP config from `~/.hermes/config.yaml` under `mcp_servers`.
-
-### Common keys
+Superforecasting Agent reads MCP config from `~/.superforecasting-agent/config.yaml` under `mcp_servers`.
 
 | Key | Type | Meaning |
 |---|---|---|
@@ -104,11 +97,11 @@ Hermes reads MCP config from `~/.hermes/config.yaml` under `mcp_servers`.
 | `headers` | mapping | HTTP headers for remote servers |
 | `timeout` | number | Tool call timeout |
 | `connect_timeout` | number | Initial connection timeout |
-| `enabled` | bool | If `false`, Hermes skips the server entirely |
+| `enabled` | bool | If `false`, skip the server entirely |
 | `supports_parallel_tool_calls` | bool | If `true`, tools from this server may run concurrently |
 | `tools` | mapping | Per-server tool filtering and utility policy |
 
-### Minimal stdio example
+Minimal stdio:
 
 ```yaml
 mcp_servers:
@@ -117,30 +110,25 @@ mcp_servers:
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
 ```
 
-### Minimal HTTP example
+Minimal HTTP:
 
 ```yaml
 mcp_servers:
-  company_api:
+  company_data:
     url: "https://mcp.internal.example.com"
     headers:
       Authorization: "Bearer ***"
 ```
 
-## Built-in presets
+## Built-In Presets
 
-For well-known MCP servers, `hermes mcp add` accepts a `--preset` flag that fills in the transport details so you don't have to look up the command and args. The preset only supplies defaults — anything else (env vars, headers, filtering) you pass on the same command line still wins.
-
-| Preset | What it wires up |
-|---|---|
-| `codex` | The Codex CLI's MCP server (`codex mcp-server` over stdio). Requires the `codex` CLI on PATH. |
+For known servers, `superforecasting-agent mcp add` accepts `--preset`:
 
 ```bash
-# Add Codex CLI as an MCP server in one line
-hermes mcp add codex --preset codex
+superforecasting-agent mcp add codex --preset codex
 ```
 
-That writes the equivalent of:
+The `codex` preset wires the Codex CLI MCP server:
 
 ```yaml
 mcp_servers:
@@ -149,11 +137,11 @@ mcp_servers:
     args: ["mcp-server"]
 ```
 
-You can pick any local name (`hermes mcp add my-codex --preset codex` is fine); the preset only provides the `command`/`args` defaults.
+The inherited `hermes mcp add ...` command remains a compatibility alias.
 
-## How Hermes registers MCP tools
+## Tool Naming
 
-Hermes prefixes MCP tools so they do not collide with built-in names:
+MCP tools are prefixed to avoid collisions:
 
 ```text
 mcp_<server_name>_<tool_name>
@@ -165,37 +153,26 @@ Examples:
 |---|---|---|
 | `filesystem` | `read_file` | `mcp_filesystem_read_file` |
 | `github` | `create-issue` | `mcp_github_create_issue` |
-| `my-api` | `query.data` | `mcp_my_api_query_data` |
+| `market-data` | `query.prices` | `mcp_market_data_query_prices` |
 
-In practice, you usually do not need to call the prefixed name manually — Hermes sees the tool and chooses it during normal reasoning.
+Most users do not need to call these names manually; the runtime chooses tools during research and review workflows.
 
-## MCP utility tools
+## Utility Tools
 
-When supported, Hermes also registers utility tools around MCP resources and prompts:
+When the server supports resources or prompts, the runtime can register:
 
 - `list_resources`
 - `read_resource`
 - `list_prompts`
 - `get_prompt`
 
-These are registered per server with the same prefix pattern, for example:
+These are registered per server, for example `mcp_docs_read_resource`. The wrappers appear only when both the server capability and your config allow them.
 
-- `mcp_github_list_resources`
-- `mcp_github_get_prompt`
+## Filtering
 
-### Important
+Filtering is both a product-quality control and a security control. Prefer exposing only the tools that help research, evidence capture, modeling, source monitoring, or alert delivery.
 
-These utility tools are now capability-aware:
-- Hermes only registers resource utilities if the MCP session actually supports resource operations
-- Hermes only registers prompt utilities if the MCP session actually supports prompt operations
-
-So a server that exposes callable tools but no resources/prompts will not get those extra wrappers.
-
-## Per-server filtering
-
-You can control which tools each MCP server contributes to Hermes, allowing fine-grained management of your tool namespace.
-
-### Disable a server entirely
+Disable a server:
 
 ```yaml
 mcp_servers:
@@ -204,9 +181,7 @@ mcp_servers:
     enabled: false
 ```
 
-If `enabled: false`, Hermes skips the server completely and does not even attempt a connection.
-
-### Whitelist server tools
+Whitelist tools:
 
 ```yaml
 mcp_servers:
@@ -216,38 +191,22 @@ mcp_servers:
     env:
       GITHUB_PERSONAL_ACCESS_TOKEN: "***"
     tools:
-      include: [create_issue, list_issues]
+      include: [list_issues, search_code]
 ```
 
-Only those MCP server tools are registered.
-
-### Blacklist server tools
+Blacklist dangerous actions:
 
 ```yaml
 mcp_servers:
-  stripe:
-    url: "https://mcp.stripe.com"
+  billing:
+    url: "https://mcp.billing.internal"
     tools:
-      exclude: [delete_customer]
+      exclude: [delete_customer, refund_payment]
 ```
 
-All server tools are registered except the excluded ones.
+If both `include` and `exclude` are present, `include` wins.
 
-### Precedence rule
-
-If both are present:
-
-```yaml
-tools:
-  include: [create_issue]
-  exclude: [create_issue, delete_issue]
-```
-
-`include` wins.
-
-### Filter utility tools too
-
-You can also separately disable Hermes-added utility wrappers:
+Disable utility wrappers:
 
 ```yaml
 mcp_servers:
@@ -258,94 +217,41 @@ mcp_servers:
       resources: false
 ```
 
-That means:
-- `tools.resources: false` disables `list_resources` and `read_resource`
-- `tools.prompts: false` disables `list_prompts` and `get_prompt`
+If every callable tool and utility wrapper is filtered out, the runtime does not create an empty MCP toolset for that server.
 
-### Full example
+## Runtime Behavior
 
-```yaml
-mcp_servers:
-  github:
-    command: "npx"
-    args: ["-y", "@modelcontextprotocol/server-github"]
-    env:
-      GITHUB_PERSONAL_ACCESS_TOKEN: "***"
-    tools:
-      include: [create_issue, list_issues, search_code]
-      prompts: false
+MCP servers are discovered at startup and registered in the normal tool registry.
 
-  stripe:
-    url: "https://mcp.stripe.com"
-    headers:
-      Authorization: "Bearer ***"
-    tools:
-      exclude: [delete_customer]
-      resources: false
+When servers send `notifications/tools/list_changed`, Superforecasting Agent re-fetches the tool list and updates the registry. Prompt and resource change notifications are received but not yet acted on.
 
-  legacy:
-    url: "https://mcp.legacy.internal"
-    enabled: false
-```
-
-## What happens if everything is filtered out?
-
-If your config filters out all callable tools and disables or omits all supported utilities, Hermes does not create an empty runtime MCP toolset for that server.
-
-That keeps the tool list clean.
-
-## Runtime behavior
-
-### Discovery time
-
-Hermes discovers MCP servers at startup and registers their tools into the normal tool registry.
-
-### Dynamic Tool Discovery
-
-MCP servers can notify Hermes when their available tools change at runtime by sending a `notifications/tools/list_changed` notification. When Hermes receives this notification, it automatically re-fetches the server's tool list and updates the registry — no manual `/reload-mcp` required.
-
-This is useful for MCP servers whose capabilities change dynamically (e.g. a server that adds tools when a new database schema is loaded, or removes tools when a service goes offline).
-
-The refresh is lock-protected so rapid-fire notifications from the same server don't cause overlapping refreshes. Prompt and resource change notifications (`prompts/list_changed`, `resources/list_changed`) are received but not yet acted on.
-
-### Reloading
-
-If you change MCP config, use:
+If you edit MCP config manually, reload from an interactive session:
 
 ```text
 /reload-mcp
 ```
 
-This reloads MCP servers from config and refreshes the available tool list. For runtime tool changes pushed by the server itself, see [Dynamic Tool Discovery](#dynamic-tool-discovery) above.
-
-### Toolsets
-
-Each configured MCP server also creates a runtime toolset when it contributes at least one registered tool:
+Each configured MCP server also creates a runtime toolset when it contributes at least one tool:
 
 ```text
 mcp-<server>
 ```
 
-That makes MCP servers easier to reason about at the toolset level.
+## Security Model
 
-## Security model
+Stdio servers do not receive the full shell environment. Only configured `env` plus a safe baseline are passed through.
 
-### Stdio env filtering
+Recommended forecast-desk posture:
 
-For stdio servers, Hermes does not blindly pass your full shell environment.
+- expose read-only tools by default
+- use `include` lists for sensitive sources
+- remove destructive tools from API, billing, cloud, and database servers
+- disable prompt/resource wrappers when they are not needed
+- keep source reliability and evidence timestamps in the forecast ledger, not in MCP transient output
 
-Only explicitly configured `env` plus a safe baseline are passed through. This reduces accidental secret leakage.
+## Forecast Use Cases
 
-### Config-level exposure control
-
-The new filtering support is also a security control:
-- disable dangerous tools you do not want the model to see
-- expose only a minimal whitelist for a sensitive server
-- disable resource/prompt wrappers when you do not want that surface exposed
-
-## Example use cases
-
-### GitHub server with a minimal issue-management surface
+### GitHub Release-Risk Evidence
 
 ```yaml
 mcp_servers:
@@ -355,88 +261,51 @@ mcp_servers:
     env:
       GITHUB_PERSONAL_ACCESS_TOKEN: "***"
     tools:
-      include: [list_issues, create_issue, update_issue]
+      include: [list_issues, search_code, get_file_contents]
       prompts: false
       resources: false
 ```
 
-Use it like:
+Example:
 
 ```text
-Show me open issues labeled bug, then draft a new issue for the flaky MCP reconnection behavior.
+Find open blockers related to the release branch and summarize evidence for forecast F-203 without changing its probability.
 ```
 
-### Stripe server with dangerous actions removed
+### Internal Metrics Source
 
 ```yaml
 mcp_servers:
-  stripe:
-    url: "https://mcp.stripe.com"
-    headers:
-      Authorization: "Bearer ***"
+  metrics:
+    url: "https://mcp.metrics.internal"
     tools:
-      exclude: [delete_customer, refund_payment]
+      include: [query_timeseries, list_dashboards]
 ```
 
-Use it like:
+Example:
 
 ```text
-Look up the last 10 failed payments and summarize common failure reasons.
+Pull the last 30 days of incident counts for forecast F-188 and add them as timestamped evidence if relevant.
 ```
 
-### Filesystem server for a single project root
+### Filesystem Research Corpus
 
 ```yaml
 mcp_servers:
-  project_fs:
+  research_files:
     command: "npx"
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/my-project"]
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/forecast-research"]
 ```
 
-Use it like:
+Example:
 
 ```text
-Inspect the project root and explain the directory layout.
+Inspect the stored reports for AI benchmark results and identify which ones are admissible for the current backtest.
 ```
-
-## Troubleshooting
-
-### MCP server not connecting
-
-Check:
-
-```bash
-# Verify MCP deps are installed (already included in standard install)
-cd ~/.hermes/hermes-agent && uv pip install -e ".[mcp]"
-
-node --version
-npx --version
-```
-
-Then verify your config and restart Hermes.
-
-### Tools not appearing
-
-Possible causes:
-- the server failed to connect
-- discovery failed
-- your filter config excluded the tools
-- the utility capability does not exist on that server
-- the server is disabled with `enabled: false`
-
-If you are intentionally filtering, this is expected.
-
-### Why didn't resource or prompt utilities appear?
-
-Because Hermes now only registers those wrappers when both are true:
-1. your config allows them
-2. the server session actually supports the capability
-
-This is intentional and keeps the tool list honest.
 
 ## Parallel Tool Calls
 
-By default, MCP tools run sequentially — one at a time. If your MCP server exposes tools that are safe to run concurrently (e.g. read-only queries, independent API calls), you can opt-in to parallel execution:
+By default, MCP tools run sequentially. Opt in only when the server tools are safe to run concurrently:
 
 ```yaml
 mcp_servers:
@@ -445,36 +314,30 @@ mcp_servers:
     supports_parallel_tool_calls: true
 ```
 
-When `supports_parallel_tool_calls` is `true`, Hermes may execute multiple tools from that server at the same time within a single tool-call batch, just like it does for built-in read-only tools (web_search, read_file, etc.).
+Parallel calls are appropriate for read-only queries and independent API calls. Avoid them for tools that mutate shared files, ledgers, databases, credentials, or external resources.
 
-:::caution
-Only enable parallel calls for MCP servers whose tools are safe to run at the same time. If tools read and write shared state, files, databases, or external resources, review the read/write race conditions before enabling this setting.
-:::
+## MCP Sampling
 
-## MCP Sampling Support
+MCP servers can request LLM inference through `sampling/createMessage`. This lets a server generate summaries or transformations without owning model credentials.
 
-MCP servers can request LLM inference from Hermes via the `sampling/createMessage` protocol. This allows an MCP server to ask Hermes to generate text on its behalf — useful for servers that need LLM capabilities but don't have their own model access.
-
-Sampling is **enabled by default** for all MCP servers (when the MCP SDK supports it). Configure it per-server under the `sampling` key:
+Sampling is enabled by default when the MCP SDK supports it:
 
 ```yaml
 mcp_servers:
   my_server:
     command: "my-mcp-server"
     sampling:
-      enabled: true            # Enable sampling (default: true)
-      model: "openai/gpt-4o"  # Override model for sampling requests (optional)
-      max_tokens_cap: 4096     # Max tokens per sampling response (default: 4096)
-      timeout: 30              # Timeout in seconds per request (default: 30)
-      max_rpm: 10              # Rate limit: max requests per minute (default: 10)
-      max_tool_rounds: 5       # Max tool-use rounds in sampling loops (default: 5)
-      allowed_models: []       # Allowlist of model names the server may request (empty = any)
-      log_level: "info"        # Audit log level: debug, info, or warning (default: info)
+      enabled: true
+      model: "openai/gpt-4o"
+      max_tokens_cap: 4096
+      timeout: 30
+      max_rpm: 10
+      max_tool_rounds: 5
+      allowed_models: []
+      log_level: "info"
 ```
 
-The sampling handler includes a sliding-window rate limiter, per-request timeouts, and tool-loop depth limits to prevent runaway usage. Metrics (request count, errors, tokens used) are tracked per server instance.
-
-To disable sampling for a specific server:
+Disable it for untrusted servers:
 
 ```yaml
 mcp_servers:
@@ -484,45 +347,49 @@ mcp_servers:
       enabled: false
 ```
 
-## Running Hermes as an MCP server
+The sampling handler has rate limits, per-request timeouts, and tool-loop depth limits. Treat sampled text as an intermediate artifact unless it is attached to a forecast ledger record with source and model provenance.
 
-In addition to connecting **to** MCP servers, Hermes can also **be** an MCP server. This lets other MCP-capable agents (Claude Code, Cursor, Codex, or any MCP client) use Hermes's messaging capabilities — list conversations, read message history, and send messages across all your connected platforms.
+## Running the Runtime as an MCP Server {#running-hermes-as-an-mcp-server}
 
-### When to use this
+Superforecasting Agent can also expose a stdio MCP server for other MCP clients. This is an inherited bridge for messaging and approval workflows; it is not the primary forecast product surface.
 
-- You want Claude Code, Cursor, or another coding agent to send and read Telegram/Discord/Slack messages through Hermes
-- You want a single MCP server that bridges to all of Hermes's connected messaging platforms at once
-- You already have a running Hermes gateway with connected platforms
+Use it when:
 
-### Quick start
+- a coding or research client needs to read forecast-alert conversations
+- an external client needs to send a review note through a connected gateway platform
+- you already run the gateway with connected platforms
+
+Start the server:
+
+```bash
+superforecasting-agent mcp serve
+```
+
+Compatibility installs may still use:
 
 ```bash
 hermes mcp serve
 ```
 
-This starts a stdio MCP server. The MCP client (not you) manages the process lifecycle.
-
-### MCP client configuration
-
-Add Hermes to your MCP client config. For example, in Claude Code's `~/.claude/claude_desktop_config.json`:
+Example MCP client config:
 
 ```json
 {
   "mcpServers": {
-    "hermes": {
-      "command": "hermes",
+    "superforecasting-agent": {
+      "command": "superforecasting-agent",
       "args": ["mcp", "serve"]
     }
   }
 }
 ```
 
-Or if you installed Hermes in a specific location:
+If only the inherited binary exists:
 
 ```json
 {
   "mcpServers": {
-    "hermes": {
+    "superforecasting-agent": {
       "command": "/home/user/.hermes/hermes-agent/venv/bin/hermes",
       "args": ["mcp", "serve"]
     }
@@ -530,62 +397,61 @@ Or if you installed Hermes in a specific location:
 }
 ```
 
-### Available tools
-
-The MCP server exposes 10 tools, matching OpenClaw's channel bridge surface plus a Hermes-specific channel browser:
+Available bridge tools:
 
 | Tool | Description |
 |------|-------------|
-| `conversations_list` | List active messaging conversations. Filter by platform or search by name. |
-| `conversation_get` | Get detailed info about one conversation by session key. |
-| `messages_read` | Read recent message history for a conversation. |
-| `attachments_fetch` | Extract non-text attachments (images, media) from a specific message. |
-| `events_poll` | Poll for new conversation events since a cursor position. |
-| `events_wait` | Long-poll / block until the next event arrives (near-real-time). |
-| `messages_send` | Send a message through a platform (e.g. `telegram:123456`, `discord:#general`). |
-| `channels_list` | List available messaging targets across all platforms. |
-| `permissions_list_open` | List pending approval requests observed during this bridge session. |
-| `permissions_respond` | Allow or deny a pending approval request. |
+| `conversations_list` | List active messaging conversations |
+| `conversation_get` | Get detailed info for one conversation |
+| `messages_read` | Read recent message history |
+| `attachments_fetch` | Extract non-text attachments from a message |
+| `events_poll` | Poll for new conversation events |
+| `events_wait` | Wait for the next event |
+| `messages_send` | Send a message through a configured platform |
+| `channels_list` | List messaging targets |
+| `permissions_list_open` | List pending approvals |
+| `permissions_respond` | Allow or deny a pending approval |
 
-### Event system
+The bridge reads conversation data from the session store under the active agent home, normally `~/.superforecasting-agent/` with legacy `~/.hermes/` fallback. The gateway must be running for send operations.
 
-The MCP server includes a live event bridge that polls Hermes's session database for new messages. This gives MCP clients near-real-time awareness of incoming conversations:
+Current limits:
 
-```
-# Poll for new events (non-blocking)
-events_poll(after_cursor=0)
+- the embedded server is stdio-only
+- event polling is in-memory and starts when the bridge connects
+- sends are text-only
+- no `claude/channel` push notification protocol yet
 
-# Wait for next event (blocks up to timeout)
-events_wait(after_cursor=42, timeout_ms=30000)
-```
+## Troubleshooting
 
-Event types: `message`, `approval_requested`, `approval_resolved`
+### MCP server not connecting
 
-The event queue is in-memory and starts when the bridge connects. Older messages are available through `messages_read`.
-
-### Options
+Check runtime dependencies and local server CLIs:
 
 ```bash
-hermes mcp serve              # Normal mode
-hermes mcp serve --verbose    # Debug logging on stderr
+uv pip install -e ".[mcp]"
+node --version
+npx --version
 ```
 
-### How it works
+Then verify config, credentials, and server reachability before restarting the CLI or gateway.
 
-The MCP server reads conversation data directly from Hermes's session store (`~/.hermes/sessions/sessions.json` and the SQLite database). A background thread polls the database for new messages and maintains an in-memory event queue. For sending messages, it uses the same `send_message` infrastructure as the Hermes agent itself.
+### Tools not appearing
 
-The gateway does NOT need to be running for read operations (listing conversations, reading history, polling events). It DOES need to be running for send operations, since the platform adapters need active connections.
+Common causes:
 
-### Current limits
+- server connection failed
+- discovery failed
+- filters excluded the tools
+- the utility capability does not exist on that server
+- `enabled: false` is set
 
-- The embedded `hermes mcp serve` exposes a **stdio-only** MCP server today. If you need an HTTP MCP server, run a separate adapter — or, much more commonly, use the MCP **client** side of Hermes, which already speaks both stdio and HTTP (`url` + `headers` in `mcp_servers.yaml` / `config.yaml`; see [HTTP servers](#http-servers) above).
-- Event polling at ~200ms intervals via mtime-optimized DB polling (skips work when files are unchanged)
-- No `claude/channel` push notification protocol yet
-- Text-only sends (no media/attachment sending through `messages_send`)
+### Resource or prompt utilities are missing
 
-## Related docs
+Those wrappers appear only when your config allows them and the MCP session supports the capability.
 
-- [Use MCP with Hermes](/docs/guides/use-mcp-with-hermes)
+## Related Docs
+
+- [Use MCP with the inherited runtime](/docs/guides/use-mcp-with-hermes)
 - [CLI Commands](/docs/reference/cli-commands)
 - [Slash Commands](/docs/reference/slash-commands)
 - [FAQ](/docs/reference/faq)

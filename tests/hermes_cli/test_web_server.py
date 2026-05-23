@@ -92,6 +92,23 @@ class TestRedactKey:
         assert "not set" in result.lower() or result == "***" or "\x1b" in result
 
 
+class TestForecastNativeWebServerEnv:
+    def test_web_dist_aliases_precede_legacy_hermes_env(self, monkeypatch):
+        import hermes_cli.web_server as web_server
+
+        monkeypatch.setenv("HERMES_WEB_DIST", "/legacy/dist")
+        monkeypatch.setenv("FORECAST_WEB_DIST", "/forecast/dist")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_WEB_DIST", "/superforecasting/dist")
+
+        assert web_server._configured_web_dist() == "/superforecasting/dist"
+
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_WEB_DIST")
+        assert web_server._configured_web_dist() == "/forecast/dist"
+
+        monkeypatch.delenv("FORECAST_WEB_DIST")
+        assert web_server._configured_web_dist() == "/legacy/dist"
+
+
 # ---------------------------------------------------------------------------
 # web_server tests (FastAPI endpoints)
 # ---------------------------------------------------------------------------
@@ -122,8 +139,138 @@ class TestWebServerEndpoints:
         assert resp.status_code == 200
         data = resp.json()
         assert "version" in data
+        assert "superforecasting_agent_home" in data
+        assert "forecast_home" in data
         assert "hermes_home" in data
+        assert data["superforecasting_agent_home"] == data["hermes_home"]
+        assert data["forecast_home"] == data["hermes_home"]
         assert "active_sessions" in data
+
+    def test_legacy_dashboard_session_header_still_accepted(self):
+        from starlette.testclient import TestClient
+        from hermes_cli.web_server import app, _SESSION_TOKEN
+
+        client = TestClient(app)
+        resp = client.get(
+            "/api/config",
+            headers={"X-Hermes-Session-Token": _SESSION_TOKEN},
+        )
+
+        assert resp.status_code == 200
+
+    def test_superforecasting_update_endpoint_uses_forecast_native_action(self, monkeypatch):
+        import hermes_cli.web_server as web_server
+
+        calls = []
+
+        class _FakeProc:
+            pid = 12345
+
+        def fake_spawn(subcommand, name):
+            calls.append((subcommand, name))
+            return _FakeProc()
+
+        monkeypatch.setattr(web_server, "_spawn_forecast_action", fake_spawn)
+
+        resp = self.client.post("/api/superforecasting-agent/update")
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "ok": True,
+            "pid": 12345,
+            "name": "superforecasting-agent-update",
+        }
+        assert calls == [(["update"], "superforecasting-agent-update")]
+
+    def test_legacy_hermes_update_endpoint_still_accepted(self, monkeypatch):
+        import hermes_cli.web_server as web_server
+
+        calls = []
+
+        class _FakeProc:
+            pid = 12346
+
+        def fake_spawn(subcommand, name):
+            calls.append((subcommand, name))
+            return _FakeProc()
+
+        monkeypatch.setattr(web_server, "_spawn_forecast_action", fake_spawn)
+
+        resp = self.client.post("/api/hermes/update")
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "ok": True,
+            "pid": 12346,
+            "name": "hermes-update",
+        }
+        assert calls == [(["update"], "hermes-update")]
+
+    def test_get_forecast_dashboard(self):
+        from forecasting import ForecastLedger
+
+        ledger = ForecastLedger()
+        question = ledger.create_question(
+            title="Will dashboard expose forecasts?",
+            resolution_criteria="Resolved yes if the dashboard API returns active forecasts.",
+            domain="product",
+            close_time="2026-06-01T00:00:00Z",
+        )
+        ledger.create_snapshot(
+            question_id=question.id,
+            probability_or_distribution=0.42,
+            rationale="Initial dashboard test forecast.",
+            as_of="2026-05-01T00:00:00Z",
+            confidence=0.6,
+        )
+        ledger.create_snapshot(
+            question_id=question.id,
+            probability_or_distribution=0.55,
+            rationale="Updated dashboard test forecast.",
+            as_of="2026-05-02T00:00:00Z",
+            confidence=0.7,
+        )
+        ledger.add_assumption(question_id=question.id, text="Dashboard assumption")
+        ledger.add_evidence(
+            question_id=question.id,
+            source_or_note="Dashboard evidence",
+            available_at="2026-05-02T00:00:00Z",
+        )
+        ledger.add_baseline_comparison(
+            question_id=question.id,
+            source="dashboard-market",
+            baseline_type="market",
+            probability_or_distribution=0.5,
+            as_of="2026-05-02T00:00:00Z",
+        )
+        ledger.create_alert(
+            severity="info",
+            scope_type="question",
+            scope_ref=question.id,
+            reason="dashboard_test",
+            recommended_action="Review dashboard test forecast.",
+        )
+
+        resp = self.client.get("/api/forecast/dashboard")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert data["product"] == "Superforecasting Agent"
+        assert data["active_count"] == 1
+        assert data["open_alert_count"] == 1
+        assert data["recent_backtests"] == []
+        assert data["learning"]["total_lessons"] == 0
+        assert data["learning"]["top_error_profiles"] == []
+        row = data["questions"][0]
+        assert row["id"] == question.id
+        assert row["probability"] == 0.55
+        assert row["as_of"] == "2026-05-02T00:00:00Z"
+        assert row["delta"] == pytest.approx(0.13)
+        assert row["confidence"] == 0.7
+        assert row["evidence_count"] == 1
+        assert row["baseline_count"] == 1
+        assert row["open_assumption_count"] == 1
+        assert row["open_alert_count"] == 1
 
     def test_get_status_filters_unconfigured_gateway_platforms(self, monkeypatch):
         import gateway.config as gateway_config
@@ -667,7 +814,7 @@ class TestNewEndpoints:
         assert resp.status_code == 200
         assert resp.json()["command"] == "coder setup"
 
-    def test_profile_setup_command_uses_hermes_for_default_profile(self):
+    def test_profile_setup_command_uses_forecast_cli_for_default_profile(self):
         from hermes_constants import get_hermes_home
 
         get_hermes_home().mkdir(parents=True, exist_ok=True)
@@ -675,7 +822,16 @@ class TestNewEndpoints:
         resp = self.client.get("/api/profiles/default/setup-command")
 
         assert resp.status_code == 200
-        assert resp.json()["command"] == "hermes setup"
+        assert resp.json()["command"] == "superforecasting-agent setup"
+
+    def test_oauth_provider_cli_commands_are_forecast_native(self):
+        resp = self.client.get("/api/providers/oauth")
+
+        assert resp.status_code == 200
+        commands = [provider["cli_command"] for provider in resp.json()["providers"]]
+        assert "superforecasting-agent auth add anthropic" in commands
+        assert "superforecasting-agent auth add nous" in commands
+        assert not any(command.startswith("hermes auth") for command in commands)
 
     def test_profiles_create_creates_wrapper_alias_when_safe(self, monkeypatch, tmp_path):
         import hermes_cli.profiles as profiles_mod

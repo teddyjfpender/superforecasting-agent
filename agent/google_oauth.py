@@ -803,13 +803,13 @@ h1 { color: #1a7f37; } p { color: #555; }
 """
 
 _ERROR_PAGE = """<!doctype html>
-<html><head><meta charset="utf-8"><title>Hermes — sign-in failed</title>
+<html><head><meta charset="utf-8"><title>Superforecasting Agent — sign-in failed</title>
 <style>
 body {{ font: 16px/1.5 system-ui, sans-serif; margin: 10vh auto; max-width: 32rem; text-align: center; color: #222; }}
 h1 {{ color: #b42318; }} p {{ color: #555; }}
 </style></head>
 <body><h1>Sign-in failed</h1><p>{message}</p>
-<p>Return to your terminal — Hermes will walk you through a manual paste fallback.</p></body></html>
+<p>Return to your terminal — Superforecasting Agent will walk you through a manual paste fallback.</p></body></html>
 """
 
 

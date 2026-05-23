@@ -1,21 +1,22 @@
 // The dashboard can be served either at the root of its host (e.g.
 // https://kanban.tilos.com/) or under a URL prefix when reverse-proxied
-// (e.g. https://mission-control.tilos.com/hermes/). The Python backend
-// injects ``window.__HERMES_BASE_PATH__`` into index.html based on the
+// (e.g. https://mission-control.tilos.com/forecast/). The Python backend
+// injects forecast-native base-path globals into index.html based on the
 // incoming ``X-Forwarded-Prefix`` header so the SPA can address its own
 // ``/api/...`` and ``/dashboard-plugins/...`` URLs correctly without a
 // rebuild. Empty string means "served at root".
 function readBasePath(): string {
   if (typeof window === "undefined") return "";
-  const raw = window.__HERMES_BASE_PATH__ ?? "";
+  const raw = window.__SUPERFORECASTING_AGENT_BASE_PATH__ ?? window.__FORECAST_BASE_PATH__ ?? window.__HERMES_BASE_PATH__ ?? "";
   if (!raw) return "";
   // Normalise: ensure leading slash, strip trailing slash.
   const withLead = raw.startsWith("/") ? raw : `/${raw}`;
   return withLead.replace(/\/+$/, "");
 }
 
-export const HERMES_BASE_PATH = readBasePath();
-const BASE = HERMES_BASE_PATH;
+export const FORECAST_BASE_PATH = readBasePath();
+export const HERMES_BASE_PATH = FORECAST_BASE_PATH;
+const BASE = FORECAST_BASE_PATH;
 
 import type { DashboardTheme } from "@/themes/types";
 
@@ -23,12 +24,26 @@ import type { DashboardTheme } from "@/themes/types";
 // Injected into index.html by the server — never fetched via API.
 declare global {
   interface Window {
+    __SUPERFORECASTING_AGENT_SESSION_TOKEN__?: string;
+    __FORECAST_SESSION_TOKEN__?: string;
     __HERMES_SESSION_TOKEN__?: string;
+    __SUPERFORECASTING_AGENT_BASE_PATH__?: string;
+    __FORECAST_BASE_PATH__?: string;
     __HERMES_BASE_PATH__?: string;
   }
 }
 let _sessionToken: string | null = null;
-const SESSION_HEADER = "X-Hermes-Session-Token";
+const SESSION_HEADER = "X-Superforecasting-Agent-Session-Token";
+
+export function getDashboardSessionTokenSync(): string | null {
+  if (typeof window === "undefined") return null;
+  return (
+    window.__SUPERFORECASTING_AGENT_SESSION_TOKEN__ ??
+    window.__FORECAST_SESSION_TOKEN__ ??
+    window.__HERMES_SESSION_TOKEN__ ??
+    null
+  );
+}
 
 function setSessionHeader(headers: Headers, token: string): void {
   if (!headers.has(SESSION_HEADER)) {
@@ -39,7 +54,7 @@ function setSessionHeader(headers: Headers, token: string): void {
 export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   // Inject the session token into all /api/ requests.
   const headers = new Headers(init?.headers);
-  const token = window.__HERMES_SESSION_TOKEN__;
+  const token = getDashboardSessionTokenSync();
   if (token) {
     setSessionHeader(headers, token);
   }
@@ -53,12 +68,12 @@ export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> 
 
 async function getSessionToken(): Promise<string> {
   if (_sessionToken) return _sessionToken;
-  const injected = window.__HERMES_SESSION_TOKEN__;
+  const injected = getDashboardSessionTokenSync();
   if (injected) {
     _sessionToken = injected;
     return _sessionToken;
   }
-  throw new Error("Session token not available — page must be served by the Hermes dashboard server");
+  throw new Error("Session token not available — page must be served by the Superforecasting Agent dashboard server");
 }
 
 export const api = {
@@ -205,6 +220,8 @@ export const api = {
       body: JSON.stringify({ name, enabled }),
     }),
   getToolsets: () => fetchJSON<ToolsetInfo[]>("/api/tools/toolsets"),
+  getForecastDashboard: () =>
+    fetchJSON<ForecastDashboardResponse>("/api/forecast/dashboard"),
 
   // Session search (FTS5)
   searchSessions: (q: string) =>
@@ -269,6 +286,8 @@ export const api = {
   // Gateway / update actions
   restartGateway: () =>
     fetchJSON<ActionResponse>("/api/gateway/restart", { method: "POST" }),
+  updateSuperforecastingAgent: () =>
+    fetchJSON<ActionResponse>("/api/superforecasting-agent/update", { method: "POST" }),
   updateHermes: () =>
     fetchJSON<ActionResponse>("/api/hermes/update", { method: "POST" }),
   getActionStatus: (name: string, lines = 200) =>
@@ -376,6 +395,8 @@ export interface StatusResponse {
   gateway_running: boolean;
   gateway_state: string | null;
   gateway_updated_at: string | null;
+  superforecasting_agent_home: string;
+  forecast_home: string;
   hermes_home: string;
   latest_config_version: number;
   release_date: string;
@@ -664,6 +685,171 @@ export interface ModelAssignmentResponse {
   model?: string;
   tasks?: string[];
   reset?: boolean;
+}
+
+// ── Forecast dashboard types ───────────────────────────────────────────
+
+export interface ForecastDashboardQuestion {
+  id: string;
+  title: string;
+  status: string;
+  domain?: string | null;
+  topics: string[];
+  close_time?: string | null;
+  resolution_time?: string | null;
+  probability: number | Record<string, unknown> | string | null;
+  delta?: number | null;
+  confidence?: number | null;
+  as_of?: string | null;
+  baseline_count: number;
+  evidence_count: number;
+  open_assumption_count: number;
+  stale_assumption_count: number;
+  open_alert_count: number;
+}
+
+export interface ForecastDashboardResponse {
+  product: string;
+  active_count: number;
+  open_alert_count: number;
+  review_queue_count: number;
+  alerts?: ForecastDashboardAlert[];
+  calibration: ForecastDashboardCalibration;
+  evidence_status?: ForecastDashboardEvidenceStatus;
+  learning: ForecastDashboardLearning;
+  questions: ForecastDashboardQuestion[];
+  review_queue: ForecastDashboardReview[];
+  recent_backtests: ForecastDashboardBacktest[];
+}
+
+export interface ForecastDashboardAlert {
+  id?: string;
+  created_at?: string;
+  severity?: string;
+  scope_type?: string;
+  scope_ref?: string;
+  reason?: string;
+  recommended_action?: string;
+  acknowledged_at?: string | null;
+}
+
+export interface ForecastDashboardEvidenceStatus {
+  verdict?: string;
+  can_claim_live_superforecasting?: boolean;
+  message?: string;
+  gaps?: string[];
+  next_actions?: Array<{
+    requirement_id?: string;
+    action?: string;
+  }>;
+  score_counts?: {
+    live?: number;
+    backtest?: number;
+    imported_baseline?: number;
+  };
+  backtests?: {
+    run_count?: number;
+    distinct_dataset_count?: number;
+    leakage_free_run_count?: number;
+    positive_best_baseline_edge_run_count?: number;
+    agent_protocol_scored_count?: number;
+  };
+  requirements?: Array<{
+    id?: string;
+    description?: string;
+    observed?: number;
+    required?: number;
+    passed?: boolean;
+    recommended_action?: string;
+  }>;
+}
+
+export interface ForecastDashboardBacktest {
+  id: string;
+  dataset: string;
+  case_count: number;
+  probability_sources?: string[];
+  agent_mean_brier?: number | null;
+  best_baseline?: string | null;
+  best_baseline_brier?: number | null;
+  agent_edge?: number | null;
+  claim_status?: ForecastDashboardClaimStatus;
+  paired_count?: number;
+  paired_agent_edge?: number | null;
+  paired_agent_edge_ci95_low?: number | null;
+  paired_agent_edge_ci95_high?: number | null;
+  paired_agent_wins?: number;
+  paired_baseline_wins?: number;
+  paired_ties?: number;
+  leakage_checks_passed: boolean;
+}
+
+export interface ForecastDashboardClaimStatus {
+  evidence_type?: string;
+  can_claim_live_superforecasting?: boolean;
+  case_count?: number;
+  scored_count?: number;
+  leakage_checks_passed?: boolean;
+  verdict?: string;
+  message?: string;
+}
+
+export interface ForecastDashboardCalibration {
+  count: number;
+  mean_brier?: number | null;
+  mean_log_score?: number | null;
+  mean_sharpness?: number | null;
+  domain?: string | null;
+  forecast_origin?: string | null;
+  horizon?: string | null;
+  calibration_eligible?: boolean | null;
+}
+
+export interface ForecastDashboardErrorProfile {
+  id?: string;
+  domain?: string | null;
+  topic?: string | null;
+  question_type?: string | null;
+  sample_count: number;
+  mean_brier?: number | null;
+  recurring_errors: string[];
+  recommended_adjustments: string[];
+  updated_at?: string | null;
+}
+
+export interface ForecastDashboardLesson {
+  id?: string;
+  status: string;
+  scope_type?: string | null;
+  scope_ref?: string | null;
+  confidence?: number | null;
+  lesson: string;
+  recommended_adjustment?: Record<string, unknown>;
+  source_postmortem_count?: number;
+  source_score_count?: number;
+  updated_at?: string | null;
+}
+
+export interface ForecastDashboardLearning {
+  total_lessons: number;
+  active_lessons: number;
+  tentative_lessons: number;
+  invalidated_lessons: number;
+  top_error_profiles: ForecastDashboardErrorProfile[];
+  recent_lessons: ForecastDashboardLesson[];
+}
+
+export interface ForecastDashboardReview {
+  id: string;
+  title: string;
+  domain?: string | null;
+  close_time?: string | null;
+  resolution_time?: string | null;
+  probability?: number | Record<string, unknown> | string | null;
+  as_of?: string | null;
+  priority: number;
+  reasons: string[];
+  next_action: string;
 }
 
 // ── OAuth provider types ────────────────────────────────────────────────

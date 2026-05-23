@@ -41,6 +41,8 @@ def _run_apply_profile_override(
         monkeypatch.setenv("HERMES_HOME", hermes_home)
     else:
         monkeypatch.delenv("HERMES_HOME", raising=False)
+    monkeypatch.delenv("FORECAST_HOME", raising=False)
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_HOME", raising=False)
 
     monkeypatch.setattr(sys, "argv", argv or ["hermes", "gateway", "start"])
 
@@ -139,3 +141,21 @@ class TestApplyProfileOverrideHermesHomeGuard:
         _apply_profile_override()
 
         assert os.environ.get("HERMES_HOME") is None
+
+    def test_forecast_native_home_alias_is_bridged_to_legacy_env(
+        self, tmp_path, monkeypatch
+    ):
+        """SUPERFORECASTING_AGENT_HOME should feed legacy HERMES_HOME readers."""
+        home = tmp_path / ".superforecasting-agent"
+        home.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("HERMES_HOME", raising=False)
+        monkeypatch.delenv("FORECAST_HOME", raising=False)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(home))
+        monkeypatch.setattr(sys, "argv", ["superforecasting-agent", "dashboard"])
+
+        from hermes_cli.main import _apply_profile_override
+        _apply_profile_override()
+
+        assert os.environ.get("HERMES_HOME") == str(home)

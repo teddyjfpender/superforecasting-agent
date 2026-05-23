@@ -1,4 +1,4 @@
-"""Hermes CLI skin/theme engine.
+"""Superforecasting Agent CLI skin/theme engine.
 
 A data-driven skin system that lets users customize the CLI's visual appearance.
 Skins are defined as YAML files in ~/.hermes/skins/ or as built-in presets.
@@ -65,12 +65,12 @@ All fields are optional. Missing values inherit from the ``default`` skin.
 
     # Branding: text strings used throughout the CLI
     branding:
-      agent_name: "Hermes Agent"          # Banner title, status display
+      agent_name: "Superforecasting Agent"          # Banner title, status display
       welcome: "Welcome message"          # Shown at CLI startup
-      goodbye: "Goodbye! ⚕"              # Shown on exit
-      response_label: " ⚕ Hermes "       # Response box header label
+      goodbye: "Goodbye."                # Shown on exit
+      response_label: " Forecast "       # Response box header label
       prompt_symbol: "❯"                 # Input prompt symbol (bare token; renderers add trailing space)
-      help_header: "(^_^)? Commands"      # /help header text
+      help_header: "Forecast Desk Commands"  # /help header text
 
     # Tool prefix: character for tool output lines (default: ┊)
     tool_prefix: "┊"
@@ -90,7 +90,7 @@ USAGE
 
     skin = get_active_skin()
     print(skin.colors["banner_title"])    # "#FFD700"
-    print(skin.get_branding("agent_name"))  # "Hermes Agent"
+    print(skin.get_branding("agent_name"))  # "Superforecasting Agent"
 
     set_active_skin("ares")               # Switch to built-in ares skin
     set_active_skin("mytheme")            # Switch to user skin from ~/.hermes/skins/
@@ -98,7 +98,8 @@ USAGE
 BUILT-IN SKINS
 ==============
 
-- ``default`` — Classic Hermes gold/kawaii (the current look)
+- ``default`` — Classic forecast gold (the current look)
+- ``forecast`` — Forecasting desk default with neutral research-terminal styling
 - ``ares``    — Crimson/bronze war-god theme with custom spinner wings
 - ``mono``    — Clean grayscale monochrome
 - ``slate``   — Cool blue developer-focused theme
@@ -136,8 +137,8 @@ class SkinConfig:
     branding: Dict[str, str] = field(default_factory=dict)
     tool_prefix: str = "┊"
     tool_emojis: Dict[str, str] = field(default_factory=dict)  # per-tool emoji overrides
-    banner_logo: str = ""    # Rich-markup ASCII art logo (replaces HERMES_AGENT_LOGO)
-    banner_hero: str = ""    # Rich-markup hero art (replaces HERMES_CADUCEUS)
+    banner_logo: str = ""    # Rich-markup ASCII art logo override
+    banner_hero: str = ""    # Rich-markup forecast-desk hero art override
 
     def get_color(self, key: str, fallback: str = "") -> str:
         """Get a color value with fallback."""
@@ -164,7 +165,7 @@ class SkinConfig:
 _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
     "default": {
         "name": "default",
-        "description": "Classic Hermes — gold and kawaii",
+        "description": "Classic forecast — gold",
         "colors": {
             "banner_border": "#CD7F32",
             "banner_title": "#FFD700",
@@ -187,12 +188,12 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
             # Empty = use hardcoded defaults in display.py
         },
         "branding": {
-            "agent_name": "Hermes Agent",
-            "welcome": "Welcome to Hermes Agent! Type your message or /help for commands.",
-            "goodbye": "Goodbye! ⚕",
-            "response_label": " ⚕ Hermes ",
+            "agent_name": "Superforecasting Agent",
+            "welcome": "Welcome to Superforecasting Agent. Type /forecast to inspect the desk or /help for commands.",
+            "goodbye": "Goodbye.",
+            "response_label": " Forecast ",
             "prompt_symbol": "❯",
-            "help_header": "(^_^)? Available Commands",
+            "help_header": "Forecast Desk Commands",
         },
         "tool_prefix": "┊",
     },
@@ -240,7 +241,7 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
         },
         "branding": {
             "agent_name": "Ares Agent",
-            "welcome": "Welcome to Ares Agent! Type your message or /help for commands.",
+            "welcome": "Welcome to Ares Agent. Type /forecast to inspect the desk or /help for commands.",
             "goodbye": "Farewell, warrior! ⚔",
             "response_label": " ⚔ Ares ",
             "prompt_symbol": "⚔",
@@ -298,10 +299,10 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
         },
         "spinner": {},
         "branding": {
-            "agent_name": "Hermes Agent",
-            "welcome": "Welcome to Hermes Agent! Type your message or /help for commands.",
-            "goodbye": "Goodbye! ⚕",
-            "response_label": " ⚕ Hermes ",
+            "agent_name": "Superforecasting Agent",
+            "welcome": "Welcome to Superforecasting Agent. Type /forecast to inspect the desk or /help for commands.",
+            "goodbye": "Goodbye.",
+            "response_label": " Forecast ",
             "prompt_symbol": "❯",
             "help_header": "[?] Available Commands",
         },
@@ -337,14 +338,64 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
         },
         "spinner": {},
         "branding": {
-            "agent_name": "Hermes Agent",
-            "welcome": "Welcome to Hermes Agent! Type your message or /help for commands.",
-            "goodbye": "Goodbye! ⚕",
-            "response_label": " ⚕ Hermes ",
+            "agent_name": "Superforecasting Agent",
+            "welcome": "Welcome to Superforecasting Agent. Type /forecast to inspect the desk or /help for commands.",
+            "goodbye": "Goodbye.",
+            "response_label": " Forecast ",
             "prompt_symbol": "❯",
-            "help_header": "(^_^)? Available Commands",
+            "help_header": "[?] Available Commands",
         },
         "tool_prefix": "┊",
+    },
+    "forecast": {
+        "name": "forecast",
+        "description": "Forecasting desk — neutral research terminal",
+        "colors": {
+            "banner_border": "#3D7C6E",
+            "banner_title": "#8FE3CF",
+            "banner_accent": "#D6B85A",
+            "banner_dim": "#63706C",
+            "banner_text": "#D9E8E3",
+            "ui_accent": "#8FE3CF",
+            "ui_label": "#D6B85A",
+            "ui_ok": "#63D0A6",
+            "ui_error": "#F07A72",
+            "ui_warn": "#D6B85A",
+            "prompt": "#D9E8E3",
+            "input_rule": "#3D7C6E",
+            "response_border": "#8FE3CF",
+            "status_bar_bg": "#13211F",
+            "status_bar_text": "#D9E8E3",
+            "status_bar_strong": "#8FE3CF",
+            "status_bar_dim": "#63706C",
+            "status_bar_good": "#63D0A6",
+            "status_bar_warn": "#D6B85A",
+            "status_bar_bad": "#F0A35E",
+            "status_bar_critical": "#F07A72",
+            "session_label": "#8FE3CF",
+            "session_border": "#63706C",
+        },
+        "spinner": {
+            "waiting_faces": ["[.]", "[:]", "[']", "[.]"],
+            "thinking_faces": ["[p]", "[q]", "[e]", "[m]"],
+            "thinking_verbs": [
+                "checking evidence",
+                "estimating base rates",
+                "updating priors",
+                "running comparisons",
+                "reviewing assumptions",
+                "scoring uncertainty",
+            ],
+        },
+        "branding": {
+            "agent_name": "Superforecasting Agent",
+            "welcome": "Welcome to Superforecasting Agent. Type /forecast to inspect the desk or /help for commands.",
+            "goodbye": "Forecast desk closed.",
+            "response_label": " Forecast ",
+            "prompt_symbol": "›",
+            "help_header": "Forecast Desk Commands",
+        },
+        "tool_prefix": "│",
     },
     "daylight": {
         "name": "daylight",
@@ -374,10 +425,10 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
         },
         "spinner": {},
         "branding": {
-            "agent_name": "Hermes Agent",
-            "welcome": "Welcome to Hermes Agent! Type your message or /help for commands.",
-            "goodbye": "Goodbye! ⚕",
-            "response_label": " ⚕ Hermes ",
+            "agent_name": "Superforecasting Agent",
+            "welcome": "Welcome to Superforecasting Agent. Type /forecast to inspect the desk or /help for commands.",
+            "goodbye": "Goodbye.",
+            "response_label": " Forecast ",
             "prompt_symbol": "❯",
             "help_header": "[?] Available Commands",
         },
@@ -411,12 +462,12 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
         },
         "spinner": {},
         "branding": {
-            "agent_name": "Hermes Agent",
-            "welcome": "Welcome to Hermes Agent! Type your message or /help for commands.",
-            "goodbye": "Goodbye! \u2695",
-            "response_label": " \u2695 Hermes ",
+            "agent_name": "Superforecasting Agent",
+            "welcome": "Welcome to Superforecasting Agent. Type /forecast to inspect the desk or /help for commands.",
+            "goodbye": "Goodbye.",
+            "response_label": " Forecast ",
             "prompt_symbol": "\u276f",
-            "help_header": "(^_^)? Available Commands",
+            "help_header": "[?] Available Commands",
         },
         "tool_prefix": "\u250a",
     },
@@ -465,7 +516,7 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
         },
         "branding": {
             "agent_name": "Poseidon Agent",
-            "welcome": "Welcome to Poseidon Agent! Type your message or /help for commands.",
+            "welcome": "Welcome to Poseidon Agent. Type /forecast to inspect the desk or /help for commands.",
             "goodbye": "Fair winds! Ψ",
             "response_label": " Ψ Poseidon ",
             "prompt_symbol": "Ψ",
@@ -537,7 +588,7 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
         },
         "branding": {
             "agent_name": "Sisyphus Agent",
-            "welcome": "Welcome to Sisyphus Agent! Type your message or /help for commands.",
+            "welcome": "Welcome to Sisyphus Agent. Type /forecast to inspect the desk or /help for commands.",
             "goodbye": "The boulder waits. ◉",
             "response_label": " ◉ Sisyphus ",
             "prompt_symbol": "◉",
@@ -615,7 +666,7 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
         },
         "branding": {
             "agent_name": "Charizard Agent",
-            "welcome": "Welcome to Charizard Agent! Type your message or /help for commands.",
+            "welcome": "Welcome to Charizard Agent. Type /forecast to inspect the desk or /help for commands.",
             "goodbye": "Flame out! ✦",
             "response_label": " ✦ Charizard ",
             "prompt_symbol": "✦",
@@ -825,7 +876,7 @@ def get_active_prompt_symbol(fallback: str = "❯") -> str:
 
 
 
-def get_active_help_header(fallback: str = "(^_^)? Available Commands") -> str:
+def get_active_help_header(fallback: str = "Forecast Desk Commands") -> str:
     """Get the /help header from the active skin."""
     try:
         return get_active_skin().get_branding("help_header", fallback)
@@ -834,7 +885,7 @@ def get_active_help_header(fallback: str = "(^_^)? Available Commands") -> str:
 
 
 
-def get_active_goodbye(fallback: str = "Goodbye! ⚕") -> str:
+def get_active_goodbye(fallback: str = "Goodbye.") -> str:
     """Get the goodbye line from the active skin."""
     try:
         return get_active_skin().get_branding("goodbye", fallback)

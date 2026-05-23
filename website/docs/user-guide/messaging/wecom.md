@@ -1,12 +1,14 @@
 ---
 sidebar_position: 14
 title: "WeCom (Enterprise WeChat)"
-description: "Connect Hermes Agent to WeCom via the AI Bot WebSocket gateway"
+description: "Use WeCom for enterprise forecast alerts and approvals."
 ---
 
 # WeCom (Enterprise WeChat)
 
-Connect Hermes to [WeCom](https://work.weixin.qq.com/) (企业微信), Tencent's enterprise messaging platform. The adapter uses WeCom's AI Bot WebSocket gateway for real-time bidirectional communication — no public endpoint or webhook needed.
+Connect the forecast gateway to [WeCom](https://work.weixin.qq.com/) (企业微信), Tencent's enterprise messaging platform. The adapter uses WeCom's AI Bot WebSocket gateway for real-time bidirectional communication — no public endpoint or webhook needed.
+
+Use WeCom for enterprise forecast review alerts, source notes, approval prompts, scheduled digests, and meeting follow-up evidence. WeCom conversations are not durable forecast memory; probabilities, evidence, assumptions, resolutions, postmortems, and calibration lessons belong in the forecast ledger.
 
 ## Prerequisites
 
@@ -22,10 +24,10 @@ Connect Hermes to [WeCom](https://work.weixin.qq.com/) (企业微信), Tencent's
 #### Recommended: Scan-to-Create (one command)
 
 ```bash
-hermes gateway setup
+superforecasting-agent gateway setup
 ```
 
-Select **WeCom** and scan the QR code with your WeCom mobile app. Hermes will automatically create a bot application with the correct permissions and save the credentials.
+Select **WeCom** and scan the QR code with your WeCom mobile app. The setup wizard will automatically create a bot application with the correct permissions and save the credentials.
 
 The setup wizard will:
 1. Display a QR code in your terminal
@@ -41,18 +43,18 @@ If scan-to-create is not available, the wizard falls back to manual input:
 2. Navigate to **Applications** → **Create Application** → **AI Bot**
 3. Configure the bot name and description
 4. Copy the **Bot ID** and **Secret** from the credentials page
-5. Run `hermes gateway setup`, select **WeCom**, and enter the credentials when prompted
+5. Run `superforecasting-agent gateway setup`, select **WeCom**, and enter the credentials when prompted
 
 :::warning
 Keep the Bot Secret private. Anyone with it can impersonate your bot.
 :::
 
-### Step 2: Configure Hermes
+### Step 2: Configure Superforecasting Agent
 
 #### Option A: Interactive Setup (Recommended)
 
 ```bash
-hermes gateway setup
+superforecasting-agent gateway setup
 ```
 
 Select **WeCom** and follow the prompts. The wizard will guide you through:
@@ -62,7 +64,7 @@ Select **WeCom** and follow the prompts. The wizard will guide you through:
 
 #### Option B: Manual Configuration
 
-Add the following to `~/.hermes/.env`:
+Add the following to `~/.superforecasting-agent/.env`:
 
 ```bash
 WECOM_BOT_ID=your-bot-id
@@ -71,14 +73,14 @@ WECOM_SECRET=your-secret
 # Optional: restrict access
 WECOM_ALLOWED_USERS=user_id_1,user_id_2
 
-# Optional: home channel for cron/notifications
+# Optional: home channel for scheduled reviews/notifications
 WECOM_HOME_CHANNEL=chat_id
 ```
 
 ### Step 3: Start the gateway
 
 ```bash
-hermes gateway
+superforecasting-agent gateway
 ```
 
 ## Features
@@ -181,7 +183,7 @@ If no `allow_from` is configured for a group, all users in that group are allowe
 
 ### Inbound (receiving)
 
-The adapter receives media attachments from users and caches them locally for agent processing:
+The adapter receives media attachments from users and caches them locally for forecast review:
 
 | Type | How it's handled |
 |------|-----------------|
@@ -190,7 +192,7 @@ The adapter receives media attachments from users and caches them locally for ag
 | **Voice** | Voice message text transcription is extracted if available. |
 | **Mixed messages** | WeCom mixed-type messages (text + images) are parsed and all components extracted. |
 
-**Quoted messages:** Media from quoted (replied-to) messages is also extracted, so the agent has context about what the user is replying to.
+**Quoted messages:** Media from quoted messages is also extracted, so the forecast runtime has context about the source note or approval thread.
 
 ### AES-Encrypted Media Decryption
 

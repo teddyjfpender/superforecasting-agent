@@ -32,9 +32,12 @@ def _state_dir() -> Path:
     override = os.environ.get("WATCHER_STATE_DIR")
     if override:
         return Path(override)
-    # Default: $HERMES_HOME/watcher-state/, falling back to ~/.hermes/watcher-state/.
-    hermes_home = os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
-    return Path(hermes_home) / "watcher-state"
+    # Default: fork-native agent home, with HERMES_HOME kept as compatibility.
+    for env_var in ("SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME"):
+        value = os.environ.get(env_var, "").strip()
+        if value:
+            return Path(value) / "watcher-state"
+    return Path.home() / ".superforecasting-agent" / "watcher-state"
 
 
 class Watermark:

@@ -5,6 +5,7 @@ import type {
   CommandsCatalogResponse,
   ConfigFullResponse,
   DelegationStatusResponse,
+  ForecastDashboardResponse,
   GatewayEvent,
   GatewaySkin,
   SessionMostRecentResponse
@@ -16,6 +17,7 @@ import { fromSkin } from '../theme.js'
 import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 
 import { applyDelegationStatus, getDelegationState } from './delegationStore.js'
+import { forecastDashboardSections, forecastDeskRailSections, forecastDeskStatusLabel } from './forecastPanel.js'
 import type { GatewayEventHandlerContext } from './interfaces.js'
 import { patchOverlayState } from './overlayStore.js'
 import { turnController } from './turnController.js'
@@ -86,6 +88,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   let pendingThinkingStatus = ''
   let thinkingStatusTimer: null | ReturnType<typeof setTimeout> = null
   let startupPromptSubmitted = false
+  let startupForecastDashboardShown = false
 
   // Inject the disk-save callback into turnController so recordMessageComplete
   // can fire-and-forget a persist without having to plumb a gateway ref around.
@@ -198,6 +201,30 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     }, 0)
   }
 
+  const showStartupForecastDashboard = () => {
+    if (startupForecastDashboardShown) {
+      return
+    }
+
+    startupForecastDashboardShown = true
+    const renderPanel = !STARTUP_RESUME_ID && !STARTUP_QUERY && !STARTUP_IMAGE
+    rpc<ForecastDashboardResponse>('forecast.dashboard', { limit: 8 })
+      .then(r => {
+        if (!r?.summary && !String(r?.output || '').trim()) {
+          return
+        }
+
+        patchUiState({
+          forecastDeskRailSections: forecastDeskRailSections(r || {}),
+          forecastDeskStatus: forecastDeskStatusLabel(r || {})
+        })
+        if (renderPanel) {
+          panel('Forecast Desk', forecastDashboardSections(r || {}))
+        }
+      })
+      .catch(() => {})
+  }
+
   // Terminal statuses are never overwritten by late-arriving live events —
   // otherwise a stale `subagent.start` / `spawn_requested` can clobber a
   // terminal state from complete (failed/interrupted/timeout/error).
@@ -210,6 +237,8 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     if (skin) {
       applySkin(skin)
     }
+
+    showStartupForecastDashboard()
 
     rpc<CommandsCatalogResponse>('commands.catalog', {})
       .then(r => {

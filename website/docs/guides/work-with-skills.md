@@ -1,12 +1,12 @@
 ---
 sidebar_position: 12
 title: "Working with Skills"
-description: "Find, install, use, and create skills — on-demand knowledge that teaches Hermes new workflows"
+description: "Use skills for repeatable forecasting workflows."
 ---
 
 # Working with Skills
 
-Skills are on-demand knowledge documents that teach Hermes how to handle specific tasks — from generating ASCII art to managing GitHub PRs. This guide walks you through using them day to day.
+Skills are on-demand knowledge documents for repeatable forecasting work: source adapters, research protocols, benchmark setup, model checks, and domain-specific evidence handling. They are useful when they improve forecast quality; durable beliefs, evidence, scores, postmortems, and calibration lessons still belong in the forecast ledger.
 
 For the full technical reference, see [Skills System](/docs/user-guide/features/skills).
 
@@ -14,32 +14,32 @@ For the full technical reference, see [Skills System](/docs/user-guide/features/
 
 ## Finding Skills
 
-Every Hermes installation ships with bundled skills. See what's available:
+Every Superforecasting Agent installation ships with bundled skills. See what's available:
 
 ```bash
-# In any chat session:
+# In any forecast session:
 /skills
 
 # Or from the CLI:
-hermes skills list
+superforecasting-agent skills list
 ```
 
 This shows a compact list with names and descriptions:
 
 ```
-ascii-art         Generate ASCII art using pyfiglet, cowsay, boxes...
 arxiv             Search and retrieve academic papers from arXiv...
-github-pr-workflow Full PR lifecycle — create branches, commit...
-plan              Plan mode — inspect context, write a markdown...
-excalidraw        Create hand-drawn style diagrams using Excalidraw...
+finance-stocks    Pull market context for public-company forecasts...
+forecast-review   Review active questions and stale assumptions...
+research-paper    Structure paper evidence for model runs...
+data-adapter      Attach CSV/JSON observations as timestamped evidence...
 ```
 
 ### Searching for a Skill
 
 ```bash
 # Search by keyword
-/skills search docker
-/skills search music
+/skills search arxiv
+/skills search polling
 ```
 
 ### The Skills Hub
@@ -51,7 +51,7 @@ Official optional skills (heavier or niche skills not active by default) are ava
 /skills browse
 
 # Search the hub
-/skills search blockchain
+/skills search macro
 ```
 
 ---
@@ -62,22 +62,22 @@ Every installed skill is automatically a slash command. Just type its name:
 
 ```bash
 # Load a skill and give it a task
-/ascii-art Make a banner that says "HELLO WORLD"
-/plan Design a REST API for a todo app
-/github-pr-workflow Create a PR for the auth refactor
+/arxiv Find recent papers relevant to this question
+/forecast-review Review stale assumptions for question 142
+/data-adapter Attach this CSV as evidence for the inflation forecast
 
 # Just the skill name (no task) loads it and lets you describe what you need
-/excalidraw
+/arxiv
 ```
 
-You can also trigger skills through natural conversation — ask Hermes to use a specific skill, and it will load it via the `skill_view` tool.
+You can also trigger skills through natural language inside a forecast session. Ask the desk to use a specific skill, and it will load it via the `skill_view` tool.
 
 ### Progressive Disclosure
 
-Skills use a token-efficient loading pattern. The agent doesn't load everything at once:
+Skills use a token-efficient loading pattern. The runtime does not load everything at once:
 
 1. **`skills_list()`** — compact list of all skills (~3k tokens). Loaded at session start.
-2. **`skill_view(name)`** — full SKILL.md content for one skill. Loaded when the agent decides it needs that skill.
+2. **`skill_view(name)`** — full SKILL.md content for one skill. Loaded when the runtime decides it needs that skill.
 3. **`skill_view(name, file_path)`** — a specific reference file within the skill. Only loaded if needed.
 
 This means skills don't cost tokens until they're actually used.
@@ -86,22 +86,22 @@ This means skills don't cost tokens until they're actually used.
 
 ## Installing from the Hub
 
-Official optional skills ship with Hermes but aren't active by default. Install them explicitly:
+Official optional skills ship with Superforecasting Agent but aren't active by default. Install them explicitly:
 
 ```bash
 # Install an official optional skill
-hermes skills install official/research/arxiv
+superforecasting-agent skills install official/research/arxiv
 
-# Install from the hub in a chat session
-/skills install official/creative/songwriting-and-ai-music
+# Install from the hub in a forecast session
+/skills install official/research/arxiv
 
 # Install a single-file SKILL.md directly from any HTTP(S) URL
-hermes skills install https://sharethis.chat/SKILL.md
+superforecasting-agent skills install https://sharethis.chat/SKILL.md
 /skills install https://example.com/SKILL.md --name my-skill
 ```
 
 What happens:
-1. The skill directory is copied to `~/.hermes/skills/`
+1. The skill directory is copied to `~/.superforecasting-agent/skills/`
 2. It appears in your `skills_list` output
 3. It becomes available as a slash command
 
@@ -113,7 +113,7 @@ Installed skills take effect in new sessions. If you want it available in the cu
 
 ```bash
 # Check it's there
-hermes skills list | grep arxiv
+superforecasting-agent skills list | grep arxiv
 
 # Or in chat
 /skills search arxiv
@@ -133,9 +133,9 @@ skill_view("superpowers:writing-plans")
 skill_view("writing-plans")
 ```
 
-Plugin skills are **not** listed in the system prompt and don't appear in `skills_list`. They're opt-in — load them explicitly when you know a plugin provides one. When loaded, the agent sees a banner listing sibling skills from the same plugin.
+Plugin skills are **not** listed in the system prompt and do not appear in `skills_list`. They are opt-in: load them explicitly when you know a plugin provides one. When loaded, the runtime sees a banner listing sibling skills from the same plugin.
 
-For how to ship skills in your own plugin, see [Build a Hermes Plugin → Bundle skills](/docs/guides/build-a-hermes-plugin#bundle-skills).
+For how to ship skills in your own plugin, see the plugin guide's bundle-skills section.
 
 ---
 
@@ -145,24 +145,24 @@ Some skills declare configuration they need in their frontmatter:
 
 ```yaml
 metadata:
-  hermes:
+  forecasting:
     config:
-      - key: tenor.api_key
-        description: "Tenor API key for GIF search"
-        prompt: "Enter your Tenor API key"
-        url: "https://developers.google.com/tenor/guides/quickstart"
+      - key: fred.api_key
+        description: "FRED API key for economic time series"
+        prompt: "Enter your FRED API key"
+        url: "https://fred.stlouisfed.org/docs/api/api_key.html"
 ```
 
-When a skill with config is first loaded, Hermes prompts you for the values. They're stored in `config.yaml` under `skills.config.*`.
+When a skill with config is first loaded, Superforecasting Agent prompts you for the values. They're stored in `config.yaml` under `skills.config.*`.
 
 Manage skill config from the CLI:
 
 ```bash
 # Interactive config for a specific skill
-hermes skills config gif-search
+superforecasting-agent skills config fred
 
 # View all skill config
-hermes config get skills.config
+superforecasting-agent config get skills.config
 ```
 
 ---
@@ -174,60 +174,60 @@ Skills are just markdown files with YAML frontmatter. Creating one takes under f
 ### 1. Create the Directory
 
 ```bash
-mkdir -p ~/.hermes/skills/my-category/my-skill
+mkdir -p ~/.superforecasting-agent/skills/my-category/my-skill
 ```
 
 ### 2. Write SKILL.md
 
-```markdown title="~/.hermes/skills/my-category/my-skill/SKILL.md"
+```markdown title="~/.superforecasting-agent/skills/my-category/my-skill/SKILL.md"
 ---
-name: my-skill
-description: Brief description of what this skill does
+name: my-forecast-skill
+description: Brief description of the forecasting workflow
 version: 1.0.0
 metadata:
-  hermes:
-    tags: [my-tag, automation]
-    category: my-category
+  forecasting:
+    tags: [evidence, automation]
+    category: research
 ---
 
-# My Skill
+# My Forecast Skill
 
 ## When to Use
-Use this skill when the user asks about [specific topic] or needs to [specific task].
+Use this skill when a forecast needs [specific source], [specific model], or [specific review protocol].
 
 ## Procedure
-1. First, check if [prerequisite] is available
-2. Run `command --with-flags`
-3. Parse the output and present results
+1. Check that the question has resolution criteria and an evidence cutoff
+2. Run the data or source query with the relevant timestamp bounds
+3. Attach findings as evidence, model inputs, or a review note
 
 ## Pitfalls
-- Common failure: [description]. Fix: [solution]
-- Watch out for [edge case]
+- Do not use post-cutoff evidence in backtests
+- Separate facts, estimates, rumors, and assumptions
 
 ## Verification
-Run `check-command` to confirm the result is correct.
+Confirm every produced claim has source metadata and an `available_at` timestamp.
 ```
 
 ### 3. Add Reference Files (Optional)
 
-Skills can include supporting files the agent loads on demand:
+Skills can include supporting files the runtime loads on demand:
 
 ```
 my-skill/
 ├── SKILL.md                    # Main skill document
 ├── references/
-│   ├── api-docs.md             # API reference the agent can consult
+│   ├── api-docs.md             # API reference the runtime can consult
 │   └── examples.md             # Example inputs/outputs
 ├── templates/
-│   └── config.yaml             # Template files the agent can use
+│   └── config.yaml             # Template files the runtime can use
 └── scripts/
-    └── setup.sh                # Scripts the agent can execute
+    └── setup.sh                # Scripts the runtime can execute
 ```
 
 Reference these in your SKILL.md:
 
 ```markdown
-For API details, load the reference: `skill_view("my-skill", "references/api-docs.md")`
+For API details, load the reference: `skill_view("my-forecast-skill", "references/api-docs.md")`
 ```
 
 ### 4. Test It
@@ -235,13 +235,13 @@ For API details, load the reference: `skill_view("my-skill", "references/api-doc
 Start a new session and try your skill:
 
 ```bash
-hermes chat -q "/my-skill help me with the thing"
+superforecasting-agent chat -q "/my-forecast-skill review question 142"
 ```
 
-The skill appears automatically — no registration needed. Drop it in `~/.hermes/skills/` and it's live.
+The skill appears automatically — no registration needed. Drop it in `~/.superforecasting-agent/skills/` and it's live.
 
 :::info
-The agent can also create and update skills itself using `skill_manage`. After solving a complex problem, Hermes may offer to save the approach as a skill for next time.
+The runtime can also create and update skills with `skill_manage`. After a repeatable research or modeling workflow, it may offer to save the approach as a skill for next time. Treat that as procedural knowledge; it should not replace ledger entries or calibration lessons.
 :::
 
 ---
@@ -251,10 +251,10 @@ The agent can also create and update skills itself using `skill_manage`. After s
 Control which skills are available on which platforms:
 
 ```bash
-hermes skills
+superforecasting-agent skills
 ```
 
-This opens an interactive TUI where you can enable or disable skills per platform (CLI, Telegram, Discord, etc.). Useful when you want certain skills only available in specific contexts — for example, keeping development skills off Telegram.
+This opens an interactive TUI where you can enable or disable skills per platform (CLI, Telegram, Discord, etc.). For the fork, keep forecasting and evidence skills available in the CLI first; messaging gateways should usually get only the skills needed for alerts, approvals, and source capture.
 
 ---
 
@@ -264,26 +264,26 @@ Both are persistent across sessions, but they serve different purposes:
 
 | | Skills | Memory |
 |---|---|---|
-| **What** | Procedural knowledge — how to do things | Factual knowledge — what things are |
-| **When** | Loaded on demand, only when relevant | Injected into every session automatically |
-| **Size** | Can be large (hundreds of lines) | Should be compact (key facts only) |
-| **Cost** | Zero tokens until loaded | Small but constant token cost |
-| **Examples** | "How to deploy to Kubernetes" | "User prefers dark mode, lives in PST" |
-| **Who creates** | You, the agent, or installed from Hub | The agent, based on conversations |
+| **What** | Procedural knowledge — how to do things | Calibration and evidence memory tied to scored forecasts |
+| **When** | Loaded on demand, only when relevant | Used when reviewing similar domains, horizons, or error patterns |
+| **Size** | Can be large (hundreds of lines) | Should be compact and provenance-aware |
+| **Cost** | Zero tokens until loaded | Used selectively when relevant to a question |
+| **Examples** | "How to import FRED evidence" | "Overweighted late polling swings in mayoral races" |
+| **Who creates** | You, the runtime, or installed from Hub | Scoring and postmortem workflows |
 
-**Rule of thumb:** If you'd put it in a reference document, it's a skill. If you'd put it on a sticky note, it's memory.
+**Rule of thumb:** If it is a repeatable procedure, make it a skill. If it is a scored lesson from a forecast, keep it in calibration memory.
 
 ---
 
 ## Tips
 
-**Keep skills focused.** A skill that tries to cover "all of DevOps" will be too long and too vague. A skill that covers "deploy a Python app to Fly.io" is specific enough to be genuinely useful.
+**Keep skills focused.** A skill that tries to cover "all macro forecasting" will be too long and too vague. A skill that covers "import and sanity-check FRED CPI observations" is specific enough to be useful.
 
-**Let the agent create skills.** After a complex multi-step task, Hermes will often offer to save the approach as a skill. Say yes — these agent-authored skills capture the exact workflow including pitfalls that were discovered along the way.
+**Let the runtime create skills carefully.** After a complex multi-step research task, it may offer to save the approach as a skill. Accept when the procedure is reusable, then keep outcome-specific learnings in the ledger.
 
-**Use categories.** Organize skills into subdirectories (`~/.hermes/skills/devops/`, `~/.hermes/skills/research/`, etc.). This keeps the list manageable and helps the agent find relevant skills faster.
+**Use categories.** Organize skills into subdirectories (`~/.superforecasting-agent/skills/devops/`, `~/.superforecasting-agent/skills/research/`, etc.). This keeps the list manageable and helps the runtime find relevant skills faster.
 
-**Update skills when they go stale.** If you use a skill and hit issues not covered by it, tell Hermes to update the skill with what you learned. Skills that aren't maintained become liabilities.
+**Update skills when they go stale.** If a source format, API, or review protocol changes, update the skill. Skills that are not maintained become liabilities.
 
 ---
 

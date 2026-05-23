@@ -110,7 +110,7 @@ def test_first_positional_argv(argv, expected):
 @pytest.mark.parametrize(
     "argv",
     [
-        ["hermes"],                          # bare → chat
+        ["hermes"],                          # bare → forecast desk
         ["hermes", "--help"],                # top-level help
         ["hermes", "-h"],
         ["hermes", "version"],               # known built-in

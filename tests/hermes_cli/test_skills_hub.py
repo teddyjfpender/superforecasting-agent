@@ -1,11 +1,20 @@
 from io import StringIO
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 from rich.console import Console
 
 from cli import ChatConsole
-from hermes_cli.skills_hub import do_check, do_install, do_list, do_update, handle_skills_slash
+from hermes_cli.skills_hub import (
+    do_check,
+    do_install,
+    do_list,
+    do_search,
+    do_update,
+    handle_skills_slash,
+    skills_command,
+)
 
 
 class _DummyLockFile:
@@ -121,6 +130,44 @@ def test_do_list_initializes_hub_dir(monkeypatch, hub_env):
     assert (hub_dir / "index-cache").is_dir()
 
 
+def test_do_search_uses_forecast_native_cli_hint(monkeypatch):
+    import tools.skills_hub as hub
+
+    result = SimpleNamespace(
+        name="forecast-research",
+        description="Research forecasting questions.",
+        source="official",
+        trust_level="builtin",
+        identifier="official/research/forecast-research",
+    )
+    monkeypatch.setattr(hub, "GitHubAuth", lambda: object())
+    monkeypatch.setattr(hub, "create_source_router", lambda auth: {})
+    monkeypatch.setattr(hub, "unified_search", lambda *args, **kwargs: [result])
+
+    sink = StringIO()
+    console = Console(file=sink, force_terminal=False, color_system=None, width=120)
+
+    do_search("forecast", console=console)
+
+    output = sink.getvalue()
+    assert "superforecasting-agent skills inspect <identifier>" in output
+    assert "superforecasting-agent skills install <identifier>" in output
+    assert "hermes skills" not in output
+
+
+def test_skills_command_usage_prefers_forecast_native_cli(monkeypatch):
+    sink = StringIO()
+    console = Console(file=sink, force_terminal=False, color_system=None, width=120)
+    monkeypatch.setattr("hermes_cli.skills_hub._console", console)
+
+    skills_command(SimpleNamespace(skills_action=None))
+
+    output = sink.getvalue()
+    assert "Usage: superforecasting-agent skills" in output
+    assert "Run 'superforecasting-agent skills <command> --help'" in output
+    assert "Usage: hermes skills" not in output
+
+
 def test_do_list_distinguishes_hub_builtin_and_local(three_source_env):
     output = _capture()
 
@@ -204,7 +251,7 @@ def test_do_list_enabled_only_hides_disabled(three_source_env, monkeypatch):
 
 
 def test_do_list_platform_env_is_ignored(three_source_env, monkeypatch):
-    """`hermes skills list` reads the active profile's config via
+    """The skills list command reads the active profile's config via
     HERMES_HOME (swapped by -p), so it must NOT pass a platform arg to
     ``get_disabled_skill_names`` — otherwise per-platform overrides
     would silently leak in from HERMES_PLATFORM env."""

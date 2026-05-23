@@ -14,10 +14,10 @@ Poll RSS, JSON APIs, and GitHub with watermark dedup.
 
 | | |
 |---|---|
-| Source | Optional — install with `hermes skills install official/devops/watchers` |
+| Source | Optional — install with `superforecasting-agent skills install official/devops/watchers` |
 | Path | `optional-skills/devops/watchers` |
 | Version | `1.0.0` |
-| Author | Hermes Agent |
+| Author | Superforecasting Agent |
 | License | MIT |
 | Platforms | linux, macos |
 | Tags | `cron`, `polling`, `rss`, `github`, `http`, `automation`, `monitoring` |
@@ -25,7 +25,7 @@ Poll RSS, JSON APIs, and GitHub with watermark dedup.
 ## Reference: full SKILL.md
 
 :::info
-The following is the complete skill definition that Hermes loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
+The following is the complete skill definition that Superforecasting Agent loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
 # Watchers
@@ -52,7 +52,7 @@ The scripts below handle all three. The agent runs them via the terminal tool �
 
 ## Ready-made scripts
 
-All three live in `$HERMES_HOME/skills/devops/watchers/scripts/` once the skill is installed. Each reads `WATCHER_STATE_DIR` (defaults to `$HERMES_HOME/watcher-state/`) for its state file, keyed by the `--name` argument.
+Set `AGENT_HOME="${SUPERFORECASTING_AGENT_HOME:-${FORECAST_HOME:-${HERMES_HOME:-$HOME/.superforecasting-agent}}}"` in shell examples. All three live in `$AGENT_HOME/skills/devops/watchers/scripts/` once the skill is installed. Each reads `WATCHER_STATE_DIR` (defaults to `$AGENT_HOME/watcher-state/`) for its state file, keyed by the `--name` argument.
 
 | Script | What it watches | Dedup key |
 |---|---|---|
@@ -73,21 +73,24 @@ All three:
 Run a watcher directly from the terminal tool:
 
 ```bash
-python $HERMES_HOME/skills/devops/watchers/scripts/watch_rss.py \
+AGENT_HOME="${SUPERFORECASTING_AGENT_HOME:-${FORECAST_HOME:-${HERMES_HOME:-$HOME/.superforecasting-agent}}}"
+python "$AGENT_HOME/skills/devops/watchers/scripts/watch_rss.py" \
   --name hn --url https://news.ycombinator.com/rss --max 5
 ```
 
-Watch a GitHub repo (set `GITHUB_TOKEN` in `~/.hermes/.env` to avoid the 60 req/hr anonymous rate limit):
+Watch a GitHub repo (set `GITHUB_TOKEN` in `~/.superforecasting-agent/.env` to avoid the 60 req/hr anonymous rate limit):
 
 ```bash
-python $HERMES_HOME/skills/devops/watchers/scripts/watch_github.py \
-  --name hermes-issues --repo NousResearch/hermes-agent --scope issues
+AGENT_HOME="${SUPERFORECASTING_AGENT_HOME:-${FORECAST_HOME:-${HERMES_HOME:-$HOME/.superforecasting-agent}}}"
+python "$AGENT_HOME/skills/devops/watchers/scripts/watch_github.py" \
+  --name forecast-agent-issues --repo NousResearch/superforecasting-agent --scope issues
 ```
 
 Poll an arbitrary JSON API:
 
 ```bash
-python $HERMES_HOME/skills/devops/watchers/scripts/watch_http_json.py \
+AGENT_HOME="${SUPERFORECASTING_AGENT_HOME:-${FORECAST_HOME:-${HERMES_HOME:-$HOME/.superforecasting-agent}}}"
+python "$AGENT_HOME/skills/devops/watchers/scripts/watch_http_json.py" \
   --name api --url https://api.example.com/events \
   --id-field event_id --items-path data.events
 ```
@@ -102,16 +105,18 @@ The agent invokes the script via the terminal tool inside the cron job's agent l
 
 ## State files
 
-Every watcher writes `$HERMES_HOME/watcher-state/<name>.json`. Inspect:
+Every watcher writes `$AGENT_HOME/watcher-state/<name>.json` by default. Inspect:
 
 ```bash
-cat $HERMES_HOME/watcher-state/hn.json
+AGENT_HOME="${SUPERFORECASTING_AGENT_HOME:-${FORECAST_HOME:-${HERMES_HOME:-$HOME/.superforecasting-agent}}}"
+cat "$AGENT_HOME/watcher-state/hn.json"
 ```
 
 Force a replay (next run treated as first poll):
 
 ```bash
-rm $HERMES_HOME/watcher-state/hn.json
+AGENT_HOME="${SUPERFORECASTING_AGENT_HOME:-${FORECAST_HOME:-${HERMES_HOME:-$HOME/.superforecasting-agent}}}"
+rm "$AGENT_HOME/watcher-state/hn.json"
 ```
 
 ## Writing your own
@@ -123,4 +128,4 @@ All three scripts use the same template: load watermark, fetch, diff, save, emit
 1. **Printing a "no new items" header every tick.** Callers rely on empty stdout = silent. If you print anything on an empty delta, you spam the channel. The shipped scripts handle this; custom scripts must too.
 2. **Expecting the first run to emit items.** It won't — first run records a baseline. If you need an initial digest, delete the state file after the first run or add a `--prime-with-latest N` flag in your own script.
 3. **Unbounded watermark growth.** The shared helper caps at 500 IDs. Raise it for high-churn feeds; lower it on constrained filesystems.
-4. **Putting the state dir where the agent's sandbox can't write.** `$HERMES_HOME/watcher-state/` is always writable. Docker/Modal backends may not see arbitrary host paths.
+4. **Putting the state dir where the agent's sandbox can't write.** `$AGENT_HOME/watcher-state/` is always writable. Docker/Modal backends may not see arbitrary host paths.

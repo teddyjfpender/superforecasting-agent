@@ -1,12 +1,12 @@
 ---
 sidebar_position: 12
 title: "Video Generation Provider Plugins"
-description: "How to build a video-generation backend plugin for Hermes Agent"
+description: "Build video-generation backend plugins"
 ---
 
 # Building a Video Generation Provider Plugin
 
-Video-gen provider plugins register a backend that services every `video_generate` tool call. Built-in providers (xAI, FAL) ship as plugins. Add a new one, or override a bundled one, by dropping a directory into `plugins/video_gen/<name>/`.
+Video-gen provider plugins register a backend that services every `video_generate` tool call. This is an inherited secondary surface in Superforecasting Agent: useful for presentation assets or visual briefs, but not part of forecast state or calibration. Built-in providers (xAI, FAL) ship as plugins. Add a new one, or override a bundled one, by dropping a directory into `plugins/video_gen/<name>/`.
 
 :::tip
 Video-gen mirrors [Image Generation Provider Plugins](/docs/developer-guide/image-gen-provider-plugin) almost line-for-line — if you've built an image-gen backend, you already know the shape. The main differences: a `capabilities()` method advertising modalities/aspect-ratios/durations, and a routing convention (pass `image_url` to use image-to-video, omit it to use text-to-video — the provider picks the right endpoint internally).
@@ -23,13 +23,13 @@ Edit and extend are intentionally out of scope. Most backends don't support them
 
 ## How discovery works
 
-Hermes scans for video-gen backends in three places:
+The runtime scans for video-gen backends in three places:
 
 1. **Bundled** — `<repo>/plugins/video_gen/<name>/` (auto-loaded with `kind: backend`)
-2. **User** — `~/.hermes/plugins/video_gen/<name>/` (opt-in via `plugins.enabled`)
-3. **Pip** — packages declaring a `hermes_agent.plugins` entry point
+2. **User** — `~/.superforecasting-agent/plugins/video_gen/<name>/` (opt-in via `plugins.enabled`). The legacy `~/.hermes/plugins/video_gen/<name>/` path remains accepted for inherited installs.
+3. **Pip** — packages declaring a `hermes_agent.plugins` entry point. The entry-point group keeps the inherited name for compatibility.
 
-Each plugin's `register(ctx)` function calls `ctx.register_video_gen_provider(...)`. The active provider is picked by `video_gen.provider` in `config.yaml`; `hermes tools` → Video Generation walks users through selection. Unlike `image_generate`, there is no in-tree legacy backend — every provider is a plugin.
+Each plugin's `register(ctx)` function calls `ctx.register_video_gen_provider(...)`. The active provider is picked by `video_gen.provider` in `config.yaml`; `superforecasting-agent tools` -> Video Generation walks users through selection. Unlike `image_generate`, there is no in-tree legacy backend — every provider is a plugin.
 
 ## Directory structure
 
@@ -101,7 +101,7 @@ class MyVideoGenProvider(VideoGenProvider):
         return {
             "name": "My Backend",
             "badge": "paid",
-            "tag": "Short description shown in `hermes tools`",
+            "tag": "Short description shown in `superforecasting-agent tools`",
             "env_vars": [
                 {
                     "key": "MY_API_KEY",
@@ -181,7 +181,7 @@ The tool exposes one schema across every backend. Providers ignore parameters th
 | `seed` | Reproducibility |
 | `model` | Override the active model/family |
 
-The provider's `capabilities()` advertises which of these are honored. The agent sees the active backend's capabilities in the tool description, dynamically rebuilt when the user changes backend via `hermes tools`.
+The provider's `capabilities()` advertises which of these are honored. The agent sees the active backend's capabilities in the tool description, dynamically rebuilt when the user changes backend via `superforecasting-agent tools`.
 
 ## Model families and endpoint routing (the FAL pattern)
 
@@ -202,7 +202,7 @@ def generate(self, prompt, *, image_url=None, model=None, **kwargs):
     # ... build payload from family's declared capability flags, call endpoint ...
 ```
 
-The user picks `veo3.1` once in `hermes tools`. The agent never thinks about endpoints — it just passes (or doesn't pass) `image_url`.
+The user picks `veo3.1` once in `superforecasting-agent tools`. The agent never thinks about endpoints — it just passes (or doesn't pass) `image_url`.
 
 ## Selection precedence
 
@@ -224,7 +224,7 @@ Error keys: `success`, `video` (None), `error`, `error_type`, `model`, `prompt`,
 
 ## Where to save artifacts
 
-If your backend returns base64, use `save_b64_video()` to write under `$HERMES_HOME/cache/videos/`. For raw bytes from a follow-up HTTP fetch, use `save_bytes_video()`. Otherwise return the upstream URL directly — the gateway resolves remote URLs on delivery.
+If your backend returns base64, use `save_b64_video()` to write under the active agent home, normally `~/.superforecasting-agent/cache/videos/`. Legacy `$HERMES_HOME/cache/videos/` remains accepted for inherited installs. For raw bytes from a follow-up HTTP fetch, use `save_bytes_video()`. Otherwise return the upstream URL directly — the gateway resolves remote URLs on delivery.
 
 ## Testing
 

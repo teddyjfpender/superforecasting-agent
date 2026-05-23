@@ -1,25 +1,34 @@
 """
-hermes fallback — manage the fallback provider chain.
+superforecasting-agent fallback — manage the fallback provider chain.
 
 Fallback providers are tried in order when the primary model fails with
-rate-limit, overload, or connection errors. See:
-https://hermes-agent.nousresearch.com/docs/user-guide/features/fallback-providers
+rate-limit, overload, or connection errors. See the local docs page:
+website/docs/user-guide/features/fallback-providers.md
 
 Subcommands:
-  hermes fallback [list]   Show the current fallback chain (default when no subcommand)
-  hermes fallback add      Pick provider + model via the same picker as `hermes model`,
+  superforecasting-agent fallback [list]
+                           Show the current fallback chain (default when no subcommand)
+  superforecasting-agent fallback add
+                           Pick provider + model via the same picker as
+                           `superforecasting-agent model`,
                            then append the selection to the chain
-  hermes fallback remove   Pick an entry to delete from the chain
-  hermes fallback clear    Remove all fallback entries
+  superforecasting-agent fallback remove
+                           Pick an entry to delete from the chain
+  superforecasting-agent fallback clear
+                           Remove all fallback entries
 
-Storage: ``fallback_providers`` in ``~/.hermes/config.yaml`` (top-level, list of
-``{provider, model, base_url?, api_mode?}`` dicts).  The legacy single-dict
+Storage: ``fallback_providers`` in the runtime ``config.yaml`` (top-level, list
+of ``{provider, model, base_url?, api_mode?}`` dicts). The legacy single-dict
 ``fallback_model`` format is migrated to the new list format on first add.
 """
 from __future__ import annotations
 
 import copy
 from typing import Any, Dict, List, Optional
+
+
+_PRIMARY_CLI = "superforecasting-agent"
+_DOCS_PATH = "website/docs/user-guide/features/fallback-providers.md"
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +112,7 @@ def _restore_auth_active_provider(value: Any) -> None:
     except Exception:
         # Best-effort — if auth.json can't be restored, the user's primary
         # provider may have been deactivated by the picker.  They can re-run
-        # `hermes model` to fix it.  Don't fail the fallback add.
+        # the model picker to fix it.  Don't fail the fallback add.
         pass
 
 
@@ -122,7 +131,7 @@ def cmd_fallback_list(args) -> None:  # noqa: ARG001
     if not chain:
         print("  No fallback providers configured.")
         print()
-        print("  Add one with:  hermes fallback add")
+        print(f"  Add one with:  {_PRIMARY_CLI} fallback add")
         print()
         return
 
@@ -135,7 +144,7 @@ def cmd_fallback_list(args) -> None:  # noqa: ARG001
         print(f"    {i}. {_format_entry(entry)}")
     print()
     print("  Tried in order when the primary fails (rate-limit, 5xx, connection errors).")
-    print("  Docs: https://hermes-agent.nousresearch.com/docs/user-guide/features/fallback-providers")
+    print(f"  Docs: {_DOCS_PATH}")
     print()
 
 
@@ -152,7 +161,7 @@ def _describe_primary(config: Dict[str, Any]) -> Optional[str]:
 
 
 def cmd_fallback_add(args) -> None:
-    """Launch the same picker as `hermes model`, then append the selection to the chain."""
+    """Launch the same picker as the model command, then append the selection to the chain."""
     from hermes_cli.main import _require_tty, select_provider_and_model
     from hermes_cli.config import load_config, save_config
 
@@ -166,7 +175,7 @@ def cmd_fallback_add(args) -> None:
 
     print()
     print("  Adding a fallback provider.  The picker below is the same one used by")
-    print("  `hermes model` — select the provider + model you want as a fallback.")
+    print(f"  `{_PRIMARY_CLI} model` — select the provider + model you want as a fallback.")
     print()
 
     try:
@@ -228,7 +237,10 @@ def cmd_fallback_add(args) -> None:
     print(f"  Added fallback: {_format_entry(new_entry)}")
     print(f"  Chain is now {len(chain)} {'entry' if len(chain) == 1 else 'entries'} long.")
     print()
-    print("  Run `hermes fallback list` to view, or `hermes fallback remove` to delete.")
+    print(
+        f"  Run `{_PRIMARY_CLI} fallback list` to view, or "
+        f"`{_PRIMARY_CLI} fallback remove` to delete."
+    )
 
 
 def _restore_model_cfg(model_before: Any) -> None:
@@ -345,7 +357,7 @@ def _numbered_pick(question: str, choices: List[str]) -> Optional[int]:
 # ---------------------------------------------------------------------------
 
 def cmd_fallback(args) -> None:
-    """Top-level dispatcher for ``hermes fallback [subcommand]``."""
+    """Top-level dispatcher for ``superforecasting-agent fallback [subcommand]``."""
     sub = getattr(args, "fallback_command", None)
     if sub in {None, "", "list", "ls"}:
         cmd_fallback_list(args)

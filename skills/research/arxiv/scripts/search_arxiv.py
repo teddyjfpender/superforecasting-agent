@@ -16,6 +16,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 
 NS = {'a': 'http://www.w3.org/2005/Atom'}
+USER_AGENT = "superforecasting-agent/1.0 (+https://github.com/NousResearch/superforecasting-agent)"
 
 def search(query=None, author=None, category=None, ids=None, max_results=5, sort="relevance"):
     params = {}
@@ -43,7 +44,7 @@ def search(query=None, author=None, category=None, ids=None, max_results=5, sort
     
     url = "https://export.arxiv.org/api/query?" + "&".join(f"{k}={v}" for k, v in params.items())
     
-    req = urllib.request.Request(url, headers={'User-Agent': 'HermesAgent/1.0'})
+    req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
     with urllib.request.urlopen(req, timeout=15) as resp:
         data = resp.read()
     

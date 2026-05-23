@@ -37,7 +37,7 @@ class TestSkinConfig:
     def test_get_branding_with_fallback(self):
         from hermes_cli.skin_engine import load_skin
         skin = load_skin("default")
-        assert skin.get_branding("agent_name") == "Hermes Agent"
+        assert skin.get_branding("agent_name") == "Superforecasting Agent"
         assert skin.get_branding("nonexistent", "fallback") == "fallback"
 
     def test_get_spinner_wings_empty_for_default(self):
@@ -77,6 +77,22 @@ class TestBuiltinSkins:
         skin = load_skin("slate")
         assert skin.name == "slate"
         assert skin.get_color("banner_title") == "#7eb8f6"
+
+    def test_forecast_skin_loads(self):
+        from hermes_cli.skin_engine import load_skin
+        skin = load_skin("forecast")
+        assert skin.name == "forecast"
+        assert skin.get_branding("agent_name") == "Superforecasting Agent"
+        assert "forecast" in skin.get_branding("welcome").lower()
+        assert "research terminal" in skin.description
+        assert skin.spinner["thinking_verbs"]
+
+    def test_new_config_defaults_to_forecast_skin(self):
+        from hermes_cli.config import DEFAULT_CONFIG
+
+        assert DEFAULT_CONFIG["display"]["skin"] == "forecast"
+        assert DEFAULT_CONFIG["display"]["personality"] == "neutral"
+        assert DEFAULT_CONFIG["display"]["tui_status_indicator"] == "unicode"
 
     def test_daylight_skin_loads(self):
         from hermes_cli.skin_engine import load_skin
@@ -145,6 +161,7 @@ class TestSkinManagement:
         skins = list_skins()
         names = [s["name"] for s in skins]
         assert "default" in names
+        assert "forecast" in names
         assert "ares" in names
         assert "mono" in names
         assert "slate" in names
@@ -237,7 +254,7 @@ class TestUserSkins:
 
         assert skin.name == "broken"
         assert skin.get_color("banner_title") == "#FFD700"
-        assert skin.get_branding("agent_name") == "Hermes Agent"
+        assert skin.get_branding("agent_name") == "Superforecasting Agent"
         assert skin.spinner.get("waiting_faces", []) == []
         assert skin.tool_emojis == {}
         assert skin.tool_prefix == "!"

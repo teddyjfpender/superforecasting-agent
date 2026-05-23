@@ -373,7 +373,7 @@ class TestSlackNativeSlashes:
 
 
 class TestSlackAppManifest:
-    """Generated Slack app manifest (used by `hermes slack manifest`)."""
+    """Generated Slack app manifest."""
 
     def test_returns_dict(self):
         m = slack_app_manifest()
@@ -397,6 +397,11 @@ class TestSlackAppManifest:
         m = slack_app_manifest()
         commands = [c["command"] for c in m["features"]["slash_commands"]]
         assert "/btw" in commands
+
+    def test_default_request_url_is_forecast_native(self):
+        m = slack_app_manifest()
+        urls = {entry["url"] for entry in m["features"]["slash_commands"]}
+        assert urls == {"https://superforecasting-agent.local/slack/commands"}
 
     def test_custom_request_url(self):
         m = slack_app_manifest(request_url="https://example.com/slack")

@@ -1,4 +1,4 @@
-"""Tests for `hermes curator run` CLI behavior."""
+"""Tests for `superforecasting-agent curator run` CLI behavior."""
 
 from __future__ import annotations
 
@@ -49,7 +49,9 @@ def test_run_background_opts_into_async(monkeypatch, capsys):
     assert curator_cli._cmd_run(_args(background=True)) == 0
 
     assert calls[0]["synchronous"] is False
-    assert "llm pass running in background" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "llm pass running in background" in out
+    assert "superforecasting-agent curator status" in out
 
 
 def test_run_sync_wins_over_background(monkeypatch):
@@ -84,4 +86,4 @@ def test_dry_run_default_reports_synchronous_wording(monkeypatch, capsys):
 
     out = capsys.readouterr().out
     assert "When the report lands" not in out
-    assert "Read the report with `hermes curator status`" in out
+    assert "Read the report with `superforecasting-agent curator status`" in out

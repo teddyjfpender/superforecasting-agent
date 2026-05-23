@@ -12,11 +12,19 @@ import urllib.parse
 import urllib.request
 
 DEFAULT_UA = (
-    "hermes-osint-investigation/0.2 "
-    "(+https://github.com/NousResearch/hermes-agent; "
-    "set HERMES_OSINT_UA env var to identify yourself per "
+    "superforecasting-agent-osint-investigation/0.2 "
+    "(+https://github.com/NousResearch/superforecasting-agent; "
+    "set SUPERFORECASTING_AGENT_OSINT_UA env var to identify yourself per "
     "Wikimedia / SEC fair-use guidance)"
 )
+
+
+def _user_agent_override() -> str:
+    for env_var in ("SUPERFORECASTING_AGENT_OSINT_UA", "FORECAST_OSINT_UA", "HERMES_OSINT_UA"):
+        value = os.environ.get(env_var, "").strip()
+        if value:
+            return value
+    return DEFAULT_UA
 
 
 def get(
@@ -38,7 +46,7 @@ def get(
     if params:
         sep = "&" if "?" in url else "?"
         url = f"{url}{sep}{urllib.parse.urlencode(params)}"
-    h = {"User-Agent": user_agent or os.environ.get("HERMES_OSINT_UA", DEFAULT_UA)}
+    h = {"User-Agent": user_agent or _user_agent_override()}
     if headers:
         h.update(headers)
 

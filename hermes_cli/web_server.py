@@ -1,12 +1,12 @@
 """
-Hermes Agent — Web UI server.
+Superforecasting Agent — Web UI server.
 
 Provides a FastAPI backend serving the Vite/React frontend and REST API
 endpoints for managing configuration, environment variables, and sessions.
 
 Usage:
-    python -m hermes_cli.main web          # Start on http://127.0.0.1:9119
-    python -m hermes_cli.main web --port 8080
+    python -m hermes_cli.main dashboard          # Start on http://127.0.0.1:9119
+    python -m hermes_cli.main dashboard --port 8080
 """
 
 import asyncio
@@ -73,10 +73,25 @@ except ImportError:
             f"Install with: {sys.executable} -m pip install 'fastapi' 'uvicorn[standard]'"
         )
 
-WEB_DIST = Path(os.environ["HERMES_WEB_DIST"]) if "HERMES_WEB_DIST" in os.environ else Path(__file__).parent / "web_dist"
+_WEB_DIST_ENV_VARS = (
+    "SUPERFORECASTING_AGENT_WEB_DIST",
+    "FORECAST_WEB_DIST",
+    "HERMES_WEB_DIST",
+)
+
+
+def _configured_web_dist() -> str | None:
+    for name in _WEB_DIST_ENV_VARS:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return None
+
+
+WEB_DIST = Path(_configured_web_dist() or Path(__file__).parent / "web_dist")
 _log = logging.getLogger(__name__)
 
-app = FastAPI(title="Hermes Agent", version=__version__)
+app = FastAPI(title="Superforecasting Agent", version=__version__)
 
 # ---------------------------------------------------------------------------
 # Session token for protecting sensitive endpoints (reveal).
@@ -84,10 +99,15 @@ app = FastAPI(title="Hermes Agent", version=__version__)
 # Injected into the SPA HTML so only the legitimate web UI can use it.
 # ---------------------------------------------------------------------------
 _SESSION_TOKEN = secrets.token_urlsafe(32)
-_SESSION_HEADER_NAME = "X-Hermes-Session-Token"
+_SESSION_HEADER_NAME = "X-Superforecasting-Agent-Session-Token"
+_SESSION_HEADER_NAMES = (
+    _SESSION_HEADER_NAME,
+    "X-Forecast-Session-Token",
+    "X-Hermes-Session-Token",
+)
 
-# In-browser Chat tab (/chat, /api/pty, …).  Off unless ``hermes dashboard --tui``
-# or HERMES_DASHBOARD_TUI=1.  Set from :func:`start_server`.
+# In-browser Chat tab (/chat, /api/pty, ...). Off unless ``hermes dashboard --tui``
+# or a dashboard TUI env alias is set. Set from :func:`start_server`.
 _DASHBOARD_EMBEDDED_CHAT_ENABLED = False
 
 # Simple rate limiter for the reveal endpoint
@@ -125,17 +145,18 @@ _PUBLIC_API_PATHS: frozenset = frozenset({
 def _has_valid_session_token(request: Request) -> bool:
     """True if the request carries a valid dashboard session token.
 
-    The dedicated session header avoids collisions with reverse proxies that
+    Dedicated session headers avoid collisions with reverse proxies that
     already use ``Authorization`` (for example Caddy ``basic_auth``). We still
-    accept the legacy Bearer path for backward compatibility with older
-    dashboard bundles.
+    accept the legacy Hermes header and Bearer path for backward compatibility
+    with older dashboard bundles.
     """
-    session_header = request.headers.get(_SESSION_HEADER_NAME, "")
-    if session_header and hmac.compare_digest(
-        session_header.encode(),
-        _SESSION_TOKEN.encode(),
-    ):
-        return True
+    for header_name in _SESSION_HEADER_NAMES:
+        session_header = request.headers.get(header_name, "")
+        if session_header and hmac.compare_digest(
+            session_header.encode(),
+            _SESSION_TOKEN.encode(),
+        ):
+            return True
 
     auth = request.headers.get("authorization", "")
     expected = f"Bearer {_SESSION_TOKEN}"
@@ -621,10 +642,14 @@ async def get_status():
     except Exception:
         pass
 
+    runtime_home = str(get_hermes_home())
+
     return {
         "version": __version__,
         "release_date": __release_date__,
-        "hermes_home": str(get_hermes_home()),
+        "superforecasting_agent_home": runtime_home,
+        "forecast_home": runtime_home,
+        "hermes_home": runtime_home,
         "config_path": str(get_config_path()),
         "env_path": str(get_env_path()),
         "config_version": current_ver,
@@ -653,9 +678,14 @@ async def get_status():
 _ACTION_LOG_DIR: Path = get_hermes_home() / "logs"
 
 # Short ``name`` (from the URL) → absolute log file path.
+_GATEWAY_RESTART_ACTION = "gateway-restart"
+_FORECAST_UPDATE_ACTION = "superforecasting-agent-update"
+_LEGACY_UPDATE_ACTION = "hermes-update"
+
 _ACTION_LOG_FILES: Dict[str, str] = {
-    "gateway-restart": "gateway-restart.log",
-    "hermes-update": "hermes-update.log",
+    _GATEWAY_RESTART_ACTION: "gateway-restart.log",
+    _FORECAST_UPDATE_ACTION: "superforecasting-agent-update.log",
+    _LEGACY_UPDATE_ACTION: "hermes-update.log",
 }
 
 # ``name`` → most recently spawned Popen handle.  Used so ``status`` can
@@ -663,8 +693,8 @@ _ACTION_LOG_FILES: Dict[str, str] = {
 _ACTION_PROCS: Dict[str, subprocess.Popen] = {}
 
 
-def _spawn_hermes_action(subcommand: List[str], name: str) -> subprocess.Popen:
-    """Spawn ``hermes <subcommand>`` detached and record the Popen handle.
+def _spawn_forecast_action(subcommand: List[str], name: str) -> subprocess.Popen:
+    """Spawn a forecast-compatible CLI subcommand and record the Popen handle.
 
     Uses the running interpreter's ``hermes_cli.main`` module so the action
     inherits the same venv/PYTHONPATH the web server is using.
@@ -699,6 +729,11 @@ def _spawn_hermes_action(subcommand: List[str], name: str) -> subprocess.Popen:
     return proc
 
 
+def _spawn_hermes_action(subcommand: List[str], name: str) -> subprocess.Popen:
+    """Compatibility wrapper for tests and older dashboard integrations."""
+    return _spawn_forecast_action(subcommand, name)
+
+
 def _tail_lines(path: Path, n: int) -> List[str]:
     """Return the last ``n`` lines of ``path``.  Reads the whole file — fine
     for our small per-action logs.  Binary-decoded with ``errors='replace'``
@@ -717,30 +752,45 @@ def _tail_lines(path: Path, n: int) -> List[str]:
 async def restart_gateway():
     """Kick off a ``hermes gateway restart`` in the background."""
     try:
-        proc = _spawn_hermes_action(["gateway", "restart"], "gateway-restart")
+        proc = _spawn_hermes_action(
+            ["gateway", "restart"],
+            _GATEWAY_RESTART_ACTION,
+        )
     except Exception as exc:
         _log.exception("Failed to spawn gateway restart")
         raise HTTPException(status_code=500, detail=f"Failed to restart gateway: {exc}")
     return {
         "ok": True,
         "pid": proc.pid,
-        "name": "gateway-restart",
+        "name": _GATEWAY_RESTART_ACTION,
     }
 
 
-@app.post("/api/hermes/update")
-async def update_hermes():
-    """Kick off ``hermes update`` in the background."""
+def _start_update_action(action_name: str, spawn_fn=None) -> Dict[str, Any]:
+    if spawn_fn is None:
+        spawn_fn = _spawn_forecast_action
     try:
-        proc = _spawn_hermes_action(["update"], "hermes-update")
+        proc = spawn_fn(["update"], action_name)
     except Exception as exc:
-        _log.exception("Failed to spawn hermes update")
+        _log.exception("Failed to spawn dashboard update action")
         raise HTTPException(status_code=500, detail=f"Failed to start update: {exc}")
     return {
         "ok": True,
         "pid": proc.pid,
-        "name": "hermes-update",
+        "name": action_name,
     }
+
+
+@app.post("/api/superforecasting-agent/update")
+async def update_superforecasting_agent():
+    """Kick off a Superforecasting Agent update in the background."""
+    return _start_update_action(_FORECAST_UPDATE_ACTION)
+
+
+@app.post("/api/hermes/update")
+async def update_hermes():
+    """Legacy update endpoint kept for older dashboard bundles."""
+    return _start_update_action(_LEGACY_UPDATE_ACTION, _spawn_hermes_action)
 
 
 @app.get("/api/actions/{name}/status")
@@ -1277,7 +1327,7 @@ async def reveal_env_var(body: EnvVarReveal, request: Request):
 # connected, plus a disconnect button. The actual login flow (PKCE for
 # Anthropic, device-code for Nous/Codex) still runs in the CLI for now;
 # Phase 2 will add in-browser flows. For unconnected providers we return
-# the canonical ``hermes auth add <provider>`` command so the dashboard
+# the canonical ``superforecasting-agent auth add <provider>`` command so the dashboard
 # can surface a one-click copy.
 
 
@@ -1309,8 +1359,8 @@ def _truncate_token(value: Optional[str], visible: int = 6) -> str:
 def _anthropic_oauth_status() -> Dict[str, Any]:
     """Combined status across the three Anthropic credential sources we read.
 
-    Hermes resolves Anthropic creds in this order at runtime:
-    1. ``~/.hermes/.anthropic_oauth.json`` — Hermes-managed PKCE flow
+    Superforecasting Agent resolves Anthropic creds in this order at runtime:
+    1. runtime PKCE credential file — Superforecasting Agent-managed PKCE flow
     2. ``~/.claude/.credentials.json`` — Claude Code CLI credentials (auto)
     3. ``ANTHROPIC_TOKEN`` / ``ANTHROPIC_API_KEY`` env vars
     The dashboard reports the highest-priority source that's actually present.
@@ -1336,7 +1386,7 @@ def _anthropic_oauth_status() -> Dict[str, Any]:
         return {
             "logged_in": True,
             "source": "hermes_pkce",
-            "source_label": f"Hermes PKCE ({_HERMES_OAUTH_FILE})",
+            "source_label": f"Superforecasting Agent PKCE ({_HERMES_OAUTH_FILE})",
             "token_preview": _truncate_token(hermes_creds.get("accessToken")),
             "expires_at": hermes_creds.get("expiresAt"),
             "has_refresh_token": bool(hermes_creds.get("refreshToken")),
@@ -1375,8 +1425,8 @@ def _claude_code_only_status() -> Dict[str, Any]:
     """Surface Claude Code CLI credentials as their own provider entry.
 
     Independent of the Anthropic entry above so users can see whether their
-    Claude Code subscription tokens are actively flowing into Hermes even
-    when they also have a separate Hermes-managed PKCE login.
+    Claude Code subscription tokens are actively flowing into Superforecasting Agent
+    even when they also have a separate runtime-managed PKCE login.
     """
     try:
         from agent.anthropic_adapter import read_claude_code_credentials
@@ -1407,7 +1457,7 @@ _OAUTH_PROVIDER_CATALOG: tuple[Dict[str, Any], ...] = (
         "id": "anthropic",
         "name": "Anthropic (Claude API)",
         "flow": "pkce",
-        "cli_command": "hermes auth add anthropic",
+        "cli_command": "superforecasting-agent auth add anthropic",
         "docs_url": "https://docs.claude.com/en/api/getting-started",
         "status_fn": _anthropic_oauth_status,
     },
@@ -1423,7 +1473,7 @@ _OAUTH_PROVIDER_CATALOG: tuple[Dict[str, Any], ...] = (
         "id": "nous",
         "name": "Nous Portal",
         "flow": "device_code",
-        "cli_command": "hermes auth add nous",
+        "cli_command": "superforecasting-agent auth add nous",
         "docs_url": "https://portal.nousresearch.com",
         "status_fn": None,  # dispatched via auth.get_nous_auth_status
     },
@@ -1431,7 +1481,7 @@ _OAUTH_PROVIDER_CATALOG: tuple[Dict[str, Any], ...] = (
         "id": "openai-codex",
         "name": "OpenAI Codex (ChatGPT)",
         "flow": "device_code",
-        "cli_command": "hermes auth add openai-codex",
+        "cli_command": "superforecasting-agent auth add openai-codex",
         "docs_url": "https://platform.openai.com/docs",
         "status_fn": None,  # dispatched via auth.get_codex_auth_status
     },
@@ -1439,7 +1489,7 @@ _OAUTH_PROVIDER_CATALOG: tuple[Dict[str, Any], ...] = (
         "id": "qwen-oauth",
         "name": "Qwen (via Qwen CLI)",
         "flow": "external",
-        "cli_command": "hermes auth add qwen-oauth",
+        "cli_command": "superforecasting-agent auth add qwen-oauth",
         "docs_url": "https://github.com/QwenLM/qwen-code",
         "status_fn": None,  # dispatched via auth.get_qwen_auth_status
     },
@@ -1452,7 +1502,7 @@ _OAUTH_PROVIDER_CATALOG: tuple[Dict[str, Any], ...] = (
         # as Nous's device-code flow; the PKCE bit is a security
         # extension that doesn't change the operator experience.
         "flow": "device_code",
-        "cli_command": "hermes auth add minimax-oauth",
+        "cli_command": "superforecasting-agent auth add minimax-oauth",
         "docs_url": "https://www.minimax.io",
         "status_fn": None,  # dispatched via auth.get_minimax_oauth_auth_status
     },
@@ -1559,7 +1609,7 @@ async def disconnect_oauth_provider(provider_id: str, request: Request):
                    f"Available: {', '.join(sorted(valid_ids))}",
         )
 
-    # Anthropic and claude-code clear the same Hermes-managed PKCE file
+    # Anthropic and claude-code clear the same runtime-managed PKCE file
     # AND forget the Claude Code import. We don't touch ~/.claude/* directly
     # — that's owned by the Claude Code CLI; users can re-auth there if they
     # want to undo a disconnect.
@@ -1675,7 +1725,7 @@ def _save_anthropic_oauth_creds(access_token: str, refresh_token: str, expires_a
     """Persist Anthropic PKCE creds to both Hermes file AND credential pool.
 
     Mirrors what auth_commands.add_command does so the dashboard flow leaves
-    the system in the same state as ``hermes auth add anthropic``.
+    the system in the same state as ``superforecasting-agent auth add anthropic``.
     """
     from agent.anthropic_adapter import _HERMES_OAUTH_FILE
     payload = {
@@ -2063,7 +2113,7 @@ def _minimax_poller(session_id: str) -> None:
     auth_state dict that ``_minimax_oauth_login`` (the CLI flow) builds
     and persists via ``_minimax_save_auth_state`` — so the dashboard
     path leaves the system in the same state as
-    ``hermes auth add minimax-oauth``.
+    ``superforecasting-agent auth add minimax-oauth``.
     """
     from hermes_cli.auth import (
         _minimax_poll_token,
@@ -2832,7 +2882,7 @@ def _resolve_profile_dir(name: str) -> Path:
 def _profile_setup_command(name: str) -> str:
     """Return the shell command used to configure a profile in the CLI."""
     _resolve_profile_dir(name)
-    return "hermes setup" if name == "default" else f"{name} setup"
+    return "superforecasting-agent setup" if name == "default" else f"{name} setup"
 
 
 @app.get("/api/profiles")
@@ -3055,6 +3105,20 @@ async def get_toolsets():
             "tools": tools,
         })
     return result
+
+
+@app.get("/api/forecast/dashboard")
+async def get_forecast_dashboard(limit: int = 50):
+    """Forecast-native dashboard summary for the web UI.
+
+    This complements the embedded TUI instead of replacing the chat surface:
+    it exposes the standing forecast book, current probabilities, deltas,
+    confidence, assumptions, and open alerts as structured data.
+    """
+
+    from forecasting.dashboard import build_dashboard_summary
+
+    return build_dashboard_summary(limit=limit)
 
 
 # ---------------------------------------------------------------------------
@@ -3424,7 +3488,7 @@ async def pty_ws(ws: WebSocket) -> None:
         await ws.send_text(
             "\r\n\x1b[31mChat unavailable: the embedded terminal requires a "
             "POSIX PTY, which native Windows Python doesn't provide.\x1b[0m\r\n"
-            "\x1b[33mInstall Hermes inside WSL2 to use the dashboard's /chat "
+            "\x1b[33mInstall Superforecasting Agent inside WSL2 to use the dashboard's /chat "
             "tab — the rest of the dashboard works here.\x1b[0m\r\n"
         )
         await ws.close(code=1011)
@@ -3659,8 +3723,8 @@ def mount_spa(application: FastAPI):
     ``mission-control.tilos.com/hermes/*`` -> local Caddy -> :9119), the
     proxy injects ``X-Forwarded-Prefix: /hermes`` on every request. We
     rewrite the served ``index.html`` so absolute asset URLs (``/assets/...``)
-    and the SPA's runtime ``__HERMES_BASE_PATH__`` honour that prefix
-    without rebuilding the bundle.
+    and the SPA's runtime base-path globals honour that prefix without
+    rebuilding the bundle.
     """
     if not WEB_DIST.exists():
         @application.get("/{full_path:path}")
@@ -3682,8 +3746,14 @@ def mount_spa(application: FastAPI):
         html = _index_path.read_text()
         chat_js = "true" if _DASHBOARD_EMBEDDED_CHAT_ENABLED else "false"
         token_script = (
-            f'<script>window.__HERMES_SESSION_TOKEN__="{_SESSION_TOKEN}";'
+            f'<script>window.__SUPERFORECASTING_AGENT_SESSION_TOKEN__="{_SESSION_TOKEN}";'
+            f'window.__FORECAST_SESSION_TOKEN__="{_SESSION_TOKEN}";'
+            f'window.__HERMES_SESSION_TOKEN__="{_SESSION_TOKEN}";'
+            f"window.__SUPERFORECASTING_AGENT_DASHBOARD_EMBEDDED_CHAT__={chat_js};"
+            f"window.__FORECAST_DASHBOARD_EMBEDDED_CHAT__={chat_js};"
             f"window.__HERMES_DASHBOARD_EMBEDDED_CHAT__={chat_js};"
+            f'window.__SUPERFORECASTING_AGENT_BASE_PATH__="{prefix}";'
+            f'window.__FORECAST_BASE_PATH__="{prefix}";'
             f'window.__HERMES_BASE_PATH__="{prefix}";</script>'
         )
         if prefix:
@@ -3748,8 +3818,8 @@ def mount_spa(application: FastAPI):
 # Built-in dashboard themes — label + description only.  The actual color
 # definitions live in the frontend (web/src/themes/presets.ts).
 _BUILTIN_DASHBOARD_THEMES = [
-    {"name": "default",       "label": "Hermes Teal",         "description": "Classic dark teal — the canonical Hermes look"},
-    {"name": "default-large", "label": "Hermes Teal (Large)", "description": "Hermes Teal with bigger fonts and roomier spacing"},
+    {"name": "default",       "label": "Forecast Teal",         "description": "Classic dark teal for the forecasting desk"},
+    {"name": "default-large", "label": "Forecast Teal (Large)", "description": "Forecast Teal with bigger fonts and roomier spacing"},
     {"name": "midnight",      "label": "Midnight",            "description": "Deep blue-violet with cool accents"},
     {"name": "ember",     "label": "Ember",          "description": "Warm crimson and bronze — forge vibes"},
     {"name": "mono",      "label": "Mono",           "description": "Clean grayscale — minimal and focused"},
@@ -4229,7 +4299,7 @@ def _merged_plugins_hub() -> Dict[str, Any]:
                     entry = registry.get_entry(tname)
                     if entry and entry.check_fn and not entry.check_fn():
                         auth_required = True
-                        auth_command = f"hermes auth {name}"
+                        auth_command = f"superforecasting-agent auth {name}"
                         break
             except Exception:
                 pass
@@ -4576,7 +4646,7 @@ def start_server(
                 "(headless Linux). Pass --no-open to suppress this detection."
             )
 
-    print(f"  Hermes Web UI → http://{host}:{port}")
+    print(f"  Superforecasting Agent Web UI -> http://{host}:{port}")
     # proxy_headers=False so _ws_client_is_allowed sees the real connection peer
     # rather than X-Forwarded-For's rewritten value (which would defeat the
     # loopback gate when behind a reverse proxy).

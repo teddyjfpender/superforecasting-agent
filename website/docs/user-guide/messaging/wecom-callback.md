@@ -4,10 +4,12 @@ sidebar_position: 15
 
 # WeCom Callback (Self-Built App)
 
-Connect Hermes to WeCom (Enterprise WeChat) as a self-built enterprise application using the callback/webhook model.
+Connect the forecast gateway to WeCom (Enterprise WeChat) as a self-built enterprise application using the callback/webhook model.
+
+Use this mode for enterprise forecast review alerts, source notes, approvals, and scheduled digests when a first-class WeCom app is preferable to the bot WebSocket gateway. Durable forecast state still belongs in the ledger.
 
 :::info WeCom Bot vs WeCom Callback
-Hermes supports two WeCom integration modes:
+Superforecasting Agent supports two WeCom integration modes:
 - **[WeCom Bot](wecom.md)** — bot-style, connects via WebSocket. Simpler setup, works in group chats.
 - **WeCom Callback** (this page) — self-built app, receives encrypted XML callbacks. Shows as a first-class app in users' WeCom sidebar. Supports multi-corp routing.
 :::
@@ -16,9 +18,9 @@ Hermes supports two WeCom integration modes:
 
 1. You register a self-built application in the WeCom Admin Console
 2. WeCom pushes encrypted XML to your HTTP callback endpoint
-3. Hermes decrypts the message, queues it for the agent
+3. The gateway decrypts the message and queues it for forecast review
 4. Immediately acknowledges (silent — nothing displayed to the user)
-5. The agent processes the request (typically 3–30 minutes)
+5. The forecast runtime processes the request (typically 3-30 minutes)
 6. The reply is delivered proactively via the WeCom `message/send` API
 
 ## Prerequisites
@@ -60,10 +62,10 @@ WECOM_CALLBACK_ALLOWED_USERS=user1,user2
 ### 3. Start the Gateway
 
 ```bash
-hermes gateway
+superforecasting-agent gateway
 ```
 
-(Use `hermes gateway start` only after `hermes gateway install` has registered the systemd/launchd service.)
+(Use `superforecasting-agent gateway start` only after `superforecasting-agent gateway install` has registered the systemd/launchd service.)
 
 The callback adapter starts an HTTP server on the configured port. WeCom will verify the callback URL via a GET request, then begin sending messages via POST.
 
@@ -143,7 +145,7 @@ The crypto implementation is compatible with Tencent's official WXBizMsgCrypt SD
 
 ## Limitations
 
-- **No streaming** — replies arrive as complete messages after the agent finishes
+- **No streaming** — replies arrive as complete messages after the forecast runtime finishes
 - **No typing indicators** — the callback model doesn't support typing status
-- **Text only** — currently supports text messages for input; image/file/voice input not yet implemented. The agent is aware of outbound media capabilities via the WeCom platform hint (images, documents, video, voice).
-- **Response latency** — agent sessions take 3–30 minutes; users see the reply when processing completes
+- **Text only** — currently supports text messages for input; image/file/voice input not yet implemented. The runtime is aware of outbound media capabilities via the WeCom platform hint (images, documents, video, voice).
+- **Response latency** — review sessions can take 3-30 minutes; users see the reply when processing completes

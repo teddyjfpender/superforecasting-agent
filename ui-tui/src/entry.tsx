@@ -13,8 +13,10 @@ import { type MemorySnapshot, startMemoryMonitor } from './lib/memoryMonitor.js'
 import { openExternalUrl } from './lib/openExternalUrl.js'
 import { resetTerminalModes } from './lib/terminalModes.js'
 
+const APP_LABEL = 'superforecasting-agent-tui'
+
 if (!process.stdin.isTTY) {
-  console.log('hermes-tui: no TTY')
+  console.log(`${APP_LABEL}: no TTY`)
   process.exit(0)
 }
 
@@ -36,7 +38,7 @@ const gw = new GatewayClient()
 gw.start()
 
 const dumpNotice = (snap: MemorySnapshot, dump: HeapDumpResult | null) =>
-  `hermes-tui: ${snap.level} memory (${formatBytes(snap.heapUsed)}) — auto heap dump → ${dump?.heapPath ?? '(failed)'}\n`
+  `${APP_LABEL}: ${snap.level} memory (${formatBytes(snap.heapUsed)}) — auto heap dump → ${dump?.heapPath ?? '(failed)'}\n`
 
 setupGracefulExit({
   cleanups: [
@@ -49,11 +51,11 @@ setupGracefulExit({
   onError: (scope, err) => {
     const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
 
-    process.stderr.write(`hermes-tui ${scope}: ${message.slice(0, 2000)}\n`)
+    process.stderr.write(`${APP_LABEL} ${scope}: ${message.slice(0, 2000)}\n`)
   },
   onSignal: signal => {
     resetTerminalModes()
-    process.stderr.write(`hermes-tui: received ${signal}\n`)
+    process.stderr.write(`${APP_LABEL}: received ${signal}\n`)
   }
 })
 
@@ -61,7 +63,7 @@ const stopMemoryMonitor = startMemoryMonitor({
   onCritical: (snap, dump) => {
     resetTerminalModes()
     process.stderr.write(dumpNotice(snap, dump))
-    process.stderr.write('hermes-tui: exiting to avoid OOM; restart to recover\n')
+    process.stderr.write(`${APP_LABEL}: exiting to avoid OOM; restart to recover\n`)
     process.exit(137)
   },
   onHigh: (snap, dump) => process.stderr.write(dumpNotice(snap, dump))

@@ -219,6 +219,30 @@ def test_run_doctor_sets_interactive_env_for_tool_checks(monkeypatch, tmp_path):
     assert seen["interactive"] == "1"
 
 
+def test_run_doctor_banner_is_forecast_native(monkeypatch, tmp_path):
+    project_root = tmp_path / "project"
+    hermes_home = tmp_path / ".hermes"
+    project_root.mkdir()
+    hermes_home.mkdir()
+
+    monkeypatch.setattr(doctor_mod, "PROJECT_ROOT", project_root)
+    monkeypatch.setattr(doctor_mod, "HERMES_HOME", hermes_home)
+
+    fake_model_tools = types.SimpleNamespace(
+        check_tool_availability=lambda *args, **kwargs: (_ for _ in ()).throw(SystemExit(0)),
+        TOOLSET_REQUIREMENTS={},
+    )
+    monkeypatch.setitem(sys.modules, "model_tools", fake_model_tools)
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), pytest.raises(SystemExit):
+        doctor_mod.run_doctor(Namespace(fix=False))
+
+    text = out.getvalue()
+    assert "Superforecasting Agent Doctor" in text
+    assert "Hermes Doctor" not in text
+
+
 def test_check_gateway_service_linger_warns_when_disabled(monkeypatch, tmp_path, capsys):
     unit_path = tmp_path / "hermes-gateway.service"
     unit_path.write_text("[Unit]\n")
@@ -517,6 +541,8 @@ def test_run_doctor_flags_missing_credentials_for_active_openrouter_provider(mon
     out = buf.getvalue()
     assert "model.provider 'openrouter' is set but no API key is configured" in out
     assert "No credentials found for provider 'openrouter'." in out
+    assert "superforecasting-agent setup" in out
+    assert "superforecasting-agent config set model.provider <name>" in out
 
 
 @pytest.mark.parametrize(

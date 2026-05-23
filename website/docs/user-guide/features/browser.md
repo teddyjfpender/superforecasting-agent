@@ -1,159 +1,178 @@
 ---
 title: Browser Automation
-description: Control browsers with multiple providers, local Chromium-family browsers via CDP, or cloud browsers for web interaction, form filling, scraping, and more.
+description: Inspect dynamic web sources when search and structured adapters are not enough.
 sidebar_label: Browser
 sidebar_position: 5
 ---
 
 # Browser Automation
 
-Hermes Agent includes a full browser automation toolset with multiple backend options:
+Superforecasting Agent includes browser tools for source inspection, dynamic pages, form-driven data, authenticated sites, visual verification, and pages that cannot be handled cleanly by `web_search`, `web_extract`, or a structured source adapter.
 
-- **Browserbase cloud mode** via [Browserbase](https://browserbase.com) for managed cloud browsers and anti-bot tooling
-- **Browser Use cloud mode** via [Browser Use](https://browser-use.com) as an alternative cloud browser provider
-- **Firecrawl cloud mode** via [Firecrawl](https://firecrawl.dev) for cloud browsers with built-in scraping
-- **Camofox local mode** via [Camofox](https://github.com/jo-inc/camofox-browser) for local anti-detection browsing (Firefox-based fingerprint spoofing)
-- **Local Chromium-family CDP** — connect browser tools to your own Chrome, Brave, Chromium, or Edge instance using `/browser connect`
-- **Local browser mode** via the `agent-browser` CLI and a local Chromium installation
+Browser output is not forecast truth. A page snapshot, screenshot, console log, or extracted table only affects a forecast after it is recorded in the forecast ledger with source, timestamp, reliability, relevance, stance, and reviewer context.
 
-In all modes, the agent can navigate websites, interact with page elements, fill forms, and extract information.
+Use browser automation when:
 
-## Overview
+- a source requires clicks, filters, login state, or form input
+- a dynamic page hides data from normal extraction
+- a visual layout or screenshot matters to the evidence review
+- a local dashboard, model output, or data product needs inspection
+- a domain adapter is unavailable or too narrow
 
-Pages are represented as **accessibility trees** (text-based snapshots), making them ideal for LLM agents. Interactive elements get ref IDs (like `@e1`, `@e2`) that the agent uses for clicking and typing.
+Prefer structured adapters for repeatable scheduled work. For example, RSS/Atom, GDELT, FRED, BLS, World Bank, SEC EDGAR, arXiv, OpenAlex, Wikipedia, Wikimedia pageviews, GitHub, Hacker News, Reddit, Federal Register, NVD, Open-Meteo, USGS, NASA EONET, NWS alerts, OWID, Metaculus, Manifold, Kalshi, Polymarket, URL JSON/HTML, and CSV/JSON imports are usually better than a browser for backtests and scheduled self-checks.
 
-Key capabilities:
+## Backends
 
-- **Multi-provider cloud execution** — Browserbase, Browser Use, or Firecrawl — no local browser needed
-- **Local Chromium-family integration** — attach to your running Chrome, Brave, Chromium, or Edge browser via CDP for hands-on browsing
-- **Built-in stealth** — random fingerprints, CAPTCHA solving, residential proxies (Browserbase)
-- **Session isolation** — each task gets its own browser session
-- **Automatic cleanup** — inactive sessions are closed after a timeout
-- **Vision analysis** — screenshot + AI analysis for visual understanding
+| Backend | Typical use |
+|---|---|
+| Browserbase cloud | Managed cloud browser sessions, anti-bot support, remote public sites |
+| Browser Use cloud | Alternative cloud browser provider |
+| Firecrawl cloud | Cloud browser plus scraping/extraction support |
+| Camofox local | Local Firefox-based anti-detection browsing |
+| Chromium-family CDP | Attach to your own Chrome, Brave, Chromium, or Edge via `/browser connect` |
+| Local browser mode | Local Chromium driven by the inherited `agent-browser` CLI |
+
+Pages are represented as accessibility-tree snapshots. Interactive elements get refs such as `@e1` and `@e2` for `browser_click` and `browser_type`.
+
+Core capabilities:
+
+- navigate and inspect dynamic pages
+- click controls and fill forms
+- capture accessibility snapshots
+- capture screenshots and vision analysis
+- inspect console logs and JavaScript errors
+- handle native dialogs on CDP-capable backends
+- pass through raw Chrome DevTools Protocol calls when CDP is available
+
+## Forecasting Boundaries
+
+When using browser tools for forecasting:
+
+- Record source URLs, access time, publication time when available, and snapshot paths in the ledger.
+- Treat screenshots and accessibility snapshots as evidence candidates, not durable probability state.
+- Do not let a browser-derived claim change probability without `forecast update` and citations.
+- For backtests, only use browser outputs that were available before the evidence cutoff.
+- Avoid long-lived authenticated sessions for sources whose access policy forbids automated collection.
+
+Example ledger flow:
+
+```bash
+forecast evidence add <id> \
+  --source-url "https://example.com/dashboard" \
+  --source-type browser-snapshot \
+  --available-at "2026-05-22T10:30:00Z" \
+  --reliability medium \
+  --relevance high \
+  --summary "Browser-inspected claim and why it matters."
+
+forecast update <id> --require-citations
+```
 
 ## Setup
 
 :::tip Nous Subscribers
-If you have a paid [Nous Portal](https://portal.nousresearch.com) subscription, you can use browser automation through the **[Tool Gateway](tool-gateway.md)** without any separate API keys. Run `hermes model` or `hermes tools` to enable it.
+Paid [Nous Portal](https://portal.nousresearch.com) subscriptions can route browser automation through the [Tool Gateway](./tool-gateway) without separate Browserbase, Browser Use, or Firecrawl keys. Enable it with `superforecasting-agent model` or `superforecasting-agent tools`.
 :::
 
-### Browserbase cloud mode
+### Browserbase Cloud Mode
 
-To use Browserbase-managed cloud browsers, add:
+Add credentials:
 
 ```bash
-# Add to ~/.hermes/.env
+# ~/.superforecasting-agent/.env
 BROWSERBASE_API_KEY=***
 BROWSERBASE_PROJECT_ID=your-project-id-here
 ```
 
-Get your credentials at [browserbase.com](https://browserbase.com).
+Get credentials at [browserbase.com](https://browserbase.com).
 
-### Browser Use cloud mode
+### Browser Use Cloud Mode
 
-To use Browser Use as your cloud browser provider, add:
+Add:
 
 ```bash
-# Add to ~/.hermes/.env
+# ~/.superforecasting-agent/.env
 BROWSER_USE_API_KEY=***
 ```
 
-Get your API key at [browser-use.com](https://browser-use.com). Browser Use provides a cloud browser via its REST API. If both Browserbase and Browser Use credentials are set, Browserbase takes priority.
+Get the API key at [browser-use.com](https://browser-use.com). If both Browserbase and Browser Use credentials are configured, Browserbase takes priority.
 
-### Firecrawl cloud mode
+### Firecrawl Cloud Mode
 
-To use Firecrawl as your cloud browser provider, add:
+Add:
 
 ```bash
-# Add to ~/.hermes/.env
+# ~/.superforecasting-agent/.env
 FIRECRAWL_API_KEY=fc-***
 ```
 
-Get your API key at [firecrawl.dev](https://firecrawl.dev). Then select Firecrawl as your browser provider:
+Then select Firecrawl as the browser provider:
 
 ```bash
-hermes setup tools
-# → Browser Automation → Firecrawl
+superforecasting-agent setup tools
 ```
+
+Open **Browser Automation** and select **Firecrawl**.
 
 Optional settings:
 
 ```bash
-# Self-hosted Firecrawl instance (default: https://api.firecrawl.dev)
+# Self-hosted Firecrawl instance
 FIRECRAWL_API_URL=http://localhost:3002
 
-# Session TTL in seconds (default: 300)
+# Session TTL in seconds
 FIRECRAWL_BROWSER_TTL=600
 ```
 
-### Hybrid routing: cloud for public URLs, local for LAN/localhost
+### Hybrid Routing For Private URLs
 
-When a cloud provider is configured, Hermes auto-spawns a **local Chromium sidecar**
-for URLs that resolve to a private/loopback/LAN address (`localhost`, `127.0.0.1`,
-`192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`, `*.local`, `*.lan`, `*.internal`,
-IPv6 loopback `::1`, link-local `169.254.x.x`). Public URLs continue to use the
-cloud provider in the same conversation.
+When a cloud provider is configured, the runtime auto-spawns a local Chromium sidecar for private, loopback, LAN, `.local`, `.lan`, and `.internal` URLs. Public URLs continue to use the cloud provider in the same session.
 
-This solves the common "I'm developing locally but using Browserbase" workflow —
-the agent can screenshot your dashboard at `http://localhost:3000` AND scrape
-`https://github.com` without you switching providers or disabling the SSRF guard.
-The cloud provider never sees the private URL.
+This keeps a cloud provider from seeing private URLs while still letting you inspect a local dashboard or data product.
 
-The feature is **on by default**. To disable it (all URLs go to the configured
-cloud provider, as before):
+The feature is on by default. Disable it with:
 
 ```yaml
-# ~/.hermes/config.yaml
+# ~/.superforecasting-agent/config.yaml
 browser:
   cloud_provider: browserbase
   auto_local_for_private_urls: false
 ```
 
-With auto-routing disabled, private URLs are rejected with
-`"Blocked: URL targets a private or internal address"` unless you also set
-`browser.allow_private_urls: true` (which lets the cloud provider attempt them —
-usually won't work since Browserbase etc. can't reach your LAN).
+With auto-routing disabled, private URLs are rejected unless `browser.allow_private_urls: true` is also set. Cloud providers usually cannot reach your private network even when that guard is disabled.
 
-Requirements: the local sidecar uses the same `agent-browser` CLI as pure local
-mode, so you need it installed (`hermes setup tools → Browser Automation`
-auto-installs it). Post-navigation redirects from a public URL onto a private
-address are still blocked (you can't use a redirect-to-internal trick to reach
-your LAN through the public path).
-
-### Camofox local mode
-
-[Camofox](https://github.com/jo-inc/camofox-browser) is a self-hosted Node.js server wrapping Camoufox (a Firefox fork with C++ fingerprint spoofing). It provides local anti-detection browsing without cloud dependencies.
+The sidecar uses the same inherited `agent-browser` CLI as local browser mode. Install it through:
 
 ```bash
-# Clone the Camofox browser server first
+superforecasting-agent setup tools
+```
+
+Post-navigation redirects from public URLs to private addresses remain blocked.
+
+### Camofox Local Mode
+
+[Camofox](https://github.com/jo-inc/camofox-browser) is a self-hosted Node.js server wrapping Camoufox, a Firefox fork with fingerprint spoofing. It provides local anti-detection browsing without cloud dependencies.
+
+```bash
 git clone https://github.com/jo-inc/camofox-browser
 cd camofox-browser
-
-# Build and start with Docker using the default container settings
-# (auto-detects arch: aarch64 on M1/M2, x86_64 on Intel)
 make up
+```
 
-# Stop and remove the default container
+Useful maintenance commands:
+
+```bash
 make down
-
-# Force a clean rebuild (for example, after upgrading VERSION/RELEASE)
 make reset
-
-# Just download binaries without building
 make fetch
-
-# Override arch or version explicitly
 make up ARCH=x86_64
 make up VERSION=135.0.1 RELEASE=beta.24
 ```
 
-`make up` starts the default container immediately. If you want custom runtime settings such as a larger Node heap, VNC, or a persistent profile directory, build the image first and then run it yourself:
+For a custom persistent container:
 
 ```bash
-# Build the image without starting the default container
 make build
-
-# Start with persistence, VNC live view, and a larger Node heap
 mkdir -p ~/.camofox-docker
 docker run -d \
   --name camofox-browser \
@@ -170,84 +189,79 @@ docker run -d \
   camofox-browser:135.0.1-aarch64
 ```
 
-With VNC enabled, the browser runs in headed mode and can be watched live in your browser at `http://localhost:6080` (noVNC). You can also connect a native VNC client to `localhost:5901`.
+With VNC enabled, watch the browser at `http://localhost:6080` or connect a VNC client to `localhost:5901`.
 
-If you already ran `make up`, stop and remove that default container before starting the custom one:
-
-```bash
-make down
-# then run the custom docker run command above
-```
-
-Then set in `~/.hermes/.env`:
+Configure:
 
 ```bash
+# ~/.superforecasting-agent/.env
 CAMOFOX_URL=http://localhost:9377
 ```
 
-Or configure via `hermes tools` → Browser Automation → Camofox.
+Or use:
 
-When `CAMOFOX_URL` is set, all browser tools automatically route through Camofox instead of Browserbase or agent-browser.
+```bash
+superforecasting-agent tools
+```
 
-#### Persistent browser sessions
+When `CAMOFOX_URL` is set, browser tools route through Camofox instead of Browserbase or local `agent-browser`.
 
-By default, each Camofox session gets a random identity — cookies and logins don't survive across agent restarts. To enable persistent browser sessions, add the following to `~/.hermes/config.yaml`:
+#### Persistent Browser Sessions
+
+By default, each Camofox session gets a random identity. Cookies and logins do not survive across restarts. Enable profile-scoped persistence:
 
 ```yaml
+# ~/.superforecasting-agent/config.yaml
 browser:
   camofox:
     managed_persistence: true
 ```
 
-Then fully restart Hermes so the new config is picked up.
+Restart Superforecasting Agent after changing the config.
 
 :::warning Nested path matters
-Hermes reads `browser.camofox.managed_persistence`, **not** a top-level `managed_persistence`. A common mistake is writing:
+The runtime reads `browser.camofox.managed_persistence`, not a top-level `managed_persistence`.
 
 ```yaml
-# ❌ Wrong — Hermes ignores this
+# Wrong: ignored
 managed_persistence: true
 ```
-
-If the flag is placed at the wrong path, Hermes silently falls back to a random ephemeral `userId` and your login state will be lost on every session.
 :::
 
-##### What Hermes does
-- Sends a deterministic profile-scoped `userId` to Camofox so the server can reuse the same Firefox profile across sessions.
-- Skips server-side context destruction on cleanup, so cookies and logins survive between agent tasks.
-- Scopes the `userId` to the active Hermes profile, so different Hermes profiles get different browser profiles (profile isolation).
+What the runtime does:
 
-##### What Hermes does not do
-- It does not force persistence on the Camofox server. Hermes only sends a stable `userId`; the server must honor it by mapping that `userId` to a persistent Firefox profile directory.
-- If your Camofox server build treats every request as ephemeral (e.g. always calls `browser.newContext()` without loading a stored profile), Hermes cannot make those sessions persist. Make sure you are running a Camofox build that implements userId-based profile persistence.
+- Sends a deterministic profile-scoped `userId` to Camofox.
+- Skips server-side context destruction on cleanup.
+- Scopes the `userId` to the active profile for profile isolation.
 
-##### Verify it's working
+What it does not do:
 
-1. Start Hermes and your Camofox server.
-2. Open Google (or any login site) in a browser task and sign in manually.
-3. End the browser task normally.
+- It does not force persistence on the Camofox server.
+- It cannot preserve sessions if the Camofox server always creates ephemeral contexts.
+
+Verify persistence:
+
+1. Start Superforecasting Agent and your Camofox server.
+2. Open a login site in a browser task and sign in manually.
+3. End the browser task.
 4. Start a new browser task.
-5. Open the same site again — you should still be signed in.
+5. Open the same site and confirm you are still signed in.
 
-If step 5 logs you out, the Camofox server isn't honoring the stable `userId`. Double-check your config path, confirm you fully restarted Hermes after editing `config.yaml`, and verify your Camofox server version supports persistent per-user profiles.
+State used to derive the stable `userId` lives under `~/.superforecasting-agent/browser_auth/camofox/` or the profile-specific `$HERMES_HOME` equivalent. The actual browser profile lives on the Camofox server side.
 
-##### Where state lives
+Legacy `~/.hermes/browser_auth/camofox/` remains migration-compatible.
 
-Hermes derives the stable `userId` from the profile-scoped directory `~/.hermes/browser_auth/camofox/` (or the equivalent under `$HERMES_HOME` for non-default profiles). The actual browser profile data lives on the Camofox server side, keyed by that `userId`. To fully reset a persistent profile, clear it on the Camofox server and remove the corresponding Hermes profile's state directory.
+#### Externally Managed Camofox Sessions
 
-#### Externally managed Camofox sessions
-
-When another app drives the visible Camofox browser (a desktop assistant, a custom integration, another agent), configure Hermes to operate inside that same identity instead of spawning its own isolated profile.
-
-Three knobs control the behavior:
+When another app drives the visible Camofox browser, configure Superforecasting Agent to operate inside that same identity instead of spawning an isolated profile.
 
 | Setting | Env var | Effect |
-|---------|---------|--------|
-| `browser.camofox.user_id` | `CAMOFOX_USER_ID` | Camofox `userId` Hermes uses when creating tabs. Setting this opts the session into "externally managed" mode. |
-| `browser.camofox.session_key` | `CAMOFOX_SESSION_KEY` | `sessionKey` (a.k.a. `listItemId`) sent on tab creation. Used to match an existing tab during adoption. Defaults to a per-task value if unset. |
-| `browser.camofox.adopt_existing_tab` | `CAMOFOX_ADOPT_EXISTING_TAB` | When true, Hermes calls `GET /tabs?userId=<user_id>` on first use and reuses an existing tab before creating a new one. |
+|---|---|---|
+| `browser.camofox.user_id` | `CAMOFOX_USER_ID` | Camofox `userId` used when creating tabs |
+| `browser.camofox.session_key` | `CAMOFOX_SESSION_KEY` | `sessionKey` sent on tab creation and adoption |
+| `browser.camofox.adopt_existing_tab` | `CAMOFOX_ADOPT_EXISTING_TAB` | Reuse an existing tab before creating a new one |
 
-Env vars take precedence over `config.yaml`. Either form works:
+Config form:
 
 ```yaml
 browser:
@@ -257,386 +271,215 @@ browser:
     adopt_existing_tab: true
 ```
 
+Env var form:
+
 ```bash
 CAMOFOX_USER_ID=shared-camofox
 CAMOFOX_SESSION_KEY=visible-tab
 CAMOFOX_ADOPT_EXISTING_TAB=true
 ```
 
-**What changes when `user_id` is set:**
+When enabled, the runtime skips destructive cleanup at task end. Coordinate ownership if another app and Superforecasting Agent can drive the same Camofox `userId` simultaneously.
 
-- Hermes skips destructive cleanup at task end (same as `managed_persistence: true`). The other app's tab/cookies/profile survive.
-- Hermes does **not** call `DELETE /sessions/<user_id>` — that endpoint wipes all user data, so it would nuke the external app's session if it fired.
+### Local Chromium-family Browser Via CDP (`/browser connect`)
 
-**How tab adoption works (when `adopt_existing_tab: true`):**
+Attach browser tools to a running Chrome, Brave, Chromium, or Edge instance via Chrome DevTools Protocol (CDP). This is useful when you need your own cookies, want to watch the session, or need a local/private source.
 
-1. On the first browser tool call after a process start, Hermes issues `GET /tabs?userId=<user_id>` (5-second timeout).
-2. If any tab in the response has `listItemId == session_key`, Hermes adopts the most recently created one in that group.
-3. Otherwise, Hermes adopts the most recently created tab for the user (any `listItemId`).
-4. If no tabs exist or the request fails, Hermes falls back to creating a new tab on the next operation.
+`/browser connect` is an interactive CLI slash command. It is not dispatched by the gateway. Run it in a terminal session:
 
-Adoption only fires until `tab_id` is populated for the session. If the external app closes the adopted tab mid-run, the next browser tool call will surface a Camofox error — Hermes does not re-poll for a fresh tab on every call.
-
-**Picking `session_key`:** if you want Hermes to reliably attach to a *specific* existing tab, set `session_key` to the `listItemId` the external app used when creating it. If you leave `session_key` unset and only set `user_id`, Hermes generates a per-task `session_key` (`task_<id>`) — Hermes will share cookies and the profile with the external app, but will open its own tab alongside instead of reusing one.
-
-**Concurrency note:** the external app and Hermes can drive the same Camofox `userId` simultaneously, but Camofox does not coordinate per-tab focus between clients. Coordinate ownership at the application layer (e.g. the external app pauses while Hermes runs).
-
-#### VNC live view
-
-When Camofox runs in headed mode (with a visible browser window), it exposes a VNC port in its health check response. Hermes automatically discovers this and includes the VNC URL in navigation responses, so the agent can share a link for you to watch the browser live.
-
-### Local Chromium-family browser via CDP (`/browser connect`)
-
-Instead of a cloud provider, you can attach Hermes browser tools to your own running Chrome, Brave, Chromium, or Edge instance via the Chrome DevTools Protocol (CDP). This is useful when you want to see what the agent is doing in real-time, interact with pages that require your own cookies/sessions, or avoid cloud browser costs.
-
-:::note
-`/browser connect` is an **interactive-CLI slash command** — it is not dispatched by the gateway. If you try to run it inside a WebUI, Telegram, Discord, or other gateway chat, the message will be sent to the agent as plain text and the command will not execute. Start Hermes from the terminal (`hermes` or `hermes chat`) and issue `/browser connect` there.
-:::
-
-In the CLI, use:
-
-```
-/browser connect                 # Auto-launch/connect to a local Chromium-family browser at http://127.0.0.1:9222
-/browser connect ws://host:port  # Connect to a specific CDP endpoint
-/browser status                  # Check current connection
-/browser disconnect              # Detach and return to cloud/local mode
+```text
+/browser connect
+/browser connect ws://host:port
+/browser status
+/browser disconnect
 ```
 
-If a browser isn't already running with remote debugging, Hermes will attempt to auto-launch a supported Chromium-family browser with `--remote-debugging-port=9222`. Detection includes Brave, Google Chrome, Chromium, and Microsoft Edge, with common Linux install paths such as `/opt/brave-bin/brave` and `/snap/bin/brave`.
+If no browser is already running with remote debugging, the CLI attempts to auto-launch a supported Chromium-family browser on `http://127.0.0.1:9222`.
 
-:::tip
-To start a Chromium-family browser manually with CDP enabled, use a dedicated user-data-dir so the debug port actually comes up even if the browser is already running with your normal profile:
+To start manually with CDP enabled, use a dedicated profile directory:
 
 ```bash
-# Linux — Brave
+# Linux - Brave
 brave-browser \
   --remote-debugging-port=9222 \
-  --user-data-dir=$HOME/.hermes/chrome-debug \
+  --user-data-dir=/tmp/sfa-brave-cdp \
   --no-first-run \
   --no-default-browser-check &
 
-# Linux — Google Chrome
-google-chrome \
+# macOS - Google Chrome
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
   --remote-debugging-port=9222 \
-  --user-data-dir=$HOME/.hermes/chrome-debug \
-  --no-first-run \
-  --no-default-browser-check &
-
-# macOS — Brave
-"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" \
-  --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.hermes/chrome-debug" \
-  --no-first-run \
-  --no-default-browser-check &
-
-# macOS — Google Chrome
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.hermes/chrome-debug" \
+  --user-data-dir=/tmp/sfa-chrome-cdp \
   --no-first-run \
   --no-default-browser-check &
 ```
 
-Then launch the Hermes CLI and run `/browser connect`.
+Then launch the CLI and run `/browser connect`.
 
-**Why `--user-data-dir`?** Without it, launching a Chromium-family browser while a regular instance is already running typically opens a new window on the existing process — and that existing process was not started with `--remote-debugging-port`, so port 9222 never opens. A dedicated user-data-dir forces a fresh browser process where the debug port actually listens. `--no-first-run --no-default-browser-check` skips the first-launch wizard for the fresh profile.
-:::
+When connected via CDP, browser tools operate on your live browser instance rather than a cloud or local `agent-browser` session.
 
-When connected via CDP, all browser tools (`browser_navigate`, `browser_click`, etc.) operate on your live browser instance instead of spinning up a cloud session.
+### WSL2 + Windows Chrome: Prefer MCP Over `/browser connect`
 
-### WSL2 + Windows Chrome: prefer MCP over `/browser connect`
+If Superforecasting Agent runs inside WSL2 but the Chrome window runs on the Windows host, `/browser connect` is often not the best path.
 
-If Hermes runs inside WSL2 but the Chrome window you want to control runs on the Windows host, `/browser connect` is often not the best path.
+- Windows Chrome usually needs to launch with remote debugging from Windows.
+- WSL2 must reach the Windows host CDP port.
+- A Windows-side browser MCP server can attach to Chrome and expose a cleaner bridge.
 
-Why:
+For that setup, prefer `chrome-devtools-mcp` through MCP support.
 
-- `/browser connect` expects Hermes itself to reach a usable CDP endpoint
-- modern Chrome live-debugging sessions often expose a host-local endpoint that is not directly reachable from WSL the same way a classic `9222` port is
-- even when Windows Chrome is debuggable, the cleanest integration is often to let a Windows-side browser MCP server attach to Chrome and let Hermes talk to that MCP server
+See:
 
-For that setup, prefer `chrome-devtools-mcp` through Hermes MCP support.
+- [Use MCP with Superforecasting Agent](../../guides/use-mcp-with-hermes.md#wsl2-bridge-hermes-in-wsl-to-windows-chrome)
+- [MCP](./mcp)
 
-See the MCP guide for the practical setup:
+### Local Browser Mode
 
-- [Use MCP with Hermes](../../guides/use-mcp-with-hermes.md#wsl2-bridge-hermes-in-wsl-to-windows-chrome)
+If no cloud credentials are configured and you do not use `/browser connect`, browser tools can run through a local Chromium installation driven by the inherited `agent-browser` CLI.
 
-### Local browser mode
-
-If you do **not** set any cloud credentials and don't use `/browser connect`, Hermes can still use the browser tools through a local Chromium install driven by `agent-browser`.
-
-### Optional Environment Variables
-
-```bash
-# Residential proxies for better CAPTCHA solving (default: "true")
-BROWSERBASE_PROXIES=true
-
-# Advanced stealth with custom Chromium — requires Scale Plan (default: "false")
-BROWSERBASE_ADVANCED_STEALTH=false
-
-# Session reconnection after disconnects — requires paid plan (default: "true")
-BROWSERBASE_KEEP_ALIVE=true
-
-# Custom session timeout in milliseconds (default: project default)
-# Examples: 600000 (10min), 1800000 (30min)
-BROWSERBASE_SESSION_TIMEOUT=600000
-
-# Inactivity timeout before auto-cleanup in seconds (default: 120)
-BROWSER_INACTIVITY_TIMEOUT=120
-
-# Extra Chromium launch flags (comma- or newline-separated). Hermes auto-injects
-# `--no-sandbox,--disable-dev-shm-usage` when it detects root or AppArmor-restricted
-# unprivileged user namespaces (Ubuntu 23.10+, DGX Spark, many container images),
-# so most users don't need to set this. Set it manually only if you need a flag
-# Hermes doesn't add automatically; setting it disables the auto-injection.
-AGENT_BROWSER_ARGS=--no-sandbox
-```
-
-### Install agent-browser CLI
+Install:
 
 ```bash
 npm install -g agent-browser
-# Or install locally in the repo:
-npm install
 ```
 
-:::info
-The `browser` toolset must be included in your config's `toolsets` list or enabled via `hermes config set toolsets '["hermes-cli", "browser"]'`.
-:::
+Then enable browser tooling through:
 
-## Available Tools
+```bash
+superforecasting-agent tools
+```
+
+## Tools
+
+For simple information retrieval, prefer `web_search` or `web_extract`. Use browser tools when interaction, visual context, login state, or dynamic content matters.
 
 ### `browser_navigate`
 
-Navigate to a URL. Must be called before any other browser tool. Initializes the Browserbase session.
+Navigate to a URL. This initializes a browser session.
 
+```text
+browser_navigate(url="https://example.com")
 ```
-Navigate to https://github.com/NousResearch
-```
-
-:::tip
-For simple information retrieval, prefer `web_search` or `web_extract` — they are faster and cheaper. Use browser tools when you need to **interact** with a page (click buttons, fill forms, handle dynamic content).
-:::
 
 ### `browser_snapshot`
 
-Get a text-based snapshot of the current page's accessibility tree. Returns interactive elements with ref IDs like `@e1`, `@e2` for use with `browser_click` and `browser_type`.
+Return the current page accessibility tree. Interactive elements are referenced by IDs like `@e1`.
 
-- **`full=false`** (default): Compact view showing only interactive elements
-- **`full=true`**: Complete page content
-
-Snapshots over 8000 characters are automatically summarized by an LLM.
+```text
+browser_snapshot(full=true)
+```
 
 ### `browser_click`
 
-Click an element identified by its ref ID from the snapshot.
+Click an element by ref:
 
-```
-Click @e5 to press the "Sign In" button
+```text
+browser_click(ref="@e5")
 ```
 
 ### `browser_type`
 
-Type text into an input field. Clears the field first, then types the new text.
+Type into an input:
 
-```
-Type "hermes agent" into the search field @e3
+```text
+browser_type(ref="@e3", text="forecast source query")
 ```
 
 ### `browser_scroll`
 
-Scroll the page up or down to reveal more content.
+Scroll the page:
 
-```
-Scroll down to see more results
+```text
+browser_scroll(direction="down")
 ```
 
 ### `browser_press`
 
-Press a keyboard key. Useful for submitting forms or navigation.
+Press a key:
 
+```text
+browser_press(key="Enter")
 ```
-Press Enter to submit the form
-```
-
-Supported keys: `Enter`, `Tab`, `Escape`, `ArrowDown`, `ArrowUp`, and more.
 
 ### `browser_back`
 
-Navigate back to the previous page in browser history.
+Navigate back in browser history.
 
 ### `browser_get_images`
 
-List all images on the current page with their URLs and alt text. Useful for finding images to analyze.
+List image URLs from the current page.
 
 ### `browser_vision`
 
-Take a screenshot and analyze it with vision AI. Use this when text snapshots don't capture important visual information — especially useful for CAPTCHAs, complex layouts, or visual verification challenges.
+Take a screenshot and analyze it with a vision model. Use this when the accessibility snapshot misses important visual information, chart structure, or layout state.
 
-The screenshot is saved persistently and the file path is returned alongside the AI analysis. On messaging platforms (Telegram, Discord, Slack, WhatsApp), you can ask the agent to share the screenshot — it will be sent as a native photo attachment via the `MEDIA:` mechanism.
-
-```
-What does the chart on this page show?
-```
-
-Screenshots are stored in `~/.hermes/cache/screenshots/` and automatically cleaned up after 24 hours.
+Screenshots are stored under `~/.superforecasting-agent/cache/screenshots/` and cleaned up automatically. Legacy `~/.hermes/cache/screenshots/` remains migration-compatible.
 
 ### `browser_console`
 
-Get browser console output (log/warn/error messages) and uncaught JavaScript exceptions from the current page. Essential for detecting silent JS errors that don't appear in the accessibility tree.
+Read console output and uncaught JavaScript exceptions. This is useful when a page silently fails or a local forecast dashboard needs debugging.
 
-```
-Check the browser console for any JavaScript errors
-```
-
-Use `clear=True` to clear the console after reading, so subsequent calls only show new messages.
-
-`browser_console` also evaluates JavaScript when called with an `expression` argument — same shape as DevTools console, the result comes back parsed (JSON-serialized objects become dicts; primitive values stay primitive).
-
-```
+```text
+browser_console()
 browser_console(expression="document.querySelector('h1').textContent")
-browser_console(expression="JSON.stringify(performance.timing)")
 ```
-
-When a CDP supervisor is active for the current session (typical for any session that's run `browser_navigate` against a CDP-capable backend), evaluation runs over the supervisor's persistent WebSocket — no subprocess startup cost. Falls through to the standard agent-browser CLI path otherwise. Behaviour is identical either way; only latency changes.
 
 ### `browser_cdp`
 
-Raw Chrome DevTools Protocol passthrough — the escape hatch for browser operations not covered by the other tools. Use for native dialog handling, iframe-scoped evaluation, cookie/network control, or any CDP verb the agent needs.
+Raw Chrome DevTools Protocol passthrough for operations not covered by other tools.
 
-**Only available when a CDP endpoint is reachable at session start** — meaning `/browser connect` has attached to a running Chrome, Brave, Chromium, or Edge browser, or `browser.cdp_url` is set in `config.yaml`. The default local agent-browser mode, Camofox, and cloud providers (Browserbase, Browser Use, Firecrawl) do not currently expose CDP to this tool — cloud providers have per-session CDP URLs but live-session routing is a follow-up.
+Available when a CDP endpoint is reachable at session start: `/browser connect`, `browser.cdp_url`, or a CDP-capable backend.
 
-**CDP method reference:** https://chromedevtools.github.io/devtools-protocol/ — the agent can `web_extract` a specific method's page to look up parameters and return shape.
+Examples:
 
-Common patterns:
-
-```
-# List tabs (browser-level, no target_id)
+```text
 browser_cdp(method="Target.getTargets")
-
-# Handle a native JS dialog on a tab
-browser_cdp(method="Page.handleJavaScriptDialog",
-            params={"accept": true, "promptText": ""},
-            target_id="<tabId>")
-
-# Evaluate JS in a specific tab
-browser_cdp(method="Runtime.evaluate",
-            params={"expression": "document.title", "returnByValue": true},
-            target_id="<tabId>")
-
-# Get all cookies
 browser_cdp(method="Network.getAllCookies")
 ```
 
-Browser-level methods (`Target.*`, `Browser.*`, `Storage.*`) omit `target_id`. Page-level methods (`Page.*`, `Runtime.*`, `DOM.*`, `Emulation.*`) require a `target_id` from `Target.getTargets`. Each stateless call is independent — sessions do not persist between calls.
-
-**Cross-origin iframes:** pass `frame_id` (from `browser_snapshot.frame_tree.children[]` where `is_oopif=true`) to route the CDP call through the supervisor's live session for that iframe. This is how `Runtime.evaluate` inside a cross-origin iframe works on Browserbase, where stateless CDP connections would hit signed-URL expiry. Example:
-
-```
-browser_cdp(
-  method="Runtime.evaluate",
-  params={"expression": "document.title", "returnByValue": True},
-  frame_id="<frame_id from browser_snapshot>",
-)
-```
-
-Same-origin iframes don't need `frame_id` — use `document.querySelector('iframe').contentDocument` from a top-level `Runtime.evaluate` instead.
+Browser-level methods such as `Target.*`, `Browser.*`, and `Storage.*` omit `target_id`. Page-level methods such as `Page.*`, `Runtime.*`, `DOM.*`, and `Emulation.*` require a `target_id` from `Target.getTargets`.
 
 ### `browser_dialog`
 
-Responds to a native JS dialog (`alert` / `confirm` / `prompt` / `beforeunload`). Before this tool existed, dialogs would silently block the page's JavaScript thread and subsequent `browser_*` calls would hang or throw; now the agent sees pending dialogs in `browser_snapshot` output and responds explicitly.
+Respond to native JavaScript dialogs:
 
-**Workflow:**
-1. Call `browser_snapshot`. If a dialog is blocking the page, it shows up as `pending_dialogs: [{"id": "d-1", "type": "alert", "message": "..."}]`.
-2. Call `browser_dialog(action="accept")` or `browser_dialog(action="dismiss")`. For `prompt()` dialogs, pass `prompt_text="..."` to supply the response.
-3. Re-snapshot — `pending_dialogs` is empty; the page's JS thread has resumed.
-
-**Detection happens automatically** via a persistent CDP supervisor — one WebSocket per task that subscribes to Page/Runtime/Target events. The supervisor also populates a `frame_tree` field in the snapshot so the agent can see the iframe structure of the current page, including cross-origin (OOPIF) iframes.
-
-**Availability matrix:**
-
-| Backend | Detection via `pending_dialogs` | Response (`browser_dialog` tool) |
-|---|---|---|
-| Local Chrome via `/browser connect` or `browser.cdp_url` | ✓ | ✓ full workflow |
-| Browserbase | ✓ | ✓ full workflow (via injected XHR bridge) |
-| Camofox / default local agent-browser | ✗ | ✗ (no CDP endpoint) |
-
-**How it works on Browserbase.** Browserbase's CDP proxy auto-dismisses real native dialogs server-side within ~10ms, so we can't use `Page.handleJavaScriptDialog`. The supervisor injects a small script via `Page.addScriptToEvaluateOnNewDocument` that overrides `window.alert`/`confirm`/`prompt` with a synchronous XHR. We intercept those XHRs via `Fetch.enable` — the page's JS thread stays blocked on the XHR until we call `Fetch.fulfillRequest` with the agent's response. `prompt()` return values round-trip back into page JS unchanged.
-
-**Dialog policy** is configured in `config.yaml` under `browser.dialog_policy`:
-
-| Policy | Behavior |
-|--------|----------|
-| `must_respond` (default) | Capture, surface in snapshot, wait for explicit `browser_dialog()` call. Safety auto-dismiss after `browser.dialog_timeout_s` (default 300s) so a buggy agent can't stall forever. |
-| `auto_dismiss` | Capture, dismiss immediately. Agent still sees the dialog in `browser_state` history but doesn't have to act. |
-| `auto_accept` | Capture, accept immediately. Useful when navigating pages with aggressive `beforeunload` prompts. |
-
-**Frame tree** inside `browser_snapshot.frame_tree` is capped to 30 frames and OOPIF depth 2 to keep payloads bounded on ad-heavy pages. A `truncated: true` flag surfaces when limits were hit; agents needing the full tree can use `browser_cdp` with `Page.getFrameTree`.
-
-## Practical Examples
-
-### Filling Out a Web Form
-
-```
-User: Sign up for an account on example.com with my email john@example.com
-
-Agent workflow:
-1. browser_navigate("https://example.com/signup")
-2. browser_snapshot()  → sees form fields with refs
-3. browser_type(ref="@e3", text="john@example.com")
-4. browser_type(ref="@e5", text="SecurePass123")
-5. browser_click(ref="@e8")  → clicks "Create Account"
-6. browser_snapshot()  → confirms success
+```text
+browser_dialog(action="accept")
+browser_dialog(action="dismiss")
+browser_dialog(action="accept", prompt_text="value")
 ```
 
-### Researching Dynamic Content
-
-```
-User: What are the top trending repos on GitHub right now?
-
-Agent workflow:
-1. browser_navigate("https://github.com/trending")
-2. browser_snapshot(full=true)  → reads trending repo list
-3. Returns formatted results
-```
-
-## Session Recording
-
-Automatically record browser sessions as WebM video files:
+Dialog policy is configured in `config.yaml`:
 
 ```yaml
 browser:
-  record_sessions: true  # default: false
+  dialog_policy: must_respond
+  dialog_timeout_s: 300
 ```
 
-When enabled, recording starts automatically on the first `browser_navigate` and saves to `~/.hermes/browser_recordings/` when the session closes. Works in both local and cloud (Browserbase) modes. Recordings older than 72 hours are automatically cleaned up.
+`must_respond` captures dialogs and waits for explicit action. `auto_dismiss` dismisses immediately while retaining dialog history.
 
-## Stealth Features
+## Session Recording
 
-Browserbase provides automatic stealth capabilities:
+Record browser sessions as WebM files:
 
-| Feature | Default | Notes |
-|---------|---------|-------|
-| Basic Stealth | Always on | Random fingerprints, viewport randomization, CAPTCHA solving |
-| Residential Proxies | On | Routes through residential IPs for better access |
-| Advanced Stealth | Off | Custom Chromium build, requires Scale Plan |
-| Keep Alive | On | Session reconnection after network hiccups |
+```yaml
+browser:
+  record_sessions: true
+```
 
-:::note
-If paid features aren't available on your plan, Hermes automatically falls back — first disabling `keepAlive`, then proxies — so browsing still works on free plans.
-:::
+Recordings save under `~/.superforecasting-agent/browser_recordings/` when a session closes and are cleaned up automatically. Legacy `~/.hermes/browser_recordings/` remains migration-compatible.
 
-## Session Management
+For forecast work, record only when it helps audit source inspection or reproduce a decision. Recording can capture sensitive data.
 
-- Each task gets an isolated browser session via Browserbase
-- Sessions are automatically cleaned up after inactivity (default: 2 minutes)
-- A background thread checks every 30 seconds for stale sessions
-- Emergency cleanup runs on process exit to prevent orphaned sessions
-- Sessions are released via the Browserbase API (`REQUEST_RELEASE` status)
+## Safety And Limitations
 
-## Limitations
+- Browser tools are slower and less reproducible than structured source adapters.
+- Accessibility snapshots can omit visual information.
+- Large pages can be truncated or summarized.
+- Cloud browser sessions consume provider credits and may have provider timeouts.
+- Some providers or plans may not support proxies, keep-alive, CDP, or recordings.
+- Downloads are not a default browser-tool workflow.
+- Authenticated pages can create compliance and privacy obligations; record source provenance and reviewer decisions carefully.
 
-- **Text-based interaction** — relies on accessibility tree, not pixel coordinates
-- **Snapshot size** — large pages may be truncated or LLM-summarized at 8000 characters
-- **Session timeout** — cloud sessions expire based on your provider's plan settings
-- **Cost** — cloud sessions consume provider credits; sessions are automatically cleaned up when the conversation ends or after inactivity. Use `/browser connect` for free local browsing.
-- **No file downloads** — cannot download files from the browser
+For repeatable forecast maintenance, prefer watched sources, scheduled self-checks, and domain adapters. Use browser automation as the manual or semi-automated inspection layer around those systems.

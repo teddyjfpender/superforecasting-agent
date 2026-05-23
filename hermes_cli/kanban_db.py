@@ -5031,7 +5031,7 @@ def _rotate_worker_log(
 
 
 def _module_hermes_argv() -> list[str]:
-    """Return the interpreter-bound Hermes CLI invocation."""
+    """Return the interpreter-bound Superforecasting Agent CLI invocation."""
     # ``hermes_cli.main`` is the console-script target declared in
     # pyproject.toml, NOT a top-level ``hermes`` package — there is no
     # ``hermes`` package to import.
@@ -5106,21 +5106,24 @@ def _hermes_path_argv(path: str) -> list[str]:
 
 
 def _resolve_hermes_argv() -> list[str]:
-    """Resolve the ``hermes`` invocation as argv parts for ``Popen``.
+    """Resolve the runtime CLI invocation as argv parts for ``Popen``.
 
     Tries in order:
 
-    1. ``$HERMES_BIN`` — explicit operator override. Path-like values are
-       normalized to absolute paths; bare command names keep normal PATH
-       semantics and never prefer a same-directory file before ``PATH``.
-    2. ``shutil.which("hermes")`` — the console-script shim, normalized to
+    1. ``$SUPERFORECASTING_AGENT_BIN`` / ``$HERMES_BIN`` — explicit operator
+       override. Path-like values are normalized to absolute paths; bare
+       command names keep normal PATH semantics and never prefer a
+       same-directory file before ``PATH``.
+    2. ``shutil.which("superforecasting-agent")`` — the console-script shim,
+       normalized to an absolute path.
+    3. ``shutil.which("hermes")`` — legacy compatibility shim, normalized to
        an absolute path. On Windows, ``which`` can return a relative
        ``.\\hermes.CMD`` when the current directory is on ``PATH``; directly
        launching batch shims is also unsafe with task-derived argv. The
        dispatcher therefore falls back to the interpreter-bound module form
        for implicit ``.cmd`` / ``.bat`` shims.
-    3. ``sys.executable -m hermes_cli.main`` — fallback for setups where
-       Hermes is launched from a venv and the ``hermes`` shim is not on
+    4. ``sys.executable -m hermes_cli.main`` — fallback for setups where
+       the runtime is launched from a venv and the CLI shim is not on
        the dispatcher's ``$PATH`` (cron, systemd ``User=`` services,
        launchd jobs, detached processes, etc.). Goes through the running
        interpreter so the result is independent of ``$PATH``.
@@ -5131,7 +5134,10 @@ def _resolve_hermes_argv() -> list[str]:
     """
     import shutil
 
-    env_bin = os.environ.get("HERMES_BIN", "").strip()
+    env_bin = (
+        os.environ.get("SUPERFORECASTING_AGENT_BIN", "").strip()
+        or os.environ.get("HERMES_BIN", "").strip()
+    )
     if env_bin:
         if _looks_like_path(env_bin):
             return _hermes_path_argv(env_bin)
@@ -5139,6 +5145,13 @@ def _resolve_hermes_argv() -> list[str]:
         if resolved_env_bin:
             return _hermes_path_argv(resolved_env_bin)
         return _module_hermes_argv()
+
+    primary_bin = (
+        _safe_which_no_cwd("superforecasting-agent")
+        if _IS_WINDOWS else shutil.which("superforecasting-agent")
+    )
+    if primary_bin:
+        return _hermes_path_argv(primary_bin)
 
     hermes_bin = _safe_which_no_cwd("hermes") if _IS_WINDOWS else shutil.which("hermes")
     if hermes_bin:
@@ -5162,9 +5175,14 @@ def _kanban_worker_skill_available(hermes_home: Optional[str]) -> bool:
     """
     from pathlib import Path as _Path
 
-    # An unset HERMES_HOME means the worker falls back to the default root
-    # home (``~/.hermes``), which ships the bundled skill.
-    base = _Path(hermes_home) if hermes_home else (_Path.home() / ".hermes")
+    # An unset HERMES_HOME means the worker falls back to the canonical default
+    # root home, which may be fork-native or a legacy Hermes install.
+    if hermes_home:
+        base = _Path(hermes_home)
+    else:
+        from hermes_constants import get_default_hermes_root
+
+        base = get_default_hermes_root()
     skills_root = base / "skills"
     if not skills_root.is_dir():
         return False
@@ -5367,8 +5385,8 @@ def _default_spawn(
     except FileNotFoundError:
         log_f.close()
         raise RuntimeError(
-            "`hermes` executable not found on PATH. "
-            "Install Hermes Agent or activate its venv before running the kanban dispatcher."
+            "`superforecasting-agent` executable not found on PATH. "
+            "Install Superforecasting Agent or activate its venv before running the kanban dispatcher."
         )
     # NOTE: we intentionally do NOT close log_f here — we want Popen's
     # child process to keep writing after this function returns.  The

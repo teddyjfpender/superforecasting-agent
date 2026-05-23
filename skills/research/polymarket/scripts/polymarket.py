@@ -21,11 +21,12 @@ import urllib.error
 GAMMA = "https://gamma-api.polymarket.com"
 CLOB = "https://clob.polymarket.com"
 DATA = "https://data-api.polymarket.com"
+USER_AGENT = "superforecasting-agent/1.0 (+https://github.com/NousResearch/superforecasting-agent)"
 
 
 def _get(url: str) -> dict | list:
     """GET request, return parsed JSON."""
-    req = urllib.request.Request(url, headers={"User-Agent": "hermes-agent/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             return json.loads(resp.read().decode())

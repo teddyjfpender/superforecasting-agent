@@ -489,11 +489,11 @@ export default function AnalyticsPage() {
               </h2>
               <p>
                 The token, cost, and per-day analytics on this page are a
-                local debug estimate. They only count successful main-agent
+                local debug estimate. They only count successful main-forecaster
                 responses with a usable <span className="font-mono">usage</span>{" "}
                 block, and silently exclude auxiliary calls (context
-                compression, title generation, vision, session search, web
-                extract, smart approvals, MCP routing, plugin LLM access)
+                compression, title generation, vision, research session search, web
+                extract, smart approvals, MCP routing, extension LLM access)
                 plus provider-side retries and fallback attempts. Cache
                 writes are missing entirely.
               </p>

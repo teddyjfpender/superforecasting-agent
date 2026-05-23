@@ -1,9 +1,10 @@
 """Remote model catalog fetcher.
 
-The Hermes docs site hosts a JSON manifest of curated models for providers
-we want to update without shipping a release (currently OpenRouter and
-Nous Portal). This module fetches, validates, and caches that manifest,
-falling back to the in-repo hardcoded lists when the network is unavailable.
+The Superforecasting Agent fork can host a JSON manifest of curated models
+for providers we want to update without shipping a release (currently
+OpenRouter and Nous Portal). This module fetches, validates, and caches that
+manifest, falling back to the in-repo hardcoded lists when the network is
+unavailable.
 
 Pipeline
 --------
@@ -62,13 +63,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 DEFAULT_CATALOG_URL = (
-    "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json"
+    "https://raw.githubusercontent.com/NousResearch/superforecasting-agent/main/website/static/api/model-catalog.json"
 )
 DEFAULT_TTL_HOURS = 24
 DEFAULT_FETCH_TIMEOUT = 8.0
 SUPPORTED_SCHEMA_VERSION = 1
 
-_HERMES_USER_AGENT = f"hermes-cli/{_HERMES_VERSION}"
+_HERMES_USER_AGENT = f"superforecasting-agent/{_HERMES_VERSION}"
 
 # In-process cache to avoid repeated disk + parse work across multiple
 # calls within the same session. Invalidated by TTL against the disk file's

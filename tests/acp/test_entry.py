@@ -8,6 +8,17 @@ import pytest
 from acp_adapter import entry
 
 
+def test_help_uses_fork_native_acp_prog_by_default(capsys):
+    with pytest.raises(SystemExit) as exc:
+        entry._parse_args(["--help"])
+
+    assert exc.value.code == 0
+    output = capsys.readouterr().out
+    assert "usage: superforecasting-agent-acp" in output
+    assert "Run Superforecasting Agent as an ACP stdio server." in output
+    assert "Hermes Agent" not in output
+
+
 def test_main_enables_unstable_protocol(monkeypatch):
     calls = {}
 
@@ -30,7 +41,7 @@ def test_main_version_prints_without_starting_server(monkeypatch, capsys):
 
     output = capsys.readouterr().out.strip()
     assert output
-    assert "Starting hermes-agent ACP adapter" not in output
+    assert "Starting Superforecasting Agent ACP adapter" not in output
 
 
 def test_main_check_prints_ok_without_starting_server(monkeypatch, capsys):
@@ -38,7 +49,7 @@ def test_main_check_prints_ok_without_starting_server(monkeypatch, capsys):
 
     entry.main(["--check"])
 
-    assert capsys.readouterr().out.strip() == "Hermes ACP check OK"
+    assert capsys.readouterr().out.strip() == "Superforecasting Agent ACP check OK"
 
 
 def test_main_setup_runs_model_configuration(monkeypatch):

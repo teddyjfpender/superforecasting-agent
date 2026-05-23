@@ -28,6 +28,7 @@ from typing import Any, Dict, Iterator, List, Optional
 import httpx
 
 from agent.gemini_schema import sanitize_gemini_tool_parameters
+from hermes_constants import display_hermes_home
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ def probe_gemini_tier(
 
     Returns one of:
 
-    - ``"free"``    -- key is on the free tier (unusable with Hermes)
+    - ``"free"``    -- key is on the free tier (unusable with Superforecasting Agent)
     - ``"paid"``    -- key is on a paid tier
     - ``"unknown"`` -- probe failed; callers should proceed without blocking.
     """
@@ -818,8 +819,8 @@ class GeminiNativeClient:
         if not (api_key or "").strip():
             raise RuntimeError(
                 "Gemini native client requires an API key, but none was provided. "
-                "Set GOOGLE_API_KEY or GEMINI_API_KEY in your environment / ~/.hermes/.env "
-                "(get one at https://aistudio.google.com/app/apikey), or run `hermes setup` "
+                f"Set GOOGLE_API_KEY or GEMINI_API_KEY in your environment / {display_hermes_home()}/.env "
+                "(get one at https://aistudio.google.com/app/apikey), or run `superforecasting-agent setup` "
                 "to configure the Google provider."
             )
         self.api_key = api_key
@@ -852,7 +853,7 @@ class GeminiNativeClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
             "x-goog-api-key": self.api_key,
-            "User-Agent": "hermes-agent (gemini-native)",
+            "User-Agent": "superforecasting-agent (gemini-native)",
         }
         headers.update(self._default_headers)
         return headers

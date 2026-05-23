@@ -1,12 +1,12 @@
 ---
 sidebar_position: 11
-title: "Automate Anything with Cron"
-description: "Real-world automation patterns using Hermes cron — monitoring, reports, pipelines, and multi-skill workflows"
+title: "Automate Forecast Reviews with Cron"
+description: "Real-world forecast automation patterns: source monitoring, reviews, alerts, pipelines, and skills."
 ---
 
-# Automate Anything with Cron
+# Automate Forecast Reviews with Cron
 
-The [daily briefing bot tutorial](/docs/guides/daily-briefing-bot) covers the basics. This guide goes further — five real-world automation patterns you can adapt for your own workflows.
+The [Scheduled Tasks (Cron)](/docs/user-guide/features/cron) feature page covers the basics. This guide goes further — five real-world automation patterns you can adapt for forecast reviews, source monitoring, evidence collection, and alert delivery.
 
 For the full feature reference, see [Scheduled Tasks (Cron)](/docs/user-guide/features/cron).
 
@@ -15,32 +15,32 @@ Cron jobs run in fresh agent sessions with no memory of your current chat. Promp
 :::
 
 :::tip Don't need the LLM? You have two zero-token options.
-- **Recurring watchdog** where the script already produces the exact message (memory alerts, disk alerts, heartbeats): use [script-only cron jobs](/docs/guides/cron-script-only). Same scheduler, no LLM. You can ask Hermes to set one up for you in chat — the `cronjob` tool knows when to pick `no_agent=True` and writes the script for you.
-- **One-shot from a script that's already running** (CI step, post-commit hook, deploy script, externally-scheduled monitor): use [`hermes send`](/docs/guides/pipe-script-output) to pipe stdout or a file straight to Telegram / Discord / Slack / etc. without setting up a cron entry.
+- **Recurring watchdog** where the script already produces the exact message (source alerts, disk alerts, heartbeats): use [script-only cron jobs](/docs/guides/cron-script-only). Same scheduler, no LLM. You can ask Superforecasting Agent to set one up in chat — the `cronjob` tool knows when to pick `no_agent=True` and writes the script for you.
+- **One-shot from a script that's already running** (CI step, post-commit hook, deploy script, externally-scheduled monitor): use [`superforecasting-agent send`](/docs/guides/pipe-script-output) to pipe stdout or a file straight to Telegram / Discord / Slack / etc. without setting up a cron entry.
 :::
 
 ---
 
-## Pattern 1: Website Change Monitor
+## Pattern 1: Forecast Source Monitor
 
-Watch a URL for changes and get notified only when something is different.
+Watch a resolution source, market page, policy page, or data provider for changes and get notified only when something relevant changes.
 
-The `script` parameter is the secret weapon here. A Python script runs before each execution, and its stdout becomes context for the agent. The script handles the mechanical work (fetching, diffing); the agent handles the reasoning (is this change interesting?).
+The `script` parameter is the secret weapon here. A Python script runs before each execution, and its stdout becomes context for the agent. The script handles the mechanical work (fetching, diffing); the agent handles the reasoning (does this affect a forecast, a watched assumption, or a review queue?).
 
 Create the monitoring script:
 
 ```bash
-mkdir -p ~/.hermes/scripts
+mkdir -p ~/.superforecasting-agent/scripts
 ```
 
-```python title="~/.hermes/scripts/watch-site.py"
+```python title="~/.superforecasting-agent/scripts/watch-site.py"
 import hashlib, json, os, urllib.request
 
 URL = "https://example.com/pricing"
-STATE_FILE = os.path.expanduser("~/.hermes/scripts/.watch-site-state.json")
+STATE_FILE = os.path.expanduser("~/.superforecasting-agent/scripts/.watch-site-state.json")
 
 # Fetch current content
-req = urllib.request.Request(URL, headers={"User-Agent": "Hermes-Monitor/1.0"})
+req = urllib.request.Request(URL, headers={"User-Agent": "Forecast-Monitor/1.0"})
 content = urllib.request.urlopen(req, timeout=30).read().decode()
 current_hash = hashlib.sha256(content.encode()).hexdigest()
 
@@ -67,7 +67,7 @@ else:
 Set up the cron job:
 
 ```bash
-/cron add "every 1h" "If the script output says CHANGE DETECTED, summarize what changed on the page and why it might matter. If it says NO_CHANGE, respond with just [SILENT]." --script ~/.hermes/scripts/watch-site.py --name "Pricing monitor" --deliver telegram
+/cron add "every 1h" "If the script output says CHANGE DETECTED, summarize what changed and whether it affects any active forecast, watched assumption, or source reliability note. If it says NO_CHANGE, respond with just [SILENT]." --script ~/.superforecasting-agent/scripts/watch-site.py --name "Forecast source monitor" --deliver telegram
 ```
 
 :::tip The [SILENT] Trick
@@ -76,27 +76,27 @@ When the agent's final response contains `[SILENT]`, delivery is suppressed. Thi
 
 ---
 
-## Pattern 2: Weekly Report
+## Pattern 2: Weekly Forecast Review
 
-Compile information from multiple sources into a formatted summary. This runs once a week and delivers to your home channel.
+Compile information from multiple sources into a formatted review. This runs once a week and delivers to your home channel.
 
 ```bash
-/cron add "0 9 * * 1" "Generate a weekly report covering:
+/cron add "0 9 * * 1" "Generate a weekly forecast review covering:
 
-1. Search the web for the top 5 AI news stories from the past week
-2. Search GitHub for trending repositories in the 'machine-learning' topic
-3. Check Hacker News for the most discussed AI/ML posts
+1. Active forecasts that are stale or near close
+2. New evidence from watched sources
+3. Calibration lessons or domain error patterns that should be applied this week
 
-Format as a clean summary with sections for each source. Include links.
-Keep it under 500 words — highlight only what matters." --name "Weekly AI digest" --deliver telegram
+Format as a clean summary with sections for forecast updates, evidence, and review actions. Include links.
+Keep it under 500 words — highlight only what matters." --name "Weekly forecast review" --deliver telegram
 ```
 
 From the CLI:
 
 ```bash
-hermes cron create "0 9 * * 1" \
-  "Generate a weekly report covering the top AI news, trending ML GitHub repos, and most-discussed HN posts. Format with sections, include links, keep under 500 words." \
-  --name "Weekly AI digest" \
+superforecasting-agent cron create "0 9 * * 1" \
+  "Generate a weekly forecast review covering stale active forecasts, new watched-source evidence, and calibration lessons to apply. Format with sections, include links, keep under 500 words." \
+  --name "Weekly forecast review" \
   --deliver telegram
 ```
 
@@ -104,22 +104,22 @@ The `0 9 * * 1` is a standard cron expression: 9:00 AM every Monday.
 
 ---
 
-## Pattern 3: GitHub Repository Watcher
+## Pattern 3: Source Adapter Repository Watcher
 
-Monitor a repository for new issues, PRs, or releases.
+Monitor a repository for new issues, PRs, or releases that could affect a source adapter, benchmark importer, or forecast pipeline.
 
 ```bash
-/cron add "every 6h" "Check the GitHub repository NousResearch/hermes-agent for:
+/cron add "every 6h" "Check the GitHub repository your-org/forecast-data-adapter for:
 - New issues opened in the last 6 hours
 - New PRs opened or merged in the last 6 hours
 - Any new releases
 
 Use the terminal to run gh commands:
-  gh issue list --repo NousResearch/hermes-agent --state open --json number,title,author,createdAt --limit 10
-  gh pr list --repo NousResearch/hermes-agent --state all --json number,title,author,createdAt,mergedAt --limit 10
+  gh issue list --repo your-org/forecast-data-adapter --state open --json number,title,author,createdAt --limit 10
+  gh pr list --repo your-org/forecast-data-adapter --state all --json number,title,author,createdAt,mergedAt --limit 10
 
 Filter to only items from the last 6 hours. If nothing new, respond with [SILENT].
-Otherwise, provide a concise summary of the activity." --name "Repo watcher" --deliver discord
+Otherwise, provide a concise summary of changes that could affect forecast data quality." --name "Source adapter watcher" --deliver discord
 ```
 
 :::warning Self-Contained Prompts
@@ -132,11 +132,11 @@ Notice how the prompt includes the exact `gh` commands. The cron agent has no me
 
 Scrape data at regular intervals, save to files, and detect trends over time. This pattern combines a script (for collection) with the agent (for analysis).
 
-```python title="~/.hermes/scripts/collect-prices.py"
+```python title="~/.superforecasting-agent/scripts/collect-prices.py"
 import json, os, urllib.request
 from datetime import datetime
 
-DATA_DIR = os.path.expanduser("~/.hermes/data/prices")
+DATA_DIR = os.path.expanduser("~/.superforecasting-agent/data/prices")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # Fetch current data (example: crypto prices)
@@ -169,12 +169,12 @@ for r in recent[-6:]:
 
 If prices are flat and nothing notable, respond with [SILENT].
 If there's a significant move, explain what happened." \
-  --script ~/.hermes/scripts/collect-prices.py \
+  --script ~/.superforecasting-agent/scripts/collect-prices.py \
   --name "Price tracker" \
   --deliver telegram
 ```
 
-The script does the mechanical collection; the agent adds the reasoning layer.
+The script does the mechanical collection; the agent adds the reasoning layer and can recommend a ledger update when the move matters.
 
 ---
 

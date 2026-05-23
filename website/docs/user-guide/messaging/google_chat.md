@@ -1,17 +1,14 @@
 ---
 sidebar_position: 12
 title: "Google Chat"
-description: "Set up Hermes Agent as a Google Chat bot using Cloud Pub/Sub"
+description: "Send forecast-desk alerts and approvals through Google Chat"
 ---
 
 # Google Chat Setup
 
-Connect Hermes Agent to Google Chat as a bot. The integration uses Cloud Pub/Sub
-pull subscriptions for inbound events and the Chat REST API for outbound messages.
-Equivalent ergonomics to Slack Socket Mode or Telegram long-polling: your Hermes
-process does not need a public URL, a tunnel, or a TLS certificate. It connects,
-authenticates, and listens on a subscription — the same way a Telegram bot listens
-on a token.
+Connect Superforecasting Agent to Google Chat as a secondary forecast-desk bot for review alerts, approvals, scheduled digests, evidence delivery, and operator coordination. The integration uses Cloud Pub/Sub pull subscriptions for inbound events and the Chat REST API for outbound messages.
+
+Equivalent ergonomics to Slack Socket Mode or Telegram long-polling: your forecast gateway does not need a public URL, a tunnel, or a TLS certificate. It connects, authenticates, and listens on a subscription.
 
 :::note Workspace edition
 Google Chat is part of Google Workspace. You can use this integration with a
@@ -29,6 +26,8 @@ cannot host Chat apps.
 | **Outbound transport** | Chat REST API (`chat.googleapis.com`) |
 | **Authentication** | Service Account JSON with `roles/pubsub.subscriber` on the subscription |
 | **User identification** | Chat resource names (`users/{id}`) + email |
+
+Google Chat sessions are conversational context only. Forecast probabilities, evidence, assumptions, postmortems, and calibration lessons should still be written through the forecast ledger before they are treated as durable.
 
 ---
 
@@ -58,13 +57,13 @@ Both are free for the volumes a personal bot generates.
 
 **IAM & Admin → Service Accounts → Create Service Account.**
 
-- Name: `hermes-chat-bot`
+- Name: `superforecasting-agent-chat-bot`
 - Skip the "Grant this service account access to project" step. IAM on the specific
   subscription is all you need — do **NOT** grant project-level Pub/Sub roles.
 
 After creation, open the SA, go to **Keys → Add Key → Create new key → JSON** and
-download the file. Save it somewhere only Hermes can read (e.g.,
-`~/.hermes/google-chat-sa.json`, `chmod 600`).
+download the file. Save it somewhere only Superforecasting Agent can read (e.g.,
+`~/.superforecasting-agent/google-chat-sa.json`, `chmod 600`).
 
 :::caution There is NO "Chat Bot Caller" role
 A common mistake is to search for a Chat-specific IAM role and grant it at the
@@ -79,14 +78,14 @@ the subscription you create in the next step.
 
 **Pub/Sub → Topics → Create topic.**
 
-- Topic ID: `hermes-chat-events`
+- Topic ID: `superforecasting-agent-chat-events`
 - Leave the defaults for everything else.
 
 After creation, the topic's detail page has a **Subscriptions** tab. Create one:
 
-- Subscription ID: `hermes-chat-events-sub`
+- Subscription ID: `superforecasting-agent-chat-events-sub`
 - Delivery type: **Pull**
-- Message retention: **7 days** (so backlog survives a hermes restart)
+- Message retention: **7 days** (so backlog survives a superforecasting-agent restart)
 - Leave the rest default.
 
 ---
@@ -107,10 +106,10 @@ never receive anything.
 
 On the **subscription**, add your own Service Account as a principal:
 
-- Principal: `hermes-chat-bot@<your-project>.iam.gserviceaccount.com`
+- Principal: `superforecasting-agent-chat-bot@<your-project>.iam.gserviceaccount.com`
 - Role: `Pub/Sub Subscriber`
 
-Also grant `Pub/Sub Viewer` on the same subscription — Hermes calls
+Also grant `Pub/Sub Viewer` on the same subscription — Superforecasting Agent calls
 `subscription.get()` at startup as a reachability check.
 
 ---
@@ -119,13 +118,13 @@ Also grant `Pub/Sub Viewer` on the same subscription — Hermes calls
 
 Go to **APIs & Services → Google Chat API → Configuration**.
 
-- **App name**: whatever you want users to see ("Hermes" is reasonable).
+- **App name**: whatever you want users to see ("Superforecasting Agent" is reasonable).
 - **Avatar URL**: any public PNG (Google has some defaults).
 - **Description**: a short sentence shown in the app directory.
 - **Functionality**: enable **Receive 1:1 messages** and **Join spaces and group
   conversations**.
 - **Connection settings**: select **Cloud Pub/Sub**, enter the topic name
-  `projects/<your-project>/topics/hermes-chat-events`.
+  `projects/<your-project>/topics/superforecasting-agent-chat-events`.
 - **Visibility**: restrict to your workspace (or specific users) — do not publish
   to everyone while you're testing.
 
@@ -137,26 +136,26 @@ Save.
 
 Open Google Chat in a browser. Start a DM with your app by searching for its name
 in the **+ New Chat** menu. The first time you message it, Google sends an
-`ADDED_TO_SPACE` event that Hermes uses to cache the bot's own `users/{id}` for
+`ADDED_TO_SPACE` event that Superforecasting Agent uses to cache the bot's own `users/{id}` for
 self-message filtering.
 
 ---
 
-## Step 9: Configure Hermes
+## Step 9: Configure Superforecasting Agent
 
-Add the Google Chat section to `~/.hermes/.env`:
+Add the Google Chat section to `~/.superforecasting-agent/.env`:
 
 ```bash
 # Required
 GOOGLE_CHAT_PROJECT_ID=my-chat-bot-123
-GOOGLE_CHAT_SUBSCRIPTION_NAME=projects/my-chat-bot-123/subscriptions/hermes-chat-events-sub
-GOOGLE_CHAT_SERVICE_ACCOUNT_JSON=/home/you/.hermes/google-chat-sa.json
+GOOGLE_CHAT_SUBSCRIPTION_NAME=projects/my-chat-bot-123/subscriptions/superforecasting-agent-chat-events-sub
+GOOGLE_CHAT_SERVICE_ACCOUNT_JSON=/home/you/.superforecasting-agent/google-chat-sa.json
 
 # Authorization — paste the emails of people allowed to talk to the bot
 GOOGLE_CHAT_ALLOWED_USERS=you@yourdomain.com,coworker@yourdomain.com
 
 # Optional
-GOOGLE_CHAT_HOME_CHANNEL=spaces/AAAA...         # default delivery destination for cron jobs
+GOOGLE_CHAT_HOME_CHANNEL=spaces/AAAA...         # default delivery destination for scheduled review output
 GOOGLE_CHAT_MAX_MESSAGES=1                      # Pub/Sub FlowControl; 1 serializes commands per session
 GOOGLE_CHAT_MAX_BYTES=16777216                  # 16 MiB — cap on in-flight message bytes
 ```
@@ -164,7 +163,7 @@ GOOGLE_CHAT_MAX_BYTES=16777216                  # 16 MiB — cap on in-flight me
 The project ID also falls back to `GOOGLE_CLOUD_PROJECT`, and the SA path falls
 back to `GOOGLE_APPLICATION_CREDENTIALS` — use whichever convention you prefer.
 
-Install the dependencies the Google Chat adapter needs (no Hermes extra is currently published — install them directly):
+Install the dependencies the Google Chat adapter needs:
 
 ```bash
 pip install google-cloud-pubsub google-api-python-client google-auth google-auth-oauthlib
@@ -173,7 +172,7 @@ pip install google-cloud-pubsub google-api-python-client google-auth google-auth
 Start the gateway:
 
 ```bash
-hermes gateway
+superforecasting-agent gateway
 ```
 
 You should see a log line like:
@@ -183,9 +182,7 @@ You should see a log line like:
              bot_user_id=users/XXXX, flow_control(msgs=1, bytes=16777216)
 ```
 
-Send "hola" in the test DM. The bot posts a "Hermes is thinking…" marker, then
-edits that same message in place with the real response — no "message deleted"
-tombstones.
+Send "status" in the test DM. The bot posts a working marker, then edits that same message in place with the real response — no "message deleted" tombstones.
 
 ---
 
@@ -199,15 +196,15 @@ Google Chat renders a limited markdown subset:
 | Inline images via URL | Interactive Card v2 buttons (v1 of this gateway) |
 | Native file attachments (after `/setup-files` — see Step 10) | Native voice notes / circular video notes |
 
-The agent's system prompt includes a Google Chat–specific hint so it knows these
+The runtime prompt includes a Google Chat-specific hint so it knows these
 limits and avoids formatting that won't render.
 
-Message size limit: 4000 characters per message. Longer agent responses are
+Message size limit: 4000 characters per message. Longer responses are
 automatically split across multiple messages.
 
-Thread support: when a user replies inside a thread, Hermes detects the
+Thread support: when a user replies inside a thread, Superforecasting Agent detects the
 `thread.name` and posts its reply in the same thread, so each thread gets a
-separate Hermes session.
+separate forecast-desk session.
 
 ---
 
@@ -233,15 +230,15 @@ specifically, as the user who asked for the file.
 
 1. Go to **APIs & Services → Credentials** in the same GCP project.
 2. **Create credentials → OAuth client ID → Desktop app**.
-3. Download the JSON. Move it onto the host that runs Hermes.
-4. On the host, register the client with Hermes:
+3. Download the JSON. Move it onto the host that runs Superforecasting Agent.
+4. On the host, register the client with Superforecasting Agent:
 
 ```bash
 python -m gateway.platforms.google_chat_user_oauth \
     --client-secret /path/to/client_secret.json
 ```
 
-That writes `~/.hermes/google_chat_user_client_secret.json`. This is shared
+That writes `~/.superforecasting-agent/google_chat_user_client_secret.json`. This is shared
 infrastructure — it identifies the OAuth *app*, not any individual user. One
 file per host is enough no matter how many users authorize later.
 
@@ -259,7 +256,7 @@ Each user runs the flow once, in their own DM with the bot:
    into chat as `/setup-files <PASTED_URL>`. The bot exchanges it for a
    refresh token.
 
-The token lands at `~/.hermes/google_chat_user_tokens/<sanitized_email>.json`.
+The token lands at `~/.superforecasting-agent/google_chat_user_tokens/<sanitized_email>.json`.
 Subsequent file requests in that user's DM use *their* token, so the bot
 uploads as them and the message lands in their space.
 
@@ -276,7 +273,7 @@ on purpose.
 ### Multi-user behavior
 
 When the asker has no per-user token yet, the bot falls back to a legacy
-single-user token at `~/.hermes/google_chat_user_token.json` (if present from
+single-user token at `~/.superforecasting-agent/google_chat_user_token.json` (if present from
 a pre-multi-user install). When neither is available, the bot posts a clear
 text notice telling the asker to run `/setup-files`.
 
@@ -290,16 +287,16 @@ evicts only that user's cache. Users don't disrupt each other.
 **Bot stays silent after sending "hola."**
 
 1. Check the Pub/Sub subscription has undelivered messages in the console.
-   If it does, Hermes isn't authenticated — verify `GOOGLE_CHAT_SERVICE_ACCOUNT_JSON`
+   If it does, Superforecasting Agent isn't authenticated — verify `GOOGLE_CHAT_SERVICE_ACCOUNT_JSON`
    and that the SA is listed as `Pub/Sub Subscriber` on the subscription.
 2. If the subscription has zero messages, Google Chat isn't publishing.
    Double-check the IAM binding on the **topic**:
    `chat-api-push@system.gserviceaccount.com` must have `Pub/Sub Publisher`.
-3. Check `hermes gateway` logs for `[GoogleChat] Connected`. If you see
+3. Check `superforecasting-agent gateway` logs for `[GoogleChat] Connected`. If you see
    `[GoogleChat] Config validation failed`, the error message tells you which
    env var to fix.
 
-**Bot replies but an error message appears instead of the agent's answer.**
+**Bot replies but an error message appears instead of the runtime answer.**
 
 Check logs for `[GoogleChat] Pub/Sub stream died` — if these repeat, your SA
 credentials may have been rotated or the subscription deleted. After 10 attempts
@@ -313,8 +310,8 @@ messaging automatically).
 
 **Too many "Rate limit hit" warnings.**
 
-The Chat API's default quotas allow 60 messages per space per minute. If your
-agent produces long streaming responses that exceed that, the adapter retries
+The Chat API's default quotas allow 60 messages per space per minute. If a
+forecast review produces long responses that exceed that, the adapter retries
 with exponential backoff — but you'll still see user-visible latency. Consider
 concise responses or raising the quota in the GCP console.
 
@@ -327,7 +324,7 @@ the next file request uploads natively without a gateway restart.
 **`/setup-files start` says "No client credentials stored on the host."**
 
 The one-time host setup wasn't done. From a terminal on the host that runs
-Hermes:
+Superforecasting Agent:
 
 ```bash
 python -m gateway.platforms.google_chat_user_oauth \
@@ -349,7 +346,7 @@ The auth code is single-use and short-lived (typically a few minutes). Send
   IAM should be the actual enforcement — grant your SA the minimum
   (`roles/pubsub.subscriber` + `roles/pubsub.viewer` on the subscription), not
   project-level or org-level Pub/Sub roles.
-- **Attachment download protection**: Hermes will only attach the SA bearer
+- **Attachment download protection**: Superforecasting Agent will only attach the SA bearer
   token to URLs whose host matches a short allowlist of Google-owned domains
   (`googleapis.com`, `drive.google.com`, `lh[3-6].googleusercontent.com`, and
   a few others). Any other host is rejected before the HTTP request, to
@@ -365,6 +362,6 @@ The auth code is single-use and short-lived (typically a few minutes). Send
 - **User OAuth scope**: the per-user attachment flow requests *only*
   `chat.messages.create` — the minimum that covers `media.upload` plus the
   follow-up `messages.create`. Tokens are persisted as plain JSON at
-  `~/.hermes/google_chat_user_tokens/<sanitized_email>.json` (filesystem
+  `~/.superforecasting-agent/google_chat_user_tokens/<sanitized_email>.json` (filesystem
   permissions are the protection — same model as the SA key file). Each
   token is owned by exactly one user; revoke is scoped to that user.

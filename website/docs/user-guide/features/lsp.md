@@ -1,62 +1,60 @@
 ---
 sidebar_position: 16
-title: "LSP — Semantic Diagnostics"
-description: "Real language servers (pyright, gopls, rust-analyzer, …) wired into the post-write lint check used by write_file and patch."
+title: "LSP Semantic Diagnostics"
+description: "Run language-server diagnostics after file writes."
 ---
 
 # Language Server Protocol (LSP)
 
-Hermes runs full language servers — pyright, gopls, rust-analyzer,
-typescript-language-server, clangd, and ~20 more — as background
-subprocesses and feeds their semantic diagnostics into the post-write
-lint check used by `write_file` and `patch`. When the agent edits a
-file, it sees exactly the errors that edit introduced — not just
-syntax errors, but **type errors, undefined names, missing imports,
-and project-wide semantic issues** the language server detects.
+Superforecasting Agent can run full language servers such as pyright, gopls, rust-analyzer, typescript-language-server, clangd, and others as background subprocesses. Their diagnostics are fed into the post-write checks used by `write_file` and `patch`.
 
-This is the same architecture top-tier coding agents use. Hermes
-ships it self-contained: no editor host required, no plugins to
-install, no separate daemon to manage.
+For the forecast desk, LSP is engineering support. It helps keep source adapters, benchmark fixtures, model scripts, tests, plugins, and analysis notebooks correct. It does not validate a forecast probability, evidence claim, resolution, score, postmortem, or calibration lesson.
 
-## When LSP runs
+## When LSP Runs
 
-LSP is gated on **git workspace detection**. When the agent's working
-directory (or the file being edited) is inside a git repository, LSP
-runs against that workspace. When neither is in a git repo, LSP
-stays dormant — useful for messaging gateways where the cwd is the
-user's home directory and there's no project to diagnose.
+LSP is gated on git workspace detection. When the working directory, or the edited file, is inside a git repository, LSP runs against that workspace. Outside a git repository, LSP stays dormant.
 
-The check is layered: in-process syntax check first (microseconds),
-then LSP diagnostics second when syntax is clean. A flaky or missing
-language server can never break a write — every LSP failure path
-falls back silently to the syntax-only result.
+The check is layered:
 
-Concretely, on every successful `write_file` or `patch`:
+1. Fast in-process syntax check.
+2. Language-server diagnostics when syntax is clean.
+3. Silent fallback to syntax-only results if a server is missing, flaky, or unsupported.
 
-1. Hermes captures a baseline of current diagnostics for the file.
-2. Performs the write.
-3. Re-queries the language server, filters out diagnostics that were
-   already in the baseline, and surfaces only the new ones.
+On every successful `write_file` or `patch`:
 
-The agent sees output like:
+1. The runtime captures baseline diagnostics for the file.
+2. It performs the write.
+3. It re-queries the language server.
+4. It shows only diagnostics introduced by the edit.
 
-```
+Example result:
+
+```json
 {
   "bytes_written": 42,
   "dirs_created": false,
   "lint": {"status": "ok", "output": ""},
-  "lsp_diagnostics": "LSP diagnostics introduced by this edit:\n<diagnostics file=\"/path/to/foo.py\">\nERROR [42:5] Cannot find name 'foo' [reportUndefinedVariable] (Pyright)\nERROR [50:1] Argument of type \"str\" is not assignable to \"int\" [reportArgumentType] (Pyright)\n</diagnostics>"
+  "lsp_diagnostics": "LSP diagnostics introduced by this edit:\n<diagnostics file=\"/path/to/source_adapter.py\">\nERROR [42:5] Cannot find name 'fetch_feed' [reportUndefinedVariable] (Pyright)\n</diagnostics>"
 }
 ```
 
-The `lint` field carries the syntax-check result (microsecond
-in-process parse via `ast.parse`, `json.loads`, etc.); the
-`lsp_diagnostics` field carries the semantic diagnostics from the
-real language server. Two channels, independent signals — the
-agent sees a syntax-clean file with semantic problems as
-``lint: ok`` plus a populated ``lsp_diagnostics``.
+The `lint` field is the syntax result. The `lsp_diagnostics` field is the semantic result from the language server. A syntax-clean file can still produce semantic diagnostics.
 
-## Supported languages
+## Forecast-Desk Uses
+
+Use LSP when working on:
+
+- forecast source adapters
+- benchmark dataset importers
+- scoring and calibration code
+- model-run scripts
+- plugin hooks
+- tests for ledger behavior
+- TUI/dashboard support code
+
+Do not treat LSP as evidence quality control. A type-correct extractor can still import a stale, misleading, or badly resolved source. Ledger updates still need citations, timestamps, source reliability, assumptions, and review.
+
+## Supported Languages
 
 | Language | Server | Auto-install |
 |----------|--------|--------------|
@@ -66,76 +64,54 @@ agent sees a syntax-clean file with semantic problems as
 | Svelte | `svelte-language-server` | npm |
 | Astro | `@astrojs/language-server` | npm |
 | Go | `gopls` | `go install` |
-| Rust | `rust-analyzer` | manual (rustup) |
-| C / C++ | `clangd` | manual (LLVM) |
+| Rust | `rust-analyzer` | manual |
+| C / C++ | `clangd` | manual |
 | Bash / Zsh | `bash-language-server` | npm |
 | YAML | `yaml-language-server` | npm |
-| Lua | `lua-language-server` | manual (GitHub releases) |
+| Lua | `lua-language-server` | manual |
 | PHP | `intelephense` | npm |
-| OCaml | `ocaml-lsp` | manual (opam) |
+| OCaml | `ocaml-lsp` | manual |
 | Dockerfile | `dockerfile-language-server-nodejs` | npm |
 | Terraform | `terraform-ls` | manual |
-| Dart | `dart language-server` | manual (dart sdk) |
-| Haskell | `haskell-language-server` | manual (ghcup) |
+| Dart | `dart language-server` | manual |
+| Haskell | `haskell-language-server` | manual |
 | Julia | `julia` + LanguageServer.jl | manual |
 | Clojure | `clojure-lsp` | manual |
 | Nix | `nixd` | manual |
 | Zig | `zls` | manual |
-| Gleam | `gleam lsp` | manual (gleam install) |
+| Gleam | `gleam lsp` | manual |
 | Elixir | `elixir-ls` | manual |
 | Prisma | `prisma language-server` | manual |
 | Kotlin | `kotlin-language-server` | manual |
 | Java | `jdtls` | manual |
 
-For "manual" entries, install the server through whatever toolchain
-manager makes sense for that language (rustup, ghcup, opam, brew,
-…). Hermes auto-detects the binary on PATH or in
-`<HERMES_HOME>/lsp/bin/`.
+For manual entries, install the server through the language's normal toolchain. The runtime detects binaries on `PATH` or in the profile LSP bin directory.
 
-A few servers are installed alongside a peer dependency that npm
-won't auto-pull. The current case is `typescript-language-server`,
-which requires the `typescript` SDK importable from the same
-`node_modules` tree — Hermes installs both packages together when you
-run `hermes lsp install typescript` or auto-install fires on first
-use.
+Some servers need peer dependencies. For example, `typescript-language-server` needs the `typescript` SDK in the same `node_modules` tree; the installer handles that pairing.
 
 ## CLI
 
-```
-hermes lsp status          # service state + per-server install status
-hermes lsp list            # registry, optionally --installed-only
-hermes lsp install <id>    # eagerly install one server
-hermes lsp install-all     # try every server with a known recipe
-hermes lsp restart         # tear down running clients
-hermes lsp which <id>      # print resolved binary path
+```bash
+superforecasting-agent lsp status
+superforecasting-agent lsp list
+superforecasting-agent lsp install <id>
+superforecasting-agent lsp install-all
+superforecasting-agent lsp restart
+superforecasting-agent lsp which <id>
 ```
 
-`hermes lsp status` is the best starting point — it shows which
-languages will get semantic diagnostics today and which need a
-binary installed.
+`superforecasting-agent lsp status` is the best starting point. It shows which languages will get semantic diagnostics and which need a server binary.
 
 ## Configuration
 
-The defaults work for typical setups; nothing to set if the binaries
-are on PATH.
+Defaults work for common setups. Configure under `lsp` in `~/.superforecasting-agent/config.yaml`:
 
 ```yaml
-# config.yaml
 lsp:
-  # Master toggle. Disabling skips the entire subsystem — no servers
-  # spawn, no background event loop runs.
   enabled: true
-
-  # How long to wait for diagnostics after each write.
-  wait_mode: document      # "document" or "full"
+  wait_mode: document
   wait_timeout: 5.0
-
-  # How to handle missing server binaries.
-  #   auto    — install via npm/pip/go install into <HERMES_HOME>/lsp/bin
-  #   manual  — only use binaries already on PATH
   install_strategy: auto
-
-  # Per-server overrides (all optional).
   servers:
     pyright:
       disabled: false
@@ -146,58 +122,52 @@ lsp:
           analysis:
             typeCheckingMode: "strict"
     typescript:
-      disabled: true       # skip TS even when its extensions match
+      disabled: true
 ```
 
-### Per-server keys
+Per-server keys:
 
-* `disabled: true` — skip this server entirely even when its
-  extensions match a file.
-* `command: [bin, ...args]` — pin a custom binary path. Bypasses
-  auto-install.
-* `env: {KEY: value}` — extra env vars passed to the spawned process.
-* `initialization_options: {...}` — merged into the LSP
-  `initializationOptions` payload sent in the `initialize`
-  handshake. Server-specific; consult the language server's docs.
+- `disabled: true` skips that server.
+- `command: [bin, ...args]` pins a custom binary and bypasses auto-install.
+- `env` adds environment variables for the server process.
+- `initialization_options` merges into the LSP `initialize` payload.
 
-## Installation locations
+## Installation Locations
 
-When `install_strategy: auto`, Hermes installs binaries into
-`<HERMES_HOME>/lsp/bin/`. NPM packages land in
-`<HERMES_HOME>/lsp/node_modules/` with bin symlinks one level up.
-Go binaries come from `go install` with `GOBIN` pointed at the
-staging dir.
+When `install_strategy: auto`, binaries install into:
 
-Nothing is ever installed to `/usr/local/`, `~/.local/`, or any other
-shared location — the staging dir is fully Hermes-owned and is
-removed when you reset the profile.
+```text
+~/.superforecasting-agent/lsp/bin/
+```
 
-## Performance characteristics
+NPM packages land in:
 
-LSP servers are **lazy-spawned** on first use. Editing a Python file
-in a project that's never seen `.py` traffic spawns pyright; the
-spawn takes 1-3 seconds for most servers (rust-analyzer can take 10+
-on a cold project). Subsequent edits in the same workspace re-use
-the running server.
+```text
+~/.superforecasting-agent/lsp/node_modules/
+```
 
-The LSP layer adds a few milliseconds to clean writes when no
-diagnostics are emitted. When diagnostics are emitted, the wait
-budget is `wait_timeout` seconds — typically the server responds in
-tens of milliseconds for pyright/tsserver and a few seconds for
-rust-analyzer mid-indexing.
+Go binaries install with `GOBIN` pointed at the profile staging directory. Nothing is installed to `/usr/local/`, `~/.local/`, or other shared locations.
 
-Servers are kept alive for the life of the Hermes process. There's
-no idle-timeout reaper — the cost of restarting the server's index
-on every write would be far higher than holding the daemon.
+During migration, legacy profiles may use `<HERMES_HOME>/lsp/bin` or `~/.hermes/lsp/bin`.
+
+## Performance
+
+LSP servers are lazy-spawned on first use. A Python project may spawn pyright in 1-3 seconds; rust-analyzer can take longer on cold projects.
+
+Subsequent edits in the same workspace reuse the running server. Clean writes typically add only a small delay. When diagnostics are emitted, the wait budget is `wait_timeout`.
+
+Servers stay alive for the life of the process because re-indexing on every write would be more expensive than keeping the daemon.
 
 ## Disabling
 
-Set `lsp.enabled: false` in `config.yaml` to disable the entire
-subsystem. The post-write check falls back to the in-process syntax
-check (`ast.parse` for Python, `json.loads` for JSON, etc.) which
-ships unchanged from earlier versions.
+Disable the whole layer:
 
-To disable a single language without disabling the whole layer:
+```yaml
+lsp:
+  enabled: false
+```
+
+Disable one language:
 
 ```yaml
 lsp:
@@ -206,49 +176,60 @@ lsp:
       disabled: true
 ```
 
+When disabled, post-write checks fall back to syntax-only validation.
+
 ## Troubleshooting
 
-**`hermes lsp status` shows a server as "missing"**
+### `superforecasting-agent lsp status` shows a server as missing
 
-The binary isn't on PATH and isn't in `<HERMES_HOME>/lsp/bin/`. Run
-`hermes lsp install <server_id>` to attempt an auto-install, or
-install the binary manually through the language's normal toolchain.
+The binary is not on `PATH` and not in the profile LSP bin directory.
 
-**`Backend warnings` section in `hermes lsp status`**
+Try:
 
-Some servers ship as thin wrappers around an external CLI for actual
-diagnostics — they spawn cleanly and accept requests but never emit
-errors when the sidecar binary is missing. The most common case is
-`bash-language-server`, which delegates diagnostics to `shellcheck`.
-When `hermes lsp status` shows a `Backend warnings` section, install
-the named tool through your OS package manager:
-
-```
-apt install shellcheck      # Debian / Ubuntu
-brew install shellcheck     # macOS
-scoop install shellcheck    # Windows
+```bash
+superforecasting-agent lsp install <server_id>
 ```
 
-The same warning is logged once at server spawn time in
-`~/.hermes/logs/agent.log`.
+or install the server manually through the language's normal toolchain.
 
-**Server starts but never returns diagnostics**
+### `Backend warnings` appears in status
 
-Check `~/.hermes/logs/agent.log` for `[agent.lsp.client]` entries —
-both stderr from the language server and protocol errors land
-there. Some servers (rust-analyzer especially) need to finish a
-project-wide index before they emit per-file diagnostics; the first
-edit after server start may complete with no diagnostics, with
-subsequent edits picking them up.
+Some servers are wrappers around another diagnostic binary. The most common case is `bash-language-server`, which delegates diagnostics to `shellcheck`.
 
-**Server crashed**
+Install the named sidecar:
 
-A crashed server is added to the broken-set and won't be retried for
-the rest of the session. Run `hermes lsp restart` to clear the set;
-the next edit re-spawns.
+```bash
+apt install shellcheck
+brew install shellcheck
+scoop install shellcheck
+```
 
-**Editing a file outside any git repo**
+The same warning is logged once at server spawn time.
 
-By design, LSP only runs inside a git repository. If the project isn't
-yet initialized, run `git init` to enable LSP diagnostics. Otherwise the
-in-process syntax-only fallback applies.
+### Server starts but never returns diagnostics
+
+Check:
+
+```bash
+superforecasting-agent logs --component lsp
+```
+
+or inspect `~/.superforecasting-agent/logs/agent.log` for `[agent.lsp.client]` entries.
+
+Some servers, especially rust-analyzer, need to finish project-wide indexing before they emit per-file diagnostics.
+
+### Server crashed
+
+A crashed server is added to a broken set and is not retried for the rest of the process.
+
+Restart LSP clients:
+
+```bash
+superforecasting-agent lsp restart
+```
+
+The next matching edit re-spawns the server.
+
+### Editing a file outside a git repo
+
+By design, LSP only runs inside a git repository. Run `git init` to enable semantic diagnostics for that workspace, or accept the syntax-only fallback.

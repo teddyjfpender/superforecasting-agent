@@ -1,4 +1,4 @@
-"""CLI presentation -- spinner, kawaii faces, tool preview formatting.
+"""CLI presentation -- forecast desk spinner, tool preview formatting.
 
 Pure display functions and classes with no AIAgent dependency.
 Used by AIAgent._execute_tool_calls for CLI feedback.
@@ -553,11 +553,11 @@ def render_edit_diff_with_delta(
 
 
 # =========================================================================
-# KawaiiSpinner
+# ForecastSpinner
 # =========================================================================
 
-class KawaiiSpinner:
-    """Animated spinner with kawaii faces for CLI feedback during tool execution."""
+class ForecastSpinner:
+    """Animated spinner with neutral forecast-desk markers for CLI feedback."""
 
     SPINNERS = {
         'dots': ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
@@ -567,30 +567,30 @@ class KawaiiSpinner:
         'star': ['✶', '✷', '✸', '✹', '✺', '✹', '✸', '✷'],
         'moon': ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘'],
         'pulse': ['◜', '◠', '◝', '◞', '◡', '◟'],
-        'brain': ['🧠', '💭', '💡', '✨', '💫', '🌟', '💡', '💭'],
-        'sparkle': ['⁺', '˚', '*', '✧', '✦', '✧', '*', '˚'],
+        'model': ['◇', '◆', '◇', '◆'],
+        'source': ['◌', '○', '●', '○'],
     }
 
-    KAWAII_WAITING = [
-        "(｡◕‿◕｡)", "(◕‿◕✿)", "٩(◕‿◕｡)۶", "(✿◠‿◠)", "( ˘▽˘)っ",
-        "♪(´ε` )", "(◕ᴗ◕✿)", "ヾ(＾∇＾)", "(≧◡≦)", "(★ω★)",
+    WAITING_MARKERS = [
+        "[.]", "[:]", "[']", "[.]",
     ]
 
-    KAWAII_THINKING = [
-        "(｡•́︿•̀｡)", "(◔_◔)", "(¬‿¬)", "( •_•)>⌐■-■", "(⌐■_■)",
-        "(´･_･`)", "◉_◉", "(°ロ°)", "( ˘⌣˘)♡", "ヽ(>∀<☆)☆",
-        "٩(๑❛ᴗ❛๑)۶", "(⊙_⊙)", "(¬_¬)", "( ͡° ͜ʖ ͡°)", "ಠ_ಠ",
+    THINKING_MARKERS = [
+        "[p]", "[q]", "[e]", "[m]",
     ]
 
     THINKING_VERBS = [
-        "pondering", "contemplating", "musing", "cogitating", "ruminating",
-        "deliberating", "mulling", "reflecting", "processing", "reasoning",
-        "analyzing", "computing", "synthesizing", "formulating", "brainstorming",
+        "checking evidence",
+        "estimating base rates",
+        "updating priors",
+        "reviewing assumptions",
+        "running comparisons",
+        "scoring uncertainty",
     ]
 
     @classmethod
     def get_waiting_faces(cls) -> list:
-        """Return waiting faces from the active skin, falling back to KAWAII_WAITING."""
+        """Return waiting markers from the active skin or default forecast markers."""
         try:
             skin = _get_skin()
             if skin:
@@ -599,11 +599,11 @@ class KawaiiSpinner:
                     return faces
         except Exception:
             pass
-        return cls.KAWAII_WAITING
+        return cls.WAITING_MARKERS
 
     @classmethod
     def get_thinking_faces(cls) -> list:
-        """Return thinking faces from the active skin, falling back to KAWAII_THINKING."""
+        """Return thinking markers from the active skin or default forecast markers."""
         try:
             skin = _get_skin()
             if skin:
@@ -612,7 +612,7 @@ class KawaiiSpinner:
                     return faces
         except Exception:
             pass
-        return cls.KAWAII_THINKING
+        return cls.THINKING_MARKERS
 
     @classmethod
     def get_thinking_verbs(cls) -> list:
@@ -678,7 +678,7 @@ class KawaiiSpinner:
         the correct line — each spinner frame ends up on its own line.
 
         The CLI already drives a TUI widget (_spinner_text) for spinner display,
-        so KawaiiSpinner's \\r-based animation is redundant under StdoutProxy.
+        so ForecastSpinner's \\r-based animation is redundant under StdoutProxy.
         """
         try:
             from prompt_toolkit.patch_stdout import StdoutProxy
@@ -783,8 +783,12 @@ class KawaiiSpinner:
         return False
 
 
+# Backward-compatible name for older imports and plugins.
+KawaiiSpinner = ForecastSpinner
+
+
 # =========================================================================
-# Cute tool message (completion line that replaces the spinner)
+# Tool status message (completion line that replaces the spinner)
 # =========================================================================
 
 def _detect_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str]:
@@ -983,5 +987,3 @@ def get_cute_tool_message(
 # =========================================================================
 # Honcho session line (one-liner with clickable OSC 8 hyperlink)
 # =========================================================================
-
-

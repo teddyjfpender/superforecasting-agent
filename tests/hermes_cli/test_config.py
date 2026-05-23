@@ -24,16 +24,58 @@ from hermes_cli.config import (
 
 
 class TestGetHermesHome:
-    def test_default_path(self):
+    def test_default_path(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("HERMES_HOME", None)
+            os.environ.pop("FORECAST_HOME", None)
+            os.environ.pop("SUPERFORECASTING_AGENT_HOME", None)
             home = get_hermes_home()
-            assert home == Path.home() / ".hermes"
+            assert home == tmp_path / ".superforecasting-agent"
+
+    def test_existing_legacy_home_remains_fallback(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        (tmp_path / ".hermes").mkdir()
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("HERMES_HOME", None)
+            os.environ.pop("FORECAST_HOME", None)
+            os.environ.pop("SUPERFORECASTING_AGENT_HOME", None)
+            home = get_hermes_home()
+            assert home == tmp_path / ".hermes"
 
     def test_env_override(self):
         with patch.dict(os.environ, {"HERMES_HOME": "/custom/path"}):
             home = get_hermes_home()
             assert home == Path("/custom/path")
+
+    def test_forecast_home_alias(self):
+        with patch.dict(os.environ, {"FORECAST_HOME": "/forecast/path"}, clear=False):
+            os.environ.pop("HERMES_HOME", None)
+            os.environ.pop("SUPERFORECASTING_AGENT_HOME", None)
+            home = get_hermes_home()
+            assert home == Path("/forecast/path")
+
+    def test_superforecasting_home_alias_precedes_legacy_hermes_home(self):
+        with patch.dict(
+            os.environ,
+            {
+                "SUPERFORECASTING_AGENT_HOME": "/superforecasting/path",
+                "FORECAST_HOME": "/forecast/path",
+                "HERMES_HOME": "/legacy/path",
+            },
+            clear=False,
+        ):
+            home = get_hermes_home()
+            assert home == Path("/superforecasting/path")
+
+    def test_forecast_home_alias_drives_default_root(self, tmp_path):
+        from hermes_constants import get_default_hermes_root
+
+        custom_root = tmp_path / "forecast-root"
+        with patch.dict(os.environ, {"FORECAST_HOME": str(custom_root)}, clear=False):
+            os.environ.pop("HERMES_HOME", None)
+            os.environ.pop("SUPERFORECASTING_AGENT_HOME", None)
+            assert get_default_hermes_root() == custom_root
 
 
 class TestEnsureHermesHome:
@@ -120,7 +162,7 @@ class TestLoadConfigParseFailure:
             # stderr also got a user-visible message (with the ⚠️ marker so it
             # stands out at hermes startup before logging is configured)
             captured = capsys.readouterr()
-            assert "hermes config:" in captured.err
+            assert "superforecasting-agent config:" in captured.err
             assert str(tmp_path / "config.yaml") in captured.err
 
     def test_dedup_on_repeated_load_same_file(self, tmp_path, capsys):
@@ -132,7 +174,7 @@ class TestLoadConfigParseFailure:
 
             load_config()
             first = capsys.readouterr().err
-            assert "hermes config:" in first
+            assert "superforecasting-agent config:" in first
 
             load_config()
             second = capsys.readouterr().err
@@ -153,7 +195,7 @@ class TestLoadConfigParseFailure:
             (tmp_path / "config.yaml").write_text("\tstill broken differently:\n")
             load_config()
             after_edit = capsys.readouterr().err
-            assert "hermes config:" in after_edit, "edited file should re-warn"
+            assert "superforecasting-agent config:" in after_edit, "edited file should re-warn"
 
 
 class TestSaveAndLoadRoundtrip:

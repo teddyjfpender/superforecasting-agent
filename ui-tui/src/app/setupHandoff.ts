@@ -8,16 +8,17 @@ import { patchUiState } from './uiStore.js'
 
 export interface RunExternalSetupOptions {
   args: string[]
+  commandName?: string
   ctx: Pick<SlashHandlerContext, 'gateway' | 'session' | 'transcript'>
   done: string
   launcher: (args: string[]) => Promise<LaunchResult>
   suspend: (run: RunExternalProcess) => Promise<void>
 }
 
-export async function runExternalSetup({ args, ctx, done, launcher, suspend }: RunExternalSetupOptions) {
+export async function runExternalSetup({ args, commandName = 'superforecasting-agent', ctx, done, launcher, suspend }: RunExternalSetupOptions) {
   const { gateway, session, transcript } = ctx
 
-  transcript.sys(`launching \`hermes ${args.join(' ')}\`…`)
+  transcript.sys(`launching \`${commandName} ${args.join(' ')}\`…`)
   patchUiState({ status: 'setup running…' })
 
   let result: LaunchResult = { code: null }
@@ -27,14 +28,14 @@ export async function runExternalSetup({ args, ctx, done, launcher, suspend }: R
   })
 
   if (result.error) {
-    transcript.sys(`error launching hermes: ${result.error}`)
+    transcript.sys(`error launching ${commandName}: ${result.error}`)
     patchUiState({ status: 'setup required' })
 
     return
   }
 
   if (result.code !== 0) {
-    transcript.sys(`hermes ${args[0]} exited with code ${result.code}`)
+    transcript.sys(`${commandName} ${args[0]} exited with code ${result.code}`)
     patchUiState({ status: 'setup required' })
 
     return

@@ -1,214 +1,241 @@
 ---
 sidebar_position: 5
-title: "Using Hermes as a Python Library"
-description: "Embed AIAgent in your own Python scripts, web apps, or automation pipelines — no CLI required"
+title: "Programmatic Forecast Workflows"
+description: "Use the forecast ledger and inherited AIAgent runtime from Python without replacing the CLI desk."
 ---
 
-# Using Hermes as a Python Library
+# Programmatic Forecast Workflows
 
-Hermes isn't just a CLI tool. You can import `AIAgent` directly and use it programmatically in your own Python scripts, web applications, or automation pipelines. This guide shows you how.
+The CLI is the main product surface, but you can also call the forecast ledger and inherited agent runtime from Python. Use this for internal tools, benchmark runners, source adapters, resolver scripts, or narrow automation around active forecast questions.
+
+The important boundary is:
+
+- Use `ForecastLedger` for durable, scoreable state: questions, evidence, snapshots, model runs, resolutions, scores, postmortems, calibration lessons, and domain error profiles.
+- Use `AIAgent` for ephemeral research or text synthesis when a model helps inspect sources or draft rationale.
+- Do not store probabilities, evidence, or learning artifacts only in chat history.
 
 ---
 
 ## Installation
 
-Install Hermes directly from the repository:
+From this fork:
 
 ```bash
-pip install git+https://github.com/NousResearch/hermes-agent.git
+pip install git+https://github.com/NousResearch/superforecasting-agent.git
 ```
 
 Or with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv pip install git+https://github.com/NousResearch/hermes-agent.git
+uv pip install git+https://github.com/NousResearch/superforecasting-agent.git
 ```
 
-You can also pin it in your `requirements.txt`:
+For local development, install the checkout in editable mode:
 
-```text
-hermes-agent @ git+https://github.com/NousResearch/hermes-agent.git
+```bash
+uv pip install -e ".[dev]"
 ```
+
+The inherited `hermes-agent` package and repository names remain compatibility surfaces during migration, but new programmatic examples should use the fork-native package name and commands.
 
 :::tip
-The same environment variables used by the CLI are required when using Hermes as a library. At minimum, set `OPENROUTER_API_KEY` (or `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` if using direct provider access).
+The same provider credentials used by the CLI are required for model calls. At minimum, configure a provider with `superforecasting-agent model` or set an API key such as `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`.
 :::
 
 ---
 
-## Basic Usage
+## Ledger-First Usage
 
-The simplest way to use Hermes is the `chat()` method — pass a message, get a string back:
+The forecast ledger is the programmatic source of truth:
+
+```python
+from forecasting import ForecastLedger, OutcomeSpace
+
+ledger = ForecastLedger()
+
+question = ledger.create_question(
+    title="Will the next CPI release exceed consensus expectations?",
+    resolution_criteria=(
+        "Resolve yes if the first official BLS CPI release is above "
+        "the published consensus estimate."
+    ),
+    outcome_space=OutcomeSpace(type="binary", choices=["yes", "no"]),
+    close_time="2026-06-10T12:00:00Z",
+    resolution_source="BLS CPI release and named consensus source",
+    domain="macro",
+    topics=["inflation"],
+)
+
+evidence = ledger.add_evidence(
+    question_id=question.id,
+    source_or_note="Consensus estimate not yet available from configured source.",
+    claim="No configured consensus estimate was available at review time.",
+    summary="Hold update until resolver-adjacent consensus source is available.",
+    claim_type="fact",
+    stance="context",
+    reliability_rating=0.7,
+    relevance_rating=0.8,
+)
+
+snapshot = ledger.create_snapshot(
+    question_id=question.id,
+    probability_or_distribution={"yes": 0.41, "no": 0.59},
+    rationale="Base-rate prior retained; no admissible consensus evidence yet.",
+    evidence_refs=[evidence.id],
+    require_citations=True,
+    confidence=0.55,
+    method="base-rate-plus-evidence-review",
+)
+
+print(question.id, snapshot.forecast_id)
+```
+
+This mirrors the CLI lifecycle: `forecast new`, `forecast research`, and `forecast update`.
+
+---
+
+## Calling the Forecast CLI from Python
+
+For scripts that do not need direct ledger objects, invoke the CLI. This keeps behavior aligned with the main product:
+
+```python
+import json
+import subprocess
+
+result = subprocess.run(
+    ["forecast", "review", "--domain", "macro", "--json"],
+    check=True,
+    capture_output=True,
+    text=True,
+)
+
+review = json.loads(result.stdout)
+print(review)
+```
+
+Use this approach for scheduled jobs, CI checks, and internal dashboards when the CLI already exposes the workflow you need.
+
+---
+
+## Using AIAgent for Forecast Research
+
+`AIAgent` is inherited runtime infrastructure. Use it to gather or synthesize research, but write any durable forecast state back to the ledger.
 
 ```python
 from run_agent import AIAgent
 
 agent = AIAgent(
     model="anthropic/claude-sonnet-4",
+    enabled_toolsets=["forecast-desk"],
     quiet_mode=True,
+    skip_memory=True,
 )
-response = agent.chat("What is the capital of France?")
+
+response = agent.chat(
+    "Research recent evidence for forecast fq_123. "
+    "Summarize candidate evidence with source URLs, claim type, "
+    "publication time, and relevance. Do not update probability."
+)
+
 print(response)
 ```
 
-`chat()` handles the full conversation loop internally — tool calls, retries, everything — and returns just the final text response.
+`chat()` handles tool calls and returns the final text. Treat the result as a research artifact until evidence and forecast snapshots are written to the ledger.
 
 :::warning
-Always set `quiet_mode=True` when embedding Hermes in your own code. Without it, the agent prints CLI spinners, progress indicators, and other terminal output that will clutter your application's output.
+Always set `quiet_mode=True` when embedding the runtime. Without it, CLI spinners and progress output can clutter your application's stdout.
 :::
 
 ---
 
 ## Full Conversation Control
 
-For more control over the conversation, use `run_conversation()` directly. It returns a dictionary with the full response, message history, and metadata:
+Use `run_conversation()` when you need the message list or custom one-turn system prompt:
 
 ```python
+from run_agent import AIAgent
+
 agent = AIAgent(
     model="anthropic/claude-sonnet-4",
+    enabled_toolsets=["forecast-desk"],
     quiet_mode=True,
+    skip_memory=True,
 )
 
 result = agent.run_conversation(
-    user_message="Search for recent Python 3.13 features",
-    task_id="my-task-1",
+    user_message=(
+        "For forecast fq_123, identify reference classes and list "
+        "what evidence would change the probability."
+    ),
+    task_id="forecast-research-fq-123",
 )
 
 print(result["final_response"])
 print(f"Messages exchanged: {len(result['messages'])}")
 ```
 
-The returned dictionary contains:
-- **`final_response`** — The agent's final text reply
-- **`messages`** — The complete message history (system, user, assistant, tool calls)
+The returned dictionary includes:
 
-(The `task_id` you pass in is stored on the agent instance for VM isolation but isn't echoed back in the return dict.)
+- `final_response` - final text reply.
+- `messages` - OpenAI-format message history, including tool calls.
 
-You can also pass a custom system message that overrides the ephemeral system prompt for that call:
-
-```python
-result = agent.run_conversation(
-    user_message="Explain quicksort",
-    system_message="You are a computer science tutor. Use simple analogies.",
-)
-```
+The `task_id` is stored on the agent instance for runtime isolation but is not echoed back in the return dict.
 
 ---
 
-## Configuring Tools
+## Toolset Scope
 
-Control which toolsets the agent has access to using `enabled_toolsets` or `disabled_toolsets`:
+Prefer narrow tool access:
 
 ```python
-# Only enable web tools (browsing, search)
 agent = AIAgent(
     model="anthropic/claude-sonnet-4",
-    enabled_toolsets=["web"],
+    enabled_toolsets=["forecast-desk"],
     quiet_mode=True,
-)
-
-# Enable everything except terminal access
-agent = AIAgent(
-    model="anthropic/claude-sonnet-4",
-    disabled_toolsets=["terminal"],
-    quiet_mode=True,
+    skip_memory=True,
 )
 ```
 
-:::tip
-Use `enabled_toolsets` when you want a minimal, locked-down agent (e.g., only web search for a research bot). Use `disabled_toolsets` when you want most capabilities but need to restrict specific ones (e.g., no terminal access in a shared environment).
-:::
+Use broader toolsets only for a specific reason, such as terminal-backed model execution or browser source inspection. The default fork CLI narrows routine work through the forecast desk; programmatic callers should follow that pattern.
 
 ---
 
-## Multi-turn Conversations
+## Sessions vs. Ledger State
 
-Maintain conversation state across multiple turns by passing the message history back in:
+Conversation history is useful for multi-turn research:
 
 ```python
-agent = AIAgent(
-    model="anthropic/claude-sonnet-4",
-    quiet_mode=True,
-)
+first = agent.run_conversation("Inspect forecast fq_123 and list missing evidence.")
+history = first["messages"]
 
-# First turn
-result1 = agent.run_conversation("My name is Alice")
-history = result1["messages"]
-
-# Second turn — agent remembers the context
-result2 = agent.run_conversation(
-    "What's my name?",
+second = agent.run_conversation(
+    "Now draft a source-acquisition plan.",
     conversation_history=history,
 )
-print(result2["final_response"])  # "Your name is Alice."
 ```
 
-The `conversation_history` parameter accepts the `messages` list from a previous result. The agent copies it internally, so your original list is never mutated.
-
----
-
-## Saving Trajectories
-
-Enable trajectory saving to capture conversations in ShareGPT format — useful for generating training data or debugging:
-
-```python
-agent = AIAgent(
-    model="anthropic/claude-sonnet-4",
-    save_trajectories=True,
-    quiet_mode=True,
-)
-
-agent.chat("Write a Python function to sort a list")
-# Saves to trajectory_samples.jsonl in ShareGPT format
-```
-
-Each conversation is appended as a single JSONL line, making it easy to collect datasets from automated runs.
-
----
-
-## Custom System Prompts
-
-Use `ephemeral_system_prompt` to set a custom system prompt that guides the agent's behavior but is **not** saved to trajectory files (keeping your training data clean):
-
-```python
-agent = AIAgent(
-    model="anthropic/claude-sonnet-4",
-    ephemeral_system_prompt="You are a SQL expert. Only answer database questions.",
-    quiet_mode=True,
-)
-
-response = agent.chat("How do I write a JOIN query?")
-print(response)
-```
-
-This is ideal for building specialized agents — a code reviewer, a documentation writer, a SQL assistant — all using the same underlying tooling.
+Do not confuse this with durable learning. If the result matters, write it to the ledger as evidence, an assumption, a reference class, a model run, a forecast snapshot, a postmortem, or a calibration lesson.
 
 ---
 
 ## Batch Processing
 
-For running many prompts in parallel, Hermes includes `batch_runner.py`. It manages concurrent `AIAgent` instances with proper resource isolation:
-
-```bash
-python batch_runner.py --input prompts.jsonl --output results.jsonl
-```
-
-Each prompt gets its own `task_id` and isolated environment. If you need custom batch logic, you can build your own using `AIAgent` directly:
+For many independent research prompts, create one agent per task:
 
 ```python
 import concurrent.futures
 from run_agent import AIAgent
 
 prompts = [
-    "Explain recursion",
-    "What is a hash table?",
-    "How does garbage collection work?",
+    "For fq_101, find missing resolver-source evidence. Do not update probability.",
+    "For fq_102, identify reference classes. Do not update probability.",
+    "For fq_103, summarize active calibration lessons. Do not update probability.",
 ]
 
-def process_prompt(prompt):
-    # Create a fresh agent per task for thread safety
+def process_prompt(prompt: str) -> str:
     agent = AIAgent(
         model="anthropic/claude-sonnet-4",
+        enabled_toolsets=["forecast-desk"],
         quiet_mode=True,
         skip_memory=True,
     )
@@ -217,19 +244,17 @@ def process_prompt(prompt):
 with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
     results = list(executor.map(process_prompt, prompts))
 
-for prompt, result in zip(prompts, results):
-    print(f"Q: {prompt}\nA: {result}\n")
+for result in results:
+    print(result)
 ```
 
-:::warning
-Always create a **new `AIAgent` instance per thread or task**. The agent maintains internal state (conversation history, tool sessions, iteration counters) that is not thread-safe to share.
-:::
+Always create a new `AIAgent` instance per thread or task. The runtime maintains internal state and is not safe to share across concurrent calls.
 
 ---
 
 ## Integration Examples
 
-### FastAPI Endpoint
+### FastAPI Forecast Research Endpoint
 
 ```python
 from fastapi import FastAPI
@@ -238,71 +263,67 @@ from run_agent import AIAgent
 
 app = FastAPI()
 
-class ChatRequest(BaseModel):
-    message: str
+class ResearchRequest(BaseModel):
+    question_id: str
     model: str = "anthropic/claude-sonnet-4"
 
-@app.post("/chat")
-async def chat(request: ChatRequest):
+@app.post("/forecast/research")
+async def research(request: ResearchRequest):
     agent = AIAgent(
         model=request.model,
+        enabled_toolsets=["forecast-desk"],
         quiet_mode=True,
         skip_context_files=True,
         skip_memory=True,
     )
-    response = agent.chat(request.message)
-    return {"response": response}
+    response = agent.chat(
+        f"Research forecast {request.question_id}. Return candidate evidence "
+        "with source URLs, timestamps, claim type, reliability, and relevance. "
+        "Do not update probability."
+    )
+    return {"research_note": response}
 ```
 
-### Discord Bot
-
-```python
-import discord
-from run_agent import AIAgent
-
-client = discord.Client(intents=discord.Intents.default())
-
-@client.event
-async def on_message(message):
-    if message.author == client.user:
-        return
-    if message.content.startswith("!hermes "):
-        query = message.content[8:]
-        agent = AIAgent(
-            model="anthropic/claude-sonnet-4",
-            quiet_mode=True,
-            skip_context_files=True,
-            skip_memory=True,
-            platform="discord",
-        )
-        response = agent.chat(query)
-        await message.channel.send(response[:2000])
-
-client.run("YOUR_DISCORD_TOKEN")
-```
-
-### CI/CD Pipeline Step
+### CI Benchmark Step
 
 ```python
 #!/usr/bin/env python3
-"""CI step: auto-review a PR diff."""
+"""CI step: run a small benchmark replay."""
 import subprocess
-from run_agent import AIAgent
 
-diff = subprocess.check_output(["git", "diff", "main...HEAD"]).decode()
+subprocess.run(
+    [
+        "forecast",
+        "backtest",
+        "builtin:mini-binary",
+        "--probability-source",
+        "forecast-engine",
+    ],
+    check=True,
+)
+```
 
-agent = AIAgent(
-    model="anthropic/claude-sonnet-4",
-    quiet_mode=True,
-    skip_context_files=True,
-    skip_memory=True,
-    disabled_toolsets=["terminal", "browser"],
+### Evidence Ingestion Script
+
+```python
+from forecasting import ForecastLedger
+
+ledger = ForecastLedger()
+question = ledger.get_question("fq_123")
+
+evidence = ledger.add_evidence(
+    question_id=question.id,
+    source_or_note="https://example.com/resolver-update",
+    claim="Resolver source published a new update relevant to the question.",
+    summary="New resolver-source update captured by internal watcher.",
+    source_type="url",
+    claim_type="fact",
+    stance="supports_yes",
+    reliability_rating=0.8,
+    relevance_rating=0.9,
 )
 
-review = agent.chat(
-    f"Review this PR diff for bugs, security issues, and style problems:\n\n{diff}"
-)
-print(review)
+print(evidence.id)
 ```
 
 ---
@@ -311,31 +332,31 @@ print(review)
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `model` | `str` | `"anthropic/claude-opus-4.6"` | Model in OpenRouter format |
+| `model` | `str` | configured default | Provider/model identifier |
 | `quiet_mode` | `bool` | `False` | Suppress CLI output |
-| `enabled_toolsets` | `List[str]` | `None` | Whitelist specific toolsets |
-| `disabled_toolsets` | `List[str]` | `None` | Blacklist specific toolsets |
+| `enabled_toolsets` | `list[str]` | `None` | Whitelist specific toolsets |
+| `disabled_toolsets` | `list[str]` | `None` | Blacklist specific toolsets |
+| `skip_context_files` | `bool` | `False` | Skip loading project context files |
+| `skip_memory` | `bool` | `False` | Disable runtime memory read/write |
 | `save_trajectories` | `bool` | `False` | Save conversations to JSONL |
-| `ephemeral_system_prompt` | `str` | `None` | Custom system prompt (not saved to trajectories) |
 | `max_iterations` | `int` | `90` | Max tool-calling iterations per conversation |
-| `skip_context_files` | `bool` | `False` | Skip loading AGENTS.md files |
-| `skip_memory` | `bool` | `False` | Disable persistent memory read/write |
-| `api_key` | `str` | `None` | API key (falls back to env vars) |
+| `api_key` | `str` | `None` | API key, otherwise resolved from config/env |
 | `base_url` | `str` | `None` | Custom API endpoint URL |
-| `platform` | `str` | `None` | Platform hint (`"discord"`, `"telegram"`, etc.) |
+| `platform` | `str` | `None` | Platform hint such as `discord` or `telegram` |
 
 ---
 
 ## Important Notes
 
 :::tip
-- Set **`skip_context_files=True`** if you don't want `AGENTS.md` files from the working directory loaded into the system prompt.
-- Set **`skip_memory=True`** to prevent the agent from reading or writing persistent memory — recommended for stateless API endpoints.
-- The `platform` parameter (e.g., `"discord"`, `"telegram"`) injects platform-specific formatting hints so the agent adapts its output style.
+- Prefer `ForecastLedger` or the `forecast` CLI for anything that changes durable forecast state.
+- Set `skip_context_files=True` if a service should not load local `AGENTS.md` files.
+- Set `skip_memory=True` for stateless endpoints unless runtime recall is explicitly desired.
+- Keep probability updates cited and ledgered; raw model text is not a scoreable forecast.
 :::
 
 :::warning
-- **Thread safety**: Create one `AIAgent` per thread or task. Never share an instance across concurrent calls.
-- **Resource cleanup**: The agent automatically cleans up resources (terminal sessions, browser instances) when a conversation ends. If you're running in a long-lived process, ensure each conversation completes normally.
-- **Iteration limits**: The default `max_iterations=90` is generous. For simple Q&A use cases, consider lowering it (e.g., `max_iterations=10`) to prevent runaway tool-calling loops and control costs.
+- **Thread safety:** create one `AIAgent` per thread or task.
+- **Resource cleanup:** ensure conversations finish normally in long-lived processes.
+- **Iteration limits:** lower `max_iterations` for narrow endpoints to limit runaway tool loops and cost.
 :::

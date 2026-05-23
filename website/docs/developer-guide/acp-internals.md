@@ -6,7 +6,7 @@ description: "How the ACP adapter works: lifecycle, sessions, event bridge, appr
 
 # ACP Internals
 
-The ACP adapter wraps Hermes' synchronous `AIAgent` in an async JSON-RPC stdio server.
+The ACP adapter wraps the inherited synchronous `AIAgent` runtime in an async JSON-RPC stdio server. In Superforecasting Agent, ACP is an IDE/editor protocol surface around the forecast desk; it does not replace the CLI lifecycle or the forecast ledger.
 
 Key implementation files:
 
@@ -22,16 +22,16 @@ Key implementation files:
 ## Boot flow
 
 ```text
-hermes acp / hermes-acp / python -m acp_adapter
+superforecasting-agent acp / superforecasting-agent-acp / superforecast-acp / hermes-acp / python -m acp_adapter
   -> acp_adapter.entry.main()
   -> parse --version / --check / --setup before server startup
-  -> load ~/.hermes/.env
+  -> load ~/.superforecasting-agent/.env (legacy ~/.hermes/.env accepted)
   -> configure stderr logging
   -> construct HermesACPAgent
   -> acp.run_agent(agent, use_unstable_protocol=True)
 ```
 
-The Zed ACP Registry path launches the same adapter through `uvx --from 'hermes-agent[acp]==<version>' hermes-acp`, pointed at the `hermes-agent` PyPI release.
+The Zed ACP Registry path for inherited releases launches the same adapter through `uvx --from 'hermes-agent[acp]==<version>' hermes-acp`, pointed at the legacy `hermes-agent` PyPI release. Fork-native packaging should prefer `superforecasting-agent acp` when available.
 
 Stdout is reserved for ACP JSON-RPC transport. Human-readable logs go to stderr.
 
@@ -94,15 +94,15 @@ asyncio.run_coroutine_threadsafe(...)
 
 Mapping:
 
-- `allow_once` -> Hermes `once`
-- `allow_always` -> Hermes `always`
-- reject options -> Hermes `deny`
+- `allow_once` -> runtime `once`
+- `allow_always` -> runtime `always`
+- reject options -> runtime `deny`
 
 Timeouts and bridge failures deny by default.
 
 ### Tool rendering helpers
 
-`acp_adapter/tools.py` maps Hermes tools to ACP tool kinds and builds editor-facing content.
+`acp_adapter/tools.py` maps runtime tools to ACP tool kinds and builds editor-facing content.
 
 Examples:
 
@@ -144,12 +144,12 @@ prompt(..., session_id)
 
 ACP does not implement its own auth store.
 
-Instead it reuses Hermes' runtime resolver:
+Instead it reuses the inherited runtime resolver:
 
 - `acp_adapter/auth.py`
 - `hermes_cli/runtime_provider.py`
 
-So ACP advertises and uses the currently configured Hermes provider/credentials. It also always advertises a terminal setup auth method (`hermes-setup`, args `--setup`) so first-run registry clients can open Hermes' interactive model/provider configuration before starting a normal ACP session.
+So ACP advertises and uses the currently configured Superforecasting Agent provider/credentials. It also keeps inherited terminal setup identifiers (`hermes-setup`, args `--setup`) for ACP registry compatibility, so first-run clients can open interactive model/provider configuration before starting a normal ACP session.
 
 ## Working directory binding
 
@@ -172,7 +172,8 @@ ACP temporarily installs an approval callback on the terminal tool during prompt
 
 ## Current limitations
 
-- ACP sessions are persisted to the shared `~/.hermes/state.db` (SessionDB) and transparently restored across process restarts; they appear in `session_search`
+- ACP sessions are persisted to the shared `~/.superforecasting-agent/state.db` (SessionDB; legacy `~/.hermes/state.db` accepted) and transparently restored across process restarts; they appear in `session_search`
+- ACP session persistence is not the forecast ledger. Forecast questions, evidence, model runs, scores, and learning records must be written through the ledger.
 - non-text prompt blocks are currently ignored for request text extraction
 - editor-specific UX varies by ACP client implementation
 
@@ -180,5 +181,5 @@ ACP temporarily installs an approval callback on the terminal tool during prompt
 
 - `tests/acp/` — ACP test suite
 - `toolsets.py` — `hermes-acp` toolset definition
-- `hermes_cli/main.py` — `hermes acp` CLI subcommand
-- `pyproject.toml` — `[acp]` optional dependency + `hermes-acp` script
+- `hermes_cli/main.py` — `superforecasting-agent acp` CLI subcommand plus inherited aliases
+- `pyproject.toml` — `[acp]` optional dependency plus fork-native and compatibility ACP scripts

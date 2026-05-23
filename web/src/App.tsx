@@ -61,6 +61,7 @@ import EnvPage from "@/pages/EnvPage";
 import SessionsPage from "@/pages/SessionsPage";
 import LogsPage from "@/pages/LogsPage";
 import AnalyticsPage from "@/pages/AnalyticsPage";
+import ForecastsPage from "@/pages/ForecastsPage";
 import ModelsPage from "@/pages/ModelsPage";
 import CronPage from "@/pages/CronPage";
 import ProfilesPage from "@/pages/ProfilesPage";
@@ -78,7 +79,7 @@ import { isDashboardEmbeddedChatEnabled } from "@/lib/dashboard-flags";
 import { api } from "@/lib/api";
 
 function RootRedirect() {
-  return <Navigate to="/sessions" replace />;
+  return <Navigate to="/forecasts" replace />;
 }
 
 function UnknownRouteFallback({ pluginsLoading }: { pluginsLoading: boolean }) {
@@ -86,13 +87,13 @@ function UnknownRouteFallback({ pluginsLoading }: { pluginsLoading: boolean }) {
     // Render nothing during the plugin-load window — a spinner here would just flash.
     return null;
   }
-  return <Navigate to="/sessions" replace />;
+  return <Navigate to="/forecasts" replace />;
 }
 
 const CHAT_NAV_ITEM: NavItem = {
   path: "/chat",
   labelKey: "chat",
-  label: "Chat",
+  label: "Forecast Chat",
   icon: Terminal,
 };
 
@@ -108,6 +109,7 @@ const CHAT_NAV_ITEM: NavItem = {
 const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/": RootRedirect,
   "/sessions": SessionsPage,
+  "/forecasts": ForecastsPage,
   "/analytics": AnalyticsPage,
   "/models": ModelsPage,
   "/logs": LogsPage,
@@ -130,9 +132,14 @@ function ChatRouteSink() {
 
 const BUILTIN_NAV_REST: NavItem[] = [
   {
+    path: "/forecasts",
+    label: "Forecasts",
+    icon: Activity,
+  },
+  {
     path: "/sessions",
     labelKey: "sessions",
-    label: "Sessions",
+    label: "Research Sessions",
     icon: MessageSquare,
   },
   {
@@ -149,8 +156,8 @@ const BUILTIN_NAV_REST: NavItem[] = [
   },
   { path: "/logs", labelKey: "logs", label: "Logs", icon: FileText },
   { path: "/cron", labelKey: "cron", label: "Cron", icon: Clock },
-  { path: "/skills", labelKey: "skills", label: "Skills", icon: Package },
-  { path: "/plugins", labelKey: "plugins", label: "Plugins", icon: Puzzle },
+  { path: "/skills", labelKey: "skills", label: "Forecast Skills", icon: Package },
+  { path: "/plugins", labelKey: "plugins", label: "Extensions", icon: Puzzle },
   { path: "/profiles", labelKey: "profiles", label: "Profiles", icon: Users },
   { path: "/config", labelKey: "config", label: "Config", icon: Settings },
   { path: "/env", labelKey: "keys", label: "Keys", icon: KeyRound },
@@ -364,7 +371,7 @@ export default function App() {
 
   const builtinNav = useMemo(() => {
     const base = embeddedChat
-      ? [CHAT_NAV_ITEM, ...BUILTIN_NAV_REST]
+      ? [BUILTIN_NAV_REST[0], CHAT_NAV_ITEM, ...BUILTIN_NAV_REST.slice(1)]
       : BUILTIN_NAV_REST;
     return showTokenAnalytics ? base : base.filter((n) => n.path !== "/analytics");
   }, [embeddedChat, showTokenAnalytics]);
@@ -501,7 +508,7 @@ export default function App() {
                   className="font-bold text-[1.125rem] leading-[0.95] tracking-[0.0525rem] text-midground"
                   style={{ mixBlendMode: "plus-lighter" }}
                 >
-                  Hermes
+                  Superforecasting
                   <br />
                   Agent
                 </Typography>
@@ -626,7 +633,7 @@ export default function App() {
                       >
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Spinner />
-                          <span>Loading chat…</span>
+                          <span>Loading forecast chat…</span>
                         </div>
                       </div>
                     ) : null
@@ -731,7 +738,7 @@ function SidebarSystemActions({ onNavigate }: { onNavigate: () => void }) {
   const handleClick = (action: SystemAction) => {
     if (isBusy) return;
     void runAction(action);
-    navigate("/sessions");
+    navigate("/forecasts");
     onNavigate();
   };
 

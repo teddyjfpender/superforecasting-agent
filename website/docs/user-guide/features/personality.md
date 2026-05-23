@@ -1,42 +1,42 @@
 ---
 sidebar_position: 9
 title: "Personality & SOUL.md"
-description: "Customize Hermes Agent's personality with a global SOUL.md, built-in personalities, and custom persona definitions"
+description: "Customize Superforecasting Agent's SOUL.md identity."
 ---
 
 # Personality & SOUL.md
 
-Hermes Agent's personality is fully customizable. `SOUL.md` is the **primary identity** — it's the first thing in the system prompt and defines who the agent is.
+Superforecasting Agent's personality is customizable. `SOUL.md` is the **primary identity**: the first cached system-prompt layer that defines the agent's voice and standing behavior.
 
-- `SOUL.md` — a durable persona file that lives in `HERMES_HOME` and serves as the agent's identity (slot #1 in the system prompt)
-- built-in or custom `/personality` presets — session-level system-prompt overlays
+- `SOUL.md` - a durable persona file that lives in the active runtime home and serves as the agent's identity (slot #1 in the system prompt)
+- built-in or custom `/personality` presets - session-level system-prompt overlays
 
-If you want to change who Hermes is — or replace it with an entirely different agent persona — edit `SOUL.md`.
+If you want to change the default voice or standing behavior of the forecasting desk, edit `SOUL.md`. Forecast probabilities, evidence, lessons, and error records still belong in the forecast ledger, not in personality text.
 
 ## How SOUL.md works now
 
-Hermes now seeds a default `SOUL.md` automatically in:
+New installs seed a default `SOUL.md` automatically in:
 
 ```text
-~/.hermes/SOUL.md
+~/.superforecasting-agent/SOUL.md
 ```
 
-More precisely, it uses the current instance's `HERMES_HOME`, so if you run Hermes with a custom home directory, it will use:
+Existing `~/.hermes` homes remain readable as legacy compatibility paths. More precisely, the runtime uses the active home resolved from `SUPERFORECASTING_AGENT_HOME`, `FORECAST_HOME`, or legacy `HERMES_HOME`, so custom homes use:
 
 ```text
-$HERMES_HOME/SOUL.md
+$SUPERFORECASTING_AGENT_HOME/SOUL.md
 ```
 
 ### Important behavior
 
 - **SOUL.md is the agent's primary identity.** It occupies slot #1 in the system prompt, replacing the hardcoded default identity.
-- Hermes creates a starter `SOUL.md` automatically if one does not exist yet
+- Superforecasting Agent creates a starter `SOUL.md` automatically if one does not exist yet
 - Existing user `SOUL.md` files are never overwritten
-- Hermes loads `SOUL.md` only from `HERMES_HOME`
-- Hermes does not look in the current working directory for `SOUL.md`
-- If `SOUL.md` exists but is empty, or cannot be loaded, Hermes falls back to a built-in default identity
+- Superforecasting Agent loads `SOUL.md` only from the active runtime home
+- Superforecasting Agent does not look in the current working directory for `SOUL.md`
+- If `SOUL.md` exists but is empty, or cannot be loaded, Superforecasting Agent falls back to a built-in forecast-desk identity
 - If `SOUL.md` has content, that content is injected verbatim after security scanning and truncation
-- SOUL.md is **not** duplicated in the context files section — it appears only once, as the identity
+- SOUL.md is **not** duplicated in the context files section; it appears only once, as the identity
 
 That makes `SOUL.md` a true per-user or per-instance identity, not just an additive layer.
 
@@ -44,23 +44,23 @@ That makes `SOUL.md` a true per-user or per-instance identity, not just an addit
 
 This keeps personality predictable.
 
-If Hermes loaded `SOUL.md` from whatever directory you happened to launch it in, your personality could change unexpectedly between projects. By loading only from `HERMES_HOME`, the personality belongs to the Hermes instance itself.
+If Superforecasting Agent loaded `SOUL.md` from whatever directory you happened to launch it in, the agent's identity could change unexpectedly between projects. By loading only from the active runtime home, the personality belongs to the forecast-desk instance itself.
 
 That also makes it easier to teach users:
-- "Edit `~/.hermes/SOUL.md` to change Hermes' default personality."
+- "Edit `~/.superforecasting-agent/SOUL.md` to change Superforecasting Agent's default personality."
 
 ## Where to edit it
 
 For most users:
 
 ```bash
-~/.hermes/SOUL.md
+~/.superforecasting-agent/SOUL.md
 ```
 
 If you use a custom home:
 
 ```bash
-$HERMES_HOME/SOUL.md
+$SUPERFORECASTING_AGENT_HOME/SOUL.md
 ```
 
 ## What should go in SOUL.md?
@@ -71,7 +71,7 @@ Use it for durable voice and personality guidance, such as:
 - level of directness
 - default interaction style
 - what to avoid stylistically
-- how Hermes should handle uncertainty, disagreement, or ambiguity
+- how Superforecasting Agent should handle uncertainty, disagreement, or ambiguity
 
 Use it less for:
 - one-off project instructions
@@ -116,7 +116,7 @@ You optimize for truth, clarity, and usefulness over politeness theater.
 - Treat edge cases as part of the design, not cleanup
 ```
 
-## What Hermes injects into the prompt
+## What Superforecasting Agent injects into the prompt
 
 `SOUL.md` content goes directly into slot #1 of the system prompt — the agent identity position. No wrapper language is added around it.
 
@@ -124,7 +124,7 @@ The content goes through:
 - prompt-injection scanning
 - truncation if it is too large
 
-If the file is empty, whitespace-only, or cannot be read, Hermes falls back to a built-in default identity ("You are Hermes Agent, an intelligent AI assistant created by Nous Research..."). This fallback also applies when `skip_context_files` is set (e.g., in subagent/delegation contexts).
+If the file is empty, whitespace-only, or cannot be read, Superforecasting Agent falls back to a built-in forecast-desk identity ("You are Superforecasting Agent, a command-line forecasting desk..."). This fallback also applies when `skip_context_files` is set (e.g., in subagent/delegation contexts).
 
 ## Security scanning
 
@@ -168,28 +168,23 @@ So:
 
 Examples:
 - keep a pragmatic default SOUL, then use `/personality teacher` for a tutoring conversation
-- keep a concise SOUL, then use `/personality creative` for brainstorming
+- keep a concise SOUL, then use `/personality skeptical` for an assumption review
 
-## Built-in personalities
+## Built-in Forecast Modes
 
-Hermes ships with built-in personalities you can switch to with `/personality`.
+Superforecasting Agent ships with forecast-desk overlays you can switch to with `/personality`.
 
 | Name | Description |
 |------|-------------|
-| **helpful** | Friendly, general-purpose assistant |
-| **concise** | Brief, to-the-point responses |
-| **technical** | Detailed, accurate technical expert |
-| **creative** | Innovative, outside-the-box thinking |
-| **teacher** | Patient educator with clear examples |
-| **kawaii** | Cute expressions, sparkles, and enthusiasm ★ |
-| **catgirl** | Neko-chan with cat-like expressions, nya~ |
-| **pirate** | Captain Hermes, tech-savvy buccaneer |
-| **shakespeare** | Bardic prose with dramatic flair |
-| **surfer** | Totally chill bro vibes |
-| **noir** | Hard-boiled detective narration |
-| **uwu** | Maximum cute with uwu-speak |
-| **philosopher** | Deep contemplation on every query |
-| **hype** | MAXIMUM ENERGY AND ENTHUSIASM!!! |
+| **forecaster** | Disciplined probability, assumptions, and update triggers |
+| **concise** | Brief forecast-desk responses with quantified judgments |
+| **technical** | Quantitative research, models, and sensitivity checks |
+| **research** | Timestamped evidence, source quality, and evidence gaps |
+| **skeptical** | Assumption review, ambiguity checks, and alternate explanations |
+| **calibration** | Confidence checks against historical error patterns |
+| **teacher** | Forecasting concepts explained with examples |
+| **creative** | Non-obvious scenarios, mechanisms, and indicators |
+| **executive** | Decision-oriented summary of probabilities, deltas, and caveats |
 
 ## Switching personalities with commands
 
@@ -198,7 +193,7 @@ Hermes ships with built-in personalities you can switch to with `/personality`.
 ```text
 /personality
 /personality concise
-/personality technical
+/personality skeptical
 ```
 
 ### Messaging platforms
@@ -207,31 +202,32 @@ Hermes ships with built-in personalities you can switch to with `/personality`.
 /personality teacher
 ```
 
-These are convenient overlays, but your global `SOUL.md` still gives Hermes its persistent default personality unless the overlay meaningfully changes it.
+These are convenient overlays, but your global `SOUL.md` still gives Superforecasting Agent its persistent default personality unless the overlay meaningfully changes it.
 
 ## Custom personalities in config
 
-You can also define named custom personalities in `~/.hermes/config.yaml` under `agent.personalities`.
+You can also define named custom personalities in `~/.superforecasting-agent/config.yaml` under `agent.personalities`. Legacy `~/.hermes/config.yaml` remains readable during the fork transition.
 
 ```yaml
 agent:
   personalities:
-    codereviewer: >
-      You are a meticulous code reviewer. Identify bugs, security issues,
-      performance concerns, and unclear design choices. Be precise and constructive.
+    energy-reviewer: >
+      You are a meticulous energy-market forecaster. Identify base rates,
+      supply constraints, demand shocks, policy changes, and indicators that
+      would move the probability.
 ```
 
 Then switch to it with:
 
 ```text
-/personality codereviewer
+/personality energy-reviewer
 ```
 
 ## Recommended workflow
 
 A strong default setup is:
 
-1. Keep a thoughtful global `SOUL.md` in `~/.hermes/SOUL.md`
+1. Keep a thoughtful global `SOUL.md` in `~/.superforecasting-agent/SOUL.md`
 2. Put project instructions in `AGENTS.md`
 3. Use `/personality` only when you want a temporary mode shift
 
@@ -265,7 +261,7 @@ At a high level, the prompt stack includes:
 
 Conversational personality and CLI appearance are separate:
 
-- `SOUL.md`, `agent.system_prompt`, and `/personality` affect how Hermes speaks
-- `display.skin` and `/skin` affect how Hermes looks in the terminal
+- `SOUL.md`, `agent.system_prompt`, and `/personality` affect how Superforecasting Agent speaks
+- `display.skin` and `/skin` affect how Superforecasting Agent looks in the terminal
 
 For terminal appearance, see [Skins & Themes](./skins.md).

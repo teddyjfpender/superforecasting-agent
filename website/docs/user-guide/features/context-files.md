@@ -1,218 +1,154 @@
 ---
 sidebar_position: 8
 title: "Context Files"
-description: "Project context files — .hermes.md, AGENTS.md, CLAUDE.md, global SOUL.md, and .cursorrules — automatically injected into every conversation"
+description: "Project context files and SOUL.md prompt identity loading."
 ---
 
 # Context Files
 
-Hermes Agent automatically discovers and loads context files that shape how it behaves. Some are project-local and discovered from your working directory. `SOUL.md` is now global to the Hermes instance and is loaded from `HERMES_HOME` only.
+Superforecasting Agent loads context files that shape how it works in a repository or profile. Use them for project conventions, source-adapter rules, benchmark workflow notes, and forecast-desk behavior. Do not use context files as forecast memory: scoreable forecast state belongs in the forecast ledger.
 
-## Supported Context Files
+## Supported Files
 
 | File | Purpose | Discovery |
-|------|---------|-----------| 
-| **.hermes.md** / **HERMES.md** | Project instructions (highest priority) | Walks to git root |
-| **AGENTS.md** | Project instructions, conventions, architecture | CWD at startup + subdirectories progressively |
-| **CLAUDE.md** | Claude Code context files (also detected) | CWD at startup + subdirectories progressively |
-| **SOUL.md** | Global personality and tone customization for this Hermes instance | `HERMES_HOME/SOUL.md` only |
-| **.cursorrules** | Cursor IDE coding conventions | CWD only |
-| **.cursor/rules/*.mdc** | Cursor IDE rule modules | CWD only |
+|------|---------|-----------|
+| `.hermes.md` / `HERMES.md` | Inherited project instruction filenames, highest priority | Walks to git root |
+| `AGENTS.md` | Project instructions, conventions, architecture | CWD at startup + subdirectories progressively |
+| `CLAUDE.md` | Claude Code context files | CWD at startup + subdirectories progressively |
+| `SOUL.md` | Global profile identity, tone, and standing behavior | Active agent home only |
+| `.cursorrules` | Cursor IDE coding conventions | CWD only |
+| `.cursor/rules/*.mdc` | Cursor IDE rule modules | CWD only |
 
-:::info Priority system
-Only **one** project context type is loaded per session (first match wins): `.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`. **SOUL.md** is always loaded independently as the agent identity (slot #1).
-:::
+Only one project context type is loaded at startup, in this order:
+
+```text
+.hermes.md -> AGENTS.md -> CLAUDE.md -> .cursorrules
+```
+
+`SOUL.md` is loaded independently as the profile identity. New profiles use `~/.superforecasting-agent/SOUL.md`; inherited profiles may still use `~/.hermes/SOUL.md` through the bridged `HERMES_HOME` runtime variable.
 
 ## AGENTS.md
 
-`AGENTS.md` is the primary project context file. It tells the agent how your project is structured, what conventions to follow, and any special instructions.
+`AGENTS.md` is the recommended project context file. It should tell the agent how the project is structured, which conventions matter, and which commands are safe to run.
 
 ### Progressive Subdirectory Discovery
 
-At session start, Hermes loads the `AGENTS.md` from your working directory into the system prompt. As the agent navigates into subdirectories during the session (via `read_file`, `terminal`, `search_files`, etc.), it **progressively discovers** context files in those directories and injects them into the conversation at the moment they become relevant.
+At session start, the runtime loads the `AGENTS.md` from your working directory. As tools touch subdirectories, `SubdirectoryHintTracker` discovers nested `AGENTS.md`, `CLAUDE.md`, or `.cursorrules` files and appends the relevant guidance to the tool result.
 
+```text
+forecast-project/
+├── AGENTS.md              # loaded at startup
+├── sources/
+│   └── AGENTS.md          # loaded when source files are touched
+├── backtests/
+│   └── AGENTS.md          # loaded when backtest files are touched
+└── dashboard/
+    └── AGENTS.md          # loaded when dashboard files are touched
 ```
-my-project/
-├── AGENTS.md              ← Loaded at startup (system prompt)
-├── frontend/
-│   └── AGENTS.md          ← Discovered when agent reads frontend/ files
-├── backend/
-│   └── AGENTS.md          ← Discovered when agent reads backend/ files
-└── shared/
-    └── AGENTS.md          ← Discovered when agent reads shared/ files
-```
 
-This approach has two advantages over loading everything at startup:
-- **No system prompt bloat** — subdirectory hints only appear when needed
-- **Prompt cache preservation** — the system prompt stays stable across turns
+This keeps startup prompts smaller and preserves prompt-cache stability while still surfacing local rules when they matter.
 
-Each subdirectory is checked at most once per session. The discovery also walks up parent directories, so reading `backend/src/main.py` will discover `backend/AGENTS.md` even if `backend/src/` has no context file of its own.
-
-:::info
-Subdirectory context files go through the same [security scan](#security-prompt-injection-protection) as startup context files. Malicious files are blocked.
-:::
-
-### Example AGENTS.md
+### Example
 
 ```markdown
 # Project Context
 
-This is a Next.js 14 web application with a Python FastAPI backend.
+This repository maintains forecast source adapters and replay benchmarks.
 
 ## Architecture
-- Frontend: Next.js 14 with App Router in `/frontend`
-- Backend: FastAPI in `/backend`, uses SQLAlchemy ORM
-- Database: PostgreSQL 16
-- Deployment: Docker Compose on a Hetzner VPS
+- `forecasting/source_adapters.py` contains source import adapters
+- `forecasting/backtesting.py` owns replay scoring
+- `tests/forecasting/` contains ledger and CLI regression tests
 
 ## Conventions
-- Use TypeScript strict mode for all frontend code
-- Python code follows PEP 8, use type hints everywhere
-- All API endpoints return JSON with `{data, error, meta}` shape
-- Tests go in `__tests__/` directories (frontend) or `tests/` (backend)
+- Evidence imports must preserve publication and availability timestamps
+- Forecast updates must cite evidence/model/reference/assumption records
+- Backtests must avoid leakage past each question's evidence cutoff
+- Do not mutate resolved benchmark fixtures without adding a changelog note
 
-## Important Notes
-- Never modify migration files directly — use Alembic commands
-- The `.env.local` file has real API keys, don't commit it
-- Frontend port is 3000, backend is 8000, DB is 5432
+## Verification
+- Run `scripts/run_tests.sh tests/forecasting -q`
 ```
 
 ## SOUL.md
 
-`SOUL.md` controls the agent's personality, tone, and communication style. See the [Personality](/docs/user-guide/features/personality) page for full details.
+`SOUL.md` controls identity, tone, and standing behavior. It can describe a forecast-desk persona, but it should not store active probabilities, evidence, or lessons learned. Those belong in the ledger so they can be audited and scored.
 
-**Location:**
+Location:
 
-- `~/.hermes/SOUL.md`
-- or `$HERMES_HOME/SOUL.md` if you run Hermes with a custom home directory
+- `~/.superforecasting-agent/SOUL.md`
+- legacy fallback: `~/.hermes/SOUL.md`
+- bridged runtime variable: `$HERMES_HOME/SOUL.md`
 
 Important details:
 
-- Hermes seeds a default `SOUL.md` automatically if one does not exist yet
-- Hermes loads `SOUL.md` only from `HERMES_HOME`
-- Hermes does not probe the working directory for `SOUL.md`
-- If the file is empty, nothing from `SOUL.md` is added to the prompt
-- If the file has content, the content is injected verbatim after scanning and truncation
+- a default `SOUL.md` is seeded when a profile is created
+- `SOUL.md` is loaded only from the active agent home
+- the working directory is not searched for `SOUL.md`
+- empty files are ignored
+- content is scanned and truncated before prompt injection
 
-## .cursorrules
+See [Personality](/docs/user-guide/features/personality) for profile identity guidance.
 
-Hermes is compatible with Cursor IDE's `.cursorrules` file and `.cursor/rules/*.mdc` rule modules. If these files exist in your project root and no higher-priority context file (`.hermes.md`, `AGENTS.md`, or `CLAUDE.md`) is found, they're loaded as the project context.
+## Cursor Rules
 
-This means your existing Cursor conventions automatically apply when using Hermes.
+Superforecasting Agent can load Cursor IDE's `.cursorrules` and `.cursor/rules/*.mdc` files when no higher-priority project context file is present. This lets existing Cursor project conventions apply without creating a separate `AGENTS.md`.
 
-## How Context Files Are Loaded
+## Loading Flow
 
-### At startup (system prompt)
+Startup context is assembled by `build_context_files_prompt()` in `agent/prompt_builder.py`:
 
-Context files are loaded by `build_context_files_prompt()` in `agent/prompt_builder.py`:
+1. scan the working directory for `.hermes.md`, `AGENTS.md`, `CLAUDE.md`, then `.cursorrules`
+2. read the first matching project context file
+3. scan for prompt-injection patterns
+4. truncate large files
+5. assemble under `# Project Context`
+6. inject into the system prompt
 
-1. **Scan working directory** — checks for `.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules` (first match wins)
-2. **Content is read** — each file is read as UTF-8 text
-3. **Security scan** — content is checked for prompt injection patterns
-4. **Truncation** — files exceeding 20,000 characters are head/tail truncated (70% head, 20% tail, with a marker in the middle)
-5. **Assembly** — all sections are combined under a `# Project Context` header
-6. **Injection** — the assembled content is added to the system prompt
+During a session, `SubdirectoryHintTracker` watches tool-call paths, checks the target directory and up to five parents, loads the first local context file it finds, scans it, truncates it, and appends it to the tool result.
 
-### During the session (progressive discovery)
+`SOUL.md` is loaded separately from the active agent home.
 
-`SubdirectoryHintTracker` in `agent/subdirectory_hints.py` watches tool call arguments for file paths:
+## Security Scan
 
-1. **Path extraction** — after each tool call, file paths are extracted from arguments (`path`, `workdir`, shell commands)
-2. **Ancestor walk** — the directory and up to 5 parent directories are checked (stopping at already-visited directories)
-3. **Hint loading** — if an `AGENTS.md`, `CLAUDE.md`, or `.cursorrules` is found, it's loaded (first match per directory)
-4. **Security scan** — same prompt injection scan as startup files
-5. **Truncation** — capped at 8,000 characters per file
-6. **Injection** — appended to the tool result, so the model sees it in context naturally
+Context files are scanned for common prompt-injection patterns before inclusion:
 
-The final prompt section looks roughly like:
+- instruction override attempts
+- deception patterns such as "do not tell the user"
+- system prompt override claims
+- hidden HTML comments or hidden divs
+- credential exfiltration attempts
+- secret-file access patterns
+- invisible Unicode controls
+
+If a threat pattern is detected, the file is blocked:
 
 ```text
-# Project Context
-
-The following project context files have been loaded and should be followed:
-
-## AGENTS.md
-
-[Your AGENTS.md content here]
-
-## .cursorrules
-
-[Your .cursorrules content here]
-
-[Your SOUL.md content here]
-```
-
-Notice that SOUL content is inserted directly, without extra wrapper text.
-
-## Security: Prompt Injection Protection
-
-All context files are scanned for potential prompt injection before being included. The scanner checks for:
-
-- **Instruction override attempts**: "ignore previous instructions", "disregard your rules"
-- **Deception patterns**: "do not tell the user"
-- **System prompt overrides**: "system prompt override"
-- **Hidden HTML comments**: `<!-- ignore instructions -->`
-- **Hidden div elements**: `<div style="display:none">`
-- **Credential exfiltration**: `curl ... $API_KEY`
-- **Secret file access**: `cat .env`, `cat credentials`
-- **Invisible characters**: zero-width spaces, bidirectional overrides, word joiners
-
-If any threat pattern is detected, the file is blocked:
-
-```
 [BLOCKED: AGENTS.md contained potential prompt injection (prompt_injection). Content not loaded.]
 ```
 
-:::warning
-This scanner protects against common injection patterns, but it's not a substitute for reviewing context files in shared repositories. Always validate AGENTS.md content in projects you didn't author.
-:::
+The scanner is a guardrail, not a substitute for reviewing context files in shared repositories.
 
 ## Size Limits
 
 | Limit | Value |
 |-------|-------|
-| Max chars per file | 20,000 (~7,000 tokens) |
+| Max chars per startup file | 20,000 |
+| Max chars per discovered subdirectory file | 8,000 |
 | Head truncation ratio | 70% |
 | Tail truncation ratio | 20% |
-| Truncation marker | 10% (shows char counts and suggests using file tools) |
 
-When a file exceeds 20,000 characters, the truncation message reads:
+Example truncation marker:
 
-```
+```text
 [...truncated AGENTS.md: kept 14000+4000 of 25000 chars. Use file tools to read the full file.]
 ```
 
-## Tips for Effective Context Files
+## Best Practices
 
-:::tip Best practices for AGENTS.md
-1. **Keep it concise** — stay well under 20K chars; the agent reads it every turn
-2. **Structure with headers** — use `##` sections for architecture, conventions, important notes
-3. **Include concrete examples** — show preferred code patterns, API shapes, naming conventions
-4. **Mention what NOT to do** — "never modify migration files directly"
-5. **List key paths and ports** — the agent uses these for terminal commands
-6. **Update as the project evolves** — stale context is worse than no context
-:::
-
-### Per-Subdirectory Context
-
-For monorepos, put subdirectory-specific instructions in nested AGENTS.md files:
-
-```markdown
-<!-- frontend/AGENTS.md -->
-# Frontend Context
-
-- Use `pnpm` not `npm` for package management
-- Components go in `src/components/`, pages in `src/app/`
-- Use Tailwind CSS, never inline styles
-- Run tests with `pnpm test`
-```
-
-```markdown
-<!-- backend/AGENTS.md -->
-# Backend Context
-
-- Use `poetry` for dependency management
-- Run the dev server with `poetry run uvicorn main:app --reload`
-- All endpoints need OpenAPI docstrings
-- Database models are in `models/`, schemas in `schemas/`
-```
+- Keep `AGENTS.md` concise and operational.
+- Put forecast state, calibration lessons, and postmortems in the ledger, not in context files.
+- Include commands and paths the agent should actually use.
+- Add source-adapter, evidence, and backtest rules where they prevent mistakes.
+- Use nested `AGENTS.md` files for monorepos.
+- Review inherited `.hermes.md` and `HERMES.md` files before relying on them in the fork.

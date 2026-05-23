@@ -4,404 +4,353 @@ sidebar_position: 7
 
 # Profile Commands Reference
 
-This page covers all commands related to [Hermes profiles](../user-guide/profiles.md). For general CLI commands, see [CLI Commands Reference](./cli-commands.md).
+This page covers commands for Superforecasting Agent [profiles](../user-guide/profiles.md). Profiles are separate forecast workspaces with their own config, provider keys, forecast ledger, memory files, sessions, skills, cron jobs, logs, and gateway state.
 
-## `hermes profile`
+The primary command is `superforecasting-agent profile`. The legacy `hermes profile` command remains available for inherited runtime compatibility, but new examples should use `superforecasting-agent`.
+
+## `superforecasting-agent profile`
 
 ```bash
-hermes profile <subcommand>
+superforecasting-agent profile <subcommand>
 ```
 
-Top-level command for managing profiles. Running `hermes profile` without a subcommand shows help.
+Running `superforecasting-agent profile` without a subcommand shows the current profile, path, model, gateway status, and profile help.
 
 | Subcommand | Description |
 |------------|-------------|
 | `list` | List all profiles. |
-| `use` | Set the active (default) profile. |
+| `use` | Set the sticky default profile. |
 | `create` | Create a new profile. |
+| `describe` | Read, set, or auto-generate a routing description. |
 | `delete` | Delete a profile. |
-| `show` | Show details about a profile. |
-| `alias` | Regenerate the shell alias for a profile. |
+| `show` | Show profile details. |
+| `alias` | Create, update, remove, or rename the shell alias wrapper. |
 | `rename` | Rename a profile. |
 | `export` | Export a profile to a tar.gz archive. |
 | `import` | Import a profile from a tar.gz archive. |
-| `install` | Install a profile distribution from a git URL or local directory. See [Profile Distributions](../user-guide/profile-distributions.md). |
-| `update` | Re-pull a distribution-managed profile and re-apply its bundle. |
-| `info` | Show distribution metadata for a profile (origin URL, commit, last update). |
+| `install` | Install a profile distribution from a git URL or local directory. |
+| `update` | Re-pull and re-apply a distribution-managed profile. |
+| `info` | Show distribution metadata for a profile. |
 
-## `hermes profile list`
+## `profile list`
 
 ```bash
-hermes profile list
+superforecasting-agent profile list
 ```
 
-Lists all profiles. The currently active profile is marked with `*`.
+Lists all profiles. The active profile is marked with `*`.
 
-**Example:**
+Example:
 
 ```bash
-$ hermes profile list
+$ superforecasting-agent profile list
   default
-* work
-  dev
-  personal
+* macro
+  policy
+  markets
 ```
 
-No options.
-
-## `hermes profile use`
+## `profile use`
 
 ```bash
-hermes profile use <name>
+superforecasting-agent profile use <name>
 ```
 
-Sets `<name>` as the active profile. All subsequent `hermes` commands (without `-p`) will use this profile.
+Sets `<name>` as the sticky default for `superforecasting-agent` commands. For forecast workflows, prefer `superforecasting-agent forecast ...`, a profile alias such as `macro forecast status`, or `superforecasting-agent -p <name> forecast ...` when profile targeting matters.
 
 | Argument | Description |
 |----------|-------------|
-| `<name>` | Profile name to activate. Use `default` to return to the base profile. |
+| `<name>` | Profile to activate. Use `default` to return to the root profile. |
 
-**Example:**
-
-```bash
-hermes profile use work
-hermes profile use default
-```
-
-## `hermes profile create`
+Examples:
 
 ```bash
-hermes profile create <name> [options]
+superforecasting-agent profile use macro
+superforecasting-agent forecast status
+
+superforecasting-agent profile use default
 ```
 
-Creates a new profile.
+## `profile create`
+
+```bash
+superforecasting-agent profile create <name> [options]
+```
+
+Creates a new profile under `~/.superforecasting-agent/profiles/<name>/` for new installs, or under the active legacy root when an existing `~/.hermes` home is reused.
 
 | Argument / Option | Description |
 |-------------------|-------------|
-| `<name>` | Name for the new profile. Must be a valid directory name (alphanumeric, hyphens, underscores). |
-| `--clone` | Copy `config.yaml`, `.env`, and `SOUL.md` from the current profile. |
-| `--clone-all` | Copy everything (config, memories, skills, sessions, state) from the current profile. |
-| `--clone-from <profile>` | Clone from a specific profile instead of the current one. Used with `--clone` or `--clone-all`. |
+| `<name>` | Profile name. Must be lowercase alphanumeric with optional hyphens or underscores. |
+| `--clone` | Copy `config.yaml`, `.env`, `SOUL.md`, and curated `MEMORY.md` / `USER.md` files from the source profile. |
+| `--clone-all` | Copy most profile state from the source profile, including sessions, skills, cron jobs, plugins, and ledger state. Runtime process files are stripped. |
+| `--clone-from <profile>` | Clone from a specific profile instead of the active one. Used with `--clone` or `--clone-all`. |
 | `--no-alias` | Skip wrapper script creation. |
-| `--description "<text>"` | One- or two-sentence description of what this profile is good at. Used by the kanban orchestrator to route tasks based on role instead of profile name alone. Skip and add later via `hermes profile describe`. Persisted in `<profile_dir>/profile.yaml`. |
-| `--no-skills` | Create an **empty** profile with zero bundled skills enabled. Writes a `.no-skills` marker into the profile so future `hermes update` runs won't re-seed the bundled set, and refuses to combine with `--clone` / `--clone-all` (which would copy skills in anyway). Useful for narrow orchestrator profiles or sandbox profiles that should not inherit the full skill catalog. |
+| `--description "<text>"` | One- or two-sentence description used by kanban/decomposition routing. Can be set later with `profile describe`. |
+| `--no-skills` | Create an empty profile with no bundled skills and write `.no-bundled-skills` so `superforecasting-agent update` does not re-seed them. Cannot be combined with `--clone` or `--clone-all`. |
 
-Creating a profile does **not** make that profile directory the default project/workspace directory for terminal commands. If you want a profile to start in a specific project, set `terminal.cwd` in that profile's `config.yaml`.
+Creating a profile does not make that profile directory the default terminal workspace. Set `terminal.cwd` in that profile when tools should start in a specific project or research directory.
 
-**Examples:**
-
-```bash
-# Blank profile — needs full setup
-hermes profile create mybot
-
-# Clone config only from current profile
-hermes profile create work --clone
-
-# Clone everything from current profile
-hermes profile create backup --clone-all
-
-# Clone config from a specific profile
-hermes profile create work2 --clone --clone-from work
-```
-
-## `hermes profile describe`
+Examples:
 
 ```bash
-hermes profile describe [<name>] [options]
+# Blank forecast workspace
+superforecasting-agent profile create macro
+
+# Profile with a routing description
+superforecasting-agent profile create policy \
+  --description "Policy forecasts, legislative sources, regulator statements, and resolution criteria."
+
+# Clone config and identity from the active profile
+superforecasting-agent profile create elections --clone
+
+# Clone most state from a specific profile
+superforecasting-agent profile create macro-backup --clone-all --clone-from macro
+
+# Minimal worker profile
+superforecasting-agent profile create narrow-risk --no-skills
 ```
 
-Read or set a profile's description. The description is consumed by the kanban orchestrator to route tasks based on what each profile is good at, rather than guessing from the profile name alone. Persisted in `<profile_dir>/profile.yaml` so it survives reboots and is shared with the gateway.
+## `profile describe`
 
-With no flags, prints the current description (or `(no description set for '<name>')` if empty).
+```bash
+superforecasting-agent profile describe [<name>] [options]
+```
+
+Reads or sets a profile's description. The description is stored in `<profile_dir>/profile.yaml` and used by kanban orchestration to route work based on capability instead of name alone.
 
 | Argument / Option | Description |
 |-------------------|-------------|
 | `<name>` | Profile to describe. Required unless `--all --auto` is used. |
-| `--text "<text>"` | Set the description to this exact text (user-authored). Overwrites any existing description. |
-| `--auto` | Auto-generate a 1-2 sentence description via the auxiliary LLM, based on the profile's installed skills, configured model, and name. Configure the model under `auxiliary.profile_describer` in `config.yaml`. Auto-generated descriptions are marked `description_auto: true` so the dashboard can flag them for review. |
-| `--overwrite` | With `--auto`, replace user-authored descriptions too (default: skip profiles whose description was set explicitly). |
+| `--text "<text>"` | Set the description exactly. Marks it as user-authored. |
+| `--auto` | Ask the auxiliary LLM to generate a 1-2 sentence description from the profile name, model, and installed skills. Uses `auxiliary.profile_describer`. |
+| `--overwrite` | With `--auto`, replace user-authored descriptions too. Default behavior skips explicit user descriptions. |
 | `--all` | With `--auto`, sweep every profile missing a description. |
 
-**Examples:**
+Examples:
 
 ```bash
-# Read the current description
-hermes profile describe researcher
-
-# Set it explicitly
-hermes profile describe researcher --text "Reads source code and writes findings."
-
-# Let the LLM generate one
-hermes profile describe researcher --auto
-
-# Fill in descriptions for every profile that doesn't have one
-hermes profile describe --all --auto
+superforecasting-agent profile describe macro
+superforecasting-agent profile describe macro --text "Macroeconomic forecasts using FRED, BLS, World Bank, and horizon-aware calibration."
+superforecasting-agent profile describe macro --auto
+superforecasting-agent profile describe --all --auto
 ```
 
-## `hermes profile delete`
+## `profile show`
 
 ```bash
-hermes profile delete <name> [options]
+superforecasting-agent profile show <name>
 ```
 
-Deletes a profile and removes its shell alias.
+Shows the profile's home directory, model, provider, gateway status, skill count, env/config status, alias path, and distribution metadata when present.
 
-| Argument / Option | Description |
-|-------------------|-------------|
-| `<name>` | Profile to delete. |
-| `--yes`, `-y` | Skip confirmation prompt. |
+This shows the profile home, not the terminal working directory. Forecast ledger data normally lives at:
 
-**Example:**
-
-```bash
-hermes profile delete mybot
-hermes profile delete mybot --yes
+```text
+<profile-home>/forecasting/forecasting.db
 ```
 
-:::warning
-This permanently deletes the profile's entire directory including all config, memories, sessions, and skills. Cannot delete the currently active profile.
-:::
-
-## `hermes profile show`
+Example:
 
 ```bash
-hermes profile show <name>
-```
-
-Displays details about a profile including its home directory, configured model, gateway status, skills count, and configuration file status.
-
-This shows the profile's Hermes home directory, not the terminal working directory. Terminal commands start from `terminal.cwd` (or the launch directory on the local backend when `cwd: "."`).
-
-| Argument | Description |
-|----------|-------------|
-| `<name>` | Profile to inspect. |
-
-**Example:**
-
-```bash
-$ hermes profile show work
-Profile: work
-Path:    ~/.hermes/profiles/work
-Model:   anthropic/claude-sonnet-4 (anthropic)
+$ superforecasting-agent profile show macro
+Profile: macro
+Path:    ~/.superforecasting-agent/profiles/macro
+Model:   claude-sonnet-4-6 (anthropic)
 Gateway: stopped
 Skills:  12
 .env:    exists
 SOUL.md: exists
-Alias:   ~/.local/bin/work
+Alias:   ~/.local/bin/macro
 ```
 
-## `hermes profile alias`
+## `profile delete`
 
 ```bash
-hermes profile alias <name> [options]
+superforecasting-agent profile delete <name> [options]
 ```
 
-Regenerates the shell alias script at `~/.local/bin/<name>`. Useful if the alias was accidentally deleted or if you need to update it after moving your Hermes installation.
+Deletes a profile and removes its wrapper alias.
 
 | Argument / Option | Description |
 |-------------------|-------------|
-| `<name>` | Profile to create/update the alias for. |
+| `<name>` | Profile to delete. |
+| `--yes`, `-y` | Skip confirmation. |
+
+Examples:
+
+```bash
+superforecasting-agent profile delete macro
+superforecasting-agent profile delete macro --yes
+```
+
+:::warning
+This permanently deletes the profile directory, including config, secrets, sessions, ordinary memory, skills, forecast ledger, evidence snapshots, scores, postmortems, and scheduled self-check state. You cannot delete the currently active profile.
+:::
+
+## `profile alias`
+
+```bash
+superforecasting-agent profile alias <name> [options]
+```
+
+Creates, updates, removes, or renames the wrapper script at `~/.local/bin/<alias>`.
+
+| Argument / Option | Description |
+|-------------------|-------------|
+| `<name>` | Profile to create or update the alias for. |
 | `--remove` | Remove the wrapper script instead of creating it. |
-| `--name <alias>` | Custom alias name (default: profile name). |
+| `--name <alias>` | Custom alias name. Defaults to the profile name. |
 
-**Example:**
+The generated wrapper prefers `superforecasting-agent -p <name>` and falls back to `hermes -p <name>` only when the fork-native command is unavailable.
 
-```bash
-hermes profile alias work
-# Creates/updates ~/.local/bin/work
-
-hermes profile alias work --name mywork
-# Creates ~/.local/bin/mywork
-
-hermes profile alias work --remove
-# Removes the wrapper script
-```
-
-## `hermes profile rename`
+Examples:
 
 ```bash
-hermes profile rename <old-name> <new-name>
+superforecasting-agent profile alias macro
+superforecasting-agent profile alias macro --name macro-desk
+superforecasting-agent profile alias macro --remove
 ```
 
-Renames a profile. Updates the directory and shell alias.
+## `profile rename`
+
+```bash
+superforecasting-agent profile rename <old-name> <new-name>
+```
+
+Renames a profile, updates its directory, and updates wrapper aliases.
 
 | Argument | Description |
 |----------|-------------|
 | `<old-name>` | Current profile name. |
 | `<new-name>` | New profile name. |
 
-**Example:**
+Example:
 
 ```bash
-hermes profile rename mybot assistant
-# ~/.hermes/profiles/mybot → ~/.hermes/profiles/assistant
-# ~/.local/bin/mybot → ~/.local/bin/assistant
+superforecasting-agent profile rename macro macro-research
+# ~/.superforecasting-agent/profiles/macro -> ~/.superforecasting-agent/profiles/macro-research
+# ~/.local/bin/macro -> ~/.local/bin/macro-research
 ```
 
-## `hermes profile export`
+## `profile export`
 
 ```bash
-hermes profile export <name> [options]
+superforecasting-agent profile export <name> [options]
 ```
 
-Exports a profile as a compressed tar.gz archive.
+Exports a profile as a compressed tar.gz archive. Use export/import for local backup and restore. Distribution commands are for shareable, versioned git-backed profile packages.
 
 | Argument / Option | Description |
 |-------------------|-------------|
 | `<name>` | Profile to export. |
-| `-o`, `--output <path>` | Output file path (default: `<name>.tar.gz`). |
+| `-o`, `--output <path>` | Output path. Defaults to `<name>.tar.gz`. |
 
-**Example:**
+Examples:
 
 ```bash
-hermes profile export work
-# Creates work.tar.gz in the current directory
-
-hermes profile export work -o ./work-2026-03-29.tar.gz
+superforecasting-agent profile export macro
+superforecasting-agent profile export macro -o ./macro-2026-03-29.tar.gz
 ```
 
-## `hermes profile import`
+## `profile import`
 
 ```bash
-hermes profile import <archive> [options]
+superforecasting-agent profile import <archive> [options]
 ```
 
 Imports a profile from a tar.gz archive.
 
 | Argument / Option | Description |
 |-------------------|-------------|
-| `<archive>` | Path to the tar.gz archive to import. |
-| `--name <name>` | Name for the imported profile (default: inferred from archive). |
+| `<archive>` | Path to the tar.gz archive. |
+| `--name <name>` | Name for the imported profile. Defaults to a name inferred from the archive. |
 
-**Example:**
+Examples:
 
 ```bash
-hermes profile import ./work-2026-03-29.tar.gz
-# Infers profile name from the archive
-
-hermes profile import ./work-2026-03-29.tar.gz --name work-restored
+superforecasting-agent profile import ./macro-2026-03-29.tar.gz
+superforecasting-agent profile import ./macro-2026-03-29.tar.gz --name macro-restored
 ```
 
-## Distribution commands
+## Distribution Commands
 
 :::tip
-**New to distributions?** Start with the [Profile Distributions user guide](../user-guide/profile-distributions.md) — it covers the why, when, and how with full examples. The sections below are a dry CLI reference for when you know what you want.
+New to distributions? Start with the [Profile Distributions user guide](../user-guide/profile-distributions.md). It covers authoring, publishing, update semantics, and the security model.
 :::
 
-Distributions turn a profile into a shareable, versioned artifact published
-as a **git repository**. A recipient installs the distribution with a single
-command and can update it in place later without touching their local
-memories, sessions, or credentials.
+A distribution turns a profile into a shareable git-backed artifact. It can ship SOUL instructions, config, skills, cron jobs, MCP connections, and profile metadata. Recipient-owned data such as `.env`, auth, memories, sessions, and forecast ledgers stays local unless the user explicitly exports or copies it.
 
-`auth.json` and `.env` are never part of a distribution — they stay on the
-installing user's machine.
+`profile export` / `profile import` are still the right commands for local backup and restore. `profile install` / `profile update` / `profile info` are for versioned profile distributions.
 
-The recipient's user data (memories, sessions, auth, their own edits to
-`.env`) is always preserved across the initial install and subsequent
-updates.
-
-:::info
-`hermes profile export` / `import` are still the right commands for
-**local backup and restore** of a profile on your own machine. Distribution
-(`install` / `update` / `info`) is a separate concept: ship a profile via
-git so someone else can install it.
-:::
-
-### `hermes profile install`
+### `profile install`
 
 ```bash
-hermes profile install <source> [--name <name>] [--alias] [--force] [--yes]
+superforecasting-agent profile install <source> [--name <name>] [--alias] [--force] [--yes]
 ```
 
-Installs a profile distribution from a git URL or a local directory.
+Installs a profile distribution from a git URL or a local directory containing `distribution.yaml`.
 
 | Option | Description |
 |--------|-------------|
-| `<source>` | Git URL (`github.com/user/repo`, `https://...`, `git@...`, `ssh://`, `git://`) or a local directory containing `distribution.yaml` at its root. |
+| `<source>` | Git URL (`github.com/user/repo`, `https://...`, `git@...`, `ssh://`, `git://`) or local directory. |
 | `--name NAME` | Override the profile name from the manifest. |
-| `--alias` | Also create a shell wrapper (e.g. `telemetry` → `hermes -p telemetry`). |
-| `--force` | Overwrite an existing profile of the same name. User data is still preserved. |
-| `-y`, `--yes` | Skip the manifest-preview confirmation prompt. |
+| `--alias` | Also create a shell wrapper, for example `macro-desk -> superforecasting-agent -p macro-desk`. |
+| `--force` | Overwrite an existing profile of the same name while preserving user data. |
+| `-y`, `--yes` | Skip manifest-preview confirmation. |
 
-The installer shows the manifest, lists required env vars, and warns about
-cron jobs before asking for confirmation. Required env vars go into a
-`.env.EXAMPLE` file you copy to `.env` and fill in.
-
-**Examples:**
+Examples:
 
 ```bash
-# Install from a GitHub repo (shorthand)
-hermes profile install github.com/kyle/telemetry-distribution --alias
-
-# Install from a full HTTPS git URL
-hermes profile install https://github.com/kyle/telemetry-distribution.git
-
-# Install from SSH
-hermes profile install git@github.com:kyle/telemetry-distribution.git
-
-# Install from a local directory during development
-hermes profile install ./telemetry/
+superforecasting-agent profile install github.com/you/macro-forecast-desk --alias
+superforecasting-agent profile install https://github.com/you/macro-forecast-desk.git
+superforecasting-agent profile install git@github.com:your-org/internal-policy-desk.git
+superforecasting-agent profile install ./local-profile-distribution/
 ```
 
-### `hermes profile update`
+### `profile update`
 
 ```bash
-hermes profile update <name> [--force-config] [--yes]
+superforecasting-agent profile update <name> [--force-config] [--yes]
 ```
 
-Re-clones the distribution from its recorded source and applies updates.
-Distribution-owned files (SOUL.md, skills/, cron/, mcp.json) are
-overwritten; user data (memories, sessions, auth, .env) is never touched.
+Re-clones the distribution from its recorded source and applies updates. Distribution-owned files are overwritten. User data is preserved.
 
-`config.yaml` is preserved by default to keep your local overrides.
-Pass `--force-config` to reset it to the distribution's shipped config.
+| Option | Description |
+|--------|-------------|
+| `<name>` | Distribution-managed profile to update. |
+| `--force-config` | Also overwrite `config.yaml`. By default it is preserved to keep local overrides. |
+| `-y`, `--yes` | Skip confirmation. |
 
-### `hermes profile info`
+### `profile info`
 
 ```bash
-hermes profile info <name>
+superforecasting-agent profile info <name>
 ```
 
-Prints the profile's distribution manifest — name, version, required
-Hermes version, author, env var requirements, the source URL/path, and
-the `Installed:` timestamp recorded when the distribution was last
-`install`-ed or `update`-d. Useful for checking what a shared profile
-needs before installing it, and for spotting "this profile was installed
-6 months ago and hasn't been updated."
+Prints distribution manifest metadata: name, version, required runtime spec, author, env var requirements, source URL/path, and install/update timestamp.
 
-`hermes profile list` also shows the distribution name and version in a
-`Distribution` column, and `hermes profile show <name>` / `delete <name>`
-surface the source URL so you can tell at a glance which profiles came
-from a git repo vs. were created locally.
+`superforecasting-agent profile list` also shows distribution name and version. `superforecasting-agent profile show <name>` and `delete <name>` surface distribution source details when present.
 
 ### Private distributions
 
-A private git repository works as a distribution source with no extra
-configuration — the install shells out to your normal `git` binary, so
-whatever authentication your shell is already set up for (SSH key,
-`git credential` helper, GitHub CLI's stored HTTPS credentials) applies
-transparently.
+Private repositories work with the normal `git` authentication available in your shell:
 
 ```bash
-# Uses your SSH key, the same as any other `git clone`
-hermes profile install git@github.com:your-org/internal-assistant.git
-
-# Uses your git credential helper
-hermes profile install https://github.com/your-org/internal-assistant.git
+superforecasting-agent profile install git@github.com:your-org/internal-policy-desk.git
+superforecasting-agent profile install https://github.com/your-org/internal-policy-desk.git
 ```
 
-If a clone prompts for credentials interactively in your terminal during
-install, that prompt flows through. Set up your auth the way you'd
-normally use `git clone` against the same repo first, then install.
+Set up `git clone` authentication first; the installer shells out to your normal `git` binary.
 
-### Distribution manifest (`distribution.yaml`)
+### Distribution manifest
 
-Every distribution has a `distribution.yaml` at the root of its repository:
+Every distribution has a `distribution.yaml` at repository root:
 
 ```yaml
-name: telemetry
+name: macro-forecast-desk
 version: 0.1.0
-description: "Compliance monitoring harness"
+description: "Macro forecast desk with FRED/BLS/World Bank workflows"
 hermes_requires: ">=0.12.0"
 author: "Your Name"
 license: "MIT"
@@ -409,91 +358,75 @@ env_requires:
   - name: OPENAI_API_KEY
     description: "OpenAI API key"
     required: true
-  - name: GRAPHITI_MCP_URL
-    description: "Memory graph URL"
+  - name: FRED_API_KEY
+    description: "FRED data API key"
     required: false
-    default: "http://127.0.0.1:8000/sse"
-distribution_owned:   # optional; defaults to SOUL.md, config.yaml,
-                      #   mcp.json, skills/, cron/, distribution.yaml
+distribution_owned:
   - SOUL.md
-  - skills/compliance/
+  - skills/macro/
   - cron/
 ```
 
-`hermes_requires` supports `>=`, `<=`, `==`, `!=`, `>`, `<`, or a bare
-version (treated as `>=`). Install fails with a clear error if the current
-Hermes version doesn't satisfy the spec.
-
-`distribution_owned` is optional. If set, only those paths are replaced on
-update; anything else in the profile stays user-owned. If omitted, the
-defaults above apply.
+The manifest field is still named `hermes_requires` for compatibility with the inherited distribution loader. The user-facing error text refers to the Superforecasting Agent runtime. `distribution_owned` is optional; when omitted, sensible defaults apply.
 
 ### Publishing a distribution
 
-Authoring a distribution is just a git push:
+1. In the profile directory, create `distribution.yaml` with at least `name` and `version`.
+2. Commit distribution-owned files to a git repository.
+3. Tell recipients to run `superforecasting-agent profile install <repo-url>`.
 
-1. In your profile directory, create `distribution.yaml` with at least `name`
-   and `version`.
-2. Initialize a git repo (or use an existing one) and push to GitHub /
-   GitLab / any host Hermes can clone from.
-3. Tell recipients to run `hermes profile install <your-repo-url>`.
+Use git tags and manifest version bumps for release tracking.
 
-Use git tags for versioned releases — recipients who clone `HEAD` get your
-latest state, and you can always bump `version:` in the manifest.
-
-## `hermes -p` / `hermes --profile`
+## `-p` / `--profile`
 
 ```bash
-hermes -p <name> <command> [options]
-hermes --profile <name> <command> [options]
+superforecasting-agent -p <name> <command> [options]
+superforecasting-agent --profile <name> <command> [options]
 ```
 
-Global flag to run any Hermes command under a specific profile without changing the sticky default. This overrides the active profile for the duration of the command.
+Runs any command under a specific profile without changing the sticky default.
 
 | Option | Description |
 |--------|-------------|
 | `-p <name>`, `--profile <name>` | Profile to use for this command. |
 
-**Examples:**
+Examples:
 
 ```bash
-hermes -p work chat -q "Check the server status"
-hermes --profile dev gateway start
-hermes -p personal skills list
-hermes -p work config edit
+superforecasting-agent -p macro forecast status
+superforecasting-agent --profile policy gateway start
+superforecasting-agent forecast review -p markets --last 30d
+superforecasting-agent -p macro config edit
 ```
 
-## `hermes completion`
+## `completion`
 
 ```bash
-hermes completion <shell>
+superforecasting-agent completion <shell>
 ```
 
-Generates shell completion scripts. Includes completions for profile names and profile subcommands.
+Generates shell completion scripts. Completion includes profile names and profile subcommands.
 
 | Argument | Description |
 |----------|-------------|
 | `<shell>` | Shell to generate completions for: `bash`, `zsh`, or `fish`. |
 
-**Examples:**
+Examples:
 
 ```bash
-# Install completions
-hermes completion bash >> ~/.bashrc
-hermes completion zsh >> ~/.zshrc
-hermes completion fish > ~/.config/fish/completions/hermes.fish
-
-# Reload shell
-source ~/.bashrc
+superforecasting-agent completion bash >> ~/.bashrc
+superforecasting-agent completion zsh >> ~/.zshrc
+superforecasting-agent completion fish > ~/.config/fish/completions/superforecasting-agent.fish
 ```
 
 After installation, tab completion works for:
-- `hermes profile <TAB>` — subcommands (list, use, create, etc.)
-- `hermes profile use <TAB>` — profile names
-- `hermes -p <TAB>` — profile names
 
-## See also
+- `superforecasting-agent profile <TAB>` - subcommands.
+- `superforecasting-agent profile use <TAB>` - profile names.
+- `superforecasting-agent -p <TAB>` - profile names.
+
+## See Also
 
 - [Profiles User Guide](../user-guide/profiles.md)
 - [CLI Commands Reference](./cli-commands.md)
-- [FAQ — Profiles section](./faq.md#profiles)
+- [FAQ - Profiles section](./faq.md#profiles)

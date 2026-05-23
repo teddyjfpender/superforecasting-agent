@@ -387,11 +387,11 @@ class TestCollectDebugReport:
 
         with patch("hermes_cli.dump.run_dump") as mock_dump:
             mock_dump.side_effect = lambda args: print(
-                "--- hermes dump ---\nversion: 0.8.0\n--- end dump ---"
+                "--- superforecasting-agent dump ---\nversion: 0.8.0\n--- end dump ---"
             )
             report = collect_debug_report(log_lines=50)
 
-        assert "--- hermes dump ---" in report
+        assert "--- superforecasting-agent dump ---" in report
         assert "version: 0.8.0" in report
 
     def test_report_includes_agent_log(self, hermes_home):
@@ -514,7 +514,9 @@ class TestRunDebugShare:
         with patch("hermes_cli.dump.run_dump") as mock_dump, \
              patch("hermes_cli.debug.upload_to_pastebin",
                     side_effect=_mock_upload):
-            mock_dump.side_effect = lambda a: print("--- hermes dump ---\nversion: test\n--- end dump ---")
+            mock_dump.side_effect = lambda a: print(
+                "--- superforecasting-agent dump ---\nversion: test\n--- end dump ---"
+            )
             run_debug_share(args)
 
         out = capsys.readouterr().out
@@ -529,10 +531,10 @@ class TestRunDebugShare:
 
         # Each log paste should start with the dump header
         agent_paste = uploaded_content[1]
-        assert "--- hermes dump ---" in agent_paste
+        assert "--- superforecasting-agent dump ---" in agent_paste
         assert "--- full agent.log ---" in agent_paste
         gateway_paste = uploaded_content[2]
-        assert "--- hermes dump ---" in gateway_paste
+        assert "--- superforecasting-agent dump ---" in gateway_paste
         assert "--- full gateway.log ---" in gateway_paste
 
     def test_share_keeps_report_and_full_log_on_same_snapshot(self, hermes_home, capsys):
@@ -790,7 +792,7 @@ class TestRunDebug:
         run_debug(args)
 
         out = capsys.readouterr().out
-        assert "hermes debug" in out
+        assert "superforecasting-agent debug" in out
         assert "share" in out
         assert "delete" in out
 
@@ -1128,7 +1130,7 @@ class TestRunDebugSweepsOnInvocation:
 
         # Default subcommand still printed help
         out = capsys.readouterr().out
-        assert "Usage: hermes debug" in out
+        assert "Usage: superforecasting-agent debug" in out
 
 
 class TestRunDebugDelete:

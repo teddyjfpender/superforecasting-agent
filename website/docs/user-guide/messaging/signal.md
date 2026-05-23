@@ -1,17 +1,17 @@
 ---
 sidebar_position: 6
 title: "Signal"
-description: "Set up Hermes Agent as a Signal messenger bot via signal-cli daemon"
+description: "Use Signal for private forecast alerts and approvals."
 ---
 
 # Signal Setup
 
-Hermes connects to Signal through the [signal-cli](https://github.com/AsamK/signal-cli) daemon running in HTTP mode. The adapter streams messages in real-time via SSE (Server-Sent Events) and sends responses via JSON-RPC.
+The forecast gateway connects to Signal through the [signal-cli](https://github.com/AsamK/signal-cli) daemon running in HTTP mode. The adapter streams messages in real-time via SSE (Server-Sent Events) and sends responses via JSON-RPC.
 
-Signal is the most privacy-focused mainstream messenger — end-to-end encrypted by default, open-source protocol, minimal metadata collection. This makes it ideal for security-sensitive agent workflows.
+Signal is the most privacy-focused mainstream messenger: end-to-end encrypted by default, open-source protocol, minimal metadata collection. This makes it useful for sensitive forecast-review alerts, approvals, and source notes. The Signal thread is not the durable learning layer; probabilities, evidence, assumptions, resolutions, postmortems, and calibration lessons belong in the forecast ledger.
 
 :::info No New Python Dependencies
-The Signal adapter uses `httpx` (already a core Hermes dependency) for all communication. No additional Python packages are required. You just need signal-cli installed externally.
+The Signal adapter uses `httpx` (already a core Superforecasting Agent dependency) for all communication. No additional Python packages are required. You just need signal-cli installed externally.
 :::
 
 ---
@@ -48,7 +48,7 @@ Signal-cli works as a **linked device** — like WhatsApp Web, but for Signal. Y
 
 ```bash
 # Generate a linking URI (displays a QR code or link)
-signal-cli link -n "HermesAgent"
+signal-cli link -n "SuperforecastingAgent"
 ```
 
 1. Open **Signal** on your phone
@@ -78,12 +78,12 @@ curl http://127.0.0.1:8080/api/v1/check
 
 ---
 
-## Step 3: Configure Hermes
+## Step 3: Configure Superforecasting Agent
 
 The easiest way:
 
 ```bash
-hermes gateway setup
+superforecasting-agent gateway setup
 ```
 
 Select **Signal** from the platform menu. The wizard will:
@@ -96,7 +96,7 @@ Select **Signal** from the platform menu. The wizard will:
 
 ### Manual Configuration
 
-Add to `~/.hermes/.env`:
+Add to `~/.superforecasting-agent/.env`:
 
 ```bash
 # Required
@@ -114,9 +114,9 @@ SIGNAL_HOME_CHANNEL=+1234567890                  # Default delivery target for c
 Then start the gateway:
 
 ```bash
-hermes gateway              # Foreground
-hermes gateway install      # Install as a user service
-sudo hermes gateway install --system   # Linux only: boot-time system service
+superforecasting-agent gateway              # Foreground
+superforecasting-agent gateway install      # Install as a user service
+sudo superforecasting-agent gateway install --system   # Linux only: boot-time system service
 ```
 
 ---
@@ -125,10 +125,10 @@ sudo hermes gateway install --system   # Linux only: boot-time system service
 
 ### DM Access
 
-DM access follows the same pattern as all other Hermes platforms:
+DM access follows the same pattern as other forecast gateway platforms:
 
 1. **`SIGNAL_ALLOWED_USERS` set** → only those users can message
-2. **No allowlist set** → unknown users get a DM pairing code (approve via `hermes pairing approve signal CODE`)
+2. **No allowlist set** → unknown users get a DM pairing code (approve via `superforecasting-agent pairing approve signal CODE`)
 3. **`SIGNAL_ALLOW_ALL_USERS=true`** → anyone can message (use with caution)
 
 ### Group Access
@@ -137,9 +137,9 @@ Group access is controlled by the `SIGNAL_GROUP_ALLOWED_USERS` env var:
 
 | Configuration | Behavior |
 |---------------|----------|
-| Not set (default) | All group messages are ignored. The bot only responds to DMs. |
+| Not set (default) | All group messages are ignored. The gateway only responds to DMs. |
 | Set with group IDs | Only listed groups are monitored (e.g., `groupId1,groupId2`). |
-| Set to `*` | The bot responds in any group it's a member of. |
+| Set to `*` | The gateway responds in any group it is a member of. |
 
 ---
 
@@ -149,15 +149,15 @@ Group access is controlled by the `SIGNAL_GROUP_ALLOWED_USERS` env var:
 
 The adapter supports sending and receiving media in both directions.
 
-**Incoming** (user → agent):
+**Incoming** (user -> forecast runtime):
 
 - **Images** — PNG, JPEG, GIF, WebP (auto-detected via magic bytes)
 - **Audio** — MP3, OGG, WAV, M4A (voice messages transcribed if Whisper is configured)
 - **Documents** — PDF, ZIP, and other file types
 
-**Outgoing** (agent → user):
+**Outgoing** (forecast runtime -> user):
 
-The agent can send media files via `MEDIA:` tags in responses. The following delivery methods are supported:
+The forecast runtime can send media files via `MEDIA:` tags in responses. The following delivery methods are supported:
 
 - **Images** — `send_multiple_images` and `send_image_file` send PNG, JPEG, GIF, WebP as native Signal attachments
 - **Voice** — `send_voice` sends audio files (OGG, MP3, WAV, M4A, AAC) as attachments
@@ -175,11 +175,11 @@ Attachment size limit: **100 MB** (both directions).
 
 Signal messages render with **native formatting** instead of literal markdown characters. The adapter converts markdown (`**bold**`, `*italic*`, `` `code` ``, `~~strike~~`, `||spoiler||`, headings) into Signal `bodyRanges` so the text shows up with real styling on the recipient's client rather than as visible `**` / `` ` `` characters.
 
-**Reply quotes.** When Hermes replies to a specific message, it now posts a native reply that quotes the original — same UI affordance Signal users see when they use "Reply" themselves. This is automatic for replies generated in response to an inbound message.
+**Reply quotes.** When Superforecasting Agent replies to a specific message, it now posts a native reply that quotes the original — same UI affordance Signal users see when they use "Reply" themselves. This is automatic for replies generated in response to an inbound message.
 
-**Reactions.** The agent can react to messages via the standard reaction API; reactions surface in Signal as emoji reactions on the referenced message rather than as extra text.
+**Reactions.** The runtime can react to messages via the standard reaction API; reactions surface in Signal as emoji reactions on the referenced message rather than as extra text.
 
-None of this requires additional config — it ships on by default in recent signal-cli builds. If your `signal-cli` version is too old, Hermes falls back to plaintext delivery and logs a one-time warning.
+None of this requires additional config — it ships on by default in recent signal-cli builds. If your `signal-cli` version is too old, Superforecasting Agent falls back to plaintext delivery and logs a one-time warning.
 
 ### Typing Indicators
 
@@ -189,18 +189,18 @@ The bot sends typing indicators while processing messages, refreshing every 8 se
 
 All phone numbers are automatically redacted in logs:
 - `+15551234567` → `+155****4567`
-- This applies to both Hermes gateway logs and the global redaction system
+- This applies to both Superforecasting Agent gateway logs and the global redaction system
 
 ### Note to Self (Single-Number Setup)
 
-If you run signal-cli as a **linked secondary device** on your own phone number (rather than a separate bot number), you can interact with Hermes through Signal's "Note to Self" feature.
+If you run signal-cli as a **linked secondary device** on your own phone number (rather than a separate bot number), you can interact with Superforecasting Agent through Signal's "Note to Self" feature.
 
-Just send a message to yourself from your phone — signal-cli picks it up and Hermes responds in the same conversation.
+Just send a message to yourself from your phone — signal-cli picks it up and the forecast runtime responds in the same conversation.
 
 **How it works:**
 - "Note to Self" messages arrive as `syncMessage.sentMessage` envelopes
-- The adapter detects when these are addressed to the bot's own account and processes them as regular inbound messages
-- Echo-back protection (sent-timestamp tracking) prevents infinite loops — the bot's own replies are filtered out automatically
+- The adapter detects when these are addressed to the gateway's own account and processes them as regular inbound messages
+- Echo-back protection (sent-timestamp tracking) prevents infinite loops — the gateway's own replies are filtered out automatically
 
 **No extra configuration needed.** This works automatically as long as `SIGNAL_ACCOUNT` matches your phone number.
 
@@ -221,7 +221,7 @@ The adapter monitors the SSE connection and automatically reconnects if:
 | **"signal-cli not found on PATH"** | Install signal-cli and ensure it's in your PATH, or use Docker |
 | **Connection keeps dropping** | Check signal-cli logs for errors. Ensure Java 17+ is installed. |
 | **Group messages ignored** | Configure `SIGNAL_GROUP_ALLOWED_USERS` with specific group IDs, or `*` to allow all groups. |
-| **Bot responds to no one** | Configure `SIGNAL_ALLOWED_USERS`, use DM pairing, or explicitly allow all users through gateway policy if you want broader access. |
+| **Runtime responds to no one** | Configure `SIGNAL_ALLOWED_USERS`, use DM pairing, or explicitly allow all users through gateway policy if you want broader access. |
 | **Duplicate messages** | Ensure only one signal-cli instance is listening on your phone number |
 
 ---
@@ -229,7 +229,7 @@ The adapter monitors the SSE connection and automatically reconnects if:
 ## Security
 
 :::warning
-**Always configure access controls.** The bot has terminal access by default. Without `SIGNAL_ALLOWED_USERS` or DM pairing, the gateway denies all incoming messages as a safety measure.
+**Always configure access controls.** The runtime may have terminal and source-access tools enabled. Without `SIGNAL_ALLOWED_USERS` or DM pairing, the gateway denies all incoming messages as a safety measure.
 :::
 
 - Phone numbers are redacted in all log output
@@ -245,7 +245,7 @@ The adapter monitors the SSE connection and automatically reconnects if:
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `SIGNAL_HTTP_URL` | Yes | — | signal-cli HTTP endpoint |
-| `SIGNAL_ACCOUNT` | Yes | — | Bot phone number (E.164) |
+| `SIGNAL_ACCOUNT` | Yes | — | Gateway phone number (E.164) |
 | `SIGNAL_ALLOWED_USERS` | No | — | Comma-separated phone numbers/UUIDs |
 | `SIGNAL_GROUP_ALLOWED_USERS` | No | — | Group IDs to monitor, or `*` for all (omit to disable groups) |
 | `SIGNAL_ALLOW_ALL_USERS` | No | `false` | Allow any user to interact (skip allowlist) |

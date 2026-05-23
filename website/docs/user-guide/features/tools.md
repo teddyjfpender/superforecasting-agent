@@ -1,81 +1,177 @@
 ---
 sidebar_position: 1
 title: "Tools & Toolsets"
-description: "Overview of Hermes Agent's tools — what's available, how toolsets work, and terminal backends"
+description: "Forecast-desk tools, default tool exposure, and terminal backends"
 ---
 
 # Tools & Toolsets
 
-Tools are functions that extend the agent's capabilities. They're organized into logical **toolsets** that can be enabled or disabled per platform.
+Superforecasting Agent uses tools to keep forecasts auditable: it can search,
+inspect sources, run local models, write ledger entries, schedule self-checks,
+and review prior errors. Toolsets control which capabilities are available to
+the agent in each session.
+
+The default CLI product is intentionally narrower than the inherited Hermes
+assistant runtime. A new session starts from the `forecast-desk` capability set
+instead of exposing every integration by default.
 
 ## Available Tools
 
-Hermes ships with a broad built-in tool registry covering web search, browser automation, terminal execution, file editing, memory, delegation, RL training, messaging delivery, Home Assistant, and more.
+The forecast desk groups tools by forecasting job rather than by generic agent
+feature.
+
+| Forecasting job | Typical tools | Purpose |
+|-----------------|---------------|---------|
+| Question setup | `forecast_ledger`, `clarify`, `todo` | Create scoreable questions, capture resolution criteria, track assumptions, and keep research work explicit. |
+| Research and evidence | `web_search`, `web_extract`, browser tools, file tools | Gather time-stamped evidence, inspect primary sources, snapshot claims, and distinguish facts from assumptions. |
+| Quantitative work | `execute_code`, `terminal`, `process`, file tools | Build base-rate tables, run statistical models, compare priors, and reproduce calculations. |
+| Forecast updates | `forecast_ledger`, `cronjob` | Append probability updates, schedule stale-forecast checks, and route changed evidence into review queues. |
+| Scoring and learning | `forecast_ledger`, `execute_code`, file tools | Resolve questions, compute Brier/log scores, run backtests, write postmortems, and update calibration lessons. |
+| External priors | web tools, browser tools, connector plugins | Pull market or platform priors when useful without making any single platform the center of the product. |
 
 :::note
-**Honcho cross-session memory** is available as a memory provider plugin (`plugins/memory/honcho/`), not as a built-in toolset. See [Plugins](./plugins.md) for installation.
+Generic runtime memory remains available for inherited assistant workflows, but
+forecast learning should live in the forecast ledger: probabilities, evidence,
+model runs, scores, postmortems, calibration lessons, and error profiles.
 :::
 
-High-level categories:
+For code-derived detail, see the [Built-in Tools Reference](../../reference/tools-reference.md)
+and [Toolsets Reference](../../reference/toolsets-reference.md).
 
-| Category | Examples | Description |
-|----------|----------|-------------|
-| **Web** | `web_search`, `web_extract` | Search the web and extract page content. |
-| **X Search** | `x_search` | Search X (Twitter) posts and threads via xAI's built-in `x_search` Responses tool — gated on xAI credentials (SuperGrok OAuth or `XAI_API_KEY`); off by default, opt in via `hermes tools` → 🐦 X (Twitter) Search. |
-| **Terminal & Files** | `terminal`, `process`, `read_file`, `patch` | Execute commands and manipulate files. |
-| **Browser** | `browser_navigate`, `browser_snapshot`, `browser_vision` | Interactive browser automation with text and vision support. |
-| **Media** | `vision_analyze`, `image_generate`, `video_generate`, `video_analyze`, `text_to_speech` | Multimodal analysis and generation. `video_generate` and `video_analyze` are opt-in (add `video_gen` / `video` toolsets via `hermes tools` or `--toolsets`). |
-| **Agent orchestration** | `todo`, `clarify`, `execute_code`, `delegate_task` | Planning, clarification, code execution, and subagent delegation. |
-| **Memory & recall** | `memory`, `session_search` | Persistent memory and session search. |
-| **Automation & delivery** | `cronjob`, `send_message` | Scheduled tasks with create/list/update/pause/resume/run/remove actions, plus outbound messaging delivery. |
-| **Integrations** | `ha_*`, MCP server tools, `rl_*` | Home Assistant, MCP, RL training, and other integrations. |
+## Default Tool Exposure
 
-For the authoritative code-derived registry, see [Built-in Tools Reference](/docs/reference/tools-reference) and [Toolsets Reference](/docs/reference/toolsets-reference).
+`forecast-desk` is the default toolset for the CLI. It includes the capabilities
+needed for forecasting work:
 
-:::tip Nous Tool Gateway
-Paid [Nous Portal](https://portal.nousresearch.com) subscribers can use web search, image generation, TTS, and browser automation through the **[Tool Gateway](tool-gateway.md)** — no separate API keys needed. Run `hermes model` to enable it, or configure individual tools with `hermes tools`.
-:::
+- forecast ledger operations
+- web research and browser inspection
+- terminal, process, code execution, and file tools
+- todo and clarify tools
+- cron scheduling for self-checks and alerts
+
+It does not enable broad assistant features by default. Memory-provider tools,
+skills marketplace tools, image generation, delegation, messaging delivery,
+Home Assistant, Spotify, Discord administration, RL training, and other broad
+integrations are opt-in.
+
+Use explicit toolsets when a forecast genuinely needs them:
+
+```bash
+# Forecast desk default
+superforecasting-agent
+
+# Add a specific connector or inherited capability for one session
+superforecasting-agent chat --toolsets "forecast-desk,mcp-myserver"
+
+# Inspect and configure available tools interactively
+superforecasting-agent tools
+```
+
+The legacy `hermes` command remains accepted for compatibility, but docs and
+new workflows prefer `superforecasting-agent`.
+
+## Forecast Workflow Examples
+
+### Research A Question
+
+```bash
+forecast new "Will Company X file for bankruptcy before 2027?"
+forecast research <id>
+forecast evidence add <id> "https://example.com/filing" --source-type url
+forecast base-rate <id>
+forecast update <id> --probability 0.18
+```
+
+The agent should leave an evidence trail for every material probability move:
+what changed, when it changed, which source supports it, and how reliable that
+source appears to be.
+
+### Run Models
+
+Use terminal or code execution tools for calculations that should be
+reproducible.
+
+```bash
+forecast model <id>
+forecast update <id> --probability 0.42 --rationale "Base-rate model plus new polling evidence"
+```
+
+Model output is useful only if the ledger stores the inputs, assumptions,
+version, and result. Avoid treating an LLM-written rationale as the probability
+engine unless the forecast explicitly records that choice.
+
+### Schedule Self-Checks
+
+```bash
+forecast watch add --question <id> rss:https://example.com/news.xml
+forecast schedule add --question <id> --cadence 1d --next-run-at 2026-05-22T09:00:00Z
+forecast review --stale
+```
+
+Scheduled checks should identify stale forecasts, changed evidence, upcoming
+close dates, and domains where recent postmortems show recurring mistakes.
 
 ## Using Toolsets
 
+Toolsets are named bundles of tools. They can be configured globally, per
+platform, or per session.
+
 ```bash
-# Use specific toolsets
-hermes chat --toolsets "web,terminal"
+# List configured toolsets and setup status
+superforecasting-agent tools list
 
-# See all available tools
-hermes tools
+# Configure the default toolsets
+superforecasting-agent tools
 
-# Configure tools per platform (interactive)
-hermes tools
+# Use a specific toolset mix for a one-off session
+superforecasting-agent chat --toolsets "forecast-desk,browser,mcp-market-data"
 ```
 
-Common toolsets include `web`, `search`, `terminal`, `file`, `browser`, `vision`, `image_gen`, `moa`, `skills`, `tts`, `todo`, `memory`, `session_search`, `cronjob`, `code_execution`, `delegation`, `clarify`, `homeassistant`, `messaging`, `spotify`, `discord`, `discord_admin`, `debugging`, `safe`, and `rl`.
+Common inherited toolsets include `web`, `search`, `terminal`, `file`,
+`browser`, `vision`, `image_gen`, `skills`, `tts`, `todo`, `memory`,
+`session_search`, `cronjob`, `code_execution`, `delegation`, `clarify`,
+`homeassistant`, `messaging`, `spotify`, `discord`, `debugging`, `safe`, and
+`rl`.
 
-See [Toolsets Reference](/docs/reference/toolsets-reference) for the full set, including platform presets such as `hermes-cli`, `hermes-telegram`, and dynamic MCP toolsets like `mcp-<server>`.
+See [Toolsets Reference](../../reference/toolsets-reference.md) for the full
+set, including platform presets, legacy `hermes-*` presets, and dynamic MCP
+toolsets such as `mcp-<server>`.
+
+:::tip Nous Tool Gateway
+Paid [Nous Portal](https://portal.nousresearch.com) subscribers can route web
+search, image generation, TTS, and browser automation through the Tool Gateway
+instead of configuring separate provider keys. Use `superforecasting-agent
+model` or `superforecasting-agent tools` to configure it.
+:::
 
 ## Terminal Backends
 
-The terminal tool can execute commands in different environments:
+The terminal tool can execute commands in different environments. Forecasting
+work often benefits from a reproducible sandbox because model runs and
+backtests should be repeatable.
 
-| Backend | Description | Use Case |
+| Backend | Description | Use case |
 |---------|-------------|----------|
-| `local` | Run on your machine (default) | Development, trusted tasks |
-| `docker` | Isolated containers | Security, reproducibility |
-| `ssh` | Remote server | Sandboxing, keep agent away from its own code |
-| `singularity` | HPC containers | Cluster computing, rootless |
-| `modal` | Cloud execution | Serverless, scale |
-| `daytona` | Cloud sandbox workspace | Persistent remote dev environments |
-| `vercel_sandbox` | Vercel Sandbox cloud microVM | Cloud execution with snapshot-backed filesystem persistence |
+| `local` | Run on your machine | Trusted analysis, local notebooks, quick model runs |
+| `docker` | Isolated container | Reproducible research and dependency isolation |
+| `ssh` | Remote server | Keep agent execution away from the repo or run larger jobs |
+| `singularity` | HPC container | Cluster computing and rootless environments |
+| `modal` | Cloud execution | Serverless model jobs |
+| `daytona` | Cloud sandbox workspace | Persistent remote development environments |
+| `vercel_sandbox` | Vercel Sandbox microVM | Cloud execution with snapshot-backed filesystem persistence |
 
 ### Configuration
 
 ```yaml
-# In ~/.hermes/config.yaml
+# In ~/.superforecasting-agent/config.yaml
 terminal:
-  backend: local    # or: docker, ssh, singularity, modal, daytona, vercel_sandbox
-  cwd: "."          # Working directory
-  timeout: 180      # Command timeout in seconds
+  backend: local
+  cwd: "."
+  timeout: 180
 ```
+
+Legacy `~/.hermes/config.yaml` profiles remain readable when using compatibility
+commands.
 
 ### Docker Backend
 
@@ -85,123 +181,87 @@ terminal:
   docker_image: python:3.11-slim
 ```
 
-**One persistent container, shared across the whole process.** Hermes starts a single long-lived container on first use (`docker run -d ... sleep 2h`) and routes every terminal, file, and `execute_code` call through `docker exec` into that same container. Working-directory changes, installed packages, environment tweaks, and files written to `/workspace` all carry over from one tool call to the next, across `/new`, `/reset`, and `delegate_task` subagents, for the lifetime of the Hermes process. The container is stopped and removed on shutdown.
+The Docker backend starts one persistent container per process and routes
+terminal, file, and code-execution calls through that container. Working
+directory changes, installed packages, and files written to the workspace carry
+over for the lifetime of the process. With persistence enabled, workspace state
+can survive restarts.
 
-This means the Docker backend behaves like a persistent sandbox VM, not a fresh container per command. If you `pip install foo` once, it's there for the rest of the session. If you `cd /workspace/project`, subsequent `ls` calls see that directory. See [Configuration → Docker Backend](../configuration.md#docker-backend) for the full lifecycle details and the `container_persistent` flag that controls whether `/workspace` and `/root` survive across Hermes restarts.
+This is useful for repeated backtests: install dependencies once, run the
+benchmark suite, inspect failures, then rerun with changed assumptions.
 
 ### SSH Backend
 
-Recommended for security — agent can't modify its own code:
+Use SSH when you want stronger separation between the agent and the local
+checkout.
 
 ```yaml
 terminal:
   backend: ssh
 ```
+
 ```bash
-# Set credentials in ~/.hermes/.env
+# Set credentials in ~/.superforecasting-agent/.env
 TERMINAL_SSH_HOST=my-server.example.com
 TERMINAL_SSH_USER=myuser
 TERMINAL_SSH_KEY=~/.ssh/id_rsa
 ```
 
-### Singularity/Apptainer
-
-```bash
-# Pre-build SIF for parallel workers
-apptainer build ~/python.sif docker://python:3.11-slim
-
-# Configure
-hermes config set terminal.backend singularity
-hermes config set terminal.singularity_image ~/python.sif
-```
-
-### Modal (Serverless Cloud)
-
-```bash
-uv pip install modal
-modal setup
-hermes config set terminal.backend modal
-```
-
-### Vercel Sandbox
-
-```bash
-pip install 'hermes-agent[vercel]'
-hermes config set terminal.backend vercel_sandbox
-hermes config set terminal.vercel_runtime node24
-```
-
-Authenticate with all three of `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, and `VERCEL_TEAM_ID`. This access-token setup is the supported path for deployments and normal long-running Hermes processes on Render, Railway, Docker, and similar hosts. Supported runtimes are `node24`, `node22`, and `python3.13`; Hermes defaults to `/vercel/sandbox` as the remote workspace root.
-
-For one-off local development, Hermes also accepts short-lived Vercel OIDC tokens:
-
-```bash
-VERCEL_OIDC_TOKEN="$(vc project token <project-name>)" hermes chat
-```
-
-From a linked Vercel project directory:
-
-```bash
-VERCEL_OIDC_TOKEN="$(vc project token)" hermes chat
-```
-
-With `container_persistent: true`, Hermes uses Vercel snapshots to preserve filesystem state across sandbox recreation for the same task. This can include Hermes-synced credentials, skills, and cache files inside the sandbox. Snapshots do not preserve live processes, PID space, or the same live sandbox identity.
-
-Background terminal commands use Hermes' generic non-local process flow: spawn, poll, wait, log, and kill work through the normal process tool while the sandbox is alive, but Hermes does not provide native Vercel detached-process recovery after cleanup or restart.
-
-Leave `container_disk` unset or at the shared default `51200`; custom disk sizing is unsupported for Vercel Sandbox and will fail diagnostics/backend creation.
-
 ### Container Resources
 
-Configure CPU, memory, disk, and persistence for all container backends:
+Configure CPU, memory, disk, and persistence for container backends:
 
 ```yaml
 terminal:
-  backend: docker  # or singularity, modal, daytona, vercel_sandbox
-  container_cpu: 1              # CPU cores (default: 1)
-  container_memory: 5120        # Memory in MB (default: 5GB)
-  container_disk: 51200         # Disk in MB (default: 50GB)
-  container_persistent: true    # Persist filesystem across sessions (default: true)
+  backend: docker
+  container_cpu: 1
+  container_memory: 5120
+  container_disk: 51200
+  container_persistent: true
 ```
 
-When `container_persistent: true`, installed packages, files, and config survive across sessions.
+When `container_persistent: true`, installed packages, generated datasets, and
+benchmark outputs can be reused across sessions.
 
 ### Container Security
 
-All container backends run with security hardening:
+Container backends run with security hardening where the backend supports it:
 
-- Read-only root filesystem (Docker)
-- All Linux capabilities dropped
-- No privilege escalation
-- PID limits (256 processes)
-- Full namespace isolation
-- Persistent workspace via volumes, not writable root layer
+- read-only root filesystem
+- Linux capabilities dropped
+- no privilege escalation
+- PID limits
+- namespace isolation
+- persistent workspace volumes instead of writable root layers
 
-Docker can optionally receive an explicit env allowlist via `terminal.docker_forward_env`, but forwarded variables are visible to commands inside the container and should be treated as exposed to that session.
+Forwarded environment variables are visible inside the container and should be
+treated as exposed to that session.
 
 ## Background Process Management
 
-Start background processes and manage them:
+Long model runs, data pulls, and backtests can run in the background.
 
 ```python
-terminal(command="pytest -v tests/", background=true)
+terminal(command="pytest -q tests/forecasting", background=true)
 # Returns: {"session_id": "proc_abc123", "pid": 12345}
 
-# Then manage with the process tool:
-process(action="list")       # Show all running processes
-process(action="poll", session_id="proc_abc123")   # Check status
-process(action="wait", session_id="proc_abc123")   # Block until done
-process(action="log", session_id="proc_abc123")    # Full output
-process(action="kill", session_id="proc_abc123")   # Terminate
-process(action="write", session_id="proc_abc123", data="y")  # Send input
+process(action="list")
+process(action="poll", session_id="proc_abc123")
+process(action="wait", session_id="proc_abc123")
+process(action="log", session_id="proc_abc123")
+process(action="kill", session_id="proc_abc123")
 ```
 
-PTY mode (`pty=true`) enables interactive CLI tools like Codex and Claude Code.
+PTY mode (`pty=true`) enables interactive CLI tools when a workflow needs a real
+terminal.
 
 ## Sudo Support
 
-If a command needs sudo, you'll be prompted for your password (cached for the session). Or set `SUDO_PASSWORD` in `~/.hermes/.env`.
+If a command needs sudo, the CLI can prompt for a password and cache it for the
+session. You can also set `SUDO_PASSWORD` in the profile `.env`, but prefer
+keeping forecasting workflows reproducible without privileged commands.
 
 :::warning
-On messaging platforms, if sudo fails, the output includes a tip to add `SUDO_PASSWORD` to `~/.hermes/.env`.
+Messaging platforms and non-interactive jobs should avoid sudo. A scheduled
+self-check that needs elevated privileges is brittle and difficult to audit.
 :::

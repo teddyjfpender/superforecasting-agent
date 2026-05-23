@@ -1,6 +1,7 @@
 """Tests for banner toolset name normalization and skin color usage."""
 
 from unittest.mock import patch
+import os
 
 from rich.console import Console
 
@@ -70,6 +71,31 @@ def test_build_welcome_banner_uses_normalized_toolset_names():
     assert "web_tools:" not in output
 
 
+def test_build_welcome_banner_uses_forecast_branding():
+    """The first-run wide banner should not expose inherited Hermes art."""
+    with (
+        patch.object(model_tools, "check_tool_availability", return_value=(["web"], [])),
+        patch.object(banner, "get_available_skills", return_value={}),
+        patch.object(banner, "get_update_result", return_value=None),
+        patch.object(tools.mcp_tool, "get_mcp_status", return_value=[]),
+        patch.object(banner, "get_latest_release_tag", return_value=None),
+        patch.object(banner.shutil, "get_terminal_size", return_value=os.terminal_size((160, 40))),
+    ):
+        console = Console(record=True, force_terminal=False, color_system=None, width=160)
+        banner.build_welcome_banner(
+            console=console,
+            model="anthropic/test-model",
+            cwd="/tmp/project",
+            tools=[{"function": {"name": "web_search"}}],
+            get_toolset_for_tool=lambda name: "web",
+        )
+
+    output = console.export_text()
+    assert "SUPERFORECASTING AGENT" in output
+    assert "CLI forecasting desk" in output
+    assert "HERMES-AGENT" not in output
+
+
 def test_build_welcome_banner_title_is_hyperlinked_to_release():
     """Panel title (version label) is wrapped in an OSC-8 hyperlink to the GitHub release."""
     import io
@@ -79,7 +105,10 @@ def test_build_welcome_banner_title_is_hyperlinked_to_release():
     import tools.mcp_tool as _mcp
 
     _banner._latest_release_cache = None
-    tag_url = ("v2026.4.23", "https://github.com/NousResearch/hermes-agent/releases/tag/v2026.4.23")
+    tag_url = (
+        "v2026.4.23",
+        "https://github.com/NousResearch/superforecasting-agent/releases/tag/v2026.4.23",
+    )
 
     buf = io.StringIO()
     with (
@@ -99,7 +128,7 @@ def test_build_welcome_banner_title_is_hyperlinked_to_release():
 
     raw = buf.getvalue()
     # The existing version label must still be present in the title
-    assert "Hermes Agent v" in raw, "Version label missing from title"
+    assert "Superforecasting Agent v" in raw, "Version label missing from title"
     # OSC-8 hyperlink escape sequence present with the release URL
     assert "\x1b]8;" in raw, "OSC-8 hyperlink not emitted"
     assert "releases/tag/v2026.4.23" in raw, "Release URL missing from banner output"
@@ -131,5 +160,5 @@ def test_build_welcome_banner_title_falls_back_when_no_tag():
         )
 
     raw = buf.getvalue()
-    assert "Hermes Agent v" in raw, "Version label missing from title"
+    assert "Superforecasting Agent v" in raw, "Version label missing from title"
     assert "\x1b]8;" not in raw, "OSC-8 hyperlink should not be emitted without a tag"

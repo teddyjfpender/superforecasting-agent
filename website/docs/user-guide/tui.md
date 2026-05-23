@@ -1,265 +1,294 @@
 ---
 sidebar_position: 2
 title: "TUI"
-description: "Launch the modern terminal UI for Hermes — mouse-friendly, rich overlays, and non-blocking input."
+description: "Run the forecast desk in a rich terminal UI with dashboard panels, lifecycle shortcuts, and non-blocking input."
 ---
 
 # TUI
 
-The TUI is the modern front-end for Hermes — a terminal UI backed by the same Python runtime as the [Classic CLI](cli.md). Same agent, same sessions, same slash commands; a cleaner, more responsive surface for interacting with them.
+The TUI is the rich terminal surface for the Superforecasting Agent forecast
+desk. It uses the same Python runtime, sessions, tools, and forecast ledger as
+the classic CLI, but adds structured panels, modal pickers, non-blocking input,
+and forecast lifecycle shortcuts.
 
-It's the recommended way to run Hermes interactively.
+Use it when you want to keep an active forecasting book open while researching,
+updating, resolving, scoring, and reviewing questions.
 
 ## Launch
 
 ```bash
 # Launch the TUI
-hermes --tui
+superforecasting-agent --tui
 
-# Resume the latest TUI session (falls back to the latest classic session)
-hermes --tui -c
-hermes --tui --continue
+# Resume the latest TUI session
+superforecasting-agent --tui -c
+superforecasting-agent --tui --continue
 
 # Resume a specific session by ID or title
-hermes --tui -r 20260409_000000_aa11bb
-hermes --tui --resume "my t0p session"
+superforecasting-agent --tui -r 20260409_000000_aa11bb
+superforecasting-agent --tui --resume "macro desk"
 
-# Run source directly — skips the prebuild step (for TUI contributors)
-hermes --tui --dev
+# Run source directly for TUI development
+superforecasting-agent --tui --dev
 ```
 
-You can also enable it via env var:
+You can also opt in with the compatibility environment variable:
 
 ```bash
 export HERMES_TUI=1
-hermes          # now uses the TUI
-hermes chat     # same
+superforecasting-agent chat
 ```
 
-The classic CLI remains available as the default. Anything documented in [CLI Interface](cli.md) — slash commands, quick commands, skill preloading, personalities, multi-line input, interrupts — works in the TUI identically.
+Legacy `hermes --tui` remains accepted. New docs prefer
+`superforecasting-agent --tui`.
 
-## Why the TUI
+## Forecast Desk Panel
 
-- **Instant first frame** — the banner paints before the app finishes loading, so the terminal never feels frozen while Hermes is starting.
-- **Non-blocking input** — type and queue messages before the session is ready. Your first prompt sends the moment the agent comes online.
-- **Rich overlays** — model picker, session picker, approval and clarification prompts all render as modal panels rather than inline flows.
-- **Live session panel** — tools and skills fill in progressively as they initialize.
-- **Mouse-friendly selection** — drag to highlight with a uniform background instead of SGR inverse. Copy with your terminal's normal copy gesture.
-- **Alternate-screen rendering** — differential updates mean no flicker when streaming, no scrollback clutter after you quit.
-- **Composer affordances** — inline paste-collapse for long snippets, `Cmd+V` / `Ctrl+V` text paste with clipboard-image fallback, bracketed-paste safety, and image/file-path attachment normalization.
+On startup the TUI can render the same forecast dashboard used by the CLI:
 
-Same [skins](features/skins.md) and [personalities](features/personality.md) apply. Switch mid-session with `/skin ares`, `/personality pirate`, and the UI repaints live. See [Skins & Themes](features/skins.md) for the full list of customizable keys and which ones apply to classic vs TUI — the TUI honors the banner palette, UI colors, prompt glyph/color, session display, completion menu, selection bg, `tool_prefix`, and `help_header`.
+- active forecasts with current probability, as-of timestamp, close time, and
+  stale-review state
+- open alerts and watched-source changes
+- review queue and next actions
+- calibration health and recent scores
+- learning memory, active lessons, and domain/topic error profiles
+- recent backtests and baseline comparisons
 
-### Collapsible banner sections
+Use `/forecast` at any time to refresh the panel. Use `/forecast <subcommand>`
+to run any forecast CLI command from inside the TUI.
 
-The TUI startup banner groups runtime info into four collapsible sections, each rendered with a `▸` / `▾` chevron next to the section title:
+On wide terminals, the TUI also keeps a compact forecast desk rail beside the
+transcript. The rail is refreshed from the same dashboard data and keeps the
+active book count, triage queue, at-risk forecasts, evidence-readiness gaps, and
+recent backtest provenance visible while you research or update a question.
 
-| Section | Default state |
-|---------|---------------|
-| Tools | Open |
-| Skills | Collapsed |
-| System Prompt | Collapsed |
-| MCP Servers | Collapsed |
+The composer also keeps a one-line `desk actions` strip derived from the same
+triage state. It stays visible on narrower terminals where the side rail cannot
+fit, and prioritizes alert review, stale-forecast review, benchmark-readiness
+gaps, lesson review, self-checks, and backtest commands.
 
-Click anywhere on a section header (or its chevron) to toggle it. The Tools list opens by default because it's the most-checked section at session start; Skills, System Prompt, and MCP Servers collapse by default so the banner stays compact even when you've installed dozens of skills or wired up many MCP servers. State is local to the banner instance, so the next launch resets to the defaults.
+Examples:
+
+```text
+/forecast
+/forecast review --stale
+/forecast sources
+/forecast import stooq AAPL.US --question <id>
+/forecast import githubissues owner/repo --question <id>
+/forecast import hackernews "product query" --question <id>
+/forecast import reddit "topic query" --question <id>
+/forecast import cisakev CVE-2026-0001 --question <id>
+/forecast import clinicaltrials NCT01234567 --question <id>
+/forecast import openfda BLA125514 --question <id>
+/forecast backtest --benchmarks
+/forecast schedule list
+```
+
+## Forecast Shortcuts
+
+Common desk workflows have direct slash commands:
+
+| Command | Runs |
+|---------|------|
+| `/new-forecast` | Create a scoreable question |
+| `/ingest` | Stage a URL or file as a forecast candidate |
+| `/evidence` | Add or inspect timestamped evidence |
+| `/research` | Collect evidence without moving probability |
+| `/base-rate` | Add or inspect reference-class work |
+| `/model-run` | Record a quantitative forecast model run |
+| `/update-forecast` | Append a probability snapshot |
+| `/resolve` | Record a resolution |
+| `/score` | Score a resolved question |
+| `/postmortem` | Write structured error analysis |
+| `/review` | Inspect stale or active forecasts |
+| `/alerts` | List or acknowledge forecast alerts |
+| `/sources` | List evidence source adapters and watch prefixes |
+| `/calibration` | Show calibration summaries |
+| `/lessons` | Review calibration lessons |
+| `/errors` | Inspect domain/topic error profiles |
+| `/backtest` | Run or inspect historical replay datasets |
+| `/schedule` | List or manage scheduled self-checks |
+| `/self-check` | Create review alerts for stale or changed forecasts |
+| `/performance` | Summarize recent backtest performance |
+| `/pilot-report` | Check tester pilot artifact coverage |
+| `/pilot-aggregate` | Aggregate tester export packets |
+
+These commands route to the forecast CLI and refresh desk counters when they
+complete.
+
+## Why Use The TUI
+
+- The forecast dashboard stays visible while you work.
+- Input is non-blocking, so you can queue the next research or update command
+  while a tool is still running.
+- Model, session, approval, and clarification flows render as modal panels.
+- Tool calls, reasoning, and results can stay expanded without flooding the
+  scrollback.
+- Slash command completion shows command descriptions and arguments.
+- The status bar tracks active forecast workload, alerts, review pressure,
+  calibration samples, and learned lessons.
+
+The TUI is not a second product surface. It is the terminal interface for the
+same ledger and CLI workflows.
 
 ## Requirements
 
-- **Node.js** ≥ 20 — the TUI runs as a subprocess launched from the Python CLI. `hermes doctor` verifies this.
-- **TTY** — like the classic CLI, piping stdin or running in non-interactive environments falls back to single-query mode.
+- Node.js 20 or newer
+- An interactive TTY
+- A configured model provider
 
-On first launch Hermes installs the TUI's Node dependencies into `ui-tui/node_modules` (one-time, a few seconds). Subsequent launches are fast. If you pull a new Hermes version, the TUI bundle is rebuilt automatically when sources are newer than the dist.
+`superforecasting-agent doctor` checks the local prerequisites. On first launch
+the TUI installs Node dependencies into `ui-tui/node_modules` if needed. Packaged
+installs may ship a prebuilt bundle.
 
-### External prebuild
-
-Distributions that ship a prebuilt bundle (Nix, system packages) can point Hermes at it:
+### External Prebuild
 
 ```bash
 export HERMES_TUI_DIR=/path/to/prebuilt/ui-tui
-hermes --tui
+superforecasting-agent --tui
 ```
 
 The directory must contain `dist/entry.js`.
 
 ## Keybindings
 
-Keybindings match the [Classic CLI](cli.md#keybindings) exactly. The only behavioral differences:
+Keybindings mostly match the classic CLI:
 
-- **Mouse drag** highlights text with a uniform selection background.
-- **`Cmd+V` / `Ctrl+V`** first tries normal text paste, then falls back to OSC52/native clipboard reads, and finally image attach when the clipboard or pasted payload resolves to an image.
-- **`/terminal-setup`** installs local VS Code / Cursor / Windsurf terminal bindings for better `Cmd+Enter` and undo/redo parity on macOS.
-- **Slash autocompletion** opens as a floating panel with descriptions, not an inline dropdown.
-- **`Ctrl+X`** — when a queued message is highlighted (sent while the agent was still running), delete it from the queue. **`Esc`** cancels editing and unhighlights without deleting.
-- **`Ctrl+G` / `Ctrl+X Ctrl+E`** — open the current input buffer in `$EDITOR` for multi-line / long-prompt composition; save-and-exit sends the contents back as the prompt.
+- `Cmd+V` / `Ctrl+V` paste text, then fall back to clipboard/image attachment
+  handling when supported.
+- Slash autocompletion opens as a floating panel.
+- `Ctrl+X` deletes a highlighted queued message.
+- `Esc` cancels editing and unhighlights without deleting.
+- `Ctrl+G` / `Ctrl+X Ctrl+E` open the current input buffer in `$EDITOR` for
+  long prompt composition.
+- `/terminal-setup` installs local VS Code, Cursor, or Windsurf terminal
+  bindings for better `Cmd+Enter` and undo/redo behavior on macOS.
 
-## Slash commands
+## Slash Commands
 
-All slash commands work unchanged. A few are TUI-owned — they produce richer output or render as overlays rather than inline panels:
+Forecast shortcuts are listed above. TUI-owned runtime commands render richer
+output or overlays:
 
 | Command | TUI behavior |
 |---------|--------------|
-| `/help` | Overlay with categorized commands, arrow-key navigable |
-| `/sessions` | Modal session picker — preview, title, token totals, resume inline |
-| `/model` | Modal model picker grouped by provider, with cost hints |
-| `/skin` | Live preview — theme change applies as you browse |
-| `/details` | Toggle verbose tool-call details (global or per-section) |
-| `/usage` | Rich token / cost / context panel |
-| `/agents` (alias `/tasks`) | Observability overlay — live subagent tree with kill/pause controls, per-branch cost / token / file rollups, turn-by-turn history |
-| `/reload` | Re-reads `~/.hermes/.env` into the running TUI process so newly added API keys take effect without a restart |
-| `/mouse` | Toggle mouse tracking on/off at runtime (also persists to `display.mouse_tracking` in `config.yaml`) |
+| `/help` | Overlay with categorized commands |
+| `/sessions` | Modal session picker with previews and token totals |
+| `/model` | Modal model picker grouped by provider |
+| `/skin` | Live theme preview |
+| `/details` | Toggle reasoning/tool/subagent/activity panels |
+| `/usage` | Token, cost, and context panel |
+| `/agents` or `/tasks` | Live subagent and background-task overlay |
+| `/reload` | Re-read the active profile `.env` without restarting |
+| `/mouse` | Toggle mouse tracking and persist the setting |
 
-Every other slash command (including installed skills, quick commands, and personality toggles) works identically to the classic CLI. See [Slash Commands Reference](../reference/slash-commands.md).
+Installed skills, quick commands, personality toggles, and inherited runtime
+slash commands continue to work. See [Slash Commands Reference](../reference/slash-commands.md).
 
-## LaTeX math rendering
+## Status Line
 
-The TUI's markdown pipeline renders LaTeX math inline: `$E = mc^2$` and `$$\frac{a}{b}$$` render as Unicode-formatted math instead of the raw TeX source. Works for inline and block math; unsupported syntax falls back to showing the literal TeX wrapped in a code span so it remains copyable.
-
-This is always-on — nothing to configure. Classic CLI keeps the raw TeX.
-
-## Light-terminal detection
-
-The TUI auto-detects light terminals and swaps to the light theme accordingly. Detection works in three layers:
-
-1. `HERMES_TUI_THEME` env var — highest priority. Values: `light`, `dark`, or a raw 6-char background hex (e.g. `ffffff`, `1a1a2e`).
-2. `COLORFGBG` env var — the classic "what's my background color?" hint used by xterm-derived terminals.
-3. Terminal background probe via OSC 11 — works on modern terminals (Ghostty, Warp, iTerm2, WezTerm, Kitty) that don't set `COLORFGBG`.
-
-If you want the light theme permanently regardless of terminal:
-
-```bash
-export HERMES_TUI_THEME=light
-```
-
-## Busy indicator styles
-
-The status-bar busy indicator is pluggable — the default rotates Hermes' kawaii face palette every 2.5 seconds during agent work. Pick a different style via config or the `/indicator` slash command:
-
-```yaml
-display:
-  tui_status_indicator: kaomoji   # kaomoji | emoji | unicode | ascii
-```
-
-Or in-session: `/indicator emoji` (etc.). Styles ship with matched glyph widths so the rest of the status bar doesn't jitter on rotation.
-
-## Auto-resume
-
-By default, `hermes --tui` starts a fresh session each launch. To re-attach to the most recent TUI session automatically (useful when your terminal or SSH connection drops unexpectedly), opt in:
-
-```bash
-export HERMES_TUI_RESUME=1          # most-recent TUI session
-# or:
-export HERMES_TUI_RESUME=<session-id>   # specific session
-```
-
-Unset the variable or pass `--resume <id>` explicitly to override on a per-launch basis.
-
-## Status line
-
-The TUI's status line tracks agent state in real time:
+The status line tracks both runtime state and forecast workload:
 
 | Status | Meaning |
 |--------|---------|
-| `starting agent…` | Session ID is live; tools and skills still coming online. You can type — messages queue and send when ready. |
-| `ready` | Agent is idle, accepting input. |
-| `thinking…` / `running…` | Agent is reasoning or running a tool. |
-| `interrupted` | Current turn was cancelled; press Enter to send again. |
-| `forging session…` / `resuming…` | Initial connect or `--resume` handshake. |
+| `starting forecast desk...` | Session exists; tools and skills are still initializing |
+| `ready` | Agent is idle and accepting input |
+| `thinking...` / `running...` | The current turn is reasoning or running a tool |
+| `interrupted` | The current turn was cancelled |
+| `resuming...` | The TUI is attaching to a prior session |
 
-The per-skin status-bar colors and thresholds are shared with the classic CLI — see [Skins](features/skins.md) for customization.
+The desk counters show active forecasts, open alerts, review queue size,
+calibration sample counts, and learned lessons when available.
 
-The status line also shows:
+Other status-line fields include working directory, git branch, elapsed turn
+time, session duration, context compression count, background task count, and a
+visible warning when auto-approval/YOLO mode is active.
 
-- **Working directory with git branch** — `~/projects/hermes-agent (docs/two-week-gap-sweep)`. The branch suffix updates when you `git checkout` in a side terminal (mtime-cached) so the TUI reflects your actual active branch, not whatever it was at launch.
-- **Per-prompt elapsed time** — `⏱ 12s/3m 45s` while the turn is running (live), frozen to `⏲ 32s / 3m 45s` after the turn completes. First number is time since last user message; second is total session duration. Resets on every new prompt.
-- **`🗜️ N`** — number of times the running session has been auto-compressed. Appears once the first compression fires.
-- **`▶ N`** — number of `/background` tasks currently running in this session. Appears whenever at least one task is in flight.
-- **`⚠ YOLO`** — visible warning whenever YOLO mode is on (`hermes --yolo`, `/yolo`, or `HERMES_YOLO_MODE=1`). The same badge also appears in the startup banner so you cannot launch an auto-approving session without noticing.
+## Details Panels
 
-## Configuration
-
-The TUI respects all standard Hermes config: `~/.hermes/config.yaml`, profiles, personalities, skins, quick commands, credential pools, memory providers, tool/skill enablement. No TUI-specific config file exists.
-
-A handful of keys tune the TUI surface specifically:
+The TUI uses details panels instead of long inline dumps:
 
 ```yaml
 display:
-  skin: default              # any built-in or custom skin
-  personality: helpful
-  details_mode: collapsed    # hidden | collapsed | expanded — global accordion default
-  sections:                  # optional: per-section overrides (any subset)
-    thinking: expanded       # always open
-    tools: expanded          # always open
-    activity: collapsed      # opt back IN to the activity panel (hidden by default)
-  mouse_tracking: true       # disable if your terminal conflicts with mouse reporting
+  details_mode: collapsed
+  sections:
+    thinking: expanded
+    tools: expanded
+    subagents: collapsed
+    activity: hidden
 ```
 
 Runtime toggles:
 
-- `/details [hidden|collapsed|expanded|cycle]` — set the global mode
-- `/details <section> [hidden|collapsed|expanded|reset]` — override one section
-  (sections: `thinking`, `tools`, `subagents`, `activity`)
+```text
+/details
+/details tools collapsed
+/details thinking expanded
+/details activity hidden
+```
 
-**Default visibility**
+Defaults are chosen for forecast work: reasoning and tools are visible, ambient
+activity stays quiet, and subagent detail stays collapsed until used.
 
-The TUI ships with opinionated per-section defaults that stream the turn as
-a live transcript instead of a wall of chevrons:
+## Configuration
 
-- `thinking` — **expanded**. Reasoning streams inline as the model emits it.
-- `tools` — **expanded**. Tool calls and their results render open.
-- `subagents` — falls through to the global `details_mode` (collapsed under
-  chevron by default — stays quiet until a delegation actually happens).
-- `activity` — **hidden**. Ambient meta (gateway hints, terminal-parity
-  nudges, background notifications) is noise for most day-to-day use. Tool
-  failures still render inline on the failing tool row; ambient
-  errors/warnings surface via a floating-alert backstop when every panel
-  is hidden.
+The TUI uses the standard active profile. There is no separate TUI config file.
 
-Per-section overrides take precedence over both the section default and the
-global `details_mode`. To reshape the layout:
+```yaml
+display:
+  skin: forecast
+  tui_status_indicator: unicode
+  mouse_tracking: true
+```
 
-- `display.sections.thinking: collapsed` — put thinking back under a chevron
-- `display.sections.tools: collapsed` — put tool calls back under a chevron
-- `display.sections.activity: collapsed` — opt the activity panel back in
-- `/details <section> <mode>` at runtime
+Relevant environment variables:
 
-Anything set explicitly in `display.sections` wins over the defaults, so
-existing configs keep working unchanged.
+| Variable | Purpose |
+|----------|---------|
+| `HERMES_TUI` | Launch TUI mode when set to `1` |
+| `HERMES_TUI_RESUME` | Resume the latest or a specific TUI session |
+| `HERMES_TUI_THEME` | Force `light`, `dark`, or a background hex color |
+| `HERMES_TUI_DIR` | Use a prebuilt TUI bundle |
+| `HERMES_TUI_GATEWAY_URL` | Attach to an existing gateway websocket |
 
-## Sessions
+These names are retained for compatibility with the inherited runtime.
 
-Sessions are shared between the TUI and the classic CLI — both write to the same `~/.hermes/state.db`. You can start a session in one, resume in the other. The session picker surfaces sessions from both sources, with a source tag.
+## Research Sessions
 
-See [Sessions](sessions.md) for lifecycle, search, compression, and export.
+TUI and classic CLI sessions share the same session store under the active
+agent home. You can start in one surface and resume in the other.
 
-## Attaching to a running gateway
+Forecast learning state is separate from chat session transcripts. Questions,
+evidence, snapshots, scores, postmortems, backtests, alerts, and lessons live in
+the forecast ledger.
 
-By default the TUI spawns its own in-process gateway, so each TUI instance is self-contained. If you already have a long-lived gateway running (e.g. `hermes gateway run` in tmux, or the systemd / launchd service), you can point the TUI at that gateway instead — the TUI then becomes a thin client and shares state with every other surface (messaging platforms, web dashboard, other TUI sessions) that's attached to the same gateway.
+See [Research Sessions](sessions.md) for session lifecycle, search, compression, and
+export.
 
-Set the websocket URL via env before launching:
+## Attaching To A Running Gateway
+
+By default the TUI spawns its own local gateway process. To attach to an
+existing gateway:
 
 ```bash
 export HERMES_TUI_GATEWAY_URL="ws://localhost:8765/api/ws?token=<auth-token>"
-hermes --tui
+superforecasting-agent --tui
 ```
 
-The token comes from the gateway's API auth configuration (see [API Server](features/api-server.md)). When the env var is set, the TUI:
+When set, the TUI becomes a client of that gateway. This is the same channel the
+web dashboard uses for the embedded terminal experience.
 
-- Skips spawning a local gateway entirely — no duplicate platform adapters, no port conflicts.
-- Routes every action (slash commands, image attach, browser progress, voice events, …) over the websocket to the shared gateway.
-- Reconnects automatically if the gateway URL rotates (new token) between requests.
+## Reverting To The Classic CLI
 
-This is the same channel the web dashboard's embedded TUI uses (see [Web Dashboard](features/web-dashboard.md#chat)) — one gateway, many clients.
+Unset `HERMES_TUI` or launch the normal CLI command without `--tui`.
 
-## Reverting to the classic CLI
+If the TUI cannot launch because Node, the bundle, or a TTY is unavailable, the
+runtime prints a diagnostic and falls back instead of leaving the session
+unusable.
 
-Launching `hermes` (without `--tui`) stays on the classic CLI. To make a machine prefer the TUI, set `HERMES_TUI=1` in your shell profile. To go back, unset it.
+## See Also
 
-If the TUI fails to launch (no Node, missing bundle, TTY issue), Hermes prints a diagnostic and falls back — rather than leaving you stuck.
-
-## See also
-
-- [CLI Interface](cli.md) — full slash command and keybinding reference (shared)
-- [Sessions](sessions.md) — resume, branch, and history
-- [Skins & Themes](features/skins.md) — theme the banner, status bar, and overlays
-- [Voice Mode](features/voice-mode.md) — works in both interfaces
-- [Configuration](configuration.md) — all config keys
+- [CLI Interface](cli.md)
+- [Configuration](configuration.md)
+- [Forecast Tools](features/tools.md)
+- [Scheduled Self-Checks](features/cron.md)
+- [Web Dashboard](features/web-dashboard.md)

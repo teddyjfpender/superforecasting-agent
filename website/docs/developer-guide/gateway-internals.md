@@ -6,7 +6,7 @@ description: "How the messaging gateway boots, authorizes users, routes sessions
 
 # Gateway Internals
 
-The messaging gateway is the long-running process that connects Hermes to 20+ external messaging platforms through a unified architecture.
+The messaging gateway is the inherited long-running process that connects Superforecasting Agent to 20+ external messaging platforms through a unified architecture. It is a secondary surface for notifications, remote commands, approvals, and scheduled forecast review delivery; the CLI forecast desk and forecast ledger remain the primary product surfaces.
 
 ## Key Files
 
@@ -73,7 +73,7 @@ Session keys encode the full routing context:
 agent:main:{platform}:{chat_type}:{chat_id}
 ```
 
-For example: `agent:main:telegram:private:123456789`
+For example: `agent:main:telegram:private:123456789`. The `agent:main` prefix is an inherited wire/storage identifier, not a product name.
 
 Thread-aware platforms (Telegram forum topics, Discord threads, Slack threads) may include thread IDs in the chat_id portion. **Never construct session keys manually** — always use `build_session_key()` from `gateway/session.py`.
 
@@ -135,9 +135,11 @@ The gateway reads configuration from multiple sources:
 
 | Source | What it provides |
 |--------|-----------------|
-| `~/.hermes/.env` | API keys, bot tokens, platform credentials |
-| `~/.hermes/config.yaml` | Model settings, tool configuration, display options |
+| `~/.superforecasting-agent/.env` | API keys, bot tokens, platform credentials |
+| `~/.superforecasting-agent/config.yaml` | Model settings, tool configuration, forecast-desk display options |
 | Environment variables | Override any of the above |
+
+Legacy `~/.hermes/.env` and `~/.hermes/config.yaml` paths remain accepted for inherited installations.
 
 Unlike the CLI (which uses `load_cli_config()` with hardcoded defaults), the gateway reads `config.yaml` directly via YAML loader. This means config keys that exist in the CLI's defaults dict but not in the user's config file may behave differently between CLI and gateway.
 
@@ -185,11 +187,11 @@ Adapters that connect with unique credentials call `acquire_scoped_lock()` in `c
 Outgoing deliveries (`gateway/delivery.py`) handle:
 
 - **Direct reply** — send response back to the originating chat
-- **Home channel delivery** — route cron job outputs and background results to a configured home channel
-- **Explicit target delivery** — `send_message` tool specifying `telegram:-1001234567890`, or the [`hermes send` CLI](/docs/guides/pipe-script-output) wrapping the same tool for shell scripts
+- **Home channel delivery** — route scheduled forecast review outputs and background results to a configured home channel
+- **Explicit target delivery** — `send_message` tool specifying `telegram:-1001234567890`, or the [`superforecasting-agent send` CLI](/docs/guides/pipe-script-output) wrapping the same tool for shell scripts
 - **Cross-platform delivery** — deliver to a different platform than the originating message
 
-Cron job deliveries are NOT mirrored into gateway session history — they live in their own cron session only. This is a deliberate design choice to avoid message alternation violations.
+Cron job deliveries are NOT mirrored into gateway session history — they live in their own cron session only. Forecast lifecycle changes should be written through the forecast ledger, not inferred from delivered chat messages.
 
 ## Hooks
 
@@ -208,7 +210,7 @@ Gateway hooks are Python modules that respond to lifecycle events:
 | `agent:end` | Agent finishes and returns response |
 | `command:*` | Any slash command is executed |
 
-Hooks are discovered from `gateway/builtin_hooks/` (an extension point — currently empty in the shipped distribution; `_register_builtin_hooks()` is a no-op stub) and `~/.hermes/hooks/` (user-installed). Each hook is a directory with a `HOOK.yaml` manifest and `handler.py`.
+Hooks are discovered from `gateway/builtin_hooks/` (an extension point — currently empty in the shipped distribution; `_register_builtin_hooks()` is a no-op stub) and `~/.superforecasting-agent/hooks/` (user-installed; legacy `~/.hermes/hooks/` remains accepted). Each hook is a directory with a `HOOK.yaml` manifest and `handler.py`.
 
 ## Memory Provider Integration
 
@@ -226,6 +228,8 @@ AIAgent._invoke_tool()
 
 4. On session end/reset, `on_session_end()` fires for cleanup and final data flush
 
+Memory providers are supporting recall infrastructure. Scoreable forecasts, evidence, source snapshots, model runs, resolutions, scores, postmortems, calibration lessons, and domain error profiles belong in the forecast ledger.
+
 ### Memory Flush Lifecycle
 
 When a session is reset, resumed, or expires:
@@ -238,7 +242,7 @@ When a session is reset, resumed, or expires:
 
 The gateway runs periodic maintenance alongside message handling:
 
-- **Cron ticking** — checks job schedules and fires due jobs
+- **Cron ticking** — checks job schedules and fires due jobs, including scheduled forecast self-checks and stale-review notifications
 - **Session expiry** — cleans up abandoned sessions after timeout
 - **Memory flush** — proactively flushes memory before session expiry
 - **Cache refresh** — refreshes model lists and provider status
@@ -247,11 +251,11 @@ The gateway runs periodic maintenance alongside message handling:
 
 The gateway runs as a long-lived process, managed via:
 
-- `hermes gateway start` / `hermes gateway stop` — manual control
+- `superforecasting-agent gateway start` / `superforecasting-agent gateway stop` — manual control
 - `systemctl` (Linux) or `launchctl` (macOS) — service management
-- PID file at `~/.hermes/gateway.pid` — profile-scoped process tracking
+- PID file at `~/.superforecasting-agent/gateway.pid` — profile-scoped process tracking
 
-**Profile-scoped vs global**: `start_gateway()` uses profile-scoped PID files. `hermes gateway stop` stops only the current profile's gateway. `hermes gateway stop --all` uses global `ps aux` scanning to kill all gateway processes (used during updates).
+**Profile-scoped vs global**: `start_gateway()` uses profile-scoped PID files. `superforecasting-agent gateway stop` stops only the current profile's gateway. `superforecasting-agent gateway stop --all` uses global `ps aux` scanning to kill all gateway processes (used during updates). Legacy `hermes gateway ...` commands remain compatibility aliases.
 
 ## Related Docs
 

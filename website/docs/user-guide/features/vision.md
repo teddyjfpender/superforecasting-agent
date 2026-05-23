@@ -1,183 +1,153 @@
 ---
 title: Vision & Image Paste
-description: Paste images from your clipboard into the Hermes CLI for multimodal vision analysis.
+description: Paste screenshots and images into the CLI for forecast-source inspection.
 sidebar_label: Vision & Image Paste
 sidebar_position: 7
 ---
 
 # Vision & Image Paste
 
-Hermes Agent supports **multimodal vision** — you can paste images from your clipboard directly into the CLI and ask the agent to analyze, describe, or work with them. Images are sent to the model as base64-encoded content blocks, so any vision-capable model can process them.
+Superforecasting Agent supports multimodal vision in the CLI. You can paste screenshots, charts, resolver pages, market screens, reports, or source images and ask a vision-capable model to inspect them.
+
+Vision is source-inspection support, not durable forecast state. A screenshot or image summary does not become evidence, a model run, a resolution, a score, or a calibration lesson until you explicitly record it in the forecast ledger with source metadata and an as-of timestamp.
 
 ## How It Works
 
-1. Copy an image to your clipboard (screenshot, browser image, etc.)
-2. Attach it using one of the methods below
-3. Type your question and press Enter
-4. The image appears as a `[📎 Image #1]` badge above the input
-5. On submit, the image is sent to the model as a vision content block
+1. Copy an image to your clipboard.
+2. Attach it with `/paste` or a supported paste path.
+3. Type your question and submit the message.
+4. The image appears as an attachment badge above the input.
+5. The image is sent to the model as a vision content block, or summarized by the configured auxiliary vision model for text-only models.
 
-You can attach multiple images before sending — each gets its own badge. Press `Ctrl+C` to clear all attached images.
+You can attach multiple images before sending. Press `Ctrl+C` to clear all attached images.
 
-Images are saved to `~/.hermes/images/` as PNG files with timestamped filenames.
+New profiles save pasted images under `~/.superforecasting-agent/images/` with timestamped filenames. Migrated profiles may still use `~/.hermes/images/`.
+
+## Forecast Uses
+
+Vision is useful for:
+
+- checking a chart before importing its underlying data
+- reading a screenshot of a resolver page or official source
+- inspecting a market screen when no structured adapter is available
+- summarizing a report image before deciding whether to capture it as evidence
+- reviewing dashboard, TUI, or benchmark-output screenshots while developing the fork
+
+Prefer structured source adapters, URLs, and file imports whenever possible. Screenshots are harder to audit and easier to misread than timestamped source snapshots.
 
 ## Paste Methods
 
-How you attach an image depends on your terminal environment. Not all methods work everywhere — here's the full breakdown:
-
 ### `/paste` Command
 
-**The most reliable explicit image-attach fallback.**
+Use `/paste` when the clipboard contains an image or when the terminal rewrites normal paste keys:
 
-```
+```text
 /paste
 ```
 
-Type `/paste` and press Enter. Hermes checks your clipboard for an image and attaches it. This is the safest option when your terminal rewrites `Cmd+V`/`Ctrl+V`, or when you copied only an image and there is no bracketed-paste text payload to inspect.
+The command checks your clipboard for an image and attaches it.
 
 ### Ctrl+V / Cmd+V
 
-Hermes now treats paste as a layered flow:
+Paste handling is layered:
+
 - normal text paste first
-- native clipboard / OSC52 text fallback if the terminal did not deliver text cleanly
+- native clipboard or OSC52 text fallback if terminal text paste was incomplete
 - image attach when the clipboard or pasted payload resolves to an image or image path
 
-This means pasted macOS screenshot temp paths and `file://...` image URIs can attach immediately instead of sitting in the composer as raw text.
+This means macOS screenshot temp paths and `file://...` image URIs can attach immediately instead of landing as raw text.
 
 :::warning
-If your clipboard has **only an image** (no text), terminals still cannot send binary image bytes directly. Use `/paste` as the explicit image-attach fallback.
+If your clipboard has only an image and no text, most terminals cannot send binary image bytes directly. Use `/paste` as the explicit image-attach fallback.
 :::
 
 ### `/terminal-setup` for VS Code / Cursor / Windsurf
 
-If you run the TUI inside a local VS Code-family integrated terminal on macOS, Hermes can install the recommended `workbench.action.terminal.sendSequence` bindings for better multiline and undo/redo parity:
+If you run the TUI inside a local VS Code-family integrated terminal on macOS, `/terminal-setup` can install recommended `workbench.action.terminal.sendSequence` bindings:
 
 ```text
 /terminal-setup
 ```
 
-This is especially useful when `Cmd+Enter`, `Cmd+Z`, or `Shift+Cmd+Z` are being intercepted by the IDE. Run it on the local machine only — not inside an SSH session.
+Run it on the local machine only, not inside an SSH session.
 
 ## Platform Compatibility
 
 | Environment | `/paste` | Cmd/Ctrl+V | `/terminal-setup` | Notes |
 |---|:---:|:---:|:---:|---|
-| **macOS Terminal / iTerm2** | ✅ | ✅ | n/a | Best experience — native clipboard + screenshot-path recovery |
-| **Apple Terminal** | ✅ | ✅ | n/a | If Cmd+←/→/⌫ gets rewritten, use Ctrl+A / Ctrl+E / Ctrl+U fallbacks |
-| **Linux X11 desktop** | ✅ | ✅ | n/a | Requires `xclip` (`apt install xclip`) |
-| **Linux Wayland desktop** | ✅ | ✅ | n/a | Requires `wl-paste` (`apt install wl-clipboard`) |
-| **WSL2 (Windows Terminal)** | ✅ | ✅ | n/a | Uses `powershell.exe` — no extra install needed |
-| **VS Code / Cursor / Windsurf (local)** | ✅ | ✅ | ✅ | Recommended for better Cmd+Enter / undo / redo parity |
-| **VS Code / Cursor / Windsurf (SSH)** | ❌² | ❌² | ❌³ | Run `/terminal-setup` on the local machine instead |
-| **SSH terminal (any)** | ❌² | ❌² | n/a | Remote clipboard not accessible |
-
-² See [SSH & Remote Sessions](#ssh--remote-sessions) below
-³ The command writes local IDE keybindings and should not be run from the remote host
+| macOS Terminal / iTerm2 | Yes | Yes | n/a | Native clipboard plus screenshot-path recovery |
+| Apple Terminal | Yes | Yes | n/a | If navigation keys are rewritten, use Ctrl+A / Ctrl+E / Ctrl+U |
+| Linux X11 desktop | Yes | Yes | n/a | Requires `xclip` |
+| Linux Wayland desktop | Yes | Yes | n/a | Requires `wl-paste` |
+| WSL2 with Windows Terminal | Yes | Yes | n/a | Uses `powershell.exe` |
+| VS Code / Cursor / Windsurf local terminal | Yes | Yes | Yes | Recommended for keybinding parity |
+| VS Code / Cursor / Windsurf over SSH | No | No | No | Run `/terminal-setup` locally instead |
+| SSH terminal | No | No | n/a | Remote clipboard is not available |
 
 ## Platform-Specific Setup
 
 ### macOS
 
-**No setup required.** Hermes uses `osascript` (built into macOS) to read the clipboard. For faster performance, optionally install `pngpaste`:
+No setup is required. The runtime uses `osascript` to read the clipboard. For faster performance, optionally install `pngpaste`:
 
 ```bash
 brew install pngpaste
 ```
 
-### Linux (X11)
+### Linux X11
 
 Install `xclip`:
 
 ```bash
-# Ubuntu/Debian
 sudo apt install xclip
-
-# Fedora
-sudo dnf install xclip
-
-# Arch
-sudo pacman -S xclip
 ```
 
-### Linux (Wayland)
+Use the equivalent package-manager command for Fedora, Arch, or another distribution.
 
-Modern Linux desktops (Ubuntu 22.04+, Fedora 34+) often use Wayland by default. Install `wl-clipboard`:
+### Linux Wayland
+
+Install `wl-clipboard`:
 
 ```bash
-# Ubuntu/Debian
 sudo apt install wl-clipboard
-
-# Fedora
-sudo dnf install wl-clipboard
-
-# Arch
-sudo pacman -S wl-clipboard
 ```
 
-:::tip How to check if you're on Wayland
+Check the active session type with:
+
 ```bash
 echo $XDG_SESSION_TYPE
-# "wayland" = Wayland, "x11" = X11, "tty" = no display server
 ```
-:::
 
 ### WSL2
 
-**No extra setup required.** Hermes detects WSL2 automatically (via `/proc/version`) and uses `powershell.exe` to access the Windows clipboard through .NET's `System.Windows.Forms.Clipboard`. This is built into WSL2's Windows interop — `powershell.exe` is available by default.
+No extra setup is required. WSL2 uses `powershell.exe` to access the Windows clipboard through .NET. Clipboard image data is transferred as base64-encoded PNG over stdout.
 
-The clipboard data is transferred as base64-encoded PNG over stdout, so no file path conversion or temp files are needed.
-
-:::info WSLg Note
-If you're running WSLg (WSL2 with GUI support), Hermes tries the PowerShell path first, then falls back to `wl-paste`. WSLg's clipboard bridge only supports BMP format for images — Hermes auto-converts BMP to PNG using Pillow (if installed) or ImageMagick's `convert` command.
-:::
-
-#### Verify WSL2 clipboard access
-
-```bash
-# 1. Check WSL detection
-grep -i microsoft /proc/version
-
-# 2. Check PowerShell is accessible
-which powershell.exe
-
-# 3. Copy an image, then check
-powershell.exe -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Clipboard]::ContainsImage()"
-# Should print "True"
-```
+If WSLg is present, the runtime tries PowerShell first, then falls back to `wl-paste`. WSLg clipboard images may arrive as BMP; the runtime converts them to PNG using Pillow or ImageMagick when available.
 
 ## SSH & Remote Sessions
 
-**Clipboard image paste does not fully work over SSH.** When you SSH into a remote machine, the Hermes CLI runs on the remote host. Clipboard tools (`xclip`, `wl-paste`, `powershell.exe`, `osascript`) read the clipboard of the machine they run on — which is the remote server, not your local machine. Your local clipboard image is therefore inaccessible from the remote side.
+Clipboard image paste does not fully work over SSH. Clipboard tools run on the remote host, so they read the remote clipboard rather than your local clipboard.
 
-Text can sometimes still bridge through terminal paste or OSC52, but image clipboard access and local screenshot temp paths remain tied to the machine running Hermes.
+Workarounds:
 
-### Workarounds for SSH
+- Upload the image file to the remote host and reference it by path.
+- Use a URL when the image is publicly accessible.
+- Use X11 forwarding with `ssh -X` when you have a local X server.
+- Send images through a messaging platform such as Telegram, Discord, Slack, or WhatsApp.
 
-1. **Upload the image file** — Save the image locally, upload it to the remote server via `scp`, VSCode's file explorer (drag-and-drop), or any file transfer method. Then reference it by path. *(A `/attach <filepath>` command is planned for a future release.)*
+## Why Terminals Cannot Paste Images
 
-2. **Use a URL** — If the image is accessible online, just paste the URL in your message. The agent can use `vision_analyze` to look at any image URL directly.
+Terminals are text-based interfaces. When you press Ctrl+V or Cmd+V, the terminal emulator usually:
 
-3. **X11 forwarding** — Connect with `ssh -X` to forward X11. This lets `xclip` on the remote machine access your local X11 clipboard. Requires an X server running locally (XQuartz on macOS, built-in on Linux X11 desktops). Slow for large images.
+1. Reads clipboard text.
+2. Wraps it in bracketed-paste escape sequences.
+3. Sends that text to the application.
 
-4. **Use a messaging platform** — Send images to Hermes via Telegram, Discord, Slack, or WhatsApp. These platforms handle image upload natively and are not affected by clipboard/terminal limitations.
-
-## Why Terminals Can't Paste Images
-
-This is a common source of confusion, so here's the technical explanation:
-
-Terminals are **text-based** interfaces. When you press Ctrl+V (or Cmd+V), the terminal emulator:
-
-1. Reads the clipboard for **text content**
-2. Wraps it in [bracketed paste](https://en.wikipedia.org/wiki/Bracketed-paste) escape sequences
-3. Sends it to the application through the terminal's text stream
-
-If the clipboard contains only an image (no text), the terminal has nothing to send. There is no standard terminal escape sequence for binary image data. The terminal simply does nothing.
-
-This is why Hermes uses a separate clipboard check — instead of receiving image data through the terminal paste event, it calls OS-level tools (`osascript`, `powershell.exe`, `xclip`, `wl-paste`) directly via subprocess to read the clipboard independently.
+If the clipboard contains only an image, there is no standard binary image payload for the terminal to send. The runtime therefore calls OS-level clipboard tools directly.
 
 ## Supported Models
 
-Image paste works with any vision-capable model. The image is sent as a base64-encoded data URL in the OpenAI vision content format:
+Image paste works with any vision-capable model. The image is sent as a base64-encoded data URL in the OpenAI-style vision content format:
 
 ```json
 {
@@ -188,23 +158,21 @@ Image paste works with any vision-capable model. The image is sent as a base64-e
 }
 ```
 
-Most modern models support this format, including GPT-4 Vision, Claude (with vision), Gemini, and open-source multimodal models served through OpenRouter.
+Many modern models support this format, including GPT vision models, Claude with vision, Gemini, and open-source multimodal models served through OpenRouter.
 
-## Image Routing (Vision-Capable vs Text-Only Models)
+## Image Routing
 
-When a user attaches an image — from the CLI clipboard, the gateway (Telegram/Discord photo), or any other entry point — Hermes routes it based on whether your current model actually supports vision:
+When a user attaches an image from the CLI clipboard, a gateway upload, or another entry point, the runtime checks whether the active model supports vision:
 
-| Your model | What happens to the image |
+| Model capability | What happens |
 |---|---|
-| **Vision-capable** (GPT-4V, Claude with vision, Gemini, Qwen-VL, MiMo-VL, etc.) | Sent as **real pixels** using the provider's native image content format above. No text summary layer. |
-| **Text-only** (DeepSeek V3, smaller open-source models, older chat-only endpoints) | Routed through the `vision_analyze` auxiliary tool — an auxiliary vision model describes the image, and the text description is injected into the conversation. |
+| Vision-capable | The image is sent as pixels using the provider's native image format. |
+| Text-only | The image is routed through `vision_analyze`; an auxiliary vision model describes it and the text summary is injected into the conversation. |
 
-You don't configure this — Hermes looks up your current model's capability in the provider metadata and picks the right path automatically. The practical effect: you can switch between vision and non-vision models mid-session and image handling "just works" without changing your workflow. Text-only models get coherent context about the image rather than a broken multimodal payload they'd have to reject.
+The auxiliary model is configured under `auxiliary.vision`; see [Auxiliary Models](/docs/user-guide/configuration#auxiliary-models).
 
-Which auxiliary model handles the text-description path is configurable under `auxiliary.vision` — see [Auxiliary Models](/docs/user-guide/configuration#auxiliary-models).
+### `vision_analyze`
 
-### `vision_analyze` has the same dual behavior
+The `vision_analyze` tool follows the same routing. When the active model and provider can carry image content inside tool results, the tool returns the raw image payload to the main model. Otherwise, it asks the configured auxiliary vision model for a plain-text description.
 
-The `vision_analyze` tool itself follows the same routing. When the active main model is vision-capable **and** its provider supports image content inside tool results (currently the Anthropic, OpenAI, Azure-OpenAI, and Gemini 3.x stacks), `vision_analyze` short-circuits the auxiliary describer and returns the raw image pixels as a multimodal tool-result envelope. The main model sees the image natively on its next turn — no aux call, no text-summary information loss, no extra latency.
-
-For text-only main models (or providers whose tool-result channel doesn't carry images), `vision_analyze` falls back to the legacy path: it asks the configured auxiliary vision model to describe the image and returns the description as plain text. Either way the calling tool signature is the same — the tool decides which path to take at runtime based on the active model.
+Either path is an inspection aid. Record any forecast-relevant claim separately in the ledger before relying on it for an update, score, resolution, or postmortem.

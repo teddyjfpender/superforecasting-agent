@@ -6,7 +6,7 @@ description: "Set up a local OpenAI-compatible LLM server on macOS with llama.cp
 
 # Run Local LLMs on Mac
 
-This guide walks you through running a local LLM server on macOS with an OpenAI-compatible API. You get full privacy, zero API costs, and surprisingly good performance on Apple Silicon.
+This guide walks you through running a local LLM server on macOS with an OpenAI-compatible API. You get full privacy, zero API costs, and enough local performance for forecast research, source summaries, and many review workflows on Apple Silicon.
 
 We cover two backends:
 
@@ -15,7 +15,7 @@ We cover two backends:
 | **llama.cpp** | `brew install llama.cpp` | Fastest time-to-first-token, quantized KV cache for low memory | GGUF |
 | **omlx** | [omlx.ai](https://omlx.ai) | Fastest token generation, native Metal optimization | MLX (safetensors) |
 
-Both expose an OpenAI-compatible `/v1/chat/completions` endpoint. Hermes works with either one — just point it at `http://localhost:8080` or `http://localhost:8000`.
+Both expose an OpenAI-compatible `/v1/chat/completions` endpoint. Superforecasting Agent works with either one — just point it at `http://localhost:8080` or `http://localhost:8000`.
 
 :::info Apple Silicon only
 This guide targets Macs with Apple Silicon (M1 and later). Intel Macs will work with llama.cpp but without GPU acceleration — expect significantly slower performance.
@@ -190,7 +190,7 @@ Both backends tested on the same machine (Apple M5 Max, 128 GB unified memory) r
 
 ### What this means
 
-- **llama.cpp** excels at prompt processing — its flash attention + quantized KV cache pipeline gets you the first token in ~66ms. If you're building interactive applications where perceived responsiveness matters (chatbots, autocomplete), this is a meaningful advantage.
+- **llama.cpp** excels at prompt processing — its flash attention + quantized KV cache pipeline gets you the first token in ~66ms. If you're building interactive workflows where perceived responsiveness matters, such as fast source triage or forecast review, this is a meaningful advantage.
 
 - **MLX** generates tokens ~37% faster once it gets going. For batch workloads, long-form generation, or any task where total completion time matters more than initial latency, MLX finishes sooner.
 
@@ -208,21 +208,27 @@ Both backends tested on the same machine (Apple M5 Max, 128 GB unified memory) r
 
 ---
 
-## Connect to Hermes
+## Connect to Superforecasting Agent
 
 Once your local server is running:
 
 ```bash
-hermes model
+superforecasting-agent model
 ```
 
 Select **Custom endpoint** and follow the prompts. It will ask for the base URL and model name — use the values from whichever backend you set up above.
+
+Then open the forecast desk:
+
+```bash
+forecast
+```
 
 ---
 
 ## Timeouts
 
-Hermes automatically detects local endpoints (localhost, LAN IPs) and relaxes its streaming timeouts. No configuration needed for most setups.
+Superforecasting Agent automatically detects local endpoints (localhost, LAN IPs) and relaxes its streaming timeouts. No configuration needed for most setups.
 
 If you still hit timeout errors (e.g. very large contexts on slow hardware), you can override the streaming read timeout:
 

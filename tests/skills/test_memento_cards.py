@@ -36,6 +36,14 @@ def _run(capsys, argv: list[str]) -> dict:
     return json.loads(captured.out)
 
 
+def test_agent_home_prefers_fork_env_vars(tmp_path, monkeypatch):
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path / "superforecasting"))
+    monkeypatch.setenv("FORECAST_HOME", str(tmp_path / "forecast"))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "legacy"))
+
+    assert memento_cards._agent_home() == tmp_path / "superforecasting"
+
+
 # ── Add / List / Delete ──────────────────────────────────────────────────────
 
 class TestCardCRUD:

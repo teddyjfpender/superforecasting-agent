@@ -1,14 +1,16 @@
 ---
 sidebar_position: 5
 title: "Microsoft Teams"
-description: "Set up Hermes Agent as a Microsoft Teams bot"
+description: "Set up Superforecasting Agent as a Microsoft Teams forecast-desk bot."
 ---
 
 # Microsoft Teams Setup
 
-Connect Hermes Agent to Microsoft Teams as a bot. Unlike Slack's Socket Mode, Teams delivers messages by calling a **public HTTPS webhook**, so your instance needs a publicly reachable endpoint — either a dev tunnel (local dev) or a real domain (production).
+Connect Superforecasting Agent to Microsoft Teams as a forecast-desk bot. Teams is a secondary collaboration surface for review alerts, approvals, scheduled digests, and meeting evidence notes. The CLI and forecast ledger remain the primary product surface.
 
-Need meeting summaries from Microsoft Graph events rather than normal bot conversations? Use the dedicated setup page: [Teams Meetings](/docs/user-guide/messaging/teams-meetings).
+Unlike Slack's Socket Mode, Teams delivers messages by calling a **public HTTPS webhook**, so your instance needs a publicly reachable endpoint, either a dev tunnel for local development or a real domain for production.
+
+Need meeting evidence from Microsoft Graph events rather than normal bot conversations? Use the dedicated setup page: [Teams Meetings](/docs/user-guide/messaging/teams-meetings).
 
 ## How the Bot Responds
 
@@ -18,13 +20,13 @@ Need meeting summaries from Microsoft Graph events rather than normal bot conver
 | **Group chat** | Bot only responds when @mentioned. |
 | **Channel** | Bot only responds when @mentioned. |
 
-Teams delivers @mentions as regular messages with `<at>BotName</at>` tags, which Hermes strips automatically before processing.
+Teams delivers @mentions as regular messages with `<at>BotName</at>` tags, which the Teams adapter strips automatically before processing.
 
 ---
 
 ## Step 1: Install the Teams CLI
 
-The `@microsoft/teams.cli` automates bot registration — no Azure portal needed.
+The `@microsoft/teams.cli` automates bot registration, so you do not need the Azure portal for the basic bot setup.
 
 ```bash
 npm install -g @microsoft/teams.cli@preview
@@ -41,13 +43,13 @@ teams status --verbose
 
 ## Step 2: Expose the Webhook Port
 
-Teams cannot deliver messages to `localhost`. For local development, use any tunnel tool to get a public HTTPS URL. The default port is `3978` — change it with `TEAMS_PORT` if needed.
+Teams cannot deliver messages to `localhost`. For local development, use any tunnel tool to get a public HTTPS URL. The default port is `3978`; change it with `TEAMS_PORT` if needed.
 
 ```bash
 # devtunnel (Microsoft)
-devtunnel create hermes-bot --allow-anonymous
-devtunnel port create hermes-bot -p 3978 --protocol https  # replace 3978 with TEAMS_PORT if changed
-devtunnel host hermes-bot
+devtunnel create forecast-desk-bot --allow-anonymous
+devtunnel port create forecast-desk-bot -p 3978 --protocol https  # replace 3978 with TEAMS_PORT if changed
+devtunnel host forecast-desk-bot
 
 # ngrok
 ngrok http 3978  # replace 3978 with TEAMS_PORT if changed
@@ -56,7 +58,7 @@ ngrok http 3978  # replace 3978 with TEAMS_PORT if changed
 cloudflared tunnel --url http://localhost:3978  # replace 3978 with TEAMS_PORT if changed
 ```
 
-Copy the `https://` URL from the output — you'll use it in the next step. Leave the tunnel running while developing.
+Copy the `https://` URL from the output. You will use it in the next step. Leave the tunnel running while developing.
 
 For production, point your bot's endpoint at your server's public domain instead (see [Production Deployment](#production-deployment)).
 
@@ -66,17 +68,17 @@ For production, point your bot's endpoint at your server's public domain instead
 
 ```bash
 teams app create \
-  --name "Hermes" \
+  --name "Superforecasting Agent" \
   --endpoint "https://<your-tunnel-url>/api/messages"
 ```
 
-The CLI outputs your `CLIENT_ID`, `CLIENT_SECRET`, and `TENANT_ID`, plus an install link for Step 6. Save the client secret — it won't be shown again.
+The CLI outputs your `CLIENT_ID`, `CLIENT_SECRET`, and `TENANT_ID`, plus an install link for Step 6. Save the client secret because it will not be shown again.
 
 ---
 
 ## Step 4: Configure Environment Variables
 
-Add to `~/.hermes/.env`:
+Add to `~/.superforecasting-agent/.env`:
 
 ```bash
 # Required
@@ -94,14 +96,14 @@ TEAMS_ALLOWED_USERS=<your-aad-object-id>
 ## Step 5: Start the Gateway
 
 ```bash
-HERMES_UID=$(id -u) HERMES_GID=$(id -g) docker compose up -d gateway
+docker compose up -d gateway
 ```
 
 This starts the gateway. The default webhook port is `3978` (override with `TEAMS_PORT`). Check that it's running:
 
 ```bash
 curl http://localhost:3978/health   # should return: ok
-docker logs -f hermes
+docker compose logs -f gateway
 ```
 
 Look for:
@@ -117,7 +119,7 @@ Look for:
 teams app get <teamsAppId> --install-link
 ```
 
-Open the printed link in your browser — it opens directly in the Teams client. After installing, send a direct message to your bot — it's ready.
+Open the printed link in your browser. It opens directly in the Teams client. After installing, send a direct message to your bot.
 
 ---
 
@@ -138,7 +140,7 @@ Open the printed link in your browser — it opens directly in the Teams client.
 
 ### config.yaml
 
-Alternatively, configure via `~/.hermes/config.yaml`:
+Alternatively, configure via `~/.superforecasting-agent/config.yaml`:
 
 ```yaml
 platforms:
@@ -157,20 +159,20 @@ platforms:
 
 ### Interactive Approval Cards
 
-When the agent needs to run a potentially dangerous command, it sends an Adaptive Card with four buttons instead of asking you to type `/approve`:
+When the runtime needs approval for a potentially sensitive command or source action, it sends an Adaptive Card with four buttons instead of asking you to type `/approve`:
 
-- **Allow Once** — approve this specific command
-- **Allow Session** — approve this pattern for the rest of the session
-- **Always Allow** — permanently approve this pattern
-- **Deny** — reject the command
+- **Allow Once**: approve this specific command
+- **Allow Session**: approve this pattern for the rest of the session
+- **Always Allow**: permanently approve this pattern
+- **Deny**: reject the command
 
 Clicking a button resolves the approval inline and replaces the card with the decision.
 
 ### Meeting Summary Delivery (Teams Meeting Pipeline)
 
-When the [Teams meeting pipeline plugin](/docs/user-guide/messaging/msgraph-webhook) is enabled, this adapter also handles outbound delivery of meeting summaries — one Teams integration surface, not two. After a meeting's transcript is summarized, the writer posts the summary into your chosen Teams target.
+When the [Teams meeting pipeline plugin](/docs/user-guide/messaging/msgraph-webhook) is enabled, this adapter also handles outbound delivery of meeting evidence review notes. After a meeting transcript or recording is processed, the pipeline posts forecast-relevant claims, assumptions, and suggested ledger actions into your chosen Teams target.
 
-Pipeline summary delivery is configured under the `teams` platform entry alongside the bot config:
+Pipeline review-note delivery is configured under the `teams` platform entry alongside the bot config:
 
 ```yaml
 platforms:
@@ -179,9 +181,9 @@ platforms:
     extra:
       # existing bot config (client_id, client_secret, tenant_id, port) ...
 
-      # Meeting summary delivery (only used when the teams_pipeline plugin is enabled)
+      # Meeting evidence review-note delivery (only used when the teams_pipeline plugin is enabled)
       delivery_mode: "graph"       # or "incoming_webhook"
-      # For delivery_mode: graph — pick ONE of:
+      # For delivery_mode: graph, pick ONE of:
       chat_id: "19:meeting_..."    # post into a Teams chat
       # team_id: "..."             # OR post into a channel
       # channel_id: "..."
@@ -192,10 +194,10 @@ platforms:
 
 | Mode | Use when | Trade-off |
 |------|----------|-----------|
-| `incoming_webhook` | Simple "post a summary into this channel" with a static Teams-generated URL. | No reply threading, no reactions, shows as the webhook's configured identity. |
+| `incoming_webhook` | Simple "post a forecast review note into this channel" with a static Teams-generated URL. | No reply threading, no reactions, shows as the webhook's configured identity. |
 | `graph` | Threaded channel posts or 1:1/group chat posts under the bot's identity via Microsoft Graph. | Requires the [Graph app registration](/docs/guides/microsoft-graph-app-registration) with `ChannelMessage.Send` (channel) or `Chat.ReadWrite.All` (chat) application permissions. |
 
-If the `teams_pipeline` plugin is **not** enabled, these settings are inert — they only wire up when the pipeline runtime binds to the Graph webhook ingress.
+If the `teams_pipeline` plugin is **not** enabled, these settings are inert. They only wire up when the pipeline runtime binds to the Graph webhook ingress.
 
 ---
 
@@ -205,7 +207,7 @@ For a permanent server, skip devtunnel and register your bot with your server's 
 
 ```bash
 teams app create \
-  --name "Hermes" \
+  --name "Superforecasting Agent" \
   --endpoint "https://your-domain.com/api/messages"
 ```
 
@@ -215,7 +217,7 @@ If you've already created the bot and just need to update the endpoint:
 teams app update --id <teamsAppId> --endpoint "https://your-domain.com/api/messages"
 ```
 
-Make sure your configured port (`TEAMS_PORT`, default `3978`) is reachable from the internet and that your TLS certificate is valid — Teams rejects self-signed certificates.
+Make sure your configured port (`TEAMS_PORT`, default `3978`) is reachable from the internet and that your TLS certificate is valid. Teams rejects self-signed certificates.
 
 ---
 
@@ -224,12 +226,12 @@ Make sure your configured port (`TEAMS_PORT`, default `3978`) is reachable from 
 | Problem | Solution |
 |---------|----------|
 | `health` endpoint works but bot doesn't respond | Check that your tunnel is still running and the bot's messaging endpoint matches the tunnel URL |
-| `KeyError: 'teams'` in logs | Restart the container — this is fixed in the current version |
+| `KeyError: 'teams'` in logs | Restart the container. This is fixed in the current version |
 | Bot responds with auth errors | Verify `TEAMS_CLIENT_ID`, `TEAMS_CLIENT_SECRET`, and `TEAMS_TENANT_ID` are all set correctly |
-| `No inference provider configured` | Check that `ANTHROPIC_API_KEY` (or another provider key) is set in `~/.hermes/.env` |
+| `No inference provider configured` | Check that `ANTHROPIC_API_KEY` or another provider key is set in `~/.superforecasting-agent/.env` |
 | Bot receives messages but ignores them | Your AAD object ID may not be in `TEAMS_ALLOWED_USERS`. Run `teams status --verbose` to find it |
-| Tunnel URL changes on restart | devtunnel URLs are persistent if you use a named tunnel (`devtunnel create hermes-bot`). ngrok and cloudflared generate a new URL each run unless you have a paid plan — update the bot endpoint with `teams app update` when it changes |
-| Teams shows "This bot is not responding" | The webhook returned an error. Check `docker logs hermes` for tracebacks |
+| Tunnel URL changes on restart | devtunnel URLs are persistent if you use a named tunnel (`devtunnel create forecast-desk-bot`). ngrok and cloudflared generate a new URL each run unless you have a paid plan. Update the bot endpoint with `teams app update` when it changes |
+| Teams shows "This bot is not responding" | The webhook returned an error. Check `docker compose logs -f gateway` for tracebacks |
 | `[teams] Failed to connect` in logs | The SDK failed to authenticate. Double-check your credentials and that the tenant ID matches the account you used in `teams login` |
 
 ---
@@ -239,14 +241,14 @@ Make sure your configured port (`TEAMS_PORT`, default `3978`) is reachable from 
 :::warning
 **Always set `TEAMS_ALLOWED_USERS`** with the AAD object IDs of authorized users. Without this, anyone who can find or install your bot can interact with it.
 
-Treat `TEAMS_CLIENT_SECRET` like a password — rotate it periodically via the Azure portal or Teams CLI.
+Treat `TEAMS_CLIENT_SECRET` like a password. Rotate it periodically via the Azure portal or Teams CLI.
 :::
 
-- Store credentials in `~/.hermes/.env` with permissions `600` (`chmod 600 ~/.hermes/.env`)
+- Store credentials in `~/.superforecasting-agent/.env` with permissions `600` (`chmod 600 ~/.superforecasting-agent/.env`)
 - The bot only accepts messages from users in `TEAMS_ALLOWED_USERS`; unauthorized messages are silently dropped
-- Your public endpoint (`/api/messages`) is authenticated by the Teams Bot Framework — requests without valid JWTs are rejected
+- Your public endpoint (`/api/messages`) is authenticated by the Teams Bot Framework. Requests without valid JWTs are rejected
 
 ## Related Docs
 
 - [Teams Meetings](/docs/user-guide/messaging/teams-meetings)
-- [Operate the Teams Meeting Pipeline](/docs/guides/operate-teams-meeting-pipeline)
+- [Operate the Teams Meeting Forecast Pipeline](/docs/guides/operate-teams-meeting-pipeline)

@@ -14,19 +14,19 @@ def test_get_managed_system_homebrew(monkeypatch):
     monkeypatch.setenv("HERMES_MANAGED", "homebrew")
 
     assert get_managed_system() == "Homebrew"
-    assert recommended_update_command() == "brew upgrade hermes-agent"
+    assert recommended_update_command() == "brew upgrade superforecasting-agent"
 
 
 def test_format_managed_message_homebrew(monkeypatch):
     monkeypatch.setenv("HERMES_MANAGED", "homebrew")
 
-    message = format_managed_message("update Hermes Agent")
+    message = format_managed_message("update Superforecasting Agent")
 
     assert "managed by Homebrew" in message
-    assert "brew upgrade hermes-agent" in message
+    assert "brew upgrade superforecasting-agent" in message
 
 
-def test_recommended_update_command_defaults_to_hermes_update(monkeypatch):
+def test_recommended_update_command_defaults_to_superforecasting_update(monkeypatch):
     monkeypatch.delenv("HERMES_MANAGED", raising=False)
 
     # Also short-circuit the .managed marker path — CI runners may have an
@@ -36,7 +36,7 @@ def test_recommended_update_command_defaults_to_hermes_update(monkeypatch):
     # detect_install_method().
     with patch("hermes_cli.config.get_managed_update_command", return_value=None), \
          patch("hermes_cli.config.detect_install_method", return_value="git"):
-        assert recommended_update_command() == "hermes update"
+        assert recommended_update_command() == "superforecasting-agent update"
 
 
 def test_cmd_update_blocks_managed_homebrew(monkeypatch, capsys):
@@ -48,7 +48,7 @@ def test_cmd_update_blocks_managed_homebrew(monkeypatch, capsys):
     assert not mock_run.called
     captured = capsys.readouterr()
     assert "managed by Homebrew" in captured.err
-    assert "brew upgrade hermes-agent" in captured.err
+    assert "brew upgrade superforecasting-agent" in captured.err
 
 
 def test_optional_skill_source_honors_env_override(monkeypatch, tmp_path):

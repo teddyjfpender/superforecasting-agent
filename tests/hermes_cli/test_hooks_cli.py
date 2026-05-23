@@ -1,4 +1,4 @@
-"""Tests for the ``hermes hooks`` CLI subcommand."""
+"""Tests for the ``superforecasting-agent hooks`` CLI subcommand."""
 
 from __future__ import annotations
 
@@ -48,6 +48,12 @@ class TestHooksList:
         with patch("hermes_cli.config.load_config", return_value={}):
             out = _run(SimpleNamespace(hooks_action="list"))
         assert "No shell hooks configured" in out
+        assert "superforecasting-agent hooks --help" in out
+
+    def test_missing_action_uses_fork_native_usage(self):
+        out = _run(SimpleNamespace(hooks_action=None))
+        assert "Usage: superforecasting-agent hooks" in out
+        assert "superforecasting-agent hooks --help" in out
 
     def test_shows_configured_and_consent_status(self, tmp_path):
         script = _hook_script(
@@ -82,10 +88,10 @@ class TestHooksList:
 
 class TestHooksTest:
     def test_synthetic_payload_matches_production_shape(self, tmp_path):
-        """`hermes hooks test` must feed the script stdin in the same
+        """`superforecasting-agent hooks test` must feed script stdin in the same
         shape invoke_hook() would at runtime.  Prior to this fix,
         run_once bypassed _serialize_payload and the two paths diverged —
-        scripts tested with `hermes hooks test` saw different top-level
+        scripts tested with hooks test saw different top-level
         keys than at runtime, silently breaking in production."""
         capture = tmp_path / "captured.json"
         script = _hook_script(
@@ -245,7 +251,7 @@ class TestHooksDoctor:
         assert "All shell hooks look healthy" in out
 
     def test_unallowlisted_script_is_not_executed(self, tmp_path):
-        """Regression for M4: `hermes hooks doctor` used to run every
+        """Regression for M4: hooks doctor used to run every
         listed script against a synthetic payload as part of its JSON
         smoke test, which contradicted the documented workflow of
         "spot newly-added hooks *before they register*".  An un-allowlisted

@@ -1,11 +1,11 @@
 """
-MCP Server Management CLI — ``hermes mcp`` subcommand.
+MCP Server Management CLI — ``superforecasting-agent mcp`` subcommand.
 
-Implements ``hermes mcp add/remove/list/test/configure`` for interactive
-MCP server lifecycle management (issue #690 Phase 2).
+Implements ``superforecasting-agent mcp add/remove/list/test/configure`` for
+interactive MCP server lifecycle management (issue #690 Phase 2).
 
 Relies on tools/mcp_tool.py for connection/discovery and keeps
-configuration in ~/.hermes/config.yaml under the ``mcp_servers`` key.
+configuration in the runtime config under the ``mcp_servers`` key.
 """
 
 import asyncio
@@ -28,6 +28,7 @@ from hermes_constants import display_hermes_home
 from tools.mcp_tool import _ENV_VAR_PATTERN
 
 logger = logging.getLogger(__name__)
+_PRIMARY_CLI = "superforecasting-agent"
 
 _ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -221,7 +222,7 @@ def _unwrap_exception_group(exc: BaseException) -> Exception:
     return RuntimeError(str(exc))
 
 
-# ─── hermes mcp add ──────────────────────────────────────────────────────────
+# ─── superforecasting-agent mcp add ──────────────────────────────────────────
 
 def cmd_mcp_add(args):
     """Add a new MCP server with discovery-first tool selection."""
@@ -259,9 +260,9 @@ def cmd_mcp_add(args):
     if not url and not command:
         _error("Must specify --url <endpoint>, --command <cmd>, or --preset <name>")
         _info("Examples:")
-        _info('  hermes mcp add ink --url "https://mcp.ml.ink/mcp"')
-        _info('  hermes mcp add github --command npx --args @modelcontextprotocol/server-github')
-        _info('  hermes mcp add myserver --preset mypreset')
+        _info(f'  {_PRIMARY_CLI} mcp add ink --url "https://mcp.ml.ink/mcp"')
+        _info(f'  {_PRIMARY_CLI} mcp add github --command npx --args @modelcontextprotocol/server-github')
+        _info(f'  {_PRIMARY_CLI} mcp add myserver --preset mypreset')
         return
 
     # Check if server already exists
@@ -346,7 +347,7 @@ def cmd_mcp_add(args):
             server_config["enabled"] = False
             _save_mcp_server(name, server_config)
             _success(f"Saved '{name}' to config (disabled)")
-            _info("Fix the issue, then: hermes mcp test " + name)
+            _info(f"Fix the issue, then: {_PRIMARY_CLI} mcp test {name}")
         return
 
     if not tools:
@@ -417,7 +418,7 @@ def cmd_mcp_add(args):
     _info("Start a new session to use these tools.")
 
 
-# ─── hermes mcp remove ───────────────────────────────────────────────────────
+# ─── superforecasting-agent mcp remove ───────────────────────────────────────
 
 def cmd_mcp_remove(args):
     """Remove an MCP server from config."""
@@ -440,7 +441,7 @@ def cmd_mcp_remove(args):
 
     # Clean up OAuth tokens if they exist — route through MCPOAuthManager so
     # any provider instance cached in the current process (e.g. from an
-    # earlier `hermes mcp test` in the same session) is evicted too.
+    # earlier MCP test in the same session) is evicted too.
     try:
         from tools.mcp_oauth_manager import get_manager
         get_manager().remove(name)
@@ -449,7 +450,7 @@ def cmd_mcp_remove(args):
         pass
 
 
-# ─── hermes mcp list ──────────────────────────────────────────────────────────
+# ─── superforecasting-agent mcp list ─────────────────────────────────────────
 
 def cmd_mcp_list(args=None):
     """List all configured MCP servers."""
@@ -460,8 +461,8 @@ def cmd_mcp_list(args=None):
         _info("No MCP servers configured.")
         print()
         _info("Add one with:")
-        _info('  hermes mcp add <name> --url <endpoint>')
-        _info('  hermes mcp add <name> --command <cmd> --args <args...>')
+        _info(f'  {_PRIMARY_CLI} mcp add <name> --url <endpoint>')
+        _info(f'  {_PRIMARY_CLI} mcp add <name> --command <cmd> --args <args...>')
         print()
         return
 
@@ -518,7 +519,7 @@ def cmd_mcp_list(args=None):
     print()
 
 
-# ─── hermes mcp test ──────────────────────────────────────────────────────────
+# ─── superforecasting-agent mcp test ─────────────────────────────────────────
 
 def cmd_mcp_test(args):
     """Test connection to an MCP server."""
@@ -582,7 +583,7 @@ def cmd_mcp_test(args):
     print()
 
 
-# ─── hermes mcp login ────────────────────────────────────────────────────────
+# ─── superforecasting-agent mcp login ────────────────────────────────────────
 
 def cmd_mcp_login(args):
     """Force re-authentication for an OAuth-based MCP server.
@@ -613,7 +614,7 @@ def cmd_mcp_login(args):
         return
     if server_config.get("auth") != "oauth":
         _error(f"Server '{name}' is not configured for OAuth (auth={server_config.get('auth')})")
-        _info("Use `hermes mcp remove` + `hermes mcp add` to reconfigure auth.")
+        _info(f"Use `{_PRIMARY_CLI} mcp remove` + `{_PRIMARY_CLI} mcp add` to reconfigure auth.")
         return
 
     # Wipe both disk and in-memory cache so the next probe forces a fresh
@@ -639,13 +640,13 @@ def cmd_mcp_login(args):
         _error(f"Authentication failed: {exc}")
 
 
-# ─── hermes mcp configure ────────────────────────────────────────────────────
+# ─── superforecasting-agent mcp configure ────────────────────────────────────
 
 def cmd_mcp_configure(args):
     """Reconfigure which tools are enabled for an existing MCP server."""
     import sys as _sys
     if not _sys.stdin.isatty():
-        print("Error: 'hermes mcp configure' requires an interactive terminal.", file=_sys.stderr)
+        print(f"Error: '{_PRIMARY_CLI} mcp configure' requires an interactive terminal.", file=_sys.stderr)
         _sys.exit(1)
     name = args.name
     servers = _get_mcp_servers()
@@ -741,7 +742,7 @@ def cmd_mcp_configure(args):
 # ─── Dispatcher ───────────────────────────────────────────────────────────────
 
 def mcp_command(args):
-    """Main dispatcher for ``hermes mcp`` subcommands."""
+    """Main dispatcher for ``superforecasting-agent mcp`` subcommands."""
     action = getattr(args, "mcp_action", None)
 
     if action == "serve":
@@ -768,13 +769,13 @@ def mcp_command(args):
         # No subcommand — show list
         cmd_mcp_list()
         print(color("  Commands:", Colors.CYAN))
-        _info("hermes mcp serve                              Run as MCP server")
-        _info("hermes mcp add <name> --url <endpoint>        Add an MCP server")
-        _info("hermes mcp add <name> --command <cmd>         Add a stdio server")
-        _info("hermes mcp add <name> --preset <preset>       Add from a known preset")
-        _info("hermes mcp remove <name>                      Remove a server")
-        _info("hermes mcp list                               List servers")
-        _info("hermes mcp test <name>                        Test connection")
-        _info("hermes mcp configure <name>                   Toggle tools")
-        _info("hermes mcp login <name>                       Re-authenticate OAuth")
+        _info(f"{_PRIMARY_CLI} mcp serve                              Run as MCP server")
+        _info(f"{_PRIMARY_CLI} mcp add <name> --url <endpoint>        Add an MCP server")
+        _info(f"{_PRIMARY_CLI} mcp add <name> --command <cmd>         Add a stdio server")
+        _info(f"{_PRIMARY_CLI} mcp add <name> --preset <preset>       Add from a known preset")
+        _info(f"{_PRIMARY_CLI} mcp remove <name>                      Remove a server")
+        _info(f"{_PRIMARY_CLI} mcp list                               List servers")
+        _info(f"{_PRIMARY_CLI} mcp test <name>                        Test connection")
+        _info(f"{_PRIMARY_CLI} mcp configure <name>                   Toggle tools")
+        _info(f"{_PRIMARY_CLI} mcp login <name>                       Re-authenticate OAuth")
         print()

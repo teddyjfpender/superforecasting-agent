@@ -1,12 +1,12 @@
 ---
 sidebar_position: 6
 title: "Teams Meetings"
-description: "Set up the Microsoft Teams meeting summary pipeline with Microsoft Graph webhooks"
+description: "Set up Microsoft Teams meeting evidence capture with Microsoft Graph webhooks."
 ---
 
 # Microsoft Teams Meetings
 
-Use the Teams meeting pipeline when you want Hermes to ingest Microsoft Graph meeting events, fetch transcripts first, fall back to recordings plus STT when needed, and deliver a structured summary to downstream sinks.
+Use the Teams meeting pipeline when you want Superforecasting Agent to capture Microsoft Teams meetings as forecast evidence. The pipeline ingests Microsoft Graph meeting events, fetches transcripts first, falls back to recordings plus STT when needed, and delivers structured review notes to the forecast desk.
 
 This page focuses on setup and enablement:
 - Graph credentials
@@ -14,7 +14,7 @@ This page focuses on setup and enablement:
 - Teams delivery modes
 - pipeline config shape
 
-For day-2 operations, go-live checks, and the operator worksheet, use the dedicated guide: [Operate the Teams Meeting Pipeline](/docs/guides/operate-teams-meeting-pipeline).
+For subscription renewal, go-live checks, and the operator worksheet, use the dedicated guide: [Operate the Teams Meeting Forecast Pipeline](/docs/guides/operate-teams-meeting-pipeline).
 
 ## What This Feature Does
 
@@ -23,21 +23,30 @@ The pipeline:
 2. resolves the meeting and prefers transcript artifacts first
 3. falls back to recording download plus STT when no usable transcript is available
 4. stores durable job state and sink records locally
-5. can write summaries to Notion, Linear, and Microsoft Teams
+5. extracts forecast-relevant claims, assumptions, decisions, and evidence candidates
+6. can deliver review notes to Microsoft Teams and optional workflow sinks
 
-Operator actions stay in the CLI (the `teams-pipeline` subcommand is registered by the `teams_pipeline` plugin — enable it via `hermes plugins enable teams_pipeline` or set `plugins.enabled: [teams_pipeline]` in `config.yaml`):
+Operator actions stay in the CLI. The `teams-pipeline` subcommand is registered by the `teams_pipeline` plugin. Enable it with:
 
 ```bash
-hermes teams-pipeline validate
-hermes teams-pipeline list
-hermes teams-pipeline maintain-subscriptions
+superforecasting-agent plugins enable teams_pipeline
+```
+
+or set `plugins.enabled: [teams_pipeline]` in `config.yaml`.
+
+Common commands:
+
+```bash
+superforecasting-agent teams-pipeline validate
+superforecasting-agent teams-pipeline list
+superforecasting-agent teams-pipeline maintain-subscriptions
 ```
 
 ## Prerequisites
 
 Before enabling the meetings pipeline, make sure you have:
 
-- a working Hermes install
+- a working Superforecasting Agent install
 - the existing [Microsoft Teams bot setup](/docs/user-guide/messaging/teams) if you want Teams outbound delivery
 - Microsoft Graph application credentials with the permissions required for the meeting resources you plan to subscribe to
 - a public HTTPS URL that Microsoft Graph can call for webhook delivery
@@ -45,7 +54,7 @@ Before enabling the meetings pipeline, make sure you have:
 
 ## Step 1: Add Microsoft Graph Credentials
 
-Add Graph app-only credentials to `~/.hermes/.env`:
+Add Graph app-only credentials to `~/.superforecasting-agent/.env`:
 
 ```bash
 MSGRAPH_TENANT_ID=<tenant-id>
@@ -84,7 +93,7 @@ https://ops.example.com/msgraph/webhook
 
 The meeting pipeline reads its runtime config from the existing `teams` platform entry. Pipeline-specific knobs live under `teams.extra.meeting_pipeline`. Teams outbound delivery stays on the normal Teams platform config surface.
 
-Example `~/.hermes/config.yaml`:
+Example `~/.superforecasting-agent/config.yaml`:
 
 ```yaml
 platforms:
@@ -103,7 +112,7 @@ platforms:
       client_secret: "your-teams-client-secret"
       tenant_id: "your-teams-tenant-id"
 
-      # outbound summary delivery
+      # outbound forecast review-note delivery
       delivery_mode: "graph" # or incoming_webhook
       team_id: "team-id"
       channel_id: "channel-id"
@@ -114,15 +123,19 @@ platforms:
         transcript_required: false
         transcription_fallback: true
         ffmpeg_extract_audio: true
+        prompt_profile: "forecast-evidence"
+        require_forecast_labels: true
         notion:
           enabled: false
         linear:
           enabled: false
 ```
 
+Meeting output should distinguish facts, estimates, rumors, assumptions, and decisions. It should suggest evidence or review actions, but it should not change a forecast probability unless an operator or forecast workflow writes an explicit ledger update.
+
 ## Teams Delivery Modes
 
-The pipeline supports two Teams summary-delivery modes inside the existing Teams plugin.
+The pipeline supports two Teams review-note delivery modes inside the existing Teams plugin.
 
 ### `incoming_webhook`
 
@@ -141,7 +154,7 @@ platforms:
 
 ### `graph`
 
-Use this when you want Hermes to post the summary through Microsoft Graph into a Teams chat or channel.
+Use this when you want Superforecasting Agent to post the review note through Microsoft Graph into a Teams chat or channel.
 
 Supported targets:
 - `chat_id`
@@ -162,13 +175,13 @@ platforms:
 
 ## Step 4: Start the Gateway
 
-Start Hermes normally after updating config:
+Start the gateway after updating config:
 
 ```bash
-hermes gateway run
+superforecasting-agent gateway run
 ```
 
-Or, if you run Hermes in Docker, start the gateway the same way you already do for your deployment.
+Or, if you run the fork in Docker, start the gateway the same way you already do for your deployment.
 
 Check the listener:
 
@@ -183,12 +196,12 @@ Use the plugin CLI to create and inspect subscriptions.
 Examples:
 
 ```bash
-hermes teams-pipeline subscribe \
+superforecasting-agent teams-pipeline subscribe \
   --resource communications/onlineMeetings/getAllTranscripts \
   --notification-url https://ops.example.com/msgraph/webhook \
   --client-state "$MSGRAPH_WEBHOOK_CLIENT_STATE"
 
-hermes teams-pipeline subscribe \
+superforecasting-agent teams-pipeline subscribe \
   --resource communications/onlineMeetings/getAllRecordings \
   --notification-url https://ops.example.com/msgraph/webhook \
   --client-state "$MSGRAPH_WEBHOOK_CLIENT_STATE"
@@ -196,25 +209,25 @@ hermes teams-pipeline subscribe \
 
 :::warning Graph subscriptions expire in 72 hours
 
-Microsoft Graph caps webhook subscriptions at 72 hours and will not auto-renew them. You MUST schedule `hermes teams-pipeline maintain-subscriptions` before going live, or notifications will silently stop three days after any manual subscription creation. See [Automating subscription renewal](/docs/guides/operate-teams-meeting-pipeline#automating-subscription-renewal-required-for-production) in the operator runbook — three options (Hermes cron, systemd timer, plain crontab).
+Microsoft Graph caps webhook subscriptions at 72 hours and will not auto-renew them. Schedule `superforecasting-agent teams-pipeline maintain-subscriptions` before going live, or notifications will silently stop three days after any manual subscription creation. See [Automating subscription renewal](/docs/guides/operate-teams-meeting-pipeline#automating-subscription-renewal) in the operator runbook for scheduler, systemd, and crontab options.
 
 :::
 
-For subscription maintenance and day-2 operator flows, continue with the guide: [Operate the Teams Meeting Pipeline](/docs/guides/operate-teams-meeting-pipeline).
+For subscription maintenance and day-2 operator flows, continue with the guide: [Operate the Teams Meeting Forecast Pipeline](/docs/guides/operate-teams-meeting-pipeline).
 
 ## Validation
 
 Run the built-in validation snapshot:
 
 ```bash
-hermes teams-pipeline validate
+superforecasting-agent teams-pipeline validate
 ```
 
 Useful companion checks:
 
 ```bash
-hermes teams-pipeline token-health
-hermes teams-pipeline subscriptions
+superforecasting-agent teams-pipeline token-health
+superforecasting-agent teams-pipeline subscriptions
 ```
 
 ## Troubleshooting
@@ -222,12 +235,13 @@ hermes teams-pipeline subscriptions
 | Problem | What to check |
 |---------|---------------|
 | Graph webhook validation fails | Confirm the public URL is correct and reachable, and that Graph is calling the exact `/msgraph/webhook` path |
-| Jobs do not appear in `hermes teams-pipeline list` | Confirm `msgraph_webhook` is enabled and that subscriptions point at the right notification URL |
+| Jobs do not appear in `superforecasting-agent teams-pipeline list` | Confirm `msgraph_webhook` is enabled and that subscriptions point at the right notification URL |
 | Transcript-first never succeeds | Check Graph permissions for transcript resources and whether the transcript artifact exists for that meeting |
 | Recording fallback fails | Confirm `ffmpeg` is installed and the Graph app can access recording artifacts |
-| Teams summary delivery fails | Re-check `delivery_mode`, target IDs, and Teams auth config |
+| Teams review-note delivery fails | Re-check `delivery_mode`, target IDs, and Teams auth config |
+| Meeting output is too generic | Tighten the pipeline prompt so it names affected forecast ids, factual claims, assumptions, estimates, and suggested ledger actions |
 
 ## Related Docs
 
 - [Microsoft Teams bot setup](/docs/user-guide/messaging/teams)
-- [Operate the Teams Meeting Pipeline](/docs/guides/operate-teams-meeting-pipeline)
+- [Operate the Teams Meeting Forecast Pipeline](/docs/guides/operate-teams-meeting-pipeline)

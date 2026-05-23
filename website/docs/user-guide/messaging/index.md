@@ -1,14 +1,14 @@
 ---
 sidebar_position: 1
 title: "Messaging Gateway"
-description: "Chat with Hermes from Telegram, Discord, Slack, WhatsApp, Signal, SMS, Email, Home Assistant, Mattermost, Matrix, DingTalk, Yuanbao, Microsoft Teams, LINE, Webhooks, or any OpenAI-compatible frontend via the API server — architecture and setup overview"
+description: "Use messaging platforms for forecast-desk alerts, approvals, review notes, and operator coordination."
 ---
 
 # Messaging Gateway
 
-Chat with Hermes from Telegram, Discord, Slack, WhatsApp, Signal, SMS, Email, Home Assistant, Mattermost, Matrix, DingTalk, Feishu/Lark, WeCom, Weixin, BlueBubbles (iMessage), QQ, Yuanbao, Microsoft Teams, LINE, or your browser. The gateway is a single background process that connects to all your configured platforms, handles sessions, runs cron jobs, and delivers voice messages.
+Use the messaging gateway when forecast work needs to leave the terminal: review alerts, watched-source notifications, scheduled digests, approval prompts, voice capture, and delivery to team channels. The gateway is a single background process that connects to configured platforms, handles session routing, runs scheduled jobs, and delivers media.
 
-For the full voice feature set — including CLI microphone mode, spoken replies in messaging, and Discord voice-channel conversations — see [Voice Mode](/docs/user-guide/features/voice-mode) and [Use Voice Mode with Hermes](/docs/guides/use-voice-mode-with-hermes).
+For the full voice feature set, including CLI microphone mode, spoken replies in messaging, and Discord voice-channel conversations, see [Voice Mode](/docs/user-guide/features/voice-mode).
 
 ## Platform Comparison
 
@@ -42,7 +42,7 @@ For the full voice feature set — including CLI microphone mode, spoken replies
 
 ```mermaid
 flowchart TB
-    subgraph Gateway["Hermes Gateway"]
+    subgraph Gateway["Superforecasting Agent Gateway"]
         subgraph Adapters["Platform adapters"]
             tg[Telegram]
             dc[Discord]
@@ -69,7 +69,7 @@ flowchart TB
         end
 
         store["Session store<br/>per chat"]
-        agent["AIAgent<br/>run_agent.py"]
+        agent["Forecast runtime<br/>run_agent.py"]
         cron["Cron scheduler<br/>ticks every 60s"]
     end
 
@@ -99,14 +99,14 @@ flowchart TB
     cron --> store
 ```
 
-Each platform adapter receives messages, routes them through a per-chat session store, and dispatches them to the AIAgent for processing. The gateway also runs the cron scheduler, ticking every 60 seconds to execute any due jobs.
+Each platform adapter receives messages, routes them through a per-chat session store, and dispatches them to the forecast-scoped runtime for processing. The gateway also runs the cron scheduler, ticking every 60 seconds to execute any due jobs.
 
 ## Quick Setup
 
 The easiest way to configure messaging platforms is the interactive wizard:
 
 ```bash
-hermes gateway setup        # Interactive setup for all messaging platforms
+superforecasting-agent gateway setup        # Interactive setup for all messaging platforms
 ```
 
 This walks you through configuring each platform with arrow-key selection, shows which platforms are already configured, and offers to start/restart the gateway when done.
@@ -114,14 +114,14 @@ This walks you through configuring each platform with arrow-key selection, shows
 ## Gateway Commands
 
 ```bash
-hermes gateway              # Run in foreground
-hermes gateway setup        # Configure messaging platforms interactively
-hermes gateway install      # Install as a user service (Linux) / launchd service (macOS)
-sudo hermes gateway install --system   # Linux only: install a boot-time system service
-hermes gateway start        # Start the default service
-hermes gateway stop         # Stop the default service
-hermes gateway status       # Check default service status
-hermes gateway status --system         # Linux only: inspect the system service explicitly
+superforecasting-agent gateway              # Run in foreground
+superforecasting-agent gateway setup        # Configure messaging platforms interactively
+superforecasting-agent gateway install      # Install as a user service (Linux) / launchd service (macOS)
+sudo superforecasting-agent gateway install --system   # Linux only: install a boot-time system service
+superforecasting-agent gateway start        # Start the default service
+superforecasting-agent gateway stop         # Stop the default service
+superforecasting-agent gateway status       # Check default service status
+superforecasting-agent gateway status --system         # Linux only: inspect the system service explicitly
 ```
 
 ## Chat Commands (Inside Messaging)
@@ -149,7 +149,7 @@ hermes gateway status --system         # Linux only: inspect the system service 
 | `/rollback [number]` | List or restore filesystem checkpoints |
 | `/background <prompt>` | Run a prompt in a separate background session |
 | `/reload-mcp` | Reload MCP servers from config |
-| `/update` | Update Hermes Agent to the latest version |
+| `/update` | Update Superforecasting Agent to the latest version |
 | `/help` | Show available commands |
 | `/<skill-name>` | Invoke any installed skill |
 
@@ -157,7 +157,7 @@ hermes gateway status --system         # Linux only: inspect the system service 
 
 ### Session Persistence
 
-Sessions persist across messages until they reset. The agent remembers your conversation context.
+Sessions persist across messages until they reset. The runtime keeps conversational context for the platform session, while durable forecast state stays in the forecast ledger.
 
 ### Reset Policies
 
@@ -169,7 +169,7 @@ Sessions reset based on configurable policies:
 | Idle | 1440 min | Reset after N minutes of inactivity |
 | Both | (combined) | Whichever triggers first |
 
-Configure per-platform overrides in `~/.hermes/gateway.json`:
+Configure per-platform overrides in `~/.superforecasting-agent/gateway.json`:
 
 ```json
 {
@@ -213,11 +213,11 @@ Instead of manually configuring user IDs, unknown users receive a one-time pairi
 ```bash
 # The user sees: "Pairing code: XKGH5N7P"
 # You approve them with:
-hermes pairing approve telegram XKGH5N7P
+superforecasting-agent pairing approve telegram XKGH5N7P
 
 # Other pairing commands:
-hermes pairing list          # View pending + approved users
-hermes pairing revoke telegram 123456789  # Remove access
+superforecasting-agent pairing list          # View pending + approved users
+superforecasting-agent pairing revoke telegram 123456789  # Remove access
 ```
 
 Pairing codes expire after 1 hour, are rate-limited, and use cryptographic randomness.
@@ -229,11 +229,11 @@ Allowlists answer "can this person reach the bot at all?" The **admin / user spl
 Every allowed user falls into one of two tiers per scope (DM vs group/channel):
 
 - **Admin** — full access. Can run every registered slash command (built-in + plugin) and use every gated capability.
-- **Regular user** — restricted access. Can chat with the agent normally, but can only run the slash commands you explicitly enable. The always-allowed floor is `/help` and `/whoami`.
+- **Regular user** — restricted access. Can use allowed messaging workflows normally, but can only run the slash commands you explicitly enable. The always-allowed floor is `/help` and `/whoami`.
 
 The tiers are configured per platform and per scope. DM admin status does not imply group/channel admin status — each scope has its own admin list.
 
-**What the tiers gate today:** slash commands. The split runs through the live command registry, so it covers built-ins and plugin-registered commands without per-feature wiring. Plain chat is not affected — non-admins can still talk to the agent.
+**What the tiers gate today:** slash commands. The split runs through the live command registry, so it covers built-ins and plugin-registered commands without per-feature wiring. Normal messaging remains available to allowed users.
 
 **What may be gated in the future:** more capability surfaces (tool access, model switching, expensive operations) will hang off the same admin / user distinction as we add them. Configuring the split now means those future restrictions land cleanly without you having to re-model who's an admin.
 
@@ -280,13 +280,13 @@ display:
   busy_ack_enabled: true   # set to false to suppress the ⚡/⏳/⏩ chat reply entirely
 ```
 
-The first time you message a busy agent on any platform, Hermes appends a one-line reminder to the busy-ack explaining the knob (`"💡 First-time tip — …"`). The reminder fires once per install — a flag under `onboarding.seen.busy_input_prompt` latches it. Delete that key to see the tip again.
+The first time you message a busy agent on any platform, Superforecasting Agent appends a one-line reminder to the busy-ack explaining the knob (`"💡 First-time tip — …"`). The reminder fires once per install — a flag under `onboarding.seen.busy_input_prompt` latches it. Delete that key to see the tip again.
 
 If you find the busy-ack noisy — especially with voice input or rapid-fire messages — set `display.busy_ack_enabled: false`. Your input is still queued/steered/interrupts as normal, only the chat reply is silenced.
 
 ## Tool Progress Notifications
 
-Control how much tool activity is displayed in `~/.hermes/config.yaml`:
+Control how much tool activity is displayed in `~/.superforecasting-agent/config.yaml`:
 
 ```yaml
 display:
@@ -311,7 +311,7 @@ Run a prompt in a separate background session so the agent works on it independe
 /background Check all servers in the cluster and report any that are down
 ```
 
-Hermes confirms immediately:
+Superforecasting Agent confirms immediately:
 
 ```
 🔄 Background task started: "Check all servers in the cluster..."
@@ -329,7 +329,7 @@ Each `/background` prompt spawns a **separate agent instance** that runs asynchr
 
 ### Background Process Notifications
 
-When the agent running a background session uses `terminal(background=true)` to start long-running processes (servers, builds, etc.), the gateway can push status updates to your chat. Control this with `display.background_process_notifications` in `~/.hermes/config.yaml`:
+When the agent running a background session uses `terminal(background=true)` to start long-running processes (servers, builds, etc.), the gateway can push status updates to your chat. Control this with `display.background_process_notifications` in `~/.superforecasting-agent/config.yaml`:
 
 ```yaml
 display:
@@ -365,83 +365,64 @@ Background tasks on messaging platforms are fire-and-forget — you don't need t
 ### Linux (systemd)
 
 ```bash
-hermes gateway install               # Install as user service
-hermes gateway start                 # Start the service
-hermes gateway stop                  # Stop the service
-hermes gateway status                # Check status
-journalctl --user -u hermes-gateway -f  # View logs
+superforecasting-agent gateway install               # Install as user service
+superforecasting-agent gateway start                 # Start the service
+superforecasting-agent gateway stop                  # Stop the service
+superforecasting-agent gateway status                # Check status
+journalctl --user -u <gateway-service-name> -f  # View logs
 
 # Enable lingering (keeps running after logout)
 sudo loginctl enable-linger $USER
 
 # Or install a boot-time system service that still runs as your user
-sudo hermes gateway install --system
-sudo hermes gateway start --system
-sudo hermes gateway status --system
-journalctl -u hermes-gateway -f
+sudo superforecasting-agent gateway install --system
+sudo superforecasting-agent gateway start --system
+sudo superforecasting-agent gateway status --system
+journalctl -u <gateway-service-name> -f
 ```
 
 Use the user service on laptops and dev boxes. Use the system service on VPS or headless hosts that should come back at boot without relying on systemd linger.
 
-Avoid keeping both the user and system gateway units installed at once unless you really mean to. Hermes will warn if it detects both because start/stop/status behavior gets ambiguous.
+Avoid keeping both the user and system gateway units installed at once unless you really mean to. Superforecasting Agent will warn if it detects both because start/stop/status behavior gets ambiguous.
 
 :::info Multiple installations
-If you run multiple Hermes installations on the same machine (with different `HERMES_HOME` directories), each gets its own systemd service name. The default `~/.hermes` uses `hermes-gateway`; other installations use `hermes-gateway-<hash>`. The `hermes gateway` commands automatically target the correct service for your current `HERMES_HOME`.
+If you run multiple Superforecasting Agent installations on the same machine with different agent-home directories, each gets its own systemd service name. The `superforecasting-agent gateway` commands automatically target the correct service for the current profile or agent home.
 :::
 
 ### macOS (launchd)
 
 ```bash
-hermes gateway install               # Install as launchd agent
-hermes gateway start                 # Start the service
-hermes gateway stop                  # Stop the service
-hermes gateway status                # Check status
-tail -f ~/.hermes/logs/gateway.log   # View logs
+superforecasting-agent gateway install               # Install as launchd agent
+superforecasting-agent gateway start                 # Start the service
+superforecasting-agent gateway stop                  # Stop the service
+superforecasting-agent gateway status                # Check status
+tail -f ~/.superforecasting-agent/logs/gateway.log   # View logs
 ```
 
-The generated plist lives at `~/Library/LaunchAgents/ai.hermes.gateway.plist`. It includes three environment variables:
+The generated plist lives under `~/Library/LaunchAgents/`. It includes environment variables for:
 
-- **PATH** — your full shell PATH at install time, with the venv `bin/` and `node_modules/.bin` prepended. This ensures user-installed tools (Node.js, ffmpeg, etc.) are available to gateway subprocesses like the WhatsApp bridge.
-- **VIRTUAL_ENV** — points to the Python virtualenv so tools can resolve packages correctly.
-- **HERMES_HOME** — scopes the gateway to your Hermes installation.
+- **PATH**: your full shell PATH at install time, with the venv `bin/` and `node_modules/.bin` prepended. This ensures user-installed tools such as Node.js or ffmpeg are available to gateway subprocesses like the WhatsApp bridge.
+- **VIRTUAL_ENV**: points to the Python virtualenv so tools can resolve packages correctly.
+- **Agent home**: scopes the gateway to the current Superforecasting Agent installation.
 
 :::tip PATH changes after install
-launchd plists are static — if you install new tools (e.g. a new Node.js version via nvm, or ffmpeg via Homebrew) after setting up the gateway, run `hermes gateway install` again to capture the updated PATH. The gateway will detect the stale plist and reload automatically.
+launchd plists are static — if you install new tools (e.g. a new Node.js version via nvm, or ffmpeg via Homebrew) after setting up the gateway, run `superforecasting-agent gateway install` again to capture the updated PATH. The gateway will detect the stale plist and reload automatically.
 :::
 
 :::info Multiple installations
-Like the Linux systemd service, each `HERMES_HOME` directory gets its own launchd label. The default `~/.hermes` uses `ai.hermes.gateway`; other installations use `ai.hermes.gateway-<suffix>`.
+Like the Linux systemd service, each agent-home directory gets its own launchd label. The gateway CLI resolves the correct label from the current profile or agent home.
 :::
 
-## Platform-Specific Toolsets
+## Platform-Specific Tool Exposure
 
-Each platform has its own toolset:
+Each platform has a default runtime toolset. The CLI desk uses the forecast-first `forecast-desk` toolset by default. Messaging platforms inherit platform-specific compatibility toolsets so existing gateway adapters keep working, but they should be treated as secondary delivery and approval surfaces around the forecast ledger.
 
-| Platform | Toolset | Capabilities |
-|----------|---------|--------------|
-| CLI | `hermes-cli` | Full access |
-| Telegram | `hermes-telegram` | Full tools including terminal |
-| Discord | `hermes-discord` | Full tools including terminal |
-| WhatsApp | `hermes-whatsapp` | Full tools including terminal |
-| Slack | `hermes-slack` | Full tools including terminal |
-| Google Chat | `hermes-google_chat` | Full tools including terminal |
-| Signal | `hermes-signal` | Full tools including terminal |
-| SMS | `hermes-sms` | Full tools including terminal |
-| Email | `hermes-email` | Full tools including terminal |
-| Home Assistant | `hermes-homeassistant` | Full tools + HA device control (ha_list_entities, ha_get_state, ha_call_service, ha_list_services) |
-| Mattermost | `hermes-mattermost` | Full tools including terminal |
-| Matrix | `hermes-matrix` | Full tools including terminal |
-| DingTalk | `hermes-dingtalk` | Full tools including terminal |
-| Feishu/Lark | `hermes-feishu` | Full tools including terminal |
-| WeCom | `hermes-wecom` | Full tools including terminal |
-| WeCom Callback | `hermes-wecom-callback` | Full tools including terminal |
-| Weixin | `hermes-weixin` | Full tools including terminal |
-| BlueBubbles | `hermes-bluebubbles` | Full tools including terminal |
-| QQBot | `hermes-qqbot` | Full tools including terminal |
-| Yuanbao | `hermes-yuanbao` | Full tools including terminal |
-| Microsoft Teams | `hermes-teams` | Full tools including terminal |
-| API Server | `hermes-api-server` | Full tools (drops `clarify`, `send_message`, `text_to_speech` — programmatic access doesn't have an interactive user) |
-| Webhooks | `hermes-webhook` | Full tools including terminal |
+Use these checks when enabling a platform:
+
+- Keep broad terminal access restricted to trusted users.
+- Prefer forecast review alerts, source-watch notifications, scheduled digests, and approval prompts over free-form general chat.
+- Confirm the platform can deliver enough context for citations, evidence references, and follow-up ledger commands.
+- Inspect live tool exposure with the tools configuration command before enabling a new team channel.
 
 ## Operating a multi-platform gateway
 
@@ -471,7 +452,7 @@ The breaker does **not** auto-resume — it stays open until you run `/platform 
 
 When an adapter is paused, check:
 
-1. **Gateway log** (`~/.hermes/logs/gateway.log` or the systemd / launchd unit log). Search for the platform name and `circuit breaker`, `paused`, or `disabled`. The trip event includes the failure count and the last error.
+1. **Gateway log** (`~/.superforecasting-agent/logs/gateway.log` or the systemd / launchd unit log). Search for the platform name and `circuit breaker`, `paused`, or `disabled`. The trip event includes the failure count and the last error.
 2. **`/platform list`** output — shows the current state and last reason.
 3. **The provider's status page** (Telegram bot API status, Discord status, etc.). The breaker tripped because the platform was unhealthy; don't try to resume until it's back.
 
@@ -479,7 +460,7 @@ Once upstream is healthy, `/platform resume <name>` clears the breaker and re-ar
 
 ### Restart notifications
 
-When the gateway restarts (or is shut down with in-flight sessions), it can send a one-shot "the agent is back" / "the agent was interrupted" message to each platform's home channel. This is controlled per-platform by the `gateway_restart_notification` flag in `gateway-config.yaml`, which defaults to `true`:
+When the gateway restarts or shuts down with in-flight sessions, it can send a one-shot restart or interruption notice to each platform's home channel. This is controlled per-platform by the `gateway_restart_notification` flag in `gateway-config.yaml`, which defaults to `true`:
 
 ```yaml
 gateway:

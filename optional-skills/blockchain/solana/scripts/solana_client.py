@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Solana Blockchain CLI Tool for Hermes Agent
+Solana Blockchain CLI Tool for Superforecasting Agent
 --------------------------------------------
 Queries the Solana JSON-RPC API and CoinGecko for enriched on-chain data.
 Uses only Python standard library — no external packages required.
@@ -27,6 +27,8 @@ import time
 import urllib.request
 import urllib.error
 from typing import Any, Dict, List, Optional
+
+USER_AGENT = "SuperforecastingAgent/1.0 (+https://github.com/NousResearch/superforecasting-agent)"
 
 RPC_URL = os.environ.get(
     "SOLANA_RPC_URL",
@@ -75,7 +77,7 @@ def _http_get_json(url: str, timeout: int = 10, retries: int = 2) -> Any:
     """GET JSON from a URL with retry on 429 rate-limit. Returns parsed JSON or None."""
     for attempt in range(retries + 1):
         req = urllib.request.Request(
-            url, headers={"Accept": "application/json", "User-Agent": "HermesAgent/1.0"},
+            url, headers={"Accept": "application/json", "User-Agent": USER_AGENT},
         )
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -643,7 +645,7 @@ def cmd_price(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="solana_client.py",
-        description="Solana blockchain query tool for Hermes Agent",
+        description="Solana blockchain query tool for Superforecasting Agent",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

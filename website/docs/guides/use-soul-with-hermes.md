@@ -1,14 +1,14 @@
 ---
 sidebar_position: 7
-title: "Use SOUL.md with Hermes"
-description: "How to use SOUL.md to shape Hermes Agent's default voice, what belongs there, and how it differs from AGENTS.md and /personality"
+title: "Use SOUL.md with Superforecasting Agent"
+description: "Shape the forecast agent's durable voice and distinguish it from AGENTS.md and /personality."
 ---
 
-# Use SOUL.md with Hermes
+# Use SOUL.md with Superforecasting Agent
 
-`SOUL.md` is the **primary identity** for your Hermes instance. It's the first thing in the system prompt — it defines who the agent is, how it speaks, and what it avoids.
+`SOUL.md` is the **primary style identity** for your Superforecasting Agent instance. It defines how the agent speaks, handles uncertainty, and pushes back. It does not replace the forecast protocol or the ledger.
 
-If you want Hermes to feel like the same assistant every time you talk to it — or if you want to replace the Hermes persona entirely with your own — this is the file to use.
+If you want the agent to feel consistent every time you use the forecast desk, this is the file to edit.
 
 ## What SOUL.md is for
 
@@ -16,12 +16,12 @@ Use `SOUL.md` for:
 - tone
 - personality
 - communication style
-- how direct or warm Hermes should be
-- what Hermes should avoid stylistically
-- how Hermes should relate to uncertainty, disagreement, and ambiguity
+- how direct or warm Superforecasting Agent should be
+- what the agent should avoid stylistically
+- how the agent should relate to uncertainty, disagreement, and ambiguity
 
 In short:
-- `SOUL.md` is about who Hermes is and how Hermes speaks
+- `SOUL.md` is about how Superforecasting Agent speaks and reasons in conversation
 
 ## What SOUL.md is not for
 
@@ -32,8 +32,9 @@ Do not use it for:
 - service ports
 - architecture notes
 - project workflow instructions
+- forecast probabilities, evidence, postmortems, scores, or calibration lessons
 
-Those belong in `AGENTS.md`.
+Project instructions belong in `AGENTS.md`. Scoreable forecast state belongs in the forecast ledger.
 
 A good rule:
 - if it should apply everywhere, put it in `SOUL.md`
@@ -41,13 +42,13 @@ A good rule:
 
 ## Where it lives
 
-Hermes now uses only the global SOUL file for the current instance:
+Superforecasting Agent now uses only the global SOUL file for the current instance:
 
 ```text
-~/.hermes/SOUL.md
+~/.superforecasting-agent/SOUL.md
 ```
 
-If you run Hermes with a custom home directory, it becomes:
+If you run the inherited runtime with a custom home directory, the legacy compatibility path is:
 
 ```text
 $HERMES_HOME/SOUL.md
@@ -55,19 +56,19 @@ $HERMES_HOME/SOUL.md
 
 ## First-run behavior
 
-Hermes automatically seeds a starter `SOUL.md` for you if one does not already exist.
+Superforecasting Agent automatically seeds a starter `SOUL.md` for you if one does not already exist.
 
 That means most users now begin with a real file they can read and edit immediately.
 
 Important:
-- if you already have a `SOUL.md`, Hermes does not overwrite it
-- if the file exists but is empty, Hermes adds nothing from it to the prompt
+- if you already have a `SOUL.md`, the fork does not overwrite it
+- if the file exists but is empty, the fork adds nothing from it to the prompt
 
-## How Hermes uses it
+## How Superforecasting Agent uses it
 
-When Hermes starts a session, it reads `SOUL.md` from `HERMES_HOME`, scans it for prompt-injection patterns, truncates it if needed, and uses it as the **agent identity** — slot #1 in the system prompt. This means SOUL.md completely replaces the built-in default identity text.
+When Superforecasting Agent starts a session, it reads `SOUL.md` from the active home, scans it for prompt-injection patterns, truncates it if needed, and uses it as the durable style identity. Forecast-specific system instructions still enforce the forecasting protocol, tool boundaries, and ledger discipline.
 
-If SOUL.md is missing, empty, or cannot be loaded, Hermes falls back to a built-in default identity.
+If SOUL.md is missing, empty, or cannot be loaded, Superforecasting Agent falls back to a built-in default identity.
 
 No wrapper language is added around the file. The content itself matters — write the way you want your agent to think and speak.
 
@@ -84,7 +85,7 @@ Push back clearly when an idea is weak.
 Keep answers compact unless deeper detail is useful.
 ```
 
-That alone can noticeably change how Hermes feels.
+That alone can noticeably change how Superforecasting Agent feels.
 
 ## Example styles
 
@@ -109,14 +110,14 @@ You care more about correctness and operational reality than sounding impressive
 ### 2. Research partner
 
 ```markdown
-You are a thoughtful research collaborator.
-You are curious, honest about uncertainty, and excited by unusual ideas.
+You are a thoughtful forecasting research collaborator.
+You are curious, honest about uncertainty, and skeptical of unsupported claims.
 
 ## Style
 - Explore possibilities without pretending certainty
 - Distinguish speculation from evidence
 - Ask clarifying questions when the idea space is underspecified
-- Prefer conceptual depth over shallow completeness
+- Prefer calibrated uncertainty over false confidence
 ```
 
 ### 3. Teacher / explainer
@@ -159,7 +160,7 @@ A weak `SOUL.md` is:
 - trying to micro-manage every response shape
 - mostly generic filler like "be helpful" and "be clear"
 
-Hermes already tries to be helpful and clear. `SOUL.md` should add real personality and style, not restate obvious defaults.
+Superforecasting Agent already tries to be useful, clear, and forecast-disciplined. `SOUL.md` should add real personality and style, not restate obvious defaults or alter forecast rules.
 
 ## Suggested structure
 
@@ -169,16 +170,16 @@ A simple structure that works well:
 
 ```markdown
 # Identity
-Who Hermes is.
+How Superforecasting Agent should present itself.
 
 # Style
-How Hermes should sound.
+How Superforecasting Agent should sound.
 
 # Avoid
-What Hermes should not do.
+What Superforecasting Agent should not do.
 
 # Defaults
-How Hermes should behave when ambiguity appears.
+How Superforecasting Agent should behave when ambiguity appears.
 ```
 
 ## SOUL.md vs /personality
@@ -202,6 +203,7 @@ This is the most common mistake.
 - “Avoid hype language.”
 - “Prefer short answers unless depth helps.”
 - “Push back when the user is wrong.”
+- “When uncertain, separate evidence from speculation.”
 
 ### Put this in AGENTS.md
 - “Use pytest, not unittest.”
@@ -212,39 +214,39 @@ This is the most common mistake.
 ## How to edit it
 
 ```bash
-nano ~/.hermes/SOUL.md
+nano ~/.superforecasting-agent/SOUL.md
 ```
 
 or
 
 ```bash
-vim ~/.hermes/SOUL.md
+vim ~/.superforecasting-agent/SOUL.md
 ```
 
-Then restart Hermes or start a new session.
+Then restart Superforecasting Agent or start a new session.
 
 ## A practical workflow
 
 1. Start with the seeded default file
 2. Trim anything that does not feel like the voice you want
 3. Add 4–8 lines that clearly define tone and defaults
-4. Talk to Hermes for a while
+4. Use Superforecasting Agent for a few forecast research sessions
 5. Adjust based on what still feels off
 
 That iterative approach works better than trying to design the perfect personality in one shot.
 
 ## Troubleshooting
 
-### I edited SOUL.md but Hermes still sounds the same
+### I edited SOUL.md but Superforecasting Agent still sounds the same
 
 Check:
-- you edited `~/.hermes/SOUL.md` or `$HERMES_HOME/SOUL.md`
+- you edited `~/.superforecasting-agent/SOUL.md` or the legacy `$HERMES_HOME/SOUL.md`
 - not some repo-local `SOUL.md`
 - the file is not empty
 - your session was restarted after the edit
 - a `/personality` overlay is not dominating the result
 
-### Hermes is ignoring parts of my SOUL.md
+### Superforecasting Agent is ignoring parts of my SOUL.md
 
 Possible causes:
 - higher-priority instructions are overriding it

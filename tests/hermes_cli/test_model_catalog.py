@@ -95,6 +95,28 @@ class TestValidation:
 
 
 class TestFetchSuccess:
+    def test_fetch_manifest_sends_superforecasting_user_agent(self, isolated_home):
+        from unittest.mock import MagicMock
+
+        from hermes_cli import model_catalog
+
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.read = MagicMock(return_value=json.dumps(_valid_manifest()).encode())
+
+        with patch.object(
+            model_catalog.urllib.request,
+            "urlopen",
+            return_value=mock_resp,
+        ) as urlopen:
+            result = model_catalog._fetch_manifest("https://example.invalid/catalog.json", 1)
+
+        assert result == _valid_manifest()
+        req = urlopen.call_args[0][0]
+        ua = req.get_header("User-agent")
+        assert ua and ua.startswith("superforecasting-agent/")
+
     def test_fetch_and_cache_writes_disk(self, isolated_home):
         from hermes_cli import model_catalog
         manifest = _valid_manifest()

@@ -1,190 +1,199 @@
 ---
 sidebar_position: 14
 title: "API Server"
-description: "Expose hermes-agent as an OpenAI-compatible API for any frontend"
+description: "Expose the forecast desk through an OpenAI-compatible API"
 ---
 
 # API Server
 
-The API server exposes hermes-agent as an OpenAI-compatible HTTP endpoint. Any frontend that speaks the OpenAI format — Open WebUI, LobeChat, LibreChat, NextChat, ChatBox, and hundreds more — can connect to hermes-agent and use it as a backend.
+The API server exposes Superforecasting Agent through an OpenAI-compatible HTTP endpoint. It is a secondary surface for external dashboards, control planes, and OpenAI-compatible clients that need to ask the forecast desk for work.
 
-Your agent handles requests with its full toolset (terminal, file operations, web search, memory, skills) and returns the final response. When streaming, tool progress indicators appear inline so frontends can show what the agent is doing.
+The CLI and forecast ledger remain the primary product. Use the API server when another tool needs to submit research prompts, subscribe to long-running agent progress, or manage scheduled background jobs. Do not treat it as a replacement for the forecast lifecycle commands that create, update, score, and review forecasts.
+
+Requests run with the server-side agent toolset: terminal, files, web tooling, memory, skills, and any enabled forecast modules. Streaming responses include tool progress events so clients can show what the desk is doing.
 
 ## Quick Start
 
 ### 1. Enable the API server
 
-Add to `~/.hermes/.env`:
+Add this to `~/.superforecasting-agent/.env`:
 
 ```bash
 API_SERVER_ENABLED=true
 API_SERVER_KEY=change-me-local-dev
-# Optional: only if a browser must call Hermes directly
+API_SERVER_MODEL_NAME=superforecasting-agent
+
+# Optional: only if a browser must call the API directly
 # API_SERVER_CORS_ORIGINS=http://localhost:3000
 ```
+
+`~/.hermes/.env` is still accepted by compatibility installs, but new forecast-desk setups should use `~/.superforecasting-agent`.
 
 ### 2. Start the gateway
 
 ```bash
-hermes gateway
+superforecasting-agent gateway
 ```
 
-You'll see:
+You should see:
 
-```
+```text
 [API Server] API server listening on http://127.0.0.1:8642
 ```
 
-### 3. Connect a frontend
+### 3. Submit a forecast-desk request
 
-Point any OpenAI-compatible client at `http://localhost:8642/v1`:
+Point an OpenAI-compatible client at `http://localhost:8642/v1`:
 
 ```bash
-# Test with curl
 curl http://localhost:8642/v1/chat/completions \
   -H "Authorization: Bearer change-me-local-dev" \
   -H "Content-Type: application/json" \
-  -d '{"model": "hermes-agent", "messages": [{"role": "user", "content": "Hello!"}]}'
+  -d '{
+    "model": "superforecasting-agent",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Review active forecasts that are stale or have new evidence today."
+      }
+    ]
+  }'
 ```
 
-Or connect Open WebUI, LobeChat, or any other frontend — see the [Open WebUI integration guide](/docs/user-guide/messaging/open-webui) for step-by-step instructions.
+Open WebUI, LobeChat, LibreChat, AnythingLLM, and similar clients can also connect through the OpenAI provider settings. Use those clients for monitoring or delegated requests; use the CLI for normal forecasting work.
 
 ## Endpoints
 
 ### POST /v1/chat/completions
 
-Standard OpenAI Chat Completions format. Stateless — the full conversation is included in each request via the `messages` array.
+Standard OpenAI Chat Completions format. This endpoint is stateless unless the client opts into session continuity with the `X-Hermes-Session-Id` compatibility header.
 
 **Request:**
+
 ```json
 {
-  "model": "hermes-agent",
+  "model": "superforecasting-agent",
   "messages": [
-    {"role": "system", "content": "You are a Python expert."},
-    {"role": "user", "content": "Write a fibonacci function"}
+    {
+      "role": "system",
+      "content": "Focus on evidence freshness and explicitly mention unresolved assumptions."
+    },
+    {
+      "role": "user",
+      "content": "Summarize what should be checked before updating the macro-policy forecasts."
+    }
   ],
   "stream": false
 }
 ```
 
 **Response:**
+
 ```json
 {
   "id": "chatcmpl-abc123",
   "object": "chat.completion",
   "created": 1710000000,
-  "model": "hermes-agent",
-  "choices": [{
-    "index": 0,
-    "message": {"role": "assistant", "content": "Here's a fibonacci function..."},
-    "finish_reason": "stop"
-  }],
-  "usage": {"prompt_tokens": 50, "completion_tokens": 200, "total_tokens": 250}
-}
-```
-
-**Inline image input:** user messages may send `content` as an array of `text` and `image_url` parts. Both remote `http(s)` URLs and `data:image/...` URLs are supported:
-
-```json
-{
-  "model": "hermes-agent",
-  "messages": [
+  "model": "superforecasting-agent",
+  "choices": [
     {
-      "role": "user",
-      "content": [
-        {"type": "text", "text": "What is in this image?"},
-        {"type": "image_url", "image_url": {"url": "https://example.com/cat.png", "detail": "high"}}
-      ]
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The stale forecasts are..."
+      },
+      "finish_reason": "stop"
     }
-  ]
+  ],
+  "usage": {
+    "prompt_tokens": 50,
+    "completion_tokens": 200,
+    "total_tokens": 250
+  }
 }
 ```
 
-Uploaded files (`file` / `input_file` / `file_id`) and non-image `data:` URLs return `400 unsupported_content_type`.
+**Inline image input:** user messages may send `content` as an array of `text` and `image_url` parts. Both remote `http(s)` URLs and `data:image/...` URLs are supported.
 
-**Streaming** (`"stream": true`): Returns Server-Sent Events (SSE) with token-by-token response chunks. For **Chat Completions**, the stream uses standard `chat.completion.chunk` events plus Hermes' custom `hermes.tool.progress` event for tool-start UX. For **Responses**, the stream uses OpenAI Responses event types such as `response.created`, `response.output_text.delta`, `response.output_item.added`, `response.output_item.done`, and `response.completed`.
+Uploaded files (`file`, `input_file`, `file_id`) and non-image `data:` URLs return `400 unsupported_content_type`.
 
-**Tool progress in streams**:
-- **Chat Completions**: Hermes emits `event: hermes.tool.progress` for tool-start visibility without polluting persisted assistant text.
-- **Responses**: Hermes emits spec-native `function_call` and `function_call_output` output items during the SSE stream, so clients can render structured tool UI in real time.
+**Streaming:** set `"stream": true` to receive Server-Sent Events. Chat Completions streams use standard `chat.completion.chunk` events plus the inherited `hermes.tool.progress` event for tool-start visibility.
 
 ### POST /v1/responses
 
-OpenAI Responses API format. Supports server-side conversation state via `previous_response_id` — the server stores full conversation history (including tool calls and results) so multi-turn context is preserved without the client managing it.
+OpenAI Responses API format. This endpoint supports server-side conversation state through `previous_response_id`, so clients can keep multi-turn context without resending the entire transcript.
 
 **Request:**
+
 ```json
 {
-  "model": "hermes-agent",
-  "input": "What files are in my project?",
-  "instructions": "You are a helpful coding assistant.",
+  "model": "superforecasting-agent",
+  "input": "Check whether any active forecasts in the energy profile need a source refresh.",
+  "instructions": "Return only the forecast IDs, reason for review, and suggested next command.",
   "store": true
 }
 ```
 
 **Response:**
+
 ```json
 {
   "id": "resp_abc123",
   "object": "response",
   "status": "completed",
-  "model": "hermes-agent",
+  "model": "superforecasting-agent",
   "output": [
-    {"type": "function_call", "name": "terminal", "arguments": "{\"command\": \"ls\"}", "call_id": "call_1"},
-    {"type": "function_call_output", "call_id": "call_1", "output": "README.md src/ tests/"},
-    {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Your project has..."}]}
-  ],
-  "usage": {"input_tokens": 50, "output_tokens": 200, "total_tokens": 250}
-}
-```
-
-**Inline image input:** `input[].content` can contain `input_text` and `input_image` parts. Both remote URLs and `data:image/...` URLs are supported:
-
-```json
-{
-  "model": "hermes-agent",
-  "input": [
     {
-      "role": "user",
+      "type": "message",
+      "role": "assistant",
       "content": [
-        {"type": "input_text", "text": "Describe this screenshot."},
-        {"type": "input_image", "image_url": "data:image/png;base64,iVBORw0K..."}
+        {
+          "type": "output_text",
+          "text": "forecast-142 needs an evidence refresh..."
+        }
       ]
     }
-  ]
+  ],
+  "usage": {
+    "input_tokens": 50,
+    "output_tokens": 200,
+    "total_tokens": 250
+  }
 }
 ```
 
-Uploaded files (`input_file` / `file_id`) and non-image `data:` URLs return `400 unsupported_content_type`.
+**Inline image input:** `input[].content` can contain `input_text` and `input_image` parts. Both remote URLs and `data:image/...` URLs are supported.
+
+Uploaded files (`input_file`, `file_id`) and non-image `data:` URLs return `400 unsupported_content_type`.
 
 #### Multi-turn with previous_response_id
 
-Chain responses to maintain full context (including tool calls) across turns:
+Chain responses to maintain full context, including tool calls:
 
 ```json
 {
-  "input": "Now show me the README",
+  "input": "Now draft the update rationale for the first forecast.",
   "previous_response_id": "resp_abc123"
 }
 ```
 
-The server reconstructs the full conversation from the stored response chain — all previous tool calls and results are preserved. Chained requests also share the same session, so multi-turn conversations appear as a single entry in the dashboard and session history.
+Chained requests share the same session, so they appear as one entry in session history.
 
 #### Named conversations
 
 Use the `conversation` parameter instead of tracking response IDs:
 
 ```json
-{"input": "Hello", "conversation": "my-project"}
-{"input": "What's in src/?", "conversation": "my-project"}
-{"input": "Run the tests", "conversation": "my-project"}
+{"input": "Review the clean-energy forecasts.", "conversation": "energy-review"}
+{"input": "Which ones have stale evidence?", "conversation": "energy-review"}
+{"input": "Prepare update notes for the top two.", "conversation": "energy-review"}
 ```
 
-The server automatically chains to the latest response in that conversation. Like the `/title` command for gateway sessions.
+The server automatically chains to the latest response in that named conversation.
 
 ### GET /v1/responses/\{id\}
 
-Retrieve a previously stored response by ID.
+Retrieve a stored response by ID.
 
 ### DELETE /v1/responses/\{id\}
 
@@ -192,17 +201,19 @@ Delete a stored response.
 
 ### GET /v1/models
 
-Lists the agent as an available model. The advertised model name defaults to the [profile](/docs/user-guide/profiles) name (or `hermes-agent` for the default profile). Required by most frontends for model discovery.
+Lists the advertised server-side agent model. Set `API_SERVER_MODEL_NAME` when a profile should expose a custom name. If unset, the default profile advertises `superforecasting-agent`; named profiles advertise the active [profile](/docs/user-guide/profiles) name.
 
 ### GET /v1/capabilities
 
-Returns a machine-readable description of the API server's stable surface for external UIs, orchestrators, and plugin bridges.
+Returns a machine-readable description of the stable API surface for external UIs, orchestrators, and plugin bridges.
 
 ```json
 {
-  "object": "hermes.api_server.capabilities",
-  "platform": "hermes-agent",
-  "model": "hermes-agent",
+  "object": "superforecasting_agent.api_server.capabilities",
+  "legacy_object": "hermes.api_server.capabilities",
+  "platform": "superforecasting-agent",
+  "legacy_platform": "hermes-agent",
+  "model": "superforecasting-agent",
   "auth": {"type": "bearer", "required": true},
   "features": {
     "chat_completions": true,
@@ -210,28 +221,45 @@ Returns a machine-readable description of the API server's stable surface for ex
     "run_submission": true,
     "run_status": true,
     "run_events_sse": true,
-    "run_stop": true
+    "run_stop": true,
+    "session_continuity_header": "X-Hermes-Session-Id",
+    "session_key_header": "X-Hermes-Session-Key"
+  },
+  "compatibility": {
+    "legacy_object": "hermes.api_server.capabilities",
+    "legacy_platform": "hermes-agent",
+    "session_headers": ["X-Hermes-Session-Id", "X-Hermes-Session-Key"],
+    "tool_progress_event": "hermes.tool.progress"
   }
 }
 ```
 
-Use this endpoint when integrating dashboards, browser UIs, or control planes so they can discover whether the running Hermes version supports runs, streaming, cancellation, and session continuity without depending on private Python internals.
+The `legacy_*`, `hermes.tool.progress`, and `X-Hermes-*` names are inherited compatibility identifiers on the wire. They do not mean the API server should be used as a generic assistant product surface.
 
 ### GET /health
 
-Health check. Returns `{"status": "ok"}`. Also available at **GET /v1/health** for OpenAI-compatible clients that expect the `/v1/` prefix.
+Health check. Returns `{"status": "ok"}`. Also available at `GET /v1/health` for OpenAI-compatible clients that expect the `/v1/` prefix.
 
 ### GET /health/detailed
 
-Extended health check that also reports active sessions, running agents, and resource usage. Useful for monitoring/observability tooling.
+Extended health check that reports gateway state, active sessions, connected platforms, and runtime details. Use it for monitoring.
 
-## Runs API (streaming-friendly alternative)
+## Runs API
 
-In addition to `/v1/chat/completions` and `/v1/responses`, the server exposes a **runs** API for long-form sessions where the client wants to subscribe to progress events instead of managing streaming themselves.
+The runs API is useful when a client wants to start a long-running desk task, disconnect, and later poll or subscribe to structured progress.
 
 ### POST /v1/runs
 
-Create a new agent run. Returns a `run_id` that can be used to subscribe to progress events.
+Create a new agent run. The body accepts `input`, plus optional `session_id`, `instructions`, `conversation_history`, and `previous_response_id`.
+
+```json
+{
+  "input": "Research new evidence for forecast-142 and prepare an update recommendation.",
+  "instructions": "Do not change the ledger. Return the evidence and suggested probability delta."
+}
+```
+
+Response:
 
 ```json
 {
@@ -240,37 +268,47 @@ Create a new agent run. Returns a `run_id` that can be used to subscribe to prog
 }
 ```
 
-Runs accept a simple `input` string and optional `session_id`, `instructions`, `conversation_history`, or `previous_response_id`. When `session_id` is provided, Hermes surfaces it in the run status so external UIs can correlate runs with their own conversation IDs.
-
 ### GET /v1/runs/\{run_id\}
 
-Poll the current run state. This is useful for dashboards that need status without holding an SSE connection open, or for UIs that reconnect after navigation.
+Poll the current run state:
 
 ```json
 {
   "object": "hermes.run",
   "run_id": "run_abc123",
   "status": "completed",
-  "session_id": "space-session",
-  "model": "hermes-agent",
-  "output": "Done.",
-  "usage": {"input_tokens": 50, "output_tokens": 200, "total_tokens": 250}
+  "session_id": "energy-review",
+  "model": "superforecasting-agent",
+  "output": "forecast-142 should be updated from 0.38 to 0.43...",
+  "usage": {
+    "input_tokens": 50,
+    "output_tokens": 200,
+    "total_tokens": 250
+  }
 }
 ```
 
-Statuses are retained briefly after terminal states (`completed`, `failed`, or `cancelled`) for polling and UI reconciliation.
-
 ### GET /v1/runs/\{run_id\}/events
 
-Server-Sent Events stream of the run's tool-call progress, token deltas, and lifecycle events. Designed for dashboards and thick clients that want to attach/detach without losing state.
+Server-Sent Events stream of tool progress, token deltas, approval requests, and lifecycle events. Designed for dashboards and thick clients that reconnect without losing run state.
+
+### POST /v1/runs/\{run_id\}/approval
+
+Resolve a pending approval request for an active run.
 
 ### POST /v1/runs/\{run_id\}/stop
 
-Interrupt a running agent turn. The endpoint returns immediately with `{"status": "stopping"}` while Hermes asks the active agent to stop at the next safe interruption point.
+Interrupt a running agent turn. The endpoint returns `{"status": "stopping"}` while the active agent exits at the next safe interruption point.
 
-## Jobs API (background scheduled work)
+## Jobs API
 
-The server exposes a lightweight jobs CRUD surface for managing scheduled / background agent runs from a remote client. All endpoints are gated behind the same bearer auth.
+The server exposes lightweight CRUD endpoints for scheduled background agent runs. These are useful for remote control planes, but forecast-specific scheduled learning should normally be configured through:
+
+```bash
+superforecasting-agent forecast schedule
+superforecasting-agent forecast watch add
+superforecasting-agent forecast alerts
+```
 
 ### GET /api/jobs
 
@@ -278,54 +316,59 @@ List all scheduled jobs.
 
 ### POST /api/jobs
 
-Create a new scheduled job. Body accepts the same shape as `hermes cron` — prompt, schedule, skills, provider override, delivery target.
+Create a scheduled job. The body accepts the same shape as `superforecasting-agent cron`: prompt, schedule, skills, provider override, and delivery target.
 
 ### GET /api/jobs/\{job_id\}
 
-Fetch a single job's definition and last-run state.
+Fetch a single job definition and last-run state.
 
 ### PATCH /api/jobs/\{job_id\}
 
-Update fields on an existing job (prompt, schedule, etc.). Partial updates are merged.
+Update fields on an existing job.
 
 ### DELETE /api/jobs/\{job_id\}
 
-Remove a job. Also cancels any in-flight run.
+Remove a job and cancel any in-flight run.
 
 ### POST /api/jobs/\{job_id\}/pause
 
-Pause a job without deleting it. Next-scheduled-run timestamps are suspended until resumed.
+Pause a job without deleting it.
 
 ### POST /api/jobs/\{job_id\}/resume
 
-Resume a previously paused job.
+Resume a paused job.
 
 ### POST /api/jobs/\{job_id\}/run
 
-Trigger the job to run immediately, out of schedule.
+Trigger the job immediately, outside its schedule.
 
-## System Prompt Handling
+## Prompt Handling
 
-When a frontend sends a `system` message (Chat Completions) or `instructions` field (Responses API), hermes-agent **layers it on top** of its core system prompt. Your agent keeps all its tools, memory, and skills — the frontend's system prompt adds extra instructions.
+Client `system` messages in Chat Completions and `instructions` in Responses are layered on top of the server-side forecast-desk prompt. They can narrow the behavior for a particular frontend, but they should not replace the forecast protocol.
 
-This means you can customize behavior per-frontend without losing capabilities:
-- Open WebUI system prompt: "You are a Python expert. Always include type hints."
-- The agent still has terminal, file tools, web search, memory, etc.
+Good API instructions are specific and bounded:
+
+```text
+Check evidence freshness for active energy forecasts. Do not write ledger updates.
+Return forecast ID, stale source, and recommended next CLI command.
+```
+
+Avoid using the API prompt to bypass ledger, scoring, calibration, or scheduled review behavior. The closed feedback loop still lives in the forecast ledger and backtesting layer.
 
 ## Authentication
 
-Bearer token auth via the `Authorization` header:
+Bearer token auth uses the `Authorization` header:
 
-```
+```text
 Authorization: Bearer ***
 ```
 
-Configure the key via `API_SERVER_KEY` env var. If you need a browser to call Hermes directly, also set `API_SERVER_CORS_ORIGINS` to an explicit allowlist.
+Configure the key with `API_SERVER_KEY`. If a browser must call the API directly, set `API_SERVER_CORS_ORIGINS` to an explicit allowlist.
 
 :::warning Security
-The API server gives full access to hermes-agent's toolset, **including terminal commands**. When binding to a non-loopback address like `0.0.0.0`, `API_SERVER_KEY` is **required**. Also keep `API_SERVER_CORS_ORIGINS` narrow to control browser access.
+The API server gives external callers access to the server-side agent toolset, including terminal commands and forecast workspace files. When binding to a non-loopback address like `0.0.0.0`, `API_SERVER_KEY` is required. Keep `API_SERVER_CORS_ORIGINS` narrow.
 
-The default bind address (`127.0.0.1`) is for local-only use. Browser access is disabled by default; enable it only for explicit trusted origins.
+The default bind address is `127.0.0.1` for local-only use. Browser access is disabled by default.
 :::
 
 ## Configuration
@@ -334,104 +377,96 @@ The default bind address (`127.0.0.1`) is for local-only use. Browser access is 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `API_SERVER_ENABLED` | `false` | Enable the API server |
-| `API_SERVER_PORT` | `8642` | HTTP server port |
-| `API_SERVER_HOST` | `127.0.0.1` | Bind address (localhost only by default) |
-| `API_SERVER_KEY` | _(none)_ | Bearer token for auth |
-| `API_SERVER_CORS_ORIGINS` | _(none)_ | Comma-separated allowed browser origins |
-| `API_SERVER_MODEL_NAME` | _(profile name)_ | Model name on `/v1/models`. Defaults to profile name, or `hermes-agent` for default profile. |
+| `API_SERVER_ENABLED` | `false` | Enables the API server. |
+| `API_SERVER_PORT` | `8642` | HTTP server port. |
+| `API_SERVER_HOST` | `127.0.0.1` | Bind address. |
+| `API_SERVER_KEY` | _(none)_ | Bearer token for auth. |
+| `API_SERVER_CORS_ORIGINS` | _(none)_ | Comma-separated browser origins. |
+| `API_SERVER_MODEL_NAME` | _(profile name)_ | Model name on `/v1/models`; defaults to `superforecasting-agent` for the default profile and the profile name for named profiles. |
 
 ### config.yaml
 
 ```yaml
-# Not yet supported — use environment variables.
-# config.yaml support coming in a future release.
+# API_SERVER_* values are still environment variables.
+# config.yaml support is not the canonical path for this surface yet.
 ```
 
 ## Security Headers
 
-All responses include security headers:
-- `X-Content-Type-Options: nosniff` — prevents MIME type sniffing
-- `Referrer-Policy: no-referrer` — prevents referrer leakage
+All responses include:
+
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy: no-referrer`
 
 ## CORS
 
-The API server does **not** enable browser CORS by default.
-
-For direct browser access, set an explicit allowlist:
+The API server does not enable browser CORS by default. For direct browser access, set an explicit allowlist:
 
 ```bash
 API_SERVER_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
 
 When CORS is enabled:
-- **Preflight responses** include `Access-Control-Max-Age: 600` (10 minute cache)
-- **SSE streaming responses** include CORS headers so browser EventSource clients work correctly
-- **`Idempotency-Key`** is an allowed request header — clients can send it for deduplication (responses are cached by key for 5 minutes)
 
-Most documented frontends such as Open WebUI connect server-to-server and do not need CORS at all.
+- Preflight responses include `Access-Control-Max-Age: 600`.
+- SSE streaming responses include CORS headers.
+- `Idempotency-Key` is an allowed request header for deduplication.
 
-## Compatible Frontends
+Most frontends connect server-to-server and do not need CORS.
 
-Any frontend that supports the OpenAI API format works. Tested/documented integrations:
+## Compatible Clients
 
-| Frontend | Stars | Connection |
-|----------|-------|------------|
-| [Open WebUI](/docs/user-guide/messaging/open-webui) | 126k | Full guide available |
-| LobeChat | 73k | Custom provider endpoint |
-| LibreChat | 34k | Custom endpoint in librechat.yaml |
-| AnythingLLM | 56k | Generic OpenAI provider |
-| NextChat | 87k | BASE_URL env var |
-| ChatBox | 39k | API Host setting |
-| Jan | 26k | Remote model config |
-| HF Chat-UI | 8k | OPENAI_BASE_URL |
-| big-AGI | 7k | Custom endpoint |
-| OpenAI Python SDK | — | `OpenAI(base_url="http://localhost:8642/v1")` |
-| curl | — | Direct HTTP requests |
+Any client that supports the OpenAI API format can connect. Useful examples:
 
-## Multi-User Setup with Profiles
+| Client | Use |
+|--------|-----|
+| [Open WebUI](/docs/user-guide/messaging/open-webui) | Browser monitoring and occasional forecast-desk prompts. |
+| LobeChat | Custom provider endpoint. |
+| LibreChat | Custom endpoint in `librechat.yaml`. |
+| AnythingLLM | Generic OpenAI provider. |
+| OpenAI Python SDK | `OpenAI(base_url="http://localhost:8642/v1")`. |
+| curl | Direct HTTP requests. |
 
-To give multiple users their own isolated Hermes instance (separate config, memory, skills), use [profiles](/docs/user-guide/profiles):
+Use these clients around the desk. The forecast CLI remains the canonical workflow for creating questions, updating probabilities, resolving outcomes, scoring performance, and running postmortems.
+
+## Profiles
+
+Profiles are separate forecast workspaces with their own config, credentials, memory, skills, and forecast ledger. To expose multiple profiles through the API, give each profile a different port:
 
 ```bash
-# Create a profile per user
-hermes profile create alice
-hermes profile create bob
+superforecasting-agent profile create macro
+superforecasting-agent profile create policy
 
-# Configure each profile's API server on a different port. API_SERVER_* are env
-# vars (not config.yaml keys), so write them to each profile's .env:
-cat >> ~/.hermes/profiles/alice/.env <<EOF
+cat >> ~/.superforecasting-agent/profiles/macro/.env <<EOF
 API_SERVER_ENABLED=true
 API_SERVER_PORT=8643
-API_SERVER_KEY=alice-secret
+API_SERVER_KEY=macro-secret
+API_SERVER_MODEL_NAME=macro-forecast-desk
 EOF
 
-cat >> ~/.hermes/profiles/bob/.env <<EOF
+cat >> ~/.superforecasting-agent/profiles/policy/.env <<EOF
 API_SERVER_ENABLED=true
 API_SERVER_PORT=8644
-API_SERVER_KEY=bob-secret
+API_SERVER_KEY=policy-secret
+API_SERVER_MODEL_NAME=policy-forecast-desk
 EOF
 
-# Start each profile's gateway
-hermes -p alice gateway &
-hermes -p bob gateway &
+superforecasting-agent -p macro gateway &
+superforecasting-agent -p policy gateway &
 ```
 
-Each profile's API server automatically advertises the profile name as the model ID:
-
-- `http://localhost:8643/v1/models` → model `alice`
-- `http://localhost:8644/v1/models` → model `bob`
-
-In Open WebUI, add each as a separate connection. The model dropdown shows `alice` and `bob` as distinct models, each backed by a fully isolated Hermes instance. See the [Open WebUI guide](/docs/user-guide/messaging/open-webui#multi-user-setup-with-profiles) for details.
+Each profile advertises its configured model name through `/v1/models`.
 
 ## Limitations
 
-- **Response storage** — stored responses (for `previous_response_id`) are persisted in SQLite and survive gateway restarts. Max 100 stored responses (LRU eviction).
-- **No file upload** — inline images are supported on both `/v1/chat/completions` and `/v1/responses`, but uploaded files (`file`, `input_file`, `file_id`) and non-image document inputs are not supported through the API.
-- **Model field is cosmetic** — the `model` field in requests is accepted but the actual LLM model used is configured server-side in config.yaml.
+- **Forecast ledger operations**: the API server is an agent-entry surface, not the authoritative ledger API. Use the `forecast` CLI and dashboard forecast pages for lifecycle operations.
+- **Response storage**: stored Responses API state is persisted in SQLite and survives gateway restarts. Max 100 stored responses are retained with LRU eviction.
+- **No file upload**: inline images are supported, but uploaded files and non-image document inputs are not supported through the API.
+- **Model field is cosmetic**: the request `model` is accepted for OpenAI compatibility. The actual LLM provider/model is configured server-side.
+- **Inherited wire names**: compatibility fields, progress events, and session headers can still include `hermes` for existing clients.
 
 ## Proxy Mode
 
-The API server also serves as the backend for **gateway proxy mode**. When another Hermes gateway instance is configured with `GATEWAY_PROXY_URL` pointing at this API server, it forwards all messages here instead of running its own agent. This enables split deployments — for example, a Docker container handling Matrix E2EE that relays to a host-side agent.
+The API server also serves as the backend for gateway proxy mode. When another compatible gateway is configured with `GATEWAY_PROXY_URL` pointing at this API server, it forwards messages here instead of running its own agent. This supports split deployments, such as a container handling Matrix E2EE while the host-side forecast desk owns tools and ledger access.
 
-See [Matrix Proxy Mode](/docs/user-guide/messaging/matrix#proxy-mode-e2ee-on-macos) for the full setup guide.
+See [Matrix Proxy Mode](/docs/user-guide/messaging/matrix#proxy-mode-e2ee-on-macos) for setup details.

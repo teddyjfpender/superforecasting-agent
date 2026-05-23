@@ -1,7 +1,10 @@
 # Context Compression and Caching
 
-Hermes Agent uses a dual compression system and Anthropic prompt caching to
-manage context window usage efficiently across long conversations.
+Superforecasting Agent uses a dual compression system and Anthropic prompt caching to
+manage context window usage efficiently across long conversations and long-running
+forecast research sessions. Compression must preserve enough context for evidence,
+assumptions, model runs, and pending forecast work, while scoreable forecast state
+continues to live in the forecast ledger rather than compressed chat history.
 
 Source files: `agent/context_engine.py` (ABC), `agent/context_compressor.py` (default engine),
 `agent/prompt_caching.py`, `gateway/run.py` (session hygiene), `run_agent.py` (search for `_compress_context`)
@@ -30,13 +33,13 @@ Selection is config-driven via `context.engine` in `config.yaml`. The resolution
 
 Plugin engines are **never auto-activated** — the user must explicitly set `context.engine` to the plugin's name. The default `"compressor"` always uses the built-in.
 
-Configure via `hermes plugins` → Provider Plugins → Context Engine, or edit `config.yaml` directly.
+Configure via `superforecasting-agent plugins` -> Provider Plugins -> Context Engine, or edit `config.yaml` directly.
 
 For building a context engine plugin, see [Context Engine Plugins](/docs/developer-guide/context-engine-plugin).
 
 ## Dual Compression System
 
-Hermes has two separate compression layers that operate independently:
+Superforecasting Agent has two separate compression layers that operate independently:
 
 ```
                      ┌──────────────────────────┐
@@ -216,56 +219,56 @@ text for this purpose.
 ### Before Compression (45 messages, ~95K tokens)
 
 ```
-[0] system:    "You are a helpful assistant..." (system prompt)
-[1] user:      "Help me set up a FastAPI project"
-[2] assistant: <tool_call> terminal: mkdir project </tool_call>
-[3] tool:      "directory created"
-[4] assistant: <tool_call> write_file: main.py </tool_call>
-[5] tool:      "file written (2.3KB)"
-    ... 30 more turns of file editing, testing, debugging ...
-[38] assistant: <tool_call> terminal: pytest </tool_call>
-[39] tool:      "8 passed, 2 failed\n..."  (5KB output)
-[40] user:      "Fix the failing tests"
-[41] assistant: <tool_call> read_file: tests/test_api.py </tool_call>
-[42] tool:      "import pytest\n..."  (3KB)
-[43] assistant: "I see the issue with the test fixtures..."
-[44] user:      "Great, also add error handling"
+[0] system:    "You are Superforecasting Agent..." (system prompt)
+[1] user:      "Will Country X pass the energy bill before July 1?"
+[2] assistant: <tool_call> forecast_ledger: create_question </tool_call>
+[3] tool:      "question created"
+[4] assistant: <tool_call> web_search: committee schedule </tool_call>
+[5] tool:      "article list..."  (7KB)
+    ... 30 more turns of evidence review, base-rate work, and modeling ...
+[38] assistant: <tool_call> forecast_ledger: record_model_run </tool_call>
+[39] tool:      "model run recorded\n..."  (5KB output)
+[40] user:      "New committee amendment was filed. Reassess."
+[41] assistant: <tool_call> web_extract: amendment text </tool_call>
+[42] tool:      "amendment summary..."  (3KB)
+[43] assistant: "This changes the committee-path assumption..."
+[44] user:      "Update the forecast if the evidence supports it"
 ```
 
 ### After Compression (25 messages, ~45K tokens)
 
 ```
-[0] system:    "You are a helpful assistant...
+[0] system:    "You are Superforecasting Agent...
                [Note: Some earlier conversation turns have been compacted...]"
-[1] user:      "Help me set up a FastAPI project"
+[1] user:      "Will Country X pass the energy bill before July 1?"
 [2] assistant: "[CONTEXT COMPACTION] Earlier turns were compacted...
 
                ## Goal
-               Set up a FastAPI project with tests and error handling
+               Assess whether Country X passes the energy bill before July 1
 
                ## Progress
                ### Done
-               - Created project structure: main.py, tests/, requirements.txt
-               - Implemented 5 API endpoints in main.py
-               - Wrote 10 test cases in tests/test_api.py
-               - 8/10 tests passing
+               - Created forecast question with resolution criteria
+               - Added committee-calendar evidence and sponsor statements
+               - Built a reference class for prior committee-stage energy bills
+               - Recorded one legislative-path model run
 
                ### In Progress
-               - Fixing 2 failing tests (test_create_user, test_delete_user)
+               - Evaluating whether the new amendment changes passage odds
 
                ## Relevant Files
-               - main.py — FastAPI app with 5 endpoints
-               - tests/test_api.py — 10 test cases
-               - requirements.txt — fastapi, pytest, httpx
+               - forecast ledger question Q-42
+               - source snapshot for committee schedule
+               - source snapshot for amendment text
 
                ## Next Steps
-               - Fix failing test fixtures
-               - Add error handling"
-[3] user:      "Fix the failing tests"
-[4] assistant: <tool_call> read_file: tests/test_api.py </tool_call>
-[5] tool:      "import pytest\n..."
-[6] assistant: "I see the issue with the test fixtures..."
-[7] user:      "Great, also add error handling"
+               - Compare amendment against base-rate assumptions
+               - Decide whether to create an auditable forecast update"
+[3] user:      "New committee amendment was filed. Reassess."
+[4] assistant: <tool_call> web_extract: amendment text </tool_call>
+[5] tool:      "amendment summary..."
+[6] assistant: "This changes the committee-path assumption..."
+[7] user:      "Update the forecast if the evidence supports it"
 ```
 
 
@@ -278,7 +281,7 @@ conversation prefix. Uses Anthropic's `cache_control` breakpoints.
 
 ### Strategy: system_and_3
 
-Anthropic allows a maximum of 4 `cache_control` breakpoints per request. Hermes
+Anthropic allows a maximum of 4 `cache_control` breakpoints per request. Superforecasting Agent
 uses the "system_and_3" strategy:
 
 ```

@@ -1,11 +1,11 @@
 """
-Unified self-relaunch for Hermes CLI.
+Unified self-relaunch for Superforecasting Agent CLI.
 
 Preserves critical flags (--tui, --dev, --profile, --model, etc.) across
-process replacement so that ``hermes sessions browse`` or post-setup relaunch
+process replacement so that ``superforecasting-agent sessions browse`` or post-setup relaunch
 doesn't silently drop the user's UI mode or other preferences.
 
-Also works when ``hermes`` is not on PATH (e.g. ``nix run`` or ``python -m``).
+Also works when ``superforecasting-agent`` is not on PATH (e.g. ``nix run`` or ``python -m``).
 """
 
 import os
@@ -195,9 +195,9 @@ def relaunch(
             # cryptic.  Common causes: ``hermes`` not on PATH yet (install
             # hasn't propagated User PATH into this shell) or a stale shim.
             print(
-                f"\nHermes relaunch failed: {exc}\n"
+                f"\nSuperforecasting Agent relaunch failed: {exc}\n"
                 f"Command: {' '.join(new_argv)}\n"
-                f"Fix: open a new terminal so PATH picks up, then re-run hermes.",
+                f"Fix: open a new terminal so PATH picks up, then re-run superforecasting-agent.",
                 file=sys.stderr,
             )
             sys.exit(1)

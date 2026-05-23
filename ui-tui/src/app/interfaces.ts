@@ -36,7 +36,7 @@ export type BusyInputMode = 'interrupt' | 'queue' | 'steer'
 // validation + usage hint) both import it.
 export const INDICATOR_STYLES = ['ascii', 'emoji', 'kaomoji', 'unicode'] as const
 export type IndicatorStyle = (typeof INDICATOR_STYLES)[number]
-export const DEFAULT_INDICATOR_STYLE: IndicatorStyle = 'kaomoji'
+export const DEFAULT_INDICATOR_STYLE: IndicatorStyle = 'unicode'
 
 export interface SelectionApi {
   captureScrolledRows: (firstRow: number, lastRow: number, side: 'above' | 'below') => void
@@ -102,6 +102,8 @@ export interface UiState {
   compact: boolean
   detailsMode: DetailsMode
   detailsModeCommandOverride: boolean
+  forecastDeskRailSections: PanelSection[]
+  forecastDeskStatus: string
   info: null | SessionInfo
   inlineDiffs: boolean
   mouseTracking: boolean

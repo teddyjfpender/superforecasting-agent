@@ -1,593 +1,496 @@
 ---
 sidebar_position: 15
-title: "Automation Templates"
-description: "Ready-to-use automation recipes — scheduled tasks, GitHub event triggers, API webhooks, and multi-skill workflows"
+title: "Forecast Automation Templates"
+description: "Ready-to-use templates for forecast review, source watching, backtesting, scoring, and calibration learning."
 ---
 
-# Automation Templates
+# Forecast Automation Templates
 
-Copy-paste recipes for common automation patterns. Each template uses Hermes's built-in [cron scheduler](/docs/user-guide/features/cron) for time-based triggers and [webhook platform](/docs/user-guide/messaging/webhooks) for event-driven triggers.
+Copy-paste recipes for running Superforecasting Agent as a command-line forecasting desk. These templates are deliberately question-agnostic: use them for macro, politics, science, markets, policy, business, product, sports, legal, regulatory, or operational-risk questions.
 
-Every template works with **any model** — not locked to a single provider.
+The common pattern is:
 
-:::tip Three Trigger Types
-| Trigger | How | Tool |
-|---------|-----|------|
-| **Schedule** | Runs on a cadence (hourly, nightly, weekly) | `cronjob` tool or `/cron` slash command |
-| **GitHub Event** | Fires on PR opens, pushes, issues, CI results | Webhook platform (`hermes webhook subscribe`) |
-| **API Call** | External service POSTs JSON to your endpoint | Webhook platform (config.yaml routes or `hermes webhook subscribe`) |
+1. Keep forecast state in the ledger.
+2. Watch evidence sources and close dates.
+3. Trigger review when a belief may be stale.
+4. Score resolved forecasts.
+5. Write postmortems and promote calibration lessons.
+6. Reuse those lessons during future forecast updates.
 
-All three support delivery to Telegram, Discord, Slack, SMS, email, GitHub comments, or local files.
+:::tip Forecast-first automation
+Prefer `superforecasting-agent schedule`, `watch`, `alerts`, `backtest`, and `performance` when the work should touch the forecast ledger. Use inherited `cron`, webhook, and `send` commands for delivery glue, external event triggers, or script output.
 :::
 
----
+## Trigger Types
 
-## Development Workflow
+| Trigger | Use it for | Command surface |
+|---------|------------|-----------------|
+| Scheduled self-check | Stale forecast review, scoring, postmortems, domain learning | `superforecasting-agent schedule` |
+| Watched source | Source-change alerts for URLs, feeds, data series, markets, papers, filings | `superforecasting-agent watch` |
+| Model cron | A scheduled model prompt that researches, summarizes, or routes work | `superforecasting-agent cron` |
+| Script output | Deterministic shell or Python checks that notify humans | `superforecasting-agent send` |
+| Webhook | External systems that POST events into the desk | `superforecasting-agent webhook` |
 
-### Nightly Backlog Triage
+## Operating Rules
 
-Label, prioritize, and summarize new issues every night. Delivers a digest to your team channel.
+- Every probability update should be append-only via `superforecasting-agent update`.
+- Every material source should be captured as evidence, a source snapshot, a model run, or a reference-class record.
+- Scheduled jobs should create alerts or ledger records, not silently overwrite beliefs.
+- Auto-scoring and auto-postmortem jobs are useful only when resolution criteria and resolver sources are explicit.
+- Benchmark imports are useful calibration data, but the product should not revolve around any single tournament or platform.
 
-**Trigger:** Schedule (nightly)
+## Standing Desk Loop
+
+### Install the self-check bridge
+
+Use this when you want scheduled ledger maintenance without writing a custom cron prompt.
 
 ```bash
-hermes cron create "0 2 * * *" \
-  "You are a project manager triaging the NousResearch/hermes-agent GitHub repo.
+superforecasting-agent schedule install-cron \
+  --schedule "every 1h" \
+  --name "Forecast self-check" \
+  --deliver local \
+  --auto-score \
+  --auto-postmortem
+```
 
-1. Run: gh issue list --repo NousResearch/hermes-agent --state open --json number,title,labels,author,createdAt --limit 30
-2. Identify issues opened in the last 24 hours
-3. For each new issue:
-   - Suggest a priority label (P0-critical, P1-high, P2-medium, P3-low)
-   - Suggest a category label (bug, feature, docs, security)
-   - Write a one-line triage note
-4. Summarize: total open issues, new today, breakdown by priority
+This installs a cron bridge that runs due forecast schedules, creates alerts, scores resolved questions where possible, and creates postmortem work when configured.
 
-Format as a clean digest. If no new issues, respond with [SILENT]." \
-  --name "Nightly backlog triage" \
+### Add a portfolio review schedule
+
+Use a portfolio when you want a single recurring review over a book of related questions.
+
+```bash
+superforecasting-agent schedule add \
+  --portfolio active-desk \
+  --cadence "every 6h" \
+  --next-run-at "2026-05-22T14:00:00Z" \
+  --trigger-reason "standing active forecast review" \
+  --auto-score \
+  --auto-postmortem
+```
+
+Check what will run:
+
+```bash
+superforecasting-agent schedule list
+superforecasting-agent schedule run --auto-score --auto-postmortem
+superforecasting-agent alerts
+```
+
+## Daily Review Templates
+
+### Morning stale forecast review
+
+Use this for human-readable daily triage. It should identify work, not manufacture ungrounded probability changes.
+
+```bash
+superforecasting-agent cron create "0 8 * * *" \
+  "Run the morning forecast review.
+
+1. Run: superforecasting-agent review --stale --last 1d
+2. Run: superforecasting-agent alerts
+3. For each forecast that needs work:
+   - Explain why it is stale or alerted
+   - List the next command to run
+   - Do not update probability unless new cited evidence is captured
+4. If no forecasts need work, respond with [SILENT]." \
+  --name "Morning forecast review" \
   --deliver telegram
 ```
 
-### Automatic PR Code Review
+### End-of-day belief-change digest
 
-Review every pull request automatically when it's opened. Posts a review comment directly on the PR.
-
-**Trigger:** GitHub webhook
-
-**Option A — Dynamic subscription (CLI):**
+Use this when you want a concise audit of what moved during the day.
 
 ```bash
-hermes webhook subscribe github-pr-review \
-  --events "pull_request" \
-  --prompt "Review this pull request:
-Repository: {repository.full_name}
-PR #{pull_request.number}: {pull_request.title}
-Author: {pull_request.user.login}
-Action: {action}
-Diff URL: {pull_request.diff_url}
+superforecasting-agent cron create "0 18 * * 1-5" \
+  "Create an end-of-day forecast desk digest.
 
-Fetch the diff with: curl -sL {pull_request.diff_url}
-
-Review for:
-- Security issues (injection, auth bypass, secrets in code)
-- Performance concerns (N+1 queries, unbounded loops, memory leaks)
-- Code quality (naming, duplication, error handling)
-- Missing tests for new behavior
-
-Post a concise review. If the PR is a trivial docs/typo change, say so briefly." \
-  --skill github-code-review \
-  --deliver github_comment
-```
-
-**Option B — Static route (config.yaml):**
-
-```yaml
-platforms:
-  webhook:
-    enabled: true
-    extra:
-      port: 8644
-      secret: "your-global-secret"
-      routes:
-        github-pr-review:
-          events: ["pull_request"]
-          secret: "github-webhook-secret"
-          prompt: |
-            Review PR #{pull_request.number}: {pull_request.title}
-            Repository: {repository.full_name}
-            Author: {pull_request.user.login}
-            Diff URL: {pull_request.diff_url}
-            Review for security, performance, and code quality.
-          skills: ["github-code-review"]
-          deliver: "github_comment"
-          deliver_extra:
-            repo: "{repository.full_name}"
-            pr_number: "{pull_request.number}"
-```
-
-Then in GitHub: **Settings → Webhooks → Add webhook** → Payload URL: `http://your-server:8644/webhooks/github-pr-review`, Content type: `application/json`, Secret: `github-webhook-secret`, Events: **Pull requests**.
-
-### Docs Drift Detection
-
-Weekly scan of merged PRs to find API changes that need documentation updates.
-
-**Trigger:** Schedule (weekly)
-
-```bash
-hermes cron create "0 9 * * 1" \
-  "Scan the NousResearch/hermes-agent repo for documentation drift.
-
-1. Run: gh pr list --repo NousResearch/hermes-agent --state merged --json number,title,files,mergedAt --limit 30
-2. Filter to PRs merged in the last 7 days
-3. For each merged PR, check if it modified:
-   - Tool schemas (tools/*.py) — may need docs/reference/tools-reference.md update
-   - CLI commands (hermes_cli/commands.py, hermes_cli/main.py) — may need docs/reference/cli-commands.md update
-   - Config options (hermes_cli/config.py) — may need docs/user-guide/configuration.md update
-   - Environment variables — may need docs/reference/environment-variables.md update
-4. Cross-reference: for each code change, check if the corresponding docs page was also updated in the same PR
-
-Report any gaps where code changed but docs didn't. If everything is in sync, respond with [SILENT]." \
-  --name "Docs drift detection" \
-  --deliver telegram
-```
-
-### Dependency Security Audit
-
-Daily scan for known vulnerabilities in project dependencies.
-
-**Trigger:** Schedule (daily)
-
-```bash
-hermes cron create "0 6 * * *" \
-  "Run a dependency security audit on the hermes-agent project.
-
-1. cd ~/.hermes/hermes-agent && source .venv/bin/activate
-2. Run: pip audit --format json 2>/dev/null || pip audit 2>&1
-3. Run: npm audit --json 2>/dev/null (in website/ directory if it exists)
-4. Check for any CVEs with CVSS score >= 7.0
-
-If vulnerabilities found:
-- List each one with package name, version, CVE ID, severity
-- Check if an upgrade is available
-- Note if it's a direct dependency or transitive
-
-If no vulnerabilities, respond with [SILENT]." \
-  --name "Dependency audit" \
-  --deliver telegram
-```
-
----
-
-## DevOps & Monitoring
-
-### Deploy Verification
-
-Trigger smoke tests after every deployment. Your CI/CD pipeline POSTs to the webhook when a deploy completes.
-
-**Trigger:** API call (webhook)
-
-```bash
-hermes webhook subscribe deploy-verify \
-  --events "deployment" \
-  --prompt "A deployment just completed:
-Service: {service}
-Environment: {environment}
-Version: {version}
-Deployed by: {deployer}
-
-Run these verification steps:
-1. Check if the service is responding: curl -s -o /dev/null -w '%{http_code}' {health_url}
-2. Search recent logs for errors: check the deployment payload for any error indicators
-3. Verify the version matches: curl -s {health_url}/version
-
-Report: deployment status (healthy/degraded/failed), response time, any errors found.
-If healthy, keep it brief. If degraded or failed, provide detailed diagnostics." \
-  --deliver telegram
-```
-
-Your CI/CD pipeline triggers it:
-
-```bash
-curl -X POST http://your-server:8644/webhooks/deploy-verify \
-  -H "Content-Type: application/json" \
-  -H "X-Hub-Signature-256: sha256=$(echo -n '{"service":"api","environment":"prod","version":"2.1.0","deployer":"ci","health_url":"https://api.example.com/health"}' | openssl dgst -sha256 -hmac 'your-secret' | cut -d' ' -f2)" \
-  -d '{"service":"api","environment":"prod","version":"2.1.0","deployer":"ci","health_url":"https://api.example.com/health"}'
-```
-
-### Alert Triage
-
-Correlate monitoring alerts with recent changes to draft a response. Works with Datadog, PagerDuty, Grafana, or any alerting system that can POST JSON.
-
-**Trigger:** API call (webhook)
-
-```bash
-hermes webhook subscribe alert-triage \
-  --prompt "Monitoring alert received:
-Alert: {alert.name}
-Severity: {alert.severity}
-Service: {alert.service}
-Message: {alert.message}
-Timestamp: {alert.timestamp}
-
-Investigate:
-1. Search the web for known issues with this error pattern
-2. Check if this correlates with any recent deployments or config changes
-3. Draft a triage summary with:
-   - Likely root cause
-   - Suggested first response steps
-   - Escalation recommendation (P1-P4)
-
-Be concise. This goes to the on-call channel." \
+1. Run: superforecasting-agent list --status active --limit 50
+2. Run: superforecasting-agent scores --all
+3. Identify questions updated today, alerts still open, and forecasts due before tomorrow.
+4. For each updated forecast, include:
+   - Question id
+   - Current probability or value
+   - Direction of movement if visible
+   - Evidence or model references that justified the change
+5. Keep the digest under 500 words. If nothing changed, respond with [SILENT]." \
+  --name "Forecast desk digest" \
   --deliver slack
 ```
 
-### Uptime Monitor
+### Confidence audit
 
-Check endpoints every 30 minutes. Only notify when something is down.
+Use this to catch forecasts that are too vague or too confident for their evidence base.
 
-**Trigger:** Schedule (every 30 min)
+```bash
+superforecasting-agent cron create "0 11 * * 2,5" \
+  "Run a confidence audit.
 
-```python title="~/.hermes/scripts/check-uptime.py"
-import urllib.request, json, time
+1. Run: superforecasting-agent review --confidence-above 0.85 --last 14d
+2. Run: superforecasting-agent review --confidence-below 0.15 --last 14d
+3. For each extreme forecast, check whether it has recent evidence, a reference class, and a clear resolution source.
+4. Flag any forecast whose confidence appears unsupported.
+5. Do not change probabilities. Recommend research or update commands only." \
+  --name "Confidence audit" \
+  --deliver telegram
+```
 
-ENDPOINTS = [
-    {"name": "API", "url": "https://api.example.com/health"},
-    {"name": "Web", "url": "https://www.example.com"},
-    {"name": "Docs", "url": "https://docs.example.com"},
-]
+## Watched Source Templates
 
-results = []
-for ep in ENDPOINTS:
-    try:
-        start = time.time()
-        req = urllib.request.Request(ep["url"], headers={"User-Agent": "Hermes-Monitor/1.0"})
-        resp = urllib.request.urlopen(req, timeout=10)
-        elapsed = round((time.time() - start) * 1000)
-        results.append({"name": ep["name"], "status": resp.getcode(), "ms": elapsed})
-    except Exception as e:
-        results.append({"name": ep["name"], "status": "DOWN", "error": str(e)})
+### Watch a question-specific news stream
 
-down = [r for r in results if r.get("status") == "DOWN" or (isinstance(r.get("status"), int) and r["status"] >= 500)]
-if down:
-    print("OUTAGE DETECTED")
-    for r in down:
-        print(f"  {r['name']}: {r.get('error', f'HTTP {r[\"status\"]}')} ")
-    print(f"\nAll results: {json.dumps(results, indent=2)}")
+Use watched sources for external changes that should create an alert. The alert tells the desk what to research next.
+
+```bash
+superforecasting-agent watch add "gdelt:semiconductor export controls" \
+  --question fq_123456789abc \
+  --source-type gdelt
+
+superforecasting-agent watch check --question fq_123456789abc
+superforecasting-agent alerts
+```
+
+When the alert is meaningful, import the new evidence and update only if it moves the probability:
+
+```bash
+superforecasting-agent import gdelt "semiconductor export controls" \
+  --question fq_123456789abc \
+  --limit 10 \
+  --claim-type fact
+
+superforecasting-agent update fq_123456789abc \
+  --probability 0.42 \
+  --rationale "Updated after new export-control reporting changed the near-term policy odds." \
+  --evidence-ref ev_123456789abc \
+  --require-citations \
+  --use-active-lessons
+```
+
+### Watch macroeconomic data releases
+
+Use this for CPI, unemployment, rates, industrial production, or other time-series data.
+
+```bash
+superforecasting-agent watch add "fred:CPIAUCSL" \
+  --domain macro \
+  --topic inflation \
+  --source-type fred
+
+superforecasting-agent watch add "bls:CUUR0000SA0" \
+  --domain macro \
+  --topic inflation \
+  --source-type bls
+```
+
+Run the checks from the scheduler or manually:
+
+```bash
+superforecasting-agent watch check --domain macro --topic inflation
+superforecasting-agent self-check --domain macro --topic inflation --stale-days 3
+```
+
+### Watch papers, filings, or market pages
+
+Use source prefixes to make the watch type explicit.
+
+```bash
+superforecasting-agent watch add "arxiv:AI safety evaluations" \
+  --topic ai-safety \
+  --source-type arxiv
+
+superforecasting-agent watch add "sec:0000320193" \
+  --domain equities \
+  --topic apple \
+  --source-type sec
+
+superforecasting-agent watch add "polymarket:https://polymarket.com/event/example-market" \
+  --question fq_abcdef123456 \
+  --source-type polymarket
+```
+
+Review open alerts before changing any forecast:
+
+```bash
+superforecasting-agent alerts
+superforecasting-agent show fq_abcdef123456
+```
+
+## Backtesting And Benchmark Templates
+
+### Weekly backtest suite
+
+Use this to measure the local probability engine and calibration memory on held-out cases.
+
+```bash
+superforecasting-agent cron create "0 7 * * 1" \
+  "Run the weekly forecast backtest review.
+
+1. Run: superforecasting-agent backtest --all-benchmarks --probability-source forecast-engine
+2. Run: superforecasting-agent performance --last 10
+3. Run: superforecasting-agent calibration --by-origin
+4. Summarize:
+   - Mean Brier and log score trend
+   - Which domains or horizons underperformed
+   - Whether active calibration lessons helped or hurt
+   - One concrete change to test next week
+5. Keep the report under 700 words." \
+  --name "Weekly forecast backtest" \
+  --deliver slack
+```
+
+### Import an external benchmark without making it the product center
+
+Use this when a public platform has useful resolved questions. The imported data becomes one benchmark source among many.
+
+```bash
+superforecasting-agent import benchmark manifold:resolved \
+  --name "Manifold resolved sample" \
+  --description "Resolved binary public-market questions for calibration comparison" \
+  --limit 200
+
+superforecasting-agent import benchmark metaculus:resolved \
+  --name "Metaculus resolved sample" \
+  --description "Resolved binary public questions for benchmark comparison" \
+  --limit 200
+
+superforecasting-agent backtest --benchmarks
+```
+
+Run the imported dataset by id when the import command prints it:
+
+```bash
+superforecasting-agent backtest imported:bench_123456789abc \
+  --probability-source forecast-engine
+
+superforecasting-agent performance --dataset "Metaculus"
+```
+
+### Compare probability sources
+
+Use this when you want to see whether the forecast engine is beating naive, stored dataset probabilities, or an explicit baseline ensemble.
+
+```bash
+superforecasting-agent backtest example:binary-calibration \
+  --probability-source naive
+
+superforecasting-agent backtest example:binary-calibration \
+  --probability-source baseline-ensemble
+
+superforecasting-agent backtest example:binary-calibration \
+  --probability-source forecast-engine
+
+superforecasting-agent performance --last 20
+```
+
+## Resolution And Learning Templates
+
+### Resolve, score, and postmortem a question
+
+Use this whenever a forecast resolves. The postmortem is the main path by which the desk learns from mistakes.
+
+```bash
+superforecasting-agent resolve fq_123456789abc \
+  --outcome yes \
+  --source "https://example.com/final-result" \
+  --resolver-type source_adapter \
+  --status confirmed \
+  --confirmed-by "official result feed"
+
+superforecasting-agent score fq_123456789abc
+
+superforecasting-agent postmortem fq_123456789abc \
+  --summary "The event occurred earlier than expected." \
+  --what-happened "The regulator approved the rule before the close date." \
+  --what-was-expected "The prior forecast expected a longer review cycle." \
+  --missed-evidence "The agency calendar already had a vote window." \
+  --overweighted-evidence "Overweighted historical delay rates from older administrations." \
+  --base-rate-error "Reference class mixed high-salience and routine approvals." \
+  --lesson "For this domain, separate routine approvals from controversial rulemakings before applying delay base rates." \
+  --calibration-adjustment-json '{"scope_type":"domain","scope_ref":"policy","status":"candidate","confidence":0.7}'
+```
+
+Review and promote lessons:
+
+```bash
+superforecasting-agent lesson list
+superforecasting-agent lesson status cl_123456789abc --status active --confidence 0.8
+```
+
+### Scheduled domain learning
+
+Use this when a domain has enough resolved forecasts to justify recurring error-profile updates.
+
+```bash
+superforecasting-agent schedule add \
+  --domain macro \
+  --cadence "every 1d" \
+  --next-run-at "2026-05-23T06:00:00Z" \
+  --trigger-reason "domain calibration and learning refresh" \
+  --auto-score \
+  --auto-postmortem
+
+superforecasting-agent cron create "0 6 * * *" \
+  "Run the macro domain learning refresh.
+
+1. Run: superforecasting-agent schedule run --auto-score --auto-postmortem
+2. Run: superforecasting-agent errors --domain macro
+3. Run: superforecasting-agent calibration --domain macro --by-origin
+4. Run: superforecasting-agent lesson list --scope-type domain --scope-ref macro
+5. Summarize recurring errors and list active lessons that should be applied to new macro updates.
+6. If there is no new score, postmortem, or alert, respond with [SILENT]." \
+  --name "Macro domain learning refresh" \
+  --deliver local
+```
+
+### Apply active lessons during an update
+
+Use this when a domain, topic, or question-type lesson should affect the next probability.
+
+```bash
+superforecasting-agent update fq_123456789abc \
+  --probability 0.58 \
+  --rationale "New labor-market evidence raises the probability, adjusted for active macro overconfidence lessons." \
+  --evidence-ref ev_123456789abc \
+  --reference-class-ref rc_123456789abc \
+  --use-active-lessons \
+  --require-citations
+```
+
+Preview first when the change is high-stakes:
+
+```bash
+superforecasting-agent update fq_123456789abc \
+  --probability 0.58 \
+  --rationale "Previewing the update before writing a snapshot." \
+  --evidence-ref ev_123456789abc \
+  --use-active-lessons \
+  --require-citations \
+  --preview
+```
+
+## Script And Delivery Templates
+
+### Send source-monitor output to a channel
+
+Use `send` when a script has already decided what to say.
+
+```bash
+superforecasting-agent alerts > /tmp/forecast-alerts.txt
+
+if [ -s /tmp/forecast-alerts.txt ]; then
+  superforecasting-agent send \
+    --to slack:#forecast-desk \
+    --subject "[Forecast alerts]" \
+    --file /tmp/forecast-alerts.txt
+fi
+```
+
+### Script-only data heartbeat
+
+Use a deterministic script when you need a simple health check with no model call.
+
+```python title="~/.superforecasting-agent/scripts/check-data-feed.py"
+from pathlib import Path
+from time import time
+
+path = Path.home() / ".superforecasting-agent" / "data" / "macro-feed.json"
+max_age_seconds = 36 * 60 * 60
+
+if not path.exists():
+    print("macro feed missing")
+elif time() - path.stat().st_mtime > max_age_seconds:
+    print("macro feed stale")
 else:
-    print("NO_ISSUES")
+    print("")
 ```
 
+Run it from a shell cron entry or from the inherited cron script surface:
+
 ```bash
-hermes cron create "every 30m" \
-  "If the script reports OUTAGE DETECTED, summarize which services are down and suggest likely causes. If NO_ISSUES, respond with [SILENT]." \
-  --script ~/.hermes/scripts/check-uptime.py \
-  --name "Uptime monitor" \
+superforecasting-agent cron create "0 */6 * * *" \
+  "If the script output is empty, respond with [SILENT]. Otherwise explain which forecast data feed is unhealthy and recommend a refresh." \
+  --script ~/.superforecasting-agent/scripts/check-data-feed.py \
+  --name "Macro feed heartbeat" \
   --deliver telegram
 ```
 
----
+## Webhook Templates
 
-## Research & Intelligence
+### Resolver-source event
 
-### Competitive Repository Scout
-
-Monitor competitor repos for interesting PRs, features, and architectural decisions.
-
-**Trigger:** Schedule (daily)
+Use this when an external system knows that a resolution source changed, but the forecast desk still needs to inspect and record the result.
 
 ```bash
-hermes cron create "0 8 * * *" \
-  "Scout these AI agent repositories for notable activity in the last 24 hours:
+superforecasting-agent webhook subscribe forecast-resolver-event \
+  --events "resolution_source_changed" \
+  --prompt "Resolution source event received:
+Question id: {question_id}
+Resolution source: {resolution_source}
+Observed value: {observed_value}
+Timestamp: {timestamp}
 
-Repos to check:
-- anthropics/claude-code
-- openai/codex
-- All-Hands-AI/OpenHands
-- Aider-AI/aider
-
-For each repo:
-1. gh pr list --repo <repo> --state all --json number,title,author,createdAt,mergedAt --limit 15
-2. gh issue list --repo <repo> --state open --json number,title,labels,createdAt --limit 10
-
-Focus on:
-- New features being developed
-- Architectural changes
-- Integration patterns we could learn from
-- Security fixes that might affect us too
-
-Skip routine dependency bumps and CI fixes. If nothing notable, respond with [SILENT].
-If there are findings, organize by repo with brief analysis of each item." \
-  --skill competitive-pr-scout \
-  --name "Competitor scout" \
-  --deliver telegram
-```
-
-### AI News Digest
-
-Weekly roundup of AI/ML developments.
-
-**Trigger:** Schedule (weekly)
-
-```bash
-hermes cron create "0 9 * * 1" \
-  "Generate a weekly AI news digest covering the past 7 days:
-
-1. Search the web for major AI announcements, model releases, and research breakthroughs
-2. Search for trending ML repositories on GitHub
-3. Check arXiv for highly-cited papers on language models and agents
-
-Structure:
-## Headlines (3-5 major stories)
-## Notable Papers (2-3 papers with one-sentence summaries)
-## Open Source (interesting new repos or major releases)
-## Industry Moves (funding, acquisitions, launches)
-
-Keep each item to 1-2 sentences. Include links. Total under 600 words." \
-  --name "Weekly AI digest" \
-  --deliver telegram
-```
-
-### Paper Digest with Notes
-
-Daily arXiv scan that saves summaries to your note-taking system.
-
-**Trigger:** Schedule (daily)
-
-```bash
-hermes cron create "0 8 * * *" \
-  "Search arXiv for the 3 most interesting papers on 'language model reasoning' OR 'tool-use agents' from the past day. For each paper, create an Obsidian note with the title, authors, abstract summary, key contribution, and potential relevance to Hermes Agent development." \
-  --skill arxiv --skill obsidian \
-  --name "Paper digest" \
-  --deliver local
-```
-
----
-
-## GitHub Event Automations
-
-### Issue Auto-Labeling
-
-Automatically label and respond to new issues.
-
-**Trigger:** GitHub webhook
-
-```bash
-hermes webhook subscribe github-issues \
-  --events "issues" \
-  --prompt "New GitHub issue received:
-Repository: {repository.full_name}
-Issue #{issue.number}: {issue.title}
-Author: {issue.user.login}
-Action: {action}
-Body: {issue.body}
-Labels: {issue.labels}
-
-If this is a new issue (action=opened):
-1. Read the issue title and body carefully
-2. Suggest appropriate labels (bug, feature, docs, security, question)
-3. If it's a bug report, check if you can identify the affected component from the description
-4. Post a helpful initial response acknowledging the issue
-
-If this is a label or assignment change, respond with [SILENT]." \
-  --deliver github_comment
-```
-
-### CI Failure Analysis
-
-Analyze CI failures and post diagnostics on the PR.
-
-**Trigger:** GitHub webhook
-
-```yaml
-# config.yaml route
-platforms:
-  webhook:
-    enabled: true
-    extra:
-      routes:
-        ci-failure:
-          events: ["check_run"]
-          secret: "ci-secret"
-          prompt: |
-            CI check failed:
-            Repository: {repository.full_name}
-            Check: {check_run.name}
-            Status: {check_run.conclusion}
-            PR: #{check_run.pull_requests.0.number}
-            Details URL: {check_run.details_url}
-
-            If conclusion is "failure":
-            1. Fetch the log from the details URL if accessible
-            2. Identify the likely cause of failure
-            3. Suggest a fix
-            If conclusion is "success", respond with [SILENT].
-          deliver: "github_comment"
-          deliver_extra:
-            repo: "{repository.full_name}"
-            pr_number: "{check_run.pull_requests.0.number}"
-```
-
-### Auto-Port Changes Across Repos
-
-When a PR merges in one repo, automatically port the equivalent change to another.
-
-**Trigger:** GitHub webhook
-
-```bash
-hermes webhook subscribe auto-port \
-  --events "pull_request" \
-  --prompt "PR merged in the source repository:
-Repository: {repository.full_name}
-PR #{pull_request.number}: {pull_request.title}
-Author: {pull_request.user.login}
-Action: {action}
-Merge commit: {pull_request.merge_commit_sha}
-
-If action is 'closed' and pull_request.merged is true:
-1. Fetch the diff: curl -sL {pull_request.diff_url}
-2. Analyze what changed
-3. Determine if this change needs to be ported to the Go SDK equivalent
-4. If yes, create a branch, apply the equivalent changes, and open a PR on the target repo
-5. Reference the original PR in the new PR description
-
-If action is not 'closed' or not merged, respond with [SILENT]." \
-  --skill github-pr-workflow \
-  --deliver log
-```
-
----
-
-## Business Operations
-
-### Stripe Payment Monitoring
-
-Track payment events and get summaries of failures.
-
-**Trigger:** API call (webhook)
-
-```bash
-hermes webhook subscribe stripe-payments \
-  --events "payment_intent.succeeded,payment_intent.payment_failed,charge.dispute.created" \
-  --prompt "Stripe event received:
-Event type: {type}
-Amount: {data.object.amount} cents ({data.object.currency})
-Customer: {data.object.customer}
-Status: {data.object.status}
-
-For payment_intent.payment_failed:
-- Identify the failure reason from {data.object.last_payment_error}
-- Suggest whether this is a transient issue (retry) or permanent (contact customer)
-
-For charge.dispute.created:
-- Flag as urgent
-- Summarize the dispute details
-
-For payment_intent.succeeded:
-- Brief confirmation only
-
-Keep responses concise for the ops channel." \
+1. Run: superforecasting-agent show {question_id}
+2. Check whether the event satisfies the resolution criteria.
+3. If it does, recommend the exact resolve, score, and postmortem commands.
+4. If it does not, create a concise review note and do not resolve the forecast." \
   --deliver slack
 ```
 
-### Daily Revenue Summary
+### External data-pipeline event
 
-Compile key business metrics every morning.
-
-**Trigger:** Schedule (daily)
+Use this when a data pipeline updates a dataset that many forecasts depend on.
 
 ```bash
-hermes cron create "0 8 * * *" \
-  "Generate a morning business metrics summary.
+superforecasting-agent webhook subscribe forecast-data-refresh \
+  --events "dataset_refreshed" \
+  --prompt "Forecast dataset refresh event:
+Dataset: {dataset}
+Domain: {domain}
+Topic: {topic}
+Rows changed: {rows_changed}
+Snapshot URL: {snapshot_url}
 
-Search the web for:
-1. Current Bitcoin and Ethereum prices
-2. S&P 500 status (pre-market or previous close)
-3. Any major tech/AI industry news from the last 12 hours
-
-Format as a brief morning briefing, 3-4 bullet points max.
-Deliver as a clean, scannable message." \
-  --name "Morning briefing" \
+1. Run: superforecasting-agent self-check --domain {domain} --topic {topic} --stale-days 0
+2. If rows_changed is 0, respond with [SILENT].
+3. Otherwise identify which active forecasts need research and which watched source or evidence import should run next." \
   --deliver telegram
 ```
-
----
-
-## Multi-Skill Workflows
-
-### Security Audit Pipeline
-
-Combine multiple skills for a comprehensive weekly security review.
-
-**Trigger:** Schedule (weekly)
-
-```bash
-hermes cron create "0 3 * * 0" \
-  "Run a comprehensive security audit of the hermes-agent codebase.
-
-1. Check for dependency vulnerabilities (pip audit, npm audit)
-2. Search the codebase for common security anti-patterns:
-   - Hardcoded secrets or API keys
-   - SQL injection vectors (string formatting in queries)
-   - Path traversal risks (user input in file paths without validation)
-   - Unsafe deserialization (pickle.loads, yaml.load without SafeLoader)
-3. Review recent commits (last 7 days) for security-relevant changes
-4. Check if any new environment variables were added without being documented
-
-Write a security report with findings categorized by severity (Critical, High, Medium, Low).
-If nothing found, report a clean bill of health." \
-  --skill codebase-security-audit \
-  --name "Weekly security audit" \
-  --deliver telegram
-```
-
-### Content Pipeline
-
-Research, draft, and prepare content on a schedule.
-
-**Trigger:** Schedule (weekly)
-
-```bash
-hermes cron create "0 10 * * 3" \
-  "Research and draft a technical blog post outline about a trending topic in AI agents.
-
-1. Search the web for the most discussed AI agent topics this week
-2. Pick the most interesting one that's relevant to open-source AI agents
-3. Create an outline with:
-   - Hook/intro angle
-   - 3-4 key sections
-   - Technical depth appropriate for developers
-   - Conclusion with actionable takeaway
-4. Save the outline to ~/drafts/blog-$(date +%Y%m%d).md
-
-Keep the outline to ~300 words. This is a starting point, not a finished post." \
-  --name "Blog outline" \
-  --deliver local
-```
-
----
 
 ## Quick Reference
 
-### Cron Schedule Syntax
+### Useful schedules
 
 | Expression | Meaning |
-|-----------|---------|
+|------------|---------|
 | `every 30m` | Every 30 minutes |
 | `every 2h` | Every 2 hours |
-| `0 2 * * *` | Daily at 2:00 AM |
-| `0 9 * * 1` | Every Monday at 9:00 AM |
-| `0 9 * * 1-5` | Weekdays at 9:00 AM |
-| `0 3 * * 0` | Every Sunday at 3:00 AM |
-| `0 */6 * * *` | Every 6 hours |
+| `0 8 * * *` | Daily at 8:00 AM |
+| `0 18 * * 1-5` | Weekday evenings |
+| `0 7 * * 1` | Monday morning |
+| `0 3 * * 0` | Sunday at 3:00 AM |
 
-### Delivery Targets
+### Ledger commands
 
-| Target | Flag | Notes |
-|--------|------|-------|
-| Same chat | `--deliver origin` | Default — delivers to where the job was created |
-| Local file | `--deliver local` | Saves output, no notification |
-| Telegram | `--deliver telegram` | Home channel, or `telegram:CHAT_ID` for specific |
-| Discord | `--deliver discord` | Home channel, or `discord:CHANNEL_ID` |
-| Slack | `--deliver slack` | Home channel |
-| SMS | `--deliver sms:+15551234567` | Direct to phone number |
-| Specific thread | `--deliver telegram:-100123:456` | Telegram forum topic |
+| Command | Purpose |
+|---------|---------|
+| `superforecasting-agent status` | Show operational desk status |
+| `superforecasting-agent review --stale` | Find stale or due forecasts |
+| `superforecasting-agent schedule list` | Show scheduled self-checks |
+| `superforecasting-agent watch list` | Show watched evidence sources |
+| `superforecasting-agent alerts` | Show open alerts |
+| `superforecasting-agent backtest --benchmarks` | List benchmark datasets |
+| `superforecasting-agent performance` | Summarize recent backtests |
+| `superforecasting-agent calibration --by-origin` | Compare calibration by forecast origin |
+| `superforecasting-agent lesson list --active` | Show active calibration lessons |
 
-### Webhook Template Variables
+### The `[SILENT]` pattern
 
-| Variable | Description |
-|----------|-------------|
-| `{pull_request.title}` | PR title |
-| `{issue.number}` | Issue number |
-| `{repository.full_name}` | `owner/repo` |
-| `{action}` | Event action (opened, closed, etc.) |
-| `{__raw__}` | Full JSON payload (truncated at 4000 chars) |
-| `{sender.login}` | GitHub user who triggered the event |
+When a scheduled job response contains `[SILENT]`, delivery is suppressed:
 
-### The [SILENT] Pattern
-
-When a cron job's response contains `[SILENT]`, delivery is suppressed. Use this to avoid notification spam on quiet runs:
-
-```
-If nothing noteworthy happened, respond with [SILENT].
+```text
+If no forecast needs attention, respond with [SILENT].
 ```
 
-This means you only get notified when the agent has something to report.
+Use this for routine checks so the desk alerts only when evidence, scoring, postmortems, or calibration lessons need attention.

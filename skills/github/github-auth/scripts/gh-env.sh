@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GitHub environment detection helper for Hermes Agent skills.
+# GitHub environment detection helper for Superforecasting Agent skills.
 #
 # Usage (via terminal tool):
 #   source skills/github/github-auth/scripts/gh-env.sh
@@ -17,14 +17,21 @@
 GH_AUTH_METHOD="none"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 GH_USER=""
+_AGENT_HOME="${SUPERFORECASTING_AGENT_HOME:-${FORECAST_HOME:-${HERMES_HOME:-$HOME/.superforecasting-agent}}}"
+_LEGACY_HERMES_HOME="$HOME/.hermes"
 
 if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
     GH_AUTH_METHOD="gh"
     GH_USER=$(gh api user --jq '.login' 2>/dev/null)
 elif [ -n "$GITHUB_TOKEN" ]; then
     GH_AUTH_METHOD="curl"
-elif [ -f "$HOME/.hermes/.env" ] && grep -q "^GITHUB_TOKEN=" "$HOME/.hermes/.env" 2>/dev/null; then
-    GITHUB_TOKEN=$(grep "^GITHUB_TOKEN=" "$HOME/.hermes/.env" | head -1 | cut -d= -f2 | tr -d '\n\r')
+elif [ -f "$_AGENT_HOME/.env" ] && grep -q "^GITHUB_TOKEN=" "$_AGENT_HOME/.env" 2>/dev/null; then
+    GITHUB_TOKEN=$(grep "^GITHUB_TOKEN=" "$_AGENT_HOME/.env" | head -1 | cut -d= -f2 | tr -d '\n\r')
+    if [ -n "$GITHUB_TOKEN" ]; then
+        GH_AUTH_METHOD="curl"
+    fi
+elif [ "$_AGENT_HOME" != "$_LEGACY_HERMES_HOME" ] && [ -f "$_LEGACY_HERMES_HOME/.env" ] && grep -q "^GITHUB_TOKEN=" "$_LEGACY_HERMES_HOME/.env" 2>/dev/null; then
+    GITHUB_TOKEN=$(grep "^GITHUB_TOKEN=" "$_LEGACY_HERMES_HOME/.env" | head -1 | cut -d= -f2 | tr -d '\n\r')
     if [ -n "$GITHUB_TOKEN" ]; then
         GH_AUTH_METHOD="curl"
     fi
@@ -34,6 +41,7 @@ elif [ -f "$HOME/.git-credentials" ] && grep -q "github.com" "$HOME/.git-credent
         GH_AUTH_METHOD="curl"
     fi
 fi
+unset _AGENT_HOME _LEGACY_HERMES_HOME
 
 # Resolve username for curl method
 if [ "$GH_AUTH_METHOD" = "curl" ] && [ -z "$GH_USER" ]; then

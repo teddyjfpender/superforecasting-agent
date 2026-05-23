@@ -574,7 +574,7 @@ function PluginRowCard(props: PluginRowCardProps) {
           });
         }}
         title={t.pluginsPage.removeConfirm}
-        description={`This will remove the "${row.name}" plugin from your agent.`}
+        description={`This will remove the "${row.name}" extension from your forecast desk.`}
         destructive
         confirmLabel={t.common.delete}
       />

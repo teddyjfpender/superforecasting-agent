@@ -1,132 +1,164 @@
 ---
 title: Web Search & Extract
-description: Search the web, extract page content, and crawl websites with multiple backend providers — including free self-hosted SearXNG.
+description: Search, extract, and crawl web sources for forecast evidence.
 sidebar_label: Web Search
 sidebar_position: 6
 ---
 
 # Web Search & Extract
 
-Hermes Agent includes two model-callable web tools backed by multiple providers:
+Superforecasting Agent includes two model-callable web tools for forecast research:
 
-- **`web_search`** — search the web and return ranked results
-- **`web_extract`** — fetch and extract readable content from one or more URLs (with built-in deep-crawl support when the backend provides it)
+- **`web_search`** searches the web and returns ranked candidate sources.
+- **`web_extract`** fetches readable page content and can use provider-backed crawl modes when available.
 
-Both are configured through a single backend selection. Providers are chosen via `hermes tools` or set directly in `config.yaml`. Recursive crawling capabilities (Firecrawl/Tavily) are exposed through `web_extract` rather than as a separate `web_crawl` tool.
+These tools support evidence discovery and source inspection. They do not update probability, resolve questions, score forecasts, or write calibration lessons by themselves. Add forecast-relevant material to the ledger with timestamps, source metadata, reliability, relevance, stance, and as-of context before using it in an update.
+
+Provider selection is configured through `superforecasting-agent tools` or `config.yaml`. Recursive crawling capabilities from providers such as Firecrawl or Tavily are exposed through `web_extract` rather than as a separate first-class product workflow.
 
 ## Backends
 
-| Provider | Env Var | Search | Extract | Crawl | Free tier |
-|----------|---------|--------|---------|-------|-----------|
-| **Firecrawl** (default) | `FIRECRAWL_API_KEY` | ✔ | ✔ | ✔ | 500 credits/mo |
-| **SearXNG** | `SEARXNG_URL` | ✔ | — | — | ✔ Free (self-hosted) |
-| **Brave Search (free tier)** | `BRAVE_SEARCH_API_KEY` | ✔ | — | — | 2 000 queries/mo |
-| **DDGS (DuckDuckGo)** | — (no key) | ✔ | — | — | ✔ Free |
-| **Tavily** | `TAVILY_API_KEY` | ✔ | ✔ | ✔ | 1 000 searches/mo |
-| **Exa** | `EXA_API_KEY` | ✔ | ✔ | — | 1 000 searches/mo |
-| **Parallel** | `PARALLEL_API_KEY` | ✔ | ✔ | — | Paid |
-| **xAI (Grok)** | `XAI_API_KEY` or `hermes auth login xai-oauth` | ✔ | — | — | Paid (SuperGrok or per-token) |
+| Provider | Secret or setting | Search | Extract | Crawl |
+|----------|-------------------|:------:|:-------:|:-----:|
+| Firecrawl | `FIRECRAWL_API_KEY` or `FIRECRAWL_API_URL` | yes | yes | yes |
+| SearXNG | `SEARXNG_URL` | yes | no | no |
+| Brave Search | `BRAVE_SEARCH_API_KEY` | yes | no | no |
+| DDGS | no key | yes | no | no |
+| Tavily | `TAVILY_API_KEY` | yes | yes | yes |
+| Exa | `EXA_API_KEY` | yes | yes | no |
+| Parallel | `PARALLEL_API_KEY` | yes | yes | no |
+| xAI (Grok) | `XAI_API_KEY` or `superforecasting-agent auth add xai-oauth` | yes | no | no |
 
-Brave Search, DDGS, and xAI are **search-only** — pair any of them with Firecrawl/Tavily/Exa/Parallel when you also need `web_extract`. DDGS uses the [`ddgs` Python package](https://pypi.org/project/ddgs/) under the hood; if it isn't already installed, run `pip install ddgs` (or let Hermes lazy-install it on first use). xAI runs Grok's server-side `web_search` tool on the Responses API — results are LLM-generated rather than index-backed, so titles, descriptions, and URL choice are all model output (see the [trust-model caveat](#xai-grok) below).
+Search-only providers should be paired with an extract provider when the workflow needs full page content, archived source snapshots, or crawl output. For example, use SearXNG for private search and Firecrawl for extraction.
 
-**Per-capability split:** you can use different providers for search and extract independently — for example SearXNG (free) for search and Firecrawl for extract. See [Per-capability configuration](#per-capability-configuration) below.
+DDGS uses the [`ddgs` Python package](https://pypi.org/project/ddgs/). If it is not installed, install it with `pip install ddgs` or let the runtime lazy-install it on first use.
+
+xAI runs Grok's server-side `web_search` tool on the Responses API. Results are model-generated rather than index-backed, so titles, descriptions, and URL choices are model output. See the [trust-model caveat](#xai-grok).
+
+**Per-capability split:** use different providers for search and extract independently. See [Per-capability configuration](#per-capability-configuration).
 
 :::tip Nous Subscribers
-If you have a paid [Nous Portal](https://portal.nousresearch.com) subscription, web search and extract are available through the **[Tool Gateway](tool-gateway.md)** via managed Firecrawl — no API key needed. Run `hermes tools` to enable it.
+Paid [Nous Portal](https://portal.nousresearch.com) subscriptions can route web search and extract through the [Tool Gateway](./tool-gateway) via managed Firecrawl, without a separate Firecrawl key. Enable it with `superforecasting-agent tools`.
 :::
+
+## Forecasting Use
+
+Use web tools to build the evidence side of a forecast:
+
+1. Search for candidate sources.
+2. Extract the original page or a stable source page.
+3. Record source metadata, publication time, availability time, and access time.
+4. Classify the claim as fact, estimate, rumor, opinion, model assumption, or market-implied signal.
+5. Add the material to the ledger before using it in `forecast update`.
+
+Example:
+
+```bash
+forecast evidence add <id> \
+  --source-url "https://example.com/source" \
+  --source-type article \
+  --published-at "2026-05-22T09:00:00Z" \
+  --available-at "2026-05-22T10:15:00Z" \
+  --reliability medium \
+  --relevance high \
+  --stance supports \
+  --summary "Source claim and why it matters."
+
+forecast update <id> --require-citations
+```
+
+For backtests, use only sources that would have been available before the forecast's evidence cutoff. Do not let future-dated extracts leak into historical replay.
 
 ---
 
-## How `web_extract` handles long pages
+## How `web_extract` Handles Long Pages
 
-Backends return raw page markdown, which can be huge (forum threads, docs sites, news articles with embedded comments). To keep your context window usable and your costs down, `web_extract` runs returned content through the **`web_extract` auxiliary model** before handing it to the agent. Behavior is purely size-driven:
+Backends can return very large markdown payloads, especially for forum threads, docs sites, long reports, or news pages with embedded comments. To keep the context window usable, `web_extract` runs large returned content through the **`web_extract` auxiliary model** before handing it to the agent.
 
-| Page size (characters) | What happens |
-|------------------------|--------------|
-| Under 5 000 | Returned as-is — no LLM call, full markdown reaches the agent |
-| 5 000 – 500 000 | Single-pass summary via the `web_extract` auxiliary model, capped at ~5 000 chars of output |
-| 500 000 – 2 000 000 | Chunked: split into 100 k-char chunks, summarize each in parallel, then synthesize a final summary (~5 000 chars) |
-| Over 2 000 000 | Refused with a hint to use `web_crawl` with focused extraction instructions or a more specific source |
+| Page size in characters | What happens |
+|-------------------------|--------------|
+| Under 5,000 | Returned as-is, with no auxiliary model call |
+| 5,000 to 500,000 | Single-pass summary capped around 5,000 characters |
+| 500,000 to 2,000,000 | Chunked summarization, then synthesized into a final summary |
+| Over 2,000,000 | Refused with a hint to narrow the source or use a more focused extraction path |
 
-The summary keeps quotes, code blocks, and key facts in their original formatting — it's a content compressor, not a paraphraser. If summarization fails or times out, Hermes falls back to the first ~5 000 chars of raw content rather than a useless error.
+The summary keeps quoted claims, code blocks, links, and key facts where possible. It is a content compressor, not source truth. If summarization fails or times out, the runtime falls back to the first part of the raw content rather than hiding the failure.
 
-### Which model does the summarizing?
+### Which Model Does The Summarizing?
 
-The `web_extract` auxiliary task. By default (`auxiliary.web_extract.provider: "auto"`), this is your **main chat model** — same provider, same model as `hermes model`. That's fine for most setups, but on expensive reasoning models (Opus, MiniMax M2.7, etc.) every long-page extract adds meaningful cost.
+The `web_extract` auxiliary task controls long-page summarization. By default (`auxiliary.web_extract.provider: "auto"`), it uses your main configured model and provider.
 
-To route extraction summaries to a cheap, fast model regardless of your main:
+To route extraction summaries to a cheaper or faster model:
 
 ```yaml
-# ~/.hermes/config.yaml
+# ~/.superforecasting-agent/config.yaml
 auxiliary:
   web_extract:
     provider: openrouter
     model: google/gemini-3-flash-preview
-    timeout: 360       # seconds; raise if you hit summarization timeouts
+    timeout: 360
 ```
 
-Or pick interactively: `hermes model` → **Configure auxiliary models** → `web_extract`.
+Or pick interactively:
 
-See [Auxiliary Models](/docs/user-guide/configuration#auxiliary-models) for the full reference and per-task override patterns.
+```bash
+superforecasting-agent model
+```
 
-### When summarization gets in the way
+Then open **Configure auxiliary models** and set `web_extract`.
 
-If you specifically need raw, unsummarized page content — for example, you're scraping a structured page where the LLM summary would drop important fields — use `browser_navigate` + `browser_snapshot` instead. The browser tool returns the live accessibility tree without auxiliary-model rewriting (subject to its own 8 000-char snapshot cap on huge pages).
+See [Auxiliary Models](../configuration#auxiliary-models) for per-task override patterns.
+
+### When Summarization Gets In The Way
+
+If you need raw page structure, exact table rows, form state, or a live accessibility tree, use `browser_navigate` and `browser_snapshot` instead. The browser tools avoid auxiliary-model rewriting, though they have their own snapshot-size limits.
 
 ---
 
 ## Setup
 
-### Quick setup via `hermes tools`
+### Quick Setup Via `superforecasting-agent tools`
 
-Run `hermes tools`, navigate to **Web Search & Extract**, and pick a provider. The wizard prompts for the required URL or API key and writes it to your config.
+Run:
 
 ```bash
-hermes tools
+superforecasting-agent tools
 ```
 
----
+Choose **Web Search & Extract**, then select a provider. The wizard prompts for the required URL or API key and writes it to the active config.
 
-### Firecrawl (default)
+### Firecrawl
 
-Full-featured search, extract, and crawl. Recommended for most users.
+Firecrawl supports search, extract, and crawl.
 
 ```bash
-# ~/.hermes/.env
+# ~/.superforecasting-agent/.env
 FIRECRAWL_API_KEY=fc-your-key-here
 ```
 
-Get a key at [firecrawl.dev](https://firecrawl.dev). The free tier includes 500 credits/month.
-
-**Self-hosted Firecrawl:** Point at your own instance instead of the cloud API:
+Get a key at [firecrawl.dev](https://firecrawl.dev), or point the runtime at a self-hosted instance:
 
 ```bash
-# ~/.hermes/.env
+# ~/.superforecasting-agent/.env
 FIRECRAWL_API_URL=http://localhost:3002
 ```
 
-When `FIRECRAWL_API_URL` is set, the API key is optional (disable server auth with `USE_DB_AUTHENTICATION=false`).
+When `FIRECRAWL_API_URL` is set, the API key is optional if your self-hosted server disables API-key authentication.
 
----
+### SearXNG
 
-### SearXNG (free, self-hosted)
+SearXNG is a privacy-respecting, open-source metasearch engine. It is search-only, so `web_extract` still needs a separate extract provider.
 
-SearXNG is a privacy-respecting, open-source metasearch engine that aggregates results from 70+ search engines. **No API key required** — just point Hermes at a running SearXNG instance.
+#### Option A - Self-Host With Docker
 
-SearXNG is **search-only** — `web_extract` (including its crawl modes) requires a separate extract provider.
-
-#### Option A — Self-host with Docker (recommended)
-
-This gives you a private instance with no rate limits.
-
-**1. Create a working directory:**
+Create a working directory:
 
 ```bash
 mkdir -p ~/searxng/searxng
 cd ~/searxng
 ```
 
-**2. Write a `docker-compose.yml`:**
+Write `docker-compose.yml`:
 
 ```yaml
 # ~/searxng/docker-compose.yml
@@ -143,217 +175,235 @@ services:
     restart: unless-stopped
 ```
 
-**3. Start the container:**
+Start the container:
 
 ```bash
 docker compose up -d
 ```
 
-**4. Enable the JSON API format:**
-
 SearXNG ships with JSON output disabled by default. Copy the generated config and enable it:
 
 ```bash
-# Copy the auto-generated config out of the container
 docker cp searxng:/etc/searxng/settings.yml ~/searxng/searxng/settings.yml
 ```
 
-Open `~/searxng/searxng/settings.yml` and find the `formats` block (around line 84):
+In `~/searxng/searxng/settings.yml`, enable JSON:
 
 ```yaml
-# Before (default — JSON disabled):
-formats:
-  - html
-
-# After (enable JSON for Hermes):
 formats:
   - html
   - json
 ```
 
-**5. Restart to apply:**
+Apply the config:
 
 ```bash
 docker cp ~/searxng/searxng/settings.yml searxng:/etc/searxng/settings.yml
 docker restart searxng
 ```
 
-**6. Verify it works:**
+Verify:
 
 ```bash
 curl -s "http://localhost:8888/search?q=test&format=json" | python3 -c \
   "import sys,json; d=json.load(sys.stdin); print(f'{len(d[\"results\"])} results')"
 ```
 
-You should see something like `10 results`. If you get a `403 Forbidden`, JSON format is still disabled — recheck step 4.
+If you get `403 Forbidden`, JSON format is still disabled.
 
-**7. Configure Hermes:**
+Configure Superforecasting Agent:
 
 ```bash
-# ~/.hermes/.env
+# ~/.superforecasting-agent/.env
 SEARXNG_URL=http://localhost:8888
 ```
 
-Then select SearXNG as the search backend in `~/.hermes/config.yaml`:
-
 ```yaml
+# ~/.superforecasting-agent/config.yaml
 web:
   search_backend: "searxng"
 ```
 
-Or set via `hermes tools` → Web Search & Extract → SearXNG.
-
----
-
-#### Option B — Use a public instance
-
-Public SearXNG instances are listed at [searx.space](https://searx.space/). Filter by instances that have **JSON format enabled** (shown in the table).
+Or set it with:
 
 ```bash
-# ~/.hermes/.env
+superforecasting-agent tools
+```
+
+#### Option B - Use A Public Instance
+
+Public SearXNG instances are listed at [searx.space](https://searx.space/). Use only instances with JSON format enabled.
+
+```bash
+# ~/.superforecasting-agent/.env
 SEARXNG_URL=https://searx.example.com
 ```
 
 :::caution Public instances
-Public instances have rate limits, variable uptime, and may disable JSON format at any time. For production use, self-hosting is strongly recommended.
+Public instances can have rate limits, variable uptime, logging policies, and configuration changes. For repeatable forecast workflows, self-hosting is preferable.
 :::
 
----
+#### Pair SearXNG With An Extract Provider
 
-#### Pair SearXNG with an extract provider
-
-SearXNG handles search; you need a separate provider for `web_extract` (including any deep-crawl modes). Use the per-capability keys:
+Use per-capability keys:
 
 ```yaml
-# ~/.hermes/config.yaml
+# ~/.superforecasting-agent/config.yaml
 web:
   search_backend: "searxng"
-  extract_backend: "firecrawl"   # or tavily, exa, parallel
+  extract_backend: "firecrawl"
 ```
 
-With this config, Hermes uses SearXNG for all search queries and Firecrawl for URL extraction — combining free search with high-quality extraction.
+This uses SearXNG for `web_search` and Firecrawl for `web_extract`.
 
----
+### Brave Search
+
+Brave Search is search-only.
+
+```bash
+# ~/.superforecasting-agent/.env
+BRAVE_SEARCH_API_KEY=your-brave-key-here
+```
+
+Use an extract backend separately when you need page content.
+
+### DDGS
+
+DDGS is a no-key DuckDuckGo-backed search option through the `ddgs` Python package.
+
+```bash
+pip install ddgs
+```
+
+Configure:
+
+```yaml
+web:
+  search_backend: "ddgs"
+```
 
 ### Tavily
 
-AI-optimised search, extract, and crawl with a generous free tier.
+Tavily supports search, extract, and crawl.
 
 ```bash
-# ~/.hermes/.env
+# ~/.superforecasting-agent/.env
 TAVILY_API_KEY=tvly-your-key-here
 ```
 
-Get a key at [app.tavily.com](https://app.tavily.com/home). The free tier includes 1 000 searches/month.
-
----
+Get a key at [app.tavily.com](https://app.tavily.com/home).
 
 ### Exa
 
-Neural search with semantic understanding. Good for research and finding conceptually related content.
+Exa supports semantic search and extraction.
 
 ```bash
-# ~/.hermes/.env
+# ~/.superforecasting-agent/.env
 EXA_API_KEY=your-exa-key-here
 ```
 
-Get a key at [exa.ai](https://exa.ai). The free tier includes 1 000 searches/month.
-
----
+Get a key at [exa.ai](https://exa.ai).
 
 ### Parallel
 
-AI-native search and extraction with deep research capabilities.
+Parallel supports search and extraction.
 
 ```bash
-# ~/.hermes/.env
+# ~/.superforecasting-agent/.env
 PARALLEL_API_KEY=your-parallel-key-here
 ```
 
 Get access at [parallel.ai](https://parallel.ai).
 
----
-
 ### xAI (Grok) {#xai-grok}
 
-Routes `web_search` through Grok's server-side [web_search tool](https://docs.x.ai/developers/tools/web-search) on the Responses API. Grok runs the actual searching and returns the top results as structured JSON.
+xAI routes `web_search` through Grok's server-side [web_search tool](https://docs.x.ai/developers/tools/web-search) on the Responses API.
 
-Works with either credential path — no new env vars, no new setup wizard:
+Use either credential path:
 
 ```bash
-# ~/.hermes/.env (env-var path)
+# ~/.superforecasting-agent/.env
 XAI_API_KEY=sk-xai-your-key-here
 ```
 
-or for SuperGrok subscribers:
+Or for OAuth-backed xAI access:
 
 ```bash
-hermes auth login xai-oauth
+superforecasting-agent auth add xai-oauth
 ```
 
 Then select xAI as the search backend:
 
 ```yaml
-# ~/.hermes/config.yaml
+# ~/.superforecasting-agent/config.yaml
 web:
   backend: "xai"
 ```
 
-**Optional knobs:**
+Optional knobs:
 
 ```yaml
 web:
   backend: "xai"
   xai:
-    model: grok-4.3              # reasoning model required by web_search (default)
-    allowed_domains:             # optional, max 5 — mutex with excluded_domains
+    model: grok-4.3
+    allowed_domains:
       - arxiv.org
-    excluded_domains:            # optional, max 5
+    excluded_domains:
       - example-spam.com
-    timeout: 90                  # seconds (default)
+    timeout: 90
 ```
 
-**Search-only** — pair with Firecrawl / Tavily / Exa / Parallel if you also need `web_extract`. On 401 the provider performs a single forced OAuth-token refresh and retries (covers mid-window revocation and opaque tokens the proactive expiry check can't decode); env-var credentials skip the retry.
+`allowed_domains` and `excluded_domains` are mutually exclusive. xAI is search-only, so pair it with Firecrawl, Tavily, Exa, or Parallel when you also need `web_extract`.
+
+On OAuth 401, the provider performs a single forced token refresh and retries. Env-var credentials skip that retry.
 
 :::caution Trust model
-Unlike index-backed providers (Brave, Tavily, Exa) which return verbatim search-engine results, xAI is an LLM choosing which URLs to surface and writing the titles and descriptions itself. The *content* of the query influences the output, so a maliciously crafted query (e.g. injected via untrusted upstream input the agent picked up) can in principle steer Grok into emitting attacker-chosen URLs. Treat returned URLs the same way you'd treat any model-generated link — validate before fetching, especially if the query came from untrusted input.
+Unlike index-backed providers, xAI is an LLM choosing which URLs to surface and writing the titles and descriptions itself. The query content can influence output, so validate returned URLs before fetching, especially if the query came from untrusted upstream input.
 :::
 
 ---
 
 ## Configuration
 
-### Single backend
+### Single Backend
 
 Set one provider for all web capabilities:
 
 ```yaml
-# ~/.hermes/config.yaml
+# ~/.superforecasting-agent/config.yaml
 web:
-  backend: "searxng"   # firecrawl | searxng | brave-free | ddgs | tavily | exa | parallel | xai
+  backend: "searxng"
 ```
 
-### Per-capability configuration
+Supported backend names:
 
-Use different providers for search vs extract. This lets you combine free search (SearXNG) with a paid extract provider, or vice versa:
+```text
+firecrawl, searxng, brave-free, ddgs, tavily, exa, parallel, xai
+```
+
+### Per-capability Configuration
+
+Use different providers for search and extract:
 
 ```yaml
-# ~/.hermes/config.yaml
+# ~/.superforecasting-agent/config.yaml
 web:
-  search_backend: "searxng"     # used by web_search
-  extract_backend: "firecrawl"  # used by web_extract (and its deep-crawl modes)
+  search_backend: "searxng"
+  extract_backend: "firecrawl"
 ```
 
-When per-capability keys are empty, both fall through to `web.backend`. When `web.backend` is also empty, the backend is auto-detected from whichever API key/URL is present.
+When per-capability keys are empty, both fall through to `web.backend`. When `web.backend` is also empty, the runtime auto-detects from configured credentials.
 
-**Priority order (per capability):**
-1. `web.search_backend` / `web.extract_backend` (explicit per-capability)
-2. `web.backend` (shared fallback)
-3. Auto-detect from environment variables
+Priority order:
+
+1. `web.search_backend` or `web.extract_backend`
+2. `web.backend`
+3. auto-detection from environment variables
 
 ### Auto-detection
 
-If no backend is explicitly configured, Hermes picks the first available one based on which credentials are set:
+If no backend is explicitly configured, the runtime picks the first available backend based on configured credentials:
 
 | Credential present | Auto-selected backend |
 |--------------------|-----------------------|
@@ -363,84 +413,97 @@ If no backend is explicitly configured, Hermes picks the first available one bas
 | `EXA_API_KEY` | exa |
 | `SEARXNG_URL` | searxng |
 
-xAI Web Search is **not** in the auto-detection chain — having `XAI_API_KEY` set (or being signed in via xAI Grok OAuth) does not automatically route web traffic through xAI, since those credentials are also used for inference / TTS / image gen and the user may want a different backend for web. Opt in explicitly with `web.backend: "xai"`.
+xAI Web Search is not in the auto-detection chain. `XAI_API_KEY` and xAI OAuth can also be used for inference, TTS, and image generation, so search traffic only routes through xAI when `web.backend: "xai"` or `web.search_backend: "xai"` is set.
+
+Legacy `~/.hermes/config.yaml`, `~/.hermes/.env`, and `HERMES_*` runtime variables remain readable during migration, but new forecast profiles should use `~/.superforecasting-agent/`.
 
 ---
 
-## Verify your setup
+## Verify Your Setup
 
-Run `hermes setup` to see which web backend is detected:
-
-```
-✅ Web Search & Extract (searxng)
-```
-
-Or check via the CLI:
+Run setup to see detected tool configuration:
 
 ```bash
-# Activate the venv and run the web tools module directly
-source ~/.hermes/hermes-agent/.venv/bin/activate
+superforecasting-agent setup
+```
+
+Or run the web tools module from the repository after activating the local virtual environment:
+
+```bash
+source .venv/bin/activate
 python -m tools.web_tools
 ```
 
-This prints the active backend and its status:
+Expected output includes the active backend and status:
 
+```text
+Web backend: searxng
+Using SearXNG (search only): http://localhost:8888
 ```
-✅ Web backend: searxng
-   Using SearXNG (search only): http://localhost:8888
+
+For forecast-specific verification, create or use a test question, add one manually reviewed extracted source as evidence, and confirm the ledger records source metadata:
+
+```bash
+forecast evidence list <id>
 ```
 
 ---
 
 ## Troubleshooting
 
-### `web_search` returns `{"success": false}`
+### `web_search` Returns `{"success": false}`
 
-- Check `SEARXNG_URL` is reachable: `curl -s "http://localhost:8888/search?q=test&format=json"`
-- If you get HTTP 403, JSON format is disabled — add `json` to the `formats` list in `settings.yml` and restart
-- If you get a connection error, the container may not be running: `docker ps | grep searxng`
+- Check that the provider URL or key is present in the active profile.
+- For SearXNG, check reachability: `curl -s "http://localhost:8888/search?q=test&format=json"`.
+- If SearXNG returns HTTP 403, add `json` to the `formats` list in `settings.yml` and restart.
+- If the container may not be running, inspect it with `docker ps`.
 
-### `web_extract` says "search-only backend"
+### `web_extract` Says "search-only backend"
 
-SearXNG cannot extract URL content. Set `web.extract_backend` to a provider that supports extraction:
+SearXNG, Brave, DDGS, and xAI cannot extract URL content. Set `web.extract_backend` to a provider that supports extraction:
 
 ```yaml
 web:
   search_backend: "searxng"
-  extract_backend: "firecrawl"  # or tavily / exa / parallel
+  extract_backend: "firecrawl"
 ```
 
-### SearXNG returns 0 results
+### SearXNG Returns 0 Results
 
-Some public instances disable certain search engines or categories. Try:
-- A different query
-- A different public instance from [searx.space](https://searx.space/)
-- Self-hosting your own instance for reliable results
+Try:
 
-### Rate limited on a public instance
+- a different query
+- a different public instance from [searx.space](https://searx.space/)
+- self-hosting for repeatable forecast workflows
 
-Switch to a self-hosted instance (see [Option A](#option-a--self-host-with-docker-recommended) above). With Docker, your own instance has no rate limits.
+### Rate Limited On A Public Instance
 
-### `web_extract` returns truncated content with a "summarization timed out" note
+Switch to a self-hosted instance. Public instances are not reliable enough for scheduled self-checks, watched-source monitoring, or backtests.
 
-The auxiliary model didn't finish summarizing within the configured timeout. Either:
+### `web_extract` Returns Truncated Content With A Timeout Note
 
-- Raise `auxiliary.web_extract.timeout` in `config.yaml` (default 360s on fresh installs, 30s if the key is missing)
-- Switch the `web_extract` auxiliary task to a faster model (e.g. `google/gemini-3-flash-preview`) — see [How `web_extract` handles long pages](#how-web_extract-handles-long-pages)
-- For pages where summarization is the wrong tool, use `browser_navigate` instead
+The auxiliary model did not finish summarizing within the configured timeout. Either:
+
+- raise `auxiliary.web_extract.timeout`
+- switch the `web_extract` auxiliary task to a faster model
+- use `browser_navigate` for pages where summarization is the wrong tool
+- use a domain-specific adapter when available, such as RSS/Atom, SEC EDGAR, FRED, BLS, World Bank, arXiv, OpenAlex, Wikipedia, Wikimedia pageviews, GitHub releases, Federal Register, NVD, Open-Meteo, USGS, NASA EONET, NWS alerts, OWID, GDELT, or a forecasting-platform importer
 
 ---
 
-## Optional skill: `searxng-search`
+## Optional Skill: `searxng-search`
 
-For agents that need to use SearXNG via `curl` directly (e.g. as a fallback when the web toolset isn't available), install the `searxng-search` optional skill:
+If a forecast workflow needs to call SearXNG directly as a fallback when the web toolset is unavailable, install the optional skill:
 
 ```bash
-hermes skills install official/research/searxng-search
+superforecasting-agent skills install official/research/searxng-search
 ```
 
-This adds a skill that teaches the agent how to:
-- Call the SearXNG JSON API via `curl` or Python
-- Filter by category (`general`, `news`, `science`, etc.)
-- Handle pagination and error cases
-- Fall back gracefully when SearXNG is unreachable
+This adds procedural guidance for:
+
+- calling the SearXNG JSON API directly
+- filtering by category such as `general`, `news`, or `science`
+- handling pagination and error cases
+- falling back gracefully when SearXNG is unreachable
+
+Use direct calls as a fallback path. Ledger evidence rules still apply.

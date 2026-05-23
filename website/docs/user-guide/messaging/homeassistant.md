@@ -1,16 +1,18 @@
 ---
 title: Home Assistant
-description: Control your smart home with Hermes Agent via Home Assistant integration.
+description: Optional smart-home adapter for forecast-desk alerts.
 sidebar_label: Home Assistant
 sidebar_position: 5
 ---
 
 # Home Assistant Integration
 
-Hermes Agent integrates with [Home Assistant](https://www.home-assistant.io/) in two ways:
+Superforecasting Agent can integrate with [Home Assistant](https://www.home-assistant.io/) as an optional inherited adapter. This is not part of the default forecast desk, but it can be useful for local operational alerts or environmental signals that support a forecast workflow.
 
 1. **Gateway platform** — subscribes to real-time state changes via WebSocket and responds to events
 2. **Smart home tools** — four LLM-callable tools for querying and controlling devices via the REST API
+
+Home Assistant events and notifications are not durable forecast memory. If a state change matters to a forecast, attach it as timestamped evidence or a review alert in the forecast ledger before changing probability.
 
 ## Setup
 
@@ -19,13 +21,13 @@ Hermes Agent integrates with [Home Assistant](https://www.home-assistant.io/) in
 1. Open your Home Assistant instance
 2. Go to your **Profile** (click your name in the sidebar)
 3. Scroll to **Long-Lived Access Tokens**
-4. Click **Create Token**, give it a name like "Hermes Agent"
+4. Click **Create Token**, give it a name like "Superforecasting Agent"
 5. Copy the token
 
 ### 2. Configure Environment Variables
 
 ```bash
-# Add to ~/.hermes/.env
+# Add to ~/.superforecasting-agent/.env
 
 # Required: your Long-Lived Access Token
 HASS_TOKEN=your-long-lived-access-token
@@ -41,14 +43,14 @@ The `homeassistant` toolset is automatically enabled when `HASS_TOKEN` is set. B
 ### 3. Start the Gateway
 
 ```bash
-hermes gateway
+superforecasting-agent gateway
 ```
 
-Home Assistant will appear as a connected platform alongside any other messaging platforms (Telegram, Discord, etc.).
+Home Assistant will appear as a connected platform alongside any other enabled gateway platforms.
 
 ## Available Tools
 
-Hermes Agent registers four tools for smart home control:
+Superforecasting Agent registers four optional tools for smart-home state and control:
 
 ### `ha_list_entities`
 
@@ -122,7 +124,7 @@ Set living room lights to blue at 50% brightness
 
 ## Gateway Platform: Real-Time Events
 
-The Home Assistant gateway adapter connects via WebSocket and subscribes to `state_changed` events. When a device state changes and matches your filters, it's forwarded to the agent as a message.
+The Home Assistant gateway adapter connects via WebSocket and subscribes to `state_changed` events. When a device state changes and matches your filters, it is forwarded to the forecast runtime as a message.
 
 ### Event Filtering
 
@@ -130,7 +132,7 @@ The Home Assistant gateway adapter connects via WebSocket and subscribes to `sta
 By default, **no events are forwarded**. You must configure at least one of `watch_domains`, `watch_entities`, or `watch_all` to receive events. Without filters, a warning is logged at startup and all state changes are silently dropped.
 :::
 
-Configure which events the agent sees in `~/.hermes/config.yaml` under the Home Assistant platform's `extra` section:
+Configure which events the forecast runtime sees in `~/.superforecasting-agent/config.yaml` under the Home Assistant platform's `extra` section:
 
 ```yaml
 platforms:
@@ -176,9 +178,9 @@ State changes are formatted as human-readable messages based on domain:
 | `alarm_control_panel` | "alarm state changed from 'armed_away' to 'triggered'" |
 | *(other)* | "changed from 'old' to 'new'" |
 
-### Agent Responses
+### Forecast Runtime Responses
 
-Outbound messages from the agent are delivered as **Home Assistant persistent notifications** (via `persistent_notification.create`). These appear in the HA notification panel with the title "Hermes Agent".
+Outbound messages from the forecast runtime are delivered as **Home Assistant persistent notifications** (via `persistent_notification.create`). These appear in the HA notification panel with the title "Superforecasting Agent".
 
 ### Connection Management
 
@@ -211,9 +213,9 @@ Entity IDs are validated against the pattern `^[a-z_][a-z0-9_]*\.[a-z0-9_]+$` to
 ### Morning Routine
 
 ```
-User: Start my morning routine
+User: Run the lab-open checklist
 
-Agent:
+Runtime:
 1. ha_call_service(domain="light", service="turn_on",
      entity_id="light.bedroom", data={"brightness": 128})
 2. ha_call_service(domain="climate", service="set_temperature",
@@ -225,9 +227,9 @@ Agent:
 ### Security Check
 
 ```
-User: Is the house secure?
+User: Is the lab secure?
 
-Agent:
+Runtime:
 1. ha_list_entities(domain="binary_sensor")
      → checks door/window sensors
 2. ha_get_state(entity_id="alarm_control_panel.home")
@@ -239,12 +241,12 @@ Agent:
 
 ### Reactive Automation (via Gateway Events)
 
-When connected as a gateway platform, the agent can react to events:
+When connected as a gateway platform, the runtime can react to events:
 
 ```
 [Home Assistant] Front Door: triggered (was cleared)
 
-Agent automatically:
+Runtime:
 1. ha_get_state(entity_id="binary_sensor.front_door")
 2. ha_call_service(domain="light", service="turn_on",
      entity_id="light.hallway")

@@ -8,6 +8,7 @@ import re
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
+_PRIMARY_CLI = "superforecasting-agent"
 
 from hermes_cli import auth as auth_mod
 from agent.credential_pool import CredentialPool, PooledCredential, get_custom_provider_pool_key, load_pool
@@ -507,7 +508,7 @@ def _get_named_custom_provider(requested_provider: str) -> Optional[Dict[str, An
         logger.warning(
             "custom_providers in config.yaml is a dict, not a list. "
             "Each entry must be prefixed with '-' in YAML. "
-            "Run 'hermes doctor' for details."
+            f"Run '{_PRIMARY_CLI} doctor' for details."
         )
         return None
 
@@ -829,8 +830,8 @@ def _resolve_azure_foundry_runtime(
     base_url = explicit_base_url_clean or cfg_base_url or env_base_url
     if not base_url:
         raise AuthError(
-            "Azure Foundry requires a base URL. Set it via 'hermes model' or "
-            "the AZURE_FOUNDRY_BASE_URL environment variable."
+            f"Azure Foundry requires a base URL. Set it via '{_PRIMARY_CLI} model' "
+            "or the AZURE_FOUNDRY_BASE_URL environment variable."
         )
 
     # Anthropic SDK appends /v1/messages itself, so strip any trailing /v1
@@ -918,10 +919,11 @@ def _resolve_azure_foundry_runtime(
     if not api_key:
         raise AuthError(
             "Azure Foundry requires an API key. Set AZURE_FOUNDRY_API_KEY in "
-            "~/.hermes/.env or run 'hermes model' to configure. To use "
+            "the runtime .env or run "
+            f"'{_PRIMARY_CLI} model' to configure. To use "
             "keyless Microsoft Entra ID auth instead, set "
             "model.auth_mode: entra_id in config.yaml (or pick "
-            "'Microsoft Entra ID' in 'hermes model')."
+            f"'Microsoft Entra ID' in '{_PRIMARY_CLI} model')."
         )
 
     source = "explicit" if (explicit_api_key or explicit_base_url) else "config"

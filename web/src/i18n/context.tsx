@@ -61,7 +61,8 @@ export const LOCALE_META: Record<Locale, { name: string; flagCountryCode: string
 };
 
 const SUPPORTED_LOCALES = Object.keys(TRANSLATIONS) as Locale[];
-const STORAGE_KEY = "hermes-locale";
+const STORAGE_KEY = "superforecasting-agent-locale";
+const LEGACY_STORAGE_KEYS = ["hermes-locale"];
 
 function isLocale(value: string): value is Locale {
   return (SUPPORTED_LOCALES as string[]).includes(value);
@@ -71,10 +72,28 @@ function getInitialLocale(): Locale {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored && isLocale(stored)) return stored;
+    for (const legacyKey of LEGACY_STORAGE_KEYS) {
+      const legacy = localStorage.getItem(legacyKey);
+      if (legacy && isLocale(legacy)) {
+        persistLocale(legacy);
+        return legacy;
+      }
+    }
   } catch {
     // SSR or privacy mode
   }
   return "en";
+}
+
+function persistLocale(locale: Locale) {
+  try {
+    localStorage.setItem(STORAGE_KEY, locale);
+    for (const legacyKey of LEGACY_STORAGE_KEYS) {
+      localStorage.removeItem(legacyKey);
+    }
+  } catch {
+    // ignore
+  }
 }
 
 interface I18nContextValue {
@@ -94,11 +113,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const setLocale = useCallback((l: Locale) => {
     setLocaleState(l);
-    try {
-      localStorage.setItem(STORAGE_KEY, l);
-    } catch {
-      // ignore
-    }
+    persistLocale(l);
   }, []);
 
   const value: I18nContextValue = {

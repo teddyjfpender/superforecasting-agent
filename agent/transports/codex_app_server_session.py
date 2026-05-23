@@ -182,7 +182,7 @@ class CodexAppServerSession:
             )
         )
         self._approval_callback = approval_callback
-        self._on_event = on_event  # Display hook (kawaii spinner ticks etc.)
+        self._on_event = on_event  # Display hook (spinner ticks, activity, etc.)
         self._routing = request_routing or _ServerRequestRouting()
         self._client_factory = client_factory or CodexAppServerClient
 
@@ -210,8 +210,8 @@ class CodexAppServerSession:
                 codex_bin=self._codex_bin, codex_home=self._codex_home
             )
         self._client.initialize(
-            client_name="hermes",
-            client_title="Hermes Agent",
+            client_name="superforecasting-agent",
+            client_title="Superforecasting Agent",
             client_version=_get_hermes_version(),
         )
         # Permission selection is intentionally NOT sent on thread/start.

@@ -7,6 +7,8 @@ import { SECTION_NAMES, isSectionName, nextDetailsMode, parseDetailsMode } from 
 import type {
   ConfigGetValueResponse,
   ConfigSetResponse,
+  ForecastCommandResponse,
+  ForecastDashboardResponse,
   SessionSaveResponse,
   SessionStatusResponse,
   SessionSteerResponse,
@@ -20,7 +22,8 @@ import type { Msg, PanelSection } from '../../../types.js'
 import type { StatusBarMode } from '../../interfaces.js'
 import { patchOverlayState } from '../../overlayStore.js'
 import { patchUiState } from '../../uiStore.js'
-import type { SlashCommand } from '../types.js'
+import { forecastDashboardSections, forecastDeskRailSections, forecastDeskStatusLabel } from '../../forecastPanel.js'
+import type { SlashCommand, SlashRunCtx } from '../types.js'
 
 const flagFromArg = (arg: string, current: boolean): boolean | null => {
   if (!arg) {
@@ -51,6 +54,43 @@ const DETAILS_USAGE =
   'usage: /details [hidden|collapsed|expanded|cycle]  or  /details <section> [hidden|collapsed|expanded|reset]'
 
 const DETAILS_SECTION_USAGE = 'usage: /details <section> [hidden|collapsed|expanded|reset]'
+const INTEGER_ARG = /^-?\d+$/
+
+const refreshForecastDeskStatus = (ctx: SlashRunCtx) => {
+  ctx.gateway
+    .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit: 8 })
+    .then(
+      ctx.guarded<ForecastDashboardResponse>(r => {
+        if (r.summary) {
+          patchUiState({
+            forecastDeskRailSections: forecastDeskRailSections(r),
+            forecastDeskStatus: forecastDeskStatusLabel(r)
+          })
+        }
+      })
+    )
+    .catch(() => {})
+}
+
+const renderForecastCommandOutput = (response: ForecastCommandResponse, ctx: SlashRunCtx) => {
+  const output = response.output || '(no output)'
+  const code = response.code ?? 0
+  const text = code === 0 ? output : `forecast exited with code ${code}\n${output}`
+  const long = text.length > 180 || text.split('\n').filter(Boolean).length > 2
+
+  long ? ctx.transcript.page(text, 'Forecast') : ctx.transcript.sys(text)
+
+  if (code === 0) {
+    refreshForecastDeskStatus(ctx)
+  }
+}
+
+const runForecastCommand = (ctx: SlashRunCtx, arg: string) => {
+  ctx.gateway
+    .rpc<ForecastCommandResponse>('forecast.command', { arg })
+    .then(ctx.guarded<ForecastCommandResponse>(r => renderForecastCommandOutput(r, ctx)))
+    .catch(ctx.guardedErr)
+}
 
 export const coreCommands: SlashCommand[] = [
   {
@@ -74,7 +114,29 @@ export const coreCommands: SlashCommand[] = [
               '/details <section> [hidden|collapsed|expanded|reset]',
               'override one section (thinking/tools/subagents/activity)'
             ],
-            ['/fortune [random|daily]', 'show a random or daily local fortune']
+            ['/fortune [random|daily]', 'show a random or daily local fortune'],
+            ['/forecast [limit|subcommand]', 'show active forecasts or run forecast lifecycle commands'],
+            ['/sources [--json]', 'list evidence source adapters and watch prefixes'],
+            ['/new-forecast [args]', 'create a scoreable forecast question'],
+            ['/ingest [args]', 'stage a URL or file as a forecast candidate'],
+            ['/evidence [args]', 'add or inspect timestamped forecast evidence'],
+            ['/research [args]', 'collect evidence without moving probability'],
+            ['/base-rate [args]', 'add or inspect reference-class/base-rate work'],
+            ['/model-run [args]', 'record a quantitative forecast model run'],
+            ['/update-forecast [args]', 'append a probability update'],
+            ['/resolve [args]', 'record a forecast resolution'],
+            ['/score [args]', 'score a resolved forecast'],
+            ['/postmortem [args]', 'diagnose a resolved forecast'],
+            ['/review [args]', 'run forecast review workflow'],
+            ['/alerts [args]', 'show forecast alerts'],
+            ['/calibration [args]', 'show calibration analytics; defaults to --by-origin'],
+            ['/performance [args]', 'show recent backtest performance'],
+            ['/readiness [args]', 'show forecast evidence claim gaps'],
+            ['/pilot-report [args]', 'check tester pilot artifact coverage'],
+            ['/pilot-aggregate [files...]', 'aggregate tester export packets'],
+            ['/lessons [args]', 'list calibration lessons'],
+            ['/backtest [args]', 'run or inspect historical replay datasets'],
+            ['/schedule [args]', 'list or run scheduled self-checks']
           ],
           title: 'TUI'
         },
@@ -87,17 +149,17 @@ export const coreCommands: SlashCommand[] = [
 
   {
     aliases: ['exit', 'q'],
-    help: 'exit hermes',
+    help: 'exit forecast desk',
     name: 'quit',
     run: (_arg, ctx) => ctx.session.die()
   },
 
   {
-    help: 'update Hermes Agent to the latest version (exits TUI)',
+    help: 'update Superforecasting Agent to the latest version (exits TUI)',
     name: 'update',
     run: (_arg, ctx) => {
       ctx.transcript.sys('exiting TUI to run update...')
-      // Exit code 42 signals the Python wrapper to exec `hermes update`.
+      // Exit code 42 signals the Python wrapper to exec the update command.
       // Use dieWithCode for proper cleanup (gateway kill + Ink unmount).
       setTimeout(() => ctx.session.dieWithCode(42), 100)
     }
@@ -148,12 +210,204 @@ export const coreCommands: SlashCommand[] = [
           cancelLabel: 'No, keep going',
           confirmLabel: isNew ? 'Yes, start a new session' : 'Yes, clear the session',
           danger: true,
-          detail: 'This ends the current conversation and clears the transcript.',
+          detail: 'This ends the current forecast desk exchange and clears the transcript.',
           onConfirm: commit,
           title: isNew ? 'Start a new session?' : 'Clear the current session?'
         }
       })
     }
+  },
+
+  {
+    aliases: ['forecasts'],
+    help: 'show active forecast dashboard or run forecast lifecycle commands',
+    name: 'forecast',
+    run: (arg, ctx) => {
+      const trimmed = arg.trim()
+
+      if (trimmed && !INTEGER_ARG.test(trimmed)) {
+        ctx.gateway
+          .rpc<ForecastCommandResponse>('forecast.command', { arg: trimmed })
+          .then(ctx.guarded<ForecastCommandResponse>(r => renderForecastCommandOutput(r, ctx)))
+          .catch(ctx.guardedErr)
+
+        return
+      }
+
+      const limit = trimmed ? Number.parseInt(trimmed, 10) : 20
+
+      if (!Number.isFinite(limit) || limit <= 0) {
+        return ctx.transcript.sys('usage: /forecast [limit|subcommand]')
+      }
+
+      ctx.gateway
+        .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit })
+        .then(
+          ctx.guarded<ForecastDashboardResponse>(r => {
+            if (r.summary) {
+              patchUiState({
+                forecastDeskRailSections: forecastDeskRailSections(r),
+                forecastDeskStatus: forecastDeskStatusLabel(r)
+              })
+              ctx.transcript.panel('Forecast Desk', forecastDashboardSections(r))
+              return
+            }
+
+            ctx.transcript.page(r.output || '(no forecasts)', 'Forecasts')
+          })
+        )
+        .catch(ctx.guardedErr)
+    }
+  },
+
+  {
+    aliases: ['adapters', 'source-adapters'],
+    help: 'list forecast evidence source adapters',
+    name: 'sources',
+    run: (arg, ctx) => runForecastCommand(ctx, `sources ${arg.trim()}`.trim())
+  },
+
+  {
+    aliases: ['reviews'],
+    help: 'review stale forecasts and required forecast work',
+    name: 'review',
+    run: (arg, ctx) => runForecastCommand(ctx, `review ${arg.trim() || '--stale'}`.trim())
+  },
+
+  {
+    aliases: ['import-candidate'],
+    help: 'stage a URL or file as a forecast candidate',
+    name: 'ingest',
+    run: (arg, ctx) => runForecastCommand(ctx, `ingest ${arg.trim()}`.trim())
+  },
+
+  {
+    aliases: ['ev'],
+    help: 'add or inspect timestamped forecast evidence',
+    name: 'evidence',
+    run: (arg, ctx) => runForecastCommand(ctx, `evidence ${arg.trim()}`.trim())
+  },
+
+  {
+    aliases: ['forecast-research'],
+    help: 'collect forecast evidence without moving probability',
+    name: 'research',
+    run: (arg, ctx) => runForecastCommand(ctx, `research ${arg.trim()}`.trim())
+  },
+
+  {
+    aliases: ['new-question', 'newq'],
+    help: 'create a scoreable forecast question',
+    name: 'new-forecast',
+    run: (arg, ctx) => runForecastCommand(ctx, `new ${arg.trim()}`.trim())
+  },
+
+  {
+    help: 'add or inspect reference-class/base-rate work',
+    name: 'base-rate',
+    run: (arg, ctx) => runForecastCommand(ctx, `base-rate ${arg.trim()}`.trim())
+  },
+
+  {
+    aliases: ['forecast-model'],
+    help: 'record a quantitative forecast model run',
+    name: 'model-run',
+    run: (arg, ctx) => runForecastCommand(ctx, `model ${arg.trim()}`.trim())
+  },
+
+  {
+    aliases: ['forecast-update'],
+    help: 'append a probability update',
+    name: 'update-forecast',
+    run: (arg, ctx) => runForecastCommand(ctx, `update ${arg.trim()}`.trim())
+  },
+
+  {
+    help: 'record a forecast resolution',
+    name: 'resolve',
+    run: (arg, ctx) => runForecastCommand(ctx, `resolve ${arg.trim()}`.trim())
+  },
+
+  {
+    help: 'score a resolved forecast',
+    name: 'score',
+    run: (arg, ctx) => runForecastCommand(ctx, `score ${arg.trim()}`.trim())
+  },
+
+  {
+    help: 'diagnose a resolved forecast',
+    name: 'postmortem',
+    run: (arg, ctx) => runForecastCommand(ctx, `postmortem ${arg.trim()}`.trim())
+  },
+
+  {
+    help: 'show forecast alert queue',
+    name: 'alerts',
+    run: (arg, ctx) => runForecastCommand(ctx, `alerts ${arg.trim()}`.trim())
+  },
+
+  {
+    help: 'show forecast calibration analytics',
+    name: 'calibration',
+    run: (arg, ctx) => runForecastCommand(ctx, `calibration ${arg.trim() || '--by-origin'}`.trim())
+  },
+
+  {
+    help: 'show recent backtest performance',
+    name: 'performance',
+    run: (arg, ctx) => runForecastCommand(ctx, `performance ${arg.trim()}`.trim())
+  },
+
+  {
+    help: 'show forecast evidence claim gaps',
+    name: 'readiness',
+    run: (arg, ctx) => runForecastCommand(ctx, `readiness ${arg.trim()}`.trim())
+  },
+
+  {
+    aliases: ['pilot'],
+    help: 'check tester pilot artifact coverage',
+    name: 'pilot-report',
+    run: (arg, ctx) => runForecastCommand(ctx, `pilot-report ${arg.trim()}`.trim())
+  },
+
+  {
+    help: 'aggregate tester export packets',
+    name: 'pilot-aggregate',
+    run: (arg, ctx) => runForecastCommand(ctx, `pilot-aggregate ${arg.trim()}`.trim())
+  },
+
+  {
+    aliases: ['lesson', 'learning'],
+    help: 'list forecast calibration lessons',
+    name: 'lessons',
+    run: (arg, ctx) => runForecastCommand(ctx, `lesson list ${arg.trim()}`.trim())
+  },
+
+  {
+    aliases: ['backtests'],
+    help: 'run or inspect historical replay datasets',
+    name: 'backtest',
+    run: (arg, ctx) => runForecastCommand(ctx, `backtest ${arg.trim() || '--benchmarks'}`.trim())
+  },
+
+  {
+    aliases: ['cron'],
+    help: 'manage scheduled forecast self-checks',
+    name: 'schedule',
+    run: (arg, ctx) => runForecastCommand(ctx, `schedule ${arg.trim() || 'list'}`.trim())
+  },
+
+  {
+    help: 'show domain and topic error profiles',
+    name: 'errors',
+    run: (arg, ctx) => runForecastCommand(ctx, `errors ${arg.trim()}`.trim())
+  },
+
+  {
+    help: 'run forecast self-check alerts',
+    name: 'self-check',
+    run: (arg, ctx) => runForecastCommand(ctx, `self-check ${arg.trim()}`.trim())
   },
 
   {
@@ -175,7 +429,7 @@ export const coreCommands: SlashCommand[] = [
 
       ctx.gateway
         .rpc<SessionStatusResponse>('session.status', { session_id: ctx.sid })
-        .then(ctx.guarded<SessionStatusResponse>(r => ctx.transcript.page(r.output || '(no status)', 'Status')))
+        .then(ctx.guarded<SessionStatusResponse>(r => ctx.transcript.page(r.output || '(no status)', 'Forecast Desk Status')))
         .catch(ctx.guardedErr)
     }
   },
@@ -333,7 +587,7 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'copy selection or assistant message',
+    help: 'copy selection or forecast desk response',
     name: 'copy',
     run: async (arg, ctx) => {
       const { sys } = ctx.transcript
@@ -358,7 +612,7 @@ export const coreCommands: SlashCommand[] = [
       const target = all[arg ? Math.min(parseInt(arg, 10), all.length) - 1 : all.length - 1]
 
       if (!target) {
-        return sys('nothing to copy — start a conversation first')
+        return sys('nothing to copy — run a forecast desk turn first')
       }
 
       void writeClipboardText(target.text)
@@ -434,7 +688,7 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'view current transcript (user + assistant messages)',
+    help: 'view current forecast transcript (user + forecast desk responses)',
     name: 'history',
     run: (arg, ctx) => {
       // The CLI-side `/history` runs in a detached slash-worker subprocess
@@ -444,13 +698,13 @@ export const coreCommands: SlashCommand[] = [
       const items = ctx.local.getHistoryItems().filter(m => m.role === 'user' || m.role === 'assistant')
 
       if (!items.length) {
-        return ctx.transcript.sys('no conversation yet')
+        return ctx.transcript.sys('no forecast transcript yet')
       }
 
       const preview = Math.max(80, parseInt(arg, 10) || 400)
 
       const lines = items.map((m, i) => {
-        const tag = m.role === 'user' ? `You #${i + 1}` : `Hermes #${i + 1}`
+        const tag = m.role === 'user' ? `You #${i + 1}` : `Forecast Desk #${i + 1}`
         const body = m.text.trim() || (m.tools?.length ? `(${m.tools.length} tool calls)` : '(empty)')
         const clipped = body.length > preview ? `${body.slice(0, preview).trimEnd()}…` : body
 
@@ -462,7 +716,7 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'save the current transcript to JSON',
+    help: 'save the current forecast transcript to JSON',
     name: 'save',
     run: (_arg, ctx) => {
       const hasConversation = ctx.local
@@ -470,7 +724,7 @@ export const coreCommands: SlashCommand[] = [
         .some(m => m.role === 'user' || m.role === 'assistant' || m.role === 'tool')
 
       if (!hasConversation) {
-        return ctx.transcript.sys('no conversation yet')
+        return ctx.transcript.sys('no forecast transcript yet')
       }
 
       if (!ctx.sid) {
@@ -484,7 +738,7 @@ export const coreCommands: SlashCommand[] = [
             const file = r?.file
 
             if (file) {
-              ctx.transcript.sys(`conversation saved to: ${file}`)
+              ctx.transcript.sys(`forecast transcript saved to: ${file}`)
             } else {
               ctx.transcript.sys('failed to save')
             }

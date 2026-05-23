@@ -1,12 +1,12 @@
 ---
 sidebar_position: 13
 title: "Delegation & Parallel Work"
-description: "When and how to use subagent delegation — patterns for parallel research, code review, and multi-file work"
+description: "When and how to use subagent delegation for forecast research, evidence review, and model checks"
 ---
 
 # Delegation & Parallel Work
 
-Hermes can spawn isolated child agents to work on tasks in parallel. Each subagent gets its own conversation, terminal session, and toolset. Only the final summary comes back — intermediate tool calls never enter your context window.
+Superforecasting Agent can spawn isolated child agents to work on forecast-support tasks in parallel. Each subagent gets its own conversation, terminal session, and toolset. Only the final summary comes back — intermediate tool calls never enter your context window or the forecast ledger unless the parent explicitly records them.
 
 For the full feature reference, see [Subagent Delegation](/docs/user-guide/features/delegation).
 
@@ -15,9 +15,9 @@ For the full feature reference, see [Subagent Delegation](/docs/user-guide/featu
 ## When to Delegate
 
 **Good candidates for delegation:**
-- Reasoning-heavy subtasks (debugging, code review, research synthesis)
+- Reasoning-heavy forecast subtasks such as reference-class research, evidence review, and model critique
 - Tasks that would flood your context with intermediate data
-- Parallel independent workstreams (research A and B simultaneously)
+- Parallel independent workstreams such as market evidence, regulatory evidence, and historical analogs
 - Fresh-context tasks where you want the agent to approach without bias
 
 **Use something else:**
@@ -31,62 +31,62 @@ For the full feature reference, see [Subagent Delegation](/docs/user-guide/featu
 
 ## Pattern: Parallel Research
 
-Research three topics simultaneously and get structured summaries back:
+Research three independent forecast angles simultaneously and get structured summaries back:
 
 ```
-Research these three topics in parallel:
-1. Current state of WebAssembly outside the browser
-2. RISC-V server chip adoption in 2025
-3. Practical quantum computing applications
+Research these three angles in parallel for forecast Q-142:
+1. Historical base rates for similar policy rollbacks
+2. Current market-implied probability from prediction markets and public odds
+3. Recent official statements and implementation constraints
 
-Focus on recent developments and key players.
+Return timestamped evidence, uncertainty, and which claims should enter the evidence log.
 ```
 
-Behind the scenes, Hermes uses:
+Behind the scenes, the inherited runtime uses:
 
 ```python
 delegate_task(tasks=[
     {
-        "goal": "Research WebAssembly outside the browser in 2025",
-        "context": "Focus on: runtimes (Wasmtime, Wasmer), cloud/edge use cases, WASI progress",
+        "goal": "Research historical base rates for similar policy rollbacks",
+        "context": "Forecast Q-142. Focus on comparable policies, time-to-reversal, and selection effects.",
         "toolsets": ["web"]
     },
     {
-        "goal": "Research RISC-V server chip adoption",
-        "context": "Focus on: server chips shipping, cloud providers adopting, software ecosystem",
+        "goal": "Research market-implied probability",
+        "context": "Forecast Q-142. Find public market or odds sources, timestamp all probabilities, and flag liquidity issues.",
         "toolsets": ["web"]
     },
     {
-        "goal": "Research practical quantum computing applications",
-        "context": "Focus on: error correction breakthroughs, real-world use cases, key companies",
+        "goal": "Research official statements and implementation constraints",
+        "context": "Forecast Q-142. Focus on primary sources and concrete blockers, not commentary alone.",
         "toolsets": ["web"]
     }
 ])
 ```
 
-All three run concurrently. Each subagent searches the web independently and returns a summary. The parent agent then synthesizes them into a coherent briefing.
+All three run concurrently. Each subagent searches independently and returns a summary. The parent agent then decides which claims are admissible evidence, what should update the forecast, and what should remain an assumption.
 
 ---
 
 ## Pattern: Code Review
 
-Delegate a security review to a fresh-context subagent that approaches the code without preconceptions:
+Delegate a security review to a fresh-context subagent that approaches a forecast data connector without preconceptions:
 
 ```
-Review the authentication module at src/auth/ for security issues.
-Check for SQL injection, JWT validation problems, password handling,
-and session management. Fix anything you find and run the tests.
+Review the SEC filing source adapter for security and data-integrity issues.
+Check URL handling, file writes, timestamp cutoffs, credential handling,
+and test coverage. Fix anything you find and run the tests.
 ```
 
 The key is the `context` field — it must include everything the subagent needs:
 
 ```python
 delegate_task(
-    goal="Review src/auth/ for security issues and fix any found",
-    context="""Project at /home/user/webapp. Python 3.11, Flask, PyJWT, bcrypt.
-    Auth files: src/auth/login.py, src/auth/jwt.py, src/auth/middleware.py
-    Test command: pytest tests/auth/ -v
-    Focus on: SQL injection, JWT validation, password hashing, session management.
+    goal="Review the SEC filing source adapter for security and data-integrity issues",
+    context="""Project at /home/user/superforecasting-agent. Python 3.11.
+    Files: forecasting/source_adapters.py, tools/forecasting_tool.py
+    Test command: pytest tests/forecasting/ -v
+    Focus on: URL validation, source availability timestamps, credential handling, and durable evidence writes.
     Fix issues found and verify tests pass.""",
     toolsets=["terminal", "file"]
 )
@@ -100,17 +100,17 @@ Subagents know **absolutely nothing** about your conversation. They start comple
 
 ## Pattern: Compare Alternatives
 
-Evaluate multiple approaches to the same problem in parallel, then pick the best:
+Evaluate multiple probability-modeling approaches in parallel, then pick the best:
 
 ```
-I need to add full-text search to our Django app. Evaluate three approaches
+I need to model whether a bill will pass committee by June 30. Evaluate three approaches
 in parallel:
-1. PostgreSQL tsvector (built-in)
-2. Elasticsearch via django-elasticsearch-dsl
-3. Meilisearch via meilisearch-python
+1. Historical committee base-rate model
+2. Sponsor/cosponsor and party-control model
+3. Market/crowd-implied prior plus Bayesian evidence updates
 
-For each: setup complexity, query capabilities, resource requirements,
-and maintenance overhead. Compare them and recommend one.
+For each: assumptions, data requirements, likely failure modes, and how to score it after resolution.
+Compare them and recommend an ensemble weighting.
 ```
 
 Each subagent researches one option independently. Because they're isolated, there's no cross-contamination — each evaluation stands on its own merits. The parent agent gets all three summaries and makes the comparison.
@@ -119,35 +119,30 @@ Each subagent researches one option independently. Because they're isolated, the
 
 ## Pattern: Multi-File Refactoring
 
-Split a large refactoring task across parallel subagents, each handling a different part of the codebase:
+Split a large forecast-system refactoring task across parallel subagents, each handling a different part of the codebase:
 
 ```python
 delegate_task(tasks=[
     {
-        "goal": "Refactor all API endpoint handlers to use the new response format",
-        "context": """Project at /home/user/api-server.
-        Files: src/handlers/users.py, src/handlers/auth.py, src/handlers/billing.py
-        Old format: return {"data": result, "status": "ok"}
-        New format: return APIResponse(data=result, status=200).to_dict()
-        Import: from src.responses import APIResponse
-        Run tests after: pytest tests/handlers/ -v""",
+        "goal": "Refactor forecast evidence adapters to emit availability timestamps",
+        "context": """Project at /home/user/superforecasting-agent.
+        Files: forecasting/source_adapters.py, tests/forecasting/test_source_adapters.py
+        Every EvidenceItem must include source timestamp and available_at.
+        Run tests after: pytest tests/forecasting/test_source_adapters.py -v""",
         "toolsets": ["terminal", "file"]
     },
     {
-        "goal": "Update all client SDK methods to handle the new response format",
-        "context": """Project at /home/user/api-server.
-        Files: sdk/python/client.py, sdk/python/models.py
-        Old parsing: result = response.json()["data"]
-        New parsing: result = response.json()["data"] (same key, but add status code checking)
-        Also update sdk/python/tests/test_client.py""",
+        "goal": "Update forecast CLI output for timestamped evidence",
+        "context": """Project at /home/user/superforecasting-agent.
+        Files: forecasting/cli.py, tests/forecasting/test_cli.py
+        Show source timestamp and available_at in evidence listings without widening compact tables.""",
         "toolsets": ["terminal", "file"]
     },
     {
-        "goal": "Update API documentation to reflect the new response format",
-        "context": """Project at /home/user/api-server.
-        Docs at: docs/api/. Format: Markdown with code examples.
-        Update all response examples from old format to new format.
-        Add a 'Response Format' section to docs/api/overview.md explaining the schema.""",
+        "goal": "Update docs for timestamped evidence handling",
+        "context": """Project at /home/user/superforecasting-agent.
+        Docs at: docs/plans/ and website/docs/. Format: Markdown.
+        Explain why evidence timestamps and availability cutoffs are required for backtesting.""",
         "toolsets": ["terminal", "file"]
     }
 ])
@@ -161,15 +156,18 @@ Each subagent gets its own terminal session. They can work on the same project d
 
 ## Pattern: Gather Then Analyze
 
-Use `execute_code` for mechanical data gathering, then delegate the reasoning-heavy analysis:
+Use `execute_code` for mechanical data gathering, then delegate the reasoning-heavy forecast analysis:
 
 ```python
 # Step 1: Mechanical gathering (execute_code is better here — no reasoning needed)
 execute_code("""
+# Inherited execute_code helper module.
 from hermes_tools import web_search, web_extract
 
 results = []
-for query in ["AI funding Q1 2026", "AI startup acquisitions 2026", "AI IPOs 2026"]:
+for query in ["export controls semiconductor equipment 2026",
+              "semiconductor equipment shipment restrictions 2026",
+              "chip equipment export license approvals 2026"]:
     r = web_search(query, limit=5)
     for item in r["data"]["web"]:
         results.append({"title": item["title"], "url": item["url"], "desc": item["description"]})
@@ -180,23 +178,23 @@ content = web_extract(urls)
 
 # Save for the analysis step
 import json
-with open("/tmp/ai-funding-data.json", "w") as f:
+with open("/tmp/export-control-evidence.json", "w") as f:
     json.dump({"search_results": results, "extracted": content["results"]}, f)
 print(f"Collected {len(results)} results, extracted {len(content['results'])} pages")
 """)
 
 # Step 2: Reasoning-heavy analysis (delegation is better here)
 delegate_task(
-    goal="Analyze AI funding data and write a market report",
-    context="""Raw data at /tmp/ai-funding-data.json contains search results and
-    extracted web pages about AI funding, acquisitions, and IPOs in Q1 2026.
-    Write a structured market report: key deals, trends, notable players,
-    and outlook. Focus on deals over $100M.""",
+    goal="Analyze semiconductor export-control evidence for a forecast update",
+    context="""Raw data at /tmp/export-control-evidence.json contains search results and
+    extracted web pages about semiconductor export controls.
+    Write a forecast evidence memo for whether new restrictions will be announced by Q3 2026.
+    Separate facts, estimates, rumors, and assumptions; include what should enter the evidence log.""",
     toolsets=["terminal", "file"]
 )
 ```
 
-This is often the most efficient pattern: `execute_code` handles the 10+ sequential tool calls cheaply, then a subagent does the single expensive reasoning task with a clean context.
+This is often the most efficient pattern: `execute_code` handles the 10+ sequential tool calls cheaply, then a subagent does the single expensive reasoning task with a clean context. The parent still owns the final probability update and ledger write.
 
 ---
 
@@ -206,8 +204,8 @@ Choose toolsets based on what the subagent needs:
 
 | Task type | Toolsets | Why |
 |-----------|----------|-----|
-| Web research | `["web"]` | web_search + web_extract only |
-| Code work | `["terminal", "file"]` | Shell access + file operations |
+| Forecast research | `["web"]` | web_search + web_extract only |
+| Code or adapter work | `["terminal", "file"]` | Shell access + file operations |
 | Full-stack | `["terminal", "file", "web"]` | Everything except messaging |
 | Read-only analysis | `["file"]` | Can only read files, no shell |
 

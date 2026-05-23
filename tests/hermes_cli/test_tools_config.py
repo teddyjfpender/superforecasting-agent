@@ -12,6 +12,7 @@ from hermes_cli.tools_config import (
     _get_platform_tools,
     _platform_toolset_summary,
     _reconfigure_tool,
+    _run_post_setup,
     _save_platform_tools,
     _toolset_has_keys,
     CONFIGURABLE_TOOLSETS,
@@ -72,10 +73,20 @@ def test_get_platform_tools_uses_default_when_platform_not_configured():
 
     assert enabled
     assert enabled.isdisjoint(_DEFAULT_OFF_TOOLSETS)
+    assert "forecasting" in enabled
+    assert "terminal" in enabled
+    assert "file" in enabled
+    assert "memory" not in enabled
+    assert "skills" not in enabled
 
 
 def test_configurable_toolsets_include_messaging():
     assert any(ts_key == "messaging" for ts_key, _, _ in CONFIGURABLE_TOOLSETS)
+
+
+def test_configurable_toolsets_include_forecasting():
+    assert any(ts_key == "forecasting" for ts_key, _, _ in CONFIGURABLE_TOOLSETS)
+
 
 def test_get_platform_tools_default_telegram_includes_messaging():
     enabled = _get_platform_tools({}, "telegram")
@@ -98,9 +109,9 @@ def test_get_platform_tools_homeassistant_platform_keeps_homeassistant_toolset()
 def test_get_platform_tools_homeassistant_toolset_enabled_for_cron_when_hass_token_set(monkeypatch):
     """HA toolset is runtime-gated by check_fn (requires HASS_TOKEN).
 
-    When HASS_TOKEN is set, the user has explicitly opted in — _DEFAULT_OFF_TOOLSETS
-    shouldn't also strip HA from platforms (like cron) that run through
-    _get_platform_tools without an explicit saved toolset list.
+    When HASS_TOKEN is set, the user has explicitly opted in for platforms
+    whose default composite includes HA (like cron). The forecast-desk CLI
+    default stays narrowed unless the user explicitly enables HA there.
 
     Regression guard for Norbert's HA cron breakage after #14798 made cron
     honor per-platform tool config.
@@ -113,7 +124,7 @@ def test_get_platform_tools_homeassistant_toolset_enabled_for_cron_when_hass_tok
     assert "moa" not in cron_enabled
 
     cli_enabled = _get_platform_tools({}, "cli")
-    assert "homeassistant" in cli_enabled
+    assert "homeassistant" not in cli_enabled
 
 
 def test_get_platform_tools_homeassistant_toolset_off_for_cron_when_hass_token_missing(monkeypatch):
@@ -198,10 +209,9 @@ def test_get_platform_tools_expands_composite_when_mixed_with_configurable():
     assert "spotify" in enabled
 
 
-def test_get_platform_tools_composite_only_unchanged():
-    """Composite-only config (no configurable in list) must still take the
-    else-branch path and produce the full toolset — guards against the new
-    code accidentally hijacking the composite-only case."""
+def test_get_platform_tools_legacy_hermes_cli_composite_stays_broad():
+    """Explicit legacy hermes-cli config should remain available, even though
+    the unconfigured CLI now defaults to the narrower forecast-desk toolset."""
     composite_only = _get_platform_tools(
         {"platform_toolsets": {"cli": ["hermes-cli"]}},
         "cli",
@@ -209,7 +219,11 @@ def test_get_platform_tools_composite_only_unchanged():
     )
     default = _get_platform_tools({}, "cli", include_default_mcp_servers=False)
 
-    assert composite_only == default
+    assert "memory" in composite_only
+    assert "skills" in composite_only
+    assert "memory" not in default
+    assert "skills" not in default
+    assert composite_only != default
 
 
 def test_get_platform_tools_configurable_only_no_expansion():
@@ -446,15 +460,14 @@ def test_save_platform_tools_handles_invalid_existing_config():
     assert "web" in saved_toolsets
 
 
-def test_save_platform_tools_does_not_preserve_platform_default_toolsets():
-    """Platform default toolsets (hermes-cli, hermes-telegram, etc.) must NOT
+def test_save_platform_tools_does_not_preserve_bundled_composite_toolsets():
+    """Bundled composite toolsets (forecast-desk, hermes-cli, etc.) must NOT
     be preserved across saves.
 
-    These "super" toolsets resolve to ALL tools, so if they survive in the
-    config, they silently override any tools the user unchecked. Previously,
-    the preserve filter only excluded configurable toolset keys (web, browser,
-    terminal, etc.) and treated platform defaults as unknown custom entries
-    (like MCP server names), causing them to be kept unconditionally.
+    These composites can re-enable tools the user unchecked. Previously, the
+    preserve filter only excluded configurable toolset keys (web, browser,
+    terminal, etc.) and treated composites as unknown custom entries like MCP
+    server names, causing them to be kept unconditionally.
 
     Regression test: user unchecks image_gen and homeassistant via
     ``hermes tools``, but hermes-cli stays in the config and re-enables
@@ -464,7 +477,7 @@ def test_save_platform_tools_does_not_preserve_platform_default_toolsets():
         "platform_toolsets": {
             "cli": [
                 "browser", "clarify", "code_execution", "cronjob",
-                "delegation", "file", "hermes-cli",  # <-- the culprit
+                "delegation", "file", "forecast-desk", "hermes-cli",
                 "memory", "session_search", "skills", "terminal",
                 "todo", "tts", "vision", "web",
             ]
@@ -483,7 +496,8 @@ def test_save_platform_tools_does_not_preserve_platform_default_toolsets():
 
     saved = config["platform_toolsets"]["cli"]
 
-    # hermes-cli must NOT survive — it's a platform default, not an MCP server
+    # Bundled composites must NOT survive — they are not MCP servers.
+    assert "forecast-desk" not in saved
     assert "hermes-cli" not in saved
 
     # The individual toolset keys the user selected must be present
@@ -517,13 +531,14 @@ def test_save_platform_tools_does_not_preserve_hermes_telegram():
     assert "web" in saved
 
 
-def test_save_platform_tools_still_preserves_mcp_with_platform_default_present():
-    """MCP server names must still be preserved even when platform defaults
-    are being stripped out."""
+def test_save_platform_tools_still_preserves_mcp_with_bundled_composite_present():
+    """MCP server names must still be preserved when bundled composites are
+    stripped out."""
     config = {
         "platform_toolsets": {
             "cli": [
-                "web", "terminal", "hermes-cli", "my-mcp-server", "github-tools",
+                "web", "terminal", "forecast-desk", "hermes-cli",
+                "my-mcp-server", "github-tools",
             ]
         }
     }
@@ -539,7 +554,8 @@ def test_save_platform_tools_still_preserves_mcp_with_platform_default_present()
     assert "my-mcp-server" in saved
     assert "github-tools" in saved
 
-    # Platform default stripped
+    # Bundled composites stripped
+    assert "forecast-desk" not in saved
     assert "hermes-cli" not in saved
 
     # User selections present
@@ -1069,3 +1085,36 @@ def test_reconfigure_provider_runs_post_setup_for_env_var_providers(
     _reconfigure_provider(provider, {})
 
     assert called == [post_setup_key]
+
+
+def test_spotify_post_setup_retry_guidance_is_fork_native(monkeypatch, capsys):
+    import hermes_cli.auth as auth_mod
+
+    def _abort(_args):
+        raise SystemExit("cancelled")
+
+    monkeypatch.setattr(auth_mod, "login_spotify_command", _abort)
+
+    _run_post_setup("spotify")
+
+    out = capsys.readouterr().out
+    assert "superforecasting-agent auth spotify" in out
+    assert "hermes auth spotify" not in out
+
+
+def test_tools_command_guidance_is_fork_native(monkeypatch, capsys, tmp_path):
+    import hermes_constants
+    import hermes_cli.tools_config as tools_config
+
+    monkeypatch.setattr(tools_config, "_get_enabled_platforms", lambda: ["cli"])
+    monkeypatch.setattr(tools_config, "_prompt_choice", lambda *args, **kwargs: 2)
+    monkeypatch.setattr(hermes_constants, "display_hermes_home", lambda: str(tmp_path))
+
+    tools_config.tools_command(config={"platform_toolsets": {"cli": []}})
+
+    out = capsys.readouterr().out
+    assert "Superforecasting Agent Tool Configuration" in out
+    assert "Guide: website/docs/user-guide/features/tools.md" in out
+    assert "next 'superforecasting-agent' or gateway restart" in out
+    assert "Hermes Tool Configuration" not in out
+    assert "hermes-agent.nousresearch.com/docs/user-guide/features/tools" not in out

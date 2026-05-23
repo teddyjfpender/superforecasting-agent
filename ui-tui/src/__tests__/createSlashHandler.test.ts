@@ -51,15 +51,215 @@ describe('createSlashHandler', () => {
 
   it('routes /status to live session.status instead of slash worker', async () => {
     patchUiState({ sid: 'sid-abc' })
-    const rpc = vi.fn(() => Promise.resolve({ output: 'Hermes TUI Status' }))
+    const rpc = vi.fn(() => Promise.resolve({ output: 'Superforecasting Agent TUI Status' }))
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/status')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('session.status', { session_id: 'sid-abc' })
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
     await vi.waitFor(() => {
-      expect(ctx.transcript.page).toHaveBeenCalledWith('Hermes TUI Status', 'Status')
+      expect(ctx.transcript.page).toHaveBeenCalledWith('Superforecasting Agent TUI Status', 'Forecast Desk Status')
     })
+  })
+
+  it('routes bare /forecast to the native forecast dashboard RPC', async () => {
+    const rpc = vi.fn((method: string) => {
+      if (method === 'forecast.dashboard') {
+        return Promise.resolve({
+          output: 'ACTIVE FORECASTS',
+          summary: {
+            active_count: 1,
+            open_alert_count: 0,
+            product: 'Superforecasting Agent',
+            questions: [
+              {
+                close_time: '2026-09-30T00:00:00Z',
+                baseline_count: 1,
+                confidence: 0.61,
+                delta: -0.04,
+                evidence_count: 3,
+                id: 'fq_default001',
+                open_alert_count: 0,
+                open_assumption_count: 1,
+                probability: 0.21,
+                as_of: '2026-08-01T00:00:00Z',
+                stale_assumption_count: 0,
+                title: 'Will company Y default?'
+              }
+            ]
+          }
+        })
+      }
+
+      return Promise.resolve({})
+    })
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/forecast')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 20 })
+    expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
+    await vi.waitFor(() => {
+      expect(getUiState().forecastDeskStatus).toBe('desk 1 active')
+      expect(getUiState().forecastDeskRailSections).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ title: 'Book' }),
+          expect.objectContaining({
+            rows: [
+              ['default0 P=0.210 Δ=-0.040', 'active  Will company Y default?']
+            ],
+            title: 'Watchlist'
+          })
+        ])
+      )
+      expect(ctx.transcript.panel).toHaveBeenCalledWith(
+        'Forecast Desk',
+        expect.arrayContaining([
+          expect.objectContaining({ title: 'Desk' }),
+          expect.objectContaining({
+            rows: [
+              [
+                'default0  P=0.210  Δ=-0.040',
+                'as-of 2026-08-01  close 2026-09-30  conf 0.61  ev 3  base 1  asm 1/0  active  Will company Y default?'
+              ]
+            ],
+            title: 'Active Forecasts'
+          })
+        ])
+      )
+    })
+  })
+
+  it('routes numeric /forecast args to the dashboard limit', async () => {
+    const rpc = vi.fn(() => Promise.resolve({ output: 'ACTIVE FORECASTS' }))
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/forecast 5')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 5 })
+    expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
+  })
+
+  it('routes /forecast lifecycle subcommands to the forecast command RPC', async () => {
+    const rpc = vi.fn((method: string) => {
+      if (method === 'forecast.command') {
+        return Promise.resolve({ code: 0, output: 'created forecast question fq_123' })
+      }
+      if (method === 'forecast.dashboard') {
+        return Promise.resolve({
+          summary: {
+            active_count: 2,
+            open_alert_count: 1,
+            product: 'Superforecasting Agent',
+            questions: [],
+            review_queue_count: 1
+          }
+        })
+      }
+
+      return Promise.resolve({})
+    })
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/forecast new "Will X happen?" --resolution-criteria "Resolved by source"')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', {
+      arg: 'new "Will X happen?" --resolution-criteria "Resolved by source"'
+    })
+    expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
+    await vi.waitFor(() => {
+      expect(ctx.transcript.sys).toHaveBeenCalledWith('created forecast question fq_123')
+      expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 8 })
+      expect(getUiState().forecastDeskStatus).toBe('desk 2 active / 1 alert / 1 review')
+    })
+  })
+
+  it('routes forecast-native review shortcuts to the forecast command RPC', async () => {
+    const rpc = vi.fn((method: string) => {
+      if (method === 'forecast.command') {
+        return Promise.resolve({ code: 0, output: 'No forecasts need review.' })
+      }
+
+      return Promise.resolve({})
+    })
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/review')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'review --stale' })
+    expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
+    await vi.waitFor(() => {
+      expect(ctx.transcript.sys).toHaveBeenCalledWith('No forecasts need review.')
+    })
+  })
+
+  it('routes forecast lifecycle shortcuts to the forecast command RPC', () => {
+    const rpc = vi.fn(() => Promise.resolve({ code: 0, output: 'ok' }))
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+    const handler = createSlashHandler(ctx)
+
+    expect(handler('/new-forecast "Will X happen?" --resolution-criteria "Resolved by source"')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', {
+      arg: 'new "Will X happen?" --resolution-criteria "Resolved by source"'
+    })
+    expect(handler('/ingest https://example.com/question')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'ingest https://example.com/question' })
+    expect(handler('/evidence add fq_123 "new source"')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'evidence add fq_123 "new source"' })
+    expect(handler('/research fq_123 https://example.com/source')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'research fq_123 https://example.com/source' })
+    expect(handler('/base-rate fq_123 --name similar events')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'base-rate fq_123 --name similar events' })
+    expect(handler('/model-run fq_123 --type bayesian_update')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'model fq_123 --type bayesian_update' })
+    expect(handler('/forecast-model fq_123 --type time_series')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'model fq_123 --type time_series' })
+    expect(handler('/update-forecast fq_123 --probability 0.62 --rationale "new evidence"')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', {
+      arg: 'update fq_123 --probability 0.62 --rationale "new evidence"'
+    })
+    expect(handler('/resolve fq_123 --outcome yes --confirmed')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'resolve fq_123 --outcome yes --confirmed' })
+    expect(handler('/score fq_123')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'score fq_123' })
+    expect(handler('/postmortem fq_123 --lesson "discount noisy signals"')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'postmortem fq_123 --lesson "discount noisy signals"' })
+    expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
+  })
+
+  it('routes forecast-native analytics shortcuts with args', async () => {
+    const rpc = vi.fn(() => Promise.resolve({ code: 0, output: 'count: 12' }))
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/calibration')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'calibration --by-origin' })
+    expect(createSlashHandler(ctx)('/calibration --domain macro')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'calibration --domain macro' })
+    expect(createSlashHandler(ctx)('/performance --last 3')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'performance --last 3' })
+    expect(createSlashHandler(ctx)('/readiness --json')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'readiness --json' })
+    expect(createSlashHandler(ctx)('/pilot-report --json')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'pilot-report --json' })
+    expect(createSlashHandler(ctx)('/pilot')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'pilot-report' })
+    expect(createSlashHandler(ctx)('/pilot-aggregate tester-a.json tester-b.json --json')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', {
+      arg: 'pilot-aggregate tester-a.json tester-b.json --json'
+    })
+    expect(createSlashHandler(ctx)('/lessons --active')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'lesson list --active' })
+    expect(createSlashHandler(ctx)('/backtest')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'backtest --benchmarks' })
+    expect(createSlashHandler(ctx)('/backtest --list')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'backtest --list' })
+    expect(createSlashHandler(ctx)('/sources')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'sources' })
+    expect(createSlashHandler(ctx)('/sources --json')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'sources --json' })
+    expect(createSlashHandler(ctx)('/adapters')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'sources' })
+    expect(createSlashHandler(ctx)('/schedule')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'schedule list' })
+    expect(createSlashHandler(ctx)('/schedule run --auto-score')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'schedule run --auto-score' })
+    expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
   })
 
   it('keeps typed /model switches session-scoped by default', async () => {
@@ -612,7 +812,7 @@ describe('createSlashHandler', () => {
     expect(title).toBe('History')
     expect(body).toContain('[You #1]')
     expect(body).toContain('hello')
-    expect(body).toContain('[Hermes #2]')
+    expect(body).toContain('[Forecast Desk #2]')
     expect(body).toContain('hi there')
     expect(body).toContain('[You #3]')
     expect(body).not.toContain('ignore me')
@@ -624,13 +824,13 @@ describe('createSlashHandler', () => {
 
     createSlashHandler(ctx)('/history')
     expect(ctx.transcript.page).not.toHaveBeenCalled()
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('no conversation yet')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('no forecast transcript yet')
   })
 
   it('/save forwards to session.save RPC and reports the returned file', async () => {
     patchUiState({ sid: 'sid-abc' })
 
-    const rpc = vi.fn(() => Promise.resolve({ file: '/tmp/hermes_conversation_test.json' }))
+    const rpc = vi.fn(() => Promise.resolve({ file: '/tmp/forecast_transcript_test.json' }))
 
     const ctx = buildCtx({
       gateway: { ...buildGateway(), rpc },
@@ -650,7 +850,7 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('session.save', { session_id: 'sid-abc' })
 
     await vi.waitFor(() => {
-      expect(ctx.transcript.sys).toHaveBeenCalledWith('conversation saved to: /tmp/hermes_conversation_test.json')
+      expect(ctx.transcript.sys).toHaveBeenCalledWith('forecast transcript saved to: /tmp/forecast_transcript_test.json')
     })
   })
 
@@ -662,11 +862,11 @@ describe('createSlashHandler', () => {
 
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
     expect(rpc).not.toHaveBeenCalled()
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('no conversation yet')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('no forecast transcript yet')
   })
 
   it('/save without an active session tells the user instead of hitting the RPC', () => {
-    // sid stays null (default) but there IS visible conversation
+    // sid stays null (default) but there IS visible forecast transcript
     const rpc = vi.fn(() => Promise.resolve({}))
 
     const ctx = buildCtx({

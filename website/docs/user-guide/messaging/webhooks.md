@@ -1,33 +1,19 @@
 ---
 sidebar_position: 13
 title: "Webhooks"
-description: "Receive events from GitHub, GitLab, and other services to trigger Hermes agent runs"
+description: "Receive events that trigger forecast reviews and alerts."
 ---
 
 # Webhooks
 
-Receive events from external services (GitHub, GitLab, JIRA, Stripe, etc.) and trigger Hermes agent runs automatically. The webhook adapter runs an HTTP server that accepts POST requests, validates HMAC signatures, transforms payloads into agent prompts, and routes responses back to the source or to another configured platform.
+Receive events from external services and turn them into forecast review work, evidence alerts, or notifications. The webhook adapter runs an HTTP server that accepts POST requests, validates HMAC signatures, transforms payloads into forecast prompts, and routes review output back to the source or another configured platform.
 
-The agent processes the event and can respond by posting comments on PRs, sending messages to Telegram/Discord, or logging the result.
-
-## Video Tutorial
-
-<div style={{position: 'relative', width: '100%', aspectRatio: '16 / 9', marginBottom: '1.5rem'}}>
-  <iframe
-    src="https://www.youtube.com/embed/WNYe5mD4fY8"
-    title="Hermes Agent — Webhooks Tutorial"
-    style={{position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0}}
-    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-    allowFullScreen
-  />
-</div>
-
----
+Use webhooks as alert inputs. They should not silently overwrite active probabilities; the forecast runtime should append evidence, create a review alert, or produce an explicit update that can be audited in the ledger.
 
 ## Quick Start
 
-1. Enable via `hermes gateway setup` or environment variables
-2. Define routes in `config.yaml` **or** create them dynamically with `hermes webhook subscribe`
+1. Enable via `superforecasting-agent gateway setup` or environment variables
+2. Define routes in `config.yaml` **or** create them dynamically with `superforecasting-agent webhook subscribe`
 3. Point your service at `http://your-server:8644/webhooks/<route-name>`
 
 ---
@@ -39,14 +25,14 @@ There are two ways to enable the webhook adapter.
 ### Via setup wizard
 
 ```bash
-hermes gateway setup
+superforecasting-agent gateway setup
 ```
 
 Follow the prompts to enable webhooks, set the port, and set a global HMAC secret.
 
 ### Via environment variables
 
-Add to `~/.hermes/.env`:
+Add to `~/.superforecasting-agent/.env`:
 
 ```bash
 WEBHOOK_ENABLED=true
@@ -78,13 +64,13 @@ Routes define how different webhook sources are handled. Each route is a named e
 
 | Property | Required | Description |
 |----------|----------|-------------|
-| `events` | No | List of event types to accept (e.g. `["pull_request"]`). If empty, all events are accepted. Event type is read from `X-GitHub-Event`, `X-GitLab-Event`, or `event_type` in the payload. |
+| `events` | No | List of event types to accept (e.g. `["issues"]`). If empty, all events are accepted. Event type is read from `X-GitHub-Event`, `X-GitLab-Event`, or `event_type` in the payload. |
 | `secret` | **Yes** | HMAC secret for signature validation. Falls back to the global `secret` if not set on the route. Set to `"INSECURE_NO_AUTH"` for testing only (skips validation). |
-| `prompt` | No | Template string with dot-notation payload access (e.g. `{pull_request.title}`). If omitted, the full JSON payload is dumped into the prompt. |
-| `skills` | No | List of skill names to load for the agent run. |
-| `deliver` | No | Where to send the response: `github_comment`, `telegram`, `discord`, `slack`, `signal`, `sms`, `whatsapp`, `matrix`, `mattermost`, `homeassistant`, `email`, `dingtalk`, `feishu`, `wecom`, `weixin`, `bluebubbles`, `qqbot`, or `log` (default). |
+| `prompt` | No | Template string with dot-notation payload access (e.g. `{issue.title}`). If omitted, the full JSON payload is dumped into the prompt. |
+| `skills` | No | List of skill names to load for the forecast review. |
+| `deliver` | No | Where to send the response: `github_comment`, `telegram`, `discord`, `slack`, `signal`, `sms`, `whatsapp`, `matrix`, `mattermost`, `email`, `dingtalk`, `feishu`, `wecom`, `weixin`, `bluebubbles`, `qqbot`, or `log` (default). |
 | `deliver_extra` | No | Additional delivery config — keys depend on `deliver` type (e.g. `repo`, `pr_number`, `chat_id`). Values support the same `{dot.notation}` templates as `prompt`. |
-| `deliver_only` | No | If `true`, skip the agent entirely — the rendered `prompt` template becomes the literal message that gets delivered. Zero LLM cost, sub-second delivery. See [Direct Delivery Mode](#direct-delivery-mode) for use cases. Requires `deliver` to be a real target (not `log`). |
+| `deliver_only` | No | If `true`, skip forecast review entirely — the rendered `prompt` template becomes the literal message that gets delivered. Zero LLM cost, sub-second delivery. See [Direct Delivery Mode](#direct-delivery-mode) for use cases. Requires `deliver` to be a real target (not `log`). |
 
 ### Full example
 
@@ -96,26 +82,25 @@ platforms:
       port: 8644
       secret: "global-fallback-secret"
       routes:
-        github-pr:
-          events: ["pull_request"]
+        forecast-evidence:
+          events: ["issues"]
           secret: "github-webhook-secret"
           prompt: |
-            Review this pull request:
+            Review this new evidence candidate for active forecasts:
             Repository: {repository.full_name}
-            PR #{number}: {pull_request.title}
-            Author: {pull_request.user.login}
-            URL: {pull_request.html_url}
-            Diff URL: {pull_request.diff_url}
+            Issue #{issue.number}: {issue.title}
+            Reporter: {issue.user.login}
+            URL: {issue.html_url}
             Action: {action}
-          skills: ["github-code-review"]
+          skills: ["forecast-review"]
           deliver: "github_comment"
           deliver_extra:
             repo: "{repository.full_name}"
-            pr_number: "{number}"
-        deploy-notify:
+            pr_number: "{issue.number}"
+        market-alert:
           events: ["push"]
-          secret: "deploy-secret"
-          prompt: "New push to {repository.full_name} branch {ref}: {head_commit.message}"
+          secret: "market-feed-secret"
+          prompt: "Potential evidence update for forecast portfolio: {head_commit.message}"
           deliver: "telegram"
 ```
 
@@ -123,16 +108,16 @@ platforms:
 
 Prompts use dot-notation to access nested fields in the webhook payload:
 
-- `{pull_request.title}` resolves to `payload["pull_request"]["title"]`
+- `{issue.title}` resolves to `payload["issue"]["title"]`
 - `{repository.full_name}` resolves to `payload["repository"]["full_name"]`
-- `{__raw__}` — special token that dumps the **entire payload** as indented JSON (truncated at 4000 characters). Useful for monitoring alerts or generic webhooks where the agent needs the full context.
+- `{__raw__}` — special token that dumps the **entire payload** as indented JSON (truncated at 4000 characters). Useful for monitoring alerts or generic webhooks where the forecast runtime needs the full context.
 - Missing keys are left as the literal `{key}` string (no error)
 - Nested dicts and lists are JSON-serialized and truncated at 2000 characters
 
 You can mix `{__raw__}` with regular template variables:
 
 ```yaml
-prompt: "PR #{pull_request.number} by {pull_request.user.login}: {__raw__}"
+prompt: "Evidence alert #{issue.number} by {issue.user.login}: {__raw__}"
 ```
 
 If no `prompt` template is configured for a route, the entire payload is dumped as indented JSON (truncated at 4000 characters).
@@ -159,22 +144,22 @@ If `chat_id` is not provided in `deliver_extra`, the delivery falls back to the 
 
 ---
 
-## GitHub PR Review (Step by Step) {#github-pr-review}
+## GitHub Evidence Review (Step by Step) {#github-pr-review}
 
-This walkthrough sets up automatic code review on every pull request.
+This walkthrough sets up a GitHub issue webhook that turns tagged evidence notes into forecast review work. Keep the old anchor so existing links still resolve.
 
 ### 1. Create the webhook in GitHub
 
 1. Go to your repository → **Settings** → **Webhooks** → **Add webhook**
-2. Set **Payload URL** to `http://your-server:8644/webhooks/github-pr`
+2. Set **Payload URL** to `http://your-server:8644/webhooks/forecast-evidence`
 3. Set **Content type** to `application/json`
 4. Set **Secret** to match your route config (e.g. `github-webhook-secret`)
-5. Under **Which events?**, select **Let me select individual events** and check **Pull requests**
+5. Under **Which events?**, select **Let me select individual events** and check **Issues**
 6. Click **Add webhook**
 
 ### 2. Add the route config
 
-Add the `github-pr` route to your `~/.hermes/config.yaml` as shown in the example above.
+Add the `forecast-evidence` route to your `~/.superforecasting-agent/config.yaml` as shown in the example above.
 
 ### 3. Ensure `gh` CLI is authenticated
 
@@ -186,7 +171,7 @@ gh auth login
 
 ### 4. Test it
 
-Open a pull request on the repository. The webhook fires, Hermes processes the event, and posts a review comment on the PR.
+Open an issue that contains a possible source, market move, model input, or resolution update. The webhook fires, the forecast runtime reviews the event, and posts a comment with the review result.
 
 ---
 
@@ -214,7 +199,7 @@ platforms:
           events: ["merge_request"]
           secret: "your-gitlab-secret-token"
           prompt: |
-            Review this merge request:
+            Review this merge request as possible evidence:
             Project: {project.path_with_namespace}
             MR !{object_attributes.iid}: {object_attributes.title}
             Author: {object_attributes.last_commit.author.name}
@@ -227,7 +212,7 @@ platforms:
 
 ## Delivery Options {#delivery-options}
 
-The `deliver` field controls where the agent's response goes after processing the webhook event.
+The `deliver` field controls where the forecast review output goes after processing the webhook event.
 
 | Deliver Type | Description |
 |-------------|-------------|
@@ -241,7 +226,6 @@ The `deliver` field controls where the agent's response goes after processing th
 | `whatsapp` | Routes the response to WhatsApp. Uses the home channel, or specify `chat_id` in `deliver_extra`. |
 | `matrix` | Routes the response to Matrix. Uses the home channel, or specify `chat_id` in `deliver_extra`. |
 | `mattermost` | Routes the response to Mattermost. Uses the home channel, or specify `chat_id` in `deliver_extra`. |
-| `homeassistant` | Routes the response to Home Assistant. Uses the home channel, or specify `chat_id` in `deliver_extra`. |
 | `email` | Routes the response to Email. Uses the home channel, or specify `chat_id` in `deliver_extra`. |
 | `dingtalk` | Routes the response to DingTalk. Uses the home channel, or specify `chat_id` in `deliver_extra`. |
 | `feishu` | Routes the response to Feishu/Lark. Uses the home channel, or specify `chat_id` in `deliver_extra`. |
@@ -255,25 +239,25 @@ For cross-platform delivery, the target platform must also be enabled and connec
 
 ## Direct Delivery Mode {#direct-delivery-mode}
 
-By default, every webhook POST triggers an agent run — the payload becomes a prompt, the agent processes it, and the agent's response is delivered. This costs LLM tokens on every event.
+By default, every webhook POST triggers a forecast-runtime review: the payload becomes a prompt, the runtime processes it, and the review output is delivered. This costs LLM tokens on every event.
 
-For use cases where you just want to **push a plain notification** — no reasoning, no agent loop, just deliver the message — set `deliver_only: true` on the route. The rendered `prompt` template becomes the literal message body, and the adapter dispatches it directly to the configured delivery target.
+For use cases where you just want to **push a plain notification** — no reasoning, no review loop, just deliver the message — set `deliver_only: true` on the route. The rendered `prompt` template becomes the literal message body, and the adapter dispatches it directly to the configured delivery target.
 
 ### When to use direct delivery
 
-- **External service push** — Supabase/Firebase webhook fires on a database change → notify a user in Telegram instantly
-- **Monitoring alerts** — Datadog/Grafana alert webhook → push to a Discord channel
-- **Inter-agent pings** — Agent A notifies Agent B's user that a long-running task finished
-- **Background job completion** — Cron job finishes → post result to Slack
+- **Evidence-source push** — internal data feed changes → notify a forecaster in Telegram instantly
+- **Monitoring alerts** — Datadog/Grafana alert webhook → push to a Discord channel for review
+- **Benchmark completion** — backtest job finishes → post performance summary to Slack
+- **Resolution notices** — upstream service marks a question resolved → alert the forecast book owner
 
 Benefits:
 
-- **Zero LLM tokens** — the agent is never invoked
+- **Zero LLM tokens** — no forecast review is invoked
 - **Sub-second delivery** — a single adapter call, no reasoning loop
-- **Same security as agent mode** — HMAC auth, rate limits, idempotency, and body-size limits all still apply
+- **Same security as review mode** — HMAC auth, rate limits, idempotency, and body-size limits all still apply
 - **Synchronous response** — the POST returns `200 OK` once delivery succeeds, or `502` if the target rejects it, so your upstream service can retry intelligently
 
-### Example: Telegram push from Supabase
+### Example: Telegram push from a data feed
 
 ```yaml
 platforms:
@@ -283,26 +267,26 @@ platforms:
       port: 8644
       secret: "global-secret"
       routes:
-        antenna-matches:
-          secret: "antenna-webhook-secret"
+        rate-alert:
+          secret: "rates-feed-secret"
           deliver: "telegram"
           deliver_only: true
-          prompt: "🎉 New match: {match.user_name} matched with you!"
+          prompt: "New CPI observation available: {observation.date} {observation.value}"
           deliver_extra:
-            chat_id: "{match.telegram_chat_id}"
+            chat_id: "{forecast.telegram_chat_id}"
 ```
 
-Your Supabase edge function signs the payload with HMAC-SHA256 and POSTs to `https://your-server:8644/webhooks/antenna-matches`. The webhook adapter validates the signature, renders the template from the payload, delivers to Telegram, and returns `200 OK`.
+Your feed publisher signs the payload with HMAC-SHA256 and POSTs to `https://your-server:8644/webhooks/rate-alert`. The webhook adapter validates the signature, renders the template from the payload, delivers to Telegram, and returns `200 OK`.
 
 ### Example: Dynamic subscription via CLI
 
 ```bash
-hermes webhook subscribe antenna-matches \
+superforecasting-agent webhook subscribe rate-alert \
   --deliver telegram \
   --deliver-chat-id "123456789" \
   --deliver-only \
-  --prompt "🎉 New match: {match.user_name} matched with you!" \
-  --description "Antenna match notifications"
+  --prompt "New CPI observation available: {observation.date} {observation.value}" \
+  --description "CPI evidence notifications"
 ```
 
 ### Response codes
@@ -321,25 +305,25 @@ hermes webhook subscribe antenna-matches \
 ### Configuration gotchas
 
 - `deliver_only: true` requires `deliver` to be a real target. `deliver: log` (or omitting `deliver`) is rejected at startup — the adapter refuses to start if it finds a misconfigured route.
-- The `skills` field is ignored in direct delivery mode (no agent runs, so there's nothing to inject skills into).
-- Template rendering uses the same `{dot.notation}` syntax as agent mode, including the `{__raw__}` token.
+- The `skills` field is ignored in direct delivery mode because no forecast review runs.
+- Template rendering uses the same `{dot.notation}` syntax as review mode, including the `{__raw__}` token.
 - Idempotency uses the same `X-GitHub-Delivery` / `X-Request-ID` header — retries with the same ID return `status=duplicate` and do NOT re-deliver.
 
 ---
 
 ## Dynamic Subscriptions (CLI) {#dynamic-subscriptions}
 
-In addition to static routes in `config.yaml`, you can create webhook subscriptions dynamically using the `hermes webhook` CLI command. This is especially useful when the agent itself needs to set up event-driven triggers.
+In addition to static routes in `config.yaml`, you can create webhook subscriptions dynamically using the `superforecasting-agent webhook` CLI command. This is useful when a forecast workflow needs to set up event-driven evidence triggers.
 
 ### Create a subscription
 
 ```bash
-hermes webhook subscribe github-issues \
+superforecasting-agent webhook subscribe github-issues \
   --events "issues" \
-  --prompt "New issue #{issue.number}: {issue.title}\nBy: {issue.user.login}\n\n{issue.body}" \
+  --prompt "Possible evidence for active forecasts: issue #{issue.number}: {issue.title}\nBy: {issue.user.login}\n\n{issue.body}" \
   --deliver telegram \
   --deliver-chat-id "-100123456789" \
-  --description "Triage new GitHub issues"
+  --description "Review new GitHub evidence notes"
 ```
 
 This returns the webhook URL and an auto-generated HMAC secret. Configure your service to POST to that URL.
@@ -347,33 +331,33 @@ This returns the webhook URL and an auto-generated HMAC secret. Configure your s
 ### List subscriptions
 
 ```bash
-hermes webhook list
+superforecasting-agent webhook list
 ```
 
 ### Remove a subscription
 
 ```bash
-hermes webhook remove github-issues
+superforecasting-agent webhook remove github-issues
 ```
 
 ### Test a subscription
 
 ```bash
-hermes webhook test github-issues
-hermes webhook test github-issues --payload '{"issue": {"number": 42, "title": "Test"}}'
+superforecasting-agent webhook test github-issues
+superforecasting-agent webhook test github-issues --payload '{"issue": {"number": 42, "title": "Test"}}'
 ```
 
 ### How dynamic subscriptions work
 
-- Subscriptions are stored in `~/.hermes/webhook_subscriptions.json`
+- Subscriptions are stored in `~/.superforecasting-agent/webhook_subscriptions.json`
 - The webhook adapter hot-reloads this file on each incoming request (mtime-gated, negligible overhead)
 - Static routes from `config.yaml` always take precedence over dynamic ones with the same name
 - Dynamic subscriptions use the same route format and capabilities as static routes (events, prompt templates, skills, delivery)
 - No gateway restart required — subscribe and it's immediately live
 
-### Agent-driven subscriptions
+### Workflow-driven subscriptions
 
-The agent can create subscriptions via the terminal tool when guided by the `webhook-subscriptions` skill. Ask the agent to "set up a webhook for GitHub issues" and it will run the appropriate `hermes webhook subscribe` command.
+The runtime can create subscriptions via the terminal tool when guided by the `webhook-subscriptions` skill. Ask it to "set up a webhook for forecast evidence notes" and it will run the appropriate `superforecasting-agent webhook subscribe` command.
 
 ---
 
@@ -412,7 +396,7 @@ Requests exceeding the limit receive a `429 Too Many Requests` response.
 
 ### Idempotency
 
-Delivery IDs (from `X-GitHub-Delivery`, `X-Request-ID`, or a timestamp fallback) are cached for **1 hour**. Duplicate deliveries (e.g. webhook retries) are silently skipped with a `200` response, preventing duplicate agent runs.
+Delivery IDs (from `X-GitHub-Delivery`, `X-Request-ID`, or a timestamp fallback) are cached for **1 hour**. Duplicate deliveries are silently skipped with a `200` response, preventing duplicate review runs.
 
 ### Body size limits
 
@@ -456,9 +440,9 @@ Webhook payloads contain attacker-controlled data — PR titles, commit messages
 - GitLab events use values like `merge_request`, `push` (the `X-GitLab-Event` header value)
 - If `events` is empty or not set, all events are accepted
 
-### Agent not responding
+### Forecast review not responding
 
-- Run the gateway in foreground to see logs: `hermes gateway run`
+- Run the gateway in foreground to see logs: `superforecasting-agent gateway run`
 - Check that the prompt template is rendering correctly
 - Verify the delivery target is configured and connected
 

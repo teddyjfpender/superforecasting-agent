@@ -221,8 +221,8 @@ def apply(
                     f"Codex plugin discovery skipped: "
                     f"{mig_report.plugin_query_error}"
                 )
-            # Permissions + Hermes tool callback are always-on production
-            # bits the user benefits from knowing about.
+            # Permissions + host tool callback are always-on production bits
+            # the user benefits from knowing about.
             if mig_report.wrote_permissions_default:
                 msg_lines.append(
                     f"Default sandbox: {mig_report.wrote_permissions_default} "
@@ -230,14 +230,14 @@ def apply(
                 )
             if "hermes-tools" in mig_report.migrated:
                 msg_lines.append(
-                    "Hermes tool callback registered: codex can now use "
+                    "Superforecasting Agent tool callback registered: codex can now use "
                     "web_search, web_extract, browser_*, vision_analyze, "
                     "image_generate, skill_view, skills_list, text_to_speech, "
                     "kanban_* (worker + orchestrator) via MCP."
                 )
                 msg_lines.append(
                     "  (delegate_task, memory, session_search, todo run "
-                    "only on the default Hermes runtime — they need the "
+                    "only on the default Superforecasting Agent runtime — they need the "
                     "agent loop context.)"
                 )
             msg_lines.append(f"  (config: {mig_report.target_path})")
@@ -248,14 +248,14 @@ def apply(
         msg_lines.append(
             "OpenAI/Codex turns now run through `codex app-server` "
             "(terminal/file ops/patching inside Codex; "
-            "Hermes tools available via MCP callback)."
+            "Superforecasting Agent tools available via MCP callback)."
         )
         msg_lines.append(
             "Effective on next session — current cached agent keeps "
             "the prior runtime to preserve prompt cache."
         )
     else:
-        msg_lines.append("OpenAI/Codex turns will use the default Hermes runtime.")
+        msg_lines.append("OpenAI/Codex turns will use the default Superforecasting Agent runtime.")
         msg_lines.append("Effective on next session.")
     return CodexRuntimeStatus(
         success=True,

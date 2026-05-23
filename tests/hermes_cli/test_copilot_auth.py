@@ -14,6 +14,8 @@ class TestTokenValidation:
         assert valid is False
         assert "Classic Personal Access Tokens" in msg
         assert "ghp_" in msg
+        assert "superforecasting-agent model" in msg
+        assert "hermes model" not in msg
 
     def test_oauth_token_accepted(self):
         from hermes_cli.copilot_auth import validate_copilot_token
@@ -115,7 +117,7 @@ class TestRequestHeaders:
         from hermes_cli.copilot_auth import copilot_request_headers
         headers = copilot_request_headers()
         assert headers["Openai-Intent"] == "conversation-edits"
-        assert headers["User-Agent"] == "HermesAgent/1.0"
+        assert headers["User-Agent"] == "SuperforecastingAgent/1.0"
         assert "Editor-Version" in headers
 
     def test_agent_turn_sets_initiator(self):

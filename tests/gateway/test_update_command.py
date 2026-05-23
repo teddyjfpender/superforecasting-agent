@@ -55,7 +55,7 @@ class TestHandleUpdateCommand:
         result = await runner._handle_update_command(event)
 
         assert "managed by Homebrew" in result
-        assert "brew upgrade hermes-agent" in result
+        assert "brew upgrade superforecasting-agent" in result
 
     @pytest.mark.asyncio
     async def test_no_git_directory(self, tmp_path):

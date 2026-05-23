@@ -113,4 +113,17 @@ def test_bundled_catalog_explains_missing_local_skills(gen_module):
     was removed from the local profile's skills tree."""
     result = gen_module.build_catalog_md_bundled([])
     assert "respects local deletions and user edits" in result
-    assert "hermes skills reset <name> --restore" in result
+    assert "superforecasting-agent skills reset <name> --restore" in result
+
+
+def test_legacy_repo_reference_links_are_rewritten_to_fork(gen_module):
+    body = (
+        "Read [ref](https://github.com/NousResearch/hermes-agent/blob/main/"
+        "optional-skills/research/example/references/ref.md)."
+    )
+    meta = {"source_kind": "optional", "rel_path": "research/example"}
+
+    result = gen_module.rewrite_relative_links(body, meta)
+
+    assert "https://github.com/NousResearch/superforecasting-agent/blob/main/" in result
+    assert "https://github.com/NousResearch/hermes-agent/blob/main/" not in result

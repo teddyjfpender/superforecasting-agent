@@ -2,7 +2,7 @@
 
 import pytest
 
-from hermes_cli.config import validate_config_structure, ConfigIssue
+from hermes_cli.config import ConfigIssue, print_config_warnings, validate_config_structure
 
 
 class TestCustomProvidersValidation:
@@ -181,6 +181,7 @@ class TestMissingModelSection:
             ],
         })
         assert any("no 'model' section" in i.message for i in issues)
+        assert any("Superforecasting Agent" in i.message for i in issues)
 
     def test_custom_providers_with_model(self):
         issues = validate_config_structure({
@@ -206,3 +207,10 @@ class TestConfigIssueDataclass:
         a = ConfigIssue("error", "msg", "hint")
         b = ConfigIssue("error", "msg", "hint")
         assert a == b
+
+
+def test_print_config_warnings_uses_fork_native_doctor_hint(capsys):
+    print_config_warnings({"custom_providers": [{"name": "test", "base_url": "https://example.com/v1"}]})
+
+    err = capsys.readouterr().err
+    assert "Run 'superforecasting-agent doctor' for fix suggestions" in err

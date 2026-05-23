@@ -1,30 +1,30 @@
 ---
 sidebar_position: 8
-title: "Use Voice Mode with Hermes"
-description: "A practical guide to setting up and using Hermes voice mode across CLI, Telegram, Discord, and Discord voice channels"
+title: "Use Voice Mode with Superforecasting Agent"
+description: "Set up voice capture and spoken forecast-desk replies"
 ---
 
-# Use Voice Mode with Hermes
+# Use Voice Mode with Superforecasting Agent
 
 This guide is the practical companion to the [Voice Mode feature reference](/docs/user-guide/features/voice-mode).
 
 If the feature page explains what voice mode can do, this guide shows how to actually use it well.
 
-## What voice mode is good for
+## What Voice Mode Is Good For
 
 Voice mode is especially useful when:
-- you want a hands-free CLI workflow
+- you want hands-free CLI forecast review
 - you want spoken responses in Telegram or Discord
-- you want Hermes sitting in a Discord voice channel for live conversation
-- you want quick idea capture, debugging, or back-and-forth while walking around instead of typing
+- you want Superforecasting Agent in a Discord voice channel for live forecast discussion
+- you want quick evidence capture, assumption review, or back-and-forth while walking around instead of typing
 
 ## Choose your voice mode setup
 
-There are really three different voice experiences in Hermes.
+There are really three different voice experiences in Superforecasting Agent.
 
 | Mode | Best for | Platform |
 |---|---|---|
-| Interactive microphone loop | Personal hands-free use while coding or researching | CLI |
+| Interactive microphone loop | Personal hands-free use while researching or reviewing forecasts | CLI |
 | Voice replies in chat | Spoken responses alongside normal messaging | Telegram, Discord |
 | Live voice channel bot | Group or personal live conversation in a VC | Discord voice channels |
 
@@ -33,15 +33,15 @@ A good path is:
 2. enable voice replies second
 3. move to Discord voice channels last if you want the full experience
 
-## Step 1: make sure normal Hermes works first
+## Step 1: make sure normal Superforecasting Agent works first
 
 Before touching voice mode, verify that:
-- Hermes starts
+- Superforecasting Agent starts
 - your provider is configured
-- the agent can answer text prompts normally
+- text prompts work normally
 
 ```bash
-hermes
+superforecasting-agent
 ```
 
 Ask something simple:
@@ -57,19 +57,19 @@ If that is not solid yet, fix text mode first.
 ### CLI microphone + playback
 
 ```bash
-pip install "hermes-agent[voice]"
+pip install "superforecasting-agent[voice]"
 ```
 
 ### Messaging platforms
 
 ```bash
-pip install "hermes-agent[messaging]"
+pip install "superforecasting-agent[messaging]"
 ```
 
 ### Premium ElevenLabs TTS
 
 ```bash
-pip install "hermes-agent[tts-premium]"
+pip install "superforecasting-agent[tts-premium]"
 ```
 
 ### Local NeuTTS (optional)
@@ -81,7 +81,7 @@ python -m pip install -U neutts[all]
 ### Everything
 
 ```bash
-pip install "hermes-agent[all]"
+pip install "superforecasting-agent[all]"
 ```
 
 ## Step 3: install system dependencies
@@ -108,7 +108,7 @@ Why these matter:
 
 ## Step 4: choose STT and TTS providers
 
-Hermes supports both local and cloud speech stacks.
+Superforecasting Agent supports both local and cloud speech stacks.
 
 ### Easiest / cheapest setup
 
@@ -120,7 +120,7 @@ This is usually the best place to start.
 
 ### Environment file example
 
-Add to `~/.hermes/.env`:
+Add to `~/.superforecasting-agent/.env`:
 
 ```bash
 # Cloud STT options (local needs no key)
@@ -147,9 +147,9 @@ ELEVENLABS_API_KEY=***
 - `openai` → good middle ground
 - `mistral` → multilingual, native Opus
 
-### If you use `hermes setup`
+### If you use `superforecasting-agent setup`
 
-If you choose NeuTTS in the setup wizard, Hermes checks whether `neutts` is already installed. If it is missing, the wizard tells you NeuTTS needs the Python package `neutts` and the system package `espeak-ng`, offers to install them for you, installs `espeak-ng` with your platform package manager, and then runs:
+If you choose NeuTTS in the setup wizard, Superforecasting Agent checks whether `neutts` is already installed. If it is missing, the wizard tells you NeuTTS needs the Python package `neutts` and the system package `espeak-ng`, offers to install them for you, installs `espeak-ng` with your platform package manager, and then runs:
 
 ```bash
 python -m pip install -U neutts[all]
@@ -197,10 +197,10 @@ tts:
 
 ## Turn it on
 
-Start Hermes:
+Start Superforecasting Agent:
 
 ```bash
-hermes
+superforecasting-agent
 ```
 
 Inside the CLI:
@@ -218,7 +218,7 @@ Workflow:
 1. press `Ctrl+B`
 2. speak
 3. wait for silence detection to stop recording automatically
-4. Hermes transcribes and responds
+4. Superforecasting Agent transcribes and responds
 5. if TTS is on, it speaks the answer
 6. the loop can automatically restart for continuous use
 
@@ -234,35 +234,35 @@ Workflow:
 
 ### Good CLI workflows
 
-#### Walk-up debugging
+#### Walk-Up Forecast Review
 
 Say:
 
 ```text
-I keep getting a docker permission error. Help me debug it.
+Review stale forecasts in the energy book and tell me which assumptions need checking.
 ```
 
 Then continue hands-free:
-- "Read the last error again"
-- "Explain the root cause in simpler terms"
-- "Now give me the exact fix"
+- "Read the most stale one again"
+- "What evidence would change that probability?"
+- "Draft the update rationale, but do not save it yet"
 
-#### Research / brainstorming
+#### Research / Decomposition
 
 Great for:
 - walking around while thinking
 - dictating half-formed ideas
-- asking Hermes to structure your thoughts in real time
+- asking Superforecasting Agent to structure a question, base rate, or evidence plan in real time
 
 #### Accessibility / low-typing sessions
 
-If typing is inconvenient, voice mode is one of the fastest ways to stay in the full Hermes loop.
+If typing is inconvenient, voice mode is one of the fastest ways to stay in the forecast desk loop.
 
 ## Tuning CLI behavior
 
 ### Silence threshold
 
-If Hermes starts/stops too aggressively, tune:
+If Superforecasting Agent starts/stops too aggressively, tune:
 
 ```yaml
 voice:
@@ -293,12 +293,12 @@ voice:
 
 This mode is simpler than full voice channels.
 
-Hermes stays a normal chat bot, but can speak replies.
+Superforecasting Agent stays a normal messaging bot, but can speak replies.
 
 ### Start the gateway
 
 ```bash
-hermes gateway
+superforecasting-agent gateway
 ```
 
 ### Turn on voice replies
@@ -326,16 +326,16 @@ or
 ### When to use which mode
 
 - `/voice on` if you want spoken replies only for voice-originating messages
-- `/voice tts` if you want a full spoken assistant all the time
+- `/voice tts` if you want spoken replies for every response
 
 ### Good messaging workflows
 
-#### Telegram assistant on your phone
+#### Telegram Forecast Desk On Your Phone
 
 Use when:
 - you are away from your machine
 - you want to send voice notes and get quick spoken replies
-- you want Hermes to function like a portable research or ops assistant
+- you want Superforecasting Agent to function like a portable forecast review and evidence-capture surface
 
 #### Discord DMs with spoken output
 
@@ -345,7 +345,7 @@ Useful when you want private interaction without server-channel mention behavior
 
 This is the most advanced mode.
 
-Hermes joins a Discord VC, listens to user speech, transcribes it, runs the normal agent pipeline, and speaks replies back into the channel.
+Superforecasting Agent joins a Discord VC, listens to user speech, transcribes it, runs the forecast runtime, and speaks replies back into the channel.
 
 ## Required Discord permissions
 
@@ -372,9 +372,9 @@ In a Discord text channel where the bot is present:
 ### What happens when joined
 
 - users speak in the VC
-- Hermes detects speech boundaries
+- Superforecasting Agent detects speech boundaries
 - transcripts are posted in the associated text channel
-- Hermes responds in text and audio
+- Superforecasting Agent responds in text and audio
 - the text channel is the one where `/voice join` was issued
 
 ### Best practices for Discord VC use
@@ -439,8 +439,8 @@ By default, the bot needs an `@mention` in Discord server text channels unless c
 
 If you want the shortest path to success:
 
-1. get text Hermes working
-2. install `hermes-agent[voice]`
+1. get text Superforecasting Agent working
+2. install `superforecasting-agent[voice]`
 3. use CLI voice mode with local STT + Edge TTS
 4. then enable `/voice on` in Telegram or Discord
 5. only after that, try Discord VC mode

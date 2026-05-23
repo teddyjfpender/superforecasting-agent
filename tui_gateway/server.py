@@ -1,11 +1,14 @@
 import atexit
 import concurrent.futures
+import contextlib
 import contextvars
 import copy
+import io
 import json
 import logging
 import os
 import queue
+import shlex
 import subprocess
 import sys
 import threading
@@ -147,6 +150,7 @@ _LONG_HANDLERS = frozenset(
     {
         "browser.manage",
         "cli.exec",
+        "forecast.command",
         "session.branch",
         "session.compress",
         "session.resume",
@@ -181,7 +185,7 @@ _stdio_transport = StdioTransport(lambda: _real_stdout, _stdout_lock)
 
 
 class _SlashWorker:
-    """Persistent HermesCLI subprocess for slash commands."""
+    """Persistent classic CLI subprocess for slash commands."""
 
     def __init__(self, session_key: str, model: str):
         self._lock = threading.Lock()
@@ -650,7 +654,7 @@ def _normalize_completion_path(path_part: str) -> str:
 # ``ui-tui/src/app/interfaces.ts`` — both ends validate against the
 # same shape so `config.get indicator` and the live TUI render agree.
 _INDICATOR_STYLES: tuple[str, ...] = ("ascii", "emoji", "kaomoji", "unicode")
-_INDICATOR_DEFAULT = "kaomoji"
+_INDICATOR_DEFAULT = "unicode"
 
 
 def _load_cfg() -> dict:
@@ -1768,7 +1772,9 @@ def _apply_personality_to_session(
 
     agent = session.get("agent")
     if agent:
-        agent.ephemeral_system_prompt = new_prompt or None
+        from forecasting.protocol import build_forecast_chat_system_prompt
+
+        agent.ephemeral_system_prompt = build_forecast_chat_system_prompt(new_prompt)
         # Inject a pivot marker into history so the model sees the change point.
         # This prevents it from pattern-matching its prior style.
         if new_prompt:
@@ -1780,7 +1786,7 @@ def _apply_personality_to_session(
         else:
             marker = (
                 "[System: The user has cleared the personality overlay. "
-                "From this point forward, respond in your normal default style.]"
+                "From this point forward, keep the default forecasting-desk behavior.]"
             )
         with session["history_lock"]:
             session["history"].append({"role": "user", "content": marker})
@@ -1903,6 +1909,8 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
         requested=requested_provider,
         target_model=model or None,
     )
+    from forecasting.protocol import build_forecast_chat_system_prompt
+
     return AIAgent(
         model=model,
         max_iterations=_cfg_max_turns(cfg, 90),
@@ -1921,7 +1929,7 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
         platform="tui",
         session_id=session_id or key,
         session_db=_get_db(),
-        ephemeral_system_prompt=system_prompt or None,
+        ephemeral_system_prompt=build_forecast_chat_system_prompt(system_prompt),
         checkpoints_enabled=is_truthy_value(os.environ.get("HERMES_TUI_CHECKPOINTS")),
         pass_session_id=is_truthy_value(os.environ.get("HERMES_TUI_PASS_SESSION_ID")),
         skip_context_files=is_truthy_value(os.environ.get("HERMES_IGNORE_RULES")),
@@ -2461,7 +2469,7 @@ def _(rid, params: dict) -> dict:
     provider = getattr(agent, "provider", None) or "unknown"
     model = getattr(agent, "model", None) or "(unknown)"
     lines = [
-        "Hermes TUI Status",
+        "Superforecasting Agent TUI Status",
         "",
         f"Session ID: {key}",
         f"Path: {display_hermes_home()}",
@@ -2479,6 +2487,52 @@ def _(rid, params: dict) -> dict:
         ]
     )
     return _ok(rid, {"output": "\n".join(lines)})
+
+
+@method("forecast.dashboard")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.dashboard import build_dashboard_summary, render_dashboard_text
+
+        limit = int(params.get("limit") or 20)
+        summary = build_dashboard_summary(limit=limit)
+        return _ok(rid, {"summary": summary, "output": render_dashboard_text(summary)})
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("forecast.command")
+def _(rid, params: dict) -> dict:
+    raw_arg = params.get("arg", "")
+    if not isinstance(raw_arg, str):
+        return _err(rid, 4003, "arg must be a string")
+
+    try:
+        argv = shlex.split(raw_arg)
+    except ValueError as exc:
+        return _err(rid, 4003, f"forecast command parse failed: {exc}")
+
+    try:
+        from forecasting.cli import main as forecast_main
+
+        code = 0
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+            try:
+                forecast_main(argv)
+            except SystemExit as exc:
+                if isinstance(exc.code, int):
+                    code = exc.code
+                elif exc.code is None:
+                    code = 0
+                else:
+                    code = 1
+                    print(str(exc.code), file=sys.stderr)
+
+        text = output.getvalue().strip() or "(no output)"
+        return _ok(rid, {"code": code, "output": text[:48_000]})
+    except Exception as e:
+        return _err(rid, 5008, str(e))
 
 
 @method("session.history")
@@ -4524,16 +4578,16 @@ def _(rid, params: dict) -> dict:
 def _cli_exec_blocked(argv: list[str]) -> str | None:
     """Return user hint if this argv must not run headless in the gateway process."""
     if not argv:
-        return "bare `hermes` is interactive — use `/hermes chat -q …` or run `hermes` in another terminal"
+        return "bare `superforecasting-agent` is interactive — use `/forecast` commands here, or run `superforecasting-agent chat -q …` in another terminal"
     a0 = argv[0].lower()
     if a0 == "setup":
-        return "`hermes setup` needs a full terminal — run it outside the TUI"
+        return "`superforecasting-agent setup` needs a full terminal — run it outside the TUI"
     if a0 == "gateway":
-        return "`hermes gateway` is long-running — run it in another terminal"
+        return "`superforecasting-agent gateway` is long-running — run it in another terminal"
     if a0 == "sessions" and len(argv) > 1 and argv[1].lower() == "browse":
-        return "`hermes sessions browse` is interactive — use /resume here, or run browse in another terminal"
+        return "`superforecasting-agent sessions browse` is interactive — use /resume here, or run browse in another terminal"
     if a0 == "config" and len(argv) > 1 and argv[1].lower() == "edit":
-        return "`hermes config edit` needs $EDITOR in a real terminal"
+        return "`superforecasting-agent config edit` needs $EDITOR in a real terminal"
     return None
 
 
@@ -5377,7 +5431,7 @@ def _(rid, params: dict) -> dict:
                 rid,
                 4003,
                 f"{pconfig.name} uses {pconfig.auth_type} auth — "
-                f"run `hermes model` to configure",
+                f"run `superforecasting-agent model` to configure",
             )
         if not pconfig.api_key_env_vars:
             return _err(rid, 4004, f"no env var defined for {pconfig.name}")
@@ -5506,7 +5560,11 @@ def _mirror_slash_side_effects(sid: str, session: dict, command: str) -> str:
         elif name == "prompt" and agent:
             cfg = _load_cfg()
             new_prompt = (cfg.get("agent") or {}).get("system_prompt", "") or ""
-            agent.ephemeral_system_prompt = new_prompt or None
+            from forecasting.protocol import build_forecast_chat_system_prompt
+
+            agent.ephemeral_system_prompt = build_forecast_chat_system_prompt(
+                new_prompt
+            )
             agent._cached_system_prompt = None
         elif name == "compress" and agent:
             _compress_session_history(session, arg)

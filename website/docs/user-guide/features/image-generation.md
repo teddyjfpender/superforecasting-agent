@@ -1,131 +1,109 @@
 ---
 title: Image Generation
-description: Generate images via FAL.ai — 9 models including FLUX 2, GPT Image (1.5 & 2), Nano Banana Pro, Ideogram, Recraft V4 Pro, and more, selectable via `hermes tools`.
+description: Generate auxiliary forecast visuals through FAL.ai or the managed Tool Gateway.
 sidebar_label: Image Generation
 sidebar_position: 6
 ---
 
 # Image Generation
 
-Hermes Agent generates images from text prompts via FAL.ai. Nine models are supported out of the box, each with different speed, quality, and cost tradeoffs. The active model is user-configurable via `hermes tools` and persists in `config.yaml`.
+Superforecasting Agent can generate images from text prompts through FAL.ai or the managed Tool Gateway. In a forecast desk, this is an auxiliary communication feature: use it for scenario illustrations, briefing visuals, title images, and stakeholder-facing summaries.
+
+Generated images are not evidence, model output, or probability estimates. For charts, calibration plots, and benchmark graphics, prefer code-generated figures backed by ledger data. If an image is sent to a messaging platform, it is delivered as a visual artifact; it does not modify forecast state.
 
 ## Supported Models
 
-| Model | Speed | Strengths | Price |
-|---|---|---|---|
-| `fal-ai/flux-2/klein/9b` *(default)* | `<1s` | Fast, crisp text | $0.006/MP |
-| `fal-ai/flux-2-pro` | ~6s | Studio photorealism | $0.03/MP |
-| `fal-ai/z-image/turbo` | ~2s | Bilingual EN/CN, 6B params | $0.005/MP |
-| `fal-ai/nano-banana-pro` | ~8s | Gemini 3 Pro, reasoning depth, text rendering | $0.15/image (1K) |
-| `fal-ai/gpt-image-1.5` | ~15s | Prompt adherence | $0.034/image |
-| `fal-ai/gpt-image-2` | ~20s | SOTA text rendering + CJK, world-aware photorealism | $0.04–0.06/image |
-| `fal-ai/ideogram/v3` | ~5s | Best typography | $0.03–0.09/image |
-| `fal-ai/recraft/v4/pro/text-to-image` | ~8s | Design, brand systems, production-ready | $0.25/image |
-| `fal-ai/qwen-image` | ~12s | LLM-based, complex text | $0.02/MP |
+The built-in FAL picker includes models such as:
 
-Prices are FAL's pricing at time of writing; check [fal.ai](https://fal.ai/) for current numbers.
+| Model | Typical use |
+|---|---|
+| `fal-ai/flux-2/klein/9b` | Fast general-purpose images |
+| `fal-ai/flux-2-pro` | Higher-fidelity photorealistic scenes |
+| `fal-ai/z-image/turbo` | Fast multilingual prompt support |
+| `fal-ai/nano-banana-pro` | Text-heavy or reasoning-heavy prompts |
+| `fal-ai/gpt-image-1.5` | Strong prompt adherence |
+| `fal-ai/gpt-image-2` | Text rendering and photorealistic scenes |
+| `fal-ai/ideogram/v3` | Typography-focused images |
+| `fal-ai/recraft/v4/pro/text-to-image` | Design and brand-style assets |
+| `fal-ai/qwen-image` | Complex text and multilingual prompts |
+
+Provider availability, latency, and pricing can change. Check [fal.ai](https://fal.ai/) or your managed Tool Gateway account for current details.
 
 ## Setup
 
-:::tip Nous Subscribers
-If you have a paid [Nous Portal](https://portal.nousresearch.com) subscription, you can use image generation through the **[Tool Gateway](tool-gateway.md)** without a FAL API key. Your model selection persists across both paths.
-
-If the managed gateway returns `HTTP 4xx` for a specific model, that model isn't yet proxied on the portal side — the agent will tell you so, with remediation steps (set `FAL_KEY` for direct access, or pick a different model).
+:::tip Managed Tool Gateway
+Paid Nous Portal users can route image generation through the [Tool Gateway](tool-gateway.md) without a direct FAL API key. If a specific model is not proxied by the managed gateway, choose a different model or configure direct FAL access.
 :::
 
-### Get a FAL API Key
+### Direct FAL Access
 
-1. Sign up at [fal.ai](https://fal.ai/)
-2. Generate an API key from your dashboard
+1. Sign up at [fal.ai](https://fal.ai/).
+2. Generate an API key from the FAL dashboard.
+3. Store it as `FAL_KEY` in the configured environment file.
 
-### Configure and Pick a Model
+### Configure the Backend and Model
 
-Run the tools command:
+Run:
 
 ```bash
-hermes tools
+superforecasting-agent tools
 ```
 
-Navigate to **🎨 Image Generation**, pick your backend (Nous Subscription or FAL.ai), then the picker shows all supported models in a column-aligned table — arrow keys to navigate, Enter to select:
-
-```
-  Model                          Speed    Strengths                    Price
-  fal-ai/flux-2/klein/9b         <1s      Fast, crisp text             $0.006/MP   ← currently in use
-  fal-ai/flux-2-pro              ~6s      Studio photorealism          $0.03/MP
-  fal-ai/z-image/turbo           ~2s      Bilingual EN/CN, 6B          $0.005/MP
-  ...
-```
-
-Your selection is saved to `config.yaml`:
+Open the Image Generation section, choose either managed gateway or direct FAL access, then select a model. The selection is stored in `~/.superforecasting-agent/config.yaml`:
 
 ```yaml
 image_gen:
   model: fal-ai/flux-2/klein/9b
-  use_gateway: false            # true if using Nous Subscription
+  use_gateway: false
 ```
 
-### GPT-Image Quality
-
-The `fal-ai/gpt-image-1.5` and `fal-ai/gpt-image-2` request quality is pinned to `medium` (~$0.034–$0.06/image at 1024×1024). We don't expose the `low` / `high` tiers as a user-facing option so that Nous Portal billing stays predictable across all users — the cost spread between tiers is 3–22×. If you want a cheaper option, pick Klein 9B or Z-Image Turbo; if you want higher quality, use Nano Banana Pro or Recraft V4 Pro.
+Migrated profiles may still read the same settings from `~/.hermes/config.yaml`.
 
 ## Usage
 
-The agent-facing schema is intentionally minimal — the model picks up whatever you've configured:
+The agent-facing schema is intentionally small. Ask for the visual, orientation, and any constraints:
 
-```
-Generate an image of a serene mountain landscape with cherry blossoms
-```
-
-```
-Create a square portrait of a wise old owl — use the typography model
+```text
+Generate a square image for a forecast review packet about semiconductor export controls.
 ```
 
+```text
+Create a landscape scenario illustration for a climate-risk briefing. Do not include numbers or source claims.
 ```
-Make me a futuristic cityscape, landscape orientation
+
+```text
+Make a neutral title image for the monthly calibration review.
 ```
+
+Use code or charting tools instead when the output should represent actual probabilities, scores, evidence counts, model results, or historical data.
 
 ## Aspect Ratios
 
-Every model accepts the same three aspect ratios from the agent's perspective. Internally, each model's native size spec is filled in automatically:
+Every model accepts the same three aspect ratios from the agent's perspective. The runtime translates them into each provider's native schema:
 
-| Agent input | image_size (flux/z-image/qwen/recraft/ideogram) | aspect_ratio (nano-banana-pro) | image_size (gpt-image-1.5) | image_size (gpt-image-2) |
-|---|---|---|---|---|
-| `landscape` | `landscape_16_9` | `16:9` | `1536x1024` | `landscape_4_3` (1024×768) |
-| `square` | `square_hd` | `1:1` | `1024x1024` | `square_hd` (1024×1024) |
-| `portrait` | `portrait_16_9` | `9:16` | `1024x1536` | `portrait_4_3` (768×1024) |
+| Agent input | Output shape |
+|---|---|
+| `landscape` | Wide briefing image |
+| `square` | Social or report thumbnail |
+| `portrait` | Vertical post or mobile image |
 
-GPT Image 2 maps to 4:3 presets rather than 16:9 because its minimum pixel count is 655,360 — the `landscape_16_9` preset (1024×576 = 589,824) would be rejected.
+Per-model payload details are handled internally by `_build_fal_payload()`.
 
-This translation happens in `_build_fal_payload()` — agent code never has to know about per-model schema differences.
+## GPT-Image Quality
+
+For GPT-image models, request quality is pinned to a predictable middle tier. The UI does not expose low and high tiers because cost can vary substantially by tier. Select a different model when speed, cost, typography, or photorealism matters more than the default.
 
 ## Automatic Upscaling
 
-Upscaling via FAL's **Clarity Upscaler** is gated per-model:
+Upscaling is enabled only for models where the runtime metadata marks it as useful. If upscaling fails because of rate limits, provider errors, or network issues, the original generated image is returned.
 
-| Model | Upscale? | Why |
-|---|---|---|
-| `fal-ai/flux-2-pro` | ✓ | Backward-compat (was the pre-picker default) |
-| All others | ✗ | Fast models would lose their sub-second value prop; hi-res models don't need it |
+## Internal Flow
 
-When upscaling runs, it uses these settings:
-
-| Setting | Value |
-|---|---|
-| Upscale factor | 2× |
-| Creativity | 0.35 |
-| Resemblance | 0.6 |
-| Guidance scale | 4 |
-| Inference steps | 18 |
-
-If upscaling fails (network issue, rate limit), the original image is returned automatically.
-
-## How It Works Internally
-
-1. **Model resolution** — `_resolve_fal_model()` reads `image_gen.model` from `config.yaml`, falls back to the `FAL_IMAGE_MODEL` env var, then to `fal-ai/flux-2/klein/9b`.
-2. **Payload building** — `_build_fal_payload()` translates your `aspect_ratio` into the model's native format (preset enum, aspect-ratio enum, or GPT literal), merges the model's default params, applies any caller overrides, then filters to the model's `supports` whitelist so unsupported keys are never sent.
-3. **Submission** — `_submit_fal_request()` routes via direct FAL credentials or the managed Nous gateway.
-4. **Upscaling** — runs only if the model's metadata has `upscale: True`.
-5. **Delivery** — final image URL returned to the agent, which emits a `MEDIA:<url>` tag that platform adapters convert to native media.
+1. `_resolve_fal_model()` reads `image_gen.model`, falls back to `FAL_IMAGE_MODEL`, then to the default model.
+2. `_build_fal_payload()` maps the requested aspect ratio to the selected model's native format and drops unsupported parameters.
+3. `_submit_fal_request()` routes through direct FAL credentials or the managed gateway.
+4. Optional upscaling runs only for models that enable it.
+5. The final image URL is returned to the agent, which can emit it as media for CLI or messaging delivery.
 
 ## Debugging
 
@@ -135,22 +113,23 @@ Enable debug logging:
 export IMAGE_TOOLS_DEBUG=true
 ```
 
-Debug logs go to `./logs/image_tools_debug_<session_id>.json` with per-call details (model, parameters, timing, errors).
+Debug records are written under the local logs directory with per-call model, parameter, timing, and error details. Do not treat debug logs as durable forecast evidence unless they are explicitly captured into the ledger with source metadata.
 
 ## Platform Delivery
 
 | Platform | Delivery |
 |---|---|
-| **CLI** | Image URL printed as markdown `![](url)` — click to open |
-| **Telegram** | Photo message with the prompt as caption |
-| **Discord** | Embedded in a message |
-| **Slack** | URL unfurled by Slack |
-| **WhatsApp** | Media message |
-| **Others** | URL in plain text |
+| CLI | Image URL printed as markdown |
+| Telegram | Photo message with the prompt as caption |
+| Discord | Embedded message |
+| Slack | URL unfurled by Slack |
+| WhatsApp | Media message |
+| Others | URL in plain text |
 
 ## Limitations
 
-- **Requires FAL credentials** (direct `FAL_KEY` or Nous Subscription)
-- **Text-to-image only** — no inpainting, img2img, or editing via this tool
-- **Temporary URLs** — FAL returns hosted URLs that expire after hours/days; save locally if needed
-- **Per-model constraints** — some models don't support `seed`, `num_inference_steps`, etc. The `supports` filter silently drops unsupported params; this is expected behavior
+- Requires direct `FAL_KEY` credentials or managed Tool Gateway access.
+- Text-to-image only; inpainting, image editing, and image-to-image workflows are not part of this tool.
+- Provider URLs may expire after hours or days.
+- Unsupported per-model parameters are filtered before submission.
+- Generated visuals are illustrative unless backed by separate ledgered data.

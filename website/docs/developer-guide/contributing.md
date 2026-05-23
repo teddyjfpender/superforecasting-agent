@@ -1,31 +1,34 @@
 ---
 sidebar_position: 4
 title: "Contributing"
-description: "How to contribute to Hermes Agent — dev setup, code style, PR process"
+description: "How to contribute to Superforecasting Agent."
 ---
 
 # Contributing
 
-Thank you for contributing to Hermes Agent! This guide covers setting up your dev environment, understanding the codebase, and getting your PR merged.
+Thank you for contributing to Superforecasting Agent. This guide covers setting up your development environment, choosing the right contribution path, and keeping changes aligned with the fork's forecast-desk objective.
 
 ## Contribution Priorities
 
 We value contributions in this order:
 
-1. **Bug fixes** — crashes, incorrect behavior, data loss
-2. **Cross-platform compatibility** — macOS, different Linux distros, WSL2
-3. **Security hardening** — shell injection, prompt injection, path traversal
-4. **Performance and robustness** — retry logic, error handling, graceful degradation
-5. **New skills** — broadly useful ones (see [Creating Skills](creating-skills.md))
-6. **New tools** — rarely needed; most capabilities should be skills
-7. **Documentation** — fixes, clarifications, new examples
+1. **Forecast ledger correctness** - data loss, append-only history, resolution provenance, and scoreability
+2. **Scoring, calibration, and learning** - Brier/log/proper scores, postmortems, backtests, error profiles, and active lessons
+3. **Evidence and source handling** - timestamped evidence, snapshots, reliability metadata, watched sources, and domain adapters
+4. **CLI/TUI/dashboard forecast workflows** - forecast lifecycle ergonomics, review queues, alerts, and calibration visibility
+5. **Security and robustness** - shell injection, prompt injection, path traversal, retry behavior, and graceful degradation
+6. **Cross-platform compatibility** - macOS, Linux, WSL2, and native Windows paths inherited from the runtime
+7. **Documentation** - forecast-first docs, compatibility notes, examples, and migration guidance
 
 ## Common contribution paths
 
-- Building a custom/local tool without modifying Hermes core? Start with [Build a Hermes Plugin](../guides/build-a-hermes-plugin.md)
-- Building a new built-in core tool for Hermes itself? Start with [Adding Tools](./adding-tools.md)
-- Building a new skill? Start with [Creating Skills](./creating-skills.md)
-- Building a new inference provider? Start with [Adding Providers](./adding-providers.md)
+- Adding a forecast lifecycle feature? Start with `forecasting/ledger.py`, `forecasting/cli.py`, and `tests/forecasting/`.
+- Adding an evidence/news/data/market source? Start with `forecasting/source_adapters.py` and `forecasting/extensions.py`.
+- Exposing forecast behavior to the agent loop? Start with `tools/forecasting_tool.py`.
+- Building a local extension without modifying core? Start with [Build a Superforecasting Agent Plugin](../guides/build-a-hermes-plugin.md); this is an inherited plugin surface.
+- Building a new inherited runtime tool? Start with [Adding Tools](./adding-tools.md), but prefer forecast ledger actions or plugins first.
+- Building a new skill? Start with [Creating Skills](./creating-skills.md).
+- Building a new inference provider? Start with [Adding Providers](./adding-providers.md).
 
 ## Development Setup
 
@@ -41,8 +44,8 @@ We value contributions in this order:
 ### Clone and Install
 
 ```bash
-git clone --recurse-submodules https://github.com/NousResearch/hermes-agent.git
-cd hermes-agent
+git clone --recurse-submodules <your-superforecasting-agent-fork-url>
+cd superforecasting-agent  # or the inherited checkout name, hermes-agent
 
 # Create venv with Python 3.11
 uv venv venv --python 3.11
@@ -58,31 +61,37 @@ npm install
 ### Configure for Development
 
 ```bash
-mkdir -p ~/.hermes/{cron,sessions,logs,memories,skills}
-cp cli-config.yaml.example ~/.hermes/config.yaml
-touch ~/.hermes/.env
+mkdir -p ~/.superforecasting-agent/{cron,sessions,logs,memories,skills}
+cp cli-config.yaml.example ~/.superforecasting-agent/config.yaml
+touch ~/.superforecasting-agent/.env
 
 # Add at minimum an LLM provider key:
-echo 'OPENROUTER_API_KEY=sk-or-v1-your-key' >> ~/.hermes/.env
+echo 'OPENROUTER_API_KEY=sk-or-v1-your-key' >> ~/.superforecasting-agent/.env
 ```
+
+The inherited `~/.hermes` home and `HERMES_HOME` env var remain compatibility paths, but new fork-local development should prefer `~/.superforecasting-agent`, `SUPERFORECASTING_AGENT_HOME`, or `FORECAST_HOME`.
 
 ### Run
 
 ```bash
 # Symlink for global access
 mkdir -p ~/.local/bin
-ln -sf "$(pwd)/venv/bin/hermes" ~/.local/bin/hermes
+ln -sf "$(pwd)/venv/bin/superforecasting-agent" ~/.local/bin/superforecasting-agent
+ln -sf "$(pwd)/venv/bin/forecast" ~/.local/bin/forecast
 
 # Verify
-hermes doctor
-hermes chat -q "Hello"
+superforecasting-agent doctor
+forecast status
+superforecasting-agent chat -q "Summarize the active forecast desk state."
 ```
 
 ### Run Tests
 
 ```bash
-pytest tests/ -v
+scripts/run_tests.sh tests/forecasting tests/test_project_metadata.py -q
 ```
+
+Run narrower tests for focused edits, then broaden based on blast radius. Use `npm run build` in `website/`, `web/`, or `ui-tui/` when editing those packages.
 
 ## Code Style
 
@@ -90,11 +99,11 @@ pytest tests/ -v
 - **Comments**: Only when explaining non-obvious intent, trade-offs, or API quirks
 - **Error handling**: Catch specific exceptions. Use `logger.warning()`/`logger.error()` with `exc_info=True` for unexpected errors
 - **Cross-platform**: Never assume Unix (see below)
-- **Profile-safe paths**: Never hardcode `~/.hermes` — use `get_hermes_home()` from `hermes_constants` for code paths and `display_hermes_home()` for user-facing messages. See [AGENTS.md](https://github.com/NousResearch/hermes-agent/blob/main/AGENTS.md#profiles-multi-instance-support) for full rules.
+- **Profile-safe paths**: Never hardcode `~/.hermes` unless you are explicitly documenting compatibility. Use `get_hermes_home()` from `hermes_constants` for code paths and `display_hermes_home()` for user-facing messages.
 
 ## Cross-Platform Compatibility
 
-Hermes officially supports **Linux, macOS, WSL2, and native Windows (early beta — via PowerShell install)**.  Native Windows uses Git Bash (from [Git for Windows](https://git-scm.com/download/win)) for shell commands.  A few features require POSIX kernel primitives and are gated: the dashboard's embedded PTY terminal pane (`/chat` tab) is WSL2-only. The native-Windows path is new and moves fast — if you're doing Windows-heavy dev, expect to hit and fix rough edges.
+Superforecasting Agent inherits runtime support for **Linux, macOS, WSL2, and native Windows (early beta via PowerShell install)**. Native Windows uses Git Bash from [Git for Windows](https://git-scm.com/download/win) for shell commands. A few features require POSIX kernel primitives and are gated: the dashboard's embedded PTY terminal pane (`/chat` tab) is WSL2-only. The native-Windows path is new and moves fast; if you're doing Windows-heavy development, expect to hit and fix rough edges.
 
 When contributing code, keep these rules in mind:
 
@@ -149,7 +158,7 @@ Use `pathlib.Path` instead of string concatenation with `/`.
 
 ## Security Considerations
 
-Hermes has terminal access. Security matters.
+Superforecasting Agent has terminal access. Security matters.
 
 ### Existing Protections
 
@@ -185,10 +194,11 @@ refactor/description   # Code restructuring
 
 ### Before Submitting
 
-1. **Run tests**: `pytest tests/ -v`
-2. **Test manually**: Run `hermes` and exercise the code path you changed
-3. **Check cross-platform impact**: Consider macOS and different Linux distros
-4. **Keep PRs focused**: One logical change per PR
+1. **Run focused tests**: `scripts/run_tests.sh <changed-test-files> -q`
+2. **Run forecast regressions when touching the desk**: `scripts/run_tests.sh tests/forecasting tests/test_project_metadata.py -q`
+3. **Test manually**: run `forecast status` and exercise the code path you changed
+4. **Check cross-platform impact**: consider macOS, Linux, WSL2, and native Windows
+5. **Keep PRs focused**: One logical change per PR
 
 ### PR Description
 
@@ -226,8 +236,8 @@ fix(security): prevent shell injection in sudo password piping
 
 ## Reporting Issues
 
-- Use [GitHub Issues](https://github.com/NousResearch/hermes-agent/issues)
-- Include: OS, Python version, Hermes version (`hermes version`), full error traceback
+- Use the fork's GitHub Issues when available. Use upstream Hermes issues only for inherited-runtime bugs that reproduce upstream.
+- Include: OS, Python version, Superforecasting Agent version (`superforecasting-agent version`), full error traceback
 - Include steps to reproduce
 - Check existing issues before creating duplicates
 - For security vulnerabilities, please report privately
@@ -240,4 +250,4 @@ fix(security): prevent shell injection in sudo password piping
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the [MIT License](https://github.com/NousResearch/hermes-agent/blob/main/LICENSE).
+By contributing, you agree that your contributions will be licensed under the repository's MIT License.

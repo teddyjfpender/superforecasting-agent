@@ -97,6 +97,8 @@ class TestList:
         webhook_command(_make_args(webhook_action="list"))
         out = capsys.readouterr().out
         assert "No dynamic" in out
+        assert "superforecasting-agent webhook subscribe" in out
+        assert "hermes webhook subscribe" not in out
 
     def test_with_entries(self, capsys):
         webhook_command(_make_args(webhook_action="subscribe", name="a"))
@@ -152,7 +154,9 @@ class TestWebhookEnabledGate:
         webhook_command(_make_args(webhook_action="subscribe", name="blocked"))
         out = capsys.readouterr().out
         assert "not enabled" in out.lower()
-        assert "hermes gateway setup" in out
+        assert "superforecasting-agent gateway setup" in out
+        assert "superforecasting-agent gateway run" in out
+        assert "hermes gateway" not in out
         assert _load_subscriptions() == {}
 
     def test_blocks_list_when_disabled(self, capsys, monkeypatch):
@@ -166,7 +170,16 @@ class TestWebhookEnabledGate:
         webhook_command(_make_args(webhook_action="subscribe", name="allowed"))
         out = capsys.readouterr().out
         assert "Created" in out
+        assert "superforecasting-agent gateway run" in out
+        assert "hermes gateway run" not in out
         assert "allowed" in _load_subscriptions()
+
+
+def test_missing_webhook_action_uses_forecast_native_usage(capsys):
+    webhook_command(_make_args(webhook_action=None))
+    out = capsys.readouterr().out
+    assert "Usage: superforecasting-agent webhook" in out
+    assert "hermes webhook" not in out
 
     def test_real_check_disabled(self, monkeypatch):
         monkeypatch.setattr(

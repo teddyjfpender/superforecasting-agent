@@ -1,14 +1,14 @@
 ---
 sidebar_position: 13
-title: "Script-Only Cron Jobs (No LLM)"
-description: "Classic watchdog cron jobs that skip the LLM entirely — a script runs on schedule and its stdout gets delivered to your messaging platform. Memory alerts, disk alerts, CI pings, periodic health checks."
+title: "Script-Only Scheduled Jobs"
+description: "Run deterministic watchdog scripts on schedule and deliver non-empty output without calling a model."
 ---
 
-# Script-Only Cron Jobs
+# Script-Only Scheduled Jobs
 
-Sometimes you already know exactly what message you want to send. You don't need an agent to reason about it — you just need a script to run on a timer, and its output (if any) to land in Telegram / Discord / Slack / Signal.
+Use script-only jobs when the check is deterministic and the script output already is the alert. This is useful for forecast-desk source monitors, data-pipeline heartbeats, local health checks, and other scheduled checks that should not spend model tokens.
 
-Hermes calls this **no-agent mode**. It's the cron system minus the LLM.
+Superforecasting Agent still uses the inherited cron scheduler for this mode, but the job skips the agent loop. The scheduler runs a Bash or Python script, delivers stdout when it is non-empty, and stays silent when there is nothing to report.
 
 <!-- ascii-guard-ignore -->
 ```
@@ -21,206 +21,212 @@ Hermes calls this **no-agent mode**. It's the cron system minus the LLM.
                                           ▼
                                  ┌──────────────────┐
                                  │ delivery router  │
-                                 │ (telegram/disc…) │
+                                 │ (alert target)   │
                                  └──────────────────┘
 ```
 <!-- ascii-guard-ignore-end -->
 
-- **No LLM call.** Zero tokens, zero agent loop, zero model spend.
-- **Script is the job.** The script decides whether to alert. Emit output → message gets sent. Emit nothing → silent tick.
-- **Bash or Python.** `.sh` / `.bash` files run under `/bin/bash`; any other extension runs under the current Python interpreter. Anything in `~/.hermes/scripts/` is accepted.
-- **Same scheduler.** Lives in `cronjob` alongside LLM jobs — pausing, resuming, listing, logs, and delivery targeting all work the same way.
+- **No model call.** Zero tokens and no forecast-research loop.
+- **Script is the job.** Emit output to alert; emit nothing for a silent tick.
+- **Same scheduler.** Pausing, resuming, listing, manual runs, logs, and delivery targets work like other scheduled jobs.
+- **Forecast-desk fit.** Use it for source-change monitors and pipeline checks that can later trigger review or evidence ingestion.
 
 ## When to Use It
 
-Use no-agent mode for:
+Good script-only jobs include:
 
-- **Memory / disk / GPU watchdogs.** Run every 5 minutes, alert only when a threshold is breached.
-- **CI hooks.** Deploy finished → post the commit SHA. Build failed → send the last 100 lines of the log.
-- **Periodic metrics.** "Daily Stripe revenue at 9am" as a simple API call + pretty-print.
-- **External event pollers.** Check an API, alert on state change.
-- **Heartbeats.** Ping a dashboard every N minutes to prove the host is alive.
+- Watch a source file, RSS feed, or API endpoint and alert only when its signature changes.
+- Check whether a forecast data pipeline produced a fresh CSV, JSON, or model artifact.
+- Ping when a scheduled backtest export, data snapshot, or resolver feed is missing.
+- Report local disk, memory, GPU, or service-health failures.
+- Send CI/CD output when a deployment or test run affects a forecast workflow.
 
-Use a normal (LLM-driven) cron job when you need the agent to **decide** what to say — summarize a long document, pick interesting items from a feed, draft a human-friendly message. The no-agent path is for cases where the script's stdout already IS the message.
+Use an LLM-driven scheduled job when the system must decide what the evidence means, summarize a long source, choose which items matter, or draft a rationale. Use `forecast schedule` when the desired action is forecast lifecycle work such as reviewing stale questions, scoring resolved forecasts, or writing postmortems.
 
 ## Create One from Chat
 
-The real win of no-agent mode is that the agent itself can set up the watchdog for you — no editor, no shell, no remembering CLI flags. You describe what you want, Hermes writes the script, schedules it, and tells you when it'll fire.
+You can ask the forecast desk to create a deterministic monitor. The agent writes the script, schedules it with `no_agent=true`, and records the cadence.
 
 ### Example transcript
 
-> **You:** ping me on telegram if RAM is over 85% every 5 minutes
+> **You:** alert me on Telegram if the inflation data snapshot has not changed by 10am every weekday
 >
-> **Hermes:** *(writes `~/.hermes/scripts/memory-watchdog.sh`, then calls `cronjob(...)` with `no_agent=true`)*
+> **Superforecasting Agent:** *(writes `~/.superforecasting-agent/scripts/inflation-snapshot-watchdog.sh`, then calls `cronjob(...)` with `no_agent=true`)*
 >
-> Set up. Runs every 5 min, alerts Telegram only when RAM is over 85%. Script: `memory-watchdog.sh`. Job ID: `abc123`.
+> Set up. Runs every weekday at 10:00, alerts Telegram only when the snapshot is stale. Script: `inflation-snapshot-watchdog.sh`. Job ID: `abc123`.
 
 Under the hood, the agent makes two tool calls:
 
 ```python
 # 1. Write the check script
 write_file(
-    path="~/.hermes/scripts/memory-watchdog.sh",
+    path="~/.superforecasting-agent/scripts/inflation-snapshot-watchdog.sh",
     content='''#!/usr/bin/env bash
-ram_pct=$(free | awk '/^Mem:/ {printf "%d", $3 * 100 / $2}')
-if [ "$ram_pct" -ge 85 ]; then
-  echo "RAM ${ram_pct}% on $(hostname)"
+snapshot="$HOME/.superforecasting-agent/data/inflation/latest.json"
+if [ ! -s "$snapshot" ]; then
+  echo "Inflation snapshot missing: $snapshot"
+  exit 0
+fi
+age_hours=$(( ($(date +%s) - $(stat -c %Y "$snapshot")) / 3600 ))
+if [ "$age_hours" -ge 24 ]; then
+  echo "Inflation snapshot is ${age_hours}h old: $snapshot"
 fi
 # Empty stdout = silent tick; no message sent.
 ''',
 )
 
-# 2. Schedule it — no_agent=True skips the LLM on every tick
+# 2. Schedule it. no_agent=True skips the LLM on every tick.
 cronjob(
     action="create",
-    schedule="every 5m",
-    script="memory-watchdog.sh",
+    schedule="0 10 * * 1-5",
+    script="inflation-snapshot-watchdog.sh",
     no_agent=True,
     deliver="telegram",
-    name="memory-watchdog",
+    name="inflation-snapshot-watchdog",
 )
 ```
 
-From that point on every tick is free: the scheduler runs the script, pipes its stdout to Telegram if non-empty, and never touches a model.
+From that point on, the scheduler runs the script and pipes stdout to the delivery target if there is anything to say.
 
-### What the agent decides for you
+### What the agent should choose
 
-When you phrase a request like "alert me when X" or "every N minutes check Y and tell me if Z", Hermes' `cronjob` tool description tells it to reach for `no_agent=True` whenever the message content is fully determined by the script. It falls back to the normal LLM-driven path when the request needs reasoning (*"summarize the new issues"*, *"pick the most interesting headlines"*, *"draft a friendly reminder"*).
-
-You don't have to specify `--no-agent` yourself. Just describe the behavior.
+For requests like "alert me when source X changes" or "every N minutes check Y and tell me if Z", the `cronjob` tool should choose `no_agent=True` when the script can fully determine the message. It should use the normal LLM-driven path when interpretation is needed.
 
 ### Managing watchdogs from chat
 
 The agent can pause, resume, edit, and remove jobs the same way it creates them:
 
-> **You:** stop the memory watchdog for tonight
+> **You:** stop the inflation snapshot watchdog for tonight
 >
-> **Hermes:** *(calls `cronjob(action='pause', job_id='abc123')`)*
+> **Superforecasting Agent:** *(calls `cronjob(action='pause', job_id='abc123')`)*
 >
-> Paused. Resume with "turn it back on" or via `hermes cron resume abc123`.
+> Paused. Resume with "turn it back on" or via `superforecasting-agent cron resume abc123`.
 
-> **You:** change it to every 15 minutes
+> **You:** change it to every 30 minutes while the CPI release window is open
 >
-> **Hermes:** *(calls `cronjob(action='update', job_id='abc123', schedule='every 15m')`)*
+> **Superforecasting Agent:** *(calls `cronjob(action='update', job_id='abc123', schedule='every 30m')`)*
 
-The full lifecycle (create / list / update / pause / resume / run-now / remove) is available to the agent without you learning any CLI commands.
+The full lifecycle is available to the agent without requiring you to learn the CLI flags.
 
 ## Create One from the CLI
 
-Prefer the shell? The CLI path gives you the same result with three commands:
+The CLI path gives you the same result with three commands:
 
 ```bash
 # 1. Write your script
-cat > ~/.hermes/scripts/memory-watchdog.sh <<'EOF'
+cat > ~/.superforecasting-agent/scripts/inflation-snapshot-watchdog.sh <<'EOF'
 #!/usr/bin/env bash
-# Alert when RAM usage is over 85%. Silent otherwise.
-RAM_PCT=$(free | awk '/^Mem:/ {printf "%d", $3 * 100 / $2}')
-if [ "$RAM_PCT" -ge 85 ]; then
-  echo "⚠ RAM ${RAM_PCT}% on $(hostname)"
+# Alert when a data snapshot is missing or stale. Silent otherwise.
+SNAPSHOT="$HOME/.superforecasting-agent/data/inflation/latest.json"
+if [ ! -s "$SNAPSHOT" ]; then
+  echo "Inflation snapshot missing: $SNAPSHOT"
+  exit 0
 fi
-# Empty stdout = silent run; no message sent.
+AGE_HOURS=$(( ($(date +%s) - $(stat -c %Y "$SNAPSHOT")) / 3600 ))
+if [ "$AGE_HOURS" -ge 24 ]; then
+  echo "Inflation snapshot is ${AGE_HOURS}h old: $SNAPSHOT"
+fi
 EOF
-chmod +x ~/.hermes/scripts/memory-watchdog.sh
+chmod +x ~/.superforecasting-agent/scripts/inflation-snapshot-watchdog.sh
 
 # 2. Schedule it
-hermes cron create "every 5m" \
+superforecasting-agent cron create "0 10 * * 1-5" \
   --no-agent \
-  --script memory-watchdog.sh \
+  --script inflation-snapshot-watchdog.sh \
   --deliver telegram \
-  --name "memory-watchdog"
+  --name "inflation-snapshot-watchdog"
 
 # 3. Verify
-hermes cron list
-hermes cron run <job_id>    # fire it once to test
+superforecasting-agent cron list
+superforecasting-agent cron run <job_id>
 ```
 
-That's the whole thing. No prompt, no skill, no model.
-
+New setups should use `~/.superforecasting-agent/scripts/`. The inherited `~/.hermes/scripts/` path is still supported as a migration compatibility path.
 
 ## How Script Output Maps to Delivery
 
 | Script behavior | Result |
 |-----------------|--------|
 | Exit 0, non-empty stdout | stdout is delivered verbatim |
-| Exit 0, empty stdout | Silent tick — no delivery |
-| Exit 0, stdout contains `{"wakeAgent": false}` on the last line | Silent tick (shared gate with LLM jobs) |
-| Non-zero exit code | Error alert is delivered (so a broken watchdog doesn't fail silently) |
+| Exit 0, empty stdout | Silent tick; no delivery |
+| Exit 0, stdout contains `{"wakeAgent": false}` on the last line | Silent tick |
+| Non-zero exit code | Error alert is delivered |
 | Script timeout | Error alert is delivered |
 
-The "silent when empty" behavior is the key to the classic watchdog pattern: the script is free to run every minute, but the channel only sees a message when something actually needs attention.
+The "silent when empty" behavior is the key pattern: a source monitor can run every few minutes, while the forecast desk only sees a message when something changed or failed.
 
 ## Script Rules
 
-Scripts must live in `~/.hermes/scripts/`. This is enforced at both job-creation time and run time — absolute paths, `~/` expansion, and path-traversal patterns (`../`) are rejected. The same directory is shared with the pre-check script gate used by LLM jobs.
+Scripts must live under the scheduler script directory, normally `~/.superforecasting-agent/scripts/`. This is enforced at job-creation time and run time; absolute paths, `~/` expansion, and path traversal patterns are rejected.
 
 Interpreter choice is by file extension:
 
 | Extension | Interpreter |
 |-----------|-------------|
 | `.sh`, `.bash` | `/bin/bash` |
-| anything else | `sys.executable` (current Python) |
+| anything else | `sys.executable` |
 
-We intentionally do NOT honour `#!/...` shebangs — keeping the interpreter set explicit and small reduces the surface the scheduler trusts.
+Shebangs are ignored. Keeping interpreter selection explicit reduces the surface the scheduler trusts.
 
 ## Schedule Syntax
 
-Same as all other cron jobs:
+Same as other scheduled jobs:
 
 ```bash
-hermes cron create "every 5m"        # interval
-hermes cron create "every 2h"
-hermes cron create "0 9 * * *"       # standard cron: 9am daily
-hermes cron create "30m"             # one-shot: run once in 30 minutes
+superforecasting-agent cron create "every 5m"        # interval
+superforecasting-agent cron create "every 2h"
+superforecasting-agent cron create "0 9 * * *"       # standard cron: 9am daily
+superforecasting-agent cron create "30m"             # one-shot: run once in 30 minutes
 ```
 
 See the [cron feature reference](/docs/user-guide/features/cron) for the full syntax.
 
 ## Delivery Targets
 
-`--deliver` accepts everything the gateway knows about. Some common shapes:
+`--deliver` accepts every configured gateway target. Common shapes:
 
 ```bash
 --deliver telegram                       # platform home channel
 --deliver telegram:-1001234567890        # specific chat
 --deliver telegram:-1001234567890:17585  # specific Telegram forum topic
 --deliver discord:#ops
---deliver slack:#engineering
+--deliver slack:#forecast-desk
 --deliver signal:+15551234567
---deliver local                          # just save to ~/.hermes/cron/output/
+--deliver local                          # save to ~/.superforecasting-agent/cron/output/
 ```
 
-No running gateway is required at script-run time for bot-token platforms (Telegram, Discord, Slack, Signal, SMS, WhatsApp) — the tool calls each platform's REST endpoint directly using the credentials already in `~/.hermes/.env` / `~/.hermes/config.yaml`.
+For bot-token platforms such as Telegram, Discord, Slack, Signal, SMS, and WhatsApp, no running gateway is required at script-run time. The scheduler calls the platform endpoint directly using credentials in the fork-native home. Legacy `~/.hermes/.env` and `~/.hermes/config.yaml` are still read during migration.
 
 ## Editing and Lifecycle
 
 ```bash
-hermes cron list                                    # see all jobs
-hermes cron pause <job_id>                          # stop firing, keep definition
-hermes cron resume <job_id>
-hermes cron edit <job_id> --schedule "every 10m"    # adjust cadence
-hermes cron edit <job_id> --agent                   # flip to LLM mode
-hermes cron edit <job_id> --no-agent --script …     # flip back
-hermes cron remove <job_id>                         # delete it
+superforecasting-agent cron list
+superforecasting-agent cron pause <job_id>
+superforecasting-agent cron resume <job_id>
+superforecasting-agent cron edit <job_id> --schedule "every 10m"
+superforecasting-agent cron edit <job_id> --agent
+superforecasting-agent cron edit <job_id> --no-agent --script inflation-snapshot-watchdog.sh
+superforecasting-agent cron remove <job_id>
 ```
 
-Everything that works on LLM jobs (pause, resume, manual trigger, delivery target changes) works on no-agent jobs too.
+Everything that works on LLM jobs also works on script-only jobs.
 
 ## Worked Example: Disk Space Alert
 
 ```bash
-cat > ~/.hermes/scripts/disk-alert.sh <<'EOF'
+cat > ~/.superforecasting-agent/scripts/disk-alert.sh <<'EOF'
 #!/usr/bin/env bash
 # Alert when / or /home is over 90% full.
 THRESHOLD=90
 df -h / /home 2>/dev/null | awk -v t="$THRESHOLD" '
   NR > 1 && $5+0 >= t {
-    printf "⚠ Disk %s full on %s\n", $5, $6
+    printf "Disk %s full on %s\n", $5, $6
   }
 '
 EOF
-chmod +x ~/.hermes/scripts/disk-alert.sh
+chmod +x ~/.superforecasting-agent/scripts/disk-alert.sh
 
-hermes cron create "*/15 * * * *" \
+superforecasting-agent cron create "*/15 * * * *" \
   --no-agent \
   --script disk-alert.sh \
   --deliver telegram \
@@ -233,15 +239,16 @@ Silent when both filesystems are under 90%; fires exactly one line per over-thre
 
 | Approach | What runs | When to use |
 |----------|-----------|-------------|
-| `cronjob --no-agent` (this page) | Your script on Hermes' schedule | Recurring watchdogs / alerts / metrics that don't need reasoning |
-| `cronjob` (default, LLM) | Agent with optional pre-check script | When the message content requires reasoning over data |
-| OS cron + `curl` to a [webhook subscription](/docs/user-guide/messaging/webhooks) | Your script on the OS schedule | When Hermes might be unhealthy (the thing you're monitoring) |
+| `cronjob --no-agent` | Your script on the inherited scheduler | Deterministic source monitors, watchdogs, alerts, and metrics |
+| `forecast schedule` | Forecast lifecycle review | Stale forecasts, watched evidence, scoring, postmortems, and calibration refreshes |
+| `cronjob` with an LLM prompt | Agent with optional pre-check script | Message content requires interpretation |
+| OS cron plus `curl` to a [webhook subscription](/docs/user-guide/messaging/webhooks) | Your script on the OS schedule | The scheduler or gateway itself might be unhealthy |
 
-For critical system-health watchdogs that must fire *even when the gateway is down*, use OS-level cron with a plain `curl` to a Hermes webhook subscription (or any external alerting endpoint) — those run as independent OS processes and don't depend on Hermes being up. The in-gateway scheduler is the right choice when the thing being monitored is external.
+For critical system-health watchdogs that must fire even when the gateway is down, use OS-level cron with a plain `curl` to a webhook subscription or an external alerting endpoint. Use the in-gateway scheduler when the monitored thing is external and delivery should reuse the forecast desk's configured channels.
 
 ## Related
 
-- [Automate Anything with Cron](/docs/guides/automate-with-cron) — LLM-driven cron patterns.
-- [Scheduled Tasks (Cron) reference](/docs/user-guide/features/cron) — full schedule syntax, lifecycle, delivery routing.
-- [Webhook Subscriptions](/docs/user-guide/messaging/webhooks) — fire-and-forget HTTP entry points for external schedulers.
-- [Gateway Internals](/docs/developer-guide/gateway-internals) — delivery-router internals.
+- [Automate Forecast Reviews with Cron](/docs/guides/automate-with-cron) - LLM-driven and ledger-aware scheduled workflows.
+- [Scheduled Tasks (Cron) reference](/docs/user-guide/features/cron) - full schedule syntax, lifecycle, and delivery routing.
+- [Webhook Subscriptions](/docs/user-guide/messaging/webhooks) - HTTP entry points for external schedulers.
+- [Gateway Internals](/docs/developer-guide/gateway-internals) - delivery-router internals.

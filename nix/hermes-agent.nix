@@ -1,4 +1,4 @@
-# nix/hermes-agent.nix — Overridable Hermes Agent package
+# nix/hermes-agent.nix — Overridable Superforecasting Agent package
 #
 # callPackage auto-wires nixpkgs args; flake inputs are passed explicitly.
 # Users override via:
@@ -160,6 +160,9 @@ stdenv.mkDerivation {
           ${lib.optionalString (extraPythonPackages != [ ]) ''--suffix PYTHONPATH : "${pythonPath}"''}
       '')
       [
+        "forecast"
+        "superforecast"
+        "superforecasting-agent"
         "hermes"
         "hermes-agent"
         "hermes-acp"
@@ -202,9 +205,9 @@ stdenv.mkDerivation {
   };
 
   meta = with lib; {
-    description = "AI agent with advanced tool-calling capabilities";
+    description = "CLI forecasting desk with inherited Hermes runtime compatibility";
     homepage = "https://github.com/NousResearch/hermes-agent";
-    mainProgram = "hermes";
+    mainProgram = "superforecasting-agent";
     license = licenses.mit;
     platforms = platforms.unix;
   };

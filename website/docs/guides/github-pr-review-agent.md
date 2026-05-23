@@ -1,303 +1,244 @@
 ---
 sidebar_position: 10
-title: "Tutorial: GitHub PR Review Agent"
-description: "Build an automated AI code reviewer that monitors your repos, reviews pull requests, and delivers feedback — hands-free"
+title: "Tutorial: GitHub Repository Forecast Monitor"
+description: "Monitor GitHub repositories as evidence sources for release, security, and execution-risk forecasts."
 ---
 
-# Tutorial: Build a GitHub PR Review Agent
+# Tutorial: GitHub Repository Forecast Monitor
 
-**The problem:** Your team opens PRs faster than you can review them. PRs sit for days waiting for eyeballs. Junior devs merge bugs because nobody had time to check. You spend your mornings catching up on diffs instead of building.
+GitHub activity can be a high-signal source for forecasts about software releases, company execution, open-source adoption, security exposure, and infrastructure risk. This guide shows how to monitor repositories on a schedule and turn repository changes into forecast evidence, alerts, and review work.
 
-**The solution:** An AI agent that watches your repos around the clock, reviews every new PR for bugs, security issues, and code quality, and sends you a summary — so you only spend time on PRs that actually need human judgment.
+This is not a general automated code-review workflow. The goal is to support scoreable forecasts such as:
 
-**What you'll build:**
+- Will project X ship version 2.0 before July 1?
+- Will a critical vulnerability be patched before the disclosure deadline?
+- Will a vendor deprecate an API this quarter?
+- Will an open-source dependency add a required feature before our planning date?
 
-```
-┌───────────────────────────────────────────────────────────────────┐
-│                                                                   │
-│   Cron Timer  ──▶  Hermes Agent  ──▶  GitHub API  ──▶  Review     │
-│   (every 2h)       + gh CLI           (PR diffs)       delivery   │
-│                    + skill                             (Telegram, │
-│                    + memory                            Discord,   │
-│                                                        local)     │
-│                                                                   │
-└───────────────────────────────────────────────────────────────────┘
+## What You'll Build
+
+```text
+Cron schedule -> Superforecasting Agent -> GitHub CLI -> forecast evidence and alerts
 ```
 
-This guide uses **cron jobs** to poll for PRs on a schedule — no server or public endpoint needed. Works behind NAT and firewalls.
-
-:::tip Want real-time reviews instead?
-If you have a public endpoint available, check out [Automated GitHub PR Comments with Webhooks](./webhook-github-pr-review.md) — GitHub pushes events to Hermes instantly when PRs are opened or updated.
-:::
-
----
+The workflow polls repositories from a server or laptop. It works behind NAT and does not require a public endpoint. For real-time GitHub events, use [GitHub Webhook Forecast Evidence](./webhook-github-pr-review.md).
 
 ## Prerequisites
 
-- **Hermes Agent installed** — see the [Installation guide](/docs/getting-started/installation)
-- **Gateway running** for cron jobs:
-  ```bash
-  hermes gateway install   # Install as a service
-  # or
-  hermes gateway           # Run in foreground
-  ```
-- **GitHub CLI (`gh`) installed and authenticated**:
-  ```bash
-  # Install
-  brew install gh        # macOS
-  sudo apt install gh    # Ubuntu/Debian
+- **Superforecasting Agent installed**. See the [installation guide](/docs/getting-started/installation).
+- **Gateway running** if you want scheduled delivery:
 
-  # Authenticate
+  ```bash
+  superforecasting-agent gateway install
+  superforecasting-agent gateway start
+  ```
+
+- **GitHub CLI (`gh`) installed and authenticated**:
+
+  ```bash
+  brew install gh
   gh auth login
   ```
-- **Messaging configured** (optional) — [Telegram](/docs/user-guide/messaging/telegram) or [Discord](/docs/user-guide/messaging/discord)
 
-:::tip No messaging? No problem
-Use `deliver: "local"` to save reviews to `~/.hermes/cron/output/`. Great for testing before wiring up notifications.
-:::
+- **At least one forecast question** that GitHub activity can inform.
 
----
+If you do not want messaging yet, use `--deliver local` and inspect `~/.superforecasting-agent/cron/output/`.
 
-## Step 1: Verify the Setup
+## Step 1: Create A Forecast Question
 
-Make sure Hermes can access GitHub. Start a chat:
+Create a question with explicit resolution criteria before wiring automation around it:
 
 ```bash
-hermes
+superforecasting-agent new \
+  "Will example-org/example-app publish v2.0.0 before 2026-08-01?" \
+  --resolution-criteria "Resolved yes if a v2.0.0 GitHub release is published in example-org/example-app before 2026-08-01T00:00:00Z." \
+  --resolution-source "https://github.com/example-org/example-app/releases" \
+  --close-time "2026-07-31T23:59:59Z" \
+  --resolution-time "2026-08-01T00:00:00Z" \
+  --domain software \
+  --topic release-risk \
+  --tag github
 ```
 
-Test with a simple command:
+The command prints a forecast id such as `fq_123456789abc`. Use that id in later commands.
 
-```
-Run: gh pr list --repo NousResearch/hermes-agent --state open --limit 3
-```
+## Step 2: Verify GitHub Access
 
-You should see a list of open PRs. If this works, you're ready.
-
----
-
-## Step 2: Try a Manual Review
-
-Still in the chat, ask Hermes to review a real PR:
-
-```
-Review this pull request. Read the diff, check for bugs, security issues,
-and code quality. Be specific about line numbers and quote problematic code.
-
-Run: gh pr diff 3888 --repo NousResearch/hermes-agent
-```
-
-Hermes will:
-1. Execute `gh pr diff` to fetch the code changes
-2. Read through the entire diff
-3. Produce a structured review with specific findings
-
-If you're happy with the quality, time to automate it.
-
----
-
-## Step 3: Create a Review Skill
-
-A skill gives Hermes consistent review guidelines that persist across sessions and cron runs. Without one, review quality varies.
+From the server running the gateway:
 
 ```bash
-mkdir -p ~/.hermes/skills/code-review
+gh release list --repo example-org/example-app --limit 5
+gh pr list --repo example-org/example-app --state open --limit 5
+gh issue list --repo example-org/example-app --state open --limit 5
 ```
 
-Create `~/.hermes/skills/code-review/SKILL.md`:
+If those commands work in your shell, scheduled jobs can use them too. If they fail, fix `gh auth login`, PATH, or repository permissions before involving the model.
 
-```markdown
----
-name: code-review
-description: Review pull requests for bugs, security issues, and code quality
----
+## Step 3: Capture Manual Evidence
 
-# Code Review Guidelines
-
-When reviewing a pull request:
-
-## What to Check
-1. **Bugs** — Logic errors, off-by-one, null/undefined handling
-2. **Security** — Injection, auth bypass, secrets in code, SSRF
-3. **Performance** — N+1 queries, unbounded loops, memory leaks
-4. **Style** — Naming conventions, dead code, missing error handling
-5. **Tests** — Are changes tested? Do tests cover edge cases?
-
-## Output Format
-For each finding:
-- **File:Line** — exact location
-- **Severity** — Critical / Warning / Suggestion
-- **What's wrong** — one sentence
-- **Fix** — how to fix it
-
-## Rules
-- Be specific. Quote the problematic code.
-- Don't flag style nitpicks unless they affect readability.
-- If the PR looks good, say so. Don't invent problems.
-- End with: APPROVE / REQUEST_CHANGES / COMMENT
-```
-
-Verify it loaded — start `hermes` and you should see `code-review` in the skills list at startup.
-
----
-
-## Step 4: Teach It Your Conventions
-
-This is what makes the reviewer actually useful. Start a session and teach Hermes your team's standards:
-
-```
-Remember: In our backend repo, we use Python with FastAPI.
-All endpoints must have type annotations and Pydantic models.
-We don't allow raw SQL — only SQLAlchemy ORM.
-Test files go in tests/ and must use pytest fixtures.
-```
-
-```
-Remember: In our frontend repo, we use TypeScript with React.
-No `any` types allowed. All components must have props interfaces.
-We use React Query for data fetching, never useEffect for API calls.
-```
-
-These memories persist forever — the reviewer will enforce your conventions without being told each time.
-
----
-
-## Step 5: Create the Automated Cron Job
-
-Now wire it all together. Create a cron job that runs every 2 hours:
+Before automating, capture one manually observed signal:
 
 ```bash
-hermes cron create "0 */2 * * *" \
-  "Check for new open PRs and review them.
-
-Repos to monitor:
-- myorg/backend-api
-- myorg/frontend-app
-
-Steps:
-1. Run: gh pr list --repo REPO --state open --limit 5 --json number,title,author,createdAt
-2. For each PR created or updated in the last 4 hours:
-   - Run: gh pr diff NUMBER --repo REPO
-   - Review the diff using the code-review guidelines
-3. Format output as:
-
-## PR Reviews — today
-
-### [repo] #[number]: [title]
-**Author:** [name] | **Verdict:** APPROVE/REQUEST_CHANGES/COMMENT
-[findings]
-
-If no new PRs found, say: No new PRs to review." \
-  --name "pr-review" \
-  --deliver telegram \
-  --skill code-review
+superforecasting-agent research fq_123456789abc \
+  "https://github.com/example-org/example-app/pull/4242" \
+  --claim "Release-blocking migration PR is open and marked ready for review." \
+  --claim-type fact \
+  --source-name "GitHub PR #4242" \
+  --source-type github \
+  --reliability 0.8 \
+  --relevance 0.7 \
+  --stance increases
 ```
 
-Verify it's scheduled:
+Then update the forecast only if the signal changes your probability:
 
 ```bash
-hermes cron list
+superforecasting-agent update fq_123456789abc \
+  --probability 0.64 \
+  --rationale "Release probability increased because the blocking migration PR is ready for review and the release branch is active." \
+  --evidence-ref ev_123456789abc \
+  --use-active-lessons \
+  --require-citations
 ```
 
-### Other useful schedules
+## Step 4: Add Watched Sources
 
-| Schedule | When |
-|----------|------|
-| `0 */2 * * *` | Every 2 hours |
-| `0 9,13,17 * * 1-5` | Three times a day, weekdays only |
-| `0 9 * * 1` | Weekly Monday morning roundup |
-| `30m` | Every 30 minutes (high-traffic repos) |
-
----
-
-## Step 6: Run It On Demand
-
-Don't want to wait for the schedule? Trigger it manually:
+Use watched sources for specific pages or feeds that should create alerts when they change.
 
 ```bash
-hermes cron run pr-review
+superforecasting-agent watch add \
+  "https://github.com/example-org/example-app/releases" \
+  --question fq_123456789abc \
+  --source-type url
+
+superforecasting-agent watch add \
+  "https://github.com/example-org/example-app/pulls?q=is%3Apr+is%3Aopen+label%3Arelease-blocker" \
+  --question fq_123456789abc \
+  --source-type url
 ```
 
-Or from within a chat session:
-
-```
-/cron run pr-review
-```
-
----
-
-## Going Further
-
-### Post Reviews Directly to GitHub
-
-Instead of delivering to Telegram, have the agent comment on the PR itself:
-
-Add this to your cron prompt:
-
-```
-After reviewing, post your review:
-- For issues: gh pr review NUMBER --repo REPO --comment --body "YOUR_REVIEW"
-- For critical issues: gh pr review NUMBER --repo REPO --request-changes --body "YOUR_REVIEW"
-- For clean PRs: gh pr review NUMBER --repo REPO --approve --body "Looks good"
-```
-
-:::caution
-Make sure `gh` has a token with `repo` scope. Reviews are posted as whoever `gh` is authenticated as.
-:::
-
-### Weekly PR Dashboard
-
-Create a Monday morning overview of all your repos:
+Run a manual check:
 
 ```bash
-hermes cron create "0 9 * * 1" \
-  "Generate a weekly PR dashboard:
-- myorg/backend-api
-- myorg/frontend-app
-- myorg/infra
+superforecasting-agent watch check --question fq_123456789abc
+superforecasting-agent alerts
+```
 
-For each repo show:
-1. Open PR count and oldest PR age
-2. PRs merged this week
-3. Stale PRs (older than 5 days)
-4. PRs with no reviewer assigned
+## Step 5: Create A Scheduled Repository Scan
 
-Format as a clean summary." \
-  --name "weekly-dashboard" \
+Use a cron job for a richer periodic summary. The job should recommend forecast work, not silently mutate probabilities.
+
+```bash
+superforecasting-agent cron create "0 */4 * * *" \
+  "Scan GitHub repository signals for forecast question fq_123456789abc.
+
+Repository:
+- example-org/example-app
+
+Resolution source:
+- https://github.com/example-org/example-app/releases
+
+Commands to run:
+1. gh release list --repo example-org/example-app --limit 10
+2. gh pr list --repo example-org/example-app --state open --json number,title,labels,updatedAt,url --limit 20
+3. gh issue list --repo example-org/example-app --state open --json number,title,labels,updatedAt,url --limit 20
+
+Look for:
+- New releases, release candidates, or tag movement
+- Release-blocker PRs or issues
+- Maintainer comments suggesting schedule slip or acceleration
+- Security advisories or dependency breaks
+
+Output:
+- One paragraph on whether the forecast needs review
+- Evidence URLs worth ingesting
+- Suggested next commands
+
+Do not update the probability. If nothing material changed, respond with [SILENT]." \
+  --name "github-release-risk-monitor" \
   --deliver telegram
 ```
 
-### Multi-Repo Monitoring
+Verify it is scheduled:
 
-Scale up by adding more repos to the prompt. The agent processes them sequentially — no extra setup needed.
+```bash
+superforecasting-agent cron list
+```
 
----
+Run it on demand:
+
+```bash
+superforecasting-agent cron run github-release-risk-monitor
+```
+
+## Step 6: Schedule Domain Learning
+
+For a portfolio of software release forecasts, add a domain review loop:
+
+```bash
+superforecasting-agent schedule add \
+  --domain software \
+  --topic release-risk \
+  --cadence "every 1d" \
+  --next-run-at "2026-05-23T08:00:00Z" \
+  --trigger-reason "repository signal review" \
+  --auto-score \
+  --auto-postmortem
+```
+
+When forecasts resolve, score and postmortem them. This is how the desk learns whether GitHub signals were overweighted or missed.
+
+```bash
+superforecasting-agent calibration --domain software --by-origin
+superforecasting-agent errors --domain software --topic release-risk
+superforecasting-agent lesson list --scope-type domain --scope-ref software
+```
+
+## Useful Schedules
+
+| Schedule | Use |
+|----------|-----|
+| `0 */4 * * *` | Poll active release-risk forecasts every four hours |
+| `0 8 * * 1-5` | Weekday morning repository signal review |
+| `0 9 * * 1` | Weekly portfolio review |
+| `30m` | High-signal repository during a close-date window |
 
 ## Troubleshooting
 
-### "gh: command not found"
-The gateway runs in a minimal environment. Ensure `gh` is in the system PATH and restart the gateway.
+### `gh: command not found`
 
-### Reviews are too generic
-1. Add the `code-review` skill (Step 3)
-2. Teach Hermes your conventions via memory (Step 4)
-3. The more context it has about your stack, the better the reviews
+The gateway may run with a minimal PATH. Install `gh` in a system-visible location, restart the gateway, and check:
 
-### Cron job doesn't run
 ```bash
-hermes gateway status    # Is the gateway running?
-hermes cron list         # Is the job enabled?
+superforecasting-agent gateway restart
+superforecasting-agent logs gateway -f
 ```
 
-### Rate limits
-GitHub allows 5,000 API requests/hour for authenticated users. Each PR review uses ~3-5 requests (list + diff + optional comments). Even reviewing 100 PRs/day stays well within limits.
+### Scheduled output is too generic
 
----
+Make the prompt more concrete:
+
+- Add exact forecast ids.
+- Include the resolution source.
+- List the GitHub commands to run.
+- Tell the job what should count as material evidence.
+- Require evidence URLs and suggested next commands.
+
+### Cron job doesn't run
+
+```bash
+superforecasting-agent gateway status
+superforecasting-agent cron list
+superforecasting-agent cron status
+```
+
+### GitHub rate limits
+
+Authenticated GitHub API usage is usually enough for forecast monitoring. High-volume repositories should use lower polling frequency, narrower queries, or webhooks.
 
 ## What's Next?
 
-- **[Webhook-Based PR Reviews](./webhook-github-pr-review.md)** — get instant reviews when PRs are opened (requires a public endpoint)
-- **[Daily Briefing Bot](/docs/guides/daily-briefing-bot)** — combine PR reviews with your morning news digest
-- **[Build a Plugin](/docs/guides/build-a-hermes-plugin)** — wrap the review logic into a shareable plugin
-- **[Profiles](/docs/user-guide/profiles)** — run a dedicated reviewer profile with its own memory and config
-- **[Fallback Providers](/docs/user-guide/features/fallback-providers)** — ensure reviews run even when one provider is down
+- [GitHub Webhook Forecast Evidence](./webhook-github-pr-review.md) for real-time GitHub events.
+- [Forecast Automation Templates](/docs/guides/automation-templates) for source watches, backtests, and postmortems.
+- [Daily Forecast Brief](/docs/guides/daily-briefing-bot) for team-facing review digests.
+- [Profiles](/docs/user-guide/profiles) for isolating a dedicated forecast-desk profile.

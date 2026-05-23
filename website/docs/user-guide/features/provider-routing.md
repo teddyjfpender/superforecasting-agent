@@ -1,39 +1,39 @@
 ---
 title: Provider Routing
-description: Configure OpenRouter provider preferences to optimize for cost, speed, or quality.
+description: Configure OpenRouter provider preferences for forecast-runtime reliability and comparability.
 sidebar_label: Provider Routing
 sidebar_position: 7
 ---
 
 # Provider Routing
 
-When using [OpenRouter](https://openrouter.ai) as your LLM provider, Hermes Agent supports **provider routing** — fine-grained control over which underlying AI providers handle your requests and how they're prioritized.
+When OpenRouter is your LLM provider, Superforecasting Agent can pass **provider routing** preferences to OpenRouter. This controls which underlying providers handle requests for research, model runs, forecast updates, backtests, and scheduled review jobs.
 
-OpenRouter routes requests to many providers (e.g., Anthropic, Google, AWS Bedrock, Together AI). Provider routing lets you optimize for cost, speed, quality, or enforce specific provider requirements.
+Provider routing matters for forecasting because model/provider changes can affect calibration, latency, cost, and reproducibility. Record important model choices in forecast snapshots and model-run provenance when they influence probabilities.
 
 ## Configuration
 
-Add a `provider_routing` section to your `~/.hermes/config.yaml`:
+Add `provider_routing` to `~/.superforecasting-agent/config.yaml`:
 
 ```yaml
 provider_routing:
-  sort: "price"           # How to rank providers
-  only: []                # Whitelist: only use these providers
-  ignore: []              # Blacklist: never use these providers
-  order: []               # Explicit provider priority order
-  require_parameters: false  # Only use providers that support all parameters
-  data_collection: null   # Control data collection ("allow" or "deny")
+  sort: "price"
+  only: []
+  ignore: []
+  order: []
+  require_parameters: false
+  data_collection: null
 ```
 
-:::info
-Provider routing only applies when using OpenRouter. It has no effect with direct provider connections (e.g., connecting directly to the Anthropic API).
-:::
+Legacy `~/.hermes/config.yaml` remains readable during migration.
+
+Provider routing applies only to OpenRouter. Direct Anthropic, OpenAI, Google, local, or custom endpoints ignore this section.
 
 ## Options
 
 ### `sort`
 
-Controls how OpenRouter ranks available providers for your request.
+Controls how OpenRouter ranks available providers.
 
 | Value | Description |
 |-------|-------------|
@@ -41,14 +41,9 @@ Controls how OpenRouter ranks available providers for your request.
 | `"throughput"` | Fastest tokens-per-second first |
 | `"latency"` | Lowest time-to-first-token first |
 
-```yaml
-provider_routing:
-  sort: "price"
-```
-
 ### `only`
 
-Whitelist of provider names. When set, **only** these providers will be used. All others are excluded.
+Whitelist provider names:
 
 ```yaml
 provider_routing:
@@ -57,9 +52,11 @@ provider_routing:
     - "Google"
 ```
 
+Use this when you want forecast runs to stay comparable across a known provider set.
+
 ### `ignore`
 
-Blacklist of provider names. These providers will **never** be used, even if they offer the cheapest or fastest option.
+Blacklist provider names:
 
 ```yaml
 provider_routing:
@@ -68,9 +65,11 @@ provider_routing:
     - "DeepInfra"
 ```
 
+Use this for privacy, reliability, region, or data-retention constraints.
+
 ### `order`
 
-Explicit priority order. Providers listed first are preferred. Unlisted providers are used as fallbacks.
+Set a preferred provider order:
 
 ```yaml
 provider_routing:
@@ -80,78 +79,64 @@ provider_routing:
     - "AWS Bedrock"
 ```
 
+Listed providers are tried first; unlisted providers remain fallbacks.
+
 ### `require_parameters`
 
-When `true`, OpenRouter will only route to providers that support **all** parameters in your request (like `temperature`, `top_p`, `tools`, etc.). This avoids silent parameter drops.
+When `true`, OpenRouter uses only providers that support every request parameter, including tools and sampling options:
 
 ```yaml
 provider_routing:
   require_parameters: true
 ```
 
+This helps avoid silent behavior changes during forecast workflows.
+
 ### `data_collection`
 
-Controls whether providers can use your prompts for training. Options are `"allow"` or `"deny"`.
+Controls provider data-use preferences:
 
 ```yaml
 provider_routing:
   data_collection: "deny"
 ```
 
-## Practical Examples
+Allowed values are `"allow"` and `"deny"`.
 
-### Optimize for Cost
+## Forecast-Oriented Examples
 
-Route to the cheapest available provider. Good for high-volume usage and development:
+### Low-Cost Batch Research
 
 ```yaml
 provider_routing:
   sort: "price"
+  require_parameters: true
 ```
 
-### Optimize for Speed
+Good for high-volume evidence triage and benchmark exploration where cost matters.
 
-Prioritize low-latency providers for interactive use:
+### Low-Latency Review
 
 ```yaml
 provider_routing:
   sort: "latency"
 ```
 
-### Optimize for Throughput
+Good for interactive CLI/TUI forecast reviews.
 
-Best for long-form generation where tokens-per-second matters:
-
-```yaml
-provider_routing:
-  sort: "throughput"
-```
-
-### Lock to Specific Providers
-
-Ensure all requests go through a specific provider for consistency:
+### Provider-Consistent Backtests
 
 ```yaml
 provider_routing:
   only:
     - "Anthropic"
-```
-
-### Avoid Specific Providers
-
-Exclude providers you don't want to use (e.g., for data privacy):
-
-```yaml
-provider_routing:
-  ignore:
-    - "Together"
-    - "Lepton"
+  require_parameters: true
   data_collection: "deny"
 ```
 
-### Preferred Order with Fallbacks
+Good when you want repeated model runs to be easier to compare.
 
-Try your preferred providers first, fall back to others if unavailable:
+### Preferred Order with Fallbacks
 
 ```yaml
 provider_routing:
@@ -161,40 +146,25 @@ provider_routing:
   require_parameters: true
 ```
 
+Good when you want a primary provider but still want the session to keep working during outages.
+
 ## How It Works
 
-Provider routing preferences are passed to the OpenRouter API via the `extra_body.provider` field on every API call. This applies to both:
+The config maps to OpenRouter's `extra_body.provider` field:
 
-- **CLI mode** — configured in `~/.hermes/config.yaml`, loaded at startup
-- **Gateway mode** — same config file, loaded when the gateway starts
-
-The routing config is read from `config.yaml` and passed as parameters when creating the `AIAgent`:
-
-```
-providers_allowed  ← from provider_routing.only
-providers_ignored  ← from provider_routing.ignore
-providers_order    ← from provider_routing.order
-provider_sort      ← from provider_routing.sort
-provider_require_parameters ← from provider_routing.require_parameters
-provider_data_collection    ← from provider_routing.data_collection
+```text
+providers_allowed             <- provider_routing.only
+providers_ignored             <- provider_routing.ignore
+providers_order               <- provider_routing.order
+provider_sort                 <- provider_routing.sort
+provider_require_parameters   <- provider_routing.require_parameters
+provider_data_collection      <- provider_routing.data_collection
 ```
 
-:::tip
-You can combine multiple options. For example, sort by price but exclude certain providers and require parameter support:
+The same configuration is used by CLI and gateway processes loaded from the active agent home.
 
-```yaml
-provider_routing:
-  sort: "price"
-  ignore: ["Together"]
-  require_parameters: true
-  data_collection: "deny"
-```
-:::
+## Provider Routing vs. Fallback Models
 
-## Default Behavior
+Provider routing controls which sub-provider handles a request **inside OpenRouter**.
 
-When no `provider_routing` section is configured (the default), OpenRouter uses its own default routing logic, which generally balances cost and availability automatically.
-
-:::tip Provider Routing vs. Fallback Models
-Provider routing controls which **sub-providers within OpenRouter** handle your requests. For automatic failover to an entirely different provider when your primary model fails, see [Fallback Providers](/docs/user-guide/features/fallback-providers).
-:::
+Fallback providers control which entirely different provider/model pair Superforecasting Agent tries when the primary runtime fails. See [Fallback Providers](/docs/user-guide/features/fallback-providers).

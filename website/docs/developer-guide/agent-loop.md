@@ -6,7 +6,7 @@ description: "Detailed walkthrough of AIAgent execution, API modes, tools, callb
 
 # Agent Loop Internals
 
-The core orchestration engine is `run_agent.py`'s `AIAgent` class — a large file (15k+ lines) that handles everything from prompt assembly to tool dispatch to provider failover.
+The core orchestration engine is `run_agent.py`'s `AIAgent` class — a large inherited runtime file that handles everything from prompt assembly to tool dispatch to provider failover. In Superforecasting Agent, this loop is wrapped by forecast-specific prompts, `forecast-desk` tool exposure, and the forecast ledger. The loop moves tokens and tools; the ledger owns durable probabilities and learning records.
 
 ## Core Responsibilities
 
@@ -20,16 +20,17 @@ The core orchestration engine is `run_agent.py`'s `AIAgent` class — a large fi
 - Handling compression, retries, and fallback model switching
 - Tracking iteration budgets across parent and child agents
 - Flushing persistent memory before context is lost
+- Preserving forecast context long enough for the `forecast_ledger` tool or `forecast` CLI to write auditable state
 
 ## Two Entry Points
 
 ```python
 # Simple interface — returns final response string
-response = agent.chat("Fix the bug in main.py")
+response = agent.chat("Research this forecast question and record an auditable update.")
 
 # Full interface — returns dict with messages, metadata, usage stats
 result = agent.run_conversation(
-    user_message="Fix the bug in main.py",
+    user_message="Research this forecast question and record an auditable update.",
     system_message=None,           # auto-built if omitted
     conversation_history=None,      # auto-loaded from session if omitted
     task_id="task_abc123"
@@ -40,7 +41,7 @@ result = agent.run_conversation(
 
 ## API Modes
 
-Hermes supports three API execution modes, resolved from provider selection, explicit args, and base URL heuristics:
+The inherited runtime supports three API execution modes, resolved from provider selection, explicit args, and base URL heuristics:
 
 | API mode | Used for | Client type |
 |----------|----------|-------------|
@@ -160,6 +161,8 @@ Some tools are intercepted by `run_agent.py` *before* reaching `handle_function_
 
 These tools modify agent state directly and return synthetic tool results without going through the registry.
 
+Forecast lifecycle operations should normally use the registered `forecast_ledger` tool or the `forecast` CLI rather than these agent-local tools. Chat memory can help recall context, but forecast updates, evidence, scores, postmortems, and calibration lessons must be ledger records.
+
 ## Callback Surfaces
 
 `AIAgent` supports platform-specific callbacks that enable real-time progress in the CLI, gateway, and ACP integrations:
@@ -216,7 +219,9 @@ The fallback system also covers auxiliary tasks independently — vision, compre
 After each turn:
 - Messages are saved to the session store (SQLite via `hermes_state.py`)
 - Memory changes are flushed to `MEMORY.md` / `USER.md`
-- The session can be resumed later via `/resume` or `hermes chat --resume`
+- The session can be resumed later via `/resume` or `superforecasting-agent chat --resume`
+
+Session persistence is not the forecast ledger. If a model reaches a probability, evidence judgment, model result, or postmortem lesson, it must call the ledger tool or forecast CLI path before relying on session recall.
 
 ## Key Source Files
 

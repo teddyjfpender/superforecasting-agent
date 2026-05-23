@@ -16,6 +16,13 @@ def test_version_string_no_v_prefix():
     assert not __version__.startswith("v"), f"__version__ should not start with 'v', got {__version__!r}"
 
 
+def test_update_metadata_targets_forecast_package():
+    import hermes_cli.banner as banner
+
+    assert banner._UPSTREAM_REPO_URL == "https://github.com/NousResearch/superforecasting-agent.git"
+    assert banner._RELEASE_URL_BASE == "https://github.com/NousResearch/superforecasting-agent/releases/tag"
+
+
 def test_check_for_updates_uses_cache(tmp_path, monkeypatch):
     """When cache is fresh, check_for_updates should return cached value without calling git."""
     from hermes_cli.banner import check_for_updates

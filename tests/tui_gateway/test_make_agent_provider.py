@@ -95,7 +95,10 @@ def test_make_agent_ignores_display_personality_without_system_prompt():
 
         _make_agent("sid-default-personality", "key-default-personality")
 
-        assert mock_agent.call_args.kwargs["ephemeral_system_prompt"] is None
+        prompt = mock_agent.call_args.kwargs["ephemeral_system_prompt"]
+        assert "Superforecasting Agent" in prompt
+        assert "forecasting desk" in prompt
+        assert "sparkle system prompt" not in prompt
 
 
 def test_make_agent_honors_tui_launch_env_flags():
@@ -232,4 +235,6 @@ def test_make_agent_tolerates_null_personalities_with_active_personality():
         _make_agent("sid-null-personality", "key-null-personality")
 
         assert mock_agent.called
-        assert mock_agent.call_args.kwargs["ephemeral_system_prompt"] is None
+        prompt = mock_agent.call_args.kwargs["ephemeral_system_prompt"]
+        assert "Superforecasting Agent" in prompt
+        assert "forecasting desk" in prompt

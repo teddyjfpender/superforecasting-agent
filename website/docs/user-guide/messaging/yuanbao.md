@@ -1,16 +1,18 @@
 ---
 sidebar_position: 16
 title: "Yuanbao"
-description: "Connect Hermes Agent to the Yuanbao enterprise messaging platform via WebSocket gateway"
+description: "Use Yuanbao for enterprise forecast alerts and approvals."
 ---
 
 # Yuanbao
 
-Connect Hermes to [Yuanbao](https://yuanbao.tencent.com/), Tencent's enterprise messaging platform. The adapter uses a WebSocket gateway for real-time message delivery and supports both direct (C2C) and group conversations.
+Connect the forecast gateway to [Yuanbao](https://yuanbao.tencent.com/), Tencent's enterprise messaging platform. The adapter uses a WebSocket gateway for real-time message delivery and supports both direct (C2C) and group conversations.
 
 :::info
 Yuanbao is an enterprise messaging platform primarily used within Tencent and enterprise environments. It uses WebSocket for real-time communication, HMAC-based authentication, and supports rich media including images, files, and voice messages.
 :::
+
+Use Yuanbao for forecast review alerts, source notes, approval prompts, scheduled digests, and enterprise evidence capture. Yuanbao conversations are not durable forecast memory; ledger records remain the source of truth for probabilities, evidence, assumptions, resolutions, postmortems, and calibration lessons.
 
 ## Prerequisites
 
@@ -38,7 +40,7 @@ pip install websockets httpx aiofiles
 The easiest way to configure Yuanbao is through the interactive setup:
 
 ```bash
-hermes gateway setup
+superforecasting-agent gateway setup
 ```
 
 Select **Yuanbao** when prompted. The wizard will:
@@ -53,7 +55,7 @@ The WebSocket URL and API Domain have sensible defaults built in. You only need 
 
 ### 3. Configure Environment Variables
 
-After initial setup, verify these variables in `~/.hermes/.env`:
+After initial setup, verify these variables in `~/.superforecasting-agent/.env`:
 
 ```bash
 # Required
@@ -68,9 +70,9 @@ YUANBAO_API_DOMAIN=https://api.yuanbao.example.com
 # Optional: internal routing environment (e.g. test/staging/production)
 # YUANBAO_ROUTE_ENV=production
 
-# Optional: home channel for cron/notifications (format: direct:<account> or group:<group_code>)
+# Optional: home channel for scheduled reviews/notifications (format: direct:<account> or group:<group_code>)
 YUANBAO_HOME_CHANNEL=direct:bot_account_id
-YUANBAO_HOME_CHANNEL_NAME="Bot Notifications"
+YUANBAO_HOME_CHANNEL_NAME="Forecast Notifications"
 
 # Optional: restrict access (legacy, see Access Control below for fine-grained policies)
 YUANBAO_ALLOWED_USERS=user_account_1,user_account_2
@@ -79,7 +81,7 @@ YUANBAO_ALLOWED_USERS=user_account_1,user_account_2
 ### 4. Start the Gateway
 
 ```bash
-hermes gateway
+superforecasting-agent gateway
 ```
 
 The adapter will connect to the Yuanbao WebSocket gateway, authenticate using HMAC signatures, and begin processing messages.
@@ -94,12 +96,12 @@ The adapter will connect to the Yuanbao WebSocket gateway, authenticate using HM
 - **Markdown formatting** — messages are automatically chunked for Yuanbao's size limits
 - **Message deduplication** — prevents duplicate processing of the same message
 - **Heartbeat/keep-alive** — maintains WebSocket connection stability
-- **Typing indicators** — shows "typing…" status while the agent processes
+- **Typing indicators** — shows "typing..." status while the forecast runtime processes
 - **Automatic reconnection** — handles WebSocket disconnections with exponential backoff
 - **Group information queries** — retrieve group details and member lists
 - **Sticker/Emoji support** — send TIMFaceElem stickers and emoji in conversations
 - **Auto-sethome** — first user to message the bot is automatically set as the home channel owner
-- **Slow-response notification** — sends a waiting message when the agent takes longer than expected
+- **Slow-response notification** — sends a waiting message when the forecast runtime takes longer than expected
 
 ## Configuration Options
 
@@ -124,34 +126,34 @@ Media URLs are automatically validated and downloaded before upload to prevent S
 
 ## Home Channel
 
-Use the `/sethome` command in any Yuanbao chat (DM or group) to designate it as the **home channel**. Scheduled tasks (cron jobs) deliver their results to this channel.
+Use the `/sethome` command in any Yuanbao chat (DM or group) to designate it as the **home channel**. Scheduled forecast reviews and notifications deliver their results to this channel.
 
 :::tip Auto-sethome
 If no home channel is configured, the first user to message the bot will be automatically set as the home channel owner. If the current home channel is a group chat, the first DM will upgrade it to a direct channel.
 :::
 
-You can also set it manually in `~/.hermes/.env`:
+You can also set it manually in `~/.superforecasting-agent/.env`:
 
 ```bash
 YUANBAO_HOME_CHANNEL=direct:user_account_id
 # or for a group:
 # YUANBAO_HOME_CHANNEL=group:group_code
-YUANBAO_HOME_CHANNEL_NAME="My Bot Updates"
+YUANBAO_HOME_CHANNEL_NAME="Forecast Updates"
 ```
 
 ### Example: Set Home Channel
 
 1. Start a conversation with the bot in Yuanbao
 2. Send the command: `/sethome`
-3. The bot responds: "Home channel set to [chat_name] with ID [chat_id]. Cron jobs will deliver to this location."
-4. Future cron jobs and notifications will be sent to this channel
+3. The bot responds: "Home channel set to [chat_name] with ID [chat_id]. Scheduled reviews will deliver to this location."
+4. Future scheduled reviews and notifications will be sent to this channel
 
-### Example: Cron Job Delivery
+### Example: Scheduled Review Delivery
 
-Create a cron job:
+Create a scheduled review:
 
 ```bash
-/cron "0 9 * * *" Check server status
+/cron "0 9 * * *" Review stale forecasts for the China macro portfolio
 ```
 
 The scheduled output will be delivered to your Yuanbao home channel every day at 9 AM.
@@ -170,7 +172,7 @@ The bot responds in the same conversation thread.
 
 ### Available Commands
 
-All standard Hermes commands work on Yuanbao:
+Forecast-focused slash commands work on Yuanbao when the gateway enables them:
 
 | Command | Description |
 |---------|-------------|
@@ -182,17 +184,17 @@ All standard Hermes commands work on Yuanbao:
 
 ### Sending Files
 
-To send a file to the bot, simply attach it directly in the Yuanbao chat. The bot will automatically download and process the file attachment.
+To send a file to the bot, attach it directly in the Yuanbao chat. The runtime can download it and use it as a forecast evidence candidate.
 
 You can also include a message with the attachment:
 
 ```
-Please analyze this document
+Please attach this document as evidence for question 142
 ```
 
 ### Receiving Files
 
-When you ask the bot to create or export a file, it sends the file directly to your Yuanbao chat.
+When you ask the runtime to create or export a file, it sends the file directly to your Yuanbao chat.
 
 ## Troubleshooting
 
@@ -204,7 +206,7 @@ When you ask the bot to create or export a file, it sends the file directly to y
 1. Verify APP_ID and APP_SECRET are correct
 2. Check that the WebSocket URL is accessible
 3. Ensure the bot account has proper permissions
-4. Review gateway logs: `tail -f ~/.hermes/logs/gateway.log`
+4. Review gateway logs: `tail -f ~/.superforecasting-agent/logs/gateway.log`
 
 ### "Connection refused" error
 
@@ -228,12 +230,12 @@ When you ask the bot to create or export a file, it sends the file directly to y
 
 ### Messages not delivered to home channel
 
-**Cause**: Home channel ID format is incorrect or cron job hasn't triggered.
+**Cause**: Home channel ID format is incorrect or the scheduled review has not triggered.
 
 **Fix**:
 1. Verify YUANBAO_HOME_CHANNEL is in correct format
 2. Test with `/sethome` command to auto-detect correct format
-3. Check cron job schedule with `/status`
+3. Check scheduled review status with `/status`
 4. Verify bot has send permissions in the target chat
 
 ### Frequent disconnections
@@ -244,7 +246,7 @@ When you ask the bot to create or export a file, it sends the file directly to y
 1. Check gateway logs for error patterns
 2. Increase heartbeat timeout in connection settings
 3. Ensure stable network connection to Yuanbao API
-4. Consider enabling verbose logging: `HERMES_LOG_LEVEL=debug`
+4. Consider enabling verbose logging through the logging config or compatibility debug env if your deployment still uses it
 
 ## Access Control
 
@@ -278,7 +280,7 @@ platforms:
 
 ### Message Chunking
 
-Yuanbao has a maximum message size. Hermes automatically chunks large responses with Markdown-aware splitting (respects code fences, tables, and paragraph boundaries).
+Yuanbao has a maximum message size. The gateway automatically chunks large responses with Markdown-aware splitting that respects code fences, tables, and paragraph boundaries.
 
 ### Connection Parameters
 
@@ -302,17 +304,17 @@ These values are currently not configurable via environment variables. They are 
 Enable debug logging to troubleshoot connection issues:
 
 ```bash
-HERMES_LOG_LEVEL=debug hermes gateway
+superforecasting-agent gateway
 ```
 
 ## Integration with Other Features
 
-### Cron Jobs
+### Scheduled Reviews
 
-Schedule tasks that run on Yuanbao:
+Schedule forecast reviews that deliver to Yuanbao:
 
 ```
-/cron "0 */4 * * *" Report system health
+/cron "0 */4 * * *" Check stale forecasts and new source alerts
 ```
 
 Results are delivered to your home channel.
@@ -322,7 +324,7 @@ Results are delivered to your home channel.
 Run long operations without blocking the conversation:
 
 ```
-/background Analyze all files in the archive
+/background Analyze all source files in the evidence archive
 ```
 
 ### Cross-Platform Messages
@@ -330,7 +332,7 @@ Run long operations without blocking the conversation:
 Send a message from CLI to Yuanbao:
 
 ```bash
-hermes chat -q "Send 'Hello from CLI' to yuanbao:group:group_code"
+superforecasting-agent chat -q "Send the forecast review digest to yuanbao:group:group_code"
 ```
 
 ## Related Documentation

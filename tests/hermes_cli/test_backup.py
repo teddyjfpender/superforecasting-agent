@@ -240,7 +240,7 @@ class TestBackup:
             assert pid_files == []
 
     def test_default_output_path(self, tmp_path, monkeypatch):
-        """When no output path given, zip goes to ~/hermes-backup-*.zip."""
+        """When no output path given, zip goes to ~/superforecasting-agent-backup-*.zip."""
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()
         (hermes_home / "config.yaml").write_text("model: test\n")
@@ -254,7 +254,7 @@ class TestBackup:
         run_backup(args)
 
         # Should exist in home dir
-        zips = list(tmp_path.glob("hermes-backup-*.zip"))
+        zips = list(tmp_path.glob("superforecasting-agent-backup-*.zip"))
         assert len(zips) == 1
 
 
@@ -623,6 +623,19 @@ class TestValidation:
         with zipfile.ZipFile(buf, "r") as zf:
             assert _detect_prefix(zf) == ".hermes/"
 
+    def test_detect_prefix_superforecasting_agent(self):
+        """Detects .superforecasting-agent/ prefix wrapping all entries."""
+        import io
+        from hermes_cli.backup import _detect_prefix
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr(".superforecasting-agent/config.yaml", "test")
+            zf.writestr(".superforecasting-agent/skills/a/SKILL.md", "skill")
+        buf.seek(0)
+        with zipfile.ZipFile(buf, "r") as zf:
+            assert _detect_prefix(zf) == ".superforecasting-agent/"
+
     def test_detect_prefix_none(self):
         """No prefix when entries are at root."""
         import io
@@ -685,7 +698,7 @@ class TestBackupEdgeCases:
         from hermes_cli.backup import run_backup
         run_backup(args)
 
-        zips = list(out_dir.glob("hermes-backup-*.zip"))
+        zips = list(out_dir.glob("superforecasting-agent-backup-*.zip"))
         assert len(zips) == 1
 
     def test_output_without_zip_suffix(self, tmp_path, monkeypatch):
@@ -955,7 +968,7 @@ class TestProfileRestoration:
 
         # Wrappers should contain the right content
         coder_wrapper = (wrapper_dir / "coder").read_text()
-        assert "hermes -p coder" in coder_wrapper
+        assert "superforecasting-agent -p coder" in coder_wrapper
 
     def test_import_skips_profile_dirs_without_config(self, tmp_path, monkeypatch):
         """Import doesn't create wrappers for profile dirs without config."""
@@ -1449,7 +1462,7 @@ class TestRunPreUpdateBackup:
         assert "Creating pre-update backup" in out
         assert "Saved:" in out
         assert "Restore:" in out
-        assert "hermes import" in out
+        assert "superforecasting-agent import" in out
         assert "Disable:" in out
         # Actual backup was created
         backups = list((hermes_home / "backups").glob("pre-update-*.zip"))

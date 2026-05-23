@@ -25,7 +25,8 @@ import { api } from "@/lib/api";
 
 /** LocalStorage key — pre-applied before the React tree mounts to avoid
  *  a visible flash of the default palette on theme-overridden installs. */
-const STORAGE_KEY = "hermes-dashboard-theme";
+const STORAGE_KEY = "superforecasting-agent-dashboard-theme";
+const LEGACY_STORAGE_KEYS = ["hermes-dashboard-theme"];
 
 /** Tracks fontUrls we've already injected so multiple theme switches don't
  *  pile up <link> tags. Keyed by URL. */
@@ -207,7 +208,29 @@ let _PREV_DYNAMIC_VAR_KEYS: Set<string> = new Set();
 
 /** ID for the injected <style> tag that carries a theme's customCSS.
  *  A single tag is reused + replaced on every theme switch. */
-const CUSTOM_CSS_STYLE_ID = "hermes-theme-custom-css";
+const CUSTOM_CSS_STYLE_ID = "forecast-theme-custom-css";
+
+function readStoredThemeName(): string {
+  if (typeof window === "undefined") return "default";
+  const stored = window.localStorage.getItem(STORAGE_KEY);
+  if (stored) return stored;
+  for (const legacyKey of LEGACY_STORAGE_KEYS) {
+    const legacy = window.localStorage.getItem(legacyKey);
+    if (legacy) {
+      persistThemeName(legacy);
+      return legacy;
+    }
+  }
+  return "default";
+}
+
+function persistThemeName(name: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(STORAGE_KEY, name);
+  for (const legacyKey of LEGACY_STORAGE_KEYS) {
+    window.localStorage.removeItem(legacyKey);
+  }
+}
 
 function applyCustomCSS(css: string | undefined) {
   if (typeof document === "undefined") return;
@@ -219,7 +242,7 @@ function applyCustomCSS(css: string | undefined) {
   if (!el) {
     el = document.createElement("style");
     el.id = CUSTOM_CSS_STYLE_ID;
-    el.setAttribute("data-hermes-theme-css", "true");
+    el.setAttribute("data-forecast-theme-css", "true");
     document.head.appendChild(el);
   }
   el.textContent = css;
@@ -251,7 +274,7 @@ function injectFontStylesheet(url: string | undefined) {
   const link = document.createElement("link");
   link.rel = "stylesheet";
   link.href = url;
-  link.setAttribute("data-hermes-theme-font", "true");
+  link.setAttribute("data-forecast-theme-font", "true");
   document.head.appendChild(link);
   INJECTED_FONT_URLS.add(url);
 }
@@ -306,8 +329,7 @@ function applyTheme(theme: DashboardTheme) {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   /** Name of the currently active theme (built-in id or user YAML name). */
   const [themeName, setThemeName] = useState<string>(() => {
-    if (typeof window === "undefined") return "default";
-    return window.localStorage.getItem(STORAGE_KEY) ?? "default";
+    return readStoredThemeName();
   });
 
   /** All selectable themes (shown in the picker). Starts with just the
@@ -373,7 +395,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         }
         if (resp.active && resp.active !== themeName) {
           setThemeName(resp.active);
-          window.localStorage.setItem(STORAGE_KEY, resp.active);
+          persistThemeName(resp.active);
         }
       })
       .catch(() => {});
@@ -393,9 +415,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       ]);
       const next = knownNames.has(name) ? name : "default";
       setThemeName(next);
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(STORAGE_KEY, next);
-      }
+      persistThemeName(next);
       api.setTheme(next).catch(() => {});
     },
     [availableThemes, userThemeDefs],

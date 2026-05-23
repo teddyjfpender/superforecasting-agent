@@ -1,5 +1,5 @@
 """
-Top-level argparse construction for the hermes CLI.
+Top-level argparse construction for the Superforecasting Agent CLI.
 
 Lives in its own module so other modules (e.g. ``relaunch.py``) can
 introspect the parser to discover which flags exist without running the
@@ -39,43 +39,44 @@ def _inherited_flag(parser, *args, **kwargs):
 
 _EPILOGUE = """
 Examples:
-    hermes                        Start interactive chat
-    hermes chat -q "Hello"        Single query mode
-    hermes -c                     Resume the most recent session
-    hermes -c "my project"        Resume a session by name (latest in lineage)
-    hermes --resume <session_id>  Resume a specific session by ID
-    hermes setup                  Run setup wizard
-    hermes logout                 Clear stored authentication
-    hermes auth add <provider>    Add a pooled credential
-    hermes auth list              List pooled credentials
-    hermes auth remove <p> <t>    Remove pooled credential by index, id, or label
-    hermes auth reset <provider>  Clear exhaustion status for a provider
-    hermes model                  Select default model
-    hermes fallback [list]        Show fallback provider chain
-    hermes fallback add           Add a fallback provider (same picker as `hermes model`)
-    hermes fallback remove        Remove a fallback provider from the chain
-    hermes config                 View configuration
-    hermes config edit            Edit config in $EDITOR
-    hermes config set model gpt-4 Set a config value
-    hermes gateway                Run messaging gateway
-    hermes -s hermes-agent-dev,github-auth
-    hermes -w                     Start in isolated git worktree
-    hermes gateway install        Install gateway background service
-    hermes sessions list          List past sessions
-    hermes sessions browse        Interactive session picker
-    hermes sessions rename ID T   Rename/title a session
-    hermes logs                   View agent.log (last 50 lines)
-    hermes logs -f                Follow agent.log in real time
-    hermes logs errors            View errors.log
-    hermes logs --since 1h        Lines from the last hour
-    hermes debug share             Upload debug report for support
-    hermes update                 Update to latest version
-    hermes dashboard              Start web UI dashboard (port 9119)
-    hermes dashboard --stop       Stop running dashboard processes
-    hermes dashboard --status     List running dashboard processes
+    superforecasting-agent                        Open the forecast desk dashboard
+    superforecasting-agent forecast new "Will X happen?" --resolution-criteria "Resolved by ..."
+    superforecasting-agent chat -q "Hello"        Forecast-scoped single query mode
+    superforecasting-agent -c                     Resume the most recent session
+    superforecasting-agent -c "my project"        Resume a session by name (latest in lineage)
+    superforecasting-agent --resume <session_id>  Resume a specific session by ID
+    superforecasting-agent setup                  Run setup wizard
+    superforecasting-agent logout                 Clear stored authentication
+    superforecasting-agent auth add <provider>    Add a pooled credential
+    superforecasting-agent auth list              List pooled credentials
+    superforecasting-agent auth remove <p> <t>    Remove pooled credential by index, id, or label
+    superforecasting-agent auth reset <provider>  Clear exhaustion status for a provider
+    superforecasting-agent model                  Select default model
+    superforecasting-agent fallback [list]        Show fallback provider chain
+    superforecasting-agent fallback add           Add a fallback provider
+    superforecasting-agent fallback remove        Remove a fallback provider from the chain
+    superforecasting-agent config                 View configuration
+    superforecasting-agent config edit            Edit config in $EDITOR
+    superforecasting-agent config set model gpt-4 Set a config value
+    superforecasting-agent gateway                Run messaging gateway
+    superforecasting-agent -s forecasting,research
+    superforecasting-agent -w                     Start in isolated git worktree
+    superforecasting-agent gateway install        Install gateway background service
+    superforecasting-agent sessions list          List past sessions
+    superforecasting-agent sessions browse        Interactive session picker
+    superforecasting-agent sessions rename ID T   Rename/title a session
+    superforecasting-agent logs                   View agent.log (last 50 lines)
+    superforecasting-agent logs -f                Follow agent.log in real time
+    superforecasting-agent logs errors            View errors.log
+    superforecasting-agent logs --since 1h        Lines from the last hour
+    superforecasting-agent debug share            Upload debug report for support
+    superforecasting-agent update                 Update to latest version
+    superforecasting-agent dashboard              Start web UI dashboard (port 9119)
+    superforecasting-agent dashboard --stop       Stop running dashboard processes
+    superforecasting-agent dashboard --status     List running dashboard processes
 
 For more help on a command:
-    hermes <command> --help
+    superforecasting-agent <command> --help
 """
 
 
@@ -87,8 +88,8 @@ def build_top_level_parser():
     other subparsers via ``subparsers.add_parser(...)``.
     """
     parser = argparse.ArgumentParser(
-        prog="hermes",
-        description="Hermes Agent - AI assistant with tool-calling capabilities",
+        prog="superforecasting-agent",
+        description="Superforecasting Agent - command-line forecasting desk",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=_EPILOGUE,
     )
@@ -233,8 +234,8 @@ def build_top_level_parser():
     # =========================================================================
     chat_parser = subparsers.add_parser(
         "chat",
-        help="Interactive chat with the agent",
-        description="Start an interactive chat session with Hermes Agent",
+        help="Forecast-scoped interactive chat with the agent",
+        description="Start an interactive chat session scoped to forecasting work",
     )
     chat_parser.add_argument(
         "-q", "--query", help="Single query (non-interactive mode)"

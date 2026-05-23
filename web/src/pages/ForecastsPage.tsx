@@ -1,0 +1,907 @@
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import {
+  Activity,
+  AlertTriangle,
+  BrainCircuit,
+  Database,
+  Gauge,
+  ListChecks,
+  RefreshCw,
+  SquareTerminal,
+  TrendingUp,
+} from "lucide-react";
+import { api } from "@/lib/api";
+import type {
+  ForecastDashboardBacktest,
+  ForecastDashboardCalibration,
+  ForecastDashboardErrorProfile,
+  ForecastDashboardEvidenceStatus,
+  ForecastDashboardLearning,
+  ForecastDashboardLesson,
+  ForecastDashboardQuestion,
+  ForecastDashboardResponse,
+  ForecastDashboardReview,
+} from "@/lib/api";
+import { Button } from "@nous-research/ui/ui/components/button";
+import { Spinner } from "@nous-research/ui/ui/components/spinner";
+import { Badge } from "@nous-research/ui/ui/components/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { usePageHeader } from "@/contexts/usePageHeader";
+
+const EVIDENCE_IMPORTS = [
+  {
+    command: "forecast sources",
+    label: "Discover",
+  },
+  {
+    command: 'forecast import gdelt "<query>" --question <id>',
+    label: "News",
+  },
+  {
+    command: 'forecast import owid <slug> --entity "<entity>" --question <id>',
+    label: "Public data",
+  },
+  {
+    command: "forecast import eia <series-id-or-api-url> --question <id>",
+    label: "Energy",
+  },
+  {
+    command: "forecast import treasury <dataset-path-or-api-url> --question <id>",
+    label: "Fiscal",
+  },
+  {
+    command: "forecast import stooq <symbol-or-csv-url> --question <id>",
+    label: "Market data",
+  },
+  {
+    command: "forecast import wikipediapageviews <project>/<article> --question <id>",
+    label: "Attention",
+  },
+  {
+    command: "forecast import githubissues <owner/repo> --question <id>",
+    label: "Issues",
+  },
+  {
+    command: 'forecast import hackernews "<query>" --question <id>',
+    label: "HN",
+  },
+  {
+    command: 'forecast import reddit "<query>" --question <id>',
+    label: "Reddit",
+  },
+  {
+    command: "forecast import clinicaltrials <query-or-NCT-id> --question <id>",
+    label: "Trials",
+  },
+  {
+    command: "forecast import openfda <query-or-application-number> --question <id>",
+    label: "FDA",
+  },
+  {
+    command: "forecast import openmeteo <lat,lon> --question <id>",
+    label: "Weather",
+  },
+  {
+    command: 'forecast import usgs "<query>" --question <id>',
+    label: "Geophysical",
+  },
+  {
+    command: 'forecast import eonet "<query-or-category>" --question <id>',
+    label: "Hazards",
+  },
+  {
+    command: 'forecast import nws "<area-or-point-or-query>" --question <id>',
+    label: "Alerts",
+  },
+  {
+    command: 'forecast import nvd "<keyword-or-CVE>" --question <id>',
+    label: "Security",
+  },
+  {
+    command: 'forecast import cisakev "<keyword-or-CVE-or-all>" --question <id>',
+    label: "Exploited",
+  },
+  {
+    command: 'forecast import federalregister "<query>" --question <id>',
+    label: "Policy",
+  },
+  {
+    command: "forecast watch add --question <id> <adapter>:<source>",
+    label: "Watch",
+  },
+];
+
+type FocusedForecastRow = ForecastDashboardQuestion | ForecastDashboardReview;
+
+function formatProbability(
+  value: ForecastDashboardQuestion["probability"] | ForecastDashboardReview["probability"],
+): string {
+  if (typeof value === "number") return value.toFixed(3);
+  if (value && typeof value === "object") return JSON.stringify(value);
+  if (typeof value === "string") return value;
+  return "-";
+}
+
+function formatDelta(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "-";
+  const sign = value >= 0 ? "+" : "";
+  return `${sign}${value.toFixed(3)}`;
+}
+
+function formatDate(value?: string | null): string {
+  if (!value) return "-";
+  try {
+    return new Date(value).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return value;
+  }
+}
+
+function formatMetric(value?: number | null): string {
+  if (value === null || value === undefined) return "-";
+  return value.toFixed(6);
+}
+
+function formatBacktestWins(row: ForecastDashboardBacktest): string {
+  return `${row.paired_agent_wins ?? 0}/${row.paired_baseline_wins ?? 0}/${row.paired_ties ?? 0}`;
+}
+
+function formatBacktestSources(row: ForecastDashboardBacktest): string {
+  return (row.probability_sources?.length ? row.probability_sources : ["dataset"]).join(",");
+}
+
+function formatBacktestClaim(row: ForecastDashboardBacktest): string {
+  if (row.claim_status?.verdict === "benchmark_replay_only") return "replay";
+  return row.claim_status?.verdict?.replaceAll("_", " ") || "-";
+}
+
+function formatVerdict(value?: string): string {
+  return value?.replaceAll("_", " ") || "-";
+}
+
+function formatErrorScope(row: ForecastDashboardErrorProfile): string {
+  const base = row.domain || "global";
+  const topic = row.topic ? `/${row.topic}` : "";
+  const questionType = row.question_type ? `:${row.question_type}` : "";
+  return `${base}${topic}${questionType}`;
+}
+
+function formatLessonScope(row: ForecastDashboardLesson): string {
+  return `${row.scope_type || "global"}:${row.scope_ref || "*"}`;
+}
+
+function focusedForecast(
+  questions: ForecastDashboardQuestion[],
+  reviewQueue: ForecastDashboardReview[],
+): FocusedForecastRow | undefined {
+  return reviewQueue.find((row) => row.id) ?? questions.find((row) => row.id);
+}
+
+function focusedForecastCommands(row: FocusedForecastRow) {
+  return [
+    {
+      command: `forecast show ${row.id}`,
+      label: "Show",
+    },
+    {
+      command: `forecast research ${row.id}`,
+      label: "Research",
+    },
+    {
+      command: `forecast update ${row.id} --probability <0-1>`,
+      label: "Update",
+    },
+    {
+      command: `forecast resolve ${row.id} --outcome <value> --source <url>`,
+      label: "Resolve",
+    },
+  ];
+}
+
+function ForecastTable({ rows }: { rows: ForecastDashboardQuestion[] }) {
+  if (rows.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-sm text-muted-foreground">
+          No active forecasts.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Activity className="h-5 w-5 text-muted-foreground" />
+          <CardTitle className="text-base">Active Forecasts</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-xs text-muted-foreground">
+                <th className="py-2 pr-4 text-left font-medium">Question</th>
+                <th className="px-4 py-2 text-right font-medium">P(now)</th>
+                <th className="px-4 py-2 text-left font-medium">As of</th>
+                <th className="px-4 py-2 text-right font-medium">Delta</th>
+                <th className="px-4 py-2 text-right font-medium">Confidence</th>
+                <th className="px-4 py-2 text-left font-medium">Close</th>
+                <th className="px-4 py-2 text-right font-medium">Evidence</th>
+                <th className="px-4 py-2 text-right font-medium">Baselines</th>
+                <th className="px-4 py-2 text-right font-medium">Assumptions</th>
+                <th className="py-2 pl-4 text-right font-medium">Alerts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr
+                  key={row.id}
+                  className="border-b border-border/50 transition-colors hover:bg-secondary/20"
+                >
+                  <td className="max-w-[28rem] py-2 pr-4">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <span className="truncate font-medium text-foreground">
+                        {row.title}
+                      </span>
+                      <span className="font-mono-ui text-[11px] text-muted-foreground">
+                        {row.id}
+                        {row.domain ? ` · ${row.domain}` : ""}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono-ui text-foreground">
+                    {formatProbability(row.probability)}
+                  </td>
+                  <td className="px-4 py-2 text-muted-foreground">
+                    {formatDate(row.as_of)}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                    {formatDelta(row.delta)}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                    {row.confidence == null ? "-" : row.confidence.toFixed(2)}
+                  </td>
+                  <td className="px-4 py-2 text-muted-foreground">
+                    {formatDate(row.close_time)}
+                  </td>
+                  <td className="px-4 py-2 text-right text-muted-foreground">
+                    {row.evidence_count}
+                  </td>
+                  <td className="px-4 py-2 text-right text-muted-foreground">
+                    {row.baseline_count}
+                  </td>
+                  <td className="px-4 py-2 text-right text-muted-foreground">
+                    {row.open_assumption_count}
+                    {row.stale_assumption_count > 0 && (
+                      <span className="text-amber-300">
+                        {" "}
+                        / {row.stale_assumption_count}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2 pl-4 text-right">
+                    {row.open_alert_count > 0 ? (
+                      <Badge tone="warning" className="text-[10px]">
+                        {row.open_alert_count}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">0</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function FocusedActionsPanel({
+  questions,
+  reviewQueue,
+}: {
+  questions: ForecastDashboardQuestion[];
+  reviewQueue: ForecastDashboardReview[];
+}) {
+  const row = focusedForecast(questions, reviewQueue);
+  if (!row) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <SquareTerminal className="h-5 w-5 text-muted-foreground" />
+          <CardTitle className="text-base">Focused Actions</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-4 flex min-w-0 flex-col gap-1 text-sm">
+          <span className="truncate font-medium text-foreground">{row.title}</span>
+          <span className="font-mono-ui text-[11px] text-muted-foreground">
+            {row.id}
+            {row.domain ? ` · ${row.domain}` : ""}
+          </span>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {focusedForecastCommands(row).map((item) => (
+            <div
+              key={item.label}
+              className="flex min-w-0 items-start gap-3 border-t border-border/50 pt-3 text-sm first:border-t-0 first:pt-0 lg:border-t-0 lg:pt-0"
+            >
+              <Badge tone="secondary" className="mt-0.5 shrink-0 text-[10px]">
+                {item.label}
+              </Badge>
+              <code className="min-w-0 break-all font-mono-ui text-xs text-muted-foreground">
+                {item.command}
+              </code>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BacktestTable({ rows }: { rows: ForecastDashboardBacktest[] }) {
+  if (rows.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <TrendingUp className="h-5 w-5 text-muted-foreground" />
+          <CardTitle className="text-base">Recent Backtests</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-xs text-muted-foreground">
+                <th className="py-2 pr-4 text-left font-medium">Dataset</th>
+                <th className="px-4 py-2 text-right font-medium">Cases</th>
+                <th className="px-4 py-2 text-left font-medium">Source</th>
+                <th className="px-4 py-2 text-right font-medium">Agent Brier</th>
+                <th className="px-4 py-2 text-left font-medium">Best Baseline</th>
+                <th className="px-4 py-2 text-right font-medium">Edge</th>
+                <th className="px-4 py-2 text-right font-medium">W/L/T</th>
+                <th className="px-4 py-2 text-right font-medium">Claim</th>
+                <th className="py-2 pl-4 text-right font-medium">Leakage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id} className="border-b border-border/50">
+                  <td className="max-w-[22rem] py-2 pr-4">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <span className="truncate font-medium text-foreground">
+                        {row.dataset}
+                      </span>
+                      <span className="font-mono-ui text-[11px] text-muted-foreground">
+                        {row.id}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                    {row.case_count}
+                  </td>
+                  <td className="px-4 py-2 text-muted-foreground">
+                    {formatBacktestSources(row)}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono-ui text-foreground">
+                    {formatMetric(row.agent_mean_brier)}
+                  </td>
+                  <td className="px-4 py-2 text-muted-foreground">
+                    {row.best_baseline
+                      ? `${row.best_baseline} ${formatMetric(row.best_baseline_brier)}`
+                      : "-"}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                    {formatDelta(row.agent_edge)}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                    {formatBacktestWins(row)}
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <Badge
+                      tone={row.claim_status?.can_claim_live_superforecasting ? "success" : "secondary"}
+                      className="text-[10px]"
+                    >
+                      {formatBacktestClaim(row)}
+                    </Badge>
+                  </td>
+                  <td className="py-2 pl-4 text-right">
+                    <Badge tone={row.leakage_checks_passed ? "secondary" : "warning"} className="text-[10px]">
+                      {row.leakage_checks_passed ? "ok" : "review"}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CalibrationPanel({ calibration }: { calibration?: ForecastDashboardCalibration }) {
+  if (!calibration) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Gauge className="h-5 w-5 text-muted-foreground" />
+          <CardTitle className="text-base">Calibration</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-4 text-sm sm:grid-cols-4">
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Eligible Scores
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {calibration.count}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Mean Brier
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {formatMetric(calibration.mean_brier)}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Log Score
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {formatMetric(calibration.mean_log_score)}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Sharpness
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {formatMetric(calibration.mean_sharpness)}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LearningPanel({ learning }: { learning?: ForecastDashboardLearning }) {
+  if (!learning) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <BrainCircuit className="h-5 w-5 text-muted-foreground" />
+          <CardTitle className="text-base">Learning Memory</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-4 text-sm sm:grid-cols-4">
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Lessons
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {learning.total_lessons}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Active
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {learning.active_lessons}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Tentative
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {learning.tentative_lessons}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Invalidated
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {learning.invalidated_lessons}
+            </div>
+          </div>
+        </div>
+
+        {learning.top_error_profiles.length > 0 && (
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-xs text-muted-foreground">
+                  <th className="py-2 pr-4 text-left font-medium">Error Scope</th>
+                  <th className="px-4 py-2 text-right font-medium">N</th>
+                  <th className="px-4 py-2 text-right font-medium">Mean Brier</th>
+                  <th className="py-2 pl-4 text-left font-medium">Recurring Errors</th>
+                </tr>
+              </thead>
+              <tbody>
+                {learning.top_error_profiles.slice(0, 5).map((row) => (
+                  <tr key={row.id || formatErrorScope(row)} className="border-b border-border/50">
+                    <td className="max-w-[18rem] py-2 pr-4 font-mono-ui text-xs text-foreground">
+                      <span className="line-clamp-2">{formatErrorScope(row)}</span>
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                      {row.sample_count}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                      {formatMetric(row.mean_brier)}
+                    </td>
+                    <td className="max-w-[24rem] py-2 pl-4 text-muted-foreground">
+                      <span className="line-clamp-2">
+                        {row.recurring_errors.length > 0
+                          ? row.recurring_errors.join(", ")
+                          : "-"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {learning.recent_lessons.length > 0 && (
+          <div className="mt-5 grid gap-2">
+            {learning.recent_lessons.slice(0, 3).map((row) => (
+              <div
+                key={row.id || `${row.status}:${formatLessonScope(row)}`}
+                className="flex min-w-0 flex-col gap-1 border-t border-border/50 pt-3 text-sm"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone={row.status === "active" ? "success" : "secondary"} className="text-[10px]">
+                    {row.status}
+                  </Badge>
+                  <span className="font-mono-ui text-[11px] text-muted-foreground">
+                    {formatLessonScope(row)}
+                  </span>
+                </div>
+                <p className="line-clamp-2 text-muted-foreground">{row.lesson}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function EvidenceStatusPanel({ evidenceStatus }: { evidenceStatus?: ForecastDashboardEvidenceStatus }) {
+  if (!evidenceStatus) return null;
+
+  const scoreCounts = evidenceStatus.score_counts ?? {};
+  const backtests = evidenceStatus.backtests ?? {};
+  const gaps = evidenceStatus.gaps?.length
+    ? evidenceStatus.gaps.map((gap) => gap.replaceAll("_", " ")).join(", ")
+    : "none";
+  const nextActions = evidenceStatus.next_actions ?? [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Activity className="h-5 w-5 text-muted-foreground" />
+          <CardTitle className="text-base">Evidence Status</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-4 text-sm sm:grid-cols-5">
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Verdict
+            </div>
+            <div className="mt-1 text-sm text-foreground">
+              {formatVerdict(evidenceStatus.verdict)}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Live
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {scoreCounts.live ?? 0}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Agent Protocol
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {backtests.agent_protocol_scored_count ?? 0}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Edge Runs
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {backtests.positive_best_baseline_edge_run_count ?? 0}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Datasets
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {backtests.distinct_dataset_count ?? 0}
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 rounded-md border border-border/70 px-3 py-2 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">Gaps:</span> {gaps}
+        </div>
+        {nextActions.length > 0 && (
+          <div className="mt-3 grid gap-2 text-xs">
+            {nextActions.slice(0, 3).map((item) => (
+              <div
+                key={`${item.requirement_id || "evidence"}:${item.action || ""}`}
+                className="rounded-md border border-border/70 px-3 py-2"
+              >
+                <div className="font-medium text-foreground">
+                  {(item.requirement_id || "evidence").replaceAll("_", " ")}
+                </div>
+                <div className="mt-1 font-mono-ui text-muted-foreground">
+                  {item.action || "forecast readiness"}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="mt-2 font-mono-ui text-xs text-muted-foreground">
+          forecast readiness --json
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReviewQueueTable({ rows }: { rows: ForecastDashboardReview[] }) {
+  if (rows.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <ListChecks className="h-5 w-5 text-muted-foreground" />
+          <CardTitle className="text-base">Review Queue</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-xs text-muted-foreground">
+                <th className="py-2 pr-4 text-left font-medium">Question</th>
+                <th className="px-4 py-2 text-right font-medium">Priority</th>
+                <th className="px-4 py-2 text-right font-medium">P(now)</th>
+                <th className="px-4 py-2 text-left font-medium">As Of</th>
+                <th className="px-4 py-2 text-left font-medium">Reasons</th>
+                <th className="py-2 pl-4 text-left font-medium">Next</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id} className="border-b border-border/50">
+                  <td className="max-w-[24rem] py-2 pr-4">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <span className="truncate font-medium text-foreground">
+                        {row.title}
+                      </span>
+                      <span className="font-mono-ui text-[11px] text-muted-foreground">
+                        {row.id}
+                        {row.domain ? ` · ${row.domain}` : ""}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                    {row.priority}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono-ui text-foreground">
+                    {formatProbability(row.probability)}
+                  </td>
+                  <td className="px-4 py-2 text-muted-foreground">
+                    {formatDate(row.as_of)}
+                  </td>
+                  <td className="max-w-[18rem] px-4 py-2 text-muted-foreground">
+                    <span className="line-clamp-2">
+                      {row.reasons.join(", ")}
+                    </span>
+                  </td>
+                  <td className="max-w-[24rem] py-2 pl-4 font-mono-ui text-xs text-muted-foreground">
+                    <span className="line-clamp-2">{row.next_action}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EvidenceImportsPanel() {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Database className="h-5 w-5 text-muted-foreground" />
+          <CardTitle className="text-base">Evidence Imports</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-3 md:grid-cols-2">
+          {EVIDENCE_IMPORTS.map((item) => (
+            <div
+              key={item.label}
+              className="flex min-w-0 items-start gap-3 border-t border-border/50 pt-3 text-sm first:border-t-0 first:pt-0 md:border-t-0 md:pt-0"
+            >
+              <Badge tone="secondary" className="mt-0.5 shrink-0 text-[10px]">
+                {item.label}
+              </Badge>
+              <code className="min-w-0 break-all font-mono-ui text-xs text-muted-foreground">
+                {item.command}
+              </code>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function ForecastsPage() {
+  const [data, setData] = useState<ForecastDashboardResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { setAfterTitle, setEnd } = usePageHeader();
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    api
+      .getForecastDashboard()
+      .then(setData)
+      .catch((err) => setError(String(err)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useLayoutEffect(() => {
+    setAfterTitle(
+      loading ? (
+        <Spinner className="shrink-0 text-base text-primary" />
+      ) : data ? (
+        <Badge tone="secondary" className="text-[10px]">
+          {data.active_count} active
+        </Badge>
+      ) : null,
+    );
+    setEnd(
+      <Button
+        type="button"
+        size="sm"
+        outlined
+        onClick={load}
+        disabled={loading}
+        prefix={loading ? <Spinner /> : <RefreshCw />}
+      >
+        Refresh
+      </Button>,
+    );
+    return () => {
+      setAfterTitle(null);
+      setEnd(null);
+    };
+  }, [data, load, loading, setAfterTitle, setEnd]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <div className="flex flex-col gap-6">
+      {error && (
+        <Card>
+          <CardContent className="flex items-center gap-2 py-4 text-sm text-destructive">
+            <AlertTriangle className="h-4 w-4" />
+            {error}
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardContent className="flex items-center justify-between py-5">
+            <div>
+              <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                Active
+              </div>
+              <div className="mt-1 font-mono-ui text-2xl text-foreground">
+                {data?.active_count ?? "-"}
+              </div>
+            </div>
+            <TrendingUp className="h-5 w-5 text-muted-foreground" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center justify-between py-5">
+            <div>
+              <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                Alerts
+              </div>
+              <div className="mt-1 font-mono-ui text-2xl text-foreground">
+                {data?.open_alert_count ?? "-"}
+              </div>
+            </div>
+            <AlertTriangle className="h-5 w-5 text-muted-foreground" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center justify-between py-5">
+            <div>
+              <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                Reviews
+              </div>
+              <div className="mt-1 font-mono-ui text-2xl text-foreground">
+                {data?.review_queue_count ?? "-"}
+              </div>
+            </div>
+            <ListChecks className="h-5 w-5 text-muted-foreground" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center justify-between py-5">
+            <div>
+              <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                Brier
+              </div>
+              <div className="mt-1 font-mono-ui text-2xl text-foreground">
+                {formatMetric(data?.calibration?.mean_brier)}
+              </div>
+            </div>
+            <Gauge className="h-5 w-5 text-muted-foreground" />
+          </CardContent>
+        </Card>
+      </div>
+
+      <ForecastTable rows={data?.questions ?? []} />
+      <ReviewQueueTable rows={data?.review_queue ?? []} />
+      <FocusedActionsPanel
+        questions={data?.questions ?? []}
+        reviewQueue={data?.review_queue ?? []}
+      />
+      <CalibrationPanel calibration={data?.calibration} />
+      <LearningPanel learning={data?.learning} />
+      <EvidenceStatusPanel evidenceStatus={data?.evidence_status} />
+      <BacktestTable rows={data?.recent_backtests ?? []} />
+      <EvidenceImportsPanel />
+    </div>
+  );
+}

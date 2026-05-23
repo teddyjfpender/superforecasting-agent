@@ -2,261 +2,365 @@
 sidebar_position: 2
 ---
 
-# Profiles: Running Multiple Agents
+# Profiles: Forecast Workspaces
 
-Run multiple independent Hermes agents on the same machine — each with its own config, API keys, memory, sessions, skills, and gateway state.
+Run multiple independent Superforecasting Agent profiles on the same machine. Each profile has its own config, provider keys, forecast ledger, memory files, sessions, skills, cron jobs, logs, and gateway state.
 
-## What are profiles?
+Use profiles when you want separate forecasting workspaces: for example `macro`, `elections`, `markets`, `biosecurity`, or `client-a`. Keeping those ledgers separate makes calibration, domain error profiles, scheduled self-checks, and source credentials easier to audit.
 
-A profile is a separate Hermes home directory. Each profile gets its own directory containing its own `config.yaml`, `.env`, `SOUL.md`, memories, sessions, skills, cron jobs, and state database. Profiles let you run separate agents for different purposes — a coding assistant, a personal bot, a research agent — without mixing up Hermes state.
+## What Profiles Are
 
-When you create a profile, it automatically becomes its own command. Create a profile called `coder` and you immediately have `coder chat`, `coder setup`, `coder gateway start`, etc.
+A profile is a separate agent home directory. New installs use:
 
-## Quick start
-
-```bash
-hermes profile create coder       # creates profile + "coder" command alias
-coder setup                       # configure API keys and model
-coder chat                        # start chatting
+```text
+~/.superforecasting-agent/profiles/<name>/
 ```
 
-That's it. `coder` is now its own Hermes profile with its own config, memory, and state.
+Existing legacy profiles under `~/.hermes/profiles/<name>/` remain supported during the fork transition. Internally, inherited modules still receive a bridged `HERMES_HOME`, but new docs and commands should prefer `superforecasting-agent`, `forecast`, `SUPERFORECASTING_AGENT_HOME`, and `~/.superforecasting-agent`.
 
-## Creating a profile
+Each profile owns:
+
+- `config.yaml` - model, provider, toolsets, terminal, cron, and gateway settings.
+- `.env` - API keys and messaging tokens.
+- `SOUL.md` - profile-specific instructions.
+- `forecasting/forecasting.db` - the scoreable forecast ledger.
+- `forecasting/evidence_snapshots/` and `forecasting/resolution_snapshots/` - audit snapshots.
+- `memories/` - ordinary memory files; forecast learning should still be provenance-linked to the ledger.
+- `sessions/`, `skills/`, `cron/`, `logs/`, and gateway state.
+
+When you create a profile, the CLI can also create a shell alias with the same name. A profile called `macro` can run `macro forecast status`, `macro model`, `macro gateway start`, and other commands.
+
+## Quick Start
+
+```bash
+superforecasting-agent profile create macro \
+  --description "Macroeconomic forecasts using FRED, BLS, World Bank, market priors, and horizon-aware calibration."
+
+macro model
+macro forecast status
+macro forecast new "Will US CPI year-over-year be below 3.0% in December 2026?" \
+  --criteria "Resolved from the BLS CPI-U 12-month percentage change for December 2026." \
+  --close-time 2026-12-31T23:59:59Z \
+  --resolution-time 2027-01-15T23:59:59Z
+```
+
+`macro` is now a separate forecast desk with its own ledger, calibration history, scheduled reviews, and provider settings.
+
+## Creating Profiles
 
 ### Blank profile
 
 ```bash
-hermes profile create mybot
+superforecasting-agent profile create markets
 ```
 
-Creates a fresh profile with bundled skills seeded. Run `mybot setup` to configure API keys, model, and gateway tokens.
+Creates a fresh profile with bundled skills seeded. Run `markets setup` or `markets model` to configure provider keys, models, tools, and gateway tokens.
 
-If you plan to use this profile as a kanban worker (or want the kanban orchestrator to route work to it), pass `--description "<role>"` at create time so the orchestrator knows what it's good at:
+For forecast routing and kanban decomposition, pass a role description when creating the profile:
 
 ```bash
-hermes profile create researcher --description "Reads source code and external docs, writes findings."
+superforecasting-agent profile create policy \
+  --description "Tracks legislation, regulatory filings, public statements, and policy-resolution criteria."
 ```
 
-You can also set or auto-generate the description later with `hermes profile describe` — see the [Kanban guide](./features/kanban#auto-vs-manual-orchestration) for the full routing model.
-
-### Clone config only (`--clone`)
+You can also set or auto-generate the description later with:
 
 ```bash
-hermes profile create work --clone
+superforecasting-agent profile describe policy --text "Policy and legislative forecasts."
+superforecasting-agent profile describe policy --auto
 ```
 
-Copies your current profile's `config.yaml`, `.env`, and `SOUL.md` into the new profile. Same API keys and model, but fresh sessions and memory. Edit `~/.hermes/profiles/work/.env` for different API keys, or `~/.hermes/profiles/work/SOUL.md` for a different personality.
+See the [Kanban guide](./features/kanban#auto-vs-manual-orchestration) for the routing model.
+
+### Empty profile without bundled skills
+
+```bash
+superforecasting-agent profile create narrow-risk --no-skills
+```
+
+Use this for tightly scoped worker profiles where you want minimal skill surface area. The profile writes a `.no-bundled-skills` marker so `superforecasting-agent update` does not re-seed bundled skills later.
+
+### Clone config and identity (`--clone`)
+
+```bash
+superforecasting-agent profile create elections --clone
+```
+
+Copies the current profile's `config.yaml`, `.env`, `SOUL.md`, and curated `MEMORY.md` / `USER.md` files. It does not copy the full session history or runtime state, so the new profile starts with fresh sessions and a fresh forecast ledger unless you explicitly copy ledger data yourself.
+
+Edit profile-specific files under:
+
+```text
+~/.superforecasting-agent/profiles/elections/.env
+~/.superforecasting-agent/profiles/elections/SOUL.md
+```
+
+Legacy installations may use the same layout under `~/.hermes/profiles/elections/`.
 
 ### Clone everything (`--clone-all`)
 
 ```bash
-hermes profile create backup --clone-all
+superforecasting-agent profile create backup --clone-all
 ```
 
-Copies **everything** — config, API keys, personality, all memories, full session history, skills, cron jobs, plugins. A complete snapshot. Useful for backups or forking an agent that already has context.
+Copies config, API keys, profile instructions, memory, sessions, skills, cron jobs, plugins, and most state from the source profile. Use this for backups or forking an already-trained forecast workspace. Runtime process files such as gateway PIDs are stripped.
 
 ### Clone from a specific profile
 
 ```bash
-hermes profile create work --clone --clone-from coder
+superforecasting-agent profile create policy-copy --clone --clone-from policy
 ```
 
 :::tip Honcho memory + profiles
-When Honcho is enabled, `--clone` automatically creates a dedicated AI peer for the new profile while sharing the same user workspace. Each profile builds its own observations and identity. See [Honcho -- Multi-agent / Profiles](./features/memory-providers.md#honcho) for details.
+When Honcho is enabled, `--clone` creates a dedicated AI peer for the new profile while sharing the same user workspace. Each profile builds its own observations and identity. See [Honcho -- Multi-agent / Profiles](./features/memory-providers.md#honcho) for details.
 :::
 
-## Using profiles
+## Using Profiles
 
 ### Command aliases
 
-Every profile automatically gets a command alias at `~/.local/bin/<name>`:
+Every profile can get a command alias at `~/.local/bin/<name>`:
 
 ```bash
-coder chat                    # chat with the coder agent
-coder setup                   # configure coder's settings
-coder gateway start           # start coder's gateway
-coder doctor                  # check coder's health
-coder skills list             # list coder's skills
-coder config set model.default anthropic/claude-sonnet-4
+macro                         # open the macro forecast desk
+macro forecast status          # show macro ledger status
+macro forecast review --last 30d
+macro model                    # configure macro's model/provider
+macro gateway start            # start macro's gateway
+macro config set model.default anthropic/claude-sonnet-4-6
 ```
 
-The alias works with every hermes subcommand — it's just `hermes -p <name>` under the hood.
+The wrapper prefers `superforecasting-agent -p <name>` and falls back to the legacy `hermes -p <name>` command only for compatibility.
 
 ### The `-p` flag
 
-You can also target a profile explicitly with any command:
+Target a profile explicitly from the main command:
 
 ```bash
-hermes -p coder chat
-hermes --profile=coder doctor
-hermes chat -p coder -q "hello"    # works in any position
+superforecasting-agent -p macro forecast status
+superforecasting-agent --profile=policy doctor
+superforecasting-agent forecast review -p markets --last 14d
 ```
 
-### Sticky default (`hermes profile use`)
+### Sticky default
 
 ```bash
-hermes profile use coder
-hermes chat                   # now targets coder
-hermes tools                  # configures coder's tools
-hermes profile use default    # switch back
+superforecasting-agent profile use macro
+superforecasting-agent forecast status    # now targets macro
+superforecasting-agent tools              # configures macro's tools
+superforecasting-agent profile use default
 ```
 
-Sets a default so plain `hermes` commands target that profile. Like `kubectl config use-context`.
+This is like `kubectl config use-context`: plain commands target the sticky profile until you switch back.
 
 ### Knowing where you are
 
-The CLI always shows which profile is active:
+The CLI shows the active profile in high-attention surfaces:
 
-- **Prompt**: `coder ❯` instead of `❯`
-- **Banner**: Shows `Profile: coder` on startup
-- **`hermes profile`**: Shows current profile name, path, model, gateway status
+- Prompt: profile-aware prompt labels.
+- Banner/status: active profile name, path, model, and gateway status.
+- `superforecasting-agent profile`: current profile status.
 
-## Profiles vs workspaces vs sandboxing
+For ledger-specific confirmation, run:
+
+```bash
+forecast status
+superforecasting-agent -p macro forecast status
+```
+
+The status output includes the active ledger path.
+
+## Profiles vs Ledgers, Sessions, and Memory
+
+Profiles isolate whole agent homes. Inside a profile:
+
+- The forecast ledger stores scoreable questions, snapshots, evidence, assumptions, model runs, resolutions, scores, postmortems, calibration lessons, watched sources, and scheduled self-check state.
+- Sessions store conversation continuity only. They are not the durable learning substrate.
+- Generic memory files can store useful preferences or lessons, but forecast-relevant learning should cite ledger artifacts.
+
+If you want one shared calibration history across domains, use one profile and tag forecasts by `--domain` / `--topic`. If you want separate calibration histories, secrets, cron jobs, and gateway state, use separate profiles.
+
+## Profiles vs Workspaces vs Sandboxing
 
 Profiles are often confused with workspaces or sandboxes, but they are different things:
 
-- A **profile** gives Hermes its own state directory: `config.yaml`, `.env`, `SOUL.md`, sessions, memory, logs, cron jobs, and gateway state.
-- A **workspace** or **working directory** is where terminal commands start. That is controlled separately by `terminal.cwd`.
-- A **sandbox** is what limits filesystem access. Profiles do **not** sandbox the agent.
+- A profile gives Superforecasting Agent its own state directory.
+- A workspace or working directory is where terminal commands start. That is controlled by `terminal.cwd`.
+- A sandbox limits filesystem access. Profiles do not sandbox the agent.
 
 On the default `local` terminal backend, the agent still has the same filesystem access as your user account. A profile does not stop it from accessing folders outside the profile directory.
 
-If you want a profile to start in a specific project folder, set an explicit absolute `terminal.cwd` in that profile's `config.yaml`:
+Set an explicit working directory if a profile should run tools in a specific project:
+
+```bash
+macro config set terminal.cwd /absolute/path/to/research-workspace
+```
+
+Equivalent YAML:
 
 ```yaml
 terminal:
   backend: local
-  cwd: /absolute/path/to/project
+  cwd: /absolute/path/to/research-workspace
 ```
 
-Using `cwd: "."` on the local backend means "the directory Hermes was launched from", not "the profile directory".
+Using `cwd: "."` on the local backend means "the directory the command was launched from", not "the profile directory".
 
 Also note:
 
-- `SOUL.md` can guide the model, but it does not enforce a workspace boundary.
-- Changes to `SOUL.md` take effect cleanly on a new session. Existing sessions may still be using the old prompt state.
-- Asking the model "what directory are you in?" is not a reliable isolation test. If you need a predictable starting directory for tools, set `terminal.cwd` explicitly.
+- `SOUL.md` can guide the model, but it does not enforce workspace boundaries.
+- Changes to `SOUL.md` take effect cleanly in new sessions. Existing sessions may still use old prompt state.
+- Asking the model which directory it is in is not a reliable isolation test. If tool start location matters, set `terminal.cwd`.
 
-## Running gateways
+## Running Gateways
 
-Each profile runs its own gateway as a separate process with its own bot token:
+Each profile can run its own gateway process and bot token:
 
 ```bash
-coder gateway start           # starts coder's gateway
-assistant gateway start       # starts assistant's gateway (separate process)
+macro gateway start
+policy gateway start
 ```
 
 ### Different bot tokens
 
-Each profile has its own `.env` file. Configure a different Telegram/Discord/Slack bot token in each:
+Each profile has its own `.env`. Configure separate Telegram, Discord, Slack, WhatsApp, or Signal tokens per profile:
 
 ```bash
-# Edit coder's tokens
-nano ~/.hermes/profiles/coder/.env
-
-# Edit assistant's tokens
-nano ~/.hermes/profiles/assistant/.env
+nano ~/.superforecasting-agent/profiles/macro/.env
+nano ~/.superforecasting-agent/profiles/policy/.env
 ```
+
+Legacy profile homes under `~/.hermes/profiles/<name>/.env` still work.
 
 ### Safety: token locks
 
-If two profiles accidentally use the same bot token, the second gateway will be blocked with a clear error naming the conflicting profile. Supported for Telegram, Discord, Slack, WhatsApp, and Signal.
+If two profiles accidentally use the same bot token, the second gateway is blocked with a clear error naming the conflicting profile. This is supported for Telegram, Discord, Slack, WhatsApp, and Signal.
 
 ### Persistent services
 
 ```bash
-coder gateway install         # creates hermes-gateway-coder systemd/launchd service
-assistant gateway install     # creates hermes-gateway-assistant service
+macro gateway install
+policy gateway install
 ```
 
-Each profile gets its own service name. They run independently.
+Each profile gets its own service name and runs independently. Some systemd/launchd names still include inherited `hermes-gateway-<profile>` identifiers for compatibility with existing services.
 
-## Configuring profiles
+## Configuring Profiles
 
 Each profile has its own:
 
-- **`config.yaml`** — model, provider, toolsets, all settings
-- **`.env`** — API keys, bot tokens
-- **`SOUL.md`** — personality and instructions
+- `config.yaml` - model, provider, toolsets, terminal, cron, and gateway settings.
+- `.env` - API keys and bot tokens.
+- `SOUL.md` - profile role and instructions.
 
 ```bash
-coder config set model.default anthropic/claude-sonnet-4
-echo "You are a focused coding assistant." > ~/.hermes/profiles/coder/SOUL.md
+macro config set model.provider anthropic
+macro config set model.default claude-sonnet-4-6
+macro config set terminal.cwd /absolute/path/to/macro-research
 ```
 
-If you want this profile to work in a specific project by default, also set its own `terminal.cwd`:
+For profile identity, keep the instructions forecasting-specific:
 
 ```bash
-coder config set terminal.cwd /absolute/path/to/project
+nano ~/.superforecasting-agent/profiles/macro/SOUL.md
 ```
+
+A useful profile instruction says what evidence the profile should prioritize, how it should treat stale data, and what domain-specific errors it should watch for. It should not replace the forecast ledger's scoring and postmortem loop.
 
 ## Updating
 
-`hermes update` pulls code once (shared) and syncs new bundled skills to **all** profiles automatically:
+`superforecasting-agent update` pulls code once and syncs new bundled skills to all profiles automatically:
 
 ```bash
-hermes update
-# → Code updated (12 commits)
-# → Skills synced: default (up to date), coder (+2 new), assistant (+2 new)
+superforecasting-agent update
+# Code updated
+# Skills synced: default (up to date), macro (+2 new), policy (+1 new)
 ```
 
-User-modified skills are never overwritten.
+User-modified skills are not overwritten. Profiles created with `--no-skills` are skipped during bundled skill sync.
 
-## Managing profiles
+## Managing Profiles
 
 ```bash
-hermes profile list           # show all profiles with status
-hermes profile show coder     # detailed info for one profile
-hermes profile rename coder dev-bot   # rename (updates alias + service)
-hermes profile export coder   # export to coder.tar.gz
-hermes profile import coder.tar.gz   # import from archive
+superforecasting-agent profile list
+superforecasting-agent profile show macro
+superforecasting-agent profile rename macro macro-research
+superforecasting-agent profile export macro
+superforecasting-agent profile import macro.tar.gz
 ```
 
-## Deleting a profile
+## Deleting a Profile
 
 ```bash
-hermes profile delete coder
+superforecasting-agent profile delete macro
 ```
 
-This stops the gateway, removes the systemd/launchd service, removes the command alias, and deletes all profile data. You'll be asked to type the profile name to confirm.
+This stops the gateway, removes the systemd/launchd service, removes the command alias, and deletes all profile data. You will be asked to type the profile name to confirm.
 
-Use `--yes` to skip confirmation: `hermes profile delete coder --yes`
+Use `--yes` to skip confirmation:
+
+```bash
+superforecasting-agent profile delete macro --yes
+```
 
 :::note
-You cannot delete the default profile (`~/.hermes`). To remove everything, use `hermes uninstall`.
+You cannot delete the default profile (`~/.superforecasting-agent`, or a reused legacy `~/.hermes` home). To remove everything, use `superforecasting-agent uninstall`.
 :::
 
-## Tab completion
+## Tab Completion
 
 ```bash
 # Bash
-eval "$(hermes completion bash)"
+eval "$(superforecasting-agent completion bash)"
 
 # Zsh
-eval "$(hermes completion zsh)"
+eval "$(superforecasting-agent completion zsh)"
 ```
 
-Add the line to your `~/.bashrc` or `~/.zshrc` for persistent completion. Completes profile names after `-p`, profile subcommands, and top-level commands.
+Add the line to your `~/.bashrc` or `~/.zshrc` for persistent completion. Completion includes profile names after `-p`, profile subcommands, and top-level commands.
 
-## How it works
+## How It Works
 
-Profiles use the `HERMES_HOME` environment variable. When you run `coder chat`, the wrapper script sets `HERMES_HOME=~/.hermes/profiles/coder` before launching hermes. Since 119+ files in the codebase resolve paths via `get_hermes_home()`, Hermes state automatically scopes to the profile's directory — config, sessions, memory, skills, state database, gateway PID, logs, and cron jobs.
+New default profiles live under `~/.superforecasting-agent`. Existing `~/.hermes` installs are detected and reused during compatibility. Named profiles live under `<agent-home>/profiles/<name>/`.
 
-This is separate from terminal working directory. Tool execution starts from `terminal.cwd` (or the launch directory when `cwd: "."` on the local backend), not automatically from `HERMES_HOME`.
-
-The default profile is simply `~/.hermes` itself. No migration needed — existing installs work identically.
-
-## Sharing profiles as distributions
-
-A profile you built on one machine can be packaged as a **git repository** and installed with one command on another machine — your own workstation, a teammate's laptop, or a community user's environment. The shared package includes the SOUL, config, skills, cron jobs, and MCP connections. Credentials, memories, and sessions stay per-machine.
+When you run a profile alias such as `macro forecast status`, the wrapper executes:
 
 ```bash
-# Install a whole agent from a git repo
-hermes profile install github.com/you/research-bot --alias
-
-# Update later when the author ships a new version (keeps your memories + .env)
-hermes profile update research-bot
+superforecasting-agent -p macro forecast status
 ```
 
-See **[Profile Distributions: Share a Whole Agent](./profile-distributions.md)** for the full guide — authoring, publishing, update semantics, security model, and use cases.
+The startup path resolves the profile directory and sets the inherited internal home variable so modules that still call `get_hermes_home()` read and write inside the profile. Forecast-native env vars are preferred:
+
+- `SUPERFORECASTING_AGENT_HOME`
+- `FORECAST_HOME`
+- `HERMES_HOME` as legacy compatibility
+
+This is separate from terminal working directory. Tool execution starts from `terminal.cwd`, or from the command launch directory when `cwd: "."` on the local backend.
+
+The default profile is the root agent home itself:
+
+```text
+~/.superforecasting-agent/
+```
+
+or, for existing installs:
+
+```text
+~/.hermes/
+```
+
+No migration is required for legacy homes, but new examples should use the fork-native path.
+
+## Sharing Profiles as Distributions
+
+A profile can be packaged as a git repository and installed on another machine. The package can include SOUL instructions, config, skills, cron jobs, and MCP connections. Credentials, memories, sessions, and forecast ledgers should remain per-machine unless you explicitly export them.
+
+```bash
+# Install a whole forecast profile from a git repo
+superforecasting-agent profile install github.com/you/macro-forecast-desk --alias
+
+# Update later when the author ships a new version
+superforecasting-agent profile update macro-forecast-desk
+```
+
+See **[Profile Distributions: Share a Forecast Desk](./profile-distributions.md)** for authoring, publishing, update semantics, security model, and examples.

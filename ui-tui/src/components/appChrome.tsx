@@ -27,7 +27,7 @@ export const padVerb = (verb: string) => `${verb}…`.padEnd(VERB_PAD_LEN, ' ')
 
 // Compact alternates for the `emoji` and `ascii` indicator styles.
 // Each entry is a fixed-width (display-width) glyph.
-const EMOJI_FRAMES = ['⚕ ', '🌀', '🤔', '✨', '🍵', '🔮']
+const EMOJI_FRAMES = ['P ', 'p+', 'p-', 'Δ ', '? ', '∑ ']
 const ASCII_FRAMES = ['|', '/', '-', '\\']
 
 // Faster tick for spinner-style indicators — they read as motion only
@@ -51,7 +51,7 @@ const renderIndicator = (style: IndicatorStyle, tick: number): IndicatorRender =
 
   if (style === 'emoji') {
     return {
-      frame: EMOJI_FRAMES[tick % EMOJI_FRAMES.length] ?? '⚕ ',
+      frame: EMOJI_FRAMES[tick % EMOJI_FRAMES.length] ?? 'P ',
       intervalMs: SPINNER_TICK_MS * 6,
       showVerb: true
     }
@@ -274,6 +274,7 @@ export function StatusRule({
   cwdLabel,
   cols,
   busy,
+  deskStatus,
   status,
   statusColor,
   model,
@@ -309,6 +310,7 @@ export function StatusRule({
           ) : (
             <Text color={statusColor}>{status}</Text>
           )}
+          {deskStatus ? <Text color={t.color.muted}> │ {deskStatus}</Text> : null}
           <Text color={t.color.muted}> │ {modelLabel(model, modelReasoningEffort, modelFast)}</Text>
           {ctxLabel ? <Text color={t.color.muted}> │ {ctxLabel}</Text> : null}
           {bar ? (
@@ -458,6 +460,7 @@ interface StatusRuleProps {
   busy: boolean
   cols: number
   cwdLabel: string
+  deskStatus?: string
   model: string
   modelFast?: boolean
   modelReasoningEffort?: string

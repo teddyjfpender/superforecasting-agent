@@ -1,15 +1,17 @@
 ---
 title: X (Twitter) Search
-description: Search X (Twitter) posts and threads from within the agent using xAI's built-in x_search Responses tool — works with either a SuperGrok OAuth login or an XAI_API_KEY.
+description: Search X posts as forecast evidence using xAI's x_search Responses tool.
 sidebar_label: X (Twitter) Search
 sidebar_position: 7
 ---
 
 # X (Twitter) Search
 
-The `x_search` tool lets the agent search X (Twitter) posts, profiles, and threads directly. It's backed by xAI's built-in `x_search` tool on the Responses API at `https://api.x.ai/v1/responses` — Grok itself runs the search server-side and returns synthesized results with citations to the originating posts.
+The `x_search` tool lets the forecast desk search X (Twitter) posts, profiles, and threads directly. It is backed by xAI's built-in `x_search` tool on the Responses API at `https://api.x.ai/v1/responses`; Grok runs the search server-side and returns synthesized results with citations to originating posts.
 
-**Use this instead of `web_search`** when you specifically want current discussion, reactions, or claims **on X**. For general web pages, keep using `web_search` / `web_extract`.
+Use this instead of `web_search` when a forecast depends on current discussion, reactions, primary claims, or public signals on X. For general web pages, keep using `web_search` and `web_extract`.
+
+For scoreable forecasting work, treat X results as candidate evidence. Import or cite the specific posts in the forecast evidence log before using them to justify a probability update.
 
 ## Authentication
 
@@ -17,41 +19,43 @@ The `x_search` tool lets the agent search X (Twitter) posts, profiles, and threa
 
 | Credential | Source | Setup |
 |------------|--------|-------|
-| **SuperGrok / X Premium+ OAuth** (preferred) | Browser login at `accounts.x.ai`, refreshed automatically | `hermes auth add xai-oauth` — see [xAI Grok OAuth (SuperGrok / X Premium+)](../../guides/xai-grok-oauth.md) |
-| **`XAI_API_KEY`** | Paid xAI API key | Set in `~/.hermes/.env` |
+| **SuperGrok / X Premium+ OAuth** (preferred) | Browser login at `accounts.x.ai`, refreshed automatically | `superforecasting-agent auth add xai-oauth` - see [xAI Grok OAuth (SuperGrok / X Premium+)](../../guides/xai-grok-oauth.md) |
+| **`XAI_API_KEY`** | Paid xAI API key | Set in `~/.superforecasting-agent/.env` |
 
-Both hit the same endpoint with the same payload — the only difference is the bearer token. **When both are configured, SuperGrok OAuth wins** so x_search runs against your subscription quota instead of paid API spend.
+Both hit the same endpoint with the same payload; the only difference is the bearer token. When both are configured, SuperGrok OAuth wins so `x_search` runs against your subscription quota instead of paid API spend.
+
+Legacy `~/.hermes/.env` remains readable during migration.
 
 The tool's `check_fn` runs the xAI credential resolver every time the model's tool list is rebuilt. A `True` return means the bearer is fetchable AND non-empty AND (if it had expired) successfully refreshed. Revoked tokens with a failed refresh hide the tool from the schema; the model simply can't see it.
 
 ## Enabling the tool
 
-Auto-enables when xAI credentials (OAuth token or `XAI_API_KEY`) are present. Disable explicitly via `hermes tools` → Search → x_search if you don't want this.
+Auto-enables when xAI credentials (OAuth token or `XAI_API_KEY`) are present. Disable explicitly through the inherited tools picker if you do not want the forecast desk to expose this source.
 
 ```bash
-hermes tools
-# → 🐦 X (Twitter) Search   (press space to toggle on)
+superforecasting-agent tools
+# -> X (Twitter) Search   (press space to toggle on)
 ```
 
 The picker offers two credential choices:
 
-1. **xAI Grok OAuth (SuperGrok Subscription)** — opens the browser to `accounts.x.ai` if you're not already logged in
-2. **xAI API key** — prompts for `XAI_API_KEY`
+1. **xAI Grok OAuth (SuperGrok Subscription)** - opens the browser to `accounts.x.ai` if you are not already logged in
+2. **xAI API key** - prompts for `XAI_API_KEY`
 
 Either choice satisfies the gating. You can pick whichever credentials you already have; the tool works identically with both. If both end up configured, OAuth is preferred at call time.
 
 ## Configuration
 
 ```yaml
-# ~/.hermes/config.yaml
+# ~/.superforecasting-agent/config.yaml
 x_search:
   # xAI model used for the Responses call.
   # grok-4.20-reasoning is the recommended default; any Grok model
   # with x_search tool access works.
   model: grok-4.20-reasoning
 
-  # Request timeout in seconds. x_search can take 60–120s for
-  # complex queries — the default is generous. Minimum: 30.
+  # Request timeout in seconds. x_search can take 60-120s for
+  # complex queries; the default is generous. Minimum: 30.
   timeout_seconds: 180
 
   # Number of automatic retries on 5xx / ReadTimeout / ConnectionError.
@@ -61,7 +65,7 @@ x_search:
 
 ## Tool parameters
 
-The agent calls `x_search` with these arguments:
+The forecast desk calls `x_search` with these arguments:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -75,29 +79,29 @@ The agent calls `x_search` with these arguments:
 
 The tool returns JSON with:
 
-- `answer` — synthesized text response from Grok
-- `citations` — citations returned by the Responses API top-level field
-- `inline_citations` — `url_citation` annotations extracted from the message body (each with `url`, `title`, `start_index`, `end_index`)
-- `credential_source` — `"xai-oauth"` if OAuth resolved, `"xai"` if API key resolved
+- `answer` - synthesized text response from Grok
+- `citations` - citations returned by the Responses API top-level field
+- `inline_citations` - `url_citation` annotations extracted from the message body, each with `url`, `title`, `start_index`, and `end_index`
+- `credential_source` - `"xai-oauth"` if OAuth resolved, `"xai"` if API key resolved
 - `model`, `query`, `provider`, `tool`, `success`
 
 ## Example
 
-Talking to the agent:
+At the forecast desk:
 
 > What are people on X saying about the new Grok image features? Focus on responses from @xai.
 
-The agent will:
+The forecast desk will:
 
 1. Call `x_search` with `query="reactions to new Grok image features"`, `allowed_x_handles=["xai"]`
-2. Get back a synthesized answer plus a list of citations linking to specific posts
-3. Reply with the answer and references
+2. Get back a synthesized answer plus citations linking to specific posts
+3. Use those links as candidate evidence for the relevant forecast question
 
 ## Troubleshooting
 
 ### "No xAI credentials available"
 
-The tool surfaces this when both auth paths fail. Either set `XAI_API_KEY` in `~/.hermes/.env` or run `hermes auth add xai-oauth` and complete the browser login. Then restart your session so the agent re-reads the tool registry.
+The tool surfaces this when both auth paths fail. Either set `XAI_API_KEY` in `~/.superforecasting-agent/.env` or run `superforecasting-agent auth add xai-oauth` and complete the browser login. Then restart your session so the runtime re-reads the tool registry.
 
 ### "`x_search` is not enabled for this model"
 
@@ -107,11 +111,11 @@ The configured `x_search.model` doesn't have access to the server-side `x_search
 
 Two possible causes:
 
-1. **Toolset not enabled.** Run `hermes tools` and confirm `🐦 X (Twitter) Search` is checked.
-2. **No xAI credentials.** The check_fn returns False, so the schema stays hidden. Run `hermes auth status` to confirm xai-oauth login state, and check that `XAI_API_KEY` is set (if you're using the API-key path).
+1. **Toolset not enabled.** Run `superforecasting-agent tools` and confirm `X (Twitter) Search` is checked.
+2. **No xAI credentials.** The check_fn returns False, so the schema stays hidden. Run `superforecasting-agent auth status` to confirm xai-oauth login state, and check that `XAI_API_KEY` is set if you are using the API-key path.
 
 ## See Also
 
-- [xAI Grok OAuth (SuperGrok Subscription)](../../guides/xai-grok-oauth.md) — the OAuth setup guide
-- [Web Search & Extract](web-search.md) — for general (non-X) web search
-- [Tools Reference](../../reference/tools-reference.md) — full tool catalog
+- [xAI Grok OAuth (SuperGrok Subscription)](../../guides/xai-grok-oauth.md) - the OAuth setup guide
+- [Web Search & Extract](web-search.md) - for general non-X web search
+- [Tools Reference](../../reference/tools-reference.md) - full tool catalog

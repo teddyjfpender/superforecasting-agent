@@ -1,5 +1,5 @@
 """
-Tests for hermes_cli.mcp_config — ``hermes mcp`` subcommands.
+Tests for hermes_cli.mcp_config — ``superforecasting-agent mcp`` subcommands.
 
 These tests mock the MCP server connection layer so they run without
 any actual MCP servers or API keys.
@@ -83,6 +83,7 @@ class TestMcpList:
         cmd_mcp_list()
         out = capsys.readouterr().out
         assert "No MCP servers configured" in out
+        assert "superforecasting-agent mcp add" in out
 
     def test_list_with_servers(self, tmp_path, capsys):
         _seed_config(tmp_path, {
@@ -539,6 +540,7 @@ class TestDispatcher:
         mcp_command(_make_args(mcp_action=None))
         out = capsys.readouterr().out
         assert "Commands:" in out or "No MCP servers" in out
+        assert "superforecasting-agent mcp" in out
 
 
 # ---------------------------------------------------------------------------
@@ -599,4 +601,3 @@ class TestMcpLogin:
         cmd_mcp_login(_make_args(name="srv"))
         out = capsys.readouterr().out
         assert "no URL" in out or "not an OAuth" in out
-

@@ -28,7 +28,8 @@ def load_module():
 
 def test_save_twilio_writes_env_and_state(tmp_path: Path, monkeypatch):
     mod = load_module()
-    monkeypatch.setenv("HERMES_HOME", str(tmp_path / ".hermes"))
+    agent_home = tmp_path / ".superforecasting-agent"
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(agent_home))
 
     result = mod.save_twilio(
         "AC123",
@@ -37,10 +38,11 @@ def test_save_twilio_writes_env_and_state(tmp_path: Path, monkeypatch):
         phone_sid="PN123",
     )
 
-    env_text = (tmp_path / ".hermes" / ".env").read_text(encoding="utf-8")
-    state = json.loads((tmp_path / ".hermes" / "telephony_state.json").read_text(encoding="utf-8"))
+    env_text = (agent_home / ".env").read_text(encoding="utf-8")
+    state = json.loads((agent_home / "telephony_state.json").read_text(encoding="utf-8"))
 
     assert result["success"] is True
+    assert result["env_path"] == str(agent_home / ".env")
     assert "TWILIO_ACCOUNT_SID=AC123" in env_text
     assert "TWILIO_AUTH_TOKEN=secret-token" in env_text
     assert "TWILIO_PHONE_NUMBER=+17025551234" in env_text

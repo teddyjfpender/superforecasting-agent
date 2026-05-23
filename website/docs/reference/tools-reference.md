@@ -1,18 +1,58 @@
 ---
 sidebar_position: 3
 title: "Built-in Tools Reference"
-description: "Authoritative reference for Hermes built-in tools, grouped by toolset"
+description: "Authoritative reference for Superforecasting Agent tools, grouped by toolset"
 ---
 
 # Built-in Tools Reference
 
-This page documents Hermes' built-in tools, grouped by toolset. Availability varies by platform, credentials, and enabled toolsets.
+This page documents Superforecasting Agent's built-in tools, grouped by toolset. The CLI defaults to the `forecast-desk` toolset: enough access to research questions, write to the append-only forecast ledger, run lightweight models, schedule reviews, and inspect stale beliefs. Broader inherited agent tools remain available, but they should be treated as opt-in capabilities unless they directly improve forecasting work.
 
-**Quick counts (current registry):** ~70 tools — 10 browser tools (core) + 2 CDP-gated browser tools, 4 file tools, 10 RL tools, 4 Home Assistant tools, 2 terminal tools, 2 web tools, 5 Feishu tools, 7 Spotify tools (registered by the bundled `spotify` plugin), 5 Yuanbao tools, 7 kanban tools (registered when the kanban dispatcher spawns the agent), 2 Discord tools, and a handful of standalone tools (`memory`, `clarify`, `delegate_task`, `execute_code`, `cronjob`, `session_search`, `skill_view`/`skill_manage`/`skills_list`, `text_to_speech`, `image_generate`, `video_generate`, `vision_analyze`, `video_analyze`, `mixture_of_agents`, `send_message`, `todo`, `computer_use`, `process`).
+The canonical source is the live registry in `tools/registry.py` and the toolset map in `toolsets.py`. Counts can change as optional providers register tools, so this page focuses on operational surface area and default exposure rather than a frozen inventory count.
 
 :::tip MCP Tools
-In addition to built-in tools, Hermes can load tools dynamically from MCP servers. MCP tools appear with the prefix `mcp_<server>_` (e.g., `mcp_github_create_issue` for the `github` MCP server). See [MCP Integration](/docs/user-guide/features/mcp) for configuration.
+In addition to built-in tools, Superforecasting Agent can load tools dynamically from MCP servers. MCP tools appear with the prefix `mcp_<server>_` (for example, `mcp_github_create_issue` for the `github` MCP server). See [MCP Integration](/docs/user-guide/features/mcp) for configuration.
 :::
+
+## `forecast-desk` default toolset
+
+The default CLI toolset is intentionally narrower than the inherited all-purpose agent surface. It gives the agent enough power to run a forecasting desk without exposing messaging, smart-home, media, and broad assistant integrations by default.
+
+| Included toolset | Why it is in the default desk |
+|------|-------------|
+| `forecasting` | Append-only ledger operations, scoring, calibration, backtesting, scheduled review, and forecast protocol context. |
+| `web` | Search and extract current evidence with source URLs. |
+| `browser` | Inspect dynamic pages, source dashboards, prediction markets, or forms when static extraction is insufficient. |
+| `terminal` | Run local analysis scripts, inspect artifacts, execute backtests, and manage long-running review jobs. |
+| `file` | Read/write/patch local research notes, benchmark artifacts, exports, and generated reports. |
+| `code_execution` | Run structured Python analysis with tool calls when a forecast needs repeated retrieval or data processing. |
+| `todo` | Track multi-step forecast work inside a session. |
+| `clarify` | Ask for missing resolution criteria, outcome space, risk tolerance, or portfolio scope. |
+| `cronjob` | Manage inherited scheduled jobs; forecast-native scheduled review lives in the ledger and CLI. |
+
+## `forecasting` toolset
+
+| Tool | Description | Requires environment |
+|------|-------------|----------------------|
+| `forecast_ledger` | Operate on the forecast ledger: create questions, add evidence, append forecast snapshots, resolve, score, review, self-check, backtest, schedule reviews, manage watched sources, record lessons, and render protocol context. Forecast snapshots are append-only. | — |
+
+The `forecast_ledger` tool is the main product primitive. It is one tool with many explicit actions so every forecast artifact can be audited, scored, corrected, and replayed.
+
+| Action group | Actions |
+|------|---------|
+| Question lifecycle | `create_question`, `list_questions`, `show_question`, `export_question`, `export_all` |
+| Evidence and baselines | `add_evidence`, `import_source_evidence`, `add_baseline_comparison`, `list_baseline_comparisons` |
+| Assumptions and reference classes | `add_assumption`, `list_assumptions`, `update_assumption`, `add_reference_class`, `list_reference_classes`, `update_reference_class` |
+| Models and forecast snapshots | `record_model_run`, `list_model_runs`, `update_forecast` |
+| Resolution, scoring, and audit correction | `resolve`, `score`, `list_scores`, `postmortem`, `list_postmortems`, `create_correction`, `list_corrections` |
+| Calibration and error learning | `calibration_summary`, `list_domain_error_profiles`, `list_calibration_lessons`, `update_calibration_lesson` |
+| Review, alerts, and scheduled self-checks | `review`, `self_check`, `list_alerts`, `acknowledge_alert`, `schedule_review`, `list_scheduled_reviews`, `run_scheduled_reviews` |
+| Watched sources | `add_watched_source`, `list_watched_sources`, `check_watched_sources` |
+| Backtesting and readiness | `run_backtest_dataset`, `list_backtest_runs`, `backtest_performance_report`, `evidence_readiness` |
+| Resolution governance | `create_trusted_resolver_policy`, `list_trusted_resolver_policies` |
+| Forecasting protocol | `protocol` |
+
+Forecasting agents should use `forecast_ledger` for belief state instead of generic chat memory. A forecast update that does not write a snapshot, evidence references, model context, and an `as_of` time cannot be scored or learned from later.
 
 ## `browser` toolset
 
@@ -48,7 +88,7 @@ These two tools live in the `browser` toolset but only register when a Chrome De
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
-| `execute_code` | Run a Python script that can call Hermes tools programmatically. Use this when you need 3+ tool calls with processing logic between them, need to filter/reduce large tool outputs before they enter your context, need conditional branching (… | — |
+| `execute_code` | Run a Python script that can call Superforecasting Agent tools programmatically. Use this when you need 3+ tool calls with processing logic between them, need to filter/reduce large tool outputs before they enter your context, need conditional branching (… | — |
 
 ## `cronjob` toolset
 
@@ -64,7 +104,7 @@ These two tools live in the `browser` toolset but only register when a Chrome De
 
 ## `feishu_doc` toolset
 
-Scoped to the Feishu document-comment intelligent-reply handler (`gateway/platforms/feishu_comment.py`). Not exposed on `hermes-cli` or the regular Feishu chat adapter.
+Scoped to the Feishu document-comment intelligent-reply handler (`gateway/platforms/feishu_comment.py`). Not exposed on the forecast CLI or the regular Feishu chat adapter.
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
@@ -103,7 +143,7 @@ Scoped to the Feishu document-comment handler. Drives comment read/write operati
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
-| `computer_use` | Background macOS desktop control via cua-driver — screenshots (SOM / vision / AX), click / drag / scroll / type / key / wait, list_apps, focus_app. Does NOT steal the user's cursor or keyboard focus. Works with any tool-capable model. macOS only. | `cua-driver` on `$PATH` (install via `hermes tools`). |
+| `computer_use` | Background macOS desktop control via cua-driver — screenshots (SOM / vision / AX), click / drag / scroll / type / key / wait, list_apps, focus_app. Does NOT steal the user's cursor or keyboard focus. Works with any tool-capable model. macOS only. | `cua-driver` on `$PATH` (install via `superforecasting-agent tools`). |
 
 
 :::note
@@ -160,7 +200,7 @@ Registered when the agent is either (a) spawned by the kanban dispatcher (`HERME
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
-| `skill_manage` | Manage skills (create, update, delete). Skills are your procedural memory — reusable approaches for recurring task types. New skills go to ~/.hermes/skills/; existing skills can be modified wherever they live. Actions: create (full SKILL.m… | — |
+| `skill_manage` | Manage skills (create, update, delete). Skills are procedural memory for recurring task types. New skills go to `~/.superforecasting-agent/skills/` by default; legacy `~/.hermes/skills/` remains readable for compatibility. Actions: create (full SKILL.m… | — |
 | `skill_view` | Skills allow for loading information about specific tasks and workflows, as well as scripts and templates. Load a skill's full content or access its linked files (references, templates, scripts). First call returns SKILL.md content plus a… | — |
 | `skills_list` | List available skills (name + description). Use skill_view(name) to load full content. | — |
 
@@ -185,7 +225,7 @@ Registered when the agent is either (a) spawned by the kanban dispatcher (`HERME
 
 ## `video` toolset
 
-Opt-in toolset (not loaded in the default `hermes-cli` set). Add via `--toolsets video` or include `video` in your `toolsets:` config.
+Opt-in toolset, not loaded in the default `forecast-desk` set. Add via `--toolsets video` or include `video` in your `toolsets:` config.
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
@@ -193,7 +233,7 @@ Opt-in toolset (not loaded in the default `hermes-cli` set). Add via `--toolsets
 
 ## `video_gen` toolset
 
-Opt-in toolset (not loaded in the default `hermes-cli` set). Add via `--toolsets video_gen` or enable it in `hermes tools` → Video Generation, which also walks you through picking a backend.
+Opt-in toolset, not loaded in the default `forecast-desk` set. Add via `--toolsets video_gen` or enable it in `superforecasting-agent tools` -> Video Generation, which also walks you through picking a backend.
 
 Backends ship as plugins under `plugins/video_gen/<name>/`:
 
@@ -217,7 +257,7 @@ The single `video_generate` tool covers both modalities — pass `image_url` to 
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
-| `x_search` | Search X (Twitter) posts, profiles, and threads using xAI's built-in `x_search` Responses tool. Use this for current discussion, reactions, or claims on X rather than general web pages. Off by default — opt in via `hermes tools` → 🐦 X (Twitter) Search. Schema is only registered when xAI credentials are configured (check_fn-gated). | XAI_API_KEY **or** xAI Grok OAuth (SuperGrok Subscription) login |
+| `x_search` | Search X (Twitter) posts, profiles, and threads using xAI's built-in `x_search` Responses tool. Use this for current discussion, reactions, or claims on X rather than general web pages. Off by default; opt in via `superforecasting-agent tools` -> X (Twitter) Search. Schema is only registered when xAI credentials are configured (check_fn-gated). | XAI_API_KEY **or** xAI Grok OAuth (SuperGrok Subscription) login |
 
 ## `tts` toolset
 
@@ -227,7 +267,7 @@ The single `video_generate` tool covers both modalities — pass `image_url` to 
 
 ## `discord` toolset
 
-Registered on the `hermes-discord` platform toolset (gateway only). Uses the same bot token as the messaging adapter.
+Registered on the legacy runtime `hermes-discord` platform toolset (gateway only). Uses the same bot token as the messaging adapter.
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
@@ -235,7 +275,7 @@ Registered on the `hermes-discord` platform toolset (gateway only). Uses the sam
 
 ## `discord_admin` toolset
 
-Registered on the `hermes-discord` platform toolset. Moderation actions require the bot to hold the matching Discord permissions.
+Registered on the legacy runtime `hermes-discord` platform toolset. Moderation actions require the bot to hold the matching Discord permissions.
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
@@ -243,7 +283,7 @@ Registered on the `hermes-discord` platform toolset. Moderation actions require 
 
 ## `spotify` toolset
 
-Registered by the bundled `spotify` plugin. Requires an OAuth token — run `hermes spotify setup` once to authorize.
+Registered by the bundled `spotify` plugin. Requires an OAuth token; run `superforecasting-agent spotify setup` once to authorize.
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
@@ -257,7 +297,7 @@ Registered by the bundled `spotify` plugin. Requires an OAuth token — run `her
 
 ## `hermes-yuanbao` toolset
 
-Registered only on the `hermes-yuanbao` platform toolset. Yuanbao is Tencent's chat app; these tools drive its DM/group/sticker APIs.
+Registered only on the legacy runtime `hermes-yuanbao` platform toolset. Yuanbao is Tencent's chat app; these tools drive its DM/group/sticker APIs.
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
@@ -266,5 +306,3 @@ Registered only on the `hermes-yuanbao` platform toolset. Yuanbao is Tencent's c
 | `yb_send_dm` | Send a private/direct message to a user in a group, with optional media files. | Yuanbao credentials |
 | `yb_search_sticker` | Search the built-in Yuanbao sticker (TIM face) catalogue by keyword. | Yuanbao credentials |
 | `yb_send_sticker` | Send a built-in sticker to the current Yuanbao chat. | Yuanbao credentials |
-
-

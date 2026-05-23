@@ -1,8 +1,15 @@
 # Session Storage
 
-Hermes Agent uses a SQLite database (`~/.hermes/state.db`) to persist session
-metadata, full message history, and model configuration across CLI and gateway
-sessions. This replaces the earlier per-session JSONL file approach.
+Superforecasting Agent uses a SQLite database (`~/.superforecasting-agent/state.db`)
+to persist session metadata, full message history, and model configuration across
+CLI, TUI, API, and gateway sessions. This replaces the earlier per-session JSONL
+file approach inherited from Hermes.
+
+This is **not** the forecast ledger. Session storage is for transcripts,
+resumability, search, token accounting, and prompt replay. Forecast questions,
+evidence, snapshots, model runs, resolutions, scores, postmortems, calibration
+lessons, and domain error profiles live under the forecast ledger and must remain
+scoreable outside any one chat session.
 
 Source file: `hermes_state.py`
 
@@ -10,7 +17,7 @@ Source file: `hermes_state.py`
 ## Architecture Overview
 
 ```
-~/.hermes/state.db (SQLite, WAL mode)
+~/.superforecasting-agent/state.db (SQLite, WAL mode)
 ├── sessions              — Session metadata, token counts, billing
 ├── messages              — Full message history per session
 ├── messages_fts          — FTS5 virtual table (content + tool_name + tool_calls)
@@ -25,6 +32,7 @@ Key design decisions:
 - **Session lineage** via `parent_session_id` chains (compression-triggered splits)
 - **Source tagging** (`cli`, `telegram`, `discord`, etc.) for platform filtering
 - Batch runner and RL trajectories are NOT stored here (separate systems)
+- Forecast ledgers are NOT stored here; they are append-only forecast records
 
 
 ## SQLite Schema
@@ -156,8 +164,8 @@ Declarative column adds use `ALTER TABLE ADD COLUMN` wrapped in try/except to ha
 
 ## Write Contention Handling
 
-Multiple hermes processes (gateway + CLI sessions + worktree agents) share one
-`state.db`. The `SessionDB` class handles write contention with:
+Multiple runtime processes (gateway + CLI/TUI sessions + worktree agents) can share
+one `state.db`. The `SessionDB` class handles write contention with:
 
 - **Short SQLite timeout** (1 second) instead of the default 30s
 - **Application-level retry** with random jitter (20-150ms, up to 15 retries)
@@ -182,7 +190,7 @@ _CHECKPOINT_EVERY_N_WRITES = 50
 ```python
 from hermes_state import SessionDB
 
-db = SessionDB()                           # Default: ~/.hermes/state.db
+db = SessionDB()                           # Default: ~/.superforecasting-agent/state.db
 db = SessionDB(db_path=Path("/tmp/test.db"))  # Custom path
 ```
 
@@ -386,10 +394,12 @@ db.delete_session("sess_abc123")
 
 ## Database Location
 
-Default path: `~/.hermes/state.db`
+Default path: `~/.superforecasting-agent/state.db`
 
-This is derived from `hermes_constants.get_hermes_home()` which resolves to
-`~/.hermes/` by default, or the value of `HERMES_HOME` environment variable.
+This is derived from `hermes_constants.get_hermes_home()` which now prefers
+`~/.superforecasting-agent/` for new installs and also honors
+`SUPERFORECASTING_AGENT_HOME`, `FORECAST_HOME`, and legacy `HERMES_HOME`. Existing
+`~/.hermes/` homes remain readable during the fork transition.
 
 The database file, WAL file (`state.db-wal`), and shared-memory file
 (`state.db-shm`) are all created in the same directory.

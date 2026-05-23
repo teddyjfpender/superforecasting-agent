@@ -149,6 +149,8 @@ class TestMakeRunEnvHomeInjection:
 
     def test_no_injection_when_hermes_home_unset(self, monkeypatch):
         monkeypatch.delenv("HERMES_HOME", raising=False)
+        monkeypatch.delenv("FORECAST_HOME", raising=False)
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_HOME", raising=False)
         monkeypatch.setenv("HOME", "/home/user")
         monkeypatch.setenv("PATH", "/usr/bin:/bin")
 
@@ -156,6 +158,21 @@ class TestMakeRunEnvHomeInjection:
         result = _make_run_env({})
 
         assert result["HOME"] == "/home/user"
+
+    def test_forecast_home_alias_can_provide_subprocess_home(self, tmp_path, monkeypatch):
+        agent_home = tmp_path / ".superforecasting-agent"
+        profile_home = agent_home / "home"
+        profile_home.mkdir(parents=True)
+        monkeypatch.delenv("HERMES_HOME", raising=False)
+        monkeypatch.delenv("FORECAST_HOME", raising=False)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(agent_home))
+        monkeypatch.setenv("HOME", "/root")
+        monkeypatch.setenv("PATH", "/usr/bin:/bin")
+
+        from tools.environments.local import _make_run_env
+        result = _make_run_env({})
+
+        assert result["HOME"] == str(profile_home)
 
     def test_context_override_bridges_to_subprocess_env(self, tmp_path, monkeypatch):
         root = tmp_path / "root"

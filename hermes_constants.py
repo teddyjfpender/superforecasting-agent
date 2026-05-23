@@ -15,6 +15,47 @@ _UNSET = object()
 _HERMES_HOME_OVERRIDE: ContextVar[str | object] = ContextVar(
     "_HERMES_HOME_OVERRIDE", default=_UNSET
 )
+_HOME_ENV_VARS = ("SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME")
+_NATIVE_HOME_DIRNAME = ".superforecasting-agent"
+_LEGACY_HOME_DIRNAME = ".hermes"
+
+
+def _configured_home_env() -> tuple[str | None, str | None]:
+    """Return the first configured home env var name/value pair.
+
+    ``HERMES_HOME`` remains supported for compatibility, but the fork accepts
+    forecast-native aliases first so new deployments do not need a
+    Hermes-branded environment variable.
+    """
+    for name in _HOME_ENV_VARS:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return name, value
+    return None, None
+
+
+def _native_home() -> Path:
+    return Path.home() / _NATIVE_HOME_DIRNAME
+
+
+def _legacy_home() -> Path:
+    return Path.home() / _LEGACY_HOME_DIRNAME
+
+
+def _default_home_candidate() -> Path:
+    """Return the no-env home path for this fork.
+
+    New installs default to the fork-native home. Existing Hermes installs
+    keep using ``~/.hermes`` until users explicitly migrate or set one of the
+    forecast-native home variables.
+    """
+    native = _native_home()
+    if native.exists():
+        return native
+    legacy = _legacy_home()
+    if legacy.exists():
+        return legacy
+    return native
 
 
 def set_hermes_home_override(path: str | Path | None) -> Token:
@@ -41,26 +82,30 @@ def get_hermes_home_override() -> str | None:
 
 
 def get_hermes_home() -> Path:
-    """Return the Hermes home directory (default: ~/.hermes).
+    """Return the agent home directory.
 
-    Reads HERMES_HOME env var, falls back to ~/.hermes.
-    This is the single source of truth — all other copies should import this.
+    Reads SUPERFORECASTING_AGENT_HOME, FORECAST_HOME, or HERMES_HOME env vars,
+    then falls back to ``~/.superforecasting-agent`` for new installs. Existing
+    ``~/.hermes`` directories remain supported as the fallback home during the
+    fork transition. This is the single source of truth — all other copies
+    should import this.
 
     When ``HERMES_HOME`` is unset but an ``active_profile`` file indicates
     a non-default profile is active, logs a loud one-shot warning to
     ``errors.log`` so cross-profile data corruption is diagnosable instead
     of silent.  Behavior is unchanged otherwise — we still return
-    ``~/.hermes`` — because raising here would brick 30+ module-level
-    callers that import this at load time.  Subprocess spawners are
-    expected to propagate ``HERMES_HOME`` explicitly (see the systemd
+    the selected fallback directory — because raising here would brick 30+
+    module-level callers that import this at load time. Subprocess spawners
+    are expected to propagate an explicit home env var (see the systemd
     template in ``hermes_cli/gateway.py`` and the kanban dispatcher in
-    ``hermes_cli/kanban_db.py``).  See https://github.com/NousResearch/hermes-agent/issues/18594.
+    ``hermes_cli/kanban_db.py``). See
+    https://github.com/NousResearch/hermes-agent/issues/18594.
     """
     override = get_hermes_home_override()
     if override:
         return Path(override)
 
-    val = os.environ.get("HERMES_HOME", "").strip()
+    _env_name, val = _configured_home_env()
     if val:
         return Path(val)
 
@@ -69,10 +114,11 @@ def get_hermes_home() -> Path:
     global _profile_fallback_warned
     if not _profile_fallback_warned:
         try:
+            fallback_home = _default_home_candidate()
             # Inline the default-root resolution from get_default_hermes_root()
             # to stay import-safe (this function is called from module scope
             # in 30+ files; we cannot afford to trigger logging setup here).
-            active_path = (Path.home() / ".hermes" / "active_profile")
+            active_path = fallback_home / "active_profile"
             active = active_path.read_text().strip() if active_path.exists() else ""
         except (UnicodeDecodeError, OSError):
             active = ""
@@ -85,12 +131,13 @@ def get_hermes_home() -> Path:
             # on consoles where a StreamHandler is already attached.
             import sys
             msg = (
-                f"[HERMES_HOME fallback] HERMES_HOME is unset but active "
-                f"profile is {active!r}. Falling back to ~/.hermes, which "
-                f"is the DEFAULT profile — not {active!r}. Any data this "
-                f"process writes will land in the wrong profile. The "
-                f"subprocess spawner should pass HERMES_HOME explicitly "
-                f"(see issue #18594)."
+                f"[HERMES_HOME fallback] no explicit agent home env var is "
+                f"set but active profile is {active!r}. Falling back to "
+                f"{fallback_home}, which is the DEFAULT profile — not "
+                f"{active!r}. Any data this process writes will land in the "
+                f"wrong profile. The subprocess spawner should pass "
+                f"SUPERFORECASTING_AGENT_HOME, FORECAST_HOME, or HERMES_HOME "
+                f"explicitly (see issue #18594)."
             )
             try:
                 sys.stderr.write(msg + "\n")
@@ -98,36 +145,39 @@ def get_hermes_home() -> Path:
             except Exception:
                 pass
 
-    return Path.home() / ".hermes"
+    return _default_home_candidate()
 
 
 def get_default_hermes_root() -> Path:
-    """Return the root Hermes directory for profile-level operations.
+    """Return the root agent directory for profile-level operations.
 
-    In standard deployments this is ``~/.hermes``.
+    In new standard deployments this is ``~/.superforecasting-agent``. Existing
+    ``~/.hermes`` directories remain the fallback root during migration.
 
-    In Docker or custom deployments where ``HERMES_HOME`` points outside
-    ``~/.hermes`` (e.g. ``/opt/data``), returns ``HERMES_HOME`` directly
-    — that IS the root.
+    In Docker or custom deployments where SUPERFORECASTING_AGENT_HOME,
+    FORECAST_HOME, or HERMES_HOME points outside ``~/.hermes`` (e.g.
+    ``/opt/data``), returns that directory directly — that IS the root.
 
-    In profile mode where ``HERMES_HOME`` is ``<root>/profiles/<name>``,
+    In profile mode where the configured home is ``<root>/profiles/<name>``,
     returns ``<root>`` so that ``profile list`` can see all profiles.
-    Works both for standard (``~/.hermes/profiles/coder``) and Docker
+    Works for standard fork-native, legacy Hermes, and Docker
     (``/opt/data/profiles/coder``) layouts.
 
     Import-safe — no dependencies beyond stdlib.
     """
-    native_home = Path.home() / ".hermes"
-    env_home = os.environ.get("HERMES_HOME", "")
+    roots = (_native_home(), _legacy_home())
+    fallback_root = _default_home_candidate()
+    _env_name, env_home = _configured_home_env()
     if not env_home:
-        return native_home
+        return fallback_root
     env_path = Path(env_home)
-    try:
-        env_path.resolve().relative_to(native_home.resolve())
-        # HERMES_HOME is under ~/.hermes (normal or profile mode)
-        return native_home
-    except ValueError:
-        pass
+    for root in roots:
+        try:
+            env_path.resolve().relative_to(root.resolve())
+            # Configured home is under the standard fork or legacy root.
+            return root
+        except ValueError:
+            pass
 
     # Docker / custom deployment.
     # Check if this is a profile path: <root>/profiles/<name>
@@ -220,12 +270,13 @@ def display_hermes_home() -> str:
 
     Uses ``~/`` shorthand for readability::
 
-        default:  ``~/.hermes``
-        profile:  ``~/.hermes/profiles/coder``
+        default:  ``~/.superforecasting-agent``
+        legacy:   ``~/.hermes``
+        profile:  ``~/.superforecasting-agent/profiles/coder``
         custom:   ``/opt/hermes-custom``
 
     Use this in **user-facing** print/log messages instead of hardcoding
-    ``~/.hermes``.  For code that needs a real ``Path``, use
+    ``~/.hermes`` or ``~/.superforecasting-agent``. For code that needs a real ``Path``, use
     :func:`get_hermes_home` instead.
     """
     home = get_hermes_home()
@@ -252,7 +303,7 @@ def get_subprocess_home() -> str | None:
     Activation is directory-based: if the ``home/`` subdirectory doesn't
     exist, returns ``None`` and behavior is unchanged.
     """
-    hermes_home = get_hermes_home_override() or os.getenv("HERMES_HOME")
+    hermes_home = get_hermes_home_override() or _configured_home_env()[1]
     if not hermes_home:
         return None
     profile_home = os.path.join(hermes_home, "home")

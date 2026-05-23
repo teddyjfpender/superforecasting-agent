@@ -1,16 +1,16 @@
 ---
 sidebar_position: 9
 title: "Context Engine Plugins"
-description: "How to build a context engine plugin that replaces the built-in ContextCompressor"
+description: "Build context engines for forecast research sessions"
 ---
 
 # Building a Context Engine Plugin
 
-Context engine plugins replace the built-in `ContextCompressor` with an alternative strategy for managing conversation context. For example, a Lossless Context Management (LCM) engine that builds a knowledge DAG instead of lossy summarization.
+Context engine plugins replace the built-in `ContextCompressor` with an alternative strategy for managing long forecast research sessions. They are useful when a forecasting workflow needs better preservation of evidence, assumptions, model-run notes, or rationale than lossy summarization can provide. They do **not** replace the forecast ledger: scoreable forecasts, evidence records, source snapshots, resolutions, scores, postmortems, calibration lessons, and domain error profiles must remain in the ledger.
 
 ## How it works
 
-The agent's context management is built on the `ContextEngine` ABC (`agent/context_engine.py`). The built-in `ContextCompressor` is the default implementation. Plugin engines must implement the same interface.
+The Superforecasting Agent runtime's context management is built on the `ContextEngine` ABC (`agent/context_engine.py`). The built-in `ContextCompressor` is the default implementation. Plugin engines must implement the same interface.
 
 Only **one** context engine can be active at a time. Selection is config-driven:
 
@@ -25,7 +25,7 @@ Plugin engines are **never auto-activated** — the user must explicitly set `co
 
 ## Directory structure
 
-Each context engine lives in `plugins/context_engine/<name>/`:
+Each bundled context engine lives in `plugins/context_engine/<name>/`. User-installed engines live under `~/.superforecasting-agent/plugins/context_engine/<name>/`; the legacy `~/.hermes/plugins/context_engine/<name>/` path remains accepted for inherited installations.
 
 ```
 plugins/context_engine/lcm/
@@ -66,7 +66,8 @@ class LCMEngine(ContextEngine):
 
         ``focus_topic`` is an optional topic string from manual
         ``/compress <focus>``; engines that support guided compression should
-        prioritise preserving information related to it, others may ignore it.
+        prioritise preserving forecast-relevant information related to it,
+        others may ignore it.
         """
 ```
 
@@ -100,13 +101,13 @@ These have sensible defaults in the ABC. Override as needed:
 
 ## Engine tools
 
-Context engines can expose tools the agent calls directly. Return schemas from `get_tool_schemas()` and handle calls in `handle_tool_call()`:
+Context engines can expose tools the agent calls directly. For forecast workflows, these tools should retrieve or organize session context, not create scoreable forecast records behind the ledger's back. Return schemas from `get_tool_schemas()` and handle calls in `handle_tool_call()`:
 
 ```python
 def get_tool_schemas(self):
     return [{
         "name": "lcm_grep",
-        "description": "Search the context knowledge graph",
+        "description": "Search the forecast research context graph",
         "parameters": {
             "type": "object",
             "properties": {
@@ -129,7 +130,7 @@ Engine tools are injected into the agent's tool list at startup and dispatched a
 
 ### Via directory (recommended)
 
-Place your engine in `plugins/context_engine/<name>/`. The `__init__.py` must export a `ContextEngine` subclass. The discovery system finds and instantiates it automatically.
+Place your engine in `plugins/context_engine/<name>/` for bundled engines or in the fork-native user plugin path for local engines. The `__init__.py` must export a `ContextEngine` subclass. The discovery system finds and instantiates it automatically.
 
 ### Via general plugin system
 
@@ -147,7 +148,7 @@ Only one engine can be registered. A second plugin attempting to register is rej
 
 ```
 1. Engine instantiated (plugin load or directory discovery)
-2. on_session_start() — conversation begins
+2. on_session_start() — forecast research session begins
 3. update_from_response() — after each API call
 4. should_compress() — checked each turn
 5. compress() — called when should_compress() returns True
@@ -158,7 +159,7 @@ Only one engine can be registered. A second plugin attempting to register is rej
 
 ## Configuration
 
-Users select your engine via `hermes plugins` → Provider Plugins → Context Engine, or by editing `config.yaml`:
+Users select your engine via `superforecasting-agent plugins` -> Provider Plugins -> Context Engine, or by editing `~/.superforecasting-agent/config.yaml`:
 
 ```yaml
 context:
@@ -166,6 +167,8 @@ context:
 ```
 
 The `compression` config block (`compression.threshold`, `compression.protect_last_n`, etc.) is specific to the built-in `ContextCompressor`. Your engine should define its own config format if needed, reading from `config.yaml` during initialization.
+
+If your engine stores derived context state, keep it separate from the forecast ledger unless it is explicitly writing through ledger APIs. Derived graphs, summaries, and caches can be rebuilt; forecast probabilities and learning records must stay append-only and auditable.
 
 ## Testing
 
@@ -190,5 +193,5 @@ See `tests/agent/test_context_engine.py` for the full ABC contract test suite.
 ## See also
 
 - [Context Compression and Caching](/docs/developer-guide/context-compression-and-caching) — how the built-in compressor works
-- [Memory Provider Plugins](/docs/developer-guide/memory-provider-plugin) — analogous single-select plugin system for memory
+- [Memory Provider Plugins](/docs/developer-guide/memory-provider-plugin) — analogous single-select plugin system for secondary recall
 - [Plugins](/docs/user-guide/features/plugins) — general plugin system overview

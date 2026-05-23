@@ -26,6 +26,8 @@ from hermes_cli.profiles import (
     get_active_profile_name,
     resolve_profile_env,
     check_alias_collision,
+    create_wrapper_script,
+    remove_wrapper_script,
     rename_profile,
     export_profile,
     import_profile,
@@ -602,6 +604,49 @@ class TestAliasCollision:
         assert "reserved" in result.lower()
 
 
+class TestWrapperScripts:
+    """Tests for generated profile wrapper scripts."""
+
+    def test_wrapper_prefers_forecast_native_command(self, profile_env):
+        tmp_path = profile_env
+        wrapper_dir = tmp_path / ".local" / "bin"
+
+        with patch("hermes_cli.profiles._get_wrapper_dir", return_value=wrapper_dir):
+            wrapper = create_wrapper_script("mybot")
+
+        assert wrapper == wrapper_dir / "mybot"
+        content = wrapper.read_text()
+        assert "superforecasting-agent -p mybot" in content
+        assert "exec hermes -p mybot" in content
+
+    def test_remove_wrapper_accepts_forecast_native_wrapper(self, profile_env):
+        tmp_path = profile_env
+        wrapper_dir = tmp_path / ".local" / "bin"
+        wrapper_dir.mkdir(parents=True)
+        wrapper = wrapper_dir / "mybot"
+        wrapper.write_text(
+            "#!/bin/sh\nexec superforecasting-agent -p mybot \"$@\"\n",
+            encoding="utf-8",
+        )
+
+        with patch("hermes_cli.profiles._get_wrapper_dir", return_value=wrapper_dir):
+            assert remove_wrapper_script("mybot") is True
+
+        assert not wrapper.exists()
+
+    def test_custom_wrapper_prefers_forecast_native_command(self, profile_env):
+        tmp_path = profile_env
+        wrapper_dir = tmp_path / ".local" / "bin"
+
+        with patch("hermes_cli.profiles._get_wrapper_dir", return_value=wrapper_dir):
+            wrapper = create_wrapper_script("desk", profile_name="mybot")
+
+        assert wrapper == wrapper_dir / "desk"
+        content = wrapper.read_text()
+        assert "superforecasting-agent -p mybot" in content
+        assert "exec hermes -p mybot" in content
+
+
 # ===================================================================
 # TestRenameProfile
 # ===================================================================
@@ -1017,6 +1062,17 @@ class TestProfileIsolation:
 
 class TestInternalHelpers:
     """Tests for _get_profiles_root() and _get_default_hermes_home()."""
+
+    def test_profiles_root_uses_fork_native_default_without_legacy_home(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("HERMES_HOME", raising=False)
+        monkeypatch.delenv("FORECAST_HOME", raising=False)
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_HOME", raising=False)
+
+        assert _get_default_hermes_home() == tmp_path / ".superforecasting-agent"
+        assert _get_profiles_root() == tmp_path / ".superforecasting-agent" / "profiles"
 
     def test_profiles_root_under_home(self, profile_env):
         tmp_path = profile_env

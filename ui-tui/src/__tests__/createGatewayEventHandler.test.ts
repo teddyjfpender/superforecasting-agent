@@ -580,7 +580,7 @@ describe('createGatewayEventHandler', () => {
     onEvent({
       payload: {
         message:
-          'agent init failed: No LLM provider configured. Run `hermes model` to select a provider, or run `hermes setup` for first-time configuration.'
+          'agent init failed: No LLM provider configured. Run `superforecasting-agent model` to select a provider, or run `superforecasting-agent setup` for first-time configuration.'
       },
       type: 'error'
     } as any)
@@ -614,6 +614,343 @@ describe('createGatewayEventHandler', () => {
 
     await vi.waitFor(() => expect(newSession).toHaveBeenCalled())
     expect(resumeById).not.toHaveBeenCalled()
+  })
+
+  it('on gateway.ready renders the forecast desk panel before chat traffic', async () => {
+    const appended: Msg[] = []
+    const ctx = buildCtx(appended)
+
+    ctx.gateway.rpc = vi.fn(async (method: string) => {
+      if (method === 'forecast.dashboard') {
+        return {
+          output: 'SUPERFORECASTING DESK\n\nACTIVE FORECASTS\nfq_1 0.63 needs update',
+          summary: {
+            active_count: 1,
+            calibration: {
+              count: 3,
+              mean_brier: 0.12,
+              mean_log_score: -0.42,
+              mean_sharpness: 0.38
+            },
+            learning: {
+              active_lessons: 0,
+              invalidated_lessons: 0,
+              recent_lessons: [
+                {
+                  id: 'cl_fixture001',
+                  lesson: 'Election forecasts should discount late poll herding.',
+                  scope_ref: 'politics',
+                  scope_type: 'domain',
+                  source_postmortem_count: 1,
+                  source_score_count: 1,
+                  status: 'tentative'
+                }
+              ],
+              tentative_lessons: 1,
+              top_error_profiles: [
+                {
+                  domain: 'politics',
+                  mean_brier: 0.18,
+                  question_type: 'binary',
+                  recurring_errors: ['overweighted_late_polls'],
+                  sample_count: 6
+                }
+              ],
+              total_lessons: 1
+            },
+            evidence_status: {
+              backtests: {
+                agent_protocol_scored_count: 0,
+                distinct_dataset_count: 1,
+                leakage_free_run_count: 1,
+                positive_best_baseline_edge_run_count: 1
+              },
+              can_claim_live_superforecasting: false,
+              gaps: ['live_scored_forecasts', 'agent_protocol_scored_cases'],
+              score_counts: {
+                backtest: 12,
+                imported_baseline: 12,
+                live: 3
+              },
+              verdict: 'insufficient_live_evidence'
+            },
+            open_alert_count: 1,
+            product: 'Superforecasting Agent',
+            questions: [
+              {
+                baseline_count: 2,
+                close_time: '2026-11-03T00:00:00Z',
+                confidence: 0.74,
+                delta: 0.08,
+                evidence_count: 4,
+                id: 'fq_123456789abc',
+                open_alert_count: 1,
+                open_assumption_count: 2,
+                probability: 0.63,
+                as_of: '2026-05-01T00:00:00Z',
+                stale_assumption_count: 0,
+                title: 'Will X win the election?'
+              }
+            ],
+            review_queue_count: 1,
+            review_queue: [
+              {
+                as_of: '2026-05-01T00:00:00Z',
+                id: 'fq_123456789abc',
+                next_action: 'forecast research fq_123456789abc; forecast update fq_123456789abc --preview ...',
+                priority: 4,
+                probability: 0.63,
+                reasons: ['review_due', 'last_update_7d_plus'],
+                title: 'Will X win the election?'
+              }
+            ],
+            recent_backtests: [
+              {
+                agent_edge: 0.02,
+                agent_mean_brier: 0.08,
+                best_baseline: 'market:fixture',
+                best_baseline_brier: 0.1,
+                case_count: 12,
+                claim_status: {
+                  can_claim_live_superforecasting: false,
+                  message: 'Benchmark replay evidence only.',
+                  verdict: 'benchmark_replay_only'
+                },
+                dataset: 'fixture-corpus',
+                id: 'bt_fixture001',
+                leakage_checks_passed: true,
+                paired_agent_wins: 8,
+                paired_baseline_wins: 3,
+                probability_sources: ['forecast-engine'],
+                paired_ties: 1
+              }
+            ]
+          }
+        }
+      }
+
+      if (method === 'config.get') {
+        return { config: { display: { tui_auto_resume_recent: false } } }
+      }
+
+      return null
+    })
+
+    createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
+
+    await vi.waitFor(() => expect(appended.some(msg => msg.kind === 'panel')).toBe(true))
+    expect(getUiState().forecastDeskStatus).toBe('desk 1 active / 1 alert / 1 review / cal 3 / 1 lesson')
+    expect(getUiState().forecastDeskRailSections).toEqual([
+      {
+        rows: [
+          ['active', '1'],
+          ['alerts', '1'],
+          ['reviews', '1'],
+          ['scores', '3'],
+          ['lessons', '1']
+        ],
+        title: 'Book'
+      },
+      {
+        rows: [
+          ['/alerts', '1 open alert need source or resolution review'],
+          ['/review --stale', '1 forecast queued for stale/close/evidence review'],
+          ['/forecast readiness', '2 evidence gaps blocking stronger benchmark claims']
+        ],
+        title: 'Triage'
+      },
+      {
+        rows: [
+          ['12345678 P=0.630 Δ=+0.080', '1 alert  Will X win the election?']
+        ],
+        title: 'Watchlist'
+      },
+      {
+        rows: [
+          ['readiness', 'insufficient live evidence'],
+          ['live/backtest', '3/12'],
+          ['replay', 'agent 0 edge 1 sets 1'],
+          ['gaps', 'live scored forecasts, agent protocol scored cases']
+        ],
+        title: 'Evidence'
+      },
+      {
+        rows: [
+          [
+            'bt_fixture001',
+            'src forecast-engine  agent 0.080000  edge +0.020  replay only'
+          ]
+        ],
+        title: 'Backtests'
+      }
+    ])
+    expect(appended[0]).toMatchObject({
+      kind: 'panel',
+      panelData: {
+        sections: [
+          {
+            rows: [
+              ['product', 'Superforecasting Agent'],
+              ['active forecasts', '1'],
+              ['open alerts', '1'],
+              ['review queue', '1'],
+              ['calibration n', '3'],
+              ['lessons', '1']
+            ],
+            title: 'Desk'
+          },
+          {
+            rows: [
+              [
+                '12345678  P=0.630  Δ=+0.080',
+                'as-of 2026-05-01  close 2026-11-03  conf 0.74  ev 4  base 2  asm 2/0  1 alert  Will X win the election?'
+              ]
+            ],
+            title: 'Active Forecasts'
+          },
+          {
+            rows: [
+              [
+                '12345678  priority 4',
+                'P=0.630  as-of 2026-05-01  review_due, last_update_7d_plus  forecast research fq_123456789abc; forecast update fq_123456789…'
+              ]
+            ],
+            title: 'Review Queue'
+          },
+          {
+            rows: [
+              ['eligible scores', '3'],
+              ['mean brier', '0.120000'],
+              ['mean log score', '-0.420000'],
+              ['mean sharpness', '0.380000']
+            ],
+            title: 'Calibration'
+          },
+          {
+            rows: [
+              ['lessons', 'active 0  tentative 1  invalidated 0'],
+              ['politics:binary', 'n 6  brier 0.180000  overweighted_late_polls'],
+              ['tentative domain:politics', 'Election forecasts should discount late poll herding.']
+            ],
+            title: 'Learning Memory'
+          },
+          {
+            rows: [
+              ['verdict', 'insufficient live evidence'],
+              ['scores', 'live 3  backtest 12  baseline 12'],
+              ['backtests', 'agent-protocol 0  leakage-free 1  edge 1  datasets 1'],
+              ['gaps', 'live scored forecasts, agent protocol scored cases']
+            ],
+            title: 'Evidence Status'
+          },
+          {
+            rows: [
+              [
+                'bt_fixture001',
+                'cases 12  src forecast-engine  agent 0.080000  market:fixture=0.100000  edge +0.020  wins 8/3/1  claim replay only  leakage ok  fixture-corpus'
+              ]
+            ],
+            title: 'Recent Backtests'
+          },
+          {
+            rows: [
+              ['/alerts', '1 open alert need source or resolution review'],
+              ['/review --stale', '1 forecast queued for stale/close/evidence review'],
+              ['/forecast readiness', '2 evidence gaps blocking stronger benchmark claims'],
+              ['/forecast lesson list', '1 lesson awaiting review']
+            ],
+            title: 'Triage'
+          },
+          {
+            rows: [
+              ['/forecast show fq_123456789abc', 'load full ledger context for Will X win the election?'],
+              ['/forecast research fq_123456789abc', 'collect source notes and evidence without moving probability'],
+              [
+                '/forecast update fq_123456789abc --probability <0-1>',
+                'append an explicit probability update with rationale'
+              ],
+              [
+                '/forecast resolve fq_123456789abc --outcome <value> --source <url>',
+                'record resolution when criteria are met'
+              ]
+            ],
+            title: 'Focused Actions'
+          },
+          {
+            items: [
+              '/sources',
+              '/forecast import gdelt "<query>" --question <id>',
+              '/forecast import owid <slug> --entity "<entity>" --question <id>',
+              '/forecast import eia <series-id-or-api-url> --question <id>',
+              '/forecast import treasury <dataset-path-or-api-url> --question <id>',
+              '/forecast import stooq <symbol-or-csv-url> --question <id>',
+              '/forecast import wikipediapageviews <project>/<article> --question <id>',
+              '/forecast import githubissues <owner/repo> --question <id>',
+              '/forecast import hackernews "<query>" --question <id>',
+              '/forecast import reddit "<query>" --question <id>',
+              '/forecast import clinicaltrials <query-or-NCT-id> --question <id>',
+              '/forecast import openfda <query-or-application-number> --question <id>',
+              '/forecast import openmeteo <lat,lon> --question <id>',
+              '/forecast import usgs "<query>" --question <id>',
+              '/forecast import eonet "<query-or-category>" --question <id>',
+              '/forecast import nws "<area-or-point-or-query>" --question <id>',
+              '/forecast import nvd "<keyword-or-CVE>" --question <id>',
+              '/forecast import cisakev "<keyword-or-CVE-or-all>" --question <id>',
+              '/forecast import federalregister "<query>" --question <id>',
+              '/forecast watch add --question <id> <adapter>:<source>'
+            ],
+            title: 'Evidence Imports'
+          },
+          {
+            items: [
+              '/forecast review --stale',
+              '/forecast self-check',
+              '/sources',
+              '/forecast calibration --by-origin',
+              '/forecast performance --last 5',
+              '/forecast readiness',
+              '/forecast pilot-report',
+              '/forecast backtest --benchmarks'
+            ],
+            title: 'Next Commands'
+          }
+        ],
+        title: 'Forecast Desk'
+      },
+      role: 'system'
+    })
+  })
+
+  it('refreshes forecast desk status without showing startup panel for explicit resume', async () => {
+    const appended: Msg[] = []
+    const resumeById = vi.fn()
+    const ctx = buildCtx(appended)
+
+    ctx.session.STARTUP_RESUME_ID = 'explicit-session'
+    ctx.session.resumeById = resumeById
+    ctx.gateway.rpc = vi.fn(async (method: string) => {
+      if (method === 'forecast.dashboard') {
+        return {
+          output: 'should not render',
+          summary: {
+            active_count: 3,
+            open_alert_count: 2,
+            product: 'Superforecasting Agent',
+            questions: [],
+            review_queue_count: 1
+          }
+        }
+      }
+
+      return null
+    })
+
+    createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
+
+    await vi.waitFor(() => expect(resumeById).toHaveBeenCalledWith('explicit-session'))
+    await vi.waitFor(() => expect(getUiState().forecastDeskStatus).toBe('desk 3 active / 2 alerts / 1 review'))
+    expect(ctx.gateway.rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 8 })
+    expect(appended).toEqual([])
   })
 
   it('on gateway.ready with auto_resume on and a recent session, resumes it', async () => {

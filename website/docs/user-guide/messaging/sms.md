@@ -2,12 +2,14 @@
 sidebar_position: 8
 sidebar_label: "SMS (Twilio)"
 title: "SMS (Twilio)"
-description: "Set up Hermes Agent as an SMS chatbot via Twilio"
+description: "Use Twilio SMS for forecast alerts and approvals."
 ---
 
 # SMS Setup (Twilio)
 
-Hermes connects to SMS through the [Twilio](https://www.twilio.com/) API. People text your Twilio phone number and get AI responses back — same conversational experience as Telegram or Discord, but over standard text messages.
+The forecast gateway connects to SMS through the [Twilio](https://www.twilio.com/) API. Use it for short forecast alerts, approval prompts, and scheduled review notifications over standard text messages.
+
+SMS is not a durable learning layer. Source details, probabilities, evidence, assumptions, resolutions, postmortems, and calibration lessons should be written to the forecast ledger.
 
 :::info Shared Credentials
 The SMS gateway shares credentials with the optional [telephony skill](/docs/reference/skills-catalog). If you've already set up Twilio for voice calls or one-off SMS, the gateway works with the same `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_PHONE_NUMBER`.
@@ -20,7 +22,7 @@ The SMS gateway shares credentials with the optional [telephony skill](/docs/ref
 - **Twilio account** — [Sign up at twilio.com](https://www.twilio.com/try-twilio) (free trial available)
 - **A Twilio phone number** with SMS capability
 - **A publicly accessible server** — Twilio sends webhooks to your server when SMS arrives
-- **aiohttp** — `pip install 'hermes-agent[sms]'`
+- **aiohttp** — `pip install 'superforecasting-agent[sms]'`
 
 ---
 
@@ -32,19 +34,19 @@ The SMS gateway shares credentials with the optional [telephony skill](/docs/ref
 
 ---
 
-## Step 2: Configure Hermes
+## Step 2: Configure Superforecasting Agent
 
 ### Interactive setup (recommended)
 
 ```bash
-hermes gateway setup
+superforecasting-agent gateway setup
 ```
 
 Select **SMS (Twilio)** from the platform list. The wizard will prompt for your credentials.
 
 ### Manual setup
 
-Add to `~/.hermes/.env`:
+Add to `~/.superforecasting-agent/.env`:
 
 ```bash
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -54,7 +56,7 @@ TWILIO_PHONE_NUMBER=+15551234567
 # Security: restrict to specific phone numbers (recommended)
 SMS_ALLOWED_USERS=+15559876543,+15551112222
 
-# Optional: set a home channel for cron job delivery
+# Optional: set a home channel for scheduled review delivery
 SMS_HOME_CHANNEL=+15559876543
 ```
 
@@ -71,7 +73,7 @@ Twilio needs to know where to send incoming messages. In the [Twilio Console](ht
    - **HTTP Method**: `POST`
 
 :::tip Exposing Your Webhook
-If you're running Hermes locally, use a tunnel to expose the webhook:
+If you're running Superforecasting Agent locally, use a tunnel to expose the webhook:
 
 ```bash
 # Using cloudflared
@@ -102,7 +104,7 @@ SMS_WEBHOOK_PORT=3000
 ## Step 4: Start the Gateway
 
 ```bash
-hermes gateway
+superforecasting-agent gateway
 ```
 
 You should see:
@@ -113,7 +115,7 @@ You should see:
 
 If you see `Refusing to start: SMS_WEBHOOK_URL is required`, set `SMS_WEBHOOK_URL` to the public URL configured in your Twilio Console (see Step 3).
 
-Text your Twilio number — Hermes will respond via SMS.
+Text your Twilio number. The forecast runtime responds via SMS.
 
 ---
 
@@ -128,9 +130,9 @@ Text your Twilio number — Hermes will respond via SMS.
 | `SMS_WEBHOOK_PORT` | No | Webhook listener port (default: `8080`) |
 | `SMS_WEBHOOK_HOST` | No | Webhook bind address (default: `0.0.0.0`) |
 | `SMS_INSECURE_NO_SIGNATURE` | No | Set to `true` to disable signature validation (local dev only — **not for production**) |
-| `SMS_ALLOWED_USERS` | No | Comma-separated E.164 phone numbers allowed to chat |
+| `SMS_ALLOWED_USERS` | No | Comma-separated E.164 phone numbers allowed to interact |
 | `SMS_ALLOW_ALL_USERS` | No | Set to `true` to allow anyone (not recommended) |
-| `SMS_HOME_CHANNEL` | No | Phone number for cron job / notification delivery |
+| `SMS_HOME_CHANNEL` | No | Phone number for scheduled review / notification delivery |
 | `SMS_HOME_CHANNEL_NAME` | No | Display name for the home channel (default: `Home`) |
 
 ---
@@ -148,7 +150,7 @@ Text your Twilio number — Hermes will respond via SMS.
 
 ### Webhook signature validation
 
-Hermes validates that inbound webhooks genuinely originate from Twilio by verifying the `X-Twilio-Signature` header (HMAC-SHA1). This prevents attackers from injecting forged messages.
+The adapter validates that inbound webhooks genuinely originate from Twilio by verifying the `X-Twilio-Signature` header (HMAC-SHA1). This prevents attackers from injecting forged messages.
 
 **`SMS_WEBHOOK_URL` is required.** Set it to the public URL configured in your Twilio Console. The adapter will refuse to start without it.
 
@@ -167,7 +169,7 @@ SMS_INSECURE_NO_SIGNATURE=true
 # Recommended: restrict to specific phone numbers
 SMS_ALLOWED_USERS=+15559876543,+15551112222
 
-# Or allow all (NOT recommended for bots with terminal access)
+# Or allow all (NOT recommended when terminal or source-access tools are enabled)
 SMS_ALLOW_ALL_USERS=true
 ```
 
@@ -190,7 +192,7 @@ SMS has no built-in encryption. Don't use SMS for sensitive operations unless yo
 
 1. Check `TWILIO_PHONE_NUMBER` is set correctly (E.164 format with `+`)
 2. Verify your Twilio account has SMS-capable numbers
-3. Check Hermes gateway logs for Twilio API errors
+3. Check Superforecasting Agent gateway logs for Twilio API errors
 
 ### Webhook port conflicts
 

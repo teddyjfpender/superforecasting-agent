@@ -1,22 +1,24 @@
 """
-Profile management for multiple isolated Hermes instances.
+Profile management for multiple isolated Superforecasting Agent instances.
 
 Each profile is a fully independent HERMES_HOME directory with its own
 config.yaml, .env, memory, sessions, skills, gateway, cron, and logs.
-Profiles live under ``~/.hermes/profiles/<name>/`` by default.
+Profiles live under ``~/.superforecasting-agent/profiles/<name>/`` by
+default for new installs, with ``~/.hermes/profiles/<name>/`` kept as a
+legacy fallback.
 
-The "default" profile is ``~/.hermes`` itself — backward compatible,
-zero migration needed.
+The "default" profile is the root runtime home itself — backward compatible,
+zero migration needed for existing Hermes homes.
 
 Usage::
 
-    hermes profile create coder          # fresh profile + bundled skills
-    hermes profile create coder --clone  # also copy config, .env, SOUL.md, skills
-    hermes profile create coder --clone-all  # full copy of source profile
+    superforecasting-agent profile create coder          # fresh profile + bundled skills
+    superforecasting-agent profile create coder --clone  # also copy config, .env, SOUL.md, skills
+    superforecasting-agent profile create coder --clone-all  # full copy of source profile
     coder chat                           # use via wrapper alias
-    hermes -p coder chat                 # or via flag
-    hermes profile use coder             # set as sticky default
-    hermes profile delete coder          # remove profile + alias + service
+    superforecasting-agent -p coder chat # or via flag
+    superforecasting-agent profile use coder             # set as sticky default
+    superforecasting-agent profile delete coder          # remove profile + alias + service
 """
 
 import json
@@ -97,13 +99,21 @@ _CLONE_ALL_DEFAULT_EXCLUDE_ROOT: frozenset[str] = frozenset({
     "node_modules",
 })
 
-# Marker file written by `hermes profile create --no-skills`.  When present in
-# a profile's root, callers of seed_profile_skills() (fresh-create, `hermes
-# update`'s all-profile sync, the web dashboard) skip bundled-skill seeding
+# Marker file written by `superforecasting-agent profile create --no-skills`.
+# When present in a profile's root, callers of seed_profile_skills()
+# (fresh-create, `superforecasting-agent update`'s all-profile sync, the web
+# dashboard) skip bundled-skill seeding
 # for that profile.  The user can still install skills manually via
-# `hermes skills install` or drop SKILL.md files into the profile's skills/.
-# Delete the marker file to opt back in.
+# `superforecasting-agent skills install` or drop SKILL.md files into the
+# profile's skills/. Delete the marker file to opt back in.
 NO_BUNDLED_SKILLS_MARKER = ".no-bundled-skills"
+_PROFILE_WRAPPER_MARKERS = ("superforecasting-agent -p", "hermes -p")
+_PROFILE_WRAPPER_SCRIPT = """#!/bin/sh
+if command -v superforecasting-agent >/dev/null 2>&1; then
+  exec superforecasting-agent -p {profile} "$@"
+fi
+exec hermes -p {profile} "$@"
+"""
 
 
 def has_bundled_skills_opt_out(profile_dir: Path) -> bool:
@@ -119,8 +129,8 @@ def _clone_all_copytree_ignore(source_dir: Path):
 
     Two categories:
       1. Root-level entries in ``_CLONE_ALL_DEFAULT_EXCLUDE_ROOT`` — known
-         Hermes infrastructure directories that only the default profile
-         (``~/.hermes``) ever contains.  Gated on ``source_dir`` actually
+         inherited runtime infrastructure directories that only the default
+         profile ever contains.  Gated on ``source_dir`` actually
          being the default profile so a named-profile source never has its
          own data silently dropped.
       2. Universal exclusions at any depth — Python bytecode caches that
@@ -289,7 +299,7 @@ def validate_profile_name(name: str) -> None:
     if name in _RESERVED_NAMES:
         raise ValueError(
             f"Profile name {name!r} is reserved — it collides with either "
-            f"the Hermes installation itself or a common system binary.  "
+            f"the Superforecasting Agent installation itself or a common system binary.  "
             f"Pick a different name."
         )
 
@@ -317,13 +327,13 @@ def profile_exists(name: str) -> bool:
 def check_alias_collision(name: str) -> Optional[str]:
     """Return a human-readable collision message, or None if the name is safe.
 
-    Checks: reserved names, hermes subcommands, existing binaries in PATH.
+    Checks: reserved names, CLI subcommands, existing binaries in PATH.
     """
     canon = normalize_profile_name(name)
     if canon in _RESERVED_NAMES:
         return f"'{canon}' is a reserved name"
     if canon in _HERMES_SUBCOMMANDS:
-        return f"'{canon}' conflicts with a hermes subcommand"
+        return f"'{canon}' conflicts with a superforecasting-agent subcommand"
 
     # Check existing commands in PATH
     wrapper_dir = _get_wrapper_dir()
@@ -337,7 +347,7 @@ def check_alias_collision(name: str) -> Optional[str]:
             if existing_path == str(wrapper_dir / canon):
                 try:
                     content = (wrapper_dir / canon).read_text()
-                    if "hermes -p" in content:
+                    if any(marker in content for marker in _PROFILE_WRAPPER_MARKERS):
                         return None  # it's our wrapper, safe to overwrite
                 except Exception:
                     pass
@@ -354,12 +364,13 @@ def _is_wrapper_dir_in_path() -> bool:
     return wrapper_dir in os.environ.get("PATH", "").split(os.pathsep)
 
 
-def create_wrapper_script(name: str) -> Optional[Path]:
+def create_wrapper_script(name: str, profile_name: Optional[str] = None) -> Optional[Path]:
     """Create a shell wrapper script at ~/.local/bin/<name>.
 
     Returns the path to the created wrapper, or None if creation failed.
     """
     canon = normalize_profile_name(name)
+    target_profile = normalize_profile_name(profile_name or name)
     wrapper_dir = _get_wrapper_dir()
     try:
         wrapper_dir.mkdir(parents=True, exist_ok=True)
@@ -369,7 +380,7 @@ def create_wrapper_script(name: str) -> Optional[Path]:
 
     wrapper_path = wrapper_dir / canon
     try:
-        wrapper_path.write_text(f'#!/bin/sh\nexec hermes -p {canon} "$@"\n')
+        wrapper_path.write_text(_PROFILE_WRAPPER_SCRIPT.format(profile=target_profile))
         wrapper_path.chmod(wrapper_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
         return wrapper_path
     except OSError as e:
@@ -384,7 +395,7 @@ def remove_wrapper_script(name: str) -> bool:
         try:
             # Verify it's our wrapper before removing
             content = wrapper_path.read_text()
-            if "hermes -p" in content:
+            if any(marker in content for marker in _PROFILE_WRAPPER_MARKERS):
                 wrapper_path.unlink()
                 return True
         except Exception:
@@ -657,7 +668,7 @@ def create_profile(
         If True, skip wrapper script creation.
     no_skills:
         If True, create an empty profile with no bundled skills, and write
-        a marker file so ``hermes update`` skips re-seeding this profile's
+        a marker file so ``superforecasting-agent update`` skips re-seeding this profile's
         skills. Mutually exclusive with ``clone_config``/``clone_all`` (those
         explicitly copy skills from the source).
 
@@ -676,7 +687,8 @@ def create_profile(
 
     if canon == "default":
         raise ValueError(
-            "Cannot create a profile named 'default' — it is the built-in profile (~/.hermes)."
+            "Cannot create a profile named 'default' — it is the built-in "
+            f"profile ({_get_default_hermes_home()})."
         )
 
     profile_dir = get_profile_dir(canon)
@@ -748,14 +760,15 @@ def create_profile(
         except Exception:
             pass  # best-effort — don't fail profile creation over this
 
-    # Write the opt-out marker so seed_profile_skills() and `hermes update`'s
-    # all-profile sync loop both skip this profile for bundled-skill seeding.
+    # Write the opt-out marker so seed_profile_skills() and
+    # `superforecasting-agent update`'s all-profile sync loop both skip this
+    # profile for bundled-skill seeding.
     if no_skills:
         try:
             (profile_dir / NO_BUNDLED_SKILLS_MARKER).write_text(
                 "This profile opted out of bundled-skill seeding "
-                "(`hermes profile create --no-skills`).\n"
-                "Delete this file to re-enable sync on the next `hermes update`.\n",
+                "(`superforecasting-agent profile create --no-skills`).\n"
+                "Delete this file to re-enable sync on the next `superforecasting-agent update`.\n",
                 encoding="utf-8",
             )
         except OSError:
@@ -772,7 +785,7 @@ def create_profile(
                 description_auto=False,
             )
         except Exception:
-            pass  # non-fatal — user can describe later with `hermes profile describe`
+            pass  # non-fatal — user can describe later with `superforecasting-agent profile describe`
 
     return profile_dir
 
@@ -783,8 +796,8 @@ def seed_profile_skills(profile_dir: Path, quiet: bool = False) -> Optional[dict
     Uses subprocess because sync_skills() caches HERMES_HOME at module level.
     Returns the sync result dict, or None on failure.
 
-    Profiles that opted out of bundled skills (via ``hermes profile create
-    --no-skills`` — which writes ``.no-bundled-skills`` to the profile root)
+    Profiles that opted out of bundled skills (via ``superforecasting-agent
+    profile create --no-skills`` — which writes ``.no-bundled-skills`` to the profile root)
     are skipped and get an empty-result dict so callers can report
     "opted out" instead of "failed".
     """
@@ -835,8 +848,8 @@ def delete_profile(name: str, yes: bool = False) -> Path:
 
     if canon == "default":
         raise ValueError(
-            "Cannot delete the default profile (~/.hermes).\n"
-            "To remove everything, use: hermes uninstall"
+            f"Cannot delete the default profile ({_get_default_hermes_home()}).\n"
+            "To remove everything, use: superforecasting-agent uninstall"
         )
 
     profile_dir = get_profile_dir(canon)
@@ -1036,7 +1049,7 @@ def set_active_profile(name: str) -> None:
     if canon != "default" and not profile_exists(canon):
         raise FileNotFoundError(
             f"Profile '{canon}' does not exist. "
-            f"Create it with: hermes profile create {canon}"
+            f"Create it with: superforecasting-agent profile create {canon}"
         )
 
     path = _get_active_profile_path()
@@ -1245,7 +1258,7 @@ def import_profile(archive_path: str, name: Optional[str] = None) -> Path:
     if not inferred_name:
         raise ValueError(
             "Cannot determine profile name from archive. "
-            "Specify it explicitly: hermes profile import <archive> --name <name>"
+            "Specify it explicitly: superforecasting-agent profile import <archive> --name <name>"
         )
     if archive_root is None:
         raise ValueError(
@@ -1260,7 +1273,7 @@ def import_profile(archive_path: str, name: Optional[str] = None) -> Path:
     if canon == "default":
         raise ValueError(
             "Cannot import as 'default' — that is the built-in root profile (~/.hermes). "
-            "Specify a different name: hermes profile import <archive> --name <name>"
+            "Specify a different name: superforecasting-agent profile import <archive> --name <name>"
         )
 
     profile_dir = get_profile_dir(canon)
@@ -1419,7 +1432,7 @@ def resolve_profile_env(profile_name: str) -> str:
     if canon != "default" and not profile_dir.is_dir():
         raise FileNotFoundError(
             f"Profile '{canon}' does not exist. "
-            f"Create it with: hermes profile create {canon}"
+            f"Create it with: superforecasting-agent profile create {canon}"
         )
 
     return str(profile_dir)

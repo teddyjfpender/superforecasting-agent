@@ -5,6 +5,7 @@ import { Fragment, memo, useMemo, useRef } from 'react'
 import { useGateway } from '../app/gatewayContext.js'
 import type { AppLayoutProps } from '../app/interfaces.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../app/overlayStore.js'
+import { forecastDeskActionStripItems } from '../app/forecastPanel.js'
 import { $uiState } from '../app/uiStore.js'
 import { INLINE_MODE, SHOW_FPS } from '../config/env.js'
 import { PLACEHOLDER } from '../content/placeholders.js'
@@ -16,6 +17,7 @@ import {
 } from '../lib/inputMetrics.js'
 import { PerfPane } from '../lib/perfPane.js'
 import { composerPromptText } from '../lib/prompt.js'
+import type { PanelSection } from '../types.js'
 
 import { AgentsOverlay } from './agentsOverlay.js'
 import { GoodVibesHeart, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
@@ -27,6 +29,12 @@ import { MessageLine } from './messageLine.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
+
+const FORECAST_RAIL_MIN_COLS = 132
+const FORECAST_RAIL_WIDTH = 44
+
+const truncateRail = (value: string, max: number) =>
+  value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value
 
 const PromptPrefix = memo(function PromptPrefix({
   bold = false,
@@ -314,7 +322,7 @@ const ComposerPane = memo(function ComposerPane({
         )}
       </Box>
 
-      {!composer.empty && !ui.sid && <Text color={ui.theme.color.muted}>⚕ {ui.status}</Text>}
+      {!composer.empty && !ui.sid && <Text color={ui.theme.color.muted}>P {ui.status}</Text>}
 
       <StatusRulePane at="bottom" composer={composer} status={status} />
     </NoSelect>
@@ -354,6 +362,7 @@ const StatusRulePane = memo(function StatusRulePane({
         busy={ui.busy}
         cols={composer.cols}
         cwdLabel={status.cwdLabel}
+        deskStatus={ui.forecastDeskStatus}
         model={ui.info?.model ?? ''}
         modelFast={ui.info?.fast || ui.info?.service_tier === 'priority'}
         modelReasoningEffort={ui.info?.reasoning_effort}
@@ -370,6 +379,113 @@ const StatusRulePane = memo(function StatusRulePane({
   )
 })
 
+const ForecastDeskActionStrip = memo(function ForecastDeskActionStrip({
+  cols,
+  railVisible
+}: {
+  cols: number
+  railVisible: boolean
+}) {
+  const ui = useStore($uiState)
+  const actions = useMemo(
+    () => forecastDeskActionStripItems(ui.forecastDeskRailSections, railVisible ? 3 : 4),
+    [railVisible, ui.forecastDeskRailSections]
+  )
+
+  if (!actions.length || ui.compact) {
+    return null
+  }
+
+  const maxDetail = Math.max(18, Math.min(46, Math.floor(cols / actions.length) - 14))
+
+  return (
+    <NoSelect flexDirection="column" flexShrink={0} paddingX={1}>
+      <Text wrap="truncate">
+        <Text bold color={ui.theme.color.primary}>
+          desk actions
+        </Text>
+
+        {actions.map((action, index) => (
+          <Fragment key={action.command}>
+            <Text color={ui.theme.color.muted}>{index === 0 ? '  ' : '  |  '}</Text>
+            <Text color={ui.theme.color.accent}>{action.command}</Text>
+            {action.detail ? (
+              <Text color={ui.theme.color.muted}> {truncateRail(action.detail, maxDetail)}</Text>
+            ) : null}
+          </Fragment>
+        ))}
+      </Text>
+    </NoSelect>
+  )
+})
+
+const ForecastDeskRail = memo(function ForecastDeskRail({
+  sections,
+  status
+}: {
+  sections: PanelSection[]
+  status: string
+}) {
+  const ui = useStore($uiState)
+  const visibleSections = sections.filter(sec => sec.rows?.length || sec.items?.length || sec.text).slice(0, 5)
+
+  if (!visibleSections.length) {
+    return null
+  }
+
+  return (
+    <Box
+      borderColor={ui.theme.color.border}
+      borderStyle="single"
+      flexDirection="column"
+      flexShrink={0}
+      height="100%"
+      paddingX={1}
+      paddingY={1}
+      width={FORECAST_RAIL_WIDTH}
+    >
+      <Text bold color={ui.theme.color.primary} wrap="truncate">
+        Forecast Desk
+      </Text>
+
+      {status && (
+        <Text color={ui.theme.color.muted} wrap="truncate">
+          {truncateRail(status, FORECAST_RAIL_WIDTH - 4)}
+        </Text>
+      )}
+
+      {visibleSections.map((sec, si) => (
+        <Box flexDirection="column" key={si} marginTop={si > 0 || status ? 1 : 0}>
+          {sec.title && (
+            <Text bold color={ui.theme.color.accent} wrap="truncate">
+              {truncateRail(sec.title, FORECAST_RAIL_WIDTH - 4)}
+            </Text>
+          )}
+
+          {sec.rows?.slice(0, 4).map(([key, value], rowIndex) => (
+            <Text key={rowIndex} wrap="truncate">
+              <Text color={ui.theme.color.muted}>{truncateRail(key, 13).padEnd(13)}</Text>
+              <Text color={ui.theme.color.text}>{truncateRail(value, FORECAST_RAIL_WIDTH - 19)}</Text>
+            </Text>
+          ))}
+
+          {sec.items?.slice(0, 4).map((item, itemIndex) => (
+            <Text color={ui.theme.color.text} key={itemIndex} wrap="truncate">
+              {truncateRail(item, FORECAST_RAIL_WIDTH - 4)}
+            </Text>
+          ))}
+
+          {sec.text && (
+            <Text color={ui.theme.color.muted} wrap="truncate">
+              {truncateRail(sec.text, FORECAST_RAIL_WIDTH - 4)}
+            </Text>
+          )}
+        </Box>
+      ))}
+    </Box>
+  )
+})
+
 export const AppLayout = memo(function AppLayout({
   actions,
   composer,
@@ -380,6 +496,8 @@ export const AppLayout = memo(function AppLayout({
 }: AppLayoutProps) {
   const overlay = useStore($overlayState)
   const ui = useStore($uiState)
+  const showForecastRail =
+    !overlay.agents && !ui.compact && composer.cols >= FORECAST_RAIL_MIN_COLS && ui.forecastDeskRailSections.length > 0
 
   // Inline mode skips AlternateScreen so the host terminal's native
   // scrollback captures rows scrolled off the top; composer + progress
@@ -396,9 +514,19 @@ export const AppLayout = memo(function AppLayout({
               <AgentsOverlayPane />
             </PerfPane>
           ) : (
-            <PerfPane id="transcript">
-              <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
-            </PerfPane>
+            <>
+              <PerfPane id="transcript">
+                <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
+              </PerfPane>
+
+              {showForecastRail && (
+                <NoSelect flexShrink={0} marginLeft={1}>
+                  <PerfPane id="forecast-rail">
+                    <ForecastDeskRail sections={ui.forecastDeskRailSections} status={ui.forecastDeskStatus} />
+                  </PerfPane>
+                </NoSelect>
+              )}
+            </>
           )}
         </Box>
 
@@ -412,6 +540,10 @@ export const AppLayout = memo(function AppLayout({
                 onSecretSubmit={actions.answerSecret}
                 onSudoSubmit={actions.answerSudo}
               />
+            </PerfPane>
+
+            <PerfPane id="forecast-actions">
+              <ForecastDeskActionStrip cols={composer.cols} railVisible={showForecastRail} />
             </PerfPane>
 
             <PerfPane id="composer">

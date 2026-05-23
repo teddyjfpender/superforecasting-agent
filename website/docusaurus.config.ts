@@ -3,15 +3,15 @@ import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
-  title: 'Hermes Agent',
-  tagline: 'The self-improving AI agent',
+  title: 'Superforecasting Agent',
+  tagline: 'A CLI forecasting desk that compounds judgment over time',
   favicon: 'img/favicon.ico',
 
-  url: 'https://hermes-agent.nousresearch.com',
+  url: 'https://superforecasting-agent.nousresearch.com',
   baseUrl: '/docs/',
 
   organizationName: 'NousResearch',
-  projectName: 'hermes-agent',
+  projectName: 'superforecasting-agent',
 
   onBrokenLinks: 'warn',
 
@@ -77,7 +77,7 @@ const config: Config = {
         docs: {
           routeBasePath: '/',  // Docs at the root of /docs/
           sidebarPath: './sidebars.ts',
-          editUrl: 'https://github.com/NousResearch/hermes-agent/edit/main/website/',
+          editUrl: 'https://github.com/NousResearch/superforecasting-agent/edit/main/website/',
         },
         blog: false,
         theme: {
@@ -100,9 +100,9 @@ const config: Config = {
       },
     },
     navbar: {
-      title: 'Hermes Agent',
+      title: 'Superforecasting Agent',
       logo: {
-        alt: 'Hermes Agent',
+        alt: 'Superforecasting Agent',
         src: 'img/logo.png',
       },
       items: [
@@ -122,12 +122,12 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://hermes-agent.nousresearch.com',
+          to: '/',
           label: 'Home',
           position: 'right',
         },
         {
-          href: 'https://github.com/NousResearch/hermes-agent',
+          href: 'https://github.com/NousResearch/superforecasting-agent',
           label: 'GitHub',
           position: 'right',
         },
@@ -154,14 +154,14 @@ const config: Config = {
           title: 'Community',
           items: [
             { label: 'Discord', href: 'https://discord.gg/NousResearch' },
-            { label: 'GitHub Discussions', href: 'https://github.com/NousResearch/hermes-agent/discussions' },
+            { label: 'GitHub Discussions', href: 'https://github.com/NousResearch/superforecasting-agent/discussions' },
             { label: 'Skills Hub', href: 'https://agentskills.io' },
           ],
         },
         {
           title: 'More',
           items: [
-            { label: 'GitHub', href: 'https://github.com/NousResearch/hermes-agent' },
+            { label: 'GitHub', href: 'https://github.com/NousResearch/superforecasting-agent' },
             { label: 'Nous Research', href: 'https://nousresearch.com' },
           ],
         },

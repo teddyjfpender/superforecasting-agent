@@ -1,25 +1,25 @@
 ---
 sidebar_position: 9
-title: "Run Hermes Locally with Ollama — Zero API Cost"
-description: "Step-by-step guide to running Hermes Agent entirely on your own machine with Ollama and open-weight models like Gemma 4, no cloud API keys or paid subscriptions needed"
+title: "Run Superforecasting Agent Locally with Ollama"
+description: "Run the forecasting desk on your own hardware with Ollama and open-weight models."
 ---
 
-# Run Hermes Locally with Ollama — Zero API Cost
+# Run Superforecasting Agent Locally with Ollama
 
 ## The Problem
 
-Cloud LLM APIs charge per token. A heavy coding session can cost $5–20. For personal projects, learning, or privacy-sensitive work, that adds up — and you're sending every conversation to a third party.
+Cloud LLM APIs charge per token. A long research session that reviews evidence, calls tools, and revisits forecasts can add up quickly, and every prompt leaves your machine.
 
 ## What This Guide Solves
 
-You'll set up Hermes Agent running entirely on your own hardware, using [Ollama](https://ollama.com) as the model backend. No API keys, no subscriptions, no data leaving your machine. Once configured, Hermes works exactly like it does with OpenRouter or Anthropic — terminal commands, file editing, web browsing, delegation — but the model runs locally.
+You'll set up Superforecasting Agent running entirely on your own hardware, using [Ollama](https://ollama.com) as the model backend. No API keys, no subscriptions, no cloud model calls. Once configured, the CLI forecast desk can research questions, inspect local files, browse sources, update the forecast ledger, and run scheduled self-checks while the model runs locally.
 
 By the end, you'll have:
 
 - Ollama serving one or more open-weight models
-- Hermes connected to Ollama as a custom endpoint
-- A working local agent that can edit files, run commands, and browse the web
-- Optional: a Telegram/Discord bot powered entirely by your own hardware
+- Superforecasting Agent connected to Ollama as a custom endpoint
+- A local forecast desk that can research, update, and review forecasts
+- Optional: Telegram/Discord delivery for alerts and scheduled review prompts
 
 ## What You Need
 
@@ -34,9 +34,11 @@ By the end, you'll have:
 Ollama runs on CPU-only servers. A 9B model on a modern 8-core CPU gives ~10 tokens/sec. A 31B model on CPU is slower (~2–5 tokens/sec) — each response takes 30–120 seconds, but it works. A GPU dramatically improves this. For CPU-only setups, widen the API timeout via the env var (it's not a `config.yaml` key):
 
 ```bash
-# ~/.hermes/.env
+# ~/.superforecasting-agent/.env
 HERMES_API_TIMEOUT=1800   # 30 minutes — generous for slow local models
 ```
+
+`~/.hermes/.env` is still read as a legacy compatibility path during migration, but new setups should prefer the fork-native home.
 :::
 
 ## Step 1: Install Ollama
@@ -64,7 +66,7 @@ Choose based on your hardware:
 | `llama3.2:3b` | ~2 GB | 4+ GB | No | Lightweight quick answers only |
 
 :::warning Tool calling matters
-Hermes is an **agentic** assistant — it edits files, runs commands, and browses the web through tool calls. Models without tool-call support can only chat; they can't take actions. For the full Hermes experience, use a model that supports tools (like `gemma4:31b`).
+Superforecasting Agent uses tool calls to gather evidence, write append-only ledger entries, run backtests, and schedule self-checks. Models without reliable tool-call support can help with short summaries, but they cannot safely drive the full forecasting workflow. For the full local desk experience, use a model that supports tools (like `gemma4:31b`).
 :::
 
 Pull your chosen model:
@@ -74,7 +76,7 @@ ollama pull gemma4:31b
 ```
 
 :::info Multiple models
-You can pull several models and switch between them inside Hermes with `/model`. Ollama loads the active model into memory on demand and unloads idle ones automatically.
+You can pull several models and switch between them inside Superforecasting Agent with `/model`. Ollama loads the active model into memory on demand and unloads idle ones automatically.
 :::
 
 Verify the model works:
@@ -91,12 +93,12 @@ curl http://localhost:11434/v1/chat/completions \
 
 You should see a JSON response with the model's reply.
 
-## Step 3: Configure Hermes
+## Step 3: Configure Superforecasting Agent
 
-Run the Hermes setup wizard:
+Run the setup wizard:
 
 ```bash
-hermes setup
+superforecasting-agent setup
 ```
 
 When prompted for a provider, select **Custom Endpoint** and enter:
@@ -105,7 +107,7 @@ When prompted for a provider, select **Custom Endpoint** and enter:
 - **API Key:** Leave empty or type `no-key` (Ollama doesn't need one)
 - **Model:** `gemma4:31b` (or whichever model you pulled)
 
-Alternatively, edit `~/.hermes/config.yaml` directly:
+Alternatively, edit `~/.superforecasting-agent/config.yaml` directly:
 
 ```yaml
 model:
@@ -114,23 +116,22 @@ model:
   base_url: "http://localhost:11434/v1"
 ```
 
-## Step 4: Start Using Hermes
+## Step 4: Start Forecasting
 
 ```bash
-hermes
+forecast
 ```
 
-That's it. You're now running a fully local agent. Try it out:
+That's it. You're now running the local forecasting desk. Try it out:
 
+```bash
+forecast status
+forecast new "Will the next CPI print be above consensus?" \
+  --resolution-criteria "Resolved by the official BLS CPI release"
+superforecasting-agent chat
 ```
-You: List all Python files in this directory and count the lines of code in each
 
-You: Read the README.md and summarize what this project does
-
-You: Create a Python script that fetches the weather for Ho Chi Minh City
-```
-
-Hermes will use the terminal tool, file operations, and your local model — no cloud calls.
+The forecast desk and chat agent will use the terminal, file, browser, and ledger tools through your local model, with no cloud model calls.
 
 ## Step 5: Pick the Right Model for Your Task
 
@@ -138,12 +139,12 @@ Not every task needs the biggest model. Here's a practical guide:
 
 | Task | Recommended Model | Why |
 |------|-------------------|-----|
-| File edits, code, terminal commands | `gemma4:31b` | Only model with reliable tool calling |
-| Quick Q&A (no tool use needed) | `gemma2:9b` | Fast responses for conversational tasks |
-| Lightweight chat | `llama3.2:3b` | Fastest, but very limited capabilities |
+| Forecast research, ledger updates, tool use | `gemma4:31b` | Most reliable local tool-calling option |
+| Source summaries and low-risk drafting | `gemma2:9b` | Fast responses when no tool writes are needed |
+| Lightweight notes | `llama3.2:3b` | Fastest, but very limited capabilities |
 
 :::note
-For full agentic work (editing files, running commands, browsing), `gemma4:31b` is currently the best local option with tool-call support. Check [Ollama's model library](https://ollama.com/library) for newer models — tool-calling support is expanding rapidly.
+For full forecast-desk work (evidence gathering, command execution, source inspection, and ledger writes), `gemma4:31b` is currently the best local option with tool-call support. Check [Ollama's model library](https://ollama.com/library) for newer models — tool-calling support is expanding rapidly.
 :::
 
 Switch models on the fly inside a session:
@@ -156,7 +157,7 @@ Switch models on the fly inside a session:
 
 ### Increase Ollama's Context Window
 
-By default, Ollama uses a 2048-token context. For agentic work (tool calls, long conversations), you need more:
+By default, Ollama uses a 2048-token context. For long research sessions with tool calls and forecast updates, you need more:
 
 ```bash
 # Create a Modelfile that extends context
@@ -168,7 +169,7 @@ EOF
 ollama create gemma4-16k -f /tmp/Modelfile
 ```
 
-Then update your Hermes config to use `gemma4-16k` as the model name.
+Then update your Superforecasting Agent config to use `gemma4-16k` as the model name.
 
 ### Keep the Model Loaded
 
@@ -198,14 +199,14 @@ ollama ps   # Shows which model is loaded and how many GPU layers
 
 For a 31B model on a 12 GB GPU, you'll get partial offload (~40 layers on GPU, rest on CPU), which still gives a significant speedup.
 
-## Step 7: Run as a Gateway Bot (Optional)
+## Step 7: Deliver Alerts Through a Gateway (Optional)
 
-Once Hermes works locally in the CLI, you can expose it as a Telegram or Discord bot — still running entirely on your hardware.
+Once the local CLI forecast desk works, you can expose review prompts, watched-source alerts, and scheduled self-check summaries through Telegram or Discord while still running the model on your hardware.
 
 ### Telegram
 
 1. Create a bot via [@BotFather](https://t.me/BotFather) and get the token
-2. Add to your `~/.hermes/config.yaml`:
+2. Add to your `~/.superforecasting-agent/config.yaml`:
 
 ```yaml
 model:
@@ -222,10 +223,10 @@ platforms:
 3. Start the gateway:
 
 ```bash
-hermes gateway
+superforecasting-agent gateway
 ```
 
-Now message your bot on Telegram — it responds using your local model.
+Now message your bot on Telegram. Forecast alerts and review prompts use your local model configuration.
 
 ### Discord
 
@@ -239,7 +240,7 @@ platforms:
     token: "YOUR_DISCORD_BOT_TOKEN"
 ```
 
-3. Start: `hermes gateway`
+3. Start: `superforecasting-agent gateway`
 
 ## Step 8: Set Up Fallbacks (Optional)
 
@@ -281,16 +282,16 @@ ollama serve
 Smaller models (3B, 7B) sometimes ignore tool-call instructions and produce plain text instead of structured function calls. Solutions:
 
 - **Use a bigger model** — `gemma4:31b` or `gemma2:27b` handle tool calls much better than 3B/7B models.
-- **Hermes has auto-repair** — it detects malformed tool calls and attempts to fix them automatically.
-- **Set up a fallback** — if the local model fails 3 times, Hermes falls back to a cloud provider.
+- **The inherited runtime has auto-repair** — it detects malformed tool calls and attempts to fix them automatically.
+- **Set up a fallback** — if the local model fails 3 times, Superforecasting Agent falls back to a cloud provider.
 
 ### Context window errors
 
-The default Ollama context (2048 tokens) is too small for agentic work. See [Step 6](#step-6-optimize-for-speed) to increase it.
+The default Ollama context (2048 tokens) is too small for long forecast research sessions. See [Step 6](#step-6-optimize-for-speed) to increase it.
 
 ## Cost Comparison
 
-Here's what running locally saves compared to cloud APIs, based on a typical coding session (~100K tokens input, ~20K tokens output):
+Here's what running locally saves compared to cloud APIs, based on a typical research/update session (~100K tokens input, ~20K tokens output):
 
 | Provider | Cost per Session | Monthly (daily use) |
 |----------|-----------------|---------------------|
@@ -302,11 +303,11 @@ Your only cost is electricity — roughly $0.01–0.05 per session depending on 
 
 ## What Works Well Locally
 
-- **File editing and code generation** — models 9B+ handle this well
-- **Terminal commands** — Hermes wraps the command, runs it, reads output regardless of model
-- **Web browsing** — the browser tool does the fetching; the model just interprets results
-- **Cron jobs and scheduled tasks** — work identically to cloud setups
-- **Multi-platform gateway** — Telegram, Discord, Slack all work with local models
+- **Forecast ledger updates** — local models can draft probability updates and rationales when tool calls are reliable
+- **Source and data review** — the tools fetch files, URLs, RSS feeds, or public data; the model interprets the results
+- **Terminal commands** — the runtime wraps the command, runs it, and reads output regardless of model
+- **Scheduled self-checks** — cron jobs and watched-source alerts work identically to cloud setups
+- **Multi-platform gateway delivery** — Telegram, Discord, and Slack can deliver alerts with local models
 
 ## What's Better with Cloud Models
 

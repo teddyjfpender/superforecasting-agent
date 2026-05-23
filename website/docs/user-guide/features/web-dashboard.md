@@ -1,320 +1,287 @@
 ---
 sidebar_position: 15
 title: "Web Dashboard"
-description: "Browser-based dashboard for managing configuration, API keys, sessions, logs, analytics, cron jobs, and skills"
+description: "Browser dashboard for forecast review, configuration, logs, research sessions, cron jobs, and forecast skills."
 ---
 
 # Web Dashboard
 
-The web dashboard is a browser-based UI for managing your Hermes Agent installation. Instead of editing YAML files or running CLI commands, you can configure settings, manage API keys, and monitor sessions from a clean web interface.
+The web dashboard is a local browser UI for inspecting the Superforecasting Agent runtime. It is secondary to the CLI, but useful for reviewing the forecast book, checking configuration, managing credentials, inspecting research sessions, and watching logs without editing YAML by hand.
+
+The fork-native landing page is **Forecasts**. It shows active questions, review queue, focused action commands, calibration health, learning memory, domain/topic error profiles, alerts, and recent backtests. The embedded chat pane is optional and exists to support forecast work, not to replace the CLI forecast workflow.
 
 ## Quick Start
 
 ```bash
-hermes dashboard
+superforecasting-agent dashboard
 ```
 
-This starts a local web server and opens `http://127.0.0.1:9119` in your browser. The dashboard runs entirely on your machine — no data leaves localhost.
+This starts a local web server and opens `http://127.0.0.1:9119` in your browser. The dashboard runs on your machine.
 
-### Options
+`hermes dashboard` remains accepted for inherited runtime compatibility.
+
+## Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--port` | `9119` | Port to run the web server on |
-| `--host` | `127.0.0.1` | Bind address |
-| `--no-open` | — | Don't auto-open the browser |
-| `--insecure` | off | Allow binding to non-localhost hosts (**DANGEROUS** — exposes API keys on the network; pair with a firewall and strong auth) |
-| `--tui` | off | Expose the in-browser Chat tab (embedded `hermes --tui` via PTY/WebSocket). Alternatively set `HERMES_DASHBOARD_TUI=1`. |
+| `--port` | `9119` | Port to run the web server on. |
+| `--host` | `127.0.0.1` | Bind address. |
+| `--no-open` | off | Do not auto-open the browser. |
+| `--insecure` | off | Allow binding to non-localhost hosts. Use only behind trusted network controls. |
+| `--tui` | off | Expose the optional browser Forecast Chat tab by embedding `superforecasting-agent --tui` behind a PTY/WebSocket bridge. Alternatively set `SUPERFORECASTING_AGENT_DASHBOARD_TUI=1` or `FORECAST_DASHBOARD_TUI=1`; legacy `HERMES_DASHBOARD_TUI=1` is still accepted. |
 
 ```bash
-# Custom port
-hermes dashboard --port 8080
-
-# Bind to all interfaces (use with caution on shared networks)
-hermes dashboard --host 0.0.0.0
-
-# Start without opening browser
-hermes dashboard --no-open
-
-# Enable the in-browser Chat tab
-hermes dashboard --tui
+superforecasting-agent dashboard --port 8080
+superforecasting-agent dashboard --no-open
+superforecasting-agent dashboard --tui
 ```
 
 ## Prerequisites
 
-The default `hermes-agent` install does not ship the HTTP stack or PTY helper — those are optional extras. The **web dashboard** needs FastAPI and Uvicorn (`web` extra). The **Chat** tab also needs `ptyprocess` to spawn the embedded TUI behind a pseudo-terminal (`pty` extra on POSIX). Install both with:
+The default install may not include the HTTP stack or PTY helper. Install the dashboard extras with:
 
 ```bash
-pip install 'hermes-agent[web,pty]'
+pip install 'superforecasting-agent[web]'
 ```
 
-The `web` extra pulls in FastAPI/Uvicorn; `pty` pulls in `ptyprocess` (POSIX) or `pywinpty` (native Windows — note that the embedded TUI itself still requires WSL). `pip install hermes-agent[all]` includes both extras and is the easiest path if you also want messaging/voice/etc.
+For the optional embedded Forecast Chat tab:
 
-When you run `hermes dashboard` without the dependencies, it will tell you what to install. If the frontend hasn't been built yet and `npm` is available, it builds automatically on first launch.
+```bash
+pip install 'superforecasting-agent[web,pty]'
+```
 
-The Chat tab is intentionally off for a plain `hermes dashboard` launch. Start the dashboard with `hermes dashboard --tui` or set `HERMES_DASHBOARD_TUI=1` when you want the embedded browser chat pane.
+The `web` extra installs FastAPI and Uvicorn. The `pty` extra installs the pseudo-terminal helper needed to run the TUI inside the browser on Linux, macOS, or WSL2. Native Windows can use the rest of the dashboard, but the embedded terminal pane requires a POSIX PTY environment.
+
+If dependencies are missing, `superforecasting-agent dashboard` prints the install command. If the frontend has not been built yet and `npm` is available, it builds automatically on first launch.
 
 ## Pages
 
+### Forecasts
+
+The Forecasts page is the dashboard's primary product surface.
+
+It shows:
+
+- Active questions and current probabilities.
+- As-of timestamps, forecast deltas, confidence, and close dates.
+- Alerts from watched sources and scheduled self-checks.
+- Stale forecasts and review queue items.
+- Focused `show`, `research`, `update`, and `resolve` commands for the top
+  review or active forecast.
+- Calibration health by bucket, horizon, domain, and origin.
+- Learning memory, active lessons, and domain/topic error profiles.
+- Evidence-status gaps for live-score counts, agent-protocol replay coverage,
+  leakage-free runs, positive generated-source benchmark edges, and distinct
+  datasets.
+- Recent backtest runs and paired baseline comparisons.
+
+Use this page when you want to see where the forecast book needs work before jumping back into the CLI.
+
+Related CLI commands:
+
+```bash
+forecast status
+forecast review
+forecast alerts
+forecast show <id>
+forecast research <id>
+forecast update <id> --probability <0-1>
+forecast resolve <id> --outcome <value> --source <url>
+forecast calibration --by-origin
+forecast lessons
+forecast performance
+```
+
 ### Status
 
-The landing page shows a live overview of your installation:
+Status shows the runtime state around the forecasting desk:
 
-- **Agent version** and release date
-- **Gateway status** — running/stopped, PID, connected platforms and their state
-- **Active sessions** — count of sessions active in the last 5 minutes
-- **Recent sessions** — list of the 20 most recent sessions with model, message count, token usage, and a preview of the conversation
+- Superforecasting Agent version.
+- Active profile and home path.
+- Gateway status and connected platforms.
+- Active and recent research sessions.
+- Model/provider status.
 
-The status page auto-refreshes every 5 seconds.
+This page is operational telemetry. Forecast truth lives in the ledger, not in the session list.
 
-### Chat
+### Forecast Chat
 
-The **Chat** tab embeds the full Hermes TUI (the same interface you get from `hermes --tui`) directly in the browser. Everything you can do in the terminal TUI — slash commands, model picker, tool-call cards, markdown streaming, clarify/sudo/approval prompts, skin theming — works identically here, because the dashboard is running the real TUI binary and rendering its ANSI output through [xterm.js](https://xtermjs.org/) with its WebGL renderer for pixel-perfect cell layout.
+When started with `--tui`, the dashboard exposes an optional Forecast Chat tab. It embeds the real terminal TUI through xterm.js. The transcript, composer, slash commands, model picker, approvals, clarify prompts, tool activity, and `/forecast` shortcuts are the same TUI flow you get from:
 
-**How it works:**
+```bash
+superforecasting-agent --tui
+```
 
-- `/api/pty` opens a WebSocket authenticated with the dashboard's session token
-- The server spawns `hermes --tui` behind a POSIX pseudo-terminal
-- Keystrokes travel to the PTY; ANSI output streams back to the browser
-- xterm.js's WebGL renderer paints each cell to an integer-pixel grid; mouse tracking (SGR 1006), wide characters (Unicode 11), and box-drawing glyphs all render natively
-- Resizing the browser window resizes the TUI via the `@xterm/addon-fit` addon
+How it works:
 
-**Resume an existing session:** from the **Sessions** tab, click the play icon (▶) next to any session. That jumps to `/chat?resume=<id>` and launches the TUI with `--resume`, loading the full history.
+- `/api/pty` opens a WebSocket authenticated with the dashboard session token.
+- The server spawns `superforecasting-agent --tui` behind a POSIX pseudo-terminal.
+- Keystrokes travel to the PTY; ANSI output streams back to the browser.
+- Resizing the browser window resizes the TUI through xterm.js.
 
-**Prerequisites:**
-
-- Node.js (same requirement as `hermes --tui`; the TUI bundle is built on first launch)
-- `ptyprocess` — installed by the `pty` extra (`pip install 'hermes-agent[web,pty]'`, or `[all]` covers both)
-- POSIX kernel (Linux, macOS, or WSL2).  The `/chat` terminal pane specifically needs a POSIX PTY — native Windows Python has no equivalent, so on a native Windows install the rest of the dashboard (sessions, jobs, metrics, config editor) works but the `/chat` tab will show a banner telling you to use WSL2 for that feature.
-
-Close the browser tab and the PTY is reaped cleanly on the server. Re-opening spawns a fresh session.
+Resume from Research Sessions by opening a session and launching the chat pane with that session id. Close the browser tab to reap the PTY process on the server.
 
 ### Config
 
-A form-based editor for `config.yaml`. All 150+ configuration fields are auto-discovered from `DEFAULT_CONFIG` and organized into tabbed categories:
+Config edits the active profile's `config.yaml`. The form is generated from the default config schema and grouped by runtime area:
 
-- **model** — default model, provider, base URL, reasoning settings
-- **terminal** — backend (local/docker/ssh/modal), timeout, shell preferences
-- **display** — skin, tool progress, resume display, spinner settings
-- **agent** — max iterations, gateway timeout, service tier
-- **delegation** — subagent limits, reasoning effort
-- **memory** — provider selection, context injection settings
-- **approvals** — dangerous command approval mode (ask/yolo/deny)
-- And more — every section of config.yaml has corresponding form fields
+- Model/provider settings.
+- Terminal backend and working directory.
+- Display and skin settings.
+- Forecast-desk tool exposure.
+- Gateway, cron, memory, and extension settings.
+- Approval and security controls.
 
-Fields with known valid values (terminal backend, skin, approval mode, etc.) render as dropdowns. Booleans render as toggles. Everything else is a text input.
+Actions:
 
-**Actions:**
+- **Save** writes the profile config.
+- **Reset to defaults** reverts the form before saving.
+- **Export** downloads the current config as JSON.
+- **Import** uploads JSON config.
 
-- **Save** — writes changes to `config.yaml` immediately
-- **Reset to defaults** — reverts all fields to their default values (doesn't save until you click Save)
-- **Export** — downloads the current config as JSON
-- **Import** — uploads a JSON config file to replace the current values
-
-:::tip
-Config changes take effect on the next agent session or gateway restart. The web dashboard edits the same `config.yaml` file that `hermes config set` and the gateway read from.
-:::
+Config changes usually apply on the next agent session, gateway restart, or TUI restart. The dashboard edits the same config that `superforecasting-agent config set` reads.
 
 ### API Keys
 
-Manage the `.env` file where API keys and credentials are stored. Keys are grouped by category:
+API Keys manages the active profile's `.env` file. Keys are grouped by provider, tool, messaging platform, and setting.
 
-- **LLM Providers** — OpenRouter, Anthropic, OpenAI, DeepSeek, etc.
-- **Tool API Keys** — Browserbase, Firecrawl, Tavily, ElevenLabs, etc.
-- **Messaging Platforms** — Telegram, Discord, Slack bot tokens, etc.
-- **Agent Settings** — non-secret env vars like `API_SERVER_ENABLED`
+Each key shows whether it is set, a redacted preview, a description, a provider link when known, and controls to update or delete it.
 
-Each key shows:
-- Whether it's currently set (with a redacted preview of the value)
-- A description of what it's for
-- A link to the provider's signup/key page
-- An input field to set or update the value
-- A delete button to remove it
+Secrets stay in `.env`. Non-secret settings should usually live in `config.yaml`.
 
-Advanced/rarely-used keys are hidden by default behind a toggle.
+### Research Sessions
 
-### Sessions
+Research sessions are conversation continuity and operational history. They are not the forecast ledger.
 
-Browse and inspect all agent sessions. Each row shows the session title, source platform icon (CLI, Telegram, Discord, Slack, cron), model name, message count, tool call count, and how long ago it was active. Live sessions are marked with a pulsing badge.
+Use this page to:
 
-- **Search** — full-text search across all message content using FTS5. Results show highlighted snippets and auto-scroll to the first matching message when expanded.
-- **Expand** — click a session to load its full message history. Messages are color-coded by role (user, assistant, system, tool) and rendered as Markdown with syntax highlighting.
-- **Tool calls** — assistant messages with tool calls show collapsible blocks with the function name and JSON arguments.
-- **Delete** — remove a session and its message history with the trash icon.
+- Search prior forecast chats and CLI research sessions with FTS5.
+- Inspect message history and tool calls.
+- Resume a prior terminal/TUI session.
+- Delete obsolete research transcripts.
+
+When a session contains important evidence, probability changes, assumptions, or calibration lessons, move those artifacts into the forecast ledger through `forecast evidence`, `forecast update`, `forecast postmortem`, or the `forecast_ledger` tool.
 
 ### Logs
 
-View agent, gateway, and error log files with filtering and live tailing.
+Logs shows agent, gateway, and error logs with filtering and live tailing.
 
-- **File** — switch between `agent`, `errors`, and `gateway` log files
-- **Level** — filter by log level: ALL, DEBUG, INFO, WARNING, or ERROR
-- **Component** — filter by source component: all, gateway, agent, tools, cli, or cron
-- **Lines** — choose how many lines to display (50, 100, 200, or 500)
-- **Auto-refresh** — toggle live tailing that polls for new log lines every 5 seconds
-- **Color-coded** — log lines are colored by severity (red for errors, yellow for warnings, dim for debug)
+Use it for:
+
+- Startup and provider errors.
+- Gateway connection issues.
+- Tool execution traces.
+- Cron/self-check failures.
+- Dashboard/TUI troubleshooting.
 
 ### Analytics
 
-Usage and cost analytics computed from session history. Select a time period (7, 30, or 90 days) to see:
+Analytics summarizes token usage, model usage, cache hit rate, and estimated cost from session history. This is runtime accounting, not forecast performance.
 
-- **Summary cards** — total tokens (input/output), cache hit percentage, total estimated or actual cost, and total session count with daily average
-- **Daily token chart** — stacked bar chart showing input and output token usage per day, with hover tooltips showing breakdowns and cost
-- **Daily breakdown table** — date, session count, input tokens, output tokens, cache hit rate, and cost for each day
-- **Per-model breakdown** — table showing each model used, its session count, token usage, and estimated cost
+For forecast performance, use:
+
+```bash
+forecast calibration
+forecast performance
+forecast backtest
+```
 
 ### Cron
 
-Create and manage scheduled cron jobs that run agent prompts on a recurring schedule.
+Cron manages inherited scheduled agent jobs. Forecast lifecycle schedules are usually better managed through:
 
-- **Create** — fill in a name (optional), prompt, cron expression (e.g. `0 9 * * *`), and delivery target (local, Telegram, Discord, Slack, or email)
-- **Job list** — each job shows its name, prompt preview, schedule expression, state badge (enabled/paused/error), delivery target, last run time, and next run time
-- **Pause / Resume** — toggle a job between active and paused states
-- **Trigger now** — immediately execute a job outside its normal schedule
-- **Delete** — permanently remove a cron job
-
-### Skills
-
-Browse, search, and toggle skills and toolsets. Skills are loaded from `~/.hermes/skills/` and grouped by category.
-
-- **Search** — filter skills and toolsets by name, description, or category
-- **Category filter** — click category pills to narrow the list (e.g. MLOps, MCP, Red Teaming, AI)
-- **Toggle** — enable or disable individual skills with a switch. Changes take effect on the next session.
-- **Toolsets** — a separate section shows built-in toolsets (file operations, web browsing, etc.) with their active/inactive status, setup requirements, and list of included tools
-
-:::warning Security
-The web dashboard reads and writes your `.env` file, which contains API keys and secrets. It binds to `127.0.0.1` by default — only accessible from your local machine. If you bind to `0.0.0.0`, anyone on your network can view and modify your credentials. The dashboard has no authentication of its own.
-:::
-
-## `/reload` Slash Command
-
-The dashboard PR also adds a `/reload` slash command to the interactive CLI. After changing API keys via the web dashboard (or by editing `.env` directly), use `/reload` in an active CLI session to pick up the changes without restarting:
-
-```
-You → /reload
-  Reloaded .env (3 var(s) updated)
+```bash
+forecast schedule
+forecast watch add
+forecast alerts
 ```
 
-This re-reads `~/.hermes/.env` into the running process's environment. Useful when you've added a new provider key via the dashboard and want to use it immediately.
+Use dashboard cron only for general runtime jobs or delivery workflows. Use forecast schedules for stale-forecast checks, evidence scans, resolution checks, scoring, postmortems, and calibration-memory updates.
+
+### Forecast Skills And Toolsets
+
+Browse, search, and toggle forecast skills and toolsets for the active profile. This is a support surface for repeatable research procedures, source workflows, modeling recipes, and review checklists; the forecast ledger remains the durable source of truth. New installs prefer `~/.superforecasting-agent/skills/`; legacy `~/.hermes/skills/` remains readable during compatibility.
+
+For routine forecasting, keep the default `forecast-desk` toolset narrow. Enable broad inherited tools only when they improve evidence quality, modeling, review, or calibration.
+
+## Security
+
+The dashboard reads and writes credentials and config for the active profile.
+
+- It binds to `127.0.0.1` by default.
+- Do not bind to `0.0.0.0` unless the host is protected by trusted network controls.
+- Treat `--insecure` as exposing credentials and tool controls to the network.
+- Keep browser access local when terminal, file, browser, or code-execution tools are enabled.
+
+## Reloading Credentials
+
+After editing `.env` through the dashboard, use `/reload` in an active CLI/TUI session to re-read credentials without restarting the process:
+
+```text
+You -> /reload
+Reloaded .env (3 var(s) updated)
+```
+
+The reload path reads the active profile's `.env`, normally under `~/.superforecasting-agent/` or a named profile directory. Legacy `~/.hermes` homes remain supported.
 
 ## REST API
 
-The web dashboard exposes a REST API that the frontend consumes. You can also call these endpoints directly for automation:
+The frontend consumes the dashboard REST API. You can also call these endpoints directly for local automation.
 
-### GET /api/status
+Forecast endpoints:
 
-Returns agent version, gateway status, platform states, and active session count.
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/forecast/dashboard` | Shared forecast dashboard summary: active book, review queue, calibration health, learning memory, alerts, and backtests. |
 
-### GET /api/sessions
+Runtime endpoints:
 
-Returns the 20 most recent sessions with metadata (model, token counts, timestamps, preview).
-
-### GET /api/config
-
-Returns the current `config.yaml` contents as JSON.
-
-### GET /api/config/defaults
-
-Returns the default configuration values.
-
-### GET /api/config/schema
-
-Returns a schema describing every config field — type, description, category, and select options where applicable. The frontend uses this to render the correct input widget for each field.
-
-### PUT /api/config
-
-Saves a new configuration. Body: `{"config": {...}}`.
-
-### GET /api/env
-
-Returns all known environment variables with their set/unset status, redacted values, descriptions, and categories.
-
-### PUT /api/env
-
-Sets an environment variable. Body: `{"key": "VAR_NAME", "value": "secret"}`.
-
-### DELETE /api/env
-
-Removes an environment variable. Body: `{"key": "VAR_NAME"}`.
-
-### GET /api/sessions/\{session_id\}
-
-Returns metadata for a single session.
-
-### GET /api/sessions/\{session_id\}/messages
-
-Returns the full message history for a session, including tool calls and timestamps.
-
-### GET /api/sessions/search
-
-Full-text search across message content. Query parameter: `q`. Returns matching session IDs with highlighted snippets.
-
-### DELETE /api/sessions/\{session_id\}
-
-Deletes a session and its message history.
-
-### GET /api/logs
-
-Returns log lines. Query parameters: `file` (agent/errors/gateway), `lines` (count), `level`, `component`.
-
-### GET /api/analytics/usage
-
-Returns token usage, cost, and session analytics. Query parameter: `days` (default 30). Response includes daily breakdowns and per-model aggregates.
-
-### GET /api/cron/jobs
-
-Returns all configured cron jobs with their state, schedule, and run history.
-
-### POST /api/cron/jobs
-
-Creates a new cron job. Body: `{"prompt": "...", "schedule": "0 9 * * *", "name": "...", "deliver": "local"}`.
-
-### POST /api/cron/jobs/\{job_id\}/pause
-
-Pauses a cron job.
-
-### POST /api/cron/jobs/\{job_id\}/resume
-
-Resumes a paused cron job.
-
-### POST /api/cron/jobs/\{job_id\}/trigger
-
-Immediately triggers a cron job outside its schedule.
-
-### DELETE /api/cron/jobs/\{job_id\}
-
-Deletes a cron job.
-
-### GET /api/skills
-
-Returns all skills with their name, description, category, and enabled status.
-
-### PUT /api/skills/toggle
-
-Enables or disables a skill. Body: `{"name": "skill-name", "enabled": true}`.
-
-### GET /api/tools/toolsets
-
-Returns all toolsets with their label, description, tools list, and active/configured status.
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/status` | Version, active profile, gateway status, platform states, and active-session count. |
+| `GET /api/sessions` | Recent research sessions with metadata and previews. |
+| `GET /api/sessions/{session_id}` | Metadata for one research session. |
+| `GET /api/sessions/{session_id}/messages` | Full message history for one research session. |
+| `GET /api/sessions/search?q=...` | Full-text search across message content. |
+| `DELETE /api/sessions/{session_id}` | Delete a session. |
+| `GET /api/config` | Current `config.yaml` as JSON. |
+| `GET /api/config/defaults` | Default configuration values. |
+| `GET /api/config/schema` | Config field schema used by the form renderer. |
+| `PUT /api/config` | Save config. Body: `{"config": {...}}`. |
+| `GET /api/env` | Known env vars with redacted set/unset status. |
+| `PUT /api/env` | Set an env var. Body: `{"key": "VAR_NAME", "value": "secret"}`. |
+| `DELETE /api/env` | Remove an env var. Body: `{"key": "VAR_NAME"}`. |
+| `GET /api/logs` | Log lines with file, level, component, and line-count filters. |
+| `GET /api/analytics/usage` | Session token/cost analytics. |
+| `GET /api/cron/jobs` | Inherited cron jobs. |
+| `POST /api/cron/jobs` | Create inherited cron job. |
+| `POST /api/cron/jobs/{job_id}/pause` | Pause cron job. |
+| `POST /api/cron/jobs/{job_id}/resume` | Resume cron job. |
+| `POST /api/cron/jobs/{job_id}/trigger` | Trigger cron job. |
+| `DELETE /api/cron/jobs/{job_id}` | Delete cron job. |
+| `GET /api/skills` | Skills and enabled state. |
+| `PUT /api/skills/toggle` | Enable or disable a skill. |
+| `GET /api/tools/toolsets` | Toolsets, labels, requirements, and active/configured state. |
 
 ## CORS
 
-The web server restricts CORS to localhost origins only:
+The server restricts CORS to localhost origins:
 
-- `http://localhost:9119` / `http://127.0.0.1:9119` (production)
+- `http://localhost:9119` / `http://127.0.0.1:9119`
 - `http://localhost:3000` / `http://127.0.0.1:3000`
-- `http://localhost:5173` / `http://127.0.0.1:5173` (Vite dev server)
+- `http://localhost:5173` / `http://127.0.0.1:5173`
 
 If you run the server on a custom port, that origin is added automatically.
 
 ## Development
 
-If you're contributing to the web dashboard frontend:
+For frontend work:
 
 ```bash
-# Terminal 1: start the backend API
-hermes dashboard --no-open
+# Terminal 1: backend API
+superforecasting-agent dashboard --no-open
 
-# Terminal 2: start the Vite dev server with HMR
+# Terminal 2: frontend dev server
 cd web/
 npm install
 npm run dev
@@ -322,34 +289,26 @@ npm run dev
 
 The Vite dev server at `http://localhost:5173` proxies `/api` requests to the FastAPI backend at `http://127.0.0.1:9119`.
 
-The frontend is built with React 19, TypeScript, Tailwind CSS v4, and shadcn/ui-style components. Production builds output to `hermes_cli/web_dist/` which the FastAPI server serves as a static SPA.
+Production builds output to `hermes_cli/web_dist/`, which the FastAPI server serves as a static SPA. The directory name is inherited for compatibility.
 
-## Automatic Build on Update
+## Automatic Build On Update
 
-When you run `hermes update`, the web frontend is automatically rebuilt if `npm` is available. This keeps the dashboard in sync with code updates. If `npm` isn't installed, the update skips the frontend build and `hermes dashboard` will build it on first launch.
+When you run `superforecasting-agent update`, the web frontend is rebuilt if `npm` is available. If `npm` is not installed, the update skips the frontend build and the dashboard builds on first launch when possible.
 
-## Themes & plugins
+## Themes And Extensions
 
-The dashboard ships with six built-in themes and can be extended with user-defined themes, plugin tabs, and backend API routes — all drop-in, no repo clone needed.
-
-**Switch themes live** from the header bar — click the palette icon next to the language switcher. Selection persists to `config.yaml` under `dashboard.theme` and is restored on page load.
+The dashboard supports user-defined themes, extension tabs, and backend API routes. These are inherited extension surfaces and should be used when they improve forecast review, evidence inspection, monitoring, or operational control.
 
 Built-in themes:
 
 | Theme | Character |
 |-------|-----------|
-| **Hermes Teal** (`default`) | Dark teal + cream, system fonts, comfortable spacing |
-| **Hermes Teal (Large)** (`default-large`) | Same as default with 18px text and roomier spacing |
-| **Midnight** (`midnight`) | Deep blue-violet, Inter + JetBrains Mono |
-| **Ember** (`ember`) | Warm crimson + bronze, Spectral serif + IBM Plex Mono |
-| **Mono** (`mono`) | Grayscale, IBM Plex, compact |
-| **Cyberpunk** (`cyberpunk`) | Neon green on black, Share Tech Mono |
-| **Rosé** (`rose`) | Pink + ivory, Fraunces serif, spacious |
+| **Forecast Desk** (`default`) | Dark teal + cream, system fonts, comfortable spacing. |
+| **Forecast Desk Large** (`default-large`) | Same as default with larger text and roomier spacing. |
+| **Midnight** (`midnight`) | Deep blue-violet, Inter + JetBrains Mono. |
+| **Ember** (`ember`) | Warm crimson + bronze, Spectral serif + IBM Plex Mono. |
+| **Mono** (`mono`) | Grayscale, IBM Plex, compact. |
+| **Cyberpunk** (`cyberpunk`) | Neon green on black, Share Tech Mono. |
+| **Rose** (`rose`) | Pink + ivory, Fraunces serif, spacious. |
 
-To build your own theme, add a plugin tab, inject into shell slots, or expose plugin-specific REST endpoints, see **[Extending the Dashboard](./extending-the-dashboard)** — the complete guide covers:
-
-- Theme YAML schema — palette, typography, layout, assets, componentStyles, colorOverrides, customCSS
-- Layout variants — `standard`, `cockpit`, `tiled`
-- Plugin manifest, SDK, shell slots, page-scoped slots (inject widgets into built-in pages without overriding them), backend FastAPI routes
-- A full combined theme-plus-plugin walkthrough (Strike Freedom cockpit demo)
-- Discovery, reload, and troubleshooting
+To build your own theme, add an extension tab, inject into shell slots, or expose plugin-specific REST endpoints, see [Extending the Dashboard](./extending-the-dashboard).

@@ -44,12 +44,12 @@ const AUX_TASKS: readonly { key: string; label: string; hint: string }[] = [
   { key: "vision", label: "Vision", hint: "Image analysis" },
   { key: "web_extract", label: "Web Extract", hint: "Page summarization" },
   { key: "compression", label: "Compression", hint: "Context compaction" },
-  { key: "session_search", label: "Session Search", hint: "Recall queries" },
-  { key: "skills_hub", label: "Skills Hub", hint: "Skill search" },
+  { key: "session_search", label: "Research Session Search", hint: "Recall queries" },
+  { key: "skills_hub", label: "Forecast Skills Hub", hint: "Skill search" },
   { key: "approval", label: "Approval", hint: "Smart auto-approve" },
   { key: "mcp", label: "MCP", hint: "MCP tool routing" },
-  { key: "title_generation", label: "Title Gen", hint: "Session titles" },
-  { key: "curator", label: "Curator", hint: "Skill-usage review" },
+  { key: "title_generation", label: "Title Gen", hint: "Research session titles" },
+  { key: "curator", label: "Curator", hint: "Forecast skill review" },
 ] as const;
 
 function formatTokens(n: number): string {
@@ -553,7 +553,7 @@ function AuxiliaryTasksModal({
             </Button>
           </div>
           <p className="text-[10px] text-muted-foreground/80 mt-2">
-            Auxiliary tasks handle side-jobs like vision, session search, and
+            Auxiliary tasks handle side-jobs like vision, research session search, and
             compression. <span className="font-mono">auto</span> means
             &quot;use the main model&quot;. Override per-task when you want a
             cheap/fast model for a specific job.

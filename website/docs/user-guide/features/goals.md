@@ -1,124 +1,114 @@
 ---
 sidebar_position: 16
 title: "Persistent Goals"
-description: "Set a standing goal and let Hermes keep working across turns until it's done. Our take on the Ralph loop."
+description: "Set a standing objective and let the runtime continue across turns."
 ---
 
 # Persistent Goals (`/goal`)
 
-`/goal` gives Hermes a standing objective that survives across turns. After every turn a lightweight judge model checks whether the goal is satisfied by the assistant's last response. If not, Hermes automatically feeds a continuation prompt back into the same session and keeps working — until the goal is achieved, you pause or clear it, or the turn budget runs out.
+`/goal` gives the inherited runtime a standing objective that survives across turns. After each turn, a lightweight judge model decides whether the objective is satisfied. If not, Superforecasting Agent appends a continuation prompt and keeps working until the goal is achieved, paused, cleared, or the turn budget is exhausted.
 
-It's our take on the **Ralph loop**, directly inspired by [Codex CLI 0.128.0's `/goal`](https://github.com/openai/codex) by Eric Traut (OpenAI). The core idea — keep a goal alive across turns and don't stop until it's achieved — is theirs. The implementation here is independent and adapted to Hermes' architecture.
+For forecasting, `/goal` is best for bounded work such as source-adapter fixes, benchmark cleanup, docs audits, or research report generation. It is **not** the same as forecast scheduled self-checks: standing beliefs, stale-forecast review, scoring, postmortems, and calibration learning belong in the forecast ledger and `forecast schedule`.
 
-## When to use it
+## When to Use It
 
-Use `/goal` for tasks where you want Hermes to iterate on its own without you re-prompting every turn:
+Use `/goal` for tasks where you would otherwise have to say "keep going" several times:
 
-- "Fix every lint error in `src/` and verify `ruff check` passes"
-- "Port feature X from repo Y, including tests, and get CI green"
-- "Investigate why session IDs sometimes drift on mid-run compression and write up a report"
-- "Build a small CLI to rename files by their EXIF dates, then test it against the photos/ folder"
+- "Fix every failing `tests/forecasting/` test and verify the focused suite passes."
+- "Audit this source adapter for timestamp leakage and add a regression test."
+- "Review the benchmark import docs, patch stale examples, and run the docs build."
+- "Investigate why scheduled review alerts are duplicated and write a short report."
 
-Tasks where the agent does one turn and stops don't need `/goal`. Tasks where *you'd otherwise have to say "keep going" three times* are where this shines.
+Do not use `/goal` to maintain active forecast probabilities. Use `forecast schedule`, watched sources, alerts, and ledger postmortems for durable forecasting loops.
 
-## Quick start
+## Quick Start
 
+```text
+/goal Fix every failing test in tests/forecasting/ and make sure scripts/run_tests.sh passes for that directory
 ```
-/goal Fix every failing test in tests/hermes_cli/ and make sure scripts/run_tests.sh passes for that directory
-```
 
-What you'll see:
+Typical flow:
 
-1. **Goal accepted** — `⊙ Goal set (20-turn budget): <your goal>`
-2. **Turn 1 runs** — Hermes starts working as if you'd sent the goal as a normal message.
-3. **Judge runs** — after the turn, the judge model decides `done` or `continue`.
-4. **Loop fires if needed** — if `continue`, you'll see `↻ Continuing toward goal (1/20): <judge's reason>` and Hermes takes the next step automatically.
-5. **Terminates** — eventually you see either `✓ Goal achieved: <reason>` or `⏸ Goal paused — N/20 turns used`.
+1. `Goal set` with a turn budget.
+2. The first turn runs immediately.
+3. The judge returns `done` or `continue`.
+4. If needed, the runtime appends a continuation prompt.
+5. The loop ends with `Goal achieved` or pauses at the budget.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `/goal <text>` | Set (or replace) the standing goal. Kicks off the first turn immediately so you don't need to send a separate message. |
-| `/goal` or `/goal status` | Show the current goal, its status, and turns used. |
-| `/goal pause` | Stop the auto-continuation loop without clearing the goal. |
-| `/goal resume` | Resume the loop (resets the turn counter back to zero). |
-| `/goal clear` | Drop the goal entirely. |
+| `/goal <text>` | Set or replace the standing goal and start the first turn |
+| `/goal` or `/goal status` | Show the current goal, status, and turns used |
+| `/goal pause` | Stop auto-continuation without clearing the goal |
+| `/goal resume` | Resume the loop and reset the turn counter |
+| `/goal clear` | Drop the goal |
 
-Works identically on the CLI and every gateway platform (Telegram, Discord, Slack, Matrix, Signal, WhatsApp, SMS, iMessage, Webhook, API server, and the web dashboard).
+The command works in the CLI and gateway platforms that expose slash commands.
 
-## Adding criteria mid-goal: `/subgoal`
+## Adding Criteria with `/subgoal`
 
-While a goal is active you can append extra acceptance criteria with `/subgoal <text>` without resetting the loop. Each call adds one numbered item to the goal's subgoal list; the **continuation prompt** the agent sees on the next turn includes the original goal plus an "Additional criteria the user added mid-loop" block, and the **judge prompt** is rewritten so the verdict must consider every subgoal — the goal isn't marked done until the original objective **and** every subgoal are met.
+While a goal is active, `/subgoal <text>` appends another acceptance criterion without resetting the loop. The continuation and judge prompts include the original goal plus every subgoal, so the goal is not marked done until all criteria are satisfied.
 
 | Command | What it does |
 |---|---|
-| `/subgoal <text>` | Append a new criterion to the active goal. Requires an active `/goal`. |
-| `/subgoal` (no args) | Show the current numbered subgoal list. |
-| `/subgoal remove <N>` | Remove the Nth subgoal (1-based). |
-| `/subgoal clear` | Drop every subgoal but keep the original goal intact. |
+| `/subgoal <text>` | Append a criterion to the active goal |
+| `/subgoal` | Show the current subgoal list |
+| `/subgoal remove <N>` | Remove a criterion by 1-based index |
+| `/subgoal clear` | Drop every subgoal but keep the original goal |
 
-Subgoals are persisted alongside the goal in `SessionDB.state_meta`, so they survive `/resume`. Setting a new `/goal <text>` replaces the goal and clears the subgoal list; `/goal clear` does the same.
+Subgoals persist with the goal in `SessionDB.state_meta`, so `/resume` keeps them.
 
-Use this when you start a loop ("fix the failing tests") and notice partway through that you also want it to "and add a regression test for the bug you just patched" — `/subgoal add a regression test` tightens the success criteria without breaking the running loop.
+## Behavior Details
 
-## Behavior details
+### Judge
 
-### The judge
+After each turn, the `goal_judge` auxiliary task receives:
 
-After every turn, Hermes calls an auxiliary model with:
+- the standing goal
+- all subgoals
+- the most recent final response
+- instructions to return strict JSON with `done` and `reason`
 
-- The standing goal text
-- The agent's most recent final response (last ~4 KB of text)
-- A system prompt telling the judge to reply with strict JSON: `{"done": <bool>, "reason": "<one-sentence rationale>"}`
+The judge is conservative: it should mark done only when the response explicitly confirms completion, produces the requested deliverable, or reports a real blocker.
 
-The judge is deliberately conservative: it marks a goal `done` only when the response **explicitly** confirms the goal is complete, when the final deliverable is clearly produced, or when the goal is unachievable/blocked (treated as DONE with a block reason so we don't burn budget on impossible tasks).
+### Fail-Open Semantics
 
-### Fail-open semantics
+If the judge fails because of network, malformed output, or unavailable auxiliary runtime, the loop treats the verdict as `continue`. The turn budget is the hard stop.
 
-If the judge errors (network blip, malformed response, unavailable aux client), Hermes treats the verdict as `continue` — a broken judge never wedges progress. The **turn budget** is the real backstop.
+### Turn Budget
 
-### Turn budget
-
-Default is 20 continuation turns (`goals.max_turns` in `config.yaml`). When the budget is hit, Hermes auto-pauses and tells you exactly how to proceed:
-
-```
-⏸ Goal paused — 20/20 turns used. Use /goal resume to keep going, or /goal clear to stop.
-```
-
-`/goal resume` resets the counter to zero, so you can keep going in measured chunks.
-
-### User messages always preempt
-
-Any real message you send while a goal is active takes priority over the continuation loop. On the CLI your message lands in `_pending_input` ahead of the queued continuation; on the gateway it goes through the adapter FIFO the same way. The judge runs again after your turn — so if your message happens to complete the goal, the judge will catch it and stop.
-
-### Mid-run safety (gateway)
-
-While an agent is already running, `/goal status`, `/goal pause`, and `/goal clear` are safe to run — they only touch control-plane state and don't interrupt the current turn. Setting a **new** goal mid-run (`/goal <new text>`) is rejected with a message telling you to `/stop` first, so the old continuation can't race the new one.
-
-### Persistence
-
-Goal state lives in `SessionDB.state_meta` keyed by `goal:<session_id>`. That means `/resume` picks up right where you left off — set a goal, close your laptop, come back tomorrow, `/resume`, and the goal is still standing exactly as you left it (active, paused, or done).
-
-### Prompt cache
-
-The continuation prompt is a plain user-role message appended to history. It does **not** mutate the system prompt, swap toolsets, or touch the conversation in any way that invalidates Hermes' prompt cache. Running a 20-turn goal costs the same cache-wise as 20 turns of normal conversation.
-
-## Configuration
-
-Add to `~/.hermes/config.yaml`:
+Default budget is 20 continuation turns:
 
 ```yaml
 goals:
-  # Max continuation turns before Hermes auto-pauses and asks you to
-  # /goal resume. Default 20. Lower this if you want tighter loops;
-  # raise it for long-running refactors.
   max_turns: 20
 ```
 
-### Choosing the judge model
+Configure this in `~/.superforecasting-agent/config.yaml`. Legacy `~/.hermes/config.yaml` remains readable during migration.
 
-The judge uses the `goal_judge` auxiliary task. By default it resolves to your main model (see [Auxiliary Models](/docs/user-guide/configuration#auxiliary-models)). If you want to route the judge to a cheap fast model to keep costs down, add an override:
+When the budget is reached, the goal pauses. Use `/goal resume` to continue in another chunk.
+
+### User Messages Preempt
+
+Any real user message takes priority over the queued continuation. The judge runs again after your turn, so manual intervention can complete, redirect, or pause the loop.
+
+### Mid-Run Safety
+
+While a turn is running, `/goal status`, `/goal pause`, and `/goal clear` are safe control-plane actions. Setting a new goal mid-run is rejected so the old continuation cannot race the new objective.
+
+### Persistence
+
+Goal state is stored in `SessionDB.state_meta` under the active session. `/resume` restores the goal as active, paused, or done.
+
+### Prompt Cache
+
+Continuation prompts are normal user-role messages. They do not mutate the system prompt or swap toolsets, so they preserve prompt-cache behavior.
+
+## Judge Model
+
+`goal_judge` is an auxiliary model task. By default it resolves through the normal auxiliary-model chain. To route it to a cheap fast model:
 
 ```yaml
 auxiliary:
@@ -127,54 +117,45 @@ auxiliary:
     model: google/gemini-3-flash-preview
 ```
 
-The judge call is small (~200 output tokens) and runs once per turn, so a cheap fast model is usually the right call.
+The judge call is small and runs once per turn.
 
-## Example walkthrough
+## Example
 
-```
-You: /goal Create four files /tmp/note_{1..4}.txt, one per turn, each containing its number as text
+```text
+You: /goal Create four files /tmp/note_{1..4}.txt, one per turn, each containing its number
 
-  ⊙ Goal set (20-turn budget): Create four files /tmp/note_{1..4}.txt, one per turn, each containing its number as text
+Goal set: Create four files...
 
-Hermes: Creating /tmp/note_1.txt now.
-  💻 echo "1" > /tmp/note_1.txt   (0.1s)
-  I've created /tmp/note_1.txt with the content "1". I'll continue with the remaining files on the next turn as you specified.
+Forecaster: Creating /tmp/note_1.txt now.
+Continuing toward goal: only 1 of 4 files exists.
 
-  ↻ Continuing toward goal (1/20): Only 1 of 4 files has been created; 3 files remain.
+Forecaster: Created /tmp/note_2.txt.
+Continuing toward goal: 2 of 4 files exist.
 
-Hermes: [Continuing toward your standing goal]
-  💻 echo "2" > /tmp/note_2.txt   (0.1s)
-  Created /tmp/note_2.txt. Two more to go.
+Forecaster: Created /tmp/note_3.txt.
+Continuing toward goal: 3 of 4 files exist.
 
-  ↻ Continuing toward goal (2/20): 2 of 4 files created; 2 remain.
-
-Hermes: [Continuing toward your standing goal]
-  💻 echo "3" > /tmp/note_3.txt   (0.1s)
-  Created /tmp/note_3.txt.
-
-  ↻ Continuing toward goal (3/20): 3 of 4 files created; 1 remains.
-
-Hermes: [Continuing toward your standing goal]
-  💻 echo "4" > /tmp/note_4.txt   (0.1s)
-  All four files have been created: /tmp/note_1.txt through /tmp/note_4.txt, each containing its number.
-
-  ✓ Goal achieved: All four files were created with the specified content, completing the goal.
-
-You: _
+Forecaster: Created /tmp/note_4.txt.
+Goal achieved: all four files were created.
 ```
 
-Four turns, one `/goal` invocation, zero "keep going" prompts from you.
+## When the Judge Gets It Wrong
 
-## When the judge gets it wrong
+False negatives usually just spend extra budget. Clear or pause the goal when you can see the work is done.
 
-No judge is perfect. Two failure modes to watch for:
+False positives are more important: if the judge marks done too early, set a more specific goal or add a subgoal that names the missing deliverable.
 
-**False negative — judge says continue when the goal is actually done.** The turn budget catches this. You'll see `⏸ Goal paused` and can `/goal clear` or just send a new message.
+## Forecasting Boundary
 
-**False positive — judge says done when work remains.** You'll see `✓ Goal achieved` but you know better. Send a follow-up message to continue, or re-set the goal more precisely: `/goal <more specific text>`. The judge's system prompt is deliberately conservative to make false positives rarer than false negatives.
+Use `/goal` for work execution. Use ledger-native workflows for forecasting state:
 
-If you find a judge verdict unconvincing, the reason text in the `↻ Continuing toward goal` or `✓ Goal achieved` line tells you exactly what the judge saw. That's usually enough to diagnose whether the goal text was ambiguous or the model's response was.
+- `forecast schedule` for recurring self-checks
+- watched sources for evidence alerts
+- `forecast resolve`, `forecast score`, and `forecast postmortem` for feedback loops
+- calibration lessons and domain error profiles for learning
+
+This separation keeps long-running task automation from silently rewriting scoreable beliefs.
 
 ## Attribution
 
-`/goal` is Hermes' take on the **Ralph loop** pattern. The user-facing design — keep a goal alive across turns, don't stop until it's achieved, with create/pause/resume/clear controls — was popularised and shipped in [Codex CLI 0.128.0](https://github.com/openai/codex) by Eric Traut on OpenAI's Codex team. Our implementation is independent (central `CommandDef` registry, `SessionDB.state_meta` persistence, auxiliary-client judge, adapter-FIFO continuation on the gateway side) but the idea is theirs. Credit where credit's due.
+`/goal` follows the Ralph loop pattern popularized by Codex CLI 0.128.0. This implementation is independent and adapted to the inherited runtime's command registry, session metadata, auxiliary judge, and gateway continuation queues.

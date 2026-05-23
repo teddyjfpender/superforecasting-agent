@@ -1,7 +1,7 @@
 ---
 sidebar_position: 2
 title: "Adding Tools"
-description: "How to add a new tool to Hermes Agent — schemas, handlers, registration, and toolsets"
+description: "Add built-in tools to Superforecasting Agent"
 ---
 
 # Adding Tools
@@ -9,27 +9,27 @@ description: "How to add a new tool to Hermes Agent — schemas, handlers, regis
 Before writing a tool, ask yourself: **should this be a [skill](creating-skills.md) instead?**
 
 :::warning Built-in Core Tools Only
-This page is for adding a **built-in Hermes tool** to the repository itself.
+This page is for adding a **built-in Superforecasting Agent tool** to the repository itself.
 If you want a personal, project-local, or otherwise custom tool without
-modifying Hermes core, use the plugin route instead:
+modifying the core runtime, use the plugin route instead:
 
 - [Plugins](/docs/user-guide/features/plugins)
-- [Build a Hermes Plugin](/docs/guides/build-a-hermes-plugin)
+- [Build a Superforecasting Agent Plugin](/docs/guides/build-a-hermes-plugin) (inherited plugin guide)
 
 Default to plugins for most custom tool creation. Only follow this page when
 you explicitly want to ship a new built-in tool in `tools/` and `toolsets.py`.
 :::
 
-Make it a **Skill** when the capability can be expressed as instructions + shell commands + existing tools (arXiv search, git workflows, Docker management, PDF processing).
+Make it a **Skill** when the capability can be expressed as instructions plus existing tools, for example a repeatable research procedure, source triage workflow, data-cleaning checklist, or domain-specific modeling protocol.
 
-Make it a **Tool** when it requires end-to-end integration with API keys, custom processing logic, binary data handling, or streaming (browser automation, TTS, vision analysis).
+Make it a **Tool** when it requires end-to-end integration with API keys, custom processing logic, binary data handling, streaming, or durable interaction with the forecast ledger. If the capability records probabilities, evidence, model runs, resolutions, scores, calibration lessons, or domain error profiles, it should write through the forecast ledger APIs rather than storing private state.
 
 ## Overview
 
 Adding a tool touches **2 files**:
 
 1. **`tools/your_tool.py`** — handler, schema, check function, `registry.register()` call
-2. **`toolsets.py`** — add tool name to `_HERMES_CORE_TOOLS` (or a specific toolset)
+2. **`toolsets.py`** — add tool name to `_HERMES_CORE_TOOLS` (the inherited core-tool constant) or a specific forecast-oriented toolset
 
 Any `tools/*.py` file with a top-level `registry.register()` call is auto-discovered at startup — no manual import list required.
 
@@ -129,9 +129,9 @@ _HERMES_CORE_TOOLS = [
     "weather",  # <-- add here
 ]
 
-# Or create a new standalone toolset:
-"weather": {
-    "description": "Weather lookup tools",
+# Or create a new standalone or forecast-scoped toolset:
+"forecast-data": {
+    "description": "Forecast data lookup tools",
     "tools": ["weather"],
     "includes": []
 },
@@ -183,6 +183,8 @@ registry.register(
 
 Some tools (`todo`, `memory`, `session_search`, `delegate_task`) need access to per-session agent state. These are intercepted by `run_agent.py` before reaching the registry. The registry still holds their schemas, but `dispatch()` returns a fallback error if the intercept is bypassed.
 
+Forecast lifecycle state should not use this pattern unless there is a strong reason. Prefer explicit ledger tools and CLI commands so every forecast update is append-only, scoreable, and auditable.
+
 ## Optional: Setup Wizard Integration
 
 If your tool requires an API key, add it to `hermes_cli/config.py`:
@@ -205,7 +207,8 @@ OPTIONAL_ENV_VARS = {
 - [ ] Tool file created with handler, schema, check function, and registration
 - [ ] Added to appropriate toolset in `toolsets.py`
 - [ ] Confirmed this really should be a built-in/core tool and not a plugin
+- [ ] Confirmed forecast records, evidence, scores, and learning state go through the ledger rather than private tool storage
 - [ ] Handler returns JSON strings, errors returned as `{"error": "..."}`
 - [ ] Optional: API key added to `OPTIONAL_ENV_VARS` in `hermes_cli/config.py`
 - [ ] Optional: Added to `toolset_distributions.py` for batch processing
-- [ ] Tested with `hermes chat -q "Use the weather tool for London"`
+- [ ] Tested with `superforecasting-agent chat --toolsets forecast-desk -q "Use the weather tool to update the relevant forecast evidence"`

@@ -1,19 +1,19 @@
 ---
 sidebar_position: 7
 title: "Subagent Delegation"
-description: "Spawn isolated child agents for parallel workstreams with delegate_task"
+description: "Spawn isolated child agents for parallel forecast-support workstreams with delegate_task"
 ---
 
 # Subagent Delegation
 
-The `delegate_task` tool spawns child AIAgent instances with isolated context, restricted toolsets, and their own terminal sessions. Each child gets a fresh conversation and works independently — only its final summary enters the parent's context.
+The `delegate_task` tool spawns child AIAgent instances with isolated context, restricted toolsets, and their own terminal sessions. In Superforecasting Agent, use it for forecast-support work such as reference-class research, evidence review, model critique, and connector testing. Each child gets a fresh conversation and works independently — only its final summary enters the parent's context, and no forecast-ledger write happens unless the parent explicitly records it.
 
 ## Single Task
 
 ```python
 delegate_task(
-    goal="Debug why tests fail",
-    context="Error: assertion in test_foo.py line 42",
+    goal="Review whether Q-142 has stale evidence",
+    context="Forecast Q-142 last updated 14 days ago. Check current official sources and prediction-market pages; report evidence candidates only.",
     toolsets=["terminal", "file"]
 )
 ```
@@ -24,9 +24,9 @@ Up to 3 concurrent subagents by default (configurable, no hard ceiling):
 
 ```python
 delegate_task(tasks=[
-    {"goal": "Research topic A", "toolsets": ["web"]},
-    {"goal": "Research topic B", "toolsets": ["web"]},
-    {"goal": "Fix the build", "toolsets": ["terminal", "file"]}
+    {"goal": "Research historical base rates for Q-142", "toolsets": ["web"]},
+    {"goal": "Research current market-implied probability for Q-142", "toolsets": ["web"]},
+    {"goal": "Check forecast CLI tests for evidence timestamp regressions", "toolsets": ["terminal", "file"]}
 ])
 ```
 
@@ -44,12 +44,12 @@ delegate_task(goal="Fix the error")
 
 # GOOD - subagent has all context it needs
 delegate_task(
-    goal="Fix the TypeError in api/handlers.py",
-    context="""The file api/handlers.py has a TypeError on line 47:
+    goal="Fix the TypeError in forecasting/source_adapters.py",
+    context="""The file forecasting/source_adapters.py has a TypeError on line 47:
     'NoneType' object has no attribute 'get'.
-    The function process_request() receives a dict from parse_body(),
-    but parse_body() returns None when Content-Type is missing.
-    The project is at /home/user/myproject and uses Python 3.11."""
+    The function parse_source_payload() receives a dict from fetch_source(),
+    but fetch_source() returns None when Content-Type is missing.
+    The project is at /home/user/superforecasting-agent and uses Python 3.11."""
 )
 ```
 
@@ -59,23 +59,23 @@ The subagent receives a focused system prompt built from your goal and context, 
 
 ### Parallel Research
 
-Research multiple topics simultaneously and collect summaries:
+Research multiple forecast angles simultaneously and collect summaries:
 
 ```python
 delegate_task(tasks=[
     {
-        "goal": "Research the current state of WebAssembly in 2025",
-        "context": "Focus on: browser support, non-browser runtimes, language support",
+        "goal": "Research historical base rates for similar policy reversals",
+        "context": "Focus on comparable policies, close dates, and selection effects",
         "toolsets": ["web"]
     },
     {
-        "goal": "Research the current state of RISC-V adoption in 2025",
-        "context": "Focus on: server chips, embedded systems, software ecosystem",
+        "goal": "Research market-implied probability for the question",
+        "context": "Focus on public markets, liquidity, timestamped prices, and stale markets",
         "toolsets": ["web"]
     },
     {
-        "goal": "Research quantum computing progress in 2025",
-        "context": "Focus on: error correction breakthroughs, practical applications, key players",
+        "goal": "Research primary-source implementation constraints",
+        "context": "Focus on official statements and operational blockers",
         "toolsets": ["web"]
     }
 ])
@@ -87,12 +87,11 @@ Delegate a review-and-fix workflow to a fresh context:
 
 ```python
 delegate_task(
-    goal="Review the authentication module for security issues and fix any found",
-    context="""Project at /home/user/webapp.
-    Auth module files: src/auth/login.py, src/auth/jwt.py, src/auth/middleware.py.
-    The project uses Flask, PyJWT, and bcrypt.
-    Focus on: SQL injection, JWT validation, password handling, session management.
-    Fix any issues found and run the test suite (pytest tests/auth/).""",
+    goal="Review the forecast evidence adapter for security and data-integrity issues",
+    context="""Project at /home/user/superforecasting-agent.
+    Files: forecasting/source_adapters.py and tests/forecasting/test_source_adapters.py.
+    Focus on: URL validation, source availability timestamps, credential handling, and durable evidence writes.
+    Fix any issues found and run the test suite (pytest tests/forecasting/).""",
     toolsets=["terminal", "file"]
 )
 ```
@@ -103,16 +102,17 @@ Delegate a large refactoring task that would flood the parent's context:
 
 ```python
 delegate_task(
-    goal="Refactor all Python files in src/ to replace print() with proper logging",
-    context="""Project at /home/user/myproject.
+    goal="Refactor forecast source adapters to use structured logging",
+    context="""Project at /home/user/superforecasting-agent.
+    Files: forecasting/source_adapters.py and tools/forecasting_tool.py.
     Use the 'logging' module with logger = logging.getLogger(__name__).
     Replace print() calls with appropriate log levels:
     - print(f"Error: ...") -> logger.error(...)
     - print(f"Warning: ...") -> logger.warning(...)
     - print(f"Debug: ...") -> logger.debug(...)
     - Other prints -> logger.info(...)
-    Don't change print() in test files or CLI output.
-    Run pytest after to verify nothing broke.""",
+    Don't change print() in CLI output.
+    Run pytest tests/forecasting/ after to verify nothing broke.""",
     toolsets=["terminal", "file"]
 )
 ```
@@ -134,7 +134,7 @@ Single-task delegation runs directly without thread pool overhead.
 You can configure a different model for subagents via `config.yaml` — useful for delegating simple tasks to cheaper/faster models:
 
 ```yaml
-# In ~/.hermes/config.yaml
+# In ~/.superforecasting-agent/config.yaml
 delegation:
   model: "google/gemini-flash-2.0"    # Cheaper model for subagents
   provider: "openrouter"              # Optional: route subagents to a different provider
@@ -148,10 +148,10 @@ The `toolsets` parameter controls what tools the subagent has access to. Choose 
 
 | Toolset Pattern | Use Case |
 |----------------|----------|
-| `["terminal", "file"]` | Code work, debugging, file editing, builds |
-| `["web"]` | Research, fact-checking, documentation lookup |
-| `["terminal", "file", "web"]` | Full-stack tasks (default) |
-| `["file"]` | Read-only analysis, code review without execution |
+| `["terminal", "file"]` | Code work, data-adapter debugging, file editing, builds |
+| `["web"]` | Forecast research, fact-checking, documentation lookup |
+| `["terminal", "file", "web"]` | Full-stack forecast tooling tasks (default) |
+| `["file"]` | Read-only analysis, code review, forecast-ledger inspection without execution |
 | `["terminal"]` | System administration, process management |
 
 Certain toolsets are blocked for subagents regardless of what you specify:
@@ -185,7 +185,7 @@ delegation:
 Lower it for fast local models; raise it for slow reasoning models on hard problems. The timer resets every time the child makes an API call or tool call — only genuinely idle workers trigger the kill.
 
 :::tip Diagnostic dump on zero-call timeout
-If a subagent times out having made **zero** API calls (usually: provider unreachable, auth failure, or tool-schema rejection), `delegate_task` writes a structured diagnostic to `~/.hermes/logs/subagent-timeout-<session>-<timestamp>.log` containing the subagent's config snapshot, credential-resolution trace, and any early error messages. Much easier to root-cause than the previous silent-timeout behavior.
+If a subagent times out having made **zero** API calls (usually: provider unreachable, auth failure, or tool-schema rejection), `delegate_task` writes a structured diagnostic to `~/.superforecasting-agent/logs/subagent-timeout-<session>-<timestamp>.log` containing the subagent's config snapshot, credential-resolution trace, and any early error messages. Legacy `~/.hermes/logs/` remains readable for compatibility. Much easier to root-cause than the previous silent-timeout behavior.
 :::
 
 ## Monitoring Running Subagents (`/agents`)
@@ -251,16 +251,16 @@ For **durable long-running work** that must survive interrupts or outlive the cu
 | **Context** | Fresh isolated conversation | No conversation, just script |
 | **Tool access** | All non-blocked tools with reasoning | 7 tools via RPC, no reasoning |
 | **Parallelism** | 3 concurrent subagents by default (configurable) | Single script |
-| **Best for** | Complex tasks needing judgment | Mechanical multi-step pipelines |
+| **Best for** | Complex forecast-support tasks needing judgment | Mechanical multi-step source/data pipelines |
 | **Token cost** | Higher (full LLM loop) | Lower (only stdout returned) |
 | **User interaction** | None (subagents can't clarify) | None |
 
-**Rule of thumb:** Use `delegate_task` when the subtask requires reasoning, judgment, or multi-step problem solving. Use `execute_code` when you need mechanical data processing or scripted workflows.
+**Rule of thumb:** Use `delegate_task` when the subtask requires reasoning, judgment, evidence synthesis, or model critique. Use `execute_code` when you need mechanical data processing or scripted workflows.
 
 ## Configuration
 
 ```yaml
-# In ~/.hermes/config.yaml
+# In ~/.superforecasting-agent/config.yaml
 delegation:
   max_iterations: 50                        # Max turns per child (default: 50)
   # max_concurrent_children: 3              # Parallel children per batch (default: 3)
@@ -281,5 +281,5 @@ delegation:
 When `base_url` points at an Anthropic-compatible endpoint — for example a path ending in `/anthropic`, an Azure Foundry Claude route, or a MiniMax `/anthropic` proxy — `api_mode` is auto-detected as `anthropic_messages` so the subagent uses the right wire format without you setting anything. Set `api_mode` explicitly when the auto-detection guess is wrong (rare).
 
 :::tip
-The agent handles delegation automatically based on the task complexity. You don't need to explicitly ask it to delegate — it will do so when it makes sense.
+The forecast runtime can handle delegation automatically based on task complexity. You do not need to explicitly ask it to delegate — it will do so when parallel forecast-support work makes sense.
 :::

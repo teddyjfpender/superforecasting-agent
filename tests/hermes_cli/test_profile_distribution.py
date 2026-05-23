@@ -181,7 +181,7 @@ class TestVersionRequires:
         if ok:
             check_hermes_requires(spec, cur)
         else:
-            with pytest.raises(DistributionError, match="requires Hermes"):
+            with pytest.raises(DistributionError, match="requires Superforecasting Agent"):
                 check_hermes_requires(spec, cur)
 
     def test_parse_semver_handles_prerelease(self):
@@ -228,7 +228,7 @@ class TestEnvTemplate:
     def test_empty_env_requires_is_header_only(self):
         m = DistributionManifest(name="x")
         out = _env_template_from_manifest(m)
-        assert "Hermes distribution" in out
+        assert "Superforecasting Agent distribution" in out
         assert "FOO" not in out
 
 
@@ -339,7 +339,7 @@ class TestInstall:
             hermes_requires=">=99.0.0",
         )
         staged = _make_staging_dir(profile_env, "future", manifest=mf)
-        with pytest.raises(DistributionError, match="requires Hermes"):
+        with pytest.raises(DistributionError, match="requires Superforecasting Agent"):
             install_distribution(str(staged), name="future")
 
 
@@ -362,9 +362,21 @@ class TestUpdate:
         (plan.target_dir / "auth.json").write_text('{"user": "auth"}')
         (plan.target_dir / "sessions").mkdir(exist_ok=True)
         (plan.target_dir / "sessions" / "chat.json").write_text('{"s": 1}')
+        (plan.target_dir / "forecasting" / "evidence_snapshots").mkdir(
+            parents=True, exist_ok=True
+        )
+        (plan.target_dir / "forecasting" / "forecasting.db").write_text("ledger-v1")
+        (
+            plan.target_dir
+            / "forecasting"
+            / "evidence_snapshots"
+            / "question-1.json"
+        ).write_text('{"source": "user"}')
 
         # 3. Bump source in the staging dir
         (staged / "SOUL.md").write_text("I am Source v2.\n")
+        (staged / "forecasting").mkdir(exist_ok=True)
+        (staged / "forecasting" / "forecasting.db").write_text("ledger-v2")
 
         # 4. Update
         update_distribution("telem", force_config=False)
@@ -376,6 +388,10 @@ class TestUpdate:
         assert (plan.target_dir / ".env").read_text() == "OPENAI_API_KEY=sk-user\n"
         assert (plan.target_dir / "auth.json").read_text() == '{"user": "auth"}'
         assert (plan.target_dir / "sessions" / "chat.json").read_text() == '{"s": 1}'
+        assert (plan.target_dir / "forecasting" / "forecasting.db").read_text() == "ledger-v1"
+        assert (
+            plan.target_dir / "forecasting" / "evidence_snapshots" / "question-1.json"
+        ).read_text() == '{"source": "user"}'
 
     def test_update_preserves_config_by_default(self, profile_env):
         staged = _make_staging_dir(profile_env, "src")
@@ -454,6 +470,7 @@ class TestSecurity:
     def test_user_owned_exclude_covers_credentials(self):
         assert "auth.json" in USER_OWNED_EXCLUDE
         assert ".env" in USER_OWNED_EXCLUDE
+        assert "forecasting" in USER_OWNED_EXCLUDE
         assert "memories" in USER_OWNED_EXCLUDE
         assert "sessions" in USER_OWNED_EXCLUDE
         assert "local" in USER_OWNED_EXCLUDE
@@ -472,6 +489,26 @@ class TestSecurity:
         # about is that the leaked content didn't land in the target.
         if (plan.target_dir / ".env").exists():
             assert "LEAKED" not in (plan.target_dir / ".env").read_text()
+
+    def test_install_does_not_import_forecast_ledger_from_staging(self, profile_env):
+        """Distributions are desk templates, not ledger exports."""
+        staged = _make_staging_dir(profile_env, "src")
+        (staged / "forecasting" / "evidence_snapshots").mkdir(
+            parents=True, exist_ok=True
+        )
+        (staged / "forecasting" / "forecasting.db").write_text("source-ledger")
+        (
+            staged
+            / "forecasting"
+            / "evidence_snapshots"
+            / "question-1.json"
+        ).write_text('{"source": "staged"}')
+
+        plan = install_distribution(str(staged), name="clean-ledger")
+        assert not (plan.target_dir / "forecasting" / "forecasting.db").exists()
+        assert not (
+            plan.target_dir / "forecasting" / "evidence_snapshots" / "question-1.json"
+        ).exists()
 
 
 # ===========================================================================
@@ -581,4 +618,3 @@ class TestErrorSurfaces:
         staged = _make_staging_dir(profile_env, "bad", manifest=mf)
         with pytest.raises((ValueError, DistributionError)):
             plan_install(str(staged), tmp_path / "work")
-

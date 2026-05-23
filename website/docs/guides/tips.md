@@ -1,36 +1,36 @@
 ---
 sidebar_position: 1
 title: "Tips & Best Practices"
-description: "Practical advice to get the most out of Hermes Agent — prompt tips, CLI shortcuts, context files, memory, cost optimization, and security"
+description: "Practical advice for using the forecast desk, ledger, CLI shortcuts, memory, and security controls."
 ---
 
 # Tips & Best Practices
 
-A quick-wins collection of practical tips that make you immediately more effective with Hermes Agent. Each section targets a different aspect — scan the headers and jump to what's relevant.
+A quick-wins collection of practical tips that make you more effective with Superforecasting Agent. Each section targets a different part of the forecast desk: question setup, evidence handling, ledger discipline, CLI flow, memory, cost, and security.
 
 ---
 
 ## Getting the Best Results
 
-### Be Specific About What You Want
+### Be Specific About the Forecast
 
-Vague prompts produce vague results. Instead of "fix the code," say "fix the TypeError in `api/handlers.py` on line 47 — the `process_request()` function receives `None` from `parse_body()`." The more context you give, the fewer iterations you need.
+Vague prompts produce vague forecasts. Instead of "research inflation," say "create a binary forecast for whether the next CPI print will exceed consensus, using BLS as the resolution source, and separate base-rate evidence from inside-view arguments." The more precise the question and resolution criteria, the fewer cleanup passes you need.
 
 ### Provide Context Up Front
 
-Front-load your request with the relevant details: file paths, error messages, expected behavior. One well-crafted message beats three rounds of clarification. Paste error tracebacks directly — the agent can parse them.
+Front-load your request with the relevant details: source URLs, close time, resolution source, prior forecasts, evidence cutoffs, and known ambiguities. One well-crafted message beats three rounds of clarification.
 
 ### Use Context Files for Recurring Instructions
 
-If you find yourself repeating the same instructions ("use tabs not spaces," "we use pytest," "the API is at `/api/v2`"), put them in an `AGENTS.md` file. The agent reads it automatically every session — zero effort after setup.
+If you find yourself repeating the same instructions ("always cite BLS releases," "separate market priors from model estimates," "use this local data directory"), put them in an `AGENTS.md` file. The agent reads it automatically every session — zero effort after setup.
 
 ### Let the Agent Use Its Tools
 
-Don't try to hand-hold every step. Say "find and fix the failing test" rather than "open `tests/test_foo.py`, look at line 42, then..." The agent has file search, terminal access, and code execution — let it explore and iterate.
+Don't try to hand-hold every step. Say "build a base-rate estimate and update the forecast with cited evidence" rather than manually sequencing every tool. The agent has file search, terminal access, browser access, and ledger tooling — let it explore, then verify the final probability and rationale.
 
 ### Use Skills for Complex Workflows
 
-Before writing a long prompt explaining how to do something, check if there's already a skill for it. Type `/skills` to browse available skills, or just invoke one directly like `/axolotl` or `/github-pr-workflow`.
+Before writing a long prompt explaining a workflow, check if there's already a skill for it. Type `/skills` to browse available skills. Use skills for repeatable research procedures, but keep scoreable forecast state in the ledger.
 
 ## CLI Power User Tips
 
@@ -48,7 +48,7 @@ Press **Ctrl+C** once to interrupt the agent mid-response. You can then type a n
 
 ### Resume Sessions with `-c`
 
-Forgot something from your last session? Run `hermes -c` to resume exactly where you left off, with full conversation history restored. You can also resume by title: `hermes -r "my research project"`.
+Forgot something from your last session? Run `superforecasting-agent -c` to resume exactly where you left off, with full conversation history restored. You can also resume by title: `superforecasting-agent -r "inflation forecast research"`.
 
 ### Clipboard Image Paste
 
@@ -78,9 +78,9 @@ Create an `AGENTS.md` in your project root with architecture decisions, coding c
 
 ### SOUL.md: Customize Personality
 
-Want Hermes to have a stable default voice? Edit `~/.hermes/SOUL.md` (or `$HERMES_HOME/SOUL.md` if you use a custom Hermes home). Hermes now seeds a starter SOUL automatically and uses that global file as the instance-wide personality source.
+Want Superforecasting Agent to have a stable default voice? Edit `~/.superforecasting-agent/SOUL.md` (or the inherited `$HERMES_HOME/SOUL.md` compatibility path if you use a legacy home). The fork seeds a starter SOUL automatically and uses that global file as the instance-wide style source.
 
-For a full walkthrough, see [Use SOUL.md with Hermes](/docs/guides/use-soul-with-hermes).
+For a full walkthrough, see [Use SOUL.md with Superforecasting Agent](/docs/guides/use-soul-with-hermes).
 
 ```markdown
 # Soul
@@ -93,11 +93,11 @@ Use `SOUL.md` for durable personality. Use `AGENTS.md` for project-specific inst
 
 ### .cursorrules Compatibility
 
-Already have a `.cursorrules` or `.cursor/rules/*.mdc` file? Hermes reads those too. No need to duplicate your coding conventions — they're loaded automatically from the working directory.
+Already have a `.cursorrules` or `.cursor/rules/*.mdc` file? The inherited runtime reads those too. No need to duplicate your project conventions — they're loaded automatically from the working directory.
 
 ### Discovery
 
-Hermes loads the top-level `AGENTS.md` from the current working directory at session start. Subdirectory `AGENTS.md` files are discovered lazily during tool calls (via `subdirectory_hints.py`) and injected into tool results — they are not loaded upfront into the system prompt.
+Superforecasting Agent loads the top-level `AGENTS.md` from the current working directory at session start. Subdirectory `AGENTS.md` files are discovered lazily during tool calls (via `subdirectory_hints.py`) and injected into tool results — they are not loaded upfront into the system prompt.
 
 :::tip
 Keep context files focused and concise. Every character counts against your token budget since they're injected into every single message.
@@ -107,11 +107,11 @@ Keep context files focused and concise. Every character counts against your toke
 
 ### Memory vs. Skills: What Goes Where
 
-**Memory** is for facts: your environment, preferences, project locations, and things the agent has learned about you. **Skills** are for procedures: multi-step workflows, tool-specific instructions, and reusable recipes. Use memory for "what," skills for "how."
+**Memory** is for preferences and recurring context: your environment, source habits, project locations, and communication defaults. **Skills** are for procedures: multi-step workflows, tool-specific instructions, and reusable recipes. **The forecast ledger** is for scoreable beliefs: questions, evidence, probabilities, model runs, resolutions, scores, postmortems, and calibration lessons.
 
 ### When to Create Skills
 
-If you find a task that takes 5+ steps and you'll do it again, ask the agent to create a skill for it. Say "save what you just did as a skill called `deploy-staging`." Next time, just type `/deploy-staging` and the agent loads the full procedure.
+If you find a research task that takes 5+ steps and you'll do it again, ask the agent to create a skill for it. Say "save this evidence-triage workflow as a skill called `macro-source-review`." Next time, type `/macro-source-review` and the agent loads the procedure.
 
 ### Managing Memory Capacity
 
@@ -119,7 +119,7 @@ Memory is intentionally bounded (~2,200 chars for MEMORY.md, ~1,375 chars for US
 
 ### Let the Agent Remember
 
-After a productive session, say "remember this for next time" and the agent will save the key takeaways. You can also be specific: "save to memory that our CI uses GitHub Actions with the `deploy.yml` workflow."
+After a productive session, say "remember this preference for next time" and the agent will save durable non-scoreable context. For forecast updates, use `forecast update`, `forecast postmortem`, and calibration lessons instead of chat memory.
 
 :::warning
 Memory is a frozen snapshot — changes made during a session don't appear in the system prompt until the next session starts. The agent writes to disk immediately, but the prompt cache isn't invalidated mid-session.
@@ -137,7 +137,7 @@ Long sessions accumulate tokens. When you notice responses slowing down or getti
 
 ### Delegate for Parallel Work
 
-Need to research three topics at once? Ask the agent to use `delegate_task` with parallel subtasks. Each subagent runs independently with its own context, and only the final summaries come back — massively reducing your main conversation's token usage.
+Need to research three source clusters at once? Ask the agent to use `delegate_task` with parallel subtasks. Each subagent runs independently with its own context, and only the final summaries come back — keep any final probability write in the ledger.
 
 ### Use execute_code for Batch Operations
 
@@ -145,7 +145,7 @@ Instead of running terminal commands one at a time, ask the agent to write a scr
 
 ### Choose the Right Model
 
-Use `/model` to switch models mid-session. Use a frontier model (Claude Sonnet/Opus, GPT-4o) for complex reasoning and architecture decisions. Switch to a faster model for simple tasks like formatting, renaming, or boilerplate generation.
+Use `/model` to switch models mid-session. Use a frontier model for ambiguous resolution criteria, causal decomposition, and adversarial evidence review. Switch to a faster model for formatting, source summaries, and low-risk drafting.
 
 :::tip
 Run `/usage` periodically to see your token consumption. Run `/insights` for a broader view of usage patterns over the last 30 days.
@@ -155,22 +155,22 @@ Run `/usage` periodically to see your token consumption. Run `/insights` for a b
 
 ### Set a Home Channel
 
-Use `/sethome` in your preferred Telegram or Discord chat to designate it as the home channel. Cron job results and scheduled task outputs are delivered here. Without it, the agent has nowhere to send proactive messages.
+Use `/sethome` in your preferred Telegram or Discord chat to designate it as the home channel. Forecast review prompts, watched-source alerts, cron job results, and scheduled self-check outputs are delivered here. Without it, the agent has nowhere to send proactive messages.
 
 ### Use /title to Organize Sessions
 
-Name your sessions with `/title auth-refactor` or `/title research-llm-quantization`. Named sessions are easy to find with `hermes sessions list` and resume with `hermes -r "auth-refactor"`. Unnamed sessions pile up and become impossible to distinguish.
+Name your sessions with `/title inflation-cpi-research` or `/title election-baselines`. Named sessions are easy to find with `superforecasting-agent sessions list` and resume with `superforecasting-agent -r "inflation-cpi-research"`. Unnamed sessions pile up and become impossible to distinguish.
 
 ### DM Pairing for Team Access
 
-Instead of manually collecting user IDs for allowlists, enable DM pairing. When a teammate DMs the bot, they get a one-time pairing code. You approve it with `hermes pairing approve telegram XKGH5N7P` — simple and secure.
+Instead of manually collecting user IDs for allowlists, enable DM pairing. When a teammate DMs the bot, they get a one-time pairing code. You approve it with `superforecasting-agent pairing approve telegram XKGH5N7P` — simple and secure.
 
 ### Tool Progress Display Modes
 
 Use `/verbose` to control how much tool activity you see. In messaging platforms, less is usually more — keep it on "new" to see just new tool calls. In the CLI, "all" gives you a satisfying live view of everything the agent does.
 
 :::tip
-On messaging platforms, sessions auto-reset after idle time (default: 24 hours) or daily at 4 AM. Adjust per-platform in `~/.hermes/config.yaml` if you need longer sessions.
+On messaging platforms, sessions auto-reset after idle time (default: 24 hours) or daily at 4 AM. Adjust per-platform in `~/.superforecasting-agent/config.yaml` if you need longer sessions.
 :::
 
 ## Security
@@ -182,7 +182,7 @@ When working with untrusted repositories or running unfamiliar code, use Docker 
 ```bash
 # In your .env:
 TERMINAL_BACKEND=docker
-TERMINAL_DOCKER_IMAGE=hermes-sandbox:latest
+TERMINAL_DOCKER_IMAGE=nikolaik/python-nodejs:python3.11-nodejs20
 ```
 
 ### Avoid Windows Encoding Pitfalls
@@ -210,7 +210,7 @@ When the agent triggers a dangerous command approval (`rm -rf`, `DROP TABLE`, et
 
 ### Command Approval Is Your Safety Net
 
-Hermes checks every command against a curated list of dangerous patterns before execution. This includes recursive deletes, SQL drops, piping curl to shell, and more. Don't disable this in production — it exists for good reasons.
+Superforecasting Agent checks every command against a curated list of dangerous patterns before execution. This includes recursive deletes, SQL drops, piping curl to shell, and more. Don't disable this in production — it exists for good reasons.
 
 :::warning
 When running in a container backend (Docker, Singularity, Modal, Daytona), dangerous command checks are **skipped** because the container is the security boundary. Make sure your container images are properly locked down.

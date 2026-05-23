@@ -1,114 +1,167 @@
-# Kanban worker lanes
+---
+title: Kanban Worker Lanes
+description: Worker-lane contracts for forecast-desk Kanban execution.
+---
 
-A **worker lane** is a class of process that the kanban dispatcher can route tasks to. Each lane has an identity (the assignee string), a spawn mechanism, and a contract for what it must do with the task once spawned.
+# Kanban Worker Lanes
 
-This page is the contract. It exists for two audiences:
+A worker lane is a class of process the Kanban dispatcher can route tasks to. Each lane has an assignee identity, a spawn mechanism, and a lifecycle contract for closing or blocking the claimed task.
 
-- **Operators** picking which lanes to wire into a board (which profiles to create, which assignees to use).
-- **Plugin / integration authors** wanting to add a new lane shape (a CLI worker that wraps Codex / Claude Code / OpenCode, a containerised review worker, a non-Hermes service that pulls tasks via the API).
+In the forecast desk, lanes are useful for specialist roles such as source analyst, quant researcher, forecast reviewer, resolver reviewer, benchmark maintainer, or source-adapter engineer. Lanes execute tasks; they do not own the forecast ledger.
 
-If you're writing the worker code itself — the agent that runs *inside* a lane — the [`kanban-worker`](https://github.com/NousResearch/hermes-agent/blob/main/skills/devops/kanban-worker/SKILL.md) skill is the deeper procedural detail.
-
-## The hierarchy
+## Hierarchy
 
 ```text
-Hermes Kanban  =  canonical task lifecycle + audit trail
-Worker lane    =  implementation executor for one assigned card
-Reviewer       =  human or human-proxy that gates "done"
-GitHub PR      =  upstreamable artifact (optional, for code lanes)
+Kanban board    = task lifecycle and attempt audit trail
+Worker lane     = executor for one assigned task
+Reviewer        = human or review profile that gates completion
+Forecast ledger = durable forecasts, evidence, models, scores, and learning
 ```
 
-Hermes Kanban owns lifecycle truth — `ready` → `running` → `blocked` / `done` / `archived`. Worker lanes execute work but never own that truth; everything they do flows back through the kanban kernel via the `kanban_*` tools (or, for non-Hermes external workers, via the API). Reviewers gate the transition from "code change written" to "task done."
+Kanban owns task lifecycle truth: `ready -> running -> blocked / done / archived`. The forecast ledger owns forecast truth. Worker lanes must write forecast-relevant outcomes through explicit forecast commands or tools after review.
 
-## What a lane provides
+## What a Lane Provides
 
-To be a kanban worker lane, an integration must provide three things:
+### 1. Assignee String
 
-### 1. An assignee string
+The dispatcher matches `task.assignee` against either:
 
-The dispatcher matches `task.assignee` against either a Hermes profile name (the default lane shape) or a registered non-spawnable identifier (the plugin lane shape — see [Adding an external CLI worker lane](#adding-an-external-cli-worker-lane) below). Tasks whose assignee doesn't resolve are left on `ready` with a `skipped_nonspawnable` event so a board operator can fix them; they are not silently dropped or executed by an arbitrary fallback.
+- a Superforecasting Agent profile name
+- a registered non-spawnable identifier supplied by a plugin
 
-### 2. A spawn mechanism
+Tasks whose assignee cannot be resolved stay on `ready` with a `skipped_nonspawnable` event. They are not silently executed by an arbitrary fallback.
 
-For Hermes profile lanes, the dispatcher's `_default_spawn` runs `hermes -p <assignee> chat -q <prompt>` (or the equivalent module form when the `hermes` shim isn't on `$PATH`) inside the task's pinned workspace, with these env vars set:
+### 2. Spawn Mechanism
+
+For profile lanes, the dispatcher spawns a quiet chat process for the assignee profile inside the task workspace. The fork-native command shape is:
+
+```bash
+superforecasting-agent -p <assignee> chat -q <prompt>
+```
+
+Migrated installs may still use `hermes -p <assignee> chat -q <prompt>` or the equivalent module form.
+
+The dispatcher sets inherited runtime environment variables:
 
 | Variable | Carries |
 |---|---|
-| `HERMES_KANBAN_TASK` | the task id the worker is operating on |
+| `HERMES_KANBAN_TASK` | task id the worker is operating on |
 | `HERMES_KANBAN_DB` | absolute path to the per-board SQLite file |
 | `HERMES_KANBAN_BOARD` | board slug |
-| `HERMES_KANBAN_WORKSPACES_ROOT` | root of the board's workspace tree |
-| `HERMES_KANBAN_WORKSPACE` | absolute path to *this* task's workspace |
-| `HERMES_KANBAN_RUN_ID` | the current run's id (for the lifecycle gate) |
-| `HERMES_KANBAN_CLAIM_LOCK` | the claim lock string (`<host>:<pid>:<uuid>`) |
-| `HERMES_PROFILE` | the worker's own profile name (for `kanban_comment` author attribution) |
-| `HERMES_TENANT` | tenant namespace, if the task has one |
+| `HERMES_KANBAN_WORKSPACES_ROOT` | root of the board workspace tree |
+| `HERMES_KANBAN_WORKSPACE` | absolute path to this task workspace |
+| `HERMES_KANBAN_RUN_ID` | current run id |
+| `HERMES_KANBAN_CLAIM_LOCK` | claim lock string |
+| `HERMES_PROFILE` | worker profile name |
+| `HERMES_TENANT` | tenant namespace, if present |
 
-For non-Hermes lanes (registered via a plugin), the plugin supplies its own `spawn_fn` callable that gets `task`, `workspace`, and `board` and returns an optional pid for crash detection.
+These names remain `HERMES_*` because they are inherited runtime identifiers.
 
-### 3. A lifecycle terminator
+For external lanes registered by plugins, the plugin supplies a `spawn_fn` callable that receives task, workspace, and board context and returns an optional pid for crash detection.
 
-Every claim must end in exactly one of:
+### 3. Lifecycle Terminator
 
-- `kanban_complete(summary=..., metadata=...)` — task succeeds, status flips to `done`.
-- `kanban_block(reason=...)` — task waits for human input, status flips to `blocked`. The dispatcher respawns when `kanban_unblock` runs.
-- The worker process exits without a tool call. The kernel reaps it and emits `crashed` (PID died) or `gave_up` (consecutive-failure breaker tripped) or `timed_out` (max_runtime exceeded). This is the failure path; healthy workers don't end here.
+Every claim must end in exactly one terminal path:
 
-The kanban kernel enforces that exactly one of these terminates each run. A worker that calls neither and exits normally is treated as crashed.
+- `kanban_complete(summary=..., metadata=...)`
+- `kanban_block(reason=...)`
+- failure handling by the kernel when the worker exits, crashes, times out, or trips the retry circuit
 
-## Outputs and the review-required convention
+Healthy workers should call `kanban_complete` or `kanban_block`. A worker that exits without either is treated as failed.
 
-For most code-changing tasks, the work isn't truly *done* the moment the worker finishes — it needs a human reviewer. The kanban kernel doesn't enforce this distinction (a "code-changing task" is fuzzy and forcing block-instead-of-complete on every code worker would break flows where no review is wanted). It's a convention layered on top:
+## Review-Required Convention
 
-- **Block instead of complete**, with `reason` prefixed `review-required: ` so the dashboard / `hermes kanban show` surfaces the row as awaiting review.
-- **Drop structured metadata into a `kanban_comment` first** since `kanban_block` only carries the human-readable `reason`. Comments are the durable annotation channel — every audit-relevant field (changed_files, tests_run, diff_path or PR url, decisions) belongs there.
-- **Reviewer either approves and unblocks**, which respawns the worker with the comment thread for follow-ups; or asks for changes via another comment, which the next worker run sees as part of `kanban_show`'s context.
+For code-changing or forecast-impacting tasks, completion often needs human review. The common convention is:
 
-The [`kanban-worker`](https://github.com/NousResearch/hermes-agent/blob/main/skills/devops/kanban-worker/SKILL.md) skill has worked examples for both `kanban_complete` (truly terminal tasks — typo fixes, docs changes, research writeups) and the `review-required` block pattern.
+1. Add a `kanban_comment` with structured metadata.
+2. Call `kanban_block(reason="review-required: ...")`.
+3. Let a reviewer approve, comment, or unblock.
+4. Record any forecast-relevant result through the forecast ledger after approval.
 
-## Logs and audit trail
+Useful review metadata:
 
-The dispatcher writes per-task worker stdout/stderr to `<board-root>/logs/<task_id>.log`. Logs are auditable from kanban metadata:
+- changed files
+- tests run
+- source ids inspected
+- evidence candidates
+- model parameters and output
+- assumptions that need review
+- forecast ids affected
+- proposed ledger action
 
-- `task_runs` rows carry the `log_path`, exit code (where available), summary, and metadata.
-- `task_events` rows carry every state transition (`promoted`, `claimed`, `heartbeat`, `completed`, `blocked`, `gave_up`, `crashed`, `timed_out`, `reclaimed`, `claim_extended`).
-- `kanban_show` returns both, so a reviewer (or a follow-up worker) reading the task gets the full history without needing dashboard access.
+The block keeps the task out of `done` until review has happened.
 
-The dashboard renders run history with summaries, metadata blocks, and exit-status badges. CLI users can run `hermes kanban tail <task_id>` to follow live, or `hermes kanban runs <task_id>` for the historical attempt list.
+## Logs and Audit Trail
 
-## Existing lane shapes
+The dispatcher writes worker stdout/stderr to the board logs directory. The board records:
 
-### Hermes profile lane (default)
+- `task_runs` with outcome, worker, timings, summary, metadata, log path, and exit code where available
+- `task_events` with transitions such as promoted, claimed, heartbeat, completed, blocked, gave_up, crashed, timed_out, reclaimed, and claim_extended
+- `kanban_show` context with task history, parent handoffs, comments, and active run state
 
-The shape every kanban worker takes today: the assignee is a profile name, the dispatcher spawns `hermes -p <profile>`, the worker auto-loads the [`kanban-worker`](https://github.com/NousResearch/hermes-agent/blob/main/skills/devops/kanban-worker/SKILL.md) skill plus the `KANBAN_GUIDANCE` system-prompt block, and uses the `kanban_*` tools to terminate the run. No setup beyond defining the profile.
+CLI users can inspect:
 
-When you create profiles for your fleet, choose names that match the *role* you want the orchestrator to route to. The orchestrator (when there is one) discovers your profile names via `hermes profile list` — there's no fixed roster the system assumes (see the [`kanban-orchestrator`](https://github.com/NousResearch/hermes-agent/blob/main/skills/devops/kanban-orchestrator/SKILL.md) skill for the orchestrator side of the contract).
+```bash
+superforecasting-agent kanban tail <task-id>
+superforecasting-agent kanban runs <task-id>
+```
 
-### Orchestrator profile lane
+Legacy `hermes kanban tail` and `hermes kanban runs` remain compatibility aliases.
 
-A specialisation of the profile lane: an orchestrator is a Hermes profile whose toolset includes `kanban` but excludes `terminal` / `file` / `code` / `web` for implementation. Its job is decomposing a high-level goal into child tasks via `kanban_create` + `kanban_link` and stepping back. The orchestrator skill encodes the anti-temptation rules.
+## Existing Lane Shapes
 
-## Adding an external CLI worker lane
+### Profile Lane
 
-Wiring a non-Hermes CLI tool (Codex CLI, Claude Code CLI, OpenCode CLI, a local coding-model runner, etc.) as a kanban worker lane is *not yet a paved path*. The dispatcher's spawn function is pluggable (`spawn_fn` is a parameter on `dispatch_once`), and a plugin could register its own `spawn_fn` for a non-Hermes assignee, but the surrounding integration work — wrapping the CLI's exit code into `kanban_complete` / `kanban_block` calls, mapping the CLI's workspace/sandbox conventions onto the dispatcher's `HERMES_KANBAN_WORKSPACE` env, handling auth and per-CLI policy — is still per-integration design work.
+The default lane shape uses a forecast profile as the assignee. The worker loads the Kanban worker guidance, receives the task context, uses normal tools to do the work, and terminates through `kanban_*` tools.
 
-If you're considering adding a CLI lane, open an issue describing the specific CLI and the workflow you're trying to enable. The contract above is the constraints any such lane must satisfy; the implementation shape (one plugin per CLI vs a generic CLI-runner plugin parameterised by config) is open.
+Create profile names that match roles the decomposer should route to, for example:
 
-The historical issue for this is [#19931](https://github.com/NousResearch/hermes-agent/issues/19931) and the closed-not-merged Codex-specific PR [#19924](https://github.com/NousResearch/hermes-agent/pull/19924) — those describe the original architecture proposal but didn't land a runner.
+- `source-analyst`
+- `quant-researcher`
+- `forecast-reviewer`
+- `resolver-reviewer`
+- `adapter-engineer`
 
-## Failure modes the dispatcher handles
+The orchestrator discovers profile names through the profile list. It does not assume a fixed roster.
 
-So lane authors don't have to reimplement these:
+### Orchestrator Profile Lane
 
-- **Stale claim TTL** — a worker that claims and then never heartbeats / completes / blocks gets reclaimed after `DEFAULT_CLAIM_TTL_SECONDS` (15 min default) — but only if the worker process has actually died. A live worker (slow model spending 20+ min in one tool-free LLM call) gets the claim *extended* instead of killed; only a dead PID is reclaimed.
-- **Crashed worker** — a worker whose host-local PID has vanished is detected by `detect_crashed_workers` and reaped; the task increments `consecutive_failures` and may auto-block when the breaker trips.
-- **Run-level retry** — when a task is retried (post-block, post-crash, post-reclaim), the worker can use the `expected_run_id` parameter on terminating tools to fail fast if its own run was already superseded.
-- **Per-task max runtime** — `task.max_runtime_seconds` hard-caps wall-clock time per run, regardless of PID liveness. Catches genuinely-deadlocked workers that the live-PID extension would otherwise keep running.
-- **Stranded-task detection** — a ready task whose assignee never produces a claim within `kanban.stranded_threshold_seconds` (default 30 min) shows up in `hermes kanban diagnostics` as a `stranded_in_ready` warning. Severity escalates to error at 2x the threshold and critical at 6x. Catches typo'd assignees, deleted profiles, and down external worker pools in one signal — identity-agnostic, no per-board allowlist to curate.
+An orchestrator profile decomposes high-level tasks into child tasks with `kanban_create` and `kanban_link`. It should avoid implementation work unless explicitly configured for it.
+
+For forecast work, the orchestrator should create tasks that end in explicit ledger actions or reviewed handoffs, not hidden probability changes.
+
+## External CLI Worker Lanes
+
+External CLI lanes, such as Codex CLI, Claude Code, OpenCode, or a local coding-model runner, are not yet a fully paved path. A plugin can provide a custom `spawn_fn`, but it must still satisfy the same lifecycle contract:
+
+- map the CLI workspace and sandbox into the Kanban workspace
+- report status through `kanban_complete` or `kanban_block`
+- preserve run metadata and logs
+- handle auth and per-CLI policies
+- avoid writing forecast state outside the forecast ledger
+
+The inherited issue references for this design are still useful background: `#19931` and the closed Codex-specific PR `#19924` in the upstream Hermes repository.
+
+## Failure Modes
+
+The dispatcher handles:
+
+- stale claim TTL for dead workers
+- crashed worker detection
+- run-level retry after block, crash, or reclaim
+- per-task max runtime
+- stranded ready-task diagnostics
+- consecutive-failure circuit breaker
+
+Use diagnostics to find unresolved assignees or stalled pools:
+
+```bash
+superforecasting-agent kanban diagnostics
+```
 
 ## Related
 
-- [Kanban overview](./kanban) — the user-facing intro.
-- [Kanban tutorial](./kanban-tutorial) — walkthrough with the dashboard open.
-- [`kanban-worker`](https://github.com/NousResearch/hermes-agent/blob/main/skills/devops/kanban-worker/SKILL.md) — the skill the worker process loads.
-- [`kanban-orchestrator`](https://github.com/NousResearch/hermes-agent/blob/main/skills/devops/kanban-orchestrator/SKILL.md) — the orchestrator side.
+- [Kanban overview](./kanban)
+- [Kanban tutorial](./kanban-tutorial)
+- [Codex app-server runtime](./codex-app-server-runtime)
+- [Forecast scheduling and cron](./cron)

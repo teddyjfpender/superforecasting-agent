@@ -6,23 +6,45 @@ sidebar_position: 0
 
 # Integrations
 
-Hermes Agent connects to external systems for AI inference, tool servers, IDE workflows, programmatic access, and more. These integrations extend what Hermes can do and where it can run.
+Superforecasting Agent connects to external systems so the forecast desk can gather current evidence, run domain models, preserve audit trails, and trigger review when beliefs go stale. The main product remains the CLI forecasting workflow; integrations are useful when they improve research quality, probability estimation, scoring, calibration, or alerting.
+
+Not every inherited Hermes integration is equally central to the fork. AI providers, web/source acquisition, MCP data connectors, plugins, cron, and evaluation workflows are forecast-critical. Messaging, voice, IDE, API, and home automation integrations are secondary surfaces unless they support a forecasting workflow such as alerts, handoffs, or source capture.
+
+## Forecast Integration Map
+
+| Forecasting need | Primary integrations | Role |
+|------------------|----------------------|------|
+| Model inference and routing | AI providers, provider routing, fallback providers | Run decomposition, evidence synthesis, structured judgment, and auxiliary extraction reliably. |
+| Current evidence | Web search, web extraction, browser automation, MCP servers | Pull timestamped source material, inspect pages, and collect facts that can be attached to the forecast ledger. |
+| Domain data and models | MCP servers, plugins, browser automation, terminal tools | Connect to market data, APIs, databases, spreadsheets, notebooks, or custom model runners. |
+| Review and alerting | Cron, messaging gateways, webhooks | Re-check stale forecasts, monitor source changes, and notify when assumptions need updates. |
+| Learning loop | Memory providers, batch processing, plugins | Store reusable domain lessons, run backtests, and compare model variants against resolved questions. |
 
 ## AI Providers & Routing
 
-Hermes supports multiple AI inference providers out of the box. Use `hermes model` to configure interactively, or set them in `config.yaml`.
+Superforecasting Agent supports multiple inference providers out of the box. Use `superforecasting-agent model` to configure them interactively, or set them in `config.yaml`.
 
-- **[AI Providers](/docs/user-guide/features/provider-routing)** — OpenRouter, Anthropic, OpenAI, Google, and any OpenAI-compatible endpoint. Hermes auto-detects capabilities like vision, streaming, and tool use per provider.
-- **[Provider Routing](/docs/user-guide/features/provider-routing)** — Fine-grained control over which underlying providers handle your OpenRouter requests. Optimize for cost, speed, or quality with sorting, whitelists, blacklists, and explicit priority ordering.
+- **[AI Providers](/docs/user-guide/features/provider-routing)** — OpenRouter, Anthropic, OpenAI, Google, and any OpenAI-compatible endpoint. The runtime auto-detects capabilities like vision, streaming, and tool use per provider.
+- **[Provider Routing](/docs/user-guide/features/provider-routing)** — Fine-grained control over which underlying providers handle your OpenRouter requests. Use routing to separate high-judgment forecast synthesis from cheaper extraction and summarization work.
 - **[Fallback Providers](/docs/user-guide/features/fallback-providers)** — Automatic failover to backup LLM providers when your primary model encounters errors. Includes primary model fallback and independent auxiliary task fallback for vision, compression, and web extraction.
 
-## Tool Servers (MCP)
+## Evidence & Source Acquisition
 
-- **[MCP Servers](/docs/user-guide/features/mcp)** — Connect Hermes to external tool servers via Model Context Protocol. Access tools from GitHub, databases, file systems, browser stacks, internal APIs, and more without writing native Hermes tools. Supports both stdio and SSE transports, per-server tool filtering, and capability-aware resource/prompt registration.
+The forecast CLI has a source-adapter inventory:
 
-## Web Search Backends
+```bash
+forecast sources
+forecast sources --json
+```
 
-The `web_search` and `web_extract` tools support four backend providers, configured via `config.yaml` or `hermes tools`:
+Use it to discover built-in imports and watched-source prefixes for news,
+economic, fiscal, and market price data, filings, papers, reference data, software releases, policy
+documents, CVEs, weather forecasts and alerts, geophysical and natural-hazard
+event data, public datasets, markets, and generic files.
+
+### Web Search Backends
+
+The `web_search` and `web_extract` tools support four backend providers, configured via `config.yaml` or `superforecasting-agent tools`:
 
 | Backend | Env Var | Search | Extract | Crawl |
 |---------|---------|--------|---------|-------|
@@ -40,9 +62,9 @@ web:
 
 If `web.backend` is not set, the backend is auto-detected from whichever API key is available. Self-hosted Firecrawl is also supported via `FIRECRAWL_API_URL`.
 
-## Browser Automation
+### Browser Automation
 
-Hermes includes full browser automation with multiple backend options for navigating websites, filling forms, and extracting information:
+Browser automation is useful when a forecast depends on pages that require interaction, filtering, or inspection beyond simple extraction:
 
 - **Browserbase** — Managed cloud browsers with anti-bot tooling, CAPTCHA solving, and residential proxies
 - **Browser Use** — Alternative cloud browser provider
@@ -51,50 +73,42 @@ Hermes includes full browser automation with multiple backend options for naviga
 
 See [Browser Automation](/docs/user-guide/features/browser) for setup and usage.
 
-## Voice & TTS Providers
+### Tool Servers (MCP)
 
-Text-to-speech and speech-to-text across all messaging platforms:
+- **[MCP Servers](/docs/user-guide/features/mcp)** — Connect Superforecasting Agent to external tool servers via Model Context Protocol. Access GitHub, databases, file systems, browser stacks, internal APIs, data warehouses, and custom source systems without writing native tools. Supports both stdio and SSE transports, per-server tool filtering, and capability-aware resource/prompt registration.
 
-| Provider | Quality | Cost | API Key |
-|----------|---------|------|---------|
-| **Edge TTS** (default) | Good | Free | None needed |
-| **ElevenLabs** | Excellent | Paid | `ELEVENLABS_API_KEY` |
-| **OpenAI TTS** | Good | Paid | `VOICE_TOOLS_OPENAI_KEY` |
-| **MiniMax** | Good | Paid | `MINIMAX_API_KEY` |
-| **NeuTTS** | Good | Free | None needed |
+## Plugins & Custom Connectors
 
-Speech-to-text supports six providers: local faster-whisper (free, runs on-device), a local command wrapper, Groq, OpenAI Whisper API, Mistral, and xAI. Voice message transcription works across Telegram, Discord, WhatsApp, and other messaging platforms. See [Voice & TTS](/docs/user-guide/features/tts) and [Voice Mode](/docs/user-guide/features/voice-mode) for details.
+- **[Plugin System](/docs/user-guide/features/plugins)** — Extend the forecast desk with custom tools, lifecycle hooks, CLI commands, source adapters, model runners, and review workflows without modifying core code. Plugins are discovered from `~/.superforecasting-agent/plugins/`, legacy `~/.hermes/plugins/`, project-local `.hermes/plugins/`, and pip-installed entry points.
+- **[Build a Plugin](/docs/guides/build-a-hermes-plugin)** — The legacy-named plugin authoring guide covers tools, hooks, and CLI commands that can be used to add forecasting-specific connectors.
 
-## IDE & Editor Integration
+Good plugin candidates include market-data connectors, policy trackers, source reliability scorers, evidence snapshotters, reference-class builders, and domain-specific model runners.
 
-- **[IDE Integration (ACP)](/docs/user-guide/features/acp)** — Use Hermes Agent inside ACP-compatible editors such as VS Code, Zed, and JetBrains. Hermes runs as an ACP server, rendering chat messages, tool activity, file diffs, and terminal commands inside your editor.
+## Review, Alerts & Automation
 
-## Programmatic Access
+- **[Cron](/docs/user-guide/features/cron)** — Schedule stale-forecast checks, domain watchlists, recurring evidence scans, calibration reviews, and post-resolution learning jobs.
+- **[Webhooks](/docs/user-guide/messaging/webhooks)** — Trigger forecast review or evidence capture from external systems.
+- **Messaging platforms** — Deliver alerts, review reminders, and forecast summaries where a team already works.
 
-- **[API Server](/docs/user-guide/features/api-server)** — Expose Hermes as an OpenAI-compatible HTTP endpoint. Any frontend that speaks the OpenAI format — Open WebUI, LobeChat, LibreChat, NextChat, ChatBox — can connect and use Hermes as a backend with its full toolset.
+## Memory, Backtesting & Evaluation
 
-## Memory & Personalization
+- **[Built-in Memory](/docs/user-guide/features/memory)** — Support persistent lessons and user preferences via `MEMORY.md` and `USER.md` files. Forecast probabilities, evidence, scores, and resolutions belong in the forecast ledger, not ordinary chat memory.
+- **[Memory Providers](/docs/user-guide/features/memory-providers)** — Plug in external memory backends for deeper retrieval of domain lessons and prior mistakes. Eight providers are supported: Honcho, OpenViking, Mem0, Hindsight, Holographic, RetainDB, ByteRover, and Supermemory.
+- **[Batch Processing](/docs/user-guide/features/batch-processing)** — Run the agent across many prompts in parallel for backtesting, evaluation, or structured trajectory generation.
 
-- **[Built-in Memory](/docs/user-guide/features/memory)** — Persistent, curated memory via `MEMORY.md` and `USER.md` files. The agent maintains bounded stores of personal notes and user profile data that survive across sessions.
-- **[Memory Providers](/docs/user-guide/features/memory-providers)** — Plug in external memory backends for deeper personalization. Eight providers are supported: Honcho (dialectic reasoning), OpenViking (tiered retrieval), Mem0 (cloud extraction), Hindsight (knowledge graphs), Holographic (local SQLite), RetainDB (hybrid search), ByteRover (CLI-based), and Supermemory.
+The closed learning loop is forecast -> observe -> resolve -> score -> diagnose -> recalibrate. Integrations should feed that loop instead of becoming standalone chat surfaces.
 
 ## Messaging Platforms
 
-Hermes runs as a gateway bot on 19+ messaging platforms, all configured through the same `gateway` subsystem:
+Superforecasting Agent can run inherited gateway bots on 19+ messaging platforms, all configured through the same `gateway` subsystem. Treat these as alert and collaboration channels for the CLI forecast desk rather than the primary product surface.
 
 - **[Telegram](/docs/user-guide/messaging/telegram)**, **[Discord](/docs/user-guide/messaging/discord)**, **[Slack](/docs/user-guide/messaging/slack)**, **[WhatsApp](/docs/user-guide/messaging/whatsapp)**, **[Signal](/docs/user-guide/messaging/signal)**, **[Matrix](/docs/user-guide/messaging/matrix)**, **[Mattermost](/docs/user-guide/messaging/mattermost)**, **[Email](/docs/user-guide/messaging/email)**, **[SMS](/docs/user-guide/messaging/sms)**, **[DingTalk](/docs/user-guide/messaging/dingtalk)**, **[Feishu/Lark](/docs/user-guide/messaging/feishu)**, **[WeCom](/docs/user-guide/messaging/wecom)**, **[WeCom Callback](/docs/user-guide/messaging/wecom-callback)**, **[Weixin](/docs/user-guide/messaging/weixin)**, **[BlueBubbles](/docs/user-guide/messaging/bluebubbles)**, **[QQ Bot](/docs/user-guide/messaging/qqbot)**, **[Yuanbao](/docs/user-guide/messaging/yuanbao)**, **[Home Assistant](/docs/user-guide/messaging/homeassistant)**, **[Microsoft Teams](/docs/user-guide/messaging/teams)**, **[Webhooks](/docs/user-guide/messaging/webhooks)**
 
 See the [Messaging Gateway overview](/docs/user-guide/messaging) for the platform comparison table and setup guide.
 
-## Home Automation
+## Secondary Inherited Surfaces
 
-- **[Home Assistant](/docs/user-guide/messaging/homeassistant)** — Control smart home devices via four dedicated tools (`ha_list_entities`, `ha_get_state`, `ha_list_services`, `ha_call_service`). The Home Assistant toolset activates automatically when `HASS_TOKEN` is configured.
-
-## Plugins
-
-- **[Plugin System](/docs/user-guide/features/plugins)** — Extend Hermes with custom tools, lifecycle hooks, and CLI commands without modifying core code. Plugins are discovered from `~/.hermes/plugins/`, project-local `.hermes/plugins/`, and pip-installed entry points.
-- **[Build a Plugin](/docs/guides/build-a-hermes-plugin)** — Step-by-step guide for creating Hermes plugins with tools, hooks, and CLI commands.
-
-## Training & Evaluation
-
-- **[Batch Processing](/docs/user-guide/features/batch-processing)** — Run the agent across hundreds of prompts in parallel, generating structured ShareGPT-format trajectory data for training data generation or evaluation.
+- **[IDE Integration (ACP)](/docs/user-guide/features/acp)** — Use Superforecasting Agent inside ACP-compatible editors such as VS Code, Zed, and JetBrains when code, notebooks, or model artifacts are part of the forecasting workflow.
+- **[API Server](/docs/user-guide/features/api-server)** — Expose Superforecasting Agent as an OpenAI-compatible HTTP endpoint. This is useful for internal tools that need forecast-desk capabilities through an API.
+- **[Voice & TTS](/docs/user-guide/features/tts)** and **[Voice Mode](/docs/user-guide/features/voice-mode)** — Speech-to-text and text-to-speech remain available for messaging workflows, but they are not core to the forecast lifecycle.
+- **[Home Assistant](/docs/user-guide/messaging/homeassistant)** — Home automation remains available through the inherited gateway/toolset, but it is secondary unless it supports a concrete forecasting or alerting workflow.

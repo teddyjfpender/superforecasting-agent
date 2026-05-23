@@ -14,7 +14,7 @@ Optional vendor skill for Parallel CLI — agent-native web search, extraction, 
 
 | | |
 |---|---|
-| Source | Optional — install with `hermes skills install official/research/parallel-cli` |
+| Source | Optional — install with `superforecasting-agent skills install official/research/parallel-cli` |
 | Path | `optional-skills/research/parallel-cli` |
 | Version | `1.1.0` |
 | Author | Hermes Agent |
@@ -26,7 +26,7 @@ Optional vendor skill for Parallel CLI — agent-native web search, extraction, 
 ## Reference: full SKILL.md
 
 :::info
-The following is the complete skill definition that Hermes loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
+The following is the complete skill definition that Superforecasting Agent loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
 # Parallel CLI

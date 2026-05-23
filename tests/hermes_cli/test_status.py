@@ -41,7 +41,7 @@ def test_show_status_termux_gateway_section_skips_systemctl(monkeypatch, capsys,
 
     output = capsys.readouterr().out
     assert "Manager:      Termux / manual process" in output
-    assert "Start with:   hermes gateway" in output
+    assert "Start with:   superforecasting-agent gateway" in output
     assert "systemd (user)" not in output
 
 
@@ -77,7 +77,7 @@ def test_show_status_reports_nous_auth_error(monkeypatch, capsys, tmp_path):
     status_mod.show_status(SimpleNamespace(all=False, deep=False))
 
     output = capsys.readouterr().out
-    assert "Nous Portal   ✗ not logged in (run: hermes auth add nous --type oauth)" in output
+    assert "Nous Portal   ✗ not logged in (run: superforecasting-agent auth add nous --type oauth)" in output
     assert "Error:      Refresh session has been revoked" in output
     assert "Access exp:" in output
     assert "Key exp:" in output
@@ -248,7 +248,7 @@ class TestShowStatusXaiOAuth:
         status_mod.show_status(SimpleNamespace(all=False, deep=False))
         out = capsys.readouterr().out
 
-        assert "not logged in (run: hermes auth add xai-oauth)" in out
+        assert "not logged in (run: superforecasting-agent auth add xai-oauth)" in out
 
     def test_not_logged_in_shows_error(self, monkeypatch, capsys, tmp_path):
         import hermes_cli.auth as auth_mod
@@ -331,4 +331,19 @@ class TestShowStatusXaiOAuth:
         out = capsys.readouterr().out
 
         assert "xAI OAuth" in out
-        assert "not logged in (run: hermes auth add xai-oauth)" in out
+        assert "not logged in (run: superforecasting-agent auth add xai-oauth)" in out
+
+
+def test_show_status_uses_forecast_native_visible_guidance(monkeypatch, capsys, tmp_path):
+    from hermes_cli import status as status_mod
+
+    _base_xai_mocks(monkeypatch, tmp_path)
+
+    status_mod.show_status(SimpleNamespace(all=False, deep=False))
+
+    out = capsys.readouterr().out
+    assert "Superforecasting Agent Status" in out
+    assert "superforecasting-agent doctor" in out
+    assert "superforecasting-agent setup" in out
+    assert "run: hermes " not in out
+    assert "Hermes Agent Status" not in out

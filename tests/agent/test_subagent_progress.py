@@ -2,7 +2,7 @@
 Tests for subagent progress relay (issue #169).
 
 Verifies that:
-- KawaiiSpinner.print_above() works with and without active spinner
+- ForecastSpinner.print_above() works with and without active spinner
 - _build_child_progress_callback handles CLI/gateway/no-display paths
 - Thinking events are relayed correctly
 - Parallel callbacks don't share state
@@ -15,21 +15,21 @@ import threading
 import pytest
 from unittest.mock import MagicMock, patch
 
-from agent.display import KawaiiSpinner
+from agent.display import ForecastSpinner
 from tools.delegate_tool import _build_child_progress_callback
 
 
 # =========================================================================
-# KawaiiSpinner.print_above tests
+# ForecastSpinner.print_above tests
 # =========================================================================
 
 class TestPrintAbove:
-    """Tests for KawaiiSpinner.print_above method."""
+    """Tests for ForecastSpinner.print_above method."""
 
     def test_print_above_without_spinner_running(self):
         """print_above should write to stdout even when spinner is not running."""
         buf = io.StringIO()
-        spinner = KawaiiSpinner("test")
+        spinner = ForecastSpinner("test")
         spinner._out = buf  # Redirect to buffer
         
         spinner.print_above("hello world")
@@ -39,7 +39,7 @@ class TestPrintAbove:
     def test_print_above_with_spinner_running(self):
         """print_above should clear spinner line and print text."""
         buf = io.StringIO()
-        spinner = KawaiiSpinner("test")
+        spinner = ForecastSpinner("test")
         spinner._out = buf
         spinner.running = True  # Pretend spinner is running (don't start thread)
         
@@ -52,7 +52,7 @@ class TestPrintAbove:
         """print_above should use self._out, not sys.stdout.
         This ensures it works inside redirect_stdout(devnull)."""
         buf = io.StringIO()
-        spinner = KawaiiSpinner("test")
+        spinner = ForecastSpinner("test")
         spinner._out = buf
         
         # Simulate redirect_stdout(devnull)
@@ -85,7 +85,7 @@ class TestBuildChildProgressCallback:
     def test_cli_spinner_tool_event(self):
         """Should print tool line above spinner for CLI path."""
         buf = io.StringIO()
-        spinner = KawaiiSpinner("delegating")
+        spinner = ForecastSpinner("delegating")
         spinner._out = buf
         spinner.running = True
         
@@ -105,7 +105,7 @@ class TestBuildChildProgressCallback:
     def test_cli_spinner_thinking_event(self):
         """Should print thinking line above spinner for CLI path."""
         buf = io.StringIO()
-        spinner = KawaiiSpinner("delegating")
+        spinner = ForecastSpinner("delegating")
         spinner._out = buf
         spinner.running = True
         
@@ -183,7 +183,7 @@ class TestBuildChildProgressCallback:
     def test_task_index_prefix_in_batch_mode(self):
         """Batch mode (task_count > 1) should show 1-indexed prefix for all tasks."""
         buf = io.StringIO()
-        spinner = KawaiiSpinner("delegating")
+        spinner = ForecastSpinner("delegating")
         spinner._out = buf
         spinner.running = True
         
@@ -208,7 +208,7 @@ class TestBuildChildProgressCallback:
     def test_single_task_no_prefix(self):
         """Single task (task_count=1) should not show index prefix."""
         buf = io.StringIO()
-        spinner = KawaiiSpinner("delegating")
+        spinner = ForecastSpinner("delegating")
         spinner._out = buf
         spinner.running = True
         
@@ -371,7 +371,7 @@ class TestBatchFlush:
     def test_flush_noop_when_no_parent_callback(self):
         """_flush should not crash when there's no parent callback."""
         buf = io.StringIO()
-        spinner = KawaiiSpinner("test")
+        spinner = ForecastSpinner("test")
         spinner._out = buf
         spinner.running = True
 
@@ -386,4 +386,3 @@ class TestBatchFlush:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

@@ -1,268 +1,310 @@
 ---
 sidebar_position: 3
-title: "Tutorial: Daily Briefing Bot"
-description: "Build an automated daily briefing bot that researches topics, summarizes findings, and delivers them to Telegram or Discord every morning"
+title: "Tutorial: Daily Forecast Brief"
+description: "Build a scheduled forecast evidence brief that reviews active questions, source changes, and stale beliefs."
 ---
 
-# Tutorial: Build a Daily Briefing Bot
+# Tutorial: Build a Daily Forecast Brief
 
-In this tutorial, you'll build a personal briefing bot that wakes up every morning, researches topics you care about, summarizes the findings, and delivers a concise briefing straight to your Telegram or Discord.
+In this tutorial, you will build a scheduled briefing that checks the forecast desk each morning, gathers fresh evidence, and delivers a concise review to your configured alert channel.
 
-By the end, you'll have a fully automated workflow combining **web search**, **cron scheduling**, **delegation**, and **messaging delivery** — no code required.
+The goal is not a generic news digest. The goal is a daily research note that helps maintain probabilistic beliefs: which forecasts are stale, which sources changed, which assumptions need review, and which questions should be updated.
+
+By the end, you will have a workflow combining **forecast review**, **web/source research**, **cron scheduling**, and **delivery**.
 
 ## What We're Building
 
-Here's the flow:
+The flow:
 
-1. **8:00 AM** — The cron scheduler triggers your job
-2. **Hermes spins up** a fresh agent session with your prompt
-3. **Web search** pulls the latest news on your topics
-4. **Summarization** distills it into a clean briefing format
-5. **Delivery** sends the briefing to your Telegram or Discord
+1. **8:00 AM** - The scheduler triggers your job.
+2. **Forecast review** - The desk lists stale questions, close dates, watched-source alerts, and calibration notes.
+3. **Research** - The agent gathers recent evidence for the selected domains.
+4. **Briefing** - The agent summarizes facts, uncertainty, and suggested forecast actions.
+5. **Delivery** - The briefing goes to Telegram, Discord, Slack, local output, or another configured target.
 
-The whole thing runs hands-free. You just read your briefing with your morning coffee.
+Use the briefing to decide what to update in the ledger. Do not treat it as a forecast snapshot unless a `forecast update` command actually records the probability, rationale, evidence refs, and as-of timestamp.
 
 ## Prerequisites
 
 Before starting, make sure you have:
 
-- **Hermes Agent installed** — see the [Installation guide](/docs/getting-started/installation)
-- **Gateway running** — the gateway daemon handles cron execution:
-  ```bash
-  hermes gateway install   # Install as a user service
-  sudo hermes gateway install --system   # Linux servers: boot-time system service
-  # or
-  hermes gateway           # Run in foreground
-  ```
-- **Firecrawl API key** — set `FIRECRAWL_API_KEY` in your environment for web search
-- **Messaging configured** (optional but recommended) — [Telegram](/docs/user-guide/messaging/telegram) or Discord set up with a home channel
+- **Superforecasting Agent installed** - see the [Installation guide](/docs/getting-started/installation).
+- **A configured model/provider** - run `superforecasting-agent model` if needed.
+- **Gateway running** - the gateway daemon handles general cron execution:
 
-:::tip No messaging? No problem
-You can still follow this tutorial using `deliver: "local"`. Briefings will be saved to `~/.hermes/cron/output/` and you can read them anytime.
+  ```bash
+  superforecasting-agent gateway install
+  sudo superforecasting-agent gateway install --system
+  # or
+  superforecasting-agent gateway
+  ```
+
+- **Source/research tools configured** - web search or source adapters for the domains you care about.
+- **Messaging configured** - optional but useful; [Telegram](/docs/user-guide/messaging/telegram), Discord, Slack, or another delivery target.
+
+:::tip No messaging target yet
+Use `deliver: "local"` while testing. Briefings are saved under `~/.superforecasting-agent/cron/output/`. The inherited `~/.hermes/cron/output/` path is still supported for migrated profiles.
 :::
 
-## Step 1: Test the Workflow Manually
+## Step 1: Create or Select Forecasts
 
-Before automating anything, let's make sure the briefing works. Start a chat session:
+The briefing works best when the ledger already has active questions:
 
 ```bash
-hermes
+forecast list
+forecast review
+forecast alerts
 ```
 
-Then enter this prompt:
+If you are starting from scratch, create one question:
 
-```
-Search for the latest news about AI agents and open source LLMs.
-Summarize the top 3 stories in a concise briefing format with links.
-```
-
-Hermes will search the web, read through results, and produce something like:
-
-```
-☀️ Your AI Briefing — March 8, 2026
-
-1. Qwen 3 Released with 235B Parameters
-   Alibaba's latest open-weight model matches GPT-4.5 on several
-   benchmarks while remaining fully open source.
-   → https://qwenlm.github.io/blog/qwen3/
-
-2. LangChain Launches Agent Protocol Standard
-   A new open standard for agent-to-agent communication gains
-   adoption from 15 major frameworks in its first week.
-   → https://blog.langchain.dev/agent-protocol/
-
-3. EU AI Act Enforcement Begins for General-Purpose Models
-   The first compliance deadlines hit, with open source models
-   receiving exemptions under the 10M parameter threshold.
-   → https://artificialintelligenceact.eu/updates/
-
----
-3 stories • Sources searched: 8 • Generated by Hermes Agent
+```bash
+forecast new \
+  --title "Will the next CPI release exceed consensus expectations?" \
+  --resolution-criteria "Resolve yes if the first official BLS CPI release is above the published consensus estimate." \
+  --outcome binary \
+  --close-time 2026-06-10T12:00:00Z \
+  --domain macro \
+  --topic inflation
 ```
 
-If this works, you're ready to automate it.
+Then add evidence or watched sources:
 
-:::tip Iterate on the format
-Try different prompts until you get output you love. Add instructions like "use emoji headers" or "keep each summary under 2 sentences." Whatever you settle on goes into the cron job.
-:::
-
-## Step 2: Create the Cron Job
-
-Now let's schedule this to run automatically every morning. You can do this in two ways.
-
-Before creating cron jobs, ensure Hermes has a default model and provider configured globally. If you want a specific job to use different values, set explicit per-job model/provider overrides when creating it.
-
-### Option A: Natural Language (in chat)
-
-Just tell Hermes what you want:
-
-```
-Every morning at 8am, search the web for the latest news about AI agents
-and open source LLMs. Summarize the top 3 stories in a concise briefing
-with links. Use a friendly, professional tone. Deliver to telegram.
+```bash
+forecast import fred CPIAUCSL --question <id>
+forecast watch add fred CPIAUCSL --question <id>
 ```
 
-Hermes will create the cron job for you using the unified `cronjob` tool.
+## Step 2: Test the Brief Manually
 
-### Option B: CLI Slash Command
+Before automating anything, start a forecast-scoped session:
 
-Use the `/cron` command for more control:
-
-```
-/cron add "0 8 * * *" "Search the web for the latest news about AI agents and open source LLMs. Find at least 5 recent articles from the past 24 hours. Summarize the top 3 most important stories in a concise daily briefing format. For each story include: a clear headline, a 2-sentence summary, and the source URL. Use a friendly, professional tone. Format with emoji bullet points and end with a total story count."
+```bash
+superforecasting-agent
 ```
 
-### The Golden Rule: Self-Contained Prompts
+Then enter a prompt like this:
 
-:::warning Critical concept
-Cron jobs run in a **completely fresh session** — no memory of your previous conversations, no context about what you "set up earlier." Your prompt must contain **everything** the agent needs to do the job.
-:::
+```text
+Create a morning forecast brief for my macro questions.
+
+Use the forecast ledger first:
+- list active macro forecasts
+- identify stale forecasts and upcoming close dates
+- check open alerts and watched-source changes
+- review recent calibration lessons for macro
+
+Then gather only evidence that changed since the last review.
+Separate facts, estimates, rumors, and model assumptions.
+End with recommended ledger actions: research, base-rate, model, update, resolve, or no action.
+Do not change probabilities unless you explicitly run a forecast update with cited evidence refs.
+```
+
+The output should look like:
+
+```text
+Daily Forecast Brief - Macro - 2026-05-22
+
+Active questions: 7
+Needs update: 2
+Open source alerts: 3
+Upcoming close dates: 1 within 14 days
+
+1. CPI surprise question
+   Current p(yes): 0.41 as of 2026-05-20
+   New evidence:
+   - FRED CPIAUCSL snapshot changed since last review.
+   - Consensus estimate still unavailable from configured sources.
+   Suggested action: import latest data, update base-rate model, hold probability until consensus source is available.
+
+2. FOMC rate-hold question
+   Current p(yes): 0.74 as of 2026-05-19
+   New evidence:
+   - No watched-source alert.
+   - Last postmortem notes overconfidence in single-source Fed commentary.
+   Suggested action: no probability update; add one additional market-implied baseline before next review.
+```
+
+If the output mixes generic news with forecast actions, tighten the prompt around active question IDs, domains, and ledger actions.
+
+## Step 3: Schedule the Brief
+
+You can schedule this through chat, slash command, or CLI.
+
+### Option A: Natural Language
+
+Tell the forecast desk what you want:
+
+```text
+Every weekday at 8am, create a macro forecast brief.
+Review active macro questions, stale forecasts, open alerts, close dates,
+recent calibration lessons, and source changes. Deliver to telegram.
+Do not update probabilities automatically.
+```
+
+The agent should create a cron job using the inherited `cronjob` scheduler.
+
+### Option B: Slash Command
+
+```text
+/cron add "0 8 * * 1-5" "Create a morning forecast brief for active macro forecasts. Start from the forecast ledger: active questions, stale forecasts, open alerts, watched-source changes, upcoming close dates, and recent macro calibration lessons. Gather only fresh evidence since the last review. Distinguish facts, estimates, rumors, and assumptions. End with recommended ledger actions. Do not change probabilities automatically."
+```
+
+### Option C: Ledger-Native Review
+
+When you want the schedule to operate directly on forecast objects, prefer `forecast schedule`:
+
+```bash
+forecast schedule add \
+  --domain macro \
+  --cadence "0 8 * * 1-5" \
+  --name "macro-morning-review"
+```
+
+For learning workflows, make writes explicit:
+
+```bash
+forecast schedule add \
+  --domain macro \
+  --cadence "0 8 * * 1-5" \
+  --auto-score \
+  --auto-postmortem \
+  --name "macro-learning-refresh"
+```
+
+Use auto-learning flags only when the domain has clear resolver sources and you are comfortable with scheduled score/postmortem writes.
+
+## The Rule: Make Prompts Self-Contained
+
+Cron jobs run in fresh sessions. They do not remember what you said earlier. Put the domain, source policy, output format, and ledger-writing policy directly in the prompt.
 
 **Bad prompt:**
-```
-Do my usual morning briefing.
+
+```text
+Do my usual morning forecast brief.
 ```
 
 **Good prompt:**
-```
-Search the web for the latest news about AI agents and open source LLMs.
-Find at least 5 recent articles from the past 24 hours. Summarize the
-top 3 most important stories in a concise daily briefing format. For each
-story include: a clear headline, a 2-sentence summary, and the source URL.
-Use a friendly, professional tone. Format with emoji bullet points.
-```
 
-The good prompt is specific about **what to search**, **how many articles**, **what format**, and **what tone**. It's everything the agent needs in one shot.
-
-## Step 3: Customize the Briefing
-
-Once the basic briefing works, you can get creative.
-
-### Multi-Topic Briefings
-
-Cover several areas in one briefing:
-
-```
-/cron add "0 8 * * *" "Create a morning briefing covering three topics. For each topic, search the web for recent news from the past 24 hours and summarize the top 2 stories with links.
-
-Topics:
-1. AI and machine learning — focus on open source models and agent frameworks
-2. Cryptocurrency — focus on Bitcoin, Ethereum, and regulatory news
-3. Space exploration — focus on SpaceX, NASA, and commercial space
-
-Format as a clean briefing with section headers and emoji. End with today's date and a motivational quote."
+```text
+Create a morning forecast brief for active macro forecasts.
+Use the forecast ledger first: active questions, stale probabilities,
+open alerts, watched-source changes, upcoming close dates, and recent
+macro calibration lessons. Gather only evidence published since the last
+review. Separate facts, estimates, rumors, and assumptions. End with
+recommended ledger actions. Do not update probabilities automatically.
 ```
 
-### Using Delegation for Parallel Research
+The good prompt is specific about scope, evidence policy, output format, and ledger side effects.
 
-For faster briefings, tell Hermes to delegate each topic to a sub-agent:
+## Step 4: Customize the Brief
 
-```
-/cron add "0 8 * * *" "Create a morning briefing by delegating research to sub-agents. Delegate three parallel tasks:
+### Multi-Domain Brief
 
-1. Delegate: Search for the top 2 AI/ML news stories from the past 24 hours with links
-2. Delegate: Search for the top 2 cryptocurrency news stories from the past 24 hours with links
-3. Delegate: Search for the top 2 space exploration news stories from the past 24 hours with links
-
-Collect all results and combine them into a single clean briefing with section headers, emoji formatting, and source links. Add today's date as a header."
+```text
+/cron add "0 8 * * *" "Create a morning forecast brief covering macro, elections, and AI capability forecasts. For each domain, list active questions needing review, fresh evidence, open assumptions, and recommended ledger actions. Keep domains separate. Do not update probabilities automatically."
 ```
 
-Each sub-agent searches independently and in parallel, then the main agent combines everything into one polished briefing. See the [Delegation docs](/docs/user-guide/features/delegation) for more on how this works.
+### Backtest and Calibration Section
 
-### Weekday-Only Schedule
+Add a performance block:
 
-Don't need briefings on weekends? Use a cron expression that targets Monday–Friday:
-
-```
-/cron add "0 8 * * 1-5" "Search for the latest AI and tech news..."
-```
-
-### Twice-Daily Briefings
-
-Get a morning overview and an evening recap:
-
-```
-/cron add "0 8 * * *" "Morning briefing: search for AI news from the past 12 hours..."
-/cron add "0 18 * * *" "Evening recap: search for AI news from the past 12 hours..."
+```text
+Include a calibration section with:
+- unresolved high-confidence questions
+- recent Brier/log score changes
+- domains with elevated error profiles
+- active calibration lessons that should affect updates
 ```
 
-### Adding Personal Context with Memory
+### Watched-Source Focus
 
-If you have [memory](/docs/user-guide/features/memory) enabled, you can store preferences that persist across sessions. But remember — cron jobs run in fresh sessions without conversational memory. To add personal context, bake it directly into the prompt:
+If you have source watches configured:
 
+```text
+Start from forecast alerts and watched-source changes.
+Ignore general news unless it links directly to an active question,
+reference class, resolver source, or explicit assumption.
 ```
-/cron add "0 8 * * *" "You are creating a briefing for a senior ML engineer who cares about: PyTorch ecosystem, transformer architectures, open-weight models, and AI regulation in the EU. Skip stories about product launches or funding rounds unless they involve open source.
 
-Search for the latest news on these topics. Summarize the top 3 stories with links. Be concise and technical — this reader doesn't need basic explanations."
+### Delegation as an Opt-In Accelerator
+
+Delegation can speed up broad research, but it should stay bounded:
+
+```text
+For each domain with more than five active forecasts, delegate one research task:
+find fresh evidence since the last review, return source URLs, claim type,
+publication time, and relevance. The main agent must reconcile the results
+against the forecast ledger and avoid probability updates unless cited.
 ```
 
-:::tip Tailor the persona
-Including details about who the briefing is *for* dramatically improves relevance. Tell the agent your role, interests, and what to skip.
-:::
+See [Delegation](/docs/user-guide/features/delegation) for the inherited parallel-worker runtime.
 
-## Step 4: Manage Your Jobs
+### Personal Context
 
-### List All Scheduled Jobs
+Runtime memory can store preferences, but the forecast ledger owns probabilities, evidence, scores, postmortems, and calibration lessons. For scheduled briefs, bake the relevant preferences into the prompt:
+
+```text
+Audience: a macro forecaster who cares about rate decisions, inflation
+surprises, recession odds, and market-implied baselines. Skip broad market
+commentary unless it changes a reference class, source reliability, or
+probability update recommendation.
+```
+
+## Step 5: Manage Jobs
+
+### List Scheduled Jobs
 
 In chat:
-```
+
+```text
 /cron list
 ```
 
-Or from the terminal:
+From the terminal:
+
 ```bash
-hermes cron list
-```
-
-You'll see output like:
-
-```
-ID          | Name              | Schedule    | Next Run           | Deliver
-------------|-------------------|-------------|--------------------|--------
-a1b2c3d4    | Morning Briefing  | 0 8 * * *   | 2026-03-09 08:00   | telegram
-e5f6g7h8    | Evening Recap     | 0 18 * * *  | 2026-03-08 18:00   | telegram
+superforecasting-agent cron list
+forecast schedule list
 ```
 
 ### Remove a Job
 
-In chat:
-```
+```text
 /cron remove a1b2c3d4
 ```
 
-Or ask conversationally:
-```
-Remove my morning briefing cron job.
+Or ask:
+
+```text
+Remove my macro morning forecast brief.
 ```
 
-Hermes will use `cronjob(action="list")` to find it and `cronjob(action="remove")` to delete it.
+The agent can call `cronjob(action="list")` and `cronjob(action="remove")` for general cron jobs. Use `forecast schedule remove <id>` for ledger-native schedules.
 
 ### Check Gateway Status
 
-Make sure the scheduler is actually running:
-
 ```bash
-hermes cron status
+superforecasting-agent cron status
+superforecasting-agent gateway status
 ```
 
-If the gateway isn't running, your jobs won't execute. Install it as a background service for reliability:
+If the gateway is not running, general cron jobs will not execute. Install it as a background service for reliability:
 
 ```bash
-hermes gateway install
-# or on Linux servers
-sudo hermes gateway install --system
+superforecasting-agent gateway install
+sudo superforecasting-agent gateway install --system
 ```
 
 ## Going Further
 
-You've built a working daily briefing bot. Here are some directions to explore next:
-
-- **[Scheduled Tasks (Cron)](/docs/user-guide/features/cron)** — Full reference for schedule formats, repeat limits, and delivery options
-- **[Delegation](/docs/user-guide/features/delegation)** — Deep dive into parallel sub-agent workflows
-- **[Messaging Platforms](/docs/user-guide/messaging)** — Set up Telegram, Discord, or other delivery targets
-- **[Memory](/docs/user-guide/features/memory)** — Persistent context across sessions
-- **[Tips & Best Practices](/docs/guides/tips)** — More prompt engineering advice
+- [Scheduled Tasks (Cron)](/docs/user-guide/features/cron) - full schedule formats, repeat limits, and delivery options.
+- [Automate Forecast Reviews with Cron](/docs/guides/automate-with-cron) - ledger-aware scheduled review patterns.
+- [Script-Only Scheduled Jobs](/docs/guides/cron-script-only) - deterministic monitors that skip the model.
+- [Messaging Platforms](/docs/user-guide/messaging) - configure Telegram, Discord, Slack, or other delivery targets.
+- [Memory](/docs/user-guide/features/memory) - runtime recall; not the source of truth for forecast state.
+- [Tips & Best Practices](/docs/guides/tips) - prompt and ledger hygiene.
 
 :::tip What else can you schedule?
-The briefing bot pattern works for anything: competitor monitoring, GitHub repo summaries, weather forecasts, portfolio tracking, server health checks, or even a daily joke. If you can describe it in a prompt, you can schedule it.
+The same pattern works for competitor monitoring, policy watches, earnings-cycle review, macro data releases, model artifact checks, or resolver-source monitoring. Keep the output tied to active forecast questions and ledger actions.
 :::

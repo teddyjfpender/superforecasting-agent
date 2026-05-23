@@ -1,6 +1,6 @@
 """
-Skills configuration for Hermes Agent.
-`hermes skills` enters this module.
+Skills configuration for Superforecasting Agent.
+`superforecasting-agent skills` enters this module.
 
 Toggle individual skills or categories on/off, globally or per-platform.
 Config stored in ~/.hermes/config.yaml under:

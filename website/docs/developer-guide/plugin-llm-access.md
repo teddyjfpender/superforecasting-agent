@@ -1,7 +1,7 @@
 ---
 sidebar_position: 11
 title: "Plugin LLM Access"
-description: "Run any LLM call from inside a plugin via ctx.llm — chat or structured, sync or async. Host-owned auth, fail-closed trust gate, optional JSON Schema validation."
+description: "Run trusted plugin LLM calls for forecast workflows."
 ---
 
 # Plugin LLM Access
@@ -11,13 +11,12 @@ Chat completion, structured extraction, sync, async, with or without
 images — same surface, same trust gate, same host-owned credentials.
 
 Plugins reach for this when they need to do something that involves
-the model but isn't part of the agent's conversation. A hook that
-rewrites a tool error into something a non-engineer can read. A
-gateway adapter that translates an inbound message before queuing
-it. A slash command that summarises a long paste. A scheduled job
-that scores yesterday's activity and writes one line to a status
-board. A pre-filter that decides whether a message is worth waking
-the agent up for at all.
+the model but isn't part of the main forecast conversation. A hook
+that rewrites a source-adapter error into a concise operator note. A
+slash command that turns a pasted source into structured candidate
+evidence. A scheduled job that classifies whether new evidence should
+wake a stale forecast. A postmortem helper that labels likely error
+types before the ledger records the human-readable diagnosis.
 
 These are jobs the agent shouldn't be in the loop on. They want one
 LLM call, a typed answer, and to be done.
@@ -58,16 +57,16 @@ When the plugin needs a typed answer, switch to the structured lane:
 
 ```python
 result = ctx.llm.complete_structured(
-    instructions="Score this support reply for urgency (0–1) and pick a category.",
+    instructions="Score this source update for forecast relevance (0-1) and pick a claim type.",
     input=[{"type": "text", "text": message_body}],
     json_schema=TRIAGE_SCHEMA,
-    purpose="support.triage",
+    purpose="forecast.source-triage",
     temperature=0.0,
     max_tokens=128,
 )
 
-if result.parsed["urgency"] > 0.8:
-    await dispatch_to_oncall(result.parsed["category"], message_body)
+if result.parsed["relevance"] > 0.8:
+    await flag_forecast_for_review(result.parsed["claim_type"], message_body)
 ```
 
 The host requests JSON output from the provider, parses it locally
@@ -84,7 +83,7 @@ model couldn't produce valid JSON, `result.parsed` is `None` and
   objects.
 * **Host-owned credentials.** OAuth tokens, refresh flows, the
   credential pool, per-task aux overrides — every credential
-  concept Hermes already has applies. The plugin never sees a
+  concept the inherited runtime already has applies. The plugin never sees a
   token; the host attributes the call back through `result.audit`.
 * **Bounded.** Single sync or async call. No streaming, no tool
   loops, no conversation state to manage. State the input, get the
@@ -107,7 +106,7 @@ def register(ctx):
     ctx.register_command(
         name="tldr",
         handler=lambda raw: _tldr(ctx, raw),
-        description="Summarise the supplied text in one paragraph.",
+        description="Summarise the supplied forecast note in one paragraph.",
         args_hint="<text>",
     )
 
@@ -115,11 +114,11 @@ def register(ctx):
 def _tldr(ctx, raw_args: str) -> str:
     text = raw_args.strip()
     if not text:
-        return "Usage: /tldr <text to summarise>"
+        return "Usage: /tldr <forecast note to summarise>"
     result = ctx.llm.complete(
         messages=[
             {"role": "system",
-             "content": "Summarise the user's text in one tight paragraph. No preamble."},
+             "content": "Summarise the forecast-relevant content in one tight paragraph. No preamble."},
             {"role": "user", "content": text},
         ],
         max_tokens=256,
@@ -132,63 +131,66 @@ def _tldr(ctx, raw_args: str) -> str:
 `result.text` is the model's response; `result.usage` carries token
 counts; `result.provider` and `result.model` carry attribution.
 
-### Structured extraction — `/paste-to-tasks`
+### Structured extraction — `/paste-to-evidence`
 
 ```python
 def register(ctx):
     ctx.register_command(
-        name="paste-to-tasks",
-        handler=lambda raw: _paste_to_tasks(ctx, raw),
-        description="Turn freeform meeting notes into structured tasks.",
+        name="paste-to-evidence",
+        handler=lambda raw: _paste_to_evidence(ctx, raw),
+        description="Turn freeform source notes into candidate evidence.",
         args_hint="<text>",
     )
 
 
-_TASKS_SCHEMA = {
+_EVIDENCE_SCHEMA = {
     "type": "object",
     "properties": {
-        "tasks": {
+        "claims": {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
-                    "owner":  {"type": "string"},
-                    "action": {"type": "string"},
-                    "due":    {"type": "string", "description": "ISO date or empty"},
+                    "claim": {"type": "string"},
+                    "claim_type": {"type": "string", "description": "fact, estimate, rumor, or assumption"},
+                    "forecast_relevance": {"type": "number"},
                 },
-                "required": ["action"],
+                "required": ["claim"],
             },
         },
     },
-    "required": ["tasks"],
+    "required": ["claims"],
 }
 
 
-def _paste_to_tasks(ctx, raw_args: str) -> str:
+def _paste_to_evidence(ctx, raw_args: str) -> str:
     if not raw_args.strip():
-        return "Usage: /paste-to-tasks <meeting notes>"
+        return "Usage: /paste-to-evidence <source notes>"
     result = ctx.llm.complete_structured(
         instructions=(
-            "Extract concrete action items from these meeting notes. "
-            "One task per actionable line. If no owner is named, leave 'owner' blank."
+            "Extract forecast-relevant claims from these notes. "
+            "Label each as fact, estimate, rumor, or assumption."
         ),
         input=[{"type": "text", "text": raw_args}],
-        json_schema=_TASKS_SCHEMA,
-        schema_name="meeting.tasks",
-        purpose="paste-to-tasks",
+        json_schema=_EVIDENCE_SCHEMA,
+        schema_name="forecast.evidence_candidates",
+        purpose="paste-to-evidence",
         temperature=0.0,
         max_tokens=512,
     )
     if result.parsed is None:
         return f"Couldn't parse a response. Raw output:\n{result.text}"
-    lines = [f"- [{t.get('owner') or '?'}] {t['action']}" for t in result.parsed["tasks"]]
-    return "\n".join(lines) or "(no tasks found)"
+    lines = [
+        f"- [{c.get('claim_type') or '?'}] {c['claim']}"
+        for c in result.parsed["claims"]
+    ]
+    return "\n".join(lines) or "(no claims found)"
 ```
 
 A third worked example, this time with image input, lives in the
 [`hermes-example-plugins`](https://github.com/NousResearch/hermes-example-plugins/tree/main/plugin-llm-example)
 repo (companion repo for reference plugins — not bundled with
-hermes-agent itself). For the async surface (`acomplete()` /
+the Superforecasting Agent fork itself). For the async surface (`acomplete()` /
 `acomplete_structured()` with `asyncio.gather()`), see
 [`plugin-llm-async-example`](https://github.com/NousResearch/hermes-example-plugins/tree/main/plugin-llm-async-example)
 in the same repo.
@@ -215,7 +217,7 @@ timeout, vision routing — is the same across all four.
 ```python
 result = ctx.llm.complete(
     messages=[{"role": "user", "content": "Hi"}],
-    provider=None,         # optional, gated — Hermes provider id (e.g. "openrouter")
+    provider=None,         # optional, gated — runtime provider id (e.g. "openrouter")
     model=None,            # optional, gated — whatever string that provider expects
     temperature=None,
     max_tokens=None,
@@ -292,7 +294,7 @@ already running on an asyncio loop.
 ```python
 @dataclass
 class PluginLlmCompleteResult:
-    text: str                    # the assistant's response
+    text: str                    # the model response
     provider: str                # e.g. "openrouter", "anthropic"
     model: str                   # whatever the provider returned for this call
     agent_id: str                # whose model/auth was used
@@ -335,9 +337,9 @@ plugins:
   entries:
     my-plugin:
       llm:
-        # Allow this plugin to choose a different Hermes provider
-        # (must be one Hermes already knows about — same names as
-        # `hermes model` and config.yaml model.provider).
+        # Allow this plugin to choose a different runtime provider
+        # (must be one Superforecasting Agent already knows about — same names as
+        # `superforecasting-agent model` and config.yaml model.provider).
         allow_provider_override: true
 
         # Optionally restrict which providers. Use ["*"] for any.
@@ -350,7 +352,7 @@ plugins:
 
         # Optionally restrict which models. Use ["*"] for any.
         # Models are matched literally against whatever string the
-        # plugin sends — Hermes does not look anything up.
+        # plugin sends — the runtime does not look anything up.
         allowed_models:
           - openai/gpt-4o-mini
           - anthropic/claude-3-5-haiku
@@ -402,13 +404,14 @@ don't have to:
 * **Provider resolution.** Reads `model.provider` + `model.model`
   from the user's config (or the explicit overrides when trusted).
 * **Auth.** Pulls API keys, OAuth tokens, or refresh tokens from
-  `~/.hermes/auth.json` / env, including the credential pool when
-  one is configured. The plugin never sees them.
+  `~/.superforecasting-agent/auth.json` / env, including the credential pool when
+  one is configured. Legacy `~/.hermes/auth.json` remains accepted for inherited
+  installs. The plugin never sees credentials.
 * **Vision routing.** When image input is supplied and the user's
   active text model is text-only, the host falls back to the
   configured vision model automatically.
 * **Fallback chain.** If the user's primary provider 5xxs or 429s,
-  the request goes through Hermes' usual aggregator-aware fallback
+  the request goes through the runtime's usual aggregator-aware fallback
   before it returns an error to the plugin.
 * **Timeout.** Honours your `timeout=` argument, falling back to
   `auxiliary.<task>.timeout` config or the global aux default.
@@ -438,7 +441,7 @@ don't have to:
 
 ## Where this fits in the plugin surface
 
-Existing `ctx.*` methods extend an existing Hermes subsystem:
+Existing `ctx.*` methods extend an existing runtime subsystem:
 
 | `ctx.register_tool` | adds a tool the agent can call |
 | `ctx.register_platform` | wires a new gateway adapter |
@@ -454,10 +457,14 @@ tool the agent invokes, use `register_tool`. If it needs to react
 to a lifecycle event, use `register_hook`. If it needs to make its
 own model call — for any reason, structured or not — `ctx.llm`.
 
+For forecast plugins, `ctx.llm` should create structured summaries,
+classifications, and candidate judgments. It should not silently write
+probability updates or learning records outside the forecast ledger.
+
 ## Reference
 
-* Implementation: [`agent/plugin_llm.py`](https://github.com/NousResearch/hermes-agent/blob/main/agent/plugin_llm.py)
-* Tests: [`tests/agent/test_plugin_llm.py`](https://github.com/NousResearch/hermes-agent/blob/main/tests/agent/test_plugin_llm.py)
+* Implementation: `agent/plugin_llm.py`
+* Tests: `tests/agent/test_plugin_llm.py`
 * Reference plugins (companion repo):
   * [`plugin-llm-example`](https://github.com/NousResearch/hermes-example-plugins/tree/main/plugin-llm-example) — sync structured extraction with image input
   * [`plugin-llm-async-example`](https://github.com/NousResearch/hermes-example-plugins/tree/main/plugin-llm-async-example) — async with `asyncio.gather()`

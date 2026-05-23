@@ -1818,12 +1818,13 @@ class TestAzureFoundryResolution:
         monkeypatch.setattr(rp, "_get_model_config", lambda: {})
         monkeypatch.setattr(rp, "load_pool", lambda provider: None)
 
-        with pytest.raises(rp.AuthError, match="base URL"):
+        with pytest.raises(rp.AuthError, match="base URL") as exc:
             rp.resolve_runtime_provider(requested="azure-foundry")
+        assert "superforecasting-agent model" in str(exc.value)
 
     def test_azure_foundry_missing_api_key_raises(self, monkeypatch):
         monkeypatch.delenv("AZURE_FOUNDRY_API_KEY", raising=False)
-        # `get_env_value` reads from ~/.hermes/.env — mock it to return None
+        # `get_env_value` reads from the runtime .env — mock it to return None
         # so the resolver can't find a key there either.
         import hermes_cli.config as cfg_mod
         monkeypatch.setattr(cfg_mod, "get_env_value", lambda k: None)
@@ -1833,8 +1834,9 @@ class TestAzureFoundryResolution:
         ))
         monkeypatch.setattr(rp, "load_pool", lambda provider: None)
 
-        with pytest.raises(rp.AuthError, match="API key"):
+        with pytest.raises(rp.AuthError, match="API key") as exc:
             rp.resolve_runtime_provider(requested="azure-foundry")
+        assert "superforecasting-agent model" in str(exc.value)
 
     # -- Model-family api_mode inference -------------------------------------
     # Azure rejects /chat/completions on GPT-5.x / codex / o-series with

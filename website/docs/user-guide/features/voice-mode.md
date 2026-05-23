@@ -1,418 +1,407 @@
 ---
 sidebar_position: 10
 title: "Voice Mode"
-description: "Real-time voice conversations with Hermes Agent — CLI, Telegram, Discord (DMs, text channels, and voice channels)"
+description: "Hands-free forecast review and spoken alert delivery."
 ---
 
 # Voice Mode
 
-Hermes Agent supports full voice interaction across CLI and messaging platforms. Talk to the agent using your microphone, hear spoken replies, and have live voice conversations in Discord voice channels.
+Voice mode adds microphone input, speech-to-text, and spoken replies to the
+Superforecasting Agent runtime. It is useful for hands-free forecast review,
+quick evidence capture, spoken alert delivery, approvals, and Discord voice
+channel discussions.
 
-If you want a practical setup walkthrough with recommended configurations and real usage patterns, see [Use Voice Mode with Hermes](/docs/guides/use-voice-mode-with-hermes).
+Voice does not replace the forecast ledger. Spoken transcripts and replies are
+conversation artifacts until you explicitly create evidence, update a forecast,
+resolve a question, score a result, or write a postmortem through the forecast
+workflow.
+
+For a practical setup walkthrough, see
+[Use Voice Mode with Superforecasting Agent](/docs/guides/use-voice-mode-with-hermes).
 
 ## Prerequisites
 
-Before using voice features, make sure you have:
+Before enabling voice, make sure:
 
-1. **Hermes Agent installed** — `pip install hermes-agent` (see [Installation](/docs/getting-started/installation))
-2. **An LLM provider configured** — run `hermes model` or set your preferred provider credentials in `~/.hermes/.env`
-3. **A working base setup** — run `hermes` to verify the agent responds to text before enabling voice
+1. Superforecasting Agent is installed.
+2. A model provider is configured with `superforecasting-agent model`.
+3. Text mode works in `superforecasting-agent chat` or `superforecasting-agent --tui`.
+4. The active profile home exists, normally `~/.superforecasting-agent/`.
 
-:::tip
-The `~/.hermes/` directory and default `config.yaml` are created automatically the first time you run `hermes`. You only need to create `~/.hermes/.env` manually for API keys.
-:::
+Legacy `~/.hermes/` homes remain readable during migration, but new forecast
+profiles should use the fork-native home.
 
 ## Overview
 
-| Feature | Platform | Description |
-|---------|----------|-------------|
-| **Interactive Voice** | CLI | Press Ctrl+B to record, agent auto-detects silence and responds |
-| **Auto Voice Reply** | Telegram, Discord | Agent sends spoken audio alongside text responses |
-| **Voice Channel** | Discord | Bot joins VC, listens to users speaking, speaks replies back |
+| Feature | Platform | Best for |
+| --- | --- | --- |
+| Interactive voice | CLI/TUI | Hands-free forecast review and dictated research notes. |
+| Spoken replies | Telegram, Discord | Review alerts, source-watch summaries, and approval prompts. |
+| Voice channel bot | Discord | Live forecast discussion with text transcript and spoken response. |
 
-## Requirements
+Voice mode is a secondary interface. Use it to operate the desk, not as the
+source of truth for probabilities, evidence, assumptions, scores, or lessons.
 
-### Python Packages
+## Install Extras
 
 ```bash
-# CLI voice mode (microphone + audio playback)
-pip install "hermes-agent[voice]"
+# CLI microphone mode and audio playback
+pip install "superforecasting-agent[voice]"
 
-# Discord + Telegram messaging (includes discord.py[voice] for VC support)
-pip install "hermes-agent[messaging]"
+# Discord and Telegram messaging
+pip install "superforecasting-agent[messaging]"
 
-# Premium TTS (ElevenLabs)
-pip install "hermes-agent[tts-premium]"
+# Premium ElevenLabs TTS
+pip install "superforecasting-agent[tts-premium]"
 
-# Local TTS (NeuTTS, optional)
+# Optional local NeuTTS provider
 python -m pip install -U neutts[all]
 
-# Everything at once
-pip install "hermes-agent[all]"
+# Everything
+pip install "superforecasting-agent[all]"
 ```
 
-| Extra | Packages | Required For |
-|-------|----------|-------------|
-| `voice` | `sounddevice`, `numpy` | CLI voice mode |
-| `messaging` | `discord.py[voice]`, `python-telegram-bot`, `aiohttp` | Discord & Telegram bots |
-| `tts-premium` | `elevenlabs` | ElevenLabs TTS provider |
+| Extra | Packages | Required for |
+| --- | --- | --- |
+| `voice` | `sounddevice`, `numpy` | CLI/TUI microphone mode. |
+| `messaging` | `discord.py[voice]`, `python-telegram-bot`, `aiohttp` | Discord and Telegram bots. |
+| `tts-premium` | `elevenlabs` | ElevenLabs TTS provider. |
 
-Optional local TTS provider: install `neutts` separately with `python -m pip install -U neutts[all]`. On first use it downloads the model automatically.
+`discord.py[voice]` installs the PyNaCl and Opus bindings needed for Discord
+voice-channel support.
 
-:::info
-`discord.py[voice]` installs **PyNaCl** (for voice encryption) and **opus bindings** automatically. This is required for Discord voice channel support.
-:::
-
-### System Dependencies
+## System Dependencies
 
 ```bash
 # macOS
 brew install portaudio ffmpeg opus
-brew install espeak-ng   # for NeuTTS
+brew install espeak-ng
 
 # Ubuntu/Debian
 sudo apt install portaudio19-dev ffmpeg libopus0
-sudo apt install espeak-ng   # for NeuTTS
+sudo apt install espeak-ng
 ```
 
-| Dependency | Purpose | Required For |
-|-----------|---------|-------------|
-| **PortAudio** | Microphone input and audio playback | CLI voice mode |
-| **ffmpeg** | Audio format conversion (MP3 → Opus, PCM → WAV) | All platforms |
-| **Opus** | Discord voice codec | Discord voice channels |
-| **espeak-ng** | Phonemizer backend | Local NeuTTS provider |
+| Dependency | Purpose | Required for |
+| --- | --- | --- |
+| PortAudio | Microphone input and local playback. | CLI/TUI voice mode. |
+| ffmpeg | Audio conversion for messaging and TTS delivery. | All platforms. |
+| Opus | Discord voice codec. | Discord voice channels. |
+| espeak-ng | NeuTTS phonemizer backend. | Local NeuTTS. |
 
-### API Keys
+## API Keys
 
-Add to `~/.hermes/.env`:
+Add cloud speech keys to `~/.superforecasting-agent/.env` only when needed:
 
 ```bash
-# Speech-to-Text — local provider needs NO key at all
-# pip install faster-whisper          # Free, runs locally, recommended
-GROQ_API_KEY=your-key                 # Groq Whisper — fast, free tier (cloud)
-VOICE_TOOLS_OPENAI_KEY=your-key       # OpenAI Whisper — paid (cloud)
+# Speech-to-text. Local STT needs no key.
+GROQ_API_KEY=***
+VOICE_TOOLS_OPENAI_KEY=***
 
-# Text-to-Speech (optional — Edge TTS and NeuTTS work without any key)
-ELEVENLABS_API_KEY=***           # ElevenLabs — premium quality
-# VOICE_TOOLS_OPENAI_KEY above also enables OpenAI TTS
+# Text-to-speech. Edge TTS and NeuTTS need no key.
+ELEVENLABS_API_KEY=***
 ```
 
-:::tip
-If `faster-whisper` is installed, voice mode works with **zero API keys** for STT. The model (~150 MB for `base`) downloads automatically on first use.
-:::
-
----
+If `faster-whisper` is installed, local speech-to-text can run without cloud
+keys. The first local run downloads the selected Whisper model.
 
 ## CLI Voice Mode
 
-Voice mode is available in both the **classic CLI** (`hermes chat`) and the **TUI** (`hermes --tui`). Behavior is identical across both — same slash commands, same VAD silence detection, same streaming TTS, same hallucination filter. The TUI additionally forwards crash-forensic logs to `~/.hermes/logs/` so push-to-talk failures on exotic audio backends can be reported with a full stack trace rather than disappearing silently.
-
-### Quick Start
-
-Start the CLI and enable voice mode:
+Voice mode is available in the classic CLI and the TUI:
 
 ```bash
-hermes                # Start the interactive CLI
+superforecasting-agent chat
+superforecasting-agent --tui
 ```
 
-Then use these commands inside the CLI:
+Inside the session:
 
-```
-/voice          Toggle voice mode on/off
+```text
+/voice          Toggle voice mode
 /voice on       Enable voice mode
 /voice off      Disable voice mode
-/voice tts      Toggle TTS output
-/voice status   Show current state
+/voice tts      Toggle spoken replies
+/voice status   Show current voice state
 ```
 
-### How It Works
+### Recording Flow
 
-1. Start the CLI with `hermes` and enable voice mode with `/voice on`
-2. **Press Ctrl+B** — a beep plays (880Hz), recording starts
-3. **Speak** — a live audio level bar shows your input: `● [▁▂▃▅▇▇▅▂] ❯`
-4. **Stop speaking** — after 3 seconds of silence, recording auto-stops
-5. **Two beeps** play (660Hz) confirming the recording ended
-6. Audio is transcribed via Whisper and sent to the agent
-7. If TTS is enabled, the agent's reply is spoken aloud
-8. Recording **automatically restarts** — speak again without pressing any key
+1. Press `Ctrl+B`.
+2. A start beep plays and recording begins.
+3. Speak the forecast question, source note, assumption, or review request.
+4. Silence detection stops recording after the configured pause.
+5. The audio is transcribed and sent as the next user message.
+6. If TTS is enabled, the response is spoken.
+7. The loop can restart automatically until you stop it.
 
-This loop continues until you press **Ctrl+B** during recording (exits continuous mode) or 3 consecutive recordings detect no speech.
+The record key is configurable in `~/.superforecasting-agent/config.yaml`:
 
-:::tip
-The record key is configurable via `voice.record_key` in `~/.hermes/config.yaml` (default: `ctrl+b`).
-:::
+```yaml
+voice:
+  record_key: "ctrl+b"
+```
+
+### Good CLI Voice Prompts
+
+Use voice for short operational requests:
+
+```text
+Review forecast fc_123 for stale evidence and summarize what needs checking.
+```
+
+```text
+Add this as an evidence candidate for fc_123, but do not update probability until I review it.
+```
+
+```text
+Read the active macro review queue and flag forecasts whose close date is inside two weeks.
+```
+
+For durable updates, review the generated text and then run or confirm the
+appropriate `forecast evidence`, `forecast update`, `forecast resolve`,
+`forecast score`, or `forecast postmortem` command.
 
 ### Silence Detection
 
-Two-stage algorithm detects when you've finished speaking:
+The recorder uses a two-stage algorithm:
 
-1. **Speech confirmation** — waits for audio above the RMS threshold (200) for at least 0.3s, tolerating brief dips between syllables
-2. **End detection** — once speech is confirmed, triggers after 3.0 seconds of continuous silence
+1. Speech confirmation waits for audio above the RMS threshold.
+2. End detection stops after continuous silence.
 
-If no speech is detected at all for 15 seconds, recording stops automatically.
+Defaults:
 
-Both `silence_threshold` and `silence_duration` are configurable in `config.yaml`. You can also disable the record start/stop beeps with `voice.beep_enabled: false`.
+- `silence_threshold`: `200`
+- `silence_duration`: `3.0`
+- no-speech timeout: `15` seconds
+
+These values are useful starting points, but noisy rooms may need a higher
+threshold or a headset microphone.
 
 ### Streaming TTS
 
-When TTS is enabled, the agent speaks its reply **sentence-by-sentence** as it generates text — you don't wait for the full response:
+When TTS is enabled, replies are spoken sentence by sentence as text is
+generated. The runtime:
 
-1. Buffers text deltas into complete sentences (min 20 chars)
-2. Strips markdown formatting and `<think>` blocks
-3. Generates and plays audio per sentence in real-time
+1. Buffers model deltas into complete sentences.
+2. Strips markdown and hidden thinking blocks.
+3. Generates and plays audio for each sentence.
+
+For forecast review, prefer concise replies. Long spoken rationales are harder
+to audit than text with explicit evidence references.
 
 ### Hallucination Filter
 
-Whisper sometimes generates phantom text from silence or background noise ("Thank you for watching", "Subscribe", etc.). The agent filters these out using a set of 26 known hallucination phrases across multiple languages, plus a regex pattern that catches repetitive variations.
+Whisper can sometimes produce phantom text from silence or background noise. The
+runtime filters common hallucination phrases and repetitive variants before
+submitting the transcript.
 
----
+If phantom transcripts still appear, raise the silence threshold, use local
+noise reduction, or switch STT models.
 
-## Gateway Voice Reply (Telegram & Discord)
+## Gateway Voice Reply
 
-If you haven't set up your messaging bots yet, see the platform-specific guides:
+Telegram and Discord can send spoken replies alongside normal text messages.
+See the platform setup guides first:
+
 - [Telegram Setup Guide](../messaging/telegram.md)
 - [Discord Setup Guide](../messaging/discord.md)
 
-Start the gateway to connect to your messaging platforms:
+Start the gateway:
 
 ```bash
-hermes gateway        # Start the gateway (connects to configured platforms)
-hermes gateway setup  # Interactive setup wizard for first-time configuration
+superforecasting-agent gateway
+superforecasting-agent gateway setup
 ```
 
-### Discord: Channels vs DMs
+### Messaging Commands
 
-The bot supports two interaction modes on Discord:
+These commands work in Telegram and Discord text channels or DMs:
 
-| Mode | How to Talk | Mention Required | Setup |
-|------|------------|-----------------|-------|
-| **Direct Message (DM)** | Open the bot's profile → "Message" | No | Works immediately |
-| **Server Channel** | Type in a text channel where the bot is present | Yes (`@botname`) | Bot must be invited to the server |
-
-**DM (recommended for personal use):** Just open a DM with the bot and type — no @mention needed. Voice replies and all commands work the same as in channels.
-
-**Server channels:** The bot only responds when you @mention it (e.g. `@hermesbyt4 hello`). Make sure you select the **bot user** from the mention popup, not the role with the same name.
-
-:::tip
-To disable the mention requirement in server channels, add to `~/.hermes/.env`:
-```bash
-DISCORD_REQUIRE_MENTION=false
-```
-Or set specific channels as free-response (no mention needed):
-```bash
-DISCORD_FREE_RESPONSE_CHANNELS=123456789,987654321
-```
-:::
-
-### Commands
-
-These work in both Telegram and Discord (DMs and text channels):
-
-```
-/voice          Toggle voice mode on/off
-/voice on       Voice replies only when you send a voice message
-/voice tts      Voice replies for ALL messages
-/voice off      Disable voice replies
-/voice status   Show current setting
+```text
+/voice          Toggle voice mode
+/voice on       Speak only when the inbound message is voice
+/voice tts      Speak every reply
+/voice off      Disable spoken replies
+/voice status   Show current mode
 ```
 
 ### Modes
 
 | Mode | Command | Behavior |
-|------|---------|----------|
-| `off` | `/voice off` | Text only (default) |
-| `voice_only` | `/voice on` | Speaks reply only when you send a voice message |
-| `all` | `/voice tts` | Speaks reply to every message |
+| --- | --- | --- |
+| `off` | `/voice off` | Text only. |
+| `voice_only` | `/voice on` | Speak replies only after inbound voice messages. |
+| `all` | `/voice tts` | Speak every response. |
 
-Voice mode setting is persisted across gateway restarts.
+Voice settings persist across gateway restarts.
+
+### Forecast Desk Usage
+
+Messaging voice is best for:
+
+- spoken review alerts
+- source-watch summaries
+- quick approvals
+- dictated evidence notes
+- asking for the next item in a review queue
+
+It should not silently mutate a forecast. Have the agent produce a proposed
+ledger action, then confirm the command or update explicitly.
 
 ### Platform Delivery
 
 | Platform | Format | Notes |
-|----------|--------|-------|
-| **Telegram** | Voice bubble (Opus/OGG) | Plays inline in chat. ffmpeg converts MP3 → Opus if needed |
-| **Discord** | Native voice bubble (Opus/OGG) | Plays inline like a user voice message. Falls back to file attachment if voice bubble API fails |
+| --- | --- | --- |
+| Telegram | Opus/OGG voice bubble | Plays inline in chat. |
+| Discord | Native voice bubble or file fallback | Uses Opus when supported. |
 
----
+ffmpeg converts audio formats as needed.
 
 ## Discord Voice Channels
 
-The most immersive voice feature: the bot joins a Discord voice channel, listens to users speaking, transcribes their speech, processes through the agent, and speaks the reply back in the voice channel.
+The Discord voice-channel mode lets the bot join a voice channel, listen to
+authorized users, transcribe speech, run a forecast-scoped response, and speak
+the reply back in the channel.
 
-### Setup
+Use it for live forecast review meetings. If a spoken point affects a forecast,
+capture it as evidence or an assumption with an explicit timestamp before it
+changes the probability.
 
-#### 1. Discord Bot Permissions
+### Bot Permissions
 
-If you already have a Discord bot set up for text (see [Discord Setup Guide](../messaging/discord.md)), you need to add voice permissions.
-
-Go to the [Discord Developer Portal](https://discord.com/developers/applications) → your application → **Installation** → **Default Install Settings** → **Guild Install**:
-
-**Add these permissions to the existing text permissions:**
+If your Discord bot already works for text, add voice permissions in the Discord
+Developer Portal under **Installation** -> **Default Install Settings** ->
+**Guild Install**.
 
 | Permission | Purpose | Required |
-|-----------|---------|----------|
-| **Connect** | Join voice channels | Yes |
-| **Speak** | Play TTS audio in voice channels | Yes |
-| **Use Voice Activity** | Detect when users are speaking | Recommended |
+| --- | --- | --- |
+| Connect | Join voice channels. | Yes |
+| Speak | Play TTS audio in voice channels. | Yes |
+| Use Voice Activity | Detect speakers. | Recommended |
 
-**Updated Permissions Integer:**
+Updated permission integers:
 
-| Level | Integer | What's Included |
-|-------|---------|----------------|
-| Text only | `274878286912` | View Channels, Send Messages, Read History, Embeds, Attachments, Threads, Reactions |
-| Text + Voice | `274881432640` | All above + Connect, Speak |
+| Level | Integer | Includes |
+| --- | --- | --- |
+| Text only | `274878286912` | View channels, send messages, read history, embeds, attachments, threads, reactions. |
+| Text + voice | `274881432640` | Text permissions plus Connect and Speak. |
 
-**Re-invite the bot** with the updated permissions URL:
+Re-invite the bot with:
 
-```
+```text
 https://discord.com/oauth2/authorize?client_id=YOUR_APP_ID&scope=bot+applications.commands&permissions=274881432640
 ```
 
-Replace `YOUR_APP_ID` with your Application ID from the Developer Portal.
+Replace `YOUR_APP_ID` with the Application ID from the Developer Portal.
 
-:::warning
-Re-inviting the bot to a server it's already in will update its permissions without removing it. You won't lose any data or configuration.
-:::
+### Privileged Gateway Intents
 
-#### 2. Privileged Gateway Intents
-
-In the [Developer Portal](https://discord.com/developers/applications) → your application → **Bot** → **Privileged Gateway Intents**, enable all three:
+Enable these in the Discord Developer Portal under **Bot** -> **Privileged
+Gateway Intents**:
 
 | Intent | Purpose |
-|--------|---------|
-| **Presence Intent** | Detect user online/offline status |
-| **Server Members Intent** | Resolve usernames in `DISCORD_ALLOWED_USERS` to numeric IDs (conditional) |
-| **Message Content Intent** | Read text message content in channels |
+| --- | --- |
+| Presence Intent | Detect user presence. |
+| Server Members Intent | Resolve usernames in `DISCORD_ALLOWED_USERS` when numeric IDs are not used. |
+| Message Content Intent | Read text messages in channels. |
 
-**Message Content Intent** is required. **Server Members Intent** is only needed if your `DISCORD_ALLOWED_USERS` list uses usernames — if you use numeric user IDs, you can leave it OFF. Voice-channel SSRC → user_id mapping comes from Discord's SPEAKING opcode on the voice websocket and does **not** require the Server Members Intent.
+Message Content Intent is required. Server Members Intent is optional when
+`DISCORD_ALLOWED_USERS` uses numeric Discord user IDs.
 
-#### 3. Opus Codec
+### Opus Codec
 
-The Opus codec library must be installed on the machine running the gateway:
+Install Opus on the gateway host:
 
 ```bash
-# macOS (Homebrew)
+# macOS
 brew install opus
 
 # Ubuntu/Debian
 sudo apt install libopus0
 ```
 
-The bot auto-loads the codec from:
-- **macOS:** `/opt/homebrew/lib/libopus.dylib`
-- **Linux:** `libopus.so.0`
+The runtime auto-loads common library names:
 
-#### 4. Environment Variables
+- macOS: `/opt/homebrew/lib/libopus.dylib`
+- Linux: `libopus.so.0`
 
-```bash
-# ~/.hermes/.env
-
-# Discord bot (already configured for text)
-DISCORD_BOT_TOKEN=your-bot-token
-DISCORD_ALLOWED_USERS=your-user-id
-
-# STT — local provider needs no key (pip install faster-whisper)
-# GROQ_API_KEY=your-key            # Alternative: cloud-based, fast, free tier
-
-# TTS — optional. Edge TTS and NeuTTS need no key.
-# ELEVENLABS_API_KEY=***      # Premium quality
-# VOICE_TOOLS_OPENAI_KEY=***  # OpenAI TTS / Whisper
-```
-
-### Start the Gateway
+### Discord Environment
 
 ```bash
-hermes gateway        # Start with existing configuration
+# ~/.superforecasting-agent/.env
+DISCORD_BOT_TOKEN=***
+DISCORD_ALLOWED_USERS=284102345871466496
+
+# Optional cloud speech providers
+GROQ_API_KEY=***
+VOICE_TOOLS_OPENAI_KEY=***
+ELEVENLABS_API_KEY=***
 ```
 
-The bot should come online in Discord within a few seconds.
+Start the gateway:
 
-### Commands
+```bash
+superforecasting-agent gateway
+```
+
+### Voice Channel Commands
 
 Use these in the Discord text channel where the bot is present:
 
-```
-/voice join      Bot joins your current voice channel
+```text
+/voice join      Join your current voice channel
 /voice channel   Alias for /voice join
-/voice leave     Bot disconnects from voice channel
+/voice leave     Disconnect from voice channel
 /voice status    Show voice mode and connected channel
 ```
 
-:::info
-You must be in a voice channel before running `/voice join`. The bot joins the same VC you're in.
-:::
+You must be in a voice channel before running `/voice join`.
 
-### How It Works
+### Voice Channel Flow
 
-When the bot joins a voice channel, it:
+When joined, the bot:
 
-1. **Listens** to each user's audio stream independently
-2. **Detects silence** — 1.5s of silence after at least 0.5s of speech triggers processing
-3. **Transcribes** the audio via Whisper STT (local, Groq, or OpenAI)
-4. **Processes** through the full agent pipeline (session, tools, memory)
-5. **Speaks** the reply back in the voice channel via TTS
+1. Listens to each authorized user's audio stream.
+2. Detects speech and silence.
+3. Transcribes audio with local, Groq, or OpenAI STT.
+4. Runs the forecast-scoped runtime response.
+5. Sends the transcript and text reply to the linked text channel.
+6. Speaks the reply in the voice channel.
 
-### Text Channel Integration
-
-When the bot is in a voice channel:
-
-- Transcripts appear in the text channel: `[Voice] @user: what you said`
-- Agent responses are sent as text in the channel AND spoken in the VC
-- The text channel is the one where `/voice join` was issued
-
-### Echo Prevention
-
-The bot automatically pauses its audio listener while playing TTS replies, preventing it from hearing and re-processing its own output.
-
-### Access Control
-
-Only users listed in `DISCORD_ALLOWED_USERS` can interact via voice. Other users' audio is silently ignored.
-
-```bash
-# ~/.hermes/.env
-DISCORD_ALLOWED_USERS=284102345871466496
-```
-
----
+The listener pauses while the bot is speaking so it does not re-process its own
+audio.
 
 ## Configuration Reference
 
 ### config.yaml
 
 ```yaml
-# Voice recording (CLI)
 voice:
-  record_key: "ctrl+b"            # Key to start/stop recording
-  max_recording_seconds: 120       # Maximum recording length
-  auto_tts: false                  # Auto-enable TTS when voice mode starts
-  beep_enabled: true               # Play record start/stop beeps
-  silence_threshold: 200           # RMS level (0-32767) below which counts as silence
-  silence_duration: 3.0            # Seconds of silence before auto-stop
+  record_key: "ctrl+b"
+  max_recording_seconds: 120
+  auto_tts: false
+  beep_enabled: true
+  silence_threshold: 200
+  silence_duration: 3.0
 
-# Speech-to-Text
 stt:
-  enabled: true                     # set to false to skip auto-transcription —
-                                    # the gateway still caches the audio file and
-                                    # passes its path to the agent as part of the
-                                    # inbound message, useful for custom pipelines
-                                    # (diarization, alignment, archival, etc.)
-  provider: "local"                  # "local" (free) | "groq" | "openai"
+  enabled: true
+  provider: "local"
   local:
-    model: "base"                    # tiny, base, small, medium, large-v3
-  # model: "whisper-1"              # Legacy: used when provider is not set
+    model: "base"
+  # model: "whisper-1"  # legacy fallback when provider is omitted
 
-# Text-to-Speech
 tts:
-  provider: "edge"                 # "edge" (free) | "elevenlabs" | "openai" | "neutts" | "minimax"
+  provider: "edge"
   edge:
-    voice: "en-US-AriaNeural"      # 322 voices, 74 languages
+    voice: "en-US-AriaNeural"
   elevenlabs:
-    voice_id: "pNInz6obpgDQGcFmaJgB"    # Adam
+    voice_id: "pNInz6obpgDQGcFmaJgB"
     model_id: "eleven_multilingual_v2"
   openai:
     model: "gpt-4o-mini-tts"
-    voice: "alloy"                 # alloy, echo, fable, onyx, nova, shimmer
-    base_url: "https://api.openai.com/v1"  # optional: override for self-hosted or OpenAI-compatible endpoints
+    voice: "alloy"
+    base_url: "https://api.openai.com/v1"
   neutts:
     ref_audio: ''
     ref_text: ''
@@ -420,97 +409,120 @@ tts:
     device: cpu
 ```
 
+Set `stt.enabled: false` if you want the gateway to cache inbound audio and pass
+the file path to a custom pipeline without automatic transcription.
+
 ### Environment Variables
 
 ```bash
-# Speech-to-Text providers (local needs no key)
-# pip install faster-whisper        # Free local STT — no API key needed
-GROQ_API_KEY=...                    # Groq Whisper (fast, free tier)
-VOICE_TOOLS_OPENAI_KEY=...         # OpenAI Whisper (paid)
+# Speech-to-text providers. Local needs no key.
+GROQ_API_KEY=***
+VOICE_TOOLS_OPENAI_KEY=***
 
-# STT advanced overrides (optional)
-STT_GROQ_MODEL=whisper-large-v3-turbo    # Override default Groq STT model
-STT_OPENAI_MODEL=whisper-1               # Override default OpenAI STT model
-GROQ_BASE_URL=https://api.groq.com/openai/v1     # Custom Groq endpoint
-STT_OPENAI_BASE_URL=https://api.openai.com/v1    # Custom OpenAI STT endpoint
+# STT advanced overrides
+STT_GROQ_MODEL=whisper-large-v3-turbo
+STT_OPENAI_MODEL=whisper-1
+GROQ_BASE_URL=https://api.groq.com/openai/v1
+STT_OPENAI_BASE_URL=https://api.openai.com/v1
 
-# Text-to-Speech providers (Edge TTS and NeuTTS need no key)
-ELEVENLABS_API_KEY=***             # ElevenLabs (premium quality)
-# VOICE_TOOLS_OPENAI_KEY above also enables OpenAI TTS
+# Text-to-speech providers. Edge TTS and NeuTTS need no key.
+ELEVENLABS_API_KEY=***
 
 # Discord voice channel
-DISCORD_BOT_TOKEN=...
-DISCORD_ALLOWED_USERS=...
+DISCORD_BOT_TOKEN=***
+DISCORD_ALLOWED_USERS=***
+DISCORD_REQUIRE_MENTION=true
+DISCORD_FREE_RESPONSE_CHANNELS=
 ```
+
+`VOICE_TOOLS_OPENAI_KEY` enables both OpenAI STT and OpenAI TTS.
 
 ### STT Provider Comparison
 
-| Provider | Model | Speed | Quality | Cost | API Key |
-|----------|-------|-------|---------|------|---------|
-| **Local** | `base` | Fast (depends on CPU/GPU) | Good | Free | No |
-| **Local** | `small` | Medium | Better | Free | No |
-| **Local** | `large-v3` | Slow | Best | Free | No |
-| **Groq** | `whisper-large-v3-turbo` | Very fast (~0.5s) | Good | Free tier | Yes |
-| **Groq** | `whisper-large-v3` | Fast (~1s) | Better | Free tier | Yes |
-| **OpenAI** | `whisper-1` | Fast (~1s) | Good | Paid | Yes |
-| **OpenAI** | `gpt-4o-transcribe` | Medium (~2s) | Best | Paid | Yes |
+| Provider | Model | Speed | Quality | Key required |
+| --- | --- | --- | --- | --- |
+| Local | `base` | Fast on many machines | Good | No |
+| Local | `small` | Medium | Better | No |
+| Local | `large-v3` | Slow on CPU | Best local model | No |
+| Groq | `whisper-large-v3-turbo` | Very fast | Good | Yes |
+| Groq | `whisper-large-v3` | Fast | Better | Yes |
+| OpenAI | `whisper-1` | Fast | Good | Yes |
+| OpenAI | `gpt-4o-transcribe` | Medium | Strong | Yes |
 
-Provider priority (automatic fallback): **local** > **groq** > **openai**
+Automatic fallback order is local, then Groq, then OpenAI.
 
 ### TTS Provider Comparison
 
-| Provider | Quality | Cost | Latency | Key Required |
-|----------|---------|------|---------|-------------|
-| **Edge TTS** | Good | Free | ~1s | No |
-| **ElevenLabs** | Excellent | Paid | ~2s | Yes |
-| **OpenAI TTS** | Good | Paid | ~1.5s | Yes |
-| **NeuTTS** | Good | Free | Depends on CPU/GPU | No |
+| Provider | Quality | Latency | Key required |
+| --- | --- | --- | --- |
+| Edge TTS | Good | Low | No |
+| NeuTTS | Good | Depends on CPU/GPU | No |
+| ElevenLabs | High | Medium | Yes |
+| OpenAI TTS | Good | Low-medium | Yes |
 
-NeuTTS uses the `tts.neutts` config block above.
-
----
+See [Text-to-Speech](./tts.md) for provider-specific TTS details.
 
 ## Troubleshooting
 
-### "No audio device found" (CLI)
+### No Audio Device Found
 
-PortAudio is not installed:
+PortAudio is usually missing:
 
 ```bash
-brew install portaudio    # macOS
-sudo apt install portaudio19-dev  # Ubuntu
+brew install portaudio
+sudo apt install portaudio19-dev
 ```
 
-### Bot doesn't respond in Discord server channels
+### Discord Server Channels Do Not Respond
 
-The bot requires an @mention by default in server channels. Make sure you:
+The bot requires a mention by default in server channels.
 
-1. Type `@` and select the **bot user** (with the #discriminator), not the **role** with the same name
-2. Or use DMs instead — no mention needed
-3. Or set `DISCORD_REQUIRE_MENTION=false` in `~/.hermes/.env`
+1. Type `@` and select the bot user, not a role with the same name.
+2. Use DMs for no-mention interaction.
+3. Set `DISCORD_REQUIRE_MENTION=false` only in channels where broad response is acceptable.
 
-### Bot joins VC but doesn't hear me
+### Bot Joins A Voice Channel But Does Not Hear Me
 
-- Check your Discord user ID is in `DISCORD_ALLOWED_USERS`
-- Make sure you're not muted in Discord
-- The bot needs a SPEAKING event from Discord before it can map your audio — start speaking within a few seconds of joining
+- Confirm your Discord user ID is in `DISCORD_ALLOWED_USERS`.
+- Confirm you are not muted in Discord.
+- Speak for a few seconds after the bot joins so the Discord voice websocket can map audio to a user.
+- Confirm Opus is installed on the gateway host.
 
-### Bot hears me but doesn't respond
+### Bot Hears Me But Does Not Respond
 
-- Verify STT is available: install `faster-whisper` (no key needed) or set `GROQ_API_KEY` / `VOICE_TOOLS_OPENAI_KEY`
-- Check the LLM model is configured and accessible
-- Review gateway logs: `tail -f ~/.hermes/logs/gateway.log`
+- Verify STT is available with `faster-whisper`, `GROQ_API_KEY`, or `VOICE_TOOLS_OPENAI_KEY`.
+- Verify the model provider works in text mode.
+- Review gateway logs:
 
-### Bot responds in text but not in voice channel
+```bash
+tail -f ~/.superforecasting-agent/logs/gateway.log
+```
 
-- TTS provider may be failing — check API key and quota
-- Edge TTS (free, no key) is the default fallback
-- Check logs for TTS errors
+Legacy profiles may still write logs under `~/.hermes/logs/`.
 
-### Whisper returns garbage text
+### Bot Responds In Text But Not Voice
 
-The hallucination filter catches most cases automatically. If you're still getting phantom transcripts:
+- Check the selected TTS provider and quota.
+- Try the Edge TTS fallback.
+- Check logs for TTS conversion errors.
+- Confirm `ffmpeg` is installed.
 
-- Use a quieter environment
-- Adjust `silence_threshold` in config (higher = less sensitive)
-- Try a different STT model
+### Whisper Returns Garbage Text
+
+- Use a quieter environment.
+- Raise `voice.silence_threshold`.
+- Use a headset microphone.
+- Try another STT model.
+
+### Forecast State Did Not Change
+
+Voice commands are still conversation turns. To modify durable state, confirm or
+run the relevant ledger command:
+
+```bash
+forecast evidence add <id> --source "<source>" --claim "<claim>"
+forecast update <id> --probability 0.62 --rationale "..."
+forecast resolve <id> --outcome yes
+forecast score <id>
+forecast postmortem <id> --summary "..."
+```

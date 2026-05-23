@@ -2,572 +2,288 @@
 sidebar_position: 3
 ---
 
-# Profile Distributions: Share a Whole Agent
+# Profile Distributions: Share a Forecast Desk
 
-A **profile distribution** packages a complete Hermes agent — personality, skills, cron jobs, MCP connections, config — as a git repository. Anyone with access to the repo can install the whole agent with one command, update it in place, and keep their own memories, sessions, and API keys untouched.
+A **profile distribution** packages a forecast desk template as a git repository. It can include the desk's SOUL, configuration defaults, forecasting skills, source connectors, model runners, cron jobs, and MCP wiring.
 
-If a [profile](./profiles.md) is a local agent, a distribution is that agent made shareable.
+It does **not** package the installer's forecast ledger. A distribution is for sharing how a desk should work; it is not for shipping another forecaster's questions, probabilities, evidence snapshots, calibration history, or resolved-score record.
 
-## What this means
+If a [profile](./profiles.md) is a local forecasting workspace, a distribution is a versioned template for creating or updating that workspace.
 
-Before distributions, sharing a Hermes agent meant sending someone:
+## What Gets Shared
 
-1. Your SOUL.md
-2. A list of skills to install
-3. Your config.yaml, minus the secrets
-4. A description of which MCP servers you wired up
-5. Any cron jobs you scheduled
-6. Instructions for which env vars to set
+A typical forecast-desk distribution looks like this:
 
-…and hoping they assembled it correctly. Every version bump or bug fix meant repeating the handoff.
-
-With distributions, all of that lives in one git repo:
-
-```
-my-research-agent/
-├── distribution.yaml    # manifest: name, version, env-var requirements
-├── SOUL.md              # the agent's personality / system prompt
-├── config.yaml          # model, temperature, reasoning, tool defaults
-├── skills/              # bundled skills that come with the agent
-├── cron/                # scheduled tasks the agent runs
-└── mcp.json             # MCP servers the agent connects to
+```text
+macro-forecast-desk/
+├── distribution.yaml
+├── SOUL.md
+├── config.yaml
+├── mcp.json
+├── skills/
+│   ├── evidence-triage/SKILL.md
+│   ├── base-rate-research/SKILL.md
+│   └── forecast-postmortem/SKILL.md
+├── cron/
+│   ├── daily-staleness-check.json
+│   └── weekly-calibration-review.json
+└── README.md
 ```
 
-Recipients run:
+The shared template can define:
 
-```bash
-hermes profile install github.com/you/my-research-agent --alias
+- Forecasting protocol and desk persona in `SOUL.md`.
+- Model/provider defaults in `config.yaml`.
+- Evidence, market-data, research, and backtesting skills in `skills/`.
+- Scheduled checks for stale questions, new evidence, and calibration review in `cron/`.
+- MCP/source connections in `mcp.json`.
+- Required environment variables in `distribution.yaml`.
+
+The installer brings their own API keys, local data, ledger, and calibration record.
+
+## What Never Gets Shared
+
+These paths are user-owned and are never copied from a distribution or overwritten by an update:
+
+```text
+forecasting/
+memories/
+sessions/
+logs/
+plans/
+workspace/
+home/
+local/
+auth.json
+.env
+state.db*
+hermes_state.db
+response_store.db*
+*_cache/
+checkpoints/
+sandboxes/
+backups/
+cache/
 ```
 
-…and they now have the whole agent. They fill in their own API keys (`.env.EXAMPLE` → `.env`), and they can run `my-research-agent chat` or address it through Telegram / Discord / Slack / any gateway platform. When you push a new version, they run `hermes profile update my-research-agent` and pull your changes — their memories and sessions stay put.
+`forecasting/` is the critical one for this fork. It contains the ledger and related state: active questions, probability histories, evidence snapshots, resolutions, scores, calibration adjustments, domain lessons, and scheduled self-check state. Those records belong to the local desk because the agent can only learn honestly from its own forecast history.
 
-## Why git?
+To move a ledger intentionally, use the forecast export/import workflow or a profile backup workflow. Do not publish it as a profile distribution.
 
-We considered tarballs, HTTP archives, a custom format. None of them beat git:
-
-- **Zero build step for authors.** Push to GitHub; consumers install. There's no "pack this, upload that, update the index" loop.
-- **Tags, branches, and commits are already the versioning system.** A tag push does for us what "pack + upload a release" does for other tools.
-- **Updates are a fetch.** Not a re-download of the whole archive.
-- **Transparent.** Users can browse the repo, read diffs between versions, open issues against it, fork it to customize.
-- **Private repos work for free.** SSH keys, `git credential` helpers, GitHub CLI stored credentials — whatever auth your terminal is already set up for applies transparently.
-- **Reproducibility is a commit SHA.** The same thing pip and npm record.
-
-The tradeoff: recipients need git installed. On any machine running Hermes in 2026, that's already true.
-
-## When should you use a distribution?
+## When To Use One
 
 Good fits:
 
-- **You're sharing a specialized agent** — a compliance monitor, a code reviewer, a research assistant, a customer-support bot — with a team or with the community.
-- **You're deploying the same agent to multiple machines** and don't want to copy files manually each time.
-- **You're iterating on an agent** and want recipients to pick up new versions with one command.
-- **You're building an agent as a product** — opinionated defaults, curated skills, tuned prompts — that other people should use as a starting point.
+- Share a **macro desk** with evidence feeds, base-rate skills, and daily stale-forecast checks.
+- Share a **policy desk** that monitors legislation, agency actions, and resolution criteria.
+- Share a **company-risk desk** with credit, product, hiring, or litigation research workflows.
+- Share an **internal research desk** that standardizes source handling, model runners, and postmortems across a team.
+- Publish a **starter desk** for a domain, where users should build their own ledger over time.
 
 Not a fit:
 
-- **You just want to back up a profile on your own machine.** Use [`hermes profile export` / `import`](../reference/profile-commands.md#hermes-profile-export) — that's what those are for.
-- **You want to share API keys alongside the agent.** `auth.json` and `.env` are deliberately excluded from distributions. Each installer brings their own credentials.
-- **You want to share memories / sessions / conversation history.** Those are user data, not distribution content. Never shipped.
+- Backing up your own profile. Use [`superforecasting-agent profile export` / `import`](../reference/profile-commands.md#profile-export).
+- Sharing API keys. `.env` and `auth.json` are intentionally excluded.
+- Sharing resolved performance history. That is forecast ledger data, not distribution content.
+- Shipping a Metaculus-only workflow as the core product. Metaculus extraction can be a useful source connector, but a desk distribution should work for any well-formed forecast question.
 
-## The lifecycle: author to installer to update
+## Install
 
-Below is the full end-to-end flow. Pick the side you care about.
-
----
-
-## For authors: publishing a distribution
-
-### Step 1 — Start from a working profile
-
-Build and refine the agent like any other profile:
+Install from a git URL or local directory:
 
 ```bash
-hermes profile create research-bot
-research-bot setup                    # configure model, API keys
-# Edit ~/.hermes/profiles/research-bot/SOUL.md
-# Install skills, wire up MCP servers, schedule cron jobs, etc.
-research-bot chat                     # dogfood until it feels right
+superforecasting-agent profile install github.com/you/macro-forecast-desk --alias
+superforecasting-agent profile install https://github.com/you/macro-forecast-desk.git
+superforecasting-agent profile install git@github.com:your-org/internal-policy-desk.git
+superforecasting-agent profile install ./local-profile-distribution/
 ```
 
-### Step 2 — Add a `distribution.yaml`
+What happens:
 
-Create `~/.hermes/profiles/research-bot/distribution.yaml`:
+1. The repo is cloned into a temporary directory.
+2. `distribution.yaml` is read and validated.
+3. Required environment variables are checked against the shell and target profile.
+4. Distribution-owned files are copied into `~/.superforecasting-agent/profiles/<name>/`.
+5. `.env.EXAMPLE` is generated when required keys are declared.
+6. With `--alias`, a wrapper is created so the desk can be launched by name.
+
+The legacy `hermes` command may still work in compatibility installs, but new documentation and scripts should use `superforecasting-agent`.
+
+## Authoring
+
+Start from a working local profile:
+
+```bash
+superforecasting-agent profile create macro-forecast-desk
+superforecasting-agent -p macro-forecast-desk setup
+```
+
+Then edit:
+
+```text
+~/.superforecasting-agent/profiles/macro-forecast-desk/SOUL.md
+~/.superforecasting-agent/profiles/macro-forecast-desk/config.yaml
+~/.superforecasting-agent/profiles/macro-forecast-desk/skills/
+~/.superforecasting-agent/profiles/macro-forecast-desk/cron/
+~/.superforecasting-agent/profiles/macro-forecast-desk/mcp.json
+```
+
+Create `distribution.yaml` at the profile root:
 
 ```yaml
-name: research-bot
+name: macro-forecast-desk
 version: 1.0.0
-description: "Autonomous research assistant with arXiv and web tools"
+description: "Forecast desk for macro, rates, inflation, and policy questions"
 hermes_requires: ">=0.12.0"
 author: "Your Name"
 license: "MIT"
 
-# Tell installers which env vars the agent needs. These are checked against
-# the installer's shell and existing .env file so they don't get nagged
-# about keys they already have configured.
 env_requires:
   - name: OPENAI_API_KEY
-    description: "OpenAI API key (for model access)"
+    description: "Model access"
     required: true
   - name: SERPAPI_KEY
-    description: "SerpAPI key for web search"
+    description: "Web search"
     required: false
-    default: ""
+  - name: FRED_API_KEY
+    description: "Economic time-series data"
+    required: false
 ```
 
-That's the whole manifest. Every field except `name` has a sensible default.
+`hermes_requires` is the compatibility field name used by the current profile-distribution runtime. It constrains the Superforecasting Agent version.
 
-### Step 3 — Push to a git repo
+Commit and publish:
 
 ```bash
-cd ~/.hermes/profiles/research-bot
+cd ~/.superforecasting-agent/profiles/macro-forecast-desk
 git init
 git add .
 git commit -m "v1.0.0"
-git remote add origin git@github.com:you/research-bot.git
+git remote add origin git@github.com:you/macro-forecast-desk.git
 git tag v1.0.0
 git push -u origin main --tags
 ```
 
-The repo is now a distribution. Anyone with access can install it.
+## Distribution-Owned Vs User-Owned
 
-:::note
-The git repo contains **everything in the profile directory except things already excluded from distributions**: `auth.json`, `.env`, `memories/`, `sessions/`, `state.db*`, `logs/`, `workspace/`, `*_cache/`, `local/`. Those stay on your machine. You can also add a `.gitignore` if you want to exclude additional paths.
-:::
+On update, distribution-owned paths are refreshed from the source repo. User-owned paths stay local.
 
-### Step 4 — Tag versioned releases
-
-Every time the agent reaches a stable point, bump the version and tag:
-
-```bash
-# Edit distribution.yaml: version: 1.1.0
-git add distribution.yaml SOUL.md skills/
-git commit -m "v1.1.0: tighter research SOUL, add arxiv skill"
-git tag v1.1.0
-git push --tags
-```
-
-Recipients who run `hermes profile update research-bot` will pull the latest.
-
-### What the repo looks like
-
-A complete authored distribution:
-
-```
-research-bot/
-├── distribution.yaml            # required
-├── SOUL.md                      # strongly recommended
-├── config.yaml                  # model, provider, tool defaults
-├── mcp.json                     # MCP server connections
-├── skills/
-│   ├── arxiv-search/SKILL.md
-│   ├── paper-summarization/SKILL.md
-│   └── citation-lookup/SKILL.md
-├── cron/
-│   └── weekly-digest.json       # scheduled tasks
-└── README.md                    # human-facing description (optional)
-```
-
-### Distribution-owned vs user-owned
-
-When an installer updates to a new version, some things get replaced (author's domain) and some things stay put (installer's domain). Defaults:
-
-| Category | Paths | On update |
+| Category | Paths | Update behavior |
 |---|---|---|
-| **Distribution-owned** | `SOUL.md`, `config.yaml`, `mcp.json`, `skills/`, `cron/`, `distribution.yaml` | Replaced from the new clone |
-| **Config override** | `config.yaml` | Actually preserved by default — the installer may have tuned model or provider. Pass `--force-config` on update to reset. |
-| **User-owned** | `memories/`, `sessions/`, `state.db*`, `auth.json`, `.env`, `logs/`, `workspace/`, `plans/`, `home/`, `*_cache/`, `local/` | Never touched |
+| Distribution-owned | `SOUL.md`, `config.yaml`, `mcp.json`, `skills/`, `cron/`, `distribution.yaml` | Replaced from the new source |
+| Config override | `config.yaml` | Preserved by default; pass `--force-config` to replace it |
+| User-owned | `forecasting/`, `memories/`, `sessions/`, `.env`, `auth.json`, `logs/`, `workspace/`, `home/`, `plans/`, `local/`, caches, state DBs | Never copied or overwritten |
 
-You can override the distribution-owned list in the manifest:
+Authors can narrow the distribution-owned set:
 
 ```yaml
 distribution_owned:
   - SOUL.md
-  - skills/research/            # only my research skills; other installed skills stay
-  - cron/digest.json
+  - skills/base-rate-research/
+  - skills/evidence-triage/
+  - cron/daily-staleness-check.json
 ```
 
-When omitted, the defaults above apply — which is what most distributions want.
+Use this when a distribution should update only a specific forecasting protocol or skill bundle while leaving other local desk customizations intact.
 
----
-
-## For installers: using a distribution
-
-### Install
+## Update
 
 ```bash
-hermes profile install github.com/you/research-bot --alias
+superforecasting-agent profile update macro-forecast-desk
 ```
 
-What happens:
+Update re-clones the recorded source, refreshes distribution-owned paths, and preserves local user-owned data. The most important preservation rule is the ledger: `forecasting/` stays untouched even if the upstream repo accidentally contains one.
 
-1. Clones the repo into a temporary directory.
-2. Reads `distribution.yaml`, shows you the manifest (name, version, description, author, required env vars).
-3. Checks each required env var against your shell environment and the target profile's existing `.env`. Marks each as `✓ set` or `needs setting` so you know exactly what to configure.
-4. Asks for confirmation. Pass `-y` / `--yes` to skip.
-5. Copies distribution-owned files into `~/.hermes/profiles/research-bot/` (or wherever the manifest's `name` resolves).
-6. Writes `.env.EXAMPLE` with the required keys commented out — copy to `.env` and fill in.
-7. With `--alias`, creates a wrapper so you can run `research-bot chat` directly.
-
-### Source types
-
-Any git URL works:
+To reset the local config to the distribution default:
 
 ```bash
-# GitHub shorthand
-hermes profile install github.com/you/research-bot
-
-# Full HTTPS
-hermes profile install https://github.com/you/research-bot.git
-
-# SSH
-hermes profile install git@github.com:you/research-bot.git
-
-# Self-hosted, GitLab, Gitea, Forgejo — any Git host
-hermes profile install https://git.example.com/team/research-bot.git
-
-# Private repo using your configured git auth
-hermes profile install git@github.com:your-org/internal-bot.git
-
-# Local directory during development (no git push needed)
-hermes profile install ~/my-profile-in-progress/
+superforecasting-agent profile update macro-forecast-desk --force-config
 ```
 
-### Override the profile name
+`--force-config` affects `config.yaml`; it does not make forecast ledger state distributable.
 
-Two users wanting the same distribution under different profile names:
+## Scheduled Checks
+
+Forecast-desk distributions may include cron jobs for:
+
+- Stale-forecast checks.
+- New-evidence scans for active questions.
+- Domain-specific alerts.
+- Weekly calibration review.
+- Resolved-question postmortems.
+- Backtest replay jobs.
+
+Keep these jobs auditable. A good cron job should write to the forecast ledger or review queue with timestamps, source references, and an explicit reason for any probability update it proposes.
+
+For team distributions, document each job in the repo README. Installers should know which jobs are source monitoring, which are scoring/review jobs, and which may call paid APIs.
+
+## Security Model
+
+Treat every distribution like code:
+
+- Read `SOUL.md`, `skills/`, `cron/`, and `mcp.json` before installing.
+- Prefer tags or commit SHAs for production desks.
+- Keep credentials in `.env`; never commit them.
+- Put local-only customizations under `local/`.
+- Keep the ledger local unless you are deliberately exporting it through a separate backup or audit process.
+
+Private repos use your existing git authentication. SSH keys, credential helpers, and GitHub CLI credentials work the same way they do for normal git operations.
+
+## Inspect
 
 ```bash
-# Alice
-hermes profile install github.com/acme/support-bot --name support-us --alias
-# Bob (same distribution, different local name)
-hermes profile install github.com/acme/support-bot --name support-eu --alias
+superforecasting-agent profile info macro-forecast-desk
 ```
 
-### Fill in env vars
+The info command shows the installed distribution name, version, author, source, install time, and environment requirements.
 
-After install, the agent's profile contains a `.env.EXAMPLE`:
+`superforecasting-agent profile list` also includes distribution metadata, so you can distinguish hand-built desks from desks installed from versioned templates.
 
-```
-# Environment variables required by this Hermes distribution.
-# Copy to `.env` and fill in your own values before running.
-
-# OpenAI API key (for model access)
-# (required)
-OPENAI_API_KEY=
-
-# SerpAPI key for web search
-# (optional)
-# SERPAPI_KEY=
-```
-
-Copy it:
+## Remove
 
 ```bash
-cp ~/.hermes/profiles/research-bot/.env.EXAMPLE ~/.hermes/profiles/research-bot/.env
-# Edit .env, paste your real keys
+superforecasting-agent profile delete macro-forecast-desk
 ```
 
-Required keys that were already in your shell environment (e.g. `OPENAI_API_KEY` exported in your `~/.zshrc`) are marked `✓ set` during install — you don't need to duplicate them in `.env`.
+Deletion removes the local profile, including local user-owned state. That is different from update, which preserves user-owned state. Export anything you need before deleting a desk.
 
-### Check what you installed
+## Patterns
+
+**Personal template**
+
+Use a private repo to keep the same desk protocol across machines while allowing each machine to build its own ledger.
 
 ```bash
-hermes profile info research-bot
+superforecasting-agent profile install github.com/you/macro-forecast-desk --alias
 ```
 
-Shows:
+**Team desk**
 
-```
-Distribution: research-bot
-Version:      1.0.0
-Description:  Autonomous research assistant with arXiv and web tools
-Author:       Your Name
-Requires:     Hermes >=0.12.0
-Source:       https://github.com/you/research-bot
-Installed:    2026-05-08T17:04:32+00:00
-
-Environment variables:
-  OPENAI_API_KEY (required) — OpenAI API key (for model access)
-  SERPAPI_KEY (optional) — SerpAPI key for web search
-```
-
-`hermes profile list` also shows a `Distribution` column so at a glance you can see which of your profiles came from repos and which you hand-built:
-
-```
- Profile          Model                        Gateway      Alias        Distribution
- ───────────────    ───────────────────────────    ───────────    ───────────    ────────────────────
- ◆default         claude-sonnet-4              stopped      —            —
-  coder           gpt-5                        stopped      coder        —
-  research-bot    claude-opus-4                stopped      research-bot research-bot@1.0.0
-  telemetry       claude-sonnet-4              running      telemetry    telemetry@2.3.1
-```
-
-### Update
+An internal team can ship shared skills, source connectors, cron checks, and review standards while every analyst keeps a separate probability history.
 
 ```bash
-hermes profile update research-bot
+superforecasting-agent profile install git@github.com:your-org/policy-forecast-desk.git --alias
 ```
 
-What happens:
+**Domain starter**
 
-1. Re-clones the repo from the recorded source URL.
-2. Replaces distribution-owned files (SOUL, skills, cron, mcp.json).
-3. **Preserves** your `config.yaml` — you may have tuned the model, temperature, or other settings. Pass `--force-config` to overwrite.
-4. **Never touches** user data: memories, sessions, auth, `.env`, logs, state.
-
-No re-downloading the whole archive. No stomping your local changes to config. No deleting your conversation history.
-
-### Remove
+Publish a starter distribution for energy, elections, geopolitics, credit risk, biology, sports, or another question domain. The distribution should provide workflow and tools, not preloaded conclusions.
 
 ```bash
-hermes profile delete research-bot
+superforecasting-agent profile install github.com/you/energy-forecast-desk --alias
 ```
 
-The delete prompt surfaces distribution info before asking you to confirm:
+**Local development**
 
-```
-Profile: research-bot
-Path:    ~/.hermes/profiles/research-bot
-Model:   claude-opus-4 (anthropic)
-Skills:  12
-Distribution: research-bot@1.0.0
-Installed from: https://github.com/you/research-bot
-
-This will permanently delete:
-  • All config, API keys, memories, sessions, skills, cron jobs
-  • Command alias (~/.local/bin/research-bot)
-
-Type 'research-bot' to confirm:
-```
-
-So you never accidentally delete an agent without knowing where it came from or being able to re-install it.
-
----
-
-## Use cases and patterns
-
-### Personal: sync one agent across machines
-
-You built a research assistant on your laptop. You want the same agent on your workstation.
+Test a distribution from a local directory before pushing:
 
 ```bash
-# Laptop
-cd ~/.hermes/profiles/research-bot
-git init && git add . && git commit -m "initial"
-git remote add origin git@github.com:you/research-bot.git
-git push -u origin main
-
-# Workstation
-hermes profile install github.com/you/research-bot --alias
-# Fill in .env. Done.
+superforecasting-agent profile install ~/.superforecasting-agent/profiles/macro-forecast-desk --name macro-forecast-desk-test --alias
+superforecasting-agent profile delete macro-forecast-desk-test --yes
 ```
 
-Any iteration on the laptop (`git commit && push`) pulls onto the workstation with `hermes profile update research-bot`. Memories stay per-machine — the laptop remembers its own conversations, the workstation remembers its own, they don't collide.
+## See Also
 
-### Team: ship a reviewed internal agent
-
-Your engineering team wants a shared PR-review bot with a specific SOUL, specific skills, and a cron that runs every PR through it.
-
-```bash
-# Engineering lead
-cd ~/.hermes/profiles/pr-reviewer
-# ... build and tune ...
-git init && git add . && git commit -m "v1.0 PR reviewer"
-git tag v1.0.0
-git push -u origin main --tags    # push to your company's internal Git host
-
-# Each engineer
-hermes profile install git@github.com:your-org/pr-reviewer.git --alias
-# Fill in .env with their own API key (billed to them), .env.EXAMPLE points at what's required
-pr-reviewer chat
-```
-
-When the lead ships v1.1 (better SOUL, new skill), engineers run `hermes profile update pr-reviewer` and everyone's on the new version within minutes.
-
-### Community: publish a public agent
-
-You built something novel — maybe a "Polymarket trader" or an "academic paper summarizer" or a "Minecraft server ops assistant." You want to share it.
-
-```bash
-# You
-cd ~/.hermes/profiles/polymarket-trader
-# Write a solid README.md at the repo root — GitHub shows it on the repo page
-git init && git add . && git commit -m "v1.0"
-git tag v1.0.0
-# Publish to a public GitHub repo
-git remote add origin https://github.com/you/hermes-polymarket-trader.git
-git push -u origin main --tags
-
-# Anyone
-hermes profile install github.com/you/hermes-polymarket-trader --alias
-```
-
-Tweet the install command. People who try it send you issues and PRs. If someone wants to customize, they fork — same git workflow everyone already knows.
-
-### Product: ship an opinionated agent
-
-You built Hermes-on-top — maybe a compliance-monitoring harness, a customer-support stack, a domain-specific research platform. You want to distribute it as a product.
-
-```yaml
-# distribution.yaml
-name: telemetry-harness
-version: 2.3.1
-description: "Compliance telemetry harness — monitors and reviews regulated workflows"
-hermes_requires: ">=0.13.0"
-author: "Acme Compliance Inc."
-license: "Commercial"
-
-env_requires:
-  - name: ACME_API_KEY
-    description: "Your Acme Compliance license key (email support@acme.com)"
-    required: true
-  - name: OPENAI_API_KEY
-    description: "OpenAI API key for model access"
-    required: true
-  - name: GRAPHITI_MCP_URL
-    description: "URL for your Graphiti knowledge graph instance"
-    required: false
-    default: "http://127.0.0.1:8000/sse"
-```
-
-Your customers install via a single command; the install preview tells them exactly which keys to have ready; updates roll out the moment you tag a new release; their compliance data (`memories/`, `sessions/`) never leaves their machine.
-
-### Ephemeral: one-off scripts on shared infra
-
-You're the ops lead. You want a temporary agent that diagnoses a production incident — a canned SOUL with the right tools and MCP connections — and runs on three on-call engineers' laptops for the next week.
-
-```bash
-# You
-# Build the profile, commit, push a private repo
-git push -u origin main
-
-# Each on-call
-hermes profile install git@github.com:your-org/incident-2026-q2.git --alias
-
-# Incident resolved — tear it down
-hermes profile delete incident-2026-q2
-```
-
-The install-delete cycle is cheap enough to be disposable.
-
----
-
-## Recipes
-
-### Pin to a specific version
-
-:::note
-Git ref pinning (`#v1.2.0`) is planned but not in the initial release — install currently tracks the default branch. Track your installed version via `hermes profile info <name>` and hold off on updates until you're ready.
-:::
-
-### Check what version you're on vs. latest
-
-```bash
-# Your installed version
-hermes profile info research-bot | grep Version
-
-# Latest upstream (without installing)
-git ls-remote --tags https://github.com/you/research-bot | tail -5
-```
-
-### Keep local config customizations through updates
-
-The default update behavior already does this: `config.yaml` is preserved. To be safe, write your local tweaks to a file the distribution doesn't own:
-
-```yaml
-# ~/.hermes/profiles/research-bot/local/my-overrides.yaml
-# (distribution never touches local/)
-```
-
-…and reference it from `config.yaml` or your SOUL as needed.
-
-### Force a clean re-install
-
-```bash
-# Nuke and re-install from scratch (loses memories/sessions too)
-hermes profile delete research-bot --yes
-hermes profile install github.com/you/research-bot --alias
-
-# Update to current main but reset config.yaml to the distribution's default
-hermes profile update research-bot --force-config --yes
-```
-
-### Fork and customize
-
-The standard git workflow — distributions are just repos:
-
-```bash
-# Fork the repo on GitHub, then install your fork
-hermes profile install github.com/yourname/forked-research-bot --alias
-
-# Iterate locally in ~/.hermes/profiles/forked-research-bot/
-# Edit SOUL.md, commit, push to your fork
-# Upstream changes: pull them into your fork the usual way
-```
-
-### Test a distribution before pushing
-
-From the author's machine:
-
-```bash
-# Install from a local directory (no git push needed)
-hermes profile install ~/.hermes/profiles/research-bot --name research-bot-test --alias
-
-# Tweak, delete, re-install until it's right
-hermes profile delete research-bot-test --yes
-hermes profile install ~/.hermes/profiles/research-bot --name research-bot-test
-```
-
----
-
-## What's NOT in a distribution (ever)
-
-The installer hard-excludes these paths even if an author accidentally ships them. No config option lets you override this — the safety guard is a regression-tested invariant:
-
-- `auth.json` — OAuth tokens, platform credentials
-- `.env` — API keys, secrets
-- `memories/` — conversation memory
-- `sessions/` — conversation history
-- `state.db`, `state.db-shm`, `state.db-wal` — session metadata
-- `logs/` — agent and error logs
-- `workspace/` — generated working files
-- `plans/` — scratch plans
-- `home/` — user's home mount in Docker backends
-- `*_cache/` — image / audio / document caches
-- `local/` — user-reserved customization namespace
-
-When you clone a distribution, these simply aren't there. When you update, they stay put. If you installed the same distribution on five machines, you have five isolated sets of this data — one per machine.
-
-## Security and trust
-
-Profile distributions are unsigned by default. You're trusting:
-
-- **The git host** (GitHub / GitLab / wherever) to serve the bytes the author pushed.
-- **The author** to not ship a malicious SOUL, skills, or cron jobs.
-
-Cron jobs from a distribution are **not auto-scheduled** — the installer prints `hermes -p <name> cron list` and you enable them explicitly. SOUL.md and skills ARE active as soon as you start chatting with the profile, so read them before your first run if you're installing from someone you don't know.
-
-Rough analogy: installing a distribution is like installing a browser extension or a VS Code extension. Low friction, high power, trust the source. For internal company distributions, use a private repo and your normal git auth — nothing new to configure.
-
-Future versions may add signing, a lockfile (`.distribution-lock.yaml`) with a resolved commit SHA, and a `--dry-run` flag that prints the diff before applying an update. None of those are shipping yet.
-
-## Under the hood
-
-For implementation details, precise CLI behavior, and all flags, see the [Profile Commands reference](../reference/profile-commands.md#distribution-commands).
-
-The short version:
-
-- `install`, `update`, `info` live inside `hermes profile` — not a parallel command tree.
-- The manifest format is YAML with a tiny required schema (`name` only).
-- The installer uses your local `git` binary for cloning, so any auth your shell already handles (SSH keys, credential helpers) works transparently.
-- After clone, `.git/` is stripped — the installed profile isn't itself a git checkout, avoiding "oh my, I accidentally committed my `.env` to the distribution's git history" traps.
-- Reserved profile names (`hermes`, `test`, `tmp`, `root`, `sudo`) are rejected at install time to avoid collisions with common binaries.
-
-## See also
-
-- [Profiles: Running Multiple Agents](./profiles.md) — the base concept
-- [Profile Commands reference](../reference/profile-commands.md) — every flag, every option
-- [`hermes profile export` / `import`](../reference/profile-commands.md#hermes-profile-export) — local backup / restore (not distribution)
-- [Using SOUL with Hermes](../guides/use-soul-with-hermes.md) — authoring personalities
-- [Personality & SOUL](./features/personality.md) — how SOUL fits into the agent
-- [Skills catalog](../reference/skills-catalog.md) — skills you can bundle
+- [Profiles](./profiles.md)
+- [Profile command reference](../reference/profile-commands.md)
+- [Integrations](../integrations/index.md)

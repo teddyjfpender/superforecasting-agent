@@ -1,12 +1,12 @@
 ---
 sidebar_position: 8
 title: "Extending the CLI"
-description: "Build wrapper CLIs that extend the Hermes TUI with custom widgets, keybindings, and layout changes"
+description: "Build wrapper CLIs around the forecast desk"
 ---
 
 # Extending the CLI
 
-Hermes exposes protected extension hooks on `HermesCLI` so wrapper CLIs can add widgets, keybindings, and layout customizations without overriding the 1000+ line `run()` method. This keeps your extension decoupled from internal changes.
+Superforecasting Agent inherits protected extension hooks on `HermesCLI` so wrapper CLIs can add widgets, keybindings, and layout customizations without overriding the large `run()` method. Use these hooks to add forecast-focused panels, status lines, review queues, source alerts, or domain dashboards while keeping durable forecast state in the ledger.
 
 ## Extension points
 
@@ -26,7 +26,7 @@ The first three are new protected hooks. The last two already existed.
 
 ```python
 #!/usr/bin/env python3
-"""my_cli.py — Example wrapper CLI that extends Hermes."""
+"""my_cli.py -- Example wrapper CLI that extends the forecast desk."""
 
 from cli import HermesCLI
 from prompt_toolkit.layout import FormattedTextControl, Window
@@ -44,7 +44,7 @@ class MyCLI(HermesCLI):
         cli_ref = self
         return [
             Window(
-                FormattedTextControl(lambda: "📊 My custom panel content"),
+                FormattedTextControl(lambda: "Active forecast review queue"),
                 height=1,
                 filter=Condition(lambda: cli_ref._panel_visible),
             ),
@@ -76,7 +76,7 @@ if __name__ == "__main__":
 Run it:
 
 ```bash
-cd ~/.hermes/hermes-agent
+cd /path/to/superforecasting-agent
 source .venv/bin/activate
 python my_cli.py
 ```
@@ -109,7 +109,7 @@ def _get_extra_tui_widgets(self):
 
 ### `_register_extra_tui_keybindings(kb, *, input_area)`
 
-Called after Hermes registers its own keybindings and before the layout is built. Add your keybindings to `kb`.
+Called after the base CLI registers its own keybindings and before the layout is built. Add your keybindings to `kb`.
 
 ```python
 def _register_extra_tui_keybindings(self, kb, *, input_area):
@@ -186,7 +186,7 @@ The default layout from top to bottom:
 ## Tips
 
 - **Invalidate the display** after state changes: call `self._invalidate()` to trigger a prompt_toolkit redraw.
-- **Access agent state**: `self.agent`, `self.model`, `self.conversation_history` are all available.
+- **Access agent state**: `self.agent`, `self.model`, `self.conversation_history` are all available. Do not treat conversation history as the forecast ledger.
 - **Custom styles**: Override `_build_tui_style_dict()` and add entries for your custom style classes.
 - **Slash commands**: Override `process_command()`, handle your commands, and call `super().process_command(cmd)` for everything else.
 - **Don't override `run()`** unless absolutely necessary — the extension hooks exist specifically to avoid that coupling.

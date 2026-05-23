@@ -1,116 +1,147 @@
 ---
 title: "Nous Tool Gateway"
-description: "One subscription, every tool. Web search, image generation, TTS, and cloud browsers — all routed through Nous Portal with no extra API keys."
+description: "Route forecast-support tools through Nous Portal when available."
 sidebar_label: "Tool Gateway"
 sidebar_position: 2
 ---
 
 # Nous Tool Gateway
 
-**One subscription. Every tool built in.**
+The Tool Gateway routes selected forecast-support tools through Nous Portal
+instead of requiring a separate vendor key for every backend. It can cover web
+search and extraction, image generation, text-to-speech, and cloud browser
+automation when those managed tools are available on your account.
 
-The Tool Gateway is included with every paid [Nous Portal](https://portal.nousresearch.com) subscription. It routes Hermes' tool calls — web search, image generation, text-to-speech, and cloud browser automation — through infrastructure Nous already runs, so you don't have to sign up with Firecrawl, FAL, OpenAI, Browser Use, or anyone else just to make your agent useful.
+The gateway is infrastructure. It does not create ledger records, change
+probabilities, resolve questions, score forecasts, or write calibration lessons
+by itself. Tool outputs still need to be captured through the forecast workflow
+before they become durable evidence or model inputs.
 
-<div style={{display: 'flex', gap: '1rem', flexWrap: 'wrap', margin: '1.5rem 0'}}>
-  <a href="https://portal.nousresearch.com/manage-subscription" style={{background: 'var(--ifm-color-primary)', color: 'white', padding: '0.75rem 1.5rem', borderRadius: '6px', textDecoration: 'none', fontWeight: 'bold'}}>Start or manage subscription →</a>
-</div>
+## What It Supports
 
-## What's included
+| Capability | Forecast-desk use |
+| --- | --- |
+| Web search and extraction | Find source material, inspect articles, collect timestamped evidence candidates. |
+| Image generation | Produce secondary visual artifacts for reports or briefs. |
+| Text-to-speech | Deliver spoken review alerts, summaries, or approvals. |
+| Cloud browser automation | Inspect dynamic pages when structured adapters or static extraction are not enough. |
 
-| | Tool | What you get |
-|---|---|---|
-| 🔍 | **Web search & extract** | Agent-grade web search and full-page extraction via Firecrawl. No rate limits to worry about — the gateway handles scaling. |
-| 🎨 | **Image generation** | Nine models under one endpoint: **FLUX 2 Klein 9B**, **FLUX 2 Pro**, **Z-Image Turbo**, **Nano Banana Pro** (Gemini 3 Pro Image), **GPT Image 1.5**, **GPT Image 2**, **Ideogram V3**, **Recraft V4 Pro**, **Qwen Image**. Pick per-generation with a flag, or let Hermes default to FLUX 2 Klein. |
-| 🔊 | **Text-to-speech** | OpenAI TTS voices wired into the `text_to_speech` tool. Drop voice notes into Telegram, generate audio for pipelines, narrate anything. |
-| 🌐 | **Cloud browser automation** | Headless Chromium sessions via Browser Use. `browser_navigate`, `browser_click`, `browser_type`, `browser_vision` — all the agent-driving primitives, no Browserbase account required. |
+The exact managed provider list can change. Use `superforecasting-agent tools`
+to see the live choices for the active profile.
 
-All four are pay-as-you-use billed against your Nous subscription. Use any combination — run the gateway for web and images while keeping your own ElevenLabs key for TTS, or route everything through Nous.
+## Why Use It
 
-## Why it's here
+Forecasting work often needs several outside services: search, extraction,
+browser automation, speech, and media providers. The Tool Gateway lets you use a
+single Nous-authenticated managed route for supported tools while preserving
+per-tool control.
 
-Building an agent that can actually *do things* means stitching together 5+ API subscriptions — each with their own signup, rate limits, billing, and quirks. The gateway collapses that into one account:
+It is useful when:
 
-- **One bill.** Pay Nous; we handle the rest.
-- **One signup.** No Firecrawl, FAL, Browser Use, or OpenAI audio accounts to manage.
-- **One key.** Your Nous Portal OAuth covers every tool.
-- **Same quality.** Same backends the direct-key route uses — just fronted by us.
+- a scheduled self-check needs web search without a local Firecrawl key
+- a source-watch workflow needs managed browser automation
+- a messaging gateway needs TTS for review alerts
+- you want consistent tool provenance across backtests or repeated review jobs
+- you want to avoid scattering vendor keys across profiles
 
-Bring your own keys anytime — per-tool, whenever you want to. The gateway isn't a lock-in, it's a shortcut.
+Bring-your-own keys remain supported. The gateway is a managed route, not a
+lock-in.
 
-## Get started
+## Get Started
+
+Pick Nous Portal as a provider:
 
 ```bash
-hermes model          # Pick Nous Portal as your provider
+superforecasting-agent model
 ```
 
-When you select Nous Portal, Hermes offers to turn on the Tool Gateway. Accept, and you're done — every supported tool is live on the next run.
+When the selected account has Tool Gateway access, setup offers to enable it for
+eligible tools.
 
-Check what's active at any time:
+You can also configure tools later:
 
 ```bash
-hermes status
+superforecasting-agent tools
 ```
 
-You'll see a section like:
+Check current routing:
 
+```bash
+superforecasting-agent status
 ```
+
+Example status section:
+
+```text
 ◆ Nous Tool Gateway
-  Nous Portal     ✓ managed tools available
-  Web tools       ✓ active via Nous subscription
-  Image gen       ✓ active via Nous subscription
-  TTS             ✓ active via Nous subscription
-  Browser         ○ active via Browser Use key
+  Nous Portal     yes managed tools available
+  Web tools       active via Nous subscription
+  Image gen       active via Nous subscription
+  TTS             active via Nous subscription
+  Browser         active via direct provider key
 ```
 
-Tools marked "active via Nous subscription" are going through the gateway. Anything else is using your own keys.
+Tools marked as active through the Nous subscription use the gateway. Other
+tools use direct keys or local providers.
 
 ## Eligibility
 
-The Tool Gateway is a **paid-subscription** feature. Free-tier Nous accounts can use Portal for inference but don't include managed tools — [upgrade your plan](https://portal.nousresearch.com/manage-subscription) to unlock the gateway.
+Tool Gateway access depends on the active Nous Portal account and subscription
+entitlements. If a managed tool is unavailable, configure a direct provider key
+with `superforecasting-agent tools` or update the account in
+[Nous Portal](https://portal.nousresearch.com).
 
-## Mix and match
+## Mix And Match
 
-The gateway is per-tool. Turn it on for just what you want:
+The gateway is configured per tool:
 
-- **All tools through Nous** — easiest; one subscription, done.
-- **Gateway for web + images, bring your own TTS** — keep your ElevenLabs voice, let Nous handle the rest.
-- **Gateway only for things you don't have keys for** — "I already pay for Browserbase, but I don't want a Firecrawl account" works fine.
+- Route web search through Nous while keeping your own ElevenLabs TTS key.
+- Route image generation through Nous while using direct Browserbase or Browser Use credentials.
+- Disable the gateway for a tool when you want direct-provider comparability in a benchmark run.
+- Keep direct keys in `.env` as fallbacks for profiles that do not use managed routing.
 
-Switch any tool at any time via:
+Switch any tool at any time:
 
 ```bash
-hermes tools          # Interactive picker for each tool category
+superforecasting-agent tools
 ```
 
-Select the tool, pick **Nous Subscription** as the provider (or any direct provider you prefer). No config editing required.
+## Forecast Ledger Boundaries
 
-## Using individual image models
+Gateway tool calls are not scoreable forecast state. Treat them as inputs:
 
-Image generation defaults to FLUX 2 Klein 9B for speed. Override per-call by passing the model ID to the `image_generate` tool:
+- A web result becomes forecast evidence only after `forecast evidence add`,
+  `forecast import`, or an equivalent ledger write.
+- A browser observation should include source URL, timestamp, claim type,
+  relevance, reliability, and stance before it affects a probability.
+- TTS output is delivery only.
+- Generated images are report artifacts unless explicitly attached to an export
+  or evidence packet.
 
-| Model | ID | Best for |
-|---|---|---|
-| FLUX 2 Klein 9B | `fal-ai/flux-2/klein/9b` | Fast, good default |
-| FLUX 2 Pro | `fal-ai/flux-2/pro` | Higher fidelity FLUX |
-| Z-Image Turbo | `fal-ai/z-image/turbo` | Stylized, fast |
-| Nano Banana Pro | `fal-ai/gemini-3-pro-image` | Google Gemini 3 Pro Image |
-| GPT Image 1.5 | `fal-ai/gpt-image-1/5` | OpenAI image gen, text+image |
-| GPT Image 2 | `fal-ai/gpt-image-2` | OpenAI latest |
-| Ideogram V3 | `fal-ai/ideogram/v3` | Strong prompt adherence + typography |
-| Recraft V4 Pro | `fal-ai/recraft/v4/pro` | Vector-style, graphic design |
-| Qwen Image | `fal-ai/qwen-image` | Alibaba multimodal |
+For backtests, preserve evidence cutoffs. Do not use a live gateway lookup to
+fill in facts that would not have been available at the simulated forecast time.
 
-The set evolves — `hermes tools` → Image Generation shows the current live list.
+## Image Models
 
----
+Image generation model availability is controlled by the active image provider.
+When using the Tool Gateway, inspect the current managed image list in:
 
-## Configuration reference
+```bash
+superforecasting-agent tools
+```
 
-Most users never need to touch this — `hermes model` and `hermes tools` cover every workflow interactively. This section is for writing config.yaml directly or scripting setups.
+Select Image Generation, then choose the managed provider and model for the
+profile. The selected model persists in `config.yaml`.
 
-### Per-tool `use_gateway` flag
+## Configuration Reference
 
-Each tool's config block takes a `use_gateway` boolean:
+Most users should use `superforecasting-agent model` and
+`superforecasting-agent tools`. Edit `config.yaml` directly only for scripted
+setup or profile templates.
+
+### Per-Tool `use_gateway`
+
+Each supported tool block can set `use_gateway: true`:
 
 ```yaml
 web:
@@ -129,48 +160,75 @@ browser:
   use_gateway: true
 ```
 
-Precedence: `use_gateway: true` routes through Nous regardless of any direct keys in `.env`. `use_gateway: false` (or absent) uses direct keys if available and only falls back to the gateway when none exist.
+When `use_gateway: true`, the runtime prefers the Nous managed route even if a
+direct vendor key is also present. When `use_gateway: false` or absent, the
+runtime uses direct keys or local providers according to the selected tool
+configuration.
 
-### Disabling the gateway
+### Disabling The Gateway
 
 ```yaml
 web:
-  use_gateway: false   # Hermes now uses FIRECRAWL_API_KEY from .env
+  use_gateway: false
 ```
 
-`hermes tools` automatically clears the flag when you pick a non-gateway provider, so this usually happens for you.
+The interactive tools picker clears stale gateway flags when you choose a
+direct provider.
 
-### Self-hosted gateway (advanced)
+### Self-Hosted Or Custom Gateway
 
-Running your own Nous-compatible gateway? Override endpoints in `~/.hermes/.env`:
+Custom deployments can override managed endpoints in the active `.env`:
 
 ```bash
 TOOL_GATEWAY_DOMAIN=your-domain.example.com
 TOOL_GATEWAY_SCHEME=https
-TOOL_GATEWAY_USER_TOKEN=your-token        # normally auto-populated from Portal login
-FIRECRAWL_GATEWAY_URL=https://...         # override one endpoint specifically
+TOOL_GATEWAY_USER_TOKEN=your-token
+FIRECRAWL_GATEWAY_URL=https://example.com/firecrawl
 ```
 
-These knobs exist for custom infrastructure setups (enterprise deployments, dev environments). Regular subscribers never set them.
+New forecast profiles store this under `~/.superforecasting-agent/.env`.
+Legacy `~/.hermes/.env` remains readable during migration.
+
+Regular Nous Portal users should not need these variables.
 
 ## FAQ
 
-### Does it work with Telegram / Discord / the other messaging gateways?
+### Does It Work With Telegram, Discord, Slack, And The API Server?
 
-Yes. Tool Gateway operates at the tool-execution layer, not the CLI. Every interface that can call a tool — CLI, Telegram, Discord, Slack, IRC, Teams, the API server, anything — benefits from it transparently.
+Yes. Tool Gateway routing happens at the tool-execution layer. Any surface that
+can call the configured tool can use the managed route: CLI, TUI, messaging
+gateway, scheduled jobs, API server, or dashboard-triggered workflows.
 
-### What happens if my subscription expires?
+### What Happens If Gateway Access Is Unavailable?
 
-Tools routed through the gateway stop working until you renew or swap in direct API keys via `hermes tools`. Hermes shows a clear error pointing at the portal.
+Tools configured with `use_gateway: true` fail until gateway access is restored
+or the tool is switched to a direct provider. Use:
 
-### Can I see usage or costs per tool?
+```bash
+superforecasting-agent tools
+```
 
-Yes — the [Nous Portal dashboard](https://portal.nousresearch.com) breaks usage down by tool so you can see what's driving your bill.
+to choose a direct provider or clear the gateway flag.
 
-### Is Modal (serverless terminal) included?
+### Can I Keep Existing API Keys?
 
-Modal is available as an **optional add-on** through the Nous subscription, not part of the default Tool Gateway bundle. Configure it via `hermes setup terminal` or directly in `config.yaml` when you want a remote sandbox for shell execution.
+Yes. Keep direct keys in `.env`. `use_gateway: true` selects the managed route
+for that tool. Setting `use_gateway: false` lets the direct key take over again.
 
-### Do I need to delete my existing API keys when I enable the gateway?
+### Can I See Usage Or Costs?
 
-No — keep them in `.env`. When `use_gateway: true`, Hermes skips direct keys and uses the gateway. Flip the flag back to `false` and your keys become the source again. The gateway isn't a lock-in.
+Use the [Nous Portal dashboard](https://portal.nousresearch.com) for account
+usage. For forecast provenance, also record which provider or gateway route
+produced evidence, model outputs, or report artifacts when they enter the
+ledger.
+
+### Is Modal Included?
+
+Modal terminal execution is separate from the Tool Gateway's web, media, TTS,
+and browser routing. Configure terminal backends with:
+
+```bash
+superforecasting-agent setup terminal
+```
+
+or by editing the terminal section in `config.yaml`.

@@ -1,16 +1,37 @@
 import sys
 
 
-def test_top_level_skills_flag_defaults_to_chat(monkeypatch):
+def test_bare_top_level_defaults_to_forecast_desk(monkeypatch):
     import hermes_cli.main as main_mod
+    import forecasting.cli as forecast_cli
 
     captured = {}
 
-    def fake_cmd_chat(args):
+    def fake_cmd_forecast(args):
+        captured["command"] = args.command
+        captured["db"] = getattr(args, "db", None)
+
+    monkeypatch.setattr(main_mod, "cmd_chat", lambda _args: (_ for _ in ()).throw(AssertionError("chat should not run")))
+    monkeypatch.setattr(forecast_cli, "cmd_forecast", fake_cmd_forecast)
+    monkeypatch.setattr(sys, "argv", ["hermes"])
+
+    main_mod.main()
+
+    assert captured == {"command": None, "db": None}
+
+
+def test_top_level_skills_flag_defaults_to_forecast_desk(monkeypatch):
+    import hermes_cli.main as main_mod
+    import forecasting.cli as forecast_cli
+
+    captured = {}
+
+    def fake_cmd_forecast(args):
         captured["skills"] = args.skills
         captured["command"] = args.command
 
-    monkeypatch.setattr(main_mod, "cmd_chat", fake_cmd_chat)
+    monkeypatch.setattr(main_mod, "cmd_chat", lambda _args: (_ for _ in ()).throw(AssertionError("chat should not run")))
+    monkeypatch.setattr(forecast_cli, "cmd_forecast", fake_cmd_forecast)
     monkeypatch.setattr(
         sys,
         "argv",

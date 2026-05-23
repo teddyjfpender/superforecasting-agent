@@ -23,9 +23,9 @@ def all_assignees_spawnable(monkeypatch):
 def _suppress_concurrent_hermes_gate(request, monkeypatch):
     """Default ``_detect_concurrent_hermes_instances`` to ``[]`` for every test.
 
-    The Windows update path now refuses to proceed when another
-    ``hermes.exe`` is detected (issue #26670). On a developer's Windows
-    machine running the test suite via ``hermes`` itself, this would
+    The Windows update path now refuses to proceed when another generated CLI
+    shim is detected (issue #26670). On a developer's Windows machine running
+    the test suite via ``superforecasting-agent`` or ``hermes`` itself, this would
     flag the running agent as a concurrent instance and abort every
     ``cmd_update`` test. Tests that want to exercise the gate explicitly
     re-patch ``_detect_concurrent_hermes_instances`` with their own

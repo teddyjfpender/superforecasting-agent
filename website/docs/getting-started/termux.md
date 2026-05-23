@@ -1,19 +1,19 @@
 ---
 sidebar_position: 3
 title: "Android / Termux"
-description: "Run Hermes Agent directly on an Android phone with Termux"
+description: "Run Superforecasting Agent directly on an Android phone with Termux"
 ---
 
-# Hermes on Android with Termux
+# Superforecasting Agent on Android with Termux
 
-This is the tested path for running Hermes Agent directly on an Android phone through [Termux](https://termux.dev/).
+This is the tested path for running Superforecasting Agent directly on an Android phone through [Termux](https://termux.dev/).
 
-It gives you a working local CLI on the phone, plus the core extras that are currently known to install cleanly on Android.
+It gives you a working local forecast desk on the phone, plus the core extras that are currently known to install cleanly on Android.
 
 ## What is supported in the tested path?
 
 The tested Termux bundle installs:
-- the Hermes CLI
+- the forecast desk CLI
 - cron support
 - PTY/background terminal support
 - Telegram gateway support (manual / best-effort background runs)
@@ -33,28 +33,38 @@ A few features still need desktop/server-style dependencies that are not publish
 
 - `.[all]` is not supported on Android today
 - the `voice` extra is blocked by `faster-whisper -> ctranslate2`, and `ctranslate2` does not publish Android wheels
-- automatic browser / Playwright bootstrap is skipped in the Termux installer
+- automatic browser / Playwright bootstrap is skipped in the tested Termux install path
 - Docker-based terminal isolation is not available inside Termux
 - Android may still suspend Termux background jobs, so gateway persistence is best-effort rather than a normal managed service
 
-That does not stop Hermes from working well as a phone-native CLI agent — it just means the recommended mobile install is intentionally narrower than the desktop/server install.
+That does not stop Superforecasting Agent from working well as a phone-native CLI forecasting desk. It just means the recommended mobile install is intentionally narrower than the desktop/server install.
 
 ---
 
-## Option 1: One-line installer
+## Option 1: Fork checkout install
 
-Hermes now ships a Termux-aware installer path:
+Use the fork checkout so the forecast-native command, ledger, docs, and package metadata are installed together:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+pkg update
+pkg install -y git python clang rust make pkg-config libffi openssl nodejs ripgrep ffmpeg
+git clone <this-fork-url> superforecasting-agent
+cd superforecasting-agent
+python -m venv venv
+source venv/bin/activate
+export ANDROID_API_LEVEL="$(getprop ro.build.version.sdk)"
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -e '.[termux]' -c constraints-termux.txt
+ln -sf "$PWD/venv/bin/superforecasting-agent" "$PREFIX/bin/superforecasting-agent"
+ln -sf "$PWD/venv/bin/forecast" "$PREFIX/bin/forecast"
 ```
 
-On Termux, the installer automatically:
-- uses `pkg` for system packages
-- creates the venv with `python -m venv`
-- attempts the broad `.[termux-all]` extra first and falls back to the smaller `.[termux]` extra (then a base install) — the curl installer matches this order automatically
-- links `hermes` into `$PREFIX/bin` so it stays on your Termux PATH
-- skips the untested browser / WhatsApp bootstrap
+Open the desk:
+
+```bash
+forecast status
+superforecasting-agent
+```
 
 If you want the explicit commands or need to debug a failed install, use the manual path below.
 
@@ -77,11 +87,11 @@ Why these packages?
 - `ripgrep` — fast file search
 - `ffmpeg` — media / TTS conversions
 
-### 2. Clone Hermes
+### 2. Clone the fork
 
 ```bash
-git clone --recurse-submodules https://github.com/NousResearch/hermes-agent.git
-cd hermes-agent
+git clone --recurse-submodules <this-fork-url> superforecasting-agent
+cd superforecasting-agent
 ```
 
 If you already cloned without submodules:
@@ -113,25 +123,27 @@ If you only want the minimal core agent, this also works:
 python -m pip install -e '.' -c constraints-termux.txt
 ```
 
-### 5. Put `hermes` on your Termux PATH
+### 5. Put commands on your Termux PATH
 
 ```bash
-ln -sf "$PWD/venv/bin/hermes" "$PREFIX/bin/hermes"
+ln -sf "$PWD/venv/bin/superforecasting-agent" "$PREFIX/bin/superforecasting-agent"
+ln -sf "$PWD/venv/bin/forecast" "$PREFIX/bin/forecast"
 ```
 
-`$PREFIX/bin` is already on PATH in Termux, so this makes the `hermes` command persist across new shells without re-activating the venv every time.
+`$PREFIX/bin` is already on PATH in Termux, so this makes the `superforecasting-agent` and `forecast` commands persist across new shells without re-activating the venv every time.
 
 ### 6. Verify the install
 
 ```bash
-hermes version
-hermes doctor
+superforecasting-agent version
+superforecasting-agent doctor
+forecast status
 ```
 
-### 7. Start Hermes
+### 7. Start Superforecasting Agent
 
 ```bash
-hermes
+superforecasting-agent
 ```
 
 ---
@@ -141,15 +153,15 @@ hermes
 ### Configure a model
 
 ```bash
-hermes model
+superforecasting-agent model
 ```
 
-Or set keys directly in `~/.hermes/.env`.
+Or set keys directly in `~/.superforecasting-agent/.env`. Existing `~/.hermes/.env` files remain readable during the compatibility transition.
 
 ### Re-run the full interactive setup wizard later
 
 ```bash
-hermes setup
+superforecasting-agent setup
 ```
 
 ### Install optional Node dependencies manually
@@ -203,7 +215,7 @@ export ANDROID_API_LEVEL="$(getprop ro.build.version.sdk)"
 python -m pip install -e '.[termux]' -c constraints-termux.txt
 ```
 
-### `hermes doctor` says ripgrep or Node is missing
+### `superforecasting-agent doctor` says ripgrep or Node is missing
 
 Install them with Termux packages:
 
@@ -231,12 +243,12 @@ python -m pip install -e '.[termux]' -c constraints-termux.txt
 
 - Docker backend is unavailable
 - local voice transcription via `faster-whisper` is unavailable in the tested path
-- browser automation setup is intentionally skipped by the installer
+- browser automation setup is intentionally skipped in the tested Termux install path
 - some optional extras may work, but only `.[termux]` and `.[termux-all]` are currently documented as the tested Android bundles
 
 If you hit a new Android-specific issue, please open a GitHub issue with:
 - your Android version
 - `termux-info`
 - `python --version`
-- `hermes doctor`
+- `superforecasting-agent doctor`
 - the exact install command and full error output

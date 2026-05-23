@@ -59,6 +59,36 @@ def test_write_json_returns_false_on_broken_pipe(monkeypatch):
     assert server.write_json({"ok": True}) is False
 
 
+def test_forecast_command_runs_forecast_cli_with_raw_args(tmp_path):
+    db_path = tmp_path / "forecast.sqlite"
+    resp = server.handle_request(
+        {
+            "id": "1",
+            "method": "forecast.command",
+            "params": {"arg": f"--db {db_path} status --json"},
+        }
+    )
+
+    assert "result" in resp, resp
+    assert resp["result"]["code"] == 0
+    payload = json.loads(resp["result"]["output"])
+    assert payload["slug"] == "superforecasting-agent"
+    assert payload["ledger_path"] == str(db_path)
+
+
+def test_forecast_command_reports_parse_errors():
+    resp = server.handle_request(
+        {
+            "id": "1",
+            "method": "forecast.command",
+            "params": {"arg": 'new "unterminated'},
+        }
+    )
+
+    assert "error" in resp, resp
+    assert resp["error"]["code"] == 4003
+
+
 def test_dispatch_rejects_non_object_request():
     resp = server.dispatch([])
 
@@ -401,10 +431,7 @@ def test_load_enabled_toolsets_rejects_disabled_mcp_env(monkeypatch, capsys):
         config_mod, "load_config", lambda: {"platform_toolsets": {"cli": ["memory"]}}
     )
 
-    # Sorted: ["kanban", "memory"]. `kanban` is auto-recovered by
-    # _get_platform_tools because it's a non-configurable platform toolset
-    # whose tools live in hermes-cli's universe (see toolsets.py).
-    assert server._load_enabled_toolsets() == ["kanban", "memory"]
+    assert server._load_enabled_toolsets() == ["memory"]
     err = capsys.readouterr().err
     assert "ignoring disabled MCP servers" in err
     assert "mcp-off" in err
@@ -425,7 +452,7 @@ def test_load_enabled_toolsets_falls_back_when_tui_env_invalid(monkeypatch, caps
         config_mod, "load_config", lambda: {"platform_toolsets": {"cli": ["memory"]}}
     )
 
-    assert server._load_enabled_toolsets() == ["kanban", "memory"]
+    assert server._load_enabled_toolsets() == ["memory"]
     assert "using configured CLI toolsets" in capsys.readouterr().err
 
 
@@ -1903,8 +1930,10 @@ def test_config_set_personality_preserves_history_and_returns_info(monkeypatch):
     assert "personality" in session["history"][1]["content"].lower()
     assert "You are helpful." in session["history"][1]["content"]
     assert session["history_version"] == 5
-    # Agent's system prompt was updated in-place; cached prompt untouched
-    assert agent.ephemeral_system_prompt == "You are helpful."
+    # Agent's system prompt was updated in-place with the forecast desk base
+    # prompt plus the selected personality overlay; cached prompt untouched.
+    assert "Superforecasting Agent" in agent.ephemeral_system_prompt
+    assert "You are helpful." in agent.ephemeral_system_prompt
     assert agent._cached_system_prompt == "old"
     assert ("session.info", "sid", {"model": "?"}) in emits
 
@@ -2228,7 +2257,7 @@ def test_session_status_reads_live_gateway_agent(monkeypatch):
         server._sessions.pop("sid", None)
 
     out = resp["result"]["output"]
-    assert "Hermes TUI Status" in out
+    assert "Superforecasting Agent TUI Status" in out
     assert "Session ID: session-key" in out
     assert "Title: Live TUI" in out
     assert "Model: live-model (live-provider)" in out
@@ -3981,6 +4010,7 @@ def test_browser_manage_connect_default_local_reports_launch_hint(monkeypatch):
     )
     assert any(
         "No supported Chromium-family browser executable was found" in line
+        or "Start a Chromium-family browser with remote debugging" in line
         for line in resp["result"]["messages"]
     )
     assert any(
@@ -4416,7 +4446,7 @@ def test_config_get_indicator_falls_back_to_default_for_unknown(monkeypatch):
     resp = server.handle_request(
         {"id": "1", "method": "config.get", "params": {"key": "indicator"}}
     )
-    assert resp["result"] == {"value": "kaomoji"}
+    assert resp["result"] == {"value": "unicode"}
 
 
 def test_config_get_indicator_falls_back_when_unset(monkeypatch):
@@ -4424,7 +4454,7 @@ def test_config_get_indicator_falls_back_when_unset(monkeypatch):
     resp = server.handle_request(
         {"id": "1", "method": "config.get", "params": {"key": "indicator"}}
     )
-    assert resp["result"] == {"value": "kaomoji"}
+    assert resp["result"] == {"value": "unicode"}
 
 
 # ── config.set indicator validation ──────────────────────────────────

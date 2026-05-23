@@ -8,12 +8,14 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import sys
 import time
 import urllib.request
 from pathlib import Path
 
 ENDPOINT = "https://api.usaspending.gov/api/v2/search/spending_by_award/"
+DEFAULT_UA = "superforecasting-agent osint-investigation"
 COLUMNS = [
     "award_id",
     "recipient_name",
@@ -56,10 +58,16 @@ _FIELDS = [
 
 
 def _post(body: dict) -> dict:
+    user_agent = (
+        os.environ.get("SUPERFORECASTING_AGENT_OSINT_UA")
+        or os.environ.get("FORECAST_OSINT_UA")
+        or os.environ.get("HERMES_OSINT_UA")
+        or DEFAULT_UA
+    )
     req = urllib.request.Request(
         ENDPOINT,
         data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json", "User-Agent": "hermes-agent osint-investigation"},
+        headers={"Content-Type": "application/json", "User-Agent": user_agent},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=60) as resp:

@@ -1,12 +1,12 @@
 ---
 sidebar_position: 11
 title: "Cron Internals"
-description: "How Hermes stores, schedules, edits, pauses, skill-loads, and delivers cron jobs"
+description: "How scheduled forecast jobs and reviews are stored"
 ---
 
 # Cron Internals
 
-The cron subsystem provides scheduled task execution — from simple one-shot delays to recurring cron-expression jobs with skill injection and cross-platform delivery.
+The cron subsystem provides scheduled task execution for the inherited runtime. In Superforecasting Agent, its primary product role is scheduled forecast work: stale-forecast reviews, watched-source checks, domain/topic self-checks, calibration refreshes, and learning-memory updates. General reminders and cross-platform deliveries still work, but forecast lifecycle jobs should prefer the `forecast schedule` workflow when they need ledger-aware scoring, postmortems, or recalibration.
 
 ## Key Files
 
@@ -16,7 +16,7 @@ The cron subsystem provides scheduled task execution — from simple one-shot de
 | `cron/scheduler.py` | Scheduler loop — due-job detection, execution, repeat tracking |
 | `tools/cronjob_tools.py` | Model-facing `cronjob` tool registration and handler |
 | `gateway/run.py` | Gateway integration — cron ticking in the long-running loop |
-| `hermes_cli/cron.py` | CLI `hermes cron` subcommands |
+| `hermes_cli/cron.py` | CLI `superforecasting-agent cron` subcommands with legacy `hermes cron` compatibility |
 
 ## Scheduling Model
 
@@ -33,20 +33,20 @@ The model-facing surface is a single `cronjob` tool with action-style operations
 
 ## Job Storage
 
-Jobs are stored in `~/.hermes/cron/jobs.json` with atomic write semantics (write to temp file, then rename). Each job record contains:
+Jobs are stored in `~/.superforecasting-agent/cron/jobs.json` with atomic write semantics (write to temp file, then rename). Legacy `~/.hermes/cron/jobs.json` remains accepted for inherited installations. Each job record contains:
 
 ```json
 {
   "id": "a1b2c3d4e5f6",
-  "name": "Daily briefing",
-  "prompt": "Summarize today's AI news and funding rounds",
+  "name": "Daily forecast source check",
+  "prompt": "Review watched AI funding sources, write material changes to the relevant forecast evidence logs, and flag stale probabilities.",
   "schedule": {
     "kind": "cron",
     "expr": "0 9 * * *",
     "display": "0 9 * * *"
   },
   "skills": ["ai-funding-daily-report"],
-  "deliver": "telegram:-1001234567890",
+  "deliver": "local",
   "repeat": {
     "times": null,
     "completed": 42
@@ -104,16 +104,18 @@ tick()
 
 In gateway mode, the scheduler runs in a dedicated background thread (`_start_cron_ticker` in `gateway/run.py`) that calls `scheduler.tick()` every 60 seconds alongside message handling.
 
-In CLI mode, cron jobs only fire when `hermes cron` commands are run or during active CLI sessions.
+In CLI mode, cron jobs only fire when `superforecasting-agent cron` commands are run or during active CLI sessions.
 
 ### Fresh Session Isolation
 
 Each cron job runs in a completely fresh agent session:
 
 - No conversation history from previous runs
-- No memory of previous cron executions (unless persisted to memory/files)
+- No memory of previous cron executions unless persisted to the forecast ledger, memory, or files
 - The prompt must be self-contained — cron jobs cannot ask clarifying questions
 - The `cronjob` toolset is disabled (recursion guard)
+
+For forecast jobs, prompts should identify the forecast IDs, domains, watched sources, and desired ledger action. Do not rely on compressed chat context to remember active beliefs.
 
 ## Skill-Backed Jobs
 
@@ -127,7 +129,7 @@ A cron job can attach one or more skills via the `skills` field. At execution ti
 This enables reusable, tested workflows without pasting full instructions into cron prompts. For example:
 
 ```
-Create a daily funding report → attach "ai-funding-daily-report" skill
+Create a daily AI-funding forecast review -> attach "ai-funding-daily-report" skill
 ```
 
 ### Script-Backed Jobs
@@ -135,7 +137,7 @@ Create a daily funding report → attach "ai-funding-daily-report" skill
 Jobs can also attach a Python script via the `script` field. The script runs *before* each agent turn, and its stdout is injected into the prompt as context. This enables data collection and change detection patterns:
 
 ```python
-# ~/.hermes/scripts/check_competitors.py
+# ~/.superforecasting-agent/scripts/check_competitors.py
 import requests, json
 # Fetch competitor release notes, diff against last run
 # Print summary to stdout — agent analyzes and reports
@@ -144,7 +146,7 @@ import requests, json
 The script timeout defaults to 120 seconds. `_get_script_timeout()` resolves the limit through a three-layer chain:
 
 1. **Module-level override** — `_SCRIPT_TIMEOUT` (for tests/monkeypatching). Only used when it differs from the default.
-2. **Environment variable** — `HERMES_CRON_SCRIPT_TIMEOUT`
+2. **Environment variable** — `HERMES_CRON_SCRIPT_TIMEOUT` (inherited env-var name)
 3. **Config** — `cron.script_timeout_seconds` in `config.yaml` (read via `load_config()`)
 4. **Default** — 120 seconds
 
@@ -164,7 +166,7 @@ Cron job results can be delivered to any supported platform:
 | Target | Syntax | Example |
 |--------|--------|---------|
 | Origin chat | `origin` | Deliver to the chat where the job was created |
-| Local file | `local` | Save to `~/.hermes/cron/output/` |
+| Local file | `local` | Save to `~/.superforecasting-agent/cron/output/` |
 | Telegram | `telegram` or `telegram:<chat_id>` | `telegram:-1001234567890` |
 | Discord | `discord` or `discord:#channel` | `discord:#engineering` |
 | Slack | `slack` | Deliver to Slack home channel |
@@ -205,20 +207,28 @@ Cron-run sessions have the `cronjob` toolset disabled. This prevents:
 
 ## Locking
 
-The scheduler uses cross-process file-based locking (`fcntl.flock` on Unix, `msvcrt.locking` on Windows) to prevent overlapping ticks from executing the same due-job batch twice — even between the gateway's in-process ticker and a standalone `hermes cron` / manual `tick()` call. If the lock cannot be acquired, `tick()` returns 0 immediately.
+The scheduler uses cross-process file-based locking (`fcntl.flock` on Unix, `msvcrt.locking` on Windows) to prevent overlapping ticks from executing the same due-job batch twice — even between the gateway's in-process ticker and a standalone `superforecasting-agent cron` / manual `tick()` call. If the lock cannot be acquired, `tick()` returns 0 immediately.
 
 ## CLI Interface
 
-The `hermes cron` CLI provides direct job management:
+The `superforecasting-agent cron` CLI provides direct job management:
 
 ```bash
-hermes cron list                    # Show all jobs
-hermes cron create                  # Interactive job creation (alias: add)
-hermes cron edit <job_id>           # Edit job configuration
-hermes cron pause <job_id>          # Pause a running job
-hermes cron resume <job_id>         # Resume a paused job
-hermes cron run <job_id>            # Trigger immediate execution
-hermes cron remove <job_id>         # Delete a job
+superforecasting-agent cron list                    # Show all jobs
+superforecasting-agent cron create                  # Interactive job creation (alias: add)
+superforecasting-agent cron edit <job_id>           # Edit job configuration
+superforecasting-agent cron pause <job_id>          # Pause a running job
+superforecasting-agent cron resume <job_id>         # Resume a paused job
+superforecasting-agent cron run <job_id>            # Trigger immediate execution
+superforecasting-agent cron remove <job_id>         # Delete a job
+```
+
+For forecast-native scheduled review loops, use:
+
+```bash
+forecast schedule list
+forecast schedule add <forecast-id> --every 24h --auto-learn
+forecast self-check --domain "ai-funding"
 ```
 
 ## Related Docs

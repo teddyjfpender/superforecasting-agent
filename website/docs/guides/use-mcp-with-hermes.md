@@ -1,25 +1,25 @@
 ---
 sidebar_position: 6
-title: "Use MCP with Hermes"
-description: "A practical guide to connecting MCP servers to Hermes Agent, filtering their tools, and using them safely in real workflows"
+title: "Use MCP with Superforecasting Agent"
+description: "Connect MCP servers to the forecast desk and filter tools safely."
 ---
 
-# Use MCP with Hermes
+# Use MCP with Superforecasting Agent
 
-This guide shows how to actually use MCP with Hermes Agent in day-to-day workflows.
+This guide shows how to use MCP with Superforecasting Agent in day-to-day forecast research workflows.
 
 If the feature page explains what MCP is, this guide is about how to get value from it quickly and safely.
 
 ## When should you use MCP?
 
 Use MCP when:
-- a tool already exists in MCP form and you do not want to build a native Hermes tool
-- you want Hermes to operate against a local or remote system through a clean RPC layer
+- a research, data, browser, or internal-system tool already exists in MCP form and you do not want to build a native forecast tool
+- you want Superforecasting Agent to operate against a local or remote system through a clean RPC layer
 - you want fine-grained per-server exposure control
-- you want to connect Hermes to internal APIs, databases, or company systems without modifying Hermes core
+- you want to connect the forecast desk to internal APIs, databases, or company systems without modifying fork core
 
 Do not use MCP when:
-- a built-in Hermes tool already solves the job well
+- a built-in forecast/source/ledger tool already solves the job well
 - the server exposes a huge dangerous tool surface and you are not prepared to filter it
 - you only need one very narrow integration and a native tool would be simpler and safer
 
@@ -27,9 +27,9 @@ Do not use MCP when:
 
 Think of MCP as an adapter layer:
 
-- Hermes remains the agent
+- Superforecasting Agent remains the forecast agent
 - MCP servers contribute tools
-- Hermes discovers those tools at startup or reload time
+- the runtime discovers those tools at startup or reload time
 - the model can use them like normal tools
 - you control how much of each server is visible
 
@@ -37,12 +37,12 @@ That last part matters. Good MCP usage is not just “connect everything.” It 
 
 ## Step 1: install MCP support
 
-If you installed Hermes with the standard install script, MCP support is already included (the installer runs `uv pip install -e ".[all]"`).
+If you installed Superforecasting Agent with the standard install script, MCP support is already included.
 
 If you installed without extras and need to add MCP separately:
 
 ```bash
-cd ~/.hermes/hermes-agent
+# From your Superforecasting Agent checkout
 uv pip install -e ".[mcp]"
 ```
 
@@ -63,10 +63,10 @@ mcp_servers:
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/my-project"]
 ```
 
-Then start Hermes:
+Then start Superforecasting Agent:
 
 ```bash
-hermes chat
+superforecasting-agent chat
 ```
 
 Now ask something concrete:
@@ -79,8 +79,8 @@ Inspect this project and summarize the repo layout.
 
 You can verify MCP in a few ways:
 
-- Hermes banner/status should show MCP integration when configured
-- ask Hermes what tools it has available
+- the banner/status should show MCP integration when configured
+- ask the agent what tools it has available
 - use `/reload-mcp` after config changes
 - check logs if the server failed to connect
 
@@ -109,32 +109,32 @@ mcp_servers:
 
 This is usually the best default for sensitive systems.
 
-## WSL2: bridge Hermes in WSL to Windows Chrome
+## WSL2: bridge Superforecasting Agent in WSL to Windows Chrome {#wsl2-bridge-hermes-in-wsl-to-windows-chrome}
 
 This is the practical setup when:
 
-- Hermes runs inside WSL2
+- Superforecasting Agent runs inside WSL2
 - the browser you want to control is your normal signed-in Chrome on Windows
 - `/browser connect` is awkward or unreliable from WSL
 
-In this setup, Hermes does **not** connect to Chrome directly. Instead:
+In this setup, Superforecasting Agent does **not** connect to Chrome directly. Instead:
 
-- Hermes runs in WSL
-- Hermes starts a local stdio MCP server
+- Superforecasting Agent runs in WSL
+- the runtime starts a local stdio MCP server
 - that MCP server is launched through Windows interop (`cmd.exe` or `powershell.exe`)
 - the MCP server attaches to your live Windows Chrome session
 
 Mental model:
 
 ```text
-Hermes (WSL) -> MCP stdio bridge -> Windows Chrome
+Superforecasting Agent (WSL) -> MCP stdio bridge -> Windows Chrome
 ```
 
 ### Why this mode is useful
 
 - you keep your real Windows browser profile, cookies, and logins
-- Hermes stays in its supported Unix environment (WSL2)
-- browser control is exposed as MCP tools instead of relying on Hermes core browser transport
+- Superforecasting Agent stays in its supported Unix environment (WSL2)
+- browser control is exposed as MCP tools instead of relying on the inherited core browser transport
 
 ### Recommended server
 
@@ -143,16 +143,16 @@ Use `chrome-devtools-mcp`.
 If your Windows Chrome already has live remote debugging enabled from `chrome://inspect/#remote-debugging`, add it like this from WSL:
 
 ```bash
-hermes mcp add chrome-devtools-win --command cmd.exe --args /c npx -y chrome-devtools-mcp@latest --autoConnect --no-usage-statistics
+superforecasting-agent mcp add chrome-devtools-win --command cmd.exe --args /c npx -y chrome-devtools-mcp@latest --autoConnect --no-usage-statistics
 ```
 
 After saving the server:
 
 ```bash
-hermes mcp test chrome-devtools-win
+superforecasting-agent mcp test chrome-devtools-win
 ```
 
-Then start a fresh Hermes session or run:
+Then start a fresh Superforecasting Agent session or run:
 
 ```text
 /reload-mcp
@@ -160,7 +160,7 @@ Then start a fresh Hermes session or run:
 
 ### Typical prompt
 
-Once loaded, Hermes can use the MCP-prefixed browser tools directly. For example:
+Once loaded, Superforecasting Agent can use the MCP-prefixed browser tools directly. For example:
 
 ```text
 调用 MCP 工具 mcp_chrome_devtools_win_list_pages，列出当前浏览器标签页。
@@ -168,7 +168,7 @@ Once loaded, Hermes can use the MCP-prefixed browser tools directly. For example
 
 ### When `/browser connect` is the wrong tool
 
-If Hermes runs in WSL and Chrome runs on Windows, `/browser connect` may fail even though Chrome is open and debuggable.
+If Superforecasting Agent runs in WSL and Chrome runs on Windows, `/browser connect` may fail even though Chrome is open and debuggable.
 
 Common reasons:
 
@@ -180,8 +180,8 @@ In those cases, keep `/browser connect` for same-environment setups and use MCP 
 
 ### Known pitfalls
 
-- Start Hermes from a Windows-mounted path like `/mnt/c/Users/<you>` or `/mnt/c/workspace/...` when using Windows stdio executables through MCP.
-- If you start Hermes from `/root` or `/home/...`, Windows may emit a `UNC` current-directory warning before the MCP server starts.
+- Start Superforecasting Agent from a Windows-mounted path like `/mnt/c/Users/<you>` or `/mnt/c/workspace/...` when using Windows stdio executables through MCP.
+- If you start from `/root` or `/home/...`, Windows may emit a `UNC` current-directory warning before the MCP server starts.
 - If `chrome-devtools-mcp --autoConnect` times out while enumerating pages, reduce background/frozen tabs in Chrome and retry.
 
 ### Example: blacklist dangerous actions
@@ -209,14 +209,14 @@ mcp_servers:
 
 ## What does filtering actually affect?
 
-There are two categories of MCP-exposed functionality in Hermes:
+There are two categories of MCP-exposed functionality in the inherited runtime:
 
 1. Server-native MCP tools
 - filtered with:
   - `tools.include`
   - `tools.exclude`
 
-2. Hermes-added utility wrappers
+2. Runtime-added utility wrappers
 - filtered with:
   - `tools.resources`
   - `tools.prompts`
@@ -235,13 +235,13 @@ These wrappers only appear if:
 - your config allows them, and
 - the MCP server session actually supports those capabilities
 
-So Hermes will not pretend a server has resources/prompts if it does not.
+So Superforecasting Agent will not pretend a server has resources/prompts if it does not.
 
 ## Common patterns
 
-### Pattern 1: local project assistant
+### Pattern 1: local forecast workspace
 
-Use MCP for a repo-local filesystem or git server when you want Hermes to reason over a bounded workspace.
+Use MCP for a local filesystem or git server when you want the forecast agent to reason over a bounded evidence workspace.
 
 ```yaml
 mcp_servers:
@@ -257,14 +257,14 @@ mcp_servers:
 Good prompts:
 
 ```text
-Review the project structure and identify where configuration lives.
+Review the evidence folder and identify which files contain current source data.
 ```
 
 ```text
-Check the local git state and summarize what changed recently.
+Check the local git state and summarize which forecast inputs changed recently.
 ```
 
-### Pattern 2: GitHub triage assistant
+### Pattern 2: GitHub source triage
 
 ```yaml
 mcp_servers:
@@ -282,14 +282,14 @@ mcp_servers:
 Good prompts:
 
 ```text
-List open issues about MCP, cluster them by theme, and draft a high-quality issue for the most common bug.
+List open issues about this forecast-data connector and cluster them by failure mode.
 ```
 
 ```text
-Search the repo for uses of _discover_and_register_server and explain how MCP tools are registered.
+Search the repo for source-adapter registration code and explain how new evidence tools are exposed.
 ```
 
-### Pattern 3: internal API assistant
+### Pattern 3: internal data API
 
 ```yaml
 mcp_servers:
@@ -306,7 +306,7 @@ mcp_servers:
 Good prompts:
 
 ```text
-Look up customer ACME Corp and summarize recent invoice activity.
+Look up the latest country-risk rows for the target market and summarize changes that could affect the forecast.
 ```
 
 This is the sort of place where a strict whitelist is far better than an exclude list.
@@ -353,7 +353,7 @@ mcp_servers:
       resources: false
 ```
 
-Start Hermes and ask:
+Start Superforecasting Agent and ask:
 
 ```text
 Search the codebase for references to MCP and summarize the main integration points.
@@ -393,13 +393,13 @@ mcp_servers:
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/project"]
 ```
 
-Now Hermes can combine them:
+Now Superforecasting Agent can combine them:
 
 ```text
-Inspect the local project files, then create a GitHub issue summarizing the bug you find.
+Inspect the local forecast adapter files, then create a GitHub issue summarizing the stale-source bug you find.
 ```
 
-That is where MCP gets powerful: multi-system workflows without changing Hermes core.
+That is where MCP gets powerful: multi-system research workflows without changing fork core.
 
 ## Safe usage recommendations
 
@@ -458,7 +458,7 @@ Check:
 
 ### "Why do I see fewer tools than the MCP server advertises?"
 
-Because Hermes now respects your per-server policy and capability-aware registration. That is expected, and usually desirable.
+Because Superforecasting Agent respects your per-server policy and capability-aware registration. That is expected, and usually desirable.
 
 ### "How do I remove an MCP server without deleting the config?"
 

@@ -1,8 +1,8 @@
 ---
 name: honcho
-description: Configure and use Honcho memory with Hermes -- cross-session user modeling, multi-profile peer isolation, observation config, dialectic reasoning, session summaries, and context budget enforcement. Use when setting up Honcho, troubleshooting memory, managing profiles with Honcho peers, or tuning observation, recall, and dialectic settings.
+description: Configure and use Honcho memory with Superforecasting Agent -- cross-session user modeling, multi-profile peer isolation, observation config, dialectic reasoning, session summaries, and context budget enforcement. Use when setting up Honcho, troubleshooting memory, managing profiles with Honcho peers, or tuning observation, recall, and dialectic settings.
 version: 2.0.0
-author: Hermes Agent
+author: Superforecasting Agent
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -14,9 +14,11 @@ prerequisites:
   pip: [honcho-ai]
 ---
 
-# Honcho Memory for Hermes
+# Honcho Memory for Superforecasting Agent
 
-Honcho provides AI-native cross-session user modeling. It learns who the user is across conversations and gives every Hermes profile its own peer identity while sharing a unified view of the user.
+Honcho provides AI-native cross-session user modeling. It learns who the user is across conversations and gives every Superforecasting Agent profile its own peer identity while sharing a unified view of the user.
+
+Honcho is auxiliary recall. Durable forecast questions, probabilities, evidence, model runs, resolutions, scores, postmortems, calibration lessons, and domain/topic error profiles belong in the forecast ledger.
 
 ## When to Use
 
@@ -32,14 +34,14 @@ Honcho provides AI-native cross-session user modeling. It learns who the user is
 ### Cloud (app.honcho.dev)
 
 ```bash
-hermes honcho setup
+superforecasting-agent honcho setup
 # select "cloud", paste API key from https://app.honcho.dev
 ```
 
 ### Self-hosted
 
 ```bash
-hermes honcho setup
+superforecasting-agent honcho setup
 # select "local", enter base URL (e.g. http://localhost:8000)
 ```
 
@@ -48,7 +50,7 @@ See: https://docs.honcho.dev/v3/guides/integrations/hermes#running-honcho-locall
 ### Verify
 
 ```bash
-hermes honcho status    # shows resolved config, connection test, peer info
+superforecasting-agent honcho status    # shows resolved config, connection test, peer info
 ```
 
 ## Architecture
@@ -59,7 +61,7 @@ When Honcho injects context into the system prompt (in `hybrid` or `context` rec
 
 1. **Session summary** -- a short digest of the current session so far (placed first so the model has immediate conversational continuity)
 2. **User representation** -- Honcho's accumulated model of the user (preferences, facts, patterns)
-3. **AI peer card** -- the identity card for this Hermes profile's AI peer
+3. **AI peer card** -- the identity card for this Superforecasting Agent profile's AI peer
 
 The session summary is generated automatically by Honcho at the start of each turn (when a prior session exists). It gives the model a warm start without replaying full history.
 
@@ -76,10 +78,10 @@ You do not need to configure this -- it is automatic based on session state.
 
 ### Peers
 
-Honcho models conversations as interactions between **peers**. Hermes creates two peers per session:
+Honcho models conversations as interactions between **peers**. Superforecasting Agent creates two peers per session:
 
 - **User peer** (`peerName`): represents the human. Honcho builds a user representation from observed messages.
-- **AI peer** (`aiPeer`): represents this Hermes instance. Each profile gets its own AI peer so agents develop independent views.
+- **AI peer** (`aiPeer`): represents this Superforecasting Agent instance. Each profile gets its own AI peer so agents develop independent views.
 
 ### Observation
 
@@ -120,10 +122,10 @@ Honcho sessions scope where messages and observations land. Strategy options:
 |----------|----------|
 | `per-directory` (default) | One session per working directory |
 | `per-repo` | One session per git repository root |
-| `per-session` | New Honcho session each Hermes run |
+| `per-session` | New Honcho session each Superforecasting Agent run |
 | `global` | Single session across all directories |
 
-Manual override: `hermes honcho map my-project-name`
+Manual override: `superforecasting-agent honcho map my-project-name`
 
 ### Recall Modes
 
@@ -196,7 +198,7 @@ Higher levels produce richer synthesis but cost more tokens on Honcho's backend.
 
 ## Multi-Profile Setup
 
-Each Hermes profile gets its own Honcho AI peer while sharing the same workspace (user context). This means:
+Each Superforecasting Agent profile gets its own Honcho AI peer while sharing the same workspace (user context). This means:
 
 - All profiles see the same user representation
 - Each profile builds its own AI identity and observations
@@ -205,7 +207,7 @@ Each Hermes profile gets its own Honcho AI peer while sharing the same workspace
 ### Create a profile with Honcho peer
 
 ```bash
-hermes profile create coder --clone
+superforecasting-agent profile create coder --clone
 # creates host block hermes.coder, AI peer "coder", inherits config from default
 ```
 
@@ -218,7 +220,7 @@ What `--clone` does for Honcho:
 ### Backfill existing profiles
 
 ```bash
-hermes honcho sync    # creates host blocks for all profiles that don't have one yet
+superforecasting-agent honcho sync    # creates host blocks for all profiles that don't have one yet
 ```
 
 ### Per-profile config
@@ -288,7 +290,7 @@ honcho_conclude delete_id="abc123"    # PII removal
 
 ## Agent Usage Patterns
 
-Guidelines for Hermes when Honcho memory is active.
+Guidelines for Superforecasting Agent when Honcho memory is active.
 
 ### On conversation start
 
@@ -389,13 +391,13 @@ This fix addresses edge cases where raw user conclusions containing markup or sp
 ## Troubleshooting
 
 ### "Honcho not configured"
-Run `hermes honcho setup`. Ensure `memory.provider: honcho` is in `~/.hermes/config.yaml`.
+Run `superforecasting-agent honcho setup`. Ensure `memory.provider: honcho` is in `~/.superforecasting-agent/config.yaml`.
 
 ### Memory not persisting across sessions
-Check `hermes honcho status` -- verify `saveMessages: true` and `writeFrequency` isn't `session` (which only writes on exit).
+Check `superforecasting-agent honcho status` -- verify `saveMessages: true` and `writeFrequency` isn't `session` (which only writes on exit).
 
 ### Profile not getting its own peer
-Use `--clone` when creating: `hermes profile create <name> --clone`. For existing profiles: `hermes honcho sync`.
+Use `--clone` when creating: `superforecasting-agent profile create <name> --clone`. For existing profiles: `superforecasting-agent honcho sync`.
 
 ### Observation changes in dashboard not reflected
 Observation config is synced from the server on each session init. Start a new session after changing settings in the Honcho UI.
@@ -413,19 +415,19 @@ Session summary requires at least one prior turn in the current Honcho session. 
 
 | Command | Description |
 |---------|-------------|
-| `hermes honcho setup` | Interactive setup wizard (cloud/local, identity, observation, recall, sessions) |
-| `hermes honcho status` | Show resolved config, connection test, peer info for active profile |
-| `hermes honcho enable` | Enable Honcho for the active profile (creates host block if needed) |
-| `hermes honcho disable` | Disable Honcho for the active profile |
-| `hermes honcho peer` | Show or update peer names (`--user <name>`, `--ai <name>`, `--reasoning <level>`) |
-| `hermes honcho peers` | Show peer identities across all profiles |
-| `hermes honcho mode` | Show or set recall mode (`hybrid`, `context`, `tools`) |
-| `hermes honcho tokens` | Show or set token budgets (`--context <N>`, `--dialectic <N>`) |
-| `hermes honcho sessions` | List known directory-to-session-name mappings |
-| `hermes honcho map <name>` | Map current working directory to a Honcho session name |
-| `hermes honcho identity` | Seed AI peer identity or show both peer representations |
-| `hermes honcho sync` | Create host blocks for all Hermes profiles that don't have one yet |
-| `hermes honcho migrate` | Step-by-step migration guide from OpenClaw native memory to Hermes + Honcho |
-| `hermes memory setup` | Generic memory provider picker (selecting "honcho" runs the same wizard) |
-| `hermes memory status` | Show active memory provider and config |
-| `hermes memory off` | Disable external memory provider |
+| `superforecasting-agent honcho setup` | Interactive setup wizard (cloud/local, identity, observation, recall, sessions) |
+| `superforecasting-agent honcho status` | Show resolved config, connection test, peer info for active profile |
+| `superforecasting-agent honcho enable` | Enable Honcho for the active profile (creates host block if needed) |
+| `superforecasting-agent honcho disable` | Disable Honcho for the active profile |
+| `superforecasting-agent honcho peer` | Show or update peer names (`--user <name>`, `--ai <name>`, `--reasoning <level>`) |
+| `superforecasting-agent honcho peers` | Show peer identities across all profiles |
+| `superforecasting-agent honcho mode` | Show or set recall mode (`hybrid`, `context`, `tools`) |
+| `superforecasting-agent honcho tokens` | Show or set token budgets (`--context <N>`, `--dialectic <N>`) |
+| `superforecasting-agent honcho sessions` | List known directory-to-session-name mappings |
+| `superforecasting-agent honcho map <name>` | Map current working directory to a Honcho session name |
+| `superforecasting-agent honcho identity` | Seed AI peer identity or show both peer representations |
+| `superforecasting-agent honcho sync` | Create host blocks for all Superforecasting Agent profiles that don't have one yet |
+| `superforecasting-agent honcho migrate` | Step-by-step migration guide from OpenClaw native memory to Superforecasting Agent + Honcho |
+| `superforecasting-agent memory setup` | Generic memory provider picker (selecting "honcho" runs the same wizard) |
+| `superforecasting-agent memory status` | Show active memory provider and config |
+| `superforecasting-agent memory off` | Disable external memory provider |

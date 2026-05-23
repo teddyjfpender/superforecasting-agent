@@ -4,6 +4,12 @@
 **Last updated:** 2026-04-23
 **Author:** @teknium1
 
+This is inherited browser-tooling design documentation. In Superforecasting
+Agent, the supervisor is useful for web research, source inspection, and
+interactive pages, but it is not a forecast-state store. Any evidence found
+through browser tools should be written to the forecast ledger with source
+metadata.
+
 ## Problem
 
 Native JS dialogs (`alert`/`confirm`/`prompt`/`beforeunload`) and iframes are
@@ -57,7 +63,7 @@ Camofox stays unsupported for this PR; follow-up upstream issue planned at
 
 ### CDPSupervisor
 
-One `asyncio.Task` running in a background daemon thread per Hermes `task_id`.
+One `asyncio.Task` running in a background daemon thread per runtime `task_id`.
 Holds a persistent WebSocket to the backend's CDP endpoint. Maintains:
 
 - **Dialog queue** — `List[PendingDialog]` with `{id, type, message, default_prompt, session_id, opened_at}`

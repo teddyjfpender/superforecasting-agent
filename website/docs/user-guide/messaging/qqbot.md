@@ -1,6 +1,8 @@
 # QQ Bot
 
-Connect Hermes to QQ via the **Official QQ Bot API (v2)** — supporting private (C2C), group @-mentions, guild, and direct messages with voice transcription.
+Connect the forecast gateway to QQ via the **Official QQ Bot API (v2)** — supporting private (C2C), group @-mentions, guild, and direct messages with voice transcription.
+
+Use QQ for forecast review alerts, source notes, approval prompts, and voice-message evidence capture. Durable probabilities, evidence, assumptions, resolutions, postmortems, and calibration lessons should be written to the forecast ledger.
 
 ## Overview
 
@@ -28,14 +30,14 @@ The QQ Bot adapter uses the [Official QQ Bot API](https://bot.q.qq.com/wiki/deve
 ### Interactive setup
 
 ```bash
-hermes gateway setup
+superforecasting-agent gateway setup
 ```
 
 Select **QQ Bot** from the platform list and follow the prompts.
 
 ### Manual configuration
 
-Set the required environment variables in `~/.hermes/.env`:
+Set the required environment variables in `~/.superforecasting-agent/.env`:
 
 ```bash
 QQ_APP_ID=your-app-id
@@ -48,7 +50,7 @@ QQ_CLIENT_SECRET=your-app-secret
 |---|---|---|
 | `QQ_APP_ID` | QQ Bot App ID (required) | — |
 | `QQ_CLIENT_SECRET` | QQ Bot App Secret (required) | — |
-| `QQBOT_HOME_CHANNEL` | OpenID for cron/notification delivery | — |
+| `QQBOT_HOME_CHANNEL` | OpenID for scheduled review and notification delivery | — |
 | `QQBOT_HOME_CHANNEL_NAME` | Display name for home channel | `Home` |
 | `QQ_ALLOWED_USERS` | Comma-separated user OpenIDs for DM access | open (all users) |
 | `QQ_GROUP_ALLOWED_USERS` | Comma-separated group OpenIDs for group access | — |
@@ -60,7 +62,7 @@ QQ_CLIENT_SECRET=your-app-secret
 
 ## Advanced Configuration
 
-For fine-grained control, add platform settings to `~/.hermes/config.yaml`:
+For fine-grained control, add platform settings to `~/.superforecasting-agent/config.yaml`:
 
 ```yaml
 platforms:

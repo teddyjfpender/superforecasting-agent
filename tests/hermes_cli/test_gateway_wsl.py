@@ -129,6 +129,11 @@ class TestSupportsSystemdServicesWSL:
         monkeypatch.setattr(gateway, "is_linux", lambda: True)
         monkeypatch.setattr(gateway, "is_termux", lambda: False)
         monkeypatch.setattr(gateway, "is_wsl", lambda: True)
+        monkeypatch.setattr(
+            gateway.shutil,
+            "which",
+            lambda name: "/usr/bin/systemctl" if name == "systemctl" else None,
+        )
         monkeypatch.setattr(gateway, "_wsl_systemd_operational", lambda: True)
         assert gateway.supports_systemd_services() is True
 
@@ -145,6 +150,11 @@ class TestSupportsSystemdServicesWSL:
         monkeypatch.setattr(gateway, "is_linux", lambda: True)
         monkeypatch.setattr(gateway, "is_termux", lambda: False)
         monkeypatch.setattr(gateway, "is_wsl", lambda: False)
+        monkeypatch.setattr(
+            gateway.shutil,
+            "which",
+            lambda name: "/usr/bin/systemctl" if name == "systemctl" else None,
+        )
         assert gateway.supports_systemd_services() is True
 
     def test_termux_still_excluded(self, monkeypatch):
@@ -181,7 +191,7 @@ class TestGatewayCommandWSLMessages:
         out = capsys.readouterr().out
         assert "WSL detected" in out
         assert "systemd is not running" in out
-        assert "hermes gateway run" in out
+        assert "superforecasting-agent gateway run" in out
         assert "tmux" in out
 
     def test_start_wsl_no_systemd(self, monkeypatch, capsys):
@@ -199,7 +209,7 @@ class TestGatewayCommandWSLMessages:
 
         out = capsys.readouterr().out
         assert "WSL detected" in out
-        assert "hermes gateway run" in out
+        assert "superforecasting-agent gateway run" in out
         assert "wsl.conf" in out
 
     def test_status_wsl_running_manual(self, monkeypatch, capsys):
@@ -248,5 +258,5 @@ class TestGatewayCommandWSLMessages:
         gateway.gateway_command(args)
 
         out = capsys.readouterr().out
-        assert "hermes gateway run" in out
+        assert "superforecasting-agent gateway run" in out
         assert "tmux" in out

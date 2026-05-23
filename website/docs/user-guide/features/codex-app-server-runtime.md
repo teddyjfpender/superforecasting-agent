@@ -1,252 +1,204 @@
 ---
-title: Codex App-Server Runtime (optional)
+title: Codex App-Server Runtime
 sidebar_label: Codex App-Server Runtime
 ---
 
 # Codex App-Server Runtime
 
-Hermes can optionally hand `openai/*` and `openai-codex/*` turns to the [Codex CLI app-server](https://github.com/openai/codex) instead of running its own tool loop. When enabled, terminal commands, file edits, sandboxing, and MCP tool calls all execute inside Codex's runtime — Hermes becomes the shell around it (sessions DB, slash commands, gateway, memory and skill review).
+Superforecasting Agent can optionally hand `openai/*` and `openai-codex/*` turns to the Codex CLI app-server instead of using the default agent loop. When enabled, shell commands, file edits, sandboxing, and Codex-native MCP/plugin calls run inside Codex's runtime.
 
-This is **opt-in only**. Default Hermes behavior is unchanged unless you flip the flag. Hermes never auto-routes you onto this runtime.
+This is opt-in only. The default forecast desk runtime remains unchanged unless you enable it.
 
-## Why
+For forecasting work, treat this runtime as an execution backend for code, repository work, source-adapter development, benchmark fixtures, and auxiliary research tasks. It does not change the source of durable forecast truth. Forecast questions, evidence, probabilities, model runs, resolutions, scores, postmortems, calibration lessons, and domain error profiles remain ledger-owned.
 
-- Run OpenAI agent turns against your **ChatGPT subscription** (no API key required) using the same auth flow Codex CLI uses.
-- Use **Codex's own toolset and sandbox** — `shell` for terminal/read/write/search, `apply_patch` for structured edits, `update_plan` for planning, all running inside seatbelt/landlock sandboxing.
-- **Native Codex plugins** — Linear, GitHub, Gmail, Calendar, Canva, etc. — installed via `codex plugin` are auto-migrated and active in your Hermes session.
-- **Hermes' richer tools come along** — web_search, web_extract, browser automation, vision, image generation, skills, and TTS work via an MCP callback. Codex calls back into Hermes for tools it doesn't have built in.
-- **Memory and skill nudges keep working** — Codex's events are projected into Hermes' message shape so the self-improvement loop sees a normal-looking transcript.
+## Why Use It
 
-## What tools the model actually has
+- Run OpenAI/Codex turns through the same subscription auth flow used by Codex CLI.
+- Use Codex's native `shell`, `apply_patch`, `update_plan`, `view_image`, and sandbox behavior.
+- Reuse Codex plugins that are already installed and authorized through Codex CLI.
+- Let Codex call back into configured Superforecasting Agent tools through an MCP bridge for web search, browser automation, vision, image generation, skills, and speech tools.
+- Keep forecast-desk sessions, slash commands, gateway routing, and auxiliary review infrastructure around the Codex runtime.
 
-This is the part most users want to know up front. When this runtime is on, the model running your turn has three independent sources of tools:
+## Tool Sources
 
-### 1. Codex's built-in toolset (always on)
+When this runtime is active, a turn can receive tools from three places.
 
-These ship with `codex app-server` itself — no Hermes involvement, no MCP, no plugins. All five are available the moment the runtime starts:
+### 1. Codex Built-Ins
 
-- **`shell`** — runs arbitrary shell commands inside the sandbox. This is how the model reads files (`cat`, `head`, `tail`), writes them (`echo > foo`, heredocs), searches them (`find`, `rg`, `grep`), navigates directories (`ls`, `cd`), runs builds, manages processes, and anything else you'd do in bash.
-- **`apply_patch`** — applies a structured multi-file diff in Codex's patch format. The model uses this for non-trivial code edits (adding a function, refactoring across files); shell heredocs are still available for one-off writes.
-- **`update_plan`** — codex's internal todo / plan tracker. Equivalent of Hermes' `todo` tool, but managed entirely inside codex's runtime.
-- **`view_image`** — load a local image file into the conversation so the model can see it.
-- **`web_search`** — codex has its own built-in web search when configured. Hermes also exposes `web_search` (Firecrawl-backed) via the callback below; the model picks whichever it prefers.
+Codex provides its own built-in tools:
 
-So **anything you'd do via terminal — read/write/search/find/run — codex does natively**. The sandbox profile (`:workspace` by default when you enable the runtime) controls what's writable.
+- `shell` for terminal commands, file reads, file writes, search, builds, and scripts
+- `apply_patch` for structured file edits
+- `update_plan` for in-runtime planning
+- `view_image` for loading local images into the conversation
+- Codex-provided `web_search` when configured
 
-### 2. Native Codex plugins (auto-migrated from your `codex plugin` install)
+The Codex permission profile controls what the model may read or write.
 
-When you enable the runtime, Hermes queries codex's `plugin/list` RPC and writes a `[plugins."<name>@openai-curated"]` entry for every plugin you have installed. The plugins themselves are managed by codex and authorized once via codex's own UI.
+### 2. Native Codex Plugins
 
-Examples (the ones the OpenClaw thread highlighted as "YouTube-video-worthy"):
+Codex plugins installed with `codex plugin` are managed by Codex and authorized through Codex's own UI. When the runtime is enabled, installed plugins can be migrated into `~/.codex/config.toml`.
 
-- **Linear** — find/update issues
-- **GitHub** — search code, view PRs, comment
-- **Gmail** — read/send mail
-- **Google Calendar** — create/find events
-- **Outlook calendar/email** — same shape via the Microsoft connector
-- **Canva** — design generation
-- ...whatever else you've installed via `codex plugin marketplace add openai-curated` + `codex plugin install ...`
+Typical plugins include GitHub, Linear, Gmail, Calendar, Outlook, and other curated integrations. Use them as source and workflow helpers. If plugin output matters to a forecast, capture the relevant claim or source in the forecast ledger before relying on it.
 
-What's NOT migrated:
-- Plugins you haven't installed yet — install them in Codex first.
-- ChatGPT app marketplace entries (`app/list`) — these are already enabled inside codex by virtue of your account auth.
+### 3. Superforecasting Agent Tool Callback
 
-### 3. Hermes tool callback (MCP server, registered in `~/.codex/config.toml`)
+The runtime registers an inherited MCP server named `hermes-tools` so Codex can call tools that Codex does not ship with. The name is retained for compatibility with the existing transport module.
 
-Hermes registers itself as an MCP server so codex can call back for tools codex doesn't ship with. Available via the callback:
+Common callback tools include:
 
-- **`web_search`** / **`web_extract`** — Firecrawl-backed; tends to be cleaner than scraping for structured content.
-- **`browser_navigate` / `browser_click` / `browser_type` / `browser_press` / `browser_snapshot` / `browser_scroll` / `browser_back` / `browser_get_images` / `browser_console` / `browser_vision`** — full browser automation via Camofox or Browserbase.
-- **`vision_analyze`** — call a separate vision model to inspect an image (different from codex's `view_image` which loads it into the conversation).
-- **`image_generate`** — image generation through Hermes' image_gen plugin chain.
-- **`skill_view` / `skills_list`** — read from Hermes' skill library.
-- **`text_to_speech`** — TTS through Hermes' configured provider.
+- `web_search` and `web_extract`
+- browser automation tools
+- `vision_analyze`
+- `image_generate`
+- `skill_view` and `skills_list`
+- `text_to_speech`
 
-When the model wants one of these, codex spawns the `hermes_tools_mcp_server` subprocess via stdio MCP, the call is dispatched through `model_tools.handle_function_call()` (same code path as Hermes' default runtime), and the result is returned to codex like any other MCP response.
+The callback dispatches through the normal tool registry path. Because it is stateless, some agent-loop tools are unavailable:
 
-### What's NOT available on this runtime
+- `delegate_task`
+- `memory`
+- `session_search`
+- `todo`
 
-These four Hermes tools require the running AIAgent context (mid-loop state) to dispatch, and a stateless MCP callback can't drive them. Switch back to the default runtime (`/codex-runtime auto`) when you need any of them:
+Use `/codex-runtime auto` for turns that need those default-loop tools.
 
-- **`delegate_task`** — spawn subagents
-- **`memory`** — Hermes' persistent memory store
-- **`session_search`** — cross-session search
-- **`todo`** — Hermes' todo store (codex's `update_plan` is the in-runtime equivalent)
+## Forecast-Ledger Boundary
 
-## Workflow features (`/goal`, kanban, cron)
+Codex runtime outputs are not ledger writes by themselves:
 
-### `/goal` (the Ralph loop)
+- A shell result is not an evidence snapshot until imported or recorded.
+- A browser/plugin result is not a source citation until stored with source metadata.
+- A generated model script is not a model run until its parameters, inputs, output, and provenance are recorded.
+- A Codex plan is not a forecast rationale until a forecast update captures it.
 
-**Works on this runtime.** Goals persist in `state_meta` keyed by session id, the continuation prompt feeds back as a normal user message through `run_conversation()`, and codex executes the next turn natively. The goal judge runs via the auxiliary client (configured via `auxiliary.goal_judge` in config.yaml), independent of which runtime is active. The judge's "blocked, needs user input" verdict is a clean escape if codex stalls on approvals.
+For CLI lifecycle work, use the normal forecast commands after inspection:
 
-**One thing to be aware of:** each continuation prompt is a fresh codex turn, which means codex re-evaluates command approval policy from scratch. If you're doing a long-running goal with lots of writes, expect more approval prompts than you'd see on a single in-session task. Set `default_permissions = ":workspace"` (which Hermes does automatically when you enable the runtime) so simple workspace writes don't require prompting.
+```bash
+superforecasting-agent forecast evidence ...
+superforecasting-agent forecast model ...
+superforecasting-agent forecast update ...
+superforecasting-agent forecast resolve ...
+```
 
-### Kanban (multi-agent worktree dispatch)
+## Workflow Features
 
-**Works on this runtime, with one subtle dependency.** The kanban dispatcher spawns each worker as a separate `hermes chat -q` subprocess that reads the user's config — which means if `model.openai_runtime: codex_app_server` is set globally, workers also come up on the codex runtime.
+### `/goal`
 
-What works inside a codex-runtime worker:
-- Codex's full toolset (shell, apply_patch, update_plan, view_image, web_search) — the worker does its actual task work natively
-- The migrated codex plugins — Linear, GitHub, etc.
-- The Hermes tool callback for browser_*, vision, image_gen, skills, TTS
+Goals can run on this runtime because continuation prompts still flow through `run_conversation()`. The goal judge uses the configured auxiliary model slot and is independent of the active runtime.
 
-What also works because the MCP callback exposes them:
-- **`kanban_complete` / `kanban_block` / `kanban_comment` / `kanban_heartbeat`** — the worker handoff tools. These read `HERMES_KANBAN_TASK` from env (set by the dispatcher), gate access correctly, and write to the per-board SQLite DB pinned by `HERMES_KANBAN_DB`. Without these in the callback, a worker on this runtime could do its task but couldn't report back, hanging until the dispatcher's timeout.
-- **`kanban_show` / `kanban_list`** — read-only board queries for the worker to check its own context.
-- **`kanban_create` / `kanban_unblock` / `kanban_link`** — orchestrator-only operations. Available for orchestrator agents running on the codex runtime that need to dispatch new tasks.
+Expect more command approvals on long-running goals because each continuation is a fresh Codex turn.
 
-The kanban tools are gated by `HERMES_KANBAN_TASK` env var the dispatcher sets — that var is propagated to the codex subprocess (codex inherits env) and from there to the spawned `hermes-tools` MCP server subprocess. So the tools see the right task id and gate correctly. For Codex app-server workers, Hermes also passes narrow app-server sandbox overrides when `HERMES_KANBAN_TASK` is present: keep `workspace-write` sandboxing, add the **board DB directory plus every Kanban path the dispatcher pinned** as extra writable roots (`HERMES_KANBAN_WORKSPACES_ROOT`, `HERMES_KANBAN_WORKSPACE`, legacy `HERMES_KANBAN_ROOT` — deduplicated, DB-dir first), and keep network disabled by default. This avoids the brittle `:danger-no-sandbox` workaround while letting `kanban_complete` / `kanban_block` update the board DB **and** letting workers write reports/artifacts under workspace mounts that live outside the DB directory (e.g. `/media/.../kanban-workspaces/...` on a separate drive — [issue #27941](https://github.com/NousResearch/hermes-agent/issues/27941)).
+### Kanban
 
-### Cron jobs
+Kanban workers can run on the Codex runtime if their profile enables it. The worker does task work through Codex built-ins and reports status through callback tools such as:
 
-**Not specifically tested.** Cron jobs run via `cronjob` → `AIAgent.run_conversation`, the same code path as the CLI. If the cron job's config has `openai_runtime: codex_app_server` it'll run on codex. The same tool-availability rules apply — codex built-ins + plugins + MCP callback work, agent-loop tools (delegate_task, memory, session_search, todo) don't. If your cron job relies on those, scope the cron to a profile that uses the default runtime.
+- `kanban_complete`
+- `kanban_block`
+- `kanban_comment`
+- `kanban_heartbeat`
+- `kanban_show`
+- `kanban_list`
 
-## Trade-offs
+The dispatcher still uses inherited environment variables such as `HERMES_KANBAN_TASK`, `HERMES_KANBAN_DB`, `HERMES_KANBAN_WORKSPACES_ROOT`, `HERMES_KANBAN_WORKSPACE`, and legacy `HERMES_KANBAN_ROOT`. These are runtime compatibility names.
 
-|  | Hermes default runtime | Codex app-server (opt-in) |
-|---|---|---|
-| `delegate_task` subagents | yes | not available — needs agent loop context |
-| `memory`, `session_search`, `todo` | yes | not available — needs agent loop context |
-| `web_search`, `web_extract` | yes | yes (via MCP callback) |
-| Browser automation (Camofox/Browserbase) | yes | yes (via MCP callback) |
-| `vision_analyze`, `image_generate` | yes | yes (via MCP callback) |
-| `skill_view`, `skills_list` | yes | yes (via MCP callback) |
-| `text_to_speech` | yes | yes (via MCP callback) |
-| Codex `shell` (terminal/read/write/search/find/run) | — | yes (Codex built-in) |
-| Codex `apply_patch` (structured multi-file edits) | — | yes (Codex built-in) |
-| Codex `update_plan` (in-runtime todo) | — | yes (Codex built-in) |
-| Codex `view_image` (load image into conversation) | — | yes (Codex built-in) |
-| Codex sandbox (seatbelt/landlock, profiles) | — | yes (Codex built-in) |
-| ChatGPT subscription auth | — | yes (via `openai-codex` provider) |
-| Native Codex plugins (Linear, GitHub, etc.) | — | yes (auto-migrated) |
-| User MCP servers | yes | yes (auto-migrated to codex) |
-| Memory + skill review (background) | yes | yes (via item projection) |
-| Multi-turn conversations | yes | yes |
-| `/goal` (Ralph loop) | yes | yes |
-| Kanban worker dispatch | yes | yes (via callback) |
-| Kanban orchestrator tools | yes | yes (via callback) |
-| All gateway platforms | yes | yes |
-| Non-OpenAI providers | yes | n/a — OpenAI/Codex-scoped |
+For forecast work, use kanban as task orchestration. It does not replace the forecast ledger.
+
+### Cron
+
+Cron jobs run through the same conversation path as the CLI. If a cron profile has `model.openai_runtime: codex_app_server`, the job can use Codex. For scheduled forecast self-checks, scoring, backtests, and domain-learning updates, prefer a tested default-runtime profile unless the job's tool needs are known to fit the Codex runtime.
+
+## Trade-Offs
+
+| Capability | Default runtime | Codex app-server |
+|---|---:|---:|
+| Forecast ledger tool access | yes | depends on callback/toolset availability |
+| `delegate_task` | yes | no |
+| `memory`, `session_search`, `todo` | yes | no |
+| Web search and extraction | yes | yes, via callback or Codex |
+| Browser automation | yes | yes, via callback |
+| Vision and image generation | yes | yes, via callback or Codex image support |
+| Skills | yes | read-only callback support |
+| TTS | yes | yes, via callback |
+| Codex shell/apply_patch/update_plan | no | yes |
+| Codex sandbox | no | yes |
+| ChatGPT subscription auth | provider-dependent | yes for Codex/OpenAI |
+| Native Codex plugins | no | yes |
+| Non-OpenAI providers | yes | no |
 
 ## Prerequisites
 
-1. **Codex CLI installed:**
-   ```bash
-   npm i -g @openai/codex
-   codex --version   # 0.130.0 or newer
-   ```
-2. **Codex OAuth login.** The codex subprocess reads `~/.codex/auth.json`. Two ways to populate it:
-   ```bash
-   codex login                  # writes tokens to ~/.codex/auth.json
-   ```
-   Hermes' own `hermes auth login codex` writes to `~/.hermes/auth.json` — that's a separate session. **Run `codex login` separately** if you haven't.
+Install and authenticate Codex CLI:
 
-3. **(Optional) Install the Codex plugins you want.** When you enable the runtime, Hermes auto-migrates whichever curated plugins you've already installed via Codex CLI:
-   ```bash
-   codex plugin marketplace add openai-curated
-   # then via codex's TUI, install Linear / GitHub / Gmail / etc.
-   ```
-   Hermes will discover them and write `[plugins."<name>@openai-curated"]` entries to `~/.codex/config.toml` automatically.
+```bash
+npm i -g @openai/codex
+codex --version
+codex login
+```
+
+Codex auth is stored under `~/.codex/auth.json`. Superforecasting Agent's own Codex auth is separate:
+
+```bash
+superforecasting-agent auth login codex
+```
+
+Run both if you want the cleanest UX with Codex CLI and the forecast desk.
+
+Install any native Codex plugins through Codex itself before enabling this runtime:
+
+```bash
+codex plugin marketplace add openai-curated
+```
+
+Then install and authorize the plugins from Codex's UI.
 
 ## Enabling
 
-In a Hermes session:
+Inside a Superforecasting Agent session:
 
-```
+```text
 /codex-runtime codex_app_server
 ```
 
 That command:
-- Verifies the `codex` CLI is installed (blocks with an install hint if not).
-- Persists `model.openai_runtime: codex_app_server` to your config.yaml.
-- Migrates user MCP servers from `~/.hermes/config.yaml` to `~/.codex/config.toml`.
-- **Discovers and migrates installed native Codex plugins** (Linear, GitHub, Gmail, Calendar, Canva, etc.) by querying Codex's `plugin/list` RPC.
-- **Registers Hermes' own tools as an MCP server** so the codex subprocess can call back for tools codex doesn't ship with.
-- **Writes `default_permissions = ":workspace"`** so the sandbox allows writes within the workspace without prompting for every operation.
-- Tells you what was migrated. Takes effect on the **next** session — the current cached agent keeps the prior runtime so prompt caches stay valid.
 
-Synonyms: `/codex-runtime on`, `/codex-runtime off`, `/codex-runtime auto`.
+- verifies that `codex` is installed
+- persists `model.openai_runtime: codex_app_server`
+- migrates user MCP servers from the forecast config to `~/.codex/config.toml`
+- discovers installed native Codex plugins
+- registers the tool callback MCP server
+- writes a workspace-oriented default permission profile when needed
 
-To check current state without changing anything:
+It takes effect on the next session.
+
+Synonyms:
+
+```text
+/codex-runtime on
+/codex-runtime off
+/codex-runtime auto
 ```
+
+Check current state:
+
+```text
 /codex-runtime
 ```
 
-You can also set it manually in `~/.hermes/config.yaml`:
+Manual config in `~/.superforecasting-agent/config.yaml`:
+
 ```yaml
 model:
-  openai_runtime: codex_app_server   # default is "auto" (= Hermes runtime)
+  openai_runtime: codex_app_server
 ```
 
-## Self-improvement loop (memory + skill nudges)
+Legacy `~/.hermes/config.yaml` profiles remain readable during migration.
 
-Hermes' background self-improvement fires on counter thresholds:
+## Auxiliary Tasks
 
-- Every 10 user prompts → a forked review agent looks at the conversation and decides whether anything should be saved to memory.
-- Every 10 tool iterations within a single turn → same idea but for skills (`skill_manage` writes).
+When `openai-codex` is the active provider, auxiliary tasks can also use subscription auth by default. That includes title generation, context compression, vision detection, goal judging, and background review tasks unless you override them.
 
-**Both keep working on the codex runtime.** The codex path projects each completed `commandExecution` / `fileChange` / `mcpToolCall` / `dynamicToolCall` item into a synthetic `assistant tool_call` + `tool` result message, so by the time the review runs it sees the same shape it sees on the default Hermes runtime.
-
-How the wiring stays equivalent:
-
-| | Default runtime | Codex runtime |
-|---|---|---|
-| `_turns_since_memory` increments | per user prompt, in run_conversation pre-loop | same code path, before the early-return |
-| `_iters_since_skill` increments | per tool iteration in the chat-completions loop | by `turn.tool_iterations` after the codex turn returns |
-| Memory trigger (`_turns_since_memory >= _memory_nudge_interval`) | computed in pre-loop, fires after response | computed in pre-loop, passed through to codex helper |
-| Skill trigger (`_iters_since_skill >= _skill_nudge_interval`) | computed after the loop | computed after the codex turn |
-| `_spawn_background_review(messages_snapshot=..., review_memory=..., review_skills=...)` | called when either trigger fires | called identically when either trigger fires |
-
-One detail: the review fork itself needs to call Hermes' agent-loop tools (`memory`, `skill_manage`), which require Hermes' own dispatch. So when the parent agent is on `codex_app_server`, the review fork is **downgraded to `codex_responses`** — same OAuth credentials, same `openai-codex` provider, but talks to OpenAI's Responses API directly so Hermes owns the loop and the agent-loop tools work. This is invisible to the user.
-
-Net effect: enable the codex runtime and your memory + skill nudges keep firing exactly as they would otherwise.
-
-## How approvals work
-
-Codex requests approval before executing commands or applying patches. These get translated into Hermes' standard "Dangerous Command" prompt:
-
-```
-╭───────────────────────────────────────╮
-│ Dangerous Command                     │
-│                                       │
-│ /bin/bash -lc 'echo hello > foo.txt'  │
-│                                       │
-│ ❯ 1. Allow once                       │
-│   2. Allow for this session           │
-│   3. Deny                             │
-│                                       │
-│ Codex requests exec in /your/cwd      │
-╰───────────────────────────────────────╯
-```
-
-- **Allow once** → approve this single command.
-- **Allow for this session** → Codex won't re-prompt for similar commands.
-- **Deny** → command is rejected; Codex continues in read-only mode.
-
-For `apply_patch` (file edit) approvals, Hermes shows a summary of what changed (`1 add, 1 update: /tmp/new.py, /tmp/old.py`) when codex provides the data via the corresponding `fileChange` item.
-
-## Permission profiles
-
-Codex has three built-in permission profiles:
-- `:read-only` — no writes; every shell command requires approval
-- `:workspace` — writes within the current workspace allowed without prompts (Hermes' default when you enable the runtime)
-- `:danger-no-sandbox` — no sandbox at all (don't use this unless you understand it)
-
-You can override the default in `~/.codex/config.toml` outside Hermes' managed block:
-
-```toml
-default_permissions = ":read-only"
-```
-
-(Hermes will preserve your override on re-migration as long as it lives outside the `# managed by hermes-agent` markers.)
-
-## Auxiliary tasks and ChatGPT subscription token cost
-
-When this runtime is on with the `openai-codex` provider, **auxiliary tasks (title generation, context compression, vision auto-detect, the background self-improvement review fork) also flow through your ChatGPT subscription by default**, because Hermes' auxiliary client uses the main provider/model when no per-task override is set.
-
-This isn't specific to `codex_app_server` — it's true for the existing `codex_responses` path too — but it's more visible here because you're explicitly opting in for the subscription billing.
-
-To route specific aux tasks to a cheaper / different model, set explicit overrides in `~/.hermes/config.yaml`:
+Route specific auxiliary work elsewhere:
 
 ```yaml
 auxiliary:
@@ -264,178 +216,126 @@ auxiliary:
     model: google/gemini-3-flash-preview
 ```
 
-The self-improvement review fork inherits the main runtime via `_current_main_runtime()` and Hermes downgrades it from `codex_app_server` to `codex_responses` automatically (so the fork can actually call `memory` and `skill_manage` — Hermes' own agent-loop tools). That fork still uses your subscription auth unless you've routed aux tasks elsewhere.
+Background memory and skill review are auxiliary recall/playbook maintenance. They are not forecast calibration learning. Forecast learning still belongs in scoring, postmortem, and calibration-ledger workflows.
 
-## Editing `~/.codex/config.toml` safely
+## Approvals and Permissions
 
-Hermes wraps everything it manages between two marker comments:
+Codex requests approval before commands or patches when its permission profile requires it. These requests are shown through the normal command-approval UI.
+
+Common permission profiles:
+
+| Profile | Behavior |
+|---|---|
+| `:read-only` | No writes; shell commands require approval |
+| `:workspace` | Workspace writes are allowed without prompting |
+| `:danger-no-sandbox` | No sandbox; avoid unless you understand the risk |
+
+You can override permissions in `~/.codex/config.toml` outside the managed block.
+
+## Editing `~/.codex/config.toml`
+
+The runtime writes a managed block to `~/.codex/config.toml`. The marker still uses inherited `hermes-agent` naming because that is the current transport implementation:
 
 ```toml
-# managed by hermes-agent — `hermes codex-runtime migrate` regenerates this section
+# managed by hermes-agent - `superforecasting-agent codex-runtime migrate` regenerates this section
 default_permissions = ":workspace"
-[mcp_servers.filesystem]
-...
-[plugins."github@openai-curated"]
+[mcp_servers.hermes-tools]
 ...
 # end hermes-agent managed section
 ```
 
-Anything **outside** that block is yours. Re-running migration (via `/codex-runtime codex_app_server` or whenever you toggle the runtime on) replaces the managed block in place but preserves user content above and below it verbatim. This means you can:
+Anything outside that block is user-owned and preserved on migration. Anything inside the block can be replaced the next time the runtime is enabled or migrated.
 
-- Add your own MCP servers Hermes doesn't know about
-- Override `default_permissions` to `:read-only` if you prefer to be prompted
-- Configure codex-only options (model, providers, otel, etc.)
-- Add user-defined permission profiles in `[permissions.<name>]` tables
+## Profiles and Codex State
 
-Anything you add **inside** the managed block will get clobbered on the next migration. If you need a tweak that requires editing the managed block, file an issue and we'll add the knob.
+By default, Codex reads `~/.codex/` regardless of the active forecast profile. This preserves normal Codex CLI behavior and avoids silently invalidating existing Codex auth.
 
-## Multi-profile / multi-tenant setups
-
-By default, Hermes points the codex subprocess at `~/.codex/` regardless of which Hermes profile is active. This means `hermes -p work` and `hermes -p personal` share the same Codex auth, plugins, and config. For most users this is the right behavior — it matches what running `codex` CLI directly would do.
-
-If you want per-profile Codex isolation (separate auth, separate installed plugins, separate config), set `CODEX_HOME` explicitly per profile. The cleanest way is to point at a directory under your `HERMES_HOME`:
+For profile-specific Codex state, set `CODEX_HOME` per profile. A fork-native path is preferred:
 
 ```bash
-# Inside the work profile, you might wrap hermes:
-CODEX_HOME=~/.hermes/profiles/work/codex hermes chat
+CODEX_HOME=~/.superforecasting-agent/profiles/macro/codex superforecasting-agent chat
 ```
 
-You'll need to re-run `codex login` once with that `CODEX_HOME` set so the OAuth tokens land in the profile-scoped location. After that, `hermes -p work` will operate on isolated Codex state.
+Then run `codex login` once with that `CODEX_HOME`.
 
-We don't auto-scope this because moving an existing user's `~/.codex/` would silently invalidate their Codex CLI auth — anyone who already ran `codex login` would have to re-authenticate. Opt-in feels safer than surprising users.
+Legacy examples may use `~/.hermes/profiles/<profile>/codex` and `hermes chat`; those remain compatibility paths and commands.
 
-## HOME environment variable passthrough
+## HOME Passthrough
 
-Hermes does NOT rewrite `HOME` when spawning the codex app-server subprocess (we use `os.environ.copy()` and only overlay `CODEX_HOME` and `RUST_LOG`). This means:
+The runtime does not rewrite `HOME` when spawning the Codex app-server subprocess. Commands run by Codex still see the real user home and can find `~/.gitconfig`, `~/.gh/`, `~/.aws/`, `~/.npmrc`, and similar files.
 
-- Commands codex runs via its `shell` tool see the real user `HOME` and find `~/.gitconfig`, `~/.gh/`, `~/.aws/`, `~/.npmrc`, etc. correctly.
-- Codex's internal state stays isolated through `CODEX_HOME` (which points at `~/.codex/` by default).
+Codex's own state is isolated through `CODEX_HOME`, which defaults to `~/.codex/`.
 
-This matches the boundary OpenClaw arrived at after some early experimentation: isolate Codex's state, leave the user's home alone. (Cf. openclaw/openclaw#81562.)
+## MCP Migration
 
-## MCP server migration
+`mcp_servers` entries from the forecast config are translated to Codex TOML whenever you enable the runtime:
 
-Hermes' `mcp_servers` config is auto-translated to the TOML format Codex expects. The migration runs every time you enable the runtime and is idempotent — re-runs replace the managed section but preserve any user-edited Codex config.
-
-What translates:
-
-| Hermes (`config.yaml`) | Codex (`config.toml`) |
+| Forecast config | Codex config |
 |---|---|
 | `command` + `args` + `env` | stdio transport |
-| `url` + `headers` | streamable_http transport |
+| `url` + `headers` | streamable HTTP transport |
 | `timeout` | `tool_timeout_sec` |
 | `connect_timeout` | `startup_timeout_sec` |
 | `enabled: false` | `enabled = false` |
 
-What's not migrated:
-- Hermes-specific keys like `sampling` (Codex's MCP client has no equivalent — these are dropped with a per-server warning).
+Runtime-specific keys that Codex does not understand are dropped with warnings.
 
-## Native Codex plugin migration
+## Tool Callback MCP Server
 
-Plugins installed via `codex plugin` (Linear, GitHub, Gmail, Calendar, Canva, etc.) are discovered through Codex's `plugin/list` RPC. For each plugin where `installed: true`, Hermes writes a `[plugins."<name>@openai-curated"]` block enabling it in your Hermes session.
-
-This means: when your friend says "I have Calendar and GitHub set up in my Codex CLI" and they enable Hermes' codex runtime, Hermes activates those automatically. No re-configuration needed.
-
-What's NOT migrated:
-- Plugins you haven't installed yet — install them in Codex first.
-- Plugins where codex reports `availability != AVAILABLE` (broken install, expired OAuth, removed from marketplace, etc.). These are skipped to avoid writing config that would fail at activation time.
-- ChatGPT app marketplace entries (the per-account `app/list` results — these are already enabled inside codex by virtue of your account auth).
-- Plugin OAuth — you authorize each plugin once in Codex itself; Hermes doesn't touch credentials.
-
-## Hermes tool callback (the new MCP server)
-
-Codex's built-in toolset covers shell/file ops/patches but doesn't have web search, browser automation, vision, image generation, etc. To keep those usable in a codex turn, Hermes registers itself as an MCP server in `~/.codex/config.toml`:
+Codex can call configured forecast-desk tools through the inherited callback server:
 
 ```toml
 [mcp_servers.hermes-tools]
 command = "/path/to/python"
 args = ["-m", "agent.transports.hermes_tools_mcp_server"]
-env = { HERMES_HOME = "/your/.hermes", PYTHONPATH = "...", HERMES_QUIET = "1" }
+env = { HERMES_HOME = "/your/.superforecasting-agent", PYTHONPATH = "...", HERMES_QUIET = "1" }
 startup_timeout_sec = 30.0
 tool_timeout_sec = 600.0
 ```
 
-When the model calls `web_search` (or another exposed Hermes tool), codex spawns the `hermes_tools_mcp_server` subprocess via stdio, the request is dispatched through `model_tools.handle_function_call()`, and the result is projected back to codex like any other MCP response.
-
-**Tools available via the callback:** `web_search`, `web_extract`, `browser_navigate`, `browser_click`, `browser_type`, `browser_press`, `browser_snapshot`, `browser_scroll`, `browser_back`, `browser_get_images`, `browser_console`, `browser_vision`, `vision_analyze`, `image_generate`, `skill_view`, `skills_list`, `text_to_speech`.
-
-**Tools NOT available:** `delegate_task`, `memory`, `session_search`, `todo`. These need the running AIAgent context to dispatch (mid-loop state) and a stateless MCP callback can't drive them. Use the default Hermes runtime (`/codex-runtime auto`) when you need these.
+The `hermes-tools`, `hermes_tools_mcp_server`, `HERMES_HOME`, and `HERMES_QUIET` names are inherited runtime identifiers. New profile paths should still point at the forecast-native home.
 
 ## Disabling
 
 Switch back at any time:
 
-```
+```text
 /codex-runtime auto
 ```
 
-Effective on the next session. The Codex managed block stays in `~/.codex/config.toml` so you can re-enable later without losing config — or remove it manually if you prefer.
+The change is effective on the next session. The Codex managed block remains in `~/.codex/config.toml` so it can be re-enabled later.
 
 ## Limitations
 
-This runtime is **opt-in beta**. Working as of Hermes Agent 2026.5 + Codex CLI 0.130.0:
+- The runtime is opt-in and OpenAI/Codex-scoped.
+- Codex auth and Superforecasting Agent auth are separate sessions.
+- `delegate_task`, `memory`, `session_search`, and `todo` are unavailable through the stateless callback.
+- Inline patch preview can be incomplete when Codex does not provide the changeset before approval.
+- Mid-stream cancellation is best-effort.
+- Cron forecast self-checks should use a default-runtime profile unless the Codex tool surface has been verified for that job.
 
-- Multi-turn conversations
-- `commandExecution` and `fileChange` (apply_patch) approvals via Hermes UI
-- MCP tool calls (verified against `@modelcontextprotocol/server-filesystem` and the new `hermes-tools` callback)
-- Native Codex plugin migration (verified against Linear / GitHub / Calendar inventory)
-- Deny/cancel paths
-- Toggle on/off cycle
-- Memory and skill nudge counters (verified live via integration tests)
-- Hermes web_search through codex (verified live: "OpenAI Codex CLI – Getting Started" returned end-to-end)
+If you find a runtime bug, open an issue with recent logs:
 
-Known limitations:
-
-- **Hermes auth and codex auth are separate sessions.** You need both `codex login` AND `hermes auth login codex` for the cleanest UX (the runtime uses codex's session for the LLM call). This is a deliberate design choice in Hermes' `_import_codex_cli_tokens` — Hermes won't share OAuth state with codex CLI to avoid clobbering each other on token refresh.
-- **`delegate_task`, `memory`, `session_search`, `todo` are unavailable on this runtime.** They need the running AIAgent context which a stateless MCP callback can't provide. Use `/codex-runtime auto` when you need these.
-- **No inline patch preview in approval prompts when codex doesn't track the changeset.** Codex's `fileChange` approval params don't always carry the changeset. Hermes caches the data from the corresponding `item/started` notification when possible, but if approval arrives before the item has streamed, the prompt falls back to whatever `reason` codex provides.
-- **Sub-second cancellation isn't guaranteed.** Mid-stream interrupts (Ctrl+C while codex is responding) are sent via `turn/interrupt`, but if codex has already flushed the final message, you get the response anyway.
-
-If you find a bug, [open an issue](https://github.com/NousResearch/hermes-agent/issues) with the output of `hermes logs --since 5m`. Mention `codex-runtime` in the title so it's easy to triage.
+```bash
+superforecasting-agent logs --since 5m
+```
 
 ## Architecture
 
+```text
+Superforecasting Agent CLI / TUI / gateway
+  sessions, slash commands, profiles, forecast desk surfaces
+    |
+    v
+AIAgent.run_conversation()
+  if api_mode == codex_app_server:
+      CodexAppServerSession
+  else:
+      default chat-completions / responses runtime
+    |
+    v
+codex app-server subprocess
+  shell, apply_patch, update_plan, view_image, sandbox
+  native Codex plugins
+  MCP client -> hermes-tools callback -> configured forecast-desk tools
 ```
-                ┌─── Hermes shell (CLI / TUI / gateway) ───┐
-                │  sessions DB · slash commands · memory   │
-                │  & skill review · cron · session pickers │
-                └──┬──────────────────────────────────────┬┘
-                   │ user_message               final     │
-                   ▼                            text +    │
-        ┌──────────────────────────────────┐   projected  │
-        │  AIAgent.run_conversation()       │   messages   │
-        │   if api_mode == codex_app_server │              │
-        │     → CodexAppServerSession       │              │
-        │   else: chat_completions / codex_responses (default)
-        └────┬─────────────────────────────┘              │
-             │ JSON-RPC over stdio                        │
-             ▼                                            │
-        ┌──────────────────────────────────┐              │
-        │  codex app-server (subprocess)    │──────────────┘
-        │   thread/start, turn/start        │
-        │   item/* notifications            │
-        │   shell + apply_patch + update_plan│
-        │   view_image + sandbox            │
-        │   ┌─────────────────────────┐     │
-        │   │  MCP client             │     │
-        │   │  ├─ user MCP servers    │     │
-        │   │  ├─ native plugins      │     │
-        │   │  │   (linear, github,   │     │
-        │   │  │    gmail, calendar,  │     │
-        │   │  │    canva, ...)       │     │
-        │   │  └─ hermes-tools ───────┼─────────────────┐
-        │   │       (callback to     │     │           │
-        │   │        Hermes' richer  │     │           │
-        │   │        tools)          │     │           │
-        │   └─────────────────────────┘     │           │
-        └──────────────────────────────────┘           │
-                                                        │
-                                                        ▼
-        ┌──────────────────────────────────────────────────────────┐
-        │  hermes_tools_mcp_server.py (subprocess on demand)        │
-        │   web_search, web_extract, browser_*, vision_analyze,    │
-        │   image_generate, skill_view, skills_list, text_to_speech│
-        └──────────────────────────────────────────────────────────┘
-```
-
-For implementation details, see [PR #24182](https://github.com/NousResearch/hermes-agent/pull/24182) and the [Codex app-server protocol README](https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md).

@@ -104,6 +104,26 @@ def test_switch_model_accepts_explicit_named_custom_provider(monkeypatch):
     assert result.api_key == "no-key-required"
 
 
+def test_switch_model_unknown_provider_uses_fork_native_guidance(monkeypatch):
+    """Unknown explicit providers should point at fork-native setup commands."""
+    monkeypatch.setattr("hermes_cli.config.validate_config_structure", lambda: [])
+
+    result = switch_model(
+        raw_input="some-model",
+        current_provider="openai",
+        current_model="gpt-5.4",
+        current_base_url="https://api.openai.com/v1",
+        current_api_key="",
+        explicit_provider="not-a-provider",
+        user_providers={},
+        custom_providers=[],
+    )
+
+    assert result.success is False
+    assert "superforecasting-agent model" in result.error_message
+    assert "hermes model" not in result.error_message
+
+
 def test_list_groups_same_name_custom_providers_into_one_row(monkeypatch):
     """Multiple custom_providers entries sharing a name should produce one row
     with all models collected, not N duplicate rows."""

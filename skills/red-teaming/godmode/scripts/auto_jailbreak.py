@@ -7,7 +7,13 @@ finds what works, and locks it in by writing config.yaml + prefill.json.
 
 Usage in execute_code:
     exec(open(os.path.expanduser(
-        os.path.join(os.environ.get("HERMES_HOME", os.path.expanduser("~/.hermes")), "skills/red-teaming/godmode/scripts/auto_jailbreak.py")
+        os.path.join(
+            os.environ.get("SUPERFORECASTING_AGENT_HOME")
+            or os.environ.get("FORECAST_HOME")
+            or os.environ.get("HERMES_HOME")
+            or os.path.expanduser("~/.superforecasting-agent"),
+            "skills/red-teaming/godmode/scripts/auto_jailbreak.py",
+        )
     )).read())
     
     result = auto_jailbreak()  # Uses current model from config
@@ -26,6 +32,14 @@ try:
 except ImportError:
     OpenAI = None
 
+
+def _agent_home() -> Path:
+    for env_var in ("SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME"):
+        value = os.getenv(env_var, "").strip()
+        if value:
+            return Path(value)
+    return Path.home() / ".superforecasting-agent"
+
 # ═══════════════════════════════════════════════════════════════════
 # Load sibling modules
 # ═══════════════════════════════════════════════════════════════════
@@ -35,7 +49,7 @@ try:
     _SKILL_DIR = Path(__file__).resolve().parent.parent
 except NameError:
     # __file__ not defined when loaded via exec() — search standard paths
-    _SKILL_DIR = Path(os.getenv("HERMES_HOME", Path.home() / ".hermes")) / "skills" / "red-teaming" / "godmode"
+    _SKILL_DIR = _agent_home() / "skills" / "red-teaming" / "godmode"
 
 _SCRIPTS_DIR = _SKILL_DIR / "scripts"
 _TEMPLATES_DIR = _SKILL_DIR / "templates"
@@ -54,12 +68,12 @@ if _race_path.exists():
     exec(compile(open(_race_path).read(), str(_race_path), 'exec'), _caller_globals)
 
 # ═══════════════════════════════════════════════════════════════════
-# Hermes config paths
+# Agent config paths
 # ═══════════════════════════════════════════════════════════════════
 
-HERMES_HOME = Path(os.getenv("HERMES_HOME", Path.home() / ".hermes"))
-CONFIG_PATH = HERMES_HOME / "config.yaml"
-PREFILL_PATH = HERMES_HOME / "prefill.json"
+AGENT_HOME = _agent_home()
+CONFIG_PATH = AGENT_HOME / "config.yaml"
+PREFILL_PATH = AGENT_HOME / "prefill.json"
 
 # ═══════════════════════════════════════════════════════════════════
 # Canary queries — questions that typically trigger safety filters
@@ -319,7 +333,7 @@ def _detect_model_family(model: str) -> str:
 
 
 def _get_current_model() -> tuple:
-    """Read current model and provider from Hermes config.yaml.
+    """Read current model and provider from Superforecasting Agent config.yaml.
     Returns (model_str, base_url)."""
     if not CONFIG_PATH.exists():
         return None, None
@@ -668,7 +682,7 @@ def auto_jailbreak(model=None, base_url=None, api_key=None,
             if verbose:
                 print(f"[LOCKED] Config written to: {config_written}")
                 print()
-                print("[DONE] Jailbreak locked in. Restart Hermes for changes to take effect.")
+                print("[DONE] Jailbreak locked in. Restart Superforecasting Agent for changes to take effect.")
         else:
             if verbose:
                 print("[DRY RUN] Would write config + prefill but dry_run=True")
@@ -736,7 +750,7 @@ def undo_jailbreak(verbose=True):
             print(f"[UNDO] Deleted {PREFILL_PATH}")
 
     if verbose:
-        print("[UNDO] Jailbreak removed. Restart Hermes for changes to take effect.")
+        print("[UNDO] Jailbreak removed. Restart Superforecasting Agent for changes to take effect.")
 
 
 # ═══════════════════════════════════════════════════════════════════

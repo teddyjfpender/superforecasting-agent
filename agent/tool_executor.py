@@ -23,7 +23,7 @@ import time
 from typing import Any, Optional
 
 from agent.display import (
-    KawaiiSpinner,
+    ForecastSpinner,
     build_tool_preview as _build_tool_preview,
     get_cute_tool_message as _get_cute_tool_message_impl,
     get_tool_emoji as _get_tool_emoji,
@@ -272,8 +272,8 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
     # Start spinner for CLI mode (skip when TUI handles tool progress)
     spinner = None
     if agent._should_emit_quiet_tool_messages() and agent._should_start_quiet_spinner():
-        face = random.choice(KawaiiSpinner.get_waiting_faces())
-        spinner = KawaiiSpinner(f"{face} ⚡ running {num_tools} tools concurrently", spinner_type='dots', print_fn=agent._print_fn)
+        marker = random.choice(ForecastSpinner.get_waiting_faces())
+        spinner = ForecastSpinner(f"{marker} ⚡ running {num_tools} tools concurrently", spinner_type='dots', print_fn=agent._print_fn)
         spinner.start()
 
     try:
@@ -672,8 +672,8 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                 spinner_label = f"🔀 {goal_preview}" if goal_preview else "🔀 delegating"
             spinner = None
             if agent._should_emit_quiet_tool_messages() and agent._should_start_quiet_spinner():
-                face = random.choice(KawaiiSpinner.get_waiting_faces())
-                spinner = KawaiiSpinner(f"{face} {spinner_label}", spinner_type='dots', print_fn=agent._print_fn)
+                marker = random.choice(ForecastSpinner.get_waiting_faces())
+                spinner = ForecastSpinner(f"{marker} {spinner_label}", spinner_type='dots', print_fn=agent._print_fn)
                 spinner.start()
             agent._delegate_spinner = spinner
             _delegate_result = None
@@ -692,10 +692,10 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             # Context engine tools (lcm_grep, lcm_describe, lcm_expand, etc.)
             spinner = None
             if agent._should_emit_quiet_tool_messages():
-                face = random.choice(KawaiiSpinner.get_waiting_faces())
+                marker = random.choice(ForecastSpinner.get_waiting_faces())
                 emoji = _get_tool_emoji(function_name)
                 preview = _build_tool_preview(function_name, function_args) or function_name
-                spinner = KawaiiSpinner(f"{face} {emoji} {preview}", spinner_type='dots', print_fn=agent._print_fn)
+                spinner = ForecastSpinner(f"{marker} {emoji} {preview}", spinner_type='dots', print_fn=agent._print_fn)
                 spinner.start()
             _ce_result = None
             try:
@@ -716,10 +716,10 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             # These are not in the tool registry — route through MemoryManager.
             spinner = None
             if agent._should_emit_quiet_tool_messages() and agent._should_start_quiet_spinner():
-                face = random.choice(KawaiiSpinner.get_waiting_faces())
+                marker = random.choice(ForecastSpinner.get_waiting_faces())
                 emoji = _get_tool_emoji(function_name)
                 preview = _build_tool_preview(function_name, function_args) or function_name
-                spinner = KawaiiSpinner(f"{face} {emoji} {preview}", spinner_type='dots', print_fn=agent._print_fn)
+                spinner = ForecastSpinner(f"{marker} {emoji} {preview}", spinner_type='dots', print_fn=agent._print_fn)
                 spinner.start()
             _mem_result = None
             try:
@@ -738,10 +738,10 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
         elif agent.quiet_mode:
             spinner = None
             if agent._should_emit_quiet_tool_messages() and agent._should_start_quiet_spinner():
-                face = random.choice(KawaiiSpinner.get_waiting_faces())
+                marker = random.choice(ForecastSpinner.get_waiting_faces())
                 emoji = _get_tool_emoji(function_name)
                 preview = _build_tool_preview(function_name, function_args) or function_name
-                spinner = KawaiiSpinner(f"{face} {emoji} {preview}", spinner_type='dots', print_fn=agent._print_fn)
+                spinner = ForecastSpinner(f"{marker} {emoji} {preview}", spinner_type='dots', print_fn=agent._print_fn)
                 spinner.start()
             _spinner_result = None
             try:

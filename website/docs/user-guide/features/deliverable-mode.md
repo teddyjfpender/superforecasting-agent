@@ -1,130 +1,102 @@
 ---
-title: Deliverable Mode (Artifacts in Chat)
+title: Deliverable Mode
 sidebar_label: Deliverable Mode
-description: How the agent ships generated charts, PDFs, spreadsheets, and other files as native attachments in messaging platforms.
+description: Send forecast packets, charts, reports, and data files as native messaging attachments.
 ---
 
 # Deliverable Mode
 
-When Hermes Agent runs inside a messaging gateway (Slack, Discord, Telegram,
-WhatsApp, Signal, etc.), it can deliver generated files directly into the
-chat — not as paths the user has to copy, but as native attachments.
+When Superforecasting Agent runs through a messaging gateway such as Slack, Discord, Telegram, WhatsApp, or Signal, it can send generated files back into the thread as native attachments.
 
-A chart shows up as an inline image. A PDF report shows up as a file
-download. A spreadsheet uploads as `.xlsx`. The agent does not need to
-write a `MEDIA:` tag or do anything special — it just generates the file
-and mentions its absolute path in the response. The gateway picks the path
-out of the text, removes it from the visible message, and uploads the
-file natively.
+For a forecast desk, deliverables are the outward-facing artifacts around the ledger: calibration plots, forecast review packets, evidence tables, resolver notes, benchmark reports, spreadsheets, slide decks, PDFs, audio briefs, and generated images. Uploading a file does not change the scoreable forecast state. Forecast updates, evidence imports, resolutions, scores, postmortems, and calibration lessons still need explicit ledger actions.
 
-## How it works
+## How It Works
 
 Three pieces fit together:
 
-1. **The agent has tools that produce files.** `execute_code` for charts via
-   matplotlib, the `latex-pdf-report` skill for PDFs, the `powerpoint` skill
-   for decks, `image_generate` for images, `text_to_speech` for audio, and so
-   on.
+1. Forecast workflows or tools produce files. Examples include code-generated charts, backtest reports, exported evidence tables, PDF packets, spreadsheets, slide decks, generated images, and text-to-speech audio.
+2. The gateway scans the final response for file paths. Absolute paths and home-relative paths with supported extensions are extracted. Paths inside code blocks and inline code are ignored.
+3. The gateway uploads by file type. Images embed inline where supported, audio routes to voice or audio attachments, and documents or data files upload as files.
 
-2. **The gateway scans agent responses for file paths.** Any absolute path
-   (`/tmp/...`) or home-relative path (`~/...`) ending in a supported
-   extension gets extracted. Paths inside code blocks and inline code are
-   ignored so code samples are never mutilated.
+The agent only needs to mention the generated file path as plain text in the response. The gateway removes that path from the visible message and uploads the file.
 
-3. **The gateway dispatches by file type.** Images embed inline where the
-   platform supports it; videos embed inline; audio routes to voice/audio
-   attachments; everything else uploads as a file attachment.
-
-## Supported file extensions
+## Supported File Extensions
 
 | Category | Extensions | Delivery |
 |---|---|---|
 | Images | `.png .jpg .jpeg .gif .webp .bmp .tiff .svg` | Inline embed |
-| Video | `.mp4 .mov .avi .mkv .webm` | Inline embed (where supported) |
-| Audio | `.mp3 .wav .ogg .m4a .flac` | Voice / audio attachment |
+| Video | `.mp4 .mov .avi .mkv .webm` | Inline embed where supported |
+| Audio | `.mp3 .wav .ogg .m4a .flac` | Voice or audio attachment |
 | Documents | `.pdf .docx .doc .odt .rtf .txt .md` | File upload |
 | Data | `.xlsx .xls .csv .tsv .json .xml .yaml .yml` | File upload |
 | Presentations | `.pptx .ppt .odp` | File upload |
 | Archives | `.zip .tar .gz .tgz .bz2 .7z` | File upload |
 | Web | `.html .htm` | File upload |
 
-`.py`, `.log`, and other source-file extensions are intentionally excluded so
-the agent doesn't auto-ship arbitrary source files; if you want to send code
-to the user, use a code block.
+Source-file extensions such as `.py` and `.log` are intentionally excluded to avoid auto-shipping arbitrary code or logs. Use a code block when source text should appear in the message.
 
-## Encouraging the agent to produce artifacts
+## Forecast Uses
 
-The agent doesn't reach for artifacts by default — it has to know to.
-Two ways to nudge it:
+Deliverable mode is useful for:
 
-**Per-session:** ask explicitly ("send me the comparison as a chart",
-"return the data as a CSV") or write your own custom-instructions /
-personality entry that biases toward artifact-style replies on
-messaging platforms.
+- daily or weekly active-forecast packets
+- calibration and Brier/log-score charts
+- backtest result exports
+- evidence tables and source snapshots
+- resolver packets for pending resolutions
+- model-run notebooks or report PDFs
+- briefings for stakeholders who do not use the CLI
 
-**Project-level:** add the bias to `AGENTS.md` / `CLAUDE.md` /
-`.cursorrules` in a project the agent works from, or to your global
-custom instructions in `~/.hermes/config.yaml` under `agent.custom_instructions`.
+Treat delivered artifacts as communication outputs. If an artifact contains a new claim, source, model result, or correction that should affect a forecast, write that item to the ledger through `forecast evidence`, `forecast model`, `forecast update`, `forecast resolve`, or the equivalent forecast tool action.
 
-The mechanic the agent has to use is simple: render the file to an
-absolute path (e.g. `/tmp/q3-revenue.png`) and mention that path as
-plain text in the reply. The gateway does the rest. Paths inside
-fenced code blocks or backticks are ignored so code samples are never
-mutilated.
+## Encouraging Artifacts
 
-## Kanban: artifacts ride completion notifications
+Per-session, ask explicitly for the format:
 
-If you use Hermes' kanban multi-agent workflow, workers can attach
-deliverable files to their `kanban_complete` call:
+```text
+Send the last 30 days of calibration as a PNG and CSV.
+```
+
+```text
+Create a resolver packet PDF for forecast 142.
+```
+
+Project-level instructions can bias messaging responses toward artifact-style replies. Add that preference to `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, or `agent.custom_instructions` in `~/.superforecasting-agent/config.yaml`.
+
+During migration, legacy profiles may still read custom instructions from `~/.hermes/config.yaml`.
+
+## Task Completion Artifacts
+
+In multi-agent or kanban-style research workflows, workers can attach files to completion notifications:
 
 ```python
 kanban_complete(
-    summary="rendered Q3 revenue chart and report",
+    summary="rendered calibration chart and benchmark report",
     artifacts=[
-        "/tmp/q3-revenue.png",
-        "/tmp/q3-report.pdf",
+        "/tmp/calibration-30d.png",
+        "/tmp/benchmark-report.pdf",
     ],
 )
 ```
 
-When the gateway notifier delivers the "task completed" message to whoever
-subscribed to the task in Slack/Telegram/etc., it also uploads each artifact
-as a native attachment to that chat. The human gets the deliverable and the
-summary in one place.
+When a subscribed chat receives the completion message, the notifier uploads each existing artifact as a native attachment. Missing files are skipped.
 
-Files that don't exist on disk when the notifier runs are silently skipped.
+## MCP Sources
 
-## Connecting more services with MCP
+MCP servers can help fetch inputs or publish deliverables to external workspaces. Typical forecast-desk uses include:
 
-Beyond the artifact-delivery pipeline, the agent can reach into other
-services via MCP (Model Context Protocol). The MCP ecosystem ships
-community servers for most popular tools — install whichever you need:
-
-| Service | What it unlocks |
+| Service | Forecast-desk use |
 |---|---|
-| **Notion** | Read/write Notion pages, databases, query workspace |
-| **GitHub** | Issues, PRs, comments, repo search beyond the gh CLI |
-| **Linear** | Tickets, projects, cycles |
-| **Slack** | Workspace-wide search, read other channels |
-| **Gmail** | Inbox triage, send mail, label management |
-| **Salesforce** | Leads, opportunities, account data |
-| **Snowflake / BigQuery** | SQL against data warehouses |
-| **Google Drive** | File search, contents, share management |
+| Notion | Publish forecast review notes or resolver packets |
+| GitHub | Attach issue/PR evidence or benchmark fixtures |
+| Linear | Link forecast tasks to product or incident workflows |
+| Slack | Search channels for timestamped source notes |
+| Gmail | Triage alert emails and export evidence candidates |
+| Snowflake / BigQuery | Query historical base-rate datasets |
+| Google Drive | Find or publish reports and spreadsheets |
 
-Install MCP servers via `~/.hermes/config.yaml` under the `mcp_servers`
-section. See [MCP integration](./mcp.md) for the full setup guide.
+Configure MCP servers under `mcp_servers` in `~/.superforecasting-agent/config.yaml`. See [MCP integration](./mcp.md) for setup.
 
-## Comparison to Perplexity Computer in Slack
+## Security
 
-Perplexity Computer's Slack integration is built around the same idea:
-the agent generates a deliverable (chart, PDF, slide deck) and posts it
-back into the thread as a native attachment. Hermes Agent's deliverable
-mode provides the same user-facing pattern locally:
-
-- Generation happens in the user's own venv / sandbox (no remote tenant).
-- Files land in the chat via the same Slack `files.uploadV2` API.
-- Connector breadth comes via MCP rather than a curated catalog of 400
-  hosted integrations — install the ones you actually use.
-
-OAuth tokens stay on the user's machine in `auth.json` / `.env`. No hosted
-token storage. No multi-tenant microVM. Same end result.
+Deliverable mode only uploads paths that the agent explicitly mentions in its response. It does not scan arbitrary directories. Credentials remain on the user's machine in local auth and environment files; native platform uploads use the configured gateway credentials.

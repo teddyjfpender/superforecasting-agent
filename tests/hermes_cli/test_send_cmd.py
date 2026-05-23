@@ -1,4 +1,4 @@
-"""Tests for the ``hermes send`` CLI subcommand.
+"""Tests for the ``superforecasting-agent send`` CLI subcommand.
 
 Covers the argument parsing / stdin / file / list behavior of
 ``hermes_cli.send_cmd``. The underlying ``send_message_tool`` is stubbed so
@@ -25,7 +25,7 @@ def _parse(argv):
     """Build the top-level parser and return the parsed args for ``argv``."""
     import argparse
 
-    parser = argparse.ArgumentParser(prog="hermes")
+    parser = argparse.ArgumentParser(prog="superforecasting-agent")
     subparsers = parser.add_subparsers(dest="command")
     send_cmd.register_send_subparser(subparsers)
     return parser.parse_args(["send", *argv])
@@ -151,6 +151,8 @@ def test_missing_target(fake_tool, capsys, monkeypatch):
     assert exc.value.code == 2
     err = capsys.readouterr().err
     assert "--to" in err
+    assert "superforecasting-agent send:" in err
+    assert "hermes send" not in err
 
 
 def test_missing_message(fake_tool, capsys, monkeypatch):
@@ -161,6 +163,8 @@ def test_missing_message(fake_tool, capsys, monkeypatch):
     assert exc.value.code == 2
     err = capsys.readouterr().err
     assert "no message" in err.lower()
+    assert "superforecasting-agent send:" in err
+    assert "hermes send" not in err
 
 
 def test_file_not_found_is_usage_error(fake_tool, capsys, monkeypatch):
@@ -171,6 +175,8 @@ def test_file_not_found_is_usage_error(fake_tool, capsys, monkeypatch):
     assert exc.value.code == 2
     err = capsys.readouterr().err
     assert "cannot read" in err.lower()
+    assert "superforecasting-agent send:" in err
+    assert "hermes send" not in err
 
 
 def test_file_decode_error_is_usage_error(fake_tool, capsys, monkeypatch, tmp_path):
@@ -184,6 +190,8 @@ def test_file_decode_error_is_usage_error(fake_tool, capsys, monkeypatch, tmp_pa
     assert exc.value.code == 2
     err = capsys.readouterr().err
     assert "cannot read" in err.lower()
+    assert "superforecasting-agent send:" in err
+    assert "hermes send" not in err
 
 
 def test_tool_error_returns_failure_exit(monkeypatch, capsys):
@@ -204,6 +212,8 @@ def test_tool_error_returns_failure_exit(monkeypatch, capsys):
     assert exc.value.code == 1
     err = capsys.readouterr().err
     assert "platform blew up" in err
+    assert "superforecasting-agent send:" in err
+    assert "hermes send" not in err
 
 
 def test_skipped_result_is_success(monkeypatch):
@@ -306,6 +316,27 @@ def test_list_unknown_platform_fails(monkeypatch, capsys):
     assert exc.value.code == 1
     err = capsys.readouterr().err
     assert "pigeon-post" in err
+    assert "superforecasting-agent send:" in err
+    assert "hermes send" not in err
+
+
+def test_list_empty_directory_uses_forecast_native_setup_hint(monkeypatch, capsys):
+    import sys as _sys
+    import types as _types
+
+    fake_dir = _types.ModuleType("gateway.channel_directory")
+    fake_dir.format_directory_for_display = lambda: "(unused)"
+    fake_dir.load_directory = lambda: {"platforms": {}}
+    monkeypatch.setitem(_sys.modules, "gateway.channel_directory", fake_dir)
+
+    args = _parse(["--list"])
+    with pytest.raises(SystemExit) as exc:
+        send_cmd.cmd_send(args)
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "`superforecasting-agent gateway setup`" in out
+    assert "~/.superforecasting-agent/channel_directory.json" in out
+    assert "hermes gateway setup" not in out
 
 
 # ---------------------------------------------------------------------------
@@ -327,6 +358,20 @@ def test_register_send_subparser_is_reusable():
     assert args.message == "hi"
 
 
+def test_send_subparser_help_is_forecast_native():
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="superforecasting-agent")
+    subparsers = parser.add_subparsers(dest="command")
+    send_parser = send_cmd.register_send_subparser(subparsers)
+
+    help_text = send_parser.format_help()
+    assert "superforecasting-agent send --to telegram" in help_text
+    assert "~/.superforecasting-agent/.env" in help_text
+    assert "hermes send" not in help_text
+    assert "Hermes" not in help_text
+
+
 # ---------------------------------------------------------------------------
 # Env loader
 # ---------------------------------------------------------------------------
@@ -336,8 +381,8 @@ def test_load_hermes_env_bridges_config_yaml_scalars(tmp_path, monkeypatch):
     """Top-level config.yaml scalars should be bridged into os.environ.
 
     This mirrors the gateway/run.py bootstrap behavior: without this, running
-    ``hermes send`` from a fresh shell cannot resolve the home channel
-    because ``TELEGRAM_HOME_CHANNEL`` (saved by ``hermes config set``) lives
+    ``superforecasting-agent send`` from a fresh shell cannot resolve the home channel
+    because ``TELEGRAM_HOME_CHANNEL`` (saved by ``superforecasting-agent config set``) lives
     in config.yaml, not in .env — and the gateway's config loader reads via
     ``os.getenv(...)``.
     """

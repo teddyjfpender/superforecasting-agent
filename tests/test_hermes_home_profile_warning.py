@@ -2,9 +2,9 @@
 
 Regression test for https://github.com/NousResearch/hermes-agent/issues/18594.
 
-When HERMES_HOME is unset but an active_profile file indicates a non-default
+When no explicit home env var is set but an active_profile file indicates a non-default
 profile is active, get_hermes_home() should:
-  1. STILL return ~/.hermes (raising would brick 30+ module-level callers)
+  1. STILL return the fallback home (raising would brick 30+ module-level callers)
   2. Emit a loud one-shot warning to stderr so operators can diagnose
      cross-profile data contamination after the fact.
 
@@ -26,6 +26,8 @@ def fresh_constants(monkeypatch, tmp_path):
     importlib.reload(hermes_constants)
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.delenv("HERMES_HOME", raising=False)
+    monkeypatch.delenv("FORECAST_HOME", raising=False)
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_HOME", raising=False)
     return hermes_constants
 
 
@@ -33,20 +35,30 @@ class TestGetHermesHomeProfileWarning:
     def test_classic_mode_no_active_profile_no_warning(
         self, fresh_constants, tmp_path, capsys
     ):
-        """Classic mode: no active_profile file → silent, returns ~/.hermes."""
+        """Fresh fork install: no active_profile file → silent, returns native home."""
         result = fresh_constants.get_hermes_home()
-        assert result == tmp_path / ".hermes"
+        assert result == tmp_path / ".superforecasting-agent"
         assert "HERMES_HOME fallback" not in capsys.readouterr().err
 
     def test_default_active_profile_no_warning(
         self, fresh_constants, tmp_path, capsys
     ):
-        """active_profile=default → still no warning, returns ~/.hermes."""
+        """Legacy active_profile=default → still no warning, returns ~/.hermes."""
         hermes_dir = tmp_path / ".hermes"
         hermes_dir.mkdir()
         (hermes_dir / "active_profile").write_text("default\n")
         result = fresh_constants.get_hermes_home()
         assert result == tmp_path / ".hermes"
+        assert "HERMES_HOME fallback" not in capsys.readouterr().err
+
+    def test_native_home_wins_over_legacy_home(self, fresh_constants, tmp_path, capsys):
+        """Once the fork-native home exists, it is preferred over legacy state."""
+        (tmp_path / ".superforecasting-agent").mkdir()
+        (tmp_path / ".hermes").mkdir()
+
+        result = fresh_constants.get_hermes_home()
+
+        assert result == tmp_path / ".superforecasting-agent"
         assert "HERMES_HOME fallback" not in capsys.readouterr().err
 
     def test_named_profile_unset_home_warns_once(
@@ -81,6 +93,22 @@ class TestGetHermesHomeProfileWarning:
         profile_dir.mkdir(parents=True)
         (tmp_path / ".hermes" / "active_profile").write_text("coder\n")
         monkeypatch.setenv("HERMES_HOME", str(profile_dir))
+
+        result = fresh_constants.get_hermes_home()
+
+        assert result == profile_dir
+        assert "HERMES_HOME fallback" not in capsys.readouterr().err
+
+    def test_forecast_home_alias_suppresses_warning(
+        self, fresh_constants, tmp_path, capsys, monkeypatch
+    ):
+        """Forecast-native home aliases count as explicit home configuration."""
+        profile_dir = tmp_path / ".forecast" / "profiles" / "coder"
+        profile_dir.mkdir(parents=True)
+        hermes_dir = tmp_path / ".hermes"
+        hermes_dir.mkdir()
+        (hermes_dir / "active_profile").write_text("coder\n")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(profile_dir))
 
         result = fresh_constants.get_hermes_home()
 

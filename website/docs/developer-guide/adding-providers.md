@@ -1,18 +1,19 @@
 ---
 sidebar_position: 5
 title: "Adding Providers"
-description: "How to add a new inference provider to Hermes Agent — auth, runtime resolution, CLI flows, adapters, tests, and docs"
+description: "How to add a forecasting-runtime inference provider."
 ---
 
 # Adding Providers
 
-Hermes can already talk to any OpenAI-compatible endpoint through the custom provider path. Do not add a built-in provider unless you want first-class UX for that service:
+Superforecasting Agent can already talk to any OpenAI-compatible endpoint through the custom provider path inherited from Hermes. Do not add a built-in provider unless you want first-class UX for that service:
 
 - provider-specific auth or token refresh
 - a curated model catalog
-- setup / `hermes model` menu entries
+- setup / `superforecasting-agent model` menu entries
 - provider aliases for `provider:model` syntax
 - a non-OpenAI API shape that needs an adapter
+- forecast provenance and benchmark comparisons that need a stable provider id
 
 If the provider is just "another OpenAI-compatible base URL and API key", a named custom provider may be enough.
 
@@ -28,8 +29,9 @@ A built-in provider has to line up across a few layers:
    - `api_key`
    - `source`
 3. `run_agent.py` uses `api_mode` to decide how requests are built and sent.
-4. `hermes_cli/models.py` and `hermes_cli/main.py` make the provider show up in the CLI. (`hermes_cli/setup.py` delegates to `main.py` automatically — no changes needed there.)
+4. `hermes_cli/models.py` and `hermes_cli/main.py` make the provider show up in the CLI. (`hermes_cli/setup.py` delegates to `main.py` automatically; no changes needed there.)
 5. `agent/auxiliary_client.py` and `agent/model_metadata.py` keep side tasks and token budgeting working.
+6. `forecasting/ledger.py` and `forecasting/models.py` record the resulting provider/model provenance through model runs and forecast snapshots.
 
 The important abstraction is `api_mode`.
 
@@ -84,7 +86,7 @@ This path includes everything from Path A plus:
 8. user-facing docs under `website/docs/`
 
 :::tip
-`hermes_cli/setup.py` does **not** need changes. The setup wizard delegates provider/model selection to `select_provider_and_model()` in `main.py` — any provider added there is automatically available in `hermes setup`.
+`hermes_cli/setup.py` does **not** need changes. The setup wizard delegates provider/model selection to `select_provider_and_model()` in `main.py`; any provider added there is automatically available in `superforecasting-agent setup`.
 :::
 
 ### Additional for native / non-OpenAI providers
@@ -102,7 +104,7 @@ All you need is:
 1. A plugin directory under `plugins/model-providers/<your-provider>/` containing:
    - `__init__.py` — calls `register_provider(profile)` at module-level
    - `plugin.yaml` — manifest (name, kind: model-provider, version, description)
-2. That's it. Provider plugins auto-load the first time anything calls `get_provider_profile()` or `list_providers()` — bundled plugins (this repo) and user plugins at `$HERMES_HOME/plugins/model-providers/` both get picked up.
+2. That's it. Provider plugins auto-load the first time anything calls `get_provider_profile()` or `list_providers()`; bundled plugins and user plugins at `$SUPERFORECASTING_AGENT_HOME/plugins/model-providers/` or legacy `$HERMES_HOME/plugins/model-providers/` both get picked up.
 
 When you add a plugin and it calls `register_provider()`, the following wire up automatically:
 
@@ -112,14 +114,14 @@ When you add a plugin and it calls `register_provider()`, the following wire up 
 4. `env_vars` checked in priority order for the API key
 5. `fallback_models` list registered for the provider
 6. `--provider` CLI flag accepts the provider id
-7. `hermes model` menu includes the provider
-8. `hermes setup` wizard delegates to `main.py` automatically
+7. `superforecasting-agent model` menu includes the provider
+8. `superforecasting-agent setup` wizard delegates to `main.py` automatically
 9. `provider:model` alias syntax works
 10. Runtime resolver returns the correct `base_url` and `api_key`
-11. `HERMES_INFERENCE_PROVIDER` env-var override accepts the provider id
+11. `HERMES_INFERENCE_PROVIDER` compatibility env-var override accepts the provider id
 12. Fallback model activation can switch into the provider cleanly
 
-User plugins at `$HERMES_HOME/plugins/model-providers/<name>/` override bundled plugins of the same name (last-writer-wins in `register_provider()`) — so third parties can monkey-patch or replace any built-in profile without editing the repo.
+User plugins at `$SUPERFORECASTING_AGENT_HOME/plugins/model-providers/<name>/` or legacy `$HERMES_HOME/plugins/model-providers/<name>/` override bundled plugins of the same name (last-writer-wins in `register_provider()`), so third parties can replace any built-in profile without editing the repo.
 
 See `plugins/model-providers/nvidia/` or `plugins/model-providers/gmi/` as a template, and the full [Model Provider Plugin guide](/docs/developer-guide/model-provider-plugin) for field reference, hook idioms, and end-to-end examples.
 
@@ -131,7 +133,7 @@ Use the full checklist below when your provider needs any of the following:
 - A non-OpenAI API shape that requires a new adapter (Anthropic Messages, Codex Responses)
 - Custom endpoint detection or multi-region probing (z.ai, Kimi)
 - A curated static model catalog or live `/models` fetch
-- Provider-specific `hermes model` menu entries with bespoke auth flows
+- Provider-specific `superforecasting-agent model` menu entries with bespoke auth flows
 
 ## Step 1: Pick one canonical provider id
 
@@ -177,7 +179,7 @@ Use the existing providers as templates:
 
 Questions to answer here:
 
-- What env vars should Hermes check, and in what priority order?
+- What env vars should Superforecasting Agent check, and in what priority order?
 - Does the provider need base-URL overrides?
 - Does it need endpoint probing or token refresh?
 - What should the auth error say when credentials are missing?
@@ -226,11 +228,11 @@ Add a branch that returns a dict with at least:
 
 If the provider is OpenAI-compatible, `api_mode` should usually stay `chat_completions`.
 
-Be careful with API-key precedence. Hermes already contains logic to avoid leaking an OpenRouter key to unrelated endpoints. A new provider should be equally explicit about which key goes to which base URL.
+Be careful with API-key precedence. The inherited runtime already contains logic to avoid leaking an OpenRouter key to unrelated endpoints. A new provider should be equally explicit about which key goes to which base URL.
 
 ## Step 5: Wire the CLI in `hermes_cli/main.py`
 
-A provider is not discoverable until it shows up in the interactive `hermes model` flow.
+A provider is not discoverable until it shows up in the interactive `superforecasting-agent model` flow.
 
 Update these in `hermes_cli/main.py`:
 
@@ -242,7 +244,7 @@ Update these in `hermes_cli/main.py`:
 - a `_model_flow_<provider>()` function, or reuse `_model_flow_api_key_provider()` if it fits
 
 :::tip
-`hermes_cli/setup.py` does not need changes — it calls `select_provider_and_model()` from `main.py`, so your new provider appears in both `hermes model` and `hermes setup` automatically.
+`hermes_cli/setup.py` does not need changes. It calls `select_provider_and_model()` from `main.py`, so your new provider appears in both `superforecasting-agent model` and `superforecasting-agent setup` automatically.
 :::
 
 ## Step 6: Keep auxiliary calls working
@@ -313,7 +315,7 @@ Examples already in-tree:
 - OpenRouter gets provider-routing fields
 - not every provider should receive every request-side option
 
-When you add a native provider, double-check that Hermes is only sending fields that provider actually understands.
+When you add a native provider, double-check that Superforecasting Agent is only sending fields that provider actually understands.
 
 ## Step 8: Tests
 
@@ -338,18 +340,16 @@ For docs-only examples, the exact file set may differ. The point is to cover:
 - provider:model parsing
 - any adapter-specific message conversion
 
-Run tests with xdist disabled:
+Run focused tests with the project runner:
 
 ```bash
-source venv/bin/activate
-python -m pytest tests/test_runtime_provider_resolution.py tests/test_cli_provider_resolution.py tests/test_cli_model_command.py tests/test_setup_model_selection.py -n0 -q
+scripts/run_tests.sh tests/test_runtime_provider_resolution.py tests/test_cli_provider_resolution.py tests/test_cli_model_command.py tests/test_setup_model_selection.py -q
 ```
 
 For deeper changes, run the full suite before pushing:
 
 ```bash
-source venv/bin/activate
-python -m pytest tests/ -n0 -q
+scripts/run_tests.sh tests -q
 ```
 
 ## Step 9: Live verification
@@ -358,15 +358,15 @@ After tests, run a real smoke test.
 
 ```bash
 source venv/bin/activate
-python -m hermes_cli.main chat -q "Say hello" --provider your-provider --model your-model
+python -m superforecasting_agent chat -q "Say hello" --provider your-provider --model your-model
 ```
 
 Also test the interactive flows if you changed menus:
 
 ```bash
 source venv/bin/activate
-python -m hermes_cli.main model
-python -m hermes_cli.main setup
+python -m superforecasting_agent model
+python -m superforecasting_agent setup
 ```
 
 For native providers, verify at least one tool call too, not just a plain text response.
@@ -434,7 +434,7 @@ Search for `api_mode` and `self.client.`. Do not assume the obvious request path
 
 Fields like provider routing belong only on the providers that support them.
 
-### 7. Updating `hermes model` but not `hermes setup`
+### 7. Updating `superforecasting-agent model` but not setup
 
 Both flows need to know about the provider.
 

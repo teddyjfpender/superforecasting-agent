@@ -1,163 +1,221 @@
 ---
 sidebar_position: 4
 title: "Toolsets Reference"
-description: "Reference for Hermes core, composite, platform, and dynamic toolsets"
+description: "Reference for forecast-desk, core, platform, and dynamic toolsets"
 ---
 
 # Toolsets Reference
 
-Toolsets are named bundles of tools that control what the agent can do. They're the primary mechanism for configuring tool availability per platform, per session, or per task.
+Toolsets are named bundles of tools. They define what an agent session is
+allowed to do: inspect sources, run commands, edit files, write forecast
+ledger entries, send messages, use plugins, or call MCP servers.
+
+For Superforecasting Agent, the important default is `forecast-desk`. It gives
+the CLI enough capability to research, model, update, schedule, score, and
+learn from forecasts without exposing every inherited general-assistant
+integration by default.
 
 ## How Toolsets Work
 
-Every tool belongs to exactly one toolset. When you enable a toolset, all tools in that bundle become available to the agent. Toolsets come in three kinds:
+Every tool belongs to one logical toolset. Toolsets can include other toolsets,
+so a composite such as `forecast-desk` expands into the underlying tool names
+before the model sees them.
 
-- **Core** — A single logical group of related tools (e.g., `file` bundles `read_file`, `write_file`, `patch`, `search_files`)
-- **Composite** — Combines multiple core toolsets for a common scenario (e.g., `debugging` bundles file, terminal, and web tools)
-- **Platform** — A complete tool configuration for a specific deployment context (e.g., `hermes-cli` is the default for interactive CLI sessions)
+Toolsets come in four kinds:
+
+| Kind | Meaning | Example |
+|------|---------|---------|
+| Forecast default | The CLI's primary product capability set | `forecast-desk` |
+| Core | One logical group of related tools | `file`, `web`, `forecasting` |
+| Composite | Multiple core toolsets combined for a workflow | `debugging`, `safe` |
+| Platform | A complete runtime preset for a deployment context | `forecast-api-server`, `hermes-telegram` |
+
+Platform names that still start with `hermes-` are compatibility identifiers in
+the runtime. They do not mean the old broad assistant surface is the preferred
+product surface. New configs can use fork-native aliases for the main inherited
+runtime presets: `forecast-cli`, `forecast-acp`, `forecast-api-server`,
+`forecast-cron`, and `forecast-gateway`.
 
 ## Configuring Toolsets
 
-### Per-session (CLI)
+### Per Session
 
 ```bash
-hermes chat --toolsets web,file,terminal
-hermes chat --toolsets debugging        # composite — expands to file + terminal + web
-hermes chat --toolsets all              # everything
+# Forecast desk default
+superforecasting-agent
+
+# Add a specific opt-in capability
+superforecasting-agent chat --toolsets forecast-desk,mcp-market-data
+
+# Use the inherited full runtime preset only when you need it
+superforecasting-agent chat --toolsets forecast-cli
 ```
 
-### Per-platform (config.yaml)
+Avoid `all` for normal forecasting work. It exposes every registered built-in,
+plugin, and dynamic toolset, which makes prompts noisier and broadens the
+agent's action surface.
+
+### Per Platform
 
 ```yaml
 toolsets:
-  - hermes-cli          # default for CLI
-  # - hermes-telegram   # override for Telegram gateway
+  - forecast-desk
 ```
 
-### Interactive management
+Messaging, gateway, ACP, and API-server profiles can still use their platform
+presets when that deployment needs the inherited runtime behavior.
+
+### Interactive Management
 
 ```bash
-hermes tools                            # curses UI to enable/disable per platform
+superforecasting-agent tools
+superforecasting-agent tools list
 ```
 
-Or in-session:
+In the classic interactive CLI, slash commands can inspect and adjust tool
+availability for the current runtime:
 
-```
+```text
 /tools list
 /tools disable browser
-/tools enable homeassistant
+/tools enable mcp-market-data
 ```
+
+The `superforecasting-agent tools` UI persists tool-level disables to
+`config.yaml`. Disabled tools are filtered out even when a matching toolset is
+enabled.
+
+## Forecast Default
+
+| Toolset | Includes | Purpose |
+|---------|----------|---------|
+| `forecast-desk` | `forecasting`, `web`, `browser`, `terminal`, `file`, `code_execution`, `todo`, `clarify`, `cronjob` | Default CLI desk for forecast ledger operations, source research, local modeling, evidence capture, scheduled review, and explicit clarification. |
+
+The default intentionally does not include generic memory-provider tools,
+skills marketplace tools, image generation, delegation, messaging delivery,
+Home Assistant, Spotify, Discord administration, RL training, or other broad
+assistant integrations. Enable those explicitly when a forecast workflow
+actually needs them.
 
 ## Core Toolsets
 
 | Toolset | Tools | Purpose |
 |---------|-------|---------|
-| `browser` | `browser_back`, `browser_cdp`, `browser_click`, `browser_console`, `browser_dialog`, `browser_get_images`, `browser_navigate`, `browser_press`, `browser_scroll`, `browser_snapshot`, `browser_type`, `browser_vision`, `web_search` | Core browser automation. Includes `web_search` as a fallback for quick lookups. `browser_cdp` and `browser_dialog` are gated at runtime — registered only when a CDP endpoint is reachable at session start (via `/browser connect`, `browser.cdp_url` config, Browserbase, or Camofox). `browser_dialog` works together with the `pending_dialogs` and `frame_tree` fields that `browser_snapshot` adds when a CDP supervisor is attached. |
-| `clarify` | `clarify` | Ask the user a question when the agent needs clarification. |
-| `code_execution` | `execute_code` | Run Python scripts that call Hermes tools programmatically. |
-| `cronjob` | `cronjob` | Schedule and manage recurring tasks. |
-| `debugging` | composite (`file` + `terminal` + `web`) | Debug bundle — file, process/terminal, web extract/search. |
-| `delegation` | `delegate_task` | Spawn isolated subagent instances for parallel work. |
-| `discord` | `discord` | Core Discord text/embed/DM actions (gateway-only). Active on the `hermes-discord` toolset. |
-| `discord_admin` | `discord_admin` | Discord moderation (bans, role changes, channel management). Active on the `hermes-discord` toolset; requires the bot to hold the relevant Discord permissions. |
-| `feishu_doc` | `feishu_doc_read` | Read Feishu/Lark document content. Used by the Feishu document-comment intelligent-reply handler. |
-| `feishu_drive` | `feishu_drive_add_comment`, `feishu_drive_list_comments`, `feishu_drive_list_comment_replies`, `feishu_drive_reply_comment` | Feishu/Lark drive comment operations. Scoped to the comment agent; not exposed on `hermes-cli` or other messaging toolsets. |
-| `file` | `patch`, `read_file`, `search_files`, `write_file` | File reading, writing, searching, and editing. |
-| `homeassistant` | `ha_call_service`, `ha_get_state`, `ha_list_entities`, `ha_list_services` | Smart home control via Home Assistant. Only available when `HASS_TOKEN` is set. |
-| `computer_use` | `computer_use` | Background macOS desktop control via cua-driver — does not steal cursor/focus. Works with any tool-capable model. macOS only; requires `cua-driver` on `$PATH`. |
-| `image_gen` | `image_generate` | Text-to-image generation via FAL.ai (with opt-in OpenAI / xAI backends). |
-| `video_gen` | `video_generate` | Text-to-video and image-to-video via plugin-registered backends (xAI Grok-Imagine, FAL.ai Veo 3.1 / Pixverse v6 / Kling O3). Pass `image_url` to animate an image; omit it for text-to-video. |
-| `kanban` | `kanban_block`, `kanban_comment`, `kanban_complete`, `kanban_create`, `kanban_heartbeat`, `kanban_link`, `kanban_list`, `kanban_show`, `kanban_unblock` | Multi-agent coordination tools. Registered for dispatcher-spawned task workers (`HERMES_KANBAN_TASK`) and for profiles that explicitly enable the `kanban` toolset. Workers mark tasks done, block, heartbeat, comment, and create/link follow-up tasks; orchestrator profiles additionally get board-routing tools like list/unblock. |
-| `memory` | `memory` | Persistent cross-session memory management. |
-| `messaging` | `send_message` | Send messages to other platforms (Telegram, Discord, etc.) from within a session. |
-| `moa` | `mixture_of_agents` | Multi-model consensus via Mixture of Agents. |
-| `safe` | `image_generate`, `vision_analyze`, `web_extract`, `web_search` (via `includes`) | Read-only research + media generation. No file writes, no terminal, no code execution. |
-| `search` | `web_search` | Web search only (without extract). |
-| `session_search` | `session_search` | Search past conversation sessions. |
-| `skills` | `skill_manage`, `skill_view`, `skills_list` | Skill CRUD and browsing. |
-| `spotify` | `spotify_albums`, `spotify_devices`, `spotify_library`, `spotify_playback`, `spotify_playlists`, `spotify_queue`, `spotify_search` | Native Spotify control (playback, queue, search, playlists, albums, library). Registered by the bundled `spotify` plugin. |
-| `terminal` | `process`, `terminal` | Shell command execution and background process management. |
-| `todo` | `todo` | Task list management within a session. |
-| `tts` | `text_to_speech` | Text-to-speech audio generation. |
-| `vision` | `vision_analyze` | Image analysis via vision-capable models. |
-| `video` | `video_analyze` | Video analysis and understanding tools (opt-in, not in the default toolset — add explicitly via `--toolsets`). |
-| `web` | `web_extract`, `web_search` | Web search and page content extraction. |
-| `x_search` | `x_search` | Search X (Twitter) posts and threads via xAI's built-in `x_search` Responses tool. Off by default; opt in via `hermes tools`. Schema only registered when xAI credentials (SuperGrok OAuth or `XAI_API_KEY`) are configured. |
-| `yuanbao` | `yb_query_group_info`, `yb_query_group_members`, `yb_search_sticker`, `yb_send_dm`, `yb_send_sticker` | Yuanbao DM/group actions and sticker search. Registered only on `hermes-yuanbao`. |
+| `forecasting` | `forecast_ledger` | Forecast question lifecycle, evidence, snapshots, assumptions, reference classes, model runs, schedules, alerts, scores, postmortems, calibration lessons, and exports. |
+| `web` | `web_search`, `web_extract` | Web search and page extraction for evidence gathering. |
+| `search` | `web_search` | Search only, without extraction. |
+| `browser` | browser navigation/snapshot/click/type/scroll/console/CDP tools, `web_search` | Interactive source inspection and pages that need browser automation. CDP-only tools register only when a CDP endpoint is available. |
+| `file` | `read_file`, `write_file`, `patch`, `search_files` | Read, write, patch, and search local files. |
+| `terminal` | `terminal`, `process` | Shell command execution and background process management. |
+| `code_execution` | `execute_code` | Run Python scripts that can call tools programmatically. |
+| `cronjob` | `cronjob` | Inherited generic scheduler. Forecast lifecycle schedules should prefer `forecast schedule`. |
+| `todo` | `todo` | Session task planning and tracking. |
+| `clarify` | `clarify` | Ask the user for a needed decision or missing input. |
+| `memory` | `memory` | Generic cross-session memory. Forecast learning should be stored in the forecast ledger. |
+| `session_search` | `session_search` | Search prior chat sessions. |
+| `skills` | `skills_list`, `skill_view`, `skill_manage` | Browse and manage skill documents. |
+| `delegation` | `delegate_task` | Spawn isolated subagent instances for complex subtasks. |
+| `vision` | `vision_analyze` | Analyze images. |
+| `image_gen` | `image_generate` | Generate images through configured providers. |
+| `video` | `video_analyze` | Analyze video; opt-in. |
+| `video_gen` | `video_generate` | Generate video through configured providers; opt-in. |
+| `tts` | `text_to_speech` | Generate speech audio. |
+| `messaging` | `send_message` | Send outbound messages through configured platforms. |
+| `computer_use` | `computer_use` | Background macOS desktop control via cua-driver. |
+| `homeassistant` | `ha_list_entities`, `ha_get_state`, `ha_list_services`, `ha_call_service` | Smart-home control, gated by Home Assistant credentials. |
+| `kanban` | `kanban_*` tools | Multi-agent board coordination for dispatcher/worker profiles. |
+| `discord` | `discord` | Discord text/embed/DM actions for gateway use. |
+| `discord_admin` | `discord_admin` | Discord moderation and server administration. |
+| `spotify` | `spotify_*` tools | Spotify playback, queue, search, playlist, album, and library control. |
+| `x_search` | `x_search` | Search X posts and threads through xAI credentials; off by default. |
+| `moa` | `mixture_of_agents` | Multi-model consensus. |
+| `yuanbao` | `yb_*` tools | Yuanbao DM/group/sticker actions. |
+| `feishu_doc` | `feishu_doc_read` | Feishu/Lark document reads. |
+| `feishu_drive` | `feishu_drive_*` tools | Feishu/Lark document comment operations. |
+
+## Composite Toolsets
+
+| Toolset | Includes | Purpose |
+|---------|----------|---------|
+| `debugging` | `file`, `terminal`, `web` | Troubleshooting and development work. Useful for fixing code, not a default forecasting surface. |
+| `safe` | `web`, `vision`, `image_gen` | Read-only research and media generation. It omits terminal and file-write access. |
 
 ## Platform Toolsets
 
-Platform toolsets define the complete tool configuration for a deployment target. Most messaging platforms use the same set as `hermes-cli`:
+Platform toolsets define complete presets for non-default deployment targets.
+Most names are inherited compatibility identifiers.
 
-| Toolset | Differences from `hermes-cli` |
-|---------|-------------------------------|
-| `hermes-cli` | Full toolset — the default for interactive CLI sessions. Includes file, terminal, web, browser, memory, skills, vision, image_gen, todo, tts, delegation, code_execution, cronjob, session_search, clarify, and `safe` (read-only) bundles plus the standard messaging tools. |
-| `hermes-acp` | Drops `clarify`, `cronjob`, `image_generate`, `send_message`, `text_to_speech`, and all four Home Assistant tools. Focused on coding tasks in IDE context. |
-| `hermes-api-server` | Drops `clarify`, `send_message`, and `text_to_speech`. Keeps everything else — suitable for programmatic access where user interaction isn't possible. |
-| `hermes-cron` | Same as `hermes-cli`. |
-| `hermes-telegram` | Same as `hermes-cli`. |
-| `hermes-discord` | Adds `discord` and `discord_admin` on top of `hermes-cli`. |
-| `hermes-slack` | Same as `hermes-cli`. |
-| `hermes-whatsapp` | Same as `hermes-cli`. |
-| `hermes-signal` | Same as `hermes-cli`. |
-| `hermes-matrix` | Same as `hermes-cli`. |
-| `hermes-mattermost` | Same as `hermes-cli`. |
-| `hermes-email` | Same as `hermes-cli`. |
-| `hermes-sms` | Same as `hermes-cli`. |
-| `hermes-bluebubbles` | Same as `hermes-cli`. |
-| `hermes-dingtalk` | Same as `hermes-cli`. |
-| `hermes-feishu` | Adds the five `feishu_doc_*` / `feishu_drive_*` tools (only used by the document-comment handler, not the regular chat adapter). |
-| `hermes-qqbot` | Same as `hermes-cli`. |
-| `hermes-wecom` | Same as `hermes-cli`. |
-| `hermes-wecom-callback` | Same as `hermes-cli`. |
-| `hermes-weixin` | Same as `hermes-cli`. |
-| `hermes-yuanbao` | Adds the five `yb_*` tools (DM/group/sticker) on top of `hermes-cli`. |
-| `hermes-homeassistant` | Same as `hermes-cli` (the Home Assistant tools are already present by default and activate when `HASS_TOKEN` is set). |
-| `hermes-webhook` | Same as `hermes-cli`. |
-| `hermes-gateway` | Internal gateway orchestrator toolset — union of every `hermes-<platform>` toolset; used when the gateway needs to accept any message source. |
+| Toolset | Purpose |
+|---------|---------|
+| `forecast-cli` | Fork-native alias for `hermes-cli`; inherited full interactive runtime preset. Prefer `forecast-desk` for normal forecasting work. |
+| `forecast-acp` | Fork-native alias for `hermes-acp`; editor integration for VS Code, Zed, and JetBrains. |
+| `forecast-api-server` | Fork-native alias for `hermes-api-server`; OpenAI-compatible HTTP runtime without interactive clarification or outbound messaging. |
+| `forecast-cron` | Fork-native alias for `hermes-cron`; inherited cron runtime preset. Forecast-aware jobs should prefer `forecast schedule`. |
+| `forecast-gateway` | Fork-native alias for `hermes-gateway`; inherited messaging gateway preset. |
+| `hermes-cli` | Legacy full interactive assistant preset. Use explicitly when you want the broad inherited tool surface. |
+| `hermes-acp` | Editor integration for VS Code, Zed, and JetBrains. Drops interactive messaging/audio tools. |
+| `hermes-api-server` | OpenAI-compatible HTTP runtime without interactive clarification or outbound messaging. |
+| `hermes-cron` | Inherited cron runtime preset. Forecast-aware jobs should prefer `forecast schedule`. |
+| `hermes-telegram`, `hermes-slack`, `hermes-whatsapp`, `hermes-signal`, `hermes-matrix`, `hermes-mattermost`, `hermes-email`, `hermes-sms`, `hermes-bluebubbles`, `hermes-dingtalk`, `hermes-wecom`, `hermes-wecom-callback`, `hermes-weixin`, `hermes-qqbot`, `hermes-webhook` | Messaging/gateway presets built on the inherited runtime. |
+| `hermes-discord` | Messaging preset plus Discord and Discord-admin tools. |
+| `hermes-feishu` | Messaging preset plus Feishu/Lark document tools. |
+| `hermes-yuanbao` | Messaging preset plus Yuanbao tools. |
+| `hermes-homeassistant` | Messaging preset where Home Assistant credentials activate smart-home tools. |
+| `hermes-gateway` | Internal gateway orchestrator preset, a union of all messaging platform presets. |
 
 ## Dynamic Toolsets
 
-### MCP server toolsets
+### MCP Server Toolsets
 
-Each configured MCP server generates a `mcp-<server>` toolset at runtime. For example, if you configure a `github` MCP server, a `mcp-github` toolset is created containing all tools that server exposes.
+Each configured MCP server generates a `mcp-<server>` toolset at runtime. If a
+`market-data` MCP server is configured, `mcp-market-data` becomes available in
+`--toolsets`, platform configs, and the tools UI.
 
 ```yaml
-# config.yaml
 mcp_servers:
-  github:
+  market-data:
     command: npx
-    args: ["-y", "@modelcontextprotocol/server-github"]
+    args: ["-y", "@example/market-data-mcp"]
 ```
 
-This creates a `mcp-github` toolset you can reference in `--toolsets` or platform configs.
+### Plugin Toolsets
 
-### Plugin toolsets
+Plugins can register tools through `ctx.register_tool(...)`. Registered plugin
+tools appear beside built-in tools and can be enabled or disabled through the
+same UI.
 
-Plugins can register their own toolsets via `ctx.register_tool()` during plugin initialization. These appear alongside built-in toolsets and can be enabled/disabled the same way.
+### Custom Toolsets
 
-### Custom toolsets
-
-Define custom toolsets in `config.yaml` to create project-specific bundles:
+Define project-specific bundles in `config.yaml` when a recurring workflow
+needs a stable set of tools.
 
 ```yaml
 toolsets:
-  - hermes-cli
+  - forecast-desk
 custom_toolsets:
-  data-science:
+  macro-research:
+    - forecasting
+    - web
+    - browser
     - file
     - terminal
     - code_execution
-    - web
-    - vision
+    - mcp-market-data
 ```
 
 ### Wildcards
 
-- `all` or `*` — expands to every registered toolset (built-in + dynamic + plugin)
+- `all` or `*` expands to every registered built-in, dynamic, and plugin
+  toolset.
 
-## Relationship to `hermes tools`
+Use wildcards for diagnostics or deliberate full-surface sessions, not routine
+forecasting.
 
-The `hermes tools` command provides a curses-based UI for toggling individual tools on or off per platform. This operates at the tool level (finer than toolsets) and persists to `config.yaml`. Disabled tools are filtered out even if their toolset is enabled.
+## Relationship To Tools
 
-See also: [Tools Reference](./tools-reference.md) for the complete list of individual tools and their parameters.
+Toolsets decide the first layer of exposure. The tools UI can then disable
+individual tools within those enabled toolsets. The model only receives tools
+that survive both filters and pass any runtime availability checks such as
+credentials, platform support, or a connected browser endpoint.
+
+See also: [Tools Reference](./tools-reference.md) for individual tool schemas.

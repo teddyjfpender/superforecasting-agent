@@ -1,84 +1,118 @@
 ---
 slug: /
 sidebar_position: 0
-title: "Hermes Agent Documentation"
-description: "The self-improving AI agent built by Nous Research. A built-in learning loop that creates skills from experience, improves them during use, and remembers across sessions."
+title: "Superforecasting Agent Documentation"
+description: "A CLI-first forecasting desk that keeps scoreable forecasts, evidence, backtests, calibration memory, and self-checks in an auditable ledger."
 hide_table_of_contents: true
 displayed_sidebar: docs
 ---
 
-# Hermes Agent
+# Superforecasting Agent
 
-The self-improving AI agent built by [Nous Research](https://nousresearch.com). The only agent with a built-in learning loop — it creates skills from experience, improves them during use, nudges itself to persist knowledge, and builds a deepening model of who you are across sessions.
+Superforecasting Agent is a command-line forecasting desk built around one durable primitive: the scoreable forecast.
+
+It keeps a standing book of probabilistic beliefs, stores append-only forecast snapshots, links every update to timestamped evidence, runs base-rate and model workflows, scores resolved questions, writes postmortems, and turns past errors into calibration memory.
 
 <div style={{display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap'}}>
-  <a href="/docs/getting-started/installation" style={{display: 'inline-block', padding: '0.6rem 1.2rem', backgroundColor: '#FFD700', color: '#07070d', borderRadius: '8px', fontWeight: 600, textDecoration: 'none'}}>Get Started →</a>
-  <a href="https://github.com/NousResearch/hermes-agent" style={{display: 'inline-block', padding: '0.6rem 1.2rem', border: '1px solid rgba(255,215,0,0.2)', borderRadius: '8px', textDecoration: 'none'}}>View on GitHub</a>
+  <a href="/getting-started/quickstart" style={{display: 'inline-block', padding: '0.6rem 1.2rem', backgroundColor: '#FFD700', color: '#07070d', borderRadius: '8px', fontWeight: 600, textDecoration: 'none'}}>Start Forecasting -></a>
+  <a href="https://github.com/NousResearch/superforecasting-agent" style={{display: 'inline-block', padding: '0.6rem 1.2rem', border: '1px solid rgba(255,215,0,0.2)', borderRadius: '8px', textDecoration: 'none'}}>View on GitHub</a>
 </div>
 
 ## Install
 
-**Linux / macOS / WSL2**
+```bash
+git clone <this-fork-url> superforecasting-agent
+cd superforecasting-agent
+uv venv .venv --python 3.11
+source .venv/bin/activate
+uv pip install -e ".[all,dev]"
+```
+
+Then open the desk:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+forecast
+superforecasting-agent
 ```
 
-**Windows (native, PowerShell)** — *early beta, [details →](/docs/user-guide/windows-native)*
+The legacy `hermes` entrypoint remains available during the fork transition, but bare invocation routes to the forecast desk instead of generic chat.
 
-```powershell
-iex (irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1)
-```
+## What It Does
 
-**Android (Termux)** — same curl one-liner as Linux; the installer auto-detects Termux.
-
-See the full **[Installation Guide](/docs/getting-started/installation)** for what the installer does, the per-user vs root layout, and Windows-specific notes.
-
-## What is Hermes Agent?
-
-It's not a coding copilot tethered to an IDE or a chatbot wrapper around a single API. It's an **autonomous agent** that gets more capable the longer it runs. It lives wherever you put it — a $5 VPS, a GPU cluster, or serverless infrastructure (Daytona, Modal) that costs nearly nothing when idle. Talk to it from Telegram while it works on a cloud VM you never SSH into yourself. It's not tied to your laptop.
+| Capability | Forecast-first behavior |
+|---|---|
+| Forecast ledger | Create, research, update, resolve, score, postmortem, and export scoreable questions. |
+| Evidence trail | Capture sources with availability time, publication time, stance, reliability, relevance, and snapshot metadata. |
+| Base rates and models | Store reference classes, Bayesian updates, model runs, ensemble components, and calibration adjustments. |
+| Calibration memory | Track Brier/log scores, calibration buckets, sharpness, horizon/domain performance, error profiles, and reusable lessons. |
+| Backtesting | Replay held-out resolved questions under evidence cutoffs and compare against market, crowd, base-rate, and naive baselines. |
+| Self-checks | Schedule question/domain/topic reviews, watch sources, flag stale assumptions, detect resolved questions, and queue postmortems. |
+| Adapters | Import context from RSS/Atom, GDELT, FRED, BLS, World Bank, SEC EDGAR, arXiv, OpenAlex, Wikipedia, Wikimedia pageviews, GitHub, Hacker News, Reddit, Federal Register, NVD, Open-Meteo, USGS, NASA EONET, NWS alerts, OWID, Metaculus, Manifold, Polymarket, Kalshi, CSV/JSON, and generic URLs. |
 
 ## Quick Links
 
 | | |
 |---|---|
-| 🚀 **[Installation](/docs/getting-started/installation)** | Install in 60 seconds on Linux, macOS, WSL2, or native Windows (early beta) |
-| 📖 **[Quickstart Tutorial](/docs/getting-started/quickstart)** | Your first conversation and key features to try |
-| 🗺️ **[Learning Path](/docs/getting-started/learning-path)** | Find the right docs for your experience level |
-| ⚙️ **[Configuration](/docs/user-guide/configuration)** | Config file, providers, models, and options |
-| 💬 **[Messaging Gateway](/docs/user-guide/messaging)** | Set up Telegram, Discord, Slack, WhatsApp, Teams, or more |
-| 🔧 **[Tools & Toolsets](/docs/user-guide/features/tools)** | 70+ built-in tools and how to configure them |
-| 🧠 **[Memory System](/docs/user-guide/features/memory)** | Persistent memory that grows across sessions |
-| 📚 **[Skills System](/docs/user-guide/features/skills)** | Procedural memory the agent creates and reuses |
-| 🔌 **[MCP Integration](/docs/user-guide/features/mcp)** | Connect to MCP servers, filter their tools, and extend Hermes safely |
-| 🧭 **[Use MCP with Hermes](/docs/guides/use-mcp-with-hermes)** | Practical MCP setup patterns, examples, and tutorials |
-| 🎙️ **[Voice Mode](/docs/user-guide/features/voice-mode)** | Real-time voice interaction in CLI, Telegram, Discord, and Discord VC |
-| 🗣️ **[Use Voice Mode with Hermes](/docs/guides/use-voice-mode-with-hermes)** | Hands-on setup and usage patterns for Hermes voice workflows |
-| 🎭 **[Personality & SOUL.md](/docs/user-guide/features/personality)** | Define Hermes' default voice with a global SOUL.md |
-| 📄 **[Context Files](/docs/user-guide/features/context-files)** | Project context files that shape every conversation |
-| 🔒 **[Security](/docs/user-guide/security)** | Command approval, authorization, container isolation |
-| 💡 **[Tips & Best Practices](/docs/guides/tips)** | Quick wins to get the most out of Hermes |
-| 🏗️ **[Architecture](/docs/developer-guide/architecture)** | How it works under the hood |
-| ❓ **[FAQ & Troubleshooting](/docs/reference/faq)** | Common questions and solutions |
+| **[Quickstart](/getting-started/quickstart)** | Create a question, add evidence, update probability, review, resolve, score, and postmortem. |
+| **[Installation](/getting-started/installation)** | Runtime setup and inherited installer details. |
+| **[Tester Pilot Runbook](/getting-started/tester-pilot)** | Run a small CLI alpha without confusing smoke evidence for performance proof. |
+| **[CLI Reference](/reference/cli-commands)** | Full command inventory, including inherited compatibility commands. |
+| **[Configuration](/user-guide/configuration)** | Config files, providers, models, and runtime options. |
+| **[Tools & Toolsets](/user-guide/features/tools)** | Tool execution and forecast-desk default tool exposure. |
+| **[MCP Integration](/user-guide/features/mcp)** | Connect external tools and data sources. |
+| **[Cron Scheduling](/user-guide/features/cron)** | Runtime scheduler used by forecast self-checks. |
+| **[Architecture](/developer-guide/architecture)** | Inherited runtime architecture and fork context. |
+| **[FAQ & Troubleshooting](/reference/faq)** | Common setup and runtime issues. |
 
-## Key Features
+## Core CLI
 
-- **A closed learning loop** — Agent-curated memory with periodic nudges, autonomous skill creation, skill self-improvement during use, FTS5 cross-session recall with LLM summarization, and [Honcho](https://github.com/plastic-labs/honcho) dialectic user modeling
-- **Runs anywhere, not just your laptop** — 6 terminal backends: local, Docker, SSH, Daytona, Singularity, Modal. Daytona and Modal offer serverless persistence — your environment hibernates when idle, costing nearly nothing
-- **Lives where you do** — CLI, Telegram, Discord, Slack, WhatsApp, Signal, Matrix, Mattermost, Email, SMS, DingTalk, Feishu, WeCom, Weixin, QQ Bot, Yuanbao, BlueBubbles, Home Assistant, Microsoft Teams, Google Chat, and more — 20+ platforms from one gateway
-- **Built by model trainers** — Created by [Nous Research](https://nousresearch.com), the lab behind Hermes, Nomos, and Psyche. Works with [Nous Portal](https://portal.nousresearch.com), [OpenRouter](https://openrouter.ai), OpenAI, or any endpoint
-- **Scheduled automations** — Built-in cron with delivery to any platform
-- **Delegates & parallelizes** — Spawn isolated subagents for parallel workstreams. Programmatic Tool Calling via `execute_code` collapses multi-step pipelines into single inference calls
-- **Open standard skills** — Compatible with [agentskills.io](https://agentskills.io). Skills are portable, shareable, and community-contributed via the Skills Hub
-- **Full web control** — Search, extract, browse, vision, image generation, TTS
-- **MCP support** — Connect to any MCP server for extended tool capabilities
-- **Research-ready** — Batch processing, trajectory export, RL training with Atropos. Built by [Nous Research](https://nousresearch.com) — the lab behind Hermes, Nomos, and Psyche models
+```bash
+forecast status
+forecast new "Will X happen?" --resolution-criteria "Resolved by ..."
+forecast evidence add <id> <url-or-note>
+forecast research <id> <source...>
+forecast base-rate <id> ...
+forecast model <id> --type bayesian_update ...
+forecast update <id> --probability 0.63 --rationale "..."
+forecast review --stale
+forecast resolve <id> --outcome yes --confirmed
+forecast score <id>
+forecast postmortem <id>
+forecast calibration --by-origin --all
+forecast backtest --benchmarks
+forecast performance --last 5 --json
+```
 
-## For LLMs and coding agents
+## TUI Shortcuts
+
+The Ink TUI opens with forecast desk context and routes common workflows directly:
+
+```text
+/forecast
+/new-forecast
+/base-rate
+/update-forecast
+/resolve
+/score
+/postmortem
+/review
+/alerts
+/calibration
+/lessons
+/backtest
+/schedule
+/performance
+```
+
+## Compatibility Notes
+
+This fork still carries substantial inherited runtime code and documentation. Generic chat, skills, messaging gateways, voice, dashboard chat, and broad platform integrations remain available when useful, but they are subordinate to the forecast lifecycle.
+
+Runtime state defaults to `~/.superforecasting-agent` for new installs. Existing `~/.hermes` homes are reused during the fork transition.
+
+## For LLMs and Coding Agents
 
 Machine-readable entry points to this documentation:
 
-- **[`/llms.txt`](/llms.txt)** — curated index of every doc page with short descriptions. ~17 KB, safe to load into an LLM context.
-- **[`/llms-full.txt`](/llms-full.txt)** — every doc page concatenated into a single markdown file for one-shot ingestion. ~1.8 MB.
-
-Both files also resolve at `/docs/llms.txt` and `/docs/llms-full.txt`. Generated fresh on every deploy.
+- **[`/llms.txt`](/llms.txt)** — curated index of doc pages with short descriptions.
+- **[`/llms-full.txt`](/llms-full.txt)** — all doc pages concatenated for one-shot ingestion.

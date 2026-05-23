@@ -1,4 +1,4 @@
-# nix/overlays.nix — Expose pkgs.hermes-agent for external NixOS configs
+# nix/overlays.nix — Expose the inherited pkgs.hermes-agent overlay
 { inputs, ... }:
 {
   flake.overlays.default = final: _: {

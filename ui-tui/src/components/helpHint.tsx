@@ -8,8 +8,8 @@ const COMMON_COMMANDS: [string, string][] = [
   ['/clear', 'start a new session'],
   ['/resume', 'resume a prior session'],
   ['/details', 'control transcript detail level'],
-  ['/copy', 'copy selection or last assistant message'],
-  ['/quit', 'exit hermes']
+  ['/copy', 'copy selection or forecast desk response'],
+  ['/quit', 'exit forecast desk']
 ]
 
 const HOTKEY_PREVIEW = HOTKEYS.slice(0, 8)

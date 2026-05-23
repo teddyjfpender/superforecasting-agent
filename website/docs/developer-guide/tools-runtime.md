@@ -6,7 +6,7 @@ description: "Runtime behavior of the tool registry, toolsets, dispatch, and ter
 
 # Tools Runtime
 
-Hermes tools are self-registering functions grouped into toolsets and executed through a central registry/dispatch system.
+Superforecasting Agent tools are self-registering functions grouped into toolsets and executed through a central registry/dispatch system. The fork's default product surface narrows routine CLI work to the `forecast-desk` toolset, with `forecast_ledger` as the main durable state bridge for questions, evidence, model runs, scoring, postmortems, calibration, and learning records.
 
 Primary files:
 
@@ -64,7 +64,7 @@ Each import triggers the module's `registry.register()` calls. Errors in optiona
 After core tool discovery, MCP tools and plugin tools are also discovered:
 
 1. **MCP tools** — `tools.mcp_tool.discover_mcp_tools()` reads MCP server config and registers tools from external servers.
-2. **Plugin tools** — `hermes_cli.plugins.discover_plugins()` loads user/project/pip plugins that may register additional tools.
+2. **Plugin tools** — `hermes_cli.plugins.discover_plugins()` loads user/project/pip plugins that may register additional tools. The `hermes_cli` module name is inherited.
 
 ## Tool availability checking (`check_fn`)
 
@@ -94,12 +94,12 @@ Key behaviors:
 
 ## Toolset resolution
 
-Toolsets are named bundles of tools. Hermes resolves them through:
+Toolsets are named bundles of tools. The runtime resolves them through:
 
 - explicit enabled/disabled toolset lists
-- platform presets (`hermes-cli`, `hermes-telegram`, etc.)
+- platform presets (`forecast-desk` for routine CLI forecasting, plus inherited compatibility presets such as `hermes-cli`, `hermes-telegram`, etc.)
 - dynamic MCP toolsets
-- curated special-purpose sets like `hermes-acp`
+- curated special-purpose sets like `hermes-acp` (inherited ACP compatibility)
 
 ### How `get_tool_definitions()` filters tools
 
@@ -170,6 +170,8 @@ Four tools are intercepted before registry dispatch because they need agent-leve
 - `delegate_task` — spawns subagent sessions
 
 These tools' schemas are still registered in the registry (for `get_tool_definitions`), but their handlers return a stub error if dispatch somehow reaches them directly.
+
+The forecast ledger is intentionally not treated as generic chat memory. `forecast_ledger` is a regular registered tool so forecast writes are explicit, JSON-shaped, and testable through the same dispatch path as other built-in tools.
 
 ### Async bridging
 

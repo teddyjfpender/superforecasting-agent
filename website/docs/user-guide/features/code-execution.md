@@ -1,26 +1,26 @@
 ---
 sidebar_position: 8
 title: "Code Execution"
-description: "Programmatic Python execution with RPC tool access — collapse multi-step workflows into a single turn"
+description: "Programmatic Python execution for forecast data gathering and source processing"
 ---
 
 # Code Execution (Programmatic Tool Calling)
 
-The `execute_code` tool lets the agent write Python scripts that call Hermes tools programmatically, collapsing multi-step workflows into a single LLM turn. The script runs in a child process on the agent host, communicating with Hermes over a Unix domain socket RPC.
+The `execute_code` tool lets Superforecasting Agent write Python scripts that call inherited runtime tools programmatically, collapsing multi-step data gathering and source-processing workflows into a single LLM turn. The script runs in a child process on the agent host, communicating with the parent process over a Unix domain socket RPC.
 
 ## How It Works
 
-1. The agent writes a Python script using `from hermes_tools import ...`
-2. Hermes generates a `hermes_tools.py` stub module with RPC functions
-3. Hermes opens a Unix domain socket and starts an RPC listener thread
-4. The script runs in a child process — tool calls travel over the socket back to Hermes
+1. The agent writes a Python script using the inherited helper import `from hermes_tools import ...`
+2. Superforecasting Agent generates a `hermes_tools.py` stub module with RPC functions
+3. Superforecasting Agent opens a Unix domain socket and starts an RPC listener thread
+4. The script runs in a child process — tool calls travel over the socket back to the parent process
 5. Only the script's `print()` output is returned to the LLM; intermediate tool results never enter the context window
 
 ```python
 # The agent can write scripts like:
 from hermes_tools import web_search, web_extract
 
-results = web_search("Python 3.13 features", limit=5)
+results = web_search("semiconductor export controls license approvals 2026", limit=5)
 for r in results["data"]["web"]:
     content = web_extract([r["url"]])
     # ... filter and process ...
@@ -41,14 +41,14 @@ The key benefit: intermediate tool results never enter the context window — on
 
 ## Practical Examples
 
-### Data Processing Pipeline
+### Forecast Data Processing Pipeline
 
 ```python
 from hermes_tools import search_files, read_file
 import json
 
-# Find all config files and extract database settings
-matches = search_files("database", path=".", file_glob="*.yaml", limit=20)
+# Find forecast fixture files and extract stale-question markers
+matches = search_files("needs_update", path="forecasting/", file_glob="*.json", limit=20)
 configs = []
 for match in matches.get("matches", []):
     content = read_file(match["path"])
@@ -57,14 +57,14 @@ for match in matches.get("matches", []):
 print(json.dumps(configs, indent=2))
 ```
 
-### Multi-Step Web Research
+### Multi-Step Source Research
 
 ```python
 from hermes_tools import web_search, web_extract
 import json
 
-# Search, extract, and summarize in one turn
-results = web_search("Rust async runtime comparison 2025", limit=5)
+# Search, extract, and summarize source candidates in one turn
+results = web_search("central bank rate cut guidance 2026 official statements", limit=5)
 summaries = []
 for r in results["data"]["web"]:
     page = web_extract([r["url"]])
@@ -79,19 +79,19 @@ for r in results["data"]["web"]:
 print(json.dumps(summaries, indent=2))
 ```
 
-### Bulk File Refactoring
+### Bulk Forecast-Code Refactoring
 
 ```python
 from hermes_tools import search_files, read_file, patch
 
-# Find all Python files using deprecated API and fix them
-matches = search_files("old_api_call", path="src/", file_glob="*.py")
+# Find forecast code using a deprecated helper and fix it
+matches = search_files("old_probability_helper", path="forecasting/", file_glob="*.py")
 fixed = 0
 for match in matches.get("matches", []):
     result = patch(
         path=match["path"],
-        old_string="old_api_call(",
-        new_string="new_api_call(",
+        old_string="old_probability_helper(",
+        new_string="calibrated_probability_helper(",
         replace_all=True
     )
     if "error" not in str(result):
@@ -128,19 +128,19 @@ print(json.dumps(report, indent=2))
 
 ## Execution Mode
 
-`execute_code` has two execution modes controlled by `code_execution.mode` in `~/.hermes/config.yaml`:
+`execute_code` has two execution modes controlled by `code_execution.mode` in `~/.superforecasting-agent/config.yaml`:
 
 | Mode | Working directory | Python interpreter |
 |------|-------------------|--------------------|
-| **`project`** (default) | The session's working directory (same as `terminal()`) | Active `VIRTUAL_ENV` / `CONDA_PREFIX` python, falling back to Hermes's own python |
-| `strict` | A temp staging directory isolated from the user's project | `sys.executable` (Hermes's own python) |
+| **`project`** (default) | The session's working directory (same as `terminal()`) | Active `VIRTUAL_ENV` / `CONDA_PREFIX` python, falling back to the agent's own python |
+| `strict` | A temp staging directory isolated from the user's project | `sys.executable` (the agent's own python) |
 
 **When to leave it on `project`:** you want `import pandas`, `from my_project import foo`, or relative paths like `open(".env")` to work the same way they do in `terminal()`. This is almost always what you want.
 
 **When to flip to `strict`:** you need maximum reproducibility — you want the same interpreter every session regardless of which venv the user activated, and you want scripts quarantined from the project tree (no risk of accidentally reading project files through a relative path).
 
 ```yaml
-# ~/.hermes/config.yaml
+# ~/.superforecasting-agent/config.yaml
 code_execution:
   mode: project   # or "strict"
 ```
@@ -167,7 +167,7 @@ Switching mode changes where scripts run and which interpreter runs them, not wh
 All limits are configurable via `config.yaml`:
 
 ```yaml
-# In ~/.hermes/config.yaml
+# In ~/.superforecasting-agent/config.yaml
 code_execution:
   mode: project      # project (default) | strict
   timeout: 300       # Max seconds per script (default: 300)
@@ -219,7 +219,7 @@ terminal:
 
 See the [Security guide](/docs/user-guide/security#environment-variable-passthrough) for full details.
 
-Hermes always writes the script and the auto-generated `hermes_tools.py` RPC stub into a temp staging directory that is cleaned up after execution. In `strict` mode the script also *runs* there; in `project` mode it runs in the session's working directory (the staging directory stays on `PYTHONPATH` so imports still resolve). The child process runs in its own process group so it can be cleanly killed on timeout or interruption.
+Superforecasting Agent always writes the script and the auto-generated inherited `hermes_tools.py` RPC stub into a temp staging directory that is cleaned up after execution. In `strict` mode the script also *runs* there; in `project` mode it runs in the session's working directory (the staging directory stays on `PYTHONPATH` so imports still resolve). The child process runs in its own process group so it can be cleanly killed on timeout or interruption.
 
 ## execute_code vs terminal
 
@@ -233,7 +233,7 @@ Hermes always writes the script and the auto-generated `hermes_tools.py` RPC stu
 | Interactive/background processes | ❌ | ✅ |
 | Needs API keys in environment | ⚠️ Only via [passthrough](/docs/user-guide/security#environment-variable-passthrough) | ✅ (most pass through) |
 
-**Rule of thumb:** Use `execute_code` when you need to call Hermes tools programmatically with logic between calls. Use `terminal` for running shell commands, builds, and processes.
+**Rule of thumb:** Use `execute_code` when you need to call agent tools programmatically with logic between calls, especially for source/data pipelines. Use `terminal` for running shell commands, builds, and processes.
 
 ## Platform Support
 
