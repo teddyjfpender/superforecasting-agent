@@ -38,6 +38,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "stooq",
     "sec",
     "federalregister",
+    "courtlistener",
     "nvd",
     "cisakev",
     "arxiv",

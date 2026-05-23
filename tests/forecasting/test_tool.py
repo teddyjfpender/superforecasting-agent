@@ -81,7 +81,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "hackernews", "reddit", "federalregister", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "owid", "eia", "treasury", "stooq", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "owid", "eia", "treasury", "stooq", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_lifecycle(tmp_path):

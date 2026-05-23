@@ -93,6 +93,7 @@ forecast --db "$FORECAST_DB" import treasury v2/accounting/od/avg_interest_rates
 forecast --db "$FORECAST_DB" import wikipediapageviews en.wikipedia.org/Topic --question <id>
 forecast --db "$FORECAST_DB" import hackernews "product query" --question <id>
 forecast --db "$FORECAST_DB" import reddit "topic query" --question <id>
+forecast --db "$FORECAST_DB" import courtlistener "case or legal query" --question <id>
 forecast --db "$FORECAST_DB" import cisakev CVE-2026-0001 --question <id>
 ```
 

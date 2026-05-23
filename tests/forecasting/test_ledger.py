@@ -19,6 +19,7 @@ from forecasting.source_adapters import (
     BlsObservation,
     CisaKevVulnerability,
     ClinicalTrialStudy,
+    CourtListenerSearchResult,
     EiaObservation,
     FederalRegisterDocument,
     FredObservation,
@@ -1858,6 +1859,72 @@ def test_watched_federalregister_source_creates_alert_on_document_change(tmp_pat
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert (
         f'forecast import federalregister "forecast desk rule" --question {question.id}'
+        in alerts[0].recommended_action
+    )
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_courtlistener_source_creates_alert_on_result_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched CourtListener results be detected?",
+        resolution_criteria="Resolved yes if watched legal search results create alerts.",
+    )
+    titles = ["Forecast Desk v. Benchmark"]
+    captured_queries = []
+
+    def fake_load_courtlistener_search_results(query: str, **kwargs):
+        captured_queries.append(query)
+        return [
+            CourtListenerSearchResult(
+                result_id=str(len(titles[0])),
+                title=titles[0],
+                snippet="A monitored legal result.",
+                url=f"https://www.courtlistener.com/opinion/{len(titles[0])}/forecast/",
+                court="Supreme Court of Forecasting",
+                court_id="scotus",
+                docket_number="24-123",
+                date_filed="2026-05-21T00:00:00Z",
+                date_argued=None,
+                status="Published",
+                citation="123 F.4th 456",
+                judge="Forecaster, J.",
+                cite_count=17,
+                search_type="o",
+                source_name="CourtListener scotus",
+                entry_id=str(len(titles[0])),
+                raw={"title": titles[0]},
+            )
+        ]
+
+    monkeypatch.setattr(
+        "forecasting.source_adapters.load_courtlistener_search_results",
+        fake_load_courtlistener_search_results,
+    )
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="courtlistener:forecast desk",
+    )
+
+    assert watch["source_type"] == "courtlistener"
+    assert watch["last_seen_signature"].startswith("courtlistener:1:")
+    assert captured_queries[-1] == "forecast desk"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    titles[0] = "Updated Legal Result"
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert (
+        f'forecast import courtlistener "forecast desk" --question {question.id}'
         in alerts[0].recommended_action
     )
     updated = ledger.get_watched_source(watch["id"])

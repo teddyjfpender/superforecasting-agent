@@ -80,6 +80,7 @@ forecast import githubissues owner/repo --question <id>
 forecast import hackernews "product query" --question <id>
 forecast import reddit "topic query" --question <id>
 forecast import federalregister "rule query" --question <id>
+forecast import courtlistener "case or legal query" --question <id>
 forecast import nvd CVE-2026-0001 --question <id>
 forecast import cisakev CVE-2026-0001 --question <id>
 forecast import clinicaltrials "NCT01234567" --question <id>
@@ -145,6 +146,7 @@ forecast watch add --question <id> openalex:"research query"
 forecast watch add --question <id> hackernews:"product query"
 forecast watch add --question <id> reddit:"topic query"
 forecast watch add --question <id> federalregister:"rule query"
+forecast watch add --question <id> courtlistener:"case or legal query"
 forecast watch add --question <id> cisakev:CVE-2026-0001
 forecast watch add --question <id> owid:grapher-slug
 forecast watch add --question <id> usgs:minmagnitude=5

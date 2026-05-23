@@ -68,6 +68,7 @@ WATCH_SOURCE_TYPES = {
     "hackernews",
     "reddit",
     "federalregister",
+    "courtlistener",
     "nvd",
     "cisakev",
     "openmeteo",
@@ -2889,7 +2890,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, github, githubissues, hackernews, reddit, federalregister, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, owid, fred, eia, treasury, bls, worldbank, stooq, "
+                "source_type must be file, url, manual, rss, gdelt, github, githubissues, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, owid, fred, eia, treasury, bls, worldbank, stooq, "
                 "sec, arxiv, openalex, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -2979,6 +2980,7 @@ class ForecastLedger:
                     "hackernews",
                     "reddit",
                     "federalregister",
+                    "courtlistener",
                     "nvd",
                     "cisakev",
                     "openmeteo",
@@ -5190,6 +5192,8 @@ class ForecastLedger:
             return "reddit"
         if source.startswith("federalregister:"):
             return "federalregister"
+        if source.startswith("courtlistener:"):
+            return "courtlistener"
         if source.startswith("nvd:"):
             return "nvd"
         if source.startswith("cisakev:"):
@@ -5256,6 +5260,8 @@ class ForecastLedger:
             return self._reddit_source_signature(source)
         if source_type == "federalregister":
             return self._federalregister_source_signature(source)
+        if source_type == "courtlistener":
+            return self._courtlistener_source_signature(source)
         if source_type == "nvd":
             return self._nvd_source_signature(source)
         if source_type == "cisakev":
@@ -5523,6 +5529,33 @@ class ForecastLedger:
         ]
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"federalregister:{len(payload)}:{digest}"
+
+    def _courtlistener_source_signature(self, source: str) -> str:
+        query = source.split(":", 1)[1].strip() if source.startswith("courtlistener:") else source.strip()
+        if not query:
+            return "missing:courtlistener:empty-query"
+        try:
+            from forecasting.source_adapters import load_courtlistener_search_results
+
+            results = load_courtlistener_search_results(query, limit=50)
+        except Exception as exc:
+            return f"missing:courtlistener:{query}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "citation": result.citation,
+                "court_id": result.court_id,
+                "date_filed": result.date_filed,
+                "docket_number": result.docket_number,
+                "entry_id": result.entry_id,
+                "result_id": result.result_id,
+                "status": result.status,
+                "title": result.title,
+                "url": result.url,
+            }
+            for result in results
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"courtlistener:{len(payload)}:{digest}"
 
     def _nvd_source_signature(self, source: str) -> str:
         query = source.split(":", 1)[1].strip() if source.startswith("nvd:") else source.strip()
@@ -6198,6 +6231,12 @@ class ForecastLedger:
             query = source.split(":", 1)[1].strip() if source.startswith("federalregister:") else source
             return (
                 f"Run `forecast import federalregister \"{query}\" --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "courtlistener" and scope_type == "question" and scope_ref:
+            query = source.split(":", 1)[1].strip() if source.startswith("courtlistener:") else source
+            return (
+                f"Run `forecast import courtlistener \"{query}\" --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "nvd" and scope_type == "question" and scope_ref:

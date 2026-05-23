@@ -83,6 +83,7 @@ def register_builtin_extensions() -> None:
         ("hackernews-search", "importer", "Capture Hacker News search results as public-attention evidence."),
         ("reddit-search", "importer", "Capture Reddit search results as public-attention evidence."),
         ("federal-register-documents", "importer", "Capture Federal Register documents as timestamped evidence."),
+        ("courtlistener-search", "importer", "Capture CourtListener legal search results as timestamped evidence."),
         ("nvd-cves", "importer", "Capture NVD CVE records as timestamped security evidence."),
         ("cisa-kev", "importer", "Capture CISA Known Exploited Vulnerabilities as evidence."),
         ("openmeteo-daily-forecast", "importer", "Capture Open-Meteo daily forecasts as weather evidence."),

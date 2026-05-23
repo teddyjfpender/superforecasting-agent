@@ -21,6 +21,7 @@ from forecasting.source_adapters import (
     BlsObservation,
     CisaKevVulnerability,
     ClinicalTrialStudy,
+    CourtListenerSearchResult,
     EiaObservation,
     FederalRegisterDocument,
     FredObservation,
@@ -2493,6 +2494,151 @@ def test_forecast_cli_federalregister_import_captures_documents_as_evidence(
     assert evidence[0].metadata["document_number"] == "2026-11223"
     assert evidence[0].metadata["document_type"] == "Rule"
     assert evidence[0].metadata["agencies"] == ["Department of Forecasting"]
+
+
+def test_courtlistener_adapter_loads_search_results(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return {
+            "results": [
+                {
+                    "id": 123,
+                    "caseName": "Forecast Desk v. Benchmark",
+                    "snippet": " A legal result affecting benchmark questions. ",
+                    "absolute_url": "/opinion/123/forecast-desk-v-benchmark/",
+                    "court": "Supreme Court of Forecasting",
+                    "court_id": "scotus",
+                    "docketNumber": "24-123",
+                    "dateFiled": "2026-05-21",
+                    "status": "Published",
+                    "citation": [{"cite": "123 F.4th 456"}],
+                    "judge": "Forecaster, J.",
+                    "citeCount": 17,
+                }
+            ]
+        }
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    results = source_adapters.load_courtlistener_search_results(
+        "forecast desk",
+        limit=2,
+        since="2026-05-01T00:00:00Z",
+        search_type="o",
+        api_base_url="https://courtlistener.test/api/rest/v4/search/",
+    )
+    parsed = urlparse(captured["endpoint"])
+    params = parse_qs(parsed.query)
+
+    assert captured["label"] == "courtlistener search"
+    assert parsed.path == "/api/rest/v4/search/"
+    assert params["q"] == ["forecast desk"]
+    assert params["type"] == ["o"]
+    assert params["page_size"] == ["2"]
+    assert results[0].result_id == "123"
+    assert results[0].title == "Forecast Desk v. Benchmark"
+    assert results[0].snippet == "A legal result affecting benchmark questions."
+    assert results[0].url == "https://www.courtlistener.com/opinion/123/forecast-desk-v-benchmark/"
+    assert results[0].date_filed == "2026-05-21T00:00:00Z"
+    assert results[0].citation == "123 F.4th 456"
+    assert results[0].cite_count == 17
+
+
+def test_forecast_cli_courtlistener_import_captures_results_as_evidence(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_courtlistener_search_results(query: str, **kwargs):
+        captured["query"] = query
+        captured["kwargs"] = kwargs
+        return [
+            CourtListenerSearchResult(
+                result_id="123",
+                title="Forecast Desk v. Benchmark",
+                snippet="A legal result affecting benchmark questions.",
+                url="https://www.courtlistener.com/opinion/123/forecast-desk-v-benchmark/",
+                court="Supreme Court of Forecasting",
+                court_id="scotus",
+                docket_number="24-123",
+                date_filed="2026-05-21T00:00:00Z",
+                date_argued=None,
+                status="Published",
+                citation="123 F.4th 456",
+                judge="Forecaster, J.",
+                cite_count=17,
+                search_type="o",
+                source_name="CourtListener scotus",
+                entry_id="123",
+                raw={"id": 123},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_courtlistener_search_results", fake_load_courtlistener_search_results)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will CourtListener evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if CourtListener evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "courtlistener",
+            "forecast desk",
+            "--question",
+            question_id,
+            "--limit",
+            "3",
+            "--search-type",
+            "o",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.8",
+            "--relevance",
+            "0.9",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 courtlistener evidence item(s)" in output
+    assert captured["query"] == "forecast desk"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["search_type"] == "o"
+    assert evidence[0].claim == "CourtListener: Forecast Desk v. Benchmark"
+    assert evidence[0].summary.startswith("CourtListener result (scotus) filed 2026-05-21T00:00:00Z.")
+    assert evidence[0].source_name == "CourtListener scotus"
+    assert evidence[0].source_type == "adapter:courtlistener"
+    assert evidence[0].published_at == "2026-05-21T00:00:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.8
+    assert evidence[0].relevance_rating == 0.9
+    assert evidence[0].metadata["adapter"] == "courtlistener"
+    assert evidence[0].metadata["result_id"] == "123"
+    assert evidence[0].metadata["court_id"] == "scotus"
+    assert evidence[0].metadata["citation"] == "123 F.4th 456"
 
 
 def test_nvd_adapter_loads_cves(monkeypatch):
@@ -5312,6 +5458,7 @@ def test_forecast_cli_lists_extension_points(capsys):
     assert "github-releases" in output
     assert "github-issues" in output
     assert "federal-register-documents" in output
+    assert "courtlistener-search" in output
     assert "nvd-cves" in output
     assert "openmeteo-daily-forecast" in output
     assert "usgs-earthquakes" in output
@@ -5366,6 +5513,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "nvd:<keyword-or-CVE>" in output
     assert "cisakev:<keyword-or-CVE-or-all>" in output
     assert "federalregister:<query>" in output
+    assert "courtlistener:<query>" in output
     assert "<market>:<market-id-or-url>" in output
 
 
@@ -5376,7 +5524,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "owid", "eia", "treasury", "stooq", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "wikipediapageviews", "githubissues", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "markets"} <= names
+    assert {"gdelt", "owid", "eia", "treasury", "stooq", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "wikipediapageviews", "githubissues", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "stooq:<symbol-or-csv-url>" for source in payload["sources"])
@@ -5386,6 +5534,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     assert any(source["watch_prefix"] == "hackernews:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "reddit:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "cisakev:<keyword-or-CVE-or-all>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "courtlistener:<query>" for source in payload["sources"])
 
 
 def test_forecast_cli_about_exposes_fork_identity(capsys):

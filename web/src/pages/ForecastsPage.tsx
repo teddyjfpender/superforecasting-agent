@@ -106,6 +106,10 @@ const EVIDENCE_IMPORTS = [
     label: "Policy",
   },
   {
+    command: 'forecast import courtlistener "<query>" --question <id>',
+    label: "Legal",
+  },
+  {
     command: "forecast watch add --question <id> <adapter>:<source>",
     label: "Watch",
   },

@@ -22,6 +22,7 @@ from forecasting.source_adapters import (
     load_bls_observations,
     load_cisa_kev_vulnerabilities,
     load_clinicaltrials_studies,
+    load_courtlistener_search_results,
     load_eia_observations,
     load_federal_register_documents,
     load_fred_observations,
@@ -171,6 +172,7 @@ FORECAST_LEDGER_SCHEMA = {
             "since": {"type": "string"},
             "api_base_url": {"type": "string"},
             "timespan": {"type": "string"},
+            "search_type": {"type": "string"},
             "source_country": {"type": "string"},
             "source_lang": {"type": "string"},
             "start_year": {"type": "integer"},
@@ -244,6 +246,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "hackernews",
                     "reddit",
                     "federalregister",
+                    "courtlistener",
                     "nvd",
                     "cisakev",
                     "openmeteo",
@@ -1133,6 +1136,15 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_federal_register_documents(source, **kwargs)
+    if adapter_name == "courtlistener":
+        kwargs = {
+            "limit": limit,
+            "since": since,
+            "search_type": args.get("search_type") or "o",
+        }
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_courtlistener_search_results(source, **kwargs)
     if adapter_name == "nvd":
         kwargs = {"limit": limit, "since": since}
         if api_base_url:
@@ -1214,6 +1226,8 @@ def _source_adapter_evidence_payload(
         "created_at",
         "date_added",
         "due_date",
+        "date_filed",
+        "date_argued",
         "observation_date",
         "forecast_date",
         "filing_date",
@@ -1304,6 +1318,10 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         return f"Hacker News: {data.get('title')}"
     if adapter == "reddit":
         return f"Reddit: {data.get('title')}"
+    if adapter == "courtlistener":
+        court = f" {data.get('court_id')}" if data.get("court_id") else ""
+        filed = f" filed {data.get('date_filed')}" if data.get("date_filed") else ""
+        return f"CourtListener{court}{filed}: {data.get('title')}"
     if adapter == "nvd":
         return f"NVD {data.get('cve_id')}: {data.get('severity') or data.get('vuln_status') or 'record'}"
     if adapter == "cisakev":

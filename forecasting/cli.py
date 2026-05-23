@@ -61,6 +61,7 @@ from forecasting.source_adapters import (
     load_bls_observations,
     load_cisa_kev_vulnerabilities,
     load_clinicaltrials_studies,
+    load_courtlistener_search_results,
     load_eia_observations,
     load_federal_register_documents,
     load_fred_observations,
@@ -201,6 +202,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "domain": "US policy/regulatory documents",
         "import_command": 'forecast import federalregister "<query>" --question <id>',
         "watch_prefix": "federalregister:<query>",
+    },
+    {
+        "name": "courtlistener",
+        "domain": "US legal opinions and docket search",
+        "import_command": 'forecast import courtlistener "<query>" --question <id>',
+        "watch_prefix": "courtlistener:<query>",
     },
     {
         "name": "nvd",
@@ -436,6 +443,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "hackernews",
         "reddit",
         "federalregister",
+        "courtlistener",
         "nvd",
         "cisakev",
         "openmeteo",
@@ -504,6 +512,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "hackernews",
             "reddit",
             "federalregister",
+            "courtlistener",
             "nvd",
             "cisakev",
             "openmeteo",
@@ -569,6 +578,13 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://www.federalregister.gov/api/v1/documents.json",
                 help="Override Federal Register API endpoint for tests or private mirrors",
+            )
+        if name == "courtlistener":
+            adapter.add_argument("--search-type", default="o", help="CourtListener search type, defaulting to opinions")
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://www.courtlistener.com/api/rest/v4/search/",
+                help="Override CourtListener search API endpoint for tests or private mirrors",
             )
         if name == "nvd":
             adapter.add_argument(
@@ -1039,6 +1055,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "sec",
             "arxiv",
             "openalex",
+            "courtlistener",
             "manifold",
             "metaculus",
             "polymarket",
@@ -2325,6 +2342,64 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} federalregister evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "courtlistener":
+        if not args.question_id:
+            raise SystemExit("forecast import courtlistener requires --question")
+        results = load_courtlistener_search_results(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            search_type=args.search_type,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for result in results:
+            court_label = f" ({result.court_id or result.court})" if result.court_id or result.court else ""
+            filed = f" filed {result.date_filed}" if result.date_filed else ""
+            citation = f" Citation: {result.citation}." if result.citation else ""
+            judge = f" Judge: {result.judge}." if result.judge else ""
+            summary = (
+                f"CourtListener result{court_label}{filed}."
+                f"{citation}{judge} {result.snippet}".strip()
+            )
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=result.url or f"CourtListener:{result.entry_id or result.title}",
+                    source_url=result.url,
+                    source_name=result.source_name,
+                    source_type="adapter:courtlistener",
+                    published_at=result.date_filed,
+                    available_at=result.date_filed or result.date_argued or args.as_of,
+                    claim=f"CourtListener: {result.title}",
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "courtlistener",
+                        "query": args.source,
+                        "result_id": result.result_id,
+                        "court": result.court,
+                        "court_id": result.court_id,
+                        "docket_number": result.docket_number,
+                        "date_filed": result.date_filed,
+                        "date_argued": result.date_argued,
+                        "status": result.status,
+                        "citation": result.citation,
+                        "judge": result.judge,
+                        "cite_count": result.cite_count,
+                        "search_type": result.search_type,
+                        "api_base_url": args.api_base_url,
+                        "raw": result.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} courtlistener evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

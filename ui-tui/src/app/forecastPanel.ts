@@ -493,6 +493,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
       '/forecast import nvd "<keyword-or-CVE>" --question <id>',
       '/forecast import cisakev "<keyword-or-CVE-or-all>" --question <id>',
       '/forecast import federalregister "<query>" --question <id>',
+      '/forecast import courtlistener "<query>" --question <id>',
       '/forecast watch add --question <id> <adapter>:<source>'
     ],
     title: 'Evidence Imports'

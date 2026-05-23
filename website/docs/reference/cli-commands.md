@@ -49,7 +49,7 @@ For in-chat slash commands, see [Slash Commands Reference](./slash-commands.md).
 | `forecast export` | Export auditable question or portfolio packets. |
 | `forecast about` | Show fork context and forecast-desk scope. |
 
-Common sources for `forecast import` include `data`, `rss`, `gdelt`, `fred`, `eia`, `treasury`, `bls`, `worldbank`, `stooq`, `sec`, `arxiv`, `openalex`, `wikipedia`, `wikipediapageviews`, `github`, `githubissues`, `hackernews`, `reddit`, `federalregister`, `nvd`, `cisakev`, `clinicaltrials`, `openfda`, `openmeteo`, `usgs`, `eonet`, `nws`, `owid`, `metaculus`, `manifold`, `polymarket`, `kalshi`, `benchmark`, and `tournament`. Run `forecast sources` or `forecast sources --json` for the current adapter list and watch-prefix guidance.
+Common sources for `forecast import` include `data`, `rss`, `gdelt`, `fred`, `eia`, `treasury`, `bls`, `worldbank`, `stooq`, `sec`, `arxiv`, `openalex`, `wikipedia`, `wikipediapageviews`, `github`, `githubissues`, `hackernews`, `reddit`, `federalregister`, `courtlistener`, `nvd`, `cisakev`, `clinicaltrials`, `openfda`, `openmeteo`, `usgs`, `eonet`, `nws`, `owid`, `metaculus`, `manifold`, `polymarket`, `kalshi`, `benchmark`, and `tournament`. Run `forecast sources` or `forecast sources --json` for the current adapter list and watch-prefix guidance.
 
 Backtest probability sources include:
 
