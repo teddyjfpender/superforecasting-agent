@@ -3,6 +3,7 @@ import {
   LIVE_RENDER_MAX_LINES,
   THINKING_COT_MAX
 } from '../config/limits.js'
+import { FACES } from '../content/faces.js'
 import { VERBS } from '../content/verbs.js'
 import type { ThinkingMode } from '../types.js'
 
@@ -103,8 +104,17 @@ export const pasteTokenLabel = (text: string, lineCount: number) => {
     : `[[ ${preview} [${fmtK(lineCount)} lines] ]]`
 }
 
-const THINKING_STATUS_RE = new RegExp(`^(?:${VERBS.join('|')})\\.{0,3}$`, 'i')
-const THINKING_STATUS_CHUNK_RE = new RegExp(`[^A-Za-z\n]+\\s*(?:${VERBS.join('|')})\\.{0,3}\\s*`, 'giu')
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const THINKING_VERBS_PATTERN = VERBS.map(escapeRegExp).join('|')
+const THINKING_FRAMES_PATTERN = FACES.map(escapeRegExp).join('|')
+const THINKING_STATUS_RE = new RegExp(
+  `^(?:(?:${THINKING_FRAMES_PATTERN})\\s*)?(?:${THINKING_VERBS_PATTERN})\\.{0,3}$`,
+  'i'
+)
+const THINKING_STATUS_CHUNK_RE = new RegExp(
+  `(?:(?:${THINKING_FRAMES_PATTERN})|[^A-Za-z\n]+)\\s*(?:${THINKING_VERBS_PATTERN})\\.{1,3}\\s*`,
+  'giu'
+)
 
 export const cleanThinkingText = (reasoning: string) =>
   reasoning

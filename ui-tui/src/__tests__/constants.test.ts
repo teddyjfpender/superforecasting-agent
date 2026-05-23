@@ -19,6 +19,19 @@ describe('constants', () => {
     }
   })
 
+  it('uses forecast-native idle prompts and status frames', () => {
+    expect(PLACEHOLDERS.join('\n')).toContain('/forecast')
+    expect(PLACEHOLDERS.join('\n')).not.toMatch(/Ask me anything|explain this codebase|refactor|lint/i)
+
+    expect(VERBS).toEqual(
+      expect.arrayContaining(['sourcing', 'modeling', 'scoring', 'calibrating', 'backtesting'])
+    )
+    expect(VERBS).not.toEqual(expect.arrayContaining(['pondering', 'musing', 'brainstorming']))
+
+    expect(FACES).toEqual(expect.arrayContaining(['P=', 'EV', 'BT', 'CAL']))
+    expect(FACES.join(' ')).not.toMatch(/[♡ಠ｡]|_\)|¬_¬|Lenny/i)
+  })
+
   it('HOTKEYS are [key, desc] pairs', () => {
     HOTKEYS.forEach(([k, d]) => {
       expect(typeof k).toBe('string')
@@ -35,6 +48,7 @@ describe('constants', () => {
   it('TOOL_VERBS maps known tools (verb-only, no emoji)', () => {
     expect(TOOL_VERBS.terminal).toBe('terminal')
     expect(TOOL_VERBS.read_file).toBe('reading')
+    expect(TOOL_VERBS.forecast_ledger).toBe('forecasting')
   })
 
   it('INTERPOLATION_RE matches {!cmd}', () => {

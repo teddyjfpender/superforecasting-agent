@@ -81,7 +81,7 @@ describe('createGatewayEventHandler', () => {
 
     expect(finalText).toBeDefined()
     expect(trail).toMatchObject({ kind: 'trail', role: 'system', todos, todoIncomplete: true })
-    // Todo archive must sit ABOVE the final assistant text so the panel
+    // Protocol archive must sit ABOVE the final assistant text so the panel
     // doesn't visibly jump across the final answer at end-of-turn.
     expect(appended.indexOf(trail!)).toBeLessThan(appended.indexOf(finalText!))
     expect(getTurnState().todos).toEqual([])
@@ -330,7 +330,7 @@ describe('createGatewayEventHandler', () => {
 
   it('filters spinner/status-only reasoning noise from completed thinking', () => {
     const appended: Msg[] = []
-    const streamed = '(¬_¬) synthesizing...\nactual plan\n( ͡° ͜ʖ ͡°) pondering...\nnext step'
+    const streamed = 'P= sourcing...\nactual plan\nCAL calibrating...\nnext step'
 
     const onEvent = createGatewayEventHandler(buildCtx(appended))
 

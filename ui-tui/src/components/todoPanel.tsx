@@ -59,7 +59,7 @@ export const TodoPanel = memo(function TodoPanel({
         <Text color={t.color.muted}>
           <Text color={t.color.accent}>{effectiveCollapsed ? '▸ ' : '▾ '}</Text>
           <Text bold color={t.color.text}>
-            Todo
+            Protocol
           </Text>{' '}
           <Text color={t.color.statusFg} dim>
             ({done}/{todos.length})
