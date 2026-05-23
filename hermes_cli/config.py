@@ -2239,6 +2239,15 @@ OPTIONAL_ENV_VARS = {
         "password": True,
         "category": "tool",
     },
+    "CENSUS_API_KEY": {
+        "description": "U.S. Census API key for forecast evidence imports",
+        "prompt": "U.S. Census API key",
+        "url": "https://api.census.gov/data/key_signup.html",
+        "tools": ["forecast_ledger"],
+        "password": True,
+        "category": "tool",
+        "advanced": True,
+    },
     "SEARXNG_URL": {
         "description": "URL of your SearXNG instance for free self-hosted web search",
         "prompt": "SearXNG URL (e.g. http://localhost:8080)",

@@ -69,6 +69,7 @@ forecast import eia PET.RWTC.M --question <id>
 forecast import treasury v2/accounting/od/avg_interest_rates --question <id>
 forecast import bls LNS14000000 --question <id>
 forecast import worldbank US/NY.GDP.MKTP.CD --question <id>
+forecast import census "2023/acs/acs5?get=NAME,B01003_001E&for=state:*" --question <id>
 forecast import stooq AAPL.US --question <id>
 forecast import sec 0000320193 --question <id>
 forecast import arxiv "cat:cs.AI AND forecasting" --question <id>
@@ -147,6 +148,7 @@ forecast watch add --question <id> hackernews:"product query"
 forecast watch add --question <id> reddit:"topic query"
 forecast watch add --question <id> federalregister:"rule query"
 forecast watch add --question <id> courtlistener:"case or legal query"
+forecast watch add --question <id> census:"2023/acs/acs5?get=NAME,B01003_001E&for=state:*"
 forecast watch add --question <id> cisakev:CVE-2026-0001
 forecast watch add --question <id> owid:grapher-slug
 forecast watch add --question <id> usgs:minmagnitude=5

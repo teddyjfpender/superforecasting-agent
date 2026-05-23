@@ -35,6 +35,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "treasury",
     "bls",
     "worldbank",
+    "census",
     "stooq",
     "sec",
     "federalregister",

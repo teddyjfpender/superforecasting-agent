@@ -73,6 +73,7 @@ Examples:
 /forecast
 /forecast review --stale
 /forecast sources
+/forecast import census "2023/acs/acs5?get=NAME,B01003_001E&for=state:*" --question <id>
 /forecast import stooq AAPL.US --question <id>
 /forecast import githubissues owner/repo --question <id>
 /forecast import hackernews "product query" --question <id>

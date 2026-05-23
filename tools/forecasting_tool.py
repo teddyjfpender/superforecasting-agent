@@ -20,6 +20,7 @@ from forecasting.protocol import build_protocol_messages
 from forecasting.source_adapters import (
     load_arxiv_papers,
     load_bls_observations,
+    load_census_records,
     load_cisa_kev_vulnerabilities,
     load_clinicaltrials_studies,
     load_courtlistener_search_results,
@@ -261,6 +262,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "treasury",
                     "bls",
                     "worldbank",
+                    "census",
                     "stooq",
                     "sec",
                     "arxiv",
@@ -1068,6 +1070,11 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_worldbank_observations(source, **kwargs)
+    if adapter_name == "census":
+        kwargs = {"limit": limit, "since": since}
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_census_records(source, **kwargs)
     if adapter_name == "stooq":
         kwargs = {
             "limit": limit,
@@ -1302,6 +1309,16 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
     if adapter == "worldbank":
         label = data.get("indicator_name") or data.get("indicator")
         return f"World Bank {label} was {data.get('value')} for {data.get('country_name') or data.get('country')} in {data.get('observation_date')}"
+    if adapter == "census":
+        values = data.get("values")
+        value_text = ", ".join(f"{key}={value}" for key, value in values.items()) if isinstance(values, dict) else values
+        geography = data.get("geography")
+        geography_text = (
+            ", ".join(f"{key}={value}" for key, value in geography.items())
+            if isinstance(geography, dict) and geography
+            else "all geographies"
+        )
+        return f"Census {data.get('dataset')} {geography_text}: {value_text}"
     if adapter == "stooq":
         return f"Stooq {data.get('symbol')} close was {data.get('close_price')} on {data.get('observation_date')}"
     if adapter == "sec":

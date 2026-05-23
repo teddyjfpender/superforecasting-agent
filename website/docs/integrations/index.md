@@ -38,7 +38,7 @@ forecast sources --json
 ```
 
 Use it to discover built-in imports and watched-source prefixes for news,
-economic, fiscal, and market price data, filings, papers, reference data, software releases, policy and legal
+economic, fiscal, demographic, regional, and market price data, filings, papers, reference data, software releases, policy and legal
 documents, CVEs, weather forecasts and alerts, geophysical and natural-hazard
 event data, public datasets, markets, and generic files.
 

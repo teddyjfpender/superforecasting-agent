@@ -59,6 +59,7 @@ from forecasting.protocol import PROTOCOL_STAGES, build_protocol_messages
 from forecasting.source_adapters import (
     load_arxiv_papers,
     load_bls_observations,
+    load_census_records,
     load_cisa_kev_vulnerabilities,
     load_clinicaltrials_studies,
     load_courtlistener_search_results,
@@ -184,6 +185,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "domain": "country indicators",
         "import_command": "forecast import worldbank <country>/<indicator> --question <id>",
         "watch_prefix": "worldbank:<country>/<indicator>",
+    },
+    {
+        "name": "census",
+        "domain": "US demographic and regional data",
+        "import_command": "forecast import census <dataset-path?get=...&for=...> --question <id>",
+        "watch_prefix": "census:<dataset-path?get=...&for=...>",
     },
     {
         "name": "stooq",
@@ -458,6 +465,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "treasury",
         "bls",
         "worldbank",
+        "census",
         "stooq",
         "sec",
         "arxiv",
@@ -527,6 +535,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "treasury",
             "bls",
             "worldbank",
+            "census",
             "stooq",
             "sec",
             "arxiv",
@@ -676,6 +685,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://api.worldbank.org/v2",
                 help="Override World Bank API base URL for tests or private mirrors",
+            )
+        if name == "census":
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://api.census.gov/data",
+                help="Override U.S. Census API base URL for tests or private mirrors",
             )
         if name == "stooq":
             adapter.add_argument("--interval", choices=["d", "w", "m"], default="d")
@@ -3189,6 +3204,54 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} worldbank evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "census":
+        if not args.question_id:
+            raise SystemExit("forecast import census requires --question")
+        records = load_census_records(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for record in records:
+            geography = ", ".join(f"{key}={value}" for key, value in record.geography.items()) or "all geographies"
+            values = ", ".join(f"{key}={value}" for key, value in record.values.items())
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=record.source_url or f"Census:{record.dataset}",
+                    source_url=record.source_url,
+                    source_name=record.source_name,
+                    source_type="adapter:census",
+                    published_at=record.published_at,
+                    available_at=record.published_at or args.as_of,
+                    claim=f"Census {record.dataset} {geography}: {values}",
+                    summary=(
+                        f"U.S. Census Bureau record for {record.dataset} "
+                        f"on {record.observation_date or 'unknown date'} "
+                        f"({geography}): {values}."
+                    ),
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "census",
+                        "dataset": record.dataset,
+                        "dataset_year": record.dataset_year,
+                        "observation_date": record.observation_date,
+                        "values": record.values,
+                        "geography": record.geography,
+                        "api_base_url": args.api_base_url,
+                        "raw": record.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} census evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

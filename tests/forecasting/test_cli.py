@@ -19,6 +19,7 @@ from forecasting.ledger import ForecastLedger
 from forecasting.source_adapters import (
     ArxivPaper,
     BlsObservation,
+    CensusRecord,
     CisaKevVulnerability,
     ClinicalTrialStudy,
     CourtListenerSearchResult,
@@ -4658,6 +4659,134 @@ def test_forecast_cli_worldbank_import_captures_observations_as_evidence(
     assert evidence[0].metadata["value"] == 30000000000000.0
 
 
+def test_census_adapter_loads_api_rows(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return [
+            ["NAME", "B01003_001E", "state"],
+            ["California", "39100000", "06"],
+            ["Texas", "30000000", "48"],
+        ]
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+    monkeypatch.setenv("CENSUS_API_KEY", "test-key")
+
+    records = source_adapters.load_census_records(
+        "2023/acs/acs5?get=NAME,B01003_001E&for=state:*",
+        limit=1,
+        since="2023-01-01",
+        api_base_url="https://census.test/data",
+    )
+    parsed = urlparse(captured["endpoint"])
+    params = parse_qs(parsed.query)
+
+    assert captured["label"] == "census data"
+    assert parsed.netloc == "census.test"
+    assert parsed.path == "/data/2023/acs/acs5"
+    assert params["get"] == ["NAME,B01003_001E"]
+    assert params["for"] == ["state:*"]
+    assert params["key"] == ["test-key"]
+    assert len(records) == 1
+    assert records[0].dataset == "2023/acs/acs5"
+    assert records[0].dataset_year == 2023
+    assert records[0].observation_date == "2023-12-31"
+    assert records[0].published_at == "2023-12-31T00:00:00Z"
+    assert records[0].values == {"NAME": "California", "B01003_001E": 39100000.0}
+    assert records[0].geography == {"state": "06"}
+    assert "key=" not in (records[0].source_url or "")
+    assert records[0].source_name == "U.S. Census Bureau"
+
+
+def test_forecast_cli_census_import_captures_records_as_evidence(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_census_records(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            CensusRecord(
+                dataset="2023/acs/acs5",
+                dataset_year=2023,
+                observation_date="2023-12-31",
+                values={"NAME": "California", "B01003_001E": 39100000.0},
+                geography={"state": "06"},
+                published_at="2023-12-31T00:00:00Z",
+                source_url="https://api.census.gov/data/2023/acs/acs5?get=NAME,B01003_001E&for=state:*",
+                source_name="U.S. Census Bureau",
+                entry_id="2023/acs/acs5:2023-12-31:0",
+                raw={"row_index": 0},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_census_records", fake_load_census_records)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will Census evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if Census evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "census",
+            "2023/acs/acs5?get=NAME,B01003_001E&for=state:*",
+            "--question",
+            question_id,
+            "--since",
+            "2023-01-01",
+            "--limit",
+            "3",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.95",
+            "--relevance",
+            "0.85",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 census evidence item(s)" in output
+    assert captured["source"] == "2023/acs/acs5?get=NAME,B01003_001E&for=state:*"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["since"] == "2023-01-01"
+    assert evidence[0].claim == "Census 2023/acs/acs5 state=06: NAME=California, B01003_001E=39100000.0"
+    assert evidence[0].summary == (
+        "U.S. Census Bureau record for 2023/acs/acs5 "
+        "on 2023-12-31 (state=06): NAME=California, B01003_001E=39100000.0."
+    )
+    assert evidence[0].source_name == "U.S. Census Bureau"
+    assert evidence[0].source_type == "adapter:census"
+    assert evidence[0].published_at == "2023-12-31T00:00:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.95
+    assert evidence[0].relevance_rating == 0.85
+    assert evidence[0].metadata["adapter"] == "census"
+    assert evidence[0].metadata["dataset"] == "2023/acs/acs5"
+    assert evidence[0].metadata["dataset_year"] == 2023
+    assert evidence[0].metadata["values"] == {"NAME": "California", "B01003_001E": 39100000.0}
+    assert evidence[0].metadata["geography"] == {"state": "06"}
+
+
 def test_stooq_adapter_loads_recent_price_observations(monkeypatch):
     captured = {}
 
@@ -5471,6 +5600,7 @@ def test_forecast_cli_lists_extension_points(capsys):
     assert "treasury-fiscal-data" in output
     assert "bls-economic-data" in output
     assert "worldbank-indicators" in output
+    assert "census-data" in output
     assert "sec-edgar-filings" in output
     assert "arxiv-papers" in output
     assert "openalex-works" in output
@@ -5499,6 +5629,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "owid:<grapher-slug>" in output
     assert "eia:<series-id-or-api-url>" in output
     assert "treasury:<dataset-path-or-api-url>" in output
+    assert "census:<dataset-path?get=...&for=...>" in output
     assert "stooq:<symbol-or-csv-url>" in output
     assert "openmeteo:<lat,lon>" in output
     assert "usgs:<query>" in output
@@ -5524,9 +5655,10 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "owid", "eia", "treasury", "stooq", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "wikipediapageviews", "githubissues", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "owid", "eia", "treasury", "census", "stooq", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "wikipediapageviews", "githubissues", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "census:<dataset-path?get=...&for=...>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "stooq:<symbol-or-csv-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "clinicaltrials:<query-or-NCT-id>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "openfda:<query-or-application-number>" for source in payload["sources"])
@@ -7947,6 +8079,68 @@ def test_forecast_cli_watch_add_supports_worldbank_sources(tmp_path, capsys, mon
     assert "source_type: worldbank" in add_output
 
     values[0] = 30_000_000_000_000.0
+    _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
+    check_output = capsys.readouterr().out
+
+    assert "created 1 alert(s)" in check_output
+    assert f"watched_source_changed:{watch_id}" in check_output
+
+
+def test_forecast_cli_watch_add_supports_census_sources(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    values = [39_100_000.0]
+
+    def fake_load_census_records(source: str, **kwargs):
+        return [
+            CensusRecord(
+                dataset="2023/acs/acs5",
+                dataset_year=2023,
+                observation_date="2023-12-31",
+                values={"NAME": "California", "B01003_001E": values[0]},
+                geography={"state": "06"},
+                published_at="2023-12-31T00:00:00Z",
+                source_url="https://api.census.gov/data/2023/acs/acs5?get=NAME,B01003_001E&for=state:*",
+                source_name="U.S. Census Bureau",
+                entry_id="2023/acs/acs5:2023-12-31:0",
+                raw={"row_index": 0, "value": str(values[0])},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_census_records", fake_load_census_records)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will watched CLI Census series change?",
+            "--resolution-criteria",
+            "Resolved yes if watched Census records change.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            "census:2023/acs/acs5?get=NAME,B01003_001E&for=state:*",
+            "--question",
+            question_id,
+        ],
+    )
+    add_output = capsys.readouterr().out
+    watch_id = re.search(r"watched source (ws_[a-f0-9]+)", add_output).group(1)
+
+    assert "source_type: census" in add_output
+
+    values[0] = 39_200_000.0
     _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
     check_output = capsys.readouterr().out
 

@@ -17,6 +17,7 @@ from forecasting.protocol import build_forecast_chat_system_prompt, build_protoc
 from forecasting.source_adapters import (
     ArxivPaper,
     BlsObservation,
+    CensusRecord,
     CisaKevVulnerability,
     ClinicalTrialStudy,
     CourtListenerSearchResult,
@@ -2731,6 +2732,62 @@ def test_watched_worldbank_source_creates_alert_on_observation_change(tmp_path, 
     assert f"forecast import worldbank USA/NY.GDP.MKTP.CD --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-02T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_census_source_creates_alert_on_record_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched Census changes be detected?",
+        resolution_criteria="Resolved yes if watched Census records create alerts.",
+    )
+    values = [39_100_000.0]
+    captured_sources = []
+
+    def fake_load_census_records(source: str, **kwargs):
+        captured_sources.append(source)
+        return [
+            CensusRecord(
+                dataset="2023/acs/acs5",
+                dataset_year=2023,
+                observation_date="2023-12-31",
+                values={"NAME": "California", "B01003_001E": values[0]},
+                geography={"state": "06"},
+                published_at="2023-12-31T00:00:00Z",
+                source_url="https://api.census.gov/data/2023/acs/acs5?get=NAME,B01003_001E&for=state:*",
+                source_name="U.S. Census Bureau",
+                entry_id="2023/acs/acs5:2023-12-31:0",
+                raw={"row_index": 0, "value": str(values[0])},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_census_records", fake_load_census_records)
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="census:2023/acs/acs5?get=NAME,B01003_001E&for=state:*",
+    )
+
+    assert watch["source_type"] == "census"
+    assert watch["last_seen_signature"].startswith("census:1:")
+    assert captured_sources[-1] == "2023/acs/acs5?get=NAME,B01003_001E&for=state:*"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    values[0] = 39_200_000.0
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert (
+        f'forecast import census "2023/acs/acs5?get=NAME,B01003_001E&for=state:*" --question {question.id}'
+        in alerts[0].recommended_action
+    )
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]
 
 

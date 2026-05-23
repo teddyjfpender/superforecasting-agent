@@ -533,6 +533,7 @@ forecast watch add --question <id> gdelt:<query>
 forecast watch add --question <id> fred:<series-id>
 forecast watch add --question <id> bls:<series-id>
 forecast watch add --question <id> worldbank:<country>/<indicator>
+forecast watch add --question <id> census:<dataset-path?get=...&for=...>
 forecast watch add --question <id> sec:<cik>
 forecast watch add --domain <domain> [--topic <topic>] <source>
 forecast watch add --portfolio <name> <source>
@@ -555,6 +556,7 @@ forecast import gdelt <query> --question <id>
 forecast import fred <series-id> --question <id>
 forecast import bls <series-id> --question <id>
 forecast import worldbank <country>/<indicator> --question <id>
+forecast import census <dataset-path?get=...&for=...> --question <id>
 forecast import sec <cik> --question <id>
 forecast import arxiv <query> --question <id>
 forecast import manifold <url-or-id-or-slug>

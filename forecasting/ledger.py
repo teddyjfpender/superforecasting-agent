@@ -83,6 +83,7 @@ WATCH_SOURCE_TYPES = {
     "treasury",
     "bls",
     "worldbank",
+    "census",
     "stooq",
     "sec",
     "arxiv",
@@ -2890,7 +2891,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, github, githubissues, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, owid, fred, eia, treasury, bls, worldbank, stooq, "
+                "source_type must be file, url, manual, rss, gdelt, github, githubissues, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, owid, fred, eia, treasury, bls, worldbank, census, stooq, "
                 "sec, arxiv, openalex, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -2995,6 +2996,7 @@ class ForecastLedger:
                     "treasury",
                     "bls",
                     "worldbank",
+                    "census",
                     "stooq",
                     "sec",
                     "arxiv",
@@ -5222,6 +5224,8 @@ class ForecastLedger:
             return "bls"
         if source.startswith("worldbank:"):
             return "worldbank"
+        if source.startswith("census:"):
+            return "census"
         if source.startswith("stooq:"):
             return "stooq"
         if source.startswith("sec:"):
@@ -5290,6 +5294,8 @@ class ForecastLedger:
             return self._bls_source_signature(source)
         if source_type == "worldbank":
             return self._worldbank_source_signature(source)
+        if source_type == "census":
+            return self._census_source_signature(source)
         if source_type == "stooq":
             return self._stooq_source_signature(source)
         if source_type == "sec":
@@ -5918,6 +5924,30 @@ class ForecastLedger:
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"worldbank:{len(payload)}:{digest}"
 
+    def _census_source_signature(self, source: str) -> str:
+        source_value = source.split(":", 1)[1].strip() if source.startswith("census:") else source.strip()
+        if not source_value:
+            return "missing:census:empty-source"
+        try:
+            from forecasting.source_adapters import load_census_records
+
+            records = load_census_records(source_value, limit=50)
+        except Exception as exc:
+            return f"missing:census:{source_value}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "dataset": record.dataset,
+                "entry_id": record.entry_id,
+                "geography": record.geography,
+                "observation_date": record.observation_date,
+                "published_at": record.published_at,
+                "values": record.values,
+            }
+            for record in records
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"census:{len(payload)}:{digest}"
+
     def _stooq_source_signature(self, source: str) -> str:
         source_value = source.split(":", 1)[1].strip() if source.startswith("stooq:") else source.strip()
         if not source_value:
@@ -6321,6 +6351,12 @@ class ForecastLedger:
             source_value = source.split(":", 1)[1].strip() if source.startswith("worldbank:") else source
             return (
                 f"Run `forecast import worldbank {source_value} --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "census" and scope_type == "question" and scope_ref:
+            source_value = source.split(":", 1)[1].strip() if source.startswith("census:") else source
+            return (
+                f"Run `forecast import census \"{source_value}\" --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "stooq" and scope_type == "question" and scope_ref:

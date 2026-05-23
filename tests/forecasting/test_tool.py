@@ -7,6 +7,7 @@ import pytest
 
 from forecasting import ForecastLedger
 from forecasting.source_adapters import (
+    CensusRecord,
     CisaKevVulnerability,
     ClinicalTrialStudy,
     EiaObservation,
@@ -81,7 +82,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "owid", "eia", "treasury", "stooq", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "owid", "eia", "treasury", "census", "stooq", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_lifecycle(tmp_path):
@@ -1853,6 +1854,51 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert treasury_evidence["published_at"] == "2026-04-01T00:00:00Z"
     assert treasury_evidence["metadata"]["adapter"] == "treasury"
     assert treasury_evidence["metadata"]["adapter_item"]["value_label"] == "Average Interest Rate"
+
+    def fake_census(source, **kwargs):
+        assert source == "2023/acs/acs5?get=NAME,B01003_001E&for=state:*"
+        assert kwargs["limit"] == 1
+        assert kwargs["since"] == "2023-01-01"
+        assert kwargs["api_base_url"] == "https://example.test/census"
+        return [
+            CensusRecord(
+                dataset="2023/acs/acs5",
+                dataset_year=2023,
+                observation_date="2023-12-31",
+                values={"NAME": "California", "B01003_001E": 39100000.0},
+                geography={"state": "06"},
+                published_at="2023-12-31T00:00:00Z",
+                source_url="https://example.test/census/2023/acs/acs5?get=NAME,B01003_001E&for=state:*",
+                source_name="U.S. Census Bureau",
+                entry_id="2023/acs/acs5:2023-12-31:0",
+                raw={"row_index": 0},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_census_records", fake_census)
+    census_imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "census",
+                "source": "2023/acs/acs5?get=NAME,B01003_001E&for=state:*",
+                "limit": 1,
+                "since": "2023-01-01",
+                "api_base_url": "https://example.test/census",
+            }
+        )
+    )
+
+    assert census_imported["imported_count"] == 1
+    census_evidence = census_imported["imported"][0]["evidence"]
+    assert census_evidence["source_type"] == "adapter:census"
+    assert census_evidence["source_name"] == "U.S. Census Bureau"
+    assert census_evidence["claim"] == "Census 2023/acs/acs5 state=06: NAME=California, B01003_001E=39100000.0"
+    assert census_evidence["published_at"] == "2023-12-31T00:00:00Z"
+    assert census_evidence["metadata"]["adapter"] == "census"
+    assert census_evidence["metadata"]["adapter_item"]["geography"] == {"state": "06"}
 
     def fake_githubissues(source, **kwargs):
         assert source == "acme/desk"

@@ -50,6 +50,10 @@ const EVIDENCE_IMPORTS = [
     label: "Fiscal",
   },
   {
+    command: 'forecast import census "<dataset-path?get=...&for=...>" --question <id>',
+    label: "Census",
+  },
+  {
     command: "forecast import stooq <symbol-or-csv-url> --question <id>",
     label: "Market data",
   },
