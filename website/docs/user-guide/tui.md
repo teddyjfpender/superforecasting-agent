@@ -246,12 +246,13 @@ Relevant environment variables:
 | Variable | Purpose |
 |----------|---------|
 | `HERMES_TUI` | Launch TUI mode when set to `1` |
-| `HERMES_TUI_RESUME` | Resume the latest or a specific TUI session |
+| `SUPERFORECASTING_AGENT_TUI_RESUME` / `FORECAST_TUI_RESUME` / `HERMES_TUI_RESUME` | Resume the latest or a specific TUI session |
+| `SUPERFORECASTING_AGENT_TUI_INLINE` / `FORECAST_TUI_INLINE` / `HERMES_TUI_INLINE` | Force primary-buffer rendering on or off |
 | `HERMES_TUI_THEME` | Force `light`, `dark`, or a background hex color |
 | `HERMES_TUI_DIR` | Use a prebuilt TUI bundle |
 | `HERMES_TUI_GATEWAY_URL` | Attach to an existing gateway websocket |
 
-These names are retained for compatibility with the inherited runtime.
+Legacy `HERMES_TUI_*` names remain accepted for compatibility with the inherited runtime.
 
 ## Research Sessions
 
