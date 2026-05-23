@@ -1,10 +1,10 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname } from 'node:path'
+
+import { forecastHistoryFile } from './forecastHome.js'
 
 const MAX = 1000
-const dir = process.env.HERMES_HOME ?? join(homedir(), '.hermes')
-const file = join(dir, '.hermes_history')
+const file = forecastHistoryFile()
 
 let cache: string[] | null = null
 
@@ -64,6 +64,7 @@ export function append(line: string) {
   }
 
   try {
+    const dir = dirname(file)
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true })
     }

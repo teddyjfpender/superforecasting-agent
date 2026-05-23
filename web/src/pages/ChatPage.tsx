@@ -1,5 +1,5 @@
 /**
- * ChatPage — embeds `hermes --tui` inside the dashboard.
+ * ChatPage - embeds the forecast TUI inside the dashboard.
  *
  *   <div host> (dashboard chrome)                                         .
  *     └─ <div wrapper> (rounded, dark bg, padded — the "terminal window"  .
@@ -313,8 +313,8 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     //      in useInputHandlers.ts turns Ctrl+C into a copy when the
     //      terminal has a selection, then emits an OSC 52 escape.  Our
     //      OSC 52 handler below decodes that escape and writes to the
-    //      browser clipboard — so the flow works just like it does in
-    //      `hermes --tui`.
+    //      browser clipboard, so the flow works just like it does in the
+    //      terminal forecast desk.
     //
     //   2. **Ctrl/Cmd+Shift+C.**  Belt-and-suspenders shortcut that
     //      operates directly on xterm's selection, useful if the TUI
@@ -440,7 +440,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         term.loadAddon(webgl);
       } catch (err) {
         console.warn(
-          "[hermes-chat] WebGL renderer unavailable; falling back to default",
+          "[forecast-dashboard] WebGL renderer unavailable; falling back to default",
           err,
         );
       }
