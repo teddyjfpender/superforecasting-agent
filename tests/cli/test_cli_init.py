@@ -162,6 +162,31 @@ class TestBusyInputMode:
         assert cli._pending_input.empty()
 
 
+class TestHistoryPath:
+    def test_new_cli_history_uses_forecast_native_name(self, tmp_path):
+        cli = _make_cli(
+            env_overrides={
+                "SUPERFORECASTING_AGENT_HOME": str(tmp_path),
+                "FORECAST_HOME": "",
+                "HERMES_HOME": "",
+            }
+        )
+
+        assert cli._history_file == tmp_path / ".forecast_history"
+
+    def test_existing_legacy_cli_history_is_preserved(self, tmp_path):
+        (tmp_path / ".hermes_history").write_text("# old input history\n")
+        cli = _make_cli(
+            env_overrides={
+                "SUPERFORECASTING_AGENT_HOME": str(tmp_path),
+                "FORECAST_HOME": "",
+                "HERMES_HOME": "",
+            }
+        )
+
+        assert cli._history_file == tmp_path / ".hermes_history"
+
+
 class TestPromptToolkitTerminalCompatibility:
     def test_lf_enter_binds_to_submit_handler_posix(self):
         """Some thin PTYs deliver Enter as LF/c-j instead of CR/enter.

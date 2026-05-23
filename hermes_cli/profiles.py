@@ -191,6 +191,7 @@ _DEFAULT_EXPORT_EXCLUDE_ROOT = frozenset({
     ".env",                 # API keys (dotenv)
     "auth.lock", "active_profile", ".update_check",
     "errors.log",
+    ".forecast_history",
     ".hermes_history",
     # Caches (regenerated on use)
     "image_cache", "audio_cache", "document_cache",

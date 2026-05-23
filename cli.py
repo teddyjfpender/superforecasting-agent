@@ -47,6 +47,17 @@ from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+
+def _resolve_cli_history_file(agent_home: Path) -> Path:
+    """Return the prompt history file, preserving existing legacy history."""
+
+    native = agent_home / ".forecast_history"
+    legacy = agent_home / ".hermes_history"
+    if not native.exists() and legacy.exists():
+        return legacy
+    return native
+
+
 # Suppress startup messages for clean CLI experience
 os.environ["HERMES_QUIET"] = "1"  # Our own modules
 
@@ -2897,8 +2908,8 @@ class HermesCLI:
             short_uuid = uuid.uuid4().hex[:6]
             self.session_id = f"{timestamp_str}_{short_uuid}"
         
-        # History file for persistent input recall across sessions
-        self._history_file = _hermes_home / ".hermes_history"
+        # History file for persistent input recall across sessions.
+        self._history_file = _resolve_cli_history_file(_hermes_home)
         self._last_invalidate: float = 0.0  # throttle UI repaints
         self._app = None
 
