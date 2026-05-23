@@ -1246,6 +1246,8 @@ def _launch_tui(
         prefix="forecast-tui-active-session-", suffix=".json"
     )
     os.close(active_session_fd)
+    env["SUPERFORECASTING_AGENT_TUI_ACTIVE_SESSION_FILE"] = active_session_file
+    env["FORECAST_TUI_ACTIVE_SESSION_FILE"] = active_session_file
     env["HERMES_TUI_ACTIVE_SESSION_FILE"] = active_session_file
     env["HERMES_PYTHON_SRC_ROOT"] = os.environ.get(
         "HERMES_PYTHON_SRC_ROOT", str(PROJECT_ROOT)

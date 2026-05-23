@@ -26,7 +26,15 @@ import { getUiState, patchUiState } from './uiStore.js'
 
 const usageFrom = (info: null | SessionInfo): Usage => (info?.usage ? { ...ZERO, ...info.usage } : ZERO)
 
-export const writeActiveSessionFile = (sessionId: null | string, file = process.env.HERMES_TUI_ACTIVE_SESSION_FILE) => {
+export const activeSessionFileFromEnv = (env = process.env) =>
+  (
+    env.SUPERFORECASTING_AGENT_TUI_ACTIVE_SESSION_FILE ??
+    env.FORECAST_TUI_ACTIVE_SESSION_FILE ??
+    env.HERMES_TUI_ACTIVE_SESSION_FILE ??
+    ''
+  ).trim() || undefined
+
+export const writeActiveSessionFile = (sessionId: null | string, file = activeSessionFileFromEnv()) => {
   if (!file || !sessionId) {
     return
   }
