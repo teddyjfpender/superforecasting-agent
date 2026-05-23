@@ -595,7 +595,7 @@ def install_distribution(
         create_wrapper_script,
     )
 
-    with tempfile.TemporaryDirectory(prefix="hermes_dist_install_") as tmp:
+    with tempfile.TemporaryDirectory(prefix="forecast_dist_install_") as tmp:
         plan = plan_install(source, Path(tmp), override_name=name)
 
         if plan.existing and not force:
@@ -657,7 +657,7 @@ def update_distribution(
             "`superforecasting-agent profile install <source> --name {canon} --force`."
         )
 
-    with tempfile.TemporaryDirectory(prefix="hermes_dist_update_") as tmp:
+    with tempfile.TemporaryDirectory(prefix="forecast_dist_update_") as tmp:
         plan = plan_install(
             existing_manifest.source,
             Path(tmp),
