@@ -32,10 +32,10 @@ superforecasting-agent --tui --resume "macro desk"
 superforecasting-agent --tui --dev
 ```
 
-You can also opt in with the compatibility environment variable:
+You can also opt in with a forecast-native environment variable:
 
 ```bash
-export HERMES_TUI=1
+export FORECAST_TUI=1
 superforecasting-agent chat
 ```
 
@@ -145,7 +145,7 @@ installs may ship a prebuilt bundle.
 ### External Prebuild
 
 ```bash
-export HERMES_TUI_DIR=/path/to/prebuilt/ui-tui
+export FORECAST_TUI_DIR=/path/to/prebuilt/ui-tui
 superforecasting-agent --tui
 ```
 
@@ -245,11 +245,11 @@ Relevant environment variables:
 
 | Variable | Purpose |
 |----------|---------|
-| `HERMES_TUI` | Launch TUI mode when set to `1` |
+| `SUPERFORECASTING_AGENT_TUI` / `FORECAST_TUI` / `HERMES_TUI` | Launch TUI mode when set to `1` |
 | `SUPERFORECASTING_AGENT_TUI_RESUME` / `FORECAST_TUI_RESUME` / `HERMES_TUI_RESUME` | Resume the latest or a specific TUI session |
 | `SUPERFORECASTING_AGENT_TUI_INLINE` / `FORECAST_TUI_INLINE` / `HERMES_TUI_INLINE` | Force primary-buffer rendering on or off |
 | `SUPERFORECASTING_AGENT_TUI_THEME` / `FORECAST_TUI_THEME` / `HERMES_TUI_THEME` | Force `light`, `dark`, or a background hex color |
-| `HERMES_TUI_DIR` | Use a prebuilt TUI bundle |
+| `SUPERFORECASTING_AGENT_TUI_DIR` / `FORECAST_TUI_DIR` / `HERMES_TUI_DIR` | Use a prebuilt TUI bundle |
 | `SUPERFORECASTING_AGENT_TUI_GATEWAY_URL` / `FORECAST_TUI_GATEWAY_URL` / `HERMES_TUI_GATEWAY_URL` | Attach to an existing gateway websocket |
 
 Legacy `HERMES_TUI_*` names remain accepted for compatibility with the inherited runtime.
@@ -272,7 +272,7 @@ By default the TUI spawns its own local gateway process. To attach to an
 existing gateway:
 
 ```bash
-export HERMES_TUI_GATEWAY_URL="ws://localhost:8765/api/ws?token=<auth-token>"
+export FORECAST_TUI_GATEWAY_URL="ws://localhost:8765/api/ws?token=<auth-token>"
 superforecasting-agent --tui
 ```
 
@@ -281,7 +281,7 @@ web dashboard uses for the embedded terminal experience.
 
 ## Reverting To The Classic CLI
 
-Unset `HERMES_TUI` or launch the normal CLI command without `--tui`.
+Unset `FORECAST_TUI` / `SUPERFORECASTING_AGENT_TUI` / `HERMES_TUI`, or launch the normal CLI command without `--tui`.
 
 If the TUI cannot launch because Node, the bundle, or a TTY is unavailable, the
 runtime prints a diagnostic and falls back instead of leaving the session

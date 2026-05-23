@@ -117,6 +117,23 @@ def test_cmd_chat_tui_resume_resolves_title_before_launch(monkeypatch, main_mod)
     assert captured["resume"] == "20260409_000000_aa11bb"
 
 
+def test_cmd_chat_accepts_forecast_tui_env_alias(monkeypatch, main_mod):
+    captured = {}
+
+    def fake_launch(resume_session_id=None, **kwargs):
+        captured["resume"] = resume_session_id
+        captured.update(kwargs)
+        raise SystemExit(0)
+
+    monkeypatch.setenv("FORECAST_TUI", "1")
+    monkeypatch.setattr(main_mod, "_launch_tui", fake_launch)
+
+    with pytest.raises(SystemExit):
+        main_mod.cmd_chat(_args(tui=False))
+
+    assert captured["tui_dev"] is False
+
+
 def test_cmd_chat_tui_passes_model_and_provider(monkeypatch, main_mod):
     captured = {}
 
@@ -597,7 +614,8 @@ def test_make_tui_argv_dev_prebuilds_hermes_ink(monkeypatch, main_mod, tmp_path)
 
     monkeypatch.setattr(main_mod, "_ensure_tui_node", lambda: None)
     monkeypatch.setattr(main_mod, "_tui_need_npm_install", lambda _tui_dir: False)
-    monkeypatch.delenv("HERMES_TUI_DIR", raising=False)
+    for key in ("SUPERFORECASTING_AGENT_TUI_DIR", "FORECAST_TUI_DIR", "HERMES_TUI_DIR"):
+        monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(main_mod.shutil, "which", lambda bin_name: f"/usr/bin/{bin_name}")
 
     calls = []
@@ -613,6 +631,24 @@ def test_make_tui_argv_dev_prebuilds_hermes_ink(monkeypatch, main_mod, tmp_path)
     assert argv == [str(tsx), "src/entry.tsx"]
     assert cwd == tui_dir
     assert calls == [(["/usr/bin/npm", "run", "build"], str(ink_dir))]
+
+
+def test_make_tui_argv_uses_forecast_tui_dir_alias(monkeypatch, main_mod, tmp_path):
+    tui_dir = tmp_path / "ui-tui"
+    prebuilt = tmp_path / "prebuilt"
+    entry = prebuilt / "dist" / "entry.js"
+    entry.parent.mkdir(parents=True)
+    entry.write_text("console.log('forecast tui')\n", encoding="utf-8")
+
+    monkeypatch.setattr(main_mod, "_ensure_tui_node", lambda: None)
+    monkeypatch.setenv("FORECAST_TUI_DIR", str(prebuilt))
+    monkeypatch.delenv("HERMES_TUI_DIR", raising=False)
+    monkeypatch.setattr(main_mod.shutil, "which", lambda bin_name: f"/usr/bin/{bin_name}")
+
+    argv, cwd = main_mod._make_tui_argv(tui_dir, tui_dev=False)
+
+    assert argv == ["/usr/bin/node", str(entry)]
+    assert cwd == prebuilt
 
 
 def test_print_tui_exit_summary_includes_resume_and_token_totals(monkeypatch, capsys):

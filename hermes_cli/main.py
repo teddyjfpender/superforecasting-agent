@@ -1079,8 +1079,32 @@ def _find_bundled_tui(hermes_cli_dir: Path | None = None) -> Path | None:
     return bundled if bundled.is_file() else None
 
 
+def _tui_env(name: str = "") -> tuple[str, str]:
+    suffix = f"_{name}" if name else ""
+
+    for key in (
+        f"SUPERFORECASTING_AGENT_TUI{suffix}",
+        f"FORECAST_TUI{suffix}",
+        f"HERMES_TUI{suffix}",
+    ):
+        value = (os.environ.get(key) or "").strip()
+
+        if value:
+            return key, value
+
+    return "", ""
+
+
+def _tui_env_value(name: str = "") -> str:
+    return _tui_env(name)[1]
+
+
+def _tui_env_truthy(name: str = "") -> bool:
+    return _tui_env_value(name).lower() in {"1", "true", "yes", "on"}
+
+
 def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
-    """TUI: --dev → tsx src; else node dist (HERMES_TUI_DIR prebuilt or esbuild)."""
+    """TUI: --dev → tsx src; else node dist (forecast TUI_DIR prebuilt or esbuild)."""
     _ensure_tui_node()
 
     def _node_bin(bin: str) -> str:
@@ -1102,12 +1126,12 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
         return path
 
     # Footgun: --dev against a prebuilt bundle that has no source/node_modules.
-    ext_dir = os.environ.get("HERMES_TUI_DIR")
+    ext_dir_key, ext_dir = _tui_env("DIR")
     if tui_dev and ext_dir:
         print(
-            f"Error: --dev is incompatible with HERMES_TUI_DIR={ext_dir}\n"
+            f"Error: --dev is incompatible with {ext_dir_key}={ext_dir}\n"
             f"The prebuilt TUI has no source code to hot-reload.\n"
-            f"Unset HERMES_TUI_DIR (e.g. `unset HERMES_TUI_DIR`) to use --dev from a checkout.",
+            f"Unset {ext_dir_key} (e.g. `unset {ext_dir_key}`) to use --dev from a checkout.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -1397,7 +1421,7 @@ def _pin_kanban_board_env() -> None:
 
 def cmd_chat(args):
     """Run interactive chat CLI."""
-    use_tui = getattr(args, "tui", False) or os.environ.get("HERMES_TUI") == "1"
+    use_tui = getattr(args, "tui", False) or _tui_env_truthy()
 
     # Resolve --continue into --resume with the latest session or by name
     continue_val = getattr(args, "continue_last", None)

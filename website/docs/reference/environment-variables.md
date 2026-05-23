@@ -581,8 +581,8 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 
 | Variable | Description |
 |----------|-------------|
-| `HERMES_TUI` | Legacy-named switch to launch the [TUI](../user-guide/tui.md) instead of the classic CLI when set to `1`. Equivalent to passing `--tui`. |
-| `HERMES_TUI_DIR` | Path to a prebuilt `ui-tui/` directory (must contain `dist/entry.js` and populated `node_modules`). Used by distros and Nix to skip the first-launch `npm install`. |
+| `SUPERFORECASTING_AGENT_TUI` / `FORECAST_TUI` / `HERMES_TUI` | Launch the [TUI](../user-guide/tui.md) instead of the classic CLI when set to `1`, `true`, `yes`, or `on`. Equivalent to passing `--tui`. |
+| `SUPERFORECASTING_AGENT_TUI_DIR` / `FORECAST_TUI_DIR` / `HERMES_TUI_DIR` | Path to a prebuilt `ui-tui/` directory (must contain `dist/entry.js` and populated `node_modules`). Used by distros and Nix to skip the first-launch `npm install`. |
 | `SUPERFORECASTING_AGENT_TUI_RESUME` / `FORECAST_TUI_RESUME` / `HERMES_TUI_RESUME` | Resume a specific TUI session by ID on launch. When set, `superforecasting-agent --tui` skips creating a fresh session and picks up the named session instead — useful for re-attaching after a disconnect or terminal crash. |
 | `SUPERFORECASTING_AGENT_TUI_INLINE` / `FORECAST_TUI_INLINE` / `HERMES_TUI_INLINE` | Force primary-buffer TUI rendering on or off (`1`/`0`). Primary-buffer mode preserves terminal scrollback and is the Termux default. |
 | `SUPERFORECASTING_AGENT_TUI_FPS` / `FORECAST_TUI_FPS` / `HERMES_TUI_FPS` | Show the TUI frame-rate overlay when set to a truthy value. Mainly useful while tuning terminal rendering. |
