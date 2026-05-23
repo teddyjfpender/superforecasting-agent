@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { tuiEnvValue } from '../config/env.js'
+import { tuiEnvValue } from '../lib/envAlias.js'
 
 describe('tuiEnvValue', () => {
   it('prefers fork-native aliases before legacy Hermes names', () => {
@@ -20,9 +20,7 @@ describe('tuiEnvValue', () => {
         FORECAST_TUI_RESUME: 'forecast-session'
       } as NodeJS.ProcessEnv)
     ).toBe('forecast-session')
-    expect(tuiEnvValue('RESUME', { HERMES_TUI_RESUME: 'legacy-session' } as NodeJS.ProcessEnv)).toBe(
-      'legacy-session'
-    )
+    expect(tuiEnvValue('RESUME', { HERMES_TUI_RESUME: 'legacy-session' } as NodeJS.ProcessEnv)).toBe('legacy-session')
   })
 
   it('ignores blank higher-priority aliases', () => {

@@ -12,6 +12,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 // `detectLightMode` takes env as an explicit arg, so it's safe to import
 // statically — but we stay consistent and dynamic-import it too.
 const RELEVANT_ENV = [
+  'SUPERFORECASTING_AGENT_TUI_LIGHT',
+  'SUPERFORECASTING_AGENT_TUI_THEME',
+  'SUPERFORECASTING_AGENT_TUI_BACKGROUND',
+  'FORECAST_TUI_LIGHT',
+  'FORECAST_TUI_THEME',
+  'FORECAST_TUI_BACKGROUND',
   'HERMES_TUI_LIGHT',
   'HERMES_TUI_THEME',
   'HERMES_TUI_BACKGROUND',
@@ -103,6 +109,19 @@ describe('detectLightMode', () => {
     expect(detectLightMode({ HERMES_TUI_LIGHT: 'on' })).toBe(true)
     expect(detectLightMode({ HERMES_TUI_LIGHT: '0' })).toBe(false)
     expect(detectLightMode({ HERMES_TUI_LIGHT: 'off' })).toBe(false)
+  })
+
+  it('prefers fork-native light-mode aliases before legacy Hermes names', async () => {
+    const { detectLightMode } = await importThemeWithCleanEnv()
+
+    expect(detectLightMode({ HERMES_TUI_THEME: 'dark', FORECAST_TUI_THEME: 'light' })).toBe(true)
+    expect(
+      detectLightMode({
+        HERMES_TUI_LIGHT: '1',
+        FORECAST_TUI_LIGHT: '1',
+        SUPERFORECASTING_AGENT_TUI_LIGHT: '0'
+      })
+    ).toBe(false)
   })
 
   it('sniffs COLORFGBG bg slots 7 and 15 as light (#11300)', async () => {
@@ -220,10 +239,13 @@ describe('fromSkin', () => {
   it('maps completion meta background colors from skins', async () => {
     const { fromSkin } = await importThemeWithCleanEnv()
 
-    const theme = fromSkin({
-      completion_menu_meta_bg: '#111111',
-      completion_menu_meta_current_bg: '#222222'
-    }, {})
+    const theme = fromSkin(
+      {
+        completion_menu_meta_bg: '#111111',
+        completion_menu_meta_current_bg: '#222222'
+      },
+      {}
+    )
 
     expect(theme.color.completionMetaBg).toBe('#111111')
     expect(theme.color.completionMetaCurrentBg).toBe('#222222')
@@ -263,14 +285,17 @@ describe('fromSkin', () => {
   it('normalizes non-banner foregrounds on light Apple Terminal', async () => {
     const { fromSkin } = await importThemeWithEnv({ TERM_PROGRAM: 'Apple_Terminal' })
 
-    const theme = fromSkin({
-      banner_accent: '#FFBF00',
-      banner_border: '#CD7F32',
-      banner_dim: '#B8860B',
-      banner_text: '#FFF8DC',
-      banner_title: '#FFD700',
-      prompt: '#FFF8DC'
-    }, {})
+    const theme = fromSkin(
+      {
+        banner_accent: '#FFBF00',
+        banner_border: '#CD7F32',
+        banner_dim: '#B8860B',
+        banner_text: '#FFF8DC',
+        banner_title: '#FFD700',
+        prompt: '#FFF8DC'
+      },
+      {}
+    )
 
     expect(theme.color.primary).toBe('#FFD700')
     expect(theme.color.accent).toBe('#FFBF00')

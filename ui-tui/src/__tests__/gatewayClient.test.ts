@@ -93,27 +93,35 @@ class FakeWebSocket {
 
 describe('GatewayClient websocket attach mode', () => {
   const originalWebSocket = globalThis.WebSocket
-  let originalGatewayUrl: string | undefined
-  let originalSidecarUrl: string | undefined
+  const envKeys = [
+    'SUPERFORECASTING_AGENT_TUI_GATEWAY_URL',
+    'FORECAST_TUI_GATEWAY_URL',
+    'HERMES_TUI_GATEWAY_URL',
+    'SUPERFORECASTING_AGENT_TUI_SIDECAR_URL',
+    'FORECAST_TUI_SIDECAR_URL',
+    'HERMES_TUI_SIDECAR_URL'
+  ] as const
+  let originalEnv: Record<(typeof envKeys)[number], string | undefined>
 
   beforeEach(() => {
-    originalGatewayUrl = process.env.HERMES_TUI_GATEWAY_URL
-    originalSidecarUrl = process.env.HERMES_TUI_SIDECAR_URL
+    originalEnv = {} as Record<(typeof envKeys)[number], string | undefined>
+
+    for (const key of envKeys) {
+      originalEnv[key] = process.env[key]
+      delete process.env[key]
+    }
+
     FakeWebSocket.reset()
     ;(globalThis as { WebSocket?: unknown }).WebSocket = FakeWebSocket as unknown as typeof WebSocket
   })
 
   afterEach(() => {
-    if (originalGatewayUrl === undefined) {
-      delete process.env.HERMES_TUI_GATEWAY_URL
-    } else {
-      process.env.HERMES_TUI_GATEWAY_URL = originalGatewayUrl
-    }
-
-    if (originalSidecarUrl === undefined) {
-      delete process.env.HERMES_TUI_SIDECAR_URL
-    } else {
-      process.env.HERMES_TUI_SIDECAR_URL = originalSidecarUrl
+    for (const key of envKeys) {
+      if (originalEnv[key] === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = originalEnv[key]
+      }
     }
 
     FakeWebSocket.reset()
@@ -140,6 +148,24 @@ describe('GatewayClient websocket attach mode', () => {
     const frame = JSON.parse(gatewaySocket.sent[0] ?? '{}') as { id: string; method: string }
     expect(frame.method).toBe('session.create')
 
+    gatewaySocket.message(JSON.stringify({ id: frame.id, jsonrpc: '2.0', result: { ok: true } }))
+    await expect(req).resolves.toEqual({ ok: true })
+
+    gw.kill()
+  })
+
+  it('accepts forecast-native websocket attach aliases', async () => {
+    process.env.FORECAST_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws?token=abc'
+    const gw = new GatewayClient()
+
+    gw.start()
+    const gatewaySocket = FakeWebSocket.instances[0]!
+    const req = gw.request<{ ok: boolean }>('session.create', { cols: 80 })
+
+    gatewaySocket.open()
+    await vi.waitFor(() => expect(gatewaySocket.sent).toHaveLength(1))
+
+    const frame = JSON.parse(gatewaySocket.sent[0] ?? '{}') as { id: string }
     gatewaySocket.message(JSON.stringify({ id: frame.id, jsonrpc: '2.0', result: { ok: true } }))
     await expect(req).resolves.toEqual({ ok: true })
 

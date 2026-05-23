@@ -248,9 +248,9 @@ Relevant environment variables:
 | `HERMES_TUI` | Launch TUI mode when set to `1` |
 | `SUPERFORECASTING_AGENT_TUI_RESUME` / `FORECAST_TUI_RESUME` / `HERMES_TUI_RESUME` | Resume the latest or a specific TUI session |
 | `SUPERFORECASTING_AGENT_TUI_INLINE` / `FORECAST_TUI_INLINE` / `HERMES_TUI_INLINE` | Force primary-buffer rendering on or off |
-| `HERMES_TUI_THEME` | Force `light`, `dark`, or a background hex color |
+| `SUPERFORECASTING_AGENT_TUI_THEME` / `FORECAST_TUI_THEME` / `HERMES_TUI_THEME` | Force `light`, `dark`, or a background hex color |
 | `HERMES_TUI_DIR` | Use a prebuilt TUI bundle |
-| `HERMES_TUI_GATEWAY_URL` | Attach to an existing gateway websocket |
+| `SUPERFORECASTING_AGENT_TUI_GATEWAY_URL` / `FORECAST_TUI_GATEWAY_URL` / `HERMES_TUI_GATEWAY_URL` | Attach to an existing gateway websocket |
 
 Legacy `HERMES_TUI_*` names remain accepted for compatibility with the inherited runtime.
 

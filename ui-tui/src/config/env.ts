@@ -1,23 +1,10 @@
 import { isTermuxTuiMode } from '../lib/termux.js'
+import { tuiEnvValue } from '../lib/envAlias.js'
 
 const truthy = (v?: string) => /^(?:1|true|yes|on)$/i.test((v ?? '').trim())
 const falsy = (v?: string) => /^(?:0|false|no|off)$/i.test((v ?? '').trim())
 
-export const tuiEnvValue = (name: string, env: NodeJS.ProcessEnv = process.env) => {
-  for (const key of [
-    `SUPERFORECASTING_AGENT_TUI_${name}`,
-    `FORECAST_TUI_${name}`,
-    `HERMES_TUI_${name}`
-  ]) {
-    const value = env[key]?.trim()
-
-    if (value) {
-      return value
-    }
-  }
-
-  return ''
-}
+export { tuiEnvValue }
 
 const parseToggle = (v?: string): boolean | null => {
   const raw = (v ?? '').trim()
@@ -48,8 +35,7 @@ const mouseTrackingDisabledLegacy = truthy(tuiEnvValue('DISABLE_MOUSE'))
 // Mobile selection UX: on Termux default mouse tracking OFF so touch selection
 // is less likely to be intercepted by terminal mouse protocols. Desktop keeps
 // prior behavior unless explicitly overridden.
-export const MOUSE_TRACKING =
-  mouseTrackingOverride ?? (TERMUX_TUI_MODE ? false : !mouseTrackingDisabledLegacy)
+export const MOUSE_TRACKING = mouseTrackingOverride ?? (TERMUX_TUI_MODE ? false : !mouseTrackingDisabledLegacy)
 
 export const NO_CONFIRM_DESTRUCTIVE = truthy(tuiEnvValue('NO_CONFIRM'))
 

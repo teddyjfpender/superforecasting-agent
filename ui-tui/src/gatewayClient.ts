@@ -6,13 +6,14 @@ import { createInterface } from 'node:readline'
 
 import type { GatewayEvent } from './gatewayTypes.js'
 import { CircularBuffer } from './lib/circularBuffer.js'
+import { tuiEnvValue } from './lib/envAlias.js'
 
 const MAX_GATEWAY_LOG_LINES = 200
 const MAX_LOG_LINE_BYTES = 4096
 const MAX_BUFFERED_EVENTS = 2000
 const MAX_LOG_PREVIEW = 240
-const STARTUP_TIMEOUT_MS = Math.max(5000, parseInt(process.env.HERMES_TUI_STARTUP_TIMEOUT_MS ?? '15000', 10) || 15000)
-const REQUEST_TIMEOUT_MS = Math.max(30000, parseInt(process.env.HERMES_TUI_RPC_TIMEOUT_MS ?? '120000', 10) || 120000)
+const STARTUP_TIMEOUT_MS = Math.max(5000, parseInt(tuiEnvValue('STARTUP_TIMEOUT_MS') || '15000', 10) || 15000)
+const REQUEST_TIMEOUT_MS = Math.max(30000, parseInt(tuiEnvValue('RPC_TIMEOUT_MS') || '120000', 10) || 120000)
 const WS_CONNECTING = 0
 const WS_OPEN = 1
 const WS_CLOSING = 2
@@ -22,13 +23,13 @@ const truncateLine = (line: string) =>
   line.length > MAX_LOG_LINE_BYTES ? `${line.slice(0, MAX_LOG_LINE_BYTES)}… [truncated ${line.length} bytes]` : line
 
 const resolveGatewayAttachUrl = () => {
-  const raw = process.env.HERMES_TUI_GATEWAY_URL?.trim()
+  const raw = tuiEnvValue('GATEWAY_URL')
 
   return raw ? raw : null
 }
 
 const resolveSidecarUrl = () => {
-  const raw = process.env.HERMES_TUI_SIDECAR_URL?.trim()
+  const raw = tuiEnvValue('SIDECAR_URL')
 
   return raw ? raw : null
 }
