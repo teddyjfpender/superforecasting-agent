@@ -96,7 +96,7 @@ need to install `gemini-cli` or register your own GCP OAuth client.
 | Your situation | What to do |
 |---|---|
 | Personal Google account, want free tier | Nothing — sign in, start chatting |
-| Workspace / Standard / Enterprise account | Set `HERMES_GEMINI_PROJECT_ID` or `GOOGLE_CLOUD_PROJECT` to your GCP project ID |
+| Workspace / Standard / Enterprise account | Set `SUPERFORECASTING_AGENT_GEMINI_PROJECT_ID`, `FORECAST_GEMINI_PROJECT_ID`, or `GOOGLE_CLOUD_PROJECT` to your GCP project ID |
 | VPC-SC-protected org | The runtime detects `SECURITY_POLICY_VIOLATED` and forces `standard-tier` automatically |
 
 Free tier auto-provisions a Google-managed project on first use. No GCP setup required.
@@ -129,9 +129,13 @@ If you'd rather register your own Google OAuth client — e.g., to keep quota
 and consent scoped to your own GCP project — set:
 
 ```bash
-HERMES_GEMINI_CLIENT_ID=your-client.apps.googleusercontent.com
-HERMES_GEMINI_CLIENT_SECRET=...   # optional for Desktop clients
+SUPERFORECASTING_AGENT_GEMINI_CLIENT_ID=your-client.apps.googleusercontent.com
+SUPERFORECASTING_AGENT_GEMINI_CLIENT_SECRET=...   # optional for Desktop clients
 ```
+
+`FORECAST_GEMINI_CLIENT_ID` / `FORECAST_GEMINI_CLIENT_SECRET` are short aliases,
+and the inherited `HERMES_GEMINI_CLIENT_ID` / `HERMES_GEMINI_CLIENT_SECRET`
+names remain supported for existing environments.
 
 Register a **Desktop app** OAuth client at
 [console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials)

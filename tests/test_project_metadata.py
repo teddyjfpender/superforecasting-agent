@@ -1457,11 +1457,16 @@ def test_anthropic_oauth_guidance_is_forecast_native():
 def test_google_oauth_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "agent" / "google_oauth.py").read_text(encoding="utf-8")
+    code_assist = (root / "agent" / "google_code_assist.py").read_text(encoding="utf-8")
 
     assert "Superforecasting Agent looks for a locally installed gemini-cli" in text
     assert "Superforecasting Agent — signed in" in text
+    assert "SUPERFORECASTING_AGENT_GEMINI_CLIENT_ID" in text
+    assert "SUPERFORECASTING_AGENT_GEMINI_PROJECT_ID" in code_assist
     assert "Hermes looks for a locally installed gemini-cli" not in text
     assert "Hermes — signed in" not in text
+    assert "Set HERMES_GEMINI_CLIENT_ID" not in text
+    assert "Set HERMES_GEMINI_PROJECT_ID" not in code_assist
 
 
 def test_curator_guidance_is_forecast_native():

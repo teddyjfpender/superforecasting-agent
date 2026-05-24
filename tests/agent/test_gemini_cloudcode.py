@@ -35,8 +35,14 @@ def _isolate_env(monkeypatch, tmp_path):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("HERMES_HOME", str(home))
     for key in (
+        "SUPERFORECASTING_AGENT_GEMINI_CLIENT_ID",
+        "FORECAST_GEMINI_CLIENT_ID",
         "HERMES_GEMINI_CLIENT_ID",
+        "SUPERFORECASTING_AGENT_GEMINI_CLIENT_SECRET",
+        "FORECAST_GEMINI_CLIENT_SECRET",
         "HERMES_GEMINI_CLIENT_SECRET",
+        "SUPERFORECASTING_AGENT_GEMINI_PROJECT_ID",
+        "FORECAST_GEMINI_PROJECT_ID",
         "HERMES_GEMINI_PROJECT_ID",
         "GOOGLE_CLOUD_PROJECT",
         "GOOGLE_CLOUD_PROJECT_ID",
@@ -110,8 +116,32 @@ class TestClientCredResolution:
     def test_env_override(self, monkeypatch):
         from agent.google_oauth import _get_client_id
 
-        monkeypatch.setenv("HERMES_GEMINI_CLIENT_ID", "custom-id.apps.googleusercontent.com")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_GEMINI_CLIENT_ID", "custom-id.apps.googleusercontent.com")
         assert _get_client_id() == "custom-id.apps.googleusercontent.com"
+
+    def test_env_override_prefers_forecast_native_alias(self, monkeypatch):
+        from agent.google_oauth import _get_client_id, _get_client_secret
+
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_GEMINI_CLIENT_ID", "sfa-id.apps.googleusercontent.com")
+        monkeypatch.setenv("FORECAST_GEMINI_CLIENT_ID", "forecast-id.apps.googleusercontent.com")
+        monkeypatch.setenv("HERMES_GEMINI_CLIENT_ID", "legacy-id.apps.googleusercontent.com")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_GEMINI_CLIENT_SECRET", "sfa-secret")
+        monkeypatch.setenv("FORECAST_GEMINI_CLIENT_SECRET", "forecast-secret")
+        monkeypatch.setenv("HERMES_GEMINI_CLIENT_SECRET", "legacy-secret")
+
+        assert _get_client_id() == "sfa-id.apps.googleusercontent.com"
+        assert _get_client_secret() == "sfa-secret"
+
+    def test_env_override_falls_back_to_short_alias(self, monkeypatch):
+        from agent.google_oauth import _get_client_id, _get_client_secret
+
+        monkeypatch.setenv("FORECAST_GEMINI_CLIENT_ID", "forecast-id.apps.googleusercontent.com")
+        monkeypatch.setenv("HERMES_GEMINI_CLIENT_ID", "legacy-id.apps.googleusercontent.com")
+        monkeypatch.setenv("FORECAST_GEMINI_CLIENT_SECRET", "forecast-secret")
+        monkeypatch.setenv("HERMES_GEMINI_CLIENT_SECRET", "legacy-secret")
+
+        assert _get_client_id() == "forecast-id.apps.googleusercontent.com"
+        assert _get_client_secret() == "forecast-secret"
 
     def test_shipped_default_used_when_no_env(self):
         """Out of the box, the public gemini-cli desktop client is used."""
@@ -338,6 +368,8 @@ class TestGetValidAccessToken:
 
 class TestProjectIdResolution:
     @pytest.mark.parametrize("env_var", [
+        "SUPERFORECASTING_AGENT_GEMINI_PROJECT_ID",
+        "FORECAST_GEMINI_PROJECT_ID",
         "HERMES_GEMINI_PROJECT_ID",
         "GOOGLE_CLOUD_PROJECT",
         "GOOGLE_CLOUD_PROJECT_ID",
@@ -351,9 +383,18 @@ class TestProjectIdResolution:
     def test_priority_order(self, monkeypatch):
         from agent.google_oauth import resolve_project_id_from_env
 
+        monkeypatch.setenv("FORECAST_GEMINI_PROJECT_ID", "middle-priority")
         monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "lower-priority")
         monkeypatch.setenv("HERMES_GEMINI_PROJECT_ID", "higher-priority")
-        assert resolve_project_id_from_env() == "higher-priority"
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_GEMINI_PROJECT_ID", "highest-priority")
+        assert resolve_project_id_from_env() == "highest-priority"
+
+    def test_short_project_alias_precedes_legacy(self, monkeypatch):
+        from agent.google_oauth import resolve_project_id_from_env
+
+        monkeypatch.setenv("FORECAST_GEMINI_PROJECT_ID", "forecast-priority")
+        monkeypatch.setenv("HERMES_GEMINI_PROJECT_ID", "legacy-priority")
+        assert resolve_project_id_from_env() == "forecast-priority"
 
     def test_no_env_returns_empty(self):
         from agent.google_oauth import resolve_project_id_from_env
@@ -1170,9 +1211,9 @@ class TestProviderRegistration:
         from hermes_cli.config import OPTIONAL_ENV_VARS
 
         for key in (
-            "HERMES_GEMINI_CLIENT_ID",
-            "HERMES_GEMINI_CLIENT_SECRET",
-            "HERMES_GEMINI_PROJECT_ID",
+            "SUPERFORECASTING_AGENT_GEMINI_CLIENT_ID",
+            "SUPERFORECASTING_AGENT_GEMINI_CLIENT_SECRET",
+            "SUPERFORECASTING_AGENT_GEMINI_PROJECT_ID",
         ):
             assert key in OPTIONAL_ENV_VARS
 

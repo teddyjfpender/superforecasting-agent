@@ -10,7 +10,7 @@ Synthesized from:
 - clawdbot/extensions/google/ — refresh-token rotation, VPC-SC handling reference
 - PRs #10176 (@sliverp) and #10779 (@newarthur) — PKCE module structure, cross-process lock
 
-Storage (``~/.hermes/auth/google_oauth.json``, chmod 0o600):
+Storage (``<agent-home>/auth/google_oauth.json``, chmod 0o600):
 
     {
       "refresh": "refreshToken|projectId|managedProjectId",
@@ -68,7 +68,8 @@ logger = logging.getLogger(__name__)
 # OAuth client credential resolution.
 #
 # Resolution order:
-#   1. HERMES_GEMINI_CLIENT_ID / HERMES_GEMINI_CLIENT_SECRET env vars (power users)
+#   1. SUPERFORECASTING_AGENT_GEMINI_* / FORECAST_GEMINI_* env vars
+#      (HERMES_GEMINI_* stays supported as a legacy alias)
 #   2. Shipped defaults — Google's public gemini-cli desktop OAuth client
 #      (baked into every copy of Google's open-source gemini-cli; NOT
 #      confidential — desktop OAuth clients use PKCE, not client_secret, for
@@ -78,8 +79,27 @@ logger = logging.getLogger(__name__)
 #   4. Fail with a helpful error.
 # =============================================================================
 
-ENV_CLIENT_ID = "HERMES_GEMINI_CLIENT_ID"
-ENV_CLIENT_SECRET = "HERMES_GEMINI_CLIENT_SECRET"
+ENV_CLIENT_ID = "SUPERFORECASTING_AGENT_GEMINI_CLIENT_ID"
+ENV_CLIENT_SECRET = "SUPERFORECASTING_AGENT_GEMINI_CLIENT_SECRET"
+LEGACY_ENV_CLIENT_ID = "HERMES_GEMINI_CLIENT_ID"
+LEGACY_ENV_CLIENT_SECRET = "HERMES_GEMINI_CLIENT_SECRET"
+_CLIENT_ID_ENV_NAMES = (
+    ENV_CLIENT_ID,
+    "FORECAST_GEMINI_CLIENT_ID",
+    LEGACY_ENV_CLIENT_ID,
+)
+_CLIENT_SECRET_ENV_NAMES = (
+    ENV_CLIENT_SECRET,
+    "FORECAST_GEMINI_CLIENT_SECRET",
+    LEGACY_ENV_CLIENT_SECRET,
+)
+_PROJECT_ID_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_GEMINI_PROJECT_ID",
+    "FORECAST_GEMINI_PROJECT_ID",
+    "HERMES_GEMINI_PROJECT_ID",
+    "GOOGLE_CLOUD_PROJECT",
+    "GOOGLE_CLOUD_PROJECT_ID",
+)
 
 # Public gemini-cli desktop OAuth client (shipped in Google's open-source
 # gemini-cli MIT repo). Composed piecewise to keep the constants readable and
@@ -336,9 +356,10 @@ def _scrape_client_credentials() -> Tuple[str, str]:
 
 
 def _get_client_id() -> str:
-    env_val = (os.getenv(ENV_CLIENT_ID) or "").strip()
-    if env_val:
-        return env_val
+    for env_name in _CLIENT_ID_ENV_NAMES:
+        env_val = (os.getenv(env_name) or "").strip()
+        if env_val:
+            return env_val
     if _DEFAULT_CLIENT_ID:
         return _DEFAULT_CLIENT_ID
     scraped, _ = _scrape_client_credentials()
@@ -346,9 +367,10 @@ def _get_client_id() -> str:
 
 
 def _get_client_secret() -> str:
-    env_val = (os.getenv(ENV_CLIENT_SECRET) or "").strip()
-    if env_val:
-        return env_val
+    for env_name in _CLIENT_SECRET_ENV_NAMES:
+        env_val = (os.getenv(env_name) or "").strip()
+        if env_val:
+            return env_val
     if _DEFAULT_CLIENT_SECRET:
         return _DEFAULT_CLIENT_SECRET
     _, scraped = _scrape_client_credentials()
@@ -363,7 +385,8 @@ def _require_client_id() -> str:
             "Superforecasting Agent looks for a locally installed gemini-cli to source the OAuth client. "
             "Either:\n"
             "  1. Install it: npm install -g @google/gemini-cli  (or brew install gemini-cli)\n"
-            "  2. Set HERMES_GEMINI_CLIENT_ID and HERMES_GEMINI_CLIENT_SECRET in the forecast home .env\n"
+            "  2. Set SUPERFORECASTING_AGENT_GEMINI_CLIENT_ID and "
+            "SUPERFORECASTING_AGENT_GEMINI_CLIENT_SECRET in the forecast home .env\n"
             "\n"
             "Register a Desktop OAuth client at:\n"
             "  https://console.cloud.google.com/apis/credentials\n"
@@ -1050,11 +1073,7 @@ def run_gemini_oauth_login_pure() -> Dict[str, Any]:
 
 def resolve_project_id_from_env() -> str:
     """Return a GCP project ID from env vars, in priority order."""
-    for var in (
-        "HERMES_GEMINI_PROJECT_ID",
-        "GOOGLE_CLOUD_PROJECT",
-        "GOOGLE_CLOUD_PROJECT_ID",
-    ):
+    for var in _PROJECT_ID_ENV_NAMES:
         val = (os.getenv(var) or "").strip()
         if val:
             return val
