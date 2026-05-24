@@ -2168,6 +2168,41 @@ def test_superforecasting_fork_audit_maps_prd_requirements():
     assert "full PRD is not complete" in audit
 
 
+def test_forecast_cli_smoke_transcript_captures_tester_path():
+    root = Path(__file__).resolve().parents[1]
+    transcript = (
+        root / "docs" / "plans" / "2026-05-24-forecast-cli-smoke-transcript.md"
+    ).read_text(encoding="utf-8")
+    audit = (
+        root
+        / "docs"
+        / "plans"
+        / "2026-05-20-superforecasting-agent-fork-implementation-audit.md"
+    ).read_text(encoding="utf-8")
+
+    expected_markers = [
+        "python3 scripts/forecast_smoke_test.py",
+        "[forecast-smoke] source_adapters:",
+        "[forecast-smoke] benchmark_datasets:",
+        "[forecast-smoke] question_id:",
+        "[forecast-smoke] evidence_id:",
+        "[forecast-smoke] reference_class_id:",
+        "[forecast-smoke] model_run_id:",
+        "[forecast-smoke] scheduled_self_check_question_id:",
+        "[forecast-smoke] pilot_cohort_example_questions: 5",
+        "[forecast-smoke] pilot_report_checks: 7/7",
+        "[forecast-smoke] pilot_aggregate_live_scores:",
+        "[forecast-smoke] backtest_run_id:",
+        "[forecast-smoke] agent_protocol_backtest_run_id:",
+        "[forecast-smoke] readiness_verdict: insufficient_live_evidence",
+        "[forecast-smoke] forecast smoke test passed",
+    ]
+    for marker in expected_markers:
+        assert marker in transcript, marker
+
+    assert "2026-05-24-forecast-cli-smoke-transcript.md" in audit
+
+
 def test_revision_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     banner = (root / "hermes_cli" / "banner.py").read_text(encoding="utf-8")

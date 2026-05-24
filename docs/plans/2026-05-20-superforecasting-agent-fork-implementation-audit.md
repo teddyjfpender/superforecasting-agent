@@ -15,6 +15,7 @@ Concrete success means the fork behaves as a command-line forecasting desk cente
 
 - Forecasting package: `forecasting/`
 - Forecast default CLI dashboard renderer: `forecasting/cli.py`, `forecasting/dashboard.py`
+- CLI smoke transcript: `docs/plans/2026-05-24-forecast-cli-smoke-transcript.md`
 - Fork-native forecast namespace wrapper: `superforecasting_agent/cli.py`, `tests/forecasting/test_package_identity.py`
 - Forecast learning adjustment helper and agent tool: `forecasting/learning.py`, `tools/forecasting_tool.py`
 - Forecast watched-source adapters and alerts: `forecasting/ledger.py`, `forecasting/source_adapters.py`, `forecasting/cli.py`, `tools/forecasting_tool.py`
@@ -1702,7 +1703,7 @@ fork objective still needs the remaining work listed below.
 | First surgery 8: scheduled learning self-checks | Covered | Domain/topic/horizon/portfolio schedules can create alerts, scores, postmortems, lessons, and profiles without mutating probabilities |
 | Quality gate: `scripts/run_tests.sh -q` | Partial | Many focused suites pass; the full repository gate was not rerun as final completion evidence in this audit |
 | Quality gate: `python3 -m compileall -q forecasting` | Covered | Passed in this audit pass after the PRD checklist update |
-| CLI/TUI manual transcript gate | Partial | CLI/TUI/web behavior is covered by tests and docs; a final tester transcript should be captured before release |
+| CLI/TUI manual transcript gate | Covered/Partial | `docs/plans/2026-05-24-forecast-cli-smoke-transcript.md` captures a real CLI smoke transcript with ledger, evidence, reference-class, model-run, schedule, pilot, backtest, performance, and readiness output; a fuller interactive TUI transcript remains a release-hardening task |
 | Docs/link render gate | Partial | Website/web builds pass with inherited warnings; rerun after further docs edits |
 
 ## Remaining Gaps
