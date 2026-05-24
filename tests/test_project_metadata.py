@@ -161,8 +161,10 @@ def test_web_locale_app_brand_is_forecast_native():
     for path in locale_files:
         text = path.read_text(encoding="utf-8")
         assert 'brand: "Superforecasting Agent"' in text, path
+        assert "~/.superforecasting-agent" in text, path
         assert 'brand: "Hermes Agent"' not in text, path
         assert "Hermes Agent ☤" not in text, path
+        assert "~/.hermes" not in text, path
 
 
 def test_web_dashboard_titles_are_forecast_native():
