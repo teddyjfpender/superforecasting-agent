@@ -2,19 +2,19 @@
 """
 Code Execution Tool -- Programmatic Tool Calling (PTC)
 
-Lets the LLM write a Python script that calls Hermes tools via RPC,
+Lets the LLM write a Python script that calls agent tools via RPC,
 collapsing multi-step tool chains into a single inference turn.
 
 Architecture (two transports):
 
   **Local backend (UDS):**
-  1. Parent generates a `hermes_tools.py` stub module with UDS RPC functions
+  1. Parent generates a `hermes_tools.py` compatibility stub with UDS RPC functions
   2. Parent opens a Unix domain socket and starts an RPC listener thread
   3. Parent spawns a child process that runs the LLM's script
   4. Tool calls travel over the UDS back to the parent for dispatch
 
   **Remote backends (file-based RPC):**
-  1. Parent generates `hermes_tools.py` with file-based RPC stubs
+  1. Parent generates the `hermes_tools.py` compatibility module with file-based RPC stubs
   2. Parent ships both files to the remote environment
   3. Script runs inside the terminal backend (Docker/SSH/Modal/Daytona/etc.)
   4. Tool calls are written as request files; a polling thread on the parent
@@ -305,7 +305,7 @@ def retry(fn, max_attempts=3, delay=2):
 # ---- UDS transport (local backend) ---------------------------------------
 
 _UDS_TRANSPORT_HEADER = '''\
-"""Auto-generated Hermes tools RPC stubs."""
+"""Auto-generated agent-tool RPC stubs."""
 import json, os, socket, shlex, threading, time
 
 _sock = None
@@ -369,7 +369,7 @@ def _call(tool_name, args):
 # ---- File-based transport (remote backends) -------------------------------
 
 _FILE_TRANSPORT_HEADER = '''\
-"""Auto-generated Hermes tools RPC stubs (file-based transport)."""
+"""Auto-generated agent-tool RPC stubs (file-based transport)."""
 import json, os, shlex, tempfile, threading, time
 
 _RPC_DIR = os.environ.get("HERMES_RPC_DIR") or os.path.join(tempfile.gettempdir(), "hermes_rpc")
@@ -1040,7 +1040,7 @@ def execute_code(
 ) -> str:
     """
     Run a Python script in a sandboxed child process with RPC access
-    to a subset of Hermes tools.
+    to a subset of agent tools.
 
     Dispatches to the local (UDS) or remote (file-based RPC) path
     depending on the configured terminal backend.
@@ -1452,7 +1452,12 @@ def execute_code(
 
 def _kill_process_group(proc, escalate: bool = False):
     """Kill the child and its entire process tree (cross-platform via psutil)."""
-    import psutil
+    try:
+        import psutil
+    except ImportError:
+        _kill_process_group_without_psutil(proc, escalate=escalate)
+        return
+
     try:
         parent = psutil.Process(proc.pid)
         children = parent.children(recursive=True)
@@ -1498,6 +1503,47 @@ def _kill_process_group(proc, escalate: bool = False):
                     proc.kill()
                 except Exception as e2:
                     logger.debug("Could not kill process: %s", e2, exc_info=True)
+
+
+def _kill_process_group_without_psutil(proc, escalate: bool = False) -> None:
+    """Best-effort process cleanup when psutil is unavailable."""
+
+    kill_signal = getattr(signal, "SIGKILL", None)
+
+    def _is_kill_signal(sig: int) -> bool:
+        return kill_signal is not None and sig == kill_signal
+
+    def _send(sig: int) -> None:
+        try:
+            if _IS_WINDOWS:
+                if _is_kill_signal(sig):
+                    proc.kill()
+                else:
+                    proc.terminate()
+                return
+            os.killpg(os.getpgid(proc.pid), sig)
+        except ProcessLookupError:
+            return
+        except Exception as exc:
+            logger.debug("Could not signal process group: %s", exc, exc_info=True)
+            try:
+                if _is_kill_signal(sig):
+                    proc.kill()
+                else:
+                    proc.terminate()
+            except Exception as fallback_exc:
+                logger.debug(
+                    "Could not signal child process: %s",
+                    fallback_exc,
+                    exc_info=True,
+                )
+
+    _send(signal.SIGTERM)
+    if escalate:
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _send(getattr(signal, "SIGKILL", signal.SIGTERM))
 
 
 def _load_config() -> dict:
@@ -1676,7 +1722,7 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
                               mode: str = None) -> dict:
     """Build the execute_code schema with description listing only enabled tools.
 
-    When tools are disabled via ``hermes tools`` (e.g. web is turned off),
+    When tools are disabled via the tools configuration UI (e.g. web is turned off),
     the schema description should NOT mention web_search / web_extract —
     otherwise the model thinks they are available and keeps trying to use them.
 
@@ -1707,7 +1753,7 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
 
     # Mode-specific CWD guidance. Project mode is the default and matches
     # terminal()'s filesystem/interpreter; strict mode retains the isolated
-    # temp-dir staging and hermes-agent's own python.
+    # temp-dir staging and the runtime's own python.
     if mode == "strict":
         cwd_note = (
             "Scripts run in their own temp dir, not the session's CWD — use absolute paths "
@@ -1720,7 +1766,7 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
         )
 
     description = (
-        "Run a Python script that can call Hermes tools programmatically. "
+        "Run a Python script that can call Superforecasting Agent tools programmatically. "
         "Use this when you need 3+ tool calls with processing logic between them, "
         "need to filter/reduce large tool outputs before they enter your context, "
         "need conditional branching (if X then Y else Z), or need to loop "

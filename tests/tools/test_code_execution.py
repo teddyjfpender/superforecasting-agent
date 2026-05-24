@@ -658,6 +658,12 @@ class TestBuildExecuteCodeSchema(unittest.TestCase):
         self.assertIn("shell_quote", desc)
         self.assertIn("retry", desc)
 
+    def test_description_is_forecast_native(self):
+        schema = build_execute_code_schema()
+        desc = schema["description"]
+        self.assertIn("Superforecasting Agent tools", desc)
+        self.assertNotIn("Hermes tools", desc)
+
     def test_none_defaults_to_all_tools(self):
         schema_none = build_execute_code_schema(None)
         schema_all = build_execute_code_schema(SANDBOX_ALLOWED_TOOLS)

@@ -217,6 +217,24 @@ def test_contributor_and_skills_index_guidance_is_forecast_native():
     assert "Hermes Skills Index" not in combined
 
 
+def test_tool_runtime_guidance_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "tools" / "code_execution_tool.py",
+        root / "tools" / "debug_helpers.py",
+        root / "tools" / "openrouter_client.py",
+        root / "tools" / "web_tools.py",
+        root / "agent" / "transports" / "hermes_tools_mcp_server.py",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "Superforecasting Agent tools" in text
+    assert "Run `superforecasting-agent tools` to set one up." in text
+    assert "Hermes tools" not in text
+    assert "Hermes tool" not in text
+    assert "Run `hermes tools`" not in text
+
+
 def test_google_workspace_skill_docs_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [
