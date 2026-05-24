@@ -176,6 +176,8 @@ def test_forecast_cli_lifecycle(tmp_path, capsys):
     calibration_output = capsys.readouterr().out
     assert "mean_log_score:" in calibration_output
     assert "mean_sharpness:" in calibration_output
+    assert "probability_movement_n:" in calibration_output
+    assert "mean_abs_probability_movement_before_close:" in calibration_output
     assert "empty" in calibration_output
     assert "low_sample" in calibration_output
 

@@ -134,6 +134,9 @@ forecast pilot-aggregate tester-a-export.json tester-b-export.json --json
 ```
 
 Backtests are time-aware. Evidence after the simulated forecast timestamp is excluded unless it is part of the resolution step.
+`forecast calibration` reports Brier/log scores, calibration buckets, sharpness,
+and probability movement before close so reviewers can see whether late updates
+are improving or simply adding churn.
 Agent-protocol backtests additionally hide answer-side replay fields from the
 agent prompt, can write captured JSONL responses, and can replay captured JSONL
 outputs. `forecast performance --json` includes an `evidence_status` section so

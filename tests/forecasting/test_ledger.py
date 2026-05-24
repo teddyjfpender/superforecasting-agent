@@ -769,9 +769,15 @@ def test_calibration_summary_filters_horizon_and_reports_sharpness(tmp_path):
     )
     ledger.create_snapshot(
         question_id=question.id,
+        probability_or_distribution=0.55,
+        rationale="Initial deal odds reflect an early base rate.",
+        as_of="2026-01-01T00:00:00Z",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
         probability_or_distribution=0.75,
         rationale="Near-term deal catalysts are strong.",
-        as_of="2026-01-01T00:00:00Z",
+        as_of="2026-01-05T00:00:00Z",
     )
     ledger.resolve_question(question_id=question.id, outcome="yes")
     ledger.score_question(question.id)
@@ -781,9 +787,13 @@ def test_calibration_summary_filters_horizon_and_reports_sharpness(tmp_path):
 
     assert summary["count"] == 1
     assert summary["mean_sharpness"] == pytest.approx(0.5)
+    assert summary["probability_movement_count"] == 1
+    assert summary["mean_probability_movement_before_close"] == pytest.approx(0.2)
+    assert summary["mean_abs_probability_movement_before_close"] == pytest.approx(0.2)
     assert summary["buckets"][0]["sample_status"] == "empty"
     assert next(row for row in summary["buckets"] if row["bucket"] == "0.7-0.8")["sample_status"] == "low_sample"
     assert excluded["count"] == 0
+    assert excluded["probability_movement_count"] == 0
 
 
 def test_categorical_distribution_scoring_uses_resolved_outcome(tmp_path):

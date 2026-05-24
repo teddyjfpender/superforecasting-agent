@@ -4919,6 +4919,19 @@ def _print_calibration_summary(summary: dict[str, Any], *, label: str | None = N
     print(f"mean_log_score: {mean_log:.6f}" if mean_log is not None else "mean_log_score: -")
     sharpness = summary["mean_sharpness"]
     print(f"mean_sharpness: {sharpness:.6f}" if sharpness is not None else "mean_sharpness: -")
+    movement = summary.get("mean_probability_movement_before_close")
+    abs_movement = summary.get("mean_abs_probability_movement_before_close")
+    print(f"probability_movement_n: {summary.get('probability_movement_count', 0)}")
+    print(
+        f"mean_probability_movement_before_close: {movement:+.6f}"
+        if movement is not None
+        else "mean_probability_movement_before_close: -"
+    )
+    print(
+        f"mean_abs_probability_movement_before_close: {abs_movement:.6f}"
+        if abs_movement is not None
+        else "mean_abs_probability_movement_before_close: -"
+    )
     print("buckets:")
     if not summary["buckets"]:
         print("  none")

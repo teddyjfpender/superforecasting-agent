@@ -1680,6 +1680,7 @@ class ForecastLedger:
         ]
         buckets: dict[str, list[float]] = defaultdict(list)
         sharpness_values: list[float] = []
+        probability_movements: list[float] = []
         for score in scores:
             if score.brier_score is None:
                 continue
@@ -1691,6 +1692,9 @@ class ForecastLedger:
             sharpness = self._sharpness(snapshot.probability_or_distribution)
             if sharpness is not None:
                 sharpness_values.append(sharpness)
+            movement = self._score_probability_movement_before_close(score, snapshot)
+            if movement is not None:
+                probability_movements.append(movement)
         bucket_rows = []
         canonical_buckets = [f"{i / 10:.1f}-{(i + 1) / 10:.1f}" for i in range(10)]
         ordered_buckets = canonical_buckets + sorted(
@@ -1713,6 +1717,17 @@ class ForecastLedger:
             "mean_brier": sum(all_values) / len(all_values) if all_values else None,
             "mean_log_score": sum(log_values) / len(log_values) if log_values else None,
             "mean_sharpness": sum(sharpness_values) / len(sharpness_values) if sharpness_values else None,
+            "probability_movement_count": len(probability_movements),
+            "mean_probability_movement_before_close": (
+                sum(probability_movements) / len(probability_movements)
+                if probability_movements
+                else None
+            ),
+            "mean_abs_probability_movement_before_close": (
+                sum(abs(value) for value in probability_movements) / len(probability_movements)
+                if probability_movements
+                else None
+            ),
             "buckets": bucket_rows,
             "domain": domain,
             "forecast_origin": forecast_origin,
@@ -4896,6 +4911,50 @@ class ForecastLedger:
             return None
         if isinstance(previous, (int, float)) and isinstance(current, (int, float)):
             return float(current) - float(previous)
+        return None
+
+    def _score_probability_movement_before_close(
+        self,
+        score: ScoreRecord,
+        scored_snapshot: ForecastSnapshot,
+    ) -> float | None:
+        """Return final-minus-initial probability movement for the scored forecast path."""
+
+        try:
+            question = self.get_question(score.question_id)
+        except LedgerNotFoundError:
+            return None
+        scored_as_of = timestamp_to_datetime(scored_snapshot.as_of)
+        close_time = timestamp_to_datetime(question.close_time) if question.close_time else None
+        cutoff = close_time or scored_as_of
+        numeric_snapshots: list[ForecastSnapshot] = []
+        for snapshot in self.list_snapshots(score.question_id):
+            if snapshot.forecast_origin != scored_snapshot.forecast_origin:
+                continue
+            if snapshot.backtest_run_id != scored_snapshot.backtest_run_id:
+                continue
+            snapshot_as_of = timestamp_to_datetime(snapshot.as_of)
+            if cutoff and snapshot_as_of and snapshot_as_of > cutoff:
+                continue
+            if scored_as_of and snapshot_as_of and snapshot_as_of > scored_as_of:
+                continue
+            if self._numeric_probability(snapshot.probability_or_distribution) is None:
+                continue
+            numeric_snapshots.append(snapshot)
+        if len(numeric_snapshots) < 2:
+            return None
+        first = self._numeric_probability(numeric_snapshots[0].probability_or_distribution)
+        last = self._numeric_probability(numeric_snapshots[-1].probability_or_distribution)
+        if first is None or last is None:
+            return None
+        return last - first
+
+    @staticmethod
+    def _numeric_probability(payload: Any) -> float | None:
+        if isinstance(payload, bool):
+            return None
+        if isinstance(payload, (int, float)):
+            return float(payload)
         return None
 
     def _domain_error_profile_alerts(

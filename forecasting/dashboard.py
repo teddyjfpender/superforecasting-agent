@@ -245,6 +245,10 @@ def render_dashboard_text(summary: dict[str, Any]) -> str:
         lines.append(f"mean_brier: {format_metric(calibration.get('mean_brier'))}")
         lines.append(f"mean_log_score: {format_metric(calibration.get('mean_log_score'))}")
         lines.append(f"mean_sharpness: {format_metric(calibration.get('mean_sharpness'))}")
+        lines.append(
+            "mean_abs_movement_before_close: "
+            f"{format_metric(calibration.get('mean_abs_probability_movement_before_close'))}"
+        )
     learning = dict(summary.get("learning") or {})
     if learning:
         lines.extend(["", "Learning Memory"])
