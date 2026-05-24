@@ -5,15 +5,37 @@ import os
 
 import pytest
 
-from agent.redact import redact_sensitive_text, RedactingFormatter
+from agent.redact import (
+    RedactingFormatter,
+    _REDACT_SECRETS_ENV_NAMES,
+    _redact_enabled_from_env,
+    redact_sensitive_text,
+)
 
 
 @pytest.fixture(autouse=True)
 def _ensure_redaction_enabled(monkeypatch):
     """Ensure HERMES_REDACT_SECRETS is not disabled by prior test imports."""
-    monkeypatch.delenv("HERMES_REDACT_SECRETS", raising=False)
+    for name in _REDACT_SECRETS_ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
     # Also patch the module-level snapshot so it reflects the cleared env var
     monkeypatch.setattr("agent.redact._REDACT_ENABLED", True)
+
+
+def test_forecast_redaction_aliases_take_precedence(monkeypatch):
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_REDACT_SECRETS", "false")
+    monkeypatch.setenv("FORECAST_REDACT_SECRETS", "true")
+    monkeypatch.setenv("HERMES_REDACT_SECRETS", "true")
+
+    assert _redact_enabled_from_env() is False
+
+
+def test_legacy_redaction_alias_still_supported(monkeypatch):
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_REDACT_SECRETS", raising=False)
+    monkeypatch.delenv("FORECAST_REDACT_SECRETS", raising=False)
+    monkeypatch.setenv("HERMES_REDACT_SECRETS", "false")
+
+    assert _redact_enabled_from_env() is False
 
 
 class TestKnownPrefixes:

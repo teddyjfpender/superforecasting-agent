@@ -208,7 +208,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
 
     # Quiet mode: keep inherited runtime banners off stdout (which is the MCP wire).
+    os.environ.setdefault("SUPERFORECASTING_AGENT_QUIET", "1")
+    os.environ.setdefault("FORECAST_QUIET", "1")
     os.environ.setdefault("HERMES_QUIET", "1")
+    os.environ.setdefault("SUPERFORECASTING_AGENT_REDACT_SECRETS", "true")
+    os.environ.setdefault("FORECAST_REDACT_SECRETS", "true")
     os.environ.setdefault("HERMES_REDACT_SECRETS", "true")
 
     try:

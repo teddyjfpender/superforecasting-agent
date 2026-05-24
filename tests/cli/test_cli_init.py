@@ -91,6 +91,27 @@ class TestMaxTurnsResolution:
         assert isinstance(cli.max_turns, int) and cli.max_turns == 90
 
 
+def test_redact_env_alias_helpers_prefer_forecast_native(monkeypatch):
+    import cli as cli_mod
+
+    for name in cli_mod._REDACT_SECRETS_ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
+
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_REDACT_SECRETS", "false")
+    monkeypatch.setenv("FORECAST_REDACT_SECRETS", "true")
+    monkeypatch.setenv("HERMES_REDACT_SECRETS", "true")
+
+    assert cli_mod._first_redact_env() == (
+        "SUPERFORECASTING_AGENT_REDACT_SECRETS",
+        "false",
+    )
+
+    cli_mod._set_redact_env_aliases(True)
+
+    for name in cli_mod._REDACT_SECRETS_ENV_NAMES:
+        assert os.environ[name] == "true"
+
+
 class TestVerboseAndToolProgress:
     def test_default_verbose_is_bool(self):
         cli = _make_cli()

@@ -256,13 +256,18 @@ from hermes_cli.env_loader import load_hermes_dotenv
 
 load_hermes_dotenv(project_env=PROJECT_ROOT / ".env")
 
-# Bridge security.redact_secrets from config.yaml → HERMES_REDACT_SECRETS env
-# var BEFORE hermes_logging imports agent.redact (which snapshots the flag at
+# Bridge security.redact_secrets from config.yaml → redaction env aliases
+# BEFORE hermes_logging imports agent.redact (which snapshots the flag at
 # module-import time). Without this, config.yaml's toggle is ignored because
 # the setup_logging() call below imports agent.redact, which reads the env var
 # exactly once. Env var in .env still wins — this is config.yaml fallback only.
+_REDACT_SECRETS_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_REDACT_SECRETS",
+    "FORECAST_REDACT_SECRETS",
+    "HERMES_REDACT_SECRETS",
+)
 try:
-    if "HERMES_REDACT_SECRETS" not in os.environ:
+    if not any(name in os.environ for name in _REDACT_SECRETS_ENV_NAMES):
         import yaml as _yaml_early
 
         _cfg_path = get_hermes_home() / "config.yaml"
@@ -272,7 +277,9 @@ try:
             if isinstance(_early_sec_cfg, dict):
                 _early_redact = _early_sec_cfg.get("redact_secrets")
                 if _early_redact is not None:
-                    os.environ["HERMES_REDACT_SECRETS"] = str(_early_redact).lower()
+                    _early_redact_value = str(_early_redact).lower()
+                    for _env_name in _REDACT_SECRETS_ENV_NAMES:
+                        os.environ[_env_name] = _early_redact_value
             del _early_sec_cfg
         del _cfg_path
 except Exception:

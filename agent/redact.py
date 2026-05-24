@@ -55,16 +55,32 @@ _SENSITIVE_BODY_KEYS = frozenset({
     "key",
 })
 
+_REDACT_SECRETS_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_REDACT_SECRETS",
+    "FORECAST_REDACT_SECRETS",
+    "HERMES_REDACT_SECRETS",
+)
+
+
+def _redact_enabled_from_env() -> bool:
+    for name in _REDACT_SECRETS_ENV_NAMES:
+        value = os.getenv(name)
+        if value is not None:
+            return value.lower() in {"1", "true", "yes", "on"}
+    return True
+
+
 # Snapshot at import time so runtime env mutations (e.g. LLM-generated
 # `export HERMES_REDACT_SECRETS=false`) cannot disable redaction
 # mid-session.  ON by default — secure default per issue #17691. Users who
 # need raw credential values in tool output (e.g. working on the redactor
 # itself) can opt out via `security.redact_secrets: false` in config.yaml
-# (bridged to this env var in hermes_cli/main.py, gateway/run.py, and
-# cli.py) or `HERMES_REDACT_SECRETS=false` in ~/.hermes/.env. An opt-out
-# warning is logged at gateway and CLI startup so operators see the
-# downgrade — see `_log_redaction_status()` in gateway/run.py and cli.py.
-_REDACT_ENABLED = os.getenv("HERMES_REDACT_SECRETS", "true").lower() in {"1", "true", "yes", "on"}
+# (bridged to these env vars in hermes_cli/main.py, gateway/run.py, and
+# cli.py) or `SUPERFORECASTING_AGENT_REDACT_SECRETS=false` in the agent .env.
+# Legacy `HERMES_REDACT_SECRETS` remains supported. An opt-out warning is
+# logged at gateway and CLI startup so operators see the downgrade — see
+# `_log_redaction_status()` in gateway/run.py and cli.py.
+_REDACT_ENABLED = _redact_enabled_from_env()
 
 # Known API key prefixes -- match the prefix + contiguous token chars
 _PREFIX_PATTERNS = [

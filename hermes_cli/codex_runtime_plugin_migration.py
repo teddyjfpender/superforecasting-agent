@@ -620,7 +620,15 @@ def _build_hermes_tools_mcp_entry() -> dict:
     env["SUPERFORECASTING_AGENT_QUIET"] = "1"
     env["FORECAST_QUIET"] = "1"
     env["HERMES_QUIET"] = "1"
-    env["HERMES_REDACT_SECRETS"] = env.get("HERMES_REDACT_SECRETS", "true")
+    redact_value = (
+        os.environ.get("SUPERFORECASTING_AGENT_REDACT_SECRETS")
+        or os.environ.get("FORECAST_REDACT_SECRETS")
+        or os.environ.get("HERMES_REDACT_SECRETS")
+        or "true"
+    )
+    env["SUPERFORECASTING_AGENT_REDACT_SECRETS"] = redact_value
+    env["FORECAST_REDACT_SECRETS"] = redact_value
+    env["HERMES_REDACT_SECRETS"] = redact_value
 
     out: dict[str, Any] = {
         "command": sys.executable,

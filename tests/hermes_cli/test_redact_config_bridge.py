@@ -1,15 +1,16 @@
 """Regression test for config.yaml `security.redact_secrets: false` toggle.
 
-Bug: `agent/redact.py` snapshots `_REDACT_ENABLED` from the env var
-`HERMES_REDACT_SECRETS` at module-import time. `hermes_cli/main.py` at
+Bug: `agent/redact.py` snapshots `_REDACT_ENABLED` from the redaction env var
+aliases at module-import time. `hermes_cli/main.py` at
 line ~174 calls `setup_logging(mode="cli")` which transitively imports
 `agent.redact` — BEFORE any config bridge ran. So if a user set
 `security.redact_secrets: false` in config.yaml (instead of as an env var
 in .env), the toggle was silently ignored in both `hermes chat` and
 `hermes gateway run`.
 
-Fix: bridge `security.redact_secrets` from config.yaml → `HERMES_REDACT_SECRETS`
-env var in `hermes_cli/main.py` BEFORE the `setup_logging()` call.
+Fix: bridge `security.redact_secrets` from config.yaml → fork-native redaction
+env aliases plus compatibility `HERMES_REDACT_SECRETS` in `hermes_cli/main.py`
+BEFORE the `setup_logging()` call.
 """
 import os
 import subprocess
@@ -18,6 +19,11 @@ import textwrap
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+REDACT_ENV_ALIASES = (
+    "SUPERFORECASTING_AGENT_REDACT_SECRETS",
+    "FORECAST_REDACT_SECRETS",
+    "HERMES_REDACT_SECRETS",
+)
 
 
 def test_redact_secrets_false_in_config_yaml_is_honored(tmp_path):
@@ -44,18 +50,21 @@ def test_redact_secrets_false_in_config_yaml_is_honored(tmp_path):
         """\
         import sys, os
         # Make absolutely sure the env var is not pre-set
-        os.environ.pop("HERMES_REDACT_SECRETS", None)
+        for name in %r:
+            os.environ.pop(name, None)
         sys.path.insert(0, %r)
         import hermes_cli.main  # triggers the bridge + setup_logging
         import agent.redact
         print(f"REDACT_ENABLED={agent.redact._REDACT_ENABLED}")
+        print(f"FORECAST_ENV_VAR={os.environ.get('SUPERFORECASTING_AGENT_REDACT_SECRETS', '<unset>')}")
         print(f"ENV_VAR={os.environ.get('HERMES_REDACT_SECRETS', '<unset>')}")
         """
-    ) % str(REPO_ROOT)
+    ) % (REDACT_ENV_ALIASES, str(REPO_ROOT))
 
     env = dict(os.environ)
     env["HERMES_HOME"] = str(hermes_home)
-    env.pop("HERMES_REDACT_SECRETS", None)
+    for name in REDACT_ENV_ALIASES:
+        env.pop(name, None)
 
     result = subprocess.run(
         [sys.executable, "-c", probe],
@@ -70,6 +79,7 @@ def test_redact_secrets_false_in_config_yaml_is_honored(tmp_path):
         f"Config toggle not honored.\nstdout: {result.stdout}\nstderr: {result.stderr}"
     )
     assert "ENV_VAR=false" in result.stdout
+    assert "FORECAST_ENV_VAR=false" in result.stdout
 
 
 def test_redact_secrets_default_true_when_unset(tmp_path):
@@ -88,17 +98,19 @@ def test_redact_secrets_default_true_when_unset(tmp_path):
     probe = textwrap.dedent(
         """\
         import sys, os
-        os.environ.pop("HERMES_REDACT_SECRETS", None)
+        for name in %r:
+            os.environ.pop(name, None)
         sys.path.insert(0, %r)
         import hermes_cli.main
         import agent.redact
         print(f"REDACT_ENABLED={agent.redact._REDACT_ENABLED}")
         """
-    ) % str(REPO_ROOT)
+    ) % (REDACT_ENV_ALIASES, str(REPO_ROOT))
 
     env = dict(os.environ)
     env["HERMES_HOME"] = str(hermes_home)
-    env.pop("HERMES_REDACT_SECRETS", None)
+    for name in REDACT_ENV_ALIASES:
+        env.pop(name, None)
 
     result = subprocess.run(
         [sys.executable, "-c", probe],
@@ -130,18 +142,21 @@ def test_redact_secrets_true_in_config_yaml_is_honored(tmp_path):
     probe = textwrap.dedent(
         """\
         import sys, os
-        os.environ.pop("HERMES_REDACT_SECRETS", None)
+        for name in %r:
+            os.environ.pop(name, None)
         sys.path.insert(0, %r)
         import hermes_cli.main
         import agent.redact
         print(f"REDACT_ENABLED={agent.redact._REDACT_ENABLED}")
+        print(f"FORECAST_ENV_VAR={os.environ.get('SUPERFORECASTING_AGENT_REDACT_SECRETS', '<unset>')}")
         print(f"ENV_VAR={os.environ.get('HERMES_REDACT_SECRETS', '<unset>')}")
         """
-    ) % str(REPO_ROOT)
+    ) % (REDACT_ENV_ALIASES, str(REPO_ROOT))
 
     env = dict(os.environ)
     env["HERMES_HOME"] = str(hermes_home)
-    env.pop("HERMES_REDACT_SECRETS", None)
+    for name in REDACT_ENV_ALIASES:
+        env.pop(name, None)
 
     result = subprocess.run(
         [sys.executable, "-c", probe],
@@ -156,6 +171,7 @@ def test_redact_secrets_true_in_config_yaml_is_honored(tmp_path):
         f"Config toggle not honored.\nstdout: {result.stdout}\nstderr: {result.stderr}"
     )
     assert "ENV_VAR=true" in result.stdout
+    assert "FORECAST_ENV_VAR=true" in result.stdout
 
 
 def test_dotenv_redact_secrets_beats_config_yaml(tmp_path):
@@ -187,7 +203,8 @@ def test_dotenv_redact_secrets_beats_config_yaml(tmp_path):
 
     env = dict(os.environ)
     env["HERMES_HOME"] = str(hermes_home)
-    env.pop("HERMES_REDACT_SECRETS", None)
+    for name in REDACT_ENV_ALIASES:
+        env.pop(name, None)
 
     result = subprocess.run(
         [sys.executable, "-c", probe],
@@ -201,3 +218,51 @@ def test_dotenv_redact_secrets_beats_config_yaml(tmp_path):
     # .env value wins
     assert "REDACT_ENABLED=True" in result.stdout
     assert "ENV_VAR=true" in result.stdout
+
+
+def test_forecast_redact_env_alias_beats_config_yaml(tmp_path):
+    """Fork-native redaction env aliases take precedence over config.yaml."""
+    hermes_home = tmp_path / ".hermes"
+    hermes_home.mkdir()
+    (hermes_home / "config.yaml").write_text(
+        textwrap.dedent(
+            """\
+            security:
+              redact_secrets: true
+            """
+        )
+    )
+    (hermes_home / ".env").write_text("")
+
+    probe = textwrap.dedent(
+        """\
+        import sys, os
+        os.environ.pop("FORECAST_REDACT_SECRETS", None)
+        os.environ.pop("HERMES_REDACT_SECRETS", None)
+        sys.path.insert(0, %r)
+        import hermes_cli.main
+        import agent.redact
+        print(f"REDACT_ENABLED={agent.redact._REDACT_ENABLED}")
+        print(f"FORECAST_ENV_VAR={os.environ.get('SUPERFORECASTING_AGENT_REDACT_SECRETS', '<unset>')}")
+        print(f"HERMES_ENV_VAR={os.environ.get('HERMES_REDACT_SECRETS', '<unset>')}")
+        """
+    ) % str(REPO_ROOT)
+
+    env = dict(os.environ)
+    env["HERMES_HOME"] = str(hermes_home)
+    for name in REDACT_ENV_ALIASES:
+        env.pop(name, None)
+    env["SUPERFORECASTING_AGENT_REDACT_SECRETS"] = "false"
+
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        env=env,
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        timeout=30,
+    )
+    assert result.returncode == 0, f"probe failed: {result.stderr}"
+    assert "REDACT_ENABLED=False" in result.stdout
+    assert "FORECAST_ENV_VAR=false" in result.stdout
+    assert "HERMES_ENV_VAR=<unset>" in result.stdout

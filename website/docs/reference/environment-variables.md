@@ -580,7 +580,7 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 | `HERMES_EPHEMERAL_SYSTEM_PROMPT` | Ephemeral system prompt injected at API-call time (never persisted to sessions) |
 | `HERMES_PREFILL_MESSAGES_FILE` | Path to a JSON file of ephemeral prefill messages injected at API-call time. |
 | `SUPERFORECASTING_AGENT_ALLOW_PRIVATE_URLS` / `FORECAST_ALLOW_PRIVATE_URLS` / `HERMES_ALLOW_PRIVATE_URLS` | `true`/`false` — allow tools to fetch localhost/private-network URLs. Off by default in gateway mode; the `HERMES_*` name remains a legacy alias. |
-| `HERMES_REDACT_SECRETS` | `true`/`false` — control secret redaction in tool output, logs, and chat responses (default: `true`). |
+| `SUPERFORECASTING_AGENT_REDACT_SECRETS` / `FORECAST_REDACT_SECRETS` / `HERMES_REDACT_SECRETS` | `true`/`false` — control secret redaction in tool output, logs, and chat responses (default: `true`). Prefer the fork-native aliases; `HERMES_REDACT_SECRETS` remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_WRITE_SAFE_ROOT` / `FORECAST_WRITE_SAFE_ROOT` / `HERMES_WRITE_SAFE_ROOT` | Optional directory prefix that restricts `write_file`/`patch` writes; paths outside require approval. The `HERMES_*` name remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_DISABLE_FILE_STATE_GUARD` / `FORECAST_DISABLE_FILE_STATE_GUARD` / `HERMES_DISABLE_FILE_STATE_GUARD` | Set to `1` to turn off the "file changed since you read it" guard on `patch`/`write_file`; the `HERMES_*` name remains a legacy alias. |
 | `HERMES_CORE_TOOLS` | Comma-separated override for the canonical core tool list (advanced; rarely needed). |

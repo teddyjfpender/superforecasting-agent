@@ -47,6 +47,26 @@ from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+_REDACT_SECRETS_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_REDACT_SECRETS",
+    "FORECAST_REDACT_SECRETS",
+    "HERMES_REDACT_SECRETS",
+)
+
+
+def _set_redact_env_aliases(value: object) -> None:
+    text = str(value).lower()
+    for name in _REDACT_SECRETS_ENV_NAMES:
+        os.environ[name] = text
+
+
+def _first_redact_env(default: str = "true") -> tuple[str, str]:
+    for name in _REDACT_SECRETS_ENV_NAMES:
+        value = os.getenv(name)
+        if value is not None:
+            return name, value
+    return "default", default
+
 
 def _resolve_cli_history_file(agent_home: Path) -> Path:
     """Return the prompt history file, preserving existing legacy history."""
@@ -623,7 +643,7 @@ def load_cli_config() -> Dict[str, Any]:
     if isinstance(security_config, dict):
         redact = security_config.get("redact_secrets")
         if redact is not None:
-            os.environ["HERMES_REDACT_SECRETS"] = str(redact).lower()
+            _set_redact_env_aliases(redact)
 
     return defaults
 
@@ -11929,11 +11949,11 @@ class HermesCLI:
         # won't affect the running process — we just want the operator to
         # see that they're running without the safety net.
         try:
-            _redact_raw = os.getenv("HERMES_REDACT_SECRETS", "true")
+            _redact_key, _redact_raw = _first_redact_env("true")
             if _redact_raw.lower() not in {"1", "true", "yes", "on"}:
                 self._console_print(
                     "[bold red]⚠  Secret redaction is DISABLED[/] "
-                    f"(HERMES_REDACT_SECRETS={_redact_raw}). "
+                    f"({_redact_key}={_redact_raw}). "
                     "API keys and tokens may appear verbatim in chat output, "
                     "session JSONs, and logs. Set "
                     "[cyan]security.redact_secrets: true[/] in config.yaml "

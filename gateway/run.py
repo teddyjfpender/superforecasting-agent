@@ -559,6 +559,20 @@ from hermes_cli.env_loader import load_hermes_dotenv
 _env_path = _hermes_home / '.env'
 load_hermes_dotenv(hermes_home=_hermes_home, project_env=Path(__file__).resolve().parents[1] / '.env')
 
+_REDACT_SECRETS_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_REDACT_SECRETS",
+    "FORECAST_REDACT_SECRETS",
+    "HERMES_REDACT_SECRETS",
+)
+
+
+def _first_redact_secrets_env(default: str = "true") -> tuple[str, str]:
+    for name in _REDACT_SECRETS_ENV_NAMES:
+        value = os.getenv(name)
+        if value is not None:
+            return name, value
+    return "default", default
+
 
 def _reload_runtime_env_preserving_config_authority() -> None:
     """Reload .env for fresh credentials without letting stale .env override config.
@@ -737,7 +751,9 @@ if _config_path.exists():
         if isinstance(_security_cfg, dict):
             _redact = _security_cfg.get("redact_secrets")
             if _redact is not None:
-                os.environ["HERMES_REDACT_SECRETS"] = str(_redact).lower()
+                _redact_value = str(_redact).lower()
+                for _env_name in _REDACT_SECRETS_ENV_NAMES:
+                    os.environ[_env_name] = _redact_value
     except Exception as _bridge_err:
         # Previously this was silent (`except Exception: pass`), which
         # hid partial bridge failures and let .env defaults shadow
@@ -3623,7 +3639,7 @@ class GatewayRunner:
         # state at import time, so this log line is the source of truth
         # for this process's lifetime.
         try:
-            _redact_raw = os.getenv("HERMES_REDACT_SECRETS", "true")
+            _redact_key, _redact_raw = _first_redact_secrets_env("true")
             _redact_on = _redact_raw.lower() in {"1", "true", "yes", "on"}
             if _redact_on:
                 logger.info(
@@ -3632,10 +3648,11 @@ class GatewayRunner:
                 )
             else:
                 logger.warning(
-                    "Secret redaction: DISABLED (HERMES_REDACT_SECRETS=%s). "
+                    "Secret redaction: DISABLED (%s=%s). "
                     "API keys and tokens may appear verbatim in chat output, "
                     "session JSONs, and logs. Set security.redact_secrets: true "
                     "in config.yaml to re-enable.",
+                    _redact_key,
                     _redact_raw,
                 )
         except Exception:
