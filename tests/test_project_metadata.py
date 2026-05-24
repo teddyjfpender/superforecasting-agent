@@ -234,6 +234,16 @@ def test_standalone_gateway_script_is_forecast_native():
     assert "~/.hermes/logs/gateway.log" not in text
 
 
+def test_windows_gateway_service_names_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "hermes_cli" / "gateway_windows.py").read_text(encoding="utf-8")
+
+    assert '_TASK_NAME_DEFAULT = "Superforecasting_Agent_Gateway"' in text
+    assert '_LEGACY_TASK_NAME_DEFAULT = "Hermes_Gateway"' in text
+    assert "Default profile: ``Superforecasting_Agent_Gateway``" in text
+    assert "Named profile X: ``Superforecasting_Agent_Gateway_<X>``" in text
+
+
 def test_install_helpers_use_forecast_native_visible_copy():
     root = Path(__file__).resolve().parents[1]
     install_ps1 = (root / "scripts" / "install.ps1").read_text(encoding="utf-8")

@@ -49,7 +49,8 @@ _FALLBACK_PATTERNS = re.compile(
 _ACCESS_DENIED_PATTERN = re.compile(r"(access is denied|acceso denegado)", re.IGNORECASE)
 _PRIMARY_CLI = "superforecasting-agent"
 
-_TASK_NAME_DEFAULT = "Hermes_Gateway"
+_TASK_NAME_DEFAULT = "Superforecasting_Agent_Gateway"
+_LEGACY_TASK_NAME_DEFAULT = "Hermes_Gateway"
 _TASK_DESCRIPTION = "Superforecasting Agent Gateway - Messaging Platform Integration"
 
 
@@ -231,8 +232,8 @@ def _launch_elevated_uninstall() -> bool:
 def get_task_name() -> str:
     """Scheduled Task name, scoped per profile.
 
-    Default profile: ``Hermes_Gateway``
-    Named profile X: ``Hermes_Gateway_<X>``
+    Default profile: ``Superforecasting_Agent_Gateway``
+    Named profile X: ``Superforecasting_Agent_Gateway_<X>``
     """
     _assert_windows()
     # Local import to avoid circular module initialization during hermes_cli boot.

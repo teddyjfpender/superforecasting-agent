@@ -123,6 +123,14 @@ def test_gateway_cmd_script_uses_pythonw_without_replace_or_start_churn(monkeypa
     assert "exit /b 0" in content
 
 
+def test_gateway_task_default_name_is_forecast_native(monkeypatch):
+    monkeypatch.setattr(gateway_windows, "_assert_windows", lambda: None)
+    monkeypatch.setattr(gateway, "_profile_suffix", lambda: "")
+
+    assert gateway_windows.get_task_name() == "Superforecasting_Agent_Gateway"
+    assert gateway_windows._LEGACY_TASK_NAME_DEFAULT == "Hermes_Gateway"
+
+
 def test_elevated_gateway_command_uses_pythonw_hidden_console(monkeypatch):
     """UAC handoff should not leave a second elevated cmd.exe window open."""
     calls = []
