@@ -237,6 +237,21 @@ def test_docker_image_guidance_uses_fork_registry():
     assert "ghcr.io/nousresearch/hermes-agent" not in text
 
 
+def test_voice_install_guidance_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "tools" / "voice_mode.py",
+        root / "website" / "docs" / "user-guide" / "features" / "voice-mode.md",
+        root / "website" / "docs" / "guides" / "use-voice-mode-with-hermes.md",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert 'pip install "superforecasting-agent[voice]"' in text
+    assert "install `superforecasting-agent[voice]`" in text
+    assert "pip install hermes-agent[voice]" not in text
+    assert 'pip install "hermes-agent[voice]"' not in text
+
+
 def test_standalone_gateway_script_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "scripts" / "hermes-gateway").read_text(encoding="utf-8")
