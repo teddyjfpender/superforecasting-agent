@@ -28,6 +28,28 @@ from typing import Dict, Any, Optional, List, Tuple
 
 logger = logging.getLogger(__name__)
 _PRIMARY_CLI = "superforecasting-agent"
+_IGNORE_USER_CONFIG_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_IGNORE_USER_CONFIG",
+    "FORECAST_IGNORE_USER_CONFIG",
+    "HERMES_IGNORE_USER_CONFIG",
+)
+
+
+def _first_present_env(names: tuple[str, ...], default: str = "") -> tuple[str, str]:
+    for name in names:
+        value = os.environ.get(name)
+        if value is not None:
+            return name, value
+    return "default", default
+
+
+def _env_flag_exact_one(names: tuple[str, ...]) -> bool:
+    _name, value = _first_present_env(names)
+    return value == "1"
+
+
+def _ignore_user_config_requested() -> bool:
+    return _env_flag_exact_one(_IGNORE_USER_CONFIG_ENV_NAMES)
 
 # Track which (config_path, mtime_ns, size) tuples we've already warned about
 # so concurrent CLI/gateway loads of a broken config.yaml don't spam stderr
@@ -4322,6 +4344,9 @@ def read_raw_config() -> Dict[str, Any]:
     mutate the result before passing to ``save_config()``.
     """
     with _CONFIG_LOCK:
+        if _ignore_user_config_requested():
+            return {}
+
         try:
             config_path = get_config_path()
             st = config_path.stat()
@@ -4348,7 +4373,7 @@ def read_raw_config() -> Dict[str, Any]:
 
 
 def load_config() -> Dict[str, Any]:
-    """Load configuration from ~/.hermes/config.yaml.
+    """Load configuration from ~/.superforecasting-agent/config.yaml.
 
     Cached on the config file's (mtime_ns, size). Returns a deepcopy of
     the cached value when unchanged, since most call sites mutate the
@@ -4360,6 +4385,10 @@ def load_config() -> Dict[str, Any]:
     Read-only callers should use ``load_config_readonly()`` to skip the
     defensive deepcopy — that path matters in agent-loop hot spots like
     ``get_provider_request_timeout`` which is called once per API turn.
+
+    ``SUPERFORECASTING_AGENT_IGNORE_USER_CONFIG=1`` skips the user config
+    entirely, with ``FORECAST_IGNORE_USER_CONFIG`` and
+    ``HERMES_IGNORE_USER_CONFIG`` retained as compatibility aliases.
     """
     return _load_config_impl(want_deepcopy=True)
 
@@ -4392,6 +4421,7 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
         ensure_hermes_home()
         config_path = get_config_path()
         path_key = str(config_path)
+        ignore_user_config = _ignore_user_config_requested()
 
         try:
             st = config_path.stat()
@@ -4400,12 +4430,17 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
             cache_key = None
 
         cached = _LOAD_CONFIG_CACHE.get(path_key)
-        if cached is not None and cache_key is not None and cached[:2] == cache_key:
+        if (
+            not ignore_user_config
+            and cached is not None
+            and cache_key is not None
+            and cached[:2] == cache_key
+        ):
             return copy.deepcopy(cached[2]) if want_deepcopy else cached[2]
 
         config = copy.deepcopy(DEFAULT_CONFIG)
 
-        if cache_key is not None:
+        if cache_key is not None and not ignore_user_config:
             try:
                 with open(config_path, encoding="utf-8") as f:
                     user_config = yaml.safe_load(f) or {}
@@ -4424,7 +4459,7 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
         normalized = _normalize_root_model_keys(_normalize_max_turns_config(config))
         expanded = _expand_env_vars(normalized)
         _LAST_EXPANDED_CONFIG_BY_PATH[path_key] = copy.deepcopy(expanded)
-        if cache_key is not None:
+        if cache_key is not None and not ignore_user_config:
             # Cache stores a separate deepcopy so subsequent ``load_config()``
             # (deepcopy=True) callers can mutate freely without affecting the
             # cached value, and ``load_config_readonly()`` (deepcopy=False)

@@ -550,8 +550,8 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 | `SUPERFORECASTING_AGENT_INFERENCE_MODEL` / `FORECAST_INFERENCE_MODEL` / `HERMES_INFERENCE_MODEL` | Override model name for `-z`/oneshot, TUI startup, and scripted runtime paths. Also settable via `-m`/`--model`; the `HERMES_*` name remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_YOLO_MODE` / `FORECAST_YOLO_MODE` / `HERMES_YOLO_MODE` | Set to `1` to bypass dangerous-command approval prompts. Equivalent to `--yolo`; the `HERMES_*` name remains a legacy alias. |
 | `HERMES_ACCEPT_HOOKS` | Auto-approve any unseen shell hooks declared in `config.yaml` without a TTY prompt. Equivalent to `--accept-hooks` or `hooks_auto_accept: true`. |
-| `HERMES_IGNORE_USER_CONFIG` | Skip the active agent `config.yaml` and use built-in defaults (credentials in `.env` still load). Equivalent to `--ignore-user-config`. |
-| `HERMES_IGNORE_RULES` | Skip auto-injection of `AGENTS.md`, `SOUL.md`, `.cursorrules`, memory, and preloaded skills. Equivalent to `--ignore-rules`. |
+| `SUPERFORECASTING_AGENT_IGNORE_USER_CONFIG` / `FORECAST_IGNORE_USER_CONFIG` / `HERMES_IGNORE_USER_CONFIG` | Skip the active agent `config.yaml` and use built-in defaults (credentials in `.env` still load). Equivalent to `--ignore-user-config`; the `HERMES_*` name remains a legacy alias. |
+| `SUPERFORECASTING_AGENT_IGNORE_RULES` / `FORECAST_IGNORE_RULES` / `HERMES_IGNORE_RULES` | Skip auto-injection of `AGENTS.md`, `SOUL.md`, `.cursorrules`, memory, and preloaded skills. Equivalent to `--ignore-rules`; the `HERMES_*` name remains a legacy alias. |
 | `HERMES_MD_NAMES` | Comma-separated list of rules-file names to auto-inject (default: `AGENTS.md,CLAUDE.md,.cursorrules,SOUL.md`). |
 | `HERMES_TOOL_PROGRESS` | Deprecated compatibility variable for tool progress display. Prefer `display.tool_progress` in `config.yaml`. |
 | `HERMES_TOOL_PROGRESS_MODE` | Deprecated compatibility variable for tool progress mode. Prefer `display.tool_progress` in `config.yaml`. |

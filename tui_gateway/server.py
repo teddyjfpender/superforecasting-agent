@@ -1991,8 +1991,8 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
         ephemeral_system_prompt=build_forecast_chat_system_prompt(system_prompt),
         checkpoints_enabled=is_truthy_value(_tui_env("CHECKPOINTS")),
         pass_session_id=is_truthy_value(_tui_env("PASS_SESSION_ID")),
-        skip_context_files=is_truthy_value(os.environ.get("HERMES_IGNORE_RULES")),
-        skip_memory=is_truthy_value(os.environ.get("HERMES_IGNORE_RULES")),
+        skip_context_files=is_truthy_value(_runtime_env("IGNORE_RULES")),
+        skip_memory=is_truthy_value(_runtime_env("IGNORE_RULES")),
         **_agent_cbs(sid),
     )
 

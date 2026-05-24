@@ -58,6 +58,16 @@ _MAX_ITERATIONS_ENV_NAMES = (
     "FORECAST_MAX_ITERATIONS",
     "HERMES_MAX_ITERATIONS",
 )
+_IGNORE_USER_CONFIG_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_IGNORE_USER_CONFIG",
+    "FORECAST_IGNORE_USER_CONFIG",
+    "HERMES_IGNORE_USER_CONFIG",
+)
+_IGNORE_RULES_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_IGNORE_RULES",
+    "FORECAST_IGNORE_RULES",
+    "HERMES_IGNORE_RULES",
+)
 
 
 def _set_redact_env_aliases(value: object) -> None:
@@ -80,6 +90,19 @@ def _first_max_iterations_env(default: str = "90") -> tuple[str, str]:
         if value:
             return name, value
     return "default", default
+
+
+def _first_present_env(names: tuple[str, ...], default: str = "") -> tuple[str, str]:
+    for name in names:
+        value = os.environ.get(name)
+        if value is not None:
+            return name, value
+    return "default", default
+
+
+def _env_flag_exact_one(names: tuple[str, ...]) -> bool:
+    _name, value = _first_present_env(names)
+    return value == "1"
 
 
 def _resolve_cli_history_file(agent_home: Path) -> Path:
@@ -323,15 +346,18 @@ def load_cli_config() -> Dict[str, Any]:
     Load CLI configuration from config files.
     
     Config lookup order:
-    1. ~/.hermes/config.yaml (user config - preferred)
+    1. ~/.superforecasting-agent/config.yaml (user config - preferred)
     2. ./cli-config.yaml (project config - fallback)
     
     Environment variables take precedence over config file values.
     Returns default values if no config file exists.
 
-    If HERMES_IGNORE_USER_CONFIG=1 is set (via ``hermes chat --ignore-user-config``),
-    the user config at ``~/.hermes/config.yaml`` is skipped entirely and only the
-    built-in defaults plus the project-level ``cli-config.yaml`` (if any) are used.
+    If SUPERFORECASTING_AGENT_IGNORE_USER_CONFIG=1 is set (via
+    ``superforecasting-agent chat --ignore-user-config``), with
+    FORECAST_IGNORE_USER_CONFIG and HERMES_IGNORE_USER_CONFIG as compatibility
+    aliases, the user config at ``~/.superforecasting-agent/config.yaml`` is
+    skipped entirely and only the built-in defaults plus the project-level
+    ``cli-config.yaml`` (if any) are used.
     Credentials in ``.env`` are still loaded — this flag only suppresses
     behavioral/config settings.
     """
@@ -341,7 +367,7 @@ def load_cli_config() -> Dict[str, Any]:
 
     # --ignore-user-config: force-skip the user config.yaml (still honor project
     # config as a fallback so defaults stay sensible).
-    ignore_user_config = os.environ.get("HERMES_IGNORE_USER_CONFIG") == "1"
+    ignore_user_config = _env_flag_exact_one(_IGNORE_USER_CONFIG_ENV_NAMES)
 
     # Use user config if it exists, otherwise project config
     if user_config_path.exists() and not ignore_user_config:
@@ -2840,10 +2866,10 @@ class HermesCLI:
         self.checkpoint_max_file_size_mb = cp_cfg.get("max_file_size_mb", 10)
         self.pass_session_id = pass_session_id
         # --ignore-rules: honor either the constructor flag or the env var set
-        # by `hermes chat --ignore-rules` in hermes_cli/main.py. When true we
+        # by `superforecasting-agent chat --ignore-rules` in hermes_cli/main.py. When true we
         # pass skip_context_files=True and skip_memory=True to AIAgent so
         # AGENTS.md/SOUL.md/.cursorrules and persistent memory are not loaded.
-        self.ignore_rules = ignore_rules or os.environ.get("HERMES_IGNORE_RULES") == "1"
+        self.ignore_rules = ignore_rules or _env_flag_exact_one(_IGNORE_RULES_ENV_NAMES)
         
         # Ephemeral system prompt: env var takes precedence, then config
         self.system_prompt = (
