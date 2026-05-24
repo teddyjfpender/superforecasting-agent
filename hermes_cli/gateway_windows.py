@@ -245,9 +245,29 @@ def get_task_name() -> str:
     return f"{_TASK_NAME_DEFAULT}_{suffix}"
 
 
+def get_legacy_task_name() -> str:
+    """Legacy Scheduled Task name used by pre-fork Windows gateway installs."""
+    _assert_windows()
+    from hermes_cli.gateway import _profile_suffix
+
+    suffix = _profile_suffix()
+    if not suffix:
+        return _LEGACY_TASK_NAME_DEFAULT
+    return f"{_LEGACY_TASK_NAME_DEFAULT}_{suffix}"
+
+
 def _sanitize_filename(value: str) -> str:
     """Remove characters illegal in Windows filenames."""
     return re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", value)
+
+
+def _task_script_path_for(task_name: str) -> Path:
+    """Return the generated wrapper path for a task name."""
+    from hermes_cli.config import get_hermes_home
+
+    script_dir = Path(get_hermes_home()) / "gateway-service"
+    script_dir.mkdir(parents=True, exist_ok=True)
+    return script_dir / f"{_sanitize_filename(task_name)}.cmd"
 
 
 def get_task_script_path() -> Path:
@@ -258,11 +278,13 @@ def get_task_script_path() -> Path:
     Hermes installs stay self-contained).
     """
     _assert_windows()
-    from hermes_cli.config import get_hermes_home
+    return _task_script_path_for(get_task_name())
 
-    script_dir = Path(get_hermes_home()) / "gateway-service"
-    script_dir.mkdir(parents=True, exist_ok=True)
-    return script_dir / f"{_sanitize_filename(get_task_name())}.cmd"
+
+def get_legacy_task_script_path() -> Path:
+    """Legacy generated wrapper path used by pre-fork Windows gateway installs."""
+    _assert_windows()
+    return _task_script_path_for(get_legacy_task_name())
 
 
 def _startup_dir() -> Path:
@@ -284,9 +306,18 @@ def _startup_dir() -> Path:
     )
 
 
+def _startup_entry_path_for(task_name: str) -> Path:
+    return _startup_dir() / f"{_sanitize_filename(task_name)}.cmd"
+
+
 def get_startup_entry_path() -> Path:
     _assert_windows()
-    return _startup_dir() / f"{_sanitize_filename(get_task_name())}.cmd"
+    return _startup_entry_path_for(get_task_name())
+
+
+def get_legacy_startup_entry_path() -> Path:
+    _assert_windows()
+    return _startup_entry_path_for(get_legacy_task_name())
 
 
 # ---------------------------------------------------------------------------
@@ -403,6 +434,9 @@ def _install_scheduled_task(task_name: str, script_path: Path) -> tuple[bool, st
             return (False, f"schtasks /Delete failed (code {delete_code}): {delete_detail}")
         # Non-fatal: /Create /F below may still replace it. Keep the detail in
         # the final error if creation also fails.
+    legacy_task_name = get_legacy_task_name()
+    if legacy_task_name != task_name:
+        _exec_schtasks(["/Delete", "/F", "/TN", legacy_task_name])
     # password" variant; if that fails, retry without /RU /NP /IT.
     base = [
         "/Create",
@@ -439,6 +473,12 @@ def _install_startup_entry(script_path: Path) -> Path:
     entry = get_startup_entry_path()
     entry.parent.mkdir(parents=True, exist_ok=True)
     entry.write_text(_build_startup_launcher(script_path), encoding="utf-8", newline="")
+    legacy_entry = get_legacy_startup_entry_path()
+    if legacy_entry != entry:
+        try:
+            legacy_entry.unlink()
+        except FileNotFoundError:
+            pass
     return entry
 
 
@@ -887,7 +927,18 @@ def uninstall() -> None:
         else:
             print(f"⚠ schtasks /Delete returned code {code}: {detail}")
 
-    for path, label in [(startup_entry, "Windows login item"), (script_path, "Task script")]:
+    cleanup_paths = [
+        (startup_entry, "Windows login item"),
+        (script_path, "Task script"),
+    ]
+    try:
+        cleanup_paths.extend([
+            (get_legacy_startup_entry_path(), "legacy Windows login item"),
+            (get_legacy_task_script_path(), "legacy task script"),
+        ])
+    except RuntimeError:
+        pass
+    for path, label in cleanup_paths:
         try:
             path.unlink()
             print(f"✓ Removed {label}: {path}")

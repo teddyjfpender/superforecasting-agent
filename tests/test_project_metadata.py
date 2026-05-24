@@ -242,6 +242,9 @@ def test_windows_gateway_service_names_are_forecast_native():
     assert '_LEGACY_TASK_NAME_DEFAULT = "Hermes_Gateway"' in text
     assert "Default profile: ``Superforecasting_Agent_Gateway``" in text
     assert "Named profile X: ``Superforecasting_Agent_Gateway_<X>``" in text
+    assert "def get_legacy_task_name()" in text
+    assert "def get_legacy_startup_entry_path()" in text
+    assert "def get_legacy_task_script_path()" in text
 
 
 def test_install_helpers_use_forecast_native_visible_copy():

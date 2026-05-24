@@ -166,6 +166,7 @@ def test_install_scheduled_task_recreates_instead_of_change(monkeypatch, tmp_pat
     script_path = tmp_path / "Hermes_Gateway_alice.cmd"
 
     monkeypatch.setattr(gateway_windows, "_assert_windows", lambda: None)
+    monkeypatch.setattr(gateway_windows, "get_legacy_task_name", lambda: "Hermes_Gateway_alice")
 
     def fake_schtasks(args):
         calls.append(tuple(args))
@@ -184,6 +185,51 @@ def test_install_scheduled_task_recreates_instead_of_change(monkeypatch, tmp_pat
     assert calls[1][0] == "/Create"
     assert "/SC" in calls[1]
     assert "ONLOGON" in calls[1]
+
+
+def test_install_scheduled_task_deletes_legacy_task_for_forecast_native_name(monkeypatch, tmp_path):
+    """Installing the fork-native task should remove the inherited legacy task."""
+    calls = []
+    script_path = tmp_path / "Superforecasting_Agent_Gateway_alice.cmd"
+
+    monkeypatch.setattr(gateway_windows, "_assert_windows", lambda: None)
+    monkeypatch.setattr(gateway_windows, "get_legacy_task_name", lambda: "Hermes_Gateway_alice")
+
+    def fake_schtasks(args):
+        calls.append(tuple(args))
+        if args[0] == "/Delete":
+            return (0, "SUCCESS", "")
+        if args[0] == "/Create":
+            return (0, "SUCCESS", "")
+        raise AssertionError(f"unexpected schtasks args: {args}")
+
+    monkeypatch.setattr(gateway_windows, "_exec_schtasks", fake_schtasks)
+    ok, detail = gateway_windows._install_scheduled_task("Superforecasting_Agent_Gateway_alice", script_path)
+
+    assert ok is True
+    assert ("/Delete", "/F", "/TN", "Superforecasting_Agent_Gateway_alice") in calls
+    assert ("/Delete", "/F", "/TN", "Hermes_Gateway_alice") in calls
+    assert detail == "Created Scheduled Task 'Superforecasting_Agent_Gateway_alice'"
+
+
+def test_install_startup_entry_removes_legacy_startup_item(monkeypatch, tmp_path):
+    """Startup fallback migration should not leave the old login item active."""
+    startup_dir = tmp_path / "Startup"
+    startup_dir.mkdir()
+    legacy = startup_dir / "Hermes_Gateway_alice.cmd"
+    legacy.write_text("old", encoding="utf-8")
+    script_path = tmp_path / "Superforecasting_Agent_Gateway_alice.cmd"
+
+    monkeypatch.setattr(gateway_windows, "_assert_windows", lambda: None)
+    monkeypatch.setattr(gateway_windows, "_startup_dir", lambda: startup_dir)
+    monkeypatch.setattr(gateway_windows, "get_task_name", lambda: "Superforecasting_Agent_Gateway_alice")
+    monkeypatch.setattr(gateway_windows, "get_legacy_task_name", lambda: "Hermes_Gateway_alice")
+
+    entry = gateway_windows._install_startup_entry(script_path)
+
+    assert entry == startup_dir / "Superforecasting_Agent_Gateway_alice.cmd"
+    assert entry.exists()
+    assert not legacy.exists()
 
 
 def test_install_scheduled_task_success_start_now_uses_direct_spawn_not_task_run(monkeypatch, tmp_path, capsys):
