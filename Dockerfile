@@ -17,7 +17,8 @@ RUN apt-get update && \
     build-essential curl nodejs npm python3 ripgrep ffmpeg gcc python3-dev libffi-dev procps git openssh-client docker-cli tini && \
     rm -rf /var/lib/apt/lists/*
 
-# Non-root user for runtime; UID can be overridden via HERMES_UID at runtime
+# Non-root user for runtime; UID can be overridden via forecast-native
+# SUPERFORECASTING_AGENT_UID / FORECAST_UID aliases, or legacy HERMES_UID.
 RUN useradd -u 10000 -m -d /opt/data hermes
 
 COPY --chmod=0755 --from=gosu_source /gosu /usr/local/bin/
@@ -89,13 +90,13 @@ RUN cd web && npm run build && \
     cd ../ui-tui && npm run build
 
 # ---------- Permissions ----------
-# Make install dir world-readable so any HERMES_UID can read it at runtime.
+# Make install dir world-readable so any remapped runtime UID can read it.
 # The venv needs to be traversable too.
 # node_modules trees additionally need to be writable by the hermes user
 # so the runtime `npm install` triggered by _tui_need_npm_install() in
 # hermes_cli/main.py succeeds (see #18800). /opt/hermes/web is build-time
-# only (HERMES_WEB_DIST points at hermes_cli/web_dist) and is intentionally
-# not chowned here.
+# only (the dashboard web-dist aliases point at hermes_cli/web_dist) and is
+# intentionally not chowned here.
 # The .venv MUST remain hermes-writable so lazy_deps.py can install
 # remaining optional platform packages and future pin bumps at first use.
 # Without this, `uv pip install` fails with EACCES and adapters silently
@@ -104,7 +105,8 @@ USER root
 RUN chmod -R a+rX /opt/hermes && \
     chown -R hermes:hermes /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/node_modules
 # Start as root so the entrypoint can usermod/groupmod + gosu.
-# If HERMES_UID is unset, the entrypoint drops to the default hermes user (10000).
+# If no runtime UID override is set, the entrypoint drops to the default
+# internal hermes user (10000).
 
 # ---------- Link Superforecasting Agent itself (editable) ----------
 # Deps are already installed in the cached layer above; `--no-deps` makes
@@ -112,6 +114,8 @@ RUN chmod -R a+rX /opt/hermes && \
 RUN uv pip install --no-cache-dir --no-deps -e "."
 
 # ---------- Runtime ----------
+ENV SUPERFORECASTING_AGENT_WEB_DIST=/opt/hermes/hermes_cli/web_dist
+ENV FORECAST_WEB_DIST=/opt/hermes/hermes_cli/web_dist
 ENV HERMES_WEB_DIST=/opt/hermes/hermes_cli/web_dist
 ENV HERMES_HOME=/opt/data
 ENV PATH="/opt/data/.local/bin:${PATH}"

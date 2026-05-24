@@ -416,7 +416,7 @@ Common causes are missing credentials, invalid config, and port conflicts.
 
 ### Permission denied errors
 
-The entrypoint drops privileges to the non-root runtime user. If the host data directory is owned by another UID, set `HERMES_UID` and `HERMES_GID` to match your host user, or make the directory writable:
+The entrypoint drops privileges to the non-root runtime user. If the host data directory is owned by another UID, set `SUPERFORECASTING_AGENT_UID` and `SUPERFORECASTING_AGENT_GID` to match your host user, or use the shorter `FORECAST_UID` / `FORECAST_GID` aliases. The legacy `HERMES_UID` / `HERMES_GID` variables remain accepted for inherited deployments.
 
 ```sh
 chmod -R 755 ~/.superforecasting-agent

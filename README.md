@@ -138,7 +138,7 @@ The forecast ledger is the product surface. Generic chat and messaging gateways 
 In the TUI, `/forecast` opens the structured forecast desk panel; `/new-forecast`, `/base-rate`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/review`, `/alerts`, `/calibration`, `/lessons`, `/backtest`, `/schedule`, `/performance`, `/readiness`, and `/pilot-cohort` jump to common desk workflows; and `/forecast <subcommand>` remains available for the full forecast CLI.
 
 Runtime state defaults to `~/.superforecasting-agent` for new installs. Existing `~/.hermes` homes are reused during the fork transition, and deployments can set `SUPERFORECASTING_AGENT_HOME` or `FORECAST_HOME` instead of the legacy `HERMES_HOME` variable.
-Dashboard and Docker overrides also accept `SUPERFORECASTING_AGENT_DASHBOARD`, `SUPERFORECASTING_AGENT_DASHBOARD_HOST`, `SUPERFORECASTING_AGENT_DASHBOARD_PORT`, `SUPERFORECASTING_AGENT_WEB_DIST`, and `SUPERFORECASTING_AGENT_DASHBOARD_TUI`, plus the shorter `FORECAST_*` aliases, ahead of the legacy Hermes environment names.
+Dashboard and Docker overrides also accept `SUPERFORECASTING_AGENT_DASHBOARD`, `SUPERFORECASTING_AGENT_DASHBOARD_HOST`, `SUPERFORECASTING_AGENT_DASHBOARD_PORT`, `SUPERFORECASTING_AGENT_WEB_DIST`, `SUPERFORECASTING_AGENT_DASHBOARD_TUI`, `SUPERFORECASTING_AGENT_UID`, `SUPERFORECASTING_AGENT_GID`, and `SUPERFORECASTING_AGENT_AUTH_JSON_BOOTSTRAP`, plus the shorter `FORECAST_*` aliases, ahead of the legacy Hermes environment names.
 
 ---
 

@@ -7,30 +7,33 @@ export SUPERFORECASTING_AGENT_HOME="$AGENT_HOME"
 export FORECAST_HOME="$AGENT_HOME"
 export HERMES_HOME="$AGENT_HOME"
 INSTALL_DIR="/opt/hermes"
+RUNTIME_UID="${SUPERFORECASTING_AGENT_UID:-${FORECAST_UID:-${HERMES_UID:-}}}"
+RUNTIME_GID="${SUPERFORECASTING_AGENT_GID:-${FORECAST_GID:-${HERMES_GID:-}}}"
+AUTH_JSON_BOOTSTRAP="${SUPERFORECASTING_AGENT_AUTH_JSON_BOOTSTRAP:-${FORECAST_AUTH_JSON_BOOTSTRAP:-${HERMES_AUTH_JSON_BOOTSTRAP:-}}}"
 
 # --- Privilege dropping via gosu ---
 # When started as root (the default for Docker, or fakeroot in rootless Podman),
-# optionally remap the hermes user/group to match host-side ownership, fix volume
-# permissions, then re-exec as hermes.
+# optionally remap the internal runtime user/group to match host-side ownership,
+# fix volume permissions, then re-exec as that unprivileged user.
 if [ "$(id -u)" = "0" ]; then
-    if [ -n "$HERMES_UID" ] && [ "$HERMES_UID" != "$(id -u hermes)" ]; then
-        echo "Changing hermes UID to $HERMES_UID"
-        usermod -u "$HERMES_UID" hermes
+    if [ -n "$RUNTIME_UID" ] && [ "$RUNTIME_UID" != "$(id -u hermes)" ]; then
+        echo "Changing forecast runtime UID to $RUNTIME_UID"
+        usermod -u "$RUNTIME_UID" hermes
     fi
 
-    if [ -n "$HERMES_GID" ] && [ "$HERMES_GID" != "$(id -g hermes)" ]; then
-        echo "Changing hermes GID to $HERMES_GID"
+    if [ -n "$RUNTIME_GID" ] && [ "$RUNTIME_GID" != "$(id -g hermes)" ]; then
+        echo "Changing forecast runtime GID to $RUNTIME_GID"
         # -o allows non-unique GID (e.g. macOS GID 20 "staff" may already exist
         # as "dialout" in the Debian-based container image)
-        groupmod -o -g "$HERMES_GID" hermes 2>/dev/null || true
+        groupmod -o -g "$RUNTIME_GID" hermes 2>/dev/null || true
     fi
 
-    # Fix ownership of the data volume. When HERMES_UID remaps the hermes user,
-    # files created by previous runs (under the old UID) become inaccessible.
-    # Always chown -R when UID was remapped; otherwise only if top-level is wrong.
+    # Fix ownership of the data volume. When the runtime UID is remapped, files
+    # created by previous runs (under the old UID) become inaccessible. Always
+    # chown -R when UID was remapped; otherwise only if top-level is wrong.
     actual_hermes_uid=$(id -u hermes)
     needs_chown=false
-    if [ -n "$HERMES_UID" ] && [ "$HERMES_UID" != "10000" ]; then
+    if [ -n "$RUNTIME_UID" ] && [ "$RUNTIME_UID" != "10000" ]; then
         needs_chown=true
     elif [ "$(stat -c %u "$HERMES_HOME" 2>/dev/null)" != "$actual_hermes_uid" ]; then
         needs_chown=true
@@ -92,16 +95,16 @@ if [ ! -f "$HERMES_HOME/SOUL.md" ]; then
 fi
 
 # auth.json: bootstrap from env on first boot only.  Used by orchestrators
-# (e.g. provisioning a Hermes VPS from an account-management service) that
-# need to seed the OAuth refresh credential non-interactively, instead of
-# walking the user through `hermes setup` + the device-flow login dance.
+# (e.g. provisioning a forecast-desk VPS from an account-management service)
+# that need to seed the OAuth refresh credential non-interactively, instead of
+# walking the user through `superforecasting-agent setup` + the device-flow login dance.
 # Subsequent token rotations write back to the same file, which lives on a
 # persistent volume — so this env var is consumed exactly once at first
 # boot.  The `[ ! -f ... ]` guard is critical: without it, a container
 # restart would clobber a rotated refresh token with the now-stale value
 # the orchestrator originally seeded.
-if [ ! -f "$HERMES_HOME/auth.json" ] && [ -n "$HERMES_AUTH_JSON_BOOTSTRAP" ]; then
-    printf '%s' "$HERMES_AUTH_JSON_BOOTSTRAP" > "$HERMES_HOME/auth.json"
+if [ ! -f "$HERMES_HOME/auth.json" ] && [ -n "$AUTH_JSON_BOOTSTRAP" ]; then
+    printf '%s' "$AUTH_JSON_BOOTSTRAP" > "$HERMES_HOME/auth.json"
     chmod 600 "$HERMES_HOME/auth.json"
 fi
 
