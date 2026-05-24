@@ -217,6 +217,23 @@ def test_docker_entrypoint_and_compose_are_forecast_native():
     assert "~/.hermes:/opt/data" not in compose
 
 
+def test_standalone_gateway_script_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "scripts" / "hermes-gateway").read_text(encoding="utf-8")
+
+    assert "Superforecasting Agent Gateway - standalone optional messaging integration." in text
+    assert 'SERVICE_NAME = "superforecasting-agent-gateway"' in text
+    assert 'LAUNCHD_LABEL = "ai.superforecasting-agent.gateway"' in text
+    assert "display_hermes_home()" in text
+    assert "get_hermes_home() / \"logs\"" in text
+    assert "Starting Superforecasting Agent Gateway..." in text
+    assert "Superforecasting Agent Gateway - Messaging Platform Integration" in text
+    assert "Starting Hermes Gateway" not in text
+    assert "Hermes Gateway - Messaging Platform Integration" not in text
+    assert "Path.home() / \".hermes\" / \"logs\"" not in text
+    assert "~/.hermes/logs/gateway.log" not in text
+
+
 def test_high_attention_docs_navigation_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     sidebars = (root / "website" / "sidebars.ts").read_text(encoding="utf-8")
