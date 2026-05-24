@@ -211,6 +211,22 @@ class TestBuildOAuthAuth:
 # ---------------------------------------------------------------------------
 
 class TestUtilities:
+    def test_callback_success_page_is_forecast_native(self):
+        Handler, result = _make_callback_handler()
+        handler = object.__new__(Handler)
+        handler.path = "/callback?code=abc123&state=ok"
+        handler.wfile = BytesIO()
+        handler.send_response = lambda code: None
+        handler.send_header = lambda key, value: None
+        handler.end_headers = lambda: None
+
+        handler.do_GET()
+
+        body = handler.wfile.getvalue().decode("utf-8")
+        assert result["auth_code"] == "abc123"
+        assert "return to Superforecasting Agent" in body
+        assert "return to Hermes" not in body
+
     def test_find_free_port_returns_int(self):
         port = _find_free_port()
         assert isinstance(port, int)
@@ -619,5 +635,4 @@ def test_build_oauth_auth_preserves_server_url_path():
         )
 
     assert captured["server_url"] == "https://mcp.notion.com/mcp"
-
 
