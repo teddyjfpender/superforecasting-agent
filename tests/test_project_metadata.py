@@ -1822,6 +1822,7 @@ def test_homebrew_formula_is_forecast_native():
 def test_nix_package_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     nix_package = (root / "nix" / "hermes-agent.nix").read_text(encoding="utf-8")
+    nix_python = (root / "nix" / "python.nix").read_text(encoding="utf-8")
     nix_packages = (root / "nix" / "packages.nix").read_text(encoding="utf-8")
     nix_overlay = (root / "nix" / "overlays.nix").read_text(encoding="utf-8")
     nix_module = (root / "nix" / "nixosModules.nix").read_text(encoding="utf-8")
@@ -1832,6 +1833,10 @@ def test_nix_package_aliases_are_forecast_native():
 
     assert 'pname = "superforecasting-agent"' in nix_package
     assert 'homepage = "https://github.com/NousResearch/superforecasting-agent"' in nix_package
+    assert 'pythonSet.mkVirtualEnv "superforecasting-agent-env"' in nix_python
+    assert '"superforecasting-agent" = dependency-groups' in nix_python
+    assert 'pythonSet.mkVirtualEnv "hermes-agent-env"' not in nix_python
+    assert "hermes-agent = dependency-groups" not in nix_python
     assert "$out/share/superforecasting-agent/skills" in nix_package
     assert "ln -sfn superforecasting-agent $out/share/hermes-agent" in nix_package
     assert '"superforecasting-agent" = superforecastingAgent' in nix_packages
