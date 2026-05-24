@@ -994,10 +994,18 @@ def test_codex_migration_report_copy_is_forecast_native():
         root / "hermes_cli" / "codex_runtime_plugin_migration.py"
     ).read_text(encoding="utf-8")
 
+    assert "Migrate Superforecasting Agent MCP config" in text
+    assert "Superforecasting Agent mcp_servers" in text
+    assert "hermes-tools" in text
     assert "No MCP servers found in Hermes config" not in text
     assert "unknown Hermes key" not in text
     assert "configured by Hermes" not in text
     assert "mcp_servers in Hermes config" not in text
+    assert "Migrate Hermes' MCP server config" not in text
+    assert "Hermes mcp_servers" not in text
+    assert "Hermes-specific keys" not in text
+    assert "Hermes' managed Codex" not in text
+    assert "call back into Hermes for tools" not in text
 
 
 def test_readme_primary_links_are_fork_native():

@@ -1,5 +1,6 @@
-"""Migrate Hermes' MCP server config and Codex's installed curated plugins
-to the format Codex expects in ~/.codex/config.toml.
+"""Migrate Superforecasting Agent MCP config and Codex curated plugins.
+
+Writes the format Codex expects in ~/.codex/config.toml.
 
 When the user enables the codex_app_server runtime, the codex subprocess
 runs its own MCP client and its own plugin runtime (Linear, Atlassian,
@@ -7,8 +8,8 @@ Asana, plus per-account ChatGPT apps via app/list). For both of those to
 be useful, the user's choices need to be visible to codex too. This
 module:
 
-  1. Reads Hermes' YAML and writes equivalent [mcp_servers.<name>]
-     entries to ~/.codex/config.toml.
+  1. Reads Superforecasting Agent YAML and writes equivalent
+     [mcp_servers.<name>] entries to ~/.codex/config.toml.
   2. Queries codex's `plugin/list` for the openai-curated marketplace
      and writes [plugins."<name>@<marketplace>"] entries for any plugin
      the user has installed=true on their codex CLI. (This is what
@@ -19,19 +20,23 @@ module:
      don't get an approval prompt on every write attempt.
 
 What translates (MCP servers):
-  Hermes mcp_servers.<n>.command/args/env  → codex stdio transport
-  Hermes mcp_servers.<n>.url/headers       → codex streamable_http transport
-  Hermes mcp_servers.<n>.timeout           → codex tool_timeout_sec
-  Hermes mcp_servers.<n>.connect_timeout   → codex startup_timeout_sec
+  Superforecasting Agent mcp_servers.<n>.command/args/env  → codex stdio
+      transport
+  Superforecasting Agent mcp_servers.<n>.url/headers       → codex
+      streamable_http transport
+  Superforecasting Agent mcp_servers.<n>.timeout           → codex
+      tool_timeout_sec
+  Superforecasting Agent mcp_servers.<n>.connect_timeout   → codex
+      startup_timeout_sec
 
 What does NOT translate (warned + skipped):
-  Hermes-specific keys (sampling, etc.) — codex's MCP client has no
-  equivalent. Listed in the per-server skipped[] field of the report.
+  Agent-specific keys (sampling, etc.) — codex's MCP client has no equivalent.
+  Listed in the per-server skipped[] field of the report.
 
 What's NOT migrated (intentional):
-  AGENTS.md — codex respects this file natively in its cwd. Hermes' own
-  AGENTS.md (project-level) is already in the worktree, so codex picks
-  it up without translation. No code needed.
+  AGENTS.md — codex respects this file natively in its cwd. This repository's
+  project-level AGENTS.md is already in the worktree, so codex picks it up
+  without translation. No code needed.
 """
 
 from __future__ import annotations
@@ -114,9 +119,9 @@ class MigrationReport:
         return "\n".join(lines)
 
 
-# Hermes keys that codex's MCP schema doesn't support — dropped during
-# migration with a warning. Anything not on the keep list AND not the
-# transport keys is added to skipped.
+# Agent MCP keys that codex's MCP schema doesn't support — dropped during
+# migration with a warning. Anything not on the keep list AND not the transport
+# keys is added to skipped.
 _KNOWN_HERMES_KEYS = {
     # transport — stdio
     "command", "args", "env", "cwd",
@@ -130,7 +135,7 @@ _KNOWN_HERMES_KEYS = {
 
 # Subset that have a direct codex equivalent.
 _KEYS_DROPPED_WITH_WARNING = {
-    # Hermes' sampling subsection — codex MCP has no equivalent
+    # The agent-side sampling subsection — codex MCP has no equivalent
     "sampling",
 }
 
@@ -138,7 +143,7 @@ _KEYS_DROPPED_WITH_WARNING = {
 def _translate_one_server(
     name: str, hermes_cfg: dict
 ) -> tuple[Optional[dict], list[str]]:
-    """Translate one Hermes MCP server config to the codex inline-table dict
+    """Translate one agent MCP server config to the codex inline-table dict
     representation. Returns (codex_entry, skipped_keys).
 
     codex_entry is a dict ready for TOML serialization, or None when the
@@ -175,7 +180,7 @@ def _translate_one_server(
         headers = hermes_cfg.get("headers") or {}
         if headers:
             out["http_headers"] = {str(k): str(v) for k, v in headers.items()}
-        # Hermes' transport: sse hint is informational; codex auto-negotiates
+        # Agent transport=sse hints are informational; codex auto-negotiates.
         if hermes_cfg.get("transport") == "sse":
             skipped.append("transport=sse (codex auto-negotiates)")
     else:
@@ -316,7 +321,7 @@ def render_codex_toml_section(
 
 
 def _insert_managed_block_at_top_level(user_text: str, managed_block: str) -> str:
-    """Insert Hermes' managed Codex TOML block while keeping root keys root-scoped.
+    """Insert the managed Codex TOML block while keeping root keys root-scoped.
 
     TOML has no syntax to return to the document root after a table header.
     Therefore appending a root key like `default_permissions = ...` after a
@@ -351,7 +356,7 @@ def _strip_unmanaged_plugin_tables(toml_text: str) -> str:
     managed block.
 
     Codex itself writes these tables when the user runs ``codex plugins enable``
-    directly (i.e. before Hermes' migrate has ever touched the file). When we
+    directly (i.e. before this migration has ever touched the file). When we
     later run migrate, ``_query_codex_plugins()`` reports the same plugins via
     the live ``plugin/list`` RPC and we re-emit them inside the managed block.
     The result without this strip is duplicate ``[plugins."X@Y"]`` table
@@ -426,7 +431,7 @@ def _strip_existing_managed_block(toml_text: str) -> str:
     follows, we fall back to the heuristic that swallows lines until we
     hit a section that's not [mcp_servers.*]/[plugins.*]/[permissions]/
     a `default_permissions =` key. This matches what older versions of
-    this code wrote so re-runs don't break configs from prior Hermes
+    this code wrote so re-runs don't break configs from prior runtime
     versions."""
     lines = toml_text.splitlines(keepends=True)
     out: list[str] = []
@@ -575,12 +580,14 @@ def _looks_like_test_tempdir(path: str) -> bool:
 
 
 def _build_hermes_tools_mcp_entry() -> dict:
-    """Build the codex stdio-transport entry that launches Hermes' own
-    tool surface as an MCP server. Codex's subprocess will call back into
-    this for browser/web/delegate_task/vision/memory/skills tools.
+    """Build the codex stdio entry for the inherited tools callback server.
+
+    The compatibility server id remains ``hermes-tools``. Codex's subprocess
+    calls back into it for browser/web/delegate_task/vision/memory/skills
+    tools.
 
     The command runs the worktree's Python via the current sys.executable
-    so a hermes installed under /opt/, /usr/local/, or a venv all work.
+    so installs under /opt/, /usr/local/, or a venv all work.
     HERMES_HOME and PYTHONPATH are passed through so the spawned process
     sees the same config + module layout the user is running."""
     import sys
@@ -604,8 +611,8 @@ def _build_hermes_tools_mcp_entry() -> dict:
         hermes_home = ""
     if hermes_home:
         env["HERMES_HOME"] = hermes_home
-    # PYTHONPATH passes through so a worktree-launched hermes finds the
-    # branch's modules instead of the installed package.
+    # PYTHONPATH passes through so a worktree-launched runtime finds the
+    # branch's modules instead of an installed package.
     pythonpath = os.environ.get("PYTHONPATH")
     if pythonpath:
         env["PYTHONPATH"] = pythonpath
@@ -635,11 +642,11 @@ def migrate(
     default_permission_profile: Optional[str] = ":workspace",
     expose_hermes_tools: bool = True,
 ) -> MigrationReport:
-    """Translate Hermes mcp_servers config + Codex curated plugins into
+    """Translate Superforecasting Agent mcp_servers + Codex curated plugins into
     ~/.codex/config.toml.
 
     Args:
-        hermes_config: full ~/.hermes/config.yaml dict
+        hermes_config: full Superforecasting Agent config.yaml dict
         codex_home: override CODEX_HOME (defaults to ~/.codex)
         dry_run: skip the actual write; report what would happen
         discover_plugins: when True (default), query `plugin/list` against
@@ -655,10 +662,10 @@ def migrate(
             configured in their own [permissions.<name>] table. Set None
             to leave permissions unset and let codex use its compiled-in
             default (which is read-only).
-        expose_hermes_tools: when True (default), register Hermes' own
-            tool surface (web_search, browser_*, delegate_task, vision,
+        expose_hermes_tools: when True (default), register the inherited
+            agent tool surface (web_search, browser_*, delegate_task, vision,
             memory, skills, etc.) as an MCP server in ~/.codex/config.toml
-            so the codex subprocess can call back into Hermes for tools
+            so the codex subprocess can call back into this runtime for tools
             codex doesn't have built in. Set False to opt out.
     """
     report = MigrationReport(dry_run=dry_run)
@@ -707,8 +714,8 @@ def migrate(
     if default_permission_profile:
         report.wrote_permissions_default = default_permission_profile
 
-    # Inject Hermes' own tool surface as an MCP server so the spawned
-    # codex subprocess can call back into Hermes for the tools codex
+    # Inject the inherited agent tool surface as an MCP server so the spawned
+    # codex subprocess can call back into this runtime for the tools codex
     # doesn't ship with — web_search, browser_*, delegate_task, vision,
     # memory, skills, session_search, image_generate, text_to_speech.
     # The server itself is agent/transports/hermes_tools_mcp_server.py
