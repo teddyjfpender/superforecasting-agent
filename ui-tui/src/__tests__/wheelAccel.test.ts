@@ -1,6 +1,54 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { computeWheelStep, initWheelAccel } from '../lib/wheelAccel.js'
+import { computeWheelStep, initWheelAccel, readScrollSpeedBase } from '../lib/wheelAccel.js'
+
+const ENV_KEYS = [
+  'CLAUDE_CODE_SCROLL_SPEED',
+  'FORECAST_TUI_SCROLL_SPEED',
+  'HERMES_TUI_SCROLL_SPEED',
+  'SUPERFORECASTING_AGENT_TUI_SCROLL_SPEED'
+] as const
+
+const saved = Object.fromEntries(ENV_KEYS.map(key => [key, process.env[key]])) as Record<
+  (typeof ENV_KEYS)[number],
+  string | undefined
+>
+
+afterEach(() => {
+  for (const key of ENV_KEYS) {
+    if (saved[key] === undefined) {
+      delete process.env[key]
+    } else {
+      process.env[key] = saved[key]
+    }
+  }
+})
+
+beforeEach(() => {
+  for (const key of ENV_KEYS) {
+    delete process.env[key]
+  }
+})
+
+describe('readScrollSpeedBase', () => {
+  it('prefers fork-native aliases before legacy and portability names', () => {
+    process.env.CLAUDE_CODE_SCROLL_SPEED = '2'
+    process.env.HERMES_TUI_SCROLL_SPEED = '3'
+    process.env.FORECAST_TUI_SCROLL_SPEED = '4'
+    process.env.SUPERFORECASTING_AGENT_TUI_SCROLL_SPEED = '5'
+
+    expect(readScrollSpeedBase()).toBe(5)
+  })
+
+  it('keeps legacy and portability fallbacks', () => {
+    process.env.HERMES_TUI_SCROLL_SPEED = '3'
+    expect(readScrollSpeedBase()).toBe(3)
+
+    delete process.env.HERMES_TUI_SCROLL_SPEED
+    process.env.CLAUDE_CODE_SCROLL_SPEED = '2'
+    expect(readScrollSpeedBase()).toBe(2)
+  })
+})
 
 describe('wheelAccel — native path', () => {
   it('first click after init returns base', () => {

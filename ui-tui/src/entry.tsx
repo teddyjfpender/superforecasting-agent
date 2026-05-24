@@ -8,12 +8,14 @@ import type { FrameEvent } from '@hermes/ink'
 import { TERMUX_TUI_MODE } from './config/env.js'
 import { GatewayClient } from './gatewayClient.js'
 import { setupGracefulExit } from './lib/gracefulExit.js'
+import { tuiEnvValue } from './lib/envAlias.js'
 import { formatBytes, type HeapDumpResult, performHeapDump } from './lib/memory.js'
 import { type MemorySnapshot, startMemoryMonitor } from './lib/memoryMonitor.js'
 import { openExternalUrl } from './lib/openExternalUrl.js'
 import { resetTerminalModes } from './lib/terminalModes.js'
 
 const APP_LABEL = 'superforecasting-agent-tui'
+const TRUE_RE = /^(?:1|true|yes|on)$/i
 
 if (!process.stdin.isTTY) {
   console.log(`${APP_LABEL}: no TTY`)
@@ -69,7 +71,15 @@ const stopMemoryMonitor = startMemoryMonitor({
   onHigh: (snap, dump) => process.stderr.write(dumpNotice(snap, dump))
 })
 
-if (process.env.HERMES_HEAPDUMP_ON_START === '1') {
+const heapDumpOnStart = TRUE_RE.test(
+  tuiEnvValue('HEAPDUMP_ON_START') ||
+    process.env.SUPERFORECASTING_AGENT_HEAPDUMP_ON_START ||
+    process.env.FORECAST_HEAPDUMP_ON_START ||
+    process.env.HERMES_HEAPDUMP_ON_START ||
+    ''
+)
+
+if (heapDumpOnStart) {
   void performHeapDump('manual')
 }
 
