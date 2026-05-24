@@ -4503,6 +4503,43 @@ def test_domain_topic_schedule_can_auto_update_learning_records(tmp_path):
     assert ledger.list_domain_error_profiles(domain="macro", topic="growth") == []
 
 
+def test_domain_topic_schedule_alerts_for_tentative_lessons(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will scheduled lesson review be surfaced?",
+        resolution_criteria="Resolved yes if tentative scoped lessons create review alerts.",
+        domain="macro",
+        topics=["inflation"],
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.8,
+        rationale="High-confidence forecast that should be reviewed after resolution.",
+    )
+    ledger.resolve_question(question_id=question.id, outcome="no")
+    ledger.self_check(question_id=question.id, auto_score=True, auto_postmortem=True)
+    lesson = ledger.list_calibration_lessons(scope_type="domain", scope_ref="macro")[0]
+
+    ledger.schedule_review(
+        scope_type="domain_topic",
+        scope_ref=json.dumps({"domain": "macro", "topic": "inflation"}, sort_keys=True),
+        cadence="1d",
+        next_run_at="2026-01-04T00:00:00Z",
+    )
+
+    results = ledger.run_due_scheduled_reviews(now="2026-01-05T00:00:00Z")
+    lesson_alerts = [alert for alert in results[0]["alerts"] if alert.reason == "calibration_lesson_review"]
+
+    assert [alert.scope_ref for alert in lesson_alerts] == [lesson["id"]]
+    assert lesson_alerts[0].scope_type == "calibration_lesson"
+    assert f"forecast lesson status {lesson['id']} --status active" in lesson_alerts[0].recommended_action
+
+    ledger.update_calibration_lesson(lesson["id"], status="active")
+    results = ledger.run_due_scheduled_reviews(now="2026-01-06T00:00:00Z")
+
+    assert "calibration_lesson_review" not in {alert.reason for alert in results[0]["alerts"]}
+
+
 def test_cron_runner_reports_alerts_and_stays_silent_without_work(tmp_path):
     db_path = tmp_path / "forecasting.db"
     ledger = ForecastLedger(db_path)

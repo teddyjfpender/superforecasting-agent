@@ -3511,6 +3511,13 @@ class ForecastLedger:
                     )
                 )
         alerts.extend(self._domain_error_profile_alerts(domain=domain, topic=topic, questions=questions))
+        alerts.extend(
+            self._calibration_lesson_review_alerts(
+                domain=domain,
+                topic=topic,
+                questions=questions,
+            )
+        )
         if not any([question_id, domain, topic, horizon, portfolio]):
             alerts.extend(self._benchmark_evidence_alerts())
         watch_scope_type, watch_scope_ref = self._self_check_watch_scope(
@@ -5143,6 +5150,62 @@ class ForecastLedger:
                         ),
                     )
                 )
+        return alerts
+
+    def _calibration_lesson_review_alerts(
+        self,
+        *,
+        domain: str | None,
+        topic: str | None,
+        questions: list[ForecastQuestion],
+    ) -> list[AlertEvent]:
+        candidates: dict[str, dict[str, Any]] = {}
+
+        def add_lesson(lesson: dict[str, Any]) -> None:
+            if lesson.get("status") != "tentative":
+                return
+            if lesson.get("invalidated_by_correction_id"):
+                return
+            candidates[lesson["id"]] = lesson
+
+        if domain:
+            for lesson in self.list_calibration_lessons(scope_type="domain", scope_ref=domain):
+                add_lesson(lesson)
+        if topic:
+            for lesson in self.list_calibration_lessons(scope_type="topic", scope_ref=topic):
+                add_lesson(lesson)
+
+        all_scores = self.list_scores()
+        for question in questions:
+            if question.domain:
+                for lesson in self.list_calibration_lessons(scope_type="domain", scope_ref=question.domain):
+                    add_lesson(lesson)
+            for question_topic in question.topics:
+                for lesson in self.list_calibration_lessons(scope_type="topic", scope_ref=question_topic):
+                    add_lesson(lesson)
+            question_scores = [score for score in all_scores if score.question_id == question.id]
+            postmortems = self.list_postmortems(question.id)
+            for lesson in self._calibration_lessons_for_question(question_scores, postmortems):
+                add_lesson(lesson)
+
+        if not any([domain, topic, questions]):
+            for lesson in self.list_calibration_lessons(scope_type="global", scope_ref=None):
+                add_lesson(lesson)
+
+        alerts: list[AlertEvent] = []
+        for lesson in sorted(candidates.values(), key=lambda item: item["updated_at"], reverse=True):
+            alerts.append(
+                self.create_alert(
+                    severity="info",
+                    scope_type="calibration_lesson",
+                    scope_ref=lesson["id"],
+                    reason="calibration_lesson_review",
+                    recommended_action=(
+                        f"Review tentative lesson {lesson['id']} with `forecast lesson status {lesson['id']} "
+                        "--status active` or reject/supersede it before relying on it for future updates."
+                    ),
+                )
+            )
         return alerts
 
     def _benchmark_evidence_alerts(self) -> list[AlertEvent]:
