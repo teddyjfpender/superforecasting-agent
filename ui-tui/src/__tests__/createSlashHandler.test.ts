@@ -99,7 +99,7 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 20 })
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
     await vi.waitFor(() => {
-      expect(getUiState().forecastDeskStatus).toBe('desk 1 active')
+      expect(getUiState().forecastDeskStatus).toBe('desk 1 active / asm 1/0')
       expect(getUiState().forecastDeskRailSections).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ title: 'Book' }),

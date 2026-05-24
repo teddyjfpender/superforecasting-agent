@@ -12,6 +12,11 @@ export interface ForecastDeskActionItem {
   detail: string
 }
 
+export interface ForecastDeskCompactItem {
+  label: string
+  detail: string
+}
+
 const truncate = (value: string, max: number) => (value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value)
 
 const numberValue = (value: unknown): number | null =>
@@ -333,6 +338,66 @@ export const forecastDeskActionStripItems = (sections: PanelSection[], max = 4):
   addItems(sectionByTitle.get('Next Commands'))
 
   return actions
+}
+
+const findSection = (sections: PanelSection[], title: string) => sections.find(section => section.title === title)
+
+const addCompactItem = (
+  items: ForecastDeskCompactItem[],
+  label: string,
+  detail: string | undefined,
+  max: number
+) => {
+  if (items.length >= max || !detail) {
+    return
+  }
+
+  items.push({ label, detail })
+}
+
+export const forecastDeskCompactItems = (sections: PanelSection[], max = 3): ForecastDeskCompactItem[] => {
+  const items: ForecastDeskCompactItem[] = []
+  const book = findSection(sections, 'Book')
+  const bookRows = new Map(book?.rows ?? [])
+  const bookBits = [
+    `${bookRows.get('active') ?? '0'} active`,
+    `${bookRows.get('alerts') ?? '0'} alerts`,
+    `${bookRows.get('reviews') ?? '0'} reviews`
+  ]
+  const assumptions = bookRows.get('assumptions')
+
+  if (assumptions) {
+    bookBits.push(`asm ${assumptions}`)
+  }
+
+  if (book?.rows?.length) {
+    addCompactItem(items, 'book', bookBits.join(' / '), max)
+  }
+
+  const triage = findSection(sections, 'Triage')?.rows?.[0]
+  if (triage) {
+    addCompactItem(items, 'triage', `${triage[0]} ${triage[1]}`, max)
+  }
+
+  const watch = findSection(sections, 'Watchlist')?.rows?.[0]
+  if (watch) {
+    addCompactItem(items, 'watch', `${watch[0]} ${watch[1]}`, max)
+  }
+
+  const alert = findSection(sections, 'Alerts')?.rows?.[0]
+  if (alert) {
+    addCompactItem(items, 'alert', `${alert[0]} ${alert[1]}`, max)
+  }
+
+  const evidence = findSection(sections, 'Evidence')?.rows?.find(row => row[0].startsWith('next ')) ?? findSection(
+    sections,
+    'Evidence'
+  )?.rows?.find(row => row[0] === 'gaps')
+  if (evidence) {
+    addCompactItem(items, 'evidence', `${evidence[0]} ${evidence[1]}`, max)
+  }
+
+  return items
 }
 
 export const forecastDashboardSections = (response: ForecastDashboardResponse): PanelSection[] => {

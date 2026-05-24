@@ -2,10 +2,10 @@ import { AlternateScreen, Box, NoSelect, ScrollBox, Text } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
 import { Fragment, memo, useMemo, useRef } from 'react'
 
+import { forecastDeskActionStripItems, forecastDeskCompactItems } from '../app/forecastPanel.js'
 import { useGateway } from '../app/gatewayContext.js'
 import type { AppLayoutProps } from '../app/interfaces.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../app/overlayStore.js'
-import { forecastDeskActionStripItems } from '../app/forecastPanel.js'
 import { $uiState } from '../app/uiStore.js'
 import { INLINE_MODE, SHOW_FPS } from '../config/env.js'
 import { PLACEHOLDER } from '../content/placeholders.js'
@@ -419,6 +419,44 @@ const ForecastDeskActionStrip = memo(function ForecastDeskActionStrip({
   )
 })
 
+const ForecastDeskCompactBrief = memo(function ForecastDeskCompactBrief({
+  cols,
+  railVisible
+}: {
+  cols: number
+  railVisible: boolean
+}) {
+  const ui = useStore($uiState)
+  const items = useMemo(() => forecastDeskCompactItems(ui.forecastDeskRailSections, railVisible ? 0 : 3), [
+    railVisible,
+    ui.forecastDeskRailSections
+  ])
+
+  if (!items.length || ui.compact || railVisible) {
+    return null
+  }
+
+  const maxDetail = Math.max(18, Math.min(58, Math.floor(cols / Math.max(1, items.length)) - 12))
+
+  return (
+    <NoSelect flexDirection="column" flexShrink={0} paddingX={1}>
+      <Text wrap="truncate">
+        <Text bold color={ui.theme.color.primary}>
+          desk brief
+        </Text>
+
+        {items.map((item, index) => (
+          <Fragment key={`${item.label}:${item.detail}`}>
+            <Text color={ui.theme.color.muted}>{index === 0 ? '  ' : '  |  '}</Text>
+            <Text color={ui.theme.color.accent}>{item.label}</Text>
+            <Text color={ui.theme.color.muted}> {truncateRail(item.detail, maxDetail)}</Text>
+          </Fragment>
+        ))}
+      </Text>
+    </NoSelect>
+  )
+})
+
 const ForecastDeskRail = memo(function ForecastDeskRail({
   sections,
   status
@@ -540,6 +578,10 @@ export const AppLayout = memo(function AppLayout({
                 onSecretSubmit={actions.answerSecret}
                 onSudoSubmit={actions.answerSudo}
               />
+            </PerfPane>
+
+            <PerfPane id="forecast-brief">
+              <ForecastDeskCompactBrief cols={composer.cols} railVisible={showForecastRail} />
             </PerfPane>
 
             <PerfPane id="forecast-actions">

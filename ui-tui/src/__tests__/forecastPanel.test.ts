@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   forecastDashboardSections,
   forecastDeskActionStripItems,
+  forecastDeskCompactItems,
   forecastDeskRailSections,
   forecastDeskStatusLabel
 } from '../app/forecastPanel.js'
@@ -276,6 +277,57 @@ describe('forecast desk panel helpers', () => {
       {
         command: '/forecast update fq_review123456 --probability <0-1>',
         detail: 'append an explicit probability update with rationale'
+      }
+    ])
+  })
+
+  it('builds a compact desk brief for terminals without the forecast rail', () => {
+    const response: ForecastDashboardResponse = {
+      summary: {
+        active_count: 2,
+        calibration: { count: 4 },
+        evidence_status: {
+          gaps: ['live_scored_forecasts'],
+          next_actions: [
+            {
+              action: 'Resolve and score live forecasts before making stronger benchmark claims.',
+              requirement_id: 'live_scored_forecasts'
+            }
+          ],
+          verdict: 'insufficient_live_evidence'
+        },
+        open_alert_count: 1,
+        open_assumption_count: 3,
+        product: 'Superforecasting Agent',
+        questions: [
+          {
+            id: 'fq_watch123456',
+            open_alert_count: 1,
+            probability: 0.71,
+            stale_assumption_count: 2,
+            title: 'Will the watched forecast need review?'
+          }
+        ],
+        review_queue: [
+          {
+            id: 'fq_review123456',
+            probability: 0.62,
+            priority: 1,
+            reasons: ['stale'],
+            title: 'Will review stay visible?'
+          }
+        ],
+        review_queue_count: 1,
+        stale_assumption_count: 2
+      }
+    }
+
+    expect(forecastDeskCompactItems(forecastDeskRailSections(response))).toEqual([
+      { detail: '2 active / 1 alerts / 1 reviews / asm 3/2', label: 'book' },
+      { detail: '/alerts 1 open alert need source or resolution review', label: 'triage' },
+      {
+        detail: 'watch123 P=0.710 Δ=- 1 alert  Will the watched forecast need review?',
+        label: 'watch'
       }
     ])
   })
