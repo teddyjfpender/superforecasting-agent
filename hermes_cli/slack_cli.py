@@ -23,6 +23,26 @@ import sys
 from pathlib import Path
 
 
+_HOME_ENV_VARS = ("SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME")
+
+
+def _manifest_home_from_constants() -> Path:
+    from hermes_constants import get_hermes_home
+
+    return Path(get_hermes_home())
+
+
+def _manifest_write_default_path() -> Path:
+    try:
+        return _manifest_home_from_constants() / "slack-manifest.json"
+    except Exception:
+        for name in _HOME_ENV_VARS:
+            value = os.environ.get(name, "").strip()
+            if value:
+                return Path(value).expanduser() / "slack-manifest.json"
+        return Path.home() / ".superforecasting-agent" / "slack-manifest.json"
+
+
 def _build_full_manifest(bot_name: str, bot_description: str) -> dict:
     """Build a full Slack manifest merging display info + our slash list.
 
@@ -108,7 +128,9 @@ def slack_manifest_command(args) -> int:
 
     Flags (all parsed in ``hermes_cli/main.py``):
       --write [PATH]  Write to file instead of stdout (default path:
-                      ``$HERMES_HOME/slack-manifest.json``)
+                      agent-home ``slack-manifest.json``; prefers
+                      ``SUPERFORECASTING_AGENT_HOME`` / ``FORECAST_HOME``
+                      before legacy ``HERMES_HOME``)
       --name NAME     Override the bot display name (default: "Superforecast")
       --description DESC  Override the bot description
       --slashes-only  Emit only the ``features.slash_commands`` array (for
@@ -129,13 +151,8 @@ def slack_manifest_command(args) -> int:
     write_target = getattr(args, "write", None)
     if write_target is not None:
         if isinstance(write_target, bool) and write_target:
-            # --write with no value → default location
-            try:
-                from hermes_constants import get_hermes_home
-
-                target = Path(get_hermes_home()) / "slack-manifest.json"
-            except Exception:
-                target = Path(os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")) / "slack-manifest.json"
+            # --write with no value -> default location
+            target = _manifest_write_default_path()
         else:
             target = Path(write_target).expanduser()
         target.parent.mkdir(parents=True, exist_ok=True)

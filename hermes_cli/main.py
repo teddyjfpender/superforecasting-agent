@@ -10980,7 +10980,8 @@ def main():
         default=None,
         metavar="PATH",
         help="Write manifest to a file instead of stdout. With no PATH "
-        "writes to $HERMES_HOME/slack-manifest.json.",
+        "writes to the agent home slack-manifest.json, preferring "
+        "$SUPERFORECASTING_AGENT_HOME / $FORECAST_HOME before legacy $HERMES_HOME.",
     )
     slack_manifest.add_argument(
         "--name",
