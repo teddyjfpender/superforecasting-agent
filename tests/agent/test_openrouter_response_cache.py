@@ -6,6 +6,19 @@ from unittest.mock import patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _clear_openrouter_cache_env(monkeypatch):
+    for key in (
+        "SUPERFORECASTING_AGENT_OPENROUTER_CACHE",
+        "FORECAST_OPENROUTER_CACHE",
+        "HERMES_OPENROUTER_CACHE",
+        "SUPERFORECASTING_AGENT_OPENROUTER_CACHE_TTL",
+        "FORECAST_OPENROUTER_CACHE_TTL",
+        "HERMES_OPENROUTER_CACHE_TTL",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
 # ---------------------------------------------------------------------------
 # build_or_headers
 # ---------------------------------------------------------------------------
@@ -143,27 +156,54 @@ class TestEnvVarOverrides:
     """Test env var precedence over config.yaml for response caching."""
 
     def test_env_enables_cache(self, monkeypatch):
-        """HERMES_OPENROUTER_CACHE=true enables cache even when config disables it."""
+        """SUPERFORECASTING_AGENT_OPENROUTER_CACHE enables cache over config."""
         from agent.auxiliary_client import build_or_headers
 
-        monkeypatch.setenv("HERMES_OPENROUTER_CACHE", "true")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_OPENROUTER_CACHE", "true")
         headers = build_or_headers(or_config={"response_cache": False})
         assert headers["X-OpenRouter-Cache"] == "true"
 
     def test_env_disables_cache(self, monkeypatch):
-        """HERMES_OPENROUTER_CACHE=false disables cache even when config enables it."""
+        """SUPERFORECASTING_AGENT_OPENROUTER_CACHE disables cache over config."""
         from agent.auxiliary_client import build_or_headers
 
-        monkeypatch.setenv("HERMES_OPENROUTER_CACHE", "false")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_OPENROUTER_CACHE", "false")
         headers = build_or_headers(or_config={"response_cache": True})
         assert "X-OpenRouter-Cache" not in headers
+
+    def test_env_alias_precedence(self, monkeypatch):
+        from agent.auxiliary_client import build_or_headers
+
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_OPENROUTER_CACHE", "false")
+        monkeypatch.setenv("FORECAST_OPENROUTER_CACHE", "true")
+        monkeypatch.setenv("HERMES_OPENROUTER_CACHE", "true")
+
+        headers = build_or_headers(or_config={"response_cache": True})
+        assert "X-OpenRouter-Cache" not in headers
+
+    def test_env_short_alias_falls_back_before_legacy(self, monkeypatch):
+        from agent.auxiliary_client import build_or_headers
+
+        monkeypatch.setenv("FORECAST_OPENROUTER_CACHE", "true")
+        monkeypatch.setenv("HERMES_OPENROUTER_CACHE", "false")
+
+        headers = build_or_headers(or_config={"response_cache": False})
+        assert headers["X-OpenRouter-Cache"] == "true"
+
+    def test_legacy_env_alias_still_works(self, monkeypatch):
+        from agent.auxiliary_client import build_or_headers
+
+        monkeypatch.setenv("HERMES_OPENROUTER_CACHE", "true")
+
+        headers = build_or_headers(or_config={"response_cache": False})
+        assert headers["X-OpenRouter-Cache"] == "true"
 
     @pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "Yes", "on"])
     def test_truthy_values(self, monkeypatch, value):
         """Various truthy strings enable caching."""
         from agent.auxiliary_client import build_or_headers
 
-        monkeypatch.setenv("HERMES_OPENROUTER_CACHE", value)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_OPENROUTER_CACHE", value)
         headers = build_or_headers(or_config={})
         assert headers["X-OpenRouter-Cache"] == "true"
 
@@ -172,7 +212,7 @@ class TestEnvVarOverrides:
         """Non-truthy strings do not enable caching (empty falls through to config)."""
         from agent.auxiliary_client import build_or_headers
 
-        monkeypatch.setenv("HERMES_OPENROUTER_CACHE", value)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_OPENROUTER_CACHE", value)
         # Empty string falls through to config; others are explicitly non-truthy
         if value == "":
             # Empty env var falls through to config default (False)
@@ -182,12 +222,42 @@ class TestEnvVarOverrides:
         assert "X-OpenRouter-Cache" not in headers
 
     def test_env_ttl_overrides_config(self, monkeypatch):
-        """HERMES_OPENROUTER_CACHE_TTL overrides config TTL."""
+        """SUPERFORECASTING_AGENT_OPENROUTER_CACHE_TTL overrides config TTL."""
+        from agent.auxiliary_client import build_or_headers
+
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_OPENROUTER_CACHE", "true")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_OPENROUTER_CACHE_TTL", "1800")
+        headers = build_or_headers(or_config={"response_cache_ttl": 300})
+        assert headers["X-OpenRouter-Cache-TTL"] == "1800"
+
+    def test_env_ttl_alias_precedence(self, monkeypatch):
+        from agent.auxiliary_client import build_or_headers
+
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_OPENROUTER_CACHE", "true")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_OPENROUTER_CACHE_TTL", "120")
+        monkeypatch.setenv("FORECAST_OPENROUTER_CACHE_TTL", "600")
+        monkeypatch.setenv("HERMES_OPENROUTER_CACHE_TTL", "1800")
+
+        headers = build_or_headers(or_config={})
+        assert headers["X-OpenRouter-Cache-TTL"] == "120"
+
+    def test_env_ttl_short_alias_falls_back_before_legacy(self, monkeypatch):
+        from agent.auxiliary_client import build_or_headers
+
+        monkeypatch.setenv("FORECAST_OPENROUTER_CACHE", "true")
+        monkeypatch.setenv("FORECAST_OPENROUTER_CACHE_TTL", "600")
+        monkeypatch.setenv("HERMES_OPENROUTER_CACHE_TTL", "1800")
+
+        headers = build_or_headers(or_config={})
+        assert headers["X-OpenRouter-Cache-TTL"] == "600"
+
+    def test_legacy_ttl_env_alias_still_works(self, monkeypatch):
         from agent.auxiliary_client import build_or_headers
 
         monkeypatch.setenv("HERMES_OPENROUTER_CACHE", "true")
         monkeypatch.setenv("HERMES_OPENROUTER_CACHE_TTL", "1800")
-        headers = build_or_headers(or_config={"response_cache_ttl": 300})
+
+        headers = build_or_headers(or_config={})
         assert headers["X-OpenRouter-Cache-TTL"] == "1800"
 
     @pytest.mark.parametrize("ttl", ["0", "86401", "abc", "-1", "12.5"])
@@ -195,8 +265,8 @@ class TestEnvVarOverrides:
         """Invalid TTL env values are ignored; cache still enabled without TTL."""
         from agent.auxiliary_client import build_or_headers
 
-        monkeypatch.setenv("HERMES_OPENROUTER_CACHE", "1")
-        monkeypatch.setenv("HERMES_OPENROUTER_CACHE_TTL", ttl)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_OPENROUTER_CACHE", "1")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_OPENROUTER_CACHE_TTL", ttl)
         headers = build_or_headers(or_config={})
         assert headers["X-OpenRouter-Cache"] == "true"
         assert "X-OpenRouter-Cache-TTL" not in headers
@@ -206,16 +276,14 @@ class TestEnvVarOverrides:
         """Boundary TTL values (1, 300, 86400) are accepted."""
         from agent.auxiliary_client import build_or_headers
 
-        monkeypatch.setenv("HERMES_OPENROUTER_CACHE", "yes")
-        monkeypatch.setenv("HERMES_OPENROUTER_CACHE_TTL", ttl)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_OPENROUTER_CACHE", "yes")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_OPENROUTER_CACHE_TTL", ttl)
         assert build_or_headers(or_config={})["X-OpenRouter-Cache-TTL"] == ttl
 
     def test_no_env_vars_falls_through_to_config(self, monkeypatch):
         """Without env vars, config.yaml controls behavior."""
         from agent.auxiliary_client import build_or_headers
 
-        monkeypatch.delenv("HERMES_OPENROUTER_CACHE", raising=False)
-        monkeypatch.delenv("HERMES_OPENROUTER_CACHE_TTL", raising=False)
         headers = build_or_headers(or_config={"response_cache": True, "response_cache_ttl": 600})
         assert headers["X-OpenRouter-Cache"] == "true"
         assert headers["X-OpenRouter-Cache-TTL"] == "600"

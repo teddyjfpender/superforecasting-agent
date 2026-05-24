@@ -41,8 +41,8 @@ Prefer `SUPERFORECASTING_AGENT_HOME` or `FORECAST_HOME` for new deployments. Use
 |----------|-------------|
 | `OPENROUTER_API_KEY` | OpenRouter API key (recommended for flexibility) |
 | `OPENROUTER_BASE_URL` | Override the OpenRouter-compatible base URL |
-| `HERMES_OPENROUTER_CACHE` | Enable OpenRouter response caching (`1`/`true`/`yes`/`on`). Overrides `openrouter.response_cache` in config.yaml. See [Response Caching](https://openrouter.ai/docs/guides/features/response-caching). |
-| `HERMES_OPENROUTER_CACHE_TTL` | Cache TTL in seconds (1-86400). Overrides `openrouter.response_cache_ttl` in config.yaml. |
+| `SUPERFORECASTING_AGENT_OPENROUTER_CACHE` / `FORECAST_OPENROUTER_CACHE` / `HERMES_OPENROUTER_CACHE` | Enable OpenRouter response caching (`1`/`true`/`yes`/`on`). Overrides `openrouter.response_cache` in config.yaml; the `HERMES_*` name remains a legacy alias. See [Response Caching](https://openrouter.ai/docs/guides/features/response-caching). |
+| `SUPERFORECASTING_AGENT_OPENROUTER_CACHE_TTL` / `FORECAST_OPENROUTER_CACHE_TTL` / `HERMES_OPENROUTER_CACHE_TTL` | Cache TTL in seconds (1-86400). Overrides `openrouter.response_cache_ttl` in config.yaml; the `HERMES_*` name remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_NOUS_PORTAL_BASE_URL` / `FORECAST_NOUS_PORTAL_BASE_URL` / `HERMES_PORTAL_BASE_URL` / `NOUS_PORTAL_BASE_URL` / `NOUS_BASE_URL` | Override Nous Portal base URL (rarely needed; development/testing only). Prefer the fork-native aliases; `HERMES_*` and `NOUS_*` names remain compatibility aliases. |
 | `SUPERFORECASTING_AGENT_NOUS_INFERENCE_BASE_URL` / `FORECAST_NOUS_INFERENCE_BASE_URL` / `NOUS_INFERENCE_BASE_URL` | Override Nous inference endpoint directly. Prefer the fork-native aliases; `NOUS_INFERENCE_BASE_URL` remains the provider-specific compatibility alias. |
 | `AI_GATEWAY_API_KEY` | Vercel AI Gateway API key ([ai-gateway.vercel.sh](https://ai-gateway.vercel.sh)) |
