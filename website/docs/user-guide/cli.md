@@ -70,6 +70,7 @@ forecast import treasury v2/accounting/od/avg_interest_rates --question <id>
 forecast import bls LNS14000000 --question <id>
 forecast import worldbank US/NY.GDP.MKTP.CD --question <id>
 forecast import census "2023/acs/acs5?get=NAME,B01003_001E&for=state:*" --question <id>
+forecast import socrata data.cdc.gov/abcd-1234 --question <id>
 forecast import stooq AAPL.US --question <id>
 forecast import yahoo AAPL --question <id>
 forecast import coingecko bitcoin --question <id>
@@ -158,6 +159,7 @@ forecast watch add --question <id> reddit:"topic query"
 forecast watch add --question <id> federalregister:"rule query"
 forecast watch add --question <id> courtlistener:"case or legal query"
 forecast watch add --question <id> census:"2023/acs/acs5?get=NAME,B01003_001E&for=state:*"
+forecast watch add --question <id> socrata:data.cdc.gov/abcd-1234
 forecast watch add --question <id> cisakev:CVE-2026-0001
 forecast watch add --question <id> pubmed:"forecasting calibration"
 forecast watch add --question <id> owid:grapher-slug

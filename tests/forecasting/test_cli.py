@@ -45,6 +45,7 @@ from forecasting.source_adapters import (
     PypiRelease,
     RedditPost,
     SecFiling,
+    SocrataRecord,
     StooqPriceObservation,
     TreasuryRecord,
     UsgsEarthquakeEvent,
@@ -5698,6 +5699,132 @@ def test_forecast_cli_census_import_captures_records_as_evidence(tmp_path, capsy
     assert evidence[0].metadata["geography"] == {"state": "06"}
 
 
+def test_socrata_adapter_loads_open_data_rows(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return [
+            {
+                ":id": "row-1",
+                ":updated_at": "2026-05-21T11:00:00Z",
+                "report_date": "2026-05-20",
+                "county": "King",
+                "cases": "42",
+            }
+        ]
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    records = source_adapters.load_socrata_records(
+        "socrata:data.cdc.gov/abcd-1234?county=King",
+        limit=2,
+        since="2026-05-01T00:00:00Z",
+        api_base_url="https://api.test/{domain}/resource/{dataset_id}.json",
+    )
+    parsed = urlparse(captured["endpoint"])
+    params = parse_qs(parsed.query)
+
+    assert captured["label"] == "socrata records"
+    assert parsed.netloc == "api.test"
+    assert parsed.path == "/data.cdc.gov/resource/abcd-1234.json"
+    assert params["county"] == ["King"]
+    assert params["$limit"] == ["2"]
+    assert records[0].domain == "data.cdc.gov"
+    assert records[0].dataset_id == "abcd-1234"
+    assert records[0].row_id == "row-1"
+    assert records[0].updated_at == "2026-05-21T11:00:00Z"
+    assert records[0].observation_time == "2026-05-20T00:00:00Z"
+    assert records[0].values == {"report_date": "2026-05-20", "county": "King", "cases": "42"}
+    assert records[0].source_url == "https://api.test/data.cdc.gov/resource/abcd-1234.json?county=King"
+
+
+def test_forecast_cli_socrata_import_captures_records_as_evidence(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_socrata_records(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            SocrataRecord(
+                domain="data.cdc.gov",
+                dataset_id="abcd-1234",
+                row_id="row-1",
+                observation_time="2026-05-20T00:00:00Z",
+                updated_at="2026-05-21T11:00:00Z",
+                values={"report_date": "2026-05-20", "county": "King", "cases": "42"},
+                source_url="https://data.cdc.gov/resource/abcd-1234.json?county=King",
+                source_name="Socrata",
+                entry_id="data.cdc.gov/abcd-1234:row-1",
+                raw={"row_index": 0},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_socrata_records", fake_load_socrata_records)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will Socrata evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if Socrata evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "socrata",
+            "data.cdc.gov/abcd-1234?county=King",
+            "--question",
+            question_id,
+            "--since",
+            "2026-05-01T00:00:00Z",
+            "--limit",
+            "3",
+            "--api-base-url",
+            "https://api.test/{domain}/resource/{dataset_id}.json",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.9",
+            "--relevance",
+            "0.8",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 socrata evidence item(s)" in output
+    assert captured["source"] == "data.cdc.gov/abcd-1234?county=King"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["api_base_url"] == "https://api.test/{domain}/resource/{dataset_id}.json"
+    assert evidence[0].claim == "Socrata row: data.cdc.gov/abcd-1234 row-1"
+    assert evidence[0].summary.startswith("Socrata record from data.cdc.gov/abcd-1234")
+    assert evidence[0].source_name == "Socrata"
+    assert evidence[0].source_type == "adapter:socrata"
+    assert evidence[0].published_at == "2026-05-21T11:00:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.9
+    assert evidence[0].relevance_rating == 0.8
+    assert evidence[0].metadata["adapter"] == "socrata"
+    assert evidence[0].metadata["domain"] == "data.cdc.gov"
+    assert evidence[0].metadata["dataset_id"] == "abcd-1234"
+    assert evidence[0].metadata["values"]["cases"] == "42"
+
+
 def test_stooq_adapter_loads_recent_price_observations(monkeypatch):
     captured = {}
 
@@ -6712,6 +6839,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "eia:<series-id-or-api-url>" in output
     assert "treasury:<dataset-path-or-api-url>" in output
     assert "census:<dataset-path?get=...&for=...>" in output
+    assert "socrata:<domain>/<dataset-id>" in output
     assert "stooq:<symbol-or-csv-url>" in output
     assert "yahoo:<symbol>" in output
     assert "coingecko:<coin-id>" in output
@@ -6744,10 +6872,11 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "owid", "eia", "treasury", "census", "stooq", "yahoo", "coingecko", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "census:<dataset-path?get=...&for=...>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "socrata:<domain>/<dataset-id>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "stooq:<symbol-or-csv-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "yahoo:<symbol>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "coingecko:<coin-id>" for source in payload["sources"])
@@ -9641,6 +9770,68 @@ def test_forecast_cli_watch_add_supports_census_sources(tmp_path, capsys, monkey
     assert "source_type: census" in add_output
 
     values[0] = 39_200_000.0
+    _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
+    check_output = capsys.readouterr().out
+
+    assert "created 1 alert(s)" in check_output
+    assert f"watched_source_changed:{watch_id}" in check_output
+
+
+def test_forecast_cli_watch_add_supports_socrata_sources(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    cases = ["42"]
+
+    def fake_load_socrata_records(source: str, **kwargs):
+        return [
+            SocrataRecord(
+                domain="data.cdc.gov",
+                dataset_id="abcd-1234",
+                row_id="row-1",
+                observation_time="2026-05-20T00:00:00Z",
+                updated_at="2026-05-21T11:00:00Z",
+                values={"report_date": "2026-05-20", "county": "King", "cases": cases[0]},
+                source_url="https://data.cdc.gov/resource/abcd-1234.json?county=King",
+                source_name="Socrata",
+                entry_id="data.cdc.gov/abcd-1234:row-1",
+                raw={"cases": cases[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_socrata_records", fake_load_socrata_records)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will watched CLI Socrata rows change?",
+            "--resolution-criteria",
+            "Resolved yes if watched Socrata records change.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            "socrata:data.cdc.gov/abcd-1234?county=King",
+            "--question",
+            question_id,
+        ],
+    )
+    add_output = capsys.readouterr().out
+    watch_id = re.search(r"watched source (ws_[a-f0-9]+)", add_output).group(1)
+
+    assert "source_type: socrata" in add_output
+
+    cases[0] = "43"
     _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
     check_output = capsys.readouterr().out
 

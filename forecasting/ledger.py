@@ -90,6 +90,7 @@ WATCH_SOURCE_TYPES = {
     "bls",
     "worldbank",
     "census",
+    "socrata",
     "stooq",
     "yahoo",
     "sec",
@@ -2898,7 +2899,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, stooq, yahoo, "
+                "source_type must be file, url, manual, rss, gdelt, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
                 "sec, arxiv, openalex, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -3010,6 +3011,7 @@ class ForecastLedger:
                     "bls",
                     "worldbank",
                     "census",
+                    "socrata",
                     "stooq",
                     "yahoo",
                     "sec",
@@ -5252,6 +5254,8 @@ class ForecastLedger:
             return "worldbank"
         if source.startswith("census:"):
             return "census"
+        if source.startswith("socrata:"):
+            return "socrata"
         if source.startswith("stooq:"):
             return "stooq"
         if source.startswith("yahoo:"):
@@ -5336,6 +5340,8 @@ class ForecastLedger:
             return self._worldbank_source_signature(source)
         if source_type == "census":
             return self._census_source_signature(source)
+        if source_type == "socrata":
+            return self._socrata_source_signature(source)
         if source_type == "stooq":
             return self._stooq_source_signature(source)
         if source_type == "yahoo":
@@ -6149,6 +6155,31 @@ class ForecastLedger:
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"census:{len(payload)}:{digest}"
 
+    def _socrata_source_signature(self, source: str) -> str:
+        source_value = source.split(":", 1)[1].strip() if source.startswith("socrata:") else source.strip()
+        if not source_value:
+            return "missing:socrata:empty-source"
+        try:
+            from forecasting.source_adapters import load_socrata_records
+
+            records = load_socrata_records(source_value, limit=50)
+        except Exception as exc:
+            return f"missing:socrata:{source_value}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "dataset_id": record.dataset_id,
+                "domain": record.domain,
+                "entry_id": record.entry_id,
+                "observation_time": record.observation_time,
+                "row_id": record.row_id,
+                "updated_at": record.updated_at,
+                "values": record.values,
+            }
+            for record in records
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"socrata:{len(payload)}:{digest}"
+
     def _stooq_source_signature(self, source: str) -> str:
         source_value = source.split(":", 1)[1].strip() if source.startswith("stooq:") else source.strip()
         if not source_value:
@@ -6619,6 +6650,12 @@ class ForecastLedger:
             source_value = source.split(":", 1)[1].strip() if source.startswith("census:") else source
             return (
                 f"Run `forecast import census \"{source_value}\" --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "socrata" and scope_type == "question" and scope_ref:
+            source_value = source.split(":", 1)[1].strip() if source.startswith("socrata:") else source
+            return (
+                f"Run `forecast import socrata \"{source_value}\" --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "stooq" and scope_type == "question" and scope_ref:

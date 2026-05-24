@@ -47,6 +47,7 @@ from forecasting.source_adapters import (
     PypiRelease,
     RedditPost,
     SecFiling,
+    SocrataRecord,
     StooqPriceObservation,
     TreasuryRecord,
     UsgsEarthquakeEvent,
@@ -3142,6 +3143,62 @@ def test_watched_census_source_creates_alert_on_record_change(tmp_path, monkeypa
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert (
         f'forecast import census "2023/acs/acs5?get=NAME,B01003_001E&for=state:*" --question {question.id}'
+        in alerts[0].recommended_action
+    )
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_socrata_source_creates_alert_on_record_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched Socrata changes be detected?",
+        resolution_criteria="Resolved yes if watched Socrata records create alerts.",
+    )
+    cases = ["42"]
+    captured_sources = []
+
+    def fake_load_socrata_records(source: str, **kwargs):
+        captured_sources.append(source)
+        return [
+            SocrataRecord(
+                domain="data.cdc.gov",
+                dataset_id="abcd-1234",
+                row_id="row-1",
+                observation_time="2026-05-20T00:00:00Z",
+                updated_at="2026-05-21T11:00:00Z",
+                values={"report_date": "2026-05-20", "county": "King", "cases": cases[0]},
+                source_url="https://data.cdc.gov/resource/abcd-1234.json?county=King",
+                source_name="Socrata",
+                entry_id="data.cdc.gov/abcd-1234:row-1",
+                raw={"cases": cases[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_socrata_records", fake_load_socrata_records)
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="socrata:data.cdc.gov/abcd-1234?county=King",
+    )
+
+    assert watch["source_type"] == "socrata"
+    assert watch["last_seen_signature"].startswith("socrata:1:")
+    assert captured_sources[-1] == "data.cdc.gov/abcd-1234?county=King"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    cases[0] = "43"
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert (
+        f'forecast import socrata "data.cdc.gov/abcd-1234?county=King" --question {question.id}'
         in alerts[0].recommended_action
     )
     updated = ledger.get_watched_source(watch["id"])

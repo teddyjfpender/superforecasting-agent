@@ -23,6 +23,7 @@ from forecasting.source_adapters import (
     RedditPost,
     PubMedArticle,
     PypiRelease,
+    SocrataRecord,
     StooqPriceObservation,
     TreasuryRecord,
     UsgsEarthquakeEvent,
@@ -89,7 +90,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "stooq", "yahoo", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_lifecycle(tmp_path):
@@ -2063,6 +2064,51 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert census_evidence["published_at"] == "2023-12-31T00:00:00Z"
     assert census_evidence["metadata"]["adapter"] == "census"
     assert census_evidence["metadata"]["adapter_item"]["geography"] == {"state": "06"}
+
+    def fake_socrata(source, **kwargs):
+        assert source == "data.cdc.gov/abcd-1234?county=King"
+        assert kwargs["limit"] == 1
+        assert kwargs["since"] == "2026-01-01"
+        assert kwargs["api_base_url"] == "https://example.test/{domain}/resource/{dataset_id}.json"
+        return [
+            SocrataRecord(
+                domain="data.cdc.gov",
+                dataset_id="abcd-1234",
+                row_id="row-1",
+                observation_time="2026-05-20T00:00:00Z",
+                updated_at="2026-05-21T11:00:00Z",
+                values={"report_date": "2026-05-20", "county": "King", "cases": "42"},
+                source_url="https://data.cdc.gov/resource/abcd-1234.json?county=King",
+                source_name="Socrata",
+                entry_id="data.cdc.gov/abcd-1234:row-1",
+                raw={"row_index": 0},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_socrata_records", fake_socrata)
+    socrata_imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "socrata",
+                "source": "data.cdc.gov/abcd-1234?county=King",
+                "limit": 1,
+                "since": "2026-01-01",
+                "api_base_url": "https://example.test/{domain}/resource/{dataset_id}.json",
+            }
+        )
+    )
+
+    assert socrata_imported["imported_count"] == 1
+    socrata_evidence = socrata_imported["imported"][0]["evidence"]
+    assert socrata_evidence["source_type"] == "adapter:socrata"
+    assert socrata_evidence["source_name"] == "Socrata"
+    assert socrata_evidence["claim"] == "Socrata row data.cdc.gov/abcd-1234 row-1"
+    assert socrata_evidence["published_at"] == "2026-05-21T11:00:00Z"
+    assert socrata_evidence["metadata"]["adapter"] == "socrata"
+    assert socrata_evidence["metadata"]["adapter_item"]["values"]["cases"] == "42"
 
     def fake_githubissues(source, **kwargs):
         assert source == "acme/desk"

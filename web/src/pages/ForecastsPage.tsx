@@ -54,6 +54,10 @@ const EVIDENCE_IMPORTS = [
     label: "Census",
   },
   {
+    command: "forecast import socrata <domain>/<dataset-id> --question <id>",
+    label: "Open data",
+  },
+  {
     command: "forecast import stooq <symbol-or-csv-url> --question <id>",
     label: "Market data",
   },

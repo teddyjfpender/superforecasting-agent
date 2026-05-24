@@ -93,6 +93,7 @@ from forecasting.source_adapters import (
     load_reddit_posts,
     load_polymarket_market,
     load_sec_filings,
+    load_socrata_records,
     load_stooq_prices,
     load_treasury_records,
     load_usgs_earthquakes,
@@ -204,6 +205,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "domain": "US demographic and regional data",
         "import_command": "forecast import census <dataset-path?get=...&for=...> --question <id>",
         "watch_prefix": "census:<dataset-path?get=...&for=...>",
+    },
+    {
+        "name": "socrata",
+        "domain": "open-data portal rows",
+        "import_command": "forecast import socrata <domain>/<dataset-id> --question <id>",
+        "watch_prefix": "socrata:<domain>/<dataset-id>",
     },
     {
         "name": "stooq",
@@ -520,6 +527,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "bls",
         "worldbank",
         "census",
+        "socrata",
         "stooq",
         "yahoo",
         "coingecko",
@@ -597,6 +605,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "bls",
             "worldbank",
             "census",
+            "socrata",
             "stooq",
             "yahoo",
             "coingecko",
@@ -784,6 +793,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://api.census.gov/data",
                 help="Override U.S. Census API base URL for tests or private mirrors",
+            )
+        if name == "socrata":
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://{domain}/resource/{dataset_id}.json",
+                help="Override Socrata API endpoint template for tests or private mirrors",
             )
         if name == "stooq":
             adapter.add_argument("--interval", choices=["d", "w", "m"], default="d")
@@ -3648,6 +3663,56 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} census evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "socrata":
+        if not args.question_id:
+            raise SystemExit("forecast import socrata requires --question")
+        records = load_socrata_records(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for record in records:
+            value_text = json.dumps(record.values, sort_keys=True)
+            if len(value_text) > 400:
+                value_text = value_text[:397] + "..."
+            summary = (
+                f"Socrata record from {record.domain}/{record.dataset_id} "
+                f"at {record.observation_time or record.updated_at or 'unknown time'}: {value_text}."
+            )
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=record.source_url or f"Socrata:{record.domain}/{record.dataset_id}",
+                    source_url=record.source_url,
+                    source_name=record.source_name,
+                    source_type="adapter:socrata",
+                    published_at=record.updated_at or record.observation_time,
+                    available_at=record.updated_at or record.observation_time or args.as_of,
+                    claim=f"Socrata row: {record.domain}/{record.dataset_id} {record.row_id or record.entry_id}",
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "socrata",
+                        "domain": record.domain,
+                        "dataset_id": record.dataset_id,
+                        "row_id": record.row_id,
+                        "observation_time": record.observation_time,
+                        "updated_at": record.updated_at,
+                        "api_base_url": args.api_base_url,
+                        "values": record.values,
+                        "raw": record.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} socrata evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

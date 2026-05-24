@@ -49,6 +49,7 @@ def test_builtin_forecast_extensions_are_registered():
     assert "bls-economic-data" in names
     assert "worldbank-indicators" in names
     assert "census-data" in names
+    assert "socrata-open-data" in names
     assert "stooq-market-data" in names
     assert "yahoo-finance-chart" in names
     assert "sec-edgar-filings" in names

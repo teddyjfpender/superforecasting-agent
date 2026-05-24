@@ -47,6 +47,7 @@ from forecasting.source_adapters import (
     load_pypi_releases,
     load_reddit_posts,
     load_sec_filings,
+    load_socrata_records,
     load_stooq_prices,
     load_treasury_records,
     load_usgs_earthquakes,
@@ -278,6 +279,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "bls",
                     "worldbank",
                     "census",
+                    "socrata",
                     "stooq",
                     "yahoo",
                     "sec",
@@ -1091,6 +1093,11 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_census_records(source, **kwargs)
+    if adapter_name == "socrata":
+        kwargs = {"limit": limit, "since": since}
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_socrata_records(source, **kwargs)
     if adapter_name == "stooq":
         kwargs = {
             "limit": limit,
@@ -1295,6 +1302,7 @@ def _source_adapter_evidence_payload(
         "run_started_at",
         "updated_at",
         "last_updated",
+        "observation_time",
         "committed_at",
         "authored_at",
         "created_at",
@@ -1387,6 +1395,8 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
             else "all geographies"
         )
         return f"Census {data.get('dataset')} {geography_text}: {value_text}"
+    if adapter == "socrata":
+        return f"Socrata row {data.get('domain')}/{data.get('dataset_id')} {data.get('row_id') or data.get('entry_id')}"
     if adapter == "stooq":
         return f"Stooq {data.get('symbol')} close was {data.get('close_price')} on {data.get('observation_date')}"
     if adapter == "yahoo":
