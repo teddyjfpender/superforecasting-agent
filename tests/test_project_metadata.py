@@ -706,6 +706,16 @@ def test_anthropic_oauth_guidance_is_forecast_native():
     assert "Hermes-native PKCE" not in text
 
 
+def test_google_oauth_guidance_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "agent" / "google_oauth.py").read_text(encoding="utf-8")
+
+    assert "Superforecasting Agent looks for a locally installed gemini-cli" in text
+    assert "Superforecasting Agent — signed in" in text
+    assert "Hermes looks for a locally installed gemini-cli" not in text
+    assert "Hermes — signed in" not in text
+
+
 def test_support_error_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     profile_distribution = (

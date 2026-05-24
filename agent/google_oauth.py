@@ -360,10 +360,10 @@ def _require_client_id() -> str:
     if not cid:
         raise GoogleOAuthError(
             "Google OAuth client ID is not available.\n"
-            "Hermes looks for a locally installed gemini-cli to source the OAuth client. "
+            "Superforecasting Agent looks for a locally installed gemini-cli to source the OAuth client. "
             "Either:\n"
             "  1. Install it: npm install -g @google/gemini-cli  (or brew install gemini-cli)\n"
-            "  2. Set HERMES_GEMINI_CLIENT_ID and HERMES_GEMINI_CLIENT_SECRET in ~/.hermes/.env\n"
+            "  2. Set HERMES_GEMINI_CLIENT_ID and HERMES_GEMINI_CLIENT_SECRET in the forecast home .env\n"
             "\n"
             "Register a Desktop OAuth client at:\n"
             "  https://console.cloud.google.com/apis/credentials\n"
@@ -793,7 +793,7 @@ class _OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
 
 
 _SUCCESS_PAGE = """<!doctype html>
-<html><head><meta charset="utf-8"><title>Hermes — signed in</title>
+<html><head><meta charset="utf-8"><title>Superforecasting Agent — signed in</title>
 <style>
 body { font: 16px/1.5 system-ui, sans-serif; margin: 10vh auto; max-width: 32rem; text-align: center; color: #222; }
 h1 { color: #1a7f37; } p { color: #555; }
