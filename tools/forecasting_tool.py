@@ -28,6 +28,7 @@ from forecasting.source_adapters import (
     load_federal_register_documents,
     load_fred_observations,
     load_gdelt_articles,
+    load_github_commits,
     load_hackernews_items,
     load_github_issues,
     load_github_releases,
@@ -247,6 +248,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "gdelt",
                     "github",
                     "githubissues",
+                    "githubcommits",
                     "pypi",
                     "npm",
                     "hackernews",
@@ -1134,6 +1136,11 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_github_issues(source, **kwargs)
+    if adapter_name == "githubcommits":
+        kwargs = {"limit": limit, "since": since}
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_github_commits(source, **kwargs)
     if adapter_name == "pypi":
         kwargs = {"limit": limit, "since": since}
         if api_base_url:
@@ -1254,6 +1261,8 @@ def _source_adapter_evidence_payload(
         "last_update_submitted_at",
         "latest_submission_status_date",
         "updated_at",
+        "committed_at",
+        "authored_at",
         "created_at",
         "date_added",
         "due_date",
@@ -1355,6 +1364,8 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         issue_kind = "pull request" if data.get("is_pull_request") else "issue"
         number = f"#{data.get('issue_number')}" if data.get("issue_number") is not None else data.get("entry_id")
         return f"GitHub {issue_kind} {data.get('repo')} {number}: {data.get('title')}"
+    if adapter == "githubcommits":
+        return f"GitHub commit {data.get('repo')} {data.get('short_sha')}: {data.get('message')}"
     if adapter == "pypi":
         return f"PyPI release {data.get('package')} {data.get('version')}: {data.get('summary') or 'package release'}"
     if adapter == "npm":

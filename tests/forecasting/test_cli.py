@@ -28,6 +28,7 @@ from forecasting.source_adapters import (
     FredObservation,
     GdeltArticle,
     HackerNewsItem,
+    GitHubCommit,
     GitHubIssue,
     GitHubRelease,
     NasaEonetEvent,
@@ -2083,6 +2084,141 @@ def test_forecast_cli_githubissues_import_captures_issues_as_evidence(tmp_path, 
     assert evidence[0].metadata["issue_number"] == 42
     assert evidence[0].metadata["is_pull_request"] is True
     assert evidence[0].metadata["labels"] == ["forecasting", "release"]
+
+
+def test_githubcommits_adapter_loads_repository_commits(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return [
+            {
+                "sha": "abcdef1234567890",
+                "commit": {
+                    "message": "Add calibrated forecast dashboard\n\nDetails.",
+                    "author": {"name": "Ada Analyst", "date": "2026-05-20T10:00:00Z"},
+                    "committer": {"date": "2026-05-21T11:00:00Z"},
+                    "comment_count": 2,
+                },
+                "author": {"login": "ada"},
+                "url": "https://api.github.test/repos/acme/desk/commits/abcdef1234567890",
+                "html_url": "https://github.com/acme/desk/commit/abcdef1234567890",
+            }
+        ]
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    commits = source_adapters.load_github_commits(
+        "githubcommits:acme/desk",
+        limit=2,
+        since="2026-05-01T00:00:00Z",
+        api_base_url="https://api.github.test",
+    )
+    parsed = urlparse(captured["endpoint"])
+    params = parse_qs(parsed.query)
+
+    assert captured["label"] == "github commits"
+    assert parsed.path == "/repos/acme/desk/commits"
+    assert params["per_page"] == ["2"]
+    assert params["since"] == ["2026-05-01T00:00:00Z"]
+    assert commits[0].repo == "acme/desk"
+    assert commits[0].sha == "abcdef1234567890"
+    assert commits[0].short_sha == "abcdef1"
+    assert commits[0].message == "Add calibrated forecast dashboard Details."
+    assert commits[0].author_name == "Ada Analyst"
+    assert commits[0].author_login == "ada"
+    assert commits[0].committed_at == "2026-05-21T11:00:00Z"
+    assert commits[0].comments == 2
+
+
+def test_forecast_cli_githubcommits_import_captures_commits_as_evidence(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_github_commits(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            GitHubCommit(
+                repo="acme/desk",
+                sha="abcdef1234567890",
+                short_sha="abcdef1",
+                message="Add calibrated forecast dashboard",
+                author_name="Ada Analyst",
+                author_login="ada",
+                authored_at="2026-05-20T10:00:00Z",
+                committed_at="2026-05-21T11:00:00Z",
+                comments=2,
+                url="https://api.github.test/repos/acme/desk/commits/abcdef1234567890",
+                html_url="https://github.com/acme/desk/commit/abcdef1234567890",
+                source_name="GitHub",
+                entry_id="acme/desk@abcdef1234567890",
+                raw={"sha": "abcdef1234567890"},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_github_commits", fake_load_github_commits)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will GitHub commit evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if GitHub commit evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "githubcommits",
+            "acme/desk",
+            "--question",
+            question_id,
+            "--limit",
+            "3",
+            "--since",
+            "2026-05-01T00:00:00Z",
+            "--api-base-url",
+            "https://api.github.test",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.8",
+            "--relevance",
+            "0.9",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 githubcommits evidence item(s)" in output
+    assert captured["source"] == "acme/desk"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["api_base_url"] == "https://api.github.test"
+    assert evidence[0].claim == "GitHub commit: acme/desk abcdef1"
+    assert evidence[0].summary.startswith("GitHub commit acme/desk@abcdef1")
+    assert evidence[0].source_name == "GitHub"
+    assert evidence[0].source_type == "adapter:githubcommits"
+    assert evidence[0].published_at == "2026-05-21T11:00:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.8
+    assert evidence[0].relevance_rating == 0.9
+    assert evidence[0].metadata["adapter"] == "githubcommits"
+    assert evidence[0].metadata["repo"] == "acme/desk"
+    assert evidence[0].metadata["sha"] == "abcdef1234567890"
+    assert evidence[0].metadata["author_login"] == "ada"
 
 
 def test_pypi_adapter_loads_package_releases(monkeypatch):
@@ -6065,6 +6201,7 @@ def test_forecast_cli_lists_extension_points(capsys):
     assert "gdelt-doc-news" in output
     assert "github-releases" in output
     assert "github-issues" in output
+    assert "github-commits" in output
     assert "federal-register-documents" in output
     assert "courtlistener-search" in output
     assert "nvd-cves" in output
@@ -6124,6 +6261,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "npm:<package>" in output
     assert "wikipediapageviews:<project>/<article>" in output
     assert "githubissues:<owner/repo>" in output
+    assert "githubcommits:<owner/repo>" in output
     assert "hackernews:<query>" in output
     assert "reddit:<query>" in output
     assert "nvd:<keyword-or-CVE>" in output
@@ -6140,7 +6278,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "owid", "eia", "treasury", "census", "stooq", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "owid", "eia", "treasury", "census", "stooq", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "census:<dataset-path?get=...&for=...>" for source in payload["sources"])
@@ -6151,6 +6289,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     assert any(source["watch_prefix"] == "pypi:<package>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "npm:<package>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "githubissues:<owner/repo>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "githubcommits:<owner/repo>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "hackernews:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "reddit:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "cisakev:<keyword-or-CVE-or-all>" for source in payload["sources"])
@@ -7963,6 +8102,72 @@ def test_forecast_cli_watch_add_supports_githubissues_sources(tmp_path, capsys, 
     assert "source_type: githubissues" in add_output
 
     states[0] = "closed"
+    _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
+    check_output = capsys.readouterr().out
+
+    assert "created 1 alert(s)" in check_output
+    assert f"watched_source_changed:{watch_id}" in check_output
+
+
+def test_forecast_cli_watch_add_supports_githubcommits_sources(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    messages = ["Initial forecast commit"]
+
+    def fake_load_github_commits(source: str, **kwargs):
+        return [
+            GitHubCommit(
+                repo="acme/desk",
+                sha=f"{len(messages[0]):040x}",
+                short_sha=f"{len(messages[0]):07x}",
+                message=messages[0],
+                author_name="Ada Analyst",
+                author_login="ada",
+                authored_at="2026-05-20T10:00:00Z",
+                committed_at="2026-05-21T11:00:00Z",
+                comments=0,
+                url=None,
+                html_url=None,
+                source_name="GitHub",
+                entry_id=f"acme/desk@{len(messages[0]):040x}",
+                raw={"message": messages[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_github_commits", fake_load_github_commits)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will watched CLI GitHub commits change?",
+            "--resolution-criteria",
+            "Resolved yes if watched GitHub commits change.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            "githubcommits:acme/desk",
+            "--question",
+            question_id,
+        ],
+    )
+    add_output = capsys.readouterr().out
+    watch_id = re.search(r"watched source (ws_[a-f0-9]+)", add_output).group(1)
+
+    assert "source_type: githubcommits" in add_output
+
+    messages[0] = "New forecast commit"
     _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
     check_output = capsys.readouterr().out
 

@@ -49,6 +49,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "wikipediapageviews",
     "github",
     "githubissues",
+    "githubcommits",
     "pypi",
     "npm",
     "hackernews",

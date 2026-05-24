@@ -277,6 +277,24 @@ class GitHubIssue:
 
 
 @dataclass(frozen=True)
+class GitHubCommit:
+    repo: str
+    sha: str
+    short_sha: str
+    message: str
+    author_name: str | None
+    author_login: str | None
+    authored_at: str | None
+    committed_at: str | None
+    comments: int | None
+    url: str | None
+    html_url: str | None
+    source_name: str
+    entry_id: str
+    raw: dict
+
+
+@dataclass(frozen=True)
 class PypiRelease:
     package: str
     version: str
@@ -1818,6 +1836,80 @@ def load_github_issues(
         if len(issues) >= limit:
             break
     return issues
+
+
+def load_github_commits(
+    source: str,
+    *,
+    limit: int = 10,
+    since: str | None = None,
+    api_base_url: str = "https://api.github.com",
+) -> list[GitHubCommit]:
+    """Load GitHub repository commits as timestamped software activity evidence."""
+
+    owner, repo_name = _github_repo_parts(source)
+    if limit <= 0:
+        raise ValidationError("githubcommits import --limit must be positive")
+    since_ts = parse_timestamp(since, field_name="since") if since else None
+    since_dt = timestamp_to_datetime(since_ts) if since_ts else None
+    repo = f"{owner}/{repo_name}"
+    params: dict[str, object] = {"per_page": min(limit, 100)}
+    if since_ts:
+        params["since"] = since_ts
+    endpoint = (
+        f"{api_base_url.rstrip('/')}/repos/{quote(owner, safe='')}/"
+        f"{quote(repo_name, safe='')}/commits?{urlencode(params)}"
+    )
+    payload = _read_json_endpoint(endpoint, "github commits")
+    if not isinstance(payload, list):
+        raise ValidationError("github commits response must be an array")
+
+    commits: list[GitHubCommit] = []
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        sha = _optional_str(row.get("sha"))
+        if not sha:
+            continue
+        commit = row.get("commit") if isinstance(row.get("commit"), dict) else {}
+        author = commit.get("author") if isinstance(commit.get("author"), dict) else {}
+        committer = commit.get("committer") if isinstance(commit.get("committer"), dict) else {}
+        github_author = row.get("author") if isinstance(row.get("author"), dict) else {}
+        authored_at = _github_timestamp(author.get("date"))
+        committed_at = _github_timestamp(committer.get("date")) or authored_at
+        available_dt = timestamp_to_datetime(committed_at or authored_at) if committed_at or authored_at else None
+        if since_dt is not None and available_dt is not None and available_dt < since_dt:
+            continue
+        message = _collapse_ws(_optional_str(commit.get("message")) or "Untitled GitHub commit")
+        commits.append(
+            GitHubCommit(
+                repo=repo,
+                sha=sha,
+                short_sha=sha[:7],
+                message=message,
+                author_name=_optional_str(author.get("name")),
+                author_login=_optional_str(github_author.get("login")),
+                authored_at=authored_at,
+                committed_at=committed_at,
+                comments=_optional_int(commit.get("comment_count")),
+                url=_optional_str(row.get("url")),
+                html_url=_optional_str(row.get("html_url")),
+                source_name="GitHub",
+                entry_id=f"{repo}@{sha}",
+                raw={
+                    "sha": sha,
+                    "repo": repo,
+                    "message": commit.get("message"),
+                    "author_name": author.get("name"),
+                    "author_login": github_author.get("login"),
+                    "authored_at": authored_at,
+                    "committed_at": committed_at,
+                },
+            )
+        )
+        if len(commits) >= limit:
+            break
+    return commits
 
 
 def load_pypi_releases(
@@ -5774,7 +5866,7 @@ def _owid_date_to_iso(value: str) -> str | None:
 def _github_repo_parts(source: str) -> tuple[str, str]:
     value = (
         source.split(":", 1)[1].strip()
-        if source.startswith(("github:", "githubissues:"))
+        if source.startswith(("github:", "githubissues:", "githubcommits:"))
         else source.strip()
     )
     parsed = urlparse(value)
@@ -5783,7 +5875,10 @@ def _github_repo_parts(source: str) -> tuple[str, str]:
     else:
         parts = [part for part in value.strip("/").split("/") if part]
     if len(parts) < 2:
-        raise ValidationError("github source must be owner/repo, github:owner/repo, or a GitHub repository URL")
+        raise ValidationError(
+            "github source must be owner/repo, github:owner/repo, githubissues:owner/repo, "
+            "githubcommits:owner/repo, or a GitHub repository URL"
+        )
     owner, repo = parts[0], parts[1]
     if not owner or not repo:
         raise ValidationError("github source must include owner and repo")

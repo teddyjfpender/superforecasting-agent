@@ -560,6 +560,7 @@ forecast import census <dataset-path?get=...&for=...> --question <id>
 forecast import sec <cik> --question <id>
 forecast import arxiv <query> --question <id>
 forecast import pubmed <query-or-PMID> --question <id>
+forecast import githubcommits <owner/repo> --question <id>
 forecast import pypi <package> --question <id>
 forecast import npm <package> --question <id>
 forecast import manifold <url-or-id-or-slug>

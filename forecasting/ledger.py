@@ -65,6 +65,7 @@ WATCH_SOURCE_TYPES = {
     "gdelt",
     "github",
     "githubissues",
+    "githubcommits",
     "hackernews",
     "reddit",
     "federalregister",
@@ -2894,7 +2895,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, github, githubissues, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, stooq, "
+                "source_type must be file, url, manual, rss, gdelt, github, githubissues, githubcommits, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, stooq, "
                 "sec, arxiv, openalex, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -2981,6 +2982,7 @@ class ForecastLedger:
                     "gdelt",
                     "github",
                     "githubissues",
+                    "githubcommits",
                     "pypi",
                     "npm",
                     "hackernews",
@@ -5194,6 +5196,8 @@ class ForecastLedger:
             return "github"
         if source.startswith("githubissues:"):
             return "githubissues"
+        if source.startswith("githubcommits:"):
+            return "githubcommits"
         if source.startswith("pypi:"):
             return "pypi"
         if source.startswith("npm:"):
@@ -5270,6 +5274,8 @@ class ForecastLedger:
             return self._github_source_signature(source)
         if source_type == "githubissues":
             return self._github_issues_source_signature(source)
+        if source_type == "githubcommits":
+            return self._github_commits_source_signature(source)
         if source_type == "pypi":
             return self._pypi_source_signature(source)
         if source_type == "npm":
@@ -5476,6 +5482,30 @@ class ForecastLedger:
         ]
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"githubissues:{len(payload)}:{digest}"
+
+    def _github_commits_source_signature(self, source: str) -> str:
+        source_value = source.split(":", 1)[1].strip() if source.startswith("githubcommits:") else source.strip()
+        if not source_value:
+            return "missing:githubcommits:empty-repo"
+        try:
+            from forecasting.source_adapters import load_github_commits
+
+            commits = load_github_commits(source_value, limit=50)
+        except Exception as exc:
+            return f"missing:githubcommits:{source_value}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "author_login": commit.author_login,
+                "committed_at": commit.committed_at,
+                "entry_id": commit.entry_id,
+                "message": commit.message,
+                "repo": commit.repo,
+                "sha": commit.sha,
+            }
+            for commit in commits
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"githubcommits:{len(payload)}:{digest}"
 
     def _pypi_source_signature(self, source: str) -> str:
         source_value = source.split(":", 1)[1].strip() if source.startswith("pypi:") else source.strip()
@@ -6340,6 +6370,12 @@ class ForecastLedger:
             source_value = source.split(":", 1)[1].strip() if source.startswith("githubissues:") else source
             return (
                 f"Run `forecast import githubissues {source_value} --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "githubcommits" and scope_type == "question" and scope_ref:
+            source_value = source.split(":", 1)[1].strip() if source.startswith("githubcommits:") else source
+            return (
+                f"Run `forecast import githubcommits {source_value} --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "pypi" and scope_type == "question" and scope_ref:

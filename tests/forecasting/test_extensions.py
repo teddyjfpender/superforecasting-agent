@@ -25,6 +25,7 @@ def test_builtin_forecast_extensions_are_registered():
     assert "tournament-export" in names
     assert "github-releases" in names
     assert "github-issues" in names
+    assert "github-commits" in names
     assert "pypi-releases" in names
     assert "npm-package-versions" in names
     assert "hackernews-search" in names

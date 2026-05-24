@@ -26,6 +26,7 @@ from forecasting.source_adapters import (
     FredObservation,
     GdeltArticle,
     HackerNewsItem,
+    GitHubCommit,
     GitHubIssue,
     GitHubRelease,
     KalshiMarketImport,
@@ -1691,6 +1692,64 @@ def test_watched_githubissues_source_creates_alert_on_issue_change(tmp_path, mon
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert f"forecast import githubissues acme/desk --question {question.id}" in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_githubcommits_source_creates_alert_on_commit_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched GitHub commits be detected?",
+        resolution_criteria="Resolved yes if watched GitHub commit changes create alerts.",
+    )
+    messages = ["Initial forecast commit"]
+    captured_sources = []
+
+    def fake_load_github_commits(source: str, **kwargs):
+        captured_sources.append(source)
+        sha = f"{len(messages[0]):040x}"
+        return [
+            GitHubCommit(
+                repo="acme/desk",
+                sha=sha,
+                short_sha=sha[:7],
+                message=messages[0],
+                author_name="Ada Analyst",
+                author_login="ada",
+                authored_at="2026-05-20T10:00:00Z",
+                committed_at="2026-05-21T11:00:00Z",
+                comments=0,
+                url="https://api.github.test/repos/acme/desk/commits/" + sha,
+                html_url="https://github.com/acme/desk/commit/" + sha,
+                source_name="GitHub",
+                entry_id=f"acme/desk@{sha}",
+                raw={"message": messages[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_github_commits", fake_load_github_commits)
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="githubcommits:acme/desk",
+    )
+
+    assert watch["source_type"] == "githubcommits"
+    assert watch["last_seen_signature"].startswith("githubcommits:1:")
+    assert captured_sources[-1] == "acme/desk"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    messages[0] = "New forecast commit"
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f"forecast import githubcommits acme/desk --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]

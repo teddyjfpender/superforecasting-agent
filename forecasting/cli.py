@@ -67,6 +67,7 @@ from forecasting.source_adapters import (
     load_federal_register_documents,
     load_fred_observations,
     load_gdelt_articles,
+    load_github_commits,
     load_hackernews_items,
     load_github_issues,
     load_github_releases,
@@ -274,6 +275,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "watch_prefix": "githubissues:<owner/repo>",
     },
     {
+        "name": "githubcommits",
+        "domain": "repository commit activity",
+        "import_command": "forecast import githubcommits <owner/repo> --question <id>",
+        "watch_prefix": "githubcommits:<owner/repo>",
+    },
+    {
         "name": "pypi",
         "domain": "Python package releases",
         "import_command": "forecast import pypi <package> --question <id>",
@@ -468,6 +475,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "gdelt",
         "github",
         "githubissues",
+        "githubcommits",
         "pypi",
         "npm",
         "hackernews",
@@ -541,6 +549,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "gdelt",
             "github",
             "githubissues",
+            "githubcommits",
             "pypi",
             "npm",
             "hackernews",
@@ -592,6 +601,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             )
         if name == "githubissues":
             adapter.add_argument("--state", choices=["open", "closed", "all"], default="all")
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://api.github.com",
+                help="Override GitHub API base URL for tests or private mirrors",
+            )
+        if name == "githubcommits":
             adapter.add_argument(
                 "--api-base-url",
                 default="https://api.github.com",
@@ -2244,6 +2259,58 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} githubissues evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "githubcommits":
+        if not args.question_id:
+            raise SystemExit("forecast import githubcommits requires --question")
+        commits = load_github_commits(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for commit in commits:
+            author = commit.author_login or commit.author_name or "unknown author"
+            summary = (
+                f"GitHub commit {commit.repo}@{commit.short_sha}: {commit.message}. "
+                f"Committed by {author}"
+                + (f" at {commit.committed_at}." if commit.committed_at else ".")
+            )
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=commit.html_url or commit.url or f"GitHub:{commit.repo}@{commit.sha}",
+                    source_url=commit.html_url or commit.url,
+                    source_name=commit.source_name,
+                    source_type="adapter:githubcommits",
+                    published_at=commit.committed_at or commit.authored_at,
+                    available_at=commit.committed_at or commit.authored_at or args.as_of,
+                    claim=f"GitHub commit: {commit.repo} {commit.short_sha}",
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "githubcommits",
+                        "repo": commit.repo,
+                        "sha": commit.sha,
+                        "short_sha": commit.short_sha,
+                        "message": commit.message,
+                        "author_name": commit.author_name,
+                        "author_login": commit.author_login,
+                        "authored_at": commit.authored_at,
+                        "committed_at": commit.committed_at,
+                        "comments": commit.comments,
+                        "api_base_url": args.api_base_url,
+                        "raw": commit.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} githubcommits evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

@@ -12,6 +12,7 @@ from forecasting.source_adapters import (
     ClinicalTrialStudy,
     EiaObservation,
     HackerNewsItem,
+    GitHubCommit,
     GitHubIssue,
     NasaEonetEvent,
     NpmPackageVersion,
@@ -85,7 +86,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "stooq", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "githubcommits", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "stooq", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_lifecycle(tmp_path):
@@ -1760,6 +1761,55 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert evidence["metadata"]["adapter"] == "wikipediapageviews"
     assert evidence["metadata"]["adapter_item"]["views"] == 1234
     assert row["adapter_item"]["entry_id"] == "en.wikipedia.org:Artificial_intelligence:2026-01-02"
+
+    def fake_github_commits(source, **kwargs):
+        assert source == "acme/desk"
+        assert kwargs["limit"] == 1
+        assert kwargs["since"] == "2026-01-01"
+        assert kwargs["api_base_url"] == "https://example.test/github"
+        return [
+            GitHubCommit(
+                repo="acme/desk",
+                sha="abcdef1234567890",
+                short_sha="abcdef1",
+                message="Add calibrated forecast dashboard",
+                author_name="Ada Analyst",
+                author_login="ada",
+                authored_at="2026-05-20T10:00:00Z",
+                committed_at="2026-05-21T11:00:00Z",
+                comments=2,
+                url="https://api.github.test/repos/acme/desk/commits/abcdef1234567890",
+                html_url="https://github.com/acme/desk/commit/abcdef1234567890",
+                source_name="GitHub",
+                entry_id="acme/desk@abcdef1234567890",
+                raw={"sha": "abcdef1234567890"},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_github_commits", fake_github_commits)
+    github_imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "githubcommits",
+                "source": "acme/desk",
+                "limit": 1,
+                "since": "2026-01-01",
+                "api_base_url": "https://example.test/github",
+            }
+        )
+    )
+
+    assert github_imported["imported_count"] == 1
+    github_evidence = github_imported["imported"][0]["evidence"]
+    assert github_evidence["source_type"] == "adapter:githubcommits"
+    assert github_evidence["source_name"] == "GitHub"
+    assert github_evidence["claim"] == "GitHub commit acme/desk abcdef1: Add calibrated forecast dashboard"
+    assert github_evidence["published_at"] == "2026-05-21T11:00:00Z"
+    assert github_evidence["metadata"]["adapter"] == "githubcommits"
+    assert github_evidence["metadata"]["adapter_item"]["sha"] == "abcdef1234567890"
 
     def fake_eia(source, **kwargs):
         assert source == "PET.RWTC.M"
