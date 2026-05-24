@@ -2151,7 +2151,7 @@ Compose this skill with other Superforecasting Agent skills for specific phases:
 
 **This skill supersedes `ml-paper-writing`** — it contains all of ml-paper-writing's content plus the full experiment/analysis pipeline and autoreason methodology.
 
-### Hermes Tools Reference
+### Superforecasting Agent Tools Reference
 
 | Tool | Usage in This Pipeline |
 |------|----------------------|

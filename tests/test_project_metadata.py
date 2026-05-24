@@ -925,7 +925,51 @@ def test_remaining_product_facing_skill_examples_are_forecast_native():
             / "social-media-xurl.md"
         ),
         root / "skills" / "research" / "research-paper-writing" / "references" / "experiment-patterns.md",
+        root / "skills" / "research" / "research-paper-writing" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "research"
+            / "research-research-paper-writing.md"
+        ),
+        root / "skills" / "creative" / "claude-design" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "creative"
+            / "creative-claude-design.md"
+        ),
+        root / "skills" / "creative" / "pixel-art" / "SKILL.md",
         root / "skills" / "creative" / "pixel-art" / "ATTRIBUTION.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "creative"
+            / "creative-pixel-art.md"
+        ),
+        root / "skills" / "smart-home" / "openhue" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "smart-home"
+            / "smart-home-openhue.md"
+        ),
         root / "optional-skills" / "software-development" / "rest-graphql-debug" / "SKILL.md",
         (
             root
@@ -951,6 +995,9 @@ def test_remaining_product_facing_skill_examples_are_forecast_native():
     assert "Superforecasting Agent workflow" in text
     assert "Recommended Superforecasting Agent workflow" in text
     assert "Superforecasting Agent Tool Patterns" in text
+    assert "Superforecasting Agent Tools Reference" in text
+    assert "Superforecasting Agent has three design-related skills" in text
+    assert "machine running Superforecasting Agent" in text
     assert "already available in Superforecasting Agent" in text
     assert "Superforecasting Agent adaptation" in text
     assert "Superforecasting Agent contributors" in text
@@ -969,6 +1016,10 @@ def test_remaining_product_facing_skill_examples_are_forecast_native():
     assert "Hermes Agent contributors" not in text
     assert "Recommended Hermes workflow" not in text
     assert "Hermes Tool Patterns" not in text
+    assert "Hermes Tools Reference" not in text
+    assert "Hermes has three design-related skills" not in text
+    assert "machine running Hermes" not in text
+    assert "Hermes installs package this" not in text
 
 
 def test_github_auth_skill_is_forecast_native():
