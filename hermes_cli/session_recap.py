@@ -7,7 +7,7 @@ so users juggling multiple sessions can re-orient quickly.
 Source: https://code.claude.com/docs/en/whats-new/2026-w17
 
 Differences from Claude Code:
-    - Pure local computation from the in-memory conversation history. No
+    - Pure local computation from the in-memory research-session transcript. No
       LLM call, no auxiliary model, no prompt-cache invalidation. A
       recap should be instant and free.
     - Works unchanged on CLI and every gateway platform (Telegram,
@@ -23,13 +23,13 @@ import os
 from collections import Counter
 from typing import Any, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-# How many recent user/assistant turns we consider "recent activity".
+# How many recent user/forecaster turns we consider "recent activity".
 _RECENT_TURN_WINDOW = 20
 
 # How many characters of the latest user prompt to show.
 _PROMPT_PREVIEW_CHARS = 140
 
-# How many characters of the latest assistant text to show.
+# How many characters of the latest forecaster text to show.
 _ASSISTANT_PREVIEW_CHARS = 200
 
 # How many recently-touched files to list.
@@ -245,7 +245,7 @@ def build_recap(
     """Build a multi-line recap of recent activity.
 
     Inputs:
-        messages: the full conversation history as a list of
+        messages: the full research-session transcript as a list of
             chat-completion-style dicts (``role``, ``content``,
             ``tool_calls``, …).
         session_title: optional human title (from SessionDB).
@@ -276,7 +276,7 @@ def build_recap(
 
     scope = (
         f"{win_users} user turn{'s' if win_users != 1 else ''} / "
-        f"{win_assistants} assistant repl{'ies' if win_assistants != 1 else 'y'}"
+        f"{win_assistants} forecaster repl{'ies' if win_assistants != 1 else 'y'}"
     )
     if (users, assistants) != (win_users, win_assistants):
         scope += f" (of {users}/{assistants} total)"
@@ -308,7 +308,7 @@ def build_recap(
 
     if len(lines) == 2:
         # Only the header + scope line — nothing substantive to show.
-        lines.append("  (no assistant activity yet in this window)")
+        lines.append("  (no forecaster activity yet in this window)")
 
     return "\n".join(lines)
 

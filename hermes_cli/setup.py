@@ -1800,7 +1800,7 @@ def setup_agent_settings(config: dict):
     # entry is still around (from pre-PR#18413 setups), prefer the
     # config value so we don't surface a stale number to the user.
     current_max = str(cfg_get(config, "agent", "max_turns", default=90))
-    print_info("Maximum tool-calling iterations per conversation.")
+    print_info("Maximum tool-calling iterations per research-session turn.")
     print_info("Higher = more complex tasks, but costs more tokens.")
     print_info(
         f"Press Enter to keep {current_max}. Use 90 for most tasks or 150+ for open exploration."
@@ -1869,7 +1869,7 @@ def setup_agent_settings(config: dict):
         "Messaging sessions (Telegram, Discord, etc.) accumulate context over time."
     )
     print_info(
-        "Each message adds to the conversation history, which means growing API costs."
+        "Each message adds to the research-session transcript, which means growing API costs."
     )
     print_info("")
     print_info(
@@ -1879,7 +1879,7 @@ def setup_agent_settings(config: dict):
         "or at a fixed time each day. When a reset happens, the agent saves important"
     )
     print_info(
-        "things to its persistent memory first — but the conversation context is cleared."
+        "things to durable memory first — but the research-session context is cleared."
     )
     print_info("")
     print_info("You can also manually reset anytime by typing /reset in chat.")
@@ -1953,7 +1953,7 @@ def setup_agent_settings(config: dict):
             "Sessions will never auto-reset. Context is managed only by compression."
         )
         print_warning(
-            "Long conversations will grow in cost. Use /reset manually when needed."
+            "Long research sessions will grow in cost. Use /reset manually when needed."
         )
     # else: keep current (idx == 4)
 

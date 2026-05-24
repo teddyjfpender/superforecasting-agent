@@ -56,7 +56,7 @@ def test_counts_recent_turns():
     ]
     out = build_recap(msgs)
     assert "2 user turn" in out
-    assert "assistant repl" in out
+    assert "forecaster repl" in out
 
 
 def test_last_ask_and_reply_are_surfaced():
@@ -156,9 +156,9 @@ def test_handles_arguments_as_dict_not_string():
     assert "foo.py" in out
 
 
-def test_no_assistant_activity_hint():
+def test_no_forecaster_activity_hint():
     out = build_recap([_user("just sent my first message")])
-    assert "no assistant activity" in out or "Last ask" in out
+    assert "no forecaster activity" in out or "Last ask" in out
 
 
 def test_tool_message_count_reported():

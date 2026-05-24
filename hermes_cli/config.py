@@ -1436,7 +1436,7 @@ DEFAULT_CONFIG = {
         # this key to false.
         "mcp_reload_confirm": True,
         # When true, destructive session slash commands (/clear, /new, /reset,
-        # /undo) ask the user to confirm before discarding conversation state.
+        # /undo) ask the user to confirm before discarding research-session state.
         # Three-option prompt (Approve Once / Always Approve / Cancel) routed
         # through tools.slash_confirm — native yes/no buttons on Telegram,
         # Discord, and Slack; text fallback elsewhere.  Users click "Always

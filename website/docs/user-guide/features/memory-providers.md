@@ -49,7 +49,7 @@ Use memory providers for recall and context:
 - domain-specific vocabulary and recurring sources
 - project conventions and repository notes
 - reminders about previous analysis approaches
-- summaries of earlier conversations
+- summaries of earlier research sessions
 
 Do not use memory providers as the source of truth for:
 
@@ -70,7 +70,7 @@ When a provider is active, the runtime can:
 
 1. Prefetch relevant memories before a turn.
 2. Inject provider context into the prompt.
-3. Sync conversation turns after responses.
+3. Sync research-session turns after responses.
 4. Extract memories at session end when the provider supports it.
 5. Mirror built-in memory writes to the external provider.
 6. Add provider-specific tools for search, store, and management.
@@ -302,7 +302,7 @@ Supermemory provides semantic recall, profile context, explicit memory tools, an
 | Best for | Semantic recall with user profiling |
 | Requires | `supermemory` package plus API key |
 | Storage | Supermemory Cloud |
-| Forecast role | Profile facts and reusable non-ledger conversation context |
+| Forecast role | Profile facts and reusable non-ledger research-session context |
 
 Tools include `supermemory_store`, `supermemory_search`, `supermemory_forget`, and `supermemory_profile`.
 
@@ -333,7 +333,7 @@ Container tags can be profile-scoped. Existing tags such as `hermes` or `hermes-
 | Holographic | Local | 2 | Local fact store with trust scoring |
 | RetainDB | Cloud | 5 | Team memory infrastructure |
 | ByteRover | Local or cloud | 3 | Portable local-first project recall |
-| Supermemory | Cloud | 4 | Semantic profile and conversation recall |
+| Supermemory | Cloud | 4 | Semantic profile and research-session recall |
 
 ## Profile Isolation
 
