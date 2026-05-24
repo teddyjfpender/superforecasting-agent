@@ -15,6 +15,12 @@ Secrets go in `~/.superforecasting-agent/.env` by default. Non-secret settings u
 | `SUPERFORECASTING_AGENT_HOME` | Preferred override for the agent home directory. New installs default to `~/.superforecasting-agent`. |
 | `FORECAST_HOME` | Short alias for `SUPERFORECASTING_AGENT_HOME`. |
 | `HERMES_HOME` | Legacy home override. Still supported and bridged internally for inherited modules, profiles, logs, plugins, skills, auth, and gateway state. |
+| `SUPERFORECASTING_AGENT_CWD` | Preferred fallback working directory for TUI status/git context and spawned TUI gateway startup when the gateway does not provide a cwd. |
+| `FORECAST_CWD` | Short alias for `SUPERFORECASTING_AGENT_CWD`. |
+| `HERMES_CWD` | Legacy fallback working-directory override for inherited TUI and gateway startup paths. |
+| `SUPERFORECASTING_AGENT_VOICE` | Preferred startup voice-mode flag for TUI UI state. Set to `1` to show voice as enabled at startup. |
+| `FORECAST_VOICE` | Short alias for `SUPERFORECASTING_AGENT_VOICE`. |
+| `HERMES_VOICE` | Legacy startup voice-mode flag for inherited TUI voice state. |
 | `FORECAST_LEDGER_DB` | Optional path to the forecast ledger SQLite database used by scheduled self-check runners. When unset, the ledger defaults to the active agent home. |
 | `FORECAST_AUTO_SCORE` | When set truthy for forecast cron/self-check runs, automatically scores newly resolved scoreable forecasts. |
 | `FORECAST_AUTO_POSTMORTEM` | When set truthy for forecast cron/self-check runs, writes postmortem/learning artifacts for scored resolved forecasts where the runner can do so. |

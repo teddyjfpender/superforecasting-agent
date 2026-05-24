@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline'
 import type { GatewayEvent } from './gatewayTypes.js'
 import { CircularBuffer } from './lib/circularBuffer.js'
 import { tuiEnvValue } from './lib/envAlias.js'
+import { runtimeEnvValue } from './lib/runtimeEnv.js'
 
 const MAX_GATEWAY_LOG_LINES = 200
 const MAX_LOG_LINE_BYTES = 4096
@@ -318,7 +319,7 @@ export class GatewayClient extends EventEmitter {
 
   private startSpawnedGateway(root: string) {
     const python = resolvePython(root)
-    const cwd = process.env.HERMES_CWD || root
+    const cwd = runtimeEnvValue('CWD') || root
     const env = { ...process.env }
     const pyPath = env.PYTHONPATH?.trim()
 
