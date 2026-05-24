@@ -47,7 +47,7 @@ The legacy `hermes` entrypoint remains available during the fork transition, but
 | Calibration memory | Track Brier/log scores, calibration buckets, sharpness, horizon/domain performance, error profiles, and reusable lessons. |
 | Backtesting | Replay held-out resolved questions under evidence cutoffs and compare against market, crowd, base-rate, and naive baselines. |
 | Self-checks | Schedule question/domain/topic reviews, watch sources, flag stale assumptions, detect resolved questions, and queue postmortems. |
-| Adapters | Import context from RSS/Atom, GDELT, FRED, BLS, World Bank, SEC EDGAR, arXiv, OpenAlex, Wikipedia, Wikimedia pageviews, GitHub, Hacker News, Reddit, Federal Register, NVD, Open-Meteo, USGS, NASA EONET, NWS alerts, OWID, Metaculus, Manifold, Polymarket, Kalshi, CSV/JSON, and generic URLs. |
+| Adapters | Import context from RSS/Atom, GDELT, FRED, BLS, World Bank, SEC EDGAR, arXiv, OpenAlex, PubMed, Wikipedia, Wikimedia pageviews, GitHub, PyPI, Hacker News, Reddit, Federal Register, CourtListener, NVD, CISA KEV, Open-Meteo, USGS, NASA EONET, NWS alerts, OWID, Metaculus, Manifold, Polymarket, Kalshi, CSV/JSON, and generic URLs. |
 
 ## Quick Links
 

@@ -483,6 +483,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
       '/forecast import stooq <symbol-or-csv-url> --question <id>',
       '/forecast import wikipediapageviews <project>/<article> --question <id>',
       '/forecast import githubissues <owner/repo> --question <id>',
+      '/forecast import pypi <package> --question <id>',
       '/forecast import hackernews "<query>" --question <id>',
       '/forecast import reddit "<query>" --question <id>',
       '/forecast import clinicaltrials <query-or-NCT-id> --question <id>',

@@ -86,6 +86,10 @@ const EVIDENCE_IMPORTS = [
     label: "PubMed",
   },
   {
+    command: "forecast import pypi <package> --question <id>",
+    label: "PyPI",
+  },
+  {
     command: "forecast import openmeteo <lat,lon> --question <id>",
     label: "Weather",
   },

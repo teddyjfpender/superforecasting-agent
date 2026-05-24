@@ -18,6 +18,7 @@ from forecasting.source_adapters import (
     OpenFdaDrugApplication,
     RedditPost,
     PubMedArticle,
+    PypiRelease,
     StooqPriceObservation,
     TreasuryRecord,
     UsgsEarthquakeEvent,
@@ -83,7 +84,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "stooq", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "pypi", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "stooq", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_lifecycle(tmp_path):
@@ -2305,6 +2306,56 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert pubmed_evidence["published_at"] == "2026-05-21T00:00:00Z"
     assert pubmed_evidence["metadata"]["adapter"] == "pubmed"
     assert pubmed_evidence["metadata"]["adapter_item"]["doi"] == "10.1234/pubmed.forecast"
+
+    def fake_pypi(source, **kwargs):
+        assert source == "forecast-desk"
+        assert kwargs["limit"] == 1
+        assert kwargs["since"] == "2026-05-01"
+        assert kwargs["api_base_url"] == "https://example.test/pypi"
+        return [
+            PypiRelease(
+                package="forecast-desk",
+                version="1.2.3",
+                summary="Forecasting command line tools.",
+                url="https://pypi.org/project/forecast-desk/1.2.3/",
+                project_url="https://pypi.org/project/forecast-desk/",
+                uploaded_at="2026-05-21T11:00:00Z",
+                latest_upload_at="2026-05-21T11:05:00Z",
+                file_count=2,
+                package_types=["bdist_wheel", "sdist"],
+                python_versions=["py3", "source"],
+                yanked=False,
+                yanked_reason=None,
+                source_name="PyPI",
+                entry_id="forecast-desk:1.2.3",
+                raw={"version": "1.2.3"},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_pypi_releases", fake_pypi)
+    pypi_imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "pypi",
+                "source": "forecast-desk",
+                "limit": 1,
+                "since": "2026-05-01",
+                "api_base_url": "https://example.test/pypi",
+            }
+        )
+    )
+
+    assert pypi_imported["imported_count"] == 1
+    pypi_evidence = pypi_imported["imported"][0]["evidence"]
+    assert pypi_evidence["source_type"] == "adapter:pypi"
+    assert pypi_evidence["source_name"] == "PyPI"
+    assert pypi_evidence["claim"] == "PyPI release forecast-desk 1.2.3: Forecasting command line tools."
+    assert pypi_evidence["published_at"] == "2026-05-21T11:05:00Z"
+    assert pypi_evidence["metadata"]["adapter"] == "pypi"
+    assert pypi_evidence["metadata"]["adapter_item"]["file_count"] == 2
 
     def fake_usgs(source, **kwargs):
         assert source == "minmagnitude=5"

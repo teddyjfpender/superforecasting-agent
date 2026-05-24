@@ -85,6 +85,7 @@ from forecasting.source_adapters import (
     load_openalex_works,
     load_owid_observations,
     load_pubmed_articles,
+    load_pypi_releases,
     load_reddit_posts,
     load_polymarket_market,
     load_sec_filings,
@@ -272,6 +273,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "watch_prefix": "githubissues:<owner/repo>",
     },
     {
+        "name": "pypi",
+        "domain": "Python package releases",
+        "import_command": "forecast import pypi <package> --question <id>",
+        "watch_prefix": "pypi:<package>",
+    },
+    {
         "name": "hackernews",
         "domain": "technical news and public attention",
         "import_command": 'forecast import hackernews "<query>" --question <id>',
@@ -454,6 +461,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "gdelt",
         "github",
         "githubissues",
+        "pypi",
         "hackernews",
         "reddit",
         "federalregister",
@@ -525,6 +533,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "gdelt",
             "github",
             "githubissues",
+            "pypi",
             "hackernews",
             "reddit",
             "federalregister",
@@ -578,6 +587,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://api.github.com",
                 help="Override GitHub API base URL for tests or private mirrors",
+            )
+        if name == "pypi":
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://pypi.org/pypi",
+                help="Override PyPI JSON API base URL for tests or private mirrors",
             )
         if name == "hackernews":
             adapter.add_argument(
@@ -1086,6 +1101,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "arxiv",
             "openalex",
             "pubmed",
+            "pypi",
             "courtlistener",
             "manifold",
             "metaculus",
@@ -2212,6 +2228,65 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} githubissues evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "pypi":
+        if not args.question_id:
+            raise SystemExit("forecast import pypi requires --question")
+        releases = load_pypi_releases(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for release in releases:
+            package_types = ", ".join(release.package_types) if release.package_types else "unknown file types"
+            python_versions = (
+                ", ".join(release.python_versions[:5]) if release.python_versions else "unknown Python versions"
+            )
+            status = "yanked" if release.yanked else "available"
+            summary = (
+                f"PyPI release {release.package} {release.version}: {release.summary or 'no project summary'}. "
+                f"{release.file_count} files; {package_types}; Python {python_versions}; "
+                f"first uploaded {release.uploaded_at or 'unknown'}; latest upload {release.latest_upload_at or 'unknown'}; "
+                f"status {status}."
+            )
+            if release.yanked_reason:
+                summary += f" Yanked reason: {release.yanked_reason}."
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=release.url or release.project_url or f"PyPI:{release.package}:{release.version}",
+                    source_url=release.url or release.project_url,
+                    source_name=release.source_name,
+                    source_type="adapter:pypi",
+                    published_at=release.uploaded_at,
+                    available_at=release.latest_upload_at or release.uploaded_at or args.as_of,
+                    claim=f"PyPI release: {release.package} {release.version}",
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "pypi",
+                        "package": release.package,
+                        "version": release.version,
+                        "uploaded_at": release.uploaded_at,
+                        "latest_upload_at": release.latest_upload_at,
+                        "file_count": release.file_count,
+                        "package_types": release.package_types,
+                        "python_versions": release.python_versions,
+                        "yanked": release.yanked,
+                        "yanked_reason": release.yanked_reason,
+                        "api_base_url": args.api_base_url,
+                        "raw": release.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} pypi evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

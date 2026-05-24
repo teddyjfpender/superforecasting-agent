@@ -40,6 +40,7 @@ from forecasting.source_adapters import (
     load_openmeteo_daily_forecasts,
     load_owid_observations,
     load_pubmed_articles,
+    load_pypi_releases,
     load_reddit_posts,
     load_sec_filings,
     load_stooq_prices,
@@ -245,6 +246,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "gdelt",
                     "github",
                     "githubissues",
+                    "pypi",
                     "hackernews",
                     "reddit",
                     "federalregister",
@@ -1130,6 +1132,11 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_github_issues(source, **kwargs)
+    if adapter_name == "pypi":
+        kwargs = {"limit": limit, "since": since}
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_pypi_releases(source, **kwargs)
     if adapter_name == "hackernews":
         kwargs = {"limit": limit, "since": since}
         if api_base_url:
@@ -1231,6 +1238,8 @@ def _source_adapter_evidence_payload(
         data,
         "published_at",
         "revised_at",
+        "latest_upload_at",
+        "uploaded_at",
         "time",
         "latest_geometry_at",
         "sent_at",
@@ -1339,6 +1348,8 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         issue_kind = "pull request" if data.get("is_pull_request") else "issue"
         number = f"#{data.get('issue_number')}" if data.get("issue_number") is not None else data.get("entry_id")
         return f"GitHub {issue_kind} {data.get('repo')} {number}: {data.get('title')}"
+    if adapter == "pypi":
+        return f"PyPI release {data.get('package')} {data.get('version')}: {data.get('summary') or 'package release'}"
     if adapter == "hackernews":
         return f"Hacker News: {data.get('title')}"
     if adapter == "reddit":

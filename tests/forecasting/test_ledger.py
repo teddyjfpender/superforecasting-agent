@@ -40,6 +40,7 @@ from forecasting.source_adapters import (
     OwidObservation,
     PolymarketMarketImport,
     PubMedArticle,
+    PypiRelease,
     RedditPost,
     SecFiling,
     StooqPriceObservation,
@@ -2469,6 +2470,64 @@ def test_watched_pubmed_source_creates_alert_on_article_change(tmp_path, monkeyp
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert f'forecast import pubmed "forecasting calibration" --question {question.id}' in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_pypi_source_creates_alert_on_release_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched PyPI releases be detected?",
+        resolution_criteria="Resolved yes if watched PyPI release changes create alerts.",
+    )
+    versions = ["1.2.3"]
+    captured_sources = []
+
+    def fake_load_pypi_releases(source: str, **kwargs):
+        captured_sources.append(source)
+        return [
+            PypiRelease(
+                package=source,
+                version=versions[0],
+                summary="Forecasting command line tools.",
+                url=f"https://pypi.org/project/{source}/{versions[0]}/",
+                project_url=f"https://pypi.org/project/{source}/",
+                uploaded_at="2026-05-21T11:00:00Z",
+                latest_upload_at="2026-05-21T11:05:00Z",
+                file_count=2,
+                package_types=["bdist_wheel", "sdist"],
+                python_versions=["py3", "source"],
+                yanked=False,
+                yanked_reason=None,
+                source_name="PyPI",
+                entry_id=f"{source}:{versions[0]}",
+                raw={"version": versions[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_pypi_releases", fake_load_pypi_releases)
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="pypi:forecast-desk",
+    )
+
+    assert watch["source_type"] == "pypi"
+    assert watch["last_seen_signature"].startswith("pypi:1:")
+    assert captured_sources[-1] == "forecast-desk"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    versions[0] = "1.2.4"
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f"forecast import pypi forecast-desk --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]

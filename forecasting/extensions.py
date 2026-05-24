@@ -80,6 +80,7 @@ def register_builtin_extensions() -> None:
         ("gdelt-doc-news", "importer", "Capture GDELT DOC article-list results as timestamped evidence."),
         ("github-releases", "importer", "Capture GitHub repository releases as timestamped evidence."),
         ("github-issues", "importer", "Capture GitHub issues and pull requests as timestamped evidence."),
+        ("pypi-releases", "importer", "Capture PyPI package releases as timestamped evidence."),
         ("hackernews-search", "importer", "Capture Hacker News search results as public-attention evidence."),
         ("reddit-search", "importer", "Capture Reddit search results as public-attention evidence."),
         ("federal-register-documents", "importer", "Capture Federal Register documents as timestamped evidence."),

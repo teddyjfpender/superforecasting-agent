@@ -277,6 +277,25 @@ class GitHubIssue:
 
 
 @dataclass(frozen=True)
+class PypiRelease:
+    package: str
+    version: str
+    summary: str
+    url: str | None
+    project_url: str | None
+    uploaded_at: str | None
+    latest_upload_at: str | None
+    file_count: int
+    package_types: list[str]
+    python_versions: list[str]
+    yanked: bool
+    yanked_reason: str | None
+    source_name: str
+    entry_id: str
+    raw: dict
+
+
+@dataclass(frozen=True)
 class HackerNewsItem:
     object_id: str
     title: str
@@ -1781,6 +1800,109 @@ def load_github_issues(
         if len(issues) >= limit:
             break
     return issues
+
+
+def load_pypi_releases(
+    source: str,
+    *,
+    limit: int = 10,
+    since: str | None = None,
+    api_base_url: str = "https://pypi.org/pypi",
+) -> list[PypiRelease]:
+    """Load PyPI package releases as timestamped software ecosystem evidence."""
+
+    package = _pypi_package_name(source)
+    if limit <= 0:
+        raise ValidationError("pypi import --limit must be positive")
+    since_ts = parse_timestamp(since, field_name="since") if since else None
+    since_dt = timestamp_to_datetime(since_ts) if since_ts else None
+    endpoint = _pypi_project_endpoint(package, api_base_url=api_base_url)
+    payload = _read_json_endpoint(endpoint, "pypi package")
+    if not isinstance(payload, dict):
+        raise ValidationError("pypi package response must be a JSON object")
+    info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
+    releases_payload = payload.get("releases")
+    if not isinstance(releases_payload, dict):
+        raise ValidationError("pypi package response must include a releases object")
+
+    package_name = _collapse_ws(_optional_str(info.get("name")) or package)
+    summary = _collapse_ws(_optional_str(info.get("summary")) or "")
+    project_url = _optional_str(info.get("package_url")) or f"https://pypi.org/project/{quote(package_name, safe='')}/"
+    rows: list[PypiRelease] = []
+    for version, files_value in releases_payload.items():
+        version_text = _optional_str(version)
+        if not version_text:
+            continue
+        files = [item for item in files_value if isinstance(item, dict)] if isinstance(files_value, list) else []
+        upload_times = [
+            uploaded_at
+            for item in files
+            for uploaded_at in [_pypi_upload_timestamp(item)]
+            if uploaded_at is not None
+        ]
+        uploaded_at = min(upload_times) if upload_times else None
+        latest_upload_at = max(upload_times) if upload_times else None
+        available_dt = timestamp_to_datetime(latest_upload_at or uploaded_at) if latest_upload_at or uploaded_at else None
+        if since_dt is not None and (available_dt is None or available_dt < since_dt):
+            continue
+        package_types = sorted(
+            {
+                text
+                for item in files
+                for text in [_collapse_optional(item.get("packagetype"))]
+                if text
+            }
+        )
+        python_versions = sorted(
+            {
+                text
+                for item in files
+                for text in [_collapse_optional(item.get("python_version"))]
+                if text
+            }
+        )
+        yanked_reason = _pypi_yanked_reason(files)
+        rows.append(
+            PypiRelease(
+                package=package_name,
+                version=version_text,
+                summary=summary,
+                url=f"https://pypi.org/project/{quote(package_name, safe='')}/{quote(version_text, safe='')}/",
+                project_url=project_url,
+                uploaded_at=uploaded_at,
+                latest_upload_at=latest_upload_at,
+                file_count=len(files),
+                package_types=package_types,
+                python_versions=python_versions,
+                yanked=any(bool(item.get("yanked")) for item in files),
+                yanked_reason=yanked_reason,
+                source_name="PyPI",
+                entry_id=f"{package_name}:{version_text}",
+                raw={
+                    "package": package_name,
+                    "version": version_text,
+                    "summary": summary,
+                    "latest_version": info.get("version"),
+                    "uploaded_at": uploaded_at,
+                    "latest_upload_at": latest_upload_at,
+                    "file_count": len(files),
+                    "package_types": package_types,
+                    "python_versions": python_versions,
+                    "yanked": any(bool(item.get("yanked")) for item in files),
+                    "yanked_reason": yanked_reason,
+                },
+            )
+        )
+
+    rows.sort(
+        key=lambda item: (
+            timestamp_to_datetime(item.latest_upload_at or item.uploaded_at)
+            or datetime.min.replace(tzinfo=timezone.utc),
+            item.version,
+        ),
+        reverse=True,
+    )
+    return rows[:limit]
 
 
 def load_hackernews_items(
@@ -5585,6 +5707,57 @@ def _github_label_names(value: object) -> list[str]:
         if label:
             labels.append(label)
     return labels
+
+
+def _pypi_package_name(source: str) -> str:
+    value = source.split(":", 1)[1].strip() if source.startswith("pypi:") else source.strip()
+    parsed = urlparse(value)
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        parts = [unquote(part) for part in parsed.path.strip("/").split("/") if part]
+        if len(parts) >= 2 and parts[0] == "project":
+            package = parts[1]
+        elif len(parts) >= 2 and parts[0] == "pypi":
+            package = parts[1]
+        else:
+            raise ValidationError("pypi source URL must be a PyPI project or JSON API URL")
+    else:
+        package = value
+    package = package.strip()
+    if not package:
+        raise ValidationError("pypi source must be a package name, pypi:<package>, or a PyPI project URL")
+    if "/" in package or any(ch.isspace() for ch in package):
+        raise ValidationError("pypi package names cannot contain slashes or whitespace")
+    return package
+
+
+def _pypi_project_endpoint(package: str, *, api_base_url: str) -> str:
+    base = api_base_url.rstrip("/")
+    if "{package}" in base:
+        return base.format(package=quote(package, safe=""))
+    if base.endswith("/json"):
+        return base
+    return f"{base}/{quote(package, safe='')}/json"
+
+
+def _pypi_upload_timestamp(item: dict) -> str | None:
+    value = _first_present(item.get("upload_time_iso_8601"), item.get("upload_time"))
+    text = _optional_str(value)
+    if not text:
+        return None
+    try:
+        return parse_timestamp(text, field_name="pypi upload time")
+    except ValidationError:
+        return None
+
+
+def _pypi_yanked_reason(files: list[dict]) -> str | None:
+    for item in files:
+        if not item.get("yanked"):
+            continue
+        reason = _collapse_optional(item.get("yanked_reason"))
+        if reason:
+            return reason
+    return None
 
 
 def _hackernews_endpoint(

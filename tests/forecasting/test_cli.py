@@ -38,6 +38,7 @@ from forecasting.source_adapters import (
     OpenAlexWork,
     OwidObservation,
     PubMedArticle,
+    PypiRelease,
     RedditPost,
     SecFiling,
     StooqPriceObservation,
@@ -2081,6 +2082,167 @@ def test_forecast_cli_githubissues_import_captures_issues_as_evidence(tmp_path, 
     assert evidence[0].metadata["issue_number"] == 42
     assert evidence[0].metadata["is_pull_request"] is True
     assert evidence[0].metadata["labels"] == ["forecasting", "release"]
+
+
+def test_pypi_adapter_loads_package_releases(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return {
+            "info": {
+                "name": "forecast-desk",
+                "summary": "Forecasting command line tools.",
+                "version": "1.2.3",
+                "package_url": "https://pypi.org/project/forecast-desk/",
+            },
+            "releases": {
+                "1.2.3": [
+                    {
+                        "filename": "forecast_desk-1.2.3-py3-none-any.whl",
+                        "packagetype": "bdist_wheel",
+                        "python_version": "py3",
+                        "upload_time_iso_8601": "2026-05-21T11:00:00.000000Z",
+                        "url": "https://files.pythonhosted.org/packages/forecast_desk.whl",
+                        "yanked": False,
+                    },
+                    {
+                        "filename": "forecast_desk-1.2.3.tar.gz",
+                        "packagetype": "sdist",
+                        "python_version": "source",
+                        "upload_time_iso_8601": "2026-05-21T11:05:00.000000Z",
+                        "yanked": False,
+                    },
+                ],
+                "1.1.0": [
+                    {
+                        "filename": "forecast_desk-1.1.0.tar.gz",
+                        "packagetype": "sdist",
+                        "python_version": "source",
+                        "upload_time_iso_8601": "2026-04-01T09:00:00Z",
+                        "yanked": True,
+                        "yanked_reason": "bad metadata",
+                    }
+                ],
+            },
+        }
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    releases = source_adapters.load_pypi_releases(
+        "https://pypi.org/project/forecast-desk/",
+        limit=2,
+        since="2026-05-01",
+        api_base_url="https://pypi.test/pypi",
+    )
+    parsed = urlparse(captured["endpoint"])
+
+    assert captured["label"] == "pypi package"
+    assert parsed.path == "/pypi/forecast-desk/json"
+    assert len(releases) == 1
+    assert releases[0].package == "forecast-desk"
+    assert releases[0].version == "1.2.3"
+    assert releases[0].summary == "Forecasting command line tools."
+    assert releases[0].uploaded_at == "2026-05-21T11:00:00Z"
+    assert releases[0].latest_upload_at == "2026-05-21T11:05:00Z"
+    assert releases[0].file_count == 2
+    assert releases[0].package_types == ["bdist_wheel", "sdist"]
+    assert releases[0].python_versions == ["py3", "source"]
+    assert releases[0].yanked is False
+
+
+def test_forecast_cli_pypi_import_captures_releases_as_evidence(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_pypi_releases(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            PypiRelease(
+                package="forecast-desk",
+                version="1.2.3",
+                summary="Forecasting command line tools.",
+                url="https://pypi.org/project/forecast-desk/1.2.3/",
+                project_url="https://pypi.org/project/forecast-desk/",
+                uploaded_at="2026-05-21T11:00:00Z",
+                latest_upload_at="2026-05-21T11:05:00Z",
+                file_count=2,
+                package_types=["bdist_wheel", "sdist"],
+                python_versions=["py3", "source"],
+                yanked=False,
+                yanked_reason=None,
+                source_name="PyPI",
+                entry_id="forecast-desk:1.2.3",
+                raw={"version": "1.2.3"},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_pypi_releases", fake_load_pypi_releases)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will PyPI release evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if PyPI release evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "pypi",
+            "forecast-desk",
+            "--question",
+            question_id,
+            "--limit",
+            "3",
+            "--since",
+            "2026-05-01",
+            "--api-base-url",
+            "https://pypi.test/pypi",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.82",
+            "--relevance",
+            "0.88",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 pypi evidence item(s)" in output
+    assert captured["source"] == "forecast-desk"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["since"] == "2026-05-01"
+    assert captured["kwargs"]["api_base_url"] == "https://pypi.test/pypi"
+    assert evidence[0].claim == "PyPI release: forecast-desk 1.2.3"
+    assert evidence[0].summary.startswith("PyPI release forecast-desk 1.2.3")
+    assert evidence[0].source_name == "PyPI"
+    assert evidence[0].source_type == "adapter:pypi"
+    assert evidence[0].published_at == "2026-05-21T11:00:00Z"
+    assert evidence[0].available_at == "2026-05-21T11:05:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.82
+    assert evidence[0].relevance_rating == 0.88
+    assert evidence[0].metadata["adapter"] == "pypi"
+    assert evidence[0].metadata["package"] == "forecast-desk"
+    assert evidence[0].metadata["version"] == "1.2.3"
+    assert evidence[0].metadata["file_count"] == 2
+    assert evidence[0].metadata["package_types"] == ["bdist_wheel", "sdist"]
 
 
 def test_hackernews_adapter_loads_search_results(monkeypatch):
@@ -5760,6 +5922,7 @@ def test_forecast_cli_lists_extension_points(capsys):
     assert "nws-alerts" in output
     assert "openfda-drug-applications" in output
     assert "pubmed-articles" in output
+    assert "pypi-releases" in output
     assert "owid-grapher" in output
     assert "fred-economic-data" in output
     assert "eia-energy-data" in output
@@ -5804,6 +5967,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "clinicaltrials:<query-or-NCT-id>" in output
     assert "openfda:<query-or-application-number>" in output
     assert "pubmed:<query-or-PMID>" in output
+    assert "pypi:<package>" in output
     assert "wikipediapageviews:<project>/<article>" in output
     assert "githubissues:<owner/repo>" in output
     assert "hackernews:<query>" in output
@@ -5822,7 +5986,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "owid", "eia", "treasury", "census", "stooq", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "wikipediapageviews", "githubissues", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "owid", "eia", "treasury", "census", "stooq", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "wikipediapageviews", "githubissues", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "census:<dataset-path?get=...&for=...>" for source in payload["sources"])
@@ -5830,6 +5994,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     assert any(source["watch_prefix"] == "clinicaltrials:<query-or-NCT-id>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "openfda:<query-or-application-number>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "pubmed:<query-or-PMID>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "pypi:<package>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "githubissues:<owner/repo>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "hackernews:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "reddit:<query>" for source in payload["sources"])
@@ -8063,6 +8228,73 @@ def test_forecast_cli_watch_add_supports_pubmed_sources(tmp_path, capsys, monkey
     assert "source_type: pubmed" in add_output
 
     titles[0] = "New PubMed article"
+    _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
+    check_output = capsys.readouterr().out
+
+    assert "created 1 alert(s)" in check_output
+    assert f"watched_source_changed:{watch_id}" in check_output
+
+
+def test_forecast_cli_watch_add_supports_pypi_sources(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    versions = ["1.2.3"]
+
+    def fake_load_pypi_releases(source: str, **kwargs):
+        return [
+            PypiRelease(
+                package=source,
+                version=versions[0],
+                summary="Forecasting command line tools.",
+                url=f"https://pypi.org/project/{source}/{versions[0]}/",
+                project_url=f"https://pypi.org/project/{source}/",
+                uploaded_at="2026-05-21T11:00:00Z",
+                latest_upload_at="2026-05-21T11:05:00Z",
+                file_count=2,
+                package_types=["bdist_wheel", "sdist"],
+                python_versions=["py3", "source"],
+                yanked=False,
+                yanked_reason=None,
+                source_name="PyPI",
+                entry_id=f"{source}:{versions[0]}",
+                raw={"version": versions[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_pypi_releases", fake_load_pypi_releases)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will watched CLI PyPI releases change?",
+            "--resolution-criteria",
+            "Resolved yes if watched PyPI release evidence changes.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            "pypi:forecast-desk",
+            "--question",
+            question_id,
+        ],
+    )
+    add_output = capsys.readouterr().out
+    watch_id = re.search(r"watched source (ws_[a-f0-9]+)", add_output).group(1)
+
+    assert "source_type: pypi" in add_output
+
+    versions[0] = "1.2.4"
     _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
     check_output = capsys.readouterr().out
 
