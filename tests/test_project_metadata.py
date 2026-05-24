@@ -1,6 +1,7 @@
 """Regression tests for packaging metadata in pyproject.toml."""
 
 from pathlib import Path
+import re
 import tomllib
 
 
@@ -687,8 +688,8 @@ def test_skill_author_metadata_is_forecast_native():
 
     assert "author: Superforecasting Agent" in source_text
     assert "| Author | Superforecasting Agent" in generated_text
-    assert "author: Hermes Agent" not in source_text
-    assert "| Author | Hermes Agent" not in generated_text
+    assert not re.search(r"^author: .*Hermes Agent", source_text, re.MULTILINE)
+    assert not re.search(r"^\| Author \| .*Hermes Agent", generated_text, re.MULTILINE)
 
 
 def test_github_auth_skill_is_forecast_native():
