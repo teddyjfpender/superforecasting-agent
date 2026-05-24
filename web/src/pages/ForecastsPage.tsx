@@ -179,6 +179,29 @@ const EVIDENCE_IMPORTS = [
   },
 ];
 
+const PILOT_HANDOFFS = [
+  {
+    command: "cp examples/forecasting/live-cohort.example.csv live-cohort.csv",
+    label: "Starter",
+  },
+  {
+    command: "forecast pilot-cohort live-cohort.csv --dry-run --json",
+    label: "Validate",
+  },
+  {
+    command: "forecast pilot-cohort live-cohort.csv --schedule-cadence 1d --schedule-next-run-at <time>",
+    label: "Seed",
+  },
+  {
+    command: "forecast pilot-report --json",
+    label: "Report",
+  },
+  {
+    command: "forecast pilot-aggregate .pilot/*-export.json --json",
+    label: "Aggregate",
+  },
+];
+
 type FocusedForecastRow = ForecastDashboardQuestion | ForecastDashboardReview;
 
 function formatProbability(
@@ -955,6 +978,36 @@ function EvidenceImportsPanel() {
   );
 }
 
+function PilotHandoffPanel() {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <SquareTerminal className="h-5 w-5 text-muted-foreground" />
+          <CardTitle className="text-base">Pilot Handoff</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-3 md:grid-cols-2">
+          {PILOT_HANDOFFS.map((item) => (
+            <div
+              key={item.label}
+              className="flex min-w-0 items-start gap-3 border-t border-border/50 pt-3 text-sm first:border-t-0 first:pt-0 md:border-t-0 md:pt-0"
+            >
+              <Badge tone="secondary" className="mt-0.5 shrink-0 text-[10px]">
+                {item.label}
+              </Badge>
+              <code className="min-w-0 break-all font-mono-ui text-xs text-muted-foreground">
+                {item.command}
+              </code>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ForecastsPage() {
   const [data, setData] = useState<ForecastDashboardResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1091,6 +1144,7 @@ export default function ForecastsPage() {
       <CalibrationPanel calibration={data?.calibration} />
       <LearningPanel learning={data?.learning} />
       <EvidenceStatusPanel evidenceStatus={data?.evidence_status} />
+      <PilotHandoffPanel />
       <BacktestTable rows={data?.recent_backtests ?? []} />
       <EvidenceImportsPanel />
     </div>

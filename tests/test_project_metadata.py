@@ -1722,6 +1722,19 @@ def test_web_focused_forecast_panel_shows_probability_timing_context():
     assert "{reasons.join(\", \")}" in page
 
 
+def test_web_forecast_page_surfaces_tester_pilot_handoff():
+    root = Path(__file__).resolve().parents[1]
+    page = (root / "web" / "src" / "pages" / "ForecastsPage.tsx").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Pilot Handoff" in page
+    assert "examples/forecasting/live-cohort.example.csv" in page
+    assert "forecast pilot-cohort live-cohort.csv --dry-run --json" in page
+    assert "forecast pilot-report --json" in page
+    assert "forecast pilot-aggregate .pilot/*-export.json --json" in page
+
+
 def test_dashboard_oauth_user_agent_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     web_server = (root / "hermes_cli" / "web_server.py").read_text(encoding="utf-8")
