@@ -1878,9 +1878,19 @@ def test_managed_install_env_aliases_are_forecast_native():
 def test_mcp_serve_identity_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     mcp_serve = (root / "mcp_serve.py").read_text(encoding="utf-8")
-    mcp_docs = (root / "website" / "docs" / "user-guide" / "features" / "mcp.md").read_text(
+    mcp_docs = (
+        root / "website" / "docs" / "user-guide" / "features" / "mcp.md"
+    ).read_text(encoding="utf-8")
+    mcp_config_docs = (
+        root / "website" / "docs" / "reference" / "mcp-config-reference.md"
+    ).read_text(encoding="utf-8")
+    faq_docs = (root / "website" / "docs" / "reference" / "faq.md").read_text(
         encoding="utf-8"
     )
+    cli_docs = (
+        root / "website" / "docs" / "reference" / "cli-commands.md"
+    ).read_text(encoding="utf-8")
+    mcp_link_docs = "\n".join([mcp_docs, mcp_config_docs, faq_docs, cli_docs])
 
     assert "Superforecasting Agent MCP Server" in mcp_serve
     assert "superforecasting-agent mcp serve" in mcp_serve
@@ -1894,6 +1904,8 @@ def test_mcp_serve_identity_is_forecast_native():
     assert "Hermes MCP Server" not in mcp_serve
     assert "Hermes Agent messaging bridge" not in mcp_serve
     assert "superforecasting-agent mcp serve" in mcp_docs
+    assert "Use MCP with Superforecasting Agent" in mcp_link_docs
+    assert "Use MCP with the inherited runtime" not in mcp_link_docs
 
 
 def test_nous_runtime_env_aliases_are_forecast_native():

@@ -451,7 +451,7 @@ Those wrappers appear only when your config allows them and the MCP session supp
 
 ## Related Docs
 
-- [Use MCP with the inherited runtime](/docs/guides/use-mcp-with-hermes)
+- [Use MCP with Superforecasting Agent](/docs/guides/use-mcp-with-hermes)
 - [CLI Commands](/docs/reference/cli-commands)
 - [Slash Commands](/docs/reference/slash-commands)
 - [FAQ](/docs/reference/faq)

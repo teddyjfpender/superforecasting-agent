@@ -112,7 +112,7 @@ This is more reliable than trying to force Superforecasting Agent core browser t
 
 See:
 
-- [Use MCP with the inherited runtime](../guides/use-mcp-with-hermes.md#wsl2-bridge-hermes-in-wsl-to-windows-chrome)
+- [Use MCP with Superforecasting Agent](../guides/use-mcp-with-hermes.md#wsl2-bridge-hermes-in-wsl-to-windows-chrome)
 - [Browser Automation](../user-guide/features/browser.md#wsl2--windows-chrome-prefer-mcp-over-browser-connect)
 
 ### Does it work on Android / Termux?
@@ -674,7 +674,7 @@ superforecasting-agent chat
 
 See also:
 - [MCP (Model Context Protocol)](/docs/user-guide/features/mcp)
-- [Use MCP with the inherited runtime](/docs/guides/use-mcp-with-hermes)
+- [Use MCP with Superforecasting Agent](/docs/guides/use-mcp-with-hermes)
 - [MCP Config Reference](/docs/reference/mcp-config-reference)
 
 #### MCP timeout errors
