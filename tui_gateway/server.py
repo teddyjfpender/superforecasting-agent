@@ -2695,21 +2695,23 @@ def _(rid, params: dict) -> dict:
         return err
     import time as _time
 
-    filename = os.path.abspath(
-        f"hermes_conversation_{_time.strftime('%Y%m%d_%H%M%S')}.json"
-    )
+    saved_dir = _hermes_home / "sessions" / "saved"
+    filename = saved_dir / f"forecast_transcript_{_time.strftime('%Y%m%d_%H%M%S')}.json"
     try:
+        saved_dir.mkdir(parents=True, exist_ok=True)
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(
                 {
                     "model": getattr(session["agent"], "model", ""),
+                    "session_id": params.get("session_id", ""),
+                    "session_key": session.get("session_key", ""),
                     "messages": session.get("history", []),
                 },
                 f,
                 indent=2,
                 ensure_ascii=False,
             )
-        return _ok(rid, {"file": filename})
+        return _ok(rid, {"file": str(filename)})
     except Exception as e:
         return _err(rid, 5011, str(e))
 

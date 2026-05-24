@@ -782,6 +782,36 @@ def test_session_close_commits_memory_and_fires_finalize_hook(monkeypatch):
         server._sessions.pop("sid", None)
 
 
+def test_session_save_writes_forecast_transcript_snapshot(monkeypatch, tmp_path):
+    home = tmp_path / "agent-home"
+    history = [{"role": "user", "content": "Will ACME default by year-end?"}]
+    agent = types.SimpleNamespace(model="forecast-model")
+    server._sessions["sid"] = _session(agent=agent, history=history)
+    monkeypatch.setattr(server, "_hermes_home", home)
+
+    try:
+        resp = server.handle_request(
+            {"id": "1", "method": "session.save", "params": {"session_id": "sid"}}
+        )
+
+        assert "result" in resp, resp
+        saved = Path(resp["result"]["file"])
+        assert saved.parent == home / "sessions" / "saved"
+        assert saved.name.startswith("forecast_transcript_")
+        assert saved.suffix == ".json"
+        assert "hermes_conversation" not in saved.name
+
+        payload = json.loads(saved.read_text(encoding="utf-8"))
+        assert payload == {
+            "model": "forecast-model",
+            "session_id": "sid",
+            "session_key": "session-key",
+            "messages": history,
+        }
+    finally:
+        server._sessions.pop("sid", None)
+
+
 def test_init_session_fires_reset_hook(monkeypatch):
     hooks = []
 
