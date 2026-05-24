@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Skills Hub — Source adapters and hub state management for the Hermes Skills Hub.
+Skills Hub — source adapters and hub state management for the skills catalog.
 
 This is a library module (not an agent tool). It provides:
   - GitHubAuth: Shared GitHub API authentication (PAT, gh CLI, GitHub App)
@@ -3142,7 +3142,7 @@ def _load_stale_index_cache() -> Optional[dict]:
 
 
 class HermesIndexSource(SkillSource):
-    """Skill source backed by the centralized Hermes Skills Index.
+    """Skill source backed by the centralized Superforecasting Agent index.
 
     The index is a JSON catalog published to the docs site and rebuilt
     daily by CI.  It contains metadata + resolved GitHub paths for every
