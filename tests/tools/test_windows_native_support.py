@@ -105,6 +105,36 @@ class TestConfigureWindowsStdio:
         assert len(cp_calls) == 1  # SetConsoleOutputCP path hit
         assert len(reconfigure_calls) == 3  # stdout, stderr, stdin
 
+    def test_path_repair_prefers_forecast_native_windows_install(self, monkeypatch, tmp_path):
+        from hermes_cli import stdio
+
+        forecast_git_bin = tmp_path / "superforecasting-agent" / "git" / "bin"
+        forecast_scripts = (
+            tmp_path
+            / "superforecasting-agent"
+            / "superforecasting-agent"
+            / "venv"
+            / "Scripts"
+        )
+        legacy_git_bin = tmp_path / "hermes" / "git" / "bin"
+
+        for path in (forecast_git_bin, forecast_scripts, legacy_git_bin):
+            path.mkdir(parents=True)
+
+        monkeypatch.setattr(stdio, "is_windows", lambda: True)
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+        monkeypatch.setenv("PATH", "/existing/bin")
+
+        stdio._augment_path_with_known_tools()
+
+        path_parts = os.environ["PATH"].split(os.pathsep)
+        assert path_parts[:4] == [
+            str(forecast_git_bin),
+            str(forecast_scripts),
+            str(legacy_git_bin),
+            "/existing/bin",
+        ]
+
     def test_respects_existing_editor_var(self, monkeypatch):
         """User's explicit EDITOR wins over our default."""
         from hermes_cli import stdio

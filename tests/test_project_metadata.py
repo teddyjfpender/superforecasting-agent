@@ -319,6 +319,18 @@ def test_windows_gateway_service_names_are_forecast_native():
     assert "`SUPERFORECASTING_AGENT_DISABLE_WINDOWS_UTF8` / `FORECAST_DISABLE_WINDOWS_UTF8`" in env_reference
 
 
+def test_windows_stdio_path_repair_prefers_forecast_native_dirs():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "hermes_cli" / "stdio.py").read_text(encoding="utf-8")
+
+    assert 'os.path.join(local_appdata, "superforecasting-agent", "git", "bin")' in text
+    assert '"superforecasting-agent",\n            "superforecasting-agent",' in text
+    assert "Superforecasting Agent banners" in text
+    assert "Legacy Hermes install layout retained" in text
+    assert "%LOCALAPPDATA%\\\\hermes\\\\git\\\\bin" not in text
+    assert "Hermes-managed" not in text
+
+
 def test_install_helpers_use_forecast_native_visible_copy():
     root = Path(__file__).resolve().parents[1]
     install_ps1 = (root / "scripts" / "install.ps1").read_text(encoding="utf-8")
