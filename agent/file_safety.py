@@ -6,6 +6,12 @@ import os
 from pathlib import Path
 from typing import Optional
 
+_WRITE_SAFE_ROOT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_WRITE_SAFE_ROOT",
+    "FORECAST_WRITE_SAFE_ROOT",
+    "HERMES_WRITE_SAFE_ROOT",
+)
+
 
 def _hermes_home_path() -> Path:
     """Resolve the active HERMES_HOME (profile-aware) without circular imports."""
@@ -62,8 +68,12 @@ def build_write_denied_prefixes(home: str) -> list[str]:
 
 
 def get_safe_write_root() -> Optional[str]:
-    """Return the resolved HERMES_WRITE_SAFE_ROOT path, or None if unset."""
-    root = os.getenv("HERMES_WRITE_SAFE_ROOT", "")
+    """Return the resolved write-safe root path, or None if unset."""
+    root = ""
+    for env_name in _WRITE_SAFE_ROOT_ENV_NAMES:
+        root = os.getenv(env_name, "")
+        if root:
+            break
     if not root:
         return None
     try:

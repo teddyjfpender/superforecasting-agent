@@ -75,7 +75,7 @@ def _strip_terminal_fence_leaks(text: str) -> str:
 
 
 def _get_safe_write_root() -> Optional[str]:
-    """Return the resolved HERMES_WRITE_SAFE_ROOT path, or None if unset.
+    """Return the resolved write-safe root path, or None if unset.
 
     When set, all write_file/patch operations are constrained to this
     directory tree.  Writes outside it are denied even if the target is

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import threading
 import time
@@ -206,6 +207,18 @@ class FileStateRegistryUnitTests(unittest.TestCase):
         finally:
             del os.environ["HERMES_DISABLE_FILE_STATE_GUARD"]
 
+    def test_kill_switch_forecast_env_alias(self):
+        p = self._mk()
+        os.environ["SUPERFORECASTING_AGENT_DISABLE_FILE_STATE_GUARD"] = "1"
+        try:
+            file_state.record_read("A", p)
+            file_state.note_write("B", p)
+            self.assertIsNone(file_state.check_stale("A", p))
+            self.assertEqual(file_state.known_reads("A"), [])
+            self.assertEqual(file_state.writes_since("A", 0.0, [p]), {})
+        finally:
+            del os.environ["SUPERFORECASTING_AGENT_DISABLE_FILE_STATE_GUARD"]
+
 
 class FileToolsIntegrationTests(unittest.TestCase):
     """Integration through the real file_tools handlers.
@@ -216,7 +229,8 @@ class FileToolsIntegrationTests(unittest.TestCase):
 
     def setUp(self) -> None:
         file_state.get_registry().clear()
-        self._tmpdir = tempfile.mkdtemp(prefix="hermes_file_state_int_")
+        tmp_base = "/tmp" if sys.platform == "darwin" and os.path.isdir("/tmp") else None
+        self._tmpdir = tempfile.mkdtemp(prefix="hermes_file_state_int_", dir=tmp_base)
 
     def tearDown(self) -> None:
         import shutil

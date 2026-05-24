@@ -24,7 +24,7 @@ Plus ``lock_path(path)`` — a context-manager returning a per-path lock to
 wrap the whole read→modify→write block. And ``writes_since(task_id,
 since_ts, paths)`` for the subagent-completion reminder in delegate_tool.
 
-All methods are no-ops when ``HERMES_DISABLE_FILE_STATE_GUARD=1`` is set.
+All methods are no-ops when a disable-file-state-guard env alias is set to ``1``.
 
 This module is intentionally separate from ``_read_tracker`` in
 ``file_tools.py`` — that tracker is per-task and handles consecutive-read
@@ -260,6 +260,11 @@ class FileStateRegistry:
 
 # ── Module-level singleton + helpers ─────────────────────────────────
 _registry = FileStateRegistry()
+_DISABLE_FILE_STATE_GUARD_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_DISABLE_FILE_STATE_GUARD",
+    "FORECAST_DISABLE_FILE_STATE_GUARD",
+    "HERMES_DISABLE_FILE_STATE_GUARD",
+)
 
 
 def get_registry() -> FileStateRegistry:
@@ -268,7 +273,10 @@ def get_registry() -> FileStateRegistry:
 
 def _disabled() -> bool:
     # Re-read each call so tests can toggle via monkeypatch.setenv.
-    return os.environ.get("HERMES_DISABLE_FILE_STATE_GUARD", "").strip() == "1"
+    for env_name in _DISABLE_FILE_STATE_GUARD_ENV_NAMES:
+        if os.environ.get(env_name, "").strip() == "1":
+            return True
+    return False
 
 
 def _fmt_ts(ts: float) -> str:

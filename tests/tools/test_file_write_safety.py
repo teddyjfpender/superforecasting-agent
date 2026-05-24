@@ -10,6 +10,18 @@ import pytest
 
 from tools.file_operations import _is_write_denied
 
+_WRITE_SAFE_ROOT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_WRITE_SAFE_ROOT",
+    "FORECAST_WRITE_SAFE_ROOT",
+    "HERMES_WRITE_SAFE_ROOT",
+)
+
+
+@pytest.fixture(autouse=True)
+def _clear_write_safe_root_env(monkeypatch):
+    for env_name in _WRITE_SAFE_ROOT_ENV_NAMES:
+        monkeypatch.delenv(env_name, raising=False)
+
 
 class TestStaticDenyList:
     """Basic sanity checks for the static write deny list."""
@@ -35,6 +47,20 @@ class TestSafeWriteRoot:
 
         monkeypatch.setenv("HERMES_WRITE_SAFE_ROOT", str(safe_root))
         assert _is_write_denied(str(child)) is False
+
+    def test_forecast_safe_root_alias_takes_precedence(self, tmp_path: Path, monkeypatch):
+        forecast_root = tmp_path / "forecast-workspace"
+        legacy_root = tmp_path / "legacy-workspace"
+        inside_forecast = forecast_root / "file.txt"
+        inside_legacy = legacy_root / "file.txt"
+        os.makedirs(forecast_root, exist_ok=True)
+        os.makedirs(legacy_root, exist_ok=True)
+
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_WRITE_SAFE_ROOT", str(forecast_root))
+        monkeypatch.setenv("HERMES_WRITE_SAFE_ROOT", str(legacy_root))
+
+        assert _is_write_denied(str(inside_forecast)) is False
+        assert _is_write_denied(str(inside_legacy)) is True
 
     def test_writes_to_safe_root_itself_are_allowed(self, tmp_path: Path, monkeypatch):
         safe_root = tmp_path / "workspace"
