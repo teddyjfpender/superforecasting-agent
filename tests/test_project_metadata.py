@@ -267,6 +267,13 @@ def test_install_helpers_use_forecast_native_visible_copy():
     assert "Hermes-managed" not in install_ps1
 
     assert "SUPERFORECASTING_AGENT_HOME" in node_bootstrap
+    assert "SUPERFORECASTING_AGENT_NODE_MIN_VERSION" in node_bootstrap
+    assert "FORECAST_NODE_MIN_VERSION" in node_bootstrap
+    assert "SUPERFORECASTING_AGENT_NODE_TARGET_MAJOR" in node_bootstrap
+    assert "FORECAST_NODE_TARGET_MAJOR" in node_bootstrap
+    assert "SUPERFORECASTING_AGENT_NODE_AVAILABLE" in node_bootstrap
+    assert "FORECAST_NODE_AVAILABLE" in node_bootstrap
+    assert "_nb_set_node_available" in node_bootstrap
     assert "$HOME/.superforecasting-agent" in node_bootstrap
     assert "forecast-runtime-managed" in node_bootstrap
     assert "Hermes-managed" not in node_bootstrap

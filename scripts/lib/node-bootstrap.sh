@@ -15,19 +15,34 @@
 # Usage:
 #   source scripts/lib/node-bootstrap.sh
 #   ensure_node   # returns 0 on success, non-zero on failure
-#   if [ "$HERMES_NODE_AVAILABLE" = true ]; then ...; fi
+#   if [ "$SUPERFORECASTING_AGENT_NODE_AVAILABLE" = true ]; then ...; fi
 #
 # Env inputs (set before sourcing to override defaults):
+#   SUPERFORECASTING_AGENT_NODE_MIN_VERSION, FORECAST_NODE_MIN_VERSION,
 #   HERMES_NODE_MIN_VERSION   (default: 20)   — accepted on PATH
+#   SUPERFORECASTING_AGENT_NODE_TARGET_MAJOR, FORECAST_NODE_TARGET_MAJOR,
 #   HERMES_NODE_TARGET_MAJOR  (default: 22)   — installed when we install
 #   SUPERFORECASTING_AGENT_HOME, FORECAST_HOME, HERMES_HOME
 #                             (default: $HOME/.superforecasting-agent)
 # ============================================================================
 
-HERMES_NODE_MIN_VERSION="${HERMES_NODE_MIN_VERSION:-20}"
-HERMES_NODE_TARGET_MAJOR="${HERMES_NODE_TARGET_MAJOR:-22}"
+_NB_NODE_MIN_VERSION="${SUPERFORECASTING_AGENT_NODE_MIN_VERSION:-${FORECAST_NODE_MIN_VERSION:-${HERMES_NODE_MIN_VERSION:-20}}}"
+_NB_NODE_TARGET_MAJOR="${SUPERFORECASTING_AGENT_NODE_TARGET_MAJOR:-${FORECAST_NODE_TARGET_MAJOR:-${HERMES_NODE_TARGET_MAJOR:-22}}}"
+SUPERFORECASTING_AGENT_NODE_MIN_VERSION="$_NB_NODE_MIN_VERSION"
+FORECAST_NODE_MIN_VERSION="$_NB_NODE_MIN_VERSION"
+HERMES_NODE_MIN_VERSION="$_NB_NODE_MIN_VERSION"
+SUPERFORECASTING_AGENT_NODE_TARGET_MAJOR="$_NB_NODE_TARGET_MAJOR"
+FORECAST_NODE_TARGET_MAJOR="$_NB_NODE_TARGET_MAJOR"
+HERMES_NODE_TARGET_MAJOR="$_NB_NODE_TARGET_MAJOR"
 HERMES_HOME="${SUPERFORECASTING_AGENT_HOME:-${FORECAST_HOME:-${HERMES_HOME:-$HOME/.superforecasting-agent}}}"
-HERMES_NODE_AVAILABLE=false
+
+_nb_set_node_available() {
+    SUPERFORECASTING_AGENT_NODE_AVAILABLE="$1"
+    FORECAST_NODE_AVAILABLE="$1"
+    HERMES_NODE_AVAILABLE="$1"
+}
+
+_nb_set_node_available false
 
 # ---------------------------------------------------------------------------
 # Logging — prefer the host script's log_* helpers when present
@@ -204,11 +219,11 @@ _nb_install_bundled_node() {
 # ---------------------------------------------------------------------------
 
 ensure_node() {
-    HERMES_NODE_AVAILABLE=false
+    _nb_set_node_available false
 
     if _nb_have_modern_node; then
         _nb_ok "Node $(node --version) found"
-        HERMES_NODE_AVAILABLE=true
+        _nb_set_node_available true
         return 0
     fi
 
@@ -216,24 +231,24 @@ ensure_node() {
         export PATH="$HERMES_HOME/node/bin:$PATH"
         if _nb_have_modern_node; then
             _nb_ok "Node $(node --version) found (forecast-runtime-managed)"
-            HERMES_NODE_AVAILABLE=true
+            _nb_set_node_available true
             return 0
         fi
     fi
 
     # Version managers first — respect the user's existing setup.
-    _nb_try_fnm   && { HERMES_NODE_AVAILABLE=true; return 0; }
-    _nb_try_proto && { HERMES_NODE_AVAILABLE=true; return 0; }
-    _nb_try_nvm   && { HERMES_NODE_AVAILABLE=true; return 0; }
+    _nb_try_fnm   && { _nb_set_node_available true; return 0; }
+    _nb_try_proto && { _nb_set_node_available true; return 0; }
+    _nb_try_nvm   && { _nb_set_node_available true; return 0; }
 
     # Platform package managers.
-    _nb_try_termux_pkg && { HERMES_NODE_AVAILABLE=true; return 0; }
-    _nb_try_brew       && { HERMES_NODE_AVAILABLE=true; return 0; }
+    _nb_try_termux_pkg && { _nb_set_node_available true; return 0; }
+    _nb_try_brew       && { _nb_set_node_available true; return 0; }
 
     # Last resort: pinned nodejs.org tarball.
-    _nb_install_bundled_node && { HERMES_NODE_AVAILABLE=true; return 0; }
+    _nb_install_bundled_node && { _nb_set_node_available true; return 0; }
 
     _nb_warn "Node.js install failed — TUI and browser tools will be unavailable."
-    _nb_warn "Install manually: https://nodejs.org/en/download/  (or: \`brew install node\`, \`fnm install $HERMES_NODE_TARGET_MAJOR\`, etc.)"
+    _nb_warn "Install manually: https://nodejs.org/en/download/  (or: \`brew install node\`, \`fnm install $SUPERFORECASTING_AGENT_NODE_TARGET_MAJOR\`, etc.)"
     return 1
 }
