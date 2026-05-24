@@ -6,7 +6,7 @@ description: "Install and deploy Superforecasting Agent with Nix — from quick 
 
 # Nix & NixOS Setup
 
-Superforecasting Agent inherits the Hermes Nix flake and exposes fork-native CLI wrappers from it. The package and overlay now expose `superforecasting-agent` as the primary attribute, while `hermes-agent`, `hermes`, `services.hermes-agent`, and `pkgs."hermes-agent"` remain compatibility names during the fork transition. New interactive commands should use `forecast` and `superforecasting-agent`.
+Superforecasting Agent inherits the Hermes Nix flake and exposes fork-native CLI wrappers from it. The package, overlay, and NixOS module now expose `superforecasting-agent` as the primary attribute, while `hermes-agent`, `hermes`, `services.hermes-agent`, and `pkgs."hermes-agent"` remain compatibility names during the fork transition. New interactive commands should use `forecast` and `superforecasting-agent`.
 
 The Nix integration has three levels:
 
@@ -100,7 +100,7 @@ This module requires NixOS. For non-NixOS systems (macOS, other Linux distros), 
 ```nix
 # configuration.nix
 { config, ... }: {
-  services.hermes-agent = {
+  services.superforecasting-agent = {
     enable = true;
     settings.model.default = "anthropic/claude-sonnet-4";
     environmentFiles = [ config.sops.secrets."forecast-env".path ];
@@ -119,7 +119,7 @@ echo "OPENROUTER_API_KEY=sk-or-your-key" | sudo install -m 0600 -o hermes /dev/s
 ```
 
 ```nix
-services.hermes-agent.environmentFiles = [ "/var/lib/hermes/env" ];
+services.superforecasting-agent.environmentFiles = [ "/var/lib/hermes/env" ];
 ```
 :::
 
@@ -140,7 +140,7 @@ When `container.enable = true` and `addToSystemPackages = true`, **every** fork-
 Set `container.hostUsers` to create a legacy `~/.hermes` symlink to the service state directory, so the host CLI and the container share sessions, config, and runtime state. Fork-native home aliases point at the same state directory.
 
 ```nix
-services.hermes-agent = {
+services.superforecasting-agent = {
   container.enable = true;
   container.hostUsers = [ "your-username" ];
   addToSystemPackages = true;
@@ -196,7 +196,7 @@ To enable container mode, add one line:
 
 ```nix
 {
-  services.hermes-agent = {
+  services.superforecasting-agent = {
     enable = true;
     container.enable = true;
     # ... rest of config is identical
@@ -218,14 +218,14 @@ The `settings` option accepts an arbitrary attrset that is rendered as `config.y
 
 ```nix
 # base.nix
-services.hermes-agent.settings = {
+services.superforecasting-agent.settings = {
   model.default = "anthropic/claude-sonnet-4";
   toolsets = [ "all" ];
   terminal = { backend = "local"; timeout = 180; };
 };
 
 # personality.nix
-services.hermes-agent.settings = {
+services.superforecasting-agent.settings = {
   display = { compact = false; personality = "neutral"; };
   memory = { memory_enabled = true; user_profile_enabled = true; };
 };
@@ -246,7 +246,7 @@ Run `nix build .#configKeys && cat result` to see every leaf config key extracte
 
 ```nix
 { config, ... }: {
-  services.hermes-agent = {
+  services.superforecasting-agent = {
     enable = true;
     container.enable = true;
 
@@ -308,7 +308,7 @@ Run `nix build .#configKeys && cat result` to see every leaf config key extracte
 If you'd rather manage `config.yaml` entirely outside Nix, use `configFile`:
 
 ```nix
-services.hermes-agent.configFile = /etc/superforecasting-agent/config.yaml;
+services.superforecasting-agent.configFile = /etc/superforecasting-agent/config.yaml;
 ```
 
 This bypasses `settings` entirely — no merge, no generation. The file is copied as-is to `$SUPERFORECASTING_AGENT_HOME/config.yaml` on each activation.
@@ -322,7 +322,7 @@ Quick reference for the most common things Nix users want to customize:
 | Change the LLM model | `settings.model.default` | `"anthropic/claude-sonnet-4"` |
 | Use a different provider endpoint | `settings.model.base_url` | `"https://openrouter.ai/api/v1"` |
 | Add API keys | `environmentFiles` | `[ config.sops.secrets."forecast-env".path ]` |
-| Give the forecast desk a standing role | `${services.hermes-agent.stateDir}/.hermes/SOUL.md` | manage the file directly |
+| Give the forecast desk a standing role | `${services.superforecasting-agent.stateDir}/.hermes/SOUL.md` | manage the file directly |
 | Add MCP tool servers | `mcpServers.<name>` | See [MCP Servers](#mcp-servers) |
 | Mount host directories into container | `container.extraVolumes` | `[ "/data:/data:rw" ]` |
 | Pass GPU access to container | `container.extraOptions` | `[ "--gpus" "all" ]` |
@@ -354,7 +354,7 @@ Both `environment` (non-secret vars) and `environmentFiles` (secret files) are m
     secrets."forecast-env" = { format = "yaml"; };
   };
 
-  services.hermes-agent.environmentFiles = [
+  services.superforecasting-agent.environmentFiles = [
     config.sops.secrets."forecast-env".path
   ];
 }
@@ -376,7 +376,7 @@ forecast-env: |
 {
   age.secrets.forecast-env.file = ./secrets/forecast-env.age;
 
-  services.hermes-agent.environmentFiles = [
+  services.superforecasting-agent.environmentFiles = [
     config.age.secrets.forecast-env.path
   ];
 }
@@ -388,7 +388,7 @@ For platforms requiring OAuth (e.g., Discord), use `authFile` to seed credential
 
 ```nix
 {
-  services.hermes-agent = {
+  services.superforecasting-agent = {
     authFile = config.sops.secrets."hermes/auth.json".path;
     # authFileForceOverwrite = true;  # overwrite on every activation
   };
@@ -406,11 +406,11 @@ The `documents` option installs files into the agent's working directory (the `w
 - **`USER.md`** — context about the user the agent is interacting with.
 - Any other files you place here are visible to the agent as workspace files.
 
-The forecast desk identity file is separate: Superforecasting Agent loads its primary `SOUL.md` from `$SUPERFORECASTING_AGENT_HOME/SOUL.md`, which in the current NixOS module is `${services.hermes-agent.stateDir}/.hermes/SOUL.md`. Putting `SOUL.md` in `documents` only creates a workspace file and will not replace the main persona file.
+The forecast desk identity file is separate: Superforecasting Agent loads its primary `SOUL.md` from `$SUPERFORECASTING_AGENT_HOME/SOUL.md`, which in the current NixOS module is `${services.superforecasting-agent.stateDir}/.hermes/SOUL.md`. Putting `SOUL.md` in `documents` only creates a workspace file and will not replace the main persona file.
 
 ```nix
 {
-  services.hermes-agent.documents = {
+  services.superforecasting-agent.documents = {
     "USER.md" = ./documents/USER.md;  # path reference, copied from Nix store
   };
 }
@@ -428,7 +428,7 @@ The `mcpServers` option declaratively configures [MCP (Model Context Protocol)](
 
 ```nix
 {
-  services.hermes-agent.mcpServers = {
+  services.superforecasting-agent.mcpServers = {
     filesystem = {
       command = "npx";
       args = [ "-y" "@modelcontextprotocol/server-filesystem" "/data/workspace" ];
@@ -450,7 +450,7 @@ Environment variables in `env` values are resolved from `$SUPERFORECASTING_AGENT
 
 ```nix
 {
-  services.hermes-agent.mcpServers.remote-api = {
+  services.superforecasting-agent.mcpServers.remote-api = {
     url = "https://mcp.example.com/v1/mcp";
     headers.Authorization = "Bearer \${MCP_REMOTE_API_KEY}";
     timeout = 180;
@@ -464,7 +464,7 @@ Set `auth = "oauth"` for servers using OAuth 2.1. Superforecasting Agent impleme
 
 ```nix
 {
-  services.hermes-agent.mcpServers.my-oauth-server = {
+  services.superforecasting-agent.mcpServers.my-oauth-server = {
     url = "https://mcp.example.com/mcp";
     auth = "oauth";
   };
@@ -509,7 +509,7 @@ Some MCP servers can request LLM completions from the agent:
 
 ```nix
 {
-  services.hermes-agent.mcpServers.analysis = {
+  services.superforecasting-agent.mcpServers.analysis = {
     command = "npx";
     args = [ "-y" "analysis-server" ];
     sampling = {
@@ -615,7 +615,7 @@ The NixOS module supports declarative plugin installation — no imperative `sup
 For plugins that are just a source tree with `plugin.yaml` + `__init__.py` (e.g., [hermes-lcm](https://github.com/stephenschoettler/hermes-lcm)):
 
 ```nix
-services.hermes-agent.extraPlugins = [
+services.superforecasting-agent.extraPlugins = [
   (pkgs.fetchFromGitHub {
     owner = "stephenschoettler";
     repo = "hermes-lcm";
@@ -632,7 +632,7 @@ Plugins are symlinked into `$SUPERFORECASTING_AGENT_HOME/plugins/` at activation
 For pip-packaged plugins that register via `[project.entry-points."hermes_agent.plugins"]` (e.g., [rtk-hermes](https://github.com/ogallotti/rtk-hermes)):
 
 ```nix
-services.hermes-agent.extraPythonPackages = [
+services.superforecasting-agent.extraPythonPackages = [
   (pkgs.python312Packages.buildPythonPackage {
     pname = "rtk-hermes";
     version = "1.0.0";
@@ -655,7 +655,7 @@ The package's `site-packages` is added to PYTHONPATH in the Nix wrapper. `import
 For optional extras already declared in this fork's `pyproject.toml` (e.g., memory providers like `hindsight` or `honcho`), use `extraDependencyGroups` to include them in the sealed venv at build time:
 
 ```nix
-services.hermes-agent = {
+services.superforecasting-agent = {
   extraDependencyGroups = [ "hindsight" ];
   settings.memory.provider = "hindsight";
 };
@@ -677,7 +677,7 @@ This is resolved by uv alongside core dependencies in a single pass — no PYTHO
 A directory plugin with third-party Python dependencies needs both options:
 
 ```nix
-services.hermes-agent = {
+services.superforecasting-agent = {
   extraPlugins = [ my-plugin-src ];          # plugin source
   extraPythonPackages = [ pkgs.python312Packages.redis ];  # its Python dep
   extraPackages = [ pkgs.redis ];            # system binary it needs
@@ -706,7 +706,7 @@ External flakes can override the package directly:
 Plugins still need to be enabled in `config.yaml`. Add them via the declarative settings:
 
 ```nix
-services.hermes-agent.settings.plugins.enabled = [
+services.superforecasting-agent.settings.plugins.enabled = [
   "hermes-lcm"
   "rtk-rewrite"
 ];

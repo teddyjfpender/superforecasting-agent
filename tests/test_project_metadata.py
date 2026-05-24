@@ -1839,6 +1839,7 @@ def test_nix_package_aliases_are_forecast_native():
     assert '"superforecasting-agent" = superforecastingAgent' in nix_overlay
     assert '"hermes-agent" = superforecastingAgent' in nix_overlay
     assert 'containerName = "superforecasting-agent"' in nix_module
+    assert 'lib.mkAliasOptionModule [ "services" "superforecasting-agent" ] [ "services" "hermes-agent" ]' in nix_module
     assert 'default = superforecasting-agent' in nix_module
     assert '"${effectivePackage}/bin/superforecasting-agent"' in nix_module
     assert "${containerDataDir}/current-package/bin/superforecasting-agent gateway run --replace" in nix_module
@@ -1848,6 +1849,7 @@ def test_nix_package_aliases_are_forecast_native():
     assert "share/hermes-agent/skills" in nix_checks
     assert "<this-fork-url>#superforecasting-agent" in nix_docs
     assert 'nixosModules."superforecasting-agent"' in nix_docs
+    assert "services.superforecasting-agent = {" in nix_docs
     assert 'pkgs."superforecasting-agent".override' in nix_docs
     assert "docker exec -it superforecasting-agent" in nix_docs
     assert "`pkgs.\"hermes-agent\"` remain compatibility names" in nix_docs

@@ -18,7 +18,7 @@
 # writable tool prefixes for npm i -g, pip install, uv tool install, etc.
 #
 # Usage:
-#   services.hermes-agent = {
+#   services.superforecasting-agent = {
 #     enable = true;
 #     settings.model = "anthropic/claude-sonnet-4";
 #     environmentFiles = [ config.sops.secrets."hermes/env".path ];
@@ -204,6 +204,10 @@ let
       else cfg.workingDirectory;
 
   in {
+    imports = [
+      (lib.mkAliasOptionModule [ "services" "superforecasting-agent" ] [ "services" "hermes-agent" ])
+    ];
+
     options.services.hermes-agent = with lib; {
       enable = mkEnableOption "Hermes Agent gateway service";
 
@@ -669,7 +673,7 @@ let
           names = map lib.getName cfg.extraPlugins;
         in [{
           assertion = (lib.length names) == (lib.length (lib.unique names));
-          message = "services.hermes-agent.extraPlugins: duplicate plugin names detected: ${toString names}. If using fetchFromGitHub, set name = \"plugin-name\" to disambiguate.";
+          message = "services.superforecasting-agent.extraPlugins: duplicate plugin names detected: ${toString names}. If using fetchFromGitHub, set name = \"plugin-name\" to disambiguate.";
         }];
       }
 
@@ -679,7 +683,7 @@ let
           names = map lib.getName cfg.extraPlugins;
         in [{
           assertion = (lib.length names) == (lib.length (lib.unique names));
-          message = "services.hermes-agent.extraPlugins: duplicate plugin names detected: ${toString names}. If using fetchFromGitHub, set name = \"plugin-name\" to disambiguate.";
+          message = "services.superforecasting-agent.extraPlugins: duplicate plugin names detected: ${toString names}. If using fetchFromGitHub, set name = \"plugin-name\" to disambiguate.";
         }];
       }
 
@@ -698,10 +702,10 @@ let
       (lib.mkIf (cfg.container.enable && !cfg.addToSystemPackages && cfg.container.hostUsers != []) {
         warnings = [
           ''
-            services.hermes-agent: container.enable is true and container.hostUsers
-            is set, but addToSystemPackages is false. Without a host-installed hermes
+            services.superforecasting-agent: container.enable is true and container.hostUsers
+            is set, but addToSystemPackages is false. Without a host-installed superforecasting-agent
             binary, container routing will not work for interactive users.
-            Set addToSystemPackages = true or ensure hermes is on PATH.
+            Set addToSystemPackages = true or ensure superforecasting-agent is on PATH.
           ''
         ];
       })
