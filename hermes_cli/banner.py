@@ -34,6 +34,11 @@ _REVISION_ENV_NAMES = (
     "FORECAST_REVISION",
     "HERMES_REVISION",
 )
+_AGENT_LOGO_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_LOGO",
+    "FORECAST_AGENT_LOGO",
+    "HERMES_AGENT_LOGO",
+)
 
 
 def _yolo_mode_enabled() -> bool:
@@ -97,6 +102,10 @@ FORECAST_DESK_MARK = """[#CD7F32]        as-of timeline          probability[/]
 [#CD7F32]   └────────────────────┴──────────────────┘[/]
 [#B8860B]      ledger · score · postmortem · learn[/]"""
 
+
+def _default_banner_logo() -> str:
+    """Return the default banner logo, honoring fork-native env overrides."""
+    return env_var_alias_value(_AGENT_LOGO_ENV_NAMES, HERMES_AGENT_LOGO) or HERMES_AGENT_LOGO
 
 
 # =========================================================================
@@ -703,7 +712,7 @@ def build_welcome_banner(console: Console, model: str, cwd: str,
     console.print()
     term_width = shutil.get_terminal_size().columns
     if term_width >= 95:
-        _logo = _bskin.banner_logo if _bskin and hasattr(_bskin, 'banner_logo') and _bskin.banner_logo else HERMES_AGENT_LOGO
+        _logo = _bskin.banner_logo if _bskin and hasattr(_bskin, 'banner_logo') and _bskin.banner_logo else _default_banner_logo()
         console.print(_logo)
         console.print()
     console.print(outer_panel)

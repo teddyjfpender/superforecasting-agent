@@ -1662,3 +1662,18 @@ def test_revision_env_aliases_are_forecast_native():
     assert "HERMES_REVISION" in nix_wrapper
     assert "SUPERFORECASTING_AGENT_REVISION" in nix_checks
     assert "FORECAST_REVISION" in nix_checks
+
+
+def test_banner_logo_env_aliases_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    banner = (root / "hermes_cli" / "banner.py").read_text(encoding="utf-8")
+    env_reference = (root / "website" / "docs" / "reference" / "environment-variables.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "SUPERFORECASTING_AGENT_LOGO" in banner
+    assert "FORECAST_AGENT_LOGO" in banner
+    assert "HERMES_AGENT_LOGO" in banner
+    assert "def _default_banner_logo" in banner
+    assert "SUPERFORECASTING_AGENT_LOGO" in env_reference
+    assert "FORECAST_AGENT_LOGO" in env_reference

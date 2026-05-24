@@ -597,7 +597,7 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 | `SUPERFORECASTING_AGENT_OAUTH_TRACE` / `FORECAST_OAUTH_TRACE` / `HERMES_OAUTH_TRACE` | Set to `1` to log OAuth token exchange and refresh attempts. Includes redacted timing info; the `HERMES_*` name remains a legacy alias. |
 | `HERMES_OAUTH_FILE` | Override the path used for OAuth credential storage (default: `<agent-home>/auth.json`). |
 | `SUPERFORECASTING_AGENT_HELP_GUIDANCE` / `FORECAST_HELP_GUIDANCE` / `HERMES_AGENT_HELP_GUIDANCE` | Append additional guidance text to the system prompt for custom deployments; the `HERMES_*` name remains a legacy alias. |
-| `HERMES_AGENT_LOGO` | Override the ASCII banner logo at CLI startup. |
+| `SUPERFORECASTING_AGENT_LOGO` / `FORECAST_AGENT_LOGO` / `HERMES_AGENT_LOGO` | Override the ASCII banner logo at CLI startup; the `HERMES_*` name remains a legacy alias. |
 | `DELEGATION_MAX_CONCURRENT_CHILDREN` | Max parallel subagents per `delegate_task` batch (default: `3`, floor of 1, no ceiling). Also configurable via `delegation.max_concurrent_children` in `config.yaml` — the config value takes priority. |
 
 ## Interface

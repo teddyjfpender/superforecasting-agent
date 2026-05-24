@@ -96,6 +96,35 @@ def test_build_welcome_banner_uses_forecast_branding():
     assert "HERMES-AGENT" not in output
 
 
+def test_build_welcome_banner_prefers_forecast_native_logo_env(monkeypatch):
+    """Wide banner logo overrides should use fork-native env aliases first."""
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_LOGO", "[bold]CUSTOM FORECAST LOGO[/]")
+    monkeypatch.setenv("FORECAST_AGENT_LOGO", "[bold]SHORT FORECAST LOGO[/]")
+    monkeypatch.setenv("HERMES_AGENT_LOGO", "[bold]LEGACY LOGO[/]")
+
+    with (
+        patch.object(model_tools, "check_tool_availability", return_value=(["web"], [])),
+        patch.object(banner, "get_available_skills", return_value={}),
+        patch.object(banner, "get_update_result", return_value=None),
+        patch.object(tools.mcp_tool, "get_mcp_status", return_value=[]),
+        patch.object(banner, "get_latest_release_tag", return_value=None),
+        patch.object(banner.shutil, "get_terminal_size", return_value=os.terminal_size((160, 40))),
+    ):
+        console = Console(record=True, force_terminal=False, color_system=None, width=160)
+        banner.build_welcome_banner(
+            console=console,
+            model="anthropic/test-model",
+            cwd="/tmp/project",
+            tools=[{"function": {"name": "web_search"}}],
+            get_toolset_for_tool=lambda name: "web",
+        )
+
+    output = console.export_text()
+    assert "CUSTOM FORECAST LOGO" in output
+    assert "SHORT FORECAST LOGO" not in output
+    assert "LEGACY LOGO" not in output
+
+
 def test_build_welcome_banner_title_is_hyperlinked_to_release():
     """Panel title (version label) is wrapped in an OSC-8 hyperlink to the GitHub release."""
     import io
