@@ -342,7 +342,10 @@ def run_doctor(args):
 
     # Doctor runs from the interactive CLI, so CLI-gated tool availability
     # checks (like cronjob management) should see the same context as `hermes`.
-    os.environ.setdefault("HERMES_INTERACTIVE", "1")
+    from utils import INTERACTIVE_ENV_NAMES
+
+    for name in INTERACTIVE_ENV_NAMES:
+        os.environ.setdefault(name, "1")
 
     # Handle `hermes doctor --ack <id>` as a fast path. Persist the ack and
     # return without running the rest of the diagnostics — the user has

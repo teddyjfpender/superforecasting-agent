@@ -40,6 +40,8 @@ def _clean_state():
     approval_module._permanent_approved.clear()
     saved = {}
     for k in (
+        "SUPERFORECASTING_AGENT_INTERACTIVE",
+        "FORECAST_INTERACTIVE",
         "HERMES_INTERACTIVE",
         "HERMES_GATEWAY_SESSION",
         "SUPERFORECASTING_AGENT_EXEC_ASK",
@@ -56,6 +58,8 @@ def _clean_state():
     for k, v in saved.items():
         os.environ[k] = v
     for k in (
+        "SUPERFORECASTING_AGENT_INTERACTIVE",
+        "FORECAST_INTERACTIVE",
         "HERMES_INTERACTIVE",
         "HERMES_GATEWAY_SESSION",
         "SUPERFORECASTING_AGENT_EXEC_ASK",
@@ -112,6 +116,14 @@ class TestTirithAllowSafeCommand:
     @patch(_TIRITH_PATCH, return_value=_tirith_result("allow"))
     def test_forecast_exec_ask_env_runs_external_scan(self, mock_tirith):
         os.environ["SUPERFORECASTING_AGENT_EXEC_ASK"] = "1"
+        result = check_all_command_guards("echo hello", "local")
+        assert result["approved"] is True
+        mock_tirith.assert_called_once()
+
+    @patch(_TIRITH_PATCH, return_value=_tirith_result("allow"))
+    def test_forecast_interactive_alias_runs_external_scan(self, mock_tirith):
+        os.environ["SUPERFORECASTING_AGENT_INTERACTIVE"] = "1"
+        os.environ["HERMES_INTERACTIVE"] = "0"
         result = check_all_command_guards("echo hello", "local")
         assert result["approved"] is True
         mock_tirith.assert_called_once()

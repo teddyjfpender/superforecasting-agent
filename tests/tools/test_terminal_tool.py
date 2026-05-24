@@ -79,6 +79,23 @@ def test_explicit_empty_sudo_password_tries_empty_without_prompt(monkeypatch):
     assert sudo_stdin == "\n"
 
 
+def test_forecast_interactive_alias_enables_sudo_prompt(monkeypatch):
+    monkeypatch.delenv("SUDO_PASSWORD", raising=False)
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_INTERACTIVE", "1")
+    monkeypatch.setenv("HERMES_INTERACTIVE", "0")
+    monkeypatch.setattr(terminal_tool, "_sudo_nopasswd_works", lambda: False, raising=False)
+    monkeypatch.setattr(
+        terminal_tool,
+        "_prompt_for_sudo_password",
+        lambda timeout_seconds=45: "native-pass",
+    )
+
+    transformed, sudo_stdin = terminal_tool._transform_sudo_command("sudo true")
+
+    assert transformed == "sudo -S -p '' true"
+    assert sudo_stdin == "native-pass\n"
+
+
 def test_cached_sudo_password_is_used_when_env_is_unset(monkeypatch):
     monkeypatch.delenv("SUDO_PASSWORD", raising=False)
     monkeypatch.delenv("HERMES_INTERACTIVE", raising=False)

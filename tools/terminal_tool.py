@@ -47,7 +47,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
-from utils import env_var_enabled
+from utils import INTERACTIVE_ENV_NAMES, env_var_alias_enabled, env_var_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -870,7 +870,7 @@ def _transform_sudo_command(command: str | None) -> tuple[str | None, str | None
     if not has_configured_password and not sudo_password and _sudo_nopasswd_works():
         return command, None
 
-    if not has_configured_password and not sudo_password and env_var_enabled("HERMES_INTERACTIVE"):
+    if not has_configured_password and not sudo_password and env_var_alias_enabled(INTERACTIVE_ENV_NAMES):
         sudo_password = _prompt_for_sudo_password(timeout_seconds=45)
         if sudo_password:
             _set_cached_sudo_password(sudo_password)

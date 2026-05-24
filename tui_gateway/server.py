@@ -20,7 +20,7 @@ from typing import Any, Optional
 
 from hermes_constants import get_hermes_home
 from hermes_cli.env_loader import load_hermes_dotenv
-from utils import is_truthy_value
+from utils import INTERACTIVE_ENV_NAMES, is_truthy_value
 from tui_gateway.transport import (
     StdioTransport,
     Transport,
@@ -784,7 +784,8 @@ def _enable_gateway_prompts() -> None:
     """Route approvals through gateway callbacks instead of CLI input()."""
     os.environ["HERMES_GATEWAY_SESSION"] = "1"
     _set_runtime_env("EXEC_ASK", "1")
-    os.environ["HERMES_INTERACTIVE"] = "1"
+    for name in INTERACTIVE_ENV_NAMES:
+        os.environ[name] = "1"
 
 
 # ── Blocking prompt factory ──────────────────────────────────────────

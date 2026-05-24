@@ -199,6 +199,7 @@ from hermes_cli.browser_connect import (
 from hermes_cli.env_loader import load_hermes_dotenv
 from utils import (
     EPHEMERAL_SYSTEM_PROMPT_ENV_NAMES,
+    INTERACTIVE_ENV_NAMES,
     PREFILL_MESSAGES_FILE_ENV_NAMES,
     base_url_host_matches,
     env_var_alias_value,
@@ -14420,7 +14421,8 @@ def main(
 
     # Signal to terminal_tool that we're in interactive mode
     # This enables interactive sudo password prompts with timeout
-    os.environ["HERMES_INTERACTIVE"] = "1"
+    for name in INTERACTIVE_ENV_NAMES:
+        os.environ[name] = "1"
     
     # Handle gateway mode (messaging + cron)
     if gateway:

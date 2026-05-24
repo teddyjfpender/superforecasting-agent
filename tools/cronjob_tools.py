@@ -731,10 +731,10 @@ def check_cronjob_requirements() -> bool:
     leave the tool disabled. Uses the shared ``env_var_enabled`` helper so
     every consumer of these flags agrees on the truthy set.
     """
-    from utils import env_var_alias_enabled, env_var_enabled
+    from utils import INTERACTIVE_ENV_NAMES, env_var_alias_enabled, env_var_enabled
 
     return (
-        env_var_enabled("HERMES_INTERACTIVE")
+        env_var_alias_enabled(INTERACTIVE_ENV_NAMES)
         or env_var_enabled("HERMES_GATEWAY_SESSION")
         or env_var_alias_enabled((
             "SUPERFORECASTING_AGENT_EXEC_ASK",

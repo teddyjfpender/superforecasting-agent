@@ -19,7 +19,12 @@ import unicodedata
 from typing import Optional
 from hermes_cli.config import cfg_get
 
-from utils import env_var_alias_enabled, env_var_enabled, is_truthy_value
+from utils import (
+    INTERACTIVE_ENV_NAMES,
+    env_var_alias_enabled,
+    env_var_enabled,
+    is_truthy_value,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -979,7 +984,7 @@ def check_dangerous_command(command: str, env_type: str,
     if is_approved(session_key, pattern_key):
         return {"approved": True, "message": None}
 
-    is_cli = env_var_enabled("HERMES_INTERACTIVE")
+    is_cli = env_var_alias_enabled(INTERACTIVE_ENV_NAMES)
     is_gateway = _is_gateway_approval_context()
 
     if not is_cli and not is_gateway:
@@ -1107,7 +1112,7 @@ def check_all_command_guards(command: str, env_type: str,
     if is_process_yolo_enabled() or is_current_session_yolo_enabled() or approval_mode == "off":
         return {"approved": True, "message": None}
 
-    is_cli = env_var_enabled("HERMES_INTERACTIVE")
+    is_cli = env_var_alias_enabled(INTERACTIVE_ENV_NAMES)
     is_gateway = _is_gateway_approval_context()
     is_ask = is_exec_ask_enabled()
 

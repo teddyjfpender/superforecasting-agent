@@ -13,6 +13,7 @@ import sys
 import cli as cli_mod
 from cli import HermesCLI
 from rich.console import Console
+from utils import INTERACTIVE_ENV_NAMES
 
 
 def _run(cli: HermesCLI, command: str) -> str:
@@ -50,7 +51,8 @@ def main():
     args = p.parse_args()
 
     os.environ["HERMES_SESSION_KEY"] = args.session_key
-    os.environ["HERMES_INTERACTIVE"] = "1"
+    for name in INTERACTIVE_ENV_NAMES:
+        os.environ[name] = "1"
 
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         cli = HermesCLI(model=args.model or None, compact=True, resume=args.session_key, verbose=False)

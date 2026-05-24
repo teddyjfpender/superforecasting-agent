@@ -118,6 +118,14 @@ class TestCronjobRequirements:
 
         assert check_cronjob_requirements() is True
 
+    def test_accepts_forecast_interactive_alias(self, monkeypatch):
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_INTERACTIVE", "1")
+        monkeypatch.setenv("HERMES_INTERACTIVE", "0")
+        monkeypatch.delenv("HERMES_GATEWAY_SESSION", raising=False)
+        monkeypatch.delenv("HERMES_EXEC_ASK", raising=False)
+
+        assert check_cronjob_requirements() is True
+
     def test_accepts_gateway_session(self, monkeypatch):
         monkeypatch.delenv("HERMES_INTERACTIVE", raising=False)
         monkeypatch.setenv("HERMES_GATEWAY_SESSION", "1")
@@ -167,6 +175,8 @@ class TestCronjobRequirements:
         "var_name",
         [
             "HERMES_INTERACTIVE",
+            "SUPERFORECASTING_AGENT_INTERACTIVE",
+            "FORECAST_INTERACTIVE",
             "HERMES_GATEWAY_SESSION",
             "SUPERFORECASTING_AGENT_EXEC_ASK",
             "FORECAST_EXEC_ASK",
@@ -180,6 +190,8 @@ class TestCronjobRequirements:
         """Session env vars and exec-ask aliases share the same truthy semantics."""
         for v in (
             "HERMES_INTERACTIVE",
+            "SUPERFORECASTING_AGENT_INTERACTIVE",
+            "FORECAST_INTERACTIVE",
             "HERMES_GATEWAY_SESSION",
             "SUPERFORECASTING_AGENT_EXEC_ASK",
             "FORECAST_EXEC_ASK",
