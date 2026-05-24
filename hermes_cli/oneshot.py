@@ -6,7 +6,7 @@ no stderr chatter.  Just the agent's final text to stdout.
 Toolsets = explicit --toolsets when provided, otherwise whatever the user has
 configured for "cli" in `superforecasting-agent tools`.
 Rules / memory / AGENTS.md / preloaded skills = same as a normal chat turn.
-Approvals = auto-bypassed (HERMES_YOLO_MODE=1 is set for the call).
+Approvals = auto-bypassed (fork-native YOLO env aliases are set for the call).
 Working directory = the user's CWD (AGENTS.md etc. resolve from there as usual).
 
 Model / provider selection mirrors `superforecasting-agent chat`:
@@ -168,6 +168,8 @@ def run_oneshot(
 
     # Auto-approve any shell / tool approvals.  Non-interactive by
     # definition — a prompt would hang forever.
+    os.environ["SUPERFORECASTING_AGENT_YOLO_MODE"] = "1"
+    os.environ["FORECAST_YOLO_MODE"] = "1"
     os.environ["HERMES_YOLO_MODE"] = "1"
     os.environ["HERMES_ACCEPT_HOOKS"] = "1"
 
@@ -342,7 +344,7 @@ def _run_agent(
         #                HERMES_INTERACTIVE which we never set
         #   - shell-hook approval → auto-approved via HERMES_ACCEPT_HOOKS=1
         #                (set above); also falls back to deny on non-tty
-        #   - dangerous-command approval → bypassed via HERMES_YOLO_MODE=1
+        #   - dangerous-command approval → bypassed via fork-native YOLO env aliases
         #   - skill secret capture → returns gracefully when no callback set
         clarify_callback=_oneshot_clarify_callback,
     )

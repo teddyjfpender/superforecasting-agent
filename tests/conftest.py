@@ -160,6 +160,8 @@ def _looks_like_credential(name: str) -> bool:
 # HERMES_* vars that change test behavior by being set. Unset all of these
 # unconditionally — individual tests that need them set do so explicitly.
 _HERMES_BEHAVIORAL_VARS = frozenset({
+    "SUPERFORECASTING_AGENT_YOLO_MODE",
+    "FORECAST_YOLO_MODE",
     "HERMES_YOLO_MODE",
     "HERMES_INTERACTIVE",
     "SUPERFORECASTING_AGENT_QUIET",

@@ -1417,6 +1417,8 @@ def test_config_busy_get_and_set(monkeypatch):
 
 def test_config_set_yolo_process_scope_treats_false_like_env_as_disabled(monkeypatch):
     monkeypatch.setenv("HERMES_YOLO_MODE", "false")
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_YOLO_MODE", raising=False)
+    monkeypatch.delenv("FORECAST_YOLO_MODE", raising=False)
 
     resp = server.handle_request(
         {
@@ -1427,6 +1429,8 @@ def test_config_set_yolo_process_scope_treats_false_like_env_as_disabled(monkeyp
     )
 
     assert resp["result"]["value"] == "1"
+    assert os.environ.get("SUPERFORECASTING_AGENT_YOLO_MODE") == "1"
+    assert os.environ.get("FORECAST_YOLO_MODE") == "1"
     assert os.environ.get("HERMES_YOLO_MODE") == "1"
 
 

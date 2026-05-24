@@ -23,6 +23,25 @@ from utils import env_var_enabled, is_truthy_value
 
 logger = logging.getLogger(__name__)
 
+YOLO_MODE_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_YOLO_MODE",
+    "FORECAST_YOLO_MODE",
+    "HERMES_YOLO_MODE",
+)
+
+
+def is_process_yolo_enabled() -> bool:
+    return any(is_truthy_value(os.getenv(name)) for name in YOLO_MODE_ENV_NAMES)
+
+
+def set_process_yolo_enabled(enabled: bool) -> None:
+    if enabled:
+        for name in YOLO_MODE_ENV_NAMES:
+            os.environ[name] = "1"
+        return
+    for name in YOLO_MODE_ENV_NAMES:
+        os.environ.pop(name, None)
+
 # Per-thread/per-task gateway session identity.
 # Gateway runs agent turns concurrently in executor threads, so reading a
 # process-global env var for session identity is racy. Keep env fallback for
@@ -940,7 +959,7 @@ def check_dangerous_command(command: str, env_type: str,
 
     # --yolo: bypass all approval prompts. Gateway /yolo is session-scoped;
     # CLI --yolo remains process-scoped via the env var for local use.
-    if is_truthy_value(os.getenv("HERMES_YOLO_MODE")) or is_current_session_yolo_enabled():
+    if is_process_yolo_enabled() or is_current_session_yolo_enabled():
         return {"approved": True, "message": None}
 
     is_dangerous, pattern_key, description = detect_dangerous_command(command)
@@ -1076,7 +1095,7 @@ def check_all_command_guards(command: str, env_type: str,
     # --yolo or approvals.mode=off: bypass all approval prompts.
     # Gateway /yolo is session-scoped; CLI --yolo remains process-scoped.
     approval_mode = _get_approval_mode()
-    if is_truthy_value(os.getenv("HERMES_YOLO_MODE")) or is_current_session_yolo_enabled() or approval_mode == "off":
+    if is_process_yolo_enabled() or is_current_session_yolo_enabled() or approval_mode == "off":
         return {"approved": True, "message": None}
 
     is_cli = env_var_enabled("HERMES_INTERACTIVE")

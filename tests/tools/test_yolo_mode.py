@@ -12,8 +12,10 @@ from tools.approval import (
     detect_dangerous_command,
     disable_session_yolo,
     enable_session_yolo,
+    is_process_yolo_enabled,
     is_session_yolo_enabled,
     reset_current_session_key,
+    set_process_yolo_enabled,
     set_current_session_key,
 )
 
@@ -66,6 +68,31 @@ class TestYoloMode:
         result = check_dangerous_command("rm -rf /tmp/stuff", "local")
         assert result["approved"]
         assert result["message"] is None
+
+    def test_dangerous_command_approved_with_forecast_yolo_alias(self, monkeypatch):
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_YOLO_MODE", "1")
+        monkeypatch.setenv("FORECAST_YOLO_MODE", "0")
+        monkeypatch.setenv("HERMES_YOLO_MODE", "0")
+        monkeypatch.setenv("HERMES_INTERACTIVE", "1")
+        monkeypatch.setenv("HERMES_SESSION_KEY", "test-session")
+
+        result = check_dangerous_command("rm -rf /tmp/stuff", "local")
+
+        assert result["approved"]
+        assert result["message"] is None
+
+    def test_process_yolo_setter_updates_all_aliases(self, monkeypatch):
+        set_process_yolo_enabled(True)
+
+        assert is_process_yolo_enabled() is True
+        for name in approval_module.YOLO_MODE_ENV_NAMES:
+            assert os.environ[name] == "1"
+
+        set_process_yolo_enabled(False)
+
+        assert is_process_yolo_enabled() is False
+        for name in approval_module.YOLO_MODE_ENV_NAMES:
+            assert name not in os.environ
 
     def test_yolo_mode_works_for_all_patterns(self, monkeypatch):
         """Yolo mode bypasses dangerous patterns (except the hardline floor)."""

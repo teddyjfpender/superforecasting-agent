@@ -4020,12 +4020,14 @@ def _(rid, params: dict) -> dict:
                     enable_session_yolo(session["session_key"])
                     nv = "1"
             else:
-                current = is_truthy_value(os.environ.get("HERMES_YOLO_MODE"))
+                from tools.approval import is_process_yolo_enabled, set_process_yolo_enabled
+
+                current = is_process_yolo_enabled()
                 if current:
-                    os.environ.pop("HERMES_YOLO_MODE", None)
+                    set_process_yolo_enabled(False)
                     nv = "0"
                 else:
-                    os.environ["HERMES_YOLO_MODE"] = "1"
+                    set_process_yolo_enabled(True)
                     nv = "1"
             return _ok(rid, {"key": key, "value": nv})
         except Exception as e:

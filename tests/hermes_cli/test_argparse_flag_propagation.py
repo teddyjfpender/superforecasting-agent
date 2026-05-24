@@ -58,39 +58,51 @@ def _build_parser():
 
 
 class TestYoloEnvVar:
-    """Verify --yolo sets HERMES_YOLO_MODE regardless of flag position.
+    """Verify --yolo sets all process-scope YOLO aliases regardless of flag position.
 
     This tests the actual cmd_chat logic pattern (getattr → os.environ).
     """
 
+    _aliases = (
+        "SUPERFORECASTING_AGENT_YOLO_MODE",
+        "FORECAST_YOLO_MODE",
+        "HERMES_YOLO_MODE",
+    )
+
     @pytest.fixture(autouse=True)
     def _clean_env(self):
-        os.environ.pop("HERMES_YOLO_MODE", None)
+        for name in self._aliases:
+            os.environ.pop(name, None)
         yield
-        os.environ.pop("HERMES_YOLO_MODE", None)
+        for name in self._aliases:
+            os.environ.pop(name, None)
 
     def _simulate_cmd_chat_yolo_check(self, args):
         """Replicate the exact check from cmd_chat in main.py."""
         if getattr(args, "yolo", False):
-            os.environ["HERMES_YOLO_MODE"] = "1"
+            for name in self._aliases:
+                os.environ[name] = "1"
 
     def test_yolo_before_chat_sets_env(self):
         parser = _build_parser()
         args = parser.parse_args(["--yolo", "chat"])
         self._simulate_cmd_chat_yolo_check(args)
-        assert os.environ.get("HERMES_YOLO_MODE") == "1"
+        for name in self._aliases:
+            assert os.environ.get(name) == "1"
 
     def test_yolo_after_chat_sets_env(self):
         parser = _build_parser()
         args = parser.parse_args(["chat", "--yolo"])
         self._simulate_cmd_chat_yolo_check(args)
-        assert os.environ.get("HERMES_YOLO_MODE") == "1"
+        for name in self._aliases:
+            assert os.environ.get(name) == "1"
 
     def test_no_yolo_no_env(self):
         parser = _build_parser()
         args = parser.parse_args(["chat"])
         self._simulate_cmd_chat_yolo_check(args)
-        assert os.environ.get("HERMES_YOLO_MODE") is None
+        for name in self._aliases:
+            assert os.environ.get(name) is None
 
 
 class TestAcceptHooksOnAgentSubparsers:

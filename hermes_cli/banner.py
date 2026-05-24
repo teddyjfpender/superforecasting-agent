@@ -23,6 +23,17 @@ from prompt_toolkit.formatted_text import ANSI as _PT_ANSI
 
 logger = logging.getLogger(__name__)
 
+_YOLO_MODE_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_YOLO_MODE",
+    "FORECAST_YOLO_MODE",
+    "HERMES_YOLO_MODE",
+)
+
+
+def _yolo_mode_enabled() -> bool:
+    truthy = {"1", "true", "yes", "on"}
+    return any((os.getenv(name) or "").strip().lower() in truthy for name in _YOLO_MODE_ENV_NAMES)
+
 
 # =========================================================================
 # ANSI building blocks for conversation display
@@ -504,7 +515,7 @@ def build_welcome_banner(console: Console, model: str, cwd: str,
     ctx_str = f" [dim {dim}]·[/] [dim {dim}]{_format_context_length(context_length)} context[/]" if context_length else ""
     left_lines.append(f"[{accent}]{model_short}[/]{ctx_str} [dim {dim}]·[/] [dim {dim}]Nous Research[/]")
 
-    if os.getenv("HERMES_YOLO_MODE"):
+    if _yolo_mode_enabled():
         left_lines.append(f"[bold red]⚠ YOLO mode[/] [dim {dim}]— all approval prompts bypassed[/]")
     left_lines.append(f"[dim {dim}]{cwd}[/]")
     if session_id:
