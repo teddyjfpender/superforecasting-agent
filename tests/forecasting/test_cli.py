@@ -882,6 +882,75 @@ def test_forecast_cli_self_check_and_schedule_filter_by_confidence(tmp_path, cap
     assert high_confidence.id not in run_output
 
 
+def test_forecast_cli_review_and_schedule_flag_large_delta(tmp_path, capsys):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    ledger = ForecastLedger(db_path)
+    question = ledger.create_question(
+        title="Will large CLI deltas be reviewed?",
+        resolution_criteria="Resolved yes if CLI review flags large forecast deltas.",
+        domain="macro",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.35,
+        rationale="Initial forecast.",
+        as_of="2026-01-01T00:00:00Z",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.68,
+        rationale="Large update.",
+        as_of="2026-01-02T00:00:00Z",
+    )
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "review",
+            "--stale",
+            "--large-delta-threshold",
+            "0.25",
+            "--now",
+            "2026-01-04T00:00:00Z",
+        ],
+    )
+    review_output = capsys.readouterr().out
+    assert question.id in review_output
+    assert "large_forecast_delta:+0.330" in review_output
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "schedule",
+            "add",
+            "--domain",
+            "macro",
+            "--cadence",
+            "1d",
+            "--next-run-at",
+            "2026-01-03T00:00:00Z",
+            "--large-delta-threshold",
+            "0.25",
+        ],
+    )
+    capsys.readouterr()
+    _run(parser, ["forecast", "--db", db, "schedule", "list"])
+    assert ">=0.25" in capsys.readouterr().out
+
+    _run(parser, ["forecast", "--db", db, "schedule", "run", "--now", "2026-01-04T00:00:00Z"])
+    run_output = capsys.readouterr().out
+    assert question.id in run_output
+    assert "large_forecast_delta:+0.330" in run_output
+
+
 def test_forecast_cli_review_flags_approaching_close_time(tmp_path, capsys):
     parser = _parser()
     db_path = tmp_path / "forecasting.db"

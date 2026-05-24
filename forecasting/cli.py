@@ -1172,6 +1172,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     review_parser.add_argument("--horizon", help="Filter by forecast horizon in days, e.g. 30 or 30-90")
     review_parser.add_argument("--confidence-below", type=float)
     review_parser.add_argument("--confidence-above", type=float)
+    review_parser.add_argument("--large-delta-threshold", type=float)
     review_parser.add_argument("--now")
     review_parser.set_defaults(_forecast_handler=_cmd_review)
 
@@ -1191,6 +1192,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     schedule_add.add_argument("--auto-postmortem", action="store_true")
     schedule_add.add_argument("--confidence-below", type=float)
     schedule_add.add_argument("--confidence-above", type=float)
+    schedule_add.add_argument("--large-delta-threshold", type=float)
     schedule_add.add_argument("--disabled", action="store_true")
     schedule_add.set_defaults(_forecast_handler=_cmd_schedule_add)
     schedule_list = schedule_sub.add_parser("list", help="List scheduled reviews")
@@ -1255,6 +1257,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     self_check_parser.add_argument("--auto-postmortem", action="store_true")
     self_check_parser.add_argument("--confidence-below", type=float)
     self_check_parser.add_argument("--confidence-above", type=float)
+    self_check_parser.add_argument("--large-delta-threshold", type=float)
     self_check_parser.set_defaults(_forecast_handler=_cmd_self_check)
 
     backtest_parser = forecast_sub.add_parser("backtest", help="Run or inspect time-aware historical replay datasets")
@@ -4963,6 +4966,7 @@ def _cmd_review(args: argparse.Namespace) -> None:
         horizon=args.horizon,
         confidence_below=args.confidence_below,
         confidence_above=args.confidence_above,
+        large_delta_threshold=args.large_delta_threshold,
         now=args.now,
     )
     if not rows:
@@ -4997,6 +5001,7 @@ def _cmd_schedule_add(args: argparse.Namespace) -> None:
         stale_days=args.stale_days,
         confidence_below=args.confidence_below,
         confidence_above=args.confidence_above,
+        large_delta_threshold=args.large_delta_threshold,
     )
     print(f"scheduled review {row['id']}")
     print(f"scope: {row['scope_type']} {row['scope_ref'] or ''}".rstrip())
@@ -5008,14 +5013,15 @@ def _cmd_schedule_list(args: argparse.Namespace) -> None:
     if not rows:
         print("No scheduled reviews found.")
         return
-    print("ID             Scope          Cadence      Stale  Confidence     Next run             Enabled  Learning")
+    print("ID             Scope          Cadence      Stale  Confidence     Delta  Next run             Enabled  Learning")
     for row in rows:
         scope = _format_schedule_scope(row)
         learning = _format_schedule_learning(row)
         confidence = _format_schedule_confidence(row)
+        delta = _format_schedule_delta(row)
         print(
             f"{row['id']:<14} {scope:<14} {row['cadence']:<12} {int(row.get('stale_days') or 7):<6} "
-            f"{confidence:<14} {row['next_run_at']:<20} {bool(row['enabled']):<7} {learning}"
+            f"{confidence:<14} {delta:<6} {row['next_run_at']:<20} {bool(row['enabled']):<7} {learning}"
         )
 
 
@@ -5134,6 +5140,7 @@ def _cmd_self_check(args: argparse.Namespace) -> None:
         auto_postmortem=args.auto_postmortem,
         confidence_below=args.confidence_below,
         confidence_above=args.confidence_above,
+        large_delta_threshold=args.large_delta_threshold,
     )
     if not alerts:
         print("No self-check alerts created.")
@@ -6230,6 +6237,12 @@ def _format_schedule_confidence(row: dict[str, Any]) -> str:
     if row.get("confidence_above") is not None:
         parts.append(f">{float(row['confidence_above']):.2f}")
     return ",".join(parts) if parts else "-"
+
+
+def _format_schedule_delta(row: dict[str, Any]) -> str:
+    if row.get("large_delta_threshold") is None:
+        return "-"
+    return f">={float(row['large_delta_threshold']):.2f}"
 
 
 def _format_watch_scope(row: dict[str, Any]) -> str:

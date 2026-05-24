@@ -524,8 +524,8 @@ forecast performance [--last N] [--dataset <filter>] [--json]
 # JSON includes evidence_status with live/backtest claim-readiness gaps.
 forecast pilot-cohort <csv-or-json> [--schedule-cadence <duration>] [--schedule-next-run-at <time>]
 forecast schedule add --question <id> --cadence <duration>
-forecast schedule add --domain <domain> [--topic <topic>] --cadence <duration> [--confidence-below <p>] [--confidence-above <p>]
-forecast schedule add --horizon <days|range> --cadence <duration> [--stale-days <days>] [--confidence-below <p>] [--confidence-above <p>]
+forecast schedule add --domain <domain> [--topic <topic>] --cadence <duration> [--confidence-below <p>] [--confidence-above <p>] [--large-delta-threshold <p>]
+forecast schedule add --horizon <days|range> --cadence <duration> [--stale-days <days>] [--confidence-below <p>] [--confidence-above <p>] [--large-delta-threshold <p>]
 forecast schedule add --portfolio <name> --cadence <duration>
 forecast schedule list
 forecast schedule run [--auto-score] [--auto-postmortem]
@@ -542,7 +542,7 @@ forecast watch add --portfolio <name> <source>
 forecast watch list
 forecast watch check [--question <id>] [--domain ...] [--topic ...] [--portfolio <name>]
 forecast alerts
-forecast self-check [--question <id>] [--domain ...] [--topic ...] [--horizon <days|range>] [--portfolio <name>] [--confidence-below <p>] [--confidence-above <p>] [--auto-score] [--auto-postmortem]
+forecast self-check [--question <id>] [--domain ...] [--topic ...] [--horizon <days|range>] [--portfolio <name>] [--confidence-below <p>] [--confidence-above <p>] [--large-delta-threshold <p>] [--auto-score] [--auto-postmortem]
 forecast export <id|all>
 ```
 

@@ -502,6 +502,7 @@ class ForecastLedger:
                     stale_days INTEGER NOT NULL DEFAULT 7,
                     confidence_below REAL,
                     confidence_above REAL,
+                    large_delta_threshold REAL,
                     next_run_at TEXT NOT NULL,
                     last_run_at TEXT,
                     trigger_reason TEXT NOT NULL DEFAULT 'scheduled',
@@ -566,6 +567,7 @@ class ForecastLedger:
             self._ensure_column(conn, "scheduled_reviews", "stale_days", "INTEGER NOT NULL DEFAULT 7")
             self._ensure_column(conn, "scheduled_reviews", "confidence_below", "REAL")
             self._ensure_column(conn, "scheduled_reviews", "confidence_above", "REAL")
+            self._ensure_column(conn, "scheduled_reviews", "large_delta_threshold", "REAL")
 
     def _ensure_column(
         self,
@@ -2714,11 +2716,16 @@ class ForecastLedger:
         horizon: str | None = None,
         confidence_below: float | None = None,
         confidence_above: float | None = None,
+        large_delta_threshold: float | None = None,
         now: str | None = None,
     ) -> list[dict[str, Any]]:
         self._validate_confidence_filters(
             confidence_below=confidence_below,
             confidence_above=confidence_above,
+        )
+        self._validate_probability_threshold(
+            large_delta_threshold,
+            field_name="large_delta_threshold",
         )
         questions = self.list_questions(status="active", domain=domain)
         if topic:
@@ -2803,6 +2810,10 @@ class ForecastLedger:
                     now_dt,
                 ):
                     reasons.append(f"reference_class_check_due:{reference_class['id']}")
+            if large_delta_threshold is not None:
+                delta = self._latest_forecast_delta(question.id)
+                if delta is not None and abs(delta) >= large_delta_threshold:
+                    reasons.append(f"large_forecast_delta:{delta:+.3f}")
             if reasons or not stale:
                 rows.append(
                     {
@@ -2835,6 +2846,7 @@ class ForecastLedger:
         stale_days: int = 7,
         confidence_below: float | None = None,
         confidence_above: float | None = None,
+        large_delta_threshold: float | None = None,
     ) -> dict[str, Any]:
         if scope_type not in SCHEDULE_SCOPE_TYPES:
             raise ValidationError(
@@ -2852,6 +2864,10 @@ class ForecastLedger:
             confidence_below=confidence_below,
             confidence_above=confidence_above,
         )
+        self._validate_probability_threshold(
+            large_delta_threshold,
+            field_name="large_delta_threshold",
+        )
         review_id = f"sr_{uuid.uuid4().hex[:12]}"
         with self._connect() as conn:
             conn.execute(
@@ -2859,9 +2875,9 @@ class ForecastLedger:
                 INSERT INTO scheduled_reviews (
                     id, scope_type, scope_ref, cadence, stale_days, next_run_at,
                     trigger_reason, enabled, auto_score, auto_postmortem,
-                    confidence_below, confidence_above
+                    confidence_below, confidence_above, large_delta_threshold
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     review_id,
@@ -2876,6 +2892,7 @@ class ForecastLedger:
                     1 if auto_postmortem else 0,
                     confidence_below,
                     confidence_above,
+                    large_delta_threshold,
                 ),
             )
         return self.get_scheduled_review(review_id)
@@ -3091,6 +3108,7 @@ class ForecastLedger:
             stale_days = int(review.get("stale_days") or 7)
             confidence_below = review.get("confidence_below")
             confidence_above = review.get("confidence_above")
+            large_delta_threshold = review.get("large_delta_threshold")
             if scope_type == "question":
                 alerts = self.self_check(
                     question_id=scope_ref,
@@ -3100,6 +3118,7 @@ class ForecastLedger:
                     auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
                     confidence_below=confidence_below,
                     confidence_above=confidence_above,
+                    large_delta_threshold=large_delta_threshold,
                 )
             elif scope_type == "domain":
                 alerts = self.self_check(
@@ -3110,6 +3129,7 @@ class ForecastLedger:
                     auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
                     confidence_below=confidence_below,
                     confidence_above=confidence_above,
+                    large_delta_threshold=large_delta_threshold,
                 )
             elif scope_type == "topic":
                 alerts = self.self_check(
@@ -3120,6 +3140,7 @@ class ForecastLedger:
                     auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
                     confidence_below=confidence_below,
                     confidence_above=confidence_above,
+                    large_delta_threshold=large_delta_threshold,
                 )
             elif scope_type == "domain_topic":
                 scope_filter = json_loads(scope_ref, {})
@@ -3132,6 +3153,7 @@ class ForecastLedger:
                     auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
                     confidence_below=confidence_below,
                     confidence_above=confidence_above,
+                    large_delta_threshold=large_delta_threshold,
                 )
             elif scope_type == "portfolio":
                 alerts = self.self_check(
@@ -3142,6 +3164,7 @@ class ForecastLedger:
                     auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
                     confidence_below=confidence_below,
                     confidence_above=confidence_above,
+                    large_delta_threshold=large_delta_threshold,
                 )
             else:
                 alerts = self.self_check(
@@ -3152,6 +3175,7 @@ class ForecastLedger:
                     auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
                     confidence_below=confidence_below,
                     confidence_above=confidence_above,
+                    large_delta_threshold=large_delta_threshold,
                 )
             next_run_at = self._advance_cadence(now_ts, review["cadence"])
             with self._connect() as conn:
@@ -3240,10 +3264,15 @@ class ForecastLedger:
         auto_postmortem: bool = False,
         confidence_below: float | None = None,
         confidence_above: float | None = None,
+        large_delta_threshold: float | None = None,
     ) -> list[AlertEvent]:
         self._validate_confidence_filters(
             confidence_below=confidence_below,
             confidence_above=confidence_above,
+        )
+        self._validate_probability_threshold(
+            large_delta_threshold,
+            field_name="large_delta_threshold",
         )
         if question_id:
             questions = [self.get_question(question_id)]
@@ -3280,6 +3309,7 @@ class ForecastLedger:
             horizon=horizon,
             confidence_below=confidence_below,
             confidence_above=confidence_above,
+            large_delta_threshold=large_delta_threshold,
             now=now,
         ):
             question = row["question"]
@@ -4718,7 +4748,7 @@ class ForecastLedger:
             return 2
         if any(
             reason in {"review_due", "no_forecast_snapshot", "no_evidence"}
-            or reason.startswith(("assumption_check_due:", "reference_class_check_due:", "assumption_stale:", "reference_class_stale:"))
+            or reason.startswith(("large_forecast_delta:", "assumption_check_due:", "reference_class_check_due:", "assumption_stale:", "reference_class_stale:"))
             for reason in reasons
         ):
             return 3
@@ -4741,6 +4771,8 @@ class ForecastLedger:
             return "Review the new evidence and append a forecast update if it changes the probability."
         if reason.startswith("evidence_stale_"):
             return "Refresh evidence and decide whether a new forecast snapshot is warranted."
+        if reason.startswith("large_forecast_delta:"):
+            return "Review the large probability move; record what changed and whether assumptions or calibration lessons need updates."
         if reason.startswith("close_time_within_"):
             return "Review evidence and prepare for close/resolution before the question closes."
         return {
@@ -4842,6 +4874,29 @@ class ForecastLedger:
         ):
             if value is not None and not 0 <= value <= 1:
                 raise ValidationError(f"{label} must be between 0 and 1")
+
+    @staticmethod
+    def _validate_probability_threshold(value: float | None, *, field_name: str) -> None:
+        if value is not None and not 0 <= value <= 1:
+            raise ValidationError(f"{field_name} must be between 0 and 1")
+
+    def _latest_forecast_delta(self, question_id: str) -> float | None:
+        snapshots = self.list_snapshots(question_id)
+        if len(snapshots) < 2:
+            return None
+        previous, current = snapshots[-2], snapshots[-1]
+        return self._probability_delta(
+            previous.probability_or_distribution,
+            current.probability_or_distribution,
+        )
+
+    @staticmethod
+    def _probability_delta(previous: Any, current: Any) -> float | None:
+        if isinstance(previous, bool) or isinstance(current, bool):
+            return None
+        if isinstance(previous, (int, float)) and isinstance(current, (int, float)):
+            return float(current) - float(previous)
+        return None
 
     def _domain_error_profile_alerts(
         self,

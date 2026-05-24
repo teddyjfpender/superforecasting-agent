@@ -4181,6 +4181,48 @@ def test_review_flags_questions_approaching_close_time(tmp_path):
     assert rows[0]["priority"] == 1
 
 
+def test_review_and_scheduled_self_check_flag_large_forecast_delta(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will large forecast deltas be reviewed?",
+        resolution_criteria="Resolved yes if large deltas create review work.",
+        domain="macro",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.35,
+        rationale="Initial forecast.",
+        as_of="2026-01-01T00:00:00Z",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.68,
+        rationale="Large update.",
+        as_of="2026-01-02T00:00:00Z",
+    )
+    schedule = ledger.schedule_review(
+        scope_type="domain",
+        scope_ref="macro",
+        cadence="1d",
+        next_run_at="2026-01-03T00:00:00Z",
+        large_delta_threshold=0.25,
+    )
+
+    rows = ledger.review_questions(
+        stale=True,
+        last_days=30,
+        large_delta_threshold=0.25,
+        now="2026-01-04T00:00:00Z",
+    )
+    results = ledger.run_due_scheduled_reviews(now="2026-01-04T00:00:00Z")
+
+    assert schedule["large_delta_threshold"] == pytest.approx(0.25)
+    assert rows[0]["question"].id == question.id
+    assert any(reason.startswith("large_forecast_delta:") for reason in rows[0]["reasons"])
+    assert rows[0]["priority"] == 3
+    assert any(alert.reason.startswith("large_forecast_delta:") for alert in results[0]["alerts"])
+
+
 def test_self_check_flags_evidence_newer_than_current_forecast(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     question = ledger.create_question(

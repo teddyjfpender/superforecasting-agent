@@ -1671,6 +1671,73 @@ def test_forecast_ledger_tool_self_check_and_schedule_filter_by_confidence(tmp_p
     assert all(alert["scope_ref"] != high_confidence.id for alert in scheduled_alerts)
 
 
+def test_forecast_ledger_tool_review_and_schedule_flag_large_delta(tmp_path):
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    ledger = ForecastLedger(db_path)
+    question = ledger.create_question(
+        title="Will tool large deltas be reviewed?",
+        resolution_criteria="Resolved yes if tool review flags large forecast deltas.",
+        domain="macro",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.35,
+        rationale="Initial forecast.",
+        as_of="2026-01-01T00:00:00Z",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.68,
+        rationale="Large update.",
+        as_of="2026-01-02T00:00:00Z",
+    )
+
+    reviewed = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "review",
+                "stale": True,
+                "large_delta_threshold": 0.25,
+                "now": "2026-01-04T00:00:00Z",
+            }
+        )
+    )
+    scheduled = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "schedule_review",
+                "domain": "macro",
+                "cadence": "1d",
+                "next_run_at": "2026-01-03T00:00:00Z",
+                "large_delta_threshold": 0.25,
+            }
+        )
+    )
+    ran = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "run_scheduled_reviews",
+                "now": "2026-01-04T00:00:00Z",
+            }
+        )
+    )
+
+    assert reviewed["review"][0]["question"]["id"] == question.id
+    assert any(
+        reason.startswith("large_forecast_delta:")
+        for reason in reviewed["review"][0]["reasons"]
+    )
+    assert scheduled["scheduled_review"]["large_delta_threshold"] == pytest.approx(0.25)
+    assert any(
+        alert["reason"].startswith("large_forecast_delta:")
+        for alert in ran["scheduled_review_results"][0]["alerts"]
+    )
+
+
 def test_forecast_ledger_tool_can_list_and_acknowledge_alerts(tmp_path):
     db = str(tmp_path / "forecasting.db")
     created = json.loads(

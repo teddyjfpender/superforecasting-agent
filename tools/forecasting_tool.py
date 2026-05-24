@@ -328,6 +328,7 @@ FORECAST_LEDGER_SCHEMA = {
             "confidence": {"type": "number"},
             "confidence_below": {"type": "number"},
             "confidence_above": {"type": "number"},
+            "large_delta_threshold": {"type": "number"},
             "claim": {"type": "string"},
             "claim_type": {
                 "type": "string",
@@ -719,6 +720,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 horizon=args.get("horizon"),
                 confidence_below=args.get("confidence_below"),
                 confidence_above=args.get("confidence_above"),
+                large_delta_threshold=args.get("large_delta_threshold"),
                 now=args.get("now"),
             )
             return tool_result(success=True, review=[_review_row(row) for row in rows])
@@ -734,6 +736,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 now=args.get("now"),
                 confidence_below=args.get("confidence_below"),
                 confidence_above=args.get("confidence_above"),
+                large_delta_threshold=args.get("large_delta_threshold"),
                 auto_score=bool(args.get("auto_score", False)),
                 auto_postmortem=bool(args.get("auto_postmortem", False)),
             )
@@ -867,6 +870,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 stale_days=int(args.get("stale_days") or args.get("last_days") or 7),
                 confidence_below=args.get("confidence_below"),
                 confidence_above=args.get("confidence_above"),
+                large_delta_threshold=args.get("large_delta_threshold"),
             )
             return tool_result(success=True, scheduled_review=schedule)
 
