@@ -934,6 +934,7 @@ describe('createGatewayEventHandler', () => {
               '/forecast import coingecko <coin-id> --question <id>',
               '/forecast import sec <cik> --question <id>',
               '/forecast import secfacts <cik>/<concept> --question <id>',
+              '/forecast import crossref "<query-or-DOI>" --question <id>',
               '/forecast import wikipediapageviews <project>/<article> --question <id>',
               '/forecast import githubissues <owner/repo> --question <id>',
               '/forecast import githubcommits <owner/repo> --question <id>',

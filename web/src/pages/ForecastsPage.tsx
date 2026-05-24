@@ -74,6 +74,10 @@ const EVIDENCE_IMPORTS = [
     label: "Crypto",
   },
   {
+    command: 'forecast import crossref "<query-or-DOI>" --question <id>',
+    label: "DOI works",
+  },
+  {
     command: "forecast import wikipediapageviews <project>/<article> --question <id>",
     label: "Attention",
   },

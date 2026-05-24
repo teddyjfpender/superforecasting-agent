@@ -11,6 +11,7 @@ from forecasting.source_adapters import (
     CisaKevVulnerability,
     ClinicalTrialStudy,
     CoinGeckoMarketSnapshot,
+    CrossrefWork,
     EiaObservation,
     FiveThirtyEightPollObservation,
     HackerNewsItem,
@@ -115,7 +116,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_imports_airquality_forecasts(tmp_path, monkeypatch):
@@ -3029,6 +3030,57 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert pubmed_evidence["published_at"] == "2026-05-21T00:00:00Z"
     assert pubmed_evidence["metadata"]["adapter"] == "pubmed"
     assert pubmed_evidence["metadata"]["adapter_item"]["doi"] == "10.1234/pubmed.forecast"
+
+    def fake_crossref(source, **kwargs):
+        assert source == "forecasting calibration"
+        assert kwargs["limit"] == 1
+        assert kwargs["since"] == "2026-05-01"
+        assert kwargs["api_base_url"] == "https://example.test/crossref/works"
+        return [
+            CrossrefWork(
+                doi="10.1234/crossref.forecast",
+                title="Calibrated DOI forecasts",
+                abstract="Forecasts need DOI-indexed priors.",
+                url="https://doi.org/10.1234/crossref.forecast",
+                published_at="2026-05-21T00:00:00Z",
+                updated_at="2026-05-22T00:00:00Z",
+                authors=["Ada Forecaster"],
+                subjects=["Forecasting"],
+                container_title="Journal of Forecasting",
+                publisher="Forecasting Society",
+                work_type="journal-article",
+                reference_count=12,
+                cited_by_count=7,
+                source_name="Journal of Forecasting",
+                entry_id="10.1234/crossref.forecast",
+                raw={"DOI": "10.1234/crossref.forecast"},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_crossref_works", fake_crossref)
+    crossref_imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "crossref",
+                "source": "forecasting calibration",
+                "limit": 1,
+                "since": "2026-05-01",
+                "api_base_url": "https://example.test/crossref/works",
+            }
+        )
+    )
+
+    assert crossref_imported["imported_count"] == 1
+    crossref_evidence = crossref_imported["imported"][0]["evidence"]
+    assert crossref_evidence["source_type"] == "adapter:crossref"
+    assert crossref_evidence["source_name"] == "Journal of Forecasting"
+    assert crossref_evidence["claim"] == "Crossref work (10.1234/crossref.forecast): Calibrated DOI forecasts"
+    assert crossref_evidence["published_at"] == "2026-05-21T00:00:00Z"
+    assert crossref_evidence["metadata"]["adapter"] == "crossref"
+    assert crossref_evidence["metadata"]["adapter_item"]["doi"] == "10.1234/crossref.forecast"
 
     def fake_pypi(source, **kwargs):
         assert source == "forecast-desk"

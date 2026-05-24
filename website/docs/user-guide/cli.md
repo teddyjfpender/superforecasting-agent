@@ -79,6 +79,7 @@ forecast import sec 0000320193 --question <id>
 forecast import secfacts 0000320193/Revenues --question <id>
 forecast import arxiv "cat:cs.AI AND forecasting" --question <id>
 forecast import openalex "forecasting calibration" --question <id>
+forecast import crossref "forecasting calibration" --question <id>
 forecast import wikipedia "topic" --question <id>
 forecast import wikipediapageviews en.wikipedia.org/Topic --question <id>
 forecast import github owner/repo --question <id>
@@ -163,6 +164,7 @@ as proof of superiority.
 ```bash
 forecast watch add --question <id> gdelt:"topic query"
 forecast watch add --question <id> openalex:"research query"
+forecast watch add --question <id> crossref:"research query"
 forecast watch add --question <id> hackernews:"product query"
 forecast watch add --question <id> pypi:package-name
 forecast watch add --question <id> npm:package-name

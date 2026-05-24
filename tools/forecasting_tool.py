@@ -25,6 +25,7 @@ from forecasting.source_adapters import (
     load_clinicaltrials_studies,
     load_coingecko_market_snapshots,
     load_courtlistener_search_results,
+    load_crossref_works,
     load_eia_observations,
     load_federal_register_documents,
     load_fivethirtyeight_polls,
@@ -303,6 +304,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "secfacts",
                     "arxiv",
                     "openalex",
+                    "crossref",
                     "wikipedia",
                     "wikipediapageviews",
                     "manifold",
@@ -1183,6 +1185,11 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_openalex_works(source, **kwargs)
+    if adapter_name == "crossref":
+        kwargs = {"limit": limit, "since": since}
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_crossref_works(source, **kwargs)
     if adapter_name == "wikipedia":
         kwargs = {"limit": limit, "since": since}
         if api_base_url:
@@ -1554,6 +1561,9 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         return f"openFDA {data.get('application_number')}: {data.get('latest_submission_status') or 'application'} - {brand}"
     if adapter == "pubmed":
         return f"PubMed {data.get('pmid')}: {data.get('title')}"
+    if adapter == "crossref":
+        doi = f" ({data.get('doi')})" if data.get("doi") else ""
+        return f"Crossref work{doi}: {data.get('title')}"
     if adapter == "owid":
         return f"OWID {data.get('slug')} {data.get('entity') or ''} {data.get('value_column')} was {data.get('value')} on {data.get('observation_date')}"
     return str(

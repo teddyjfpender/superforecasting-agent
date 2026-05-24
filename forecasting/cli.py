@@ -64,6 +64,7 @@ from forecasting.source_adapters import (
     load_clinicaltrials_studies,
     load_coingecko_market_snapshots,
     load_courtlistener_search_results,
+    load_crossref_works,
     load_eia_observations,
     load_federal_register_documents,
     load_fivethirtyeight_polls,
@@ -299,6 +300,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "domain": "scholarly works",
         "import_command": 'forecast import openalex "<query>" --question <id>',
         "watch_prefix": "openalex:<query>",
+    },
+    {
+        "name": "crossref",
+        "domain": "DOI and scholarly metadata",
+        "import_command": 'forecast import crossref "<query-or-DOI>" --question <id>',
+        "watch_prefix": "crossref:<query-or-DOI>",
     },
     {
         "name": "wikipedia",
@@ -566,6 +573,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "secfacts",
         "arxiv",
         "openalex",
+        "crossref",
         "wikipedia",
         "wikipediapageviews",
     ):
@@ -648,6 +656,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "secfacts",
             "arxiv",
             "openalex",
+            "crossref",
             "wikipedia",
             "wikipediapageviews",
         }:
@@ -911,6 +920,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://api.openalex.org/works",
                 help="Override OpenAlex Works API base URL for tests or private mirrors",
+            )
+        if name == "crossref":
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://api.crossref.org/works",
+                help="Override Crossref Works API base URL for tests or private mirrors",
             )
         if name == "wikipedia":
             adapter.add_argument(
@@ -4377,6 +4392,53 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} openalex evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "crossref":
+        if not args.question_id:
+            raise SystemExit("forecast import crossref requires --question")
+        works = load_crossref_works(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for work in works:
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=work.url or work.doi or work.title,
+                    source_url=work.url,
+                    source_name=work.source_name,
+                    source_type="adapter:crossref",
+                    published_at=work.published_at,
+                    available_at=work.published_at or work.updated_at or args.as_of,
+                    claim=f"Crossref work: {work.title}",
+                    summary=work.abstract,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "crossref",
+                        "crossref_query": args.source,
+                        "doi": work.doi,
+                        "updated_at": work.updated_at,
+                        "authors": work.authors,
+                        "subjects": work.subjects,
+                        "container_title": work.container_title,
+                        "publisher": work.publisher,
+                        "work_type": work.work_type,
+                        "reference_count": work.reference_count,
+                        "cited_by_count": work.cited_by_count,
+                        "api_base_url": args.api_base_url,
+                        "raw": work.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} crossref evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

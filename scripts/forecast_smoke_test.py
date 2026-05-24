@@ -51,6 +51,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "cisakev",
     "arxiv",
     "openalex",
+    "crossref",
     "wikipedia",
     "wikipediapageviews",
     "github",

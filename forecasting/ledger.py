@@ -100,6 +100,7 @@ WATCH_SOURCE_TYPES = {
     "secfacts",
     "arxiv",
     "openalex",
+    "crossref",
     "wikipedia",
     "wikipediapageviews",
     "manifold",
@@ -3026,7 +3027,7 @@ class ForecastLedger:
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
                 "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
-                "sec, secfacts, arxiv, openalex, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
+                "sec, secfacts, arxiv, openalex, crossref, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
         watch_id = f"ws_{uuid.uuid4().hex[:12]}"
@@ -3147,6 +3148,7 @@ class ForecastLedger:
                     "secfacts",
                     "arxiv",
                     "openalex",
+                    "crossref",
                     "wikipedia",
                     "wikipediapageviews",
                     "manifold",
@@ -5681,6 +5683,8 @@ class ForecastLedger:
             return "arxiv"
         if source.startswith("openalex:"):
             return "openalex"
+        if source.startswith("crossref:"):
+            return "crossref"
         if source.startswith("wikipedia:"):
             return "wikipedia"
         if source.startswith("wikipediapageviews:"):
@@ -5775,6 +5779,8 @@ class ForecastLedger:
             return self._arxiv_source_signature(source)
         if source_type == "openalex":
             return self._openalex_source_signature(source)
+        if source_type == "crossref":
+            return self._crossref_source_signature(source)
         if source_type == "wikipedia":
             return self._wikipedia_source_signature(source)
         if source_type == "wikipediapageviews":
@@ -6841,6 +6847,34 @@ class ForecastLedger:
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"openalex:{len(payload)}:{digest}"
 
+    def _crossref_source_signature(self, source: str) -> str:
+        query = source.split(":", 1)[1].strip() if source.startswith("crossref:") else source.strip()
+        if not query:
+            return "missing:crossref:empty-query"
+        try:
+            from forecasting.source_adapters import load_crossref_works
+
+            works = load_crossref_works(query, limit=50)
+        except Exception as exc:
+            return f"missing:crossref:{query}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "cited_by_count": work.cited_by_count,
+                "container_title": work.container_title,
+                "doi": work.doi,
+                "entry_id": work.entry_id,
+                "published_at": work.published_at,
+                "publisher": work.publisher,
+                "reference_count": work.reference_count,
+                "title": work.title,
+                "updated_at": work.updated_at,
+                "work_type": work.work_type,
+            }
+            for work in works
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"crossref:{len(payload)}:{digest}"
+
     def _wikipedia_source_signature(self, source: str) -> str:
         query = source.split(":", 1)[1].strip() if source.startswith("wikipedia:") else source.strip()
         if not query:
@@ -7257,6 +7291,12 @@ class ForecastLedger:
             query = source.split(":", 1)[1].strip() if source.startswith("openalex:") else source
             return (
                 f"Run `forecast import openalex \"{query}\" --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "crossref" and scope_type == "question" and scope_ref:
+            query = source.split(":", 1)[1].strip() if source.startswith("crossref:") else source
+            return (
+                f"Run `forecast import crossref \"{query}\" --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "wikipedia" and scope_type == "question" and scope_ref:

@@ -22,6 +22,7 @@ from forecasting.source_adapters import (
     ClinicalTrialStudy,
     CoinGeckoMarketSnapshot,
     CourtListenerSearchResult,
+    CrossrefWork,
     EiaObservation,
     FederalRegisterDocument,
     FiveThirtyEightPollObservation,
@@ -3793,6 +3794,65 @@ def test_watched_openalex_source_creates_alert_on_work_change(tmp_path, monkeypa
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert f'forecast import openalex "forecasting calibration" --question {question.id}' in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_crossref_source_creates_alert_on_work_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched Crossref works be detected?",
+        resolution_criteria="Resolved yes if watched Crossref work changes create alerts.",
+    )
+    titles = ["Initial DOI work"]
+    captured_queries = []
+
+    def fake_load_crossref_works(query: str, **kwargs):
+        captured_queries.append(query)
+        return [
+            CrossrefWork(
+                doi=f"10.0000/{len(titles[0])}",
+                title=titles[0],
+                abstract="A DOI-indexed work about forecasting.",
+                url=f"https://doi.org/10.0000/{len(titles[0])}",
+                published_at="2026-05-20T00:00:00Z",
+                updated_at="2026-05-21T00:00:00Z",
+                authors=["Ada Forecaster"],
+                subjects=["Forecasting"],
+                container_title="Journal of Forecasting",
+                publisher="Forecasting Society",
+                work_type="journal-article",
+                reference_count=12,
+                cited_by_count=7,
+                source_name="Journal of Forecasting",
+                entry_id=f"10.0000/{len(titles[0])}",
+                raw={"title": titles[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_crossref_works", fake_load_crossref_works)
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="crossref:forecasting calibration",
+    )
+
+    assert watch["source_type"] == "crossref"
+    assert watch["last_seen_signature"].startswith("crossref:1:")
+    assert captured_queries[-1] == "forecasting calibration"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    titles[0] = "New DOI work"
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f'forecast import crossref "forecasting calibration" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]

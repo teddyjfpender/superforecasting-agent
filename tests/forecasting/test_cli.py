@@ -25,6 +25,7 @@ from forecasting.source_adapters import (
     ClinicalTrialStudy,
     CoinGeckoMarketSnapshot,
     CourtListenerSearchResult,
+    CrossrefWork,
     EiaObservation,
     FederalRegisterDocument,
     FiveThirtyEightPollObservation,
@@ -7290,6 +7291,149 @@ def test_forecast_cli_openalex_import_captures_works_as_evidence(tmp_path, capsy
     assert evidence[0].metadata["concepts"] == ["Forecasting", "Decision theory"]
 
 
+def test_crossref_loader_parses_works_from_api():
+    payload = {
+        "message": {
+            "items": [
+                {
+                    "DOI": "10.1234/forecasting",
+                    "title": ["Forecasting with DOI priors"],
+                    "abstract": " A Crossref-indexed work about calibrated beliefs. ",
+                    "URL": "https://doi.org/10.1234/forecasting",
+                    "published-online": {"date-parts": [[2026, 5, 20]]},
+                    "deposited": {"date-time": "2026-05-21T12:00:00Z"},
+                    "author": [{"given": "Ada", "family": "Forecaster"}],
+                    "subject": ["Forecasting", "Decision theory"],
+                    "container-title": ["Journal of Forecasting"],
+                    "publisher": "Forecasting Society",
+                    "type": "journal-article",
+                    "reference-count": 12,
+                    "is-referenced-by-count": 7,
+                }
+            ]
+        }
+    }
+    server = _serve_import_payload(json.dumps(payload))
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/works"
+        works = source_adapters.load_crossref_works(
+            "forecasting calibration",
+            limit=2,
+            since="2026-05-01",
+            api_base_url=url,
+        )
+        params = parse_qs(urlparse(_ImportPayloadHandler.last_path).query)
+    finally:
+        server.shutdown()
+
+    assert params["query.bibliographic"] == ["forecasting calibration"]
+    assert params["rows"] == ["2"]
+    assert params["sort"] == ["published"]
+    assert params["order"] == ["desc"]
+    assert params["filter"] == ["from-pub-date:2026-05-01"]
+    assert works[0].doi == "10.1234/forecasting"
+    assert works[0].title == "Forecasting with DOI priors"
+    assert works[0].abstract == "A Crossref-indexed work about calibrated beliefs."
+    assert works[0].source_name == "Journal of Forecasting"
+    assert works[0].published_at == "2026-05-20T00:00:00Z"
+    assert works[0].updated_at == "2026-05-21T12:00:00Z"
+    assert works[0].authors == ["Ada Forecaster"]
+    assert works[0].subjects == ["Forecasting", "Decision theory"]
+    assert works[0].reference_count == 12
+    assert works[0].cited_by_count == 7
+
+
+def test_forecast_cli_crossref_import_captures_works_as_evidence(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_crossref_works(query: str, **kwargs):
+        captured["query"] = query
+        captured["kwargs"] = kwargs
+        return [
+            CrossrefWork(
+                doi="10.1234/forecasting",
+                title="Forecasting with DOI priors",
+                abstract="A Crossref-indexed work about probabilistic forecasting.",
+                url="https://doi.org/10.1234/forecasting",
+                published_at="2026-05-20T00:00:00Z",
+                updated_at="2026-05-21T12:00:00Z",
+                authors=["Ada Forecaster"],
+                subjects=["Forecasting", "Decision theory"],
+                container_title="Journal of Forecasting",
+                publisher="Forecasting Society",
+                work_type="journal-article",
+                reference_count=12,
+                cited_by_count=7,
+                source_name="Journal of Forecasting",
+                entry_id="10.1234/forecasting",
+                raw={"DOI": "10.1234/forecasting"},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_crossref_works", fake_load_crossref_works)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will Crossref evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if Crossref evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "crossref",
+            "forecasting calibration",
+            "--question",
+            question_id,
+            "--limit",
+            "3",
+            "--api-base-url",
+            "https://api.crossref.test/works",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.8",
+            "--relevance",
+            "0.9",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 crossref evidence item(s)" in output
+    assert captured["query"] == "forecasting calibration"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["api_base_url"] == "https://api.crossref.test/works"
+    assert evidence[0].claim == "Crossref work: Forecasting with DOI priors"
+    assert evidence[0].summary == "A Crossref-indexed work about probabilistic forecasting."
+    assert evidence[0].source_name == "Journal of Forecasting"
+    assert evidence[0].source_type == "adapter:crossref"
+    assert evidence[0].published_at == "2026-05-20T00:00:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.8
+    assert evidence[0].relevance_rating == 0.9
+    assert evidence[0].metadata["adapter"] == "crossref"
+    assert evidence[0].metadata["crossref_query"] == "forecasting calibration"
+    assert evidence[0].metadata["doi"] == "10.1234/forecasting"
+    assert evidence[0].metadata["authors"] == ["Ada Forecaster"]
+    assert evidence[0].metadata["subjects"] == ["Forecasting", "Decision theory"]
+    assert evidence[0].metadata["cited_by_count"] == 7
+
+
 def test_wikipedia_loader_parses_mediawiki_search_results():
     payload = {
         "query": {
@@ -7588,6 +7732,7 @@ def test_forecast_cli_lists_extension_points(capsys):
     assert "sec-company-facts" in output
     assert "arxiv-papers" in output
     assert "openalex-works" in output
+    assert "crossref-works" in output
     assert "wikipedia-pages" in output
     assert "wikimedia-pageviews" in output
     assert "cisa-kev" in output
@@ -7629,6 +7774,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "clinicaltrials:<query-or-NCT-id>" in output
     assert "openfda:<query-or-application-number>" in output
     assert "pubmed:<query-or-PMID>" in output
+    assert "crossref:<query-or-DOI>" in output
     assert "pypi:<package>" in output
     assert "npm:<package>" in output
     assert "wikipediapageviews:<project>/<article>" in output
@@ -7651,7 +7797,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "fivethirtyeight", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "fivethirtyeight", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "fivethirtyeight:<dataset-or-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
@@ -7666,6 +7812,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     assert any(source["watch_prefix"] == "clinicaltrials:<query-or-NCT-id>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "openfda:<query-or-application-number>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "pubmed:<query-or-PMID>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "crossref:<query-or-DOI>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "pypi:<package>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "npm:<package>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "githubissues:<owner/repo>" for source in payload["sources"])

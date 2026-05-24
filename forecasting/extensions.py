@@ -115,6 +115,7 @@ def register_builtin_extensions() -> None:
         ("sec-company-facts", "importer", "Capture SEC XBRL company fact observations as evidence."),
         ("arxiv-papers", "importer", "Capture arXiv research papers as timestamped evidence."),
         ("openalex-works", "importer", "Capture OpenAlex scholarly works as timestamped evidence."),
+        ("crossref-works", "importer", "Capture Crossref DOI and scholarly metadata as timestamped evidence."),
         ("wikipedia-pages", "importer", "Capture Wikipedia/MediaWiki pages as timestamped evidence."),
         ("wikimedia-pageviews", "importer", "Capture Wikimedia pageviews as public-attention evidence."),
         ("prediction-market", "market", "Stage market-implied probabilities as baseline comparisons."),

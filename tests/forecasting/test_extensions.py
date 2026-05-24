@@ -59,6 +59,7 @@ def test_builtin_forecast_extensions_are_registered():
     assert "sec-company-facts" in names
     assert "arxiv-papers" in names
     assert "openalex-works" in names
+    assert "crossref-works" in names
     assert "wikipedia-pages" in names
     assert "wikimedia-pageviews" in names
     assert "bayesian-update" in names
