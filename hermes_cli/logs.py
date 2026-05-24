@@ -172,7 +172,7 @@ def tail_log(
     log_path = get_hermes_home() / "logs" / filename
     if not log_path.exists():
         print(f"Log file not found: {log_path}")
-        print("(Logs are created when Superforecasting Agent runs — try 'superforecasting-agent chat' first)")
+        print("(Logs are created when Superforecasting Agent runs — try 'superforecasting-agent' first)")
         sys.exit(1)
 
     # Parse --since into a datetime cutoff
@@ -387,4 +387,4 @@ def list_logs() -> None:
             found = True
 
     if not found:
-        print("  (no log files yet — run 'superforecasting-agent chat' to generate logs)")
+        print("  (no log files yet — run 'superforecasting-agent' to generate logs)")

@@ -896,7 +896,7 @@ def run_doctor(args):
             soul_path.write_text(
                 "# Superforecasting Agent Persona\n\n"
                 "<!-- Edit this file to customize how Superforecasting Agent communicates. -->\n\n"
-                "You are Superforecasting Agent, a forecasting desk assistant focused on evidence, probabilities, calibration, and error tracking.\n",
+                "You are Superforecasting Agent, a forecasting desk operator focused on evidence, probabilities, calibration, and error tracking.\n",
                 encoding="utf-8",
             )
             check_ok(f"Created {_DHH}/SOUL.md with basic template")

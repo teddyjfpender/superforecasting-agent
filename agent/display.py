@@ -830,7 +830,7 @@ def _detect_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str]
     return False, ""
 
 
-def get_cute_tool_message(
+def get_tool_status_message(
     tool_name: str, args: dict, duration: float, result: str | None = None,
 ) -> str:
     """Generate a formatted tool completion line for CLI quiet mode.
@@ -982,6 +982,10 @@ def get_cute_tool_message(
 
     preview = build_tool_preview(tool_name, args) or ""
     return _wrap(f"┊ ⚡ {tool_name[:9]:9} {_trunc(preview, 35)}  {dur}")
+
+
+# Backward-compatible name for older imports and plugins.
+get_cute_tool_message = get_tool_status_message
 
 
 # =========================================================================

@@ -10175,8 +10175,8 @@ class HermesCLI:
                     return
                 self._last_scrollback_tool = function_name
                 try:
-                    from agent.display import get_cute_tool_message
-                    line = get_cute_tool_message(function_name, stored_args, duration)
+                    from agent.display import get_tool_status_message
+                    line = get_tool_status_message(function_name, stored_args, duration)
                     if is_error:
                         line = f"{line} [error]"
                     _cprint(f"  {line}")

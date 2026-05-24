@@ -15,7 +15,7 @@ def test_list_logs_missing_directory_uses_display_home(monkeypatch, capsys, tmp_
     assert ".superforecasting-agent/logs/" in out
 
 
-def test_list_logs_empty_directory_uses_forecast_native_chat_hint(monkeypatch, capsys, tmp_path):
+def test_list_logs_empty_directory_uses_forecast_native_run_hint(monkeypatch, capsys, tmp_path):
     home = tmp_path / ".superforecasting-agent"
     (home / "logs").mkdir(parents=True)
     monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(home))
@@ -23,11 +23,12 @@ def test_list_logs_empty_directory_uses_forecast_native_chat_hint(monkeypatch, c
     logs.list_logs()
 
     out = capsys.readouterr().out
-    assert "superforecasting-agent chat" in out
+    assert "superforecasting-agent" in out
+    assert "superforecasting-agent chat" not in out
     assert "hermes chat" not in out
 
 
-def test_tail_missing_log_uses_forecast_native_chat_hint(monkeypatch, capsys, tmp_path):
+def test_tail_missing_log_uses_forecast_native_run_hint(monkeypatch, capsys, tmp_path):
     home = tmp_path / ".superforecasting-agent"
     (home / "logs").mkdir(parents=True)
     monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(home))
@@ -37,5 +38,6 @@ def test_tail_missing_log_uses_forecast_native_chat_hint(monkeypatch, capsys, tm
 
     out = capsys.readouterr().out
     assert "Superforecasting Agent runs" in out
-    assert "superforecasting-agent chat" in out
+    assert "superforecasting-agent" in out
+    assert "superforecasting-agent chat" not in out
     assert "hermes chat" not in out

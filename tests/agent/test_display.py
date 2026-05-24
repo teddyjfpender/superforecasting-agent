@@ -10,6 +10,7 @@ from agent.display import (
     capture_local_edit_snapshot,
     extract_edit_diff,
     get_cute_tool_message,
+    get_tool_status_message,
     set_tool_preview_max_len,
     _render_inline_unified_diff,
     _summarize_rendered_diff_sections,
@@ -112,12 +113,12 @@ class TestBuildToolPreview:
         assert build_tool_preview("terminal", []) is None
 
 
-class TestCuteToolMessagePreviewLength:
+class TestToolStatusMessagePreviewLength:
     def test_terminal_preview_unlimited_when_config_is_zero(self):
         set_tool_preview_max_len(0)
         command = "curl -s http://localhost:9222/json/list | jq -r '.[] | select(.type==\"page\")' | head -5"
 
-        line = get_cute_tool_message("terminal", {"command": command}, 0.1)
+        line = get_tool_status_message("terminal", {"command": command}, 0.1)
 
         assert command in line
         assert "..." not in line
@@ -126,7 +127,7 @@ class TestCuteToolMessagePreviewLength:
         set_tool_preview_max_len(80)
         command = "curl -s http://localhost:9222/json/list | jq -r '.[] | select(.type==\"page\")' | head -5"
 
-        line = get_cute_tool_message("terminal", {"command": command}, 0.1)
+        line = get_tool_status_message("terminal", {"command": command}, 0.1)
 
         assert command[:77] in line
         assert "..." in line
@@ -136,7 +137,7 @@ class TestCuteToolMessagePreviewLength:
         set_tool_preview_max_len(80)
         pattern = "function.formatToolCall.context.preview.compactPreview.maxLength.truncate"
 
-        line = get_cute_tool_message("search_files", {"pattern": pattern}, 0.1)
+        line = get_tool_status_message("search_files", {"pattern": pattern}, 0.1)
 
         assert pattern in line
         assert "..." not in line
@@ -145,7 +146,7 @@ class TestCuteToolMessagePreviewLength:
         set_tool_preview_max_len(80)
         path = "/tmp/hermes-test-preview-length/deeply/nested/path/test-output.txt"
 
-        line = get_cute_tool_message("read_file", {"path": path}, 0.1)
+        line = get_tool_status_message("read_file", {"path": path}, 0.1)
 
         assert path in line
         assert "..." not in line
@@ -156,7 +157,7 @@ class TestCuteToolMessagePreviewLength:
             "lint": {"status": "error", "output": "SyntaxError: invalid syntax"},
         })
 
-        line = get_cute_tool_message("write_file", {"path": "/tmp/a.py"}, 0.1, result=result)
+        line = get_tool_status_message("write_file", {"path": "/tmp/a.py"}, 0.1, result=result)
 
         assert "[error]" not in line
 
@@ -167,9 +168,12 @@ class TestCuteToolMessagePreviewLength:
             "lsp_diagnostics": "<diagnostics>ERROR [1:1] type mismatch</diagnostics>",
         })
 
-        line = get_cute_tool_message("patch", {"path": "/tmp/a.py"}, 0.1, result=result)
+        line = get_tool_status_message("patch", {"path": "/tmp/a.py"}, 0.1, result=result)
 
         assert "[error]" not in line
+
+    def test_legacy_cute_tool_message_alias_remains_available(self):
+        assert get_cute_tool_message is get_tool_status_message
 
 
 class TestEditDiffPreview:

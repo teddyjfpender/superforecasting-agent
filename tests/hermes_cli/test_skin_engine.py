@@ -290,15 +290,15 @@ class TestDisplayIntegration:
 
     def test_tool_message_uses_skin_prefix(self):
         from hermes_cli.skin_engine import set_active_skin
-        from agent.display import get_cute_tool_message
+        from agent.display import get_tool_status_message
         set_active_skin("ares")
-        msg = get_cute_tool_message("terminal", {"command": "ls"}, 0.5)
+        msg = get_tool_status_message("terminal", {"command": "ls"}, 0.5)
         assert msg.startswith("╎")
         assert "┊" not in msg
 
     def test_tool_message_default_prefix(self):
-        from agent.display import get_cute_tool_message
-        msg = get_cute_tool_message("terminal", {"command": "ls"}, 0.5)
+        from agent.display import get_tool_status_message
+        msg = get_tool_status_message("terminal", {"command": "ls"}, 0.5)
         assert msg.startswith("┊")
 
 

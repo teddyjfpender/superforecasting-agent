@@ -25,7 +25,7 @@ from typing import Any, Optional
 from agent.display import (
     ForecastSpinner,
     build_tool_preview as _build_tool_preview,
-    get_cute_tool_message as _get_cute_tool_message_impl,
+    get_tool_status_message as _get_tool_status_message,
     get_tool_emoji as _get_tool_emoji,
     _detect_tool_failure,
 )
@@ -396,10 +396,10 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
                 logging.debug(f"Tool {function_name} completed in {tool_duration:.2f}s")
                 logging.debug(f"Tool result ({len(function_result)} chars): {function_result}")
 
-        # Print cute message per tool
+        # Print compact status per tool
         if agent._should_emit_quiet_tool_messages():
-            cute_msg = _get_cute_tool_message_impl(name, args, tool_duration, result=function_result)
-            agent._safe_print(f"  {cute_msg}")
+            tool_status = _get_tool_status_message(name, args, tool_duration, result=function_result)
+            agent._safe_print(f"  {tool_status}")
         elif not agent.quiet_mode:
             _preview_str = _multimodal_text_summary(function_result)
             if agent.verbose_logging:
@@ -604,7 +604,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             )
             tool_duration = time.time() - tool_start_time
             if agent._should_emit_quiet_tool_messages():
-                agent._vprint(f"  {_get_cute_tool_message_impl('todo', function_args, tool_duration, result=function_result)}")
+                agent._vprint(f"  {_get_tool_status_message('todo', function_args, tool_duration, result=function_result)}")
         elif function_name == "session_search":
             session_db = agent._get_session_db_for_recall()
             if not session_db:
@@ -625,7 +625,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                 )
             tool_duration = time.time() - tool_start_time
             if agent._should_emit_quiet_tool_messages():
-                agent._vprint(f"  {_get_cute_tool_message_impl('session_search', function_args, tool_duration, result=function_result)}")
+                agent._vprint(f"  {_get_tool_status_message('session_search', function_args, tool_duration, result=function_result)}")
         elif function_name == "memory":
             target = function_args.get("target", "memory")
             from tools.memory_tool import memory_tool as _memory_tool
@@ -652,7 +652,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                     pass
             tool_duration = time.time() - tool_start_time
             if agent._should_emit_quiet_tool_messages():
-                agent._vprint(f"  {_get_cute_tool_message_impl('memory', function_args, tool_duration, result=function_result)}")
+                agent._vprint(f"  {_get_tool_status_message('memory', function_args, tool_duration, result=function_result)}")
         elif function_name == "clarify":
             from tools.clarify_tool import clarify_tool as _clarify_tool
             function_result = _clarify_tool(
@@ -662,7 +662,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             )
             tool_duration = time.time() - tool_start_time
             if agent._should_emit_quiet_tool_messages():
-                agent._vprint(f"  {_get_cute_tool_message_impl('clarify', function_args, tool_duration, result=function_result)}")
+                agent._vprint(f"  {_get_tool_status_message('clarify', function_args, tool_duration, result=function_result)}")
         elif function_name == "delegate_task":
             tasks_arg = function_args.get("tasks")
             if tasks_arg and isinstance(tasks_arg, list):
@@ -683,11 +683,11 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             finally:
                 agent._delegate_spinner = None
                 tool_duration = time.time() - tool_start_time
-                cute_msg = _get_cute_tool_message_impl('delegate_task', function_args, tool_duration, result=_delegate_result)
+                tool_status = _get_tool_status_message('delegate_task', function_args, tool_duration, result=_delegate_result)
                 if spinner:
-                    spinner.stop(cute_msg)
+                    spinner.stop(tool_status)
                 elif agent._should_emit_quiet_tool_messages():
-                    agent._vprint(f"  {cute_msg}")
+                    agent._vprint(f"  {tool_status}")
         elif agent._context_engine_tool_names and function_name in agent._context_engine_tool_names:
             # Context engine tools (lcm_grep, lcm_describe, lcm_expand, etc.)
             spinner = None
@@ -706,11 +706,11 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                 logger.error("context_engine.handle_tool_call raised for %s: %s", function_name, tool_error, exc_info=True)
             finally:
                 tool_duration = time.time() - tool_start_time
-                cute_msg = _get_cute_tool_message_impl(function_name, function_args, tool_duration, result=_ce_result)
+                tool_status = _get_tool_status_message(function_name, function_args, tool_duration, result=_ce_result)
                 if spinner:
-                    spinner.stop(cute_msg)
+                    spinner.stop(tool_status)
                 elif agent._should_emit_quiet_tool_messages():
-                    agent._vprint(f"  {cute_msg}")
+                    agent._vprint(f"  {tool_status}")
         elif agent._memory_manager and agent._memory_manager.has_tool(function_name):
             # Memory provider tools (hindsight_retain, honcho_search, etc.)
             # These are not in the tool registry — route through MemoryManager.
@@ -730,11 +730,11 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                 logger.error("memory_manager.handle_tool_call raised for %s: %s", function_name, tool_error, exc_info=True)
             finally:
                 tool_duration = time.time() - tool_start_time
-                cute_msg = _get_cute_tool_message_impl(function_name, function_args, tool_duration, result=_mem_result)
+                tool_status = _get_tool_status_message(function_name, function_args, tool_duration, result=_mem_result)
                 if spinner:
-                    spinner.stop(cute_msg)
+                    spinner.stop(tool_status)
                 elif agent._should_emit_quiet_tool_messages():
-                    agent._vprint(f"  {cute_msg}")
+                    agent._vprint(f"  {tool_status}")
         elif agent.quiet_mode:
             spinner = None
             if agent._should_emit_quiet_tool_messages() and agent._should_start_quiet_spinner():
@@ -758,11 +758,11 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                 logger.error("handle_function_call raised for %s: %s", function_name, tool_error, exc_info=True)
             finally:
                 tool_duration = time.time() - tool_start_time
-                cute_msg = _get_cute_tool_message_impl(function_name, function_args, tool_duration, result=_spinner_result)
+                tool_status = _get_tool_status_message(function_name, function_args, tool_duration, result=_spinner_result)
                 if spinner:
-                    spinner.stop(cute_msg)
+                    spinner.stop(tool_status)
                 elif agent._should_emit_quiet_tool_messages():
-                    agent._vprint(f"  {cute_msg}")
+                    agent._vprint(f"  {tool_status}")
         else:
             try:
                 function_result = _ra().handle_function_call(
