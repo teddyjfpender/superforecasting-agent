@@ -328,6 +328,35 @@ def test_plugin_and_session_recap_guidance_is_forecast_native():
     assert "Tailored to hermes-agent's tool vocabulary" not in recap
 
 
+def test_command_registry_and_oneshot_docs_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    commands = (root / "hermes_cli" / "commands.py").read_text(encoding="utf-8")
+    plugins_cmd = (root / "hermes_cli" / "plugins_cmd.py").read_text(
+        encoding="utf-8"
+    )
+    skills_config = (root / "hermes_cli" / "skills_config.py").read_text(
+        encoding="utf-8"
+    )
+    oneshot = (root / "hermes_cli" / "oneshot.py").read_text(encoding="utf-8")
+
+    combined = "\n".join([commands, plugins_cmd, skills_config, oneshot])
+
+    assert "superforecasting-agent skills list" in commands
+    assert "superforecasting-agent skills config" in commands
+    assert "superforecasting-agent plugins enable <key>" in plugins_cmd
+    assert "Entry point for `superforecasting-agent skills`" in skills_config
+    assert "configured for \"cli\" in `superforecasting-agent tools`" in oneshot
+    assert "Model / provider selection mirrors `superforecasting-agent chat`" in oneshot
+    assert "superforecasting-agent -z" in oneshot
+
+    assert "``hermes skills list``" not in combined
+    assert "``hermes skills\n    config``" not in combined
+    assert "``hermes plugins enable <key>``" not in combined
+    assert "Entry point for `hermes skills`" not in combined
+    assert "configured for \"cli\" in `hermes tools`" not in combined
+    assert "Model / provider selection mirrors `hermes chat`" not in combined
+
+
 def test_runtime_docstrings_use_forecast_native_home_paths():
     root = Path(__file__).resolve().parents[1]
     checked = {

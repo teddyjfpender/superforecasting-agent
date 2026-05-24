@@ -125,7 +125,7 @@ def _toggle_by_category(skills: List[dict], disabled: Set[str]) -> Set[str]:
 # ─── Entry Point ──────────────────────────────────────────────────────────────
 
 def skills_command(args=None):
-    """Entry point for `hermes skills`."""
+    """Entry point for `superforecasting-agent skills`."""
     from hermes_cli.curses_ui import curses_checklist
 
     config = load_config()

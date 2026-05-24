@@ -719,9 +719,10 @@ def _discover_all_plugins() -> list:
     one level deeper (depth capped at 2, same as the loader).
 
     The returned ``key`` is the path-derived registry key — the value the
-    user types into ``hermes plugins enable <key>``. For category-namespaced
-    plugins that's ``<category>/<dirname>``; for flat plugins it's the
-    manifest's ``name`` (or the directory name if the manifest omits it).
+    user types into ``superforecasting-agent plugins enable <key>``. For
+    category-namespaced plugins that's ``<category>/<dirname>``; for flat
+    plugins it's the manifest's ``name`` (or the directory name if the
+    manifest omits it).
 
     User entries override bundled on key collision, matching
     ``PluginManager.discover_and_load``.
