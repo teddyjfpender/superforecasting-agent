@@ -320,6 +320,24 @@ def test_developer_utility_scripts_are_forecast_native():
     assert "HERMES_DEV_PERF wired" not in profile_tui
 
 
+def test_tui_readme_uses_forecast_native_product_copy():
+    root = Path(__file__).resolve().parents[1]
+    readme = (root / "ui-tui" / "README.md").read_text(encoding="utf-8")
+
+    assert "superforecasting-agent --tui" in readme
+    assert "### Forecast composer" in readme
+    assert "live forecaster response row" in readme
+    assert "Forecaster output is rendered" in readme
+    assert "start forecaster response streaming" in readme
+    assert "SUPERFORECASTING_AGENT_HOME" in readme
+    assert "### Main chat input" not in readme
+    assert "live streaming assistant row" not in readme
+    assert "Assistant output is rendered" not in readme
+    assert "start assistant streaming" not in readme
+    assert "hermes --tui" not in readme
+    assert "Input history is stored in `~/.hermes" not in readme
+
+
 def test_plugin_and_session_recap_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     plugins = (root / "hermes_cli" / "plugins.py").read_text(encoding="utf-8")

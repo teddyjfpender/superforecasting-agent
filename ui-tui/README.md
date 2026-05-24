@@ -38,10 +38,11 @@ Malformed stdout lines are treated as protocol noise and surfaced as `gateway.pr
 From the repo root, the normal path is:
 
 ```bash
-hermes --tui
+superforecasting-agent --tui
 ```
 
 The CLI expects `ui-tui/dist/entry.js` to exist, or the whole source code available in which to run `npm install` and `npm run dev`.
+Legacy compatibility entrypoints may still route into the same client, but new usage and troubleshooting should use the forecast-native command.
 
 ```bash
 cd ui-tui
@@ -79,7 +80,7 @@ npm run test:watch
 - `gatewayContext.tsx` — React context for the gateway client
 - `constants.ts`, `helpers.ts`, `interfaces.ts`
 
-The top-level `app.tsx` composes these into the Ink tree with `Static` transcript output, a live streaming assistant row, prompt overlays, queue preview, status rule, input line, and completion list.
+The top-level `app.tsx` composes these into the Ink tree with forecast desk panels, `Static` transcript output, a live forecaster response row, prompt overlays, queue preview, status rule, input line, and completion list.
 
 State managed at the top level includes:
 
@@ -92,7 +93,7 @@ State managed at the top level includes:
 - tab completion and path completion
 - theme state from gateway skin data
 
-The UI renders as a normal Ink tree with `Static` transcript output, a live streaming assistant row, prompt overlays, queue preview, status rule, input line, and completion list.
+The UI renders as a normal Ink tree with `Static` transcript output, persistent forecast desk state, a live forecaster response row, prompt overlays, queue preview, status rule, input line, and completion list.
 
 The intro panel is driven by `session.info` and rendered through `branding.tsx`.
 
@@ -100,7 +101,7 @@ The intro panel is driven by `session.info` and rendered through `branding.tsx`.
 
 Current input behavior is split across `app.tsx`, `components/textInput.tsx`, and the prompt/picker components.
 
-### Main chat input
+### Forecast composer
 
 | Key                             | Behavior                                                                                                                                                |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -156,32 +157,32 @@ Notes:
 Notes:
 
 - Clarify free-text mode and masked prompts use `ink-text-input`, so text editing there follows the library's default bindings rather than `components/textInput.tsx`.
-- When a blocking prompt is open, the main chat input hotkeys are suspended.
+- When a blocking prompt is open, the forecast composer hotkeys are suspended.
 - Clarify mode has no dedicated cancel shortcut in the current client. Sudo and secret prompts only expose `Ctrl+C` cancellation from the app-level blocked handler.
 
 ### Interaction rules
 
 - Plain text entered while the agent is busy is queued instead of sent immediately.
 - Slash commands and `!cmd` do not queue; they execute immediately even while a run is active.
-- Queue auto-drains after each assistant response, unless a queued item is currently being edited.
+- Queue auto-drains after each forecaster response, unless a queued item is currently being edited.
 - `Up/Down` prioritizes queued-message editing over history. History only activates when there is no queue to edit.
 - Queued drafts keep their original `!cmd` and `{!cmd}` text while you edit them. Shell commands and interpolation run when the queued item is actually sent.
 - If you load a queued item into the input and resubmit plain text, that queue item is replaced, removed from the queue preview, and promoted to send next. If the agent is still busy, the edited item is moved to the front of the queue and sent after the current run completes.
 - Completion requests are debounced by 60 ms. Input starting with `/` uses `complete.slash`. A trailing token that starts with `./`, `../`, `~/`, `/`, or `@` uses `complete.path`.
 - Text pastes are inserted inline directly into the draft. Nothing is newline-flattened.
 - `Cmd/Ctrl+G` (or `Alt+G` in VSCode/Cursor, which intercept the primary keystroke for Find Next) writes the current draft, including any multiline buffer, to a temp file, suspends Ink, launches `$EDITOR`, then restores the TUI and submits the saved text if the editor exits cleanly.
-- Input history is stored in `~/.hermes/.hermes_history` or under `HERMES_HOME`.
+- Input history is stored under the active forecast home, preferring `SUPERFORECASTING_AGENT_HOME` or `FORECAST_HOME` and falling back to compatibility home aliases.
 
 ## Rendering
 
-Assistant output is rendered in one of two ways:
+Forecaster output is rendered in one of two ways:
 
 - if the payload already contains ANSI, `messageLine.tsx` prints it directly
 - otherwise `components/markdown.tsx` renders a small Markdown subset into Ink components
 
 The Markdown renderer handles headings, lists, block quotes, tables, fenced code blocks, diff coloring, inline code, emphasis, links, and plain URLs.
 
-Tool/status activity is shown in a live activity lane. Transcript rows stay focused on user/assistant turns.
+Tool/status activity is shown in a live activity lane. Transcript rows stay focused on the operator's prompts and forecast-desk responses.
 
 ## Prompt flows
 
@@ -216,7 +217,7 @@ The local slash handler covers the built-ins that need direct client behavior:
 
 Notes:
 
-- `/copy` sends the selected assistant response through OSC 52.
+- `/copy` sends the selected forecaster response through OSC 52.
 - `/paste` with no args asks the gateway to attach a clipboard image.
 - Text paste remains inline-only; `Cmd+V` / `Ctrl+V` handle layered text/OSC52/image fallback before `/paste` is needed.
 - `/details [hidden|collapsed|expanded|cycle]` controls thinking/tool-detail visibility.
@@ -237,7 +238,7 @@ Primary event types the client handles today:
 | ------------------------ | ----------------------------------------------- |
 | `gateway.ready`          | `{ skin? }`                                     |
 | `session.info`           | session metadata for banner + tool/skill panels |
-| `message.start`          | start assistant streaming                       |
+| `message.start`          | start forecaster response streaming             |
 | `message.delta`          | `{ text, rendered? }`                           |
 | `message.complete`       | `{ text, rendered?, usage, status }`            |
 | `thinking.delta`         | `{ text }`                                      |
