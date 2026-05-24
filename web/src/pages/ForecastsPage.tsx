@@ -78,6 +78,10 @@ const EVIDENCE_IMPORTS = [
     label: "Commits",
   },
   {
+    command: "forecast import githubactions <owner/repo> --question <id>",
+    label: "CI runs",
+  },
+  {
     command: 'forecast import hackernews "<query>" --question <id>',
     label: "HN",
   },

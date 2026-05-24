@@ -486,6 +486,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
       '/forecast import wikipediapageviews <project>/<article> --question <id>',
       '/forecast import githubissues <owner/repo> --question <id>',
       '/forecast import githubcommits <owner/repo> --question <id>',
+      '/forecast import githubactions <owner/repo> --question <id>',
       '/forecast import pypi <package> --question <id>',
       '/forecast import npm <package> --question <id>',
       '/forecast import hackernews "<query>" --question <id>',

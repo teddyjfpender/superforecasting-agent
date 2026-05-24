@@ -30,6 +30,7 @@ from forecasting.source_adapters import (
     load_fred_observations,
     load_gdelt_articles,
     load_github_commits,
+    load_github_workflow_runs,
     load_hackernews_items,
     load_github_issues,
     load_github_releases,
@@ -253,6 +254,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "github",
                     "githubissues",
                     "githubcommits",
+                    "githubactions",
                     "coingecko",
                     "pypi",
                     "npm",
@@ -1157,6 +1159,11 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_github_commits(source, **kwargs)
+    if adapter_name == "githubactions":
+        kwargs = {"limit": limit, "since": since}
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_github_workflow_runs(source, **kwargs)
     if adapter_name == "coingecko":
         kwargs = {
             "limit": limit,
@@ -1285,6 +1292,7 @@ def _source_adapter_evidence_payload(
         "last_update_posted_at",
         "last_update_submitted_at",
         "latest_submission_status_date",
+        "run_started_at",
         "updated_at",
         "last_updated",
         "committed_at",
@@ -1396,6 +1404,9 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         return f"GitHub {issue_kind} {data.get('repo')} {number}: {data.get('title')}"
     if adapter == "githubcommits":
         return f"GitHub commit {data.get('repo')} {data.get('short_sha')}: {data.get('message')}"
+    if adapter == "githubactions":
+        status = data.get("conclusion") or data.get("status") or "state unknown"
+        return f"GitHub Actions run {data.get('repo')} {data.get('run_id')}: {status}"
     if adapter == "coingecko":
         currency = str(data.get("vs_currency") or "").upper()
         return (

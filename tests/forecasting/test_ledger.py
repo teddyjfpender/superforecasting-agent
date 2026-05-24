@@ -30,6 +30,7 @@ from forecasting.source_adapters import (
     GitHubCommit,
     GitHubIssue,
     GitHubRelease,
+    GitHubWorkflowRun,
     KalshiMarketImport,
     ManifoldMarketImport,
     MetaculusQuestionImport,
@@ -1752,6 +1753,71 @@ def test_watched_githubcommits_source_creates_alert_on_commit_change(tmp_path, m
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert f"forecast import githubcommits acme/desk --question {question.id}" in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_githubactions_source_creates_alert_on_workflow_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched GitHub Actions be detected?",
+        resolution_criteria="Resolved yes if watched GitHub Actions run changes create alerts.",
+    )
+    conclusions = ["success"]
+    captured_sources = []
+
+    def fake_load_github_workflow_runs(source: str, **kwargs):
+        captured_sources.append(source)
+        return [
+            GitHubWorkflowRun(
+                repo="acme/desk",
+                run_id="987",
+                name="CI",
+                display_title=f"Forecast workflow {conclusions[0]}",
+                status="completed",
+                conclusion=conclusions[0],
+                event="push",
+                head_branch="main",
+                head_sha="abcdef1234567890",
+                short_sha="abcdef1",
+                workflow_id="1234",
+                workflow_url="https://api.github.test/repos/acme/desk/actions/workflows/1234",
+                actor_login="ada",
+                triggering_actor_login="ci-bot",
+                run_started_at="2026-05-21T10:30:00Z",
+                created_at="2026-05-21T10:00:00Z",
+                updated_at="2026-05-21T11:00:00Z",
+                url="https://api.github.test/repos/acme/desk/actions/runs/987",
+                html_url="https://github.com/acme/desk/actions/runs/987",
+                source_name="GitHub",
+                entry_id="acme/desk/actions/runs/987",
+                raw={"conclusion": conclusions[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_github_workflow_runs", fake_load_github_workflow_runs)
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="githubactions:acme/desk",
+    )
+
+    assert watch["source_type"] == "githubactions"
+    assert watch["last_seen_signature"].startswith("githubactions:1:")
+    assert captured_sources[-1] == "acme/desk"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    conclusions[0] = "failure"
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f"forecast import githubactions acme/desk --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]

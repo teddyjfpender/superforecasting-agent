@@ -314,6 +314,32 @@ class GitHubCommit:
 
 
 @dataclass(frozen=True)
+class GitHubWorkflowRun:
+    repo: str
+    run_id: str
+    name: str
+    display_title: str
+    status: str | None
+    conclusion: str | None
+    event: str | None
+    head_branch: str | None
+    head_sha: str | None
+    short_sha: str | None
+    workflow_id: str | None
+    workflow_url: str | None
+    actor_login: str | None
+    triggering_actor_login: str | None
+    run_started_at: str | None
+    created_at: str | None
+    updated_at: str | None
+    url: str | None
+    html_url: str | None
+    source_name: str
+    entry_id: str
+    raw: dict
+
+
+@dataclass(frozen=True)
 class CoinGeckoMarketSnapshot:
     coin_id: str
     symbol: str | None
@@ -2030,6 +2056,98 @@ def load_github_commits(
         if len(commits) >= limit:
             break
     return commits
+
+
+def load_github_workflow_runs(
+    source: str,
+    *,
+    limit: int = 10,
+    since: str | None = None,
+    api_base_url: str = "https://api.github.com",
+) -> list[GitHubWorkflowRun]:
+    """Load GitHub Actions workflow runs as timestamped operational evidence."""
+
+    owner, repo_name = _github_repo_parts(source)
+    if limit <= 0:
+        raise ValidationError("githubactions import --limit must be positive")
+    since_ts = parse_timestamp(since, field_name="since") if since else None
+    since_dt = timestamp_to_datetime(since_ts) if since_ts else None
+    repo = f"{owner}/{repo_name}"
+    endpoint = (
+        f"{api_base_url.rstrip('/')}/repos/{quote(owner, safe='')}/"
+        f"{quote(repo_name, safe='')}/actions/runs?{urlencode({'per_page': min(limit, 100)})}"
+    )
+    payload = _read_json_endpoint(endpoint, "github actions workflow runs")
+    if not isinstance(payload, dict):
+        raise ValidationError("github actions workflow runs response must be an object")
+    rows = payload.get("workflow_runs")
+    if not isinstance(rows, list):
+        raise ValidationError("github actions workflow runs response must include workflow_runs array")
+
+    runs: list[GitHubWorkflowRun] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        run_id = _optional_str(row.get("id"))
+        if not run_id:
+            continue
+        created_at = _github_timestamp(row.get("created_at"))
+        updated_at = _github_timestamp(row.get("updated_at"))
+        run_started_at = _github_timestamp(row.get("run_started_at"))
+        available_at = updated_at or run_started_at or created_at
+        available_dt = timestamp_to_datetime(available_at) if available_at else None
+        if since_dt is not None and available_dt is not None and available_dt < since_dt:
+            continue
+        actor = row.get("actor") if isinstance(row.get("actor"), dict) else {}
+        triggering_actor = row.get("triggering_actor") if isinstance(row.get("triggering_actor"), dict) else {}
+        head_sha = _optional_str(row.get("head_sha"))
+        name = _collapse_ws(_optional_str(row.get("name")) or "GitHub Actions workflow")
+        display_title = _collapse_ws(_optional_str(row.get("display_title")) or name)
+        runs.append(
+            GitHubWorkflowRun(
+                repo=repo,
+                run_id=run_id,
+                name=name,
+                display_title=display_title,
+                status=_optional_str(row.get("status")),
+                conclusion=_optional_str(row.get("conclusion")),
+                event=_optional_str(row.get("event")),
+                head_branch=_optional_str(row.get("head_branch")),
+                head_sha=head_sha,
+                short_sha=head_sha[:7] if head_sha else None,
+                workflow_id=_optional_str(row.get("workflow_id")),
+                workflow_url=_optional_str(row.get("workflow_url")),
+                actor_login=_optional_str(actor.get("login")),
+                triggering_actor_login=_optional_str(triggering_actor.get("login")),
+                run_started_at=run_started_at,
+                created_at=created_at,
+                updated_at=updated_at,
+                url=_optional_str(row.get("url")),
+                html_url=_optional_str(row.get("html_url")),
+                source_name="GitHub",
+                entry_id=f"{repo}/actions/runs/{run_id}",
+                raw={
+                    "id": row.get("id"),
+                    "repo": repo,
+                    "name": row.get("name"),
+                    "display_title": row.get("display_title"),
+                    "status": row.get("status"),
+                    "conclusion": row.get("conclusion"),
+                    "event": row.get("event"),
+                    "head_branch": row.get("head_branch"),
+                    "head_sha": head_sha,
+                    "workflow_id": row.get("workflow_id"),
+                    "actor_login": actor.get("login"),
+                    "triggering_actor_login": triggering_actor.get("login"),
+                    "run_started_at": run_started_at,
+                    "created_at": created_at,
+                    "updated_at": updated_at,
+                },
+            )
+        )
+        if len(runs) >= limit:
+            break
+    return runs
 
 
 def load_coingecko_market_snapshots(
@@ -6129,7 +6247,7 @@ def _owid_date_to_iso(value: str) -> str | None:
 def _github_repo_parts(source: str) -> tuple[str, str]:
     value = (
         source.split(":", 1)[1].strip()
-        if source.startswith(("github:", "githubissues:", "githubcommits:"))
+        if source.startswith(("github:", "githubissues:", "githubcommits:", "githubactions:"))
         else source.strip()
     )
     parsed = urlparse(value)
@@ -6140,7 +6258,7 @@ def _github_repo_parts(source: str) -> tuple[str, str]:
     if len(parts) < 2:
         raise ValidationError(
             "github source must be owner/repo, github:owner/repo, githubissues:owner/repo, "
-            "githubcommits:owner/repo, or a GitHub repository URL"
+            "githubcommits:owner/repo, githubactions:owner/repo, or a GitHub repository URL"
         )
     owner, repo = parts[0], parts[1]
     if not owner or not repo:

@@ -32,6 +32,7 @@ from forecasting.source_adapters import (
     GitHubCommit,
     GitHubIssue,
     GitHubRelease,
+    GitHubWorkflowRun,
     NasaEonetEvent,
     NpmPackageVersion,
     NvdCve,
@@ -2221,6 +2222,162 @@ def test_forecast_cli_githubcommits_import_captures_commits_as_evidence(tmp_path
     assert evidence[0].metadata["repo"] == "acme/desk"
     assert evidence[0].metadata["sha"] == "abcdef1234567890"
     assert evidence[0].metadata["author_login"] == "ada"
+
+
+def test_githubactions_adapter_loads_workflow_runs(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return {
+            "total_count": 1,
+            "workflow_runs": [
+                {
+                    "id": 987,
+                    "name": "CI",
+                    "display_title": "Add calibrated forecast dashboard",
+                    "status": "completed",
+                    "conclusion": "success",
+                    "event": "push",
+                    "head_branch": "main",
+                    "head_sha": "abcdef1234567890",
+                    "workflow_id": 1234,
+                    "workflow_url": "https://api.github.test/repos/acme/desk/actions/workflows/1234",
+                    "actor": {"login": "ada"},
+                    "triggering_actor": {"login": "ci-bot"},
+                    "run_started_at": "2026-05-21T10:30:00Z",
+                    "created_at": "2026-05-21T10:00:00Z",
+                    "updated_at": "2026-05-21T11:00:00Z",
+                    "url": "https://api.github.test/repos/acme/desk/actions/runs/987",
+                    "html_url": "https://github.com/acme/desk/actions/runs/987",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    runs = source_adapters.load_github_workflow_runs(
+        "githubactions:acme/desk",
+        limit=2,
+        since="2026-05-01T00:00:00Z",
+        api_base_url="https://api.github.test",
+    )
+    parsed = urlparse(captured["endpoint"])
+    params = parse_qs(parsed.query)
+
+    assert captured["label"] == "github actions workflow runs"
+    assert parsed.path == "/repos/acme/desk/actions/runs"
+    assert params["per_page"] == ["2"]
+    assert runs[0].repo == "acme/desk"
+    assert runs[0].run_id == "987"
+    assert runs[0].name == "CI"
+    assert runs[0].display_title == "Add calibrated forecast dashboard"
+    assert runs[0].status == "completed"
+    assert runs[0].conclusion == "success"
+    assert runs[0].event == "push"
+    assert runs[0].head_branch == "main"
+    assert runs[0].short_sha == "abcdef1"
+    assert runs[0].triggering_actor_login == "ci-bot"
+    assert runs[0].updated_at == "2026-05-21T11:00:00Z"
+
+
+def test_forecast_cli_githubactions_import_captures_runs_as_evidence(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_github_workflow_runs(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            GitHubWorkflowRun(
+                repo="acme/desk",
+                run_id="987",
+                name="CI",
+                display_title="Add calibrated forecast dashboard",
+                status="completed",
+                conclusion="failure",
+                event="push",
+                head_branch="main",
+                head_sha="abcdef1234567890",
+                short_sha="abcdef1",
+                workflow_id="1234",
+                workflow_url="https://api.github.test/repos/acme/desk/actions/workflows/1234",
+                actor_login="ada",
+                triggering_actor_login="ci-bot",
+                run_started_at="2026-05-21T10:30:00Z",
+                created_at="2026-05-21T10:00:00Z",
+                updated_at="2026-05-21T11:00:00Z",
+                url="https://api.github.test/repos/acme/desk/actions/runs/987",
+                html_url="https://github.com/acme/desk/actions/runs/987",
+                source_name="GitHub",
+                entry_id="acme/desk/actions/runs/987",
+                raw={"id": 987},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_github_workflow_runs", fake_load_github_workflow_runs)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will GitHub Actions evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if GitHub Actions evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "githubactions",
+            "acme/desk",
+            "--question",
+            question_id,
+            "--limit",
+            "3",
+            "--since",
+            "2026-05-01T00:00:00Z",
+            "--api-base-url",
+            "https://api.github.test",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.8",
+            "--relevance",
+            "0.9",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 githubactions evidence item(s)" in output
+    assert captured["source"] == "acme/desk"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["api_base_url"] == "https://api.github.test"
+    assert evidence[0].claim == "GitHub Actions run: acme/desk 987 failure"
+    assert evidence[0].summary.startswith("GitHub Actions run acme/desk #987")
+    assert evidence[0].source_name == "GitHub"
+    assert evidence[0].source_type == "adapter:githubactions"
+    assert evidence[0].published_at == "2026-05-21T11:00:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.8
+    assert evidence[0].relevance_rating == 0.9
+    assert evidence[0].metadata["adapter"] == "githubactions"
+    assert evidence[0].metadata["repo"] == "acme/desk"
+    assert evidence[0].metadata["run_id"] == "987"
+    assert evidence[0].metadata["conclusion"] == "failure"
+    assert evidence[0].metadata["head_branch"] == "main"
 
 
 def test_coingecko_adapter_loads_market_snapshots(monkeypatch):
@@ -6570,6 +6727,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "wikipediapageviews:<project>/<article>" in output
     assert "githubissues:<owner/repo>" in output
     assert "githubcommits:<owner/repo>" in output
+    assert "githubactions:<owner/repo>" in output
     assert "hackernews:<query>" in output
     assert "reddit:<query>" in output
     assert "nvd:<keyword-or-CVE>" in output
@@ -6586,7 +6744,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "owid", "eia", "treasury", "census", "stooq", "yahoo", "coingecko", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "owid", "eia", "treasury", "census", "stooq", "yahoo", "coingecko", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "census:<dataset-path?get=...&for=...>" for source in payload["sources"])
@@ -6600,6 +6758,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     assert any(source["watch_prefix"] == "npm:<package>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "githubissues:<owner/repo>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "githubcommits:<owner/repo>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "githubactions:<owner/repo>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "hackernews:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "reddit:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "cisakev:<keyword-or-CVE-or-all>" for source in payload["sources"])
@@ -8478,6 +8637,80 @@ def test_forecast_cli_watch_add_supports_githubcommits_sources(tmp_path, capsys,
     assert "source_type: githubcommits" in add_output
 
     messages[0] = "New forecast commit"
+    _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
+    check_output = capsys.readouterr().out
+
+    assert "created 1 alert(s)" in check_output
+    assert f"watched_source_changed:{watch_id}" in check_output
+
+
+def test_forecast_cli_watch_add_supports_githubactions_sources(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    conclusions = ["success"]
+
+    def fake_load_github_workflow_runs(source: str, **kwargs):
+        return [
+            GitHubWorkflowRun(
+                repo="acme/desk",
+                run_id="987",
+                name="CI",
+                display_title=f"Forecast workflow {conclusions[0]}",
+                status="completed",
+                conclusion=conclusions[0],
+                event="push",
+                head_branch="main",
+                head_sha="abcdef1234567890",
+                short_sha="abcdef1",
+                workflow_id="1234",
+                workflow_url=None,
+                actor_login="ada",
+                triggering_actor_login="ci-bot",
+                run_started_at="2026-05-21T10:30:00Z",
+                created_at="2026-05-21T10:00:00Z",
+                updated_at="2026-05-21T11:00:00Z",
+                url=None,
+                html_url=None,
+                source_name="GitHub",
+                entry_id="acme/desk/actions/runs/987",
+                raw={"conclusion": conclusions[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_github_workflow_runs", fake_load_github_workflow_runs)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will watched CLI GitHub Actions change?",
+            "--resolution-criteria",
+            "Resolved yes if watched GitHub Actions runs change.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            "githubactions:acme/desk",
+            "--question",
+            question_id,
+        ],
+    )
+    add_output = capsys.readouterr().out
+    watch_id = re.search(r"watched source (ws_[a-f0-9]+)", add_output).group(1)
+
+    assert "source_type: githubactions" in add_output
+
+    conclusions[0] = "failure"
     _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
     check_output = capsys.readouterr().out
 

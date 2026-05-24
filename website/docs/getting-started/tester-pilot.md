@@ -95,6 +95,7 @@ forecast --db "$FORECAST_DB" import yahoo AAPL --question <id>
 forecast --db "$FORECAST_DB" import coingecko bitcoin --question <id>
 forecast --db "$FORECAST_DB" import wikipediapageviews en.wikipedia.org/Topic --question <id>
 forecast --db "$FORECAST_DB" import githubcommits owner/repo --question <id>
+forecast --db "$FORECAST_DB" import githubactions owner/repo --question <id>
 forecast --db "$FORECAST_DB" import hackernews "product query" --question <id>
 forecast --db "$FORECAST_DB" import reddit "topic query" --question <id>
 forecast --db "$FORECAST_DB" import courtlistener "case or legal query" --question <id>

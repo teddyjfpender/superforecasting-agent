@@ -15,6 +15,7 @@ from forecasting.source_adapters import (
     HackerNewsItem,
     GitHubCommit,
     GitHubIssue,
+    GitHubWorkflowRun,
     NasaEonetEvent,
     NpmPackageVersion,
     NwsAlert,
@@ -88,7 +89,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "githubcommits", "coingecko", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "stooq", "yahoo", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "stooq", "yahoo", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_lifecycle(tmp_path):
@@ -1812,6 +1813,63 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert github_evidence["published_at"] == "2026-05-21T11:00:00Z"
     assert github_evidence["metadata"]["adapter"] == "githubcommits"
     assert github_evidence["metadata"]["adapter_item"]["sha"] == "abcdef1234567890"
+
+    def fake_githubactions(source, **kwargs):
+        assert source == "acme/desk"
+        assert kwargs["limit"] == 1
+        assert kwargs["since"] == "2026-01-01"
+        assert kwargs["api_base_url"] == "https://example.test/github"
+        return [
+            GitHubWorkflowRun(
+                repo="acme/desk",
+                run_id="987",
+                name="CI",
+                display_title="Add calibrated forecast dashboard",
+                status="completed",
+                conclusion="success",
+                event="push",
+                head_branch="main",
+                head_sha="abcdef1234567890",
+                short_sha="abcdef1",
+                workflow_id="1234",
+                workflow_url="https://api.github.test/repos/acme/desk/actions/workflows/1234",
+                actor_login="ada",
+                triggering_actor_login="ci-bot",
+                run_started_at="2026-05-21T10:30:00Z",
+                created_at="2026-05-21T10:00:00Z",
+                updated_at="2026-05-21T11:00:00Z",
+                url="https://api.github.test/repos/acme/desk/actions/runs/987",
+                html_url="https://github.com/acme/desk/actions/runs/987",
+                source_name="GitHub",
+                entry_id="acme/desk/actions/runs/987",
+                raw={"id": 987},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_github_workflow_runs", fake_githubactions)
+    githubactions_imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "githubactions",
+                "source": "acme/desk",
+                "limit": 1,
+                "since": "2026-01-01",
+                "api_base_url": "https://example.test/github",
+            }
+        )
+    )
+
+    assert githubactions_imported["imported_count"] == 1
+    githubactions_evidence = githubactions_imported["imported"][0]["evidence"]
+    assert githubactions_evidence["source_type"] == "adapter:githubactions"
+    assert githubactions_evidence["source_name"] == "GitHub"
+    assert githubactions_evidence["claim"] == "GitHub Actions run acme/desk 987: success"
+    assert githubactions_evidence["published_at"] == "2026-05-21T10:30:00Z"
+    assert githubactions_evidence["metadata"]["adapter"] == "githubactions"
+    assert githubactions_evidence["metadata"]["adapter_item"]["run_id"] == "987"
 
     def fake_coingecko(source, **kwargs):
         assert source == "bitcoin"

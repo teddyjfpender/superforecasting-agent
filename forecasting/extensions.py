@@ -81,6 +81,7 @@ def register_builtin_extensions() -> None:
         ("github-releases", "importer", "Capture GitHub repository releases as timestamped evidence."),
         ("github-issues", "importer", "Capture GitHub issues and pull requests as timestamped evidence."),
         ("github-commits", "importer", "Capture GitHub commit activity as timestamped evidence."),
+        ("github-actions", "importer", "Capture GitHub Actions workflow runs as timestamped evidence."),
         ("coingecko-market-data", "importer", "Capture CoinGecko crypto market snapshots as evidence."),
         ("pypi-releases", "importer", "Capture PyPI package releases as timestamped evidence."),
         ("npm-package-versions", "importer", "Capture npm package versions as timestamped evidence."),

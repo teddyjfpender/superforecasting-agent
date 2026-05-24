@@ -51,6 +51,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "github",
     "githubissues",
     "githubcommits",
+    "githubactions",
     "coingecko",
     "pypi",
     "npm",

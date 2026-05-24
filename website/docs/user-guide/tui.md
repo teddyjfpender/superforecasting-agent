@@ -79,6 +79,7 @@ Examples:
 /forecast import coingecko bitcoin --question <id>
 /forecast import githubissues owner/repo --question <id>
 /forecast import githubcommits owner/repo --question <id>
+/forecast import githubactions owner/repo --question <id>
 /forecast import pypi package-name --question <id>
 /forecast import npm package-name --question <id>
 /forecast import hackernews "product query" --question <id>

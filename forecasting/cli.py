@@ -69,6 +69,7 @@ from forecasting.source_adapters import (
     load_fred_observations,
     load_gdelt_articles,
     load_github_commits,
+    load_github_workflow_runs,
     load_hackernews_items,
     load_github_issues,
     load_github_releases,
@@ -295,6 +296,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "watch_prefix": "githubcommits:<owner/repo>",
     },
     {
+        "name": "githubactions",
+        "domain": "repository workflow runs",
+        "import_command": "forecast import githubactions <owner/repo> --question <id>",
+        "watch_prefix": "githubactions:<owner/repo>",
+    },
+    {
         "name": "pypi",
         "domain": "Python package releases",
         "import_command": "forecast import pypi <package> --question <id>",
@@ -490,6 +497,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "github",
         "githubissues",
         "githubcommits",
+        "githubactions",
         "pypi",
         "npm",
         "hackernews",
@@ -566,6 +574,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "github",
             "githubissues",
             "githubcommits",
+            "githubactions",
             "pypi",
             "npm",
             "hackernews",
@@ -625,6 +634,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 help="Override GitHub API base URL for tests or private mirrors",
             )
         if name == "githubcommits":
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://api.github.com",
+                help="Override GitHub API base URL for tests or private mirrors",
+            )
+        if name == "githubactions":
             adapter.add_argument(
                 "--api-base-url",
                 default="https://api.github.com",
@@ -2344,6 +2359,68 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} githubcommits evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "githubactions":
+        if not args.question_id:
+            raise SystemExit("forecast import githubactions requires --question")
+        runs = load_github_workflow_runs(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for run in runs:
+            status_text = run.conclusion or run.status or "state unknown"
+            branch = f" on {run.head_branch}" if run.head_branch else ""
+            actor = run.triggering_actor_login or run.actor_login or "unknown actor"
+            summary = (
+                f"GitHub Actions run {run.repo} #{run.run_id}: {run.display_title}. "
+                f"Workflow {run.name} {status_text}{branch}; triggered by {actor}"
+                + (f" at {run.updated_at}." if run.updated_at else ".")
+            )
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=run.html_url or run.url or f"GitHub:{run.repo}:actions:{run.run_id}",
+                    source_url=run.html_url or run.url,
+                    source_name=run.source_name,
+                    source_type="adapter:githubactions",
+                    published_at=run.updated_at or run.run_started_at or run.created_at,
+                    available_at=run.updated_at or run.run_started_at or run.created_at or args.as_of,
+                    claim=f"GitHub Actions run: {run.repo} {run.run_id} {status_text}",
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "githubactions",
+                        "repo": run.repo,
+                        "run_id": run.run_id,
+                        "name": run.name,
+                        "display_title": run.display_title,
+                        "status": run.status,
+                        "conclusion": run.conclusion,
+                        "event": run.event,
+                        "head_branch": run.head_branch,
+                        "head_sha": run.head_sha,
+                        "short_sha": run.short_sha,
+                        "workflow_id": run.workflow_id,
+                        "workflow_url": run.workflow_url,
+                        "actor_login": run.actor_login,
+                        "triggering_actor_login": run.triggering_actor_login,
+                        "run_started_at": run.run_started_at,
+                        "created_at": run.created_at,
+                        "updated_at": run.updated_at,
+                        "api_base_url": args.api_base_url,
+                        "raw": run.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} githubactions evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

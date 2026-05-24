@@ -81,6 +81,7 @@ forecast import wikipediapageviews en.wikipedia.org/Topic --question <id>
 forecast import github owner/repo --question <id>
 forecast import githubissues owner/repo --question <id>
 forecast import githubcommits owner/repo --question <id>
+forecast import githubactions owner/repo --question <id>
 forecast import pypi package-name --question <id>
 forecast import npm package-name --question <id>
 forecast import hackernews "product query" --question <id>
@@ -168,6 +169,7 @@ forecast watch add --question <id> nws:area=CA
 forecast watch add --question <id> manifold:<slug>
 forecast watch add --question <id> wikipediapageviews:en.wikipedia.org/Topic
 forecast watch add --question <id> githubcommits:owner/repo
+forecast watch add --question <id> githubactions:owner/repo
 
 forecast schedule add --question <id> --cadence 1d --next-run-at 2026-05-22T09:00:00Z
 forecast schedule add --domain policy --topic elections --cadence 12h --stale-days 3 --auto-score --auto-postmortem
