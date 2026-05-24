@@ -108,6 +108,21 @@ class TestForecastNativeWebServerEnv:
         monkeypatch.delenv("FORECAST_WEB_DIST")
         assert web_server._configured_web_dist() == "/legacy/dist"
 
+    def test_save_anthropic_oauth_creds_uses_forecast_oauth_file_alias(self, tmp_path, monkeypatch):
+        import hermes_cli.web_server as web_server
+
+        oauth_file = tmp_path / "auth" / "anthropic.json"
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path / "home"))
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_OAUTH_FILE", str(oauth_file))
+
+        web_server._save_anthropic_oauth_creds("access-token", "refresh-token", 123456)
+
+        assert json.loads(oauth_file.read_text(encoding="utf-8")) == {
+            "accessToken": "access-token",
+            "refreshToken": "refresh-token",
+            "expiresAt": 123456,
+        }
+
 
 # ---------------------------------------------------------------------------
 # web_server tests (FastAPI endpoints)

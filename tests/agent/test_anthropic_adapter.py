@@ -19,9 +19,11 @@ from agent.anthropic_adapter import (
     build_anthropic_kwargs,
     convert_messages_to_anthropic,
     convert_tools_to_anthropic,
+    get_hermes_oauth_file,
     is_claude_code_token_valid,
     normalize_model_name,
     read_claude_code_credentials,
+    read_hermes_oauth_credentials,
     resolve_anthropic_token,
     run_oauth_setup_token,
 )
@@ -55,6 +57,32 @@ class TestIsOAuthToken:
 
     def test_empty(self):
         assert _is_oauth_token("") is False
+
+
+class TestHermesOAuthFile:
+    def test_oauth_file_prefers_forecast_native_env_alias(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_OAUTH_FILE", str(tmp_path / "forecast.json"))
+        monkeypatch.setenv("FORECAST_OAUTH_FILE", str(tmp_path / "short.json"))
+        monkeypatch.setenv("HERMES_OAUTH_FILE", str(tmp_path / "legacy.json"))
+
+        assert get_hermes_oauth_file() == tmp_path / "forecast.json"
+
+    def test_oauth_file_preserves_legacy_env_alias(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_OAUTH_FILE", raising=False)
+        monkeypatch.delenv("FORECAST_OAUTH_FILE", raising=False)
+        monkeypatch.setenv("HERMES_OAUTH_FILE", str(tmp_path / "legacy.json"))
+
+        assert get_hermes_oauth_file() == tmp_path / "legacy.json"
+
+    def test_read_oauth_credentials_uses_forecast_native_env_alias(self, tmp_path, monkeypatch):
+        oauth_file = tmp_path / "forecast-oauth.json"
+        oauth_file.write_text(json.dumps({"accessToken": "tok", "refreshToken": "ref"}))
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_OAUTH_FILE", str(oauth_file))
+
+        assert read_hermes_oauth_credentials() == {
+            "accessToken": "tok",
+            "refreshToken": "ref",
+        }
 
 
 class TestBuildAnthropicClient:

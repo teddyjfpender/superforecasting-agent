@@ -1369,12 +1369,12 @@ def _anthropic_oauth_status() -> Dict[str, Any]:
         from agent.anthropic_adapter import (
             read_hermes_oauth_credentials,
             read_claude_code_credentials,
-            _HERMES_OAUTH_FILE,
+            get_hermes_oauth_file,
         )
     except ImportError:
         read_claude_code_credentials = None  # type: ignore
         read_hermes_oauth_credentials = None  # type: ignore
-        _HERMES_OAUTH_FILE = None  # type: ignore
+        get_hermes_oauth_file = None  # type: ignore
 
     hermes_creds = None
     if read_hermes_oauth_credentials:
@@ -1383,10 +1383,11 @@ def _anthropic_oauth_status() -> Dict[str, Any]:
         except Exception:
             hermes_creds = None
     if hermes_creds and hermes_creds.get("accessToken"):
+        oauth_file = get_hermes_oauth_file() if get_hermes_oauth_file else None
         return {
             "logged_in": True,
             "source": "hermes_pkce",
-            "source_label": f"Superforecasting Agent PKCE ({_HERMES_OAUTH_FILE})",
+            "source_label": f"Superforecasting Agent PKCE ({oauth_file})",
             "token_preview": _truncate_token(hermes_creds.get("accessToken")),
             "expires_at": hermes_creds.get("expiresAt"),
             "has_refresh_token": bool(hermes_creds.get("refreshToken")),
@@ -1615,9 +1616,10 @@ async def disconnect_oauth_provider(provider_id: str, request: Request):
     # want to undo a disconnect.
     if provider_id in {"anthropic", "claude-code"}:
         try:
-            from agent.anthropic_adapter import _HERMES_OAUTH_FILE
-            if _HERMES_OAUTH_FILE.exists():
-                _HERMES_OAUTH_FILE.unlink()
+            from agent.anthropic_adapter import get_hermes_oauth_file
+            oauth_file = get_hermes_oauth_file()
+            if oauth_file.exists():
+                oauth_file.unlink()
         except Exception:
             pass
         # Also clear the credential pool entry if present.
@@ -1727,14 +1729,15 @@ def _save_anthropic_oauth_creds(access_token: str, refresh_token: str, expires_a
     Mirrors what auth_commands.add_command does so the dashboard flow leaves
     the system in the same state as ``superforecasting-agent auth add anthropic``.
     """
-    from agent.anthropic_adapter import _HERMES_OAUTH_FILE
+    from agent.anthropic_adapter import get_hermes_oauth_file
+    oauth_file = get_hermes_oauth_file()
     payload = {
         "accessToken": access_token,
         "refreshToken": refresh_token,
         "expiresAt": expires_at_ms,
     }
-    _HERMES_OAUTH_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _HERMES_OAUTH_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    oauth_file.parent.mkdir(parents=True, exist_ok=True)
+    oauth_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     # Best-effort credential-pool insert. Failure here doesn't invalidate
     # the file write — pool registration only matters for the rotation
     # strategy, not for runtime credential resolution.

@@ -1648,6 +1648,25 @@ def test_prompt_guidance_env_aliases_are_forecast_native():
     assert "get_agent_help_guidance()" in system_prompt
 
 
+def test_oauth_file_env_aliases_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    anthropic_adapter = (root / "agent" / "anthropic_adapter.py").read_text(
+        encoding="utf-8"
+    )
+    web_server = (root / "hermes_cli" / "web_server.py").read_text(encoding="utf-8")
+    env_reference = (root / "website" / "docs" / "reference" / "environment-variables.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "SUPERFORECASTING_AGENT_OAUTH_FILE" in anthropic_adapter
+    assert "FORECAST_OAUTH_FILE" in anthropic_adapter
+    assert "HERMES_OAUTH_FILE" in anthropic_adapter
+    assert "def get_hermes_oauth_file" in anthropic_adapter
+    assert "get_hermes_oauth_file()" in web_server
+    assert "SUPERFORECASTING_AGENT_OAUTH_FILE" in env_reference
+    assert "FORECAST_OAUTH_FILE" in env_reference
+
+
 def test_revision_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     banner = (root / "hermes_cli" / "banner.py").read_text(encoding="utf-8")
