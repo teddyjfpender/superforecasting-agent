@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { env, supportsOsc52Clipboard } from '../../utils/env.js'
 
-import { shouldEmitClipboardSequence, shouldUseNativeClipboard } from './osc.js'
+import { isClipboardDebugEnabled, shouldEmitClipboardSequence, shouldUseNativeClipboard } from './osc.js'
 
 describe('shouldEmitClipboardSequence', () => {
   it('suppresses local multiplexer clipboard OSC by default', () => {
@@ -20,20 +20,38 @@ describe('shouldEmitClipboardSequence', () => {
   it('honors explicit env override', () => {
     expect(
       shouldEmitClipboardSequence({
-        HERMES_TUI_CLIPBOARD_OSC52: '1',
+        SUPERFORECASTING_AGENT_TUI_CLIPBOARD_OSC52: '1',
         TMUX: '/tmp/tmux-1/default,1,0'
       } as NodeJS.ProcessEnv)
     ).toBe(true)
     expect(
-      shouldEmitClipboardSequence({ HERMES_TUI_COPY_OSC52: '0', TERM: 'xterm-256color' } as NodeJS.ProcessEnv)
+      shouldEmitClipboardSequence({ FORECAST_TUI_COPY_OSC52: '0', TERM: 'xterm-256color' } as NodeJS.ProcessEnv)
     ).toBe(false)
   })
 
-  it('HERMES_TUI_FORCE_OSC52 takes precedence over TMUX suppression', () => {
+  it('SUPERFORECASTING_AGENT_TUI_FORCE_OSC52 takes precedence over TMUX suppression', () => {
     // Without the override, local-in-tmux suppresses the OSC 52 sequence
     // so the terminal multiplexer path wins. FORCE_OSC52=1 flips that
     // back on for users whose tmux config supports passthrough.
     expect(shouldEmitClipboardSequence({ TMUX: '/tmp/t,1,0' } as NodeJS.ProcessEnv)).toBe(false)
+    expect(
+      shouldEmitClipboardSequence({
+        SUPERFORECASTING_AGENT_TUI_FORCE_OSC52: '1',
+        TMUX: '/tmp/t,1,0'
+      } as NodeJS.ProcessEnv)
+    ).toBe(true)
+  })
+
+  it('FORECAST_TUI_FORCE_OSC52=0 suppresses OSC 52 even for remote or plain terminals', () => {
+    expect(
+      shouldEmitClipboardSequence({
+        FORECAST_TUI_FORCE_OSC52: '0',
+        SSH_CONNECTION: '1'
+      } as NodeJS.ProcessEnv)
+    ).toBe(false)
+  })
+
+  it('still honors legacy HERMES_TUI_FORCE_OSC52 overrides', () => {
     expect(
       shouldEmitClipboardSequence({
         HERMES_TUI_FORCE_OSC52: '1',
@@ -42,13 +60,23 @@ describe('shouldEmitClipboardSequence', () => {
     ).toBe(true)
   })
 
-  it('HERMES_TUI_FORCE_OSC52=0 suppresses OSC 52 even for remote or plain terminals', () => {
+  it('prefers fork-native OSC52 aliases before legacy names', () => {
     expect(
       shouldEmitClipboardSequence({
         HERMES_TUI_FORCE_OSC52: '0',
-        SSH_CONNECTION: '1'
+        SUPERFORECASTING_AGENT_TUI_FORCE_OSC52: '1',
+        TMUX: '/tmp/t,1,0'
       } as NodeJS.ProcessEnv)
-    ).toBe(false)
+    ).toBe(true)
+  })
+})
+
+describe('isClipboardDebugEnabled', () => {
+  it('accepts fork-native debug aliases and preserves legacy support', () => {
+    expect(isClipboardDebugEnabled({ SUPERFORECASTING_AGENT_TUI_DEBUG_CLIPBOARD: '1' } as NodeJS.ProcessEnv)).toBe(true)
+    expect(isClipboardDebugEnabled({ FORECAST_TUI_DEBUG_CLIPBOARD: '1' } as NodeJS.ProcessEnv)).toBe(true)
+    expect(isClipboardDebugEnabled({ HERMES_TUI_DEBUG_CLIPBOARD: '1' } as NodeJS.ProcessEnv)).toBe(true)
+    expect(isClipboardDebugEnabled({} as NodeJS.ProcessEnv)).toBe(false)
   })
 })
 
@@ -145,22 +173,22 @@ describe('shouldUseNativeClipboard', () => {
     expect(shouldUseNativeClipboard({ STY: '1234.pts-0.host' } as NodeJS.ProcessEnv, 'kitty')).toBe(true)
   })
 
-  it('returns true when OSC 52 emission is disabled via HERMES_TUI_FORCE_OSC52=0', () => {
+  it('returns true when OSC 52 emission is disabled via TUI_FORCE_OSC52=0', () => {
     // If we suppress OSC 52 (user override) AND skip native, the clipboard
     // write becomes a no-op. So when OSC 52 is off, native is the only
     // remaining path — keep it on regardless of terminal allowlist.
-    expect(shouldUseNativeClipboard({ HERMES_TUI_FORCE_OSC52: '0' } as NodeJS.ProcessEnv, 'ghostty')).toBe(true)
-    expect(shouldUseNativeClipboard({ HERMES_TUI_FORCE_OSC52: '0' } as NodeJS.ProcessEnv, 'kitty')).toBe(true)
+    expect(shouldUseNativeClipboard({ SUPERFORECASTING_AGENT_TUI_FORCE_OSC52: '0' } as NodeJS.ProcessEnv, 'ghostty')).toBe(true)
+    expect(shouldUseNativeClipboard({ FORECAST_TUI_FORCE_OSC52: '0' } as NodeJS.ProcessEnv, 'kitty')).toBe(true)
     expect(shouldUseNativeClipboard({ HERMES_TUI_CLIPBOARD_OSC52: '0' } as NodeJS.ProcessEnv, 'WezTerm')).toBe(true)
     expect(shouldUseNativeClipboard({ HERMES_TUI_COPY_OSC52: 'no' } as NodeJS.ProcessEnv, 'vscode')).toBe(true)
   })
 
-  it('returns true under TMUX even with HERMES_TUI_FORCE_OSC52=1 on an allowlisted terminal (tmux load-buffer path)', () => {
+  it('returns true under TMUX even with TUI_FORCE_OSC52=1 on an allowlisted terminal (tmux load-buffer path)', () => {
     // FORCE_OSC52=1 is the user explicitly opting INTO OSC 52 (e.g. they
     // have tmux set up for passthrough). On an allowlisted terminal the
     // race-avoidance still applies.
     expect(
-      shouldUseNativeClipboard({ HERMES_TUI_FORCE_OSC52: '1', TMUX: '/tmp/t,1,0' } as NodeJS.ProcessEnv, 'ghostty')
+      shouldUseNativeClipboard({ SUPERFORECASTING_AGENT_TUI_FORCE_OSC52: '1', TMUX: '/tmp/t,1,0' } as NodeJS.ProcessEnv, 'ghostty')
       // TMUX guard wins — native still fires because we're going through
       // tmux load-buffer, not raw OSC 52 to the terminal.
     ).toBe(true)
