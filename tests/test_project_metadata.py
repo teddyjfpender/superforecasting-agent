@@ -548,6 +548,30 @@ def test_contributor_and_skills_index_guidance_is_forecast_native():
     assert "Hermes Skills Index" not in combined
 
 
+def test_github_issue_and_pr_templates_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / ".github" / "ISSUE_TEMPLATE" / "bug_report.yml",
+        root / ".github" / "ISSUE_TEMPLATE" / "feature_request.yml",
+        root / ".github" / "ISSUE_TEMPLATE" / "forecast_pilot_feedback.yml",
+        root / ".github" / "ISSUE_TEMPLATE" / "source_adapter_request.yml",
+        root / ".github" / "ISSUE_TEMPLATE" / "config.yml",
+        root / ".github" / "PULL_REQUEST_TEMPLATE.md",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "Forecast Pilot Feedback" in text
+    assert "Source Adapter Request" in text
+    assert "superforecasting-agent debug share" in text
+    assert "forecast --db" in text
+    assert "Forecasting Integrity" in text
+    assert "https://github.com/teddyjfpender/superforecasting-agent" in text
+    assert "https://github.com/NousResearch/hermes-agent" not in text
+    assert "`hermes debug share`" not in text
+    assert "Hermes Version" not in text
+    assert "Which part of Hermes" not in text
+
+
 def test_tool_runtime_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [

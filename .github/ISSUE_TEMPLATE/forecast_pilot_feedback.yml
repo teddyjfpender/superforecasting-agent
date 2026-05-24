@@ -1,0 +1,98 @@
+name: "Forecast Pilot Feedback"
+description: Report alpha tester workflow results or pilot blockers.
+title: "[Pilot]: "
+labels: ["pilot-feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for friendly alpha feedback from the tester pilot runbook. Do not use this template to claim forecasting superiority. The goal is to collect install, workflow, evidence, self-check, scoring, and learning-loop artifacts.
+
+  - type: input
+    id: snapshot
+    attributes:
+      label: Snapshot or Commit
+      description: Branch and commit tested. `git log -1 --oneline` is enough.
+      placeholder: "superforecasting-agent-snapshot / 9a6d498b1"
+    validations:
+      required: true
+
+  - type: input
+    id: domain-topic
+    attributes:
+      label: Domain / Topic
+      description: Forecast domain and topic covered by this feedback.
+      placeholder: "policy / legislation"
+    validations:
+      required: true
+
+  - type: textarea
+    id: workflow-summary
+    attributes:
+      label: Workflow Summary
+      description: Summarize what you tried and where the forecast desk helped or blocked you.
+      placeholder: |
+        Created 4 forecasts, imported GDELT and FRED evidence, scheduled self-checks, resolved 1 question, and exported the ledger packet.
+    validations:
+      required: true
+
+  - type: textarea
+    id: commands
+    attributes:
+      label: Commands Run
+      description: Include the main commands, with secrets and private source text removed.
+      render: shell
+      placeholder: |
+        python3 scripts/forecast_smoke_test.py
+        export FORECAST_DB="$PWD/.pilot/forecasting-alice.db"
+        forecast --db "$FORECAST_DB" new "..."
+        forecast --db "$FORECAST_DB" pilot-report --json
+    validations:
+      required: true
+
+  - type: textarea
+    id: pilot-report
+    attributes:
+      label: Pilot Report Summary
+      description: Paste `forecast pilot-report` output or selected fields from `forecast pilot-report --json`.
+      render: json
+      placeholder: |
+        {
+          "pilot_status": "pilot_exit_ready",
+          "passed_checks": 7,
+          "total_checks": 7
+        }
+
+  - type: textarea
+    id: blockers
+    attributes:
+      label: Blockers or Gaps
+      description: List install failures, hard-to-discover commands, missing adapters, awkward ledger fields, noisy alerts, or unclear calibration/postmortem output.
+      placeholder: |
+        - Could not represent resolution source because ...
+        - Need an adapter for ...
+        - Self-check alert was noisy because ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Pilot Severity
+      options:
+        - Blocks tester from completing pilot workflow
+        - Blocks one domain or source type
+        - Usability issue but workaround exists
+        - Observation or improvement idea
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: artifacts
+    attributes:
+      label: Safe Artifacts Available
+      options:
+        - label: I can share `forecast export <id>` or `forecast export all`
+        - label: I can share `forecast pilot-report --json`
+        - label: I can share source URLs or public data identifiers
+        - label: I can share screenshots or terminal output

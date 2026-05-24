@@ -1,0 +1,93 @@
+name: "Source Adapter Request"
+description: Request a new evidence, market, benchmark, or data adapter.
+title: "[Source Adapter]: "
+labels: ["source-adapter", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when a forecast domain needs a data source that `forecast sources` does not cover. Good requests explain the questions this source would support and how timestamped evidence, priors, baselines, or resolutions should be extracted.
+
+  - type: input
+    id: source-name
+    attributes:
+      label: Source Name
+      placeholder: "Example: EIA short-term energy outlook tables"
+    validations:
+      required: true
+
+  - type: input
+    id: source-url
+    attributes:
+      label: Source URL or API Docs
+      placeholder: "https://..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: forecast-use
+    attributes:
+      label: Forecast Use Case
+      description: What questions would this source help forecast, update, resolve, or backtest?
+      placeholder: |
+        This source would support energy price and supply forecasts by importing monthly production, inventory, and revision data.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: adapter-role
+    attributes:
+      label: Adapter Role
+      multiple: true
+      options:
+        - Evidence import
+        - Watched source / alert
+        - Market or crowd prior
+        - Resolution source
+        - Benchmark / backtest corpus
+        - Calibration baseline
+    validations:
+      required: true
+
+  - type: textarea
+    id: fields
+    attributes:
+      label: Important Fields
+      description: List fields that must be preserved as timestamped evidence or model inputs.
+      placeholder: |
+        - available_at / publication date
+        - revised_at
+        - value and units
+        - geography
+        - series id
+        - source URL
+
+  - type: textarea
+    id: example-questions
+    attributes:
+      label: Example Forecast Questions
+      placeholder: |
+        - Will ...
+        - What will ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: access
+    attributes:
+      label: Access Pattern
+      options:
+        - Public API, no key
+        - Public API, key required
+        - Downloadable CSV/JSON
+        - Web page scraping needed
+        - Authenticated or paid source
+        - Unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Known Caveats
+      description: Note rate limits, licensing, stale data risk, revision behavior, or resolution ambiguity.

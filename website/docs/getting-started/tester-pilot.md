@@ -218,6 +218,10 @@ Ask testers to report:
 - self-check alerts that were noisy, stale, or missing
 - calibration/postmortem output that did not help the next forecast
 
+Use the repository's **Forecast Pilot Feedback** issue template for workflow
+reports and the **Source Adapter Request** template for missing data feeds,
+market priors, benchmark corpora, or resolution sources.
+
 Each issue should include:
 
 ```text

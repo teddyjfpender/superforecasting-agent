@@ -1,17 +1,17 @@
-name: "🐛 Bug Report"
-description: Report a bug — something that's broken, crashes, or behaves incorrectly.
+name: "Bug Report"
+description: Report a forecast-desk bug, crash, or incorrect behavior.
 title: "[Bug]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a bug! Please fill out the sections below so we can reproduce and fix it quickly.
+        Thanks for reporting a bug. Please fill out the sections below so we can reproduce it and keep forecast-ledger artifacts auditable.
 
         **Before submitting**, please:
-        - [ ] Search [existing issues](https://github.com/NousResearch/hermes-agent/issues) to avoid duplicates
-        - [ ] Update to the latest version (`hermes update`) and confirm the bug still exists
-        - [ ] Run `hermes debug share` and paste the links below (see Debug Report section)
+        - [ ] Search existing issues in this fork to avoid duplicates
+        - [ ] Update to the latest snapshot or branch you are testing
+        - [ ] Run `superforecasting-agent debug share` and paste the links below when logs are relevant
 
   - type: textarea
     id: description
@@ -29,9 +29,9 @@ body:
       label: Steps to Reproduce
       description: Minimal steps to trigger the bug. The more specific, the faster we can fix it.
       placeholder: |
-        1. Run `hermes chat`
-        2. Send the message "..."
-        3. Agent calls tool X
+        1. Run `forecast --db /path/to/test.db ...`
+        2. Create or open forecast id ...
+        3. Import/update/self-check/score ...
         4. Error appears: ...
     validations:
       required: true
@@ -56,16 +56,20 @@ body:
     id: component
     attributes:
       label: Affected Component
-      description: Which part of Hermes is affected?
+      description: Which part of Superforecasting Agent is affected?
       multiple: true
       options:
-        - CLI (interactive chat)
-        - Gateway (Telegram/Discord/Slack/WhatsApp)
+        - Forecast CLI / ledger
+        - Evidence source adapters
+        - Backtesting / benchmark replay
+        - Calibration / scoring / postmortems
+        - Scheduled self-checks / alerts
+        - TUI / dashboard forecast view
+        - Optional chat / agent loop
+        - Gateway / messaging alerts
         - Setup / Installation
-        - Tools (terminal, file ops, web, code execution, etc.)
-        - Skills (skill loading, skill hub, skill guard)
-        - Agent Core (conversation loop, context compression, memory)
-        - Configuration (config.yaml, .env, hermes setup)
+        - Tools / plugins / skills
+        - Configuration (config.yaml, .env, setup)
         - Other
     validations:
       required: true
@@ -88,12 +92,12 @@ body:
     attributes:
       label: Debug Report
       description: |
-        Run `hermes debug share` from your terminal and paste the links it prints here.
+        Run `superforecasting-agent debug share` from your terminal and paste the links it prints here.
         This uploads your system info, config, and recent logs to a paste service automatically.
 
-        If you're in an interactive chat session, you can also use the `/debug` slash command — it does the same thing.
+        If you're in an interactive chat session, you can also use the `/debug` slash command.
 
-        If the upload fails, run `hermes debug share --local` and paste the output directly.
+        If the upload fails, run `superforecasting-agent debug share --local` and paste the output directly.
       placeholder: |
         Report   https://paste.rs/abc123
         agent.log   https://paste.rs/def456
@@ -119,10 +123,10 @@ body:
       placeholder: "3.11.9"
 
   - type: input
-    id: hermes-version
+    id: superforecasting-agent-version
     attributes:
-      label: Hermes Version
-      description: Output of `hermes version`
+      label: Superforecasting Agent Version
+      description: Output of `superforecasting-agent version` or `git log -1 --oneline`
       placeholder: "2.1.0"
 
   - type: textarea
@@ -131,7 +135,7 @@ body:
       label: Additional Logs / Traceback (optional)
       description: |
         The debug report above covers most logs. Use this field for any extra error output, 
-        tracebacks, or screenshots not captured by `hermes debug share`.
+        tracebacks, forecast command output, or screenshots not captured by the debug report.
       render: shell
 
   - type: textarea
