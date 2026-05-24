@@ -669,6 +669,87 @@ def test_make_tui_argv_uses_forecast_tui_dir_alias(monkeypatch, main_mod, tmp_pa
     assert cwd == prebuilt
 
 
+def test_make_tui_argv_uses_forecast_node_alias(monkeypatch, main_mod, tmp_path):
+    tui_dir = tmp_path / "ui-tui"
+    prebuilt = tmp_path / "prebuilt"
+    entry = prebuilt / "dist" / "entry.js"
+    node = tmp_path / "bin" / "forecast-node"
+    entry.parent.mkdir(parents=True)
+    node.parent.mkdir(parents=True)
+    entry.write_text("console.log('forecast tui')\n", encoding="utf-8")
+    node.write_text("#!/bin/sh\n", encoding="utf-8")
+    node.chmod(0o755)
+
+    monkeypatch.setattr(main_mod, "_ensure_tui_node", lambda: None)
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_NODE", str(node))
+    monkeypatch.setenv("FORECAST_TUI_DIR", str(prebuilt))
+    monkeypatch.delenv("FORECAST_NODE", raising=False)
+    monkeypatch.delenv("HERMES_NODE", raising=False)
+    monkeypatch.delenv("HERMES_TUI_DIR", raising=False)
+    monkeypatch.setattr(main_mod.shutil, "which", lambda bin_name: f"/usr/bin/{bin_name}")
+
+    argv, cwd = main_mod._make_tui_argv(tui_dir, tui_dev=False)
+
+    assert argv == [str(node), str(entry)]
+    assert cwd == prebuilt
+
+
+def test_ensure_tui_node_honors_forecast_skip_bootstrap_alias(monkeypatch, main_mod):
+    monkeypatch.setattr(main_mod.shutil, "which", lambda _bin_name: None)
+    monkeypatch.setenv("FORECAST_SKIP_NODE_BOOTSTRAP", "1")
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_SKIP_NODE_BOOTSTRAP", raising=False)
+    monkeypatch.delenv("HERMES_SKIP_NODE_BOOTSTRAP", raising=False)
+
+    def fail_run(*_args, **_kwargs):
+        raise AssertionError("node bootstrap should be skipped")
+
+    monkeypatch.setattr(main_mod.subprocess, "run", fail_run)
+
+    main_mod._ensure_tui_node()
+
+
+def test_make_tui_argv_forecast_quiet_alias_suppresses_install_message(
+    monkeypatch, main_mod, tmp_path, capsys
+):
+    tui_dir = tmp_path / "ui-tui"
+    tui_dir.mkdir()
+
+    monkeypatch.setattr(main_mod, "_ensure_tui_node", lambda: None)
+    monkeypatch.setattr(main_mod, "_tui_need_npm_install", lambda _tui_dir: True)
+    monkeypatch.setattr(main_mod.shutil, "which", lambda bin_name: f"/usr/bin/{bin_name}")
+    monkeypatch.setenv("FORECAST_QUIET", "1")
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_QUIET", raising=False)
+    monkeypatch.delenv("HERMES_QUIET", raising=False)
+
+    calls = []
+
+    def fake_run(cmd, cwd=None, **_kwargs):
+        calls.append((cmd, cwd))
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(main_mod.subprocess, "run", fake_run)
+
+    argv, cwd = main_mod._make_tui_argv(tui_dir, tui_dev=False)
+
+    assert argv == ["/usr/bin/node", str(tui_dir / "dist" / "entry.js")]
+    assert cwd == tui_dir
+    assert calls == [
+        (
+            [
+                "/usr/bin/npm",
+                "install",
+                "--silent",
+                "--no-fund",
+                "--no-audit",
+                "--progress=false",
+            ],
+            str(tui_dir),
+        ),
+        (["/usr/bin/npm", "run", "build"], str(tui_dir)),
+    ]
+    assert "Installing TUI dependencies" not in capsys.readouterr().out
+
+
 def test_print_tui_exit_summary_includes_resume_and_token_totals(monkeypatch, capsys):
     import hermes_cli.main as main_mod
 

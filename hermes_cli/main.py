@@ -1023,11 +1023,13 @@ def _ensure_tui_node() -> None:
     was used (nvm, fnm, proto, brew, or the bundled fallback).
 
     Idempotent no-op when node+npm are already discoverable. Set
+    ``SUPERFORECASTING_AGENT_SKIP_NODE_BOOTSTRAP=1``,
+    ``FORECAST_SKIP_NODE_BOOTSTRAP=1``, or the legacy
     ``HERMES_SKIP_NODE_BOOTSTRAP=1`` to disable auto-install.
     """
     if shutil.which("node") and shutil.which("npm"):
         return
-    if os.environ.get("HERMES_SKIP_NODE_BOOTSTRAP"):
+    if _runtime_env_value("SKIP_NODE_BOOTSTRAP"):
         return
 
     helper = PROJECT_ROOT / "scripts" / "lib" / "node-bootstrap.sh"
@@ -1139,7 +1141,7 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
 
     def _node_bin(bin: str) -> str:
         if bin == "node":
-            env_node = os.environ.get("HERMES_NODE")
+            env_node = _runtime_env_value("NODE")
             if env_node and os.path.isfile(env_node) and os.access(env_node, os.X_OK):
                 return env_node
         path = shutil.which(bin)
@@ -1184,7 +1186,7 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
     #    --dev flow: npm install if needed, then tsx src/entry.tsx.
     if _tui_need_npm_install(tui_dir):
         npm = _node_bin("npm")
-        if not os.environ.get("HERMES_QUIET"):
+        if _runtime_env_value("QUIET") is None:
             print("Installing TUI dependencies…")
         result = subprocess.run(
             [npm, "install", "--silent", "--no-fund", "--no-audit", "--progress=false"],

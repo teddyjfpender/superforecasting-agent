@@ -58,8 +58,11 @@ def _resolve_cli_history_file(agent_home: Path) -> Path:
     return native
 
 
-# Suppress startup messages for clean CLI experience
-os.environ["HERMES_QUIET"] = "1"  # Our own modules
+# Suppress startup messages for clean CLI experience. Set all runtime aliases
+# so fork-native subprocesses and inherited compatibility modules agree.
+os.environ["SUPERFORECASTING_AGENT_QUIET"] = "1"
+os.environ["FORECAST_QUIET"] = "1"
+os.environ["HERMES_QUIET"] = "1"
 
 import yaml
 

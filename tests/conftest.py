@@ -162,6 +162,8 @@ def _looks_like_credential(name: str) -> bool:
 _HERMES_BEHAVIORAL_VARS = frozenset({
     "HERMES_YOLO_MODE",
     "HERMES_INTERACTIVE",
+    "SUPERFORECASTING_AGENT_QUIET",
+    "FORECAST_QUIET",
     "HERMES_QUIET",
     "HERMES_TOOL_PROGRESS",
     "HERMES_TOOL_PROGRESS_MODE",

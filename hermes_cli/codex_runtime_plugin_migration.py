@@ -617,6 +617,8 @@ def _build_hermes_tools_mcp_entry() -> dict:
     if pythonpath:
         env["PYTHONPATH"] = pythonpath
     # Quiet mode + redaction defaults so the MCP wire stays clean.
+    env["SUPERFORECASTING_AGENT_QUIET"] = "1"
+    env["FORECAST_QUIET"] = "1"
     env["HERMES_QUIET"] = "1"
     env["HERMES_REDACT_SECRETS"] = env.get("HERMES_REDACT_SECRETS", "true")
 

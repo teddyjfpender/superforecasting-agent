@@ -27,6 +27,8 @@ Secrets go in `~/.superforecasting-agent/.env` by default. Non-secret settings u
 | `SUPERFORECASTING_AGENT_BIN` | Preferred executable override when background worker launchers or TUI setup handoff code need to re-enter the CLI from a stripped service environment. |
 | `FORECAST_BIN` | Short alias for `SUPERFORECASTING_AGENT_BIN`. |
 | `HERMES_BIN` | Legacy executable override for inherited worker launchers and install shims. |
+| `SUPERFORECASTING_AGENT_NODE` / `FORECAST_NODE` / `HERMES_NODE` | Override the Node.js binary used to launch the inherited Ink TUI. Prefer the fork-native aliases for new service files; `HERMES_NODE` remains a legacy alias. |
+| `SUPERFORECASTING_AGENT_SKIP_NODE_BOOTSTRAP` / `FORECAST_SKIP_NODE_BOOTSTRAP` / `HERMES_SKIP_NODE_BOOTSTRAP` | Disable automatic Node.js bootstrap for TUI startup when set to any non-empty value. Prefer the fork-native aliases for new deployments; `HERMES_SKIP_NODE_BOOTSTRAP` remains a legacy alias. |
 | `FORECAST_LEDGER_DB` | Optional path to the forecast ledger SQLite database used by scheduled self-check runners. When unset, the ledger defaults to the active agent home. |
 | `FORECAST_AUTO_SCORE` | When set truthy for forecast cron/self-check runs, automatically scores newly resolved scoreable forecasts. |
 | `FORECAST_AUTO_POSTMORTEM` | When set truthy for forecast cron/self-check runs, writes postmortem/learning artifacts for scored resolved forecasts where the runner can do so. |
@@ -556,7 +558,7 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 | `HERMES_HUMAN_DELAY_MODE` | Response pacing: `off`/`natural`/`custom` |
 | `HERMES_HUMAN_DELAY_MIN_MS` | Custom delay range minimum (ms) |
 | `HERMES_HUMAN_DELAY_MAX_MS` | Custom delay range maximum (ms) |
-| `HERMES_QUIET` | Suppress non-essential output (`true`/`false`) |
+| `SUPERFORECASTING_AGENT_QUIET` / `FORECAST_QUIET` / `HERMES_QUIET` | Suppress non-essential runtime output for startup helpers and inherited modules when set. Prefer the fork-native aliases; `HERMES_QUIET` remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_LANGUAGE` / `FORECAST_LANGUAGE` / `HERMES_LANGUAGE` | Override static runtime UI language before `display.language` in `config.yaml`; the `HERMES_*` name remains a legacy alias. |
 | `CODEX_HOME` | When [Codex app-server runtime](../user-guide/features/codex-app-server-runtime) is enabled, override the directory Codex CLI reads its config + auth from (default: `~/.codex`). The migration writes the managed block to `<CODEX_HOME>/config.toml`. |
 | `HERMES_KANBAN_TASK` | Set by the kanban dispatcher when spawning a worker (task UUID). Workers and the spawned `hermes-tools` compatibility MCP subprocess inherit it so kanban tools gate correctly. Don't set manually. |
