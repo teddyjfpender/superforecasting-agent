@@ -234,6 +234,30 @@ def test_standalone_gateway_script_is_forecast_native():
     assert "~/.hermes/logs/gateway.log" not in text
 
 
+def test_install_helpers_use_forecast_native_visible_copy():
+    root = Path(__file__).resolve().parents[1]
+    install_ps1 = (root / "scripts" / "install.ps1").read_text(encoding="utf-8")
+    node_bootstrap = (root / "scripts" / "lib" / "node-bootstrap.sh").read_text(encoding="utf-8")
+
+    assert "Cloning Superforecasting Agent repository" in install_ps1
+    assert "Adding Superforecasting Agent to PATH" in install_ps1
+    assert "`superforecasting-agent dashboard` will not work" in install_ps1
+    assert "`superforecasting-agent dashboard` should now work" in install_ps1
+    assert "Superforecasting Agent needs Git Bash" in install_ps1
+    assert "forecast-runtime-managed" in install_ps1
+    assert "Cloning Hermes repository" not in install_ps1
+    assert "Adding Hermes to PATH" not in install_ps1
+    assert "`hermes dashboard` will not work" not in install_ps1
+    assert "`hermes dashboard` should now work" not in install_ps1
+    assert "Hermes needs Git Bash" not in install_ps1
+    assert "Hermes-managed" not in install_ps1
+
+    assert "SUPERFORECASTING_AGENT_HOME" in node_bootstrap
+    assert "$HOME/.superforecasting-agent" in node_bootstrap
+    assert "forecast-runtime-managed" in node_bootstrap
+    assert "Hermes-managed" not in node_bootstrap
+
+
 def test_high_attention_docs_navigation_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     sidebars = (root / "website" / "sidebars.ts").read_text(encoding="utf-8")
