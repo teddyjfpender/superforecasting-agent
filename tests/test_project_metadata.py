@@ -716,6 +716,19 @@ def test_google_oauth_guidance_is_forecast_native():
     assert "Hermes — signed in" not in text
 
 
+def test_curator_guidance_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "agent" / "curator.py").read_text(encoding="utf-8")
+
+    assert "Superforecasting Agent's background forecast-skill" in text
+    assert "CURATOR. This is an" in text
+    assert "superforecasting-agent curator run" in text
+    assert "superforecasting-agent curator restore <name>" in text
+    assert "Hermes' background skill CURATOR" not in text
+    assert "`hermes curator run`" not in text
+    assert "`hermes curator restore <name>`" not in text
+
+
 def test_support_error_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     profile_distribution = (

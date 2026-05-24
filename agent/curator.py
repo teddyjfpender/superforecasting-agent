@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Set
 
-from hermes_constants import get_hermes_home
+from hermes_constants import display_hermes_home, get_hermes_home
 from tools import skill_usage
 
 logger = logging.getLogger(__name__)
@@ -130,7 +130,7 @@ def is_paused() -> bool:
 # ---------------------------------------------------------------------------
 
 def _load_config() -> Dict[str, Any]:
-    """Read curator.* config from ~/.hermes/config.yaml. Tolerates missing file."""
+    """Read curator.* config from the active agent home. Tolerates missing file."""
     try:
         from hermes_cli.config import load_config
         cfg = load_config()
@@ -208,10 +208,11 @@ def should_run_now(now: Optional[datetime] = None) -> bool:
     install that predates the curator), we DO NOT run immediately. The
     curator is designed to run after at least ``interval_hours`` (7 days by
     default) of skill activity, not on the first background tick after
-    ``hermes update``. On first observation we seed ``last_run_at`` to "now"
-    and defer the first real pass by one full interval. Users who want to
-    run it sooner can always invoke ``hermes curator run`` (with or without
-    ``--dry-run``) explicitly — that path bypasses this gate.
+    ``superforecasting-agent update``. On first observation we seed
+    ``last_run_at`` to "now" and defer the first real pass by one full
+    interval. Users who want to run it sooner can always invoke
+    ``superforecasting-agent curator run`` (with or without ``--dry-run``)
+    explicitly — that path bypasses this gate.
 
     The idle check (min_idle_hours) is applied at the call site where we know
     whether an agent is actively running — here we only enforce the static
@@ -234,7 +235,8 @@ def should_run_now(now: Optional[datetime] = None) -> bool:
             state["last_run_at"] = now.isoformat()
             state["last_run_summary"] = (
                 "deferred first run — curator seeded, will run after one "
-                "interval; use `hermes curator run --dry-run` to preview now"
+                "interval; use `superforecasting-agent curator run --dry-run` "
+                "to preview now"
             )
             save_state(state)
         except Exception as e:  # pragma: no cover — best-effort persistence
@@ -311,7 +313,7 @@ CURATOR_DRY_RUN_BANNER = (
     "write_file, or remove_file.\n"
     "  • DO NOT call terminal to mv skill directories into .archive/.\n"
     "  • DO NOT call terminal to mv, cp, rm, or rewrite any file under "
-    "~/.hermes/skills/.\n"
+    "the active agent home's skills directory.\n"
     "  • skills_list and skill_view are FINE — read as much as you need.\n"
     "\n"
     "Your output IS the deliverable. Produce the exact same "
@@ -319,7 +321,7 @@ CURATOR_DRY_RUN_BANNER = (
     "produce on a live run — but describe the actions you WOULD take, "
     "not actions you took. A downstream reviewer will read the report "
     "and decide whether to approve a live run with "
-    "`hermes curator run` (no flag).\n"
+    "`superforecasting-agent curator run` (no flag).\n"
     "\n"
     "If you accidentally take a mutating action, say so explicitly in "
     "the summary so the reviewer can revert it.\n"
@@ -328,7 +330,8 @@ CURATOR_DRY_RUN_BANNER = (
 
 
 CURATOR_REVIEW_PROMPT = (
-    "You are running as Hermes' background skill CURATOR. This is an "
+    "You are running as Superforecasting Agent's background forecast-skill "
+    "CURATOR. This is an "
     "UMBRELLA-BUILDING consolidation pass, not a passive audit and not a "
     "duplicate-finder.\n\n"
     "The goal of the skill collection is a LIBRARY OF CLASS-LEVEL "
@@ -345,7 +348,7 @@ CURATOR_REVIEW_PROMPT = (
     "1. DO NOT touch bundled or hub-installed skills. The candidate list "
     "below is already filtered to agent-created skills only.\n"
     "2. DO NOT delete any skill. Archiving (moving the skill's directory "
-    "into ~/.hermes/skills/.archive/) is the maximum destructive action. "
+    "into the active agent home's skills/.archive/) is the maximum destructive action. "
     "Archives are recoverable; deletion is not.\n"
     "3. DO NOT touch skills shown as pinned=yes. Skip them entirely.\n"
     "4. DO NOT use usage counters as a reason to skip consolidation. The "
@@ -360,7 +363,7 @@ CURATOR_REVIEW_PROMPT = (
     "How to work — not optional:\n"
     "1. Scan the full candidate list. Identify PREFIX CLUSTERS (skills "
     "sharing a first word or domain keyword). Examples you are likely "
-    "to find: hermes-config-*, hermes-dashboard-*, gateway-*, codex-*, "
+    "to find: forecast-config-*, forecast-dashboard-*, gateway-*, codex-*, "
     "ollama-*, anthropic-*, gemini-*, mcp-*, salvage-*, pr-*, "
     "competitor-*, python-*, security-*, etc. Expect 10-25 clusters.\n"
     "2. For each cluster with 2+ members, do NOT ask 'are these pairs "
@@ -388,9 +391,10 @@ CURATOR_REVIEW_PROMPT = (
     "copied and modified\n"
     "      • `scripts/<name>.<ext>` for statically re-runnable actions "
     "(verification scripts, fixture generators, probes)\n"
-    "      Then archive the old sibling. Use `terminal` with `mkdir -p "
-    "~/.hermes/skills/<umbrella>/references/ && mv ... <umbrella>/"
-    "references/<topic>.md` (or templates/ / scripts/).\n"
+    "      Then archive the old sibling. Prefer `skill_manage action=write_file`; "
+    "if a terminal move is unavoidable, first resolve the active agent home and "
+    "then move the support file under skills/<umbrella>/references/ "
+    "(or templates/ / scripts/).\n"
     "4. Also flag skills whose NAME is too narrow (contains a PR number, "
     "a feature codename, a specific error string, an 'audit' / "
     "'diagnosis' / 'salvage' session artifact). These almost always "
@@ -452,10 +456,11 @@ CURATOR_REVIEW_PROMPT = (
 def _reports_root() -> Path:
     """Directory where curator run reports are written.
 
-    Lives under the profile-aware logs dir (``~/.hermes/logs/curator/``)
-    alongside ``agent.log`` and ``gateway.log`` so it's found by anyone
-    looking for operational telemetry, not mixed in with the user's
-    authored skill data in ``~/.hermes/skills/``.
+    Lives under the profile-aware logs dir (for example,
+    ``~/.superforecasting-agent/logs/curator/``) alongside ``agent.log`` and
+    ``gateway.log`` so it's found by anyone looking for operational telemetry,
+    not mixed in with the user's authored skill data in the active agent home's
+    ``skills/`` directory.
 
     ``ensure_hermes_home()`` pre-creates this dir on every CLI launch and
     the v22→v23 migration backfills it for existing profiles, but we
@@ -898,8 +903,8 @@ def _build_rename_summary(
           • docx-extraction → document-tools
           • flaky-thing — pruned (stale)
           • old-utility → spreadsheet-ops
-        full report: hermes curator status
-        keep an umbrella stable: hermes curator pin document-tools
+        full report: superforecasting-agent curator status
+        keep an umbrella stable: superforecasting-agent curator pin document-tools
 
     Cap is 10 entries so a 50-skill consolidation doesn't blow up
     agent.log; the full list is always in REPORT.md. The pin hint only
@@ -952,7 +957,7 @@ def _build_rename_summary(
         shown += 1
     if total > SHOW:
         lines.append(f"  … and {total - SHOW} more")
-    lines.append("full report: hermes curator status")
+    lines.append("full report: superforecasting-agent curator status")
     # Pin hint — only surface it when there's actually a destination skill
     # worth pinning. The umbrella skills that absorbed content are the natural
     # candidates: pinning one tells future curator runs to leave it alone.
@@ -962,7 +967,7 @@ def _build_rename_summary(
         if umbrellas:
             example = umbrellas[0]
             lines.append(
-                f"keep an umbrella stable: hermes curator pin {example}"
+                f"keep an umbrella stable: superforecasting-agent curator pin {example}"
             )
     return "\n".join(lines)
 
@@ -1166,6 +1171,7 @@ def _render_report_markdown(p: Dict[str, Any]) -> str:
     duration = p.get("duration_seconds", 0) or 0
     mins, secs = divmod(int(duration), 60)
     dur_label = f"{mins}m {secs}s" if mins else f"{secs}s"
+    skills_archive = f"{display_hermes_home()}/skills/.archive/"
 
     lines.append(f"# Curator run — {started}\n")
     model = p.get("model") or "(not resolved)"
@@ -1202,18 +1208,18 @@ def _render_report_markdown(p: Dict[str, Any]) -> str:
                  f"**{counts.get('state_transitions', 0)}**")
     lines.append("")
 
-    # Consolidated list — content absorbed into an umbrella. The directory
-    # on disk still lives under ~/.hermes/skills/.archive/ (every removal is
-    # recoverable by design), but the "live" content for these skills
-    # continues to exist inside the destination umbrella.
+    # Consolidated list — content absorbed into an umbrella. The directory on
+    # disk still lives under the active agent home's skills/.archive/ (every
+    # removal is recoverable by design), but the "live" content for these
+    # skills continues to exist inside the destination umbrella.
     consolidated = p.get("consolidated") or []
     if consolidated:
         lines.append(f"### Consolidated into umbrella skills ({len(consolidated)})\n")
         lines.append(
             "_These skills were **absorbed into another skill** during this run — "
             "their content still lives, just under a different name. "
-            "The original directory was moved to `~/.hermes/skills/.archive/` for "
-            "safety and can be restored via `hermes curator restore <name>` if the "
+            f"The original directory was moved to `{skills_archive}` for "
+            "safety and can be restored via `superforecasting-agent curator restore <name>` if the "
             "consolidation was wrong._\n"
         )
         SHOW = 50
@@ -1248,8 +1254,8 @@ def _render_report_markdown(p: Dict[str, Any]) -> str:
         lines.append(
             "_These skills were archived without being merged into an umbrella "
             "(e.g. stale, unused, or judged irrelevant). "
-            "Directories live under `~/.hermes/skills/.archive/`. "
-            "Restore any via `hermes curator restore <name>`._\n"
+            f"Directories live under `{skills_archive}`. "
+            "Restore any via `superforecasting-agent curator restore <name>`._\n"
         )
         SHOW = 50
         for entry in pruned[:SHOW]:
@@ -1334,8 +1340,8 @@ def _render_report_markdown(p: Dict[str, Any]) -> str:
 
     # Recovery footer
     lines.append("## Recovery\n")
-    lines.append("- Restore an archived skill: `hermes curator restore <name>`")
-    lines.append("- All archives live under `~/.hermes/skills/.archive/` and are recoverable by `mv`")
+    lines.append("- Restore an archived skill: `superforecasting-agent curator restore <name>`")
+    lines.append(f"- All archives live under `{skills_archive}` and are recoverable by `mv`")
     lines.append("- See `run.json` in this directory for the full machine-readable record.")
     lines.append("")
 
@@ -1432,8 +1438,8 @@ def run_curator_review(
     # Persist state before the LLM pass so a crash mid-review still records
     # the run and doesn't immediately re-trigger. In dry-run we do NOT bump
     # last_run_at or run_count — a preview shouldn't push the next scheduled
-    # real pass out. We still record a summary so `hermes curator status`
-    # shows that a preview ran.
+    # real pass out. We still record a summary so `superforecasting-agent
+    # curator status` shows that a preview ran.
     state = load_state()
     if not dry_run:
         state["last_run_at"] = start.isoformat()
@@ -1512,7 +1518,8 @@ def run_curator_review(
 
         # Write the per-run report. Runs in a best-effort try so a
         # reporting bug never breaks the curator itself. Report path is
-        # recorded in state so `hermes curator status` can point at it.
+        # recorded in state so `superforecasting-agent curator status` can
+        # point at it.
         try:
             after_report = skill_usage.agent_created_report()
         except Exception:

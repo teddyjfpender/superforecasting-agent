@@ -190,6 +190,9 @@ def test_report_md_is_human_readable(curator_env):
     assert "merged into" in md
     assert "`foo-umbrella`" in md
     assert "New skills this run" in md
+    assert "`superforecasting-agent curator restore <name>`" in md
+    assert "/skills/.archive/`" in md
+    assert "`hermes curator restore <name>`" not in md
 
     # The full LLM final response is included verbatim (no 240-char truncation)
     assert "Consolidated foo-like skills into foo-umbrella." in md

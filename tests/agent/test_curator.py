@@ -308,7 +308,7 @@ def test_run_review_records_state(curator_env):
 def test_dry_run_does_not_advance_state(curator_env, monkeypatch):
     """Dry-run previews must not bump last_run_at or run_count. A preview
     shouldn't defer the next scheduled real pass or look like a real run in
-    `hermes curator status`. Fixes #18373.
+    `superforecasting-agent curator status`. Fixes #18373.
     """
     c = curator_env["curator"]
     u = curator_env["usage"]
@@ -533,6 +533,9 @@ def test_curator_review_prompt_has_invariants():
         assert verb in CURATOR_REVIEW_PROMPT.lower()
     # Must mention consolidation (possibly via "merge" or "consolidat")
     assert "consolidat" in CURATOR_REVIEW_PROMPT.lower() or "merge" in CURATOR_REVIEW_PROMPT.lower()
+    assert "Superforecasting Agent's background forecast-skill CURATOR" in CURATOR_REVIEW_PROMPT
+    assert "Hermes' background skill CURATOR" not in CURATOR_REVIEW_PROMPT
+    assert "~/.hermes/skills/.archive/" not in CURATOR_REVIEW_PROMPT
 
 
 def test_curator_review_prompt_points_at_existing_tools_only():
@@ -607,7 +610,7 @@ def test_curator_review_prompt_offers_support_file_actions():
 
 
 def test_cli_unpin_refuses_bundled_skill(curator_env, capsys):
-    """hermes curator unpin must refuse bundled/hub skills too (matches pin)."""
+    """curator unpin must refuse bundled/hub skills too (matches pin)."""
     from hermes_cli import curator as cli
     skills_dir = curator_env["home"] / "skills"
     _write_skill(skills_dir, "ship-skill")
