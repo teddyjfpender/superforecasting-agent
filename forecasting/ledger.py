@@ -6,6 +6,7 @@ import hashlib
 import csv
 import json
 import math
+import re
 import shutil
 import sqlite3
 import uuid
@@ -4401,16 +4402,16 @@ class ForecastLedger:
         issues: list[str] = []
         criteria = resolution_criteria.strip().lower()
         title_lower = title.strip().lower()
-        vague_markers = {
-            "tbd",
-            "todo",
-            "unknown",
-            "unclear",
-            "not sure",
-            "to be decided",
-            "figure out later",
-        }
-        if any(marker in criteria for marker in vague_markers):
+        vague_markers = (
+            r"\btbd\b",
+            r"\btodo\b",
+            r"\bunknown\b",
+            r"\bunclear\b",
+            r"\bnot\s+sure\b",
+            r"\bto\s+be\s+decided\b",
+            r"\bfigure\s+out\s+later\b",
+        )
+        if any(re.search(marker, criteria) for marker in vague_markers):
             issues.append("resolution criteria contain placeholder or vague language")
         if criteria in {"yes", "no", "maybe", "n/a", "na"}:
             issues.append("resolution criteria are too short to audit")
