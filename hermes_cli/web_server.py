@@ -1827,7 +1827,7 @@ def _submit_anthropic_pkce(session_id: str, code_input: str) -> Dict[str, Any]:
         data=exchange_data,
         headers={
             "Content-Type": "application/json",
-            "User-Agent": "hermes-dashboard/1.0",
+            "User-Agent": "superforecasting-agent-dashboard/1.0",
         },
         method="POST",
     )

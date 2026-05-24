@@ -1543,3 +1543,11 @@ def test_web_focused_forecast_panel_shows_probability_timing_context():
     assert "as of {formatDate(row.as_of)}" in page
     assert "close {formatDate(row.close_time)}" in page
     assert "{reasons.join(\", \")}" in page
+
+
+def test_dashboard_oauth_user_agent_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    web_server = (root / "hermes_cli" / "web_server.py").read_text(encoding="utf-8")
+
+    assert '"User-Agent": "superforecasting-agent-dashboard/1.0"' in web_server
+    assert "hermes-dashboard/1.0" not in web_server
