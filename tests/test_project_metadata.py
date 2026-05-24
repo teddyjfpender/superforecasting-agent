@@ -553,6 +553,7 @@ def test_github_issue_and_pr_templates_are_forecast_native():
     paths = [
         root / ".github" / "ISSUE_TEMPLATE" / "bug_report.yml",
         root / ".github" / "ISSUE_TEMPLATE" / "feature_request.yml",
+        root / ".github" / "ISSUE_TEMPLATE" / "setup_help.yml",
         root / ".github" / "ISSUE_TEMPLATE" / "forecast_pilot_feedback.yml",
         root / ".github" / "ISSUE_TEMPLATE" / "source_adapter_request.yml",
         root / ".github" / "ISSUE_TEMPLATE" / "config.yml",
@@ -570,6 +571,27 @@ def test_github_issue_and_pr_templates_are_forecast_native():
     assert "`hermes debug share`" not in text
     assert "Hermes Version" not in text
     assert "Which part of Hermes" not in text
+
+
+def test_github_actions_metadata_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / ".github" / "actions" / "hermes-smoke-test" / "action.yml",
+        root / ".github" / "actions" / "nix-setup" / "action.yml",
+        root / ".github" / "dependabot.yml",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "Superforecasting Agent smoke test" in text
+    assert "teddyjfpender/superforecasting-agent:test" in text
+    assert "/tmp/superforecasting-agent-test" in text
+    assert "name: superforecasting-agent" in text
+    assert "Dependabot configuration for Superforecasting Agent" in text
+    assert "Hermes smoke test" not in text
+    assert "nousresearch/hermes-agent:test" not in text
+    assert "/tmp/hermes-test" not in text
+    assert "name: hermes-agent" not in text
+    assert "Dependabot configuration for hermes-agent" not in text
 
 
 def test_tool_runtime_guidance_is_forecast_native():

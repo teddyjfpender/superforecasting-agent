@@ -1,18 +1,18 @@
-name: "🔧 Setup / Installation Help"
-description: Having trouble installing or configuring Hermes? Ask here.
+name: "Setup / Installation Help"
+description: Having trouble installing or configuring Superforecasting Agent? Ask here.
 title: "[Setup]: "
 labels: ["setup"]
 body:
   - type: markdown
     attributes:
       value: |
-        Sorry you're having trouble! Please fill out the details below so we can help.
+        Sorry you are having trouble. Please fill out the details below so we can help reproduce the setup issue.
 
         **Quick checks first:**
-        - Run `hermes debug share` and paste the links in the Debug Report section below
-        - If you're in a chat session, you can use `/debug` instead — it does the same thing
-        - Try `hermes update` to get the latest version
-        - Check the [README troubleshooting section](https://github.com/NousResearch/hermes-agent#troubleshooting)
+        - Run `superforecasting-agent debug share` and paste the links in the Debug Report section below
+        - If you are in a chat session, you can use `/debug` instead
+        - Pull or check out the latest snapshot branch you are testing
+        - Check the [README troubleshooting section](https://github.com/teddyjfpender/superforecasting-agent/blob/superforecasting-agent-snapshot/README.md#troubleshooting)
         - For general questions, consider the [Nous Research Discord](https://discord.gg/NousResearch) for faster help
 
   - type: textarea
@@ -21,8 +21,8 @@ body:
       label: What's Going Wrong?
       description: Describe what you're trying to do and where it fails.
       placeholder: |
-        I ran `hermes setup` and selected Nous Portal, but when I try to
-        start the gateway I get...
+        I ran `superforecasting-agent setup` and selected Nous Portal, but when I try to
+        open the forecast desk I get...
     validations:
       required: true
 
@@ -32,10 +32,10 @@ body:
       label: Steps Taken
       description: What did you do? Include the exact commands you ran.
       placeholder: |
-        1. Ran the install script: `curl -fsSL ... | bash`
-        2. Ran `hermes setup` and chose "Quick setup"
+        1. Cloned the alpha snapshot branch
+        2. Ran `uv pip install -e ".[all,dev]"`
         3. Selected OpenRouter, entered API key
-        4. Ran `hermes chat` and got error...
+        4. Ran `forecast` and got error...
     validations:
       required: true
 
@@ -68,10 +68,10 @@ body:
       placeholder: "3.11.9"
 
   - type: input
-    id: hermes-version
+    id: superforecasting-agent-version
     attributes:
-      label: Hermes Version
-      description: Output of `hermes version` (if install got that far)
+      label: Superforecasting Agent Version
+      description: Output of `superforecasting-agent version` or `git log -1 --oneline` (if install got that far)
       placeholder: "2.1.0"
 
   - type: textarea
@@ -79,13 +79,13 @@ body:
     attributes:
       label: Debug Report
       description: |
-        Run `hermes debug share` from your terminal and paste the links it prints here.
+        Run `superforecasting-agent debug share` from your terminal and paste the links it prints here.
         This uploads your system info, config, and recent logs to a paste service automatically.
 
-        If you're in an interactive chat session, you can also use the `/debug` slash command — it does the same thing.
+        If you're in an interactive chat session, you can also use the `/debug` slash command.
 
-        If the upload fails or install didn't get that far, run `hermes debug share --local` and paste the output directly.
-        If even that doesn't work, run `hermes doctor` and paste that output instead.
+        If the upload fails or install didn't get that far, run `superforecasting-agent debug share --local` and paste the output directly.
+        If even that doesn't work, run `superforecasting-agent doctor` and paste that output instead.
       placeholder: |
         Report   https://paste.rs/abc123
         agent.log   https://paste.rs/def456
@@ -107,6 +107,6 @@ body:
       label: What I've Already Tried
       description: List any fixes or workarounds you've already attempted.
       placeholder: |
-        - Ran `hermes update`
+        - Reinstalled with `uv pip install -e ".[all,dev]"`
         - Tried reinstalling with `pip install -e ".[all]"`
-        - Checked that OPENROUTER_API_KEY is set in ~/.hermes/.env
+        - Checked that OPENROUTER_API_KEY is set in ~/.superforecasting-agent/.env
