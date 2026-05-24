@@ -7114,6 +7114,12 @@ def test_forecast_cli_status_summarizes_operational_desk(tmp_path, capsys):
     question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
 
     ledger = ForecastLedger(db_path)
+    ledger.add_assumption(question_id=question_id, text="Status should count active assumptions.")
+    ledger.add_assumption(
+        question_id=question_id,
+        text="Status should count stale assumptions.",
+        status="stale",
+    )
     ledger.add_watched_source(
         scope_type="question",
         scope_ref=question_id,
@@ -7133,6 +7139,7 @@ def test_forecast_cli_status_summarizes_operational_desk(tmp_path, capsys):
 
     assert "Superforecasting Agent" in output
     assert "questions: active=1" in output
+    assert "assumptions: active=1  stale=1" in output
     assert "alerts: open=1" in output
     assert "schedules=1/1" in output
     assert "learning_schedules=0" in output
@@ -7145,6 +7152,8 @@ def test_forecast_cli_status_summarizes_operational_desk(tmp_path, capsys):
     assert payload["product"] == "Superforecasting Agent"
     assert payload["slug"] == "superforecasting-agent"
     assert payload["question_counts"]["active"] == 1
+    assert payload["active_assumption_count"] == 1
+    assert payload["stale_assumption_count"] == 1
     assert payload["open_alert_count"] == 1
     assert payload["enabled_scheduled_review_count"] == 1
     assert payload["scheduled_review_count"] == 1

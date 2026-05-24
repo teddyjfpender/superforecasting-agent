@@ -1445,10 +1445,16 @@ def _cmd_about(args: argparse.Namespace) -> None:
 def _cmd_status(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
     statuses = ["active", "closed", "resolved", "archived"]
+    active_questions = ledger.list_questions(status="active")
     question_counts = {
-        status: len(ledger.list_questions(status=status))
+        status: len(active_questions) if status == "active" else len(ledger.list_questions(status=status))
         for status in statuses
     }
+    active_assumptions = [
+        assumption
+        for question in active_questions
+        for assumption in ledger.list_assumptions(question.id)
+    ]
     open_alerts = ledger.list_alerts(unresolved_only=True)
     schedules = ledger.list_scheduled_reviews()
     watches = ledger.list_watched_sources(status=None)
@@ -1464,6 +1470,8 @@ def _cmd_status(args: argparse.Namespace) -> None:
         "slug": PRODUCT_SLUG,
         "ledger_path": str(ledger.db_path),
         "question_counts": question_counts,
+        "active_assumption_count": sum(1 for row in active_assumptions if row.get("status") == "active"),
+        "stale_assumption_count": sum(1 for row in active_assumptions if row.get("status") in {"stale", "invalidated"}),
         "open_alert_count": len(open_alerts),
         "scheduled_review_count": len(schedules),
         "enabled_scheduled_review_count": sum(1 for row in schedules if row.get("enabled")),
@@ -1489,6 +1497,10 @@ def _cmd_status(args: argparse.Namespace) -> None:
     print(
         "questions: "
         + " ".join(f"{status}={count}" for status, count in question_counts.items())
+    )
+    print(
+        f"assumptions: active={payload['active_assumption_count']}  "
+        f"stale={payload['stale_assumption_count']}"
     )
     print(
         f"alerts: open={payload['open_alert_count']}  "
