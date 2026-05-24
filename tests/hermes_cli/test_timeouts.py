@@ -164,6 +164,8 @@ def test_resolved_api_call_timeout_priority(monkeypatch, tmp_path):
               openai/gpt-4o-mini:
                 timeout_seconds: 42
         """)
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_API_TIMEOUT", "123")
+    monkeypatch.setenv("FORECAST_API_TIMEOUT", "456")
     monkeypatch.setenv("HERMES_API_TIMEOUT", "999")
 
     from run_agent import AIAgent
@@ -184,7 +186,7 @@ def test_resolved_api_call_timeout_priority(monkeypatch, tmp_path):
     agent.model = "some/other-model"
     assert agent._resolved_api_call_timeout() == 77.0
 
-    # Case B: no config → env wins
+    # Case B: no config -> fork-native env wins, with legacy fallback
     _write_config(tmp_path, "")
     # Clear the cached config load
     import importlib
@@ -205,6 +207,12 @@ def test_resolved_api_call_timeout_priority(monkeypatch, tmp_path):
         skip_memory=True,
         platform="cli",
     )
+    assert agent2._resolved_api_call_timeout() == 123.0
+
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_API_TIMEOUT", raising=False)
+    assert agent2._resolved_api_call_timeout() == 456.0
+
+    monkeypatch.delenv("FORECAST_API_TIMEOUT", raising=False)
     assert agent2._resolved_api_call_timeout() == 999.0
 
     # Case C: no config, no env → 1800.0 default
@@ -225,6 +233,8 @@ def test_resolved_api_call_stale_timeout_priority(monkeypatch, tmp_path):
               gpt-5.4:
                 stale_timeout_seconds: 1800
         """)
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_API_CALL_STALE_TIMEOUT", "123")
+    monkeypatch.setenv("FORECAST_API_CALL_STALE_TIMEOUT", "456")
     monkeypatch.setenv("HERMES_API_CALL_STALE_TIMEOUT", "999")
 
     from run_agent import AIAgent
@@ -262,6 +272,12 @@ def test_resolved_api_call_stale_timeout_priority(monkeypatch, tmp_path):
         skip_memory=True,
         platform="cli",
     )
+    assert agent2._resolved_api_call_stale_timeout_base() == (123.0, False)
+
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_API_CALL_STALE_TIMEOUT", raising=False)
+    assert agent2._resolved_api_call_stale_timeout_base() == (456.0, False)
+
+    monkeypatch.delenv("FORECAST_API_CALL_STALE_TIMEOUT", raising=False)
     assert agent2._resolved_api_call_stale_timeout_base() == (999.0, False)
 
     monkeypatch.delenv("HERMES_API_CALL_STALE_TIMEOUT", raising=False)
@@ -291,7 +307,7 @@ def test_default_non_stream_stale_timeout_auto_disables_for_local_endpoints(monk
 def test_explicit_non_stream_stale_timeout_is_honored_for_local_endpoints(monkeypatch, tmp_path):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     (tmp_path / ".env").write_text("", encoding="utf-8")
-    monkeypatch.setenv("HERMES_API_CALL_STALE_TIMEOUT", "300")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_API_CALL_STALE_TIMEOUT", "300")
 
     from run_agent import AIAgent
     agent = AIAgent(

@@ -201,12 +201,30 @@ from agent.tool_dispatch_helpers import (
     _extract_error_preview,
     _trajectory_normalize_msg,
 )
-from utils import atomic_json_write, base_url_host_matches, base_url_hostname, env_var_enabled, normalize_proxy_url
+from utils import (
+    atomic_json_write,
+    base_url_host_matches,
+    base_url_hostname,
+    env_var_alias_float,
+    env_var_alias_value,
+    env_var_enabled,
+    normalize_proxy_url,
+)
 from hermes_cli.config import cfg_get
 
 
 
 _MAX_TOOL_WORKERS = 8
+_API_TIMEOUT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_API_TIMEOUT",
+    "FORECAST_API_TIMEOUT",
+    "HERMES_API_TIMEOUT",
+)
+_API_CALL_STALE_TIMEOUT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_API_CALL_STALE_TIMEOUT",
+    "FORECAST_API_CALL_STALE_TIMEOUT",
+    "HERMES_API_CALL_STALE_TIMEOUT",
+)
 
 # Guard so the OpenRouter metadata pre-warm thread is only spawned once per
 # process, not once per AIAgent instantiation.  Without this, long-running
@@ -863,19 +881,20 @@ class AIAgent:
         Priority:
           1. ``providers.<id>.models.<model>.timeout_seconds`` (per-model override)
           2. ``providers.<id>.request_timeout_seconds`` (provider-wide)
-          3. ``HERMES_API_TIMEOUT`` env var (legacy escape hatch)
+          3. ``SUPERFORECASTING_AGENT_API_TIMEOUT`` / ``FORECAST_API_TIMEOUT``
+             env var (``HERMES_API_TIMEOUT`` remains a legacy alias)
           4. 1800.0s default
 
         Used by OpenAI-wire chat completions (streaming and non-streaming) so
         the per-provider config knob wins over the 1800s default.  Without this
-        helper, the hardcoded ``HERMES_API_TIMEOUT`` fallback would always be
+        helper, the hardcoded API timeout fallback would always be
         passed as a per-call ``timeout=`` kwarg, overriding the client-level
         timeout the AIAgent.__init__ path configured.
         """
         cfg = get_provider_request_timeout(self.provider, self.model)
         if cfg is not None:
             return cfg
-        return float(os.getenv("HERMES_API_TIMEOUT", 1800.0))
+        return env_var_alias_float(_API_TIMEOUT_ENV_NAMES, 1800.0)
 
     def _resolved_api_call_stale_timeout_base(self) -> tuple[float, bool]:
         """Resolve the base non-stream stale timeout and whether it is implicit.
@@ -883,7 +902,9 @@ class AIAgent:
         Priority:
           1. ``providers.<id>.models.<model>.stale_timeout_seconds``
           2. ``providers.<id>.stale_timeout_seconds``
-          3. ``HERMES_API_CALL_STALE_TIMEOUT`` env var
+          3. ``SUPERFORECASTING_AGENT_API_CALL_STALE_TIMEOUT`` /
+             ``FORECAST_API_CALL_STALE_TIMEOUT`` env var
+             (``HERMES_API_CALL_STALE_TIMEOUT`` remains a legacy alias)
           4. 300.0s default
 
         Returns ``(timeout_seconds, uses_implicit_default)`` so the caller can
@@ -895,7 +916,7 @@ class AIAgent:
         if cfg is not None:
             return cfg, False
 
-        env_timeout = os.getenv("HERMES_API_CALL_STALE_TIMEOUT")
+        env_timeout = env_var_alias_value(_API_CALL_STALE_TIMEOUT_ENV_NAMES)
         if env_timeout is not None:
             return float(env_timeout), False
 

@@ -1017,7 +1017,8 @@ class TestAnthropicStreamCallbacks:
         )
         agent.api_mode = "anthropic_messages"
         agent._interrupt_requested = False
-        monkeypatch.setenv("HERMES_STREAM_RETRIES", "1")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_STREAM_RETRIES", "1")
+        monkeypatch.setenv("HERMES_STREAM_RETRIES", "0")
 
         class _BadStream:
             response = None

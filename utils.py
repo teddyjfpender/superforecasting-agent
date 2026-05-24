@@ -42,6 +42,27 @@ def env_var_alias_enabled(names: tuple[str, ...], default: str = "") -> bool:
     return is_truthy_value(default, default=False)
 
 
+def env_var_alias_value(names: tuple[str, ...], default: str | None = None) -> str | None:
+    """Return the first present value in a compatibility alias set."""
+    for name in names:
+        value = os.getenv(name)
+        if value is not None:
+            return value
+    return default
+
+
+def env_var_alias_float(names: tuple[str, ...], default: float) -> float:
+    """Return the first present alias value as a float, or *default*."""
+    value = env_var_alias_value(names)
+    return default if value is None else float(value)
+
+
+def env_var_alias_int(names: tuple[str, ...], default: int) -> int:
+    """Return the first present alias value as an int, or *default*."""
+    value = env_var_alias_value(names)
+    return default if value is None else int(value)
+
+
 def _preserve_file_mode(path: Path) -> "int | None":
     """Capture the permission bits of *path* if it exists, else ``None``."""
     try:
