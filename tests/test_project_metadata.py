@@ -615,6 +615,23 @@ def test_tool_runtime_docstrings_are_forecast_native():
     assert "When hermes-agent runs" not in text
 
 
+def test_profile_runtime_exclusions_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "hermes_cli" / "profiles.py").read_text(encoding="utf-8")
+
+    assert '"superforecasting-agent",' in text
+    assert "fork-native repo checkout" in text
+    assert "legacy repo checkout" in text
+    assert "superforecasting-agent profile list" in text
+    assert "default runtime root" in text
+    assert "user-facing agent config" in text
+
+    assert "Hermes subcommands that cannot be used as profile names/aliases" not in text
+    assert "user-facing Hermes config" not in text
+    assert "never break ``hermes profile list``" not in text
+    assert "Cannot import as 'default' — that is the built-in root profile (~/.hermes)." not in text
+
+
 def test_xai_oauth_referrer_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "hermes_cli" / "auth.py").read_text(encoding="utf-8")

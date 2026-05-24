@@ -8,7 +8,7 @@ default for new installs, with ``~/.hermes/profiles/<name>/`` kept as a
 legacy fallback.
 
 The "default" profile is the root runtime home itself — backward compatible,
-zero migration needed for existing Hermes homes.
+zero migration needed for existing legacy homes.
 
 Usage::
 
@@ -76,12 +76,13 @@ _CLONE_ALL_STRIP: list[str] = [
 ]
 
 # Infrastructure artifacts excluded from --clone-all when the source is the
-# default profile (``~/.hermes``).  Named profiles never contain these
-# directories at root, so the exclusion is gated to avoid silently dropping
-# user data from a named-profile source.
+# default runtime root. Named profiles never contain these directories at root,
+# so the exclusion is gated to avoid silently dropping user data from a
+# named-profile source.
 #
 # Rationale per item:
-#   hermes-agent  — git repo checkout (~84 MB source + ~3 GB venv)
+#   superforecasting-agent — fork-native git checkout (~84 MB source + ~3 GB venv)
+#   hermes-agent           — legacy git checkout
 #   .worktrees    — git worktrees
 #   profiles      — sibling named profiles (recursive copy never intended)
 #   bin           — installed binaries (tirith etc., ~10 MB) shared per-host
@@ -92,6 +93,7 @@ _CLONE_ALL_STRIP: list[str] = [
 # archive is a portable snapshot; clone-all keeps those because the cloned
 # profile is meant to keep working immediately).
 _CLONE_ALL_DEFAULT_EXCLUDE_ROOT: frozenset[str] = frozenset({
+    "superforecasting-agent",
     "hermes-agent",
     ".worktrees",
     "profiles",
@@ -171,13 +173,14 @@ def _clone_all_copytree_ignore(source_dir: Path):
     return _ignore
 
 
-# Directories/files to exclude when exporting the default (~/.hermes) profile.
+# Directories/files to exclude when exporting the default runtime-root profile.
 # The default profile contains infrastructure (repo checkout, worktrees, DBs,
-# caches, binaries) that named profiles don't have.  We exclude those so the
+# caches, binaries) that named profiles don't have. We exclude those so the
 # export is a portable, reasonable-size archive of actual profile data.
 _DEFAULT_EXPORT_EXCLUDE_ROOT = frozenset({
     # Infrastructure
-    "hermes-agent",         # repo checkout (multi-GB)
+    "superforecasting-agent",  # fork-native repo checkout (multi-GB)
+    "hermes-agent",            # legacy repo checkout (multi-GB)
     ".worktrees",           # git worktrees
     "profiles",             # other profiles — never recursive-export
     "bin",                  # installed binaries (tirith, etc.)
@@ -205,7 +208,7 @@ _RESERVED_NAMES = frozenset({
     "hermes", "default", "test", "tmp", "root", "sudo",
 })
 
-# Hermes subcommands that cannot be used as profile names/aliases
+# CLI subcommands that cannot be used as profile names/aliases
 _HERMES_SUBCOMMANDS = frozenset({
     "chat", "model", "gateway", "setup", "whatsapp", "login", "logout",
     "status", "cron", "doctor", "dump", "config", "pairing", "skills", "tools",
@@ -221,9 +224,9 @@ _HERMES_SUBCOMMANDS = frozenset({
 def _get_profiles_root() -> Path:
     """Return the directory where named profiles are stored.
 
-    Anchored to the hermes root, NOT to the current HERMES_HOME
-    (which may itself be a profile).  This ensures ``coder profile list``
-    can see all profiles.
+    Anchored to the default runtime root, NOT to the current HERMES_HOME
+    (which may itself be a profile). This ensures ``coder profile list`` can
+    see all profiles.
 
     In Docker/custom deployments where HERMES_HOME points outside
     ``~/.hermes``, profiles live under ``HERMES_HOME/profiles/`` so
@@ -291,7 +294,7 @@ def validate_profile_name(name: str) -> None:
     it's a valid alias for the built-in root profile.
     """
     if name == "default":
-        return  # special alias for ~/.hermes
+        return  # special alias for the default runtime root
     if not _PROFILE_ID_RE.match(name):
         raise ValueError(
             f"Invalid profile name {name!r}. Must match "
@@ -442,7 +445,8 @@ def _read_distribution_meta(profile_dir: Path) -> tuple:
     if present; ``(None, None, None)`` otherwise.
 
     Failures (missing file, bad YAML) are swallowed — a bad manifest should
-    never break ``hermes profile list`` for an unrelated profile.
+    never break ``superforecasting-agent profile list`` for an unrelated
+    profile.
     """
     mf_path = profile_dir / "distribution.yaml"
     if not mf_path.is_file():
@@ -507,7 +511,7 @@ def _count_skills(profile_dir: Path) -> int:
 # ---------------------------------------------------------------------------
 #
 # We keep this file deliberately tiny and separate from the profile's
-# ``config.yaml``. ``config.yaml`` is the user-facing Hermes config
+# ``config.yaml``. ``config.yaml`` is the user-facing agent config
 # (~5000 lines of defaults); ``profile.yaml`` is metadata ABOUT the
 # profile itself (its role, who described it). Mixing them makes both
 # harder to read.
@@ -526,7 +530,7 @@ def read_profile_meta(profile_dir: Path) -> dict:
     Returns ``{"description": "", "description_auto": False}`` when the
     file is missing or unreadable. Never raises — a corrupt
     profile.yaml on an unrelated profile must not break
-    ``hermes profile list``.
+    ``superforecasting-agent profile list``.
     """
     path = _profile_yaml_path(profile_dir)
     if not path.is_file():
@@ -713,7 +717,7 @@ def create_profile(
             )
 
     if clone_all and source_dir:
-        # Full copy of source profile (exclude sibling ~/.hermes/profiles/)
+        # Full copy of source profile (exclude sibling profiles/ tree).
         shutil.copytree(
             source_dir,
             profile_dir,
@@ -1043,7 +1047,8 @@ def get_active_profile() -> str:
 def set_active_profile(name: str) -> None:
     """Set the sticky active profile.
 
-    Writes to ``~/.hermes/active_profile``. Use ``"default"`` to clear.
+    Writes to the default runtime root's ``active_profile`` file. Use
+    ``"default"`` to clear.
     """
     canon = normalize_profile_name(name)
     validate_profile_name(canon)
@@ -1068,8 +1073,9 @@ def set_active_profile(name: str) -> None:
 def get_active_profile_name() -> str:
     """Infer the current profile name from HERMES_HOME.
 
-    Returns ``"default"`` if HERMES_HOME is not set or points to ``~/.hermes``.
-    Returns the profile name if HERMES_HOME points into ``~/.hermes/profiles/<name>``.
+    Returns ``"default"`` if HERMES_HOME is not set or points to the default
+    runtime root. Returns the profile name if HERMES_HOME points into
+    ``<default-root>/profiles/<name>``.
     Returns ``"custom"`` if HERMES_HOME is set to an unrecognized path.
     """
     from hermes_constants import get_hermes_home
@@ -1138,9 +1144,9 @@ def export_profile(name: str, output_path: str) -> Path:
     base = str(output).removesuffix(".tar.gz").removesuffix(".tgz")
 
     if canon == "default":
-        # The default profile IS ~/.hermes itself — its parent is ~/ and its
-        # directory name is ".hermes", not "default".  We stage a clean copy
-        # under a temp dir so the archive contains ``default/...``.
+        # The default profile IS the runtime root itself, not a directory named
+        # "default". We stage a clean copy under a temp dir so the archive
+        # contains ``default/...``.
         with tempfile.TemporaryDirectory() as tmpdir:
             staged = Path(tmpdir) / "default"
             shutil.copytree(
@@ -1267,13 +1273,13 @@ def import_profile(archive_path: str, name: Optional[str] = None) -> Path:
         )
 
     # Archives exported from the default profile have "default/" as top-level
-    # dir.  Importing as "default" would target ~/.hermes itself — disallow
-    # that and guide the user toward a named profile.
+    # dir. Importing as "default" would target the runtime root itself, so
+    # disallow that and guide the user toward a named profile.
     canon = normalize_profile_name(inferred_name)
     validate_profile_name(canon)
     if canon == "default":
         raise ValueError(
-            "Cannot import as 'default' — that is the built-in root profile (~/.hermes). "
+            "Cannot import as 'default' — that is the built-in root profile. "
             "Specify a different name: superforecasting-agent profile import <archive> --name <name>"
         )
 
