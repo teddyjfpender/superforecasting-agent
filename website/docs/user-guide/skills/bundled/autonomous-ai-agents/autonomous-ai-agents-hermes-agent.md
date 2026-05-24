@@ -321,7 +321,7 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 /browser             Open CDP browser connection
 /history             Show conversation history (CLI)
 /save                Save conversation to file (CLI)
-/copy [N]            Copy the last assistant response to clipboard (CLI)
+/copy [N]            Copy the last forecast response to clipboard (CLI)
 /paste               Attach clipboard image (CLI)
 /image               Attach local image file (CLI)
 ```
