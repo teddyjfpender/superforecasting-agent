@@ -41,6 +41,7 @@ from hermes_cli._subprocess_compat import windows_hide_flags
 from hermes_cli.model_env import model_env
 from hermes_cli.config import load_config, _expand_env_vars
 from hermes_time import now as _hermes_now
+from utils import PREFILL_MESSAGES_FILE_ENV_NAMES, env_var_alias_value
 
 logger = logging.getLogger(__name__)
 
@@ -1508,7 +1509,10 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
 
         # Prefill messages from env or config.yaml
         prefill_messages = None
-        prefill_file = os.getenv("HERMES_PREFILL_MESSAGES_FILE", "") or _cfg.get("prefill_messages_file", "")
+        prefill_file = (
+            env_var_alias_value(PREFILL_MESSAGES_FILE_ENV_NAMES, "")
+            or _cfg.get("prefill_messages_file", "")
+        )
         if prefill_file:
             pfpath = Path(prefill_file).expanduser()
             if not pfpath.is_absolute():

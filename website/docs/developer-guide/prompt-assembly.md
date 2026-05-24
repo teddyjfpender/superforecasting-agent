@@ -251,7 +251,7 @@ Most users should treat `agent/prompt_builder.py` and `forecasting/protocol.py` 
 - Forecast ledger records - store scoreable forecasts, evidence, assumptions, reference classes, model runs, resolutions, scores, postmortems, and calibration lessons.
 - Skills - package reusable workflows and references without editing core prompt code.
 - Optional system prompt config / API overrides - add deployment-specific instruction text without forking the runtime.
-- Ephemeral overlays such as `HERMES_EPHEMERAL_SYSTEM_PROMPT` or prefill messages - add turn-scoped guidance that should not become part of the cached prompt prefix.
+- Ephemeral overlays such as `SUPERFORECASTING_AGENT_EPHEMERAL_SYSTEM_PROMPT` / `FORECAST_EPHEMERAL_SYSTEM_PROMPT` / legacy `HERMES_EPHEMERAL_SYSTEM_PROMPT` or prefill messages - add turn-scoped guidance that should not become part of the cached prompt prefix.
 
 ### When to edit code instead
 

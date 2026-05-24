@@ -1,5 +1,6 @@
 """Tests for gateway configuration management."""
 
+import json
 import os
 from unittest.mock import patch
 
@@ -703,3 +704,38 @@ class TestHomeChannelEnvOverrides:
             home = config.platforms[platform].home_channel
             assert home is not None, f"{platform.value}: home_channel should not be None"
             assert (home.chat_id, home.name) == expected, platform.value
+
+
+class TestGatewayPromptAliasConfig:
+    def test_ephemeral_prompt_prefers_forecast_native_env(self, monkeypatch, tmp_path):
+        from gateway import run as gateway_run
+
+        monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+        (tmp_path / "config.yaml").write_text(
+            "agent:\n  system_prompt: from config\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_EPHEMERAL_SYSTEM_PROMPT", "from fork")
+        monkeypatch.setenv("HERMES_EPHEMERAL_SYSTEM_PROMPT", "from legacy")
+
+        assert gateway_run.GatewayRunner._load_ephemeral_system_prompt() == "from fork"
+
+    def test_prefill_messages_prefers_forecast_native_env(self, monkeypatch, tmp_path):
+        from gateway import run as gateway_run
+
+        legacy_prefill = tmp_path / "legacy.json"
+        fork_prefill = tmp_path / "fork.json"
+        legacy_prefill.write_text(json.dumps([{"role": "user", "content": "legacy"}]), encoding="utf-8")
+        fork_prefill.write_text(json.dumps([{"role": "user", "content": "fork"}]), encoding="utf-8")
+
+        monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+        (tmp_path / "config.yaml").write_text(
+            f"prefill_messages_file: {legacy_prefill}\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_PREFILL_MESSAGES_FILE", str(fork_prefill))
+        monkeypatch.setenv("HERMES_PREFILL_MESSAGES_FILE", str(legacy_prefill))
+
+        assert gateway_run.GatewayRunner._load_prefill_messages() == [
+            {"role": "user", "content": "fork"}
+        ]

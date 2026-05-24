@@ -30,6 +30,12 @@ def _make_cli(env_overrides=None, config_overrides=None, **kwargs):
         "SUPERFORECASTING_AGENT_MAX_ITERATIONS": "",
         "FORECAST_MAX_ITERATIONS": "",
         "HERMES_MAX_ITERATIONS": "",
+        "SUPERFORECASTING_AGENT_EPHEMERAL_SYSTEM_PROMPT": "",
+        "FORECAST_EPHEMERAL_SYSTEM_PROMPT": "",
+        "HERMES_EPHEMERAL_SYSTEM_PROMPT": "",
+        "SUPERFORECASTING_AGENT_PREFILL_MESSAGES_FILE": "",
+        "FORECAST_PREFILL_MESSAGES_FILE": "",
+        "HERMES_PREFILL_MESSAGES_FILE": "",
     }
     if env_overrides:
         clean_env.update(env_overrides)
@@ -102,6 +108,36 @@ class TestMaxTurnsResolution:
         """The value passed to AIAgent must never be None (causes TypeError in run_conversation)."""
         cli = _make_cli()
         assert isinstance(cli.max_turns, int) and cli.max_turns == 90
+
+
+class TestEphemeralPromptAliases:
+    def test_forecast_native_system_prompt_precedes_legacy(self):
+        cli_obj = _make_cli(
+            env_overrides={
+                "SUPERFORECASTING_AGENT_EPHEMERAL_SYSTEM_PROMPT": "from fork",
+                "FORECAST_EPHEMERAL_SYSTEM_PROMPT": "from forecast",
+                "HERMES_EPHEMERAL_SYSTEM_PROMPT": "from legacy",
+            },
+            config_overrides={"agent": {"system_prompt": "from config"}},
+        )
+
+        assert cli_obj.system_prompt == "from fork"
+
+    def test_forecast_native_prefill_file_precedes_config(self, tmp_path):
+        config_prefill = tmp_path / "config-prefill.json"
+        fork_prefill = tmp_path / "fork-prefill.json"
+        config_prefill.write_text('[{"role": "user", "content": "config"}]', encoding="utf-8")
+        fork_prefill.write_text('[{"role": "user", "content": "fork"}]', encoding="utf-8")
+
+        cli_obj = _make_cli(
+            env_overrides={
+                "SUPERFORECASTING_AGENT_PREFILL_MESSAGES_FILE": str(fork_prefill),
+                "HERMES_PREFILL_MESSAGES_FILE": str(config_prefill),
+            },
+            config_overrides={"agent": {"prefill_messages_file": str(config_prefill)}},
+        )
+
+        assert cli_obj.prefill_messages == [{"role": "user", "content": "fork"}]
 
 
 def test_redact_env_alias_helpers_prefer_forecast_native(monkeypatch):

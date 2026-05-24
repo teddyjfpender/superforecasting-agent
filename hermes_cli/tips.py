@@ -258,7 +258,7 @@ TIPS = [
     ".worktreeinclude in your repo root lists gitignored files to copy into worktrees.",
     "superforecasting-agent acp runs Superforecasting Agent as an ACP server for VS Code, Zed, and JetBrains integration.",
     "Custom providers: save named endpoints in config.yaml under custom_providers.",
-    "HERMES_EPHEMERAL_SYSTEM_PROMPT injects a system prompt that's never persisted to history.",
+    "SUPERFORECASTING_AGENT_EPHEMERAL_SYSTEM_PROMPT injects turn-scoped system guidance without persisting it to history.",
     "credential_pool_strategies supports fill_first, round_robin, least_used, and random rotation.",
     "superforecasting-agent login supports OAuth-based auth for Nous and OpenAI Codex providers.",
     "The API server supports both Chat Completions and Responses API with server-side state.",

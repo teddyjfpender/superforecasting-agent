@@ -182,7 +182,13 @@ from hermes_cli.browser_connect import (
     try_launch_chrome_debug,
 )
 from hermes_cli.env_loader import load_hermes_dotenv
-from utils import base_url_host_matches, is_truthy_value
+from utils import (
+    EPHEMERAL_SYSTEM_PROMPT_ENV_NAMES,
+    PREFILL_MESSAGES_FILE_ENV_NAMES,
+    base_url_host_matches,
+    env_var_alias_value,
+    is_truthy_value,
+)
 
 _hermes_home = get_hermes_home()
 _project_env = Path(__file__).parent / '.env'
@@ -2873,14 +2879,15 @@ class HermesCLI:
         
         # Ephemeral system prompt: env var takes precedence, then config
         self.system_prompt = (
-            os.getenv("HERMES_EPHEMERAL_SYSTEM_PROMPT", "")
+            env_var_alias_value(EPHEMERAL_SYSTEM_PROMPT_ENV_NAMES, "")
             or CLI_CONFIG["agent"].get("system_prompt", "")
         )
         self.personalities = CLI_CONFIG["agent"].get("personalities", {})
         
         # Ephemeral prefill messages (few-shot priming, never persisted)
         self.prefill_messages = _load_prefill_messages(
-            CLI_CONFIG["agent"].get("prefill_messages_file", "")
+            env_var_alias_value(PREFILL_MESSAGES_FILE_ENV_NAMES, "")
+            or CLI_CONFIG["agent"].get("prefill_messages_file", "")
         )
         
         # Reasoning config (OpenRouter reasoning effort level)

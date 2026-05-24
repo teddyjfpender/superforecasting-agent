@@ -29,6 +29,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from typing import Optional
 
 from hermes_cli.model_env import inference_model_env, inference_provider_env
+from utils import EPHEMERAL_SYSTEM_PROMPT_ENV_NAMES, env_var_alias_value
 
 
 def _set_runtime_env_aliases(name: str, value: object) -> None:
@@ -323,7 +324,7 @@ def _run_agent(
 
     agent_cfg = cfg.get("agent") if isinstance(cfg.get("agent"), dict) else {}
     extra_system_prompt = (
-        os.getenv("HERMES_EPHEMERAL_SYSTEM_PROMPT", "")
+        env_var_alias_value(EPHEMERAL_SYSTEM_PROMPT_ENV_NAMES, "")
         or agent_cfg.get("system_prompt", "")
         or ""
     )

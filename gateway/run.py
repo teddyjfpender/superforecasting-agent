@@ -552,7 +552,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Resolve Hermes home directory (respects HERMES_HOME override)
 from hermes_constants import get_hermes_home
-from utils import atomic_json_write, atomic_yaml_write, base_url_host_matches, is_truthy_value
+from utils import (
+    EPHEMERAL_SYSTEM_PROMPT_ENV_NAMES,
+    PREFILL_MESSAGES_FILE_ENV_NAMES,
+    atomic_json_write,
+    atomic_yaml_write,
+    base_url_host_matches,
+    env_var_alias_value,
+    is_truthy_value,
+)
 _hermes_home = get_hermes_home()
 
 # Load environment variables from ~/.hermes/.env first.
@@ -2660,11 +2668,11 @@ class GatewayRunner:
     def _load_prefill_messages() -> List[Dict[str, Any]]:
         """Load ephemeral prefill messages from config or env var.
         
-        Checks HERMES_PREFILL_MESSAGES_FILE env var first, then falls back to
-        the prefill_messages_file key in ~/.hermes/config.yaml.
-        Relative paths are resolved from ~/.hermes/.
+        Checks fork-native PREFILL_MESSAGES_FILE env aliases first, then falls
+        back to the prefill_messages_file key in config.yaml. Relative paths
+        are resolved from the active forecast home.
         """
-        file_path = os.getenv("HERMES_PREFILL_MESSAGES_FILE", "")
+        file_path = env_var_alias_value(PREFILL_MESSAGES_FILE_ENV_NAMES, "") or ""
         if not file_path:
             try:
                 import yaml as _y
@@ -2698,10 +2706,10 @@ class GatewayRunner:
     def _load_ephemeral_system_prompt() -> str:
         """Load ephemeral system prompt from config or env var.
         
-        Checks HERMES_EPHEMERAL_SYSTEM_PROMPT env var first, then falls back to
-        agent.system_prompt in ~/.hermes/config.yaml.
+        Checks fork-native EPHEMERAL_SYSTEM_PROMPT env aliases first, then
+        falls back to agent.system_prompt in config.yaml.
         """
-        prompt = os.getenv("HERMES_EPHEMERAL_SYSTEM_PROMPT", "")
+        prompt = env_var_alias_value(EPHEMERAL_SYSTEM_PROMPT_ENV_NAMES, "") or ""
         if prompt:
             return prompt
         try:

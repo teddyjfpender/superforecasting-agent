@@ -167,6 +167,10 @@ _EXTRA_ENV_KEYS = frozenset({
     "LANGFUSE_PUBLIC_KEY",
     "LANGFUSE_SECRET_KEY",
     "LANGFUSE_BASE_URL",
+    "FORECAST_PREFILL_MESSAGES_FILE",
+    "HERMES_PREFILL_MESSAGES_FILE",
+    "FORECAST_EPHEMERAL_SYSTEM_PROMPT",
+    "HERMES_EPHEMERAL_SYSTEM_PROMPT",
 })
 import yaml
 
@@ -2847,14 +2851,14 @@ OPTIONAL_ENV_VARS = {
         "password": False,
         "category": "setting",
     },
-    "HERMES_PREFILL_MESSAGES_FILE": {
+    "SUPERFORECASTING_AGENT_PREFILL_MESSAGES_FILE": {
         "description": "Path to JSON file with ephemeral prefill messages for few-shot priming",
         "prompt": "Prefill messages file path",
         "url": None,
         "password": False,
         "category": "setting",
     },
-    "HERMES_EPHEMERAL_SYSTEM_PROMPT": {
+    "SUPERFORECASTING_AGENT_EPHEMERAL_SYSTEM_PROMPT": {
         "description": "Ephemeral system prompt injected at API-call time (never persisted to sessions)",
         "prompt": "Ephemeral system prompt",
         "url": None,

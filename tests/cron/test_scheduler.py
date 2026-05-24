@@ -1411,6 +1411,13 @@ class TestRunJobConfigLogging:
         with patch("cron.scheduler._hermes_home", tmp_path), \
              patch("cron.scheduler._resolve_origin", return_value=None), \
              patch("dotenv.load_dotenv"), \
+             patch("hermes_cli.runtime_provider.resolve_runtime_provider", return_value={
+                 "api_key": "sk-test",
+                 "base_url": "https://example.test/v1",
+                 "provider": "test",
+                 "api_mode": "chat_completions",
+                 "credential_pool": None,
+             }), \
              patch("run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = {"final_response": "ok"}
@@ -1440,6 +1447,13 @@ class TestRunJobConfigLogging:
         with patch("cron.scheduler._hermes_home", tmp_path), \
              patch("cron.scheduler._resolve_origin", return_value=None), \
              patch("dotenv.load_dotenv"), \
+             patch("hermes_cli.runtime_provider.resolve_runtime_provider", return_value={
+                 "api_key": "sk-test",
+                 "base_url": "https://example.test/v1",
+                 "provider": "test",
+                 "api_mode": "chat_completions",
+                 "credential_pool": None,
+             }), \
              patch("run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = {"final_response": "ok"}
@@ -1450,6 +1464,46 @@ class TestRunJobConfigLogging:
 
         assert any("failed to parse prefill messages" in r.message for r in caplog.records), \
             f"Expected 'failed to parse prefill messages' warning in logs, got: {[r.message for r in caplog.records]}"
+
+    def test_prefill_messages_prefers_forecast_native_env(self, monkeypatch, tmp_path):
+        """Cron prefill loading honors fork-native env aliases before legacy/config paths."""
+        config_prefill = tmp_path / "config-prefill.json"
+        fork_prefill = tmp_path / "fork-prefill.json"
+        config_prefill.write_text(json.dumps([{"role": "user", "content": "config"}]))
+        fork_prefill.write_text(json.dumps([{"role": "user", "content": "fork"}]))
+        (tmp_path / "config.yaml").write_text(
+            "prefill_messages_file: config-prefill.json\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_PREFILL_MESSAGES_FILE", str(fork_prefill))
+        monkeypatch.setenv("HERMES_PREFILL_MESSAGES_FILE", str(config_prefill))
+
+        job = {
+            "id": "test-job",
+            "name": "test",
+            "prompt": "hello",
+        }
+
+        with patch("cron.scheduler._hermes_home", tmp_path), \
+             patch("cron.scheduler._resolve_origin", return_value=None), \
+             patch("dotenv.load_dotenv"), \
+             patch("hermes_cli.runtime_provider.resolve_runtime_provider", return_value={
+                 "api_key": "sk-test",
+                 "base_url": "https://example.test/v1",
+                 "provider": "test",
+                 "api_mode": "chat_completions",
+                 "credential_pool": None,
+             }), \
+             patch("run_agent.AIAgent") as mock_agent_cls:
+            mock_agent = MagicMock()
+            mock_agent.run_conversation.return_value = {"final_response": "ok"}
+            mock_agent_cls.return_value = mock_agent
+
+            run_job(job)
+
+        assert mock_agent_cls.call_args.kwargs["prefill_messages"] == [
+            {"role": "user", "content": "fork"}
+        ]
 
 
 class TestRunJobConfigEnvVarExpansion:

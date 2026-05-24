@@ -146,7 +146,7 @@ For native Anthropic auth, Superforecasting Agent prefers Claude Code's own cred
 | `HERMES_NOUS_MIN_KEY_TTL_SECONDS` | Min agent key TTL before re-mint (default: 1800 = 30min) |
 | `HERMES_NOUS_TIMEOUT_SECONDS` | HTTP timeout for Nous credential / token flows |
 | `HERMES_DUMP_REQUESTS` | Dump API request payloads to log files (`true`/`false`) |
-| `HERMES_PREFILL_MESSAGES_FILE` | Path to a JSON file of ephemeral prefill messages injected at API-call time |
+| `SUPERFORECASTING_AGENT_PREFILL_MESSAGES_FILE` / `FORECAST_PREFILL_MESSAGES_FILE` / `HERMES_PREFILL_MESSAGES_FILE` | Path to a JSON file of ephemeral prefill messages injected at API-call time; the `HERMES_*` name remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_TIMEZONE` / `FORECAST_TIMEZONE` / `HERMES_TIMEZONE` | IANA timezone override (for example `America/New_York`); the `HERMES_*` name remains a legacy alias. |
 
 ## Tool APIs
@@ -579,8 +579,8 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 | `HERMES_ENABLE_PROJECT_PLUGINS` | Enable auto-discovery of repo-local plugins from `./.hermes/plugins/` (`true`/`false`, default: `false`). The directory name is inherited compatibility for project-local plugin discovery. |
 | `HERMES_PLUGINS_DEBUG` | `1`/`true` to surface verbose plugin-discovery logs on stderr — directories scanned, manifests parsed, skip reasons, and full tracebacks on parse or `register()` failure. Aimed at plugin authors. |
 | `SUPERFORECASTING_AGENT_BACKGROUND_NOTIFICATIONS` / `FORECAST_BACKGROUND_NOTIFICATIONS` / `HERMES_BACKGROUND_NOTIFICATIONS` | Background process notification mode in gateway: `all` (default), `result`, `error`, `off`; the `HERMES_*` name remains a legacy alias. |
-| `HERMES_EPHEMERAL_SYSTEM_PROMPT` | Ephemeral system prompt injected at API-call time (never persisted to sessions) |
-| `HERMES_PREFILL_MESSAGES_FILE` | Path to a JSON file of ephemeral prefill messages injected at API-call time. |
+| `SUPERFORECASTING_AGENT_EPHEMERAL_SYSTEM_PROMPT` / `FORECAST_EPHEMERAL_SYSTEM_PROMPT` / `HERMES_EPHEMERAL_SYSTEM_PROMPT` | Ephemeral system prompt injected at API-call time (never persisted to sessions); the `HERMES_*` name remains a legacy alias. |
+| `SUPERFORECASTING_AGENT_PREFILL_MESSAGES_FILE` / `FORECAST_PREFILL_MESSAGES_FILE` / `HERMES_PREFILL_MESSAGES_FILE` | Path to a JSON file of ephemeral prefill messages injected at API-call time; the `HERMES_*` name remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_ALLOW_PRIVATE_URLS` / `FORECAST_ALLOW_PRIVATE_URLS` / `HERMES_ALLOW_PRIVATE_URLS` | `true`/`false` — allow tools to fetch localhost/private-network URLs. Off by default in gateway mode; the `HERMES_*` name remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_REDACT_SECRETS` / `FORECAST_REDACT_SECRETS` / `HERMES_REDACT_SECRETS` | `true`/`false` — control secret redaction in tool output, logs, and chat responses (default: `true`). Prefer the fork-native aliases; `HERMES_REDACT_SECRETS` remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_WRITE_SAFE_ROOT` / `FORECAST_WRITE_SAFE_ROOT` / `HERMES_WRITE_SAFE_ROOT` | Optional directory prefix that restricts `write_file`/`patch` writes; paths outside require approval. The `HERMES_*` name remains a legacy alias. |
