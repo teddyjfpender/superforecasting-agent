@@ -1846,9 +1846,11 @@ def test_nix_package_aliases_are_forecast_native():
     assert "superforecastingAgentTui" in nix_package
     assert "superforecastingAgentWeb" in nix_package
     assert "superforecastingAgentNpmLib" in nix_package
+    assert "superforecastingAgentVenv" in nix_package
     assert "hermesTui = superforecastingAgentTui" in nix_package
     assert "hermesWeb = superforecastingAgentWeb" in nix_package
     assert "hermesNpmLib = superforecastingAgentNpmLib" in nix_package
+    assert "hermesVenv = superforecastingAgentVenv" in nix_package
     assert "pname = \"hermes-tui\"" not in nix_tui
     assert "pname = \"hermes-web\"" not in nix_web
     assert "hermes-tui" not in nix_lib
@@ -1889,6 +1891,12 @@ def test_nix_package_aliases_are_forecast_native():
     assert 'flake.nixosModules."hermes-agent" = superforecastingAgentModule' in nix_module
     assert "share/superforecasting-agent/skills" in nix_checks
     assert "share/hermes-agent/skills" in nix_checks
+    assert "superforecastingAgent = self'.packages.default" in nix_checks
+    assert "superforecastingAgentVenv = superforecastingAgent.superforecastingAgentVenv" in nix_checks
+    assert 'pkgs.runCommand "superforecasting-agent-config-keys"' in nix_checks
+    assert 'pkgs.runCommand "superforecasting-agent-config-roundtrip"' in nix_checks
+    assert "hermes-agent = self'.packages.default" not in nix_checks
+    assert "hermesVenv = " not in nix_checks
     assert "<this-fork-url>#superforecasting-agent" in nix_docs
     assert 'nixosModules."superforecasting-agent"' in nix_docs
     assert "services.superforecasting-agent = {" in nix_docs

@@ -32,7 +32,7 @@
 }:
 let
   nodejs = nodejs_22;
-  hermesVenv = callPackage ./python.nix {
+  superforecastingAgentVenv = callPackage ./python.nix {
     inherit uv2nix pyproject-nix pyproject-build-systems;
     dependency-groups = [ "all" ] ++ extraDependencyGroups;
   };
@@ -96,7 +96,7 @@ let
 
     # Collect core venv package names
     core = set()
-    venv_sp = pathlib.Path('${hermesVenv}/${sitePackagesPath}')
+    venv_sp = pathlib.Path('${superforecastingAgentVenv}/${sitePackagesPath}')
     for di in venv_sp.glob('*.dist-info'):
         meta = di / 'METADATA'
         if meta.exists():
@@ -150,7 +150,7 @@ stdenv.mkDerivation {
 
     ${lib.concatMapStringsSep "\n"
       (name: ''
-        makeWrapper ${hermesVenv}/bin/${name} $out/bin/${name} \
+        makeWrapper ${superforecastingAgentVenv}/bin/${name} $out/bin/${name} \
           --suffix PATH : "${runtimePath}" \
           --set SUPERFORECASTING_AGENT_BUNDLED_SKILLS $out/share/superforecasting-agent/skills \
           --set FORECAST_BUNDLED_SKILLS $out/share/superforecasting-agent/skills \
@@ -164,9 +164,9 @@ stdenv.mkDerivation {
           --set SUPERFORECASTING_AGENT_TUI_DIR $out/ui-tui \
           --set FORECAST_TUI_DIR $out/ui-tui \
           --set HERMES_TUI_DIR $out/ui-tui \
-          --set SUPERFORECASTING_AGENT_PYTHON ${hermesVenv}/bin/python3 \
-          --set FORECAST_PYTHON ${hermesVenv}/bin/python3 \
-          --set HERMES_PYTHON ${hermesVenv}/bin/python3 \
+          --set SUPERFORECASTING_AGENT_PYTHON ${superforecastingAgentVenv}/bin/python3 \
+          --set FORECAST_PYTHON ${superforecastingAgentVenv}/bin/python3 \
+          --set HERMES_PYTHON ${superforecastingAgentVenv}/bin/python3 \
           --set SUPERFORECASTING_AGENT_NODE ${lib.getExe nodejs} \
           --set FORECAST_NODE ${lib.getExe nodejs} \
           --set HERMES_NODE ${lib.getExe nodejs} \
@@ -189,7 +189,7 @@ stdenv.mkDerivation {
 
     ${lib.optionalString (extraPythonPackages != [ ]) ''
       echo "=== Checking for plugin/core package collisions ==="
-      ${hermesVenv}/bin/python3 -c "${checkPackageCollisions}"
+      ${superforecastingAgentVenv}/bin/python3 -c "${checkPackageCollisions}"
       echo "=== No collisions ==="
     ''}
 
@@ -201,11 +201,12 @@ stdenv.mkDerivation {
       superforecastingAgentTui
       superforecastingAgentWeb
       superforecastingAgentNpmLib
-      hermesVenv
+      superforecastingAgentVenv
       ;
     hermesTui = superforecastingAgentTui;
     hermesWeb = superforecastingAgentWeb;
     hermesNpmLib = superforecastingAgentNpmLib;
+    hermesVenv = superforecastingAgentVenv;
 
     devShellHook = ''
       STAMP=".nix-stamps/superforecasting-agent"
@@ -220,9 +221,9 @@ stdenv.mkDerivation {
         echo "$STAMP_VALUE" > "$STAMP"
       else
         source .venv/bin/activate
-        export SUPERFORECASTING_AGENT_PYTHON=${hermesVenv}/bin/python3
-        export FORECAST_PYTHON=${hermesVenv}/bin/python3
-        export HERMES_PYTHON=${hermesVenv}/bin/python3
+        export SUPERFORECASTING_AGENT_PYTHON=${superforecastingAgentVenv}/bin/python3
+        export FORECAST_PYTHON=${superforecastingAgentVenv}/bin/python3
+        export HERMES_PYTHON=${superforecastingAgentVenv}/bin/python3
       fi
     '';
   };
