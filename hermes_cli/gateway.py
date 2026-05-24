@@ -33,6 +33,20 @@ from hermes_cli.config import (
 )
 # display_hermes_home is imported lazily at call sites to avoid ImportError
 # when hermes_constants is cached from a pre-update version during `hermes update`.
+
+_RESTART_DRAIN_TIMEOUT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT",
+    "FORECAST_RESTART_DRAIN_TIMEOUT",
+    "HERMES_RESTART_DRAIN_TIMEOUT",
+)
+
+
+def _first_nonempty_env(names: tuple[str, ...]) -> str:
+    for name in names:
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    return ""
 from hermes_cli.setup import (
     print_header, print_info, print_success, print_warning, print_error,
     prompt, prompt_choice, prompt_yes_no,
@@ -2434,7 +2448,7 @@ def _print_system_scope_remediation(action: str) -> None:
 
 def _get_restart_drain_timeout() -> float:
     """Return the configured gateway restart drain timeout in seconds."""
-    raw = os.getenv("HERMES_RESTART_DRAIN_TIMEOUT", "").strip()
+    raw = _first_nonempty_env(_RESTART_DRAIN_TIMEOUT_ENV_NAMES)
     if not raw:
         cfg = read_raw_config()
         agent_cfg = cfg.get("agent", {}) if isinstance(cfg, dict) else {}

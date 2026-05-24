@@ -318,8 +318,8 @@ def _auto_continue_freshness_window() -> float:
 
     Reads ``HERMES_AUTO_CONTINUE_FRESHNESS`` (bridged from
     ``config.yaml`` ``agent.gateway_auto_continue_freshness`` at gateway
-    startup, same pattern as ``HERMES_AGENT_TIMEOUT``).  Falls back to the
-    module default when unset or malformed.  Non-positive values disable
+    startup, same pattern as ``SUPERFORECASTING_AGENT_AGENT_TIMEOUT``).
+    Falls back to the module default when unset or malformed.  Non-positive values disable
     the freshness gate (restores the pre-fix "always fresh" behaviour for
     users who want to opt out).
     """
@@ -332,13 +332,16 @@ def _auto_continue_freshness_window() -> float:
         return float(_AUTO_CONTINUE_FRESHNESS_SECS_DEFAULT)
 
 
-def _float_env(name: str, default: float) -> float:
+def _float_env(name: str | tuple[str, ...], default: float) -> float:
     """Read an env var as float, falling back to ``default`` on typos/empty.
 
-    A misconfigured env var (e.g. ``HERMES_AGENT_TIMEOUT=abc``) must not
+    A misconfigured env var (e.g. ``SUPERFORECASTING_AGENT_AGENT_TIMEOUT=abc``) must not
     crash the gateway or an agent turn.  Unset/empty also falls back.
     """
-    raw = os.environ.get(name)
+    if isinstance(name, tuple):
+        _, raw = _first_nonempty_env(name)
+    else:
+        _env_name, raw = name, os.environ.get(name)
     if raw is None or raw == "":
         return float(default)
     try:
@@ -579,6 +582,47 @@ _BACKGROUND_NOTIFICATIONS_ENV_NAMES = (
     "FORECAST_BACKGROUND_NOTIFICATIONS",
     "HERMES_BACKGROUND_NOTIFICATIONS",
 )
+_AGENT_TIMEOUT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_AGENT_TIMEOUT",
+    "FORECAST_AGENT_TIMEOUT",
+    "HERMES_AGENT_TIMEOUT",
+)
+_AGENT_TIMEOUT_WARNING_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_AGENT_TIMEOUT_WARNING",
+    "FORECAST_AGENT_TIMEOUT_WARNING",
+    "HERMES_AGENT_TIMEOUT_WARNING",
+)
+_AGENT_NOTIFY_INTERVAL_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_AGENT_NOTIFY_INTERVAL",
+    "FORECAST_AGENT_NOTIFY_INTERVAL",
+    "HERMES_AGENT_NOTIFY_INTERVAL",
+)
+_RESTART_DRAIN_TIMEOUT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT",
+    "FORECAST_RESTART_DRAIN_TIMEOUT",
+    "HERMES_RESTART_DRAIN_TIMEOUT",
+)
+_GATEWAY_BUSY_INPUT_MODE_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_GATEWAY_BUSY_INPUT_MODE",
+    "FORECAST_GATEWAY_BUSY_INPUT_MODE",
+    "HERMES_GATEWAY_BUSY_INPUT_MODE",
+)
+_GATEWAY_BUSY_ACK_ENABLED_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_GATEWAY_BUSY_ACK_ENABLED",
+    "FORECAST_GATEWAY_BUSY_ACK_ENABLED",
+    "HERMES_GATEWAY_BUSY_ACK_ENABLED",
+)
+_GATEWAY_PLATFORM_CONNECT_TIMEOUT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_GATEWAY_PLATFORM_CONNECT_TIMEOUT",
+    "FORECAST_GATEWAY_PLATFORM_CONNECT_TIMEOUT",
+    "HERMES_GATEWAY_PLATFORM_CONNECT_TIMEOUT",
+)
+
+
+def _set_env_aliases(names: tuple[str, ...], value: object) -> None:
+    text = str(value)
+    for name in names:
+        os.environ[name] = text
 
 
 def _set_max_iterations_env_aliases(value: object) -> None:
@@ -615,6 +659,19 @@ def _first_background_notifications_env(default: str = "") -> tuple[str, str]:
         if value:
             return name, value
     return "default", default
+
+
+def _first_nonempty_env(names: tuple[str, ...], default: str = "") -> tuple[str, str]:
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return name, value
+    return "default", default
+
+
+def _gateway_busy_ack_enabled() -> bool:
+    _, raw = _first_nonempty_env(_GATEWAY_BUSY_ACK_ENABLED_ENV_NAMES, "true")
+    return raw.lower() == "true"
 
 
 def _reload_runtime_env_preserving_config_authority() -> None:
@@ -765,13 +822,13 @@ if _config_path.exists():
             if "max_turns" in _agent_cfg:
                 _set_max_iterations_env_aliases(_agent_cfg["max_turns"])
             if "gateway_timeout" in _agent_cfg:
-                os.environ["HERMES_AGENT_TIMEOUT"] = str(_agent_cfg["gateway_timeout"])
+                _set_env_aliases(_AGENT_TIMEOUT_ENV_NAMES, _agent_cfg["gateway_timeout"])
             if "gateway_timeout_warning" in _agent_cfg:
-                os.environ["HERMES_AGENT_TIMEOUT_WARNING"] = str(_agent_cfg["gateway_timeout_warning"])
+                _set_env_aliases(_AGENT_TIMEOUT_WARNING_ENV_NAMES, _agent_cfg["gateway_timeout_warning"])
             if "gateway_notify_interval" in _agent_cfg:
-                os.environ["HERMES_AGENT_NOTIFY_INTERVAL"] = str(_agent_cfg["gateway_notify_interval"])
+                _set_env_aliases(_AGENT_NOTIFY_INTERVAL_ENV_NAMES, _agent_cfg["gateway_notify_interval"])
             if "restart_drain_timeout" in _agent_cfg:
-                os.environ["HERMES_RESTART_DRAIN_TIMEOUT"] = str(_agent_cfg["restart_drain_timeout"])
+                _set_env_aliases(_RESTART_DRAIN_TIMEOUT_ENV_NAMES, _agent_cfg["restart_drain_timeout"])
             if "gateway_auto_continue_freshness" in _agent_cfg:
                 os.environ["HERMES_AUTO_CONTINUE_FRESHNESS"] = str(
                     _agent_cfg["gateway_auto_continue_freshness"]
@@ -779,9 +836,9 @@ if _config_path.exists():
         _display_cfg = _cfg.get("display", {})
         if _display_cfg and isinstance(_display_cfg, dict):
             if "busy_input_mode" in _display_cfg:
-                os.environ["HERMES_GATEWAY_BUSY_INPUT_MODE"] = str(_display_cfg["busy_input_mode"])
+                _set_env_aliases(_GATEWAY_BUSY_INPUT_MODE_ENV_NAMES, _display_cfg["busy_input_mode"])
             if "busy_ack_enabled" in _display_cfg:
-                os.environ["HERMES_GATEWAY_BUSY_ACK_ENABLED"] = str(_display_cfg["busy_ack_enabled"])
+                _set_env_aliases(_GATEWAY_BUSY_ACK_ENABLED_ENV_NAMES, _display_cfg["busy_ack_enabled"])
         # Timezone: bridge config.yaml → fork-native aliases + legacy env var.
         _tz_cfg = _cfg.get("timezone", "")
         if _tz_cfg and isinstance(_tz_cfg, str):
@@ -1932,13 +1989,15 @@ class GatewayRunner:
 
     def _platform_connect_timeout_secs(self) -> float:
         """Return the per-platform connect timeout used during startup/retry."""
-        raw = os.getenv("HERMES_GATEWAY_PLATFORM_CONNECT_TIMEOUT", "").strip()
+        env_name, raw = _first_nonempty_env(_GATEWAY_PLATFORM_CONNECT_TIMEOUT_ENV_NAMES)
+        raw = raw.strip()
         if raw:
             try:
                 timeout = float(raw)
             except ValueError:
                 logger.warning(
-                    "Ignoring invalid HERMES_GATEWAY_PLATFORM_CONNECT_TIMEOUT=%r",
+                    "Ignoring invalid %s=%r",
+                    env_name,
                     raw,
                 )
             else:
@@ -2774,7 +2833,8 @@ class GatewayRunner:
     @staticmethod
     def _load_busy_input_mode() -> str:
         """Load gateway drain-time busy-input behavior from config/env."""
-        mode = os.getenv("HERMES_GATEWAY_BUSY_INPUT_MODE", "").strip().lower()
+        _, mode = _first_nonempty_env(_GATEWAY_BUSY_INPUT_MODE_ENV_NAMES)
+        mode = mode.strip().lower()
         if not mode:
             try:
                 import yaml as _y
@@ -2794,7 +2854,8 @@ class GatewayRunner:
     @staticmethod
     def _load_restart_drain_timeout() -> float:
         """Load graceful gateway restart/stop drain timeout in seconds."""
-        raw = os.getenv("HERMES_RESTART_DRAIN_TIMEOUT", "").strip()
+        _, raw = _first_nonempty_env(_RESTART_DRAIN_TIMEOUT_ENV_NAMES)
+        raw = raw.strip()
         if not raw:
             try:
                 import yaml as _y
@@ -2998,8 +3059,7 @@ class GatewayRunner:
         # Check if busy ack is disabled — skip sending but still process the input.
         # Placed before debounce so we don't stamp a "last ack" timestamp that was
         # never actually delivered.
-        busy_ack_enabled = os.environ.get("HERMES_GATEWAY_BUSY_ACK_ENABLED", "true").lower() == "true"
-        if not busy_ack_enabled:
+        if not _gateway_busy_ack_enabled():
             logger.debug("Busy ack suppressed for session %s", session_key)
             return True  # input still processed, just no ack sent
 
@@ -6755,7 +6815,7 @@ class GatewayRunner:
         # wall-clock age alone isn't sufficient.  Evict only when the agent
         # has been *idle* beyond the inactivity threshold (or when the agent
         # object has no activity tracker and wall-clock age is extreme).
-        _raw_stale_timeout = _float_env("HERMES_AGENT_TIMEOUT", 1800)
+        _raw_stale_timeout = _float_env(_AGENT_TIMEOUT_ENV_NAMES, 1800)
         _stale_ts = self._running_agents_ts.get(_quick_key, 0)
         if _quick_key in self._running_agents and _stale_ts:
             _stale_age = time.time() - _stale_ts
@@ -17121,9 +17181,9 @@ class GatewayRunner:
         # Periodic "still working" notifications for long-running tasks.
         # Fires every N seconds so the user knows the agent hasn't died.
         # Config: agent.gateway_notify_interval in config.yaml, or
-        # HERMES_AGENT_NOTIFY_INTERVAL env var.  Default 180s (3 min).
+        # SUPERFORECASTING_AGENT_AGENT_NOTIFY_INTERVAL env var.  Default 180s (3 min).
         # 0 = disable notifications.
-        _NOTIFY_INTERVAL_RAW = _float_env("HERMES_AGENT_NOTIFY_INTERVAL", 180)
+        _NOTIFY_INTERVAL_RAW = _float_env(_AGENT_NOTIFY_INTERVAL_ENV_NAMES, 180)
         _NOTIFY_INTERVAL = _NOTIFY_INTERVAL_RAW if _NOTIFY_INTERVAL_RAW > 0 else None
         _notify_start = time.time()
 
@@ -17175,11 +17235,11 @@ class GatewayRunner:
             # configured duration is caught and killed.  (#4815)
             #
             # Config: agent.gateway_timeout in config.yaml, or
-            # HERMES_AGENT_TIMEOUT env var (env var takes precedence).
+            # SUPERFORECASTING_AGENT_AGENT_TIMEOUT env var (env var takes precedence).
             # Default 1800s (30 min inactivity).  0 = unlimited.
-            _agent_timeout_raw = _float_env("HERMES_AGENT_TIMEOUT", 1800)
+            _agent_timeout_raw = _float_env(_AGENT_TIMEOUT_ENV_NAMES, 1800)
             _agent_timeout = _agent_timeout_raw if _agent_timeout_raw > 0 else None
-            _agent_warning_raw = _float_env("HERMES_AGENT_TIMEOUT_WARNING", 900)
+            _agent_warning_raw = _float_env(_AGENT_TIMEOUT_WARNING_ENV_NAMES, 900)
             _agent_warning = _agent_warning_raw if _agent_warning_raw > 0 else None
             _warning_fired = False
             _executor_task = asyncio.ensure_future(

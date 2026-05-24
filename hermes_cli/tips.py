@@ -438,7 +438,7 @@ TIPS = [
     'superforecasting-agent status --deep runs the full health sweep across every component; plain superforecasting-agent status is the quick view.',
 
     # --- Agent Behavior Env Vars ---
-    'HERMES_AGENT_TIMEOUT=0 disables the gateway inactivity kill for a running agent — use for long research runs.',
+    'SUPERFORECASTING_AGENT_AGENT_TIMEOUT=0 disables the gateway inactivity kill for a running agent — use for long research runs.',
     'HERMES_ENABLE_PROJECT_PLUGINS=1 auto-loads repo-local plugins from ./.hermes/plugins/ — trust-gated by design.',
     "SUPERFORECASTING_AGENT_DISABLE_FILE_STATE_GUARD=1 turns off the 'file changed since you read it' guard on patch and write_file.",
     'HERMES_ALLOW_PRIVATE_URLS=true lets web tools hit localhost and private networks — off by default in gateway mode.',
@@ -449,9 +449,9 @@ TIPS = [
     'HERMES_STREAM_RETRIES (default 3) controls mid-stream reconnect attempts on transient network errors.',
 
     # --- Gateway Behavior Env Vars ---
-    'HERMES_GATEWAY_BUSY_ACK_ENABLED=false silences the ⚡/⏳/⏩ ack messages when a user messages a busy agent.',
-    'HERMES_AGENT_NOTIFY_INTERVAL (default 180s) sets how often the gateway pings with progress on long turns.',
-    'HERMES_RESTART_DRAIN_TIMEOUT (default 900s) caps how long /restart waits for in-flight runs before forcing.',
+    'SUPERFORECASTING_AGENT_GATEWAY_BUSY_ACK_ENABLED=false silences the ⚡/⏳/⏩ ack messages when a user messages a busy agent.',
+    'SUPERFORECASTING_AGENT_AGENT_NOTIFY_INTERVAL (default 180s) sets how often the gateway pings with progress on long turns.',
+    'SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT (default 900s) caps how long /restart waits for in-flight runs before forcing.',
     'HERMES_CHECKPOINT_TIMEOUT (default 30s) caps filesystem checkpoint creation — raise it on huge monorepos.',
 
     # --- Auxiliary Tasks & Image Generation ---

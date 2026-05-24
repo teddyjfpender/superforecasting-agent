@@ -91,7 +91,8 @@ async def test_draining_rejects_new_session_messages():
 
 def test_load_busy_input_mode_prefers_env_then_config_then_default(tmp_path, monkeypatch):
     monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
-    monkeypatch.delenv("HERMES_GATEWAY_BUSY_INPUT_MODE", raising=False)
+    for name in gateway_run._GATEWAY_BUSY_INPUT_MODE_ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
 
     assert gateway_run.GatewayRunner._load_busy_input_mode() == "interrupt"
 
@@ -105,22 +106,45 @@ def test_load_busy_input_mode_prefers_env_then_config_then_default(tmp_path, mon
     )
     assert gateway_run.GatewayRunner._load_busy_input_mode() == "steer"
 
-    monkeypatch.setenv("HERMES_GATEWAY_BUSY_INPUT_MODE", "interrupt")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_GATEWAY_BUSY_INPUT_MODE", "interrupt")
     assert gateway_run.GatewayRunner._load_busy_input_mode() == "interrupt"
 
-    monkeypatch.setenv("HERMES_GATEWAY_BUSY_INPUT_MODE", "steer")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_GATEWAY_BUSY_INPUT_MODE", "steer")
     assert gateway_run.GatewayRunner._load_busy_input_mode() == "steer"
 
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_GATEWAY_BUSY_INPUT_MODE", "queue")
+    monkeypatch.setenv("HERMES_GATEWAY_BUSY_INPUT_MODE", "interrupt")
+    assert gateway_run.GatewayRunner._load_busy_input_mode() == "queue"
+
     # Unknown values fall through to the safe default
-    monkeypatch.setenv("HERMES_GATEWAY_BUSY_INPUT_MODE", "bogus")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_GATEWAY_BUSY_INPUT_MODE", "bogus")
+    monkeypatch.delenv("HERMES_GATEWAY_BUSY_INPUT_MODE", raising=False)
     assert gateway_run.GatewayRunner._load_busy_input_mode() == "interrupt"
+
+
+def test_gateway_busy_ack_enabled_env_aliases(monkeypatch):
+    for name in gateway_run._GATEWAY_BUSY_ACK_ENABLED_ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
+
+    assert gateway_run._gateway_busy_ack_enabled() is True
+
+    monkeypatch.setenv("HERMES_GATEWAY_BUSY_ACK_ENABLED", "false")
+    assert gateway_run._gateway_busy_ack_enabled() is False
+
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_GATEWAY_BUSY_ACK_ENABLED", "true")
+    assert gateway_run._gateway_busy_ack_enabled() is True
+
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_GATEWAY_BUSY_ACK_ENABLED", "false")
+    monkeypatch.setenv("HERMES_GATEWAY_BUSY_ACK_ENABLED", "true")
+    assert gateway_run._gateway_busy_ack_enabled() is False
 
 
 def test_load_restart_drain_timeout_prefers_env_then_config_then_default(
     tmp_path, monkeypatch, caplog
 ):
     monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
-    monkeypatch.delenv("HERMES_RESTART_DRAIN_TIMEOUT", raising=False)
+    for name in gateway_run._RESTART_DRAIN_TIMEOUT_ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
 
     assert (
         gateway_run.GatewayRunner._load_restart_drain_timeout()
@@ -132,10 +156,15 @@ def test_load_restart_drain_timeout_prefers_env_then_config_then_default(
     )
     assert gateway_run.GatewayRunner._load_restart_drain_timeout() == 12.0
 
-    monkeypatch.setenv("HERMES_RESTART_DRAIN_TIMEOUT", "7")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT", "7")
     assert gateway_run.GatewayRunner._load_restart_drain_timeout() == 7.0
 
-    monkeypatch.setenv("HERMES_RESTART_DRAIN_TIMEOUT", "invalid")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT", "9")
+    monkeypatch.setenv("HERMES_RESTART_DRAIN_TIMEOUT", "7")
+    assert gateway_run.GatewayRunner._load_restart_drain_timeout() == 9.0
+
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT", "invalid")
+    monkeypatch.delenv("HERMES_RESTART_DRAIN_TIMEOUT", raising=False)
     assert (
         gateway_run.GatewayRunner._load_restart_drain_timeout()
         == DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT

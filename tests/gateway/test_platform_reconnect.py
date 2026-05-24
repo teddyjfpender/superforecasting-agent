@@ -145,7 +145,7 @@ class TestStartupPlatformIsolation:
             return True
 
         adapter.connect = hang
-        monkeypatch.setenv("HERMES_GATEWAY_PLATFORM_CONNECT_TIMEOUT", "0.001")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_GATEWAY_PLATFORM_CONNECT_TIMEOUT", "0.001")
 
         with pytest.raises(TimeoutError, match="telegram connect timed out"):
             await runner._connect_adapter_with_timeout(adapter, Platform.TELEGRAM)
@@ -713,4 +713,3 @@ class TestPlatformSlashCommand:
         runner = _make_runner()
         out = await runner._handle_platform_command(self._make_event("/platform"))
         assert "Gateway platforms" in out
-

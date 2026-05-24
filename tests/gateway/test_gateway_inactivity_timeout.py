@@ -5,12 +5,11 @@ Tests cover:
 - Warning does not fire when gateway_timeout is 0 (unlimited)
 - Warning fires only once per run, not on every poll
 - Full timeout still fires at gateway_timeout threshold
-- Warning respects HERMES_AGENT_TIMEOUT_WARNING env var
+- Warning respects SUPERFORECASTING_AGENT_AGENT_TIMEOUT_WARNING env var
 - Warning disabled when gateway_timeout_warning is 0
 """
 
 import concurrent.futures
-import os
 import sys
 import time
 from pathlib import Path
@@ -239,15 +238,50 @@ class TestStagedInactivityWarning:
         assert _inactivity_timeout
 
     def test_warning_env_var_respected(self, monkeypatch):
-        """HERMES_AGENT_TIMEOUT_WARNING env var is parsed correctly."""
-        monkeypatch.setenv("HERMES_AGENT_TIMEOUT_WARNING", "600")
-        _warning = float(os.getenv("HERMES_AGENT_TIMEOUT_WARNING", 900))
+        """SUPERFORECASTING_AGENT_AGENT_TIMEOUT_WARNING is parsed correctly."""
+        from gateway.run import _AGENT_TIMEOUT_WARNING_ENV_NAMES, _float_env
+
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_AGENT_TIMEOUT_WARNING", "600")
+        _warning = _float_env(_AGENT_TIMEOUT_WARNING_ENV_NAMES, 900)
         assert _warning == 600.0
 
+    def test_warning_legacy_env_var_respected(self, monkeypatch):
+        """HERMES_AGENT_TIMEOUT_WARNING remains supported as a legacy alias."""
+        from gateway.run import _AGENT_TIMEOUT_WARNING_ENV_NAMES, _float_env
+
+        monkeypatch.setenv("HERMES_AGENT_TIMEOUT_WARNING", "600")
+        assert _float_env(_AGENT_TIMEOUT_WARNING_ENV_NAMES, 900) == 600.0
+
+    def test_warning_fork_alias_precedes_legacy(self, monkeypatch):
+        """Fork-native warning timeout aliases take precedence over legacy values."""
+        from gateway.run import _AGENT_TIMEOUT_WARNING_ENV_NAMES, _float_env
+
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_AGENT_TIMEOUT_WARNING", "600")
+        monkeypatch.setenv("HERMES_AGENT_TIMEOUT_WARNING", "30")
+        assert _float_env(_AGENT_TIMEOUT_WARNING_ENV_NAMES, 900) == 600.0
+
+    def test_agent_timeout_fork_alias_precedes_legacy(self, monkeypatch):
+        """Fork-native agent timeout aliases take precedence over legacy values."""
+        from gateway.run import _AGENT_TIMEOUT_ENV_NAMES, _float_env
+
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_AGENT_TIMEOUT", "1200")
+        monkeypatch.setenv("HERMES_AGENT_TIMEOUT", "60")
+        assert _float_env(_AGENT_TIMEOUT_ENV_NAMES, 900) == 1200.0
+
+    def test_agent_notify_interval_fork_alias_precedes_legacy(self, monkeypatch):
+        """Fork-native progress notification aliases take precedence over legacy values."""
+        from gateway.run import _AGENT_NOTIFY_INTERVAL_ENV_NAMES, _float_env
+
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_AGENT_NOTIFY_INTERVAL", "240")
+        monkeypatch.setenv("HERMES_AGENT_NOTIFY_INTERVAL", "60")
+        assert _float_env(_AGENT_NOTIFY_INTERVAL_ENV_NAMES, 180) == 240.0
+
     def test_warning_zero_means_disabled(self, monkeypatch):
-        """HERMES_AGENT_TIMEOUT_WARNING=0 disables the warning."""
-        monkeypatch.setenv("HERMES_AGENT_TIMEOUT_WARNING", "0")
-        _raw = float(os.getenv("HERMES_AGENT_TIMEOUT_WARNING", 900))
+        """SUPERFORECASTING_AGENT_AGENT_TIMEOUT_WARNING=0 disables the warning."""
+        from gateway.run import _AGENT_TIMEOUT_WARNING_ENV_NAMES, _float_env
+
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_AGENT_TIMEOUT_WARNING", "0")
+        _raw = _float_env(_AGENT_TIMEOUT_WARNING_ENV_NAMES, 900)
         _warning = _raw if _raw > 0 else None
         assert _warning is None
 

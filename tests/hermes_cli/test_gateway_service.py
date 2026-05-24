@@ -454,7 +454,8 @@ class TestGatewayStopCleanup:
 
 class TestLaunchdServiceRecovery:
     def test_get_restart_drain_timeout_prefers_env_then_config_then_default(self, monkeypatch):
-        monkeypatch.delenv("HERMES_RESTART_DRAIN_TIMEOUT", raising=False)
+        for name in gateway_cli._RESTART_DRAIN_TIMEOUT_ENV_NAMES:
+            monkeypatch.delenv(name, raising=False)
         monkeypatch.setattr(gateway_cli, "read_raw_config", lambda: {})
 
         assert (
@@ -469,10 +470,15 @@ class TestLaunchdServiceRecovery:
         )
         assert gateway_cli._get_restart_drain_timeout() == 14.0
 
-        monkeypatch.setenv("HERMES_RESTART_DRAIN_TIMEOUT", "9")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT", "9")
         assert gateway_cli._get_restart_drain_timeout() == 9.0
 
-        monkeypatch.setenv("HERMES_RESTART_DRAIN_TIMEOUT", "invalid")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT", "11")
+        monkeypatch.setenv("HERMES_RESTART_DRAIN_TIMEOUT", "9")
+        assert gateway_cli._get_restart_drain_timeout() == 11.0
+
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT", "invalid")
+        monkeypatch.delenv("HERMES_RESTART_DRAIN_TIMEOUT", raising=False)
         assert (
             gateway_cli._get_restart_drain_timeout()
             == DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT

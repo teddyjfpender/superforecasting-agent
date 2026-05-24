@@ -44,9 +44,24 @@ def _run_gateway_import(hermes_home: Path, initial_env: dict[str, str]) -> dict[
             "SUPERFORECASTING_AGENT_MAX_ITERATIONS",
             "FORECAST_MAX_ITERATIONS",
             "HERMES_MAX_ITERATIONS",
+            "SUPERFORECASTING_AGENT_AGENT_TIMEOUT",
+            "FORECAST_AGENT_TIMEOUT",
             "HERMES_AGENT_TIMEOUT",
+            "SUPERFORECASTING_AGENT_AGENT_TIMEOUT_WARNING",
+            "FORECAST_AGENT_TIMEOUT_WARNING",
             "HERMES_AGENT_TIMEOUT_WARNING",
+            "SUPERFORECASTING_AGENT_AGENT_NOTIFY_INTERVAL",
+            "FORECAST_AGENT_NOTIFY_INTERVAL",
+            "HERMES_AGENT_NOTIFY_INTERVAL",
+            "SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT",
+            "FORECAST_RESTART_DRAIN_TIMEOUT",
+            "HERMES_RESTART_DRAIN_TIMEOUT",
+            "SUPERFORECASTING_AGENT_GATEWAY_BUSY_INPUT_MODE",
+            "FORECAST_GATEWAY_BUSY_INPUT_MODE",
             "HERMES_GATEWAY_BUSY_INPUT_MODE",
+            "SUPERFORECASTING_AGENT_GATEWAY_BUSY_ACK_ENABLED",
+            "FORECAST_GATEWAY_BUSY_ACK_ENABLED",
+            "HERMES_GATEWAY_BUSY_ACK_ENABLED",
             "SUPERFORECASTING_AGENT_TIMEZONE",
             "FORECAST_TIMEZONE",
             "HERMES_TIMEZONE",
@@ -132,25 +147,62 @@ def test_config_gateway_timeout_wins_over_stale_env(hermes_home: Path) -> None:
     _write_config(hermes_home, agent_cfg={
         "gateway_timeout": 1800,
         "gateway_timeout_warning": 900,
+        "gateway_notify_interval": 120,
+        "restart_drain_timeout": 45,
     })
     _write_env(hermes_home, {
+        "SUPERFORECASTING_AGENT_AGENT_TIMEOUT": "60",
+        "FORECAST_AGENT_TIMEOUT": "60",
         "HERMES_AGENT_TIMEOUT": "60",
+        "SUPERFORECASTING_AGENT_AGENT_TIMEOUT_WARNING": "30",
+        "FORECAST_AGENT_TIMEOUT_WARNING": "30",
         "HERMES_AGENT_TIMEOUT_WARNING": "30",
+        "SUPERFORECASTING_AGENT_AGENT_NOTIFY_INTERVAL": "30",
+        "FORECAST_AGENT_NOTIFY_INTERVAL": "30",
+        "HERMES_AGENT_NOTIFY_INTERVAL": "30",
+        "SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT": "30",
+        "FORECAST_RESTART_DRAIN_TIMEOUT": "30",
+        "HERMES_RESTART_DRAIN_TIMEOUT": "30",
     })
 
     env = _run_gateway_import(hermes_home, initial_env={})
 
+    assert env.get("SUPERFORECASTING_AGENT_AGENT_TIMEOUT") == "1800"
+    assert env.get("FORECAST_AGENT_TIMEOUT") == "1800"
     assert env.get("HERMES_AGENT_TIMEOUT") == "1800"
+    assert env.get("SUPERFORECASTING_AGENT_AGENT_TIMEOUT_WARNING") == "900"
+    assert env.get("FORECAST_AGENT_TIMEOUT_WARNING") == "900"
     assert env.get("HERMES_AGENT_TIMEOUT_WARNING") == "900"
+    assert env.get("SUPERFORECASTING_AGENT_AGENT_NOTIFY_INTERVAL") == "120"
+    assert env.get("FORECAST_AGENT_NOTIFY_INTERVAL") == "120"
+    assert env.get("HERMES_AGENT_NOTIFY_INTERVAL") == "120"
+    assert env.get("SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT") == "45"
+    assert env.get("FORECAST_RESTART_DRAIN_TIMEOUT") == "45"
+    assert env.get("HERMES_RESTART_DRAIN_TIMEOUT") == "45"
 
 
 def test_config_display_busy_input_mode_wins_over_stale_env(hermes_home: Path) -> None:
-    _write_config(hermes_home, display_cfg={"busy_input_mode": "interrupt"})
-    _write_env(hermes_home, {"HERMES_GATEWAY_BUSY_INPUT_MODE": "queue"})
+    _write_config(hermes_home, display_cfg={
+        "busy_input_mode": "interrupt",
+        "busy_ack_enabled": False,
+    })
+    _write_env(hermes_home, {
+        "SUPERFORECASTING_AGENT_GATEWAY_BUSY_INPUT_MODE": "queue",
+        "FORECAST_GATEWAY_BUSY_INPUT_MODE": "queue",
+        "HERMES_GATEWAY_BUSY_INPUT_MODE": "queue",
+        "SUPERFORECASTING_AGENT_GATEWAY_BUSY_ACK_ENABLED": "true",
+        "FORECAST_GATEWAY_BUSY_ACK_ENABLED": "true",
+        "HERMES_GATEWAY_BUSY_ACK_ENABLED": "true",
+    })
 
     env = _run_gateway_import(hermes_home, initial_env={})
 
+    assert env.get("SUPERFORECASTING_AGENT_GATEWAY_BUSY_INPUT_MODE") == "interrupt"
+    assert env.get("FORECAST_GATEWAY_BUSY_INPUT_MODE") == "interrupt"
     assert env.get("HERMES_GATEWAY_BUSY_INPUT_MODE") == "interrupt"
+    assert env.get("SUPERFORECASTING_AGENT_GATEWAY_BUSY_ACK_ENABLED") == "False"
+    assert env.get("FORECAST_GATEWAY_BUSY_ACK_ENABLED") == "False"
+    assert env.get("HERMES_GATEWAY_BUSY_ACK_ENABLED") == "False"
 
 
 def test_config_timezone_wins_over_stale_env(hermes_home: Path) -> None:
