@@ -1597,6 +1597,114 @@ Latest verified result:
 | Forecast-native Copilot ACP env aliases | Covered | Copilot ACP command and argument resolution now prefer `SUPERFORECASTING_AGENT_COPILOT_ACP_*` and `FORECAST_COPILOT_ACP_*` aliases before inherited `HERMES_COPILOT_ACP_*` names, provider status and startup hints use fork-native guidance, and focused ACP/auth tests pin precedence and compatibility |
 | TUI/dashboard forecast-native redesign | Partial | CLI desk exists; dashboard Forecasts page/API exists; TUI startup forecast desk panel, persistent, resume-safe, and lifecycle-refreshed status-bar forecast desk counters, a wide-terminal forecast desk rail with book counts/triage/watchlist/evidence/ensemble-component/backtest provenance, a narrow-terminal `desk brief` line with active/alert/review/assumption counts plus top triage/watchlist state, a persistent composer `desk actions` strip for narrow and wide terminals, forecast-native idle composer prompts/status frames/verbs/protocol worklist label and neutral `markers` indicator naming, probability/as-of/close-aware focused per-question `show`/`research`/`update`/`resolve` commands for the top review/active forecast, evidence-readiness gaps promoted into triage actions, forecast-native transcript/copy/save/help wording, forecast-native TUI operator README copy, structured `/forecast` dashboard sections with active forecasts/review queue/calibration health including ensemble component contribution and question-type performance/backtests/evidence-import command shapes and backtest source provenance, tester-pilot next actions for readiness, pilot-report, the checked-in pilot-cohort starter manifest, and pilot-aggregate, web Forecasts focused-action and pilot-handoff panels, evidence-import card with source discovery, calibration component and question-type contribution, and backtest source provenance, state-dependent triage commands including origin-separated calibration, forecast-native source-discovery/ingest/evidence/research/model-run/review/alert/calibration/pilot-report shortcuts, and `/forecast <subcommand>` lifecycle routing exist; full Ink/TUI redesign remains incomplete |
 
+## PRD Requirement Checklist
+
+This checklist maps the explicit PRD and context requirements back to concrete
+artifacts. "Covered" means the audit rows above identify implementation and
+focused test evidence. "Partial" means a usable substrate exists, but the full
+fork objective still needs the remaining work listed below.
+
+### Required CLI Command Surface
+
+| PRD command or surface | Status | Artifact evidence |
+|---|---|---|
+| `forecast new`, `forecast list`, `forecast show` | Covered | Forecast question metadata, active-book display, as-of probability display, CLI/tool tests |
+| `forecast ingest <url-or-file>` | Covered | Generic URL/file candidate staging, confirmation flow, original-source evidence, baseline extraction tests |
+| `forecast import ...` source adapters | Covered/Partial | Broad built-in adapters and `forecast sources` discovery exist; future provider-specific adapters remain extension points |
+| `forecast research <id>` and `forecast evidence` | Covered | Evidence capture, timestamps, reliability/relevance/stance, and probability-not-mutated tests |
+| `forecast base-rate <id>` | Covered | Reference-class and base-rate model-run workflow, CLI/tool tests |
+| `forecast model <id>` | Covered | Model-run storage, diagnostics, artifact metadata, failure recording, and ensemble-link tests |
+| `forecast update <id>` | Covered | Append-only snapshots, component weights, deltas, citations, version metadata, active lessons, and provenance tests |
+| `forecast resolve <id>`, `forecast score <id>`, `forecast postmortem <id>` | Covered | Resolution provenance/governance, scoring, postmortem diagnostics, lesson/profile generation tests |
+| `forecast calibration`, `forecast errors`, `forecast lessons` | Covered | Bucket/domain/horizon/origin reports, domain error profiles, active lesson lifecycle tests |
+| `forecast review`, `forecast alerts` | Covered | Stale evidence, close-date, domain/topic/horizon/confidence review queues and alert lifecycle tests |
+| `forecast backtest ...` probability sources | Covered | Dataset replay, baseline-ensemble, forecast-engine, agent-protocol capture/replay, leakage and baseline-edge tests |
+| `forecast performance`, `forecast readiness` | Covered | Backtest summary, paired baseline comparison, replay-only claim guard, evidence-readiness gap tests |
+| `forecast schedule ...`, `forecast self-check ...` | Covered | Durable review schedules, cron bridge, watched-source alerts, opt-in score/postmortem learning tests |
+| `forecast pilot-cohort`, `forecast pilot-report`, `forecast pilot-aggregate` | Covered | Tester pilot manifest, smoke script, README/TUI/web handoff actions, and pilot aggregation tests |
+
+### User Stories
+
+| PRD story | Status | Artifact evidence |
+|---|---|---|
+| US-001 | Covered | `forecast new` creates durable scoreable questions with criteria, times, outcome space, ambiguity validation, and `forecast show` visibility |
+| US-002 | Covered | Generic ingest stages candidates, extracts metadata/baselines, stores original source evidence, requires confirmation, and keeps Metaculus optional |
+| US-003 | Covered | Forecast updates are append-only snapshots with current/history display and persisted probability/rationale/evidence/model/assumption refs |
+| US-004 | Covered | Research creates timestamped evidence with reliability/relevance/stance and does not change probability by default |
+| US-005 | Covered | Base-rate workflow creates reference classes with inclusion/exclusion criteria and model-run evidence usable in rationales |
+| US-006 | Covered | Model workflow stores type, parameters, inputs, outputs, diagnostics, artifacts, failures, and ensemble components |
+| US-007 | Covered | Update previews and saved snapshots include ensemble components, weights, prior/new probability, delta, and change drivers |
+| US-008 | Covered | Review queues identify stale, close-date, new-evidence, domain/topic, horizon, and confidence-filtered forecasts with next commands |
+| US-009 | Covered | Resolution and scoring workflows compute Brier/log/proper scores where applicable and expose score filters |
+| US-010 | Covered | Postmortems link snapshots, resolutions, scores, expected/actual outcomes, error sources, and provenance-linked lessons |
+| US-011 | Covered | Calibration reports include buckets, samples, Brier/log scores, sharpness, filters, and domain/topic error recommendations |
+| US-012 | Covered | Export writes auditable JSON/markdown packets with metadata, history, evidence, models, scores, generated time, and as-of data |
+| US-013 | Covered | Time-aware backtests store runs/cases, cutoffs, generated snapshots, baselines, scores, leakage flags, and performance summaries |
+| US-014 | Covered | Scoped schedules persist cadence, stale thresholds, horizon/domain/topic/portfolio filters, alerts, auto-score/postmortem options, and profile updates |
+| US-015 | Covered | Resolution governance blocks unconfirmed/disputed/criteria-incomplete scoring and records corrections that invalidate affected learning artifacts |
+
+### Functional Requirements
+
+| PRD requirement | Status | Artifact evidence |
+|---|---|---|
+| FR-1 | Covered | Durable, queryable forecast-question ledger records |
+| FR-2 | Covered | Binary, categorical, numeric, and distributional outcome-space storage/scoring tests |
+| FR-3 | Covered | Append-only forecast snapshots and correction-only historical edits |
+| FR-4 | Covered | Evidence links to questions and snapshots through forecast update refs |
+| FR-5 | Covered | As-of timestamps in list/show/review/history/dashboard/TUI displays |
+| FR-6 | Covered | URL, file, manual note, generic data, and adapter evidence capture |
+| FR-7 | Covered | Research/evidence capture is separated from probability updates |
+| FR-8 | Covered | Model runs store inputs, parameters, outputs, diagnostics, and artifacts |
+| FR-9 | Covered | Brier scoring for binary and categorical forecasts |
+| FR-10 | Covered | Log/proper scores for supported full distributions and numeric/distributional forecasts |
+| FR-11 | Covered | Calibration reports by bucket, domain, horizon, origin, and question type |
+| FR-12 | Covered | Structured postmortems for resolved forecasts |
+| FR-13 | Covered | Forecasting workflows are first-class CLI commands under `forecast` |
+| FR-14 | Covered/Partial | CLI/chat prompts and default toolsets are forecast-scoped; inherited general surfaces still require broader demotion |
+| FR-15 | Covered | Forecast packet import/export and generic ingest/export support |
+| FR-16 | Covered | Extension/source adapter surfaces support future data, market, model, and tournament integrations |
+| FR-17 | Covered | Snapshot provenance stores model, prompt, protocol, and toolset versions |
+| FR-18 | Covered | Baseline comparison records and paired model/market/crowd/ensemble performance summaries |
+| FR-19 | Covered | Explicit correction records avoid silent historical mutation |
+| FR-20 | Covered | Evidence availability timestamps and backtest cutoff enforcement |
+| FR-21 | Covered | Durable backtest runs/cases with leakage status and baseline comparisons |
+| FR-22 | Covered | Scheduled self-checks by question, domain, topic, horizon, confidence, and portfolio |
+| FR-23 | Covered | Alert events for stale forecasts, new evidence, invalid assumptions, resolutions, and learning reviews |
+| FR-24 | Covered | Domain/topic error profiles from scores and postmortems |
+| FR-25 | Covered | Live, backtest, and imported-baseline provenance separated in snapshots, scores, and calibration reports |
+| FR-26 | Covered | Score records carry calibration eligibility and weighting policy |
+| FR-27 | Covered | Assumptions and reference classes are durable, checkable objects |
+| FR-28 | Covered | Unconfirmed, disputed, or criteria-incomplete resolutions cannot update scoring/calibration |
+| FR-29 | Covered | Calibration lessons are durable, scoped, statused, confidence-bearing, provenance-linked objects |
+| FR-30 | Covered | Postmortems link diagnosed snapshot, resolution, score, origin, and calibration state |
+| FR-31 | Covered | Calibration adjustments link to influencing lesson refs |
+| FR-32 | Covered | Correction records cover forecasts, evidence, assumptions, reference classes, resolutions, scores, postmortems, and lessons |
+| FR-33 | Covered | Trusted resolver policies are scoped, versioned, approved, and audited on automatic confirmation |
+
+### Context And Milestone Checklist
+
+| Context or milestone item | Status | Artifact evidence |
+|---|---|---|
+| North star: command-line forecasting desk | Covered/Partial | CLI desk and forecast ledger exist; full product surgery and TUI redesign remain incomplete |
+| Domain-general, not Metaculus-centric | Covered | Generic URL/file/data ingest, broad adapters, optional Metaculus/crowd baseline flow, and platform-neutral ledger |
+| Closed feedback loop | Covered | Forecast, observe, resolve, score, diagnose, recalibrate loop exists through ledger, scoring, postmortems, lessons, and schedules |
+| Learning memory replaces chat memory | Covered/Partial | Calibration lessons, domain profiles, and evidence memory exist; inherited general memory remains compatibility surface |
+| LLMs are not sole probability engine | Covered | Base-rate, market/crowd baseline, statistical/model-run, ensemble, forecast-engine, and agent-protocol sources |
+| Backtesting and benchmark evidence | Covered/Partial | Time-aware replay and claim guards exist; live superiority remains unproven pending accumulated resolved live forecasts |
+| Scheduled self-checks and alerts | Covered | Cron/scheduler bridge, scoped reviews, watched-source alerts, opt-in learning writes, and no silent probability mutation |
+| First surgery 1: rename product and strip gateway-first defaults | Partial | Product identity/default toolsets are largely forecast-native; compatibility surfaces and broad inherited modules remain |
+| First surgery 2: forecasting protocols | Covered | Forecast protocol prompts, stage narrowing, TUI/classic/oneshot forecast-scoped prompts |
+| First surgery 3: `forecasting/` domain modules | Covered | Ledger, scoring, backtesting, source adapters, alerts, learning, dashboard, protocol modules |
+| First surgery 4: forecast ledger over generic memory | Covered/Partial | Ledger is the learning substrate; generic memory remains demoted compatibility infrastructure |
+| First surgery 5: lifecycle CLI commands | Covered | Required forecast lifecycle command surface is implemented and tested |
+| First surgery 6: historical backtesting | Covered | Built-in corpora, imported datasets, leakage checks, generated probability sources, paired baseline reports |
+| First surgery 7: auditable probabilities and misses | Covered | Citation policy, source snapshots, version provenance, exports, corrections, postmortems, lessons |
+| First surgery 8: scheduled learning self-checks | Covered | Domain/topic/horizon/portfolio schedules can create alerts, scores, postmortems, lessons, and profiles without mutating probabilities |
+| Quality gate: `scripts/run_tests.sh -q` | Partial | Many focused suites pass; the full repository gate was not rerun as final completion evidence in this audit |
+| Quality gate: `python3 -m compileall -q forecasting` | Covered | Passed in this audit pass after the PRD checklist update |
+| CLI/TUI manual transcript gate | Partial | CLI/TUI/web behavior is covered by tests and docs; a final tester transcript should be captured before release |
+| Docs/link render gate | Partial | Website/web builds pass with inherited warnings; rerun after further docs edits |
+
 ## Remaining Gaps
 
 1. Full fork-level rename and removal/demotion of Hermes-general surfaces is not complete, though README/Python/TUI/web package metadata, English and Chinese README forecast-surface copy, English model/MCP/plugin guide copy, English tips/SOUL/cron automation guide copy, English cron script/output troubleshooting guide copy, English daily-brief/programmatic guide copy, English automation-templates guide copy, English delegation guide copy, English code-execution guide copy, Docker entrypoint/compose defaults, Docker/checkpoints/MCP/context-file docs copy, provider-routing/goals/fallback docs copy, credential-pool/subscription-proxy docs copy, Honcho memory guide copy, memory providers guide copy, skins/themes guide copy, Voice/TTS feature guide copy, Voice Mode feature guide copy, Tool Gateway feature guide copy, skills system guide copy, generated/source skill docs copy, localized high-attention WSL/Tool Gateway/image-generation/Kanban docs copy, Windows native installer/runtime messaging copy, POSIX/CMD installer/public docs URL copy, runtime provider/gateway visible-string copy, hooks guide copy, ACP editor integration guide copy, Computer Use guide copy, LSP semantic diagnostics guide copy, deliverable-mode guide copy, context-reference guide copy, image-generation guide copy, vision guide copy, curator guide copy, Codex app-server runtime guide copy, Kanban reference/tutorial/worker-lane guide copy, Spotify guide copy, dashboard-extension guide copy, built-in plugins guide copy, web-search feature guide copy, browser automation feature guide copy, batch-processing/backtesting guide copy, x-search feature/tool guidance, English team Telegram guide copy, English GitHub evidence guide copy, English Teams meeting evidence guide copy, Microsoft Graph app registration guide copy, Microsoft Teams setup page copy, core messaging setup page copy, additional messaging/voice page copy, OpenClaw migration guide copy, provider/OAuth setup guide copy, long-tail OAuth/skills/webhook/messaging setup page copy, remaining English messaging setup page copy, messaging edge setup page copy, security guide copy, forecast-native website docs homepage/quickstart/installation/learning-path/Termux/CLI/configuration/model-configuration/sessions/session-storage/profiles/profile-distributions/TUI/WSL/features-overview/tools/cron/memory/plugins/web-dashboard/API-server/Open-WebUI/programmatic-integration/architecture/contributing/provider-runtime/adding-providers/model-provider-plugin/memory-provider-plugin/prompt-assembly/personality/context-compression/context-engine-plugin/web-search-provider-plugin/adding-tools/creating-skills/cron-internals/plugin-llm-access/image-gen-provider-plugin/video-gen-provider-plugin/gateway-internals/agent-loop/tools-runtime/acp-internals/extending-the-cli/trajectory-format/browser-supervisor/adding-platform-adapters/integrations-overview/command-reference/profile-command-reference/slash-command-reference/toolsets-reference/tools-reference/environment-variables-reference/FAQ/MCP-config-reference/providers-integration, README primary links, the fork-native `superforecasting_agent` package namespace, the fork-native `superforecasting-agent` runtime command wrapper, fork-native direct ACP console scripts, fork-native inherited-toolset aliases, fork-native Nix package file/overlay/module/service attributes, primary NixOS option namespace, check artifacts, dev-shell messaging, service user/group/state defaults, and container command defaults, fork-native model-catalog/probe user-agent attribution, legacy `hermes-agent` entrypoint routing, status labels, API-server health/model/capabilities identity, FastAPI title, dashboard runtime env aliases, dashboard storage/session/base-path identifiers, dashboard status-home aliases, dashboard update route/action identifiers, dashboard auth/setup command payloads, localized web app brand labels, browser dashboard title, TUI setup/title/bin aliases and command/help/history copy, TUI startup/no-TTY/OOM diagnostics and model-key/reload help, backup/import copy/default backup names/restore guidance, gateway service command guidance, gateway platform setup copy, Windows gateway command guidance, slash/oneshot/toolset help guidance, skin fallback branding, default profile soul, dashboard chat demotion, shell completion command guidance, pairing command guidance, startup tips, status output guidance, doctor remediation guidance/persona template, security advisory guidance, curator command/path guidance, fallback command guidance, MCP command guidance, hooks command guidance, checkpoints command guidance, config warning guidance, managed install/package guidance, runtime provider guidance, Codex runtime switch copy, Codex MCP migration report copy, model/tool/proxy guidance copy, support/error copy, model-switch/model-catalog guidance, auth runtime guidance, tools configuration/auth guidance, Copilot auth guidance, plugin command guidance, skills hub command guidance, setup wizard guidance, credential repair guidance, OpenClaw migration guidance, uninstall guidance, kanban command guidance, kanban worker resolver, kanban/profile prompt identity, classic banner/dashboard startup labels and update metadata, classic CLI visible personality/status/history/worktree/browser-connect/copy/undo labels, memory setup guidance, cron command guidance, model inventory guidance, send command guidance, proxy command guidance, Open WebUI bootstrap guidance, webhook command guidance, logs command guidance, auth command guidance, prompt fallback identity, profile distribution ledger-safety guidance, Slack manifest defaults, top-level parser examples, debug/config/dump/setup command guidance, classic CLI fallback labels/resume guidance, high-attention CLI help surfaces, and the default web shell now identify the Superforecasting Agent, forecast-first console aliases exist, bare top-level CLI opens the forecast desk instead of general chat, forecast-native home env aliases and a fork-native default home are supported, profile wrappers prefer `superforecasting-agent` with Hermes fallback, profile distributions preserve local `forecasting/` ledger state, default CLI/messaging/API/cron tool exposure is narrowed through forecast-scoped `forecast-*` presets, new configs use the neutral forecast skin/personality/indicator defaults, and explicit chat/TUI/oneshot agent prompts are forecast-scoped.

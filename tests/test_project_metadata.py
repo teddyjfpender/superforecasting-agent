@@ -2126,6 +2126,48 @@ def test_tester_pilot_docs_cover_scheduled_learning_loop():
     assert "--use-active-lessons" in tester_pilot
 
 
+def test_superforecasting_fork_audit_maps_prd_requirements():
+    root = Path(__file__).resolve().parents[1]
+    audit = (
+        root
+        / "docs"
+        / "plans"
+        / "2026-05-20-superforecasting-agent-fork-implementation-audit.md"
+    ).read_text(encoding="utf-8")
+
+    assert "## PRD Requirement Checklist" in audit
+    assert "### Required CLI Command Surface" in audit
+    assert "### User Stories" in audit
+    assert "### Functional Requirements" in audit
+    assert "### Context And Milestone Checklist" in audit
+
+    for story_id in range(1, 16):
+        assert re.search(rf"\|\s*US-{story_id:03d}\s*\|", audit), story_id
+    for requirement_id in range(1, 34):
+        assert re.search(rf"\|\s*FR-{requirement_id}\s*\|", audit), requirement_id
+
+    required_commands = [
+        "forecast new",
+        "forecast ingest <url-or-file>",
+        "forecast research <id>",
+        "forecast base-rate <id>",
+        "forecast model <id>",
+        "forecast update <id>",
+        "forecast resolve <id>",
+        "forecast calibration",
+        "forecast review",
+        "forecast backtest",
+        "forecast schedule",
+        "forecast self-check",
+        "forecast pilot-cohort",
+    ]
+    for command in required_commands:
+        assert command in audit, command
+
+    assert "live superiority remains unproven" in audit
+    assert "full PRD is not complete" in audit
+
+
 def test_revision_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     banner = (root / "hermes_cli" / "banner.py").read_text(encoding="utf-8")
