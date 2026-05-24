@@ -1,9 +1,10 @@
-"""Tests for the stale-dashboard handling run at the end of ``hermes update``.
+"""Tests for the stale-dashboard handling run at the end of updates.
 
-``hermes update`` detects ``hermes dashboard`` processes left over from the
-previous version and kills them (SIGTERM + SIGKILL grace, or ``taskkill /F``
-on Windows).  Without this, the running backend silently serves stale Python
-against a freshly-updated JS bundle, producing 401s / empty data.
+``superforecasting-agent update`` detects fork-native dashboard processes plus
+legacy ``hermes dashboard`` processes left over from the previous version and
+kills them (SIGTERM + SIGKILL grace, or ``taskkill /F`` on Windows). Without
+this, the running backend silently serves stale Python against a freshly-updated
+JS bundle, producing 401s / empty data.
 
 History:
 - #16872 introduced the warn-only helper (``_warn_stale_dashboard_processes``).
@@ -104,18 +105,33 @@ class TestFindStaleDashboardPids:
             )
             assert _find_stale_dashboard_pids() == [12345]
 
+    def test_matches_fork_native_dashboard_commands(self):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="\n".join([
+                    _ps_line(12345, "superforecasting-agent dashboard --port 9119"),
+                    _ps_line(12346, "superforecast dashboard --port 9120 --no-open"),
+                    _ps_line(12347, "python -m superforecasting_agent dashboard --port 9121"),
+                    _ps_line(12348, "python -m superforecasting_agent.cli dashboard --port 9122"),
+                ]) + "\n",
+                stderr="",
+            )
+            assert sorted(_find_stale_dashboard_pids()) == [12345, 12346, 12347, 12348]
+
     def test_multiple_matches(self):
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0,
                 stdout="\n".join([
+                    _ps_line(12344, "superforecasting-agent dashboard --port 9118"),
                     _ps_line(12345, "python3 -m hermes_cli.main dashboard --port 9119"),
                     _ps_line(12346, "hermes dashboard --port 9120 --no-open"),
                     _ps_line(12347, "python /home/x/hermes_cli/main.py dashboard"),
                 ]) + "\n",
                 stderr="",
             )
-            assert sorted(_find_stale_dashboard_pids()) == [12345, 12346, 12347]
+            assert sorted(_find_stale_dashboard_pids()) == [12344, 12345, 12346, 12347]
 
     def test_self_pid_excluded(self):
         with patch("subprocess.run") as mock_run:
