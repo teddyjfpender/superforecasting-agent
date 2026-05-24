@@ -29,6 +29,7 @@ from forecasting.source_adapters import (
     load_crossref_works,
     load_eia_observations,
     load_federal_register_documents,
+    load_fema_disaster_declarations,
     load_fivethirtyeight_polls,
     load_fred_observations,
     load_gdelt_articles,
@@ -198,6 +199,8 @@ FORECAST_LEDGER_SCHEMA = {
             "pollster": {"type": "string"},
             "cycle": {"type": "integer"},
             "office_type": {"type": "string"},
+            "incident_type": {"type": "string"},
+            "declaration_type": {"type": "string"},
             "source_country": {"type": "string"},
             "source_lang": {"type": "string"},
             "start_year": {"type": "integer"},
@@ -312,6 +315,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "pubmed",
                     "owid",
                     "whogho",
+                    "fema",
                     "fred",
                     "eia",
                     "treasury",
@@ -1436,6 +1440,17 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_who_gho_observations(source, **kwargs)
+    if adapter_name == "fema":
+        kwargs = {
+            "limit": limit,
+            "since": since,
+            "state": args.get("state"),
+            "incident_type": args.get("incident_type"),
+            "declaration_type": args.get("declaration_type"),
+        }
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_fema_disaster_declarations(source, **kwargs)
     raise ValueError(f"source_type is not a supported import adapter: {adapter}")
 
 
@@ -1462,6 +1477,8 @@ def _source_adapter_evidence_payload(
         "last_update_posted_at",
         "last_update_submitted_at",
         "latest_submission_status_date",
+        "declaration_date",
+        "last_refresh",
         "run_started_at",
         "updated_at",
         "last_updated",
@@ -1664,6 +1681,11 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         geography = f" {data.get('spatial_dim')}" if data.get("spatial_dim") else ""
         time_label = f" {data.get('time_dim')}" if data.get("time_dim") else ""
         return f"WHO GHO {data.get('indicator')}{geography}{time_label}: {data.get('value')}"
+    if adapter == "fema":
+        geography = f" {data.get('state')}" if data.get("state") else ""
+        area = f" {data.get('designated_area')}" if data.get("designated_area") else ""
+        number = f" {data.get('disaster_number')}" if data.get("disaster_number") is not None else ""
+        return f"FEMA{number}{geography}{area}: {data.get('incident_type') or data.get('title')}"
     return str(
         _first_adapter_value(
             data,

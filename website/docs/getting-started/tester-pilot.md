@@ -118,6 +118,7 @@ forecast --db "$FORECAST_DB" import mastodon mastodon.social/forecasting --quest
 forecast --db "$FORECAST_DB" import courtlistener "case or legal query" --question <id>
 forecast --db "$FORECAST_DB" import cisakev CVE-2026-0001 --question <id>
 forecast --db "$FORECAST_DB" import whogho WHOSIS_000001 --country USA --question <id>
+forecast --db "$FORECAST_DB" import fema "state=CA&incidentType=Fire" --question <id>
 ```
 
 Add a base rate and a model run:

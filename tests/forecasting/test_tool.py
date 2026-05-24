@@ -14,6 +14,7 @@ from forecasting.source_adapters import (
     CoinGeckoMarketSnapshot,
     CrossrefWork,
     EiaObservation,
+    FemaDisasterDeclaration,
     FiveThirtyEightPollObservation,
     HackerNewsItem,
     GitHubCommit,
@@ -120,7 +121,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "whogho", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "whogho", "fema", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_imports_airquality_forecasts(tmp_path, monkeypatch):
@@ -259,6 +260,82 @@ def test_forecast_ledger_tool_imports_who_gho_observations(tmp_path, monkeypatch
     assert evidence["claim"] == "WHO GHO WHOSIS_000001 USA 2025: 77.4"
     assert evidence["metadata"]["adapter"] == "whogho"
     assert evidence["metadata"]["adapter_item"]["numeric_value"] == 77.4
+
+
+def test_forecast_ledger_tool_imports_fema_declarations(tmp_path, monkeypatch):
+    db = str(tmp_path / "forecasting.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will FEMA declarations import through the tool?",
+                "resolution_criteria": "Resolved yes if FEMA evidence is imported.",
+            }
+        )
+    )
+    question_id = created["question"]["id"]
+    captured = {}
+
+    def fake_fema(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            FemaDisasterDeclaration(
+                disaster_number=5001,
+                declaration_string="DR-5001-CA",
+                state="CA",
+                declaration_type="DR",
+                declaration_date="2025-01-03T00:00:00Z",
+                fiscal_year=2025,
+                incident_type="Fire",
+                title="California Wildfires",
+                designated_area="Los Angeles County",
+                incident_begin_date="2025-01-01T00:00:00Z",
+                incident_end_date=None,
+                individual_assistance=True,
+                public_assistance=False,
+                hazard_mitigation=True,
+                last_refresh="2025-01-04T00:00:00Z",
+                source_url="https://www.fema.gov/api/open/v2/DisasterDeclarationsSummaries",
+                source_name="FEMA Disaster Declarations Summaries",
+                entry_id="declaration-5001",
+                raw={"disasterNumber": 5001},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_fema_disaster_declarations", fake_fema)
+    imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "fema",
+                "source": "state=CA&incidentType=Fire",
+                "limit": 5,
+                "state": "CA",
+                "incident_type": "Fire",
+                "declaration_type": "DR",
+                "api_base_url": "https://fema.test/api/open/v2/DisasterDeclarationsSummaries",
+            }
+        )
+    )
+
+    assert captured["source"] == "state=CA&incidentType=Fire"
+    assert captured["kwargs"]["limit"] == 5
+    assert captured["kwargs"]["state"] == "CA"
+    assert captured["kwargs"]["incident_type"] == "Fire"
+    assert captured["kwargs"]["declaration_type"] == "DR"
+    assert captured["kwargs"]["api_base_url"] == "https://fema.test/api/open/v2/DisasterDeclarationsSummaries"
+    assert imported["imported_count"] == 1
+    evidence = imported["imported"][0]["evidence"]
+    assert evidence["source_type"] == "adapter:fema"
+    assert evidence["source_name"] == "FEMA Disaster Declarations Summaries"
+    assert evidence["published_at"] == "2025-01-03T00:00:00Z"
+    assert evidence["claim"] == "FEMA 5001 CA Los Angeles County: Fire"
+    assert evidence["metadata"]["adapter"] == "fema"
+    assert evidence["metadata"]["adapter_item"]["hazard_mitigation"] is True
 
 
 def test_forecast_ledger_tool_imports_weatherhistory_observations(tmp_path, monkeypatch):

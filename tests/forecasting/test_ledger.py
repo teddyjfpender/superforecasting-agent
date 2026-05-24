@@ -30,6 +30,7 @@ from forecasting.source_adapters import (
     CrossrefWork,
     EiaObservation,
     FederalRegisterDocument,
+    FemaDisasterDeclaration,
     FiveThirtyEightPollObservation,
     FredObservation,
     GdeltArticle,
@@ -3376,6 +3377,71 @@ def test_watched_who_gho_source_creates_alert_on_observation_change(tmp_path, mo
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert f"forecast import whogho WHOSIS_000001 --question {question.id}" in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_fema_source_creates_alert_on_declaration_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched FEMA declarations be detected?",
+        resolution_criteria="Resolved yes if watched FEMA declaration changes create alerts.",
+    )
+    disaster_numbers = [5001]
+    captured_sources = []
+
+    def fake_load_fema_disaster_declarations(source: str, **kwargs):
+        captured_sources.append(source)
+        return [
+            FemaDisasterDeclaration(
+                disaster_number=disaster_numbers[0],
+                declaration_string=f"DR-{disaster_numbers[0]}-CA",
+                state="CA",
+                declaration_type="DR",
+                declaration_date="2025-01-03T00:00:00Z",
+                fiscal_year=2025,
+                incident_type="Fire",
+                title="California Wildfires",
+                designated_area="Los Angeles County",
+                incident_begin_date="2025-01-01T00:00:00Z",
+                incident_end_date=None,
+                individual_assistance=True,
+                public_assistance=False,
+                hazard_mitigation=True,
+                last_refresh="2025-01-04T00:00:00Z",
+                source_url="https://www.fema.gov/api/open/v2/DisasterDeclarationsSummaries",
+                source_name="FEMA Disaster Declarations Summaries",
+                entry_id=f"declaration-{disaster_numbers[0]}",
+                raw={"disasterNumber": disaster_numbers[0]},
+            )
+        ]
+
+    monkeypatch.setattr(
+        "forecasting.source_adapters.load_fema_disaster_declarations",
+        fake_load_fema_disaster_declarations,
+    )
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="fema:state=CA&incidentType=Fire",
+    )
+
+    assert watch["source_type"] == "fema"
+    assert watch["last_seen_signature"].startswith("fema:1:")
+    assert captured_sources[-1] == "state=CA&incidentType=Fire"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    disaster_numbers[0] = 5002
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f'forecast import fema "state=CA&incidentType=Fire" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]

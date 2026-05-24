@@ -29,6 +29,7 @@ from forecasting.source_adapters import (
     CrossrefWork,
     EiaObservation,
     FederalRegisterDocument,
+    FemaDisasterDeclaration,
     FiveThirtyEightPollObservation,
     FredObservation,
     GdeltArticle,
@@ -6185,6 +6186,161 @@ def test_forecast_cli_who_gho_import_captures_observations_as_evidence(
     assert evidence[0].metadata["numeric_value"] == 77.4
 
 
+def test_fema_adapter_loads_disaster_declaration_rows(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return {
+            "DisasterDeclarationsSummaries": [
+                {
+                    "id": "abc123",
+                    "disasterNumber": 5001,
+                    "femaDeclarationString": "DR-5001-CA",
+                    "state": "CA",
+                    "declarationType": "DR",
+                    "declarationDate": "2025-01-03T00:00:00.000Z",
+                    "fyDeclared": 2025,
+                    "incidentType": "Fire",
+                    "declarationTitle": "California Wildfires",
+                    "designatedArea": "Los Angeles County",
+                    "incidentBeginDate": "2025-01-01T00:00:00.000Z",
+                    "incidentEndDate": "2025-01-08T00:00:00.000Z",
+                    "iaProgramDeclared": True,
+                    "paProgramDeclared": False,
+                    "hmProgramDeclared": True,
+                    "lastRefresh": "2025-01-04T12:00:00.000Z",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    declarations = source_adapters.load_fema_disaster_declarations(
+        "state=ca&incident_type=Fire",
+        limit=2,
+        since="2025-01-01T00:00:00Z",
+        declaration_type="DR",
+        api_base_url="https://fema.test/api/open/v2/DisasterDeclarationsSummaries",
+    )
+    parsed = urlparse(captured["endpoint"])
+    params = parse_qs(parsed.query)
+
+    assert captured["label"] == "FEMA disaster declarations"
+    assert parsed.path == "/api/open/v2/DisasterDeclarationsSummaries"
+    assert params["$top"] == ["2"]
+    assert params["$orderby"] == ["declarationDate desc"]
+    assert params["$filter"] == ["state eq 'CA' and incidentType eq 'Fire' and declarationType eq 'DR'"]
+    assert declarations[0].disaster_number == 5001
+    assert declarations[0].declaration_string == "DR-5001-CA"
+    assert declarations[0].state == "CA"
+    assert declarations[0].declaration_date == "2025-01-03T00:00:00Z"
+    assert declarations[0].incident_type == "Fire"
+    assert declarations[0].title == "California Wildfires"
+    assert declarations[0].designated_area == "Los Angeles County"
+    assert declarations[0].individual_assistance is True
+    assert declarations[0].public_assistance is False
+    assert declarations[0].hazard_mitigation is True
+
+
+def test_forecast_cli_fema_import_captures_declarations_as_evidence(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_fema_disaster_declarations(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            FemaDisasterDeclaration(
+                disaster_number=5001,
+                declaration_string="DR-5001-CA",
+                state="CA",
+                declaration_type="DR",
+                declaration_date="2025-01-03T00:00:00Z",
+                fiscal_year=2025,
+                incident_type="Fire",
+                title="California Wildfires",
+                designated_area="Los Angeles County",
+                incident_begin_date="2025-01-01T00:00:00Z",
+                incident_end_date="2025-01-08T00:00:00Z",
+                individual_assistance=True,
+                public_assistance=False,
+                hazard_mitigation=True,
+                last_refresh="2025-01-04T12:00:00Z",
+                source_url="https://www.fema.gov/api/open/v2/DisasterDeclarationsSummaries?$top=1",
+                source_name="FEMA Disaster Declarations Summaries",
+                entry_id="abc123",
+                raw={"id": "abc123"},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_fema_disaster_declarations", fake_load_fema_disaster_declarations)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will FEMA evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if FEMA evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "fema",
+            "state=CA&incidentType=Fire",
+            "--question",
+            question_id,
+            "--limit",
+            "3",
+            "--declaration-type",
+            "DR",
+            "--claim-type",
+            "fact",
+            "--reliability",
+            "0.9",
+            "--relevance",
+            "0.8",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 fema evidence item(s)" in output
+    assert captured["source"] == "state=CA&incidentType=Fire"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["declaration_type"] == "DR"
+    assert evidence[0].claim == "FEMA 5001 CA Los Angeles County: Fire"
+    assert evidence[0].summary == "FEMA disaster declaration 5001 CA Los Angeles County: Fire, declared 2025-01-03T00:00:00Z."
+    assert evidence[0].source_name == "FEMA Disaster Declarations Summaries"
+    assert evidence[0].source_type == "adapter:fema"
+    assert evidence[0].published_at == "2025-01-03T00:00:00Z"
+    assert evidence[0].claim_type == "fact"
+    assert evidence[0].reliability_rating == 0.9
+    assert evidence[0].relevance_rating == 0.8
+    assert evidence[0].metadata["adapter"] == "fema"
+    assert evidence[0].metadata["disaster_number"] == 5001
+    assert evidence[0].metadata["state"] == "CA"
+    assert evidence[0].metadata["incident_type"] == "Fire"
+    assert evidence[0].metadata["hazard_mitigation"] is True
+
+
 def test_fred_adapter_loads_recent_csv_observations(monkeypatch):
     captured = {}
 
@@ -8453,6 +8609,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "fivethirtyeight:<dataset-or-url>" in output
     assert "owid:<grapher-slug>" in output
     assert "whogho:<indicator-code>" in output
+    assert "fema:<state|disaster-number|query>" in output
     assert "eia:<series-id-or-api-url>" in output
     assert "treasury:<dataset-path-or-api-url>" in output
     assert "census:<dataset-path?get=...&for=...>" in output
@@ -8496,10 +8653,11 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "fivethirtyeight", "owid", "whogho", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "fivethirtyeight", "owid", "whogho", "fema", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "fivethirtyeight:<dataset-or-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "whogho:<indicator-code>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "fema:<state|disaster-number|query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "census:<dataset-path?get=...&for=...>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "socrata:<domain>/<dataset-id>" for source in payload["sources"])
@@ -11249,6 +11407,77 @@ def test_forecast_cli_watch_add_supports_who_gho_sources(tmp_path, capsys, monke
     assert "source_type: whogho" in add_output
 
     values[0] = 78.1
+    _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
+    check_output = capsys.readouterr().out
+
+    assert "created 1 alert(s)" in check_output
+    assert f"watched_source_changed:{watch_id}" in check_output
+
+
+def test_forecast_cli_watch_add_supports_fema_sources(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    disaster_numbers = [5001]
+
+    def fake_load_fema_disaster_declarations(source: str, **kwargs):
+        return [
+            FemaDisasterDeclaration(
+                disaster_number=disaster_numbers[0],
+                declaration_string=f"DR-{disaster_numbers[0]}-CA",
+                state="CA",
+                declaration_type="DR",
+                declaration_date="2025-01-03T00:00:00Z",
+                fiscal_year=2025,
+                incident_type="Fire",
+                title="California Wildfires",
+                designated_area="Los Angeles County",
+                incident_begin_date="2025-01-01T00:00:00Z",
+                incident_end_date=None,
+                individual_assistance=True,
+                public_assistance=False,
+                hazard_mitigation=True,
+                last_refresh="2025-01-04T00:00:00Z",
+                source_url="https://www.fema.gov/api/open/v2/DisasterDeclarationsSummaries",
+                source_name="FEMA Disaster Declarations Summaries",
+                entry_id=f"declaration-{disaster_numbers[0]}",
+                raw={"disasterNumber": disaster_numbers[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_fema_disaster_declarations", fake_load_fema_disaster_declarations)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will watched CLI FEMA declarations change?",
+            "--resolution-criteria",
+            "Resolved yes if watched FEMA evidence changes.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            "fema:state=CA&incidentType=Fire",
+            "--question",
+            question_id,
+        ],
+    )
+    add_output = capsys.readouterr().out
+    watch_id = re.search(r"watched source (ws_[a-f0-9]+)", add_output).group(1)
+
+    assert "source_type: fema" in add_output
+
+    disaster_numbers[0] = 5002
     _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
     check_output = capsys.readouterr().out
 

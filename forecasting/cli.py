@@ -72,6 +72,7 @@ from forecasting.source_adapters import (
     load_crossref_works,
     load_eia_observations,
     load_federal_register_documents,
+    load_fema_disaster_declarations,
     load_fivethirtyeight_polls,
     load_fred_observations,
     load_gdelt_articles,
@@ -152,6 +153,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "domain": "global health indicator data",
         "import_command": "forecast import whogho <indicator-code> --country <ISO3> --question <id>",
         "watch_prefix": "whogho:<indicator-code>",
+    },
+    {
+        "name": "fema",
+        "domain": "US disaster declarations",
+        "import_command": "forecast import fema <state|disaster-number|query> --question <id>",
+        "watch_prefix": "fema:<state|disaster-number|query>",
     },
     {
         "name": "openmeteo",
@@ -595,6 +602,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "pubmed",
         "owid",
         "whogho",
+        "fema",
         "fred",
         "eia",
         "treasury",
@@ -682,6 +690,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "pubmed",
             "owid",
             "whogho",
+            "fema",
             "fred",
             "eia",
             "treasury",
@@ -907,6 +916,15 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://ghoapi.azureedge.net/api",
                 help="Override WHO GHO OData API base URL for tests or private mirrors",
+            )
+        if name == "fema":
+            adapter.add_argument("--state", help="Filter FEMA declarations by two-letter state code")
+            adapter.add_argument("--incident-type", help="Filter FEMA declarations by incident type, such as Fire or Hurricane")
+            adapter.add_argument("--declaration-type", help="Filter FEMA declarations by declaration type, such as DR or EM")
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://www.fema.gov/api/open/v2/DisasterDeclarationsSummaries",
+                help="Override OpenFEMA Disaster Declarations endpoint for tests or private mirrors",
             )
         if name == "fred":
             adapter.add_argument(
@@ -4057,6 +4075,78 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} whogho evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "fema":
+        if not args.question_id:
+            raise SystemExit("forecast import fema requires --question")
+        declarations = load_fema_disaster_declarations(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            state=args.state,
+            incident_type=args.incident_type,
+            declaration_type=args.declaration_type,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for declaration in declarations:
+            geography = f" {declaration.state}" if declaration.state else ""
+            area = f" {declaration.designated_area}" if declaration.designated_area else ""
+            number = f" {declaration.disaster_number}" if declaration.disaster_number is not None else ""
+            summary = (
+                f"FEMA disaster declaration{number}{geography}{area}: "
+                f"{declaration.incident_type or declaration.title}"
+            )
+            if declaration.declaration_date:
+                summary = f"{summary}, declared {declaration.declaration_date}."
+            else:
+                summary = f"{summary}."
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=declaration.source_url or f"FEMA:{declaration.entry_id}",
+                    source_url=declaration.source_url,
+                    source_name=declaration.source_name,
+                    source_type="adapter:fema",
+                    published_at=declaration.declaration_date,
+                    available_at=declaration.declaration_date or declaration.last_refresh or args.as_of,
+                    claim=(
+                        f"FEMA{number}{geography}{area}: "
+                        f"{declaration.incident_type or declaration.title}"
+                    ),
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "fema",
+                        "disaster_number": declaration.disaster_number,
+                        "declaration_string": declaration.declaration_string,
+                        "state": declaration.state,
+                        "declaration_type": declaration.declaration_type,
+                        "declaration_date": declaration.declaration_date,
+                        "fiscal_year": declaration.fiscal_year,
+                        "incident_type": declaration.incident_type,
+                        "title": declaration.title,
+                        "designated_area": declaration.designated_area,
+                        "incident_begin_date": declaration.incident_begin_date,
+                        "incident_end_date": declaration.incident_end_date,
+                        "individual_assistance": declaration.individual_assistance,
+                        "public_assistance": declaration.public_assistance,
+                        "hazard_mitigation": declaration.hazard_mitigation,
+                        "last_refresh": declaration.last_refresh,
+                        "state_filter": args.state,
+                        "incident_type_filter": args.incident_type,
+                        "declaration_type_filter": args.declaration_type,
+                        "api_base_url": args.api_base_url,
+                        "raw": declaration.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} fema evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

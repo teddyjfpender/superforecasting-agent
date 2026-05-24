@@ -106,6 +106,7 @@ def register_builtin_extensions() -> None:
         ("pubmed-articles", "importer", "Capture PubMed biomedical literature as timestamped evidence."),
         ("owid-grapher", "importer", "Capture Our World in Data grapher rows as evidence."),
         ("who-gho-indicators", "importer", "Capture WHO Global Health Observatory indicator rows as evidence."),
+        ("fema-disaster-declarations", "importer", "Capture FEMA disaster declaration rows as emergency evidence."),
         ("fred-economic-data", "importer", "Capture FRED CSV observations as timestamped evidence."),
         ("eia-energy-data", "importer", "Capture EIA energy time-series observations as evidence."),
         ("treasury-fiscal-data", "importer", "Capture U.S. Treasury Fiscal Data API records as evidence."),

@@ -50,6 +50,10 @@ const EVIDENCE_IMPORTS = [
     label: "Health",
   },
   {
+    command: "forecast import fema <state|disaster-number|query> --question <id>",
+    label: "Disasters",
+  },
+  {
     command: "forecast import eia <series-id-or-api-url> --question <id>",
     label: "Energy",
   },
@@ -132,6 +136,10 @@ const EVIDENCE_IMPORTS = [
   {
     command: "forecast import whogho <indicator-code> --country <ISO3> --question <id>",
     label: "WHO GHO",
+  },
+  {
+    command: "forecast import fema <state|disaster-number|query> --question <id>",
+    label: "FEMA",
   },
   {
     command: "forecast import pypi <package> --question <id>",
