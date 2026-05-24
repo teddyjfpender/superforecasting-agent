@@ -118,6 +118,9 @@ def test_gateway_cmd_script_uses_pythonw_without_replace_or_start_churn(monkeypa
 
     assert "pythonw.exe" in content
     assert "gateway run" in content
+    assert 'set "SUPERFORECASTING_AGENT_HOME=C:\\\\HermesHome\\\\profiles\\\\alice"' in content
+    assert 'set "FORECAST_HOME=C:\\\\HermesHome\\\\profiles\\\\alice"' in content
+    assert 'set "HERMES_HOME=C:\\\\HermesHome\\\\profiles\\\\alice"' in content
     assert "--replace" not in content
     assert "start \"\"" not in content
     assert "exit /b 0" in content

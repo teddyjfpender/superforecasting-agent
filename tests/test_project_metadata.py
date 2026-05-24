@@ -241,6 +241,8 @@ def test_windows_gateway_service_names_are_forecast_native():
 
     assert '_TASK_NAME_DEFAULT = "Superforecasting_Agent_Gateway"' in text
     assert '_LEGACY_TASK_NAME_DEFAULT = "Hermes_Gateway"' in text
+    assert '"SUPERFORECASTING_AGENT_HOME": hermes_home' in text
+    assert 'set "SUPERFORECASTING_AGENT_HOME={hermes_home}"' in text
     assert "Default profile: ``Superforecasting_Agent_Gateway``" in text
     assert "Named profile X: ``Superforecasting_Agent_Gateway_<X>``" in text
     assert "def get_legacy_task_name()" in text
@@ -1343,6 +1345,8 @@ def test_gateway_setup_copy_is_forecast_native():
     assert '_SERVICE_BASE = "superforecasting-agent-gateway"' in text
     assert 'else "ai.superforecasting-agent.gateway"' in text
     assert '_LEGACY_SERVICE_BASE = "hermes-gateway"' in text
+    assert 'Environment="SUPERFORECASTING_AGENT_HOME={hermes_home}"' in text
+    assert "<key>SUPERFORECASTING_AGENT_HOME</key>" in text
     assert "before the Hermes command" not in text
     assert "Hermes will log in directly" not in text
     assert "where Hermes delivers cron results" not in text

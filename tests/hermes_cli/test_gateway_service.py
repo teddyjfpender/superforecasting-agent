@@ -17,6 +17,12 @@ from gateway.restart import (
 )
 
 
+def _assert_home_aliases(rendered: str, home: str) -> None:
+    assert f"SUPERFORECASTING_AGENT_HOME={home}" in rendered
+    assert f"FORECAST_HOME={home}" in rendered
+    assert f"HERMES_HOME={home}" in rendered
+
+
 class TestUserSystemdPrivateSocketPreflight:
     def test_preflight_accepts_private_socket_without_dbus_bus(self, monkeypatch):
         monkeypatch.setattr(gateway_cli, "_ensure_user_systemd_env", lambda: None)
@@ -1210,7 +1216,7 @@ class TestSystemUnitHermesHome:
 
         unit = gateway_cli.generate_systemd_unit(system=True, run_as_user="alice")
 
-        assert 'HERMES_HOME=/home/alice/.superforecasting-agent' in unit
+        _assert_home_aliases(unit, "/home/alice/.superforecasting-agent")
         assert '/root/.superforecasting-agent' not in unit
 
     def test_system_unit_remaps_profile_to_target_user(self, monkeypatch):
@@ -1228,7 +1234,7 @@ class TestSystemUnitHermesHome:
 
         unit = gateway_cli.generate_systemd_unit(system=True, run_as_user="alice")
 
-        assert 'HERMES_HOME=/home/alice/.hermes/profiles/coder' in unit
+        _assert_home_aliases(unit, "/home/alice/.hermes/profiles/coder")
         assert '/root/' not in unit
 
     def test_system_unit_preserves_custom_hermes_home(self, monkeypatch):
@@ -1246,14 +1252,14 @@ class TestSystemUnitHermesHome:
 
         unit = gateway_cli.generate_systemd_unit(system=True, run_as_user="alice")
 
-        assert 'HERMES_HOME=/opt/hermes-shared' in unit
+        _assert_home_aliases(unit, "/opt/hermes-shared")
 
     def test_user_unit_unaffected_by_change(self):
         # User-scope units should still use the calling user's HERMES_HOME
         unit = gateway_cli.generate_systemd_unit(system=False)
 
         hermes_home = str(gateway_cli.get_hermes_home().resolve())
-        assert f'HERMES_HOME={hermes_home}' in unit
+        _assert_home_aliases(unit, hermes_home)
 
 
 class TestHermesHomeForTargetUser:
@@ -1643,6 +1649,9 @@ class TestProfileArg:
         plist = gateway_cli.generate_launchd_plist()
         assert "<string>--profile</string>" in plist
         assert "<string>mybot</string>" in plist
+        assert "<key>SUPERFORECASTING_AGENT_HOME</key>" in plist
+        assert "<key>FORECAST_HOME</key>" in plist
+        assert "<key>HERMES_HOME</key>" in plist
 
     def test_launchd_plist_path_uses_real_user_home_not_profile_home(self, tmp_path, monkeypatch):
         profile_dir = tmp_path / ".hermes" / "profiles" / "orcha"

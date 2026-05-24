@@ -273,9 +273,8 @@ def _task_script_path_for(task_name: str) -> Path:
 def get_task_script_path() -> Path:
     """The generated ``gateway.cmd`` wrapper that the schtasks entry invokes.
 
-    Lives under ``%LOCALAPPDATA%\\hermes\\gateway-service\\<task_name>.cmd``
-    (or ``<HERMES_HOME>/gateway-service/<task_name>.cmd`` so per-profile
-    Hermes installs stay self-contained).
+    Lives under the fork-aware home ``gateway-service`` directory so
+    per-profile installs stay self-contained.
     """
     _assert_windows()
     return _task_script_path_for(get_task_name())
@@ -334,7 +333,8 @@ def _build_gateway_cmd_script(
 
     The script:
       - cd's into the project directory
-      - exports HERMES_HOME, PYTHONIOENCODING, VIRTUAL_ENV
+      - exports forecast-native home aliases, HERMES_HOME compatibility,
+        PYTHONIOENCODING, VIRTUAL_ENV
       - invokes ``pythonw -m hermes_cli.main [--profile X] gateway run``
         directly so the wrapper cmd.exe exits without a visible gateway console
 
@@ -344,6 +344,8 @@ def _build_gateway_cmd_script(
     """
     lines = ["@echo off", f"rem {_TASK_DESCRIPTION}"]
     lines.append(f"cd /d {_quote_cmd_script_arg(working_dir)}")
+    lines.append(f'set "SUPERFORECASTING_AGENT_HOME={hermes_home}"')
+    lines.append(f'set "FORECAST_HOME={hermes_home}"')
     lines.append(f'set "HERMES_HOME={hermes_home}"')
     lines.append('set "PYTHONIOENCODING=utf-8"')
     lines.append('set "HERMES_GATEWAY_DETACHED=1"')
@@ -574,6 +576,8 @@ def _build_gateway_argv() -> tuple[list[str], str, dict[str, str]]:
     argv.extend(["gateway", "run"])
 
     env_overlay = {
+        "SUPERFORECASTING_AGENT_HOME": hermes_home,
+        "FORECAST_HOME": hermes_home,
         "HERMES_HOME": hermes_home,
         "PYTHONIOENCODING": "utf-8",
         "HERMES_GATEWAY_DETACHED": "1",

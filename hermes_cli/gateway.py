@@ -2229,6 +2229,8 @@ Environment="USER={username}"
 Environment="LOGNAME={username}"
 Environment="PATH={sane_path}"
 Environment="VIRTUAL_ENV={venv_dir}"
+Environment="SUPERFORECASTING_AGENT_HOME={hermes_home}"
+Environment="FORECAST_HOME={hermes_home}"
 Environment="HERMES_HOME={hermes_home}"
 Restart=always
 RestartSec=5
@@ -2264,6 +2266,8 @@ ExecStart={python_path} -m hermes_cli.main{f" {profile_arg}" if profile_arg else
 WorkingDirectory={working_dir}
 Environment="PATH={sane_path}"
 Environment="VIRTUAL_ENV={venv_dir}"
+Environment="SUPERFORECASTING_AGENT_HOME={hermes_home}"
+Environment="FORECAST_HOME={hermes_home}"
 Environment="HERMES_HOME={hermes_home}"
 Restart=always
 RestartSec=5
@@ -2882,6 +2886,10 @@ def generate_launchd_plist() -> str:
         <string>{sane_path}</string>
         <key>VIRTUAL_ENV</key>
         <string>{venv_dir}</string>
+        <key>SUPERFORECASTING_AGENT_HOME</key>
+        <string>{hermes_home}</string>
+        <key>FORECAST_HOME</key>
+        <string>{hermes_home}</string>
         <key>HERMES_HOME</key>
         <string>{hermes_home}</string>
     </dict>
