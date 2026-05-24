@@ -49,6 +49,7 @@ from forecasting.source_adapters import (
     PubMedArticle,
     PypiRelease,
     RedditPost,
+    ReliefWebReport,
     SecCompanyFact,
     SecFiling,
     SocrataRecord,
@@ -3433,6 +3434,161 @@ def test_forecast_cli_reddit_import_captures_posts_as_evidence(tmp_path, capsys,
     assert evidence[0].metadata["post_id"] == "t3_abc123"
     assert evidence[0].metadata["score"] == 128
     assert evidence[0].metadata["comments"] == 34
+
+
+def test_reliefweb_adapter_loads_reports(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return {
+            "data": [
+                {
+                    "id": "rw_123",
+                    "href": "https://api.reliefweb.int/v1/reports/rw_123",
+                    "fields": {
+                        "title": "Flood response update",
+                        "body-html": "<p>Humanitarian partners reported new flooding impacts.</p>",
+                        "date": {
+                            "created": "2026-05-21T14:30:00+00:00",
+                            "changed": "2026-05-22T09:00:00+00:00",
+                        },
+                        "source": [{"name": "OCHA"}],
+                        "country": [{"name": "Kenya"}],
+                        "disaster": [{"name": "Floods"}],
+                        "format": [{"name": "Situation Report"}],
+                        "theme": [{"name": "Shelter and Non-Food Items"}],
+                        "url": "https://reliefweb.int/report/kenya/flood-response-update",
+                    },
+                }
+            ]
+        }
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    reports = source_adapters.load_reliefweb_reports(
+        "Kenya floods",
+        limit=2,
+        since="2026-05-01T00:00:00Z",
+        appname="forecast-test",
+        api_base_url="https://api.reliefweb.test/v1/reports",
+    )
+    parsed = urlparse(captured["endpoint"])
+    params = parse_qs(parsed.query)
+
+    assert captured["label"] == "reliefweb reports"
+    assert parsed.path == "/v1/reports"
+    assert params["appname"] == ["forecast-test"]
+    assert params["query[value]"] == ["Kenya floods"]
+    assert params["limit"] == ["2"]
+    assert params["sort[]"] == ["date.created:desc"]
+    assert params["filter[field]"] == ["date.created"]
+    assert params["filter[value][from]"] == ["2026-05-01"]
+    assert "title" in params["fields[include][]"]
+    assert reports[0].report_id == "rw_123"
+    assert reports[0].title == "Flood response update"
+    assert reports[0].summary == "Humanitarian partners reported new flooding impacts."
+    assert reports[0].published_at == "2026-05-21T14:30:00Z"
+    assert reports[0].changed_at == "2026-05-22T09:00:00Z"
+    assert reports[0].sources == ["OCHA"]
+    assert reports[0].countries == ["Kenya"]
+    assert reports[0].disasters == ["Floods"]
+    assert reports[0].formats == ["Situation Report"]
+    assert reports[0].themes == ["Shelter and Non-Food Items"]
+
+
+def test_forecast_cli_reliefweb_import_captures_reports_as_evidence(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_reliefweb_reports(query: str, **kwargs):
+        captured["query"] = query
+        captured["kwargs"] = kwargs
+        return [
+            ReliefWebReport(
+                report_id="rw_123",
+                title="Flood response update",
+                summary="Humanitarian partners reported new flooding impacts.",
+                url="https://reliefweb.int/report/kenya/flood-response-update",
+                published_at="2026-05-21T14:30:00Z",
+                changed_at="2026-05-22T09:00:00Z",
+                sources=["OCHA"],
+                countries=["Kenya"],
+                disasters=["Floods"],
+                formats=["Situation Report"],
+                themes=["Shelter and Non-Food Items"],
+                source_name="OCHA",
+                entry_id="rw_123",
+                raw={"id": "rw_123"},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_reliefweb_reports", fake_load_reliefweb_reports)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will ReliefWeb evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if ReliefWeb evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "reliefweb",
+            "Kenya floods",
+            "--question",
+            question_id,
+            "--limit",
+            "3",
+            "--since",
+            "2026-05-01T00:00:00Z",
+            "--api-base-url",
+            "https://api.reliefweb.test/v1/reports",
+            "--appname",
+            "forecast-test",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.74",
+            "--relevance",
+            "0.82",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 reliefweb evidence item(s)" in output
+    assert captured["query"] == "Kenya floods"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["since"] == "2026-05-01T00:00:00Z"
+    assert captured["kwargs"]["api_base_url"] == "https://api.reliefweb.test/v1/reports"
+    assert captured["kwargs"]["appname"] == "forecast-test"
+    assert evidence[0].claim == "ReliefWeb: Flood response update"
+    assert evidence[0].summary.startswith("Humanitarian partners reported new flooding impacts.")
+    assert evidence[0].source_name == "OCHA"
+    assert evidence[0].source_type == "adapter:reliefweb"
+    assert evidence[0].published_at == "2026-05-21T14:30:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.74
+    assert evidence[0].relevance_rating == 0.82
+    assert evidence[0].metadata["adapter"] == "reliefweb"
+    assert evidence[0].metadata["report_id"] == "rw_123"
+    assert evidence[0].metadata["countries"] == ["Kenya"]
+    assert evidence[0].metadata["disasters"] == ["Floods"]
 
 
 def test_federalregister_adapter_loads_documents(monkeypatch):
@@ -7733,6 +7889,7 @@ def test_forecast_cli_lists_extension_points(capsys):
     assert "arxiv-papers" in output
     assert "openalex-works" in output
     assert "crossref-works" in output
+    assert "reliefweb-reports" in output
     assert "wikipedia-pages" in output
     assert "wikimedia-pageviews" in output
     assert "cisa-kev" in output
@@ -7783,6 +7940,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "githubactions:<owner/repo>" in output
     assert "hackernews:<query>" in output
     assert "reddit:<query>" in output
+    assert "reliefweb:<query>" in output
     assert "nvd:<keyword-or-CVE>" in output
     assert "cisakev:<keyword-or-CVE-or-all>" in output
     assert "federalregister:<query>" in output
@@ -7797,7 +7955,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "fivethirtyeight", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "fivethirtyeight", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "reliefweb", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "fivethirtyeight:<dataset-or-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
@@ -7820,6 +7978,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     assert any(source["watch_prefix"] == "githubactions:<owner/repo>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "hackernews:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "reddit:<query>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "reliefweb:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "cisakev:<keyword-or-CVE-or-all>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "courtlistener:<query>" for source in payload["sources"])
 

@@ -63,6 +63,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "npm",
     "hackernews",
     "reddit",
+    "reliefweb",
     "markets",
 }
 EXPECTED_BENCHMARKS = {

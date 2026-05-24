@@ -50,6 +50,7 @@ from forecasting.source_adapters import (
     PubMedArticle,
     PypiRelease,
     RedditPost,
+    ReliefWebReport,
     SecCompanyFact,
     SecFiling,
     SocrataRecord,
@@ -2120,6 +2121,63 @@ def test_watched_reddit_source_creates_alert_on_post_change(tmp_path, monkeypatc
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert f'forecast import reddit "forecast desk" --question {question.id}' in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_reliefweb_source_creates_alert_on_report_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched ReliefWeb search be detected?",
+        resolution_criteria="Resolved yes if watched ReliefWeb report changes create alerts.",
+    )
+    titles = ["Initial flood update"]
+    captured_queries = []
+
+    def fake_load_reliefweb_reports(query: str, **kwargs):
+        captured_queries.append(query)
+        return [
+            ReliefWebReport(
+                report_id="rw_123",
+                title=titles[0],
+                summary="Humanitarian partners reported new flooding impacts.",
+                url="https://reliefweb.int/report/kenya/flood-response-update",
+                published_at="2026-05-21T14:30:00Z",
+                changed_at="2026-05-22T09:00:00Z",
+                sources=["OCHA"],
+                countries=["Kenya"],
+                disasters=["Floods"],
+                formats=["Situation Report"],
+                themes=["Shelter and Non-Food Items"],
+                source_name="OCHA",
+                entry_id="rw_123",
+                raw={"title": titles[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_reliefweb_reports", fake_load_reliefweb_reports)
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="reliefweb:Kenya floods",
+    )
+
+    assert watch["source_type"] == "reliefweb"
+    assert watch["last_seen_signature"].startswith("reliefweb:1:")
+    assert captured_queries[-1] == "Kenya floods"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    titles[0] = "Updated flood response"
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f'forecast import reliefweb "Kenya floods" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]

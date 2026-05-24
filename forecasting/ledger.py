@@ -71,6 +71,7 @@ WATCH_SOURCE_TYPES = {
     "coingecko",
     "hackernews",
     "reddit",
+    "reliefweb",
     "federalregister",
     "courtlistener",
     "nvd",
@@ -3026,7 +3027,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
+                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, reliefweb, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
                 "sec, secfacts, arxiv, openalex, crossref, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -3121,6 +3122,7 @@ class ForecastLedger:
                     "npm",
                     "hackernews",
                     "reddit",
+                    "reliefweb",
                     "federalregister",
                     "courtlistener",
                     "nvd",
@@ -5685,6 +5687,8 @@ class ForecastLedger:
             return "openalex"
         if source.startswith("crossref:"):
             return "crossref"
+        if source.startswith("reliefweb:"):
+            return "reliefweb"
         if source.startswith("wikipedia:"):
             return "wikipedia"
         if source.startswith("wikipediapageviews:"):
@@ -5781,6 +5785,8 @@ class ForecastLedger:
             return self._openalex_source_signature(source)
         if source_type == "crossref":
             return self._crossref_source_signature(source)
+        if source_type == "reliefweb":
+            return self._reliefweb_source_signature(source)
         if source_type == "wikipedia":
             return self._wikipedia_source_signature(source)
         if source_type == "wikipediapageviews":
@@ -6875,6 +6881,33 @@ class ForecastLedger:
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"crossref:{len(payload)}:{digest}"
 
+    def _reliefweb_source_signature(self, source: str) -> str:
+        query = source.split(":", 1)[1].strip() if source.startswith("reliefweb:") else source.strip()
+        if not query:
+            return "missing:reliefweb:empty-query"
+        try:
+            from forecasting.source_adapters import load_reliefweb_reports
+
+            reports = load_reliefweb_reports(query, limit=50)
+        except Exception as exc:
+            return f"missing:reliefweb:{query}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "changed_at": report.changed_at,
+                "countries": report.countries,
+                "disasters": report.disasters,
+                "entry_id": report.entry_id,
+                "published_at": report.published_at,
+                "report_id": report.report_id,
+                "sources": report.sources,
+                "title": report.title,
+                "url": report.url,
+            }
+            for report in reports
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"reliefweb:{len(payload)}:{digest}"
+
     def _wikipedia_source_signature(self, source: str) -> str:
         query = source.split(":", 1)[1].strip() if source.startswith("wikipedia:") else source.strip()
         if not query:
@@ -7124,6 +7157,12 @@ class ForecastLedger:
             query = source.split(":", 1)[1].strip() if source.startswith("reddit:") else source
             return (
                 f"Run `forecast import reddit \"{query}\" --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "reliefweb" and scope_type == "question" and scope_ref:
+            query = source.split(":", 1)[1].strip() if source.startswith("reliefweb:") else source
+            return (
+                f"Run `forecast import reliefweb \"{query}\" --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "federalregister" and scope_type == "question" and scope_ref:

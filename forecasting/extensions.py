@@ -88,6 +88,7 @@ def register_builtin_extensions() -> None:
         ("npm-package-versions", "importer", "Capture npm package versions as timestamped evidence."),
         ("hackernews-search", "importer", "Capture Hacker News search results as public-attention evidence."),
         ("reddit-search", "importer", "Capture Reddit search results as public-attention evidence."),
+        ("reliefweb-reports", "importer", "Capture ReliefWeb humanitarian reports as timestamped evidence."),
         ("federal-register-documents", "importer", "Capture Federal Register documents as timestamped evidence."),
         ("courtlistener-search", "importer", "Capture CourtListener legal search results as timestamped evidence."),
         ("nvd-cves", "importer", "Capture NVD CVE records as timestamped security evidence."),

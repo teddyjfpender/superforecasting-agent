@@ -102,6 +102,10 @@ const EVIDENCE_IMPORTS = [
     label: "Reddit",
   },
   {
+    command: 'forecast import reliefweb "<query>" --question <id>',
+    label: "ReliefWeb",
+  },
+  {
     command: "forecast import clinicaltrials <query-or-NCT-id> --question <id>",
     label: "Trials",
   },

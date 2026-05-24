@@ -25,6 +25,7 @@ from forecasting.source_adapters import (
     OpenMeteoAirQualityForecast,
     OpenMeteoHistoricalWeatherObservation,
     RedditPost,
+    ReliefWebReport,
     PubMedArticle,
     PypiRelease,
     SecCompanyFact,
@@ -116,7 +117,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "reliefweb", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_imports_airquality_forecasts(tmp_path, monkeypatch):
@@ -2720,6 +2721,57 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert reddit_evidence["published_at"] == "2026-05-21T14:30:00Z"
     assert reddit_evidence["metadata"]["adapter"] == "reddit"
     assert reddit_evidence["metadata"]["adapter_item"]["score"] == 128
+
+    def fake_reliefweb(source, **kwargs):
+        assert source == "Kenya floods"
+        assert kwargs["limit"] == 1
+        assert kwargs["since"] == "2026-05-01"
+        assert kwargs["api_base_url"] == "https://example.test/reliefweb/reports"
+        assert kwargs["appname"] == "forecast-test"
+        return [
+            ReliefWebReport(
+                report_id="rw_123",
+                title="Flood response update",
+                summary="Humanitarian partners reported new flooding impacts.",
+                url="https://reliefweb.int/report/kenya/flood-response-update",
+                published_at="2026-05-21T14:30:00Z",
+                changed_at="2026-05-22T09:00:00Z",
+                sources=["OCHA"],
+                countries=["Kenya"],
+                disasters=["Floods"],
+                formats=["Situation Report"],
+                themes=["Shelter and Non-Food Items"],
+                source_name="OCHA",
+                entry_id="rw_123",
+                raw={"id": "rw_123"},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_reliefweb_reports", fake_reliefweb)
+    reliefweb_imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "reliefweb",
+                "source": "Kenya floods",
+                "limit": 1,
+                "since": "2026-05-01",
+                "api_base_url": "https://example.test/reliefweb/reports",
+                "appname": "forecast-test",
+            }
+        )
+    )
+
+    assert reliefweb_imported["imported_count"] == 1
+    reliefweb_evidence = reliefweb_imported["imported"][0]["evidence"]
+    assert reliefweb_evidence["source_type"] == "adapter:reliefweb"
+    assert reliefweb_evidence["source_name"] == "OCHA"
+    assert reliefweb_evidence["claim"] == "ReliefWeb: Flood response update"
+    assert reliefweb_evidence["published_at"] == "2026-05-21T14:30:00Z"
+    assert reliefweb_evidence["metadata"]["adapter"] == "reliefweb"
+    assert reliefweb_evidence["metadata"]["adapter_item"]["countries"] == ["Kenya"]
 
     def fake_cisakev(source, **kwargs):
         assert source == "ForecastSoft"

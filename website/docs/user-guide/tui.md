@@ -91,6 +91,7 @@ Examples:
 /forecast import npm package-name --question <id>
 /forecast import hackernews "product query" --question <id>
 /forecast import reddit "topic query" --question <id>
+/forecast import reliefweb "humanitarian query" --question <id>
 /forecast import cisakev CVE-2026-0001 --question <id>
 /forecast import clinicaltrials NCT01234567 --question <id>
 /forecast import openfda BLA125514 --question <id>

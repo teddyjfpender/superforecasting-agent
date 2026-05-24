@@ -90,6 +90,7 @@ forecast import pypi package-name --question <id>
 forecast import npm package-name --question <id>
 forecast import hackernews "product query" --question <id>
 forecast import reddit "topic query" --question <id>
+forecast import reliefweb "humanitarian query" --question <id>
 forecast import federalregister "rule query" --question <id>
 forecast import courtlistener "case or legal query" --question <id>
 forecast import nvd CVE-2026-0001 --question <id>
@@ -169,6 +170,7 @@ forecast watch add --question <id> hackernews:"product query"
 forecast watch add --question <id> pypi:package-name
 forecast watch add --question <id> npm:package-name
 forecast watch add --question <id> reddit:"topic query"
+forecast watch add --question <id> reliefweb:"humanitarian query"
 forecast watch add --question <id> federalregister:"rule query"
 forecast watch add --question <id> courtlistener:"case or legal query"
 forecast watch add --question <id> census:"2023/acs/acs5?get=NAME,B01003_001E&for=state:*"

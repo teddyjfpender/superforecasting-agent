@@ -95,6 +95,7 @@ from forecasting.source_adapters import (
     load_pubmed_articles,
     load_pypi_releases,
     load_reddit_posts,
+    load_reliefweb_reports,
     load_sec_company_facts,
     load_polymarket_market,
     load_sec_filings,
@@ -368,6 +369,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "watch_prefix": "reddit:<query>",
     },
     {
+        "name": "reliefweb",
+        "domain": "humanitarian/disaster reports",
+        "import_command": 'forecast import reliefweb "<query>" --question <id>',
+        "watch_prefix": "reliefweb:<query>",
+    },
+    {
         "name": "markets",
         "domain": "crowd/market priors",
         "import_command": "forecast import manifold|metaculus|polymarket|kalshi <market> --question <id>",
@@ -545,6 +552,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "npm",
         "hackernews",
         "reddit",
+        "reliefweb",
         "federalregister",
         "courtlistener",
         "nvd",
@@ -628,6 +636,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "npm",
             "hackernews",
             "reddit",
+            "reliefweb",
             "federalregister",
             "courtlistener",
             "nvd",
@@ -734,6 +743,16 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://www.reddit.com/search.json",
                 help="Override Reddit JSON search endpoint for tests or private mirrors",
+            )
+        if name == "reliefweb":
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://api.reliefweb.int/v1/reports",
+                help="Override ReliefWeb reports API endpoint for tests or private mirrors",
+            )
+            adapter.add_argument(
+                "--appname",
+                help="ReliefWeb API appname; defaults to RELIEFWEB_APPNAME or superforecasting-agent",
             )
         if name == "federalregister":
             adapter.add_argument(
@@ -2857,6 +2876,57 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} reddit evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "reliefweb":
+        if not args.question_id:
+            raise SystemExit("forecast import reliefweb requires --question")
+        reports = load_reliefweb_reports(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            appname=args.appname,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for report in reports:
+            geography = f" Countries: {', '.join(report.countries[:5])}." if report.countries else ""
+            disasters = f" Disasters: {', '.join(report.disasters[:5])}." if report.disasters else ""
+            source_text = f" Sources: {', '.join(report.sources[:5])}." if report.sources else ""
+            summary = f"{report.summary}{geography}{disasters}{source_text}".strip()
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=report.url or f"ReliefWeb:{report.entry_id or report.title}",
+                    source_url=report.url,
+                    source_name=report.source_name,
+                    source_type="adapter:reliefweb",
+                    published_at=report.published_at,
+                    available_at=report.published_at or report.changed_at or args.as_of,
+                    claim=f"ReliefWeb: {report.title}",
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "reliefweb",
+                        "query": args.source,
+                        "report_id": report.report_id,
+                        "changed_at": report.changed_at,
+                        "sources": report.sources,
+                        "countries": report.countries,
+                        "disasters": report.disasters,
+                        "formats": report.formats,
+                        "themes": report.themes,
+                        "api_base_url": args.api_base_url,
+                        "appname": args.appname,
+                        "raw": report.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} reliefweb evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

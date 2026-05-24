@@ -50,6 +50,7 @@ from forecasting.source_adapters import (
     load_pubmed_articles,
     load_pypi_releases,
     load_reddit_posts,
+    load_reliefweb_reports,
     load_sec_company_facts,
     load_sec_filings,
     load_socrata_records,
@@ -185,6 +186,7 @@ FORECAST_LEDGER_SCHEMA = {
             "limit": {"type": "integer"},
             "since": {"type": "string"},
             "api_base_url": {"type": "string"},
+            "appname": {"type": "string"},
             "range_value": {"type": "string"},
             "timespan": {"type": "string"},
             "search_type": {"type": "string"},
@@ -277,6 +279,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "npm",
                     "hackernews",
                     "reddit",
+                    "reliefweb",
                     "federalregister",
                     "courtlistener",
                     "nvd",
@@ -1258,6 +1261,11 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_reddit_posts(source, **kwargs)
+    if adapter_name == "reliefweb":
+        kwargs = {"limit": limit, "since": since, "appname": args.get("appname")}
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_reliefweb_reports(source, **kwargs)
     if adapter_name == "federalregister":
         kwargs = {"limit": limit, "since": since}
         if api_base_url:
@@ -1521,6 +1529,8 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         return f"Hacker News: {data.get('title')}"
     if adapter == "reddit":
         return f"Reddit: {data.get('title')}"
+    if adapter == "reliefweb":
+        return f"ReliefWeb: {data.get('title')}"
     if adapter == "courtlistener":
         court = f" {data.get('court_id')}" if data.get("court_id") else ""
         filed = f" filed {data.get('date_filed')}" if data.get("date_filed") else ""
