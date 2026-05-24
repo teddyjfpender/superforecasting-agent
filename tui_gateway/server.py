@@ -51,6 +51,28 @@ def _tui_env(name: str, default: str = "") -> str:
     return default
 
 
+def _runtime_env(name: str, default: str = "") -> str:
+    """Read a runtime env var, preferring fork-native aliases over legacy names."""
+
+    for key in (
+        f"SUPERFORECASTING_AGENT_{name}",
+        f"FORECAST_{name}",
+        f"HERMES_{name}",
+    ):
+        value = os.environ.get(key)
+        if value is not None:
+            return value
+    return default
+
+
+def _set_runtime_env(name: str, value: str) -> None:
+    """Set fork-native and legacy runtime aliases for in-process state."""
+
+    os.environ[f"SUPERFORECASTING_AGENT_{name}"] = value
+    os.environ[f"FORECAST_{name}"] = value
+    os.environ[f"HERMES_{name}"] = value
+
+
 # ── Panic logger ─────────────────────────────────────────────────────
 # Gateway crashes in a TUI session leave no forensics: stdout is the
 # JSON-RPC pipe (TUI side parses it, doesn't log raw), the root logger
@@ -5732,12 +5754,12 @@ def _voice_mode_enabled() -> bool:
     avoids the TUI auto-starting in REC the next time the user opens it
     just because they happened to enable voice in a prior session.
     """
-    return os.environ.get("HERMES_VOICE", "").strip() == "1"
+    return _runtime_env("VOICE").strip() == "1"
 
 
 def _voice_tts_enabled() -> bool:
     """Whether agent replies should be spoken back via TTS (runtime only)."""
-    return os.environ.get("HERMES_VOICE_TTS", "").strip() == "1"
+    return _runtime_env("VOICE_TTS").strip() == "1"
 
 
 def _voice_cfg_dict() -> dict:
@@ -5813,7 +5835,7 @@ def _(rid, params: dict) -> dict:
         # Runtime-only flag (CLI parity) — no _write_config_key, so the
         # next TUI launch starts with voice OFF instead of auto-REC from a
         # persisted stale toggle.
-        os.environ["HERMES_VOICE"] = "1" if enabled else "0"
+        _set_runtime_env("VOICE", "1" if enabled else "0")
 
         if not enabled:
             # Disabling the mode must tear the continuous loop down; the
@@ -5841,7 +5863,7 @@ def _(rid, params: dict) -> dict:
             return _err(rid, 4014, "enable voice mode first: /voice on")
         new_value = not _voice_tts_enabled()
         # Runtime-only flag (CLI parity) — see voice.toggle on/off above.
-        os.environ["HERMES_VOICE_TTS"] = "1" if new_value else "0"
+        _set_runtime_env("VOICE_TTS", "1" if new_value else "0")
         # Include ``record_key`` on every branch so a /voice tts toggle
         # doesn't reset the TUI's cached shortcut to the default when a
         # user has a custom binding configured (Copilot review, round 2

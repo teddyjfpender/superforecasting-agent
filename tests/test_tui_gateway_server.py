@@ -122,11 +122,12 @@ def test_voice_toggle_returns_configured_record_key(monkeypatch):
             check_voice_requirements=lambda: {"available": True, "details": ""}
         ),
     )
-    # ``voice.toggle`` action=on mutates ``os.environ["HERMES_VOICE"]``
-    # directly (CLI parity, runtime-only flag). Take monkeypatch
-    # ownership of the var so the change is reverted at teardown and
-    # later tests don't inherit a stale ON state (Copilot round-5
-    # review on #19835).
+    # ``voice.toggle`` action=on mutates runtime env aliases directly
+    # (CLI parity, runtime-only flag). Take monkeypatch ownership of
+    # the vars so the change is reverted at teardown and later tests
+    # don't inherit a stale ON state (Copilot round-5 review on #19835).
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_VOICE", "0")
+    monkeypatch.setenv("FORECAST_VOICE", "0")
     monkeypatch.setenv("HERMES_VOICE", "0")
 
     on_resp = server.dispatch(
@@ -138,6 +139,29 @@ def test_voice_toggle_returns_configured_record_key(monkeypatch):
 
     assert on_resp["result"]["record_key"] == "ctrl+o"
     assert status_resp["result"]["record_key"] == "ctrl+o"
+    assert os.environ["SUPERFORECASTING_AGENT_VOICE"] == "1"
+    assert os.environ["FORECAST_VOICE"] == "1"
+    assert os.environ["HERMES_VOICE"] == "1"
+
+
+def test_voice_status_prefers_fork_native_runtime_env(monkeypatch):
+    monkeypatch.setattr(server, "_load_cfg", lambda: {"voice": {}})
+    monkeypatch.setitem(
+        sys.modules,
+        "tools.voice_mode",
+        types.SimpleNamespace(
+            check_voice_requirements=lambda: {"available": True, "details": ""}
+        ),
+    )
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_VOICE", "0")
+    monkeypatch.setenv("FORECAST_VOICE", "1")
+    monkeypatch.setenv("HERMES_VOICE", "1")
+
+    resp = server.dispatch(
+        {"id": "voice-status", "method": "voice.toggle", "params": {"action": "status"}}
+    )
+
+    assert resp["result"]["enabled"] is False
 
 
 def test_voice_toggle_handles_non_dict_voice_cfg(monkeypatch):
@@ -360,7 +384,11 @@ def test_voice_toggle_tts_branch_also_carries_record_key(monkeypatch):
             check_voice_requirements=lambda: {"available": True, "details": ""}
         ),
     )
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_VOICE", "1")
+    monkeypatch.setenv("FORECAST_VOICE", "1")
     monkeypatch.setenv("HERMES_VOICE", "1")
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_VOICE_TTS", raising=False)
+    monkeypatch.delenv("FORECAST_VOICE_TTS", raising=False)
     monkeypatch.delenv("HERMES_VOICE_TTS", raising=False)
 
     tts_resp = server.dispatch(
@@ -369,6 +397,9 @@ def test_voice_toggle_tts_branch_also_carries_record_key(monkeypatch):
 
     assert tts_resp["result"]["record_key"] == "ctrl+space"
     assert tts_resp["result"]["tts"] is True
+    assert os.environ["SUPERFORECASTING_AGENT_VOICE_TTS"] == "1"
+    assert os.environ["FORECAST_VOICE_TTS"] == "1"
+    assert os.environ["HERMES_VOICE_TTS"] == "1"
 
 
 def test_load_enabled_toolsets_prefers_tui_env(monkeypatch):

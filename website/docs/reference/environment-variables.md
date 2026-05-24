@@ -21,6 +21,9 @@ Secrets go in `~/.superforecasting-agent/.env` by default. Non-secret settings u
 | `SUPERFORECASTING_AGENT_VOICE` | Preferred startup voice-mode flag for TUI UI state. Set to `1` to show voice as enabled at startup. |
 | `FORECAST_VOICE` | Short alias for `SUPERFORECASTING_AGENT_VOICE`. |
 | `HERMES_VOICE` | Legacy startup voice-mode flag for inherited TUI voice state. |
+| `SUPERFORECASTING_AGENT_VOICE_TTS` | Preferred runtime flag for TUI voice-mode speech output. Set by `/voice tts`; normally not edited by hand. |
+| `FORECAST_VOICE_TTS` | Short alias for `SUPERFORECASTING_AGENT_VOICE_TTS`. |
+| `HERMES_VOICE_TTS` | Legacy runtime flag for inherited TUI voice-mode speech output. |
 | `SUPERFORECASTING_AGENT_BIN` | Preferred executable override when background worker launchers or TUI setup handoff code need to re-enter the CLI from a stripped service environment. |
 | `FORECAST_BIN` | Short alias for `SUPERFORECASTING_AGENT_BIN`. |
 | `HERMES_BIN` | Legacy executable override for inherited worker launchers and install shims. |
