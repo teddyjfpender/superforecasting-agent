@@ -1022,6 +1022,51 @@ def test_remaining_product_facing_skill_examples_are_forecast_native():
     assert "Hermes installs package this" not in text
 
 
+def test_kanban_video_orchestrator_skill_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    skill_root = root / "optional-skills" / "creative" / "kanban-video-orchestrator"
+    paths = [
+        skill_root / "SKILL.md",
+        skill_root / "assets" / "setup.sh.tmpl",
+        skill_root / "scripts" / "bootstrap_pipeline.py",
+        skill_root / "scripts" / "monitor.py",
+        skill_root / "references" / "examples.md",
+        skill_root / "references" / "kanban-setup.md",
+        skill_root / "references" / "monitoring.md",
+        skill_root / "references" / "role-archetypes.md",
+        skill_root / "references" / "tool-matrix.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "optional"
+            / "creative"
+            / "creative-kanban-video-orchestrator.md"
+        ),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "superforecasting-agent profile create" in text
+    assert "superforecasting-agent kanban create" in text
+    assert "Superforecasting Agent profiles" in text
+    assert "every Superforecasting Agent profile" in text
+    assert "SUPERFORECASTING_AGENT_HOME" in text
+    assert "$AGENT_HOME/.env" in text
+
+    assert "hermes profile create" not in text
+    assert "hermes kanban create" not in text
+    assert "Creating Hermes profiles" not in text
+    assert "Hermes profile config.yaml" not in text
+    assert "per Hermes profile rules" not in text
+    assert "no Hermes skill required" not in text
+    assert "every Hermes profile" not in text
+    assert "When a new Hermes-public video skill ships" not in text
+    assert "$HOME/.hermes/.env" not in text
+    assert "$HOME/.hermes/profiles" not in text
+
+
 def test_github_auth_skill_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [

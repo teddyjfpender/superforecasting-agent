@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Monitor a running video-production kanban. Polls `hermes kanban list` and
+Monitor a running video-production kanban. Polls `superforecasting-agent kanban list` and
 `events` for a tenant and surfaces issues (stuck tasks, missing heartbeats,
 repeated retries, dependency deadlocks).
 
@@ -26,25 +26,30 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 
-def hermes_available() -> bool:
-    return shutil.which("hermes") is not None
+def agent_cli() -> str:
+    return shutil.which("superforecasting-agent") or shutil.which("forecast") or shutil.which("hermes") or "superforecasting-agent"
+
+
+def agent_available() -> bool:
+    return shutil.which("superforecasting-agent") is not None or shutil.which("forecast") is not None or shutil.which("hermes") is not None
 
 
 def kanban_list(tenant: str) -> list[dict]:
     """Returns parsed task rows. Falls back to plain stdout parsing if JSON
-    output isn't supported by the installed hermes CLI."""
+    output isn't supported by the installed Superforecasting Agent CLI."""
+    cli = agent_cli()
     try:
         out = subprocess.run(
-            ["hermes", "kanban", "list", "--tenant", tenant, "--json"],
+            [cli, "kanban", "list", "--tenant", tenant, "--json"],
             capture_output=True, text=True, check=False,
         )
         if out.returncode == 0 and out.stdout.strip().startswith("["):
             return json.loads(out.stdout)
     except (FileNotFoundError, json.JSONDecodeError):
         pass
-    # Fallback: textual parse of `hermes kanban list`
+    # Fallback: textual parse of `superforecasting-agent kanban list`
     out = subprocess.run(
-        ["hermes", "kanban", "list", "--tenant", tenant],
+        [cli, "kanban", "list", "--tenant", tenant],
         capture_output=True, text=True, check=False,
     )
     rows = []
@@ -67,8 +72,9 @@ def kanban_list(tenant: str) -> list[dict]:
 
 
 def kanban_show(task_id: str) -> dict | None:
+    cli = agent_cli()
     out = subprocess.run(
-        ["hermes", "kanban", "show", task_id, "--json"],
+        [cli, "kanban", "show", task_id, "--json"],
         capture_output=True, text=True, check=False,
     )
     if out.returncode != 0:
@@ -171,8 +177,8 @@ def main():
                     help="Print one snapshot and exit (no polling loop)")
     args = ap.parse_args()
 
-    if not hermes_available():
-        print("ERROR: 'hermes' CLI not found in PATH", file=sys.stderr)
+    if not agent_available():
+        print("ERROR: no Superforecasting Agent CLI found in PATH", file=sys.stderr)
         sys.exit(1)
 
     if args.once:

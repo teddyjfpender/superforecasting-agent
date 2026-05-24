@@ -298,7 +298,7 @@ key is present in `~/.superforecasting-agent/.env` (or macOS Keychain) before fi
 | Luma | `LUMA_API_KEY` | image-to-video-generator (alternate) |
 | Suno | `SUNO_API_KEY` | music-supervisor (paired with `songwriting-and-ai-music`) |
 | Spotify | `SPOTIFY_CLIENT_ID` + `SPOTIFY_CLIENT_SECRET` | music-supervisor (paired with `spotify` skill) |
-| Anthropic | `ANTHROPIC_API_KEY` | every Hermes profile (Claude) |
+| Anthropic | `ANTHROPIC_API_KEY` | every Superforecasting Agent profile (Claude) |
 
 If a key is missing, prompt the user to add it. Storage methods, in order of
 preference: macOS Keychain → `~/.superforecasting-agent/.env` → environment variable.
@@ -310,7 +310,7 @@ If a specific skill version is desired, pass it via the per-task
 
 ## Adding a new skill to the matrix
 
-When a new Hermes-public video skill ships:
+When a new Superforecasting Agent video skill ships:
 
 1. Add a row to the relevant table at the top of this file
 2. If it warrants a specialized renderer variant, add to `role-archetypes.md`
