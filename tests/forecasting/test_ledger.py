@@ -11,7 +11,11 @@ import pytest
 from forecasting import ForecastLedger
 from forecasting.cron_runner import run_due_reviews
 from forecasting.dashboard import build_dashboard_summary, render_dashboard_text
-from forecasting.ensembles import bayesian_binary_update, weighted_binary_probability
+from forecasting.ensembles import (
+    bayesian_binary_update,
+    linear_trend_projection,
+    weighted_binary_probability,
+)
 from forecasting.models import OutcomeSpace, ValidationError
 from forecasting.protocol import build_forecast_chat_system_prompt, build_protocol_messages
 from forecasting.source_adapters import (
@@ -4920,6 +4924,29 @@ def test_bayesian_binary_update_combines_prior_and_likelihoods():
     )
 
     assert posterior == pytest.approx(0.7272727273)
+
+
+def test_linear_trend_projection_projects_dated_series():
+    projection = linear_trend_projection(
+        [
+            {"date": "2026-01-01", "value": 10},
+            {"date": "2026-01-02", "value": 12},
+            {"date": "2026-01-03", "value": 14},
+        ],
+        target_date="2026-01-04",
+    )
+
+    assert projection["projected_value"] == pytest.approx(16.0)
+    assert projection["slope"] == pytest.approx(2.0)
+    assert projection["slope_unit"] == "per_day"
+    assert projection["r_squared"] == pytest.approx(1.0)
+
+
+def test_linear_trend_projection_projects_numeric_pairs():
+    projection = linear_trend_projection([[0, 10], [1, 12], [2, 14]], target_x=3)
+
+    assert projection["projected_value"] == pytest.approx(16.0)
+    assert projection["slope_unit"] == "per_step"
 
 
 def test_forecast_chat_system_prompt_scopes_general_chat_to_forecasting():

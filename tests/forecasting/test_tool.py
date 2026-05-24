@@ -1104,6 +1104,40 @@ def test_forecast_ledger_tool_records_model_run_provenance(tmp_path):
     assert model_run["evidence_cutoff"] == "2026-01-01T00:00:00Z"
 
 
+def test_forecast_ledger_tool_computes_trend_projection_model_run(tmp_path):
+    db = str(tmp_path / "forecasting.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will tool trend projection persist?",
+                "resolution_criteria": "Resolved yes if trend model output is stored.",
+            }
+        )
+    )
+    question_id = created["question"]["id"]
+
+    result = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "record_model_run",
+                "question_id": question_id,
+                "model_type": "trend_projection",
+                "series": [[0, 10], [1, 12], [2, 14]],
+                "target_x": 3,
+            }
+        )
+    )
+
+    model_run = result["model_run"]
+    assert model_run["model_type"] == "trend_projection"
+    assert model_run["output"]["projected_value"] == pytest.approx(16.0)
+    assert model_run["output"]["slope"] == pytest.approx(2.0)
+    assert model_run["parameters"]["target_x"] == 3
+
+
 def test_forecast_ledger_tool_lists_model_runs_and_postmortems(tmp_path):
     db = str(tmp_path / "forecasting.db")
     created = json.loads(

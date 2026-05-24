@@ -13,7 +13,7 @@ from forecasting.backtesting import (
     build_backtest_performance_summaries,
     build_forecasting_evidence_status,
 )
-from forecasting.ensembles import weighted_binary_probability
+from forecasting.ensembles import linear_trend_projection, weighted_binary_probability
 from forecasting.learning import apply_active_lesson_adjustments
 from forecasting.models import ForecastingError, OutcomeSpace
 from forecasting.protocol import build_protocol_messages
@@ -234,6 +234,11 @@ FORECAST_LEDGER_SCHEMA = {
             "parameters": {"type": "object"},
             "output": {"type": "object"},
             "diagnostics": {"type": "object"},
+            "series": {"type": "array", "items": {}},
+            "target_date": {"type": "string"},
+            "target_x": {"type": "number"},
+            "date_field": {"type": "string"},
+            "value_field": {"type": "string"},
             "code_ref": {"type": "string"},
             "artifact_paths": {"type": "array", "items": {"type": "string"}},
             "model_version": {"type": "string"},
@@ -631,13 +636,40 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             return tool_result(success=True, reference_class=reference_class)
 
         if action == "record_model_run":
+            model_type = _required(args, "model_type")
+            inputs = args.get("inputs") or {}
+            parameters = args.get("parameters") or {}
+            output = args.get("output") or {}
+            if model_type == "trend_projection":
+                series = args.get("series") or inputs.get("series")
+                if series:
+                    target_date = args.get("target_date") or parameters.get("target_date")
+                    target_x = args.get("target_x")
+                    if target_x is None:
+                        target_x = parameters.get("target_x")
+                    date_field = args.get("date_field") or parameters.get("date_field") or "date"
+                    value_field = args.get("value_field") or parameters.get("value_field") or "value"
+                    projection = linear_trend_projection(
+                        series,
+                        target_date=target_date,
+                        target_x=target_x,
+                        date_field=date_field,
+                        value_field=value_field,
+                    )
+                    inputs.setdefault("series", series)
+                    parameters.setdefault("target_date", target_date)
+                    parameters.setdefault("target_x", target_x)
+                    parameters.setdefault("date_field", date_field)
+                    parameters.setdefault("value_field", value_field)
+                    for key, value in projection.items():
+                        output.setdefault(key, value)
             model_run = ledger.record_model_run(
                 question_id=_required(args, "question_id"),
-                model_type=_required(args, "model_type"),
+                model_type=model_type,
                 status=args.get("model_status") or "success",
-                inputs=args.get("inputs") or {},
-                parameters=args.get("parameters") or {},
-                output=args.get("output") or {},
+                inputs=inputs,
+                parameters=parameters,
+                output=output,
                 diagnostics=args.get("diagnostics") or {},
                 code_ref=args.get("code_ref"),
                 artifact_paths=args.get("artifact_paths") or [],

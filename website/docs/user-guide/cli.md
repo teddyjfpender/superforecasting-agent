@@ -43,6 +43,11 @@ forecast model <id> --type bayesian_update \
   --input-json '{"prior":0.47,"likelihood_ratio":1.3}' \
   --rationale "Evidence is positive but noisy."
 
+forecast model <id> --type trend_projection \
+  --series-json '[{"date":"2026-01-01","value":10},{"date":"2026-01-02","value":12}]' \
+  --target-date 2026-01-03 \
+  --rationale "Linear trend projection over dated observations."
+
 forecast update <id> \
   --probability 0.58 \
   --confidence 0.66 \

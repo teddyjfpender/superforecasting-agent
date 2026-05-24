@@ -37,7 +37,11 @@ from forecasting.branding import (
     PRODUCT_SLUG,
 )
 from forecasting.dashboard import build_dashboard_summary, render_dashboard_text
-from forecasting.ensembles import bayesian_binary_update, weighted_binary_probability
+from forecasting.ensembles import (
+    bayesian_binary_update,
+    linear_trend_projection,
+    weighted_binary_probability,
+)
 from forecasting.extensions import extension_registry
 from forecasting.forecast_engine import forecast_engine_binary_probability
 from forecasting.learning import apply_active_lesson_adjustments
@@ -1051,6 +1055,11 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     model_parser.add_argument("--prior", type=float)
     model_parser.add_argument("--likelihood-if-true", type=float)
     model_parser.add_argument("--likelihood-if-false", type=float)
+    model_parser.add_argument("--series-json", help="JSON array for trend_projection model runs")
+    model_parser.add_argument("--target-date", help="Projection target date for trend_projection")
+    model_parser.add_argument("--target-x", type=float, help="Projection target x value for trend_projection")
+    model_parser.add_argument("--date-field", default="date", help="Date field name in trend_projection series rows")
+    model_parser.add_argument("--value-field", default="value", help="Value field name in trend_projection series rows")
     model_parser.add_argument("--code-ref")
     model_parser.add_argument("--artifact-path", dest="artifact_paths", action="append", default=[])
     model_parser.add_argument("--model-version")
@@ -5005,6 +5014,23 @@ def _cmd_model(args: argparse.Namespace) -> None:
             parameters.setdefault("likelihood_if_true", args.likelihood_if_true)
             parameters.setdefault("likelihood_if_false", args.likelihood_if_false)
             output.setdefault("posterior", posterior)
+    elif args.model_type == "trend_projection" and args.series_json:
+        series = _json_value_arg(args.series_json, "series-json")
+        if not isinstance(series, list):
+            raise SystemExit("trend_projection --series-json must be a JSON array")
+        projection = linear_trend_projection(
+            series,
+            target_date=args.target_date,
+            target_x=args.target_x,
+            date_field=args.date_field,
+            value_field=args.value_field,
+        )
+        inputs.setdefault("series", series)
+        parameters.setdefault("target_date", args.target_date)
+        parameters.setdefault("target_x", args.target_x)
+        parameters.setdefault("date_field", args.date_field)
+        parameters.setdefault("value_field", args.value_field)
+        output.update({key: value for key, value in projection.items() if key not in output})
     model_run = _ledger(args).record_model_run(
         question_id=args.id,
         model_type=args.model_type,
@@ -5026,6 +5052,10 @@ def _cmd_model(args: argparse.Namespace) -> None:
     print(f"evidence_cutoff: {model_run['evidence_cutoff'] or '-'}")
     if args.model_type == "bayesian_update" and "posterior" in model_run["output"]:
         print(f"posterior: {model_run['output']['posterior']:.3f}")
+    if args.model_type == "trend_projection" and "projected_value" in model_run["output"]:
+        print(f"projected_value: {model_run['output']['projected_value']:.3f}")
+        print(f"slope: {model_run['output']['slope']:.6f} {model_run['output'].get('slope_unit', '')}".rstrip())
+        print(f"r_squared: {model_run['output']['r_squared']:.3f}")
 
 
 def _cmd_protocol(args: argparse.Namespace) -> None:

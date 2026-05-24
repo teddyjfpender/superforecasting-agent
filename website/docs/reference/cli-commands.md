@@ -29,7 +29,7 @@ For in-chat slash commands, see [Slash Commands Reference](./slash-commands.md).
 | `forecast sources` | List built-in evidence/source adapters, import command shapes, and watched-source prefixes. |
 | `forecast import <source>` | Import evidence, baselines, market/crowd priors, or benchmark data from supported adapters. |
 | `forecast base-rate` | Add or inspect reference-class/base-rate work. |
-| `forecast model` | Record a quantitative model run. |
+| `forecast model` | Record a quantitative model run, including Bayesian updates and deterministic trend projections. |
 | `forecast update` | Append a forecast snapshot with probability/distribution, confidence, rationale, evidence refs, and model refs. |
 | `forecast review` | Triage stale, high-impact, domain/topic, horizon, confidence, large-delta, or close-date review work. |
 | `forecast watch add` | Attach a watched source that can create review alerts when it changes. |

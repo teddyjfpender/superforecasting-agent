@@ -400,6 +400,57 @@ def test_forecast_cli_model_can_compute_bayesian_update(tmp_path, capsys):
     assert model_run["output"]["posterior"] == pytest.approx(0.7272727273)
 
 
+def test_forecast_cli_model_can_compute_trend_projection(tmp_path, capsys):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will trend projection compute a model run?",
+            "--resolution-criteria",
+            "Resolved yes if the trend projection model run is stored.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "model",
+            question_id,
+            "--type",
+            "trend_projection",
+            "--series-json",
+            json.dumps(
+                [
+                    {"date": "2026-01-01", "value": 10},
+                    {"date": "2026-01-02", "value": 12},
+                    {"date": "2026-01-03", "value": 14},
+                ]
+            ),
+            "--target-date",
+            "2026-01-04",
+        ],
+    )
+    output = capsys.readouterr().out
+    model_run_id = re.search(r"model_run: (mr_[a-f0-9]+)", output).group(1)
+    model_run = ForecastLedger(db_path).get_model_run(model_run_id)
+
+    assert "projected_value: 16.000" in output
+    assert "slope: 2.000000 per_day" in output
+    assert "r_squared: 1.000" in output
+    assert model_run["output"]["projected_value"] == pytest.approx(16.0)
+    assert model_run["parameters"]["target_date"] == "2026-01-04"
+
+
 def test_forecast_cli_update_preview_does_not_write_snapshot(tmp_path, capsys):
     parser = _parser()
     db_path = tmp_path / "forecasting.db"
