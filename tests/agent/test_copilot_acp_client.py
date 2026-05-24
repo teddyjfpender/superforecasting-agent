@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent.copilot_acp_client import CopilotACPClient
+from agent.copilot_acp_client import CopilotACPClient, _format_messages_as_prompt
 
 
 class _FakeProcess:
@@ -144,6 +144,35 @@ class CopilotACPClientSafetyTests(unittest.TestCase):
 
         self.assertIn("error", response)
         self.assertFalse(outside.exists())
+
+    def test_prompt_identity_is_forecast_native(self) -> None:
+        prompt = _format_messages_as_prompt(
+            [{"role": "user", "content": "hello"}],
+            model="copilot-test-model",
+        )
+
+        self.assertIn(
+            "active ACP agent backend for Superforecasting Agent",
+            prompt,
+        )
+        self.assertIn("Superforecasting Agent requested model hint", prompt)
+        self.assertNotIn("active ACP agent backend for Hermes", prompt)
+        self.assertNotIn("Hermes requested model hint", prompt)
+
+    def test_unsupported_acp_method_error_is_forecast_native(self) -> None:
+        response = self._dispatch(
+            {
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "unsupported/method",
+                "params": {},
+            },
+            cwd="/tmp",
+        )
+
+        message = response["error"]["message"]
+        self.assertIn("Superforecasting Agent", message)
+        self.assertNotIn("Hermes", message)
 
 
 if __name__ == "__main__":

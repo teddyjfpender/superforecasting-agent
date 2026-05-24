@@ -735,6 +735,7 @@ def test_provider_runtime_guidance_is_forecast_native():
     gemini_cloudcode = (root / "agent" / "gemini_cloudcode_adapter.py").read_text(encoding="utf-8")
     compression = (root / "agent" / "conversation_compression.py").read_text(encoding="utf-8")
     bedrock = (root / "agent" / "bedrock_adapter.py").read_text(encoding="utf-8")
+    copilot_acp = (root / "agent" / "copilot_acp_client.py").read_text(encoding="utf-8")
 
     assert "Superforecasting Agent typically makes 3-10 API calls" in gemini_native
     assert "forecast desk session" in gemini_native
@@ -746,6 +747,10 @@ def test_provider_runtime_guidance_is_forecast_native():
     assert "required by Hermes" not in compression
     assert "install Superforecasting Agent with Bedrock support" in bedrock
     assert "install Hermes with Bedrock support" not in bedrock
+    assert "active ACP agent backend for Superforecasting Agent" in copilot_acp
+    assert "active ACP agent backend for Hermes" not in copilot_acp
+    assert "not supported by Superforecasting Agent yet" in copilot_acp
+    assert "not supported by Hermes yet" not in copilot_acp
 
 
 def test_support_error_copy_is_forecast_native():
