@@ -685,7 +685,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
       '/forecast performance --last 5',
       '/forecast readiness',
       '/forecast pilot-report',
-      '/forecast pilot-cohort live-cohort.csv --dry-run --json',
+      '/forecast pilot-cohort examples/forecasting/live-cohort.example.csv --dry-run --json',
       '/forecast pilot-aggregate .pilot/*-export.json --json',
       '/forecast backtest --benchmarks'
     ],
