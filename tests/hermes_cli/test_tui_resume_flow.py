@@ -532,8 +532,20 @@ def test_launch_tui_exports_model_provider_and_toolsets(monkeypatch, main_mod):
     assert env["HERMES_MODEL"] == "nous/hermes-test"
     assert env["HERMES_INFERENCE_MODEL"] == "nous/hermes-test"
     assert env["HERMES_TUI_PROVIDER"] == "nous"
+    assert env["SUPERFORECASTING_AGENT_TUI_PROVIDER"] == "nous"
+    assert env["FORECAST_TUI_PROVIDER"] == "nous"
     assert env["HERMES_INFERENCE_PROVIDER"] == "nous"
     assert env["HERMES_TUI_TOOLSETS"] == "web,terminal"
+    assert env["SUPERFORECASTING_AGENT_TUI_TOOLSETS"] == "web,terminal"
+    assert env["FORECAST_TUI_TOOLSETS"] == "web,terminal"
+    assert env["SUPERFORECASTING_AGENT_PYTHON"] == sys.executable
+    assert env["FORECAST_PYTHON"] == sys.executable
+    assert env["HERMES_PYTHON"] == sys.executable
+    assert env["SUPERFORECASTING_AGENT_PYTHON_SRC_ROOT"] == str(main_mod.PROJECT_ROOT)
+    assert env["FORECAST_PYTHON_SRC_ROOT"] == str(main_mod.PROJECT_ROOT)
+    assert env["HERMES_PYTHON_SRC_ROOT"] == str(main_mod.PROJECT_ROOT)
+    assert env["SUPERFORECASTING_AGENT_CWD"] == env["HERMES_CWD"]
+    assert env["FORECAST_CWD"] == env["HERMES_CWD"]
     active_path = Path(env["SUPERFORECASTING_AGENT_TUI_ACTIVE_SESSION_FILE"])
     assert env["FORECAST_TUI_ACTIVE_SESSION_FILE"] == str(active_path)
     assert env["HERMES_TUI_ACTIVE_SESSION_FILE"] == str(active_path)
@@ -565,6 +577,8 @@ def test_launch_tui_exit_code_42_relaunches_update(monkeypatch, main_mod):
 def test_launch_tui_drops_stale_resume_env_without_resume_arg(monkeypatch, main_mod):
     captured = {}
 
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_TUI_RESUME", "stale-native-session")
+    monkeypatch.setenv("FORECAST_TUI_RESUME", "stale-forecast-session")
     monkeypatch.setenv("HERMES_TUI_RESUME", "stale-missing-session")
     monkeypatch.setattr(
         main_mod,
@@ -580,6 +594,8 @@ def test_launch_tui_drops_stale_resume_env_without_resume_arg(monkeypatch, main_
     with pytest.raises(SystemExit):
         main_mod._launch_tui()
 
+    assert "SUPERFORECASTING_AGENT_TUI_RESUME" not in captured["env"]
+    assert "FORECAST_TUI_RESUME" not in captured["env"]
     assert "HERMES_TUI_RESUME" not in captured["env"]
 
 
@@ -602,6 +618,8 @@ def test_launch_tui_sets_resume_env_from_resume_arg(monkeypatch, main_mod):
         main_mod._launch_tui(resume_session_id="20260518_000000_goodid")
 
     assert captured["env"]["HERMES_TUI_RESUME"] == "20260518_000000_goodid"
+    assert captured["env"]["SUPERFORECASTING_AGENT_TUI_RESUME"] == "20260518_000000_goodid"
+    assert captured["env"]["FORECAST_TUI_RESUME"] == "20260518_000000_goodid"
 
 
 def test_make_tui_argv_dev_prebuilds_hermes_ink(monkeypatch, main_mod, tmp_path):

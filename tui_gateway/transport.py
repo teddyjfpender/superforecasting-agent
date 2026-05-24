@@ -44,6 +44,19 @@ _PEER_GONE_ERRNOS = frozenset({
 
 logger = logging.getLogger(__name__)
 
+
+def _tui_env(name: str) -> str:
+    for key in (
+        f"SUPERFORECASTING_AGENT_TUI_{name}",
+        f"FORECAST_TUI_{name}",
+        f"HERMES_TUI_{name}",
+    ):
+        value = (os.environ.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
 # Optional knob: when true, StdioTransport does not call ``stream.flush``
 # after writing.  Use this on environments where a half-closed pipe (TUI
 # Node parent quit while the gateway is still emitting events) makes
@@ -55,7 +68,7 @@ logger = logging.getLogger(__name__)
 # those, JSON-RPC frames will accumulate in the buffer and the TUI
 # will hang waiting for ``gateway.ready``.  Default stays off so the
 # existing flush-after-write behaviour is unchanged.
-_DISABLE_FLUSH = (os.environ.get("HERMES_TUI_GATEWAY_NO_FLUSH", "") or "").strip().lower() in {
+_DISABLE_FLUSH = _tui_env("GATEWAY_NO_FLUSH").lower() in {
     "1",
     "true",
     "yes",

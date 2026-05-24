@@ -1,10 +1,35 @@
 import os
 import sys
 
+
+def _first_env(names: tuple[str, ...]) -> str:
+    for name in names:
+        value = (os.environ.get(name) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _runtime_env(name: str) -> str:
+    return _first_env((
+        f"SUPERFORECASTING_AGENT_{name}",
+        f"FORECAST_{name}",
+        f"HERMES_{name}",
+    ))
+
+
+def _tui_env(name: str) -> str:
+    return _first_env((
+        f"SUPERFORECASTING_AGENT_TUI_{name}",
+        f"FORECAST_TUI_{name}",
+        f"HERMES_TUI_{name}",
+    ))
+
+
 # Guard against a local utils/ (or other package) in CWD shadowing installed
-# hermes modules.  hermes_cli sets HERMES_PYTHON_SRC_ROOT before spawning this
-# subprocess; inserting it first ensures the installed packages win.
-_src_root = os.environ.get("HERMES_PYTHON_SRC_ROOT", "")
+# runtime modules.  The launcher sets PYTHON_SRC_ROOT aliases before spawning
+# this subprocess; inserting it first ensures the installed packages win.
+_src_root = _runtime_env("PYTHON_SRC_ROOT")
 if _src_root and _src_root not in sys.path:
     sys.path.insert(0, _src_root)
 # Strip '' and '.' — both resolve to CWD at import time and can let a local
@@ -24,11 +49,11 @@ from tui_gateway.transport import TeeTransport
 def _install_sidecar_publisher() -> None:
     """Mirror every dispatcher emit to the dashboard sidebar via WS.
 
-    Activated by `HERMES_TUI_SIDECAR_URL`, set by the dashboard's
+    Activated by the TUI sidecar URL env aliases, set by the dashboard's
     ``/api/pty`` endpoint when a chat tab passes a ``channel`` query param.
     Best-effort: connect failure or runtime drop falls back to stdio-only.
     """
-    url = os.environ.get("HERMES_TUI_SIDECAR_URL")
+    url = _tui_env("SIDECAR_URL")
 
     if not url:
         return
@@ -44,7 +69,8 @@ def _install_sidecar_publisher() -> None:
 # falling back to ``os._exit(0)`` so a wedged worker mid-flush can't
 # strand the process.  1s covers the gateway's own shutdown work
 # (thread-pool drain + session finalize) on every machine we've
-# tested; override via ``HERMES_TUI_GATEWAY_SHUTDOWN_GRACE_S`` if a
+# tested; override via ``SUPERFORECASTING_AGENT_TUI_GATEWAY_SHUTDOWN_GRACE_S``
+# or compatibility aliases if a
 # slower environment needs more headroom (e.g. encrypted disks
 # flushing checkpoints) and accept that a longer grace also means a
 # longer wait when shutdown actually deadlocks.
@@ -52,7 +78,7 @@ _DEFAULT_SHUTDOWN_GRACE_S = 1.0
 
 
 def _shutdown_grace_seconds() -> float:
-    raw = (os.environ.get("HERMES_TUI_GATEWAY_SHUTDOWN_GRACE_S") or "").strip()
+    raw = _tui_env("GATEWAY_SHUTDOWN_GRACE_S")
     if not raw:
         return _DEFAULT_SHUTDOWN_GRACE_S
     try:
@@ -76,7 +102,7 @@ def _log_signal(signum: int, frame) -> None:
     pool — a thread holding ``_stdout_lock`` mid-flush would block the
     interpreter shutdown indefinitely.  We now log the stack, give the
     process the configured shutdown grace
-    (``HERMES_TUI_GATEWAY_SHUTDOWN_GRACE_S``, default
+    (``SUPERFORECASTING_AGENT_TUI_GATEWAY_SHUTDOWN_GRACE_S``, default
     ``_DEFAULT_SHUTDOWN_GRACE_S``) to drain naturally on a background
     thread, and fall back to ``os._exit(0)`` so a wedged write/flush
     can never strand the process.

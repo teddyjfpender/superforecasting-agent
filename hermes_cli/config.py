@@ -1011,10 +1011,10 @@ DEFAULT_CONFIG = {
         "personality": "neutral",
         "resume_display": "full",
         "busy_input_mode": "interrupt",  # interrupt | queue | steer
-        # When true, `hermes --tui` auto-resumes the most recent human-
-        # facing session on launch instead of forging a fresh one.
-        # Mirrors `hermes -c` muscle memory.  Default off so existing
-        # users aren't surprised.  HERMES_TUI_RESUME=<id> always wins.
+        # When true, the TUI auto-resumes the most recent human-facing
+        # research session on launch instead of forging a fresh one.
+        # Mirrors `superforecasting-agent -c` muscle memory.  Default off
+        # so existing users aren't surprised. TUI_RESUME env aliases win.
         "tui_auto_resume_recent": False,
         "bell_on_complete": False,
         "show_reasoning": False,

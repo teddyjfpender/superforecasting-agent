@@ -3383,6 +3383,37 @@ _event_channels: dict[str, set] = {}
 _event_lock = asyncio.Lock()
 
 
+def _tui_env_alias_value(env: dict, name: str) -> Optional[str]:
+    for key in (
+        f"SUPERFORECASTING_AGENT_TUI_{name}",
+        f"FORECAST_TUI_{name}",
+        f"HERMES_TUI_{name}",
+    ):
+        value = (env.get(key) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def _setdefault_tui_env_aliases(env: dict, name: str, default: str) -> None:
+    value = _tui_env_alias_value(env, name) or default
+    for key in (
+        f"SUPERFORECASTING_AGENT_TUI_{name}",
+        f"FORECAST_TUI_{name}",
+        f"HERMES_TUI_{name}",
+    ):
+        env.setdefault(key, value)
+
+
+def _set_tui_env_aliases(env: dict, name: str, value: str) -> None:
+    for key in (
+        f"SUPERFORECASTING_AGENT_TUI_{name}",
+        f"FORECAST_TUI_{name}",
+        f"HERMES_TUI_{name}",
+    ):
+        env[key] = value
+
+
 def _resolve_chat_argv(
     resume: Optional[str] = None,
     sidecar_url: Optional[str] = None,
@@ -3393,14 +3424,15 @@ def _resolve_chat_argv(
     function to inject a tiny fake command (``cat``, ``sh -c 'printf …'``)
     so nothing has to build Node or the TUI bundle.
 
-    Session resume is propagated via the ``HERMES_TUI_RESUME`` env var —
-    matching what ``hermes_cli.main._launch_tui`` does for the CLI path.
-    Appending ``--resume <id>`` to argv doesn't work because ``ui-tui`` does
-    not parse its argv.
+    Session resume is propagated via fork-native TUI env aliases, with the
+    legacy ``HERMES_TUI_RESUME`` name preserved for compatibility. Appending
+    ``--resume <id>`` to argv doesn't work because ``ui-tui`` does not parse
+    its argv.
 
-    `sidecar_url` (when set) is forwarded as ``HERMES_TUI_SIDECAR_URL`` so
-    the spawned ``tui_gateway.entry`` can mirror dispatcher emits to the
-    dashboard's ``/api/pub`` endpoint (see :func:`pub_ws`).
+    `sidecar_url` (when set) is forwarded through fork-native sidecar env
+    aliases, with ``HERMES_TUI_SIDECAR_URL`` preserved so the spawned
+    ``tui_gateway.entry`` can mirror dispatcher emits to the dashboard's
+    ``/api/pub`` endpoint (see :func:`pub_ws`).
     """
     from hermes_cli.main import PROJECT_ROOT, _make_tui_argv
 
@@ -3413,17 +3445,17 @@ def _resolve_chat_argv(
     # makes browser-side transcript scrolling feel broken. Keep the terminal
     # build unchanged for native CLI usage; only disable mouse tracking for
     # the dashboard PTY path.
-    env.setdefault("HERMES_TUI_DISABLE_MOUSE", "1")
-    env.setdefault("HERMES_TUI_INLINE", "1")
+    _setdefault_tui_env_aliases(env, "DISABLE_MOUSE", "1")
+    _setdefault_tui_env_aliases(env, "INLINE", "1")
 
     if resume:
         latest_resume, _latest_path = _session_latest_descendant(resume)
         if latest_resume:
             resume = latest_resume
-        env["HERMES_TUI_RESUME"] = resume
+        _set_tui_env_aliases(env, "RESUME", resume)
 
     if sidecar_url:
-        env["HERMES_TUI_SIDECAR_URL"] = sidecar_url
+        _set_tui_env_aliases(env, "SIDECAR_URL", sidecar_url)
 
     return list(argv), str(cwd) if cwd else None, env
 
@@ -3608,11 +3640,11 @@ async def gateway_ws(ws: WebSocket) -> None:
 # /api/pub + /api/events — chat-tab event broadcast.
 #
 # The PTY-side ``tui_gateway.entry`` opens /api/pub at startup (driven by
-# HERMES_TUI_SIDECAR_URL set in /api/pty's PTY env) and writes every
-# dispatcher emit through it.  The dashboard fans those frames out to any
-# subscriber that opened /api/events on the same channel id.  This is what
-# gives the React sidebar its tool-call feed without breaking the PTY
-# child's stdio handshake with Ink.
+# the TUI sidecar URL env aliases set in /api/pty's PTY env) and writes
+# every dispatcher emit through it.  The dashboard fans those frames out
+# to any subscriber that opened /api/events on the same channel id.  This
+# is what gives the React sidebar its tool-call feed without breaking the
+# PTY child's stdio handshake with Ink.
 # ---------------------------------------------------------------------------
 
 

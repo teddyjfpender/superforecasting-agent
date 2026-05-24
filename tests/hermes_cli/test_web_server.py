@@ -850,7 +850,13 @@ class TestNewEndpoints:
         assert resp.status_code == 200
         wrapper_path = wrapper_dir / "writer"
         assert wrapper_path.exists()
-        assert wrapper_path.read_text() == '#!/bin/sh\nexec hermes -p writer "$@"\n'
+        assert wrapper_path.read_text() == (
+            "#!/bin/sh\n"
+            "if command -v superforecasting-agent >/dev/null 2>&1; then\n"
+            '  exec superforecasting-agent -p writer "$@"\n'
+            "fi\n"
+            'exec hermes -p writer "$@"\n'
+        )
 
     def test_profiles_create_with_clone_from_default_copies_default_skills(self, monkeypatch):
         from hermes_constants import get_hermes_home
@@ -2262,8 +2268,39 @@ class TestPtyWebSocket:
 
         _argv, _cwd, env = self.ws_module._resolve_chat_argv()
 
+        assert env["SUPERFORECASTING_AGENT_TUI_INLINE"] == "1"
+        assert env["FORECAST_TUI_INLINE"] == "1"
         assert env["HERMES_TUI_INLINE"] == "1"
+        assert env["SUPERFORECASTING_AGENT_TUI_DISABLE_MOUSE"] == "1"
+        assert env["FORECAST_TUI_DISABLE_MOUSE"] == "1"
         assert env["HERMES_TUI_DISABLE_MOUSE"] == "1"
+
+    def test_resolve_chat_argv_exports_resume_and_sidecar_aliases(self, monkeypatch):
+        """Dashboard chat forwards fork-native TUI env aliases to the PTY child."""
+        import hermes_cli.main as main_mod
+
+        monkeypatch.setattr(
+            main_mod,
+            "_make_tui_argv",
+            lambda project_root, tui_dev=False: (["node", "dist/entry.js"], "/tmp/ui-tui"),
+        )
+        monkeypatch.setattr(
+            self.ws_module,
+            "_session_latest_descendant",
+            lambda resume: (resume, None),
+        )
+
+        _argv, _cwd, env = self.ws_module._resolve_chat_argv(
+            resume="sess-42",
+            sidecar_url="ws://127.0.0.1:9119/api/pub?token=abc",
+        )
+
+        assert env["SUPERFORECASTING_AGENT_TUI_RESUME"] == "sess-42"
+        assert env["FORECAST_TUI_RESUME"] == "sess-42"
+        assert env["HERMES_TUI_RESUME"] == "sess-42"
+        assert env["SUPERFORECASTING_AGENT_TUI_SIDECAR_URL"].startswith("ws://127.0.0.1")
+        assert env["FORECAST_TUI_SIDECAR_URL"] == env["SUPERFORECASTING_AGENT_TUI_SIDECAR_URL"]
+        assert env["HERMES_TUI_SIDECAR_URL"] == env["SUPERFORECASTING_AGENT_TUI_SIDECAR_URL"]
 
     def test_rejects_when_embedded_chat_disabled(self, monkeypatch):
         monkeypatch.setattr(self.ws_module, "_DASHBOARD_EMBEDDED_CHAT_ENABLED", False)

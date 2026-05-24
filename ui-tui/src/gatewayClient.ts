@@ -36,7 +36,7 @@ const resolveSidecarUrl = () => {
 }
 
 const resolvePython = (root: string) => {
-  const configured = process.env.HERMES_PYTHON?.trim() || process.env.PYTHON?.trim()
+  const configured = runtimeEnvValue('PYTHON') || process.env.PYTHON?.trim()
 
   if (configured) {
     return configured
@@ -476,7 +476,7 @@ export class GatewayClient extends EventEmitter {
   }
 
   start() {
-    const root = process.env.HERMES_PYTHON_SRC_ROOT ?? resolve(import.meta.dirname, '../../')
+    const root = runtimeEnvValue('PYTHON_SRC_ROOT') || resolve(import.meta.dirname, '../../')
     const attachUrl = resolveGatewayAttachUrl()
     const sidecarUrl = resolveSidecarUrl()
 

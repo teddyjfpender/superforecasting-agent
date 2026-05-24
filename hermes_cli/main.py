@@ -1103,6 +1103,36 @@ def _tui_env_truthy(name: str = "") -> bool:
     return _tui_env_value(name).lower() in {"1", "true", "yes", "on"}
 
 
+def _set_tui_env_aliases(env: dict, name: str, value: object) -> None:
+    suffix = f"_{name}" if name else ""
+    text = str(value)
+    env[f"SUPERFORECASTING_AGENT_TUI{suffix}"] = text
+    env[f"FORECAST_TUI{suffix}"] = text
+    env[f"HERMES_TUI{suffix}"] = text
+
+
+def _pop_tui_env_aliases(env: dict, name: str) -> None:
+    suffix = f"_{name}" if name else ""
+    env.pop(f"SUPERFORECASTING_AGENT_TUI{suffix}", None)
+    env.pop(f"FORECAST_TUI{suffix}", None)
+    env.pop(f"HERMES_TUI{suffix}", None)
+
+
+def _runtime_env_value(name: str) -> str | None:
+    return _first_env_value((
+        f"SUPERFORECASTING_AGENT_{name}",
+        f"FORECAST_{name}",
+        f"HERMES_{name}",
+    ))
+
+
+def _set_runtime_env_aliases(env: dict, name: str, value: object) -> None:
+    text = str(value)
+    env[f"SUPERFORECASTING_AGENT_{name}"] = text
+    env[f"FORECAST_{name}"] = text
+    env[f"HERMES_{name}"] = text
+
+
 def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
     """TUI: --dev → tsx src; else node dist (forecast TUI_DIR prebuilt or esbuild)."""
     _ensure_tui_node()
@@ -1270,14 +1300,17 @@ def _launch_tui(
         prefix="forecast-tui-active-session-", suffix=".json"
     )
     os.close(active_session_fd)
-    env["SUPERFORECASTING_AGENT_TUI_ACTIVE_SESSION_FILE"] = active_session_file
-    env["FORECAST_TUI_ACTIVE_SESSION_FILE"] = active_session_file
-    env["HERMES_TUI_ACTIVE_SESSION_FILE"] = active_session_file
-    env["HERMES_PYTHON_SRC_ROOT"] = os.environ.get(
-        "HERMES_PYTHON_SRC_ROOT", str(PROJECT_ROOT)
+    _set_tui_env_aliases(env, "ACTIVE_SESSION_FILE", active_session_file)
+    python_src_root = _runtime_env_value("PYTHON_SRC_ROOT") or str(PROJECT_ROOT)
+    _set_runtime_env_aliases(env, "PYTHON_SRC_ROOT", python_src_root)
+    python_bin = (
+        _runtime_env_value("PYTHON")
+        or os.environ.get("PYTHON", "").strip()
+        or sys.executable
     )
-    env.setdefault("HERMES_PYTHON", sys.executable)
-    env.setdefault("HERMES_CWD", os.getcwd())
+    _set_runtime_env_aliases(env, "PYTHON", python_bin)
+    runtime_cwd = _runtime_env_value("CWD") or os.getcwd()
+    _set_runtime_env_aliases(env, "CWD", runtime_cwd)
     env.setdefault("NODE_ENV", "development" if tui_dev else "production")
 
     wt_info = None
@@ -1299,18 +1332,18 @@ def _launch_tui(
             wt_info = None
         if not wt_info:
             sys.exit(1)
-        env["HERMES_CWD"] = wt_info["path"]
+        _set_runtime_env_aliases(env, "CWD", wt_info["path"])
         env["TERMINAL_CWD"] = wt_info["path"]
 
     if model:
         env["HERMES_MODEL"] = model
         env["HERMES_INFERENCE_MODEL"] = model
     if provider:
-        env["HERMES_TUI_PROVIDER"] = provider
+        _set_tui_env_aliases(env, "PROVIDER", provider)
         env["HERMES_INFERENCE_PROVIDER"] = provider
     tui_toolsets = _normalize_tui_toolsets(toolsets)
     if tui_toolsets:
-        env["HERMES_TUI_TOOLSETS"] = ",".join(tui_toolsets)
+        _set_tui_env_aliases(env, "TOOLSETS", ",".join(tui_toolsets))
     if skills:
         if isinstance(skills, (list, tuple)):
             flattened = []
@@ -1319,25 +1352,25 @@ def _launch_tui(
                     part.strip() for part in str(item).split(",") if part.strip()
                 )
             if flattened:
-                env["HERMES_TUI_SKILLS"] = ",".join(flattened)
+                _set_tui_env_aliases(env, "SKILLS", ",".join(flattened))
         else:
             value = str(skills).strip()
             if value:
-                env["HERMES_TUI_SKILLS"] = value
+                _set_tui_env_aliases(env, "SKILLS", value)
     if query:
-        env["HERMES_TUI_QUERY"] = query
+        _set_tui_env_aliases(env, "QUERY", query)
     if image:
-        env["HERMES_TUI_IMAGE"] = image
+        _set_tui_env_aliases(env, "IMAGE", image)
     if checkpoints:
-        env["HERMES_TUI_CHECKPOINTS"] = "1"
+        _set_tui_env_aliases(env, "CHECKPOINTS", "1")
     if pass_session_id:
-        env["HERMES_TUI_PASS_SESSION_ID"] = "1"
+        _set_tui_env_aliases(env, "PASS_SESSION_ID", "1")
     if max_turns is not None:
-        env["HERMES_TUI_MAX_TURNS"] = str(max_turns)
+        _set_tui_env_aliases(env, "MAX_TURNS", str(max_turns))
     if verbose:
-        env["HERMES_TUI_TOOL_PROGRESS"] = "verbose"
+        _set_tui_env_aliases(env, "TOOL_PROGRESS", "verbose")
     elif quiet:
-        env["HERMES_TUI_TOOL_PROGRESS"] = "off"
+        _set_tui_env_aliases(env, "TOOL_PROGRESS", "off")
     if accept_hooks:
         env["HERMES_ACCEPT_HOOKS"] = "1"
     # Guarantee an 8GB V8 heap + exposed GC for the TUI. Default node cap is
@@ -1351,16 +1384,15 @@ def _launch_tui(
     if "--expose-gc" not in _tokens:
         _tokens.append("--expose-gc")
     env["NODE_OPTIONS"] = " ".join(_tokens)
-    # HERMES_TUI_RESUME is an internal hand-off from the Python wrapper to the
-    # Ink app.  Because we start from os.environ.copy(), an exported/stale value
-    # in the user's shell would otherwise make a plain `hermes --tui` try to
-    # resume a non-existent session and leave the UI at "error: session not
-    # found" with no live session.  Only forward a resume id that argparse
-    # resolved for this invocation; direct `node ui-tui/dist/entry.js` users can
-    # still set HERMES_TUI_RESUME themselves.
-    env.pop("HERMES_TUI_RESUME", None)
+    # TUI_RESUME is an internal hand-off from the Python wrapper to the Ink app.
+    # Because we start from os.environ.copy(), an exported/stale value in the
+    # user's shell would otherwise make a plain TUI launch try to resume a
+    # non-existent session and leave the UI at "error: session not found" with
+    # no live session. Only forward a resume id that argparse resolved for this
+    # invocation; direct `node ui-tui/dist/entry.js` users can still set it.
+    _pop_tui_env_aliases(env, "RESUME")
     if resume_session_id:
-        env["HERMES_TUI_RESUME"] = resume_session_id
+        _set_tui_env_aliases(env, "RESUME", resume_session_id)
 
     argv, cwd = _make_tui_argv(tui_dir, tui_dev)
     code: Optional[int] = None
