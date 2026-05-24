@@ -7484,18 +7484,38 @@ class ForecastLedger:
                 "a forecast update if the probability should move."
             )
         if scope_type == "domain":
-            return f"Run `forecast review --domain {scope_ref}` and research impacted active questions."
+            domain_arg = self._cli_arg(scope_ref)
+            return (
+                f"Run `forecast self-check --domain {domain_arg} --auto-score --auto-postmortem`, "
+                f"then run `forecast review --domain {domain_arg}` and update affected forecasts explicitly."
+            )
         if scope_type == "topic":
-            return f"Run `forecast self-check --topic {scope_ref}` and research impacted active questions."
+            topic_arg = self._cli_arg(scope_ref)
+            return (
+                f"Run `forecast self-check --topic {topic_arg} --auto-score --auto-postmortem`, "
+                "then review impacted active questions and calibration lessons."
+            )
         if scope_type == "portfolio":
-            return f"Run `forecast self-check --portfolio {scope_ref}` and research impacted active questions."
+            portfolio_arg = self._cli_arg(scope_ref)
+            return (
+                f"Run `forecast self-check --portfolio {portfolio_arg} --auto-score --auto-postmortem`, "
+                "then review impacted active questions and calibration lessons."
+            )
         if scope_type == "domain_topic":
             payload = json_loads(scope_ref, {})
+            domain_arg = self._cli_arg(str(payload.get("domain", "")))
+            topic_arg = self._cli_arg(str(payload.get("topic", "")))
             return (
-                f"Run `forecast self-check --domain {payload.get('domain', '')} "
-                f"--topic {payload.get('topic', '')}` and research impacted active questions."
+                f"Run `forecast self-check --domain {domain_arg} --topic {topic_arg} "
+                "--auto-score --auto-postmortem`, then review impacted active questions and calibration lessons."
             )
         return "Review the watched source and update affected forecasts explicitly."
+
+    def _cli_arg(self, value: str) -> str:
+        text = str(value or "").strip()
+        if re.fullmatch(r"[A-Za-z0-9_./:@%+=,-]+", text):
+            return text
+        return json.dumps(text)
 
     def _candidate_title_from_source(self, source: str, source_type: str) -> str:
         if source_type == "url":

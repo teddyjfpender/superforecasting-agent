@@ -1525,6 +1525,56 @@ def test_watched_file_source_creates_alert_on_change(tmp_path):
     assert updated["last_seen_signature"] != watch["last_seen_signature"]
 
 
+@pytest.mark.parametrize(
+    ("scope_type", "scope_ref", "expected_self_check", "expected_followup"),
+    [
+        (
+            "domain",
+            "public health",
+            'forecast self-check --domain "public health" --auto-score --auto-postmortem',
+            'forecast review --domain "public health"',
+        ),
+        (
+            "topic",
+            "vaccine approvals",
+            'forecast self-check --topic "vaccine approvals" --auto-score --auto-postmortem',
+            "calibration lessons",
+        ),
+    ],
+)
+def test_watched_file_domain_topic_alerts_recommend_learning_self_check(
+    tmp_path,
+    scope_type,
+    scope_ref,
+    expected_self_check,
+    expected_followup,
+):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    source = tmp_path / f"{scope_type}.txt"
+    source.write_text("initial domain evidence", encoding="utf-8")
+    watch = ledger.add_watched_source(
+        scope_type=scope_type,
+        scope_ref=scope_ref,
+        source=str(source),
+    )
+
+    assert watch["source_type"] == "file"
+    assert ledger.check_watched_sources(scope_type=scope_type, scope_ref=scope_ref) == []
+
+    source.write_text("changed domain evidence", encoding="utf-8")
+    alerts = ledger.check_watched_sources(
+        scope_type=scope_type,
+        scope_ref=scope_ref,
+        now="2026-01-10T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [scope_ref]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert expected_self_check in alerts[0].recommended_action
+    assert expected_followup in alerts[0].recommended_action
+    assert "update affected forecasts explicitly" in alerts[0].recommended_action or "calibration lessons" in alerts[0].recommended_action
+
+
 def test_watched_url_source_creates_alert_on_content_change(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     question = ledger.create_question(
