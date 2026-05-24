@@ -79,6 +79,7 @@ forecast import wikipediapageviews en.wikipedia.org/Topic --question <id>
 forecast import github owner/repo --question <id>
 forecast import githubissues owner/repo --question <id>
 forecast import pypi package-name --question <id>
+forecast import npm package-name --question <id>
 forecast import hackernews "product query" --question <id>
 forecast import reddit "topic query" --question <id>
 forecast import federalregister "rule query" --question <id>
@@ -148,6 +149,7 @@ forecast watch add --question <id> gdelt:"topic query"
 forecast watch add --question <id> openalex:"research query"
 forecast watch add --question <id> hackernews:"product query"
 forecast watch add --question <id> pypi:package-name
+forecast watch add --question <id> npm:package-name
 forecast watch add --question <id> reddit:"topic query"
 forecast watch add --question <id> federalregister:"rule query"
 forecast watch add --question <id> courtlistener:"case or legal query"

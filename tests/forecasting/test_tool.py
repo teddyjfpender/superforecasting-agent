@@ -14,6 +14,7 @@ from forecasting.source_adapters import (
     HackerNewsItem,
     GitHubIssue,
     NasaEonetEvent,
+    NpmPackageVersion,
     NwsAlert,
     OpenFdaDrugApplication,
     RedditPost,
@@ -84,7 +85,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "pypi", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "stooq", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "stooq", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_lifecycle(tmp_path):
@@ -2356,6 +2357,55 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert pypi_evidence["published_at"] == "2026-05-21T11:05:00Z"
     assert pypi_evidence["metadata"]["adapter"] == "pypi"
     assert pypi_evidence["metadata"]["adapter_item"]["file_count"] == 2
+
+    def fake_npm(source, **kwargs):
+        assert source == "@forecast/desk"
+        assert kwargs["limit"] == 1
+        assert kwargs["since"] == "2026-05-01"
+        assert kwargs["api_base_url"] == "https://example.test/npm"
+        return [
+            NpmPackageVersion(
+                package="@forecast/desk",
+                version="2.0.0",
+                description="Forecasting interface components.",
+                url="https://www.npmjs.com/package/@forecast/desk/v/2.0.0",
+                tarball_url="https://registry.npm.test/@forecast/desk/-/desk-2.0.0.tgz",
+                published_at="2026-05-21T11:00:00Z",
+                license="Apache-2.0",
+                maintainers=["analyst"],
+                keywords=["forecasting"],
+                deprecated=None,
+                dependency_count=2,
+                source_name="npm",
+                entry_id="@forecast/desk:2.0.0",
+                raw={"version": "2.0.0"},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_npm_package_versions", fake_npm)
+    npm_imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "npm",
+                "source": "@forecast/desk",
+                "limit": 1,
+                "since": "2026-05-01",
+                "api_base_url": "https://example.test/npm",
+            }
+        )
+    )
+
+    assert npm_imported["imported_count"] == 1
+    npm_evidence = npm_imported["imported"][0]["evidence"]
+    assert npm_evidence["source_type"] == "adapter:npm"
+    assert npm_evidence["source_name"] == "npm"
+    assert npm_evidence["claim"] == "npm package @forecast/desk 2.0.0: Forecasting interface components."
+    assert npm_evidence["published_at"] == "2026-05-21T11:00:00Z"
+    assert npm_evidence["metadata"]["adapter"] == "npm"
+    assert npm_evidence["metadata"]["adapter_item"]["dependency_count"] == 2
 
     def fake_usgs(source, **kwargs):
         assert source == "minmagnitude=5"

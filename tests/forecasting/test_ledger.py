@@ -32,6 +32,7 @@ from forecasting.source_adapters import (
     ManifoldMarketImport,
     MetaculusQuestionImport,
     NasaEonetEvent,
+    NpmPackageVersion,
     NvdCve,
     NwsAlert,
     OpenFdaDrugApplication,
@@ -2528,6 +2529,63 @@ def test_watched_pypi_source_creates_alert_on_release_change(tmp_path, monkeypat
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert f"forecast import pypi forecast-desk --question {question.id}" in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_npm_source_creates_alert_on_version_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched npm package versions be detected?",
+        resolution_criteria="Resolved yes if watched npm package changes create alerts.",
+    )
+    versions = ["2.0.0"]
+    captured_sources = []
+
+    def fake_load_npm_versions(source: str, **kwargs):
+        captured_sources.append(source)
+        return [
+            NpmPackageVersion(
+                package=source,
+                version=versions[0],
+                description="Forecasting interface components.",
+                url=f"https://www.npmjs.com/package/{source}/v/{versions[0]}",
+                tarball_url=f"https://registry.npm.test/{source}/-/{versions[0]}.tgz",
+                published_at="2026-05-21T11:00:00Z",
+                license="Apache-2.0",
+                maintainers=["analyst"],
+                keywords=["forecasting"],
+                deprecated=None,
+                dependency_count=2,
+                source_name="npm",
+                entry_id=f"{source}:{versions[0]}",
+                raw={"version": versions[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_npm_package_versions", fake_load_npm_versions)
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="npm:@forecast/desk",
+    )
+
+    assert watch["source_type"] == "npm"
+    assert watch["last_seen_signature"].startswith("npm:1:")
+    assert captured_sources[-1] == "@forecast/desk"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    versions[0] = "2.1.0"
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f"forecast import npm @forecast/desk --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]

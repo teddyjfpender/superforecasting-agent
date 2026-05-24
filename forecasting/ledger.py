@@ -79,6 +79,7 @@ WATCH_SOURCE_TYPES = {
     "openfda",
     "pubmed",
     "pypi",
+    "npm",
     "owid",
     "fred",
     "eia",
@@ -2893,7 +2894,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, github, githubissues, pypi, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, stooq, "
+                "source_type must be file, url, manual, rss, gdelt, github, githubissues, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, stooq, "
                 "sec, arxiv, openalex, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -2981,6 +2982,7 @@ class ForecastLedger:
                     "github",
                     "githubissues",
                     "pypi",
+                    "npm",
                     "hackernews",
                     "reddit",
                     "federalregister",
@@ -5194,6 +5196,8 @@ class ForecastLedger:
             return "githubissues"
         if source.startswith("pypi:"):
             return "pypi"
+        if source.startswith("npm:"):
+            return "npm"
         if source.startswith("hackernews:"):
             return "hackernews"
         if source.startswith("reddit:"):
@@ -5268,6 +5272,8 @@ class ForecastLedger:
             return self._github_issues_source_signature(source)
         if source_type == "pypi":
             return self._pypi_source_signature(source)
+        if source_type == "npm":
+            return self._npm_source_signature(source)
         if source_type == "hackernews":
             return self._hackernews_source_signature(source)
         if source_type == "reddit":
@@ -5498,6 +5504,31 @@ class ForecastLedger:
         ]
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"pypi:{len(payload)}:{digest}"
+
+    def _npm_source_signature(self, source: str) -> str:
+        source_value = source.split(":", 1)[1].strip() if source.startswith("npm:") else source.strip()
+        if not source_value:
+            return "missing:npm:empty-package"
+        try:
+            from forecasting.source_adapters import load_npm_package_versions
+
+            versions = load_npm_package_versions(source_value, limit=50)
+        except Exception as exc:
+            return f"missing:npm:{source_value}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "dependency_count": version.dependency_count,
+                "deprecated": version.deprecated,
+                "entry_id": version.entry_id,
+                "license": version.license,
+                "package": version.package,
+                "published_at": version.published_at,
+                "version": version.version,
+            }
+            for version in versions
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"npm:{len(payload)}:{digest}"
 
     def _hackernews_source_signature(self, source: str) -> str:
         query = source.split(":", 1)[1].strip() if source.startswith("hackernews:") else source.strip()
@@ -6315,6 +6346,12 @@ class ForecastLedger:
             source_value = source.split(":", 1)[1].strip() if source.startswith("pypi:") else source
             return (
                 f"Run `forecast import pypi {source_value} --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "npm" and scope_type == "question" and scope_ref:
+            source_value = source.split(":", 1)[1].strip() if source.startswith("npm:") else source
+            return (
+                f"Run `forecast import npm {source_value} --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "hackernews" and scope_type == "question" and scope_ref:

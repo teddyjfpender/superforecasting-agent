@@ -561,6 +561,7 @@ forecast import sec <cik> --question <id>
 forecast import arxiv <query> --question <id>
 forecast import pubmed <query-or-PMID> --question <id>
 forecast import pypi <package> --question <id>
+forecast import npm <package> --question <id>
 forecast import manifold <url-or-id-or-slug>
 forecast import polymarket <url-or-id-or-slug>
 forecast import kalshi <url-or-ticker>

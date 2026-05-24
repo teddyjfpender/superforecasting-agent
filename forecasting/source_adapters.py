@@ -296,6 +296,24 @@ class PypiRelease:
 
 
 @dataclass(frozen=True)
+class NpmPackageVersion:
+    package: str
+    version: str
+    description: str
+    url: str | None
+    tarball_url: str | None
+    published_at: str | None
+    license: str | None
+    maintainers: list[str]
+    keywords: list[str]
+    deprecated: str | None
+    dependency_count: int
+    source_name: str
+    entry_id: str
+    raw: dict
+
+
+@dataclass(frozen=True)
 class HackerNewsItem:
     object_id: str
     title: str
@@ -1898,6 +1916,83 @@ def load_pypi_releases(
         key=lambda item: (
             timestamp_to_datetime(item.latest_upload_at or item.uploaded_at)
             or datetime.min.replace(tzinfo=timezone.utc),
+            item.version,
+        ),
+        reverse=True,
+    )
+    return rows[:limit]
+
+
+def load_npm_package_versions(
+    source: str,
+    *,
+    limit: int = 10,
+    since: str | None = None,
+    api_base_url: str = "https://registry.npmjs.org",
+) -> list[NpmPackageVersion]:
+    """Load npm package versions as timestamped software ecosystem evidence."""
+
+    package = _npm_package_name(source)
+    if limit <= 0:
+        raise ValidationError("npm import --limit must be positive")
+    since_ts = parse_timestamp(since, field_name="since") if since else None
+    since_dt = timestamp_to_datetime(since_ts) if since_ts else None
+    endpoint = _npm_package_endpoint(package, api_base_url=api_base_url)
+    payload = _read_json_endpoint(endpoint, "npm package")
+    if not isinstance(payload, dict):
+        raise ValidationError("npm package response must be a JSON object")
+    versions_payload = payload.get("versions")
+    if not isinstance(versions_payload, dict):
+        raise ValidationError("npm package response must include a versions object")
+    times = payload.get("time") if isinstance(payload.get("time"), dict) else {}
+    package_name = _collapse_ws(_optional_str(payload.get("name")) or package)
+    package_description = _collapse_ws(_optional_str(payload.get("description")) or "")
+
+    rows: list[NpmPackageVersion] = []
+    for version, row in versions_payload.items():
+        if not isinstance(row, dict):
+            continue
+        version_text = _optional_str(version)
+        if not version_text:
+            continue
+        published_at = _npm_timestamp(times.get(version_text))
+        published_dt = timestamp_to_datetime(published_at) if published_at else None
+        if since_dt is not None and (published_dt is None or published_dt < since_dt):
+            continue
+        description = _collapse_ws(_optional_str(row.get("description")) or package_description)
+        dist = row.get("dist") if isinstance(row.get("dist"), dict) else {}
+        rows.append(
+            NpmPackageVersion(
+                package=package_name,
+                version=version_text,
+                description=description,
+                url=f"https://www.npmjs.com/package/{quote(package_name, safe='@/')}/v/{quote(version_text, safe='')}",
+                tarball_url=_optional_str(dist.get("tarball")),
+                published_at=published_at,
+                license=_npm_license(row.get("license")),
+                maintainers=_npm_people(row.get("maintainers")),
+                keywords=_npm_keywords(row.get("keywords")),
+                deprecated=_collapse_optional(row.get("deprecated")),
+                dependency_count=_npm_dependency_count(row),
+                source_name="npm",
+                entry_id=f"{package_name}:{version_text}",
+                raw={
+                    "package": package_name,
+                    "version": version_text,
+                    "description": description,
+                    "dist_tags": payload.get("dist-tags") if isinstance(payload.get("dist-tags"), dict) else {},
+                    "published_at": published_at,
+                    "tarball_url": _optional_str(dist.get("tarball")),
+                    "license": _npm_license(row.get("license")),
+                    "deprecated": _collapse_optional(row.get("deprecated")),
+                    "dependency_count": _npm_dependency_count(row),
+                },
+            )
+        )
+
+    rows.sort(
+        key=lambda item: (
+            timestamp_to_datetime(item.published_at) or datetime.min.replace(tzinfo=timezone.utc),
             item.version,
         ),
         reverse=True,
@@ -5758,6 +5853,84 @@ def _pypi_yanked_reason(files: list[dict]) -> str | None:
         if reason:
             return reason
     return None
+
+
+def _npm_package_name(source: str) -> str:
+    value = source.split(":", 1)[1].strip() if source.startswith("npm:") else source.strip()
+    parsed = urlparse(value)
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        parts = [unquote(part) for part in parsed.path.strip("/").split("/") if part]
+        if parsed.netloc.lower().endswith("npmjs.com") and len(parts) >= 2 and parts[0] == "package":
+            package = "/".join(parts[1:3]) if parts[1].startswith("@") and len(parts) >= 3 else parts[1]
+        elif parsed.netloc.lower().endswith("npmjs.org") or parsed.netloc.lower().endswith("npmjs.com"):
+            package = unquote(parsed.path.strip("/"))
+        else:
+            package = unquote(parsed.path.strip("/"))
+    else:
+        package = value
+    package = package.strip()
+    if not package:
+        raise ValidationError("npm source must be a package name, npm:<package>, or an npm package URL")
+    if any(ch.isspace() for ch in package):
+        raise ValidationError("npm package names cannot contain whitespace")
+    if "/" in package and not (package.startswith("@") and package.count("/") == 1):
+        raise ValidationError("npm scoped package names must look like @scope/name")
+    return package
+
+
+def _npm_package_endpoint(package: str, *, api_base_url: str) -> str:
+    base = api_base_url.rstrip("/")
+    if "{package}" in base:
+        return base.format(package=quote(package, safe=""))
+    return f"{base}/{quote(package, safe='')}"
+
+
+def _npm_timestamp(value: object) -> str | None:
+    text = _optional_str(value)
+    if not text:
+        return None
+    try:
+        return parse_timestamp(text, field_name="npm package time")
+    except ValidationError:
+        return None
+
+
+def _npm_license(value: object) -> str | None:
+    if isinstance(value, dict):
+        return _collapse_optional(value.get("type") or value.get("name"))
+    return _collapse_optional(value)
+
+
+def _npm_people(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    people: list[str] = []
+    for item in value:
+        if isinstance(item, dict):
+            name = _collapse_optional(item.get("name") or item.get("email"))
+        else:
+            name = _collapse_optional(item)
+        if name:
+            people.append(name)
+    return people
+
+
+def _npm_keywords(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [text for item in value for text in [_collapse_optional(item)] if text]
+    text = _collapse_optional(value)
+    if not text:
+        return []
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def _npm_dependency_count(row: dict) -> int:
+    names: set[str] = set()
+    for key in ("dependencies", "optionalDependencies", "peerDependencies"):
+        value = row.get(key)
+        if isinstance(value, dict):
+            names.update(str(name) for name in value if name)
+    return len(names)
 
 
 def _hackernews_endpoint(

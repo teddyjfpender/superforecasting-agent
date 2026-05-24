@@ -77,6 +77,7 @@ from forecasting.source_adapters import (
     load_metaculus_question,
     load_metaculus_resolved_binary_cases,
     load_news_feed_items,
+    load_npm_package_versions,
     load_nvd_cves,
     load_nasa_eonet_events,
     load_nws_alerts,
@@ -279,6 +280,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "watch_prefix": "pypi:<package>",
     },
     {
+        "name": "npm",
+        "domain": "JavaScript package versions",
+        "import_command": "forecast import npm <package> --question <id>",
+        "watch_prefix": "npm:<package>",
+    },
+    {
         "name": "hackernews",
         "domain": "technical news and public attention",
         "import_command": 'forecast import hackernews "<query>" --question <id>',
@@ -462,6 +469,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "github",
         "githubissues",
         "pypi",
+        "npm",
         "hackernews",
         "reddit",
         "federalregister",
@@ -534,6 +542,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "github",
             "githubissues",
             "pypi",
+            "npm",
             "hackernews",
             "reddit",
             "federalregister",
@@ -593,6 +602,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://pypi.org/pypi",
                 help="Override PyPI JSON API base URL for tests or private mirrors",
+            )
+        if name == "npm":
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://registry.npmjs.org",
+                help="Override npm registry API base URL for tests or private mirrors",
             )
         if name == "hackernews":
             adapter.add_argument(
@@ -1102,6 +1117,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "openalex",
             "pubmed",
             "pypi",
+            "npm",
             "courtlistener",
             "manifold",
             "metaculus",
@@ -2287,6 +2303,61 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} pypi evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "npm":
+        if not args.question_id:
+            raise SystemExit("forecast import npm requires --question")
+        versions = load_npm_package_versions(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for version in versions:
+            maintainers = ", ".join(version.maintainers[:3]) if version.maintainers else "maintainers unspecified"
+            keywords = ", ".join(version.keywords[:5]) if version.keywords else "no keywords"
+            status = "deprecated" if version.deprecated else "available"
+            summary = (
+                f"npm package {version.package} {version.version}: {version.description or 'no package description'}. "
+                f"published {version.published_at or 'unknown'}; license {version.license or 'unknown'}; "
+                f"{version.dependency_count} dependencies; {maintainers}; keywords: {keywords}; status {status}."
+            )
+            if version.deprecated:
+                summary += f" Deprecation notice: {version.deprecated}."
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=version.url or version.tarball_url or f"npm:{version.package}:{version.version}",
+                    source_url=version.url or version.tarball_url,
+                    source_name=version.source_name,
+                    source_type="adapter:npm",
+                    published_at=version.published_at,
+                    available_at=version.published_at or args.as_of,
+                    claim=f"npm package version: {version.package} {version.version}",
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "npm",
+                        "package": version.package,
+                        "version": version.version,
+                        "published_at": version.published_at,
+                        "license": version.license,
+                        "maintainers": version.maintainers,
+                        "keywords": version.keywords,
+                        "deprecated": version.deprecated,
+                        "dependency_count": version.dependency_count,
+                        "api_base_url": args.api_base_url,
+                        "raw": version.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} npm evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

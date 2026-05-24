@@ -77,6 +77,7 @@ Examples:
 /forecast import stooq AAPL.US --question <id>
 /forecast import githubissues owner/repo --question <id>
 /forecast import pypi package-name --question <id>
+/forecast import npm package-name --question <id>
 /forecast import hackernews "product query" --question <id>
 /forecast import reddit "topic query" --question <id>
 /forecast import cisakev CVE-2026-0001 --question <id>

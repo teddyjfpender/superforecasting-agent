@@ -31,6 +31,7 @@ from forecasting.source_adapters import (
     GitHubIssue,
     GitHubRelease,
     NasaEonetEvent,
+    NpmPackageVersion,
     NvdCve,
     NwsAlert,
     OpenFdaDrugApplication,
@@ -2243,6 +2244,157 @@ def test_forecast_cli_pypi_import_captures_releases_as_evidence(tmp_path, capsys
     assert evidence[0].metadata["version"] == "1.2.3"
     assert evidence[0].metadata["file_count"] == 2
     assert evidence[0].metadata["package_types"] == ["bdist_wheel", "sdist"]
+
+
+def test_npm_adapter_loads_package_versions(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return {
+            "name": "@forecast/desk",
+            "description": "Forecasting interface components.",
+            "dist-tags": {"latest": "2.0.0"},
+            "time": {
+                "created": "2026-04-01T00:00:00Z",
+                "1.0.0": "2026-04-10T10:00:00.000Z",
+                "2.0.0": "2026-05-21T11:00:00.000Z",
+                "modified": "2026-05-21T11:05:00.000Z",
+            },
+            "versions": {
+                "1.0.0": {
+                    "name": "@forecast/desk",
+                    "version": "1.0.0",
+                    "description": "Old version.",
+                    "license": "MIT",
+                    "dist": {"tarball": "https://registry.npm.test/@forecast/desk/-/desk-1.0.0.tgz"},
+                },
+                "2.0.0": {
+                    "name": "@forecast/desk",
+                    "version": "2.0.0",
+                    "description": "Forecasting interface components.",
+                    "license": {"type": "Apache-2.0"},
+                    "maintainers": [{"name": "analyst"}],
+                    "keywords": ["forecasting", "calibration"],
+                    "dependencies": {"react": "^19.0.0"},
+                    "peerDependencies": {"ink": "^6.0.0"},
+                    "dist": {"tarball": "https://registry.npm.test/@forecast/desk/-/desk-2.0.0.tgz"},
+                },
+            },
+        }
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    versions = source_adapters.load_npm_package_versions(
+        "https://www.npmjs.com/package/@forecast/desk",
+        limit=2,
+        since="2026-05-01",
+        api_base_url="https://registry.npm.test",
+    )
+    parsed = urlparse(captured["endpoint"])
+
+    assert captured["label"] == "npm package"
+    assert parsed.path == "/%40forecast%2Fdesk"
+    assert len(versions) == 1
+    assert versions[0].package == "@forecast/desk"
+    assert versions[0].version == "2.0.0"
+    assert versions[0].description == "Forecasting interface components."
+    assert versions[0].published_at == "2026-05-21T11:00:00Z"
+    assert versions[0].license == "Apache-2.0"
+    assert versions[0].maintainers == ["analyst"]
+    assert versions[0].keywords == ["forecasting", "calibration"]
+    assert versions[0].dependency_count == 2
+
+
+def test_forecast_cli_npm_import_captures_versions_as_evidence(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_npm_versions(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            NpmPackageVersion(
+                package="@forecast/desk",
+                version="2.0.0",
+                description="Forecasting interface components.",
+                url="https://www.npmjs.com/package/@forecast/desk/v/2.0.0",
+                tarball_url="https://registry.npm.test/@forecast/desk/-/desk-2.0.0.tgz",
+                published_at="2026-05-21T11:00:00Z",
+                license="Apache-2.0",
+                maintainers=["analyst"],
+                keywords=["forecasting", "calibration"],
+                deprecated=None,
+                dependency_count=2,
+                source_name="npm",
+                entry_id="@forecast/desk:2.0.0",
+                raw={"version": "2.0.0"},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_npm_package_versions", fake_load_npm_versions)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will npm evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if npm package evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "npm",
+            "@forecast/desk",
+            "--question",
+            question_id,
+            "--limit",
+            "2",
+            "--since",
+            "2026-05-01",
+            "--api-base-url",
+            "https://registry.npm.test",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.81",
+            "--relevance",
+            "0.87",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 npm evidence item(s)" in output
+    assert captured["source"] == "@forecast/desk"
+    assert captured["kwargs"]["limit"] == 2
+    assert captured["kwargs"]["since"] == "2026-05-01"
+    assert captured["kwargs"]["api_base_url"] == "https://registry.npm.test"
+    assert evidence[0].claim == "npm package version: @forecast/desk 2.0.0"
+    assert evidence[0].summary.startswith("npm package @forecast/desk 2.0.0")
+    assert evidence[0].source_name == "npm"
+    assert evidence[0].source_type == "adapter:npm"
+    assert evidence[0].published_at == "2026-05-21T11:00:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.81
+    assert evidence[0].relevance_rating == 0.87
+    assert evidence[0].metadata["adapter"] == "npm"
+    assert evidence[0].metadata["package"] == "@forecast/desk"
+    assert evidence[0].metadata["version"] == "2.0.0"
+    assert evidence[0].metadata["dependency_count"] == 2
 
 
 def test_hackernews_adapter_loads_search_results(monkeypatch):
@@ -5923,6 +6075,7 @@ def test_forecast_cli_lists_extension_points(capsys):
     assert "openfda-drug-applications" in output
     assert "pubmed-articles" in output
     assert "pypi-releases" in output
+    assert "npm-package-versions" in output
     assert "owid-grapher" in output
     assert "fred-economic-data" in output
     assert "eia-energy-data" in output
@@ -5968,6 +6121,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "openfda:<query-or-application-number>" in output
     assert "pubmed:<query-or-PMID>" in output
     assert "pypi:<package>" in output
+    assert "npm:<package>" in output
     assert "wikipediapageviews:<project>/<article>" in output
     assert "githubissues:<owner/repo>" in output
     assert "hackernews:<query>" in output
@@ -5986,7 +6140,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "owid", "eia", "treasury", "census", "stooq", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "wikipediapageviews", "githubissues", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "owid", "eia", "treasury", "census", "stooq", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "census:<dataset-path?get=...&for=...>" for source in payload["sources"])
@@ -5995,6 +6149,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     assert any(source["watch_prefix"] == "openfda:<query-or-application-number>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "pubmed:<query-or-PMID>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "pypi:<package>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "npm:<package>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "githubissues:<owner/repo>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "hackernews:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "reddit:<query>" for source in payload["sources"])
@@ -8295,6 +8450,72 @@ def test_forecast_cli_watch_add_supports_pypi_sources(tmp_path, capsys, monkeypa
     assert "source_type: pypi" in add_output
 
     versions[0] = "1.2.4"
+    _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
+    check_output = capsys.readouterr().out
+
+    assert "created 1 alert(s)" in check_output
+    assert f"watched_source_changed:{watch_id}" in check_output
+
+
+def test_forecast_cli_watch_add_supports_npm_sources(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    versions = ["2.0.0"]
+
+    def fake_load_npm_versions(source: str, **kwargs):
+        return [
+            NpmPackageVersion(
+                package=source,
+                version=versions[0],
+                description="Forecasting interface components.",
+                url=f"https://www.npmjs.com/package/{source}/v/{versions[0]}",
+                tarball_url=f"https://registry.npm.test/{source}/-/{versions[0]}.tgz",
+                published_at="2026-05-21T11:00:00Z",
+                license="Apache-2.0",
+                maintainers=["analyst"],
+                keywords=["forecasting"],
+                deprecated=None,
+                dependency_count=2,
+                source_name="npm",
+                entry_id=f"{source}:{versions[0]}",
+                raw={"version": versions[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_npm_package_versions", fake_load_npm_versions)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will watched CLI npm versions change?",
+            "--resolution-criteria",
+            "Resolved yes if watched npm package evidence changes.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            "npm:@forecast/desk",
+            "--question",
+            question_id,
+        ],
+    )
+    add_output = capsys.readouterr().out
+    watch_id = re.search(r"watched source (ws_[a-f0-9]+)", add_output).group(1)
+
+    assert "source_type: npm" in add_output
+
+    versions[0] = "2.1.0"
     _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
     check_output = capsys.readouterr().out
 

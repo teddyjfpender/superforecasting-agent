@@ -32,6 +32,7 @@ from forecasting.source_adapters import (
     load_github_issues,
     load_github_releases,
     load_news_feed_items,
+    load_npm_package_versions,
     load_nvd_cves,
     load_nasa_eonet_events,
     load_nws_alerts,
@@ -247,6 +248,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "github",
                     "githubissues",
                     "pypi",
+                    "npm",
                     "hackernews",
                     "reddit",
                     "federalregister",
@@ -1137,6 +1139,11 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_pypi_releases(source, **kwargs)
+    if adapter_name == "npm":
+        kwargs = {"limit": limit, "since": since}
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_npm_package_versions(source, **kwargs)
     if adapter_name == "hackernews":
         kwargs = {"limit": limit, "since": since}
         if api_base_url:
@@ -1350,6 +1357,8 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         return f"GitHub {issue_kind} {data.get('repo')} {number}: {data.get('title')}"
     if adapter == "pypi":
         return f"PyPI release {data.get('package')} {data.get('version')}: {data.get('summary') or 'package release'}"
+    if adapter == "npm":
+        return f"npm package {data.get('package')} {data.get('version')}: {data.get('description') or 'package version'}"
     if adapter == "hackernews":
         return f"Hacker News: {data.get('title')}"
     if adapter == "reddit":

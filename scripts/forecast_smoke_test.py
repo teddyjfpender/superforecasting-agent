@@ -50,6 +50,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "github",
     "githubissues",
     "pypi",
+    "npm",
     "hackernews",
     "reddit",
     "markets",

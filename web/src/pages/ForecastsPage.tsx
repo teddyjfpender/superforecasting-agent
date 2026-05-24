@@ -90,6 +90,10 @@ const EVIDENCE_IMPORTS = [
     label: "PyPI",
   },
   {
+    command: "forecast import npm <package> --question <id>",
+    label: "npm",
+  },
+  {
     command: "forecast import openmeteo <lat,lon> --question <id>",
     label: "Weather",
   },
