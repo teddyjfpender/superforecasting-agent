@@ -47,9 +47,17 @@ def fresh_home(tmp_path, monkeypatch):
     home.mkdir()
     monkeypatch.setenv("HERMES_HOME", str(home))
     for var in (
+        "SUPERFORECASTING_AGENT_KANBAN_DB",
+        "FORECAST_KANBAN_DB",
         "HERMES_KANBAN_DB",
+        "SUPERFORECASTING_AGENT_KANBAN_WORKSPACES_ROOT",
+        "FORECAST_KANBAN_WORKSPACES_ROOT",
         "HERMES_KANBAN_WORKSPACES_ROOT",
+        "SUPERFORECASTING_AGENT_KANBAN_HOME",
+        "FORECAST_KANBAN_HOME",
         "HERMES_KANBAN_HOME",
+        "SUPERFORECASTING_AGENT_KANBAN_BOARD",
+        "FORECAST_KANBAN_BOARD",
         "HERMES_KANBAN_BOARD",
     ):
         monkeypatch.delenv(var, raising=False)
@@ -154,6 +162,11 @@ class TestCurrentBoard:
         kb.create_board("envboard")
         monkeypatch.setenv("HERMES_KANBAN_BOARD", "envboard")
         assert kb.get_current_board() == "envboard"
+
+    def test_forecast_native_env_var_takes_precedence(self, fresh_home, monkeypatch):
+        kb.create_board("forecastboard")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_KANBAN_BOARD", "forecastboard")
+        assert kb.get_current_board() == "forecastboard"
 
     def test_file_pointer_honoured(self, fresh_home):
         kb.create_board("filepick")
@@ -421,12 +434,18 @@ class TestWorkerSpawnEnv:
         kb._default_spawn(task, str(fresh_home / "ws"), board="spawntest")
 
         env = captured["env"]
+        assert env["SUPERFORECASTING_AGENT_KANBAN_BOARD"] == "spawntest"
+        assert env["FORECAST_KANBAN_BOARD"] == "spawntest"
         assert env["HERMES_KANBAN_BOARD"] == "spawntest"
         assert env["HERMES_KANBAN_TASK"] == "t_abc"
         # DB path should match the per-board DB, not the legacy default.
         expected_db = fresh_home / "kanban" / "boards" / "spawntest" / "kanban.db"
+        assert env["SUPERFORECASTING_AGENT_KANBAN_DB"] == str(expected_db)
+        assert env["FORECAST_KANBAN_DB"] == str(expected_db)
         assert env["HERMES_KANBAN_DB"] == str(expected_db)
         expected_ws = fresh_home / "kanban" / "boards" / "spawntest" / "workspaces"
+        assert env["SUPERFORECASTING_AGENT_KANBAN_WORKSPACES_ROOT"] == str(expected_ws)
+        assert env["FORECAST_KANBAN_WORKSPACES_ROOT"] == str(expected_ws)
         assert env["HERMES_KANBAN_WORKSPACES_ROOT"] == str(expected_ws)
 
     def test_default_board_spawn_keeps_legacy_paths(self, fresh_home, monkeypatch):
@@ -459,7 +478,11 @@ class TestWorkerSpawnEnv:
         )
         kb._default_spawn(task, str(fresh_home / "ws"), board=None)
         env = captured["env"]
+        assert env["SUPERFORECASTING_AGENT_KANBAN_BOARD"] == "default"
+        assert env["FORECAST_KANBAN_BOARD"] == "default"
         assert env["HERMES_KANBAN_BOARD"] == "default"
+        assert env["SUPERFORECASTING_AGENT_KANBAN_DB"] == str(fresh_home / "kanban.db")
+        assert env["FORECAST_KANBAN_DB"] == str(fresh_home / "kanban.db")
         assert env["HERMES_KANBAN_DB"] == str(fresh_home / "kanban.db")
 
 

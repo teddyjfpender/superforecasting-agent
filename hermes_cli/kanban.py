@@ -208,7 +208,7 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     # --- global --board flag ---
     # Applies to every subcommand below. When set, scopes all reads and
     # writes to that board's DB. When omitted, resolves via the
-    # HERMES_KANBAN_BOARD env var, then the persisted current-board
+    # fork-native KANBAN_BOARD env aliases, then the persisted current-board
     # file, then "default". See kanban_db.get_current_board().
     kanban_parser.add_argument(
         "--board",
@@ -217,7 +217,7 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
         help=(
             "Board slug to operate on. Defaults to the current board "
             f"(set via `{_PRIMARY_CLI} kanban boards switch <slug>` or the "
-            f"HERMES_KANBAN_BOARD env var). Use `{_PRIMARY_CLI} kanban boards list` "
+            f"SUPERFORECASTING_AGENT_KANBAN_BOARD env var). Use `{_PRIMARY_CLI} kanban boards list` "
             "to see all boards."
         ),
     )
@@ -829,21 +829,22 @@ def kanban_command(args: argparse.Namespace) -> int:
         return _dispatch_boards(args)
 
     # `--board <slug>` applies to every subcommand below by way of an
-    # env-var pin for the duration of this call. Using HERMES_KANBAN_BOARD
-    # (rather than threading `board=` through 50+ kb.connect() sites)
-    # keeps the patch small and inherits the exact same resolution the
-    # dispatcher uses for workers — consistency is a feature here.
+    # env-var pin for the duration of this call. Setting every board alias
+    # (rather than threading `board=` through 50+ kb.connect() sites) keeps the
+    # patch small and inherits the exact same resolution the dispatcher uses
+    # for workers — consistency is a feature here.
     board_override = getattr(args, "board", None)
-    prev_board_env = os.environ.get("HERMES_KANBAN_BOARD")
+    prev_board_env = {name: os.environ.get(name) for name in kb.KANBAN_BOARD_ENV_NAMES}
     restore_board_env = False
 
     def _restore_board_env() -> None:
         if not restore_board_env:
             return
-        if prev_board_env is None:
-            os.environ.pop("HERMES_KANBAN_BOARD", None)
-        else:
-            os.environ["HERMES_KANBAN_BOARD"] = prev_board_env
+        for name, value in prev_board_env.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
     if board_override:
         try:
             normed = kb._normalize_board_slug(board_override)
@@ -862,7 +863,8 @@ def kanban_command(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 1
-        os.environ["HERMES_KANBAN_BOARD"] = normed
+        for name in kb.KANBAN_BOARD_ENV_NAMES:
+            os.environ[name] = normed
         restore_board_env = True
 
     # Auto-initialize the DB before dispatching any subcommand. init_db

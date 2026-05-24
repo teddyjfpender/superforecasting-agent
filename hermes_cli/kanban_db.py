@@ -27,30 +27,29 @@ Board resolution order (highest precedence first, all optional):
 * ``board=`` argument passed directly to :func:`connect` / :func:`init_db`
   (explicit — used by the CLI ``--board`` flag and the dashboard
   ``?board=...`` query param).
-* ``HERMES_KANBAN_BOARD`` env var (used by the dispatcher to pin workers
-  to the board their task lives on — workers cannot see other boards).
-* ``HERMES_KANBAN_DB`` env var (pins the DB file path directly — legacy
-  override still honoured; highest precedence when the file path itself
-  is what the caller wants to force).
+* ``SUPERFORECASTING_AGENT_KANBAN_BOARD`` env var, with ``FORECAST_*`` and
+  inherited ``HERMES_*`` aliases (used by the dispatcher to pin workers to the
+  board their task lives on — workers cannot see other boards).
+* ``SUPERFORECASTING_AGENT_KANBAN_DB`` env var, with ``FORECAST_*`` and
+  inherited ``HERMES_*`` aliases (pins the DB file path directly; highest
+  precedence when the file path itself is what the caller wants to force).
 * ``<root>/kanban/current`` — a one-line text file holding the slug of
   the "currently selected" board. Written by ``hermes kanban boards
   switch <slug>``. When absent, the active board is ``default``.
 
-In standard installs ``<root>`` is ``~/.hermes``. In Docker / custom
-deployments where ``HERMES_HOME`` points outside ``~/.hermes`` (e.g.
-``/opt/hermes``), ``<root>`` is ``HERMES_HOME``. Legacy env-var
-overrides still work:
+In standard installs ``<root>`` is ``~/.superforecasting-agent``. In Docker /
+custom deployments where the active home points outside that directory,
+``<root>`` is the active home. Legacy env-var overrides still work:
 
-* ``HERMES_KANBAN_DB`` — pin the database file path directly.
-* ``HERMES_KANBAN_WORKSPACES_ROOT`` — pin the workspaces root directly.
-* ``HERMES_KANBAN_HOME`` — pin the umbrella root that anchors kanban
-  paths. Useful for tests and unusual deployments.
+* ``SUPERFORECASTING_AGENT_KANBAN_DB`` — pin the database file path directly.
+* ``SUPERFORECASTING_AGENT_KANBAN_WORKSPACES_ROOT`` — pin the workspaces root directly.
+* ``SUPERFORECASTING_AGENT_KANBAN_HOME`` — pin the umbrella root that anchors
+  kanban paths. Useful for tests and unusual deployments.
 
-The dispatcher injects ``HERMES_KANBAN_DB``,
-``HERMES_KANBAN_WORKSPACES_ROOT``, and ``HERMES_KANBAN_BOARD`` into
-worker subprocess env so workers converge on the exact DB the
-dispatcher used to claim their task — even under unusual symlink or
-Docker layouts.
+The dispatcher injects fork-native names plus ``FORECAST_*`` and inherited
+``HERMES_*`` aliases into worker subprocess env so workers converge on the
+exact DB the dispatcher used to claim their task — even under unusual symlink
+or Docker layouts.
 
 Schema is intentionally small: tasks, task_links, task_comments,
 task_events.  The ``workspace_kind`` field decouples coordination from git
@@ -104,8 +103,8 @@ _IS_WINDOWS = sys.platform == "win32"
 # next dispatcher tick reclaims it. Workers that outlive this window should
 # call ``heartbeat_claim(task_id)`` periodically. In practice most kanban
 # workloads either finish within 15m, set a longer claim explicitly, or use
-# ``HERMES_KANBAN_CLAIM_TTL_SECONDS`` to raise the default claim window for
-# long single-call MCP workflows.
+# ``SUPERFORECASTING_AGENT_KANBAN_CLAIM_TTL_SECONDS`` (or compatibility
+# aliases) to raise the default claim window for long single-call MCP workflows.
 DEFAULT_CLAIM_TTL_SECONDS = 15 * 60
 
 
@@ -113,14 +112,15 @@ def _resolve_claim_ttl_seconds(ttl_seconds: Optional[int] = None) -> int:
     """Return the effective claim TTL, honoring the kanban env override.
 
     Explicit call-site values win. Otherwise a positive integer from
-    ``HERMES_KANBAN_CLAIM_TTL_SECONDS`` overrides the built-in default.
-    Invalid or non-positive env values fall back silently so existing
-    installs keep working.
+    ``SUPERFORECASTING_AGENT_KANBAN_CLAIM_TTL_SECONDS`` overrides the built-in
+    default. ``FORECAST_*`` and inherited ``HERMES_*`` aliases are accepted.
+    Invalid or non-positive env values fall back silently so existing installs
+    keep working.
     """
     if ttl_seconds is not None:
         return max(1, int(ttl_seconds))
 
-    raw = os.environ.get("HERMES_KANBAN_CLAIM_TTL_SECONDS", "").strip()
+    raw = _first_env_value(KANBAN_CLAIM_TTL_ENV_NAMES)
     if raw:
         try:
             parsed = int(raw)
@@ -149,6 +149,36 @@ _CTX_MAX_COMMENT_BYTES  = 2 * 1024   # 2 KB per comment
 # ---------------------------------------------------------------------------
 
 DEFAULT_BOARD = "default"
+KANBAN_HOME_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_KANBAN_HOME",
+    "FORECAST_KANBAN_HOME",
+    "HERMES_KANBAN_HOME",
+)
+KANBAN_BOARD_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_KANBAN_BOARD",
+    "FORECAST_KANBAN_BOARD",
+    "HERMES_KANBAN_BOARD",
+)
+KANBAN_DB_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_KANBAN_DB",
+    "FORECAST_KANBAN_DB",
+    "HERMES_KANBAN_DB",
+)
+KANBAN_WORKSPACES_ROOT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_KANBAN_WORKSPACES_ROOT",
+    "FORECAST_KANBAN_WORKSPACES_ROOT",
+    "HERMES_KANBAN_WORKSPACES_ROOT",
+)
+KANBAN_CLAIM_TTL_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_KANBAN_CLAIM_TTL_SECONDS",
+    "FORECAST_KANBAN_CLAIM_TTL_SECONDS",
+    "HERMES_KANBAN_CLAIM_TTL_SECONDS",
+)
+KANBAN_DISPATCH_IN_GATEWAY_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_KANBAN_DISPATCH_IN_GATEWAY",
+    "FORECAST_KANBAN_DISPATCH_IN_GATEWAY",
+    "HERMES_KANBAN_DISPATCH_IN_GATEWAY",
+)
 
 # Slug validator: lowercase alphanumerics, digits, hyphens; 1–64 chars.
 # Strict enough to stop traversal (`..`) and embedded path separators, loose
@@ -156,6 +186,20 @@ DEFAULT_BOARD = "default"
 # pass without fuss. Board names with display formatting (spaces, emoji)
 # live in ``board.json``; the slug is just the directory name.
 _BOARD_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\-_]{0,63}$")
+
+
+def _first_env_value(names: Iterable[str], env: Optional[dict[str, str]] = None) -> str:
+    source = os.environ if env is None else env
+    for name in names:
+        value = str(source.get(name, "")).strip()
+        if value:
+            return value
+    return ""
+
+
+def _set_env_aliases(env: dict[str, str], names: Iterable[str], value: str) -> None:
+    for name in names:
+        env[name] = value
 
 
 def _normalize_board_slug(slug: Optional[str]) -> Optional[str]:
@@ -178,8 +222,9 @@ def kanban_home() -> Path:
 
     Resolution order:
 
-    1. ``HERMES_KANBAN_HOME`` env var when set and non-empty (explicit
-       override for tests and unusual deployments).
+    1. ``SUPERFORECASTING_AGENT_KANBAN_HOME`` env var when set and non-empty
+       (explicit override for tests and unusual deployments). ``FORECAST_*``
+       and inherited ``HERMES_*`` aliases are accepted.
     2. ``get_default_hermes_root()``, which already returns ``<root>``
        when ``HERMES_HOME`` is ``<root>/profiles/<name>``, and returns
        ``HERMES_HOME`` directly for Docker / custom deployments.
@@ -189,7 +234,7 @@ def kanban_home() -> Path:
     profile's ``HERMES_HOME`` would silently fork the board per profile,
     which breaks the dispatcher / worker handoff.
     """
-    override = os.environ.get("HERMES_KANBAN_HOME", "").strip()
+    override = _first_env_value(KANBAN_HOME_ENV_NAMES)
     if override:
         return Path(override).expanduser()
     from hermes_constants import get_default_hermes_root
@@ -222,8 +267,9 @@ def get_current_board() -> str:
 
     Order (highest precedence first):
 
-    1. ``HERMES_KANBAN_BOARD`` env var (set by the dispatcher on worker
-       spawn, or manually for ad-hoc overrides).
+    1. ``SUPERFORECASTING_AGENT_KANBAN_BOARD`` env var (set by the dispatcher
+       on worker spawn, or manually for ad-hoc overrides). ``FORECAST_*`` and
+       inherited ``HERMES_*`` aliases are accepted.
     2. ``<root>/kanban/current`` on disk (set by ``hermes kanban boards
        switch``), but only when that board still exists.
     3. ``DEFAULT_BOARD`` (``"default"``).
@@ -232,7 +278,7 @@ def get_current_board() -> str:
     with a best-effort warning — the dispatcher must never crash because a
     user hand-edited a file or removed a board directory.
     """
-    env = os.environ.get("HERMES_KANBAN_BOARD", "").strip()
+    env = _first_env_value(KANBAN_BOARD_ENV_NAMES)
     if env:
         try:
             normed = _normalize_board_slug(env)
@@ -314,16 +360,17 @@ def kanban_db_path(board: Optional[str] = None) -> Path:
 
     Resolution (highest precedence first):
 
-    1. ``HERMES_KANBAN_DB`` env var — pins the path directly. Honoured for
-       back-compat and for the dispatcher→worker handoff (defense in
-       depth: dispatcher injects this into worker env so workers are
-       immune to any path-resolution disagreement).
+    1. ``SUPERFORECASTING_AGENT_KANBAN_DB`` env var — pins the path directly.
+       ``FORECAST_*`` and inherited ``HERMES_*`` aliases are honoured for
+       migration and for the dispatcher→worker handoff (defense in depth:
+       dispatcher injects aliases into worker env so workers are immune to any
+       path-resolution disagreement).
     2. When ``board`` arg is None, the active board from
        :func:`get_current_board` is used.
     3. Board ``default`` → ``<root>/kanban.db`` (back-compat path).
        Other boards → ``<root>/kanban/boards/<slug>/kanban.db``.
     """
-    override = os.environ.get("HERMES_KANBAN_DB", "").strip()
+    override = _first_env_value(KANBAN_DB_ENV_NAMES)
     if override:
         return Path(override).expanduser()
     slug = _normalize_board_slug(board)
@@ -338,14 +385,15 @@ def workspaces_root(board: Optional[str] = None) -> Path:
     """Return the directory under which ``scratch`` workspaces are created.
 
     Anchored per-board so workspaces don't leak between projects.
-    ``HERMES_KANBAN_WORKSPACES_ROOT`` pins the path directly (highest
-    precedence) — the dispatcher injects this into worker env.
+    ``SUPERFORECASTING_AGENT_KANBAN_WORKSPACES_ROOT`` pins the path directly
+    (highest precedence); ``FORECAST_*`` and inherited ``HERMES_*`` aliases are
+    accepted. The dispatcher injects aliases into worker env.
 
     ``default`` keeps the legacy path ``<root>/kanban/workspaces/`` so
     that existing scratch workspaces from before the boards feature are
     preserved. Other boards use ``<root>/kanban/boards/<slug>/workspaces/``.
     """
-    override = os.environ.get("HERMES_KANBAN_WORKSPACES_ROOT", "").strip()
+    override = _first_env_value(KANBAN_WORKSPACES_ROOT_ENV_NAMES)
     if override:
         return Path(override).expanduser()
     slug = _normalize_board_slug(board)
@@ -5305,13 +5353,13 @@ def _default_spawn(
     # dispatcher's. Belt-and-braces with the `get_default_hermes_root()`
     # resolution in `kanban_home()` — symmetric resolution is the norm,
     # but unusual symlink / Docker layouts are caught here too.
-    env["HERMES_KANBAN_DB"] = str(kanban_db_path(board=board))
-    env["HERMES_KANBAN_WORKSPACES_ROOT"] = str(workspaces_root(board=board))
+    _set_env_aliases(env, KANBAN_DB_ENV_NAMES, str(kanban_db_path(board=board)))
+    _set_env_aliases(env, KANBAN_WORKSPACES_ROOT_ENV_NAMES, str(workspaces_root(board=board)))
     # Board slug — the final defense-in-depth pin. If the worker ever
     # resolves kanban paths without the DB / workspaces env vars, the
     # board slug still forces it to the right directory.
     resolved_board = _normalize_board_slug(board) or get_current_board()
-    env["HERMES_KANBAN_BOARD"] = resolved_board
+    _set_env_aliases(env, KANBAN_BOARD_ENV_NAMES, resolved_board)
     # HERMES_PROFILE is the author the kanban_comment tool defaults to.
     # `hermes -p <assignee>` activates the profile, but the env var is
     # what the tool reads — set it explicitly here so comments are

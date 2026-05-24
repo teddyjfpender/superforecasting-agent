@@ -298,13 +298,23 @@ def test_claim_once_wins_second_loses(kanban_home):
 
 
 def test_claim_uses_env_default_ttl(kanban_home, monkeypatch):
-    monkeypatch.setenv("HERMES_KANBAN_CLAIM_TTL_SECONDS", "3600")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_KANBAN_CLAIM_TTL_SECONDS", "3600")
     with kb.connect() as conn:
         t = kb.create_task(conn, title="x", assignee="a")
         kb.claim_task(conn, t, claimer="host:1")
         expires = kb.get_task(conn, t).claim_expires
     assert expires is not None
     assert expires > int(time.time()) + 3000
+
+
+def test_claim_accepts_legacy_env_default_ttl(kanban_home, monkeypatch):
+    monkeypatch.setenv("HERMES_KANBAN_CLAIM_TTL_SECONDS", "2400")
+    with kb.connect() as conn:
+        t = kb.create_task(conn, title="legacy ttl", assignee="a")
+        kb.claim_task(conn, t, claimer="host:1")
+        expires = kb.get_task(conn, t).claim_expires
+    assert expires is not None
+    assert expires > int(time.time()) + 2100
 
 
 def test_claim_fails_on_non_ready(kanban_home):
@@ -1720,6 +1730,21 @@ class TestSharedBoardPaths:
         assert kb.kanban_db_path() == override / "kanban.db"
         assert kb.workspaces_root() == override / "kanban" / "workspaces"
 
+    def test_forecast_native_kanban_home_alias_wins(
+        self, tmp_path, monkeypatch
+    ):
+        default_home = tmp_path / ".hermes"
+        default_home.mkdir()
+        override = tmp_path / "forecast-board"
+        override.mkdir()
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("HERMES_HOME", str(default_home))
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_KANBAN_HOME", str(override))
+
+        assert kb.kanban_home() == override
+        assert kb.kanban_db_path() == override / "kanban.db"
+
     def test_empty_override_falls_through(self, tmp_path, monkeypatch):
         # Empty/whitespace override is treated as unset.
         default_home = tmp_path / ".hermes"
@@ -1777,6 +1802,23 @@ class TestSharedBoardPaths:
         # are independent.
         assert kb.workspaces_root() == umbrella / "kanban" / "workspaces"
 
+    def test_forecast_kanban_db_alias_beats_legacy_home(
+        self, tmp_path, monkeypatch
+    ):
+        default_home = tmp_path / ".hermes"
+        default_home.mkdir()
+        umbrella = tmp_path / "umbrella"
+        umbrella.mkdir()
+        pinned_db = tmp_path / "forecast-pinned" / "board.db"
+        pinned_db.parent.mkdir()
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("HERMES_HOME", str(default_home))
+        monkeypatch.setenv("HERMES_KANBAN_HOME", str(umbrella))
+        monkeypatch.setenv("FORECAST_KANBAN_DB", str(pinned_db))
+
+        assert kb.kanban_db_path() == pinned_db
+
     def test_hermes_kanban_workspaces_root_pin_beats_kanban_home(
         self, tmp_path, monkeypatch
     ):
@@ -1796,6 +1838,20 @@ class TestSharedBoardPaths:
         assert kb.workspaces_root() == pinned_ws
         # kanban_db_path still follows HERMES_KANBAN_HOME.
         assert kb.kanban_db_path() == umbrella / "kanban.db"
+
+    def test_forecast_native_workspaces_root_alias_wins(
+        self, tmp_path, monkeypatch
+    ):
+        default_home = tmp_path / ".hermes"
+        default_home.mkdir()
+        pinned_ws = tmp_path / "forecast-workspaces"
+        pinned_ws.mkdir()
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("HERMES_HOME", str(default_home))
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_KANBAN_WORKSPACES_ROOT", str(pinned_ws))
+
+        assert kb.workspaces_root() == pinned_ws
 
     def test_empty_per_path_overrides_fall_through(
         self, tmp_path, monkeypatch
@@ -1854,7 +1910,15 @@ class TestSharedBoardPaths:
         kb._default_spawn(task, str(tmp_path / "ws"))
 
         env = captured["env"]
+        assert env["SUPERFORECASTING_AGENT_KANBAN_DB"] == str(default_home / "kanban.db")
+        assert env["FORECAST_KANBAN_DB"] == str(default_home / "kanban.db")
         assert env["HERMES_KANBAN_DB"] == str(default_home / "kanban.db")
+        assert env["SUPERFORECASTING_AGENT_KANBAN_WORKSPACES_ROOT"] == str(
+            default_home / "kanban" / "workspaces"
+        )
+        assert env["FORECAST_KANBAN_WORKSPACES_ROOT"] == str(
+            default_home / "kanban" / "workspaces"
+        )
         assert env["HERMES_KANBAN_WORKSPACES_ROOT"] == str(
             default_home / "kanban" / "workspaces"
         )

@@ -425,9 +425,9 @@ Forecast work board for coordinating research, modeling, evidence review, postmo
 
 | Flag | Purpose |
 |------|---------|
-| `--board <slug>` | Operate on a specific board. Defaults to the current board (set via `superforecasting-agent kanban boards switch`, the inherited `HERMES_KANBAN_BOARD` env var, or `default`). |
+| `--board <slug>` | Operate on a specific board. Defaults to the current board (set via `superforecasting-agent kanban boards switch`, `SUPERFORECASTING_AGENT_KANBAN_BOARD` / `FORECAST_KANBAN_BOARD` / legacy `HERMES_KANBAN_BOARD`, or `default`). |
 
-**This is the human / scripting surface.** Agent workers spawned by the dispatcher drive the board through a dedicated `kanban_*` [toolset](/docs/user-guide/features/kanban#how-workers-interact-with-the-board) (`kanban_show`, `kanban_complete`, `kanban_block`, `kanban_create`, `kanban_link`, `kanban_comment`, `kanban_heartbeat`; orchestrator profiles also get `kanban_list` and `kanban_unblock`) instead of shelling to `superforecasting-agent kanban`. Workers have `HERMES_KANBAN_BOARD` pinned in their env so they physically cannot see other boards.
+**This is the human / scripting surface.** Agent workers spawned by the dispatcher drive the board through a dedicated `kanban_*` [toolset](/docs/user-guide/features/kanban#how-workers-interact-with-the-board) (`kanban_show`, `kanban_complete`, `kanban_block`, `kanban_create`, `kanban_link`, `kanban_comment`, `kanban_heartbeat`; orchestrator profiles also get `kanban_list` and `kanban_unblock`) instead of shelling to `superforecasting-agent kanban`. Workers have all kanban board aliases pinned in their env so they physically cannot see other boards.
 
 | Action | Purpose |
 |--------|---------|
@@ -474,7 +474,7 @@ superforecasting-agent kanban boards rm macro-2026
 superforecasting-agent kanban boards rm macro-2026 --delete
 ```
 
-Board resolution order (highest precedence first): `--board <slug>` flag → inherited `HERMES_KANBAN_BOARD` env var → `~/.superforecasting-agent/kanban/current` file → `default`.
+Board resolution order (highest precedence first): `--board <slug>` flag → `SUPERFORECASTING_AGENT_KANBAN_BOARD` / `FORECAST_KANBAN_BOARD` / legacy `HERMES_KANBAN_BOARD` env var → `~/.superforecasting-agent/kanban/current` file → `default`.
 
 All actions are also available as a slash command in the gateway (`/kanban …`), with the same argument surface — including `boards` subcommands and the `--board` flag.
 

@@ -1441,7 +1441,7 @@ def _launch_tui(
 
 
 def _pin_kanban_board_env() -> None:
-    """Pin the active kanban board into ``HERMES_KANBAN_BOARD`` for the chat session.
+    """Pin the active kanban board into kanban board env aliases for the chat session.
 
     Without this, in-process tools (``kanban_*``) and shelled-out CLI calls
     (``hermes kanban …``) resolve the board on different paths: the env-pin if
@@ -1451,12 +1451,19 @@ def _pin_kanban_board_env() -> None:
     calls hit board B (#20074). Pinning at chat boot mirrors what the
     dispatcher already does for spawned workers.
     """
-    if os.environ.get("HERMES_KANBAN_BOARD"):
-        return
     try:
-        from hermes_cli.kanban_db import get_current_board
+        from hermes_cli.kanban_db import KANBAN_BOARD_ENV_NAMES, get_current_board
 
-        os.environ["HERMES_KANBAN_BOARD"] = get_current_board()
+        current = next(
+            (
+                os.environ.get(name, "").strip()
+                for name in KANBAN_BOARD_ENV_NAMES
+                if os.environ.get(name, "").strip()
+            ),
+            "",
+        ) or get_current_board()
+        for name in KANBAN_BOARD_ENV_NAMES:
+            os.environ[name] = current
     except Exception:
         pass
 

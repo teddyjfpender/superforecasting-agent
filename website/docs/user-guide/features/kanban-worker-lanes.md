@@ -41,14 +41,14 @@ superforecasting-agent -p <assignee> chat -q <prompt>
 
 Migrated installs may still use `hermes -p <assignee> chat -q <prompt>` or the equivalent module form.
 
-The dispatcher sets inherited runtime environment variables:
+The dispatcher sets fork-native runtime environment variables and compatibility aliases:
 
 | Variable | Carries |
 |---|---|
 | `HERMES_KANBAN_TASK` | task id the worker is operating on |
-| `HERMES_KANBAN_DB` | absolute path to the per-board SQLite file |
-| `HERMES_KANBAN_BOARD` | board slug |
-| `HERMES_KANBAN_WORKSPACES_ROOT` | root of the board workspace tree |
+| `SUPERFORECASTING_AGENT_KANBAN_DB` / `FORECAST_KANBAN_DB` / `HERMES_KANBAN_DB` | absolute path to the per-board SQLite file |
+| `SUPERFORECASTING_AGENT_KANBAN_BOARD` / `FORECAST_KANBAN_BOARD` / `HERMES_KANBAN_BOARD` | board slug |
+| `SUPERFORECASTING_AGENT_KANBAN_WORKSPACES_ROOT` / `FORECAST_KANBAN_WORKSPACES_ROOT` / `HERMES_KANBAN_WORKSPACES_ROOT` | root of the board workspace tree |
 | `HERMES_KANBAN_WORKSPACE` | absolute path to this task workspace |
 | `HERMES_KANBAN_RUN_ID` | current run id |
 | `HERMES_KANBAN_CLAIM_LOCK` | claim lock string |

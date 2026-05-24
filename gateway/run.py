@@ -5159,16 +5159,24 @@ class GatewayRunner:
         """
         # Read config once at boot. If the user flips the flag later, they
         # restart the gateway; same pattern as every other background
-        # watcher here. Honours HERMES_KANBAN_DISPATCH_IN_GATEWAY env var
-        # as an escape hatch (false-y value disables without editing YAML).
+        # watcher here. Honours kanban dispatch env aliases as an escape hatch
+        # (false-y value disables without editing YAML).
         try:
             from hermes_cli.config import load_config as _load_config
         except Exception:
             logger.warning("kanban dispatcher: config loader unavailable; disabled")
             return
-        env_override = os.environ.get("HERMES_KANBAN_DISPATCH_IN_GATEWAY", "").strip().lower()
+        env_override = ""
+        try:
+            from hermes_cli.kanban_db import KANBAN_DISPATCH_IN_GATEWAY_ENV_NAMES
+            for env_name in KANBAN_DISPATCH_IN_GATEWAY_ENV_NAMES:
+                env_override = os.environ.get(env_name, "").strip().lower()
+                if env_override:
+                    break
+        except Exception:
+            env_override = os.environ.get("HERMES_KANBAN_DISPATCH_IN_GATEWAY", "").strip().lower()
         if env_override in {"0", "false", "no", "off"}:
-            logger.info("kanban dispatcher: disabled via HERMES_KANBAN_DISPATCH_IN_GATEWAY env")
+            logger.info("kanban dispatcher: disabled via kanban dispatch env override")
             return
 
         try:

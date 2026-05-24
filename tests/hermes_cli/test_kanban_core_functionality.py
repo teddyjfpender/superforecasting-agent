@@ -355,7 +355,17 @@ def test_workspace_resolution_failure_also_counts(kanban_home, all_assignees_spa
 # Worker aliveness / crash detection
 # ---------------------------------------------------------------------------
 
-def test_pid_alive_helper():
+def test_pid_alive_helper(monkeypatch):
+    import gateway.status as status
+
+    real_pid_exists = status._pid_exists
+
+    def fake_pid_exists(pid):
+        if int(pid) == 2 ** 30:
+            return False
+        return real_pid_exists(pid)
+
+    monkeypatch.setattr(status, "_pid_exists", fake_pid_exists)
     # Our own pid is alive.
     assert kb._pid_alive(os.getpid())
     # PID 0 / None / negative.
@@ -3561,7 +3571,22 @@ def test_gateway_dispatcher_watcher_respects_config_flag_off(monkeypatch):
 
 
 def test_gateway_dispatcher_watcher_respects_env_override(monkeypatch):
-    """HERMES_KANBAN_DISPATCH_IN_GATEWAY=0 disables without touching config."""
+    """Fork-native KANBAN_DISPATCH_IN_GATEWAY=0 disables without touching config."""
+    import asyncio
+    from gateway.run import GatewayRunner
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_KANBAN_DISPATCH_IN_GATEWAY", "0")
+
+    runner = object.__new__(GatewayRunner)
+    runner._running = True
+    asyncio.run(
+        asyncio.wait_for(
+            runner._kanban_dispatcher_watcher(),
+            timeout=3.0,
+        )
+    )
+
+
+def test_gateway_dispatcher_watcher_respects_legacy_env_override(monkeypatch):
     import asyncio
     from gateway.run import GatewayRunner
     monkeypatch.setenv("HERMES_KANBAN_DISPATCH_IN_GATEWAY", "0")
@@ -3584,7 +3609,7 @@ def test_gateway_dispatcher_watcher_env_truthy_uses_config(monkeypatch):
     from gateway.run import GatewayRunner
     import hermes_cli.config as _cfg_mod
 
-    monkeypatch.setenv("HERMES_KANBAN_DISPATCH_IN_GATEWAY", "yes")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_KANBAN_DISPATCH_IN_GATEWAY", "yes")
     monkeypatch.setattr(
         _cfg_mod, "load_config",
         lambda: {"kanban": {"dispatch_in_gateway": False}},
@@ -4209,8 +4234,11 @@ def test_repeated_timeouts_trip_the_circuit_breaker(kanban_home, monkeypatch):
         conn.close()
 
 
-def test_detect_crashed_workers_increments_counter(kanban_home):
+def test_detect_crashed_workers_increments_counter(kanban_home, monkeypatch):
     """A single crash increments the consecutive_failures counter."""
+    import hermes_cli.kanban_db as _kb
+
+    monkeypatch.setattr(_kb, "_pid_alive", lambda _pid: False)
     conn = kb.connect()
     try:
         tid = kb.create_task(conn, title="crashy", assignee="worker")
@@ -4363,6 +4391,17 @@ def test_dispatch_once_integrates_stale_detection(kanban_home, monkeypatch):
     import hermes_cli.kanban_db as _kb
 
     monkeypatch.setattr(_kb, "_pid_alive", lambda _pid: False)
+    monkeypatch.setattr(
+        _kb,
+        "_terminate_reclaimed_worker",
+        lambda pid, lock, *, signal_fn=None: {
+            "prev_pid": int(pid) if pid else None,
+            "host_local": True,
+            "termination_attempted": True,
+            "terminated": True,
+            "sigkill": False,
+        },
+    )
 
     with kb.connect() as conn:
         t = kb.create_task(conn, title="stale-dispatch", assignee="worker")

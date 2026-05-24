@@ -167,10 +167,10 @@ def _connect(board: Optional[str] = None):
 
     When ``board`` is provided it's forwarded to :func:`kb.connect`, which
     routes the connection to that board's sqlite file. ``None`` (the
-    default) preserves the legacy resolution chain
-    (``HERMES_KANBAN_DB`` → ``HERMES_KANBAN_BOARD`` env → current symlink
-    → ``default``). Per-tool ``board`` lets a Telegram-side agent override
-    the env-pinned active board without restarting Hermes.
+    default) preserves the resolution chain (fork-native KANBAN_DB aliases →
+    fork-native KANBAN_BOARD aliases → current symlink → ``default``).
+    Per-tool ``board`` lets a gateway-side agent override the env-pinned active
+    board without restarting the agent.
     """
     from hermes_cli import kanban_db as kb
     return kb, kb.connect(board=board)
@@ -781,8 +781,8 @@ _DESC_TASK_ID_DEFAULT = (
 
 _DESC_BOARD = (
     "Kanban board slug to target. When omitted, the call resolves the "
-    "active board the usual way: HERMES_KANBAN_DB env → "
-    "HERMES_KANBAN_BOARD env → the 'current' symlink under the kanban "
+    "active board the usual way: KANBAN_DB aliases → "
+    "KANBAN_BOARD aliases → the 'current' symlink under the kanban "
     "home → 'default'. Pass an explicit slug only when the caller (e.g. "
     "a Telegram routing layer) needs to override the env-pinned active "
     "board for this one call."

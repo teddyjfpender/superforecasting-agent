@@ -191,11 +191,11 @@ superforecasting-agent kanban boards switch default
 Board resolution order is:
 
 1. Explicit `--board <slug>` on the CLI call.
-2. `HERMES_KANBAN_BOARD`, set by the dispatcher for worker processes.
+2. `SUPERFORECASTING_AGENT_KANBAN_BOARD`, `FORECAST_KANBAN_BOARD`, or legacy `HERMES_KANBAN_BOARD`, set by the dispatcher for worker processes.
 3. The current-board pointer under the profile home.
 4. `default`.
 
-`HERMES_KANBAN_BOARD` is an inherited runtime variable name, not a product name.
+`HERMES_KANBAN_BOARD` remains an inherited runtime alias for migrated workers, not a product name.
 
 ## Workspaces
 
@@ -230,7 +230,7 @@ The dispatcher:
 - promotes tasks whose dependencies are complete
 - atomically claims ready tasks
 - spawns assigned profile lanes
-- sets inherited `HERMES_KANBAN_*` runtime variables
+- sets fork-native `SUPERFORECASTING_AGENT_KANBAN_*` runtime variables plus compatibility aliases
 - records heartbeats, run status, logs, and failures
 - reclaims stale or crashed workers
 - blocks tasks that exceed retry or failure limits
@@ -239,15 +239,15 @@ Running a standalone `kanban daemon` is a legacy debugging path. Prefer the gate
 
 ## Worker Context
 
-When a worker starts, the dispatcher provides task context through inherited runtime variables:
+When a worker starts, the dispatcher provides task context through fork-native runtime variables and compatibility aliases:
 
 | Variable | Carries |
 |---|---|
 | `HERMES_KANBAN_TASK` | Current task id. |
-| `HERMES_KANBAN_DB` | Board SQLite path. |
-| `HERMES_KANBAN_BOARD` | Board slug. |
+| `SUPERFORECASTING_AGENT_KANBAN_DB` / `FORECAST_KANBAN_DB` / `HERMES_KANBAN_DB` | Board SQLite path. |
+| `SUPERFORECASTING_AGENT_KANBAN_BOARD` / `FORECAST_KANBAN_BOARD` / `HERMES_KANBAN_BOARD` | Board slug. |
 | `HERMES_KANBAN_WORKSPACE` | Absolute task workspace path. |
-| `HERMES_KANBAN_WORKSPACES_ROOT` | Board workspace root. |
+| `SUPERFORECASTING_AGENT_KANBAN_WORKSPACES_ROOT` / `FORECAST_KANBAN_WORKSPACES_ROOT` / `HERMES_KANBAN_WORKSPACES_ROOT` | Board workspace root. |
 | `HERMES_KANBAN_RUN_ID` | Current run id. |
 | `HERMES_KANBAN_CLAIM_LOCK` | Claim lock token. |
 | `HERMES_PROFILE` | Worker profile name. |
