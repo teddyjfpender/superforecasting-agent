@@ -40,6 +40,14 @@ class TestTipsCorpus:
         ]
         assert legacy == []
 
+    def test_runtime_env_tips_prefer_forecast_native_aliases(self):
+        assert any("SUPERFORECASTING_AGENT_STREAM_RETRIES" in tip for tip in TIPS)
+        assert any("SUPERFORECASTING_AGENT_ALLOW_PRIVATE_URLS" in tip for tip in TIPS)
+        assert any("SUPERFORECASTING_AGENT_CHECKPOINT_TIMEOUT" in tip for tip in TIPS)
+        assert not any(tip.startswith("HERMES_STREAM_RETRIES") for tip in TIPS)
+        assert not any(tip.startswith("HERMES_ALLOW_PRIVATE_URLS") for tip in TIPS)
+        assert not any(tip.startswith("HERMES_CHECKPOINT_TIMEOUT") for tip in TIPS)
+
 
 class TestGetRandomTip:
     """Validate the get_random_tip() function."""

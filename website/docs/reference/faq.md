@@ -164,7 +164,7 @@ If you set a custom `num_ctx` in Ollama (e.g., `ollama run --num_ctx 16384`), ma
 :::
 
 :::tip Timeouts with local models
-Superforecasting Agent auto-detects local endpoints and relaxes streaming timeouts (read timeout raised from 120s to 1800s, stale stream detection disabled). If you still hit timeouts on very large contexts, set `HERMES_STREAM_READ_TIMEOUT=1800` in your `.env`. See the [Local LLM guide](../guides/local-llm-on-mac.md#timeouts) for details.
+Superforecasting Agent auto-detects local endpoints and relaxes streaming timeouts (read timeout raised from 120s to 1800s, stale stream detection disabled). If you still hit timeouts on very large contexts, set `SUPERFORECASTING_AGENT_STREAM_READ_TIMEOUT=1800` or `FORECAST_STREAM_READ_TIMEOUT=1800` in your `.env`; `HERMES_STREAM_READ_TIMEOUT` remains a legacy alias. See the [Local LLM guide](../guides/local-llm-on-mac.md#timeouts) for details.
 :::
 
 ### How much does it cost?
