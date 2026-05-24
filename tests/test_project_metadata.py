@@ -338,6 +338,32 @@ def test_tui_readme_uses_forecast_native_product_copy():
     assert "Input history is stored in `~/.hermes" not in readme
 
 
+def test_runtime_docstrings_and_markers_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    goals = (root / "hermes_cli" / "goals.py").read_text(encoding="utf-8")
+    gateway = (root / "hermes_cli" / "gateway.py").read_text(encoding="utf-8")
+    relaunch = (root / "hermes_cli" / "relaunch.py").read_text(encoding="utf-8")
+    tui_gateway = (root / "tui_gateway" / "server.py").read_text(encoding="utf-8")
+    install_ps1 = (root / "scripts" / "install.ps1").read_text(encoding="utf-8")
+
+    assert "Persistent session goals for Superforecasting Agent" in goals
+    assert "goal satisfied by the forecaster's last response" in goals
+    assert "Ralph loop for Hermes" not in goals
+    assert "Hermes feeds" not in goals
+
+    assert "Gateway subcommand for Superforecasting Agent" in gateway
+    assert "Gateway subcommand for hermes CLI" not in gateway
+    assert "Handles: hermes gateway" not in gateway
+
+    assert "run the forecast CLI again" in relaunch
+    assert "run hermes again" not in relaunch
+    assert "new hermes started" not in relaunch
+
+    assert "changed the forecast agent's style" in tui_gateway
+    assert "changed the assistant's personality" not in tui_gateway
+    assert "Hermes's prompt-injection scanner" not in install_ps1
+
+
 def test_plugin_and_session_recap_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     plugins = (root / "hermes_cli" / "plugins.py").read_text(encoding="utf-8")

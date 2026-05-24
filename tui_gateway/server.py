@@ -1839,7 +1839,7 @@ def _apply_personality_to_session(
         # This prevents it from pattern-matching its prior style.
         if new_prompt:
             marker = (
-                "[System: The user has changed the assistant's personality. "
+                "[System: The user has changed the forecast agent's style. "
                 "From this point forward, adopt the following persona and respond "
                 f"accordingly: {new_prompt}]"
             )

@@ -158,25 +158,25 @@ def relaunch(
     preserve_inherited: bool = True,
     original_argv: Optional[Sequence[str]] = None,
 ) -> None:
-    """Replace the current process with a fresh hermes invocation.
+    """Replace the current process with a fresh CLI invocation.
 
     On POSIX we use ``os.execvp`` which replaces the running process with
     the new one in place — same PID, no double-fork.  That's what the
-    relaunch contract wants: "run hermes again as if the user had typed
-    the new argv".
+    relaunch contract wants: "run the forecast CLI again as if the user
+    had typed the new argv".
 
     Windows has no native exec semantics — ``os.execvp`` on Windows
     *emulates* exec by spawning the child and exiting the parent, but
     only works when the target is a real Win32 executable.  Our target
-    is usually ``hermes.exe`` (a Python console-script shim that wraps
-    ``python -m hermes_cli.main``) or a ``.cmd`` batch file, and both
-    raise ``OSError(8, "Exec format error")`` on Windows' execvp.
+    is usually a Python console-script shim that wraps
+    ``python -m hermes_cli.main`` or a ``.cmd`` batch file, and both raise
+    ``OSError(8, "Exec format error")`` on Windows' execvp.
 
     The Windows-correct pattern is: spawn the child with ``subprocess.run``
     (which routes through ``cmd.exe`` via ``shell=False`` + PATHEXT resolution),
     wait for it to exit, then propagate its exit code via ``sys.exit``.
-    That's functionally equivalent — the user sees "hermes exited, then
-    new hermes started" — just with two PIDs in play instead of one.
+    That's functionally equivalent: the user sees the old CLI exit, then the
+    new CLI start, just with two PIDs in play instead of one.
     """
     new_argv = build_relaunch_argv(
         extra_args, preserve_inherited=preserve_inherited, original_argv=original_argv

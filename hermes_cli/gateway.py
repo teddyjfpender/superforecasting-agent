@@ -1,7 +1,8 @@
 """
-Gateway subcommand for hermes CLI.
+Gateway subcommand for Superforecasting Agent.
 
-Handles: hermes gateway [run|start|stop|restart|status|install|uninstall|setup]
+Handles: superforecasting-agent gateway
+[run|start|stop|restart|status|install|uninstall|setup]
 """
 
 import asyncio
@@ -32,7 +33,7 @@ from hermes_cli.config import (
     save_env_value,
 )
 # display_hermes_home is imported lazily at call sites to avoid ImportError
-# when hermes_constants is cached from a pre-update version during `hermes update`.
+# when hermes_constants is cached from a pre-update version during an update.
 
 _RESTART_DRAIN_TIMEOUT_ENV_NAMES = (
     "SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT",
@@ -530,10 +531,10 @@ def find_gateway_pids(exclude_pids: set | None = None, all_profiles: bool = Fals
         exclude_pids: PIDs to exclude from the result (e.g. service-managed
             PIDs that should not be killed during a stale-process sweep).
         all_profiles: When ``True``, return gateway PIDs across **all**
-            profiles (the pre-7923 global behaviour).  ``hermes update``
-            needs this because a code update affects every profile.
+            profiles (the pre-7923 global behaviour).  Updates need this
+            because a code update affects every profile.
             When ``False`` (default), only PIDs belonging to the current
-            Hermes profile are returned.
+            forecast profile are returned.
     """
     _exclude = set(exclude_pids or set())
     pids: list[int] = []
@@ -3749,8 +3750,8 @@ def _all_platforms() -> list[dict]:
         ``mautrix[encryption]`` -> ``python-olm``, which has no Windows
         wheel and needs ``make`` + libolm to build from sdist. There's
         no native Windows path that works, so we don't offer it in the
-        picker. Users who want Matrix on Windows can run hermes under
-        WSL.
+        picker. Users who want Matrix on Windows can run the forecast desk
+        under WSL.
     """
     # Populate the registry so plugin platforms are visible. Idempotent.
     # Bundled platform plugins (``kind: platform``) auto-load unconditionally,

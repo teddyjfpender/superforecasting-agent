@@ -1,11 +1,11 @@
-"""Persistent session goals — the Ralph loop for Hermes.
+"""Persistent session goals for Superforecasting Agent.
 
 A goal is a free-form user objective that stays active across turns. After
 each turn completes, a small judge call asks an auxiliary model "is this
-goal satisfied by the assistant's last response?". If not, Hermes feeds a
-continuation prompt back into the same session and keeps working until the
-goal is done, turn budget is exhausted, the user pauses/clears it, or the
-user sends a new message (which takes priority and pauses the goal loop).
+goal satisfied by the forecaster's last response?". If not, the runtime feeds
+a continuation prompt back into the same session and keeps working until the
+goal is done, turn budget is exhausted, the user pauses/clears it, or the user
+sends a new message (which takes priority and pauses the goal loop).
 
 State is persisted in SessionDB's ``state_meta`` table keyed by
 ``goal:<session_id>`` so ``/resume`` picks it up.
@@ -21,8 +21,9 @@ Design notes / invariants:
   prompt and also pauses the goal loop for that turn (we still re-judge
   after, so if the user's message happens to complete the goal the judge
   will say ``done``).
-- This module has zero hard dependency on ``cli.HermesCLI`` or the gateway
-  runner — both wire the same ``GoalManager`` in.
+- This module has zero hard dependency on the inherited ``cli.HermesCLI``
+  implementation class or the gateway runner; both wire the same
+  ``GoalManager`` in.
 
 Nothing in this module touches the agent's system prompt or toolset.
 """
