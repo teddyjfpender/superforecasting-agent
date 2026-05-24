@@ -723,6 +723,8 @@ def test_readme_primary_links_are_fork_native():
     assert '<a href="LICENSE">' in before_legacy_docs
     assert "github.com/NousResearch/hermes-agent/blob/main/LICENSE" not in before_legacy_docs
     assert "github.com/NousResearch/hermes-agent/issues" not in readme
+    assert "[CONTRIBUTING.md](CONTRIBUTING.md)" in readme
+    assert "upstream Hermes contributing guide" not in readme
 
 
 def test_high_attention_help_docs_are_fork_local():

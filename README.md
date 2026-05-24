@@ -192,7 +192,7 @@ See `superforecasting-agent claw migrate --help` for all options, or use the `op
 
 ## Contributing
 
-We welcome contributions. The upstream Hermes contributing guide is still useful for inherited runtime areas, but forecast-domain work should follow the PRD and context docs linked above.
+We welcome contributions. Start with [CONTRIBUTING.md](CONTRIBUTING.md); inherited runtime areas still carry some Hermes-compatible names, but forecast-domain work should follow the PRD and context docs linked above.
 
 Quick start for contributors:
 
