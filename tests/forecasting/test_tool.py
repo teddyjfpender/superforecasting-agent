@@ -74,19 +74,40 @@ def test_cli_default_toolsets_are_forecast_desk_scoped():
     assert "delegate_task" not in tool_names
 
 
-def test_fork_native_toolset_aliases_resolve_inherited_presets():
+def test_fork_native_inherited_toolset_aliases_remain_available():
     alias_pairs = {
         "forecast-cli": "hermes-cli",
         "forecast-acp": "hermes-acp",
-        "forecast-api-server": "hermes-api-server",
-        "forecast-cron": "hermes-cron",
-        "forecast-gateway": "hermes-gateway",
     }
 
     for alias, inherited in alias_pairs.items():
         assert validate_toolset(alias)
         assert get_toolset(alias) is not None
         assert resolve_toolset(alias) == resolve_toolset(inherited)
+
+
+def test_forecast_platform_toolsets_are_scoped_to_forecasting():
+    from hermes_cli.platforms import PLATFORMS
+
+    for platform in ("telegram", "slack", "email", "cron", "api_server"):
+        default_toolset = PLATFORMS[platform].default_toolset
+        assert default_toolset.startswith("forecast-")
+        tools = resolve_toolset(default_toolset)
+        assert "forecast_ledger" in tools
+        assert "memory" not in tools
+        assert "skill_manage" not in tools
+        assert "image_generate" not in tools
+        assert "text_to_speech" not in tools
+        assert "delegate_task" not in tools
+
+    assert "discord" in resolve_toolset(PLATFORMS["discord"].default_toolset)
+    assert "discord_admin" not in resolve_toolset(PLATFORMS["discord"].default_toolset)
+    assert "ha_call_service" not in resolve_toolset(PLATFORMS["homeassistant"].default_toolset)
+    assert "feishu_doc_read" in resolve_toolset(PLATFORMS["feishu"].default_toolset)
+    assert "feishu_drive_add_comment" not in resolve_toolset(PLATFORMS["feishu"].default_toolset)
+    assert "yb_send_sticker" not in resolve_toolset(PLATFORMS["yuanbao"].default_toolset)
+    assert "hermes-telegram" in get_toolset("hermes-gateway")["includes"]
+    assert "forecast-telegram" in get_toolset("forecast-gateway")["includes"]
 
 
 def test_forecast_ledger_tool_watch_source_type_schema_is_current():

@@ -1188,6 +1188,12 @@ def _get_platform_tools(
     _plat_info = PLATFORMS.get(platform)
     _default_ts = _plat_info["default_toolset"] if _plat_info else f"hermes-{platform}"
     platform_tool_universe = set(resolve_toolset(_default_ts))
+    for ts_name in toolset_names:
+        if ts_name in configurable_keys or ts_name in plugin_ts_keys:
+            continue
+        if ts_name not in TOOLSETS:
+            continue
+        platform_tool_universe.update(resolve_toolset(ts_name))
     configurable_tool_universe = set()
     for ck in configurable_keys:
         configurable_tool_universe.update(resolve_toolset(ck))

@@ -100,28 +100,34 @@ def test_get_platform_tools_default_whatsapp_includes_web():
     assert "web" in enabled
 
 
-def test_get_platform_tools_homeassistant_platform_keeps_homeassistant_toolset():
+def test_get_platform_tools_homeassistant_platform_is_forecast_scoped_by_default():
     enabled = _get_platform_tools({}, "homeassistant")
 
-    assert "homeassistant" in enabled
+    assert "forecasting" in enabled
+    assert "messaging" in enabled
+    assert "homeassistant" not in enabled
 
 
-def test_get_platform_tools_homeassistant_toolset_enabled_for_cron_when_hass_token_set(monkeypatch):
+def test_get_platform_tools_legacy_cron_can_still_enable_homeassistant_when_hass_token_set(monkeypatch):
     """HA toolset is runtime-gated by check_fn (requires HASS_TOKEN).
 
-    When HASS_TOKEN is set, the user has explicitly opted in for platforms
-    whose default composite includes HA (like cron). The forecast-desk CLI
-    default stays narrowed unless the user explicitly enables HA there.
-
-    Regression guard for Norbert's HA cron breakage after #14798 made cron
-    honor per-platform tool config.
+    The fork-native cron default is forecast-scoped and does not pull in smart
+    home control automatically. Users who deliberately keep the inherited
+    broad cron preset still get the old HASS_TOKEN-gated behavior.
     """
     monkeypatch.setenv("HASS_TOKEN", "fake-test-token")
 
     cron_enabled = _get_platform_tools({}, "cron")
-    assert "homeassistant" in cron_enabled
+    assert "homeassistant" not in cron_enabled
+
+    legacy_cron_enabled = _get_platform_tools(
+        {"platform_toolsets": {"cron": ["hermes-cron"]}},
+        "cron",
+    )
+    assert "homeassistant" in legacy_cron_enabled
     # moa must stay off — the original goal of #14798
     assert "moa" not in cron_enabled
+    assert "moa" not in legacy_cron_enabled
 
     cli_enabled = _get_platform_tools({}, "cli")
     assert "homeassistant" not in cli_enabled
@@ -707,11 +713,11 @@ class TestPlatformToolsetConsistency:
             )
 
     def test_gateway_toolset_includes_all_messaging_platforms(self):
-        """hermes-gateway includes list should cover all messaging platforms."""
+        """forecast-gateway includes list should cover default messaging platforms."""
         from hermes_cli.tools_config import PLATFORMS
         from toolsets import TOOLSETS
 
-        gateway_includes = set(TOOLSETS["hermes-gateway"]["includes"])
+        gateway_includes = set(TOOLSETS["forecast-gateway"]["includes"])
         # Exclude non-messaging platforms from the check
         non_messaging = {"cli", "api_server", "cron"}
         for platform, meta in PLATFORMS.items():
@@ -1005,10 +1011,17 @@ def test_save_platform_tools_strips_restricted_toolsets():
     assert "terminal" in saved
 
 
-def test_get_platform_tools_feishu_includes_doc_and_drive():
+def test_get_platform_tools_feishu_includes_doc_without_drive_by_default():
     enabled = _get_platform_tools({}, "feishu")
     assert "feishu_doc" in enabled
-    assert "feishu_drive" in enabled
+    assert "feishu_drive" not in enabled
+
+    legacy_enabled = _get_platform_tools(
+        {"platform_toolsets": {"feishu": ["hermes-feishu"]}},
+        "feishu",
+    )
+    assert "feishu_doc" in legacy_enabled
+    assert "feishu_drive" in legacy_enabled
 
 
 def test_get_platform_tools_feishu_tools_not_on_other_platforms():

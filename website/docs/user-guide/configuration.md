@@ -130,6 +130,13 @@ skills marketplace tools, image/video generation, delegation, outbound
 messaging, Home Assistant, Spotify, Discord administration, RL tools, and
 wildcard `all` tool exposure.
 
+Secondary runtimes use matching forecast-scoped presets by default. For
+example, Telegram starts from `forecast-telegram`, the API server starts from
+`forecast-api-server`, and cron starts from `forecast-cron`. Legacy
+`hermes-*` presets remain valid for existing configs, but new installs should
+prefer the `forecast-*` platform presets unless the broad inherited action
+surface is intentional.
+
 ## Forecast Ledger State
 
 The ledger is the durable learning system. It stores:
@@ -181,6 +188,17 @@ superforecasting-agent chat --toolsets hermes-cli
 
 `hermes-cli` is the legacy full assistant preset. Use it only when the broad
 inherited action surface is intentional.
+
+Platform defaults can also be overridden explicitly:
+
+```yaml
+platform_toolsets:
+  telegram:
+    - forecast-telegram
+    - mcp-market-data
+  api_server:
+    - forecast-api-server
+```
 
 ## Global Toolset Disable
 

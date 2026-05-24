@@ -3,6 +3,14 @@
 from hermes_cli import nous_subscription as ns
 
 
+def test_toolset_enabled_uses_forecast_desk_as_default():
+    assert ns._toolset_enabled({}, "web") is True
+    assert ns._toolset_enabled({}, "browser") is True
+    assert ns._toolset_enabled({}, "image_gen") is False
+    assert ns._toolset_enabled({}, "tts") is False
+    assert ns._toolset_enabled({}, "memory") is False
+
+
 def test_get_nous_subscription_features_recognizes_direct_exa_backend(monkeypatch):
     env = {"EXA_API_KEY": "exa-test"}
 

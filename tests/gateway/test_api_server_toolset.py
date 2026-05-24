@@ -64,7 +64,7 @@ class TestApiServerPlatformConfig:
     def test_platforms_dict_includes_api_server(self):
         from hermes_cli.tools_config import PLATFORMS
         assert "api_server" in PLATFORMS
-        assert PLATFORMS["api_server"]["default_toolset"] == "hermes-api-server"
+        assert PLATFORMS["api_server"]["default_toolset"] == "forecast-api-server"
 
 
 class TestApiServerAdapterToolset:
@@ -85,7 +85,7 @@ class TestApiServerAdapterToolset:
                                         "provider": None, "api_mode": None,
                                         "command": None, "args": []}
             mock_model.return_value = "test/model"
-            # No platform_toolsets override — should fall back to hermes-api-server default
+            # No platform_toolsets override — should fall back to forecast-api-server default
             mock_config.return_value = {}
             mock_agent_cls.return_value = MagicMock()
 

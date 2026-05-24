@@ -28,13 +28,14 @@ Toolsets come in four kinds:
 | Forecast default | The CLI's primary product capability set | `forecast-desk` |
 | Core | One logical group of related tools | `file`, `web`, `forecasting` |
 | Composite | Multiple core toolsets combined for a workflow | `debugging`, `safe` |
-| Platform | A complete runtime preset for a deployment context | `forecast-api-server`, `hermes-telegram` |
+| Platform | A complete runtime preset for a deployment context | `forecast-api-server`, `forecast-telegram` |
 
 Platform names that still start with `hermes-` are compatibility identifiers in
 the runtime. They do not mean the old broad assistant surface is the preferred
-product surface. New configs can use fork-native aliases for the main inherited
-runtime presets: `forecast-cli`, `forecast-acp`, `forecast-api-server`,
-`forecast-cron`, and `forecast-gateway`.
+product surface. New platform defaults use forecast-scoped presets such as
+`forecast-telegram`, `forecast-discord`, `forecast-api-server`,
+`forecast-cron`, and `forecast-gateway`; the broad `hermes-*` presets remain
+available only as deliberate compatibility opt-ins.
 
 ## Configuring Toolsets
 
@@ -62,8 +63,9 @@ toolsets:
   - forecast-desk
 ```
 
-Messaging, gateway, ACP, and API-server profiles can still use their platform
-presets when that deployment needs the inherited runtime behavior.
+Messaging, gateway, API-server, and cron profiles use forecast-scoped platform
+presets by default. ACP and explicit legacy profiles can still use inherited
+presets when that deployment needs the old broad runtime behavior.
 
 ### Interactive Management
 
@@ -90,6 +92,9 @@ enabled.
 | Toolset | Includes | Purpose |
 |---------|----------|---------|
 | `forecast-desk` | `forecasting`, `web`, `browser`, `terminal`, `file`, `code_execution`, `todo`, `clarify`, `cronjob` | Default CLI desk for forecast ledger operations, source research, local modeling, evidence capture, scheduled review, and explicit clarification. |
+| `forecast-messaging` | `forecasting`, `web`, `browser`, `terminal`, `file`, `code_execution`, `todo`, `clarify`, `messaging` | Shared forecast-scoped base for messaging surfaces and review-alert conversations. |
+| `forecast-api-server` | `forecasting`, `web`, `browser`, `terminal`, `file`, `code_execution`, `todo` | Forecast-scoped HTTP runtime without interactive clarification, outbound messaging, generic memory, skills, image generation, or delegation by default. |
+| `forecast-cron` | `forecasting`, `web`, `terminal`, `file`, `code_execution`, `todo`, `messaging` | Forecast-scoped scheduled-job runtime for evidence checks, ledger self-checks, and explicit delivery. |
 
 The default intentionally does not include generic memory-provider tools,
 skills marketplace tools, image generation, delegation, messaging delivery,
@@ -149,9 +154,12 @@ Most names are inherited compatibility identifiers.
 |---------|---------|
 | `forecast-cli` | Fork-native alias for `hermes-cli`; inherited full interactive runtime preset. Prefer `forecast-desk` for normal forecasting work. |
 | `forecast-acp` | Fork-native alias for `hermes-acp`; editor integration for VS Code, Zed, and JetBrains. |
-| `forecast-api-server` | Fork-native alias for `hermes-api-server`; OpenAI-compatible HTTP runtime without interactive clarification or outbound messaging. |
-| `forecast-cron` | Fork-native alias for `hermes-cron`; inherited cron runtime preset. Forecast-aware jobs should prefer `forecast schedule`. |
-| `forecast-gateway` | Fork-native alias for `hermes-gateway`; inherited messaging gateway preset. |
+| `forecast-api-server` | Forecast-scoped OpenAI-compatible HTTP runtime. Use `hermes-api-server` only for the inherited broad HTTP preset. |
+| `forecast-cron` | Forecast-scoped scheduled-job runtime. Use `hermes-cron` only for the inherited broad cron preset. |
+| `forecast-telegram`, `forecast-slack`, `forecast-whatsapp`, `forecast-signal`, `forecast-matrix`, `forecast-mattermost`, `forecast-email`, `forecast-sms`, `forecast-bluebubbles`, `forecast-dingtalk`, `forecast-wecom`, `forecast-wecom-callback`, `forecast-weixin`, `forecast-qqbot`, `forecast-webhook`, `forecast-yuanbao`, `forecast-homeassistant` | Forecast-scoped messaging presets built on `forecast-messaging`; Home Assistant and Yuanbao action tools remain opt-in instead of default. |
+| `forecast-discord` | Forecast-scoped messaging preset plus Discord read/participation tools. Discord admin tools remain opt-in. |
+| `forecast-feishu` | Forecast-scoped messaging preset plus Feishu/Lark document reads. Feishu drive comment operations remain opt-in. |
+| `forecast-gateway` | Aggregate of all forecast-scoped messaging platform presets. |
 | `hermes-cli` | Legacy full interactive assistant preset. Use explicitly when you want the broad inherited tool surface. |
 | `hermes-acp` | Editor integration for VS Code, Zed, and JetBrains. Drops interactive messaging/audio tools. |
 | `hermes-api-server` | OpenAI-compatible HTTP runtime without interactive clarification or outbound messaging. |

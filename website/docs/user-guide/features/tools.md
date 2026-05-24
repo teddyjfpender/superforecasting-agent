@@ -40,8 +40,11 @@ and [Toolsets Reference](../../reference/toolsets-reference.md).
 
 ## Default Tool Exposure
 
-`forecast-desk` is the default toolset for the CLI. It includes the capabilities
-needed for forecasting work:
+`forecast-desk` is the default toolset for the CLI. Messaging, API-server, and
+cron runtimes use matching `forecast-*` platform presets by default, so newly
+configured secondary surfaces inherit the forecasting scope instead of the full
+legacy assistant surface. The CLI preset includes the capabilities needed for
+forecasting work:
 
 - forecast ledger operations
 - web research and browser inspection
@@ -53,6 +56,11 @@ It does not enable broad assistant features by default. Memory-provider tools,
 skills marketplace tools, image generation, delegation, messaging delivery,
 Home Assistant, Spotify, Discord administration, RL training, and other broad
 integrations are opt-in.
+
+Legacy `hermes-*` platform presets remain available for existing configs and
+deliberate full-surface sessions, but new defaults prefer `forecast-telegram`,
+`forecast-discord`, `forecast-api-server`, `forecast-cron`, and the other
+forecast-scoped platform presets.
 
 Use explicit toolsets when a forecast genuinely needs them:
 
