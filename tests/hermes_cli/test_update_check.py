@@ -65,6 +65,36 @@ def test_check_for_updates_expired_cache(tmp_path, monkeypatch):
     assert mock_run.call_count == 2  # git fetch + git rev-list
 
 
+def test_check_for_updates_prefers_forecast_revision_env_alias(tmp_path, monkeypatch):
+    """Nix-style revision checks should prefer fork-native env aliases."""
+    import hermes_cli.banner as banner
+
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path))
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_REVISION", "forecast-native-rev")
+    monkeypatch.setenv("FORECAST_REVISION", "short-forecast-rev")
+    monkeypatch.setenv("HERMES_REVISION", "legacy-rev")
+
+    with patch.object(banner, "_check_via_rev", return_value=7) as check_rev:
+        result = banner.check_for_updates()
+
+    assert result == 7
+    check_rev.assert_called_once_with("forecast-native-rev")
+
+
+def test_check_for_updates_preserves_legacy_revision_env_alias(tmp_path, monkeypatch):
+    """Existing HERMES_REVISION Nix wrappers remain compatible."""
+    import hermes_cli.banner as banner
+
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_REVISION", "legacy-rev")
+
+    with patch.object(banner, "_check_via_rev", return_value=2) as check_rev:
+        result = banner.check_for_updates()
+
+    assert result == 2
+    check_rev.assert_called_once_with("legacy-rev")
+
+
 def test_check_for_updates_no_git_dir(tmp_path, monkeypatch):
     """Falls back to PyPI check when .git directory doesn't exist anywhere."""
     import hermes_cli.banner as banner

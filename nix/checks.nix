@@ -198,6 +198,28 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
           echo "ok" > $out/result
         '';
 
+        # Verify revision metadata prefers fork-native aliases while preserving
+        # the legacy compatibility name for existing Nix consumers.
+        revision-env-aliases = let
+          hermesWithRev = hermes-agent.override {
+            rev = "forecast-test-rev";
+          };
+        in pkgs.runCommand "hermes-revision-env-aliases" { } ''
+          set -e
+          echo "=== Checking revision env aliases in wrapper ==="
+          grep -q "SUPERFORECASTING_AGENT_REVISION" ${hermesWithRev}/bin/hermes || \
+            (echo "FAIL: SUPERFORECASTING_AGENT_REVISION not set in wrapper"; exit 1)
+          grep -q "FORECAST_REVISION" ${hermesWithRev}/bin/hermes || \
+            (echo "FAIL: FORECAST_REVISION not set in wrapper"; exit 1)
+          grep -q "HERMES_REVISION" ${hermesWithRev}/bin/hermes || \
+            (echo "FAIL: HERMES_REVISION compatibility alias not set in wrapper"; exit 1)
+          echo "PASS: revision env aliases present in wrapper"
+
+          echo "=== All revision wrapper checks passed ==="
+          mkdir -p $out
+          echo "ok" > $out/result
+        '';
+
         # Verify HERMES_MANAGED guard works on all mutation commands
         managed-guard = pkgs.runCommand "hermes-managed-guard" { } ''
           set -e

@@ -20,6 +20,7 @@ from rich.table import Table
 
 from prompt_toolkit import print_formatted_text as _pt_print
 from prompt_toolkit.formatted_text import ANSI as _PT_ANSI
+from utils import env_var_alias_value
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,11 @@ _YOLO_MODE_ENV_NAMES = (
     "SUPERFORECASTING_AGENT_YOLO_MODE",
     "FORECAST_YOLO_MODE",
     "HERMES_YOLO_MODE",
+)
+_REVISION_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_REVISION",
+    "FORECAST_REVISION",
+    "HERMES_REVISION",
 )
 
 
@@ -219,11 +225,11 @@ def check_via_pypi() -> Optional[int]:
 
 
 def check_for_updates() -> Optional[int]:
-    """Check whether a Hermes update is available.
+    """Check whether a Superforecasting Agent update is available.
 
-    Two paths: if ``HERMES_REVISION`` is set (nix builds embed it), compare
-    it to upstream main via ``git ls-remote``. Otherwise look for a local
-    git checkout and count commits behind ``origin/main``.
+    Two paths: if a revision env alias is set (Nix builds embed it), compare
+    it to upstream main via ``git ls-remote``. Otherwise look for a local git
+    checkout and count commits behind ``origin/main``.
 
     Returns the number of commits behind, ``UPDATE_AVAILABLE_NO_COUNT`` (-1)
     if behind but the count is unknown, ``0`` if up-to-date, or ``None`` if
@@ -231,7 +237,7 @@ def check_for_updates() -> Optional[int]:
     """
     hermes_home = get_hermes_home()
     cache_file = hermes_home / ".update_check"
-    embedded_rev = os.environ.get("HERMES_REVISION") or None
+    embedded_rev = env_var_alias_value(_REVISION_ENV_NAMES) or None
 
     # Read cache — invalidate if the embedded rev has changed since last check
     now = time.time()

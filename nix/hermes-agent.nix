@@ -168,7 +168,11 @@ stdenv.mkDerivation {
           --set SUPERFORECASTING_AGENT_NODE ${lib.getExe nodejs} \
           --set FORECAST_NODE ${lib.getExe nodejs} \
           --set HERMES_NODE ${lib.getExe nodejs} \
-          ${lib.optionalString (rev != null) ''--set HERMES_REVISION ${rev} \''}
+          ${lib.optionalString (rev != null) ''
+            --set SUPERFORECASTING_AGENT_REVISION ${rev} \
+            --set FORECAST_REVISION ${rev} \
+            --set HERMES_REVISION ${rev} \
+          ''}
           ${lib.optionalString (extraPythonPackages != [ ]) ''--suffix PYTHONPATH : "${pythonPath}"''}
       '')
       [

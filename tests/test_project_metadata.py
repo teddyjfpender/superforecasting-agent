@@ -1623,3 +1623,19 @@ def test_diagnostic_env_aliases_are_forecast_native():
     assert "FORECAST_DEBUG_INTERRUPT" in interrupt
     assert "SUPERFORECASTING_AGENT_DEBUG_INTERRUPT" in env_base
     assert "FORECAST_DEBUG_INTERRUPT" in env_base
+
+
+def test_revision_env_aliases_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    banner = (root / "hermes_cli" / "banner.py").read_text(encoding="utf-8")
+    nix_wrapper = (root / "nix" / "hermes-agent.nix").read_text(encoding="utf-8")
+    nix_checks = (root / "nix" / "checks.nix").read_text(encoding="utf-8")
+
+    assert "SUPERFORECASTING_AGENT_REVISION" in banner
+    assert "FORECAST_REVISION" in banner
+    assert "HERMES_REVISION" in banner
+    assert "SUPERFORECASTING_AGENT_REVISION" in nix_wrapper
+    assert "FORECAST_REVISION" in nix_wrapper
+    assert "HERMES_REVISION" in nix_wrapper
+    assert "SUPERFORECASTING_AGENT_REVISION" in nix_checks
+    assert "FORECAST_REVISION" in nix_checks
