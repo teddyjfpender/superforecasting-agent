@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { forecastDashboardSections, forecastDeskActionStripItems, forecastDeskRailSections } from '../app/forecastPanel.js'
+import {
+  forecastDashboardSections,
+  forecastDeskActionStripItems,
+  forecastDeskRailSections,
+  forecastDeskStatusLabel
+} from '../app/forecastPanel.js'
 import type { ForecastDashboardResponse } from '../gatewayTypes.js'
 
 describe('forecast desk panel helpers', () => {
@@ -118,6 +123,46 @@ describe('forecast desk panel helpers', () => {
         '/forecast import secfacts <cik>/<concept> --question <id>'
       ])
     )
+  })
+
+  it('surfaces aggregate assumption counts in desk status and triage', () => {
+    const response: ForecastDashboardResponse = {
+      summary: {
+        active_count: 2,
+        calibration: { count: 1 },
+        open_alert_count: 0,
+        product: 'Superforecasting Agent',
+        questions: [
+          {
+            id: 'fq_assumption111',
+            open_assumption_count: 3,
+            probability: 0.61,
+            stale_assumption_count: 1,
+            title: 'Will assumptions stay visible?'
+          },
+          {
+            id: 'fq_assumption222',
+            open_assumption_count: 2,
+            probability: 0.48,
+            stale_assumption_count: 0,
+            title: 'Will active assumptions aggregate?'
+          }
+        ],
+        review_queue: [],
+        review_queue_count: 0
+      }
+    }
+
+    const sections = forecastDashboardSections(response)
+    const railSections = forecastDeskRailSections(response)
+
+    expect(forecastDeskStatusLabel(response)).toContain('asm 5/1')
+    expect(sections.find(section => section.title === 'Desk')?.rows).toContainEqual(['assumptions', '5/1'])
+    expect(railSections.find(section => section.title === 'Book')?.rows).toContainEqual(['assumptions', '5/1'])
+    expect(sections.find(section => section.title === 'Triage')?.rows).toContainEqual([
+      '/forecast self-check',
+      '1 stale assumption needs evidence or status review'
+    ])
   })
 
   it('adds focused per-question actions from the review queue', () => {

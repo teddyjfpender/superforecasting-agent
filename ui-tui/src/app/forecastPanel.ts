@@ -81,6 +81,18 @@ const formatRequirement = (value: string | undefined) =>
 const plural = (count: number, singular: string, pluralForm = `${singular}s`) =>
   `${count} ${count === 1 ? singular : pluralForm}`
 
+const assumptionCounts = (questions: ForecastDashboardQuestion[]) => {
+  let open = 0
+  let stale = 0
+
+  for (const row of questions) {
+    open += numberValue(row.open_assumption_count) ?? 0
+    stale += numberValue(row.stale_assumption_count) ?? 0
+  }
+
+  return { open, stale }
+}
+
 export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): string => {
   const summary = response.summary
 
@@ -93,6 +105,7 @@ export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): st
   const reviews = numberValue(summary.review_queue_count) ?? (summary.review_queue ?? []).length
   const calibrationCount = numberValue(summary.calibration?.count)
   const lessonCount = numberValue(summary.learning?.total_lessons)
+  const assumptions = assumptionCounts(summary.questions ?? [])
   const bits = [`desk ${active} active`]
 
   if (alerts > 0) {
@@ -109,6 +122,10 @@ export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): st
 
   if (lessonCount !== null) {
     bits.push(plural(lessonCount, 'lesson'))
+  }
+
+  if (assumptions.open > 0 || assumptions.stale > 0) {
+    bits.push(`asm ${assumptions.open}/${assumptions.stale}`)
   }
 
   return bits.join(' / ')
@@ -155,6 +172,7 @@ const triageRows = (response: ForecastDashboardResponse): [string, string][] => 
   const calibrationCount = numberValue(summary.calibration?.count) ?? 0
   const learning = summary.learning
   const backtests = summary.recent_backtests ?? []
+  const assumptions = assumptionCounts(summary.questions ?? [])
   const rows: [string, string][] = []
 
   if (alerts > 0) {
@@ -163,6 +181,13 @@ const triageRows = (response: ForecastDashboardResponse): [string, string][] => 
 
   if (reviews > 0) {
     rows.push(['/review --stale', `${plural(reviews, 'forecast')} queued for stale/close/evidence review`])
+  }
+
+  if (assumptions.stale > 0) {
+    rows.push([
+      '/forecast self-check',
+      `${plural(assumptions.stale, 'stale assumption')} ${assumptions.stale === 1 ? 'needs' : 'need'} evidence or status review`
+    ])
   }
 
   const evidenceGaps = summary.evidence_status?.gaps ?? []
@@ -288,6 +313,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
   const active = summary.active_count ?? questions.length
   const alerts = summary.open_alert_count ?? 0
   const reviews = summary.review_queue_count ?? reviewQueue.length
+  const assumptions = assumptionCounts(questions)
 
   const sections: PanelSection[] = [
     {
@@ -296,6 +322,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
         ['active forecasts', formatCount(active)],
         ['open alerts', formatCount(alerts)],
         ['review queue', formatCount(reviews)],
+        ['assumptions', `${formatCount(assumptions.open)}/${formatCount(assumptions.stale)}`],
         ['calibration n', formatCount(calibration?.count)],
         ['lessons', formatCount(learning?.total_lessons)]
       ],
@@ -545,12 +572,14 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
   const active = summary.active_count ?? questions.length
   const alerts = summary.open_alert_count ?? 0
   const reviews = summary.review_queue_count ?? reviewQueue.length
+  const assumptions = assumptionCounts(questions)
   const sections: PanelSection[] = [
     {
       rows: [
         ['active', formatCount(active)],
         ['alerts', formatCount(alerts)],
         ['reviews', formatCount(reviews)],
+        ['assumptions', `${formatCount(assumptions.open)}/${formatCount(assumptions.stale)}`],
         ['scores', formatCount(calibration?.count)],
         ['lessons', formatCount(learning?.total_lessons)]
       ],

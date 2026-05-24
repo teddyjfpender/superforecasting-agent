@@ -739,13 +739,14 @@ describe('createGatewayEventHandler', () => {
     createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
 
     await vi.waitFor(() => expect(appended.some(msg => msg.kind === 'panel')).toBe(true))
-    expect(getUiState().forecastDeskStatus).toBe('desk 1 active / 1 alert / 1 review / cal 3 / 1 lesson')
+    expect(getUiState().forecastDeskStatus).toBe('desk 1 active / 1 alert / 1 review / cal 3 / 1 lesson / asm 2/0')
     expect(getUiState().forecastDeskRailSections).toEqual([
       {
         rows: [
           ['active', '1'],
           ['alerts', '1'],
           ['reviews', '1'],
+          ['assumptions', '2/0'],
           ['scores', '3'],
           ['lessons', '1']
         ],
@@ -794,6 +795,7 @@ describe('createGatewayEventHandler', () => {
               ['active forecasts', '1'],
               ['open alerts', '1'],
               ['review queue', '1'],
+              ['assumptions', '2/0'],
               ['calibration n', '3'],
               ['lessons', '1']
             ],
