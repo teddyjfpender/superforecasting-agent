@@ -64,6 +64,48 @@ body:
         }
 
   - type: textarea
+    id: readiness
+    attributes:
+      label: Readiness Summary
+      description: Paste `forecast readiness --json` or summarize live scored forecast counts, held-out replay counts, leakage-free runs, and remaining evidence gaps.
+      render: json
+      placeholder: |
+        {
+          "can_claim_live_superforecasting": false,
+          "live_scored_forecasts": 2,
+          "agent_protocol_scored_cases": 120,
+          "remaining_gaps": ["more live resolved forecasts needed"]
+        }
+
+  - type: textarea
+    id: live-evidence-counts
+    attributes:
+      label: Live Evidence Counts
+      description: Count the tester artifacts that matter for learning, not just whether the commands ran.
+      placeholder: |
+        - active forecasts:
+        - forecast updates:
+        - structured-source imports:
+        - scheduled self-checks:
+        - resolved forecasts:
+        - scored forecasts:
+        - postmortems:
+        - active calibration lessons:
+
+  - type: textarea
+    id: pilot-aggregate
+    attributes:
+      label: Pilot Aggregate Output
+      description: If multiple ledgers were exported, paste `forecast pilot-aggregate .pilot/*-export.json --json` or summarize the aggregate.
+      render: json
+      placeholder: |
+        {
+          "live_scores": 4,
+          "domains": ["macro", "software"],
+          "remaining_collection_gaps": []
+        }
+
+  - type: textarea
     id: blockers
     attributes:
       label: Blockers or Gaps

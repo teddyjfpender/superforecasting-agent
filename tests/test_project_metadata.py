@@ -570,6 +570,11 @@ def test_github_issue_and_pr_templates_are_forecast_native():
 
     assert "Forecast Pilot Feedback" in text
     assert "Source Adapter Request" in text
+    assert "forecast readiness --json" in text
+    assert "forecast pilot-aggregate .pilot/*-export.json --json" in text
+    assert "Live Evidence Counts" in text
+    assert "Timestamp And Availability Semantics" in text
+    assert "Resolution Or Benchmark Use" in text
     assert "superforecasting-agent debug share" in text
     assert "forecast --db" in text
     assert "Forecasting Integrity" in text
@@ -2136,6 +2141,9 @@ def test_tester_pilot_docs_cover_scheduled_learning_loop():
     assert "`scores_created`, `postmortems_created`, and" in tester_pilot
     assert "domain/topic error profiles" in tester_pilot
     assert "--use-active-lessons" in tester_pilot
+    assert "forecast readiness --json" in tester_pilot
+    assert "live evidence" in tester_pilot
+    assert "forecast pilot-aggregate .pilot/*-export.json --json" in tester_pilot
 
 
 def test_superforecasting_fork_audit_maps_prd_requirements():

@@ -222,7 +222,12 @@ Use the repository's **Forecast Pilot Feedback** issue template for workflow
 reports and the **Source Adapter Request** template for missing data feeds,
 market priors, benchmark corpora, or resolution sources.
 
-Each issue should include:
+Each pilot issue should include the smoke/tested commit, commands run,
+`forecast pilot-report --json`, `forecast readiness --json`, live evidence
+counts, and any `forecast pilot-aggregate .pilot/*-export.json --json` output
+from shared exports.
+
+Each issue should include enough detail to reproduce the failing workflow:
 
 ```text
 command:

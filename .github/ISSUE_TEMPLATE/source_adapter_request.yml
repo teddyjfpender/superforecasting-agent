@@ -63,6 +63,20 @@ body:
         - source URL
 
   - type: textarea
+    id: timestamp-semantics
+    attributes:
+      label: Timestamp And Availability Semantics
+      description: Explain how to tell when each record was published, revised, available to a forecaster, and safe to use in a historical replay.
+      placeholder: |
+        - published_at:
+        - revised_at:
+        - available_at:
+        - how revisions are represented:
+        - whether old snapshots can be retrieved:
+    validations:
+      required: true
+
+  - type: textarea
     id: example-questions
     attributes:
       label: Example Forecast Questions
@@ -71,6 +85,16 @@ body:
         - What will ...
     validations:
       required: true
+
+  - type: textarea
+    id: resolution-benchmark-use
+    attributes:
+      label: Resolution Or Benchmark Use
+      description: If this source can resolve questions or produce replay cases, describe the outcome field, resolution criteria, baseline probability, and leakage risks.
+      placeholder: |
+        This source can resolve the question by ...
+        It can create benchmark cases if ...
+        Leakage risks:
 
   - type: dropdown
     id: access
