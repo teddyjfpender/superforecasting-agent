@@ -564,6 +564,17 @@ _REDACT_SECRETS_ENV_NAMES = (
     "FORECAST_REDACT_SECRETS",
     "HERMES_REDACT_SECRETS",
 )
+_MAX_ITERATIONS_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_MAX_ITERATIONS",
+    "FORECAST_MAX_ITERATIONS",
+    "HERMES_MAX_ITERATIONS",
+)
+
+
+def _set_max_iterations_env_aliases(value: object) -> None:
+    text = str(value)
+    for name in _MAX_ITERATIONS_ENV_NAMES:
+        os.environ[name] = text
 
 
 def _first_redact_secrets_env(default: str = "true") -> tuple[str, str]:
@@ -574,12 +585,20 @@ def _first_redact_secrets_env(default: str = "true") -> tuple[str, str]:
     return "default", default
 
 
+def _first_max_iterations_env(default: str = "90") -> tuple[str, str]:
+    for name in _MAX_ITERATIONS_ENV_NAMES:
+        value = os.getenv(name)
+        if value:
+            return name, value
+    return "default", default
+
+
 def _reload_runtime_env_preserving_config_authority() -> None:
     """Reload .env for fresh credentials without letting stale .env override config.
 
     Gateway processes are long-lived, so per-turn code reloads ~/.hermes/.env to
     pick up rotated API keys. config.yaml remains authoritative for agent budget
-    settings such as agent.max_turns; otherwise a stale HERMES_MAX_ITERATIONS in
+    settings such as agent.max_turns; otherwise a stale max-iterations env var in
     .env can replace the startup bridge on later turns.
     """
     load_hermes_dotenv(
@@ -601,7 +620,7 @@ def _reload_runtime_env_preserving_config_authority() -> None:
 
     agent_cfg = cfg.get("agent", {})
     if isinstance(agent_cfg, dict) and "max_turns" in agent_cfg:
-        os.environ["HERMES_MAX_ITERATIONS"] = str(agent_cfg["max_turns"])
+        _set_max_iterations_env_aliases(agent_cfg["max_turns"])
 
 
 _DOCKER_VOLUME_SPEC_RE = re.compile(r"^(?P<host>.+):(?P<container>/[^:]+?)(?::(?P<options>[^:]+))?$")
@@ -720,7 +739,7 @@ if _config_path.exists():
         _agent_cfg = _cfg.get("agent", {})
         if _agent_cfg and isinstance(_agent_cfg, dict):
             if "max_turns" in _agent_cfg:
-                os.environ["HERMES_MAX_ITERATIONS"] = str(_agent_cfg["max_turns"])
+                _set_max_iterations_env_aliases(_agent_cfg["max_turns"])
             if "gateway_timeout" in _agent_cfg:
                 os.environ["HERMES_AGENT_TIMEOUT"] = str(_agent_cfg["gateway_timeout"])
             if "gateway_timeout_warning" in _agent_cfg:
@@ -3625,11 +3644,13 @@ class GatewayRunner:
         # config.yaml → env bridge did the right thing at a glance (instead
         # of silently running at a stale .env value for weeks).
         try:
-            _effective_max_iter = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
+            _max_iter_key, _max_iter_raw = _first_max_iterations_env("90")
+            _effective_max_iter = int(_max_iter_raw)
             logger.info(
                 "Agent budget: max_iterations=%d (agent.max_turns from config.yaml, "
-                "or HERMES_MAX_ITERATIONS from .env, or default 90)",
+                "or %s from .env, or default 90)",
                 _effective_max_iter,
+                _max_iter_key,
             )
         except Exception:
             pass
@@ -11413,7 +11434,7 @@ class GatewayRunner:
             disabled_toolsets = agent_cfg.get("disabled_toolsets") or None
 
             pr = self._provider_routing
-            max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
+            max_iterations = int(_first_max_iterations_env("90")[1])
             reasoning_config = self._resolve_session_reasoning_config(source=source)
             self._reasoning_config = reasoning_config
             self._service_tier = self._load_service_tier()
@@ -16120,7 +16141,7 @@ class GatewayRunner:
             os.environ["HERMES_SESSION_KEY"] = session_key or ""
 
             # Read from env var or use default (same as CLI)
-            max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
+            max_iterations = int(_first_max_iterations_env("90")[1])
             
             # Map platform enum to the platform hint key the agent understands.
             # Platform.LOCAL ("local") maps to "cli"; others pass through as-is.

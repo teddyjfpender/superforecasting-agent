@@ -1,10 +1,10 @@
 """Regression tests for the config.yaml → env var bridge in gateway/run.py.
 
-Guards against the 60-vs-500 bug where a stale `.env HERMES_MAX_ITERATIONS=60`
-entry silently shadowed `agent.max_turns: 500` in config.yaml because the
-bridge used `if X not in os.environ` guards. After PR#18413 the bridge
-treats config.yaml as authoritative and unconditionally overwrites .env
-values for `agent.*`, `display.*`, `timezone`, and `security.*` keys.
+Guards against the 60-vs-500 bug where a stale max-iterations `.env` entry
+silently shadowed `agent.max_turns: 500` in config.yaml because the bridge
+used `if X not in os.environ` guards. After PR#18413 the bridge treats
+config.yaml as authoritative and unconditionally overwrites .env values for
+`agent.*`, `display.*`, `timezone`, and `security.*` keys.
 """
 
 from __future__ import annotations
@@ -41,6 +41,8 @@ def _run_gateway_import(hermes_home: Path, initial_env: dict[str, str]) -> dict[
             sys.exit(2)
 
         for k in (
+            "SUPERFORECASTING_AGENT_MAX_ITERATIONS",
+            "FORECAST_MAX_ITERATIONS",
             "HERMES_MAX_ITERATIONS",
             "HERMES_AGENT_TIMEOUT",
             "HERMES_AGENT_TIMEOUT_WARNING",
@@ -109,10 +111,16 @@ def hermes_home(tmp_path: Path) -> Path:
 def test_config_max_turns_wins_over_stale_env(hermes_home: Path) -> None:
     """Regression: config.yaml:agent.max_turns=500 must beat .env=60."""
     _write_config(hermes_home, agent_cfg={"max_turns": 500})
-    _write_env(hermes_home, {"HERMES_MAX_ITERATIONS": "60"})
+    _write_env(hermes_home, {
+        "SUPERFORECASTING_AGENT_MAX_ITERATIONS": "60",
+        "FORECAST_MAX_ITERATIONS": "60",
+        "HERMES_MAX_ITERATIONS": "60",
+    })
 
     env = _run_gateway_import(hermes_home, initial_env={})
 
+    assert env.get("SUPERFORECASTING_AGENT_MAX_ITERATIONS") == "500"
+    assert env.get("FORECAST_MAX_ITERATIONS") == "500"
     assert env.get("HERMES_MAX_ITERATIONS") == "500", (
         f"expected config.yaml max_turns=500 to win; got {env.get('HERMES_MAX_ITERATIONS')!r}. "
         "Stale .env value is shadowing config — the bridge lost its override."
@@ -163,8 +171,8 @@ def test_env_value_survives_when_config_omits_key(hermes_home: Path) -> None:
     config key should NOT clobber the .env value.
     """
     _write_config(hermes_home, agent_cfg={})  # no max_turns
-    _write_env(hermes_home, {"HERMES_MAX_ITERATIONS": "123"})
+    _write_env(hermes_home, {"FORECAST_MAX_ITERATIONS": "123"})
 
     env = _run_gateway_import(hermes_home, initial_env={})
 
-    assert env.get("HERMES_MAX_ITERATIONS") == "123"
+    assert env.get("FORECAST_MAX_ITERATIONS") == "123"

@@ -546,7 +546,7 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 
 | Variable | Description |
 |----------|-------------|
-| `HERMES_MAX_ITERATIONS` | Max tool-calling iterations per conversation (default: 90) |
+| `SUPERFORECASTING_AGENT_MAX_ITERATIONS` / `FORECAST_MAX_ITERATIONS` / `HERMES_MAX_ITERATIONS` | Max tool-calling iterations per conversation (default: 90). The `HERMES_*` name remains a legacy alias. |
 | `HERMES_INFERENCE_MODEL` | Override model name at process level (takes priority over `config.yaml` for the session). Also settable via `-m`/`--model` flag. |
 | `SUPERFORECASTING_AGENT_YOLO_MODE` / `FORECAST_YOLO_MODE` / `HERMES_YOLO_MODE` | Set to `1` to bypass dangerous-command approval prompts. Equivalent to `--yolo`; the `HERMES_*` name remains a legacy alias. |
 | `HERMES_ACCEPT_HOOKS` | Auto-approve any unseen shell hooks declared in `config.yaml` without a TTY prompt. Equivalent to `--accept-hooks` or `hooks_auto_accept: true`. |

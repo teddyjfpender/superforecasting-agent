@@ -25,7 +25,12 @@ def _make_cli(env_overrides=None, config_overrides=None, **kwargs):
     }
     if config_overrides:
         _clean_config.update(config_overrides)
-    clean_env = {"LLM_MODEL": "", "HERMES_MAX_ITERATIONS": ""}
+    clean_env = {
+        "LLM_MODEL": "",
+        "SUPERFORECASTING_AGENT_MAX_ITERATIONS": "",
+        "FORECAST_MAX_ITERATIONS": "",
+        "HERMES_MAX_ITERATIONS": "",
+    }
     if env_overrides:
         clean_env.update(env_overrides)
     prompt_toolkit_stubs = {
@@ -75,6 +80,14 @@ class TestMaxTurnsResolution:
         """Env var is used when config file doesn't set max_turns."""
         cli_obj = _make_cli(env_overrides={"HERMES_MAX_ITERATIONS": "42"})
         assert cli_obj.max_turns == 42
+
+    def test_forecast_native_env_var_max_turns_precedes_legacy(self):
+        cli_obj = _make_cli(env_overrides={
+            "SUPERFORECASTING_AGENT_MAX_ITERATIONS": "55",
+            "FORECAST_MAX_ITERATIONS": "44",
+            "HERMES_MAX_ITERATIONS": "42",
+        })
+        assert cli_obj.max_turns == 55
 
     def test_invalid_env_var_max_turns_falls_back_to_default(self):
         """Invalid env values should not crash CLI init."""

@@ -52,6 +52,11 @@ _REDACT_SECRETS_ENV_NAMES = (
     "FORECAST_REDACT_SECRETS",
     "HERMES_REDACT_SECRETS",
 )
+_MAX_ITERATIONS_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_MAX_ITERATIONS",
+    "FORECAST_MAX_ITERATIONS",
+    "HERMES_MAX_ITERATIONS",
+)
 
 
 def _set_redact_env_aliases(value: object) -> None:
@@ -64,6 +69,14 @@ def _first_redact_env(default: str = "true") -> tuple[str, str]:
     for name in _REDACT_SECRETS_ENV_NAMES:
         value = os.getenv(name)
         if value is not None:
+            return name, value
+    return "default", default
+
+
+def _first_max_iterations_env(default: str = "90") -> tuple[str, str]:
+    for name in _MAX_ITERATIONS_ENV_NAMES:
+        value = os.getenv(name)
+        if value:
             return name, value
     return "default", default
 
@@ -2796,13 +2809,12 @@ class HermesCLI:
             self.max_turns = CLI_CONFIG["agent"]["max_turns"]
         elif CLI_CONFIG.get("max_turns"):  # Backwards compat: root-level max_turns
             self.max_turns = CLI_CONFIG["max_turns"]
-        elif os.getenv("HERMES_MAX_ITERATIONS"):
+        else:
+            _max_iterations_raw = _first_max_iterations_env("90")[1]
             try:
-                self.max_turns = int(os.getenv("HERMES_MAX_ITERATIONS", ""))
+                self.max_turns = int(_max_iterations_raw)
             except (TypeError, ValueError):
                 self.max_turns = 90
-        else:
-            self.max_turns = 90
         
         # Parse and validate toolsets
         self.enabled_toolsets = toolsets
