@@ -52,7 +52,7 @@ from hermes_cli.config import get_hermes_home, get_config_path, read_raw_config
 
 _PRIMARY_CLI = "superforecasting-agent"
 from hermes_constants import OPENROUTER_BASE_URL
-from utils import atomic_replace, atomic_yaml_write, is_truthy_value
+from utils import atomic_replace, atomic_yaml_write, env_var_alias_enabled, is_truthy_value
 
 logger = logging.getLogger(__name__)
 
@@ -783,8 +783,13 @@ def _token_fingerprint(token: Any) -> Optional[str]:
 
 
 def _oauth_trace_enabled() -> bool:
-    raw = os.getenv("HERMES_OAUTH_TRACE", "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    return env_var_alias_enabled(
+        (
+            "SUPERFORECASTING_AGENT_OAUTH_TRACE",
+            "FORECAST_OAUTH_TRACE",
+            "HERMES_OAUTH_TRACE",
+        )
+    )
 
 
 def _oauth_trace(event: str, *, sequence_id: Optional[str] = None, **fields: Any) -> None:

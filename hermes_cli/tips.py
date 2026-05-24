@@ -444,8 +444,8 @@ TIPS = [
     'HERMES_ALLOW_PRIVATE_URLS=true lets web tools hit localhost and private networks — off by default in gateway mode.',
     'SUPERFORECASTING_AGENT_OPTIONAL_SKILLS=/path/to/optional-skills points at a custom optional-skill tree.',
     'SUPERFORECASTING_AGENT_BUNDLED_SKILLS points at a custom bundled-skill tree — used by Homebrew and Nix packaging.',
-    'HERMES_DUMP_REQUEST_STDOUT=1 dumps every API request payload to stdout instead of log files.',
-    'HERMES_OAUTH_TRACE=1 logs redacted OAuth token exchange and refresh attempts for debugging provider auth.',
+    'SUPERFORECASTING_AGENT_DUMP_REQUEST_STDOUT=1 dumps every API request payload to stdout instead of log files.',
+    'SUPERFORECASTING_AGENT_OAUTH_TRACE=1 logs redacted OAuth token exchange and refresh attempts for debugging provider auth.',
     'HERMES_STREAM_RETRIES (default 3) controls mid-stream reconnect attempts on transient network errors.',
 
     # --- Gateway Behavior Env Vars ---

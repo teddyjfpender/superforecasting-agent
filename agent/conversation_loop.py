@@ -68,7 +68,7 @@ from hermes_constants import display_hermes_home as _dhh_fn
 from hermes_logging import set_session_context
 from tools.schema_sanitizer import strip_pattern_and_format
 from tools.skill_provenance import set_current_write_origin
-from utils import base_url_host_matches, env_var_enabled
+from utils import base_url_host_matches, env_var_alias_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -1024,7 +1024,13 @@ def run_conversation(
                 except Exception:
                     pass
 
-                if env_var_enabled("HERMES_DUMP_REQUESTS"):
+                if env_var_alias_enabled(
+                    (
+                        "SUPERFORECASTING_AGENT_DUMP_REQUESTS",
+                        "FORECAST_DUMP_REQUESTS",
+                        "HERMES_DUMP_REQUESTS",
+                    )
+                ):
                     agent._dump_api_request_debug(api_kwargs, reason="preflight")
 
                 # Always prefer the streaming path — even without stream

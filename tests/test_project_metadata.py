@@ -1597,3 +1597,29 @@ def test_dashboard_vite_dev_proxy_prefers_forecast_native_names():
     assert "window.__FORECAST_DASHBOARD_EMBEDDED_CHAT__" in config
     assert "forecast:dev-session-token" in config
     assert "hermes:dev-session-token" not in config
+
+
+def test_diagnostic_env_aliases_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    conversation_loop = (root / "agent" / "conversation_loop.py").read_text(
+        encoding="utf-8"
+    )
+    runtime_helpers = (root / "agent" / "agent_runtime_helpers.py").read_text(
+        encoding="utf-8"
+    )
+    auth = (root / "hermes_cli" / "auth.py").read_text(encoding="utf-8")
+    interrupt = (root / "tools" / "interrupt.py").read_text(encoding="utf-8")
+    env_base = (root / "tools" / "environments" / "base.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "SUPERFORECASTING_AGENT_DUMP_REQUESTS" in conversation_loop
+    assert "FORECAST_DUMP_REQUESTS" in conversation_loop
+    assert "SUPERFORECASTING_AGENT_DUMP_REQUEST_STDOUT" in runtime_helpers
+    assert "FORECAST_DUMP_REQUEST_STDOUT" in runtime_helpers
+    assert "SUPERFORECASTING_AGENT_OAUTH_TRACE" in auth
+    assert "FORECAST_OAUTH_TRACE" in auth
+    assert "SUPERFORECASTING_AGENT_DEBUG_INTERRUPT" in interrupt
+    assert "FORECAST_DEBUG_INTERRUPT" in interrupt
+    assert "SUPERFORECASTING_AGENT_DEBUG_INTERRUPT" in env_base
+    assert "FORECAST_DEBUG_INTERRUPT" in env_base

@@ -15,16 +15,23 @@ Usage in tools:
 """
 
 import logging
-import os
 import threading
+
+from utils import env_var_alias_enabled
 
 logger = logging.getLogger(__name__)
 
-# Opt-in debug tracing — pairs with HERMES_DEBUG_INTERRUPT in
-# tools/environments/base.py.  Enables per-call logging of set/check so the
-# caller thread, target thread, and current state are visible when
-# diagnosing "interrupt signaled but tool never saw it" reports.
-_DEBUG_INTERRUPT = bool(os.getenv("HERMES_DEBUG_INTERRUPT"))
+# Opt-in debug tracing — pairs with the same debug-interrupt aliases in
+# tools/environments/base.py. Enables per-call logging of set/check so the
+# caller thread, target thread, and current state are visible when diagnosing
+# "interrupt signaled but tool never saw it" reports.
+_DEBUG_INTERRUPT = env_var_alias_enabled(
+    (
+        "SUPERFORECASTING_AGENT_DEBUG_INTERRUPT",
+        "FORECAST_DEBUG_INTERRUPT",
+        "HERMES_DEBUG_INTERRUPT",
+    )
+)
 
 if _DEBUG_INTERRUPT:
     # AIAgent's quiet_mode path forces `tools` logger to ERROR on CLI startup.

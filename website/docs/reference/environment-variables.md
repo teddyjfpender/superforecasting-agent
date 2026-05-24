@@ -145,7 +145,7 @@ For native Anthropic auth, Superforecasting Agent prefers Claude Code's own cred
 | `NOUS_INFERENCE_BASE_URL` | Override Nous inference API URL |
 | `HERMES_NOUS_MIN_KEY_TTL_SECONDS` | Min agent key TTL before re-mint (default: 1800 = 30min) |
 | `HERMES_NOUS_TIMEOUT_SECONDS` | HTTP timeout for Nous credential / token flows |
-| `HERMES_DUMP_REQUESTS` | Dump API request payloads to log files (`true`/`false`) |
+| `SUPERFORECASTING_AGENT_DUMP_REQUESTS` / `FORECAST_DUMP_REQUESTS` / `HERMES_DUMP_REQUESTS` | Dump API request payloads to log files (`true`/`false`); the `HERMES_*` name remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_PREFILL_MESSAGES_FILE` / `FORECAST_PREFILL_MESSAGES_FILE` / `HERMES_PREFILL_MESSAGES_FILE` | Path to a JSON file of ephemeral prefill messages injected at API-call time; the `HERMES_*` name remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_TIMEZONE` / `FORECAST_TIMEZONE` / `HERMES_TIMEZONE` | IANA timezone override (for example `America/New_York`); the `HERMES_*` name remains a legacy alias. |
 
@@ -591,10 +591,10 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 | `HERMES_CORE_TOOLS` | Comma-separated override for the canonical core tool list (advanced; rarely needed). |
 | `SUPERFORECASTING_AGENT_BUNDLED_SKILLS` / `FORECAST_BUNDLED_SKILLS` / `HERMES_BUNDLED_SKILLS` | Advanced packaged-install override for the bundled skills directory. Nix wrappers set this automatically; the `HERMES_*` name remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_OPTIONAL_SKILLS` / `FORECAST_OPTIONAL_SKILLS` / `HERMES_OPTIONAL_SKILLS` | Advanced packaged-install override for the optional-skills directory; the `HERMES_*` name remains a legacy alias. |
-| `HERMES_DEBUG_INTERRUPT` | Set to `1` to log detailed interrupt/cancel tracing to `agent.log`. |
-| `HERMES_DUMP_REQUESTS` | Dump API request payloads to log files (`true`/`false`) |
-| `HERMES_DUMP_REQUEST_STDOUT` | Dump API request payloads to stdout instead of log files. |
-| `HERMES_OAUTH_TRACE` | Set to `1` to log OAuth token exchange and refresh attempts. Includes redacted timing info. |
+| `SUPERFORECASTING_AGENT_DEBUG_INTERRUPT` / `FORECAST_DEBUG_INTERRUPT` / `HERMES_DEBUG_INTERRUPT` | Set to `1` to log detailed interrupt/cancel tracing to `agent.log`; the `HERMES_*` name remains a legacy alias. |
+| `SUPERFORECASTING_AGENT_DUMP_REQUESTS` / `FORECAST_DUMP_REQUESTS` / `HERMES_DUMP_REQUESTS` | Dump API request payloads to log files (`true`/`false`); the `HERMES_*` name remains a legacy alias. |
+| `SUPERFORECASTING_AGENT_DUMP_REQUEST_STDOUT` / `FORECAST_DUMP_REQUEST_STDOUT` / `HERMES_DUMP_REQUEST_STDOUT` | Dump API request payloads to stdout instead of log files; the `HERMES_*` name remains a legacy alias. |
+| `SUPERFORECASTING_AGENT_OAUTH_TRACE` / `FORECAST_OAUTH_TRACE` / `HERMES_OAUTH_TRACE` | Set to `1` to log OAuth token exchange and refresh attempts. Includes redacted timing info; the `HERMES_*` name remains a legacy alias. |
 | `HERMES_OAUTH_FILE` | Override the path used for OAuth credential storage (default: `<agent-home>/auth.json`). |
 | `HERMES_AGENT_HELP_GUIDANCE` | Append additional guidance text to the system prompt for custom deployments. |
 | `HERMES_AGENT_LOGO` | Override the ASCII banner logo at CLI startup. |
