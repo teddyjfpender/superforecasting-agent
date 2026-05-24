@@ -19,7 +19,9 @@ from agent.prompt_builder import (
     build_nous_subscription_prompt,
     build_context_files_prompt,
     build_environment_hints,
+    get_agent_help_guidance,
     CONTEXT_FILE_MAX_CHARS,
+    AGENT_HELP_GUIDANCE_ENV_NAMES,
     DEFAULT_AGENT_IDENTITY,
     TOOL_USE_ENFORCEMENT_GUIDANCE,
     TOOL_USE_ENFORCEMENT_MODELS,
@@ -48,6 +50,29 @@ class TestGuidanceConstants:
     def test_session_search_guidance_is_simple_cross_session_recall(self):
         assert "relevant cross-session context exists" in SESSION_SEARCH_GUIDANCE
         assert "recent turns of the current session" not in SESSION_SEARCH_GUIDANCE
+
+    def test_agent_help_guidance_prefers_forecast_native_env_alias(self, monkeypatch):
+        for name in AGENT_HELP_GUIDANCE_ENV_NAMES:
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_HELP_GUIDANCE", "Use internal runbook A.")
+        monkeypatch.setenv("FORECAST_HELP_GUIDANCE", "Use internal runbook B.")
+        monkeypatch.setenv("HERMES_AGENT_HELP_GUIDANCE", "Use legacy runbook.")
+
+        guidance = get_agent_help_guidance()
+
+        assert "Superforecasting Agent" in guidance
+        assert "Use internal runbook A." in guidance
+        assert "Use internal runbook B." not in guidance
+        assert "Use legacy runbook." not in guidance
+
+    def test_agent_help_guidance_preserves_legacy_env_alias(self, monkeypatch):
+        for name in AGENT_HELP_GUIDANCE_ENV_NAMES:
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("HERMES_AGENT_HELP_GUIDANCE", "Use legacy deployment note.")
+
+        guidance = get_agent_help_guidance()
+
+        assert "Use legacy deployment note." in guidance
 
 
 # =========================================================================

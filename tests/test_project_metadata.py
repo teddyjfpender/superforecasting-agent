@@ -1632,6 +1632,22 @@ def test_diagnostic_env_aliases_are_forecast_native():
     assert "FORECAST_DEBUG_INTERRUPT" in env_base
 
 
+def test_prompt_guidance_env_aliases_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    prompt_builder = (root / "agent" / "prompt_builder.py").read_text(
+        encoding="utf-8"
+    )
+    system_prompt = (root / "agent" / "system_prompt.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "SUPERFORECASTING_AGENT_HELP_GUIDANCE" in prompt_builder
+    assert "FORECAST_HELP_GUIDANCE" in prompt_builder
+    assert "HERMES_AGENT_HELP_GUIDANCE" in prompt_builder
+    assert "def get_agent_help_guidance" in prompt_builder
+    assert "get_agent_help_guidance()" in system_prompt
+
+
 def test_revision_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     banner = (root / "hermes_cli" / "banner.py").read_text(encoding="utf-8")

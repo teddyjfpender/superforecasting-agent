@@ -24,7 +24,7 @@ from agent.skill_utils import (
     parse_frontmatter,
     skill_matches_platform,
 )
-from utils import atomic_json_write
+from utils import atomic_json_write, env_var_alias_value
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +143,12 @@ DEFAULT_AGENT_IDENTITY = (
     "calibration lessons from the forecast ledger."
 )
 
+AGENT_HELP_GUIDANCE_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_HELP_GUIDANCE",
+    "FORECAST_HELP_GUIDANCE",
+    "HERMES_AGENT_HELP_GUIDANCE",
+)
+
 HERMES_AGENT_HELP_GUIDANCE = (
     "If the user asks about configuring, setting up, or using Superforecasting "
     "Agent itself, answer with fork-native commands such as `superforecasting-agent` "
@@ -150,6 +156,14 @@ HERMES_AGENT_HELP_GUIDANCE = (
     "or legacy plugin behavior, load the `hermes-agent` skill with "
     "skill_view(name='hermes-agent') before answering."
 )
+
+
+def get_agent_help_guidance() -> str:
+    """Return built-in self-help guidance plus optional deployment guidance."""
+    extra_guidance = (env_var_alias_value(AGENT_HELP_GUIDANCE_ENV_NAMES, "") or "").strip()
+    if not extra_guidance:
+        return HERMES_AGENT_HELP_GUIDANCE
+    return f"{HERMES_AGENT_HELP_GUIDANCE}\n\nAdditional deployment guidance:\n{extra_guidance}"
 
 MEMORY_GUIDANCE = (
     "You have persistent memory across sessions. Save durable facts using the memory "

@@ -972,6 +972,20 @@ class TestBuildSystemPrompt:
         prompt = agent._build_system_prompt(system_message="Custom instruction")
         assert "Custom instruction" in prompt
 
+    def test_includes_forecast_native_help_guidance_env_alias(self, agent, monkeypatch):
+        from agent.prompt_builder import AGENT_HELP_GUIDANCE_ENV_NAMES
+
+        for name in AGENT_HELP_GUIDANCE_ENV_NAMES:
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv(
+            "SUPERFORECASTING_AGENT_HELP_GUIDANCE",
+            "Route internal setup questions to the desk runbook.",
+        )
+
+        prompt = agent._build_system_prompt()
+
+        assert "Route internal setup questions to the desk runbook." in prompt
+
     def test_memory_guidance_when_memory_tool_loaded(self, agent_with_memory_tool):
         from agent.prompt_builder import MEMORY_GUIDANCE
 
