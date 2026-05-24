@@ -1840,6 +1840,20 @@ def test_nix_package_aliases_are_forecast_native():
     assert '"hermes-agent" = superforecastingAgent' in nix_overlay
     assert 'containerName = "superforecasting-agent"' in nix_module
     assert 'lib.mkAliasOptionModule [ "services" "superforecasting-agent" ] [ "services" "hermes-agent" ]' in nix_module
+    assert 'mkEnableOption "Superforecasting Agent gateway service"' in nix_module
+    assert 'name = "superforecasting-agent-config-attrs"' in nix_module
+    assert 'pkgs.writeText "superforecasting-agent-config.yaml"' in nix_module
+    assert 'pkgs.runCommand "superforecasting-agent-documents"' in nix_module
+    assert 'pkgs.writeShellScript "superforecasting-agent-container-entrypoint"' in nix_module
+    assert 'system.activationScripts."superforecasting-agent-setup"' in nix_module
+    assert "Hermes Agent gateway service" not in nix_module
+    assert "Declarative Hermes config" not in nix_module
+    assert "Hermes reads this file" not in nix_module
+    assert "Hermes discovers these automatically" not in nix_module
+    assert "hermes-config-attrs" not in nix_module
+    assert "hermes-container-entrypoint" not in nix_module
+    assert 'system.activationScripts."hermes-agent-setup"' not in nix_module
+    assert "HERMES_CONTAINER_MODE_EOF" not in nix_module
     assert 'default = superforecasting-agent' in nix_module
     assert '"${effectivePackage}/bin/superforecasting-agent"' in nix_module
     assert "${containerDataDir}/current-package/bin/superforecasting-agent gateway run --replace" in nix_module

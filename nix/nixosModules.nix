@@ -4,14 +4,14 @@
 #   container.enable = false (default) → native systemd service
 #   container.enable = true            → OCI container (persistent writable layer)
 #
-# Container mode: hermes runs from /nix/store bind-mounted read-only into a
+# Container mode: Superforecasting Agent runs from /nix/store bind-mounted read-only into a
 # plain Ubuntu container. The writable layer (apt/pip/npm installs) persists
 # across restarts and agent updates. Only image/volume/options changes trigger
 # container recreation. Environment variables are written to the shared
 # forecast home (.hermes in the inherited module layout).
-# and read by hermes at startup — no container recreation needed for env changes.
+# and read by Superforecasting Agent at startup — no container recreation needed for env changes.
 #
-# Tool resolution: the hermes wrapper uses --suffix PATH for nix store tools,
+# Tool resolution: the superforecasting-agent wrapper uses --suffix PATH for nix store tools,
 # so apt/uv-installed versions take priority. The container entrypoint provisions
 # extensible tools on first boot: nodejs/npm via apt, uv via curl, and a Python
 # 3.11 venv (bootstrapped entirely by uv) at ~/.venv with pip seeded. Agents get
@@ -36,17 +36,17 @@ let
       else cfg.package.override { inherit (cfg) extraPythonPackages extraDependencyGroups; };
     superforecasting-agent = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.default;
 
-    # Deep-merge config type (from 0xrsydn/nix-hermes-agent)
+    # Deep-merge config type (inherited from the original Hermes Nix module)
     deepConfigType = lib.types.mkOptionType {
-      name = "hermes-config-attrs";
-      description = "Hermes YAML config (attrset), merged deeply via lib.recursiveUpdate.";
+      name = "superforecasting-agent-config-attrs";
+      description = "Superforecasting Agent YAML config (attrset), merged deeply via lib.recursiveUpdate.";
       check = builtins.isAttrs;
       merge = _loc: defs: lib.foldl' lib.recursiveUpdate { } (map (d: d.value) defs);
     };
 
     # Generate config.yaml from Nix attrset (YAML is a superset of JSON)
     configJson = builtins.toJSON cfg.settings;
-    generatedConfigFile = pkgs.writeText "hermes-config.yaml" configJson;
+    generatedConfigFile = pkgs.writeText "superforecasting-agent-config.yaml" configJson;
     configFile = if cfg.configFile != null then cfg.configFile else generatedConfigFile;
 
     configMergeScript = pkgs.callPackage ./configMergeScript.nix { };
@@ -56,7 +56,7 @@ let
       lib.mapAttrsToList (k: v: "${k}=${v}") cfg.environment
     );
     # Build documents derivation (from 0xrsydn)
-    documentDerivation = pkgs.runCommand "hermes-documents" { } (
+    documentDerivation = pkgs.runCommand "superforecasting-agent-documents" { } (
       ''
         mkdir -p $out
       '' + lib.concatStringsSep "\n" (
@@ -80,7 +80,7 @@ let
     # Runs as root inside the container on every start. Provisions the
     # hermes user + sudo on first boot (writable layer persists), then
     # drops privileges. Supports arbitrary base images (Debian, Alpine, etc).
-    containerEntrypoint = pkgs.writeShellScript "hermes-container-entrypoint" ''
+    containerEntrypoint = pkgs.writeShellScript "superforecasting-agent-container-entrypoint" ''
       set -eu
 
       HERMES_UID="''${HERMES_UID:?HERMES_UID must be set}"
@@ -209,7 +209,7 @@ let
     ];
 
     options.services.hermes-agent = with lib; {
-      enable = mkEnableOption "Hermes Agent gateway service";
+      enable = mkEnableOption "Superforecasting Agent gateway service";
 
       # ── Package ──────────────────────────────────────────────────────────
       package = mkOption {
@@ -265,7 +265,7 @@ let
         type = deepConfigType;
         default = { };
         description = ''
-          Declarative Hermes config (attrset). Deep-merged across module
+          Declarative Superforecasting Agent config (attrset). Deep-merged across module
           definitions and rendered as config.yaml.
         '';
         example = literalExpression ''
@@ -285,7 +285,7 @@ let
         description = ''
           Paths to environment files containing secrets (API keys, tokens).
           Contents are merged into the shared forecast home .env at activation time.
-          Hermes reads this file on every startup via load_hermes_dotenv().
+          Superforecasting Agent reads this file on every startup via load_hermes_dotenv().
         '';
       };
 
@@ -323,7 +323,7 @@ let
         '';
         example = literalExpression ''
           {
-            "SOUL.md" = "You are a helpful AI assistant.";
+            "SOUL.md" = "You are a calibrated forecasting desk.";
             "USER.md" = ./documents/USER.md;
           }
         '';
@@ -471,7 +471,7 @@ let
           Extra packages available to the agent — terminal commands, skills,
           cron jobs, and the service process all see them.
 
-          Implemented via the hermes user's per-user profile
+          Implemented via the service user's per-user profile
           (`/etc/profiles/per-user/${cfg.user}/bin`), which NixOS includes
           in PATH for login shells.  The packages are also added to the
           systemd service PATH for direct process access.
@@ -482,9 +482,9 @@ let
         type = types.listOf types.package;
         default = [ ];
         description = ''
-          Directory-based plugin packages to symlink into the hermes plugins
+          Directory-based plugin packages to symlink into the forecast desk plugins
           directory. Each package should contain a plugin.yaml and __init__.py
-          at its root. Hermes discovers these automatically on startup.
+          at its root. Superforecasting Agent discovers these automatically on startup.
         '';
         example = literalExpression ''
           [
@@ -506,7 +506,7 @@ let
           Python packages to add to PYTHONPATH for entry-point plugin discovery.
           These are pip-packaged plugins that register via the
           hermes_agent.plugins entry-point group. Each package must be built
-          with the same Python interpreter as hermes (python312).
+          with the same Python interpreter as Superforecasting Agent (python312).
         '';
         example = literalExpression ''
           [
@@ -689,7 +689,7 @@ let
 
       # ── Warnings ──────────────────────────────────────────────────────
       # ── Per-user profile for extraPackages ───────────────────────────
-      # Wire extraPackages into the hermes user's per-user profile so the
+      # Wire extraPackages into the service user's per-user profile so the
       # login-shell snapshot (which rebuilds PATH from NixOS profiles) sees
       # them.  The systemd service PATH also includes them for direct access.
       (lib.mkIf (cfg.extraPackages != []) {
@@ -727,7 +727,7 @@ let
 
       # ── Activation: link config + auth + documents ────────────────────
       {
-        system.activationScripts."hermes-agent-setup" = lib.stringAfter ([ "users" ] ++ lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets") ''
+        system.activationScripts."superforecasting-agent-setup" = lib.stringAfter ([ "users" ] ++ lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets") ''
           # Ensure directories exist (activation runs before tmpfiles)
           mkdir -p ${cfg.stateDir}/.hermes
           mkdir -p ${cfg.stateDir}/home
@@ -769,13 +769,13 @@ let
           # container instead of running locally. Removed when container mode
           # is disabled so the host CLI falls back to native execution.
           ${if cfg.container.enable then ''
-            cat > ${cfg.stateDir}/.hermes/.container-mode <<'HERMES_CONTAINER_MODE_EOF'
+            cat > ${cfg.stateDir}/.hermes/.container-mode <<'FORECAST_CONTAINER_MODE_EOF'
     # Written by NixOS activation script. Do not edit manually.
     backend=${cfg.container.backend}
     container_name=${containerName}
     exec_user=${cfg.user}
     hermes_bin=${containerDataDir}/current-package/bin/superforecasting-agent
-    HERMES_CONTAINER_MODE_EOF
+    FORECAST_CONTAINER_MODE_EOF
             chown ${cfg.user}:${cfg.group} ${cfg.stateDir}/.hermes/.container-mode
             chmod 0644 ${cfg.stateDir}/.hermes/.container-mode
           '' else ''
@@ -789,7 +789,7 @@ let
               in ''
                 if [ -L "${symlinkPath}" ] && [ "$(readlink "${symlinkPath}")" = "${cfg.stateDir}/.hermes" ]; then
                   rm -f "${symlinkPath}"
-                  echo "hermes-agent: removed symlink ${symlinkPath}"
+                  echo "superforecasting-agent: removed symlink ${symlinkPath}"
                 fi
               '') cfg.container.hostUsers)}
           ''}
@@ -809,7 +809,7 @@ let
                   # Real directory — back it up, then create symlink.
                   # (ln -sfn cannot atomically replace a directory.)
                   _backup="${symlinkPath}.bak.$(date +%s)"
-                  echo "hermes-agent: backing up existing ${symlinkPath} to $_backup"
+                  echo "superforecasting-agent: backing up existing ${symlinkPath} to $_backup"
                   mv "${symlinkPath}" "$_backup"
                 fi
                 # For everything else (existing symlink, doesn't exist, etc.)
