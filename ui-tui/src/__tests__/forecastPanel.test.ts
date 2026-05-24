@@ -149,6 +149,9 @@ describe('forecast desk panel helpers', () => {
     expect(nextCommands?.items).toEqual(
       expect.arrayContaining([
         '/forecast readiness',
+        '/forecast lesson list',
+        '/forecast errors',
+        '/forecast schedule run --due --auto-score --auto-postmortem',
         '/forecast pilot-report',
         '/forecast pilot-cohort live-cohort.csv --dry-run --json',
         '/forecast pilot-aggregate .pilot/*-export.json --json'
