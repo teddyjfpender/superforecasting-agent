@@ -50,7 +50,7 @@ from typing import Any, Dict, List, Optional
 # Availability gate.  On Windows we fall back to loopback TCP for the
 # sandbox RPC transport (AF_UNIX is unreliable on Windows Python) — see
 # ``_use_tcp_rpc`` in ``_execute_local`` below.  That makes execute_code
-# available on every platform Hermes itself runs on.
+# available on every platform Superforecasting Agent itself runs on.
 logger = logging.getLogger(__name__)
 
 SANDBOX_AVAILABLE = True
@@ -1241,7 +1241,7 @@ def execute_code(
         # with a C/POSIX locale (containers, minimal base images).
         child_env["PYTHONIOENCODING"] = "utf-8"
         child_env["PYTHONUTF8"] = "1"
-        # Ensure the hermes-agent root is importable in the sandbox so
+        # Ensure the repository root is importable in the sandbox so
         # repo-root modules are available to child scripts.  We also prepend
         # the staging tmpdir so ``from hermes_tools import ...`` resolves even
         # when the subprocess CWD is not tmpdir (project mode).
@@ -1261,8 +1261,8 @@ def execute_code(
         for _tz_env_name in _TIMEZONE_ENV_NAMES:
             child_env.pop(_tz_env_name, None)
 
-        # Per-profile HOME isolation: redirect system tool configs into
-        # {HERMES_HOME}/home/ when that directory exists.
+        # Per-profile HOME isolation: redirect system tool configs into the
+        # active profile's ``home/`` directory when that directory exists.
         from hermes_constants import get_subprocess_home
         _profile_home = get_subprocess_home()
         if _profile_home:
@@ -1423,7 +1423,7 @@ def execute_code(
 
         # Redact secrets (API keys, tokens, etc.) from sandbox output.
         # The sandbox env-var filter (lines 434-454) blocks os.environ access,
-        # but scripts can still read secrets from disk (e.g. open('~/.hermes/.env')).
+        # but scripts can still read secrets from disk (e.g. open('~/.superforecasting-agent/.env')).
         # This ensures leaked secrets never enter the model context.
         from agent.redact import redact_sensitive_text
         stdout_text = redact_sensitive_text(stdout_text)
@@ -1634,7 +1634,7 @@ def _get_execution_mode() -> str:
         with the active virtual environment's python, so project dependencies
         (pandas, torch, project packages) and files resolve naturally.
       - ``strict``: scripts run in an isolated temp directory with
-        ``sys.executable`` (hermes-agent's python). Reproducible and the
+        ``sys.executable`` (the agent runtime's python). Reproducible and the
         interpreter is guaranteed to work, but project deps and relative paths
         won't resolve.
 
@@ -1805,7 +1805,7 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
     if mode == "strict":
         cwd_note = (
             "Scripts run in their own temp dir, not the session's CWD — use absolute paths "
-            "(os.path.expanduser('~/.hermes/.env')) or terminal()/read_file() for user files."
+            "(os.path.expanduser('~/.superforecasting-agent/.env')) or terminal()/read_file() for user files."
         )
     else:
         cwd_note = (

@@ -797,9 +797,45 @@ def test_tool_runtime_guidance_is_forecast_native():
 
     assert "Superforecasting Agent tools" in text
     assert "Run `superforecasting-agent tools` to set one up." in text
+    assert "Superforecasting Agent itself runs on" in text
+    assert "~/.superforecasting-agent/.env" in text
+    assert "agent runtime's python" in text
     assert "Hermes tools" not in text
     assert "Hermes tool" not in text
     assert "Run `hermes tools`" not in text
+    assert "Hermes itself runs on" not in text
+    assert "hermes-agent root" not in text
+    assert "hermes-agent's python" not in text
+
+
+def test_residual_runtime_identity_copy_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "tools" / "browser_camofox_state.py",
+        root / "agent" / "gemini_native_adapter.py",
+        root / "tools" / "kanban_tools.py",
+        root / "hermes_cli" / "kanban_db.py",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "Superforecasting Agent-managed Camofox state helpers" in text
+    assert "same forecast profile = same userId" in text
+    assert "Superforecasting Agent keeps ``api_mode='chat_completions'``" in text
+    assert "agent retry/error classification" in text
+    assert "superforecasting-agent kanban complete" in text
+    assert "superforecasting-agent kanban boards switch" in text
+    assert "shared runtime root" in text
+    assert "real Superforecasting Agent profile" in text
+
+    assert "Hermes-managed" not in text
+    assert "same Hermes profile" not in text
+    assert "Hermes keeps ``api_mode='chat_completions'``" not in text
+    assert "Hermes's multi-turn" not in text
+    assert "Hermes retry/error classification" not in text
+    assert "normal ``hermes chat``" not in text
+    assert "``hermes kanban" not in text
+    assert "shared Hermes root" not in text
+    assert "real Hermes profile" not in text
 
 
 def test_google_workspace_skill_docs_are_forecast_native():
