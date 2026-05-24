@@ -284,6 +284,32 @@ def test_modal_cleanup_script_is_forecast_native_with_legacy_matching():
     assert "Current hermes-agent status" not in text
 
 
+def test_developer_utility_scripts_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    run_tests = (root / "scripts" / "run_tests.sh").read_text(encoding="utf-8")
+    keystroke = (
+        root / "scripts" / "keystroke_diagnostic.py"
+    ).read_text(encoding="utf-8")
+    profile_tui = (root / "scripts" / "profile-tui.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Canonical test runner for Superforecasting Agent" in run_tests
+    assert "$HOME/.superforecasting-agent/superforecasting-agent/venv" in run_tests
+    assert "Canonical test runner for hermes-agent" not in run_tests
+
+    assert "adding a keybinding to Superforecasting Agent" in keystroke
+    assert "Then in Superforecasting Agent" in keystroke
+    assert "adding a keybinding to Hermes" not in keystroke
+
+    assert "Drive the Superforecasting Agent TUI" in profile_tui
+    assert "SUPERFORECASTING_AGENT_DEV_PERF_LOG" in profile_tui
+    assert "SUPERFORECASTING_AGENT_TUI_DIR" in profile_tui
+    assert "SUPERFORECASTING_AGENT_TUI_RESUME" in profile_tui
+    assert "Drive the Hermes TUI" not in profile_tui
+    assert "HERMES_DEV_PERF wired" not in profile_tui
+
+
 def test_runtime_docstrings_use_forecast_native_home_paths():
     root = Path(__file__).resolve().parents[1]
     checked = {
