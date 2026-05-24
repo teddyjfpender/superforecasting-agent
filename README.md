@@ -23,7 +23,7 @@ Use any model you want — [Nous Portal](https://portal.nousresearch.com), [Open
 <tr><td><b>Calibration loop</b></td><td>Track Brier/log scores, calibration buckets, sharpness, probability movement before close, ensemble component contribution, question-type/horizon/domain performance, error profiles, and provenance-linked calibration lessons.</td></tr>
 <tr><td><b>Backtesting</b></td><td>Replay resolved questions under explicit evidence cutoffs, compare against base-rate, crowd, and market baselines, and keep live/backtest/baseline scores separate.</td></tr>
 <tr><td><b>Self-checks</b></td><td>Use scheduled reviews, watched sources, and alerts to surface stale forecasts, new evidence, invalidated assumptions, and resolution work without silently changing probabilities.</td></tr>
-<tr><td><b>Adapters, not centerpieces</b></td><td>Import context from Metaculus, Manifold, Polymarket, Kalshi, GDELT, FRED, EIA, U.S. Treasury Fiscal Data, BLS, World Bank, Stooq, Yahoo Finance, CoinGecko, SEC EDGAR filings, SEC company facts/XBRL, arXiv, OpenAlex, PubMed, Wikipedia, Wikimedia pageviews, GitHub, PyPI, npm, Hacker News, Reddit, Federal Register, CourtListener, NVD, Open-Meteo forecasts, air quality, and historical weather, USGS earthquakes, NASA EONET natural events, National Weather Service alerts, OWID, WHO Global Health Observatory, market files, RSS/Atom feeds, and generic benchmark datasets while keeping the ledger platform-neutral.</td></tr>
+<tr><td><b>Adapters, not centerpieces</b></td><td>Import context from Metaculus, Manifold, Polymarket, Kalshi, GDELT, FRED, EIA, U.S. Treasury Fiscal Data, BLS, World Bank, Socrata, CKAN, Stooq, Yahoo Finance, CoinGecko, SEC EDGAR filings, SEC company facts/XBRL, arXiv, OpenAlex, PubMed, Wikipedia, Wikimedia pageviews, GitHub, PyPI, npm, Hacker News, Reddit, Federal Register, CourtListener, NVD, Open-Meteo forecasts, air quality, and historical weather, USGS earthquakes, NASA EONET natural events, National Weather Service alerts, OWID, WHO Global Health Observatory, market files, RSS/Atom feeds, and generic benchmark datasets while keeping the ledger platform-neutral.</td></tr>
 <tr><td><b>Inherited runtime</b></td><td>Reuse provider routing, tools, plugins, profiles, logging, terminal execution, and optional chat/TUI infrastructure where they improve forecasting workflows.</td></tr>
 </table>
 
@@ -31,10 +31,10 @@ Use any model you want — [Nous Portal](https://portal.nousresearch.com), [Open
 
 ## Quick Install
 
-This alpha is installed from the pushed fork snapshot while the packaging and installer names finish moving away from Hermes:
+This alpha is installed from the pinned tester snapshot while the packaging and installer names finish moving away from Hermes:
 
 ```bash
-git clone --branch superforecasting-agent-snapshot \
+git clone --branch tester-alpha-2026-05-25 \
   https://github.com/teddyjfpender/superforecasting-agent.git \
   superforecasting-agent
 cd superforecasting-agent
@@ -43,6 +43,8 @@ source .venv/bin/activate
 uv pip install -e ".[all,dev]"
 python3 scripts/forecast_smoke_test.py
 ```
+
+Use the `superforecasting-agent-snapshot` branch instead when you want the latest moving snapshot rather than the pinned alpha.
 
 On native Windows, use the PowerShell installer:
 
