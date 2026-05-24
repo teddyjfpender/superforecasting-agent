@@ -41,6 +41,20 @@ source .venv/bin/activate
 uv pip install -e ".[all,dev]"
 ```
 
+For the current friendly alpha snapshot, use the fork branch that carries the
+forecast-desk work in progress:
+
+```bash
+git clone --branch superforecasting-agent-snapshot \
+  https://github.com/teddyjfpender/superforecasting-agent.git \
+  superforecasting-agent
+cd superforecasting-agent
+uv venv .venv --python 3.11
+source .venv/bin/activate
+uv pip install -e ".[all,dev]"
+python3 scripts/forecast_smoke_test.py
+```
+
 On native Windows, use the PowerShell installer:
 
 ```powershell

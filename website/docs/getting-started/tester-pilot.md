@@ -22,7 +22,21 @@ Avoid claiming the system is better than Metaculus, markets, or human superforec
 
 ## Operator Setup
 
-From a clean checkout:
+For the current friendly alpha snapshot, give testers the pushed fork branch
+directly:
+
+```bash
+git clone --branch superforecasting-agent-snapshot \
+  https://github.com/teddyjfpender/superforecasting-agent.git \
+  superforecasting-agent
+cd superforecasting-agent
+uv venv .venv --python 3.11
+source .venv/bin/activate
+uv pip install -e ".[all,dev]"
+```
+
+For a future default-branch or release-candidate handoff, use the same setup
+shape with the relevant fork URL:
 
 ```bash
 git clone <this-fork-url> superforecasting-agent
