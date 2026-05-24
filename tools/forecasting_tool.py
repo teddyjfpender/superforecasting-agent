@@ -39,6 +39,7 @@ from forecasting.source_adapters import (
     load_hackernews_items,
     load_github_issues,
     load_github_releases,
+    load_imf_datamapper_observations,
     load_news_feed_items,
     load_mastodon_statuses,
     load_npm_package_versions,
@@ -322,6 +323,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "treasury",
                     "bls",
                     "worldbank",
+                    "imf",
                     "census",
                     "socrata",
                     "ckan",
@@ -1184,6 +1186,11 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_worldbank_observations(source, **kwargs)
+    if adapter_name == "imf":
+        kwargs = {"limit": limit, "since": since}
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_imf_datamapper_observations(source, **kwargs)
     if adapter_name == "census":
         kwargs = {"limit": limit, "since": since}
         if api_base_url:
@@ -1527,7 +1534,7 @@ def _source_adapter_evidence_payload(
         "relevance_rating": args.get("relevance_rating"),
         "stance": args.get("stance") or "context",
         "claim_type": args.get("claim_type")
-        or ("estimate" if adapter_name in {"fivethirtyeight", "openmeteo", "airquality"} else "fact"),
+        or ("estimate" if adapter_name in {"fivethirtyeight", "imf", "openmeteo", "airquality"} else "fact"),
         "snapshot_path": args.get("snapshot_path"),
         "admissible_for_backtests": bool(args.get("admissible_for_backtests", True)),
         "metadata": metadata,
@@ -1576,6 +1583,9 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
     if adapter == "worldbank":
         label = data.get("indicator_name") or data.get("indicator")
         return f"World Bank {label} was {data.get('value')} for {data.get('country_name') or data.get('country')} in {data.get('observation_date')}"
+    if adapter == "imf":
+        label = data.get("indicator_name") or data.get("indicator")
+        return f"IMF DataMapper {label} was {data.get('value')} for {data.get('country_name') or data.get('country')} in {data.get('observation_date')}"
     if adapter == "census":
         values = data.get("values")
         value_text = ", ".join(f"{key}={value}" for key, value in values.items()) if isinstance(values, dict) else values

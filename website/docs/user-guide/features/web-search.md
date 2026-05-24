@@ -487,7 +487,7 @@ The auxiliary model did not finish summarizing within the configured timeout. Ei
 - raise `auxiliary.web_extract.timeout`
 - switch the `web_extract` auxiliary task to a faster model
 - use `browser_navigate` for pages where summarization is the wrong tool
-- use a domain-specific adapter when available, such as RSS/Atom, SEC EDGAR, FRED, BLS, World Bank, arXiv, OpenAlex, Wikipedia, Wikimedia pageviews, GitHub releases, Federal Register, NVD, Open-Meteo, USGS, NASA EONET, NWS alerts, OWID, GDELT, or a forecasting-platform importer
+- use a domain-specific adapter when available, such as RSS/Atom, SEC EDGAR, FRED, BLS, World Bank, IMF DataMapper, arXiv, OpenAlex, Wikipedia, Wikimedia pageviews, GitHub releases, Federal Register, NVD, Open-Meteo, USGS, NASA EONET, NWS alerts, OWID, GDELT, or a forecasting-platform importer
 
 ---
 

@@ -19,7 +19,7 @@ Use browser automation when:
 - a local dashboard, model output, or data product needs inspection
 - a domain adapter is unavailable or too narrow
 
-Prefer structured adapters for repeatable scheduled work. For example, RSS/Atom, GDELT, FRED, BLS, World Bank, SEC EDGAR, arXiv, OpenAlex, Wikipedia, Wikimedia pageviews, GitHub, Hacker News, Reddit, Federal Register, NVD, Open-Meteo, USGS, NASA EONET, NWS alerts, OWID, Metaculus, Manifold, Kalshi, Polymarket, URL JSON/HTML, and CSV/JSON imports are usually better than a browser for backtests and scheduled self-checks.
+Prefer structured adapters for repeatable scheduled work. For example, RSS/Atom, GDELT, FRED, BLS, World Bank, IMF DataMapper, SEC EDGAR, arXiv, OpenAlex, Wikipedia, Wikimedia pageviews, GitHub, Hacker News, Reddit, Federal Register, NVD, Open-Meteo, USGS, NASA EONET, NWS alerts, OWID, Metaculus, Manifold, Kalshi, Polymarket, URL JSON/HTML, and CSV/JSON imports are usually better than a browser for backtests and scheduled self-checks.
 
 ## Backends
 

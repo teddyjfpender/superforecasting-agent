@@ -82,6 +82,7 @@ from forecasting.source_adapters import (
     load_hackernews_items,
     load_github_issues,
     load_github_releases,
+    load_imf_datamapper_observations,
     load_kalshi_market,
     load_kalshi_resolved_binary_cases,
     load_manifold_market,
@@ -244,6 +245,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "domain": "country indicators",
         "import_command": "forecast import worldbank <country>/<indicator> --question <id>",
         "watch_prefix": "worldbank:<country>/<indicator>",
+    },
+    {
+        "name": "imf",
+        "domain": "IMF macro indicators",
+        "import_command": "forecast import imf <indicator>/<country> --question <id>",
+        "watch_prefix": "imf:<indicator>/<country>",
     },
     {
         "name": "census",
@@ -615,6 +622,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "treasury",
         "bls",
         "worldbank",
+        "imf",
         "census",
         "socrata",
         "ckan",
@@ -704,6 +712,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "treasury",
             "bls",
             "worldbank",
+            "imf",
             "census",
             "socrata",
             "ckan",
@@ -720,7 +729,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         }:
             adapter.add_argument("--limit", type=int, default=10)
             adapter.add_argument("--since")
-            default_claim_type = "estimate" if name in {"fivethirtyeight", "openmeteo", "airquality"} else "fact"
+            default_claim_type = "estimate" if name in {"fivethirtyeight", "imf", "openmeteo", "airquality"} else "fact"
             adapter.add_argument("--claim-type", choices=sorted(EVIDENCE_CLAIM_TYPES), default=default_claim_type)
             adapter.add_argument("--reliability", type=float)
             adapter.add_argument("--relevance", type=float)
@@ -968,6 +977,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://api.worldbank.org/v2",
                 help="Override World Bank API base URL for tests or private mirrors",
+            )
+        if name == "imf":
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://www.imf.org/external/datamapper/api/v1",
+                help="Override IMF DataMapper API base URL for tests or private mirrors",
             )
         if name == "census":
             adapter.add_argument(
@@ -4406,6 +4421,56 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} worldbank evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "imf":
+        if not args.question_id:
+            raise SystemExit("forecast import imf requires --question")
+        observations = load_imf_datamapper_observations(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for observation in observations:
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=observation.source_url or f"IMF:{observation.indicator}/{observation.country}",
+                    source_url=observation.source_url,
+                    source_name=observation.source_name,
+                    source_type="adapter:imf",
+                    published_at=observation.published_at,
+                    available_at=observation.published_at or args.as_of,
+                    claim=(
+                        f"{observation.indicator}/{observation.country} "
+                        f"{observation.observation_date}: {observation.value}"
+                    ),
+                    summary=(
+                        f"IMF DataMapper observation for {observation.country_name or observation.country} "
+                        f"{observation.indicator_name or observation.indicator} "
+                        f"on {observation.observation_date}: {observation.value}."
+                    ),
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "imf",
+                        "indicator": observation.indicator,
+                        "indicator_name": observation.indicator_name,
+                        "country": observation.country,
+                        "country_name": observation.country_name,
+                        "observation_date": observation.observation_date,
+                        "value": observation.value,
+                        "api_base_url": args.api_base_url,
+                        "raw": observation.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} imf evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

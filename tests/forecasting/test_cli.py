@@ -39,6 +39,7 @@ from forecasting.source_adapters import (
     GitHubIssue,
     GitHubRelease,
     GitHubWorkflowRun,
+    ImfDataMapperObservation,
     MastodonStatus,
     NasaEonetEvent,
     NpmPackageVersion,
@@ -7015,6 +7016,140 @@ def test_forecast_cli_worldbank_import_captures_observations_as_evidence(
     assert evidence[0].metadata["value"] == 30000000000000.0
 
 
+def test_imf_datamapper_adapter_loads_indicator_observations(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return {
+            "values": {
+                "NGDP_RPCH": {
+                    "USA": {
+                        "2023": 2.9,
+                        "2024": None,
+                        "2025": "1.8",
+                    }
+                }
+            },
+            "countries": {"USA": {"label": "United States"}},
+            "indicators": {"NGDP_RPCH": {"label": "Real GDP growth"}},
+        }
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    observations = source_adapters.load_imf_datamapper_observations(
+        "NGDP_RPCH/USA",
+        limit=1,
+        since="2023",
+        api_base_url="https://imf.test/datamapper/api/v1",
+    )
+    parsed = urlparse(captured["endpoint"])
+
+    assert captured["label"] == "imf datamapper observations"
+    assert parsed.netloc == "imf.test"
+    assert parsed.path.endswith("/datamapper/api/v1/NGDP_RPCH/USA")
+    assert len(observations) == 1
+    assert observations[0].indicator == "NGDP_RPCH"
+    assert observations[0].indicator_name == "Real GDP growth"
+    assert observations[0].country == "USA"
+    assert observations[0].country_name == "United States"
+    assert observations[0].observation_date == "2025-12-31"
+    assert observations[0].published_at == "2025-12-31T00:00:00Z"
+    assert observations[0].value == 1.8
+
+
+def test_forecast_cli_imf_import_captures_observations_as_evidence(
+    tmp_path, capsys, monkeypatch
+):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_imf_observations(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            ImfDataMapperObservation(
+                indicator="NGDP_RPCH",
+                indicator_name="Real GDP growth",
+                country="USA",
+                country_name="United States",
+                observation_date="2025-12-31",
+                value=1.8,
+                published_at="2025-12-31T00:00:00Z",
+                source_url="https://www.imf.org/external/datamapper/NGDP_RPCH@WEO/USA",
+                source_name="IMF DataMapper",
+                entry_id="NGDP_RPCH:USA:2025",
+                raw={"year": "2025", "value": "1.8"},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_imf_datamapper_observations", fake_load_imf_observations)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will IMF evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if IMF evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "imf",
+            "NGDP_RPCH/USA",
+            "--question",
+            question_id,
+            "--since",
+            "2023",
+            "--limit",
+            "3",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.9",
+            "--relevance",
+            "0.8",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 imf evidence item(s)" in output
+    assert captured["source"] == "NGDP_RPCH/USA"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["since"] == "2023"
+    assert evidence[0].claim == "NGDP_RPCH/USA 2025-12-31: 1.8"
+    assert evidence[0].summary == (
+        "IMF DataMapper observation for United States Real GDP growth "
+        "on 2025-12-31: 1.8."
+    )
+    assert evidence[0].source_name == "IMF DataMapper"
+    assert evidence[0].source_type == "adapter:imf"
+    assert evidence[0].published_at == "2025-12-31T00:00:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.9
+    assert evidence[0].relevance_rating == 0.8
+    assert evidence[0].metadata["adapter"] == "imf"
+    assert evidence[0].metadata["indicator"] == "NGDP_RPCH"
+    assert evidence[0].metadata["indicator_name"] == "Real GDP growth"
+    assert evidence[0].metadata["country"] == "USA"
+    assert evidence[0].metadata["country_name"] == "United States"
+    assert evidence[0].metadata["value"] == 1.8
+
+
 def test_census_adapter_loads_api_rows(monkeypatch):
     captured = {}
 
@@ -8734,6 +8869,7 @@ def test_forecast_cli_lists_extension_points(capsys):
     assert "treasury-fiscal-data" in output
     assert "bls-economic-data" in output
     assert "worldbank-indicators" in output
+    assert "imf-datamapper" in output
     assert "census-data" in output
     assert "yahoo-finance-chart" in output
     assert "sec-edgar-filings" in output
@@ -8770,6 +8906,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "fema:<state|disaster-number|query>" in output
     assert "eia:<series-id-or-api-url>" in output
     assert "treasury:<dataset-path-or-api-url>" in output
+    assert "imf:<indicator>/<country>" in output
     assert "census:<dataset-path?get=...&for=...>" in output
     assert "socrata:<domain>/<dataset-id>" in output
     assert "ckan:<domain>/<query>" in output
@@ -8812,12 +8949,13 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "fivethirtyeight", "owid", "whogho", "fema", "eia", "treasury", "census", "socrata", "ckan", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "fivethirtyeight", "owid", "whogho", "fema", "eia", "treasury", "imf", "census", "socrata", "ckan", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "fivethirtyeight:<dataset-or-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "whogho:<indicator-code>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "fema:<state|disaster-number|query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "imf:<indicator>/<country>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "census:<dataset-path?get=...&for=...>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "socrata:<domain>/<dataset-id>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "ckan:<domain>/<query>" for source in payload["sources"])
@@ -12020,6 +12158,72 @@ def test_forecast_cli_watch_add_supports_worldbank_sources(tmp_path, capsys, mon
     assert "source_type: worldbank" in add_output
 
     values[0] = 30_000_000_000_000.0
+    _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
+    check_output = capsys.readouterr().out
+
+    assert "created 1 alert(s)" in check_output
+    assert f"watched_source_changed:{watch_id}" in check_output
+
+
+def test_forecast_cli_watch_add_supports_imf_sources(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    values = [1.8]
+
+    def fake_load_imf_observations(source: str, **kwargs):
+        return [
+            ImfDataMapperObservation(
+                indicator="NGDP_RPCH",
+                indicator_name="Real GDP growth",
+                country="USA",
+                country_name="United States",
+                observation_date="2025-12-31",
+                value=values[0],
+                published_at="2025-12-31T00:00:00Z",
+                source_url="https://www.imf.org/external/datamapper/NGDP_RPCH@WEO/USA",
+                source_name="IMF DataMapper",
+                entry_id="NGDP_RPCH:USA:2025",
+                raw={"year": "2025", "value": str(values[0])},
+            )
+        ]
+
+    monkeypatch.setattr(
+        "forecasting.source_adapters.load_imf_datamapper_observations",
+        fake_load_imf_observations,
+    )
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will watched CLI IMF series change?",
+            "--resolution-criteria",
+            "Resolved yes if watched IMF series changes.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            "imf:NGDP_RPCH/USA",
+            "--question",
+            question_id,
+        ],
+    )
+    add_output = capsys.readouterr().out
+    watch_id = re.search(r"watched source (ws_[a-f0-9]+)", add_output).group(1)
+
+    assert "source_type: imf" in add_output
+
+    values[0] = 2.1
     _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
     check_output = capsys.readouterr().out
 

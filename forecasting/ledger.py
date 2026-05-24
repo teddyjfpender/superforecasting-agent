@@ -98,6 +98,7 @@ WATCH_SOURCE_TYPES = {
     "treasury",
     "bls",
     "worldbank",
+    "imf",
     "census",
     "socrata",
     "ckan",
@@ -3033,7 +3034,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, bluesky, mastodon, reliefweb, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, whogho, fema, fred, eia, treasury, bls, worldbank, census, socrata, ckan, stooq, yahoo, "
+                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, bluesky, mastodon, reliefweb, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, whogho, fema, fred, eia, treasury, bls, worldbank, imf, census, socrata, ckan, stooq, yahoo, "
                 "sec, secfacts, arxiv, openalex, crossref, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -3152,6 +3153,7 @@ class ForecastLedger:
                     "treasury",
                     "bls",
                     "worldbank",
+                    "imf",
                     "census",
                     "socrata",
                     "ckan",
@@ -5688,6 +5690,8 @@ class ForecastLedger:
             return "bls"
         if source.startswith("worldbank:"):
             return "worldbank"
+        if source.startswith("imf:"):
+            return "imf"
         if source.startswith("census:"):
             return "census"
         if source.startswith("socrata:"):
@@ -5796,6 +5800,8 @@ class ForecastLedger:
             return self._bls_source_signature(source)
         if source_type == "worldbank":
             return self._worldbank_source_signature(source)
+        if source_type == "imf":
+            return self._imf_source_signature(source)
         if source_type == "census":
             return self._census_source_signature(source)
         if source_type == "socrata":
@@ -6798,6 +6804,30 @@ class ForecastLedger:
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"worldbank:{len(payload)}:{digest}"
 
+    def _imf_source_signature(self, source: str) -> str:
+        source_value = source.split(":", 1)[1].strip() if source.startswith("imf:") else source.strip()
+        if not source_value:
+            return "missing:imf:empty-source"
+        try:
+            from forecasting.source_adapters import load_imf_datamapper_observations
+
+            observations = load_imf_datamapper_observations(source_value, limit=50)
+        except Exception as exc:
+            return f"missing:imf:{source_value}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "country": observation.country,
+                "entry_id": observation.entry_id,
+                "indicator": observation.indicator,
+                "observation_date": observation.observation_date,
+                "published_at": observation.published_at,
+                "value": observation.value,
+            }
+            for observation in observations
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"imf:{len(payload)}:{digest}"
+
     def _census_source_signature(self, source: str) -> str:
         source_value = source.split(":", 1)[1].strip() if source.startswith("census:") else source.strip()
         if not source_value:
@@ -7479,6 +7509,12 @@ class ForecastLedger:
             source_value = source.split(":", 1)[1].strip() if source.startswith("worldbank:") else source
             return (
                 f"Run `forecast import worldbank {source_value} --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "imf" and scope_type == "question" and scope_ref:
+            source_value = source.split(":", 1)[1].strip() if source.startswith("imf:") else source
+            return (
+                f"Run `forecast import imf {source_value} --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "census" and scope_type == "question" and scope_ref:

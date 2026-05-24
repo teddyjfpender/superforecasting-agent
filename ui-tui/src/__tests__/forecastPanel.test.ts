@@ -121,6 +121,7 @@ describe('forecast desk panel helpers', () => {
     expect(evidenceImports?.items).toEqual(
       expect.arrayContaining([
         '/forecast import fivethirtyeight <dataset-or-url> --question <id>',
+        '/forecast import imf <indicator>/<country> --question <id>',
         '/forecast import bluesky "<query>" --question <id>',
         '/forecast import mastodon <tag-or-instance/tag> --question <id>',
         '/forecast import airquality <lat,lon> --question <id>',

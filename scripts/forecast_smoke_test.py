@@ -41,6 +41,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "treasury",
     "bls",
     "worldbank",
+    "imf",
     "census",
     "socrata",
     "ckan",

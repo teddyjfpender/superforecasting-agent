@@ -131,7 +131,7 @@ Examples:
 
 ```bash
 superforecasting-agent profile describe macro
-superforecasting-agent profile describe macro --text "Macroeconomic forecasts using FRED, BLS, World Bank, and horizon-aware calibration."
+superforecasting-agent profile describe macro --text "Macroeconomic forecasts using FRED, BLS, World Bank, IMF DataMapper, and horizon-aware calibration."
 superforecasting-agent profile describe macro --auto
 superforecasting-agent profile describe --all --auto
 ```
@@ -350,7 +350,7 @@ Every distribution has a `distribution.yaml` at repository root:
 ```yaml
 name: macro-forecast-desk
 version: 0.1.0
-description: "Macro forecast desk with FRED/BLS/World Bank workflows"
+description: "Macro forecast desk with FRED/BLS/World Bank/IMF workflows"
 hermes_requires: ">=0.12.0"
 author: "Your Name"
 license: "MIT"

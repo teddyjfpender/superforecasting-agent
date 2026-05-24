@@ -940,6 +940,7 @@ describe('createGatewayEventHandler', () => {
               '/forecast import fema <state|disaster-number|query> --question <id>',
               '/forecast import eia <series-id-or-api-url> --question <id>',
               '/forecast import treasury <dataset-path-or-api-url> --question <id>',
+              '/forecast import imf <indicator>/<country> --question <id>',
               '/forecast import census "<dataset-path?get=...&for=...>" --question <id>',
               '/forecast import socrata <domain>/<dataset-id> --question <id>',
               '/forecast import ckan <domain>/<query> --question <id>',

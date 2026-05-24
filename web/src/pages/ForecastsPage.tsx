@@ -62,6 +62,10 @@ const EVIDENCE_IMPORTS = [
     label: "Fiscal",
   },
   {
+    command: "forecast import imf <indicator>/<country> --question <id>",
+    label: "IMF",
+  },
+  {
     command: 'forecast import census "<dataset-path?get=...&for=...>" --question <id>',
     label: "Census",
   },

@@ -76,7 +76,7 @@ Treat platforms as adapters, not as the center of the product.
 2. [Features Overview](../user-guide/features/overview.md)
 3. [Tools](../user-guide/features/tools.md)
 
-Supported adapter surfaces include generic URL/file ingest, CSV/JSON data evidence, RSS/Atom, GDELT, FRED, EIA, U.S. Treasury Fiscal Data, BLS, World Bank, SEC EDGAR, arXiv, OpenAlex, Wikipedia, Wikimedia pageviews, GitHub, Hacker News, Reddit, Federal Register, NVD, Open-Meteo, USGS, NASA EONET, NWS alerts, OWID, Metaculus, Manifold, Polymarket, and Kalshi.
+Supported adapter surfaces include generic URL/file ingest, CSV/JSON data evidence, RSS/Atom, GDELT, FRED, EIA, U.S. Treasury Fiscal Data, BLS, World Bank, IMF DataMapper, SEC EDGAR, arXiv, OpenAlex, Wikipedia, Wikimedia pageviews, GitHub, Hacker News, Reddit, Federal Register, NVD, Open-Meteo, USGS, NASA EONET, NWS alerts, OWID, Metaculus, Manifold, Polymarket, and Kalshi.
 
 ### "I want to build a connector or plugin"
 

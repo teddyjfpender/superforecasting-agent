@@ -21,6 +21,7 @@ from forecasting.source_adapters import (
     GitHubCommit,
     GitHubIssue,
     GitHubWorkflowRun,
+    ImfDataMapperObservation,
     MastodonStatus,
     NasaEonetEvent,
     NpmPackageVersion,
@@ -122,7 +123,71 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "whogho", "fema", "eia", "treasury", "census", "socrata", "ckan", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "whogho", "fema", "eia", "treasury", "imf", "census", "socrata", "ckan", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
+
+
+def test_forecast_ledger_tool_imports_imf_datamapper_observations(tmp_path, monkeypatch):
+    db = str(tmp_path / "forecasting.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will IMF data import through the tool?",
+                "resolution_criteria": "Resolved yes if IMF evidence is imported.",
+            }
+        )
+    )
+    question_id = created["question"]["id"]
+    captured = {}
+
+    def fake_imf_observations(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            ImfDataMapperObservation(
+                indicator="NGDP_RPCH",
+                indicator_name="Real GDP growth",
+                country="USA",
+                country_name="United States",
+                observation_date="2025-12-31",
+                value=1.8,
+                published_at="2025-12-31T00:00:00Z",
+                source_url="https://www.imf.org/external/datamapper/NGDP_RPCH@WEO/USA",
+                source_name="IMF DataMapper",
+                entry_id="NGDP_RPCH:USA:2025",
+                raw={"year": "2025", "value": "1.8"},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_imf_datamapper_observations", fake_imf_observations)
+    imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "imf",
+                "source": "NGDP_RPCH/USA",
+                "limit": 3,
+                "since": "2023",
+                "api_base_url": "https://imf.test/datamapper/api/v1",
+            }
+        )
+    )
+
+    assert captured["source"] == "NGDP_RPCH/USA"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["since"] == "2023"
+    assert captured["kwargs"]["api_base_url"] == "https://imf.test/datamapper/api/v1"
+    assert imported["imported_count"] == 1
+    evidence = imported["imported"][0]["evidence"]
+    assert evidence["source_type"] == "adapter:imf"
+    assert evidence["source_name"] == "IMF DataMapper"
+    assert evidence["claim_type"] == "estimate"
+    assert evidence["claim"] == "IMF DataMapper Real GDP growth was 1.8 for United States in 2025-12-31"
+    assert evidence["metadata"]["adapter"] == "imf"
+    assert evidence["metadata"]["adapter_item"]["indicator"] == "NGDP_RPCH"
 
 
 def test_forecast_ledger_tool_imports_airquality_forecasts(tmp_path, monkeypatch):

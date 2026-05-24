@@ -34,7 +34,7 @@ When you create a profile, the CLI can also create a shell alias with the same n
 
 ```bash
 superforecasting-agent profile create macro \
-  --description "Macroeconomic forecasts using FRED, BLS, World Bank, market priors, and horizon-aware calibration."
+  --description "Macroeconomic forecasts using FRED, BLS, World Bank, IMF DataMapper, market priors, and horizon-aware calibration."
 
 macro model
 macro forecast status

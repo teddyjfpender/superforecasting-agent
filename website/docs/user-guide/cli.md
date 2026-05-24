@@ -75,6 +75,7 @@ forecast import eia PET.RWTC.M --question <id>
 forecast import treasury v2/accounting/od/avg_interest_rates --question <id>
 forecast import bls LNS14000000 --question <id>
 forecast import worldbank US/NY.GDP.MKTP.CD --question <id>
+forecast import imf NGDP_RPCH/USA --question <id>
 forecast import census "2023/acs/acs5?get=NAME,B01003_001E&for=state:*" --question <id>
 forecast import socrata data.cdc.gov/abcd-1234 --question <id>
 forecast import ckan data.gov/energy --question <id>

@@ -535,6 +535,7 @@ forecast watch add --question <id> fivethirtyeight:<dataset-or-url>
 forecast watch add --question <id> fred:<series-id>
 forecast watch add --question <id> bls:<series-id>
 forecast watch add --question <id> worldbank:<country>/<indicator>
+forecast watch add --question <id> imf:<indicator>/<country>
 forecast watch add --question <id> census:<dataset-path?get=...&for=...>
 forecast watch add --question <id> sec:<cik>
 forecast watch add --domain <domain> [--topic <topic>] <source>
@@ -559,6 +560,7 @@ forecast import fivethirtyeight <dataset-or-url> --question <id>
 forecast import fred <series-id> --question <id>
 forecast import bls <series-id> --question <id>
 forecast import worldbank <country>/<indicator> --question <id>
+forecast import imf <indicator>/<country> --question <id>
 forecast import census <dataset-path?get=...&for=...> --question <id>
 forecast import socrata <domain>/<dataset-id> --question <id>
 forecast import ckan <domain>/<query> --question <id>

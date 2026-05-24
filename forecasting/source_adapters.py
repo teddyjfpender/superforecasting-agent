@@ -140,6 +140,21 @@ class WorldBankObservation:
 
 
 @dataclass(frozen=True)
+class ImfDataMapperObservation:
+    indicator: str
+    indicator_name: str | None
+    country: str
+    country_name: str | None
+    observation_date: str
+    value: float | str
+    published_at: str
+    source_url: str | None
+    source_name: str
+    entry_id: str
+    raw: dict
+
+
+@dataclass(frozen=True)
 class CensusRecord:
     dataset: str
     dataset_year: int | None
@@ -1525,6 +1540,55 @@ def load_worldbank_observations(
                 source_name="World Bank",
                 entry_id=f"{row_country or country}:{row_indicator or indicator}:{year}",
                 raw=dict(row),
+            )
+        )
+    observations.sort(key=lambda item: item.observation_date)
+    return observations[-limit:]
+
+
+def load_imf_datamapper_observations(
+    source: str,
+    *,
+    limit: int = 10,
+    since: str | None = None,
+    api_base_url: str = "https://www.imf.org/external/datamapper/api/v1",
+) -> list[ImfDataMapperObservation]:
+    """Load IMF DataMapper country indicator observations as timestamped evidence rows."""
+
+    indicator, country = _imf_source_parts(source)
+    if limit <= 0:
+        raise ValidationError("imf import --limit must be positive")
+    since_date = _worldbank_since_date(since) if since else None
+    endpoint = _imf_endpoint(indicator, country, api_base_url=api_base_url)
+    payload = _read_json_endpoint(endpoint, "imf datamapper observations")
+    values = _imf_values_for(payload, indicator=indicator, country=country)
+    country_name = _imf_metadata_label(payload, "countries", country)
+    indicator_name = _imf_metadata_label(payload, "indicators", indicator)
+
+    observations: list[ImfDataMapperObservation] = []
+    for year, raw_value in values.items():
+        observation_date = _worldbank_observation_date(str(year).strip())
+        if observation_date is None:
+            continue
+        if since_date is not None and observation_date < since_date:
+            continue
+        if raw_value in (None, ""):
+            continue
+        value = _optional_float(raw_value)
+        observation_iso = _fred_date_to_iso(observation_date)
+        observations.append(
+            ImfDataMapperObservation(
+                indicator=indicator,
+                indicator_name=indicator_name,
+                country=country,
+                country_name=country_name,
+                observation_date=observation_date.isoformat(),
+                value=value if value is not None else str(raw_value),
+                published_at=observation_iso,
+                source_url=endpoint,
+                source_name="IMF DataMapper",
+                entry_id=f"{indicator}:{country}:{year}",
+                raw={"year": year, "value": raw_value},
             )
         )
     observations.sort(key=lambda item: item.observation_date)
@@ -5827,6 +5891,86 @@ def _worldbank_observation_date(year: str):
     from datetime import date
 
     return date(int(year), 12, 31)
+
+
+def _imf_source_parts(source: str) -> tuple[str, str]:
+    raw = source.strip()
+    if raw.startswith("imf:"):
+        raw = raw.split(":", 1)[1].strip()
+    if "/" in raw:
+        indicator, country = raw.split("/", 1)
+    elif ":" in raw:
+        indicator, country = raw.split(":", 1)
+    else:
+        raise ValidationError("imf source must be INDICATOR/COUNTRY, e.g. NGDP_RPCH/USA")
+    indicator = indicator.strip().upper()
+    country = country.strip().upper()
+    if not indicator or not country:
+        raise ValidationError("imf source must include both indicator and country")
+    return indicator, country
+
+
+def _imf_endpoint(indicator: str, country: str, *, api_base_url: str) -> str:
+    endpoint_base = api_base_url.rstrip("/")
+    if not endpoint_base:
+        raise ValidationError("imf import --api-base-url cannot be empty")
+    if "{indicator}" in endpoint_base or "{country}" in endpoint_base:
+        return endpoint_base.format(indicator=quote(indicator), country=quote(country))
+    return f"{endpoint_base}/{quote(indicator)}/{quote(country)}"
+
+
+def _imf_values_for(payload: object, *, indicator: str, country: str) -> dict:
+    if not isinstance(payload, dict):
+        raise ValidationError("imf datamapper response must be a JSON object")
+    values = payload.get("values")
+    if not isinstance(values, dict):
+        raise ValidationError("imf datamapper response must include a values object")
+    if _imf_year_value_mapping(values):
+        return values
+    indicator_values = _dict_value_case_insensitive(values, indicator)
+    if isinstance(indicator_values, dict):
+        country_values = _dict_value_case_insensitive(indicator_values, country)
+        if isinstance(country_values, dict):
+            return country_values
+    country_values = _dict_value_case_insensitive(values, country)
+    if isinstance(country_values, dict):
+        indicator_values = _dict_value_case_insensitive(country_values, indicator)
+        if isinstance(indicator_values, dict):
+            return indicator_values
+    raise ValidationError("imf datamapper response does not include indicator/country values")
+
+
+def _imf_year_value_mapping(value: dict) -> bool:
+    return bool(value) and all(_worldbank_observation_date(str(key).strip()) is not None for key in value)
+
+
+def _imf_metadata_label(payload: object, key: str, code: str) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    container = payload.get(key)
+    if not isinstance(container, dict):
+        return None
+    metadata = _dict_value_case_insensitive(container, code)
+    if isinstance(metadata, dict):
+        return _optional_str(
+            _first_present(
+                metadata.get("label"),
+                metadata.get("name"),
+                metadata.get("title"),
+                metadata.get("description"),
+            )
+        )
+    return _optional_str(metadata)
+
+
+def _dict_value_case_insensitive(mapping: dict, key: str) -> object | None:
+    if key in mapping:
+        return mapping[key]
+    lowered = key.lower()
+    for candidate, value in mapping.items():
+        if str(candidate).lower() == lowered:
+            return value
+    return None
 
 
 def _census_endpoint(source: str, *, api_base_url: str, api_key: str | None) -> tuple[str, str]:
