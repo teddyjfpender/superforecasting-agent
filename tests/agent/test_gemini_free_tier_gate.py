@@ -148,6 +148,9 @@ class TestGeminiHttpErrorFreeTierGuidance:
         err = gemini_http_error(self._FakeResp(429, body))
         msg = str(err)
         assert "free tier" in msg.lower()
+        assert "Superforecasting Agent" in msg
+        assert "forecast desk session" in msg
+        assert "Hermes typically" not in msg
         assert "aistudio.google.com/apikey" in msg
 
     def test_paid_429_has_no_billing_url(self):

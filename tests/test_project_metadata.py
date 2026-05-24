@@ -729,6 +729,25 @@ def test_curator_guidance_is_forecast_native():
     assert "`hermes curator restore <name>`" not in text
 
 
+def test_provider_runtime_guidance_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    gemini_native = (root / "agent" / "gemini_native_adapter.py").read_text(encoding="utf-8")
+    gemini_cloudcode = (root / "agent" / "gemini_cloudcode_adapter.py").read_text(encoding="utf-8")
+    compression = (root / "agent" / "conversation_compression.py").read_text(encoding="utf-8")
+    bedrock = (root / "agent" / "bedrock_adapter.py").read_text(encoding="utf-8")
+
+    assert "Superforecasting Agent typically makes 3-10 API calls" in gemini_native
+    assert "forecast desk session" in gemini_native
+    assert "Hermes typically makes 3-10 API calls" not in gemini_native
+    assert "not a Superforecasting Agent issue" in gemini_cloudcode
+    assert "not a Hermes issue" not in gemini_cloudcode
+    assert "minimum {MINIMUM_CONTEXT_LENGTH:,} required by " in compression
+    assert "f\"Superforecasting Agent" in compression
+    assert "required by Hermes" not in compression
+    assert "install Superforecasting Agent with Bedrock support" in bedrock
+    assert "install Hermes with Bedrock support" not in bedrock
+
+
 def test_support_error_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     profile_distribution = (

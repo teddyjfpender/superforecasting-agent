@@ -1008,6 +1008,8 @@ class TestGeminiHttpErrorParsing:
         message = str(err)
         assert "gemini-2.5-pro" in message
         assert "capacity exhausted" in message.lower()
+        assert "not a Superforecasting Agent issue" in message
+        assert "not a Hermes issue" not in message
         assert "30s" in message
         # response attr is preserved for run_agent's Retry-After header path.
         assert err.response is not None

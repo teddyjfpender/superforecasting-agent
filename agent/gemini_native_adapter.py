@@ -128,9 +128,10 @@ def is_free_tier_quota_error(error_message: str) -> bool:
 
 _FREE_TIER_GUIDANCE = (
     "\n\nYour Google API key is on the free tier (<= 250 requests/day for "
-    "gemini-2.5-flash). Hermes typically makes 3-10 API calls per user turn, "
-    "so the free tier is exhausted in a handful of messages and cannot sustain "
-    "an agent session. Enable billing on your Google Cloud project and "
+    "gemini-2.5-flash). Superforecasting Agent typically makes 3-10 API calls "
+    "per forecast-research turn, so the free tier is exhausted in a handful of "
+    "messages and cannot sustain a forecast desk session. Enable billing on "
+    "your Google Cloud project and "
     "regenerate the key in a billing-enabled project: "
     "https://aistudio.google.com/apikey"
 )
