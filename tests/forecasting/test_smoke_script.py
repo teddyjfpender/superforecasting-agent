@@ -53,5 +53,6 @@ def test_forecast_smoke_script_runs_local_lifecycle(tmp_path):
     assert "[forecast-smoke] pilot_aggregate_live_scores: 1" in result.stdout
     assert "[forecast-smoke] readiness_verdict:" in result.stdout
     assert "[forecast-smoke] readiness_gaps: 2" in result.stdout
+    assert "[forecast-smoke] pilot_bundle_export_included: true" in result.stdout
     assert "[forecast-smoke] forecast smoke test passed" in result.stdout
     assert db_path.exists()

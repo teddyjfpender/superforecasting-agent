@@ -8700,6 +8700,89 @@ def test_forecast_cli_pilot_cohort_example_manifest_dry_run(tmp_path, capsys):
     )
 
 
+def test_forecast_cli_pilot_bundle_outputs_handoff_packet(tmp_path, capsys):
+    parser = _parser()
+    db_path = tmp_path / "tester-bundle.db"
+    db = str(db_path)
+    ledger = ForecastLedger(db_path)
+    question = ledger.create_question(
+        title="Will tester bundle include this live loop?",
+        resolution_criteria="Resolved yes if the bundle includes pilot and readiness evidence.",
+        domain="software",
+    )
+    evidence = ledger.add_evidence(
+        question_id=question.id,
+        source_or_note="GitHub Actions run completed.",
+        source_type="github_actions",
+        available_at="2026-05-23T00:00:00Z",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.64,
+        rationale="Structured software evidence supports yes.",
+        evidence_refs=[evidence.id],
+    )
+    ledger.schedule_review(
+        scope_type="question",
+        scope_ref=question.id,
+        cadence="1d",
+        next_run_at="2026-05-24T09:00:00Z",
+    )
+    ledger.resolve_question(
+        question_id=question.id,
+        outcome="yes",
+        resolution_source="https://example.com/resolution",
+    )
+    ledger.score_question(question.id)
+    ledger.create_postmortem(
+        question_id=question.id,
+        summary="Bundle fixture completed one live loop.",
+        lesson="Keep pilot handoff artifacts bundled.",
+    )
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "pilot-bundle",
+            "--min-questions",
+            "1",
+            "--min-structured-source-questions",
+            "1",
+            "--min-scores",
+            "1",
+            "--min-postmortems",
+            "1",
+            "--min-scheduled-reviews",
+            "1",
+            "--min-live-scores",
+            "1",
+            "--min-agent-protocol-cases",
+            "0",
+            "--include-export",
+        ],
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["product"]["purpose"] == "tester_pilot_handoff_bundle"
+    assert payload["pilot_report"]["pilot_status"] == "pilot_exit_ready"
+    assert payload["readiness"]["evidence_status"]["score_counts"]["live"] == 1
+    assert payload["export_included"] is True
+    assert payload["export_packet"]["questions"][0]["question"]["id"] == question.id
+    assert "not, by themselves, proof" in payload["claim_note"]
+
+    output_path = tmp_path / ".pilot" / "pilot-bundle.json"
+    _run(parser, ["forecast", "--db", db, "pilot-bundle", "--output", str(output_path)])
+    output = capsys.readouterr().out
+    written = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert f"pilot_bundle wrote {output_path}" in output
+    assert written["export_included"] is False
+    assert written["export_packet"] is None
+
+
 def test_forecast_cli_pilot_aggregate_summarizes_export_packets(tmp_path, capsys):
     parser = _parser()
     ledger = ForecastLedger(tmp_path / "tester-a.db")

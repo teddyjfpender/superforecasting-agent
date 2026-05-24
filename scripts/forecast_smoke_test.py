@@ -725,9 +725,42 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
     gaps = evidence_status.get("gaps") or []
     if not gaps:
         raise SmokeError("smoke readiness should still list evidence gaps for tester handoff")
+    pilot_bundle = _json_output(
+        _run_forecast(
+            [
+                "pilot-bundle",
+                "--min-questions",
+                "1",
+                "--min-structured-source-questions",
+                "1",
+                "--min-scores",
+                "1",
+                "--min-postmortems",
+                "1",
+                "--min-scheduled-reviews",
+                "1",
+                "--min-live-scores",
+                "1",
+                "--min-agent-protocol-cases",
+                "0",
+                "--include-export",
+            ],
+            db_path=db_path,
+            repo_root=repo_root,
+            verbose=verbose,
+        ),
+        "pilot-bundle",
+    )
+    if pilot_bundle.get("pilot_report", {}).get("pilot_status") != "pilot_exit_ready":
+        raise SmokeError(f"pilot bundle did not include a passing pilot report:\n{json.dumps(pilot_bundle, indent=2)}")
+    if pilot_bundle.get("readiness", {}).get("evidence_status", {}).get("score_counts", {}).get("live", 0) < 1:
+        raise SmokeError(f"pilot bundle did not include live-score readiness data:\n{json.dumps(pilot_bundle, indent=2)}")
+    if not pilot_bundle.get("export_included") or not pilot_bundle.get("export_packet", {}).get("questions"):
+        raise SmokeError(f"pilot bundle did not include export data:\n{json.dumps(pilot_bundle, indent=2)}")
     _print_step(f"performance_runs: {performance.get('run_count')}")
     _print_step(f"readiness_verdict: {evidence_status.get('verdict')}")
     _print_step(f"readiness_gaps: {len(gaps)}")
+    _print_step("pilot_bundle_export_included: true")
 
 
 def _main(argv: list[str]) -> int:

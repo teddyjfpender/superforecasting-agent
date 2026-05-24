@@ -988,6 +988,7 @@ describe('createGatewayEventHandler', () => {
               '/forecast readiness',
               '/forecast pilot-report',
               '/forecast pilot-cohort examples/forecasting/live-cohort.example.csv --dry-run --json',
+              '/forecast pilot-bundle --include-export --output .pilot/tester-bundle.json',
               '/forecast pilot-aggregate .pilot/*-export.json --json',
               '/forecast backtest --benchmarks'
             ],

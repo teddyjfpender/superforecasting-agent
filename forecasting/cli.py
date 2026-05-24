@@ -1514,6 +1514,37 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     pilot_aggregate_parser.add_argument("--json", action="store_true", help="Emit machine-readable aggregate JSON")
     pilot_aggregate_parser.set_defaults(_forecast_handler=_cmd_pilot_aggregate)
 
+    pilot_bundle_parser = forecast_sub.add_parser(
+        "pilot-bundle",
+        help="Emit one JSON tester handoff bundle with pilot, readiness, and optional export data",
+    )
+    pilot_bundle_parser.add_argument("--min-questions", type=int, default=3)
+    pilot_bundle_parser.add_argument("--min-structured-source-questions", type=int, default=1)
+    pilot_bundle_parser.add_argument("--min-scores", type=int, default=1)
+    pilot_bundle_parser.add_argument("--min-postmortems", type=int, default=1)
+    pilot_bundle_parser.add_argument("--min-scheduled-reviews", type=int, default=1)
+    pilot_bundle_parser.add_argument("--last", type=int, default=20, help="Number of recent backtest runs to inspect")
+    pilot_bundle_parser.add_argument("--dataset", help="Filter to runs whose dataset contains this text")
+    pilot_bundle_parser.add_argument(
+        "--min-live-scores",
+        type=int,
+        default=DEFAULT_MIN_LIVE_SCORES_FOR_CLAIM,
+        help="Required resolved live scores for readiness accounting",
+    )
+    pilot_bundle_parser.add_argument(
+        "--min-agent-protocol-cases",
+        type=int,
+        default=DEFAULT_MIN_AGENT_PROTOCOL_CASES_FOR_CLAIM,
+        help="Required scored agent-protocol replay cases for readiness accounting",
+    )
+    pilot_bundle_parser.add_argument(
+        "--include-export",
+        action="store_true",
+        help="Include `forecast export all --format json` data in the bundle; review for sensitive data first",
+    )
+    pilot_bundle_parser.add_argument("--output", help="Write the JSON bundle to this path instead of stdout")
+    pilot_bundle_parser.set_defaults(_forecast_handler=_cmd_pilot_bundle)
+
     export_parser = forecast_sub.add_parser("export", help="Export an auditable forecast packet")
     export_parser.add_argument("id")
     export_parser.add_argument("--format", choices=["markdown", "json"], default="markdown")
@@ -6247,6 +6278,70 @@ def _cmd_pilot_aggregate(args: argparse.Namespace) -> None:
             print(f"  - {action}")
     if args.require_live_scores and incomplete:
         raise SystemExit(1)
+
+
+def _cmd_pilot_bundle(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    pilot_report = ledger.pilot_report(
+        min_questions=args.min_questions,
+        min_structured_source_questions=args.min_structured_source_questions,
+        min_scores=args.min_scores,
+        min_postmortems=args.min_postmortems,
+        min_scheduled_reviews=args.min_scheduled_reviews,
+    )
+    rows, summaries = _recent_backtest_summaries(
+        ledger,
+        last=args.last,
+        dataset=getattr(args, "dataset", None),
+    )
+    evidence_status = build_forecasting_evidence_status(
+        ledger,
+        summaries,
+        min_live_scores=max(args.min_live_scores, 0),
+        min_agent_protocol_cases=max(args.min_agent_protocol_cases, 0),
+    )
+    export_packet = json.loads(ledger.export_all(fmt="json")) if args.include_export else None
+    payload = {
+        "product": {
+            "product_name": PRODUCT_NAME,
+            "product_slug": PRODUCT_SLUG,
+            "purpose": "tester_pilot_handoff_bundle",
+        },
+        "generated_at": utc_now_iso(),
+        "bundle_version": 1,
+        "pilot_report": pilot_report,
+        "readiness": {
+            "last": max(args.last, 0),
+            "dataset_filter": args.dataset,
+            "run_count": len(summaries),
+            "inspected_backtest_run_ids": [row["id"] for row in rows],
+            "evidence_status": evidence_status,
+        },
+        "export_included": bool(args.include_export),
+        "export_packet": export_packet,
+        "privacy_note": (
+            "Bundles can include source text, rationale, and local metadata when "
+            "--include-export is used. Review before sharing outside the pilot."
+        ),
+        "claim_note": (
+            "Pilot bundles collect live-evidence artifacts for evaluation. "
+            "They are not, by themselves, proof of live superforecasting performance."
+        ),
+        "next_actions": [
+            "Attach this JSON to a Forecast Pilot Feedback issue when it is safe to share.",
+            "Resolve, score, and postmortem live questions as outcomes become known.",
+            "Use `forecast readiness --json` to track remaining evidence gaps before stronger claims.",
+        ],
+    }
+    output = json.dumps(payload, indent=2, sort_keys=True)
+    if args.output:
+        path = Path(args.output)
+        if path.parent != Path("."):
+            path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(output + "\n", encoding="utf-8")
+        print(f"pilot_bundle wrote {path}")
+        return
+    print(output)
 
 
 def _load_pilot_cohort_manifest(source: str) -> list[dict[str, Any]]:

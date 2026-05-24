@@ -571,6 +571,7 @@ def test_github_issue_and_pr_templates_are_forecast_native():
     assert "Forecast Pilot Feedback" in text
     assert "Source Adapter Request" in text
     assert "forecast readiness --json" in text
+    assert "forecast --db \"$FORECAST_DB\" pilot-bundle --include-export --output .pilot/alice-bundle.json" in text
     assert "forecast pilot-aggregate .pilot/*-export.json --json" in text
     assert "Live Evidence Counts" in text
     assert "Timestamp And Availability Semantics" in text
@@ -1737,6 +1738,7 @@ def test_web_forecast_page_surfaces_tester_pilot_handoff():
     assert "examples/forecasting/live-cohort.example.csv" in page
     assert "forecast pilot-cohort live-cohort.csv --dry-run --json" in page
     assert "forecast pilot-report --json" in page
+    assert "forecast pilot-bundle --include-export --output .pilot/tester-bundle.json" in page
     assert "forecast pilot-aggregate .pilot/*-export.json --json" in page
 
 
@@ -2143,6 +2145,7 @@ def test_tester_pilot_docs_cover_scheduled_learning_loop():
     assert "--use-active-lessons" in tester_pilot
     assert "forecast readiness --json" in tester_pilot
     assert "live evidence" in tester_pilot
+    assert "forecast pilot-bundle --include-export --output .pilot/${USER}-bundle.json" in tester_pilot
     assert "forecast pilot-aggregate .pilot/*-export.json --json" in tester_pilot
 
 
@@ -2180,6 +2183,7 @@ def test_superforecasting_fork_audit_maps_prd_requirements():
         "forecast schedule",
         "forecast self-check",
         "forecast pilot-cohort",
+        "forecast pilot-bundle",
     ]
     for command in required_commands:
         assert command in audit, command
@@ -2218,6 +2222,7 @@ def test_forecast_cli_smoke_transcript_captures_tester_path():
         "[forecast-smoke] backtest_run_id:",
         "[forecast-smoke] agent_protocol_backtest_run_id:",
         "[forecast-smoke] readiness_verdict: insufficient_live_evidence",
+        "[forecast-smoke] pilot_bundle_export_included: true",
         "[forecast-smoke] forecast smoke test passed",
     ]
     for marker in expected_markers:

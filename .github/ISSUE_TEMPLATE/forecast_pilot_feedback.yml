@@ -47,6 +47,7 @@ body:
         export FORECAST_DB="$PWD/.pilot/forecasting-alice.db"
         forecast --db "$FORECAST_DB" new "..."
         forecast --db "$FORECAST_DB" pilot-report --json
+        forecast --db "$FORECAST_DB" pilot-bundle --include-export --output .pilot/alice-bundle.json
     validations:
       required: true
 

@@ -89,6 +89,7 @@ forecast pilot-report --json
 cp examples/forecasting/live-cohort.example.csv live-cohort.csv
 forecast pilot-cohort live-cohort.csv --dry-run --json
 forecast pilot-cohort live-cohort.csv --schedule-cadence 1d --schedule-next-run-at 2026-05-25T09:00:00Z
+forecast pilot-bundle --include-export --output .pilot/tester-bundle.json
 forecast pilot-aggregate .pilot/*-export.json --json
 # readiness shows evidence gaps and next actions before stronger performance claims
 superforecasting-agent chat       # Forecast-scoped chat remains available explicitly
@@ -135,6 +136,7 @@ The forecast ledger is the product surface. Generic chat and messaging gateways 
 | Check claim readiness | `forecast readiness`, `forecast readiness --json`, or `forecast readiness --require-evidence` |
 | Check tester pilot coverage | `forecast pilot-report` or `forecast pilot-report --json` |
 | Seed a live tester cohort | `cp examples/forecasting/live-cohort.example.csv live-cohort.csv` then `forecast pilot-cohort live-cohort.csv --dry-run --json` |
+| Bundle tester evidence | `forecast pilot-bundle --include-export --output .pilot/tester-bundle.json` |
 | Aggregate tester exports | `forecast pilot-aggregate tester-a.json tester-b.json --json` |
 | Import tournament exports | `forecast import tournament resolved_questions.json --name my-tournament` |
 | Watch sources | `forecast watch add --question <id> rss:<feed-or-file>`, `gdelt:<query>`, `fivethirtyeight:<dataset-or-url>`, `fred:<series-id>`, `eia:<series-id-or-api-url>`, `treasury:<dataset-path-or-api-url>`, `bls:<series-id>`, `worldbank:<country>/<indicator>`, `census:<dataset-path?get=...&for=...>`, `socrata:<domain>/<dataset-id>`, `stooq:<symbol-or-csv-url>`, `yahoo:<symbol>`, `coingecko:<coin-id>`, `sec:<cik>`, `secfacts:<cik>/<concept>`, `arxiv:<query>`, `openalex:<query>`, `crossref:<query-or-DOI>`, `wikipedia:<query>`, `wikipediapageviews:<project>/<article>`, `github:<owner/repo>`, `githubissues:<owner/repo>`, `githubcommits:<owner/repo>`, `githubactions:<owner/repo>`, `pypi:<package>`, `npm:<package>`, `hackernews:<query>`, `reddit:<query>`, `bluesky:<query>`, `mastodon:<tag-or-instance/tag>`, `reliefweb:<query>`, `federalregister:<query>`, `courtlistener:<query>`, `nvd:<keyword-or-CVE>`, `cisakev:<keyword-or-CVE-or-all>`, `clinicaltrials:<query-or-NCT-id>`, `openfda:<query-or-application-number>`, `pubmed:<query-or-PMID>`, `openmeteo:<lat,lon>`, `airquality:<lat,lon>`, `weatherhistory:<lat,lon>?start=<date>&end=<date>`, `usgs:<query>`, `eonet:<query-or-category>`, `nws:<area-or-point-or-query>`, `owid:<slug>`, or market-prior watches such as `manifold:<slug>`, `metaculus:<id>`, `polymarket:<slug>`, and `kalshi:<ticker>` |

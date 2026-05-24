@@ -197,6 +197,10 @@ const PILOT_HANDOFFS = [
     label: "Report",
   },
   {
+    command: "forecast pilot-bundle --include-export --output .pilot/tester-bundle.json",
+    label: "Bundle",
+  },
+  {
     command: "forecast pilot-aggregate .pilot/*-export.json --json",
     label: "Aggregate",
   },

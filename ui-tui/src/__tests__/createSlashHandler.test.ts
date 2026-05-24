@@ -245,6 +245,8 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'pilot-report' })
     expect(createSlashHandler(ctx)('/pilot-cohort cohort.csv --dry-run')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'pilot-cohort cohort.csv --dry-run' })
+    expect(createSlashHandler(ctx)('/pilot-bundle --include-export')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'pilot-bundle --include-export' })
     expect(createSlashHandler(ctx)('/pilot-aggregate tester-a.json tester-b.json --json')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', {
       arg: 'pilot-aggregate tester-a.json tester-b.json --json'
