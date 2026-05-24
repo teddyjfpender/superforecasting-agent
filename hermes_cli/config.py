@@ -1530,7 +1530,8 @@ DEFAULT_CONFIG = {
         # Maximum number of due jobs to run in parallel per tick.
         # null/0 = unbounded (limited only by thread count).
         # 1 = serial (pre-v0.9 behaviour).
-        # Also overridable via HERMES_CRON_MAX_PARALLEL env var.
+        # Also overridable via SUPERFORECASTING_AGENT_CRON_MAX_PARALLEL
+        # / FORECAST_CRON_MAX_PARALLEL / HERMES_CRON_MAX_PARALLEL env vars.
         "max_parallel_jobs": None,
     },
 

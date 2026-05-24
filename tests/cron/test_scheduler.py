@@ -7,7 +7,16 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
-from cron.scheduler import _resolve_origin, _resolve_delivery_target, _deliver_result, _send_media_via_adapter, run_job, SILENT_MARKER, _build_job_prompt
+from cron.scheduler import (
+    _build_job_prompt,
+    _deliver_result,
+    _get_cron_max_parallel,
+    _resolve_delivery_target,
+    _resolve_origin,
+    _send_media_via_adapter,
+    run_job,
+    SILENT_MARKER,
+)
 from tools.env_passthrough import clear_env_passthrough
 from tools.credential_files import clear_credential_files
 
@@ -2296,8 +2305,8 @@ class TestParallelTick:
         assert seen["dc-job"] == {"platform": "discord", "chat_id": "222"}
 
     def test_max_parallel_env_var(self, monkeypatch):
-        """HERMES_CRON_MAX_PARALLEL=1 should restore serial behaviour."""
-        monkeypatch.setenv("HERMES_CRON_MAX_PARALLEL", "1")
+        """SUPERFORECASTING_AGENT_CRON_MAX_PARALLEL=1 restores serial behaviour."""
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_CRON_MAX_PARALLEL", "1")
         call_times = []
 
         def mock_run_job(job):
@@ -2326,6 +2335,17 @@ class TestParallelTick:
         end_s1 = [t for action, jid, t in call_times if action == "end" and jid == "s1"][0]
         start_s2 = [t for action, jid, t in call_times if action == "start" and jid == "s2"][0]
         assert start_s2 >= end_s1, "Jobs ran concurrently despite max_parallel=1"
+
+    def test_max_parallel_legacy_env_var(self, monkeypatch):
+        """HERMES_CRON_MAX_PARALLEL remains supported as a legacy alias."""
+        monkeypatch.setenv("HERMES_CRON_MAX_PARALLEL", "2")
+        assert _get_cron_max_parallel() == 2
+
+    def test_max_parallel_fork_alias_precedes_legacy(self, monkeypatch):
+        """Fork-native cron parallelism aliases take precedence over legacy values."""
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_CRON_MAX_PARALLEL", "3")
+        monkeypatch.setenv("HERMES_CRON_MAX_PARALLEL", "1")
+        assert _get_cron_max_parallel() == 3
 
 
 class TestDeliverResultTimeoutCancelsFuture:

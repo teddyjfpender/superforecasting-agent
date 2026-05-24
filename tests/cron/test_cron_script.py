@@ -10,6 +10,7 @@ Tests cover:
 import json
 import os
 import stat
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -145,18 +146,46 @@ class TestRunJobScript:
         assert output == ""
 
     def test_script_timeout(self, cron_env, monkeypatch):
-        from cron import scheduler as sched_mod
-        from cron.scheduler import _run_job_script
+        from cron.scheduler import _get_script_timeout, _run_job_script
 
-        # Use a very short timeout
-        monkeypatch.setattr(sched_mod, "_SCRIPT_TIMEOUT", 1)
+        # Use a very short timeout through the production env path.
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_CRON_SCRIPT_TIMEOUT", "1")
+        assert _get_script_timeout() == 1
 
         script = cron_env / "scripts" / "slow.py"
         script.write_text("import time; time.sleep(30)\n")
 
-        success, output = _run_job_script(str(script))
+        with patch(
+            "cron.scheduler.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd=[sys.executable, str(script)], timeout=1),
+        ):
+            success, output = _run_job_script(str(script))
         assert success is False
         assert "timed out" in output.lower()
+
+    def test_script_timeout_fork_env_alias_precedes_legacy(self, monkeypatch):
+        from cron import scheduler as sched_mod
+
+        monkeypatch.setattr(sched_mod, "_SCRIPT_TIMEOUT", sched_mod._DEFAULT_SCRIPT_TIMEOUT)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_CRON_SCRIPT_TIMEOUT", "7")
+        monkeypatch.setenv("HERMES_CRON_SCRIPT_TIMEOUT", "1")
+
+        assert sched_mod._get_script_timeout() == 7
+
+    def test_script_timeout_module_override(self, monkeypatch):
+        from cron import scheduler as sched_mod
+
+        monkeypatch.setattr(sched_mod, "_SCRIPT_TIMEOUT", 7)
+
+        assert sched_mod._get_script_timeout() == 7
+
+    def test_script_timeout_legacy_env_alias(self, monkeypatch):
+        from cron import scheduler as sched_mod
+
+        monkeypatch.setattr(sched_mod, "_SCRIPT_TIMEOUT", sched_mod._DEFAULT_SCRIPT_TIMEOUT)
+        monkeypatch.setenv("HERMES_CRON_SCRIPT_TIMEOUT", "7")
+
+        assert sched_mod._get_script_timeout() == 7
 
     def test_script_json_output(self, cron_env):
         """Scripts can output structured JSON for the LLM to parse."""

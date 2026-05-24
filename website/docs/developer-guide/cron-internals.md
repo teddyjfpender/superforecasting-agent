@@ -146,7 +146,7 @@ import requests, json
 The script timeout defaults to 120 seconds. `_get_script_timeout()` resolves the limit through a three-layer chain:
 
 1. **Module-level override** — `_SCRIPT_TIMEOUT` (for tests/monkeypatching). Only used when it differs from the default.
-2. **Environment variable** — `HERMES_CRON_SCRIPT_TIMEOUT` (inherited env-var name)
+2. **Environment variable** — `SUPERFORECASTING_AGENT_CRON_SCRIPT_TIMEOUT` / `FORECAST_CRON_SCRIPT_TIMEOUT` / `HERMES_CRON_SCRIPT_TIMEOUT` (legacy alias)
 3. **Config** — `cron.script_timeout_seconds` in `config.yaml` (read via `load_config()`)
 4. **Default** — 120 seconds
 

@@ -353,7 +353,7 @@ TIPS = [
     # --- Cron (no-agent & scripts) ---
     'cronjob with no_agent=True runs a script on schedule and sends its stdout directly — zero tokens, zero LLM.',
     'An empty cron script stdout means silent tick — nothing is delivered, perfect for threshold watchdogs.',
-    "HERMES_CRON_MAX_PARALLEL (default 4) caps how many cron jobs run per tick so bursts don't saturate your keys.",
+    "SUPERFORECASTING_AGENT_CRON_MAX_PARALLEL (default 4) caps how many cron jobs run per tick so bursts don't saturate your keys.",
 
     # --- Gateway Hooks ---
     'Gateway hooks live under ~/.superforecasting-agent/hooks/<name>/ with HOOK.yaml + handler.py — handler must be named `handle`.',

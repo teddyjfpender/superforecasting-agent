@@ -764,6 +764,29 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
 _DEFAULT_SCRIPT_TIMEOUT = 120  # seconds
 # Backward-compatible module override used by tests and emergency monkeypatches.
 _SCRIPT_TIMEOUT = _DEFAULT_SCRIPT_TIMEOUT
+_CRON_SCRIPT_TIMEOUT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_CRON_SCRIPT_TIMEOUT",
+    "FORECAST_CRON_SCRIPT_TIMEOUT",
+    "HERMES_CRON_SCRIPT_TIMEOUT",
+)
+_CRON_TIMEOUT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_CRON_TIMEOUT",
+    "FORECAST_CRON_TIMEOUT",
+    "HERMES_CRON_TIMEOUT",
+)
+_CRON_MAX_PARALLEL_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_CRON_MAX_PARALLEL",
+    "FORECAST_CRON_MAX_PARALLEL",
+    "HERMES_CRON_MAX_PARALLEL",
+)
+
+
+def _first_env_value(names: tuple[str, ...]) -> tuple[str, str]:
+    for name in names:
+        value = os.getenv(name, "").strip()
+        if value:
+            return name, value
+    return "", ""
 
 
 def _get_script_timeout() -> int:
@@ -776,14 +799,14 @@ def _get_script_timeout() -> int:
         except Exception:
             logger.warning("Invalid patched _SCRIPT_TIMEOUT=%r; using env/config/default", _SCRIPT_TIMEOUT)
 
-    env_value = os.getenv("HERMES_CRON_SCRIPT_TIMEOUT", "").strip()
+    env_name, env_value = _first_env_value(_CRON_SCRIPT_TIMEOUT_ENV_NAMES)
     if env_value:
         try:
             timeout = int(float(env_value))
             if timeout > 0:
                 return timeout
         except Exception:
-            logger.warning("Invalid HERMES_CRON_SCRIPT_TIMEOUT=%r; using config/default", env_value)
+            logger.warning("Invalid %s=%r; using config/default", env_name, env_value)
 
     try:
         cfg = load_config() or {}
@@ -797,6 +820,41 @@ def _get_script_timeout() -> int:
         logger.debug("Failed to load cron script timeout from config: %s", exc)
 
     return _DEFAULT_SCRIPT_TIMEOUT
+
+
+def _get_cron_timeout_seconds(default: float = 600.0) -> float:
+    env_name, raw_value = _first_env_value(_CRON_TIMEOUT_ENV_NAMES)
+    if raw_value:
+        try:
+            return float(raw_value)
+        except (ValueError, TypeError):
+            logger.warning(
+                "Invalid %s=%r; using default %.0fs",
+                env_name,
+                raw_value,
+                default,
+            )
+    return default
+
+
+def _get_cron_max_parallel() -> Optional[int]:
+    env_name, env_value = _first_env_value(_CRON_MAX_PARALLEL_ENV_NAMES)
+    if env_value:
+        try:
+            return int(env_value) or None
+        except (ValueError, TypeError):
+            logger.warning("Invalid %s value; defaulting to unbounded", env_name)
+
+    try:
+        cfg = load_config() or {}
+        cfg_value = (
+            cfg.get("cron", {}) if isinstance(cfg, dict) else {}
+        ).get("max_parallel_jobs")
+        if cfg_value is not None:
+            return int(cfg_value) or None
+    except Exception:
+        pass
+    return None
 
 
 def _run_job_script(script_path: str) -> tuple[bool, str]:
@@ -1590,22 +1648,12 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
         # for hours if it's actively calling tools / receiving stream tokens,
         # but a hung API call or stuck tool with no activity for the configured
         # duration is caught and killed.  Default 600s (10 min inactivity);
-        # override via HERMES_CRON_TIMEOUT env var.  0 = unlimited.
+        # override via SUPERFORECASTING_AGENT_CRON_TIMEOUT,
+        # FORECAST_CRON_TIMEOUT, or legacy HERMES_CRON_TIMEOUT.  0 = unlimited.
         #
         # Uses the agent's built-in activity tracker (updated by
         # _touch_activity() on every tool call, API call, and stream delta).
-        _raw_cron_timeout = os.getenv("HERMES_CRON_TIMEOUT", "").strip()
-        if _raw_cron_timeout:
-            try:
-                _cron_timeout = float(_raw_cron_timeout)
-            except (ValueError, TypeError):
-                logger.warning(
-                    "Invalid HERMES_CRON_TIMEOUT=%r; using default 600s",
-                    _raw_cron_timeout,
-                )
-                _cron_timeout = 600.0
-        else:
-            _cron_timeout = 600.0
+        _cron_timeout = _get_cron_timeout_seconds()
         _cron_inactivity_limit = _cron_timeout if _cron_timeout > 0 else None
         _POLL_INTERVAL = 5.0
         _cron_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -1833,24 +1881,9 @@ def tick(verbose: bool = True, adapters=None, loop=None) -> int:
             advance_next_run(job["id"])
 
         # Resolve max parallel workers: env var > config.yaml > unbounded.
-        # Set HERMES_CRON_MAX_PARALLEL=1 to restore old serial behaviour.
-        _max_workers: Optional[int] = None
-        try:
-            _env_par = os.getenv("HERMES_CRON_MAX_PARALLEL", "").strip()
-            if _env_par:
-                _max_workers = int(_env_par) or None
-        except (ValueError, TypeError):
-            logger.warning("Invalid HERMES_CRON_MAX_PARALLEL value; defaulting to unbounded")
-        if _max_workers is None:
-            try:
-                _ucfg = load_config() or {}
-                _cfg_par = (
-                    _ucfg.get("cron", {}) if isinstance(_ucfg, dict) else {}
-                ).get("max_parallel_jobs")
-                if _cfg_par is not None:
-                    _max_workers = int(_cfg_par) or None
-            except Exception:
-                pass
+        # Set SUPERFORECASTING_AGENT_CRON_MAX_PARALLEL=1 to restore old serial
+        # behaviour; HERMES_CRON_MAX_PARALLEL remains a legacy alias.
+        _max_workers = _get_cron_max_parallel()
 
         if verbose:
             logger.info(

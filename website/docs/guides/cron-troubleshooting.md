@@ -207,7 +207,7 @@ Usually this is a delivery target issue or intentionally suppressed output. Chec
 
 **Job hangs or times out**
 
-The scheduler uses an inactivity-based timeout, configurable with `HERMES_CRON_TIMEOUT`. The env var name is inherited for compatibility. Long-running jobs should collect data in scripts and emit only the result the forecast desk needs.
+The scheduler uses an inactivity-based timeout, configurable with `SUPERFORECASTING_AGENT_CRON_TIMEOUT` or `FORECAST_CRON_TIMEOUT`; `HERMES_CRON_TIMEOUT` remains an inherited compatibility alias. Long-running jobs should collect data in scripts and emit only the result the forecast desk needs.
 
 ### Check 3: Lock contention
 
