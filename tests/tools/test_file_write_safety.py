@@ -120,9 +120,13 @@ class TestCheckSensitivePathMacOSBypass:
         from tools.file_tools import _check_sensitive_path
         assert _check_sensitive_path("/private/etc/ssh/sshd_config") is not None
 
-    def test_private_var_blocked(self):
+    def test_private_var_db_blocked(self):
         from tools.file_tools import _check_sensitive_path
         assert _check_sensitive_path("/private/var/db/something") is not None
+
+    def test_private_var_folders_tmp_allowed(self):
+        from tools.file_tools import _check_sensitive_path
+        assert _check_sensitive_path("/private/var/folders/test/sample.txt") is None
 
     def test_boot_still_blocked(self):
         from tools.file_tools import _check_sensitive_path

@@ -864,10 +864,14 @@ def read_claude_code_credentials() -> Optional[Dict[str, Any]]:
 
     Returns dict with {accessToken, refreshToken?, expiresAt?} or None.
     """
-    # Try macOS Keychain first (covers Claude Code >=2.1.114)
-    kc_creds = _read_claude_code_credentials_from_keychain()
-    if kc_creds:
-        return kc_creds
+    # Try macOS Keychain first (covers Claude Code >=2.1.114), but only when
+    # using the real OS home. Tests and isolated runtimes often monkeypatch
+    # Path.home() to a synthetic directory; in that mode reading the host
+    # user's keychain would leak credentials across the isolation boundary.
+    if Path.home() == Path("~").expanduser():
+        kc_creds = _read_claude_code_credentials_from_keychain()
+        if kc_creds:
+            return kc_creds
 
     # Fall back to JSON file
     cred_path = Path.home() / ".claude" / ".credentials.json"

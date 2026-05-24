@@ -429,6 +429,11 @@ class LSPClient:
             return
         if proc.returncode is None:
             try:
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=0.1)
+                    return
+                except asyncio.TimeoutError:
+                    pass
                 proc.terminate()
                 try:
                     await asyncio.wait_for(proc.wait(), timeout=SHUTDOWN_GRACE)

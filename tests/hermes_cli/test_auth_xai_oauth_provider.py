@@ -360,7 +360,7 @@ def test_xai_callback_handler_returns_400_when_callback_url_lacks_code_and_error
         status, body = _get_callback(redirect_uri)
         assert status == 400
         assert "not received" in body.lower()
-        assert "hermes auth add xai-oauth" in body
+        assert "superforecasting-agent auth add xai-oauth" in body
         # Wait loop must still see no code/error so it raises a real timeout,
         # rather than treating this empty hit as a successful callback.
         assert result["code"] is None

@@ -641,6 +641,22 @@ def _reset_module_state():
     except Exception:
         pass
 
+    # --- cron.jobs — storage paths are cached at import time ---
+    # _hermetic_environment gives every test its own HERMES_HOME, but
+    # cron.jobs computes HERMES_DIR/CRON_DIR/JOBS_FILE/OUTPUT_DIR once at
+    # module import. Reset those paths here so tests that use the cron tool
+    # without a local cron fixture do not read or write another test's store
+    # on the same xdist worker.
+    try:
+        from cron import jobs as _cron_jobs_mod
+        _cron_home = Path(os.environ["HERMES_HOME"]).resolve()
+        _cron_jobs_mod.HERMES_DIR = _cron_home
+        _cron_jobs_mod.CRON_DIR = _cron_home / "cron"
+        _cron_jobs_mod.JOBS_FILE = _cron_jobs_mod.CRON_DIR / "jobs.json"
+        _cron_jobs_mod.OUTPUT_DIR = _cron_jobs_mod.CRON_DIR / "output"
+    except Exception:
+        pass
+
     yield
 
 
@@ -832,6 +848,8 @@ def _live_system_guard(request, monkeypatch):
     import subprocess as _subprocess
 
     test_pid = _os.getpid()
+    real_kill = _os.kill
+    _spawned_children: set[int] = set()
     # Capture the test process's existing children at fixture start —
     # any *new* children spawned by the test are also allowlisted via
     # the live psutil walk below. Static set keeps the fast path cheap.
@@ -853,9 +871,16 @@ def _live_system_guard(request, monkeypatch):
             return True
         if pid < 0:
             return False
-        if pid == test_pid or pid in _initial_children:
+        if pid == test_pid or pid in _initial_children or pid in _spawned_children:
             return True
         if _psutil is None:
+            try:
+                real_kill(pid, 0)
+            except ProcessLookupError:
+                # Stale PID — kill would be a no-op anyway, allow it.
+                return True
+            except PermissionError:
+                return False
             return False
         try:
             walker = _psutil.Process(pid)
@@ -869,8 +894,6 @@ def _live_system_guard(request, monkeypatch):
         except Exception:
             return False
         return False
-
-    real_kill = _os.kill
 
     def _guarded_kill(pid, sig, *args, **kwargs):
         if _is_own_subtree(int(pid)):
@@ -1020,6 +1043,8 @@ def _live_system_guard(request, monkeypatch):
             def __init__(self, cmd, *args, **kwargs):
                 _check_subprocess_cmd("Popen", cmd)
                 super().__init__(cmd, *args, **kwargs)
+                if getattr(self, "pid", None):
+                    _spawned_children.add(int(self.pid))
 
         _GuardedPopen.__name__ = "Popen"
         _GuardedPopen.__qualname__ = "Popen"

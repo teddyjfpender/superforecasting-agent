@@ -93,6 +93,7 @@ def test_kill_process_uses_cached_pgid_if_wrapper_already_exited(monkeypatch):
 def test_wait_for_process_kills_subprocess_on_keyboardinterrupt():
     """When KeyboardInterrupt arrives mid-poll, the subprocess group must be
     killed before the exception is re-raised."""
+    pytest.importorskip("psutil", reason="requires psutil to discover the spawned sleep process")
     env = LocalEnvironment(cwd="/tmp")
     try:
         result_holder = {}

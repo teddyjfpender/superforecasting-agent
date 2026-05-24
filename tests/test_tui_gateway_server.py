@@ -2052,7 +2052,7 @@ def test_config_set_personality_preserves_history_and_returns_info(monkeypatch):
     assert len(session["history"]) == 2
     assert session["history"][0] == {"role": "user", "text": "hi"}
     assert session["history"][1]["role"] == "user"
-    assert "personality" in session["history"][1]["content"].lower()
+    assert "persona" in session["history"][1]["content"].lower()
     assert "You are helpful." in session["history"][1]["content"]
     assert session["history_version"] == 5
     # Agent's system prompt was updated in-place with the forecast desk base

@@ -835,7 +835,7 @@ class TestKillProcess:
             def terminate(self):
                 terminate_calls.append(("terminate", self.pid))
 
-        import psutil as _psutil
+        _psutil = pytest.importorskip("psutil")
 
         try:
             # Post-#21561: liveness probe routes through

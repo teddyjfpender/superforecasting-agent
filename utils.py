@@ -245,8 +245,12 @@ def atomic_roundtrip_yaml_update(
     should survive a single setting mutation.  Writes still use the same temp
     file + fsync + atomic replace pattern.
     """
-    from ruamel.yaml import YAML
-    from ruamel.yaml.comments import CommentedMap
+    try:
+        from ruamel.yaml import YAML
+        from ruamel.yaml.comments import CommentedMap
+    except ModuleNotFoundError:
+        _atomic_yaml_update_without_ruamel(path, key_path, value)
+        return
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -295,6 +299,108 @@ def atomic_roundtrip_yaml_update(
         except OSError:
             pass
         raise
+
+
+def _yaml_inline_scalar(value: Any) -> str:
+    dumped = yaml.safe_dump(
+        value,
+        allow_unicode=True,
+        default_flow_style=True,
+        sort_keys=False,
+    ).strip()
+    if dumped.endswith("\n..."):
+        dumped = dumped[:-4].rstrip()
+    return dumped
+
+
+def _replace_existing_yaml_scalar_line(text: str, key_path: str, value: Any) -> str | None:
+    keys = key_path.split(".")
+    stack: list[tuple[int, str]] = []
+    lines = text.splitlines(keepends=True)
+
+    for idx, line in enumerate(lines):
+        body = line.rstrip("\n")
+        if not body.strip() or body.lstrip().startswith("#"):
+            continue
+        leading = len(body) - len(body.lstrip(" "))
+        stripped = body.strip()
+        if ":" not in stripped:
+            continue
+        key, rest = stripped.split(":", 1)
+        key = key.strip().strip("'\"")
+        if not key:
+            continue
+
+        while stack and leading <= stack[-1][0]:
+            stack.pop()
+        current_path = [item[1] for item in stack] + [key]
+        if current_path == keys:
+            newline = "\n" if line.endswith("\n") else ""
+            inline_comment = ""
+            rest_text = rest.rstrip()
+            if " #" in rest_text:
+                inline_comment = " #" + rest_text.split(" #", 1)[1]
+            lines[idx] = f"{' ' * leading}{key}: {_yaml_inline_scalar(value)}{inline_comment}{newline}"
+            return "".join(lines)
+        if rest.strip() == "":
+            stack.append((leading, key))
+    return None
+
+
+def _atomic_yaml_update_without_ruamel(
+    path: Union[str, Path],
+    key_path: str,
+    value: Any,
+) -> None:
+    """Best-effort config update when ruamel.yaml is unavailable.
+
+    Existing scalar lines are replaced in-place so simple user comments survive;
+    new keys fall back to PyYAML serialization.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if path.exists():
+        original_text = path.read_text(encoding="utf-8")
+        patched = _replace_existing_yaml_scalar_line(original_text, key_path, value)
+        if patched is not None:
+            original_mode = _preserve_file_mode(path)
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(path.parent),
+                prefix=f".{path.stem}_",
+                suffix=".tmp",
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(patched)
+                    f.flush()
+                    os.fsync(f.fileno())
+                real_path = atomic_replace(tmp_path, path)
+                _restore_file_mode(real_path, original_mode)
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
+            return
+        config = yaml.safe_load(original_text) or {}
+    else:
+        config = {}
+
+    if not isinstance(config, dict):
+        config = {}
+
+    current = config
+    keys = key_path.split(".")
+    for key in keys[:-1]:
+        next_value = current.get(key)
+        if not isinstance(next_value, dict):
+            next_value = {}
+            current[key] = next_value
+        current = next_value
+    current[keys[-1]] = value
+    atomic_yaml_write(path, config, sort_keys=False)
 
 
 # ─── JSON Helpers ─────────────────────────────────────────────────────────────
