@@ -131,6 +131,31 @@ describe('forecast desk panel helpers', () => {
     )
   })
 
+  it('surfaces tester pilot handoff commands in next actions', () => {
+    const response: ForecastDashboardResponse = {
+      summary: {
+        active_count: 0,
+        open_alert_count: 0,
+        product: 'Superforecasting Agent',
+        questions: [],
+        review_queue: [],
+        review_queue_count: 0
+      }
+    }
+
+    const sections = forecastDashboardSections(response)
+    const nextCommands = sections.find(section => section.title === 'Next Commands')
+
+    expect(nextCommands?.items).toEqual(
+      expect.arrayContaining([
+        '/forecast readiness',
+        '/forecast pilot-report',
+        '/forecast pilot-cohort live-cohort.csv --dry-run --json',
+        '/forecast pilot-aggregate .pilot/*-export.json --json'
+      ])
+    )
+  })
+
   it('surfaces aggregate assumption counts in desk status and triage', () => {
     const response: ForecastDashboardResponse = {
       summary: {
