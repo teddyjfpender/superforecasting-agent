@@ -32,6 +32,15 @@ class TestQQRequirements:
         assert isinstance(result, bool)
 
 
+def test_qqbot_user_agent_is_forecast_native():
+    from gateway.platforms.qqbot import build_user_agent
+
+    user_agent = build_user_agent()
+
+    assert "SuperforecastingAgent/" in user_agent
+    assert "Hermes/" not in user_agent
+
+
 # ---------------------------------------------------------------------------
 # QQAdapter.__init__
 # ---------------------------------------------------------------------------
