@@ -373,6 +373,7 @@ function FocusedActionsPanel({
 }) {
   const row = focusedForecast(questions, reviewQueue);
   if (!row) return null;
+  const reasons = "reasons" in row ? row.reasons : [];
 
   return (
     <Card>
@@ -389,6 +390,16 @@ function FocusedActionsPanel({
             {row.id}
             {row.domain ? ` · ${row.domain}` : ""}
           </span>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono-ui text-[11px] text-muted-foreground">
+            <span>P(now) {formatProbability(row.probability)}</span>
+            <span>as of {formatDate(row.as_of)}</span>
+            <span>close {formatDate(row.close_time)}</span>
+          </div>
+          {reasons.length > 0 && (
+            <span className="line-clamp-2 text-xs text-muted-foreground">
+              {reasons.join(", ")}
+            </span>
+          )}
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
           {focusedForecastCommands(row).map((item) => (

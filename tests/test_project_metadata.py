@@ -1531,3 +1531,15 @@ def test_model_catalog_default_url_is_forecast_native():
     assert expected in catalog_py
     assert "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json" not in config_py
     assert "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json" not in catalog_py
+
+
+def test_web_focused_forecast_panel_shows_probability_timing_context():
+    root = Path(__file__).resolve().parents[1]
+    page = (root / "web" / "src" / "pages" / "ForecastsPage.tsx").read_text(
+        encoding="utf-8"
+    )
+
+    assert "P(now) {formatProbability(row.probability)}" in page
+    assert "as of {formatDate(row.as_of)}" in page
+    assert "close {formatDate(row.close_time)}" in page
+    assert "{reasons.join(\", \")}" in page
