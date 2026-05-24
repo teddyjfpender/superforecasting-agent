@@ -778,6 +778,12 @@ def test_calibration_summary_filters_horizon_and_reports_sharpness(tmp_path):
         probability_or_distribution=0.75,
         rationale="Near-term deal catalysts are strong.",
         as_of="2026-01-05T00:00:00Z",
+        ensemble_components={
+            "components": [
+                {"name": "base_rate", "probability": 0.6, "weight": 1},
+                {"name": "market", "probability": 0.8, "weight": 3},
+            ]
+        },
     )
     ledger.resolve_question(question_id=question.id, outcome="yes")
     ledger.score_question(question.id)
@@ -790,6 +796,13 @@ def test_calibration_summary_filters_horizon_and_reports_sharpness(tmp_path):
     assert summary["probability_movement_count"] == 1
     assert summary["mean_probability_movement_before_close"] == pytest.approx(0.2)
     assert summary["mean_abs_probability_movement_before_close"] == pytest.approx(0.2)
+    contributions = {
+        row["name"]: row for row in summary["ensemble_component_contributions"]
+    }
+    assert contributions["market"]["mean_weight_share"] == pytest.approx(0.75)
+    assert contributions["market"]["mean_contribution"] == pytest.approx(0.6)
+    assert contributions["base_rate"]["mean_weight_share"] == pytest.approx(0.25)
+    assert contributions["base_rate"]["mean_contribution"] == pytest.approx(0.15)
     assert summary["buckets"][0]["sample_status"] == "empty"
     assert next(row for row in summary["buckets"] if row["bucket"] == "0.7-0.8")["sample_status"] == "low_sample"
     assert excluded["count"] == 0

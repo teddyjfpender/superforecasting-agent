@@ -38,7 +38,7 @@ For in-chat slash commands, see [Slash Commands Reference](./slash-commands.md).
 | `forecast resolve` | Resolve a question with explicit outcome, source, and confirmation state. |
 | `forecast score` | Score a resolved question. |
 | `forecast postmortem` | Record miss diagnosis and calibration lessons. |
-| `forecast calibration` | Inspect calibration by bucket, domain, horizon, origin, sharpness, and probability movement before close. |
+| `forecast calibration` | Inspect calibration by bucket, domain, horizon, origin, sharpness, probability movement before close, and ensemble component contribution. |
 | `forecast errors` | Inspect domain/topic error profiles. |
 | `forecast lessons` | Inspect active, tentative, invalidated, and applied calibration lessons. |
 | `forecast backtest` | Replay resolved benchmark corpora with evidence cutoffs and baseline comparisons. |

@@ -222,6 +222,16 @@ def test_forecast_cli_update_can_derive_weighted_ensemble_probability(tmp_path, 
     assert "base_rate" in output
     assert "market" in output
 
+    _run(parser, ["forecast", "--db", db, "resolve", question_id, "--outcome", "yes"])
+    capsys.readouterr()
+    _run(parser, ["forecast", "--db", db, "score", question_id])
+    capsys.readouterr()
+    _run(parser, ["forecast", "--db", db, "calibration", "--all"])
+    calibration_output = capsys.readouterr().out
+    assert "ensemble_component_contributions:" in calibration_output
+    assert "base_rate: n=1 mean_contribution=0.266667 weight_share=0.666667" in calibration_output
+    assert "market: n=1 mean_contribution=0.233333 weight_share=0.333333" in calibration_output
+
 
 def test_forecast_cli_update_can_apply_active_calibration_lessons(tmp_path, capsys):
     parser = _parser()

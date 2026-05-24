@@ -1681,6 +1681,15 @@ class ForecastLedger:
         buckets: dict[str, list[float]] = defaultdict(list)
         sharpness_values: list[float] = []
         probability_movements: list[float] = []
+        component_stats: dict[str, dict[str, list[float]]] = defaultdict(
+            lambda: {
+                "probability": [],
+                "weight": [],
+                "weight_share": [],
+                "contribution": [],
+                "distance_from_forecast": [],
+            }
+        )
         for score in scores:
             if score.brier_score is None:
                 continue
@@ -1695,6 +1704,14 @@ class ForecastLedger:
             movement = self._score_probability_movement_before_close(score, snapshot)
             if movement is not None:
                 probability_movements.append(movement)
+            for component in self._snapshot_component_contributions(snapshot):
+                stats = component_stats[component["name"]]
+                stats["probability"].append(component["probability"])
+                stats["weight"].append(component["weight"])
+                stats["weight_share"].append(component["weight_share"])
+                stats["contribution"].append(component["contribution"])
+                if component["distance_from_forecast"] is not None:
+                    stats["distance_from_forecast"].append(component["distance_from_forecast"])
         bucket_rows = []
         canonical_buckets = [f"{i / 10:.1f}-{(i + 1) / 10:.1f}" for i in range(10)]
         ordered_buckets = canonical_buckets + sorted(
@@ -1712,6 +1729,21 @@ class ForecastLedger:
             )
         all_values = [score.brier_score for score in scores if score.brier_score is not None]
         log_values = [score.log_score for score in scores if score.log_score is not None]
+        component_rows = [
+            {
+                "name": name,
+                "count": len(stats["contribution"]),
+                "mean_probability": self._mean(stats["probability"]),
+                "mean_weight": self._mean(stats["weight"]),
+                "mean_weight_share": self._mean(stats["weight_share"]),
+                "mean_contribution": self._mean(stats["contribution"]),
+                "mean_abs_distance_from_forecast": self._mean(
+                    [abs(value) for value in stats["distance_from_forecast"]]
+                ),
+            }
+            for name, stats in component_stats.items()
+            if stats["contribution"]
+        ]
         return {
             "count": len(all_values),
             "mean_brier": sum(all_values) / len(all_values) if all_values else None,
@@ -1727,6 +1759,10 @@ class ForecastLedger:
                 sum(abs(value) for value in probability_movements) / len(probability_movements)
                 if probability_movements
                 else None
+            ),
+            "ensemble_component_contributions": sorted(
+                component_rows,
+                key=lambda row: (-row["count"], -(row["mean_contribution"] or 0.0), row["name"]),
             ),
             "buckets": bucket_rows,
             "domain": domain,
@@ -4966,6 +5002,61 @@ class ForecastLedger:
         if isinstance(payload, (int, float)):
             return float(payload)
         return None
+
+    def _snapshot_component_contributions(self, snapshot: ForecastSnapshot) -> list[dict[str, Any]]:
+        forecast_probability = self._numeric_probability(snapshot.probability_or_distribution)
+        rows = self._ensemble_component_rows(snapshot.ensemble_components)
+        total_weight = sum(row["weight"] for row in rows)
+        if total_weight <= 0:
+            return []
+        contributions: list[dict[str, Any]] = []
+        for row in rows:
+            weight_share = row["weight"] / total_weight
+            contribution = row["probability"] * weight_share
+            distance = (
+                row["probability"] - forecast_probability
+                if forecast_probability is not None
+                else None
+            )
+            contributions.append(
+                {
+                    "name": row["name"],
+                    "probability": row["probability"],
+                    "weight": row["weight"],
+                    "weight_share": weight_share,
+                    "contribution": contribution,
+                    "distance_from_forecast": distance,
+                }
+            )
+        return contributions
+
+    def _ensemble_component_rows(self, components: dict[str, Any]) -> list[dict[str, Any]]:
+        raw_rows: list[Any]
+        if isinstance(components.get("components"), list):
+            raw_rows = components["components"]
+        else:
+            raw_rows = [
+                {"name": name, **value}
+                if isinstance(value, dict)
+                else {"name": name, "probability": value}
+                for name, value in components.items()
+            ]
+        rows: list[dict[str, Any]] = []
+        for index, raw in enumerate(raw_rows, start=1):
+            if not isinstance(raw, dict):
+                continue
+            probability = self._numeric_probability(raw.get("probability"))
+            weight = self._numeric_probability(raw.get("weight", 1.0))
+            if probability is None or weight is None or weight < 0:
+                continue
+            rows.append(
+                {
+                    "name": str(raw.get("name") or raw.get("source") or f"component_{index}"),
+                    "probability": probability,
+                    "weight": weight,
+                }
+            )
+        return rows
 
     @staticmethod
     def _is_high_impact_question(question: ForecastQuestion) -> bool:

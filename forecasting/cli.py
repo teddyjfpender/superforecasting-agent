@@ -4932,6 +4932,16 @@ def _print_calibration_summary(summary: dict[str, Any], *, label: str | None = N
         if abs_movement is not None
         else "mean_abs_probability_movement_before_close: -"
     )
+    components = summary.get("ensemble_component_contributions") or []
+    if components:
+        print("ensemble_component_contributions:")
+        for row in components:
+            print(
+                f"  {row['name']}: n={row['count']} "
+                f"mean_contribution={_format_metric(row.get('mean_contribution'))} "
+                f"weight_share={_format_metric(row.get('mean_weight_share'))} "
+                f"mean_probability={_format_metric(row.get('mean_probability'))}"
+            )
     print("buckets:")
     if not summary["buckets"]:
         print("  none")
