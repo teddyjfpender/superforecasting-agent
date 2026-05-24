@@ -146,6 +146,22 @@ def _toolset_allowed_for_platform(ts_key: str, platform: str) -> bool:
     return allowed is None or platform in allowed
 
 
+def _fallback_platform_toolset(platform: str, toolsets: dict) -> str:
+    """Return the composite toolset for a dynamic platform.
+
+    New plugin/platform integrations should use ``forecast-<platform>``.
+    Legacy ``hermes-<platform>`` toolsets remain valid during the fork
+    transition so existing plugins do not lose their default tools.
+    """
+    forecast_toolset = f"forecast-{platform}"
+    if forecast_toolset in toolsets:
+        return forecast_toolset
+    legacy_toolset = f"hermes-{platform}"
+    if legacy_toolset in toolsets:
+        return legacy_toolset
+    return forecast_toolset
+
+
 def _get_effective_configurable_toolsets():
     """Return CONFIGURABLE_TOOLSETS + any plugin-provided toolsets.
 
@@ -1068,7 +1084,7 @@ def _get_platform_tools(
             default_ts = plat_info["default_toolset"]
         else:
             # Plugin platform — derive toolset name from platform key
-            default_ts = f"hermes-{platform}"
+            default_ts = _fallback_platform_toolset(platform, TOOLSETS)
         toolset_names = [default_ts]
 
     # YAML may parse bare numeric names (e.g. ``12306:``) as int.
@@ -1186,7 +1202,11 @@ def _get_platform_tools(
     # otherwise saving via `hermes tools` (which flips has_explicit_config
     # to True) silently drops them.
     _plat_info = PLATFORMS.get(platform)
-    _default_ts = _plat_info["default_toolset"] if _plat_info else f"hermes-{platform}"
+    _default_ts = (
+        _plat_info["default_toolset"]
+        if _plat_info
+        else _fallback_platform_toolset(platform, TOOLSETS)
+    )
     platform_tool_universe = set(resolve_toolset(_default_ts))
     for ts_name in toolset_names:
         if ts_name in configurable_keys or ts_name in plugin_ts_keys:
@@ -1201,7 +1221,7 @@ def _get_platform_tools(
     for ts_key in enabled_toolsets:
         claimed.update(resolve_toolset(ts_key))
     skip = configurable_keys | plugin_ts_keys | platform_default_keys
-    skip |= {k for k in TOOLSETS if k.startswith("hermes-")}
+    skip |= {k for k in TOOLSETS if k.startswith(("forecast-", "hermes-"))}
     skip |= set(_DEFAULT_OFF_TOOLSETS) - {platform}
     for ts_key, ts_def in TOOLSETS.items():
         if ts_key in skip:

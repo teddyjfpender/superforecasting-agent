@@ -374,6 +374,7 @@ class TestPlatformsMerge:
             merged = get_all_platforms()
             assert "testmerge" in merged
             assert "TestMerge" in merged["testmerge"].label
+            assert merged["testmerge"].default_toolset == "forecast-testmerge"
         finally:
             _reg.unregister("testmerge")
 

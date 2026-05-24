@@ -946,6 +946,42 @@ def test_get_platform_tools_recovers_non_configurable_toolsets_from_composite():
     assert "terminal" in enabled
 
 
+def test_get_platform_tools_unknown_platform_prefers_forecast_composite():
+    """Dynamic platform defaults should use forecast-native toolset names."""
+    from toolsets import TOOLSETS
+
+    fake_toolsets = dict(TOOLSETS)
+    fake_toolsets["forecast-_dynamic_platform"] = {
+        "description": "test composite",
+        "tools": ["web_search", "web_extract", "terminal", "process"],
+        "includes": [],
+    }
+
+    with patch("toolsets.TOOLSETS", fake_toolsets):
+        enabled = _get_platform_tools({}, "_dynamic_platform")
+
+    assert "web" in enabled
+    assert "terminal" in enabled
+
+
+def test_get_platform_tools_unknown_platform_keeps_legacy_composite_fallback():
+    """Legacy plugin platforms with only hermes-* composites still work."""
+    from toolsets import TOOLSETS
+
+    fake_toolsets = dict(TOOLSETS)
+    fake_toolsets["hermes-_legacy_platform"] = {
+        "description": "test composite",
+        "tools": ["web_search", "web_extract", "terminal", "process"],
+        "includes": [],
+    }
+
+    with patch("toolsets.TOOLSETS", fake_toolsets):
+        enabled = _get_platform_tools({}, "_legacy_platform")
+
+    assert "web" in enabled
+    assert "terminal" in enabled
+
+
 def test_get_platform_tools_second_pass_skips_fully_claimed_toolsets():
     """Toolsets whose tools are fully covered by configurable keys should NOT
     be added by the second pass (prevents 'search', 'hermes-acp' noise).
