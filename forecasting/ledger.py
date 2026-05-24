@@ -3376,13 +3376,18 @@ class ForecastLedger:
                     )
                     scores = [score]
                 else:
+                    high_impact = self._is_high_impact_question(question)
                     alerts.append(
                         self.create_alert(
                             severity="high",
                             scope_type="question",
                             scope_ref=question.id,
-                            reason="score_due",
-                            recommended_action="Run `forecast score` for the confirmed resolution.",
+                            reason="high_impact_score_due" if high_impact else "score_due",
+                            recommended_action=(
+                                "Prioritize scoring this high-impact confirmed resolution before updating calibration memory."
+                                if high_impact
+                                else "Run `forecast score` for the confirmed resolution."
+                            ),
                         )
                     )
                     continue
@@ -3410,13 +3415,18 @@ class ForecastLedger:
                         )
                     )
                     continue
+                high_impact = self._is_high_impact_question(question)
                 alerts.append(
                     self.create_alert(
-                        severity="warning",
+                        severity="high" if high_impact else "warning",
                         scope_type="question",
                         scope_ref=question.id,
-                        reason="postmortem_due",
-                        recommended_action="Run `forecast postmortem` so the resolved forecast can update learning artifacts.",
+                        reason="high_impact_postmortem_due" if high_impact else "postmortem_due",
+                        recommended_action=(
+                            "Prioritize a postmortem for this high-impact resolution before reusing the lesson."
+                            if high_impact
+                            else "Run `forecast postmortem` so the resolved forecast can update learning artifacts."
+                        ),
                     )
                 )
         alerts.extend(self._domain_error_profile_alerts(domain=domain, topic=topic, questions=questions))
@@ -4956,6 +4966,10 @@ class ForecastLedger:
         if isinstance(payload, (int, float)):
             return float(payload)
         return None
+
+    @staticmethod
+    def _is_high_impact_question(question: ForecastQuestion) -> bool:
+        return (question.impact or "").strip().lower() in {"high", "critical", "material"}
 
     def _domain_error_profile_alerts(
         self,

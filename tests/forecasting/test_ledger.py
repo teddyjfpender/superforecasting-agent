@@ -4277,6 +4277,30 @@ def test_self_check_flags_resolved_forecasts_needing_score_and_postmortem(tmp_pa
     assert {alert.reason for alert in postmortem_alerts} == {"postmortem_due"}
 
 
+def test_self_check_prioritizes_high_impact_resolution_learning(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will a high-impact forecast need learning review?",
+        resolution_criteria="Resolved yes if high-impact learning work is prioritized.",
+        impact="high",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.7,
+        rationale="Initial high-impact forecast.",
+    )
+    ledger.resolve_question(question_id=question.id, outcome="yes")
+
+    score_alerts = ledger.self_check(question_id=question.id)
+    ledger.score_question(question.id)
+    postmortem_alerts = ledger.self_check(question_id=question.id)
+
+    assert {alert.reason for alert in score_alerts} == {"high_impact_score_due"}
+    assert score_alerts[0].severity == "high"
+    assert {alert.reason for alert in postmortem_alerts} == {"high_impact_postmortem_due"}
+    assert postmortem_alerts[0].severity == "high"
+
+
 def test_self_check_auto_scores_confirmed_resolved_forecasts(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     question = ledger.create_question(
