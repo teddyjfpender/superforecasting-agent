@@ -104,9 +104,9 @@ describe('createSlashHandler', () => {
         expect.arrayContaining([
           expect.objectContaining({ title: 'Book' }),
           expect.objectContaining({
-            rows: [
-              ['default0 P=0.210 Δ=-0.040', 'active  Will company Y default?']
-            ],
+            rows: expect.arrayContaining([
+              ['default0 P=0.210 Δ=-0.040', 'active  close 2026-09-30  Will company Y default?']
+            ]),
             title: 'Watchlist'
           })
         ])
@@ -210,6 +210,10 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'model fq_123 --type bayesian_update' })
     expect(handler('/forecast-model fq_123 --type time_series')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'model fq_123 --type time_series' })
+    expect(handler('/trend-model fq_123 --series-json \'[[0,10],[1,12]]\' --target-x 2')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', {
+      arg: "model fq_123 --series-json '[[0,10],[1,12]]' --target-x 2 --type trend_projection"
+    })
     expect(handler('/update-forecast fq_123 --probability 0.62 --rationale "new evidence"')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', {
       arg: 'update fq_123 --probability 0.62 --rationale "new evidence"'

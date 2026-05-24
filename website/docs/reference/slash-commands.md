@@ -10,7 +10,7 @@ Superforecasting Agent has three slash-command surfaces:
 
 - **Classic interactive CLI slash commands** — dispatched by `cli.py`, with autocomplete from the central `COMMAND_REGISTRY` in `hermes_cli/commands.py`
 - **Messaging slash commands** — dispatched by `gateway/run.py`, with help text and platform menus generated from the registry
-- **TUI forecast shortcuts** — local Ink handlers for forecast-desk workflows such as `/forecast`, `/sources`, `/new-forecast`, `/ingest`, `/evidence`, `/research`, `/base-rate`, `/model-run`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/review`, `/alerts`, `/calibration`, `/lessons`, `/backtest`, `/schedule`, `/performance`, `/pilot-report`, `/pilot-cohort`, and `/pilot-aggregate`
+- **TUI forecast shortcuts** — local Ink handlers for forecast-desk workflows such as `/forecast`, `/sources`, `/new-forecast`, `/ingest`, `/evidence`, `/research`, `/base-rate`, `/model-run`, `/trend-model`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/review`, `/alerts`, `/calibration`, `/lessons`, `/backtest`, `/schedule`, `/performance`, `/pilot-report`, `/pilot-cohort`, and `/pilot-aggregate`
 
 Installed skills are also exposed as dynamic slash commands on the classic CLI and messaging surfaces. That includes bundled skills like `/plan`, which opens plan mode and saves markdown plans under the workspace-local compatibility plans directory.
 
@@ -27,6 +27,7 @@ The forecast desk is the primary product surface. Use these before reaching for 
 | `/research [args]` | TUI | Collect evidence or source notes without moving probability. Equivalent to `forecast research ...`. |
 | `/base-rate [args]` | TUI | Add or inspect reference-class/base-rate work. |
 | `/model-run [args]` | TUI | Record a quantitative model run. Equivalent to `forecast model ...`. |
+| `/trend-model [args]` | TUI | Record a deterministic trend projection model run. Equivalent to `forecast model ... --type trend_projection`. |
 | `/update-forecast [args]` | TUI | Append a probability update to a forecast. |
 | `/resolve [args]` | TUI | Record a forecast resolution. |
 | `/score [args]` | TUI | Score a resolved forecast. |

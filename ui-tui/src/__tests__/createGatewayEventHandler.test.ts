@@ -971,6 +971,7 @@ describe('createGatewayEventHandler', () => {
               '/forecast review --stale',
               '/forecast self-check',
               '/sources',
+              "/trend-model <id> --series-json '[...]' --target-date <date>",
               '/forecast calibration --by-origin',
               '/forecast performance --last 5',
               '/forecast readiness',

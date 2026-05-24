@@ -112,6 +112,7 @@ Common desk workflows have direct slash commands:
 | `/research` | Collect evidence without moving probability |
 | `/base-rate` | Add or inspect reference-class work |
 | `/model-run` | Record a quantitative forecast model run |
+| `/trend-model` | Record a deterministic trend projection model run |
 | `/update-forecast` | Append a probability snapshot |
 | `/resolve` | Record a resolution |
 | `/score` | Score a resolved question |
