@@ -108,6 +108,11 @@ MINIMAX_OAUTH_GLOBAL_INFERENCE = "https://api.minimax.io/anthropic"
 MINIMAX_OAUTH_CN_INFERENCE = "https://api.minimaxi.com/anthropic"
 MINIMAX_OAUTH_REFRESH_SKEW_SECONDS = 60
 DEFAULT_QWEN_BASE_URL = "https://portal.qwen.ai/v1"
+_QWEN_BASE_URL_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_QWEN_BASE_URL",
+    "FORECAST_QWEN_BASE_URL",
+    "HERMES_QWEN_BASE_URL",
+)
 DEFAULT_GITHUB_MODELS_BASE_URL = "https://api.githubcopilot.com"
 DEFAULT_COPILOT_ACP_BASE_URL = "acp://copilot"
 DEFAULT_OLLAMA_CLOUD_BASE_URL = "https://ollama.com/v1"
@@ -2006,7 +2011,12 @@ def resolve_qwen_runtime_credentials(
             code="qwen_access_token_missing",
         )
 
-    base_url = os.getenv("HERMES_QWEN_BASE_URL", "").strip().rstrip("/") or DEFAULT_QWEN_BASE_URL
+    base_url = ""
+    for env_name in _QWEN_BASE_URL_ENV_NAMES:
+        base_url = os.getenv(env_name, "").strip().rstrip("/")
+        if base_url:
+            break
+    base_url = base_url or DEFAULT_QWEN_BASE_URL
     return {
         "provider": "qwen-oauth",
         "base_url": base_url,

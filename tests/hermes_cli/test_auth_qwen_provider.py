@@ -71,6 +71,12 @@ def qwen_env(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "hermes_cli.auth._qwen_cli_auth_path", lambda: creds_path
     )
+    for key in (
+        "SUPERFORECASTING_AGENT_QWEN_BASE_URL",
+        "FORECAST_QWEN_BASE_URL",
+        "HERMES_QWEN_BASE_URL",
+    ):
+        monkeypatch.delenv(key, raising=False)
     return tmp_path
 
 
@@ -373,10 +379,39 @@ def test_resolve_qwen_runtime_credentials_missing_access_token(qwen_env):
 def test_resolve_qwen_runtime_credentials_base_url_env_override(qwen_env, monkeypatch):
     tokens = _make_qwen_tokens(access_token="at")
     _write_qwen_creds(qwen_env, tokens)
-    monkeypatch.setenv("HERMES_QWEN_BASE_URL", "https://custom.qwen.ai/v1")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_QWEN_BASE_URL", "https://custom.qwen.ai/v1")
 
     creds = resolve_qwen_runtime_credentials(refresh_if_expiring=False)
     assert creds["base_url"] == "https://custom.qwen.ai/v1"
+
+
+def test_resolve_qwen_runtime_credentials_base_url_alias_precedence(qwen_env, monkeypatch):
+    tokens = _make_qwen_tokens(access_token="at")
+    _write_qwen_creds(qwen_env, tokens)
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_QWEN_BASE_URL", "https://sfa.qwen.ai/v1")
+    monkeypatch.setenv("FORECAST_QWEN_BASE_URL", "https://forecast.qwen.ai/v1")
+    monkeypatch.setenv("HERMES_QWEN_BASE_URL", "https://legacy.qwen.ai/v1")
+
+    creds = resolve_qwen_runtime_credentials(refresh_if_expiring=False)
+    assert creds["base_url"] == "https://sfa.qwen.ai/v1"
+
+
+def test_resolve_qwen_runtime_credentials_base_url_short_alias(qwen_env, monkeypatch):
+    tokens = _make_qwen_tokens(access_token="at")
+    _write_qwen_creds(qwen_env, tokens)
+    monkeypatch.setenv("FORECAST_QWEN_BASE_URL", "https://forecast.qwen.ai/v1")
+    monkeypatch.setenv("HERMES_QWEN_BASE_URL", "https://legacy.qwen.ai/v1")
+
+    creds = resolve_qwen_runtime_credentials(refresh_if_expiring=False)
+    assert creds["base_url"] == "https://forecast.qwen.ai/v1"
+
+
+def test_qwen_provider_overlay_prefers_forecast_native_base_url_env():
+    from hermes_cli.providers import get_provider
+
+    provider = get_provider("qwen-oauth")
+    assert provider is not None
+    assert provider.base_url_env_var == "SUPERFORECASTING_AGENT_QWEN_BASE_URL"
 
 
 # ---------------------------------------------------------------------------

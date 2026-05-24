@@ -45,12 +45,22 @@ import { PluginSlot } from "@/plugins";
 /** Map env-var key prefixes to a human-friendly provider name + ordering. */
 const PROVIDER_GROUPS: { prefix: string; name: string; priority: number }[] = [
   // Nous Portal first
+  { prefix: "SUPERFORECASTING_AGENT_NOUS_", name: "Nous Portal", priority: 0 },
+  { prefix: "FORECAST_NOUS_", name: "Nous Portal", priority: 0 },
   { prefix: "NOUS_", name: "Nous Portal", priority: 0 },
   // Then alphabetical by display name
   { prefix: "ANTHROPIC_", name: "Anthropic", priority: 1 },
+  { prefix: "SUPERFORECASTING_AGENT_QWEN_", name: "Qwen OAuth", priority: 2 },
+  { prefix: "FORECAST_QWEN_", name: "Qwen OAuth", priority: 2 },
   { prefix: "DASHSCOPE_", name: "DashScope (Qwen)", priority: 2 },
-  { prefix: "HERMES_QWEN_", name: "DashScope (Qwen)", priority: 2 },
+  { prefix: "HERMES_QWEN_", name: "Qwen OAuth", priority: 2 },
+  { prefix: "SUPERFORECASTING_AGENT_COPILOT_", name: "GitHub Copilot", priority: 3 },
+  { prefix: "FORECAST_COPILOT_", name: "GitHub Copilot", priority: 3 },
+  { prefix: "HERMES_COPILOT_", name: "GitHub Copilot", priority: 3 },
+  { prefix: "COPILOT_", name: "GitHub Copilot", priority: 3 },
   { prefix: "DEEPSEEK_", name: "DeepSeek", priority: 3 },
+  { prefix: "SUPERFORECASTING_AGENT_GEMINI_", name: "Gemini", priority: 4 },
+  { prefix: "FORECAST_GEMINI_", name: "Gemini", priority: 4 },
   { prefix: "GOOGLE_", name: "Gemini", priority: 4 },
   { prefix: "GEMINI_", name: "Gemini", priority: 4 },
   { prefix: "GLM_", name: "GLM / Z.AI", priority: 5 },

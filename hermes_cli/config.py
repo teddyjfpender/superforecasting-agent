@@ -121,6 +121,7 @@ _CONFIG_LOCK = threading.RLock()
 _EXTRA_ENV_KEYS = frozenset({
     "OPENAI_API_KEY", "OPENAI_BASE_URL",
     "ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN",
+    "FORECAST_QWEN_BASE_URL", "HERMES_QWEN_BASE_URL",
     "FORECAST_GEMINI_CLIENT_ID", "HERMES_GEMINI_CLIENT_ID",
     "FORECAST_GEMINI_CLIENT_SECRET", "HERMES_GEMINI_CLIENT_SECRET",
     "FORECAST_GEMINI_PROJECT_ID", "HERMES_GEMINI_PROJECT_ID",
@@ -2068,7 +2069,7 @@ OPTIONAL_ENV_VARS = {
         "category": "provider",
         "advanced": True,
     },
-    "HERMES_QWEN_BASE_URL": {
+    "SUPERFORECASTING_AGENT_QWEN_BASE_URL": {
         "description": "Qwen Portal base URL override (default: https://portal.qwen.ai/v1)",
         "prompt": "Qwen Portal base URL (leave empty for default)",
         "url": None,

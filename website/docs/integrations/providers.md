@@ -458,7 +458,7 @@ model:
   default: "qwen3-coder-plus"
 ```
 
-Set `HERMES_QWEN_BASE_URL` only if the portal endpoint relocates (default: `https://portal.qwen.ai/v1`).
+Set `SUPERFORECASTING_AGENT_QWEN_BASE_URL` or `FORECAST_QWEN_BASE_URL` only if the portal endpoint relocates (default: `https://portal.qwen.ai/v1`). `HERMES_QWEN_BASE_URL` remains supported as a legacy alias.
 
 :::tip Qwen OAuth vs Qwen Cloud (Alibaba DashScope)
 `qwen-oauth` uses the consumer-facing Qwen Portal with OAuth login — ideal for individual users. The `alibaba` provider uses Qwen Cloud (Alibaba DashScope) with a `DASHSCOPE_API_KEY` — ideal for programmatic / production workloads. Both route to Qwen-family models but live at different endpoints.
