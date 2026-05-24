@@ -92,6 +92,20 @@ def _redirect_cache(tmp_path, monkeypatch):
     )
 
 
+@pytest.mark.asyncio
+async def test_create_handoff_thread_seed_is_forecast_native(adapter):
+    adapter._get_client = MagicMock(return_value=adapter._app.client)
+    adapter._app.client.chat_postMessage = AsyncMock(return_value={"ts": "123.456"})
+
+    result = await adapter.create_handoff_thread("C_HOME", "Research transfer")
+
+    assert result == "123.456"
+    adapter._app.client.chat_postMessage.assert_awaited_once_with(
+        channel="C_HOME",
+        text=":thread: Forecast handoff - *Research transfer*",
+    )
+
+
 # ---------------------------------------------------------------------------
 # TestSlashCommandSessionIsolation
 # ---------------------------------------------------------------------------

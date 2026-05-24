@@ -1996,18 +1996,18 @@ class GatewayRunner:
     def _telegram_topic_root_lobby_message(self) -> str:
         return (
             "This main chat is reserved for system commands.\n\n"
-            "To start a new Hermes chat, open the All Messages topic at the top "
+            "To start a new forecast chat, open the All Messages topic at the top "
             "of this bot interface and send any message there. Telegram will "
             "create a new topic for that message; each topic works as an "
-            "independent Hermes session."
+            "independent forecast research session."
         )
 
     def _telegram_topic_root_new_message(self) -> str:
         return (
-            "To start a new parallel Hermes chat, open the All Messages topic "
+            "To start a new parallel forecast chat, open the All Messages topic "
             "at the top of this bot interface and send any message there. "
             "Telegram will create a new topic for it.\n\n"
-            "Each topic is an independent Hermes session. Use /new inside an "
+            "Each topic is an independent forecast research session. Use /new inside an "
             "existing topic only if you want to replace that topic's current session."
         )
 
@@ -2015,7 +2015,7 @@ class GatewayRunner:
         if not self._is_telegram_topic_lane(source):
             return None
         return (
-            "Started a new Hermes session in this topic.\n\n"
+            "Started a new forecast research session in this topic.\n\n"
             "Tip: for parallel work, open All Messages and send a message there "
             "to create a separate topic instead of using /new here. /new replaces "
             "the session attached to the current topic."
@@ -2026,7 +2026,7 @@ class GatewayRunner:
         source: SessionSource,
         session_entry,
     ) -> None:
-        """Persist the Telegram topic -> Hermes session binding for topic lanes."""
+        """Persist the Telegram topic -> forecast session binding for topic lanes."""
         session_db = getattr(self, "_session_db", None)
         if session_db is None or not source.chat_id or not source.thread_id:
             return
@@ -3574,7 +3574,7 @@ class GatewayRunner:
         
         Returns True if at least one adapter connected successfully.
         """
-        logger.info("Starting Hermes Gateway...")
+        logger.info("Starting Superforecasting Agent Gateway...")
         try:
             self._gateway_loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -4195,7 +4195,7 @@ class GatewayRunner:
         # (no permission, topics-mode off, parent is a DM, etc.). When
         # None we fall through to using the home channel directly — the
         # synthetic turn still lands; just without thread isolation.
-        thread_name = f"Hermes — {cli_title}"
+        thread_name = f"Forecast Desk - {cli_title}"
         try:
             new_thread_id = await adapter.create_handoff_thread(
                 str(home.chat_id), thread_name,
@@ -8363,7 +8363,7 @@ class GatewayRunner:
                 )
                 notice = (
                     f"📬 No home channel is set for {platform_name.title()}. "
-                    f"A home channel is where Hermes delivers cron job results "
+                    f"A home channel is where Superforecasting Agent delivers cron job results "
                     f"and cross-platform messages.\n\n"
                     f"Type {sethome_cmd} to make this chat your home channel, "
                     f"or ignore to skip."
@@ -12080,7 +12080,7 @@ class GatewayRunner:
         """Return a Bot API-safe forum topic name from a generated session title."""
         cleaned = re.sub(r"\s+", " ", str(title or "")).strip()
         if not cleaned:
-            return "Hermes Chat"
+            return "Forecast Chat"
         # Telegram forum topic names are short (currently 1-128 chars). Keep
         # extra room for multi-byte titles and avoid trailing ellipsis churn.
         if len(cleaned) > 120:
@@ -12264,11 +12264,11 @@ class GatewayRunner:
             "  /topic <id>        Inside a topic: restore a previous session by ID\n"
             "\n"
             "How it works:\n"
-            "1. Run /topic once in this DM — Hermes checks BotFather Threads\n"
+            "1. Run /topic once in this DM — Superforecasting Agent checks BotFather Threads\n"
             "   Settings are enabled and flips on multi-session mode.\n"
             "2. Tap All Messages at the top of the bot and send any message.\n"
             "   Telegram creates a new topic for that message; each topic is\n"
-            "   an independent Hermes session (fresh history, fresh context).\n"
+            "   an independent forecast research session (fresh history, fresh context).\n"
             "3. The root DM becomes a system lobby — send /topic, /status,\n"
             "   /help, /usage there. Normal prompts go in a topic.\n"
             "4. /new inside a topic resets just that topic's session.\n"
@@ -12308,7 +12308,7 @@ class GatewayRunner:
             "Multi-session topic mode is now OFF for this chat.\n\n"
             "Existing topics in Telegram aren't removed — they'll just stop "
             "being gated as independent sessions. The root DM works as a "
-            "normal Hermes chat again. Run /topic to re-enable later."
+            "normal forecast chat again. Run /topic to re-enable later."
         )
 
     async def _handle_topic_command(self, event: MessageEvent, args: str = "") -> str:
@@ -12404,7 +12404,7 @@ class GatewayRunner:
         lines = [
             "Telegram multi-session topics are enabled.",
             "",
-            "To create a new Hermes chat, open All Messages at the top of this "
+            "To create a new forecast chat, open All Messages at the top of this "
             "bot interface and send any message there. Telegram will create a "
             "new topic for it.",
             "",
@@ -12447,7 +12447,7 @@ class GatewayRunner:
         return "\n".join(lines)
 
     async def _restore_telegram_topic_session(self, event: MessageEvent, raw_session_id: str) -> str:
-        """Restore an existing Telegram-owned Hermes session into this topic."""
+        """Restore an existing Telegram-owned forecast session into this topic."""
         source = event.source
         session_id = self._session_db.resolve_session_id(raw_session_id.strip())
         if not session_id:
@@ -12497,7 +12497,7 @@ class GatewayRunner:
 
         response = f"Session restored: {title}"
         if last_assistant:
-            response += f"\n\nLast Hermes message:\n{last_assistant}"
+            response += f"\n\nLast forecast desk message:\n{last_assistant}"
         return response
 
     async def _handle_title_command(self, event: MessageEvent) -> str:

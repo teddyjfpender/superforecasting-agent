@@ -3863,7 +3863,7 @@ class DiscordAdapter(BasePlatformAdapter):
             }
         except Exception as direct_error:
             try:
-                seed_content = starter_message or f"\U0001f9f5 Thread created by Hermes: **{name}**"
+                seed_content = starter_message or f"\U0001f9f5 Forecast thread created: **{name}**"
                 seed_msg = await parent_channel.send(seed_content)
                 thread = await seed_msg.create_thread(
                     name=name,
@@ -3901,7 +3901,7 @@ class DiscordAdapter(BasePlatformAdapter):
         content = re.sub(r"<@[!&]?\d+>", "", content)
         content = re.sub(r"<#\d+>", "", content)
         content = re.sub(r"\s+", " ", content).strip()
-        thread_name = content[:80] if content else "Hermes"
+        thread_name = content[:80] if content else "Forecast Chat"
         if len(content) > 80:
             thread_name = thread_name[:77] + "..."
 
@@ -3912,7 +3912,7 @@ class DiscordAdapter(BasePlatformAdapter):
             display_name = getattr(getattr(message, "author", None), "display_name", None) or "unknown user"
             reason = f"Auto-threaded from mention by {display_name}"
             try:
-                seed_msg = await message.channel.send(f"\U0001f9f5 Thread created by Hermes: **{thread_name}**")
+                seed_msg = await message.channel.send(f"\U0001f9f5 Forecast thread created: **{thread_name}**")
                 thread = await seed_msg.create_thread(
                     name=thread_name,
                     auto_archive_duration=1440,
@@ -3969,7 +3969,7 @@ class DiscordAdapter(BasePlatformAdapter):
             return None
 
         thread_name = (name or "handoff").strip()[:80] or "handoff"
-        reason = "Hermes session handoff"
+        reason = "Forecast research session handoff"
 
         # First try: create a thread directly on the channel.
         try:
@@ -3992,7 +3992,7 @@ class DiscordAdapter(BasePlatformAdapter):
             send = getattr(parent, "send", None)
             if send is None:
                 return None
-            seed_msg = await send(f"\U0001f9f5 Hermes handoff: **{thread_name}**")
+            seed_msg = await send(f"\U0001f9f5 Forecast handoff: **{thread_name}**")
             thread = await seed_msg.create_thread(
                 name=thread_name,
                 auto_archive_duration=1440,
