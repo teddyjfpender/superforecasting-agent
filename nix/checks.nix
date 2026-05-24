@@ -162,34 +162,38 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
 
           # self-contained bundle; no runtime node_modules expected
 
+          grep -q "SUPERFORECASTING_AGENT_TUI_DIR" ${hermes-agent}/bin/hermes || \
+            (echo "FAIL: SUPERFORECASTING_AGENT_TUI_DIR not in wrapper"; exit 1)
           grep -q "HERMES_TUI_DIR" ${hermes-agent}/bin/hermes || \
-            (echo "FAIL: HERMES_TUI_DIR not in wrapper"; exit 1)
-          echo "PASS: HERMES_TUI_DIR set in wrapper"
+            (echo "FAIL: HERMES_TUI_DIR compatibility alias not in wrapper"; exit 1)
+          echo "PASS: TUI dir env aliases set in wrapper"
 
           echo "=== All bundled TUI checks passed ==="
           mkdir -p $out
           echo "ok" > $out/result
         '';
 
-        # Verify HERMES_NODE is set in wrapper and points to Node 20+
+        # Verify forecast-native Node aliases are set in wrapper and point to Node 20+
         # (string-width uses the /v regex flag which requires Node 20+)
         hermes-node = pkgs.runCommand "hermes-node-version" { } ''
           set -e
-          echo "=== Checking HERMES_NODE in wrapper ==="
+          echo "=== Checking SUPERFORECASTING_AGENT_NODE in wrapper ==="
+          grep -q "SUPERFORECASTING_AGENT_NODE" ${hermes-agent}/bin/hermes || \
+            (echo "FAIL: SUPERFORECASTING_AGENT_NODE not set in wrapper"; exit 1)
           grep -q "HERMES_NODE" ${hermes-agent}/bin/hermes || \
-            (echo "FAIL: HERMES_NODE not set in wrapper"; exit 1)
-          echo "PASS: HERMES_NODE present in wrapper"
+            (echo "FAIL: HERMES_NODE compatibility alias not set in wrapper"; exit 1)
+          echo "PASS: Node env aliases present in wrapper"
 
-          HERMES_NODE=$(sed -n "s/^export HERMES_NODE='\(.*\)'/\1/p" ${hermes-agent}/bin/hermes)
-          test -x "$HERMES_NODE" || (echo "FAIL: HERMES_NODE=$HERMES_NODE not executable"; exit 1)
-          echo "PASS: HERMES_NODE executable at $HERMES_NODE"
+          SUPERFORECASTING_AGENT_NODE=$(sed -n "s/^export SUPERFORECASTING_AGENT_NODE='\(.*\)'/\1/p" ${hermes-agent}/bin/hermes)
+          test -x "$SUPERFORECASTING_AGENT_NODE" || (echo "FAIL: SUPERFORECASTING_AGENT_NODE=$SUPERFORECASTING_AGENT_NODE not executable"; exit 1)
+          echo "PASS: SUPERFORECASTING_AGENT_NODE executable at $SUPERFORECASTING_AGENT_NODE"
 
-          NODE_MAJOR=$("$HERMES_NODE" --version | sed 's/^v//' | cut -d. -f1)
+          NODE_MAJOR=$("$SUPERFORECASTING_AGENT_NODE" --version | sed 's/^v//' | cut -d. -f1)
           test "$NODE_MAJOR" -ge 20 || \
             (echo "FAIL: Node v$NODE_MAJOR < 20, TUI needs /v regex flag support"; exit 1)
           echo "PASS: Node v$NODE_MAJOR >= 20"
 
-          echo "=== All HERMES_NODE checks passed ==="
+          echo "=== All Node wrapper checks passed ==="
           mkdir -p $out
           echo "ok" > $out/result
         '';

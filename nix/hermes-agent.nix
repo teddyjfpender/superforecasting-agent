@@ -156,9 +156,17 @@ stdenv.mkDerivation {
           --set SUPERFORECASTING_AGENT_BUNDLED_PLUGINS $out/share/hermes-agent/plugins \
           --set FORECAST_BUNDLED_PLUGINS $out/share/hermes-agent/plugins \
           --set HERMES_BUNDLED_PLUGINS $out/share/hermes-agent/plugins \
+          --set SUPERFORECASTING_AGENT_WEB_DIST $out/share/hermes-agent/web_dist \
+          --set FORECAST_WEB_DIST $out/share/hermes-agent/web_dist \
           --set HERMES_WEB_DIST $out/share/hermes-agent/web_dist \
+          --set SUPERFORECASTING_AGENT_TUI_DIR $out/ui-tui \
+          --set FORECAST_TUI_DIR $out/ui-tui \
           --set HERMES_TUI_DIR $out/ui-tui \
+          --set SUPERFORECASTING_AGENT_PYTHON ${hermesVenv}/bin/python3 \
+          --set FORECAST_PYTHON ${hermesVenv}/bin/python3 \
           --set HERMES_PYTHON ${hermesVenv}/bin/python3 \
+          --set SUPERFORECASTING_AGENT_NODE ${lib.getExe nodejs} \
+          --set FORECAST_NODE ${lib.getExe nodejs} \
           --set HERMES_NODE ${lib.getExe nodejs} \
           ${lib.optionalString (rev != null) ''--set HERMES_REVISION ${rev} \''}
           ${lib.optionalString (extraPythonPackages != [ ]) ''--suffix PYTHONPATH : "${pythonPath}"''}
@@ -194,7 +202,7 @@ stdenv.mkDerivation {
       STAMP=".nix-stamps/hermes-agent"
       STAMP_VALUE="${pyprojectHash}:${uvLockHash}"
       if [ ! -f "$STAMP" ] || [ "$(cat "$STAMP")" != "$STAMP_VALUE" ]; then
-        echo "hermes-agent: installing Python dependencies..."
+        echo "superforecasting-agent: installing Python dependencies..."
         uv venv .venv --python ${python312}/bin/python3 2>/dev/null || true
         source .venv/bin/activate
         uv pip install -e ".[all]"
@@ -203,6 +211,8 @@ stdenv.mkDerivation {
         echo "$STAMP_VALUE" > "$STAMP"
       else
         source .venv/bin/activate
+        export SUPERFORECASTING_AGENT_PYTHON=${hermesVenv}/bin/python3
+        export FORECAST_PYTHON=${hermesVenv}/bin/python3
         export HERMES_PYTHON=${hermesVenv}/bin/python3
       fi
     '';
