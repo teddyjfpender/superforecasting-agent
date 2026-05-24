@@ -239,13 +239,17 @@ Use `forecast pilot-report --json` for a compact machine-readable summary of whe
 If testers should start from the same unresolved live question book, seed it from a CSV or JSON manifest:
 
 ```bash
-forecast pilot-cohort live-cohort.csv --schedule-cadence 1d --schedule-next-run-at 2026-05-25T09:00:00Z
+cp examples/forecasting/live-cohort.example.csv live-cohort.csv
+$EDITOR live-cohort.csv
 forecast pilot-cohort live-cohort.csv --dry-run --json
+forecast pilot-cohort live-cohort.csv --schedule-cadence 1d --schedule-next-run-at 2026-05-25T09:00:00Z
 ```
 
 Useful manifest columns are `title`, `resolution_criteria`, `probability`,
-`rationale`, `domain`, `topics`, `close_time`, `resolution_time`, and
-`watch_source`. The command creates prospective live questions and optional
+`rationale`, `domain`, `topics`, `close_time`, `resolution_time`, `as_of`,
+`confidence`, and `watch_source`. The example manifest is a template: edit the
+questions, dates, probabilities, and watched sources before using it for real
+pilot evidence. The command creates prospective live questions and optional
 initial live snapshots; it does not import resolved outcomes or prove
 forecasting skill.
 Operators can aggregate safe tester exports without merging ledgers:

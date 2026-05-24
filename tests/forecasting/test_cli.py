@@ -8665,6 +8665,41 @@ def test_forecast_cli_pilot_cohort_dry_run_json_does_not_mutate(tmp_path, capsys
     assert not db_path.exists()
 
 
+def test_forecast_cli_pilot_cohort_example_manifest_dry_run(tmp_path, capsys):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    manifest = Path(__file__).resolve().parents[2] / "examples/forecasting/live-cohort.example.csv"
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            str(db_path),
+            "pilot-cohort",
+            str(manifest),
+            "--dry-run",
+            "--json",
+        ],
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["dry_run"] is True
+    assert payload["question_count"] == 5
+    assert payload["initial_probability_count"] == 5
+    assert not db_path.exists()
+    assert {question["domain"] for question in payload["questions"]} >= {
+        "software",
+        "macro",
+        "crypto",
+        "security",
+    }
+    assert any(
+        "githubactions:teddyjfpender/superforecasting-agent" in question["watch_sources"]
+        for question in payload["questions"]
+    )
+
+
 def test_forecast_cli_pilot_aggregate_summarizes_export_packets(tmp_path, capsys):
     parser = _parser()
     ledger = ForecastLedger(tmp_path / "tester-a.db")

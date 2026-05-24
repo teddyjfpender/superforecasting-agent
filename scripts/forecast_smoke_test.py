@@ -599,6 +599,27 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
         raise SmokeError(f"pilot cohort dry-run did not validate:\n{json.dumps(pilot_cohort, indent=2)}")
     _print_step(f"pilot_cohort_dry_run_questions: {pilot_cohort.get('question_count')}")
 
+    example_cohort_path = repo_root / "examples/forecasting/live-cohort.example.csv"
+    example_cohort = _json_output(
+        _run_forecast(
+            ["pilot-cohort", str(example_cohort_path), "--dry-run", "--json"],
+            db_path=db_path,
+            repo_root=repo_root,
+            verbose=verbose,
+        ),
+        "example pilot-cohort",
+    )
+    if (
+        not example_cohort.get("dry_run")
+        or example_cohort.get("question_count") != 5
+        or example_cohort.get("initial_probability_count") != 5
+    ):
+        raise SmokeError(
+            "example pilot cohort manifest did not validate:\n"
+            f"{json.dumps(example_cohort, indent=2)}"
+        )
+    _print_step(f"pilot_cohort_example_questions: {example_cohort.get('question_count')}")
+
     pilot_report = _json_output(
         _run_forecast(
             [

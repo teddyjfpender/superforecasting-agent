@@ -140,6 +140,8 @@ forecast readiness --json
 forecast readiness --require-evidence
 forecast pilot-report
 forecast pilot-report --json
+cp examples/forecasting/live-cohort.example.csv live-cohort.csv
+forecast pilot-cohort live-cohort.csv --dry-run --json
 forecast pilot-cohort live-cohort.csv --schedule-cadence 1d --schedule-next-run-at 2026-05-25T09:00:00Z
 forecast pilot-aggregate tester-a-export.json tester-b-export.json --json
 ```
@@ -163,7 +165,9 @@ workflow artifacts needed for a small pilot, including questions, updates,
 timestamped evidence, structured-source evidence, scheduled self-checks, scores,
 and postmortems. `forecast pilot-cohort` seeds prospective live forecast cohorts
 from CSV/JSON manifests so testers can start from the same unresolved question
-book without copying outcomes into the ledger. `forecast pilot-aggregate` reads JSON exports from testers and
+book without copying outcomes into the ledger; the repo ships
+`examples/forecasting/live-cohort.example.csv` as an editable starter manifest
+for friendly pilots. `forecast pilot-aggregate` reads JSON exports from testers and
 summarizes live-score collection across packets without treating those artifacts
 as proof of superiority.
 

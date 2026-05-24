@@ -86,6 +86,8 @@ forecast readiness --json
 forecast readiness --require-evidence
 forecast pilot-report
 forecast pilot-report --json
+cp examples/forecasting/live-cohort.example.csv live-cohort.csv
+forecast pilot-cohort live-cohort.csv --dry-run --json
 forecast pilot-cohort live-cohort.csv --schedule-cadence 1d --schedule-next-run-at 2026-05-25T09:00:00Z
 forecast pilot-aggregate .pilot/*-export.json --json
 # readiness shows evidence gaps and next actions before stronger performance claims

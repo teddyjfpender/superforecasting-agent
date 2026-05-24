@@ -87,6 +87,7 @@ A build is ready for friendly testers when:
 - `forecast backtest --benchmarks` lists local benchmark datasets; the smoke script checks this
 - `forecast pilot-report` can summarize tester workflow artifacts; the smoke script checks this
 - `forecast pilot-aggregate` can count live-score evidence from tester exports; the smoke script checks this
+- `examples/forecasting/live-cohort.example.csv` dry-runs through `forecast pilot-cohort --json` before it is edited for a real pilot
 - `forecast readiness` clearly distinguishes smoke/backtest evidence from live superforecasting proof; the smoke script checks this
 - the tester can create, update, resolve, score, and postmortem one manual question without editing code
 
