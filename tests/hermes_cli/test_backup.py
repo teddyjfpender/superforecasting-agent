@@ -78,6 +78,11 @@ class TestShouldExclude:
         assert _should_exclude(Path("hermes-agent/run_agent.py"))
         assert _should_exclude(Path("hermes-agent/.git/HEAD"))
 
+    def test_excludes_superforecasting_agent(self):
+        from hermes_cli.backup import _should_exclude
+        assert _should_exclude(Path("superforecasting-agent/run_agent.py"))
+        assert _should_exclude(Path("superforecasting-agent/.git/HEAD"))
+
     def test_excludes_pycache(self):
         from hermes_cli.backup import _should_exclude
         assert _should_exclude(Path("plugins/__pycache__/mod.cpython-312.pyc"))
@@ -334,6 +339,46 @@ class TestImport:
         assert (hermes_home / ".env").read_text() == "OPENROUTER_API_KEY=sk-test\n"
         assert (hermes_home / "skills" / "my-skill" / "SKILL.md").read_text() == "# My Skill\n"
         assert (hermes_home / "profiles" / "coder" / "config.yaml").exists()
+
+    def test_import_guidance_uses_forecast_native_codebase_copy(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        hermes_home = tmp_path / ".superforecasting-agent"
+        hermes_home.mkdir()
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        zip_path = tmp_path / "backup.zip"
+        self._make_backup_zip(zip_path, {
+            "config.yaml": "model:\n  provider: openrouter\n",
+        })
+
+        from hermes_cli.backup import run_import
+        run_import(Namespace(zipfile=str(zip_path), force=True))
+
+        out = capsys.readouterr().out
+        assert "Superforecasting Agent codebase was not included" in out
+        assert "hermes-agent codebase was not included" not in out
+
+    def test_import_guidance_accepts_fork_native_codebase_checkout(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        hermes_home = tmp_path / ".superforecasting-agent"
+        hermes_home.mkdir()
+        (hermes_home / "superforecasting-agent").mkdir()
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        zip_path = tmp_path / "backup.zip"
+        self._make_backup_zip(zip_path, {
+            "config.yaml": "model:\n  provider: openrouter\n",
+        })
+
+        from hermes_cli.backup import run_import
+        run_import(Namespace(zipfile=str(zip_path), force=True))
+
+        out = capsys.readouterr().out
+        assert "codebase was not included" not in out
 
     def test_strips_hermes_prefix(self, tmp_path, monkeypatch):
         """Import strips .hermes/ prefix if all entries share it."""

@@ -30,10 +30,16 @@ logger = logging.getLogger(__name__)
 # Exclusion rules
 # ---------------------------------------------------------------------------
 
+# Runtime-home codebase checkout names to skip entirely: source checkouts are
+# re-cloned or updated, not restored from runtime-state backups.
+_CODEBASE_DIR_NAMES = {
+    "superforecasting-agent",
+    "hermes-agent",
+}
+
 # Directory names to skip entirely (matched against each path component)
 _EXCLUDED_DIRS = {
-    "hermes-agent",     # the codebase repo — re-clone instead
-    "superforecasting-agent",  # the fork codebase repo — re-clone instead
+    *_CODEBASE_DIR_NAMES,
     "__pycache__",      # bytecode caches — regenerated on import
     ".git",             # nested git dirs (profiles shouldn't have these, but safety)
     "node_modules",     # js deps if website/ somehow leaks in
@@ -84,6 +90,11 @@ def _should_exclude(rel_path: Path) -> bool:
         return True
 
     return False
+
+
+def _has_codebase_checkout(hermes_root: Path) -> bool:
+    """Return True when a fork-native or legacy code checkout is present."""
+    return any((hermes_root / name).is_dir() for name in _CODEBASE_DIR_NAMES)
 
 
 # ---------------------------------------------------------------------------
@@ -452,8 +463,8 @@ def run_import(args) -> None:
 
         # Guidance
         print()
-        if not (hermes_root / "hermes-agent").is_dir():
-            print("Note: The hermes-agent codebase was not included in the backup.")
+        if not _has_codebase_checkout(hermes_root):
+            print("Note: The Superforecasting Agent codebase was not included in the backup.")
             print("  If this is a fresh install, run: superforecasting-agent update")
 
         if restored_profiles:
