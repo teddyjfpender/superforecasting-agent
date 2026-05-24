@@ -4152,21 +4152,21 @@ def _discover_dashboard_plugins() -> list:
     """Scan plugins/*/dashboard/manifest.json for dashboard extensions.
 
     Checks three plugin sources (same as hermes_cli.plugins):
-    1. User plugins:    ~/.hermes/plugins/<name>/dashboard/manifest.json
+    1. User plugins:    ~/.superforecasting-agent/plugins/<name>/dashboard/manifest.json
     2. Bundled plugins: <repo>/plugins/<name>/dashboard/manifest.json  (memory/, etc.)
-    3. Project plugins: ./.hermes/plugins/  (only if HERMES_ENABLE_PROJECT_PLUGINS)
+    3. Project plugins: ./.hermes/plugins/  (only when project-plugin env aliases opt in)
     """
     plugins = []
     seen_names: set = set()
 
-    from hermes_cli.plugins import get_bundled_plugins_dir
+    from hermes_cli.plugins import get_bundled_plugins_dir, project_plugins_enabled
     bundled_root = get_bundled_plugins_dir()
     search_dirs = [
         (get_hermes_home() / "plugins", "user"),
         (bundled_root / "memory", "bundled"),
         (bundled_root, "bundled"),
     ]
-    if os.environ.get("HERMES_ENABLE_PROJECT_PLUGINS"):
+    if project_plugins_enabled():
         search_dirs.append((Path.cwd() / ".hermes" / "plugins", "project"))
 
     for plugins_root, source in search_dirs:

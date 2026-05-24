@@ -44,7 +44,7 @@ Project-local plugins may also be discovered from:
 ./.hermes/plugins/<name>/dashboard/
 ```
 
-Project-local discovery is gated by the inherited `HERMES_ENABLE_PROJECT_PLUGINS` runtime flag.
+Project-local discovery is gated by the `SUPERFORECASTING_AGENT_ENABLE_PROJECT_PLUGINS` runtime flag. `FORECAST_ENABLE_PROJECT_PLUGINS` and inherited `HERMES_ENABLE_PROJECT_PLUGINS` remain accepted aliases.
 
 ## Themes
 

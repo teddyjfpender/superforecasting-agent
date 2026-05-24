@@ -10,7 +10,7 @@ Discovers, loads, and manages plugins from four sources:
 2. **User plugins**   – ``~/.superforecasting-agent/plugins/<name>/`` or the
    active runtime home returned by ``get_hermes_home()``
 3. **Project plugins** – ``./.hermes/plugins/<name>/`` (opt-in via
-   ``HERMES_ENABLE_PROJECT_PLUGINS``)
+   ``SUPERFORECASTING_AGENT_ENABLE_PROJECT_PLUGINS`` or legacy aliases)
 4. **Pip plugins**     – packages that expose the inherited
    ``hermes_agent.plugins`` entry-point group.
 
@@ -53,14 +53,49 @@ from utils import env_var_enabled
 from hermes_cli.config import cfg_get
 
 
+_BUNDLED_PLUGIN_DIR_ENV_VARS = (
+    "SUPERFORECASTING_AGENT_BUNDLED_PLUGINS",
+    "FORECAST_BUNDLED_PLUGINS",
+    "HERMES_BUNDLED_PLUGINS",
+)
+_PROJECT_PLUGIN_ENV_VARS = (
+    "SUPERFORECASTING_AGENT_ENABLE_PROJECT_PLUGINS",
+    "FORECAST_ENABLE_PROJECT_PLUGINS",
+    "HERMES_ENABLE_PROJECT_PLUGINS",
+)
+_PLUGIN_DEBUG_ENV_VARS = (
+    "SUPERFORECASTING_AGENT_PLUGINS_DEBUG",
+    "FORECAST_PLUGINS_DEBUG",
+    "HERMES_PLUGINS_DEBUG",
+)
+
+
+def _first_set_env(names: tuple[str, ...]) -> str | None:
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    return None
+
+
+def _env_enabled_any(names: tuple[str, ...]) -> bool:
+    return any(env_var_enabled(name) for name in names)
+
+
+def project_plugins_enabled() -> bool:
+    """Return whether opt-in project-local plugin discovery is enabled."""
+    return _env_enabled_any(_PROJECT_PLUGIN_ENV_VARS)
+
+
 def get_bundled_plugins_dir() -> Path:
     """Locate the bundled ``plugins/`` directory.
 
-    Honours ``HERMES_BUNDLED_PLUGINS`` (set by the Nix wrapper / packaged
-    installs) so read-only store paths are consulted first.  Falls back to
-    the in-repo path used during development.
+    Honours ``SUPERFORECASTING_AGENT_BUNDLED_PLUGINS`` / ``FORECAST_BUNDLED_PLUGINS``
+    and legacy ``HERMES_BUNDLED_PLUGINS`` (set by packaged installs) so
+    read-only store paths are consulted first. Falls back to the in-repo path
+    used during development.
     """
-    env_override = os.getenv("HERMES_BUNDLED_PLUGINS")
+    env_override = _first_set_env(_BUNDLED_PLUGIN_DIR_ENV_VARS)
     if env_override:
         return Path(env_override)
     return Path(__file__).resolve().parent.parent / "plugins"
@@ -77,33 +112,30 @@ logger = logging.getLogger(__name__)
 # Plugin developer debug logging
 # ---------------------------------------------------------------------------
 #
-# Set ``HERMES_PLUGINS_DEBUG=1`` to surface verbose plugin-discovery logs to
-# stderr in addition to ~/.hermes/logs/agent.log. Aimed at plugin authors
-# trying to figure out why their plugin isn't showing up: which directories
-# were scanned, which manifests parsed, which plugins were skipped (and why),
-# what each ``register(ctx)`` call registered, and full tracebacks on load
-# failure.
+# Set ``SUPERFORECASTING_AGENT_PLUGINS_DEBUG=1`` (or ``FORECAST_PLUGINS_DEBUG=1``;
+# legacy ``HERMES_PLUGINS_DEBUG=1`` remains accepted) to surface verbose
+# plugin-discovery logs to stderr in addition to the runtime logs. Aimed at
+# plugin authors trying to figure out why their plugin isn't showing up: which
+# directories were scanned, which manifests parsed, which plugins were skipped
+# (and why), what each ``register(ctx)`` call registered, and full tracebacks on
+# load failure.
 #
 # The env var is read once at import time; tests that need to flip it
 # mid-process can call ``_install_plugin_debug_handler(force=True)``.
 
-_PLUGINS_DEBUG = os.getenv("HERMES_PLUGINS_DEBUG", "").strip().lower() in {
-    "1", "true", "yes", "on",
-}
+_PLUGINS_DEBUG = _env_enabled_any(_PLUGIN_DEBUG_ENV_VARS)
 _DEBUG_HANDLER_INSTALLED = False
 
 
 def _install_plugin_debug_handler(force: bool = False) -> None:
-    """When HERMES_PLUGINS_DEBUG is on, tee plugin logs to stderr at DEBUG.
+    """When plugin debug env aliases are on, tee plugin logs to stderr.
 
     Idempotent: only attaches the handler once per process unless ``force``
     is passed. Does not touch the root logger or other agent loggers.
     """
     global _DEBUG_HANDLER_INSTALLED, _PLUGINS_DEBUG
     if force:
-        _PLUGINS_DEBUG = os.getenv("HERMES_PLUGINS_DEBUG", "").strip().lower() in {
-            "1", "true", "yes", "on",
-        }
+        _PLUGINS_DEBUG = _env_enabled_any(_PLUGIN_DEBUG_ENV_VARS)
     if not _PLUGINS_DEBUG or _DEBUG_HANDLER_INSTALLED:
         return
     handler = logging.StreamHandler(sys.stderr)
@@ -116,7 +148,7 @@ def _install_plugin_debug_handler(force: bool = False) -> None:
     logger.propagate = True
     _DEBUG_HANDLER_INSTALLED = True
     logger.debug(
-        "HERMES_PLUGINS_DEBUG=1 — verbose plugin discovery logging enabled"
+        "SUPERFORECASTING_AGENT_PLUGINS_DEBUG=1 — verbose plugin discovery logging enabled"
     )
 
 
@@ -171,11 +203,6 @@ VALID_HOOKS: Set[str] = {
 ENTRY_POINTS_GROUP = "hermes_agent.plugins"
 
 _NS_PARENT = "hermes_plugins"
-
-
-def _env_enabled(name: str) -> bool:
-    """Return True when an env var is set to a truthy opt-in value."""
-    return env_var_enabled(name)
 
 
 def _get_disabled_plugins() -> set:
@@ -846,7 +873,7 @@ class PluginManager:
         manifests.extend(user_manifests)
 
         # 3. Project plugins (./.hermes/plugins/)
-        if _env_enabled("HERMES_ENABLE_PROJECT_PLUGINS"):
+        if project_plugins_enabled():
             project_dir = Path.cwd() / ".hermes" / "plugins"
             logger.debug("Scanning project plugins: %s", project_dir)
             project_manifests = self._scan_directory(project_dir, source="project")
@@ -854,7 +881,7 @@ class PluginManager:
             manifests.extend(project_manifests)
         else:
             logger.debug(
-                "Project plugins disabled (set HERMES_ENABLE_PROJECT_PLUGINS=1 to enable)"
+                "Project plugins disabled (set SUPERFORECASTING_AGENT_ENABLE_PROJECT_PLUGINS=1 to enable)"
             )
 
         # 4. Pip / entry-point plugins

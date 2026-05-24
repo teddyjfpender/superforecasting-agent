@@ -439,7 +439,7 @@ TIPS = [
 
     # --- Agent Behavior Env Vars ---
     'SUPERFORECASTING_AGENT_AGENT_TIMEOUT=0 disables the gateway inactivity kill for a running agent — use for long research runs.',
-    'HERMES_ENABLE_PROJECT_PLUGINS=1 auto-loads repo-local plugins from ./.hermes/plugins/ — trust-gated by design.',
+    'SUPERFORECASTING_AGENT_ENABLE_PROJECT_PLUGINS=1 auto-loads repo-local plugins from ./.hermes/plugins/ — trust-gated by design.',
     "SUPERFORECASTING_AGENT_DISABLE_FILE_STATE_GUARD=1 turns off the 'file changed since you read it' guard on patch and write_file.",
     'HERMES_ALLOW_PRIVATE_URLS=true lets web tools hit localhost and private networks — off by default in gateway mode.',
     'HERMES_OPTIONAL_SKILLS=name1,name2 auto-installs extra optional-catalog skills on first run per profile.',

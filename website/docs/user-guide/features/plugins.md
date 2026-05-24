@@ -90,7 +90,7 @@ def register(ctx):
 
 Drop both files into `~/.superforecasting-agent/plugins/hello-world/`, enable the plugin, restart Superforecasting Agent, and the model can call `hello_world` when the plugin toolset is active. The hook prints a log line after every tool invocation.
 
-Project-local plugins under `./.hermes/plugins/` are disabled by default. The directory and env var names are inherited compatibility surfaces. Enable them only for trusted repositories by setting `HERMES_ENABLE_PROJECT_PLUGINS=true` before starting Superforecasting Agent.
+Project-local plugins under `./.hermes/plugins/` are disabled by default. The directory name is an inherited compatibility surface. Enable them only for trusted repositories by setting `SUPERFORECASTING_AGENT_ENABLE_PROJECT_PLUGINS=true` before starting Superforecasting Agent. `FORECAST_ENABLE_PROJECT_PLUGINS` and `HERMES_ENABLE_PROJECT_PLUGINS` remain accepted aliases.
 
 ## What extensions can do
 
@@ -122,7 +122,7 @@ Every `ctx.*` API below is available inside a Python plugin's `register(ctx)` fu
 |--------|------|----------|
 | Bundled | `<repo>/plugins/` | Ships with Superforecasting Agent - see [Built-in Plugins](/docs/user-guide/features/built-in-plugins) |
 | User | `~/.superforecasting-agent/plugins/` | Personal plugins |
-| Project | `.hermes/plugins/` | Project-specific plugins (inherited directory name; requires `HERMES_ENABLE_PROJECT_PLUGINS=true`) |
+| Project | `.hermes/plugins/` | Project-specific plugins (inherited directory name; requires `SUPERFORECASTING_AGENT_ENABLE_PROJECT_PLUGINS=true` or an accepted alias) |
 | pip | `hermes_agent.plugins` entry_points | Distributed packages |
 | Nix | `services.hermes-agent.extraPlugins` / `extraPythonPackages` | NixOS declarative installs through the inherited module - see [Nix Setup](/docs/getting-started/nix-setup#plugins) |
 

@@ -1,4 +1,4 @@
-"""Tests for the Hermes plugin system (hermes_cli.plugins)."""
+"""Tests for the inherited plugin system (hermes_cli.plugins)."""
 
 import logging
 import os
@@ -23,6 +23,7 @@ from hermes_cli.plugins import (
     get_pre_tool_call_block_message,
     resolve_plugin_command_result,
     discover_plugins,
+    get_bundled_plugins_dir,
     invoke_hook,
 )
 
@@ -101,6 +102,15 @@ class TestPluginDiscovery:
         assert "hello_plugin" in mgr._plugins
         assert mgr._plugins["hello_plugin"].enabled
 
+    def test_bundled_plugins_dir_prefers_forecast_env_alias(self, tmp_path, monkeypatch):
+        """Bundled plugin discovery accepts fork-native package env aliases."""
+        bundled_dir = tmp_path / "bundled_plugins"
+        monkeypatch.delenv("HERMES_BUNDLED_PLUGINS", raising=False)
+        monkeypatch.delenv("FORECAST_BUNDLED_PLUGINS", raising=False)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_BUNDLED_PLUGINS", str(bundled_dir))
+
+        assert get_bundled_plugins_dir() == bundled_dir
+
     def test_discover_project_plugins(self, tmp_path, monkeypatch):
         """Plugins in ./.hermes/plugins/ are discovered."""
         project_dir = tmp_path / "project"
@@ -116,11 +126,30 @@ class TestPluginDiscovery:
         assert "proj_plugin" in mgr._plugins
         assert mgr._plugins["proj_plugin"].enabled
 
+    def test_discover_project_plugins_with_forecast_env_alias(self, tmp_path, monkeypatch):
+        """Project plugin discovery accepts the fork-native env alias."""
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        monkeypatch.chdir(project_dir)
+        monkeypatch.delenv("HERMES_ENABLE_PROJECT_PLUGINS", raising=False)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_ENABLE_PROJECT_PLUGINS", "true")
+        plugins_dir = project_dir / ".hermes" / "plugins"
+        _make_plugin_dir(plugins_dir, "forecast_proj_plugin")
+
+        mgr = PluginManager()
+        mgr.discover_and_load()
+
+        assert "forecast_proj_plugin" in mgr._plugins
+        assert mgr._plugins["forecast_proj_plugin"].enabled
+
     def test_discover_project_plugins_skipped_by_default(self, tmp_path, monkeypatch):
         """Project plugins are not discovered unless explicitly enabled."""
         project_dir = tmp_path / "project"
         project_dir.mkdir()
         monkeypatch.chdir(project_dir)
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_ENABLE_PROJECT_PLUGINS", raising=False)
+        monkeypatch.delenv("FORECAST_ENABLE_PROJECT_PLUGINS", raising=False)
+        monkeypatch.delenv("HERMES_ENABLE_PROJECT_PLUGINS", raising=False)
         plugins_dir = project_dir / ".hermes" / "plugins"
         _make_plugin_dir(plugins_dir, "proj_plugin")
 
@@ -1447,10 +1476,12 @@ class TestPluginDispatchTool:
 
 
 class TestPluginDebugLogging:
-    """HERMES_PLUGINS_DEBUG opt-in stderr handler for plugin developers."""
+    """Plugin debug env aliases opt into stderr logging for plugin developers."""
 
     def test_debug_handler_not_installed_when_env_var_absent(self, monkeypatch):
         """Without the env var, no stderr handler is attached."""
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_PLUGINS_DEBUG", raising=False)
+        monkeypatch.delenv("FORECAST_PLUGINS_DEBUG", raising=False)
         monkeypatch.delenv("HERMES_PLUGINS_DEBUG", raising=False)
         from hermes_cli import plugins as plugins_mod
 
@@ -1471,8 +1502,37 @@ class TestPluginDebugLogging:
             plugins_mod.logger.handlers = original_handlers
 
     def test_debug_handler_installed_when_env_var_set(self, monkeypatch):
-        """With HERMES_PLUGINS_DEBUG=1, a DEBUG-level stderr handler is attached."""
+        """With legacy HERMES_PLUGINS_DEBUG=1, a DEBUG handler is attached."""
         monkeypatch.setenv("HERMES_PLUGINS_DEBUG", "1")
+        from hermes_cli import plugins as plugins_mod
+
+        original_installed = plugins_mod._DEBUG_HANDLER_INSTALLED
+        original_debug = plugins_mod._PLUGINS_DEBUG
+        original_level = plugins_mod.logger.level
+        original_handlers = list(plugins_mod.logger.handlers)
+        try:
+            plugins_mod._DEBUG_HANDLER_INSTALLED = False
+            plugins_mod._install_plugin_debug_handler(force=True)
+            assert plugins_mod._PLUGINS_DEBUG is True
+            assert plugins_mod._DEBUG_HANDLER_INSTALLED is True
+            assert plugins_mod.logger.level == logging.DEBUG
+            new_handlers = [
+                h for h in plugins_mod.logger.handlers if h not in original_handlers
+            ]
+            assert len(new_handlers) == 1
+            assert isinstance(new_handlers[0], logging.StreamHandler)
+            assert new_handlers[0].level == logging.DEBUG
+        finally:
+            plugins_mod._DEBUG_HANDLER_INSTALLED = original_installed
+            plugins_mod._PLUGINS_DEBUG = original_debug
+            plugins_mod.logger.setLevel(original_level)
+            plugins_mod.logger.handlers = original_handlers
+
+    def test_debug_handler_installed_when_forecast_env_var_set(self, monkeypatch):
+        """With the fork-native debug alias, a DEBUG handler is attached."""
+        monkeypatch.delenv("HERMES_PLUGINS_DEBUG", raising=False)
+        monkeypatch.delenv("FORECAST_PLUGINS_DEBUG", raising=False)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_PLUGINS_DEBUG", "1")
         from hermes_cli import plugins as plugins_mod
 
         original_installed = plugins_mod._DEBUG_HANDLER_INSTALLED

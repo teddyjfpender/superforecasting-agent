@@ -314,10 +314,10 @@ Plugins (1):
 
 ### Debugging plugin discovery
 
-If your plugin doesn't show up — or shows up but isn't loading — set the inherited `HERMES_PLUGINS_DEBUG=1` env var to get verbose discovery logs on stderr:
+If your plugin doesn't show up — or shows up but isn't loading — set `SUPERFORECASTING_AGENT_PLUGINS_DEBUG=1` to get verbose discovery logs on stderr:
 
 ```bash
-HERMES_PLUGINS_DEBUG=1 superforecasting-agent plugins list
+SUPERFORECASTING_AGENT_PLUGINS_DEBUG=1 superforecasting-agent plugins list
 ```
 
 You'll see, for every plugin source (bundled, user, project, entry-points):

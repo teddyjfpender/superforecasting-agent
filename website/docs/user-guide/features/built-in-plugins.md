@@ -19,7 +19,7 @@ The `PluginManager` scans four sources, in order:
 
 1. **Bundled** - `<repo>/plugins/<name>/`
 2. **User** - `~/.superforecasting-agent/plugins/<name>/`
-3. **Project** - `./.hermes/plugins/<name>/` when `HERMES_ENABLE_PROJECT_PLUGINS=1`
+3. **Project** - `./.hermes/plugins/<name>/` when `SUPERFORECASTING_AGENT_ENABLE_PROJECT_PLUGINS=1` or an accepted alias is set
 4. **Pip entry points** - `hermes_agent.plugins`
 
 Later sources win on name collision. A user plugin named `disk-cleanup` can override the bundled plugin with the same name.

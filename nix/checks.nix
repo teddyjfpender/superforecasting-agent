@@ -137,9 +137,11 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
             (echo "FAIL: irc plugin manifest missing"; exit 1)
           echo "PASS: irc plugin manifest present"
 
+          grep -q "SUPERFORECASTING_AGENT_BUNDLED_PLUGINS" ${hermes-agent}/bin/hermes || \
+            (echo "FAIL: SUPERFORECASTING_AGENT_BUNDLED_PLUGINS not in wrapper"; exit 1)
           grep -q "HERMES_BUNDLED_PLUGINS" ${hermes-agent}/bin/hermes || \
-            (echo "FAIL: HERMES_BUNDLED_PLUGINS not in wrapper"; exit 1)
-          echo "PASS: HERMES_BUNDLED_PLUGINS set in wrapper"
+            (echo "FAIL: HERMES_BUNDLED_PLUGINS compatibility alias not in wrapper"; exit 1)
+          echo "PASS: bundled plugin env aliases set in wrapper"
 
           echo "=== All bundled plugins checks passed ==="
           mkdir -p $out
