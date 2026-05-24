@@ -351,9 +351,13 @@ def test_model_picker_guidance_is_forecast_native():
 
     assert "Superforecasting Agent is tool-calling-first" in text
     assert "superforecasting-agent auth add copilot" in text
+    assert "superforecasting-agent model" in text
     assert "~/.superforecasting-agent/.env" in text
     assert "hermes-agent is tool-calling-first" not in text
     assert "hermes auth add copilot" not in text
+    assert "`hermes model`" not in text
+    assert "``hermes model``" not in text
+    assert "`hermes setup`" not in text
     assert "older Hermes that doesn't ship" not in text
     assert "without a Hermes release" not in text
 
