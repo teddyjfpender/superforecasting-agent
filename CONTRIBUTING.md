@@ -81,7 +81,8 @@ This isn't a quality bar — it's a coupling-and-maintenance decision. Memory pr
 ### Clone and install
 
 ```bash
-git clone --recurse-submodules https://github.com/NousResearch/superforecasting-agent.git
+git clone --branch superforecasting-agent-snapshot --recurse-submodules \
+  https://github.com/teddyjfpender/superforecasting-agent.git
 cd superforecasting-agent
 
 # Create venv with Python 3.11
@@ -907,7 +908,7 @@ test(tools): add unit tests for file_operations
 
 ## Reporting Issues
 
-- Use [GitHub Issues](https://github.com/NousResearch/superforecasting-agent/issues)
+- Use [GitHub Issues](https://github.com/teddyjfpender/superforecasting-agent/issues)
 - Include: OS, Python version, Superforecasting Agent version (`superforecasting-agent version`), full error traceback
 - Include steps to reproduce
 - Check existing issues before creating duplicates

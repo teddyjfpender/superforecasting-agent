@@ -31,18 +31,7 @@ Use any model you want — [Nous Portal](https://portal.nousresearch.com), [Open
 
 ## Quick Install
 
-This fork is installed from the repo checkout while the packaging and installer names finish moving away from Hermes:
-
-```bash
-git clone <this-fork-url> superforecasting-agent
-cd superforecasting-agent
-uv venv .venv --python 3.11
-source .venv/bin/activate
-uv pip install -e ".[all,dev]"
-```
-
-For the current friendly alpha snapshot, use the fork branch that carries the
-forecast-desk work in progress:
+This alpha is installed from the pushed fork snapshot while the packaging and installer names finish moving away from Hermes:
 
 ```bash
 git clone --branch superforecasting-agent-snapshot \
@@ -58,7 +47,7 @@ python3 scripts/forecast_smoke_test.py
 On native Windows, use the PowerShell installer:
 
 ```powershell
-iex (irm https://raw.githubusercontent.com/NousResearch/superforecasting-agent/main/scripts/install.ps1)
+iex (irm https://raw.githubusercontent.com/teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot/scripts/install.ps1)
 ```
 
 After installation or editable setup:

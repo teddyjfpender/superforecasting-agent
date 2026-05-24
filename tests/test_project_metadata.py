@@ -266,7 +266,10 @@ def test_windows_gateway_service_names_are_forecast_native():
 def test_install_helpers_use_forecast_native_visible_copy():
     root = Path(__file__).resolve().parents[1]
     install_ps1 = (root / "scripts" / "install.ps1").read_text(encoding="utf-8")
+    install_sh = (root / "scripts" / "install.sh").read_text(encoding="utf-8")
+    install_cmd = (root / "scripts" / "install.cmd").read_text(encoding="utf-8")
     node_bootstrap = (root / "scripts" / "lib" / "node-bootstrap.sh").read_text(encoding="utf-8")
+    installer_text = "\n".join([install_ps1, install_sh, install_cmd])
 
     assert "Cloning Superforecasting Agent repository" in install_ps1
     assert "Adding Superforecasting Agent to PATH" in install_ps1
@@ -277,6 +280,9 @@ def test_install_helpers_use_forecast_native_visible_copy():
     assert '[Alias("ForecastHome", "SuperforecastingAgentHome")]' in install_ps1
     assert "SUPERFORECASTING_AGENT_GIT_BASH_PATH" in install_ps1
     assert "FORECAST_GIT_BASH_PATH" in install_ps1
+    assert "https://github.com/teddyjfpender/superforecasting-agent.git" in installer_text
+    assert "raw.githubusercontent.com/teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot/scripts/install" in installer_text
+    assert "superforecasting-agent-snapshot" in installer_text
     assert 'Write-Info "Set HERMES_GIT_BASH_PATH=' not in install_ps1
     assert "Cloning Hermes repository" not in install_ps1
     assert "Adding Hermes to PATH" not in install_ps1
@@ -284,6 +290,7 @@ def test_install_helpers_use_forecast_native_visible_copy():
     assert "`hermes dashboard` should now work" not in install_ps1
     assert "Hermes needs Git Bash" not in install_ps1
     assert "Hermes-managed" not in install_ps1
+    assert "raw.githubusercontent.com/NousResearch/superforecasting-agent/main/scripts/install" not in installer_text
 
     assert "SUPERFORECASTING_AGENT_HOME" in node_bootstrap
     assert "SUPERFORECASTING_AGENT_NODE_MIN_VERSION" in node_bootstrap
@@ -532,7 +539,7 @@ def test_contributor_and_skills_index_guidance_is_forecast_native():
     skills_hub = (root / "tools" / "skills_hub.py").read_text(encoding="utf-8")
 
     assert "# Contributing to Superforecasting Agent" in contributing
-    assert "https://github.com/NousResearch/superforecasting-agent.git" in contributing
+    assert "https://github.com/teddyjfpender/superforecasting-agent.git" in contributing
     assert "superforecasting-agent skills install" in contributing
     assert "forecast status" in contributing
     assert "Building Superforecasting Agent Skills Index" in skills_index
@@ -1651,9 +1658,11 @@ def test_update_upstream_metadata_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     main_py = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
 
-    assert "https://github.com/NousResearch/superforecasting-agent.git" in main_py
+    assert "https://github.com/teddyjfpender/superforecasting-agent.git" in main_py
     assert "superforecasting-agent/archive/refs/heads" in main_py
-    assert "official Superforecasting Agent repository" in main_py
+    assert "Superforecasting Agent fork repository" in main_py
+    assert "superforecasting-agent-snapshot" in main_py
+    assert "https://github.com/NousResearch/superforecasting-agent.git" not in main_py
     assert "https://github.com/NousResearch/hermes-agent.git" not in main_py
     assert "hermes-agent/archive/refs/heads" not in main_py
 
@@ -1926,7 +1935,7 @@ def test_nix_package_aliases_are_forecast_native():
     ).read_text(encoding="utf-8")
 
     assert 'pname = "superforecasting-agent"' in nix_package
-    assert 'homepage = "https://github.com/NousResearch/superforecasting-agent"' in nix_package
+    assert 'homepage = "https://github.com/teddyjfpender/superforecasting-agent"' in nix_package
     assert "import ./superforecasting-agent.nix args" in nix_package_compat
     assert "pkgs.callPackage ./superforecasting-agent.nix" in nix_packages
     assert "final.callPackage ./superforecasting-agent.nix" in nix_overlay
@@ -2034,7 +2043,7 @@ def test_nix_package_aliases_are_forecast_native():
     assert "Ready. Run 'forecast' or 'superforecasting-agent' to start." in nix_dev_shell
     assert "Hermes Agent dev shell" not in nix_dev_shell
     assert "Ready. Run 'hermes' to start." not in nix_dev_shell
-    assert "<this-fork-url>#superforecasting-agent" in nix_docs
+    assert "github:teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot#superforecasting-agent" in nix_docs
     assert 'nixosModules."superforecasting-agent"' in nix_docs
     assert "services.superforecasting-agent = {" in nix_docs
     assert "`superforecasting-agent.service`" in nix_docs

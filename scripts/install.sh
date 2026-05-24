@@ -6,7 +6,7 @@
 # Uses uv for desktop/server installs and Python's stdlib venv + pip on Termux.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/NousResearch/superforecasting-agent/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot/scripts/install.sh | bash
 #
 # Or with options:
 #   curl -fsSL ... | bash -s -- --no-venv --skip-setup
@@ -43,8 +43,8 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 # Configuration
-REPO_URL_SSH="git@github.com:NousResearch/superforecasting-agent.git"
-REPO_URL_HTTPS="https://github.com/NousResearch/superforecasting-agent.git"
+REPO_URL_SSH="git@github.com:teddyjfpender/superforecasting-agent.git"
+REPO_URL_HTTPS="https://github.com/teddyjfpender/superforecasting-agent.git"
 HERMES_HOME="${SUPERFORECASTING_AGENT_HOME:-${FORECAST_HOME:-${HERMES_HOME:-$HOME/.superforecasting-agent}}}"
 export HERMES_HOME
 # INSTALL_DIR is resolved AFTER arg parsing and OS detection so we can pick an
@@ -71,7 +71,7 @@ DETECTED_BROWSER_EXECUTABLE=""
 USE_VENV=true
 RUN_SETUP=true
 SKIP_BROWSER=false
-BRANCH="main"
+BRANCH="superforecasting-agent-snapshot"
 ENSURE_DEPS=""
 POSTINSTALL_MODE=false
 
@@ -130,7 +130,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-venv      Don't create virtual environment"
             echo "  --skip-setup   Skip interactive setup wizard"
             echo "  --skip-browser Skip Playwright/Chromium install (browser tools won't work)"
-            echo "  --branch NAME  Git branch to install (default: main)"
+            echo "  --branch NAME  Git branch to install (default: superforecasting-agent-snapshot)"
             echo "  --dir PATH     Installation directory"
             echo "                   default (non-root):  ~/.superforecasting-agent/superforecasting-agent"
             echo "                   default (root, Linux): /usr/local/lib/superforecasting-agent"
@@ -340,7 +340,7 @@ detect_os() {
             OS="windows"
             DISTRO="windows"
             log_error "Windows detected. Please use the PowerShell installer:"
-            log_info "  iex (irm https://raw.githubusercontent.com/NousResearch/superforecasting-agent/main/scripts/install.ps1)"
+            log_info "  iex (irm https://raw.githubusercontent.com/teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot/scripts/install.ps1)"
             exit 1
             ;;
         *)

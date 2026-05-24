@@ -36,10 +36,10 @@ uv pip install -e ".[all,dev]"
 ```
 
 For a future default-branch or release-candidate handoff, use the same setup
-shape with the relevant fork URL:
+shape against the fork URL:
 
 ```bash
-git clone <this-fork-url> superforecasting-agent
+git clone https://github.com/teddyjfpender/superforecasting-agent.git superforecasting-agent
 cd superforecasting-agent
 uv venv .venv --python 3.11
 source .venv/bin/activate

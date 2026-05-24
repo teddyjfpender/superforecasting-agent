@@ -16,11 +16,11 @@ Update to the latest version with a single command:
 superforecasting-agent update
 ```
 
-This pulls the latest code from `main`, updates dependencies, and prompts you to configure any new options that were added since your last update.
+This pulls the latest code from `superforecasting-agent-snapshot`, updates dependencies, and prompts you to configure any new options that were added since your last update.
 
 ### pip installs
 
-PyPI releases track **tagged versions** (major and minor releases), not every commit on `main`. Check for updates and upgrade with:
+PyPI releases track **tagged versions** (major and minor releases), not every commit on `superforecasting-agent-snapshot`. Check for updates and upgrade with:
 
 ```bash
 superforecasting-agent update --check    # see if a newer release is on PyPI
@@ -42,14 +42,14 @@ pip install --upgrade superforecasting-agent    # or: uv pip install --upgrade s
 When you run `superforecasting-agent update`, the following steps occur:
 
 1. **Pairing-data snapshot** — a lightweight pre-update state snapshot is saved (covers `~/.superforecasting-agent/pairing/`, Feishu comment rules, and other state files that get modified at runtime). Recoverable via the snapshot restore flow described under [Snapshots and rollback](../user-guide/checkpoints-and-rollback.md), or by extracting the most recent quick-snapshot zip written next to your home directory. Existing legacy homes may still use `~/.hermes/pairing/` during migration.
-2. **Git pull** — pulls the latest code from the `main` branch and updates submodules
+2. **Git pull** — pulls the latest code from the `superforecasting-agent-snapshot` branch and updates submodules
 3. **Dependency install** — runs `uv pip install -e ".[all]"` to pick up new or changed dependencies
 4. **Config migration** — detects new config options added since your version and prompts you to set them
 5. **Gateway auto-restart** — running gateways are refreshed after the update completes so the new code takes effect immediately. Service-managed gateways (systemd on Linux, launchd on macOS) are restarted through the service manager. Manual gateways are relaunched automatically when the updater can map the running PID back to a profile.
 
 ### Preview-only: `superforecasting-agent update --check`
 
-Want to know if an update is available before pulling? Run `superforecasting-agent update --check` — for git installs it fetches and compares commits against `origin/main`; for pip installs it queries PyPI for the latest release. No files are modified, no gateway is restarted. Useful in scripts and cron jobs that gate on "is there an update".
+Want to know if an update is available before pulling? Run `superforecasting-agent update --check` — for git installs it fetches and compares commits against `origin/superforecasting-agent-snapshot`; for pip installs it queries PyPI for the latest release. No files are modified, no gateway is restarted. Useful in scripts and cron jobs that gate on "is there an update".
 
 ### Full pre-update backup: `--backup`
 
@@ -107,7 +107,7 @@ Superforecasting Agent updated successfully!
 
 ### Recommended Post-Update Validation
 
-`superforecasting-agent update` handles the main update path, but a quick validation confirms everything landed cleanly:
+`superforecasting-agent update` handles the standard update path, but a quick validation confirms everything landed cleanly:
 
 1. `git status --short` — if the tree is unexpectedly dirty, inspect before continuing
 2. `superforecasting-agent doctor` — checks config, dependencies, and service health
@@ -161,7 +161,7 @@ cd /path/to/superforecasting-agent
 export VIRTUAL_ENV="$(pwd)/venv"
 
 # Pull latest code
-git pull origin main
+git pull origin superforecasting-agent-snapshot
 
 # Reinstall (picks up new dependencies)
 uv pip install -e ".[all]"

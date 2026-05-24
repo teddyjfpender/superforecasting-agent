@@ -21,13 +21,13 @@ The important boundary is:
 From this fork:
 
 ```bash
-pip install git+https://github.com/NousResearch/superforecasting-agent.git
+pip install git+https://github.com/teddyjfpender/superforecasting-agent.git@superforecasting-agent-snapshot
 ```
 
 Or with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv pip install git+https://github.com/NousResearch/superforecasting-agent.git
+uv pip install git+https://github.com/teddyjfpender/superforecasting-agent.git@superforecasting-agent-snapshot
 ```
 
 For local development, install the checkout in editable mode:

@@ -100,7 +100,9 @@ The `metadata` mount option above is important — without it, files on `/mnt/c/
 Once you have a WSL2 shell open:
 
 ```bash
-git clone <this-fork-url> superforecasting-agent
+git clone --branch superforecasting-agent-snapshot \
+  https://github.com/teddyjfpender/superforecasting-agent.git \
+  superforecasting-agent
 cd superforecasting-agent
 uv venv .venv --python 3.11
 source .venv/bin/activate

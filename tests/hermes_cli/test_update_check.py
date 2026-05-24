@@ -19,8 +19,9 @@ def test_version_string_no_v_prefix():
 def test_update_metadata_targets_forecast_package():
     import hermes_cli.banner as banner
 
-    assert banner._UPSTREAM_REPO_URL == "https://github.com/NousResearch/superforecasting-agent.git"
-    assert banner._RELEASE_URL_BASE == "https://github.com/NousResearch/superforecasting-agent/releases/tag"
+    assert banner._UPSTREAM_REPO_URL == "https://github.com/teddyjfpender/superforecasting-agent.git"
+    assert banner._UPSTREAM_BRANCH == "superforecasting-agent-snapshot"
+    assert banner._RELEASE_URL_BASE == "https://github.com/teddyjfpender/superforecasting-agent/releases/tag"
 
 
 def test_check_for_updates_uses_cache(tmp_path, monkeypatch):

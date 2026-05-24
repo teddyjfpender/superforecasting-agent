@@ -143,18 +143,19 @@ _UPDATE_CHECK_CACHE_SECONDS = 6 * 3600
 # (e.g. nix-built hermes — no local git history to count against).
 UPDATE_AVAILABLE_NO_COUNT = -1
 
-_UPSTREAM_REPO_URL = "https://github.com/NousResearch/superforecasting-agent.git"
+_UPSTREAM_REPO_URL = "https://github.com/teddyjfpender/superforecasting-agent.git"
+_UPSTREAM_BRANCH = "superforecasting-agent-snapshot"
 
 
 def _check_via_rev(local_rev: str) -> Optional[int]:
-    """Compare an embedded git revision to upstream main via ls-remote.
+    """Compare an embedded git revision to the fork snapshot via ls-remote.
 
     Returns 0 if up-to-date, ``UPDATE_AVAILABLE_NO_COUNT`` if behind,
     or ``None`` on failure.
     """
     try:
         result = subprocess.run(
-            ["git", "ls-remote", _UPSTREAM_REPO_URL, "refs/heads/main"],
+            ["git", "ls-remote", _UPSTREAM_REPO_URL, f"refs/heads/{_UPSTREAM_BRANCH}"],
             capture_output=True, text=True, timeout=10,
         )
     except Exception:
@@ -168,7 +169,7 @@ def _check_via_rev(local_rev: str) -> Optional[int]:
 
 
 def _check_via_local_git(repo_dir: Path) -> Optional[int]:
-    """Count commits behind origin/main in a local checkout."""
+    """Count commits behind the origin snapshot branch in a local checkout."""
     try:
         subprocess.run(
             ["git", "fetch", "origin", "--quiet"],
@@ -180,7 +181,7 @@ def _check_via_local_git(repo_dir: Path) -> Optional[int]:
 
     try:
         result = subprocess.run(
-            ["git", "rev-list", "--count", "HEAD..origin/main"],
+            ["git", "rev-list", "--count", f"HEAD..origin/{_UPSTREAM_BRANCH}"],
             capture_output=True, text=True, timeout=5,
             cwd=str(repo_dir),
         )
@@ -237,8 +238,8 @@ def check_for_updates() -> Optional[int]:
     """Check whether a Superforecasting Agent update is available.
 
     Two paths: if a revision env alias is set (Nix builds embed it), compare
-    it to upstream main via ``git ls-remote``. Otherwise look for a local git
-    checkout and count commits behind ``origin/main``.
+    it to the fork snapshot via ``git ls-remote``. Otherwise look for a local
+    git checkout and count commits behind the origin snapshot branch.
 
     Returns the number of commits behind, ``UPDATE_AVAILABLE_NO_COUNT`` (-1)
     if behind but the count is unknown, ``0`` if up-to-date, or ``None`` if
@@ -321,7 +322,8 @@ def get_git_banner_state(repo_dir: Optional[Path] = None) -> Optional[dict]:
     if repo_dir is None:
         return None
 
-    upstream = _git_short_hash(repo_dir, "origin/main")
+    upstream_ref = f"origin/{_UPSTREAM_BRANCH}"
+    upstream = _git_short_hash(repo_dir, upstream_ref)
     local = _git_short_hash(repo_dir, "HEAD")
     if not upstream or not local:
         return None
@@ -329,7 +331,7 @@ def get_git_banner_state(repo_dir: Optional[Path] = None) -> Optional[dict]:
     ahead = 0
     try:
         result = subprocess.run(
-            ["git", "rev-list", "--count", "origin/main..HEAD"],
+            ["git", "rev-list", "--count", f"{upstream_ref}..HEAD"],
             capture_output=True,
             text=True,
             timeout=5,
@@ -343,7 +345,7 @@ def get_git_banner_state(repo_dir: Optional[Path] = None) -> Optional[dict]:
     return {"upstream": upstream, "local": local, "ahead": max(ahead, 0)}
 
 
-_RELEASE_URL_BASE = "https://github.com/NousResearch/superforecasting-agent/releases/tag"
+_RELEASE_URL_BASE = "https://github.com/teddyjfpender/superforecasting-agent/releases/tag"
 _latest_release_cache: Optional[tuple] = None  # (tag, url) once resolved
 
 

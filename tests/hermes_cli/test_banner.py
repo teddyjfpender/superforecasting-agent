@@ -136,7 +136,7 @@ def test_build_welcome_banner_title_is_hyperlinked_to_release():
     _banner._latest_release_cache = None
     tag_url = (
         "v2026.4.23",
-        "https://github.com/NousResearch/superforecasting-agent/releases/tag/v2026.4.23",
+        "https://github.com/teddyjfpender/superforecasting-agent/releases/tag/v2026.4.23",
     )
 
     buf = io.StringIO()

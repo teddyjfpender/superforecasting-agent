@@ -36,14 +36,14 @@ The `curl | bash` installer manages Python, Node, and dependencies itself. The N
 No clone needed. Nix fetches, builds, and runs everything:
 
 ```bash
-# Run directly from this fork (builds on first use, cached after)
-nix run <this-fork-url> -- setup
-nix run <this-fork-url> -- status
-nix run <this-fork-url>#superforecasting-agent -- status
+# Run directly from this fork snapshot (builds on first use, cached after)
+nix run github:teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot -- setup
+nix run github:teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot -- status
+nix run github:teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot#superforecasting-agent -- status
 
 # Or install persistently
-nix profile install <this-fork-url>
-nix profile install <this-fork-url>#superforecasting-agent
+nix profile install github:teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot
+nix profile install github:teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot#superforecasting-agent
 superforecasting-agent setup
 forecast status
 ```
@@ -54,7 +54,9 @@ After `nix profile install`, `forecast`, `superforecast`, `superforecasting-agen
 <summary><strong>Building from a local clone</strong></summary>
 
 ```bash
-git clone <this-fork-url> superforecasting-agent
+git clone --branch superforecasting-agent-snapshot \
+  https://github.com/teddyjfpender/superforecasting-agent.git \
+  superforecasting-agent
 cd superforecasting-agent
 nix build
 ./result/bin/superforecasting-agent setup
@@ -80,7 +82,7 @@ This module requires NixOS. For non-NixOS systems (macOS, other Linux distros), 
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    superforecasting-agent.url = "<this-fork-url>";
+    superforecasting-agent.url = "github:teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot";
   };
 
   outputs = { nixpkgs, superforecasting-agent, ... }: {
@@ -690,7 +692,7 @@ External flakes can override the package directly:
 
 ```nix
 {
-  inputs.superforecasting-agent.url = "<this-fork-url>";
+  inputs.superforecasting-agent.url = "github:teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot";
   outputs = { superforecasting-agent, nixpkgs, ... }: {
     nixpkgs.overlays = [ superforecasting-agent.overlays.default ];
     # Then:

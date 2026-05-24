@@ -11,7 +11,9 @@ This guide gets you from a fresh checkout to a working forecast desk. The goal i
 ## 1. Install From This Fork
 
 ```bash
-git clone <this-fork-url> superforecasting-agent
+git clone --branch superforecasting-agent-snapshot \
+  https://github.com/teddyjfpender/superforecasting-agent.git \
+  superforecasting-agent
 cd superforecasting-agent
 uv venv .venv --python 3.11
 source .venv/bin/activate

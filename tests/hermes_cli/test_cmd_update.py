@@ -1,4 +1,4 @@
-"""Tests for cmd_update — branch fallback when remote branch doesn't exist."""
+"""Tests for cmd_update against the forecast snapshot branch."""
 
 import subprocess
 from types import SimpleNamespace
@@ -9,7 +9,10 @@ import pytest
 from hermes_cli.main import cmd_update, PROJECT_ROOT
 
 
-def _make_run_side_effect(branch="main", verify_ok=True, commit_count="0"):
+SNAPSHOT_BRANCH = "superforecasting-agent-snapshot"
+
+
+def _make_run_side_effect(branch=SNAPSHOT_BRANCH, verify_ok=True, commit_count="0"):
     """Build a side_effect function for subprocess.run that simulates git commands."""
 
     def side_effect(cmd, **kwargs):
@@ -39,12 +42,12 @@ def mock_args():
     return SimpleNamespace()
 
 
-class TestCmdUpdateBranchFallback:
-    """cmd_update falls back to main when current branch has no remote counterpart."""
+class TestCmdUpdateSnapshotBranch:
+    """cmd_update uses the forecast snapshot branch for git installs."""
 
     @patch("shutil.which", return_value=None)
     @patch("subprocess.run")
-    def test_update_falls_back_to_main_when_branch_not_on_remote(
+    def test_update_uses_snapshot_when_current_branch_not_on_remote(
         self, mock_run, _mock_which, mock_args, capsys
     ):
         mock_run.side_effect = _make_run_side_effect(
@@ -55,24 +58,24 @@ class TestCmdUpdateBranchFallback:
 
         commands = [" ".join(str(a) for a in c.args[0]) for c in mock_run.call_args_list]
 
-        # rev-list should use origin/main, not origin/fix/stoicneko
+        # rev-list should use the snapshot branch, not origin/fix/stoicneko
         rev_list_cmds = [c for c in commands if "rev-list" in c]
         assert len(rev_list_cmds) == 1
-        assert "origin/main" in rev_list_cmds[0]
+        assert f"origin/{SNAPSHOT_BRANCH}" in rev_list_cmds[0]
         assert "origin/fix/stoicneko" not in rev_list_cmds[0]
 
-        # pull should use main, not fix/stoicneko
+        # pull should use the snapshot branch, not fix/stoicneko
         pull_cmds = [c for c in commands if "pull" in c]
         assert len(pull_cmds) == 1
-        assert "main" in pull_cmds[0]
+        assert SNAPSHOT_BRANCH in pull_cmds[0]
 
     @patch("shutil.which", return_value=None)
     @patch("subprocess.run")
-    def test_update_uses_current_branch_when_on_remote(
+    def test_update_uses_snapshot_branch_when_on_remote(
         self, mock_run, _mock_which, mock_args, capsys
     ):
         mock_run.side_effect = _make_run_side_effect(
-            branch="main", verify_ok=True, commit_count="2"
+            branch=SNAPSHOT_BRANCH, verify_ok=True, commit_count="2"
         )
 
         cmd_update(mock_args)
@@ -81,11 +84,11 @@ class TestCmdUpdateBranchFallback:
 
         rev_list_cmds = [c for c in commands if "rev-list" in c]
         assert len(rev_list_cmds) == 1
-        assert "origin/main" in rev_list_cmds[0]
+        assert f"origin/{SNAPSHOT_BRANCH}" in rev_list_cmds[0]
 
         pull_cmds = [c for c in commands if "pull" in c]
         assert len(pull_cmds) == 1
-        assert "main" in pull_cmds[0]
+        assert SNAPSHOT_BRANCH in pull_cmds[0]
 
     @patch("shutil.which", return_value=None)
     @patch("subprocess.run")
@@ -93,7 +96,7 @@ class TestCmdUpdateBranchFallback:
         self, mock_run, _mock_which, mock_args, capsys
     ):
         mock_run.side_effect = _make_run_side_effect(
-            branch="main", verify_ok=True, commit_count="0"
+            branch=SNAPSHOT_BRANCH, verify_ok=True, commit_count="0"
         )
 
         cmd_update(mock_args)
@@ -115,7 +118,7 @@ class TestCmdUpdateBranchFallback:
 
         mock_which.side_effect = {"uv": "/usr/bin/uv", "npm": "/usr/bin/npm"}.get
         mock_run.side_effect = _make_run_side_effect(
-            branch="main", verify_ok=True, commit_count="1"
+            branch=SNAPSHOT_BRANCH, verify_ok=True, commit_count="1"
         )
         with patch.object(hm, "_is_termux_env", return_value=False):
             cmd_update(mock_args)
@@ -187,7 +190,7 @@ class TestCmdUpdateBranchFallback:
             mock_sys.stdin.isatty.return_value = False
             mock_sys.stdout.isatty.return_value = False
             mock_run.side_effect = _make_run_side_effect(
-                branch="main", verify_ok=True, commit_count="1"
+                branch=SNAPSHOT_BRANCH, verify_ok=True, commit_count="1"
             )
 
             cmd_update(mock_args)
@@ -216,7 +219,7 @@ class TestCmdUpdateProfileSkillSync:
         from pathlib import Path
 
         mock_run.side_effect = _make_run_side_effect(
-            branch="main", verify_ok=True, commit_count="1"
+            branch=SNAPSHOT_BRANCH, verify_ok=True, commit_count="1"
         )
 
         default_p = SimpleNamespace(name="default", path=Path("/fake/.hermes"))
@@ -254,7 +257,7 @@ class TestCmdUpdateProfileSkillSync:
         from pathlib import Path
 
         mock_run.side_effect = _make_run_side_effect(
-            branch="main", verify_ok=True, commit_count="1"
+            branch=SNAPSHOT_BRANCH, verify_ok=True, commit_count="1"
         )
 
         default_p = SimpleNamespace(name="default", path=Path("/fake/.hermes"))

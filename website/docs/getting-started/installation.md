@@ -11,7 +11,9 @@ This fork is in transition from Hermes Agent to Superforecasting Agent. The reco
 ## Recommended: Install From The Fork
 
 ```bash
-git clone <this-fork-url> superforecasting-agent
+git clone --branch superforecasting-agent-snapshot \
+  https://github.com/teddyjfpender/superforecasting-agent.git \
+  superforecasting-agent
 cd superforecasting-agent
 uv venv .venv --python 3.11
 source .venv/bin/activate
@@ -33,7 +35,9 @@ The legacy `hermes` command remains available for inherited runtime compatibilit
 If you do not need optional browser, dashboard, voice, or messaging dependencies:
 
 ```bash
-git clone <this-fork-url> superforecasting-agent
+git clone --branch superforecasting-agent-snapshot \
+  https://github.com/teddyjfpender/superforecasting-agent.git \
+  superforecasting-agent
 cd superforecasting-agent
 python3.11 -m venv .venv
 source .venv/bin/activate

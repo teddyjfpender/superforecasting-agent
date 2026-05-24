@@ -15,13 +15,15 @@ It keeps a standing book of probabilistic beliefs, stores append-only forecast s
 
 <div style={{display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap'}}>
   <a href="/getting-started/quickstart" style={{display: 'inline-block', padding: '0.6rem 1.2rem', backgroundColor: '#FFD700', color: '#07070d', borderRadius: '8px', fontWeight: 600, textDecoration: 'none'}}>Start Forecasting -></a>
-  <a href="https://github.com/NousResearch/superforecasting-agent" style={{display: 'inline-block', padding: '0.6rem 1.2rem', border: '1px solid rgba(255,215,0,0.2)', borderRadius: '8px', textDecoration: 'none'}}>View on GitHub</a>
+  <a href="https://github.com/teddyjfpender/superforecasting-agent/tree/superforecasting-agent-snapshot" style={{display: 'inline-block', padding: '0.6rem 1.2rem', border: '1px solid rgba(255,215,0,0.2)', borderRadius: '8px', textDecoration: 'none'}}>View on GitHub</a>
 </div>
 
 ## Install
 
 ```bash
-git clone <this-fork-url> superforecasting-agent
+git clone --branch superforecasting-agent-snapshot \
+  https://github.com/teddyjfpender/superforecasting-agent.git \
+  superforecasting-agent
 cd superforecasting-agent
 uv venv .venv --python 3.11
 source .venv/bin/activate

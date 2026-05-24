@@ -48,7 +48,9 @@ Use the fork checkout so the forecast-native command, ledger, docs, and package 
 ```bash
 pkg update
 pkg install -y git python clang rust make pkg-config libffi openssl nodejs ripgrep ffmpeg
-git clone <this-fork-url> superforecasting-agent
+git clone --branch superforecasting-agent-snapshot \
+  https://github.com/teddyjfpender/superforecasting-agent.git \
+  superforecasting-agent
 cd superforecasting-agent
 python -m venv venv
 source venv/bin/activate
@@ -90,7 +92,9 @@ Why these packages?
 ### 2. Clone the fork
 
 ```bash
-git clone --recurse-submodules <this-fork-url> superforecasting-agent
+git clone --branch superforecasting-agent-snapshot --recurse-submodules \
+  https://github.com/teddyjfpender/superforecasting-agent.git \
+  superforecasting-agent
 cd superforecasting-agent
 ```
 

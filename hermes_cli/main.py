@@ -6693,9 +6693,9 @@ def _update_via_zip(args):
     import zipfile
     from urllib.request import urlretrieve
 
-    branch = "main"
+    branch = "superforecasting-agent-snapshot"
     zip_url = (
-        f"https://github.com/NousResearch/superforecasting-agent/archive/refs/heads/{branch}.zip"
+        f"https://github.com/teddyjfpender/superforecasting-agent/archive/refs/heads/{branch}.zip"
     )
 
     print("→ Downloading latest version...")
@@ -7022,12 +7022,13 @@ def _restore_stashed_changes(
 # =========================================================================
 
 OFFICIAL_REPO_URLS = {
-    "https://github.com/NousResearch/superforecasting-agent.git",
-    "git@github.com:NousResearch/superforecasting-agent.git",
-    "https://github.com/NousResearch/superforecasting-agent",
-    "git@github.com:NousResearch/superforecasting-agent",
+    "https://github.com/teddyjfpender/superforecasting-agent.git",
+    "git@github.com:teddyjfpender/superforecasting-agent.git",
+    "https://github.com/teddyjfpender/superforecasting-agent",
+    "git@github.com:teddyjfpender/superforecasting-agent",
 }
-OFFICIAL_REPO_URL = "https://github.com/NousResearch/superforecasting-agent.git"
+OFFICIAL_REPO_URL = "https://github.com/teddyjfpender/superforecasting-agent.git"
+OFFICIAL_REPO_BRANCH = "superforecasting-agent-snapshot"
 SKIP_UPSTREAM_PROMPT_FILE = ".skip_upstream_prompt"
 
 
@@ -7126,13 +7127,14 @@ def _mark_skip_upstream_prompt():
 
 
 def _sync_fork_with_upstream(git_cmd: list[str], cwd: Path) -> bool:
-    """Attempt to push updated main to origin (sync fork).
+    """Attempt to push the updated forecast snapshot branch to origin.
 
     Returns True if push succeeded, False otherwise.
     """
     try:
         result = subprocess.run(
-            git_cmd + ["push", "origin", "main", "--force-with-lease"],
+            git_cmd
+            + ["push", "origin", OFFICIAL_REPO_BRANCH, "--force-with-lease"],
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -7147,8 +7149,8 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
 
     This implements the fork upstream sync logic:
     - If upstream remote doesn't exist, ask user if they want to add it
-    - Compare origin/main with upstream/main
-    - If origin/main is strictly behind upstream/main, pull from upstream
+    - Compare the origin snapshot branch with the upstream snapshot branch
+    - If origin is strictly behind upstream, pull from upstream
     - Try to sync fork back to origin if possible
     """
     has_upstream = _has_upstream_remote(git_cmd, cwd)
@@ -7160,12 +7162,12 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
 
         # Ask user if they want to add upstream
         print()
-        print("ℹ Your fork is not tracking the official Superforecasting Agent repository.")
-        print("  This means you may miss updates from NousResearch/superforecasting-agent.")
+        print("ℹ Your checkout is not tracking the Superforecasting Agent fork repository.")
+        print("  This means you may miss updates from teddyjfpender/superforecasting-agent.")
         print()
         try:
             response = (
-                input("Add official repo as 'upstream' remote? [Y/n]: ").strip().lower()
+                input("Add fork repo as 'upstream' remote? [Y/n]: ").strip().lower()
             )
         except (EOFError, KeyboardInterrupt):
             print()
@@ -7175,7 +7177,7 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
             print("→ Adding upstream remote...")
             if _add_upstream_remote(git_cmd, cwd):
                 print(
-                    "  ✓ Added upstream: https://github.com/NousResearch/superforecasting-agent.git"
+                    "  ✓ Added upstream: https://github.com/teddyjfpender/superforecasting-agent.git"
                 )
                 has_upstream = True
             else:
@@ -7183,7 +7185,7 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
                 return
         else:
             print(
-                "  Skipped. Run 'git remote add upstream https://github.com/NousResearch/superforecasting-agent.git' to add later."
+                "  Skipped. Run 'git remote add upstream https://github.com/teddyjfpender/superforecasting-agent.git' to add later."
             )
             _mark_skip_upstream_prompt()
             return
@@ -7202,23 +7204,26 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
         print("  ✗ Failed to fetch upstream. Skipping upstream sync.")
         return
 
-    # Compare origin/main with upstream/main
-    origin_ahead = _count_commits_between(git_cmd, cwd, "upstream/main", "origin/main")
+    origin_ref = f"origin/{OFFICIAL_REPO_BRANCH}"
+    upstream_ref = f"upstream/{OFFICIAL_REPO_BRANCH}"
+
+    # Compare origin with upstream
+    origin_ahead = _count_commits_between(git_cmd, cwd, upstream_ref, origin_ref)
     upstream_ahead = _count_commits_between(
-        git_cmd, cwd, "origin/main", "upstream/main"
+        git_cmd, cwd, origin_ref, upstream_ref
     )
 
     if origin_ahead < 0 or upstream_ahead < 0:
         print("  ✗ Could not compare branches. Skipping upstream sync.")
         return
 
-    # If origin/main has commits not on upstream, don't trample
+    # If origin has commits not on upstream, don't trample
     if origin_ahead > 0:
         print()
         print(f"ℹ Your fork has {origin_ahead} commit(s) not on upstream.")
         print("  Skipping upstream sync to preserve your changes.")
         print("  If you want to merge upstream changes, run:")
-        print("    git pull upstream main")
+        print(f"    git pull upstream {OFFICIAL_REPO_BRANCH}")
         return
 
     # If upstream is not ahead, fork is up to date
@@ -7226,14 +7231,14 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
         print("  ✓ Fork is up to date with upstream")
         return
 
-    # origin/main is strictly behind upstream/main (can fast-forward)
+    # origin is strictly behind upstream (can fast-forward)
     print()
     print(f"→ Fork is {upstream_ahead} commit(s) behind upstream")
     print("→ Pulling from upstream...")
 
     try:
         subprocess.run(
-            git_cmd + ["pull", "--ff-only", "upstream", "main"],
+            git_cmd + ["pull", "--ff-only", "upstream", OFFICIAL_REPO_BRANCH],
             cwd=cwd,
             check=True,
         )
@@ -8112,10 +8117,10 @@ def _cmd_update_check():
             text=True,
         )
         upstream_exists = False
-        compare_branch = "origin/main"
+        compare_branch = f"origin/{OFFICIAL_REPO_BRANCH}"
     else:
         upstream_exists = True
-        compare_branch = "upstream/main"
+        compare_branch = f"upstream/{OFFICIAL_REPO_BRANCH}"
 
     if fetch_result.returncode != 0:
         stderr = fetch_result.stderr.strip()
@@ -8507,21 +8512,22 @@ def _cmd_update_impl(args, gateway_mode: bool):
         )
         current_branch = result.stdout.strip()
 
-        # Always update against main
-        branch = "main"
+        # Always update against the active fork snapshot branch.
+        branch = OFFICIAL_REPO_BRANCH
 
-        # If user is on a non-main branch or detached HEAD, switch to main
-        if current_branch != "main":
+        # If user is on a different branch or detached HEAD, switch to the
+        # snapshot branch used for alpha tester handoffs.
+        if current_branch != branch:
             label = (
                 "detached HEAD"
                 if current_branch == "HEAD"
                 else f"branch '{current_branch}'"
             )
-            print(f"  ⚠ Currently on {label} — switching to main for update...")
+            print(f"  ⚠ Currently on {label} — switching to {branch} for update...")
             # Stash before checkout so uncommitted work isn't lost
             auto_stash_ref = _stash_local_changes_if_needed(git_cmd, PROJECT_ROOT)
             subprocess.run(
-                git_cmd + ["checkout", "main"],
+                git_cmd + ["checkout", branch],
                 cwd=PROJECT_ROOT,
                 capture_output=True,
                 text=True,
@@ -8557,7 +8563,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                     prompt_user=prompt_for_restore,
                     input_fn=gw_input_fn,
                 )
-            if current_branch not in {"main", "HEAD"}:
+            if current_branch not in {branch, "HEAD"}:
                 subprocess.run(
                     git_cmd + ["checkout", current_branch],
                     cwd=PROJECT_ROOT,
@@ -8619,7 +8625,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                     if reset_result.stderr.strip():
                         print(f"  {reset_result.stderr.strip()}")
                     print(
-                        "  Try manually: git fetch origin && git reset --hard origin/main"
+                        f"  Try manually: git fetch origin && git reset --hard origin/{branch}"
                     )
                     sys.exit(1)
 
@@ -8696,8 +8702,8 @@ def _cmd_update_impl(args, gateway_mode: bool):
                 f"  ✓ Cleared {removed} stale __pycache__ director{'y' if removed == 1 else 'ies'}"
             )
 
-        # Fork upstream sync logic (only for main branch on forks)
-        if is_fork and branch == "main":
+        # Fork upstream sync logic (only for the active snapshot branch on forks)
+        if is_fork and branch == OFFICIAL_REPO_BRANCH:
             _sync_with_upstream_if_needed(git_cmd, PROJECT_ROOT)
 
         # Reinstall Python dependencies. Prefer .[all], but if one optional extra

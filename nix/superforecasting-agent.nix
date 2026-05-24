@@ -230,7 +230,7 @@ stdenv.mkDerivation {
 
   meta = with lib; {
     description = "CLI forecasting desk with inherited Hermes runtime compatibility";
-    homepage = "https://github.com/NousResearch/superforecasting-agent";
+    homepage = "https://github.com/teddyjfpender/superforecasting-agent";
     mainProgram = "superforecasting-agent";
     license = licenses.mit;
     platforms = platforms.unix;

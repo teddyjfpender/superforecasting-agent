@@ -88,7 +88,9 @@ Set your provider with `superforecasting-agent model` or by editing `~/.superfor
 **Not natively.** Superforecasting Agent is best developed in a Unix-like environment. On Windows, install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) and run the fork from inside it:
 
 ```bash
-git clone <this-fork-url> superforecasting-agent
+git clone --branch superforecasting-agent-snapshot \
+  https://github.com/teddyjfpender/superforecasting-agent.git \
+  superforecasting-agent
 cd superforecasting-agent
 uv venv .venv --python 3.11
 source .venv/bin/activate
@@ -120,7 +122,9 @@ Yes, for basic inherited CLI usage. The forecast fork's recommended development 
 Quick install:
 
 ```bash
-git clone <this-fork-url> superforecasting-agent
+git clone --branch superforecasting-agent-snapshot \
+  https://github.com/teddyjfpender/superforecasting-agent.git \
+  superforecasting-agent
 cd superforecasting-agent
 python -m pip install -e .
 ```
@@ -825,7 +829,9 @@ Skills with very long descriptions are truncated to 40 characters in the Telegra
 
 1. Install Superforecasting Agent on the new machine from the fork checkout:
    ```bash
-   git clone <this-fork-url> superforecasting-agent
+   git clone --branch superforecasting-agent-snapshot \
+     https://github.com/teddyjfpender/superforecasting-agent.git \
+     superforecasting-agent
    cd superforecasting-agent
    uv venv .venv --python 3.11
    source .venv/bin/activate

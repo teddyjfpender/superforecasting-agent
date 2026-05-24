@@ -8,7 +8,7 @@ sidebar_position: 3
 # Windows (Native) Guide — Early Beta
 
 :::warning Early BETA
-Native Windows support is **early beta**. It installs, runs, and passes our Windows-footgun lint, but it hasn't been road-tested at the scale our Linux/macOS/WSL2 paths have. Expect rough edges — especially around subprocess handling, path quirks, and non-ASCII console output. Please [file issues](https://github.com/NousResearch/superforecasting-agent/issues) with repro steps when you hit something. If you want a battle-tested setup today, use the Windows WSL2 guide instead.
+Native Windows support is **early beta**. It installs, runs, and passes our Windows-footgun lint, but it hasn't been road-tested at the scale our Linux/macOS/WSL2 paths have. Expect rough edges — especially around subprocess handling, path quirks, and non-ASCII console output. Please [file issues](https://github.com/teddyjfpender/superforecasting-agent/issues) with repro steps when you hit something. If you want a battle-tested setup today, use the Windows WSL2 guide instead.
 :::
 
 Superforecasting Agent runs natively on Windows 10 and Windows 11 — no WSL, no Cygwin, no Docker. This page is the deep dive: what works natively, what's WSL-only, what the installer actually does, and the Windows-specific knobs you might need to touch.
@@ -24,7 +24,7 @@ If you prefer a real POSIX environment (for the dashboard's embedded terminal, `
 Open **PowerShell** (or Windows Terminal) and run:
 
 ```powershell
-iex (irm https://raw.githubusercontent.com/NousResearch/superforecasting-agent/main/scripts/install.ps1)
+iex (irm https://raw.githubusercontent.com/teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot/scripts/install.ps1)
 ```
 
 No admin rights required. The installer goes to `%LOCALAPPDATA%\superforecasting-agent\` and adds `superforecasting-agent` and `forecast` to your **User PATH** — open a new terminal after it finishes.
@@ -32,12 +32,12 @@ No admin rights required. The installer goes to `%LOCALAPPDATA%\superforecasting
 **Installer options** (requires the scriptblock form to pass parameters):
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/NousResearch/superforecasting-agent/main/scripts/install.ps1))) -NoVenv -SkipSetup -Branch main
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot/scripts/install.ps1))) -NoVenv -SkipSetup -Branch superforecasting-agent-snapshot
 ```
 
 | Parameter | Default | Purpose |
 |---|---|---|
-| `-Branch` | `main` | Clone a specific branch (useful for testing PRs) |
+| `-Branch` | `superforecasting-agent-snapshot` | Clone a specific branch (useful for testing PRs) |
 | `-Commit` | unset | Pin install to a specific commit SHA (overrides `-Branch`) |
 | `-Tag` | unset | Pin install to a specific git tag (e.g. `v0.14.0`) |
 | `-NoVenv` | off | Skip venv creation (advanced — you manage Python yourself) |
