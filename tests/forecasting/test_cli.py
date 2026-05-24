@@ -50,6 +50,7 @@ from forecasting.source_adapters import (
     WikipediaPage,
     WikimediaPageviewObservation,
     WorldBankObservation,
+    YahooFinancePriceObservation,
 )
 import forecasting.source_adapters as source_adapters
 from hermes_constants import reset_hermes_home_override, set_hermes_home_override
@@ -5580,6 +5581,68 @@ def test_stooq_adapter_loads_recent_price_observations(monkeypatch):
     assert observations[0].volume == 62000000
 
 
+def test_yahoo_adapter_loads_chart_observations(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return {
+            "chart": {
+                "result": [
+                    {
+                        "meta": {
+                            "symbol": "AAPL",
+                            "currency": "USD",
+                            "exchangeName": "NMS",
+                        },
+                        "timestamp": [1779408000, 1779494400],
+                        "indicators": {
+                            "quote": [
+                                {
+                                    "open": [197.2, 198.0],
+                                    "high": [199.0, 200.0],
+                                    "low": [196.8, 197.5],
+                                    "close": [198.4, 199.1],
+                                    "volume": [62000000, 63000000],
+                                }
+                            ]
+                        },
+                    }
+                ],
+                "error": None,
+            }
+        }
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    observations = source_adapters.load_yahoo_finance_prices(
+        "AAPL",
+        limit=1,
+        since="2026-05-22T00:00:00Z",
+        range_value="5d",
+        interval="1d",
+        api_base_url="https://query.yahoo.test/v8/finance/chart",
+    )
+    parsed = urlparse(captured["endpoint"])
+    params = parse_qs(parsed.query)
+
+    assert captured["label"] == "yahoo finance chart"
+    assert parsed.netloc == "query.yahoo.test"
+    assert parsed.path == "/v8/finance/chart/AAPL"
+    assert params["range"] == ["5d"]
+    assert params["interval"] == ["1d"]
+    assert len(observations) == 1
+    assert observations[0].symbol == "AAPL"
+    assert observations[0].interval == "1d"
+    assert observations[0].observation_time == "2026-05-23T00:00:00Z"
+    assert observations[0].published_at == "2026-05-23T00:00:00Z"
+    assert observations[0].close_price == 199.1
+    assert observations[0].volume == 63000000
+    assert observations[0].currency == "USD"
+    assert observations[0].exchange_name == "NMS"
+
+
 def test_forecast_cli_stooq_import_captures_observations_as_evidence(
     tmp_path, capsys, monkeypatch
 ):
@@ -5669,6 +5732,109 @@ def test_forecast_cli_stooq_import_captures_observations_as_evidence(
     assert evidence[0].metadata["symbol"] == "AAPL.US"
     assert evidence[0].metadata["close_price"] == 198.4
     assert evidence[0].metadata["volume"] == 62000000
+
+
+def test_forecast_cli_yahoo_import_captures_observations_as_evidence(
+    tmp_path, capsys, monkeypatch
+):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_yahoo_finance_prices(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            YahooFinancePriceObservation(
+                symbol="AAPL",
+                interval="1d",
+                observation_time="2026-05-23T00:00:00Z",
+                open_price=198.0,
+                high_price=200.0,
+                low_price=197.5,
+                close_price=199.1,
+                volume=63000000,
+                published_at="2026-05-23T00:00:00Z",
+                currency="USD",
+                exchange_name="NMS",
+                source_url="https://finance.yahoo.com/quote/AAPL",
+                source_name="Yahoo Finance",
+                entry_id="AAPL:1d:2026-05-23T00:00:00Z",
+                raw={"symbol": "AAPL", "close": 199.1},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_yahoo_finance_prices", fake_load_yahoo_finance_prices)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will Yahoo evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if Yahoo Finance evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "yahoo",
+            "AAPL",
+            "--question",
+            question_id,
+            "--since",
+            "2026-05-01T00:00:00Z",
+            "--limit",
+            "3",
+            "--range",
+            "5d",
+            "--interval",
+            "1d",
+            "--api-base-url",
+            "https://query.yahoo.test/v8/finance/chart",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.86",
+            "--relevance",
+            "0.81",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 yahoo evidence item(s)" in output
+    assert captured["source"] == "AAPL"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["since"] == "2026-05-01T00:00:00Z"
+    assert captured["kwargs"]["range_value"] == "5d"
+    assert captured["kwargs"]["interval"] == "1d"
+    assert captured["kwargs"]["api_base_url"] == "https://query.yahoo.test/v8/finance/chart"
+    assert evidence[0].claim == "Yahoo Finance AAPL close 199.1 USD at 2026-05-23T00:00:00Z"
+    assert evidence[0].summary == (
+        "Yahoo Finance chart observation for AAPL at 2026-05-23T00:00:00Z: "
+        "close 199.1 USD; open 198.0, high 200.0, low 197.5, volume 63000000."
+    )
+    assert evidence[0].source_name == "Yahoo Finance"
+    assert evidence[0].source_type == "adapter:yahoo"
+    assert evidence[0].published_at == "2026-05-23T00:00:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.86
+    assert evidence[0].relevance_rating == 0.81
+    assert evidence[0].metadata["adapter"] == "yahoo"
+    assert evidence[0].metadata["symbol"] == "AAPL"
+    assert evidence[0].metadata["range"] == "5d"
+    assert evidence[0].metadata["close_price"] == 199.1
+    assert evidence[0].metadata["currency"] == "USD"
 
 
 def test_sec_adapter_loads_recent_company_filings(monkeypatch):
@@ -6359,6 +6525,7 @@ def test_forecast_cli_lists_extension_points(capsys):
     assert "bls-economic-data" in output
     assert "worldbank-indicators" in output
     assert "census-data" in output
+    assert "yahoo-finance-chart" in output
     assert "sec-edgar-filings" in output
     assert "arxiv-papers" in output
     assert "openalex-works" in output
@@ -6389,6 +6556,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "treasury:<dataset-path-or-api-url>" in output
     assert "census:<dataset-path?get=...&for=...>" in output
     assert "stooq:<symbol-or-csv-url>" in output
+    assert "yahoo:<symbol>" in output
     assert "coingecko:<coin-id>" in output
     assert "openmeteo:<lat,lon>" in output
     assert "usgs:<query>" in output
@@ -6418,11 +6586,12 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "owid", "eia", "treasury", "census", "stooq", "coingecko", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "owid", "eia", "treasury", "census", "stooq", "yahoo", "coingecko", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "census:<dataset-path?get=...&for=...>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "stooq:<symbol-or-csv-url>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "yahoo:<symbol>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "coingecko:<coin-id>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "clinicaltrials:<query-or-NCT-id>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "openfda:<query-or-application-number>" for source in payload["sources"])
@@ -9302,6 +9471,73 @@ def test_forecast_cli_watch_add_supports_stooq_sources(tmp_path, capsys, monkeyp
     watch_id = re.search(r"watched source (ws_[a-f0-9]+)", add_output).group(1)
 
     assert "source_type: stooq" in add_output
+
+    close_prices[0] = 201.2
+    _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
+    check_output = capsys.readouterr().out
+
+    assert "created 1 alert(s)" in check_output
+    assert f"watched_source_changed:{watch_id}" in check_output
+
+
+def test_forecast_cli_watch_add_supports_yahoo_sources(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    close_prices = [199.1]
+
+    def fake_load_yahoo_finance_prices(source: str, **kwargs):
+        return [
+            YahooFinancePriceObservation(
+                symbol=source,
+                interval="1d",
+                observation_time="2026-05-23T00:00:00Z",
+                open_price=198.0,
+                high_price=200.0,
+                low_price=197.5,
+                close_price=close_prices[0],
+                volume=63000000,
+                published_at="2026-05-23T00:00:00Z",
+                currency="USD",
+                exchange_name="NMS",
+                source_url=f"https://finance.yahoo.com/quote/{source}",
+                source_name="Yahoo Finance",
+                entry_id=f"{source}:1d:2026-05-23T00:00:00Z",
+                raw={"Close": close_prices[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_yahoo_finance_prices", fake_load_yahoo_finance_prices)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will watched CLI Yahoo Finance price change?",
+            "--resolution-criteria",
+            "Resolved yes if watched Yahoo Finance price changes.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            "yahoo:AAPL",
+            "--question",
+            question_id,
+        ],
+    )
+    add_output = capsys.readouterr().out
+    watch_id = re.search(r"watched source (ws_[a-f0-9]+)", add_output).group(1)
+
+    assert "source_type: yahoo" in add_output
 
     close_prices[0] = 201.2
     _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])

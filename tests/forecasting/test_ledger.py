@@ -52,6 +52,7 @@ from forecasting.source_adapters import (
     WikipediaPage,
     WikimediaPageviewObservation,
     WorldBankObservation,
+    YahooFinancePriceObservation,
 )
 
 
@@ -3135,6 +3136,62 @@ def test_watched_stooq_source_creates_alert_on_price_change(tmp_path, monkeypatc
     assert f"forecast import stooq AAPL.US --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-23T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_yahoo_source_creates_alert_on_price_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched Yahoo Finance prices be detected?",
+        resolution_criteria="Resolved yes if watched Yahoo Finance price changes create alerts.",
+    )
+    close_prices = [199.1]
+
+    def fake_load_yahoo_finance_prices(source: str, **kwargs):
+        return [
+            YahooFinancePriceObservation(
+                symbol=source,
+                interval="1d",
+                observation_time="2026-05-23T00:00:00Z",
+                open_price=198.0,
+                high_price=200.0,
+                low_price=197.5,
+                close_price=close_prices[0],
+                volume=63000000,
+                published_at="2026-05-23T00:00:00Z",
+                currency="USD",
+                exchange_name="NMS",
+                source_url=f"https://finance.yahoo.com/quote/{source}",
+                source_name="Yahoo Finance",
+                entry_id=f"{source}:1d:2026-05-23T00:00:00Z",
+                raw={"Close": close_prices[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_yahoo_finance_prices", fake_load_yahoo_finance_prices)
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="yahoo:AAPL",
+    )
+
+    assert watch["source_type"] == "yahoo"
+    assert watch["last_seen_signature"].startswith("yahoo:1:")
+
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    close_prices[0] = 201.2
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-24T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f"forecast import yahoo AAPL --question {question.id}" in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-24T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]
 
 

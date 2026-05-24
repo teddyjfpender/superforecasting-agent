@@ -78,6 +78,7 @@ Import from public sources:
 ```bash
 forecast import gdelt "committee bill sponsor count" --question <id> --limit 5
 forecast import fred UNRATE --question <id>
+forecast import yahoo AAPL --question <id>
 forecast import sec 0000320193 --question <id>
 forecast import arxiv "cat:cs.AI AND forecasting" --question <id>
 forecast import openalex "forecasting calibration" --question <id>

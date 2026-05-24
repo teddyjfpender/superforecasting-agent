@@ -38,6 +38,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "worldbank",
     "census",
     "stooq",
+    "yahoo",
     "sec",
     "federalregister",
     "courtlistener",

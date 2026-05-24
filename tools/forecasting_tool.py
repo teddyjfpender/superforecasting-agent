@@ -52,6 +52,7 @@ from forecasting.source_adapters import (
     load_wikimedia_pageviews,
     load_wikipedia_pages,
     load_worldbank_observations,
+    load_yahoo_finance_prices,
 )
 from tools.registry import registry, tool_error, tool_result
 
@@ -177,6 +178,7 @@ FORECAST_LEDGER_SCHEMA = {
             "limit": {"type": "integer"},
             "since": {"type": "string"},
             "api_base_url": {"type": "string"},
+            "range_value": {"type": "string"},
             "timespan": {"type": "string"},
             "search_type": {"type": "string"},
             "source_country": {"type": "string"},
@@ -275,6 +277,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "worldbank",
                     "census",
                     "stooq",
+                    "yahoo",
                     "sec",
                     "arxiv",
                     "openalex",
@@ -1095,6 +1098,16 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_stooq_prices(source, **kwargs)
+    if adapter_name == "yahoo":
+        kwargs = {
+            "limit": limit,
+            "since": since,
+            "range_value": args.get("range_value") or args.get("range") or "1mo",
+            "interval": args.get("interval") or "1d",
+        }
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_yahoo_finance_prices(source, **kwargs)
     if adapter_name == "sec":
         kwargs = {"limit": limit, "since": since}
         if api_base_url:
@@ -1282,6 +1295,7 @@ def _source_adapter_evidence_payload(
         "date_filed",
         "date_argued",
         "observation_date",
+        "observation_time",
         "forecast_date",
         "filing_date",
     )
@@ -1367,6 +1381,9 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         return f"Census {data.get('dataset')} {geography_text}: {value_text}"
     if adapter == "stooq":
         return f"Stooq {data.get('symbol')} close was {data.get('close_price')} on {data.get('observation_date')}"
+    if adapter == "yahoo":
+        currency = f" {data.get('currency')}" if data.get("currency") else ""
+        return f"Yahoo Finance {data.get('symbol')} close was {data.get('close_price')}{currency} at {data.get('observation_time')}"
     if adapter == "sec":
         return f"SEC {data.get('form')} filing for {data.get('company_name') or data.get('cik')} on {data.get('filing_date')}"
     if adapter == "wikipediapageviews":

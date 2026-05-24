@@ -58,6 +58,10 @@ const EVIDENCE_IMPORTS = [
     label: "Market data",
   },
   {
+    command: "forecast import yahoo <symbol> --question <id>",
+    label: "Charts",
+  },
+  {
     command: "forecast import coingecko <coin-id> --question <id>",
     label: "Crypto",
   },

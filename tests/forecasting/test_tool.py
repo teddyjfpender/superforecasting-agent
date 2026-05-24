@@ -26,6 +26,7 @@ from forecasting.source_adapters import (
     TreasuryRecord,
     UsgsEarthquakeEvent,
     WikimediaPageviewObservation,
+    YahooFinancePriceObservation,
 )
 from hermes_cli.tools_config import _get_platform_tools
 from model_tools import get_tool_definitions
@@ -87,7 +88,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "githubcommits", "coingecko", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "stooq", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "githubcommits", "coingecko", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "stooq", "yahoo", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_lifecycle(tmp_path):
@@ -2254,6 +2255,61 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert stooq_evidence["published_at"] == "2026-05-22T00:00:00Z"
     assert stooq_evidence["metadata"]["adapter"] == "stooq"
     assert stooq_evidence["metadata"]["adapter_item"]["close_price"] == 198.4
+
+    def fake_yahoo(source, **kwargs):
+        assert source == "AAPL"
+        assert kwargs["limit"] == 1
+        assert kwargs["since"] == "2026-05-01T00:00:00Z"
+        assert kwargs["range_value"] == "5d"
+        assert kwargs["interval"] == "1d"
+        assert kwargs["api_base_url"] == "https://example.test/yahoo"
+        return [
+            YahooFinancePriceObservation(
+                symbol="AAPL",
+                interval="1d",
+                observation_time="2026-05-23T00:00:00Z",
+                open_price=198.0,
+                high_price=200.0,
+                low_price=197.5,
+                close_price=199.1,
+                volume=63000000,
+                published_at="2026-05-23T00:00:00Z",
+                currency="USD",
+                exchange_name="NMS",
+                source_url="https://finance.yahoo.com/quote/AAPL",
+                source_name="Yahoo Finance",
+                entry_id="AAPL:1d:2026-05-23T00:00:00Z",
+                raw={"symbol": "AAPL", "close": 199.1},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_yahoo_finance_prices", fake_yahoo)
+    yahoo_imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "yahoo",
+                "source": "AAPL",
+                "limit": 1,
+                "since": "2026-05-01T00:00:00Z",
+                "range_value": "5d",
+                "interval": "1d",
+                "api_base_url": "https://example.test/yahoo",
+            }
+        )
+    )
+
+    assert yahoo_imported["imported_count"] == 1
+    yahoo_evidence = yahoo_imported["imported"][0]["evidence"]
+    assert yahoo_evidence["source_type"] == "adapter:yahoo"
+    assert yahoo_evidence["source_name"] == "Yahoo Finance"
+    assert yahoo_evidence["claim"] == "Yahoo Finance AAPL close was 199.1 USD at 2026-05-23T00:00:00Z"
+    assert yahoo_evidence["published_at"] == "2026-05-23T00:00:00Z"
+    assert yahoo_evidence["metadata"]["adapter"] == "yahoo"
+    assert yahoo_evidence["metadata"]["adapter_item"]["close_price"] == 199.1
+    assert yahoo_evidence["metadata"]["adapter_item"]["currency"] == "USD"
 
     def fake_clinicaltrials(source, **kwargs):
         assert source == "NCT01234567"

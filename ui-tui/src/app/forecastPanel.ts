@@ -481,6 +481,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
       '/forecast import treasury <dataset-path-or-api-url> --question <id>',
       '/forecast import census "<dataset-path?get=...&for=...>" --question <id>',
       '/forecast import stooq <symbol-or-csv-url> --question <id>',
+      '/forecast import yahoo <symbol> --question <id>',
       '/forecast import coingecko <coin-id> --question <id>',
       '/forecast import wikipediapageviews <project>/<article> --question <id>',
       '/forecast import githubissues <owner/repo> --question <id>',
