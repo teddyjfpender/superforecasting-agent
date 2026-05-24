@@ -1821,7 +1821,8 @@ def test_homebrew_formula_is_forecast_native():
 
 def test_nix_package_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    nix_package = (root / "nix" / "hermes-agent.nix").read_text(encoding="utf-8")
+    nix_package = (root / "nix" / "superforecasting-agent.nix").read_text(encoding="utf-8")
+    nix_package_compat = (root / "nix" / "hermes-agent.nix").read_text(encoding="utf-8")
     nix_python = (root / "nix" / "python.nix").read_text(encoding="utf-8")
     nix_lib = (root / "nix" / "lib.nix").read_text(encoding="utf-8")
     nix_tui = (root / "nix" / "tui.nix").read_text(encoding="utf-8")
@@ -1838,6 +1839,11 @@ def test_nix_package_aliases_are_forecast_native():
 
     assert 'pname = "superforecasting-agent"' in nix_package
     assert 'homepage = "https://github.com/NousResearch/superforecasting-agent"' in nix_package
+    assert "import ./superforecasting-agent.nix args" in nix_package_compat
+    assert "pkgs.callPackage ./superforecasting-agent.nix" in nix_packages
+    assert "final.callPackage ./superforecasting-agent.nix" in nix_overlay
+    assert "callPackage ./hermes-agent.nix" not in nix_packages
+    assert "callPackage ./hermes-agent.nix" not in nix_overlay
     assert 'pythonSet.mkVirtualEnv "superforecasting-agent-env"' in nix_python
     assert '"superforecasting-agent" = dependency-groups' in nix_python
     assert 'pythonSet.mkVirtualEnv "hermes-agent-env"' not in nix_python
@@ -1962,7 +1968,8 @@ def test_nix_package_aliases_are_forecast_native():
 def test_revision_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     banner = (root / "hermes_cli" / "banner.py").read_text(encoding="utf-8")
-    nix_wrapper = (root / "nix" / "hermes-agent.nix").read_text(encoding="utf-8")
+    nix_wrapper = (root / "nix" / "superforecasting-agent.nix").read_text(encoding="utf-8")
+    nix_wrapper_compat = (root / "nix" / "hermes-agent.nix").read_text(encoding="utf-8")
     nix_checks = (root / "nix" / "checks.nix").read_text(encoding="utf-8")
 
     assert "SUPERFORECASTING_AGENT_REVISION" in banner
@@ -1971,6 +1978,7 @@ def test_revision_env_aliases_are_forecast_native():
     assert "SUPERFORECASTING_AGENT_REVISION" in nix_wrapper
     assert "FORECAST_REVISION" in nix_wrapper
     assert "HERMES_REVISION" in nix_wrapper
+    assert "import ./superforecasting-agent.nix args" in nix_wrapper_compat
     assert "SUPERFORECASTING_AGENT_REVISION" in nix_checks
     assert "FORECAST_REVISION" in nix_checks
 

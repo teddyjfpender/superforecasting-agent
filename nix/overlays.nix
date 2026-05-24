@@ -3,7 +3,7 @@
 {
   flake.overlays.default = final: _:
     let
-      superforecastingAgent = final.callPackage ./hermes-agent.nix {
+      superforecastingAgent = final.callPackage ./superforecasting-agent.nix {
         inherit (inputs) uv2nix pyproject-nix pyproject-build-systems;
         npm-lockfile-fix = inputs.npm-lockfile-fix.packages.${final.stdenv.hostPlatform.system}.default;
         rev = inputs.self.rev or null;
