@@ -14398,14 +14398,14 @@ def main(
     
     Examples:
         python cli.py                            # Start interactive mode
-        python cli.py --toolsets web,terminal    # Use specific toolsets
-        python cli.py --skills hermes-agent-dev,github-auth
-        python cli.py -q "What is Python?"       # Single query mode
-        python cli.py -q "Describe this" --image ~/storage/shared/Pictures/cat.png
+        python cli.py --toolsets forecast-desk,web  # Use specific forecast toolsets
+        python cli.py --skills research,mlops
+        python cli.py -q "Forecast whether the bill passes committee by June 30."
+        python cli.py -q "Extract forecast-relevant evidence from this chart" --image ~/storage/shared/Pictures/chart.png
         python cli.py --list-tools               # List tools and exit
         python cli.py --resume 20260225_143052_a1b2c3  # Resume session
         python cli.py -w                         # Start in isolated git worktree
-        python cli.py -w -q "Fix issue #123"     # Single query in worktree
+        python cli.py -w -q "Backtest this scoring-rule change"  # Single query in worktree
     """
     global _active_worktree
 

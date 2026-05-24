@@ -1496,6 +1496,17 @@ def test_high_attention_help_docs_are_fork_local():
     )
 
 
+def test_classic_cli_examples_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    cli_py = (root / "cli.py").read_text(encoding="utf-8")
+
+    assert "Forecast whether the bill passes committee by June 30." in cli_py
+    assert "Extract forecast-relevant evidence from this chart" in cli_py
+    assert "python cli.py -q \"What is Python?\"" not in cli_py
+    assert "python cli.py -q \"Describe this\"" not in cli_py
+    assert "python cli.py --skills hermes-agent-dev,github-auth" not in cli_py
+
+
 def test_update_upstream_metadata_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     main_py = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
