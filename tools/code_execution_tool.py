@@ -72,6 +72,20 @@ DEFAULT_TIMEOUT = 300        # 5 minutes
 DEFAULT_MAX_TOOL_CALLS = 50
 MAX_STDOUT_BYTES = 50_000    # 50 KB
 MAX_STDERR_BYTES = 10_000    # 10 KB
+_TIMEZONE_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_TIMEZONE",
+    "FORECAST_TIMEZONE",
+    "HERMES_TIMEZONE",
+)
+
+
+def _timezone_env_value() -> str:
+    """Return the configured timezone from fork-native or legacy env aliases."""
+    for env_name in _TIMEZONE_ENV_NAMES:
+        value = os.getenv(env_name, "").strip()
+        if value:
+            return value
+    return ""
 
 # Environment variable scrubbing rules (shared between the local + remote
 # backends).  Secret-substring block is applied first; anything left must
@@ -950,7 +964,7 @@ def _execute_remote(
             f"HERMES_RPC_DIR={quoted_rpc_dir} "
             f"PYTHONDONTWRITEBYTECODE=1"
         )
-        tz = os.getenv("HERMES_TIMEZONE", "").strip()
+        tz = _timezone_env_value()
         if tz:
             env_prefix += f" TZ={tz}"
 
@@ -1239,12 +1253,13 @@ def execute_code(
         child_env["PYTHONPATH"] = os.pathsep.join(_pp_parts)
         # Inject user's configured timezone so datetime.now() in sandboxed
         # code reflects the correct wall-clock time.  Only TZ is set —
-        # HERMES_TIMEZONE is an internal Hermes setting and must not leak
-        # into child processes.
-        _tz_name = os.getenv("HERMES_TIMEZONE", "").strip()
+        # Timezone override aliases are internal agent settings and must not
+        # leak into child processes.
+        _tz_name = _timezone_env_value()
         if _tz_name:
             child_env["TZ"] = _tz_name
-        child_env.pop("HERMES_TIMEZONE", None)
+        for _tz_env_name in _TIMEZONE_ENV_NAMES:
+            child_env.pop(_tz_env_name, None)
 
         # Per-profile HOME isolation: redirect system tool configs into
         # {HERMES_HOME}/home/ when that directory exists.

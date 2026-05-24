@@ -19,12 +19,23 @@ from zoneinfo import ZoneInfo
 
 import hermes_time
 
+_TIMEZONE_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_TIMEZONE",
+    "FORECAST_TIMEZONE",
+    "HERMES_TIMEZONE",
+)
+
 
 def _reset_hermes_time_cache():
     """Reset the hermes_time module cache (replacement for removed reset_cache)."""
     hermes_time._cached_tz = None
     hermes_time._cached_tz_name = None
     hermes_time._cache_resolved = False
+
+
+def _clear_timezone_env():
+    for env_name in _TIMEZONE_ENV_NAMES:
+        os.environ.pop(env_name, None)
 
 
 # =========================================================================
@@ -39,7 +50,7 @@ class TestHermesTimeNow:
 
     def teardown_method(self):
         _reset_hermes_time_cache()
-        os.environ.pop("HERMES_TIMEZONE", None)
+        _clear_timezone_env()
 
     def test_valid_timezone_applies(self):
         """With a valid IANA timezone, now() returns time in that zone."""
@@ -65,6 +76,21 @@ class TestHermesTimeNow:
         offset_hours = result.utcoffset().total_seconds() / 3600
         assert offset_hours in {-5, -4}
 
+    def test_forecast_timezone_alias_applies(self):
+        """Forecast-native timezone alias wins over legacy env."""
+        os.environ["SUPERFORECASTING_AGENT_TIMEZONE"] = "Europe/London"
+        os.environ["HERMES_TIMEZONE"] = "Asia/Kolkata"
+        result = hermes_time.now()
+        assert result.tzinfo is not None
+        assert str(result.tzinfo) == "Europe/London"
+
+    def test_short_forecast_timezone_alias_applies(self):
+        """Short forecast timezone alias wins when the long alias is unset."""
+        os.environ["FORECAST_TIMEZONE"] = "UTC"
+        os.environ["HERMES_TIMEZONE"] = "Asia/Kolkata"
+        result = hermes_time.now()
+        assert result.utcoffset() == timedelta(0)
+
     def test_invalid_timezone_falls_back(self, caplog):
         """Invalid timezone logs warning and falls back to server-local."""
         os.environ["HERMES_TIMEZONE"] = "Mars/Olympus_Mons"
@@ -76,7 +102,7 @@ class TestHermesTimeNow:
 
     def test_empty_timezone_uses_local(self):
         """No timezone configured → server-local time (still tz-aware)."""
-        os.environ.pop("HERMES_TIMEZONE", None)
+        _clear_timezone_env()
         result = hermes_time.now()
         assert result.tzinfo is not None
 
@@ -111,7 +137,7 @@ class TestGetTimezone:
 
     def teardown_method(self):
         _reset_hermes_time_cache()
-        os.environ.pop("HERMES_TIMEZONE", None)
+        _clear_timezone_env()
 
     def test_returns_zoneinfo_for_valid(self):
         os.environ["HERMES_TIMEZONE"] = "Europe/London"
@@ -120,7 +146,7 @@ class TestGetTimezone:
         assert str(tz) == "Europe/London"
 
     def test_returns_none_for_empty(self):
-        os.environ.pop("HERMES_TIMEZONE", None)
+        _clear_timezone_env()
         tz = hermes_time.get_timezone()
         assert tz is None
 
@@ -152,7 +178,7 @@ class TestCodeExecutionTZ:
             pytest.skip("tools.code_execution_tool not importable (missing deps)")
 
     def teardown_method(self):
-        os.environ.pop("HERMES_TIMEZONE", None)
+        _clear_timezone_env()
 
     def _mock_handle(self, function_name, function_args, task_id=None, user_task=None):
         import json as _json
@@ -188,10 +214,32 @@ class TestCodeExecutionTZ:
             "HERMES_TIMEZONE should not leak into child env (only TZ)"
         )
 
+    def test_tz_injected_from_forecast_alias(self):
+        """Forecast-native timezone aliases inject TZ without leaking into the child."""
+        import json as _json
+        os.environ["SUPERFORECASTING_AGENT_TIMEZONE"] = "Europe/London"
+        os.environ["HERMES_TIMEZONE"] = "Asia/Kolkata"
+
+        probe = (
+            'import os; '
+            'print("TZ=" + os.environ.get("TZ", "NOT_SET")); '
+            'print("SUPERFORECASTING_AGENT_TIMEZONE=" + '
+            'os.environ.get("SUPERFORECASTING_AGENT_TIMEZONE", "NOT_SET"))'
+        )
+        with patch("model_tools.handle_function_call", side_effect=self._mock_handle):
+            result = _json.loads(self._execute_code(
+                code=probe,
+                task_id="tz-forecast-alias-test",
+                enabled_tools=[],
+            ))
+        assert result["status"] == "success"
+        assert "TZ=Europe/London" in result["output"]
+        assert "SUPERFORECASTING_AGENT_TIMEZONE=NOT_SET" in result["output"]
+
     def test_tz_not_injected_when_empty(self):
         """When HERMES_TIMEZONE is not set, child process has no TZ."""
         import json as _json
-        os.environ.pop("HERMES_TIMEZONE", None)
+        _clear_timezone_env()
 
         with patch("model_tools.handle_function_call", side_effect=self._mock_handle):
             result = _json.loads(self._execute_code(
@@ -215,7 +263,7 @@ class TestCronTimezone:
 
     def teardown_method(self):
         _reset_hermes_time_cache()
-        os.environ.pop("HERMES_TIMEZONE", None)
+        _clear_timezone_env()
 
     def test_parse_schedule_duration_uses_tz_aware_now(self):
         """parse_schedule('30m') should produce a tz-aware run_at."""

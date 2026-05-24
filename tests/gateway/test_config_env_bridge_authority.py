@@ -45,6 +45,8 @@ def _run_gateway_import(hermes_home: Path, initial_env: dict[str, str]) -> dict[
             "HERMES_AGENT_TIMEOUT",
             "HERMES_AGENT_TIMEOUT_WARNING",
             "HERMES_GATEWAY_BUSY_INPUT_MODE",
+            "SUPERFORECASTING_AGENT_TIMEZONE",
+            "FORECAST_TIMEZONE",
             "HERMES_TIMEZONE",
         ):
             v = os.environ.get(k)
@@ -149,6 +151,8 @@ def test_config_timezone_wins_over_stale_env(hermes_home: Path) -> None:
 
     env = _run_gateway_import(hermes_home, initial_env={})
 
+    assert env.get("SUPERFORECASTING_AGENT_TIMEZONE") == "America/Los_Angeles"
+    assert env.get("FORECAST_TIMEZONE") == "America/Los_Angeles"
     assert env.get("HERMES_TIMEZONE") == "America/Los_Angeles"
 
 

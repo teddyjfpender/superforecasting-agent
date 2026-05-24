@@ -1,15 +1,16 @@
 """
-Timezone-aware clock for Hermes.
+Timezone-aware clock for Superforecasting Agent.
 
 Provides a single ``now()`` helper that returns a timezone-aware datetime
 based on the user's configured IANA timezone (e.g. ``Asia/Kolkata``).
 
 Resolution order:
-  1. ``HERMES_TIMEZONE`` environment variable
-  2. ``timezone`` key in ``~/.hermes/config.yaml``
+  1. ``SUPERFORECASTING_AGENT_TIMEZONE`` / ``FORECAST_TIMEZONE`` /
+     ``HERMES_TIMEZONE`` environment variable
+  2. ``timezone`` key in the active agent config.yaml
   3. Falls back to the server's local time (``datetime.now().astimezone()``)
 
-Invalid timezone values log a warning and fall back safely — Hermes never
+Invalid timezone values log a warning and fall back safely — the agent never
 crashes due to a bad timezone string.
 """
 
@@ -32,6 +33,11 @@ except ImportError:
 _cached_tz: Optional[ZoneInfo] = None
 _cached_tz_name: Optional[str] = None
 _cache_resolved: bool = False
+_TIMEZONE_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_TIMEZONE",
+    "FORECAST_TIMEZONE",
+    "HERMES_TIMEZONE",
+)
 
 
 def _resolve_timezone_name() -> str:
@@ -41,9 +47,10 @@ def _resolve_timezone_name() -> str:
     should cache the result rather than calling on every ``now()``.
     """
     # 1. Environment variable (highest priority — set by Supervisor, etc.)
-    tz_env = os.getenv("HERMES_TIMEZONE", "").strip()
-    if tz_env:
-        return tz_env
+    for env_name in _TIMEZONE_ENV_NAMES:
+        tz_env = os.getenv(env_name, "").strip()
+        if tz_env:
+            return tz_env
 
     # 2. config.yaml ``timezone`` key
     try:
@@ -100,5 +107,4 @@ def now() -> datetime:
         return datetime.now(tz)
     # No timezone configured — use server-local (still tz-aware)
     return datetime.now().astimezone()
-
 

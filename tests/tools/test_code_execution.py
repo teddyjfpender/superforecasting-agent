@@ -771,9 +771,24 @@ class TestEnvVarFiltering(unittest.TestCase):
             os.environ.clear()
             os.environ.update(env_backup)
 
+    def test_timezone_injected_from_forecast_alias(self):
+        env_backup = os.environ.copy()
+        try:
+            os.environ["SUPERFORECASTING_AGENT_TIMEZONE"] = "Europe/London"
+            os.environ["HERMES_TIMEZONE"] = "America/New_York"
+            child_env = self._get_child_env()
+            self.assertEqual(child_env.get("TZ"), "Europe/London")
+            self.assertNotIn("SUPERFORECASTING_AGENT_TIMEZONE", child_env)
+            self.assertNotIn("HERMES_TIMEZONE", child_env)
+        finally:
+            os.environ.clear()
+            os.environ.update(env_backup)
+
     def test_timezone_not_set_when_empty(self):
         env_backup = os.environ.copy()
         try:
+            os.environ.pop("SUPERFORECASTING_AGENT_TIMEZONE", None)
+            os.environ.pop("FORECAST_TIMEZONE", None)
             os.environ.pop("HERMES_TIMEZONE", None)
             child_env = self._get_child_env()
             if "TZ" in child_env:

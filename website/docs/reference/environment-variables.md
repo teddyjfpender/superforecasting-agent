@@ -145,7 +145,7 @@ For native Anthropic auth, Superforecasting Agent prefers Claude Code's own cred
 | `HERMES_NOUS_TIMEOUT_SECONDS` | HTTP timeout for Nous credential / token flows |
 | `HERMES_DUMP_REQUESTS` | Dump API request payloads to log files (`true`/`false`) |
 | `HERMES_PREFILL_MESSAGES_FILE` | Path to a JSON file of ephemeral prefill messages injected at API-call time |
-| `HERMES_TIMEZONE` | IANA timezone override (for example `America/New_York`) |
+| `SUPERFORECASTING_AGENT_TIMEZONE` / `FORECAST_TIMEZONE` / `HERMES_TIMEZONE` | IANA timezone override (for example `America/New_York`); the `HERMES_*` name remains a legacy alias. |
 
 ## Tool APIs
 

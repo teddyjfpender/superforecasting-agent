@@ -3564,10 +3564,15 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> Dict[str, A
     if current_ver < 5:
         config = load_config()
         if "timezone" not in config:
-            old_tz = os.getenv("HERMES_TIMEZONE", "")
+            old_tz = (
+                os.getenv("SUPERFORECASTING_AGENT_TIMEZONE", "")
+                or os.getenv("FORECAST_TIMEZONE", "")
+                or os.getenv("HERMES_TIMEZONE", "")
+            )
             if old_tz and old_tz.strip():
                 config["timezone"] = old_tz.strip()
-                results["config_added"].append(f"timezone={old_tz.strip()} (from HERMES_TIMEZONE)")
+                results["config_added"].append("timezone="
+                                               f"{old_tz.strip()} (from environment)")
             else:
                 config["timezone"] = ""
                 results["config_added"].append("timezone= (empty, uses server-local)")
