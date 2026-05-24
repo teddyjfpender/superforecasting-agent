@@ -233,7 +233,7 @@ The messaging gateway supports the following built-in commands inside Telegram, 
 | `/fast [normal\|fast\|status]` | Toggle fast mode — OpenAI Priority Processing / Anthropic Fast Mode. |
 | `/retry` | Retry the last message. |
 | `/undo` | Remove the last exchange. |
-| `/sethome` (alias: `/set-home`) | Mark the current chat as the platform home channel for deliveries. |
+| `/sethome` (alias: `/set-home`) | Mark the current conversation as the platform home channel for forecast review and cron deliveries. |
 | `/compress [focus topic]` | Manually compress research-session context. Optional focus topic narrows what the summary preserves. |
 | `/topic [off\|help\|session-id]` | **Telegram DM only.** Manage user-managed multi-session topic mode. `/topic` enables it or shows status; `/topic off` disables it and clears bindings; `/topic help` shows usage; `/topic <session-id>` inside a topic restores a previous session. See [Multi-session DM mode](/docs/user-guide/messaging/telegram#multi-session-dm-mode-topic). |
 | `/title [name]` | Set or show the session title. |

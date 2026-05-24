@@ -291,7 +291,7 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 /approve             Approve a pending command (gateway)
 /deny                Deny a pending command (gateway)
 /restart             Restart gateway (gateway)
-/sethome             Set current chat as home channel (gateway)
+/sethome             Set current conversation as home delivery channel (gateway)
 /update              Update Superforecasting Agent to latest (gateway)
 /topic [sub]         Enable or inspect Telegram DM topic sessions (gateway)
 /platforms (/gateway) Show platform connection status (gateway)
