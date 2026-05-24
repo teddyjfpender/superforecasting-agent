@@ -53,6 +53,7 @@ def test_builtin_forecast_extensions_are_registered():
     assert "stooq-market-data" in names
     assert "yahoo-finance-chart" in names
     assert "sec-edgar-filings" in names
+    assert "sec-company-facts" in names
     assert "arxiv-papers" in names
     assert "openalex-works" in names
     assert "wikipedia-pages" in names

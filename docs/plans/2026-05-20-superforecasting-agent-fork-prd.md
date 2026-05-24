@@ -563,6 +563,7 @@ forecast import stooq <symbol-or-csv-url> --question <id>
 forecast import yahoo <symbol> --question <id>
 forecast import coingecko <coin-id-or-list> --question <id>
 forecast import sec <cik> --question <id>
+forecast import secfacts <cik>/<concept> --question <id>
 forecast import arxiv <query> --question <id>
 forecast import pubmed <query-or-PMID> --question <id>
 forecast import githubcommits <owner/repo> --question <id>

@@ -46,6 +46,7 @@ from forecasting.source_adapters import (
     load_pubmed_articles,
     load_pypi_releases,
     load_reddit_posts,
+    load_sec_company_facts,
     load_sec_filings,
     load_socrata_records,
     load_stooq_prices,
@@ -193,6 +194,9 @@ FORECAST_LEDGER_SCHEMA = {
             "date_field": {"type": "string"},
             "value_field": {"type": "string"},
             "vs_currency": {"type": "string"},
+            "concept": {"type": "string"},
+            "taxonomy": {"type": "string"},
+            "unit": {"type": "string"},
             "access": {"type": "string"},
             "agent": {"type": "string"},
             "format": {"type": "string", "enum": ["json", "markdown"]},
@@ -283,6 +287,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "stooq",
                     "yahoo",
                     "sec",
+                    "secfacts",
                     "arxiv",
                     "openalex",
                     "wikipedia",
@@ -1122,6 +1127,17 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_sec_filings(source, **kwargs)
+    if adapter_name == "secfacts":
+        kwargs = {
+            "limit": limit,
+            "since": since,
+            "concept": args.get("concept"),
+            "taxonomy": args.get("taxonomy") or "us-gaap",
+            "unit": args.get("unit"),
+        }
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_sec_company_facts(source, **kwargs)
     if adapter_name == "arxiv":
         kwargs = {"limit": limit, "since": since}
         if api_base_url:
@@ -1404,6 +1420,12 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         return f"Yahoo Finance {data.get('symbol')} close was {data.get('close_price')}{currency} at {data.get('observation_time')}"
     if adapter == "sec":
         return f"SEC {data.get('form')} filing for {data.get('company_name') or data.get('cik')} on {data.get('filing_date')}"
+    if adapter == "secfacts":
+        label = data.get("label") or data.get("concept")
+        return (
+            f"SEC Company Facts {data.get('company_name') or data.get('cik')} {label} "
+            f"was {data.get('value')} {data.get('unit')} for {data.get('observation_date')}"
+        )
     if adapter == "wikipediapageviews":
         return f"Wikimedia pageviews for {data.get('article')} were {data.get('views')} on {data.get('observation_date')}"
     if adapter == "github":

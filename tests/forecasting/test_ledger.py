@@ -46,6 +46,7 @@ from forecasting.source_adapters import (
     PubMedArticle,
     PypiRelease,
     RedditPost,
+    SecCompanyFact,
     SecFiling,
     SocrataRecord,
     StooqPriceObservation,
@@ -3371,6 +3372,69 @@ def test_watched_sec_source_creates_alert_on_filing_change(tmp_path, monkeypatch
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert f"forecast import sec 0000320193 --question {question.id}" in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-02T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_sec_company_facts_source_creates_alert_on_observation_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched SEC company facts be detected?",
+        resolution_criteria="Resolved yes if watched SEC company facts changes create alerts.",
+    )
+    values = [391035000000]
+    captured_sources = []
+
+    def fake_load_sec_company_facts(source: str, **kwargs):
+        captured_sources.append(source)
+        return [
+            SecCompanyFact(
+                cik="0000320193",
+                company_name="Apple Inc.",
+                taxonomy="us-gaap",
+                concept="Revenues",
+                label="Revenues",
+                description="Revenue from contract with customer.",
+                unit="USD",
+                observation_date="2025-09-27",
+                value=values[0],
+                filed_at="2025-10-31T00:00:00Z",
+                published_at="2025-10-31T00:00:00Z",
+                form="10-K",
+                fiscal_year=2025,
+                fiscal_period="FY",
+                accession_number=f"0000320193-25-{values[0]}",
+                frame="CY2025",
+                source_url="https://data.sec.gov/api/xbrl/companyfacts/CIK0000320193.json",
+                source_name="SEC Company Facts",
+                entry_id=f"0000320193:us-gaap:Revenues:USD:2025-09-27:{values[0]}",
+                raw={"value": values[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_sec_company_facts", fake_load_sec_company_facts)
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="secfacts:0000320193/Revenues",
+    )
+
+    assert watch["source_type"] == "secfacts"
+    assert watch["last_seen_signature"].startswith("secfacts:1:")
+    assert captured_sources[-1] == "0000320193/Revenues"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    values[0] = 400000000000
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-02T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f"forecast import secfacts 0000320193/Revenues --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-02T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]

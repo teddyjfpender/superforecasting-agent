@@ -109,6 +109,7 @@ def register_builtin_extensions() -> None:
         ("stooq-market-data", "importer", "Capture Stooq market price CSV rows as timestamped evidence."),
         ("yahoo-finance-chart", "importer", "Capture Yahoo Finance chart observations as market evidence."),
         ("sec-edgar-filings", "importer", "Capture SEC EDGAR company filings as timestamped evidence."),
+        ("sec-company-facts", "importer", "Capture SEC XBRL company fact observations as evidence."),
         ("arxiv-papers", "importer", "Capture arXiv research papers as timestamped evidence."),
         ("openalex-works", "importer", "Capture OpenAlex scholarly works as timestamped evidence."),
         ("wikipedia-pages", "importer", "Capture Wikipedia/MediaWiki pages as timestamped evidence."),

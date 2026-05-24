@@ -75,6 +75,7 @@ forecast import stooq AAPL.US --question <id>
 forecast import yahoo AAPL --question <id>
 forecast import coingecko bitcoin --question <id>
 forecast import sec 0000320193 --question <id>
+forecast import secfacts 0000320193/Revenues --question <id>
 forecast import arxiv "cat:cs.AI AND forecasting" --question <id>
 forecast import openalex "forecasting calibration" --question <id>
 forecast import wikipedia "topic" --question <id>
@@ -168,6 +169,7 @@ forecast watch add --question <id> pubmed:"forecasting calibration"
 forecast watch add --question <id> owid:grapher-slug
 forecast watch add --question <id> yahoo:AAPL
 forecast watch add --question <id> coingecko:bitcoin
+forecast watch add --question <id> secfacts:0000320193/Revenues
 forecast watch add --question <id> usgs:minmagnitude=5
 forecast watch add --question <id> eonet:category=wildfires
 forecast watch add --question <id> nws:area=CA

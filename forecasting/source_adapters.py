@@ -195,6 +195,30 @@ class SecFiling:
 
 
 @dataclass(frozen=True)
+class SecCompanyFact:
+    cik: str
+    company_name: str | None
+    taxonomy: str
+    concept: str
+    label: str | None
+    description: str | None
+    unit: str
+    observation_date: str
+    value: float | int | str
+    filed_at: str | None
+    published_at: str
+    form: str | None
+    fiscal_year: int | None
+    fiscal_period: str | None
+    accession_number: str | None
+    frame: str | None
+    source_url: str | None
+    source_name: str
+    entry_id: str
+    raw: dict
+
+
+@dataclass(frozen=True)
 class ArxivPaper:
     arxiv_id: str | None
     title: str
@@ -1494,6 +1518,108 @@ def load_sec_filings(
             )
         )
     rows.sort(key=lambda item: item.published_at)
+    return rows[-limit:]
+
+
+def load_sec_company_facts(
+    source: str,
+    *,
+    concept: str | None = None,
+    taxonomy: str = "us-gaap",
+    unit: str | None = None,
+    limit: int = 10,
+    since: str | None = None,
+    api_base_url: str = "https://data.sec.gov/api/xbrl/companyfacts",
+) -> list[SecCompanyFact]:
+    """Load SEC XBRL company-facts observations as timestamped evidence rows."""
+
+    cik, effective_taxonomy, effective_concept = _sec_company_fact_query(
+        source,
+        concept=concept,
+        taxonomy=taxonomy,
+    )
+    if limit <= 0:
+        raise ValidationError("secfacts import --limit must be positive")
+    since_dt = timestamp_to_datetime(parse_timestamp(since, field_name="since")) if since else None
+    endpoint = _sec_submissions_endpoint(cik, api_base_url=api_base_url)
+    payload = _read_json_endpoint(endpoint, "sec company facts")
+    if not isinstance(payload, dict):
+        raise ValidationError("sec company facts response must be a JSON object")
+    facts = payload.get("facts")
+    if not isinstance(facts, dict):
+        raise ValidationError("sec company facts response must contain facts")
+    taxonomy_payload = facts.get(effective_taxonomy)
+    if not isinstance(taxonomy_payload, dict):
+        raise ValidationError(f"sec company facts response has no {effective_taxonomy} taxonomy")
+    concept_payload = taxonomy_payload.get(effective_concept)
+    if not isinstance(concept_payload, dict):
+        raise ValidationError(
+            f"sec company facts response has no {effective_taxonomy}:{effective_concept} concept"
+        )
+
+    units = concept_payload.get("units")
+    if not isinstance(units, dict) or not units:
+        raise ValidationError(f"sec company facts concept {effective_concept} has no units")
+    effective_unit, unit_rows = _sec_company_fact_unit_rows(units, unit=unit)
+    company_name = _optional_str(payload.get("entityName"))
+    label = _optional_str(concept_payload.get("label"))
+    description = _optional_str(concept_payload.get("description"))
+
+    rows: list[SecCompanyFact] = []
+    for index, raw_row in enumerate(unit_rows):
+        if not isinstance(raw_row, dict):
+            continue
+        observation_date = _optional_str(raw_row.get("end"))
+        if not observation_date or raw_row.get("val") is None:
+            continue
+        try:
+            _fred_date(observation_date, field_name="sec company fact end")
+        except ValidationError:
+            continue
+        filed_at = _sec_company_fact_filed_at(_optional_str(raw_row.get("filed")))
+        published_at = filed_at or _fred_date_to_iso(
+            _fred_date(observation_date, field_name="sec company fact end")
+        )
+        published_dt = timestamp_to_datetime(published_at)
+        if since_dt is not None and (published_dt is None or published_dt < since_dt):
+            continue
+        accession_number = _optional_str(raw_row.get("accn"))
+        value = _sec_company_fact_value(raw_row.get("val"))
+        rows.append(
+            SecCompanyFact(
+                cik=cik,
+                company_name=company_name,
+                taxonomy=effective_taxonomy,
+                concept=effective_concept,
+                label=label,
+                description=description,
+                unit=effective_unit,
+                observation_date=observation_date,
+                value=value,
+                filed_at=filed_at,
+                published_at=published_at,
+                form=_optional_str(raw_row.get("form")),
+                fiscal_year=_sec_company_fact_fiscal_year(raw_row.get("fy")),
+                fiscal_period=_optional_str(raw_row.get("fp")),
+                accession_number=accession_number,
+                frame=_optional_str(raw_row.get("frame")),
+                source_url=endpoint,
+                source_name="SEC Company Facts",
+                entry_id=(
+                    f"{cik}:{effective_taxonomy}:{effective_concept}:"
+                    f"{effective_unit}:{observation_date}:{accession_number or index}"
+                ),
+                raw={"index": index, "endpoint": endpoint, "row": dict(raw_row)},
+            )
+        )
+    rows.sort(
+        key=lambda item: (
+            item.published_at,
+            item.observation_date,
+            item.accession_number or "",
+            item.entry_id,
+        )
+    )
     return rows[-limit:]
 
 
@@ -4880,6 +5006,94 @@ def _sec_cik(source: str) -> str:
 
 def _sec_submissions_endpoint(cik: str, *, api_base_url: str) -> str:
     return f"{api_base_url.rstrip('/')}/CIK{cik}.json"
+
+
+def _sec_company_fact_query(
+    source: str,
+    *,
+    concept: str | None,
+    taxonomy: str,
+) -> tuple[str, str, str]:
+    raw = source.strip()
+    if raw.startswith("secfacts:"):
+        raw = raw.split(":", 1)[1].strip()
+    raw = raw.strip("/")
+    if not raw:
+        raise ValidationError("secfacts source must include a CIK and concept")
+
+    provided_concept = concept.strip() if concept and concept.strip() else None
+    provided_taxonomy = taxonomy.strip() if taxonomy and taxonomy.strip() else "us-gaap"
+    cik_part = raw
+    source_concept: str | None = None
+    source_taxonomy: str | None = None
+
+    if "/" in raw:
+        parts = [unquote(part).strip() for part in raw.split("/") if part.strip()]
+        if len(parts) >= 3:
+            cik_part = parts[0]
+            source_taxonomy = parts[1]
+            source_concept = parts[2]
+        elif len(parts) == 2:
+            cik_part, source_concept = parts
+        else:
+            cik_part = parts[0]
+    elif ":" in raw:
+        cik_part, source_concept = (part.strip() for part in raw.split(":", 1))
+
+    effective_concept = provided_concept or source_concept
+    if not effective_concept:
+        raise ValidationError(
+            "secfacts source must include a concept, e.g. 0000320193/Revenues or --concept Revenues"
+        )
+    effective_taxonomy = source_taxonomy or provided_taxonomy
+    return _sec_cik(cik_part), effective_taxonomy, effective_concept
+
+
+def _sec_company_fact_unit_rows(units: dict, *, unit: str | None) -> tuple[str, list]:
+    requested_unit = unit.strip() if unit and unit.strip() else None
+    if requested_unit:
+        rows = units.get(requested_unit)
+        if not isinstance(rows, list):
+            raise ValidationError(f"sec company facts concept has no {requested_unit} unit rows")
+        return requested_unit, rows
+
+    for candidate in ("USD", "shares", "pure"):
+        rows = units.get(candidate)
+        if isinstance(rows, list):
+            return candidate, rows
+    for candidate in sorted(str(key) for key in units):
+        rows = units.get(candidate)
+        if isinstance(rows, list):
+            return candidate, rows
+    raise ValidationError("sec company facts concept has no list-valued unit rows")
+
+
+def _sec_company_fact_filed_at(value: str | None) -> str | None:
+    filed = _fred_date(value, field_name="sec company fact filed")
+    return _fred_date_to_iso(filed) if filed is not None else None
+
+
+def _sec_company_fact_fiscal_year(value: object) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _sec_company_fact_value(value: object) -> float | int | str:
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, int | float):
+        return value
+    parsed = _optional_float(value)
+    if parsed is None:
+        text = _optional_str(value)
+        return text if text is not None else ""
+    if parsed.is_integer():
+        return int(parsed)
+    return parsed
 
 
 def _sec_filing_timestamp(acceptance_time: str | None, filing_date: str) -> str:

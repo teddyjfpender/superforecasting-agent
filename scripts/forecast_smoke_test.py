@@ -41,6 +41,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "stooq",
     "yahoo",
     "sec",
+    "secfacts",
     "federalregister",
     "courtlistener",
     "nvd",

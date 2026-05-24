@@ -91,6 +91,7 @@ from forecasting.source_adapters import (
     load_pubmed_articles,
     load_pypi_releases,
     load_reddit_posts,
+    load_sec_company_facts,
     load_polymarket_market,
     load_sec_filings,
     load_socrata_records,
@@ -235,6 +236,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "domain": "company filings",
         "import_command": "forecast import sec <cik-or-ticker> --question <id>",
         "watch_prefix": "sec:<cik-or-ticker>",
+    },
+    {
+        "name": "secfacts",
+        "domain": "company fundamentals/XBRL facts",
+        "import_command": "forecast import secfacts <cik>/<concept> --question <id>",
+        "watch_prefix": "secfacts:<cik>/<concept>",
     },
     {
         "name": "federalregister",
@@ -532,6 +539,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "yahoo",
         "coingecko",
         "sec",
+        "secfacts",
         "arxiv",
         "openalex",
         "wikipedia",
@@ -610,6 +618,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "yahoo",
             "coingecko",
             "sec",
+            "secfacts",
             "arxiv",
             "openalex",
             "wikipedia",
@@ -827,6 +836,15 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://data.sec.gov/submissions",
                 help="Override SEC submissions API base URL for tests or private mirrors",
+            )
+        if name == "secfacts":
+            adapter.add_argument("--concept", help="SEC XBRL concept, e.g. Revenues")
+            adapter.add_argument("--taxonomy", default="us-gaap", help="SEC XBRL taxonomy, defaulting to us-gaap")
+            adapter.add_argument("--unit", help="SEC XBRL unit to import, e.g. USD, shares, or pure")
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://data.sec.gov/api/xbrl/companyfacts",
+                help="Override SEC company-facts API base URL for tests or private mirrors",
             )
         if name == "arxiv":
             adapter.add_argument(
@@ -3939,6 +3957,70 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} sec evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "secfacts":
+        if not args.question_id:
+            raise SystemExit("forecast import secfacts requires --question")
+        facts = load_sec_company_facts(
+            args.source,
+            concept=args.concept,
+            taxonomy=args.taxonomy,
+            unit=args.unit,
+            limit=args.limit,
+            since=args.since,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for fact in facts:
+            company = fact.company_name or fact.cik
+            label = fact.label or fact.concept
+            filed = f", filed {fact.filed_at}" if fact.filed_at else ""
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=fact.source_url or f"SECFACTS:{fact.cik}:{fact.taxonomy}:{fact.concept}",
+                    source_url=fact.source_url,
+                    source_name=fact.source_name,
+                    source_type="adapter:secfacts",
+                    published_at=fact.published_at,
+                    available_at=fact.published_at or args.as_of,
+                    claim=(
+                        f"{company} reported {label} of {fact.value} {fact.unit} "
+                        f"for period ending {fact.observation_date}"
+                    ),
+                    summary=(
+                        f"SEC Company Facts for {company}: {fact.taxonomy}:{fact.concept} "
+                        f"was {fact.value} {fact.unit} for period ending {fact.observation_date}{filed}."
+                    ),
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "secfacts",
+                        "cik": fact.cik,
+                        "company_name": fact.company_name,
+                        "taxonomy": fact.taxonomy,
+                        "concept": fact.concept,
+                        "label": fact.label,
+                        "description": fact.description,
+                        "unit": fact.unit,
+                        "observation_date": fact.observation_date,
+                        "value": fact.value,
+                        "filed_at": fact.filed_at,
+                        "form": fact.form,
+                        "fiscal_year": fact.fiscal_year,
+                        "fiscal_period": fact.fiscal_period,
+                        "accession_number": fact.accession_number,
+                        "frame": fact.frame,
+                        "api_base_url": args.api_base_url,
+                        "raw": fact.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} secfacts evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

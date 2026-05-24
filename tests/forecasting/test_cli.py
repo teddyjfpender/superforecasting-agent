@@ -45,6 +45,7 @@ from forecasting.source_adapters import (
     PubMedArticle,
     PypiRelease,
     RedditPost,
+    SecCompanyFact,
     SecFiling,
     SocrataRecord,
     StooqPriceObservation,
@@ -6256,6 +6257,185 @@ def test_forecast_cli_sec_import_captures_filings_as_evidence(tmp_path, capsys, 
     assert evidence[0].metadata["accession_number"] == "0000320193-26-000010"
 
 
+def test_sec_company_facts_adapter_loads_xbrl_observations(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return {
+            "cik": 320193,
+            "entityName": "Apple Inc.",
+            "facts": {
+                "us-gaap": {
+                    "Revenues": {
+                        "label": "Revenues",
+                        "description": "Revenue from contract with customer.",
+                        "units": {
+                            "USD": [
+                                {
+                                    "end": "2024-09-28",
+                                    "val": 383285000000,
+                                    "accn": "0000320193-24-000123",
+                                    "fy": 2024,
+                                    "fp": "FY",
+                                    "form": "10-K",
+                                    "filed": "2024-11-01",
+                                    "frame": "CY2024",
+                                },
+                                {
+                                    "end": "2025-09-27",
+                                    "val": 391035000000,
+                                    "accn": "0000320193-25-000079",
+                                    "fy": 2025,
+                                    "fp": "FY",
+                                    "form": "10-K",
+                                    "filed": "2025-10-31",
+                                    "frame": "CY2025",
+                                },
+                            ]
+                        },
+                    }
+                }
+            },
+        }
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    facts = source_adapters.load_sec_company_facts(
+        "secfacts:320193/Revenues",
+        limit=1,
+        since="2025-01-01T00:00:00Z",
+        api_base_url="https://sec.test/companyfacts",
+    )
+    parsed = urlparse(captured["endpoint"])
+
+    assert captured["label"] == "sec company facts"
+    assert parsed.netloc == "sec.test"
+    assert parsed.path.endswith("/CIK0000320193.json")
+    assert len(facts) == 1
+    assert facts[0].cik == "0000320193"
+    assert facts[0].company_name == "Apple Inc."
+    assert facts[0].taxonomy == "us-gaap"
+    assert facts[0].concept == "Revenues"
+    assert facts[0].label == "Revenues"
+    assert facts[0].unit == "USD"
+    assert facts[0].observation_date == "2025-09-27"
+    assert facts[0].value == 391035000000
+    assert facts[0].filed_at == "2025-10-31T00:00:00Z"
+    assert facts[0].published_at == "2025-10-31T00:00:00Z"
+    assert facts[0].form == "10-K"
+    assert facts[0].fiscal_year == 2025
+    assert facts[0].source_name == "SEC Company Facts"
+
+
+def test_forecast_cli_secfacts_import_captures_observations_as_evidence(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_sec_company_facts(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            SecCompanyFact(
+                cik="0000320193",
+                company_name="Apple Inc.",
+                taxonomy="us-gaap",
+                concept="Revenues",
+                label="Revenues",
+                description="Revenue from contract with customer.",
+                unit="USD",
+                observation_date="2025-09-27",
+                value=391035000000,
+                filed_at="2025-10-31T00:00:00Z",
+                published_at="2025-10-31T00:00:00Z",
+                form="10-K",
+                fiscal_year=2025,
+                fiscal_period="FY",
+                accession_number="0000320193-25-000079",
+                frame="CY2025",
+                source_url="https://sec.test/companyfacts/CIK0000320193.json",
+                source_name="SEC Company Facts",
+                entry_id="0000320193:us-gaap:Revenues:USD:2025-09-27:0000320193-25-000079",
+                raw={"row": {"val": 391035000000}},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_sec_company_facts", fake_load_sec_company_facts)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will SEC facts evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if SEC facts evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "secfacts",
+            "0000320193/Revenues",
+            "--question",
+            question_id,
+            "--since",
+            "2025-01-01T00:00:00Z",
+            "--limit",
+            "2",
+            "--taxonomy",
+            "us-gaap",
+            "--unit",
+            "USD",
+            "--api-base-url",
+            "https://sec.test/companyfacts",
+            "--reliability",
+            "0.97",
+            "--relevance",
+            "0.84",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 secfacts evidence item(s)" in output
+    assert captured["source"] == "0000320193/Revenues"
+    assert captured["kwargs"]["limit"] == 2
+    assert captured["kwargs"]["since"] == "2025-01-01T00:00:00Z"
+    assert captured["kwargs"]["concept"] is None
+    assert captured["kwargs"]["taxonomy"] == "us-gaap"
+    assert captured["kwargs"]["unit"] == "USD"
+    assert captured["kwargs"]["api_base_url"] == "https://sec.test/companyfacts"
+    assert evidence[0].claim == (
+        "Apple Inc. reported Revenues of 391035000000 USD for period ending 2025-09-27"
+    )
+    assert evidence[0].summary == (
+        "SEC Company Facts for Apple Inc.: us-gaap:Revenues was 391035000000 USD "
+        "for period ending 2025-09-27, filed 2025-10-31T00:00:00Z."
+    )
+    assert evidence[0].source_name == "SEC Company Facts"
+    assert evidence[0].source_type == "adapter:secfacts"
+    assert evidence[0].published_at == "2025-10-31T00:00:00Z"
+    assert evidence[0].claim_type == "fact"
+    assert evidence[0].reliability_rating == 0.97
+    assert evidence[0].relevance_rating == 0.84
+    assert evidence[0].metadata["adapter"] == "secfacts"
+    assert evidence[0].metadata["cik"] == "0000320193"
+    assert evidence[0].metadata["concept"] == "Revenues"
+    assert evidence[0].metadata["unit"] == "USD"
+    assert evidence[0].metadata["value"] == 391035000000
+
+
 def test_arxiv_adapter_loads_atom_papers(monkeypatch):
     captured = {}
 
@@ -6812,6 +6992,7 @@ def test_forecast_cli_lists_extension_points(capsys):
     assert "census-data" in output
     assert "yahoo-finance-chart" in output
     assert "sec-edgar-filings" in output
+    assert "sec-company-facts" in output
     assert "arxiv-papers" in output
     assert "openalex-works" in output
     assert "wikipedia-pages" in output
@@ -6844,6 +7025,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "stooq:<symbol-or-csv-url>" in output
     assert "yahoo:<symbol>" in output
     assert "coingecko:<coin-id>" in output
+    assert "secfacts:<cik>/<concept>" in output
     assert "openmeteo:<lat,lon>" in output
     assert "usgs:<query>" in output
     assert "eonet:<query-or-category>" in output
@@ -6873,7 +7055,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "census:<dataset-path?get=...&for=...>" for source in payload["sources"])
@@ -6881,6 +7063,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     assert any(source["watch_prefix"] == "stooq:<symbol-or-csv-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "yahoo:<symbol>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "coingecko:<coin-id>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "secfacts:<cik>/<concept>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "clinicaltrials:<query-or-NCT-id>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "openfda:<query-or-application-number>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "pubmed:<query-or-PMID>" for source in payload["sources"])

@@ -78,6 +78,7 @@ Examples:
 /forecast import stooq AAPL.US --question <id>
 /forecast import yahoo AAPL --question <id>
 /forecast import coingecko bitcoin --question <id>
+/forecast import secfacts 0000320193/Revenues --question <id>
 /forecast import githubissues owner/repo --question <id>
 /forecast import githubcommits owner/repo --question <id>
 /forecast import githubactions owner/repo --question <id>

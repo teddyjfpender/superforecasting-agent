@@ -94,6 +94,7 @@ WATCH_SOURCE_TYPES = {
     "stooq",
     "yahoo",
     "sec",
+    "secfacts",
     "arxiv",
     "openalex",
     "wikipedia",
@@ -2900,7 +2901,7 @@ class ForecastLedger:
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
                 "source_type must be file, url, manual, rss, gdelt, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
-                "sec, arxiv, openalex, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
+                "sec, secfacts, arxiv, openalex, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
         watch_id = f"ws_{uuid.uuid4().hex[:12]}"
@@ -3015,6 +3016,7 @@ class ForecastLedger:
                     "stooq",
                     "yahoo",
                     "sec",
+                    "secfacts",
                     "arxiv",
                     "openalex",
                     "wikipedia",
@@ -5262,6 +5264,8 @@ class ForecastLedger:
             return "yahoo"
         if source.startswith("sec:"):
             return "sec"
+        if source.startswith("secfacts:"):
+            return "secfacts"
         if source.startswith("arxiv:"):
             return "arxiv"
         if source.startswith("openalex:"):
@@ -5348,6 +5352,8 @@ class ForecastLedger:
             return self._yahoo_source_signature(source)
         if source_type == "sec":
             return self._sec_source_signature(source)
+        if source_type == "secfacts":
+            return self._sec_company_facts_source_signature(source)
         if source_type == "arxiv":
             return self._arxiv_source_signature(source)
         if source_type == "openalex":
@@ -6254,6 +6260,35 @@ class ForecastLedger:
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"sec:{len(payload)}:{digest}"
 
+    def _sec_company_facts_source_signature(self, source: str) -> str:
+        source_value = source.split(":", 1)[1].strip() if source.startswith("secfacts:") else source.strip()
+        if not source_value:
+            return "missing:secfacts:empty-source"
+        try:
+            from forecasting.source_adapters import load_sec_company_facts
+
+            facts = load_sec_company_facts(source_value, limit=50)
+        except Exception as exc:
+            return f"missing:secfacts:{source_value}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "accession_number": fact.accession_number,
+                "cik": fact.cik,
+                "concept": fact.concept,
+                "entry_id": fact.entry_id,
+                "filed_at": fact.filed_at,
+                "frame": fact.frame,
+                "observation_date": fact.observation_date,
+                "published_at": fact.published_at,
+                "taxonomy": fact.taxonomy,
+                "unit": fact.unit,
+                "value": fact.value,
+            }
+            for fact in facts
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"secfacts:{len(payload)}:{digest}"
+
     def _arxiv_source_signature(self, source: str) -> str:
         query = source.split(":", 1)[1].strip() if source.startswith("arxiv:") else source.strip()
         if not query:
@@ -6674,6 +6709,12 @@ class ForecastLedger:
             source_value = source.split(":", 1)[1].strip() if source.startswith("sec:") else source
             return (
                 f"Run `forecast import sec {source_value} --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "secfacts" and scope_type == "question" and scope_ref:
+            source_value = source.split(":", 1)[1].strip() if source.startswith("secfacts:") else source
+            return (
+                f"Run `forecast import secfacts {source_value} --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "arxiv" and scope_type == "question" and scope_ref:

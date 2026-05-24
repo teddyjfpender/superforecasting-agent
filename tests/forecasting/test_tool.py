@@ -23,6 +23,7 @@ from forecasting.source_adapters import (
     RedditPost,
     PubMedArticle,
     PypiRelease,
+    SecCompanyFact,
     SocrataRecord,
     StooqPriceObservation,
     TreasuryRecord,
@@ -90,7 +91,84 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "wikipedia", "wikipediapageviews"} <= source_types
+
+
+def test_forecast_ledger_tool_imports_sec_company_facts(tmp_path, monkeypatch):
+    db = str(tmp_path / "forecasting.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will SEC facts import through the tool?",
+                "resolution_criteria": "Resolved yes if SEC facts import through the tool.",
+            }
+        )
+    )
+    question_id = created["question"]["id"]
+    captured = {}
+
+    def fake_sec_company_facts(source, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            SecCompanyFact(
+                cik="0000320193",
+                company_name="Apple Inc.",
+                taxonomy="us-gaap",
+                concept="Revenues",
+                label="Revenues",
+                description="Revenue from contract with customer.",
+                unit="USD",
+                observation_date="2025-09-27",
+                value=391035000000,
+                filed_at="2025-10-31T00:00:00Z",
+                published_at="2025-10-31T00:00:00Z",
+                form="10-K",
+                fiscal_year=2025,
+                fiscal_period="FY",
+                accession_number="0000320193-25-000079",
+                frame="CY2025",
+                source_url="https://sec.test/companyfacts/CIK0000320193.json",
+                source_name="SEC Company Facts",
+                entry_id="0000320193:us-gaap:Revenues:USD:2025-09-27:0000320193-25-000079",
+                raw={"row": {"val": 391035000000}},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_sec_company_facts", fake_sec_company_facts)
+    imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "secfacts",
+                "source": "0000320193/Revenues",
+                "limit": 1,
+                "since": "2025-01-01",
+                "taxonomy": "us-gaap",
+                "unit": "USD",
+                "api_base_url": "https://sec.test/companyfacts",
+            }
+        )
+    )
+
+    assert captured["source"] == "0000320193/Revenues"
+    assert captured["kwargs"]["taxonomy"] == "us-gaap"
+    assert captured["kwargs"]["unit"] == "USD"
+    assert captured["kwargs"]["api_base_url"] == "https://sec.test/companyfacts"
+    assert imported["imported_count"] == 1
+    evidence = imported["imported"][0]["evidence"]
+    assert evidence["source_type"] == "adapter:secfacts"
+    assert evidence["source_name"] == "SEC Company Facts"
+    assert evidence["claim"] == (
+        "SEC Company Facts Apple Inc. Revenues was 391035000000 USD for 2025-09-27"
+    )
+    assert evidence["published_at"] == "2025-10-31T00:00:00Z"
+    assert evidence["metadata"]["adapter"] == "secfacts"
+    assert evidence["metadata"]["adapter_item"]["concept"] == "Revenues"
 
 
 def test_forecast_ledger_tool_lifecycle(tmp_path):
