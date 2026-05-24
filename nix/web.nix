@@ -1,4 +1,4 @@
-# nix/web.nix — Hermes Web Dashboard (Vite/React) frontend build
+# nix/web.nix — Superforecasting Agent web dashboard (Vite/React) frontend build
 { pkgs, hermesNpmLib, ... }:
 let
   src = ../web;
@@ -7,13 +7,13 @@ let
     hash = "sha256-GxSmEpclOwmv94KmGMediPITxqXAsxqTEQOoDIbYkUw=";
   };
 
-  npm = hermesNpmLib.mkNpmPassthru { folder = "web"; attr = "web"; pname = "hermes-web"; };
+  npm = hermesNpmLib.mkNpmPassthru { folder = "web"; attr = "web"; pname = "superforecasting-agent-web"; };
 
   packageJson = builtins.fromJSON (builtins.readFile (src + "/package.json"));
   version = packageJson.version;
 in
 pkgs.buildNpmPackage (npm // {
-  pname = "hermes-web";
+  pname = "superforecasting-agent-web";
   inherit src npmDeps version;
 
   doCheck = false;

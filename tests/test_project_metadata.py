@@ -1823,6 +1823,9 @@ def test_nix_package_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     nix_package = (root / "nix" / "hermes-agent.nix").read_text(encoding="utf-8")
     nix_python = (root / "nix" / "python.nix").read_text(encoding="utf-8")
+    nix_lib = (root / "nix" / "lib.nix").read_text(encoding="utf-8")
+    nix_tui = (root / "nix" / "tui.nix").read_text(encoding="utf-8")
+    nix_web = (root / "nix" / "web.nix").read_text(encoding="utf-8")
     nix_packages = (root / "nix" / "packages.nix").read_text(encoding="utf-8")
     nix_overlay = (root / "nix" / "overlays.nix").read_text(encoding="utf-8")
     nix_module = (root / "nix" / "nixosModules.nix").read_text(encoding="utf-8")
@@ -1837,10 +1840,27 @@ def test_nix_package_aliases_are_forecast_native():
     assert '"superforecasting-agent" = dependency-groups' in nix_python
     assert 'pythonSet.mkVirtualEnv "hermes-agent-env"' not in nix_python
     assert "hermes-agent = dependency-groups" not in nix_python
+    assert 'pname = "superforecasting-agent-tui"' in nix_tui
+    assert 'pname = "superforecasting-agent-web"' in nix_web
+    assert "$out/lib/superforecasting-agent-tui" in nix_tui
+    assert "superforecastingAgentTui" in nix_package
+    assert "superforecastingAgentWeb" in nix_package
+    assert "superforecastingAgentNpmLib" in nix_package
+    assert "hermesTui = superforecastingAgentTui" in nix_package
+    assert "hermesWeb = superforecastingAgentWeb" in nix_package
+    assert "hermesNpmLib = superforecastingAgentNpmLib" in nix_package
+    assert "pname = \"hermes-tui\"" not in nix_tui
+    assert "pname = \"hermes-web\"" not in nix_web
+    assert "hermes-tui" not in nix_lib
     assert "$out/share/superforecasting-agent/skills" in nix_package
     assert "ln -sfn superforecasting-agent $out/share/hermes-agent" in nix_package
     assert '"superforecasting-agent" = superforecastingAgent' in nix_packages
     assert '"hermes-agent" = superforecastingAgent' in nix_packages
+    assert "tui = superforecastingAgent.superforecastingAgentTui" in nix_packages
+    assert "web = superforecastingAgent.superforecastingAgentWeb" in nix_packages
+    assert "superforecastingAgent.superforecastingAgentNpmLib.mkFixLockfiles" in nix_packages
+    assert "superforecastingAgent.hermesTui" not in nix_packages
+    assert "superforecastingAgent.hermesWeb" not in nix_packages
     assert '"superforecasting-agent" = superforecastingAgent' in nix_overlay
     assert '"hermes-agent" = superforecastingAgent' in nix_overlay
     assert 'containerName = "superforecasting-agent"' in nix_module

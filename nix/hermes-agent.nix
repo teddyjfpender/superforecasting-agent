@@ -37,16 +37,16 @@ let
     dependency-groups = [ "all" ] ++ extraDependencyGroups;
   };
 
-  hermesNpmLib = callPackage ./lib.nix {
+  superforecastingAgentNpmLib = callPackage ./lib.nix {
     inherit npm-lockfile-fix nodejs;
   };
 
-  hermesTui = callPackage ./tui.nix {
-    inherit hermesNpmLib;
+  superforecastingAgentTui = callPackage ./tui.nix {
+    hermesNpmLib = superforecastingAgentNpmLib;
   };
 
-  hermesWeb = callPackage ./web.nix {
-    inherit hermesNpmLib;
+  superforecastingAgentWeb = callPackage ./web.nix {
+    hermesNpmLib = superforecastingAgentNpmLib;
   };
 
   bundledSkills = lib.cleanSourceWith {
@@ -142,11 +142,11 @@ stdenv.mkDerivation {
     mkdir -p $out/share/superforecasting-agent $out/bin
     cp -r ${bundledSkills} $out/share/superforecasting-agent/skills
     cp -r ${bundledPlugins} $out/share/superforecasting-agent/plugins
-    cp -r ${hermesWeb} $out/share/superforecasting-agent/web_dist
+    cp -r ${superforecastingAgentWeb} $out/share/superforecasting-agent/web_dist
     ln -sfn superforecasting-agent $out/share/hermes-agent
 
     mkdir -p $out/ui-tui
-    cp -r ${hermesTui}/lib/hermes-tui/* $out/ui-tui/
+    cp -r ${superforecastingAgentTui}/lib/superforecasting-agent-tui/* $out/ui-tui/
 
     ${lib.concatMapStringsSep "\n"
       (name: ''
@@ -198,11 +198,14 @@ stdenv.mkDerivation {
 
   passthru = {
     inherit
-      hermesTui
-      hermesWeb
-      hermesNpmLib
+      superforecastingAgentTui
+      superforecastingAgentWeb
+      superforecastingAgentNpmLib
       hermesVenv
       ;
+    hermesTui = superforecastingAgentTui;
+    hermesWeb = superforecastingAgentWeb;
+    hermesNpmLib = superforecastingAgentNpmLib;
 
     devShellHook = ''
       STAMP=".nix-stamps/superforecasting-agent"

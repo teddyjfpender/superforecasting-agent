@@ -17,11 +17,11 @@
         default = superforecastingAgent;
         "superforecasting-agent" = superforecastingAgent;
         "hermes-agent" = superforecastingAgent;
-        tui = superforecastingAgent.hermesTui;
-        web = superforecastingAgent.hermesWeb;
+        tui = superforecastingAgent.superforecastingAgentTui;
+        web = superforecastingAgent.superforecastingAgentWeb;
 
-        fix-lockfiles = superforecastingAgent.hermesNpmLib.mkFixLockfiles {
-          packages = [ superforecastingAgent.hermesTui superforecastingAgent.hermesWeb ];
+        fix-lockfiles = superforecastingAgent.superforecastingAgentNpmLib.mkFixLockfiles {
+          packages = [ superforecastingAgent.superforecastingAgentTui superforecastingAgent.superforecastingAgentWeb ];
         };
       };
     };
