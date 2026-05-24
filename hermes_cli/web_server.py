@@ -2642,6 +2642,8 @@ def _annotate_cron_job(job: Dict[str, Any], profile: str, home: Path) -> Dict[st
     annotated = dict(job)
     annotated["profile"] = profile
     annotated["profile_name"] = profile
+    annotated["superforecasting_agent_home"] = str(home)
+    annotated["forecast_home"] = str(home)
     annotated["hermes_home"] = str(home)
     annotated["is_default_profile"] = profile == "default"
     return annotated

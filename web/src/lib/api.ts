@@ -577,6 +577,8 @@ export interface CronJob {
   id: string;
   profile?: string | null;
   profile_name?: string | null;
+  superforecasting_agent_home?: string | null;
+  forecast_home?: string | null;
   hermes_home?: string | null;
   is_default_profile?: boolean;
   name?: string | null;

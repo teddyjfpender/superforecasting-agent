@@ -736,6 +736,18 @@ class TestNewEndpoints:
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
 
+    def test_cron_job_annotation_includes_forecast_home_aliases(self, tmp_path):
+        from hermes_cli import web_server
+
+        annotated = web_server._annotate_cron_job(
+            {"id": "job-1"},
+            "default",
+            tmp_path / ".superforecasting-agent",
+        )
+
+        assert annotated["superforecasting_agent_home"] == annotated["hermes_home"]
+        assert annotated["forecast_home"] == annotated["hermes_home"]
+
     def test_cron_job_not_found(self):
         resp = self.client.get("/api/cron/jobs/nonexistent-id")
         assert resp.status_code == 404
