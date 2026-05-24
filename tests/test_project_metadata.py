@@ -301,6 +301,16 @@ def test_model_picker_guidance_is_forecast_native():
     assert "without a Hermes release" not in text
 
 
+def test_xai_oauth_referrer_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "hermes_cli" / "auth.py").read_text(encoding="utf-8")
+
+    assert '"referrer": "superforecasting-agent"' in text
+    assert "referrer=superforecasting-agent" in text
+    assert '"referrer": "hermes-agent"' not in text
+    assert "referrer=hermes-agent" not in text
+
+
 def test_high_attention_docs_navigation_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     sidebars = (root / "website" / "sidebars.ts").read_text(encoding="utf-8")

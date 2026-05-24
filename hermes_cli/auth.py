@@ -6332,9 +6332,10 @@ def _xai_oauth_build_authorize_url(
     # `plan=generic` opts the consent screen into xAI's generic OAuth plan
     # tier instead of falling back to the per-account default. Without it,
     # accounts.x.ai rejects loopback OAuth from non-allowlisted clients.
-    # `referrer=hermes-agent` lets xAI attribute Hermes-originated logins
-    # in their OAuth server logs (we still impersonate the upstream Grok-CLI
-    # client_id; this is best-effort attribution until xAI mints us our own).
+    # `referrer=superforecasting-agent` lets xAI attribute fork-originated
+    # logins in their OAuth server logs (we still impersonate the upstream
+    # Grok-CLI client_id; this is best-effort attribution until xAI mints us
+    # our own).
     authorize_params = {
         "response_type": "code",
         "client_id": XAI_OAUTH_CLIENT_ID,
@@ -6345,7 +6346,7 @@ def _xai_oauth_build_authorize_url(
         "state": state,
         "nonce": nonce,
         "plan": "generic",
-        "referrer": "hermes-agent",
+        "referrer": "superforecasting-agent",
     }
     return f"{authorization_endpoint}?{urlencode(authorize_params)}"
 

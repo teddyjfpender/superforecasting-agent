@@ -772,7 +772,7 @@ Latest verified result:
 - Model catalog URL pass: Python compile passed; model-catalog/project metadata focused tests 36 passed
 - Forecasting regression after fork-identity cleanup: forecasting/project metadata tests 173 passed
 - Auth runtime guidance pass: Python compile passed; auth-guidance/Spotify/xAI-callback/project metadata focused tests 19 passed
-- Auth docs/PKCE guidance pass: Python compile passed; auth-guidance/Spotify/xAI-referrer/project metadata focused tests 24 passed
+- Auth docs/PKCE guidance pass: xAI OAuth authorize URLs now send `referrer=superforecasting-agent`, local PKCE/auth guidance uses fork-native copy, Python compile passed, and auth-guidance/Spotify/xAI-referrer/project metadata focused tests passed
 - Tools configuration/auth guidance pass: Python compile passed; tools-config/project metadata focused tests 84 passed
 - Copilot auth guidance pass: Python compile passed; Copilot auth/project metadata focused tests 33 passed
 - Plugin command guidance pass: Python compile passed; plugin-command/project metadata focused tests 73 passed
@@ -1197,6 +1197,7 @@ Latest verified result:
 | Model-switch guidance | Covered | `hermes_cli/model_switch.py` now uses `superforecasting-agent model/doctor ...` in unknown-provider remediation output and describes incompatible Hermes-named models as not designed for Superforecasting Agent; focused custom-provider model-switch tests cover the fork-native error guidance |
 | Model catalog URL | Covered | `hermes_cli/model_catalog.py` and `hermes_cli/config.py` now default to the fork-native raw GitHub model catalog snapshot instead of the upstream Hermes docs URL; existing model-catalog tests verify validation/cache fallback behavior and project metadata tests pin the fork-native URL |
 | Auth runtime guidance | Covered | `hermes_cli/auth.py` now uses `superforecasting-agent auth/model/setup/doctor ...` in relogin errors, OAuth retry pages, Spotify/Codex/xAI/MiniMax/Nous follow-up guidance, removed-login replacement text, provider reset output, local Spotify/xAI/OAuth-over-SSH docs paths, and fork-native local PKCE bug errors; focused auth guidance tests cover relogin, removed-login, local docs, Spotify, and xAI paths |
+| xAI OAuth attribution is fork-native | Covered | `hermes_cli/auth.py` now sends `referrer=superforecasting-agent` in xAI OAuth authorize URLs; focused xAI OAuth and project metadata tests reject the legacy `hermes-agent` referrer |
 | Tools configuration guidance | Covered | `hermes_cli/tools_config.py` now uses Superforecasting Agent in the interactive tool configuration header, browser setup warnings, Docker image hints, local tools guide path, and next-run guidance; focused tools-config tests cover the visible interactive guidance |
 | Tools-config auth guidance | Covered | `hermes_cli/tools_config.py` now uses `superforecasting-agent auth ...` in Spotify and xAI post-enable setup follow-up prompts; focused tools-config tests cover the Spotify retry guidance |
 | X Search auth and evidence guidance | Covered | `x_search` runtime errors and docs use `superforecasting-agent auth add xai-oauth`, fork-native homes, and forecast-evidence framing; focused X Search tests cover the no-credential error |

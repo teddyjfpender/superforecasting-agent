@@ -234,8 +234,8 @@ def test_xai_oauth_authorize_url_includes_plan_generic():
     assert params["plan"] == "generic"
 
 
-def test_xai_oauth_authorize_url_includes_referrer_hermes_agent():
-    """Attribution: xAI's OAuth server can identify Hermes-originated logins
+def test_xai_oauth_authorize_url_includes_referrer_superforecasting_agent():
+    """Attribution: xAI's OAuth server can identify fork-originated logins
     via the referrer query param. Must always be present on the authorize URL."""
     url = _xai_oauth_build_authorize_url(
         authorization_endpoint="https://auth.x.ai/oauth2/authorize",
@@ -245,7 +245,7 @@ def test_xai_oauth_authorize_url_includes_referrer_hermes_agent():
         nonce="nonce-def",
     )
     params = _parse_authorize_url(url)
-    assert params["referrer"] == "hermes-agent"
+    assert params["referrer"] == "superforecasting-agent"
 
 
 def test_xai_oauth_authorize_url_includes_pkce_and_oidc_params():
