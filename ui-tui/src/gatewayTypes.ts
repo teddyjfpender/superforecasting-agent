@@ -252,6 +252,9 @@ export interface ForecastDashboardCalibration {
   mean_brier?: null | number
   mean_log_score?: null | number
   mean_sharpness?: null | number
+  probability_movement_count?: number
+  mean_probability_movement_before_close?: null | number
+  mean_abs_probability_movement_before_close?: null | number
 }
 
 export interface ForecastDashboardBacktest {

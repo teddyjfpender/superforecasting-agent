@@ -630,7 +630,9 @@ describe('createGatewayEventHandler', () => {
               count: 3,
               mean_brier: 0.12,
               mean_log_score: -0.42,
-              mean_sharpness: 0.38
+              mean_sharpness: 0.38,
+              probability_movement_count: 2,
+              mean_abs_probability_movement_before_close: 0.11
             },
             learning: {
               active_lessons: 0,
@@ -824,7 +826,9 @@ describe('createGatewayEventHandler', () => {
               ['eligible scores', '3'],
               ['mean brier', '0.120000'],
               ['mean log score', '-0.420000'],
-              ['mean sharpness', '0.380000']
+              ['mean sharpness', '0.380000'],
+              ['movement n', '2'],
+              ['mean abs movement', '0.110000']
             ],
             title: 'Calibration'
           },

@@ -407,7 +407,9 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
         ['eligible scores', formatCount(calibration.count)],
         ['mean brier', formatMetric(calibration.mean_brier)],
         ['mean log score', formatMetric(calibration.mean_log_score)],
-        ['mean sharpness', formatMetric(calibration.mean_sharpness)]
+        ['mean sharpness', formatMetric(calibration.mean_sharpness)],
+        ['movement n', formatCount(calibration.probability_movement_count)],
+        ['mean abs movement', formatMetric(calibration.mean_abs_probability_movement_before_close)]
       ],
       title: 'Calibration'
     })

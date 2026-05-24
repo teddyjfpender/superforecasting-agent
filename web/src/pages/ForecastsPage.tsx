@@ -489,7 +489,7 @@ function CalibrationPanel({ calibration }: { calibration?: ForecastDashboardCali
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-4 text-sm sm:grid-cols-4">
+        <div className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-5">
           <div>
             <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
               Eligible Scores
@@ -520,6 +520,14 @@ function CalibrationPanel({ calibration }: { calibration?: ForecastDashboardCali
             </div>
             <div className="mt-1 font-mono-ui text-lg text-foreground">
               {formatMetric(calibration.mean_sharpness)}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Abs Move
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {formatMetric(calibration.mean_abs_probability_movement_before_close)}
             </div>
           </div>
         </div>

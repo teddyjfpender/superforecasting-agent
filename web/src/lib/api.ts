@@ -801,6 +801,9 @@ export interface ForecastDashboardCalibration {
   mean_brier?: number | null;
   mean_log_score?: number | null;
   mean_sharpness?: number | null;
+  probability_movement_count?: number;
+  mean_probability_movement_before_close?: number | null;
+  mean_abs_probability_movement_before_close?: number | null;
   domain?: string | null;
   forecast_origin?: string | null;
   horizon?: string | null;
