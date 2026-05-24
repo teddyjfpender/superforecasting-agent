@@ -97,6 +97,29 @@ describe('forecast desk panel helpers', () => {
     ])
   })
 
+  it('includes fiscal and SEC adapters in evidence import shortcuts', () => {
+    const response: ForecastDashboardResponse = {
+      summary: {
+        active_count: 0,
+        open_alert_count: 0,
+        product: 'Superforecasting Agent',
+        questions: [],
+        review_queue: [],
+        review_queue_count: 0
+      }
+    }
+
+    const sections = forecastDashboardSections(response)
+    const evidenceImports = sections.find(section => section.title === 'Evidence Imports')
+
+    expect(evidenceImports?.items).toEqual(
+      expect.arrayContaining([
+        '/forecast import sec <cik> --question <id>',
+        '/forecast import secfacts <cik>/<concept> --question <id>'
+      ])
+    )
+  })
+
   it('adds focused per-question actions from the review queue', () => {
     const response: ForecastDashboardResponse = {
       summary: {

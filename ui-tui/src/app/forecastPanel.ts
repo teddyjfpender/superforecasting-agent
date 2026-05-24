@@ -484,6 +484,8 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
       '/forecast import stooq <symbol-or-csv-url> --question <id>',
       '/forecast import yahoo <symbol> --question <id>',
       '/forecast import coingecko <coin-id> --question <id>',
+      '/forecast import sec <cik> --question <id>',
+      '/forecast import secfacts <cik>/<concept> --question <id>',
       '/forecast import wikipediapageviews <project>/<article> --question <id>',
       '/forecast import githubissues <owner/repo> --question <id>',
       '/forecast import githubcommits <owner/repo> --question <id>',
