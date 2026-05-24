@@ -16,6 +16,12 @@ import pytest
 from gateway.config import GatewayConfig, Platform
 from gateway.run import GatewayRunner, _parse_session_key
 
+BACKGROUND_NOTIFICATIONS_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_BACKGROUND_NOTIFICATIONS",
+    "FORECAST_BACKGROUND_NOTIFICATIONS",
+    "HERMES_BACKGROUND_NOTIFICATIONS",
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -74,7 +80,8 @@ class TestLoadBackgroundNotificationsMode:
     def test_defaults_to_all(self, monkeypatch, tmp_path):
         import gateway.run as gw
         monkeypatch.setattr(gw, "_hermes_home", tmp_path)
-        monkeypatch.delenv("HERMES_BACKGROUND_NOTIFICATIONS", raising=False)
+        for name in BACKGROUND_NOTIFICATIONS_ENV_NAMES:
+            monkeypatch.delenv(name, raising=False)
         assert GatewayRunner._load_background_notifications_mode() == "all"
 
     def test_reads_config_yaml(self, monkeypatch, tmp_path):
@@ -83,7 +90,8 @@ class TestLoadBackgroundNotificationsMode:
         )
         import gateway.run as gw
         monkeypatch.setattr(gw, "_hermes_home", tmp_path)
-        monkeypatch.delenv("HERMES_BACKGROUND_NOTIFICATIONS", raising=False)
+        for name in BACKGROUND_NOTIFICATIONS_ENV_NAMES:
+            monkeypatch.delenv(name, raising=False)
         assert GatewayRunner._load_background_notifications_mode() == "error"
 
     def test_env_var_overrides_config(self, monkeypatch, tmp_path):
@@ -92,8 +100,24 @@ class TestLoadBackgroundNotificationsMode:
         )
         import gateway.run as gw
         monkeypatch.setattr(gw, "_hermes_home", tmp_path)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_BACKGROUND_NOTIFICATIONS", "off")
+        assert GatewayRunner._load_background_notifications_mode() == "off"
+
+    def test_legacy_env_var_still_overrides_config(self, monkeypatch, tmp_path):
+        (tmp_path / "config.yaml").write_text(
+            "display:\n  background_process_notifications: error\n"
+        )
+        import gateway.run as gw
+        monkeypatch.setattr(gw, "_hermes_home", tmp_path)
         monkeypatch.setenv("HERMES_BACKGROUND_NOTIFICATIONS", "off")
         assert GatewayRunner._load_background_notifications_mode() == "off"
+
+    def test_fork_native_env_precedence_over_legacy(self, monkeypatch, tmp_path):
+        import gateway.run as gw
+        monkeypatch.setattr(gw, "_hermes_home", tmp_path)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_BACKGROUND_NOTIFICATIONS", "result")
+        monkeypatch.setenv("HERMES_BACKGROUND_NOTIFICATIONS", "off")
+        assert GatewayRunner._load_background_notifications_mode() == "result"
 
     def test_false_value_maps_to_off(self, monkeypatch, tmp_path):
         (tmp_path / "config.yaml").write_text(
@@ -101,7 +125,8 @@ class TestLoadBackgroundNotificationsMode:
         )
         import gateway.run as gw
         monkeypatch.setattr(gw, "_hermes_home", tmp_path)
-        monkeypatch.delenv("HERMES_BACKGROUND_NOTIFICATIONS", raising=False)
+        for name in BACKGROUND_NOTIFICATIONS_ENV_NAMES:
+            monkeypatch.delenv(name, raising=False)
         assert GatewayRunner._load_background_notifications_mode() == "off"
 
     def test_invalid_value_defaults_to_all(self, monkeypatch, tmp_path):
@@ -110,7 +135,8 @@ class TestLoadBackgroundNotificationsMode:
         )
         import gateway.run as gw
         monkeypatch.setattr(gw, "_hermes_home", tmp_path)
-        monkeypatch.delenv("HERMES_BACKGROUND_NOTIFICATIONS", raising=False)
+        for name in BACKGROUND_NOTIFICATIONS_ENV_NAMES:
+            monkeypatch.delenv(name, raising=False)
         assert GatewayRunner._load_background_notifications_mode() == "all"
 
 

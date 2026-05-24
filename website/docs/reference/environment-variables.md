@@ -576,7 +576,7 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 | `SUPERFORECASTING_AGENT_EXEC_ASK` / `FORECAST_EXEC_ASK` / `HERMES_EXEC_ASK` | Enable execution approval prompts in gateway mode (`true`/`false`); the `HERMES_*` name remains a legacy alias. |
 | `HERMES_ENABLE_PROJECT_PLUGINS` | Enable auto-discovery of repo-local plugins from `./.hermes/plugins/` (`true`/`false`, default: `false`). The directory name is inherited compatibility for project-local plugin discovery. |
 | `HERMES_PLUGINS_DEBUG` | `1`/`true` to surface verbose plugin-discovery logs on stderr — directories scanned, manifests parsed, skip reasons, and full tracebacks on parse or `register()` failure. Aimed at plugin authors. |
-| `HERMES_BACKGROUND_NOTIFICATIONS` | Background process notification mode in gateway: `all` (default), `result`, `error`, `off` |
+| `SUPERFORECASTING_AGENT_BACKGROUND_NOTIFICATIONS` / `FORECAST_BACKGROUND_NOTIFICATIONS` / `HERMES_BACKGROUND_NOTIFICATIONS` | Background process notification mode in gateway: `all` (default), `result`, `error`, `off`; the `HERMES_*` name remains a legacy alias. |
 | `HERMES_EPHEMERAL_SYSTEM_PROMPT` | Ephemeral system prompt injected at API-call time (never persisted to sessions) |
 | `HERMES_PREFILL_MESSAGES_FILE` | Path to a JSON file of ephemeral prefill messages injected at API-call time. |
 | `SUPERFORECASTING_AGENT_ALLOW_PRIVATE_URLS` / `FORECAST_ALLOW_PRIVATE_URLS` / `HERMES_ALLOW_PRIVATE_URLS` | `true`/`false` — allow tools to fetch localhost/private-network URLs. Off by default in gateway mode; the `HERMES_*` name remains a legacy alias. |

@@ -346,7 +346,7 @@ display:
 You can also set this via environment variable:
 
 ```bash
-HERMES_BACKGROUND_NOTIFICATIONS=result
+SUPERFORECASTING_AGENT_BACKGROUND_NOTIFICATIONS=result
 ```
 
 ### Use Cases

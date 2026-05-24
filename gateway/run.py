@@ -574,6 +574,11 @@ _EXEC_ASK_ENV_NAMES = (
     "FORECAST_EXEC_ASK",
     "HERMES_EXEC_ASK",
 )
+_BACKGROUND_NOTIFICATIONS_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_BACKGROUND_NOTIFICATIONS",
+    "FORECAST_BACKGROUND_NOTIFICATIONS",
+    "HERMES_BACKGROUND_NOTIFICATIONS",
+)
 
 
 def _set_max_iterations_env_aliases(value: object) -> None:
@@ -598,6 +603,14 @@ def _first_redact_secrets_env(default: str = "true") -> tuple[str, str]:
 
 def _first_max_iterations_env(default: str = "90") -> tuple[str, str]:
     for name in _MAX_ITERATIONS_ENV_NAMES:
+        value = os.getenv(name)
+        if value:
+            return name, value
+    return "default", default
+
+
+def _first_background_notifications_env(default: str = "") -> tuple[str, str]:
+    for name in _BACKGROUND_NOTIFICATIONS_ENV_NAMES:
         value = os.getenv(name)
         if value:
             return name, value
@@ -2814,7 +2827,7 @@ class GatewayRunner:
           - ``error``  — only the final message when exit code is non-zero
           - ``off``    — no watcher messages at all
         """
-        mode = os.getenv("HERMES_BACKGROUND_NOTIFICATIONS", "")
+        _env_name, mode = _first_background_notifications_env()
         if not mode:
             try:
                 import yaml as _y
