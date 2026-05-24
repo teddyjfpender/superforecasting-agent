@@ -1,4 +1,5 @@
 """Tests for CLI /status command behavior."""
+import os
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -6,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from cli import HermesCLI
 from hermes_cli.commands import resolve_command
+from tools.approval import YOLO_MODE_ENV_NAMES
 
 
 def _make_cli():
@@ -57,6 +59,37 @@ def test_status_prefix_prefers_status_command_over_statusbar_toggle():
 
     mock_status.assert_called_once_with()
     assert cli_obj._status_bar_visible is True
+
+
+def test_toggle_yolo_sets_and_clears_all_process_aliases(monkeypatch):
+    cli_obj = _make_cli()
+    for name in YOLO_MODE_ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
+
+    with patch("cli._cprint"):
+        cli_obj._toggle_yolo()
+
+    assert {name: os.environ.get(name) for name in YOLO_MODE_ENV_NAMES} == {
+        name: "1" for name in YOLO_MODE_ENV_NAMES
+    }
+
+    with patch("cli._cprint"):
+        cli_obj._toggle_yolo()
+
+    assert all(name not in os.environ for name in YOLO_MODE_ENV_NAMES)
+
+
+def test_toggle_yolo_treats_forecast_native_alias_as_active(monkeypatch):
+    cli_obj = _make_cli()
+    for name in YOLO_MODE_ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_YOLO_MODE", "1")
+    monkeypatch.setenv("HERMES_YOLO_MODE", "0")
+
+    with patch("cli._cprint"):
+        cli_obj._toggle_yolo()
+
+    assert all(name not in os.environ for name in YOLO_MODE_ENV_NAMES)
 
 
 def test_show_session_status_prints_gateway_style_summary():

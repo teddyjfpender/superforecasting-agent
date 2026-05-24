@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from cli import HermesCLI
+from tools.approval import YOLO_MODE_ENV_NAMES
 
 
 def _make_cli(model: str = "anthropic/claude-sonnet-4-20250514"):
@@ -80,6 +81,46 @@ class TestCLIStatusBar:
         assert "6%" in text
         assert "$0.06" not in text  # cost hidden by default
         assert "15m" in text
+
+    def test_build_status_bar_text_honors_forecast_yolo_alias(self, monkeypatch):
+        for name in YOLO_MODE_ENV_NAMES:
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_YOLO_MODE", "1")
+
+        cli_obj = _attach_agent(
+            _make_cli(),
+            prompt_tokens=10_230,
+            completion_tokens=2_220,
+            total_tokens=12_450,
+            api_calls=7,
+            context_tokens=12_450,
+            context_length=200_000,
+        )
+
+        text = cli_obj._build_status_bar_text(width=120)
+
+        assert "⚠ YOLO" in text
+
+    def test_status_bar_fragments_honor_forecast_yolo_alias(self, monkeypatch):
+        for name in YOLO_MODE_ENV_NAMES:
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("FORECAST_YOLO_MODE", "1")
+
+        cli_obj = _attach_agent(
+            _make_cli(),
+            prompt_tokens=10_230,
+            completion_tokens=2_220,
+            total_tokens=12_450,
+            api_calls=7,
+            context_tokens=12_450,
+            context_length=200_000,
+        )
+        cli_obj._status_bar_visible = True
+
+        with patch.object(cli_obj, "_get_tui_terminal_width", return_value=120):
+            frags = cli_obj._get_status_bar_fragments()
+
+        assert "⚠ YOLO" in [text for _, text in frags]
 
     def test_input_height_counts_wide_characters_using_cell_width(self):
         cli_obj = _make_cli()

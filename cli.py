@@ -187,7 +187,6 @@ from utils import (
     PREFILL_MESSAGES_FILE_ENV_NAMES,
     base_url_host_matches,
     env_var_alias_value,
-    is_truthy_value,
 )
 
 _hermes_home = get_hermes_home()
@@ -3525,7 +3524,8 @@ class HermesCLI:
             percent_label = f"{percent}%" if percent is not None else "--"
             duration_label = snapshot["duration"]
 
-            yolo_active = bool(os.getenv("HERMES_YOLO_MODE"))
+            from tools.approval import is_process_yolo_enabled
+            yolo_active = is_process_yolo_enabled()
             if width < 52:
                 text = f"P {snapshot['model_short']} · {duration_label}"
                 if yolo_active:
@@ -3580,7 +3580,8 @@ class HermesCLI:
             # line and produce duplicated status bar rows over long sessions.
             width = self._get_tui_terminal_width()
             duration_label = snapshot["duration"]
-            yolo_active = bool(os.getenv("HERMES_YOLO_MODE"))
+            from tools.approval import is_process_yolo_enabled
+            yolo_active = is_process_yolo_enabled()
 
             if width < 52:
                 frags = [
@@ -9230,18 +9231,18 @@ class HermesCLI:
 
     def _toggle_yolo(self):
         """Toggle YOLO mode — skip all dangerous command approval prompts."""
-        import os
         from hermes_cli.colors import Colors as _Colors
+        from tools.approval import is_process_yolo_enabled, set_process_yolo_enabled
 
-        current = is_truthy_value(os.environ.get("HERMES_YOLO_MODE"))
+        current = is_process_yolo_enabled()
         if current:
-            os.environ.pop("HERMES_YOLO_MODE", None)
+            set_process_yolo_enabled(False)
             _cprint(
                 f"  ⚠ YOLO mode {_Colors.BOLD}{_Colors.RED}OFF{_Colors.RESET}"
                 " — dangerous commands will require approval."
             )
         else:
-            os.environ["HERMES_YOLO_MODE"] = "1"
+            set_process_yolo_enabled(True)
             _cprint(
                 f"  ⚡ YOLO mode {_Colors.BOLD}{_Colors.GREEN}ON{_Colors.RESET}"
                 " — all commands auto-approved. Use with caution."
