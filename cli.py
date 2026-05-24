@@ -1406,9 +1406,13 @@ def _hex_to_ansi(hex_color: str, *, bold: bool = False) -> str:
 # Terminal.app / iTerm2 background.
 #
 # Detection priority:
-#   1. HERMES_LIGHT / HERMES_TUI_LIGHT env (true/false) — explicit override
-#   2. HERMES_TUI_THEME=light|dark — explicit theme
-#   3. HERMES_TUI_BACKGROUND=#RRGGBB — explicit bg hint
+#   1. SUPERFORECASTING_AGENT_LIGHT / FORECAST_LIGHT / HERMES_LIGHT and
+#      SUPERFORECASTING_AGENT_TUI_LIGHT / FORECAST_TUI_LIGHT / HERMES_TUI_LIGHT
+#      env (true/false) — explicit override
+#   2. SUPERFORECASTING_AGENT_TUI_THEME / FORECAST_TUI_THEME /
+#      HERMES_TUI_THEME=light|dark — explicit theme
+#   3. SUPERFORECASTING_AGENT_TUI_BACKGROUND / FORECAST_TUI_BACKGROUND /
+#      HERMES_TUI_BACKGROUND=#RRGGBB — explicit bg hint
 #   4. COLORFGBG env (set by xterm/Konsole/urxvt) — bg slot 7/15 = light
 #   5. OSC 11 query (\x1b]11;?\x1b\\) — ask the terminal directly
 #   6. Default: assume dark (matches the inherited runtime assumption)
@@ -1418,6 +1422,24 @@ _LIGHT_MODE_CACHE: bool | None = None
 _TRUE_RE = re.compile(r"^(1|true|on|yes|y)$")
 _FALSE_RE = re.compile(r"^(0|false|off|no|n)$")
 _LIGHT_DEFAULT_TERM_PROGRAMS = frozenset()  # Apple_Terminal doesn't reliably indicate; require explicit
+_LIGHT_MODE_FLAG_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_LIGHT",
+    "SUPERFORECASTING_AGENT_TUI_LIGHT",
+    "FORECAST_LIGHT",
+    "FORECAST_TUI_LIGHT",
+    "HERMES_LIGHT",
+    "HERMES_TUI_LIGHT",
+)
+_TUI_THEME_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_TUI_THEME",
+    "FORECAST_TUI_THEME",
+    "HERMES_TUI_THEME",
+)
+_TUI_BACKGROUND_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_TUI_BACKGROUND",
+    "FORECAST_TUI_BACKGROUND",
+    "HERMES_TUI_BACKGROUND",
+)
 
 
 def _luminance_from_hex(hex_str: str) -> float | None:
@@ -1503,7 +1525,7 @@ def _detect_light_mode() -> bool:
     result = False
     try:
         # 1. Explicit env override
-        for var in ("HERMES_LIGHT", "HERMES_TUI_LIGHT"):
+        for var in _LIGHT_MODE_FLAG_ENV_NAMES:
             v = (os.environ.get(var) or "").strip().lower()
             if _TRUE_RE.match(v):
                 result = True
@@ -1513,7 +1535,7 @@ def _detect_light_mode() -> bool:
                 _LIGHT_MODE_CACHE = result
                 return result
         # 2. Theme hint
-        theme = (os.environ.get("HERMES_TUI_THEME") or "").strip().lower()
+        theme = (env_var_alias_value(_TUI_THEME_ENV_NAMES, "") or "").strip().lower()
         if theme == "light":
             result = True
             _LIGHT_MODE_CACHE = result
@@ -1522,7 +1544,7 @@ def _detect_light_mode() -> bool:
             _LIGHT_MODE_CACHE = result
             return result
         # 3. Explicit bg hex
-        bg_hint = os.environ.get("HERMES_TUI_BACKGROUND") or ""
+        bg_hint = env_var_alias_value(_TUI_BACKGROUND_ENV_NAMES, "") or ""
         bg_lum = _luminance_from_hex(bg_hint)
         if bg_lum is not None:
             result = bg_lum >= 0.5

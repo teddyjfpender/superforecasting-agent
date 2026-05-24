@@ -30,6 +30,11 @@ class TestLightModeDetection:
         monkeypatch.setenv("HERMES_LIGHT", "1")
         assert cli_mod._detect_light_mode() is True
 
+    def test_forecast_native_tui_light_prefers_native_alias(self, cli_mod, monkeypatch):
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_TUI_LIGHT", "1")
+        monkeypatch.setenv("HERMES_LIGHT", "0")
+        assert cli_mod._detect_light_mode() is True
+
     def test_hermes_light_env_false_forces_dark(self, cli_mod, monkeypatch):
         monkeypatch.setenv("HERMES_LIGHT", "0")
         # Also blank out other signals so nothing else flips it light.
@@ -45,11 +50,21 @@ class TestLightModeDetection:
         monkeypatch.setenv("HERMES_TUI_THEME", "light")
         assert cli_mod._detect_light_mode() is True
 
+    def test_forecast_theme_hint_prefers_native_alias(self, cli_mod, monkeypatch):
+        monkeypatch.setenv("FORECAST_TUI_THEME", "light")
+        monkeypatch.setenv("HERMES_TUI_THEME", "dark")
+        assert cli_mod._detect_light_mode() is True
+
     def test_background_hex_hint_light(self, cli_mod, monkeypatch):
         monkeypatch.delenv("HERMES_LIGHT", raising=False)
         monkeypatch.delenv("HERMES_TUI_LIGHT", raising=False)
         monkeypatch.delenv("HERMES_TUI_THEME", raising=False)
         monkeypatch.setenv("HERMES_TUI_BACKGROUND", "#FFFFFF")
+        assert cli_mod._detect_light_mode() is True
+
+    def test_forecast_background_hint_prefers_native_alias(self, cli_mod, monkeypatch):
+        monkeypatch.setenv("FORECAST_TUI_BACKGROUND", "#FFFFFF")
+        monkeypatch.setenv("HERMES_TUI_BACKGROUND", "#000000")
         assert cli_mod._detect_light_mode() is True
 
     def test_background_hex_hint_dark(self, cli_mod, monkeypatch):
