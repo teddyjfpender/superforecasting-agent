@@ -725,6 +725,21 @@ class TestCustomProviderCompatibility:
         assert models == ["qwen3-coder", "glm-5.1", "kimi-k2.5"]
 
 
+class TestPluginOptInMigration:
+    def test_v20_upgrade_uses_forecast_native_plugin_enable_hint(
+        self, tmp_path, capsys
+    ):
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(yaml.safe_dump({"_config_version": 20}))
+
+        with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}):
+            migrate_config(interactive=False, quiet=False)
+
+        out = capsys.readouterr().out
+        assert "superforecasting-agent plugins enable <name>" in out
+        assert "hermes plugins enable <name>" not in out
+
+
 class TestInterimAssistantMessageConfig:
     """Test the explicit gateway interim-message config gate."""
 
