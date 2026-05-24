@@ -122,6 +122,10 @@ const EVIDENCE_IMPORTS = [
     label: "Weather",
   },
   {
+    command: "forecast import airquality <lat,lon> --question <id>",
+    label: "Air quality",
+  },
+  {
     command: 'forecast import usgs "<query>" --question <id>',
     label: "Geophysical",
   },

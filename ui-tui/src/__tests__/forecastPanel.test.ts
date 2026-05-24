@@ -121,6 +121,7 @@ describe('forecast desk panel helpers', () => {
     expect(evidenceImports?.items).toEqual(
       expect.arrayContaining([
         '/forecast import fivethirtyeight <dataset-or-url> --question <id>',
+        '/forecast import airquality <lat,lon> --question <id>',
         '/forecast import sec <cik> --question <id>',
         '/forecast import secfacts <cik>/<concept> --question <id>'
       ])

@@ -636,6 +636,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
       '/forecast import openfda <query-or-application-number> --question <id>',
       '/forecast import pubmed "<query-or-PMID>" --question <id>',
       '/forecast import openmeteo <lat,lon> --question <id>',
+      '/forecast import airquality <lat,lon> --question <id>',
       '/forecast import usgs "<query>" --question <id>',
       '/forecast import eonet "<query-or-category>" --question <id>',
       '/forecast import nws "<area-or-point-or-query>" --question <id>',
