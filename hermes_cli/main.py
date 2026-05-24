@@ -4672,7 +4672,8 @@ def _model_flow_copilot_acp(config, current_model=""):
     except Exception as exc:
         print(f"  ⚠ {exc}")
         print(
-            "  Set HERMES_COPILOT_ACP_COMMAND or COPILOT_CLI_PATH if Copilot CLI is installed elsewhere."
+            "  Set SUPERFORECASTING_AGENT_COPILOT_ACP_COMMAND, "
+            "FORECAST_COPILOT_ACP_COMMAND, or COPILOT_CLI_PATH if Copilot CLI is installed elsewhere."
         )
         return
 

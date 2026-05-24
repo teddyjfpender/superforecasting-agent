@@ -5618,18 +5618,43 @@ def get_api_key_provider_status(provider_id: str) -> Dict[str, Any]:
     }
 
 
+_COPILOT_ACP_COMMAND_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_COPILOT_ACP_COMMAND",
+    "FORECAST_COPILOT_ACP_COMMAND",
+    "HERMES_COPILOT_ACP_COMMAND",
+    "COPILOT_CLI_PATH",
+)
+_COPILOT_ACP_ARGS_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_COPILOT_ACP_ARGS",
+    "FORECAST_COPILOT_ACP_ARGS",
+    "HERMES_COPILOT_ACP_ARGS",
+)
+
+
+def _resolve_copilot_acp_command() -> str:
+    for env_name in _COPILOT_ACP_COMMAND_ENV_NAMES:
+        value = os.getenv(env_name, "").strip()
+        if value:
+            return value
+    return "copilot"
+
+
+def _resolve_copilot_acp_args_raw() -> str:
+    for env_name in _COPILOT_ACP_ARGS_ENV_NAMES:
+        value = os.getenv(env_name, "").strip()
+        if value:
+            return value
+    return ""
+
+
 def get_external_process_provider_status(provider_id: str) -> Dict[str, Any]:
     """Status snapshot for providers that run a local subprocess."""
     pconfig = PROVIDER_REGISTRY.get(provider_id)
     if not pconfig or pconfig.auth_type != "external_process":
         return {"configured": False}
 
-    command = (
-        os.getenv("HERMES_COPILOT_ACP_COMMAND", "").strip()
-        or os.getenv("COPILOT_CLI_PATH", "").strip()
-        or "copilot"
-    )
-    raw_args = os.getenv("HERMES_COPILOT_ACP_ARGS", "").strip()
+    command = _resolve_copilot_acp_command()
+    raw_args = _resolve_copilot_acp_args_raw()
     args = shlex.split(raw_args) if raw_args else ["--acp", "--stdio"]
     base_url = os.getenv(pconfig.base_url_env_var, "").strip() if pconfig.base_url_env_var else ""
     if not base_url:
@@ -5821,18 +5846,16 @@ def resolve_external_process_provider_credentials(provider_id: str) -> Dict[str,
     if not base_url:
         base_url = pconfig.inference_base_url
 
-    command = (
-        os.getenv("HERMES_COPILOT_ACP_COMMAND", "").strip()
-        or os.getenv("COPILOT_CLI_PATH", "").strip()
-        or "copilot"
-    )
-    raw_args = os.getenv("HERMES_COPILOT_ACP_ARGS", "").strip()
+    command = _resolve_copilot_acp_command()
+    raw_args = _resolve_copilot_acp_args_raw()
     args = shlex.split(raw_args) if raw_args else ["--acp", "--stdio"]
     resolved_command = shutil.which(command) if command else None
     if not resolved_command and not base_url.startswith("acp+tcp://"):
         raise AuthError(
             f"Could not find the Copilot CLI command '{command}'. "
-            "Install GitHub Copilot CLI or set HERMES_COPILOT_ACP_COMMAND/COPILOT_CLI_PATH.",
+            "Install GitHub Copilot CLI or set "
+            "SUPERFORECASTING_AGENT_COPILOT_ACP_COMMAND, FORECAST_COPILOT_ACP_COMMAND, "
+            "or COPILOT_CLI_PATH.",
             provider=provider_id,
             code="missing_copilot_cli",
         )

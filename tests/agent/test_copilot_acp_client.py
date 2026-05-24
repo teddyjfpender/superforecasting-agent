@@ -10,7 +10,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent.copilot_acp_client import CopilotACPClient, _format_messages_as_prompt
+from agent.copilot_acp_client import (
+    CopilotACPClient,
+    _format_messages_as_prompt,
+    _resolve_args,
+    _resolve_command,
+)
 
 
 class _FakeProcess:
@@ -219,6 +224,30 @@ def test_run_prompt_prefers_profile_home_when_available(monkeypatch, tmp_path):
             client._run_prompt("hello", timeout_seconds=1)
 
     assert captured["kwargs"]["env"]["HOME"] == str(profile_home)
+
+
+def test_copilot_acp_client_env_aliases_prefer_forecast_native(monkeypatch):
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_COPILOT_ACP_COMMAND", "sfa-copilot")
+    monkeypatch.setenv("FORECAST_COPILOT_ACP_COMMAND", "forecast-copilot")
+    monkeypatch.setenv("HERMES_COPILOT_ACP_COMMAND", "legacy-copilot")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_COPILOT_ACP_ARGS", "--acp --stdio --sfa")
+    monkeypatch.setenv("FORECAST_COPILOT_ACP_ARGS", "--acp --stdio --forecast")
+    monkeypatch.setenv("HERMES_COPILOT_ACP_ARGS", "--acp --stdio --legacy")
+
+    assert _resolve_command() == "sfa-copilot"
+    assert _resolve_args() == ["--acp", "--stdio", "--sfa"]
+
+
+def test_copilot_acp_client_env_aliases_fall_back_to_forecast(monkeypatch):
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_COPILOT_ACP_COMMAND", raising=False)
+    monkeypatch.setenv("FORECAST_COPILOT_ACP_COMMAND", "forecast-copilot")
+    monkeypatch.setenv("HERMES_COPILOT_ACP_COMMAND", "legacy-copilot")
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_COPILOT_ACP_ARGS", raising=False)
+    monkeypatch.setenv("FORECAST_COPILOT_ACP_ARGS", "--acp --stdio --forecast")
+    monkeypatch.setenv("HERMES_COPILOT_ACP_ARGS", "--acp --stdio --legacy")
+
+    assert _resolve_command() == "forecast-copilot"
+    assert _resolve_args() == ["--acp", "--stdio", "--forecast"]
 
 
 def test_run_prompt_passes_home_when_parent_env_is_clean(monkeypatch, tmp_path):

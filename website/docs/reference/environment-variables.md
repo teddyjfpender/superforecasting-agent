@@ -52,9 +52,8 @@ Prefer `SUPERFORECASTING_AGENT_HOME` or `FORECAST_HOME` for new deployments. Use
 | `COPILOT_GITHUB_TOKEN` | GitHub token for Copilot API — first priority (OAuth `gho_*` or fine-grained PAT `github_pat_*`; classic PATs `ghp_*` are **not supported**) |
 | `GH_TOKEN` | GitHub token — second priority for Copilot (also used by `gh` CLI) |
 | `GITHUB_TOKEN` | GitHub token — third priority for Copilot |
-| `HERMES_COPILOT_ACP_COMMAND` | Override Copilot ACP CLI binary path (default: `copilot`) |
-| `COPILOT_CLI_PATH` | Alias for `HERMES_COPILOT_ACP_COMMAND` |
-| `HERMES_COPILOT_ACP_ARGS` | Override Copilot ACP arguments (default: `--acp --stdio`) |
+| `SUPERFORECASTING_AGENT_COPILOT_ACP_COMMAND` / `FORECAST_COPILOT_ACP_COMMAND` / `HERMES_COPILOT_ACP_COMMAND` / `COPILOT_CLI_PATH` | Override Copilot ACP CLI binary path (default: `copilot`); the `HERMES_*` name remains a legacy alias |
+| `SUPERFORECASTING_AGENT_COPILOT_ACP_ARGS` / `FORECAST_COPILOT_ACP_ARGS` / `HERMES_COPILOT_ACP_ARGS` | Override Copilot ACP arguments (default: `--acp --stdio`); the `HERMES_*` name remains a legacy alias |
 | `COPILOT_ACP_BASE_URL` | Override Copilot ACP base URL |
 | `GLM_API_KEY` | z.ai / ZhipuAI GLM API key ([z.ai](https://z.ai)) |
 | `ZAI_API_KEY` | Alias for `GLM_API_KEY` |

@@ -154,7 +154,10 @@ PROVIDER_ENV_VARS = (
     "GMI_API_KEY", "GMI_BASE_URL",
     "DASHSCOPE_API_KEY", "OPENCODE_ZEN_API_KEY", "OPENCODE_GO_API_KEY",
     "NOUS_API_KEY", "GITHUB_TOKEN", "GH_TOKEN",
-    "OPENAI_BASE_URL", "HERMES_COPILOT_ACP_COMMAND", "COPILOT_CLI_PATH",
+    "OPENAI_BASE_URL",
+    "SUPERFORECASTING_AGENT_COPILOT_ACP_COMMAND", "FORECAST_COPILOT_ACP_COMMAND",
+    "HERMES_COPILOT_ACP_COMMAND", "COPILOT_CLI_PATH",
+    "SUPERFORECASTING_AGENT_COPILOT_ACP_ARGS", "FORECAST_COPILOT_ACP_ARGS",
     "HERMES_COPILOT_ACP_ARGS", "COPILOT_ACP_BASE_URL",
 )
 
@@ -383,7 +386,7 @@ class TestApiKeyProviderStatus:
         assert status["provider"] == "minimax"
 
     def test_copilot_acp_status_detects_local_cli(self, monkeypatch):
-        monkeypatch.setenv("HERMES_COPILOT_ACP_ARGS", "--acp --stdio --debug")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_COPILOT_ACP_ARGS", "--acp --stdio --debug")
         monkeypatch.setattr("hermes_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
 
         status = get_external_process_provider_status("copilot-acp")
@@ -394,6 +397,19 @@ class TestApiKeyProviderStatus:
         assert status["resolved_command"] == "/usr/local/bin/copilot"
         assert status["args"] == ["--acp", "--stdio", "--debug"]
         assert status["base_url"] == "acp://copilot"
+
+    def test_copilot_acp_status_prefers_forecast_command_aliases(self, monkeypatch):
+        monkeypatch.setenv("FORECAST_COPILOT_ACP_COMMAND", "forecast-copilot")
+        monkeypatch.setenv("HERMES_COPILOT_ACP_COMMAND", "legacy-copilot")
+        monkeypatch.setenv("FORECAST_COPILOT_ACP_ARGS", "--acp --stdio --forecast")
+        monkeypatch.setenv("HERMES_COPILOT_ACP_ARGS", "--acp --stdio --legacy")
+        monkeypatch.setattr("hermes_cli.auth.shutil.which", lambda command: f"/opt/bin/{command}")
+
+        status = get_external_process_provider_status("copilot-acp")
+
+        assert status["command"] == "forecast-copilot"
+        assert status["resolved_command"] == "/opt/bin/forecast-copilot"
+        assert status["args"] == ["--acp", "--stdio", "--forecast"]
 
     def test_get_auth_status_dispatches_to_external_process(self, monkeypatch):
         monkeypatch.setattr("hermes_cli.auth.shutil.which", lambda command: f"/opt/bin/{command}")
@@ -489,7 +505,7 @@ class TestResolveApiKeyProviderCredentials:
         assert calls == [["/opt/homebrew/bin/gh", "auth", "token"]]
 
     def test_resolve_copilot_acp_with_local_cli(self, monkeypatch):
-        monkeypatch.setenv("HERMES_COPILOT_ACP_ARGS", "--acp --stdio")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_COPILOT_ACP_ARGS", "--acp --stdio")
         monkeypatch.setattr("hermes_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
 
         creds = resolve_external_process_provider_credentials("copilot-acp")
@@ -709,7 +725,7 @@ class TestRuntimeProviderResolution:
 
     def test_runtime_copilot_acp_uses_process_runtime(self, monkeypatch):
         monkeypatch.setattr("hermes_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
-        monkeypatch.setenv("HERMES_COPILOT_ACP_ARGS", "--acp --stdio --debug")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_COPILOT_ACP_ARGS", "--acp --stdio --debug")
 
         from hermes_cli.runtime_provider import resolve_runtime_provider
 

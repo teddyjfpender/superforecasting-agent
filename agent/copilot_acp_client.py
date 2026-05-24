@@ -43,6 +43,17 @@ _DEPRECATION_MARKERS = (
     "has been deprecated",
     "no commands will be executed",
 )
+_COPILOT_ACP_COMMAND_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_COPILOT_ACP_COMMAND",
+    "FORECAST_COPILOT_ACP_COMMAND",
+    "HERMES_COPILOT_ACP_COMMAND",
+    "COPILOT_CLI_PATH",
+)
+_COPILOT_ACP_ARGS_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_COPILOT_ACP_ARGS",
+    "FORECAST_COPILOT_ACP_ARGS",
+    "HERMES_COPILOT_ACP_ARGS",
+)
 
 
 def _is_gh_copilot_deprecation_message(stderr_text: str) -> bool:
@@ -55,15 +66,19 @@ def _is_gh_copilot_deprecation_message(stderr_text: str) -> bool:
 
 
 def _resolve_command() -> str:
-    return (
-        os.getenv("HERMES_COPILOT_ACP_COMMAND", "").strip()
-        or os.getenv("COPILOT_CLI_PATH", "").strip()
-        or "copilot"
-    )
+    for env_name in _COPILOT_ACP_COMMAND_ENV_NAMES:
+        value = os.getenv(env_name, "").strip()
+        if value:
+            return value
+    return "copilot"
 
 
 def _resolve_args() -> list[str]:
-    raw = os.getenv("HERMES_COPILOT_ACP_ARGS", "").strip()
+    raw = ""
+    for env_name in _COPILOT_ACP_ARGS_ENV_NAMES:
+        raw = os.getenv(env_name, "").strip()
+        if raw:
+            break
     if not raw:
         return ["--acp", "--stdio"]
     return shlex.split(raw)
@@ -451,7 +466,9 @@ class CopilotACPClient:
         except FileNotFoundError as exc:
             raise RuntimeError(
                 f"Could not start Copilot ACP command '{self._acp_command}'. "
-                "Install GitHub Copilot CLI or set HERMES_COPILOT_ACP_COMMAND/COPILOT_CLI_PATH."
+                "Install GitHub Copilot CLI or set "
+                "SUPERFORECASTING_AGENT_COPILOT_ACP_COMMAND, FORECAST_COPILOT_ACP_COMMAND, "
+                "or COPILOT_CLI_PATH."
             ) from exc
 
         if proc.stdin is None or proc.stdout is None:
@@ -539,7 +556,7 @@ class CopilotACPClient:
                         "  # then verify with: copilot --help\n\n"
                         "If `copilot` already resolves to the new CLI but you still see this,\n"
                         "point Superforecasting Agent at it explicitly:\n"
-                        "  export HERMES_COPILOT_ACP_COMMAND=/path/to/new/copilot\n\n"
+                        "  export SUPERFORECASTING_AGENT_COPILOT_ACP_COMMAND=/path/to/new/copilot\n\n"
                         "Alternative: use the `copilot` provider (no ACP, hits the Copilot API\n"
                         "directly with a Copilot subscription token) via `superforecasting-agent setup`.\n\n"
                         f"Original error:\n{stderr_text}"
