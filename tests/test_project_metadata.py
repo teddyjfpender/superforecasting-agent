@@ -2173,6 +2173,9 @@ def test_forecast_cli_smoke_transcript_captures_tester_path():
     transcript = (
         root / "docs" / "plans" / "2026-05-24-forecast-cli-smoke-transcript.md"
     ).read_text(encoding="utf-8")
+    smoke_doc = (
+        root / "website" / "docs" / "getting-started" / "forecast-smoke-test.md"
+    ).read_text(encoding="utf-8")
     audit = (
         root
         / "docs"
@@ -2201,6 +2204,7 @@ def test_forecast_cli_smoke_transcript_captures_tester_path():
         assert marker in transcript, marker
 
     assert "2026-05-24-forecast-cli-smoke-transcript.md" in audit
+    assert "2026-05-24-forecast-cli-smoke-transcript.md" in smoke_doc
 
 
 def test_revision_env_aliases_are_forecast_native():

@@ -21,6 +21,11 @@ The expected final line is:
 [forecast-smoke] forecast smoke test passed
 ```
 
+A captured passing run from the fork snapshot is checked in at
+`docs/plans/2026-05-24-forecast-cli-smoke-transcript.md`. Use it as a
+reference for the markers a tester should see; generated ids and temporary
+ledger paths will differ.
+
 ## Keep The Smoke Ledger
 
 By default the script uses a temporary ledger and removes it. Keep the database when you want to inspect the records:
