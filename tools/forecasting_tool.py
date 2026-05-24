@@ -38,6 +38,7 @@ from forecasting.source_adapters import (
     load_github_issues,
     load_github_releases,
     load_news_feed_items,
+    load_mastodon_statuses,
     load_npm_package_versions,
     load_nvd_cves,
     load_nasa_eonet_events,
@@ -266,6 +267,8 @@ FORECAST_LEDGER_SCHEMA = {
             "lang": {"type": "string"},
             "link_domain": {"type": "string"},
             "url_filter": {"type": "string"},
+            "local": {"type": "boolean"},
+            "only_media": {"type": "boolean"},
             "source_type": {
                 "type": "string",
                 "enum": [
@@ -286,6 +289,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "hackernews",
                     "reddit",
                     "bluesky",
+                    "mastodon",
                     "reliefweb",
                     "federalregister",
                     "courtlistener",
@@ -1281,6 +1285,16 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_bluesky_posts(source, **kwargs)
+    if adapter_name == "mastodon":
+        kwargs = {
+            "limit": limit,
+            "since": since,
+            "local": bool(args.get("local", False)),
+            "only_media": bool(args.get("only_media", False)),
+        }
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_mastodon_statuses(source, **kwargs)
     if adapter_name == "reliefweb":
         kwargs = {"limit": limit, "since": since, "appname": args.get("appname")}
         if api_base_url:
@@ -1467,7 +1481,7 @@ def _first_adapter_value(data: dict[str, Any], *keys: str) -> str | None:
 
 
 def _adapter_summary(data: dict[str, Any]) -> str:
-    for key in ("summary", "abstract", "extract", "body", "description", "selftext", "text"):
+    for key in ("summary", "abstract", "extract", "body", "description", "selftext", "text", "content_text"):
         value = data.get(key)
         if value:
             return str(value)
@@ -1552,6 +1566,9 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
     if adapter == "bluesky":
         text = str(data.get("text") or data.get("post_uri") or "")
         return f"Bluesky: {text[:140]}"
+    if adapter == "mastodon":
+        text = str(data.get("content_text") or data.get("status_id") or "")
+        return f"Mastodon: {text[:140]}"
     if adapter == "reliefweb":
         return f"ReliefWeb: {data.get('title')}"
     if adapter == "courtlistener":

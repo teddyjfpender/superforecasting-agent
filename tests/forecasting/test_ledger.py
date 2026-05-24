@@ -34,6 +34,7 @@ from forecasting.source_adapters import (
     GitHubIssue,
     GitHubRelease,
     GitHubWorkflowRun,
+    MastodonStatus,
     KalshiMarketImport,
     ManifoldMarketImport,
     MetaculusQuestionImport,
@@ -2184,6 +2185,69 @@ def test_watched_bluesky_source_creates_alert_on_post_change(tmp_path, monkeypat
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert f'forecast import bluesky "forecast desk" --question {question.id}' in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_mastodon_source_creates_alert_on_status_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched Mastodon hashtag be detected?",
+        resolution_criteria="Resolved yes if watched Mastodon status changes create alerts.",
+    )
+    favourites = [128]
+    captured_sources = []
+
+    def fake_load_mastodon_statuses(source: str, **kwargs):
+        captured_sources.append(source)
+        return [
+            MastodonStatus(
+                status_id="110123",
+                uri="https://mastodon.social/users/analyst/statuses/110123",
+                url="https://mastodon.social/@analyst/110123",
+                content_text="Forecast Desk launches public beta.",
+                account_acct="analyst",
+                account_username="analyst",
+                account_display_name="Analyst",
+                account_url="https://mastodon.social/@analyst",
+                created_at="2026-05-21T14:30:00Z",
+                replies_count=4,
+                reblogs_count=12,
+                favourites_count=favourites[0],
+                language="en",
+                visibility="public",
+                tags=["forecasting"],
+                card_url="https://example.test/forecast-desk",
+                card_title="Forecast Desk",
+                source_name="Mastodon @analyst",
+                entry_id="110123",
+                raw={"favourites_count": favourites[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_mastodon_statuses", fake_load_mastodon_statuses)
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="mastodon:mastodon.social/forecasting",
+    )
+
+    assert watch["source_type"] == "mastodon"
+    assert watch["last_seen_signature"].startswith("mastodon:1:")
+    assert captured_sources[-1] == "mastodon.social/forecasting"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    favourites[0] = 180
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f'forecast import mastodon "mastodon.social/forecasting" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]

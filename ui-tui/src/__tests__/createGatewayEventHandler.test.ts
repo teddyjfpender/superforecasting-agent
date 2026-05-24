@@ -947,6 +947,7 @@ describe('createGatewayEventHandler', () => {
               '/forecast import hackernews "<query>" --question <id>',
               '/forecast import reddit "<query>" --question <id>',
               '/forecast import bluesky "<query>" --question <id>',
+              '/forecast import mastodon <tag-or-instance/tag> --question <id>',
               '/forecast import reliefweb "<query>" --question <id>',
               '/forecast import clinicaltrials <query-or-NCT-id> --question <id>',
               '/forecast import openfda <query-or-application-number> --question <id>',

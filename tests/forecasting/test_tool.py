@@ -19,6 +19,7 @@ from forecasting.source_adapters import (
     GitHubCommit,
     GitHubIssue,
     GitHubWorkflowRun,
+    MastodonStatus,
     NasaEonetEvent,
     NpmPackageVersion,
     NwsAlert,
@@ -118,7 +119,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "bluesky", "reliefweb", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_imports_airquality_forecasts(tmp_path, monkeypatch):
@@ -2783,6 +2784,65 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert bluesky_evidence["published_at"] == "2026-05-21T14:30:00Z"
     assert bluesky_evidence["metadata"]["adapter"] == "bluesky"
     assert bluesky_evidence["metadata"]["adapter_item"]["like_count"] == 128
+
+    def fake_mastodon(source, **kwargs):
+        assert source == "mastodon.social/forecasting"
+        assert kwargs["limit"] == 1
+        assert kwargs["since"] == "2026-05-01"
+        assert kwargs["api_base_url"] == "https://example.test/mastodon/tag"
+        assert kwargs["local"] is True
+        assert kwargs["only_media"] is True
+        return [
+            MastodonStatus(
+                status_id="110123",
+                uri="https://mastodon.social/users/analyst/statuses/110123",
+                url="https://mastodon.social/@analyst/110123",
+                content_text="Forecast Desk launches public beta.",
+                account_acct="analyst",
+                account_username="analyst",
+                account_display_name="Analyst",
+                account_url="https://mastodon.social/@analyst",
+                created_at="2026-05-21T14:30:00Z",
+                replies_count=4,
+                reblogs_count=12,
+                favourites_count=128,
+                language="en",
+                visibility="public",
+                tags=["forecasting"],
+                card_url="https://example.test/forecast-desk",
+                card_title="Forecast Desk",
+                source_name="Mastodon @analyst",
+                entry_id="110123",
+                raw={"id": "110123"},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_mastodon_statuses", fake_mastodon)
+    mastodon_imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "mastodon",
+                "source": "mastodon.social/forecasting",
+                "limit": 1,
+                "since": "2026-05-01",
+                "api_base_url": "https://example.test/mastodon/tag",
+                "local": True,
+                "only_media": True,
+            }
+        )
+    )
+
+    assert mastodon_imported["imported_count"] == 1
+    mastodon_evidence = mastodon_imported["imported"][0]["evidence"]
+    assert mastodon_evidence["source_type"] == "adapter:mastodon"
+    assert mastodon_evidence["source_name"] == "Mastodon @analyst"
+    assert mastodon_evidence["claim"] == "Mastodon: Forecast Desk launches public beta."
+    assert mastodon_evidence["published_at"] == "2026-05-21T14:30:00Z"
+    assert mastodon_evidence["metadata"]["adapter"] == "mastodon"
+    assert mastodon_evidence["metadata"]["adapter_item"]["favourites_count"] == 128
 
     def fake_reliefweb(source, **kwargs):
         assert source == "Kenya floods"

@@ -64,6 +64,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "hackernews",
     "reddit",
     "bluesky",
+    "mastodon",
     "reliefweb",
     "markets",
 }

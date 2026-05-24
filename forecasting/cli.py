@@ -82,6 +82,7 @@ from forecasting.source_adapters import (
     load_manifold_resolved_binary_cases,
     load_metaculus_question,
     load_metaculus_resolved_binary_cases,
+    load_mastodon_statuses,
     load_news_feed_items,
     load_npm_package_versions,
     load_nvd_cves,
@@ -376,6 +377,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "watch_prefix": "bluesky:<query>",
     },
     {
+        "name": "mastodon",
+        "domain": "Fediverse hashtag timelines",
+        "import_command": "forecast import mastodon <tag-or-instance/tag> --question <id>",
+        "watch_prefix": "mastodon:<tag-or-instance/tag>",
+    },
+    {
         "name": "reliefweb",
         "domain": "humanitarian/disaster reports",
         "import_command": 'forecast import reliefweb "<query>" --question <id>',
@@ -560,6 +567,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "hackernews",
         "reddit",
         "bluesky",
+        "mastodon",
         "reliefweb",
         "federalregister",
         "courtlistener",
@@ -645,6 +653,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "hackernews",
             "reddit",
             "bluesky",
+            "mastodon",
             "reliefweb",
             "federalregister",
             "courtlistener",
@@ -763,6 +772,14 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts",
                 help="Override Bluesky public search endpoint for tests or private mirrors",
+            )
+        if name == "mastodon":
+            adapter.add_argument("--local", action="store_true", help="Request only local statuses from the instance")
+            adapter.add_argument("--only-media", action="store_true", help="Request only statuses with media")
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://mastodon.social/api/v1/timelines/tag",
+                help="Override Mastodon hashtag timeline endpoint for tests or private mirrors",
             )
         if name == "reliefweb":
             adapter.add_argument(
@@ -2972,6 +2989,78 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} bluesky evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "mastodon":
+        if not args.question_id:
+            raise SystemExit("forecast import mastodon requires --question")
+        statuses = load_mastodon_statuses(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            local=args.local,
+            only_media=args.only_media,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for status in statuses:
+            engagement = []
+            if status.replies_count is not None:
+                engagement.append(f"{status.replies_count} replies")
+            if status.reblogs_count is not None:
+                engagement.append(f"{status.reblogs_count} boosts")
+            if status.favourites_count is not None:
+                engagement.append(f"{status.favourites_count} favourites")
+            engagement_text = f" ({', '.join(engagement)})" if engagement else ""
+            account_text = f" by @{status.account_acct}" if status.account_acct else ""
+            tag_text = f" tags: {', '.join(status.tags[:5])}." if status.tags else ""
+            card_text = f" Link: {status.card_title or status.card_url}." if status.card_url or status.card_title else ""
+            summary = (
+                f"Mastodon status{account_text} at {status.created_at or 'unknown'}"
+                f"{engagement_text}.{tag_text}{card_text} {status.content_text}"
+            ).strip()
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=status.url or status.uri or f"Mastodon:{status.status_id}",
+                    source_url=status.url or status.uri,
+                    source_name=status.source_name,
+                    source_type="adapter:mastodon",
+                    published_at=status.created_at,
+                    available_at=status.created_at or args.as_of,
+                    claim=f"Mastodon: {status.content_text[:140] if status.content_text else status.status_id}",
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "mastodon",
+                        "source": args.source,
+                        "status_id": status.status_id,
+                        "uri": status.uri,
+                        "account_acct": status.account_acct,
+                        "account_username": status.account_username,
+                        "account_display_name": status.account_display_name,
+                        "account_url": status.account_url,
+                        "created_at": status.created_at,
+                        "replies_count": status.replies_count,
+                        "reblogs_count": status.reblogs_count,
+                        "favourites_count": status.favourites_count,
+                        "language": status.language,
+                        "visibility": status.visibility,
+                        "tags": status.tags,
+                        "card_url": status.card_url,
+                        "card_title": status.card_title,
+                        "local": args.local,
+                        "only_media": args.only_media,
+                        "api_base_url": args.api_base_url,
+                        "raw": status.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} mastodon evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

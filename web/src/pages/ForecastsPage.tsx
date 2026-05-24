@@ -106,6 +106,10 @@ const EVIDENCE_IMPORTS = [
     label: "Bluesky",
   },
   {
+    command: "forecast import mastodon <tag-or-instance/tag> --question <id>",
+    label: "Mastodon",
+  },
+  {
     command: 'forecast import reliefweb "<query>" --question <id>',
     label: "ReliefWeb",
   },

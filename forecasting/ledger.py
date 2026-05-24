@@ -72,6 +72,7 @@ WATCH_SOURCE_TYPES = {
     "hackernews",
     "reddit",
     "bluesky",
+    "mastodon",
     "reliefweb",
     "federalregister",
     "courtlistener",
@@ -3028,7 +3029,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, bluesky, reliefweb, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
+                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, bluesky, mastodon, reliefweb, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
                 "sec, secfacts, arxiv, openalex, crossref, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -3124,6 +3125,7 @@ class ForecastLedger:
                     "hackernews",
                     "reddit",
                     "bluesky",
+                    "mastodon",
                     "reliefweb",
                     "federalregister",
                     "courtlistener",
@@ -5635,6 +5637,8 @@ class ForecastLedger:
             return "reddit"
         if source.startswith("bluesky:"):
             return "bluesky"
+        if source.startswith("mastodon:"):
+            return "mastodon"
         if source.startswith("federalregister:"):
             return "federalregister"
         if source.startswith("courtlistener:"):
@@ -5735,6 +5739,8 @@ class ForecastLedger:
             return self._reddit_source_signature(source)
         if source_type == "bluesky":
             return self._bluesky_source_signature(source)
+        if source_type == "mastodon":
+            return self._mastodon_source_signature(source)
         if source_type == "federalregister":
             return self._federalregister_source_signature(source)
         if source_type == "courtlistener":
@@ -6193,6 +6199,33 @@ class ForecastLedger:
         ]
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"bluesky:{len(payload)}:{digest}"
+
+    def _mastodon_source_signature(self, source: str) -> str:
+        source_value = source.split(":", 1)[1].strip() if source.startswith("mastodon:") else source.strip()
+        if not source_value:
+            return "missing:mastodon:empty-source"
+        try:
+            from forecasting.source_adapters import load_mastodon_statuses
+
+            statuses = load_mastodon_statuses(source_value, limit=40)
+        except Exception as exc:
+            return f"missing:mastodon:{source_value}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "account_acct": status.account_acct,
+                "content_text": status.content_text,
+                "created_at": status.created_at,
+                "entry_id": status.entry_id,
+                "favourites_count": status.favourites_count,
+                "reblogs_count": status.reblogs_count,
+                "replies_count": status.replies_count,
+                "status_id": status.status_id,
+                "url": status.url,
+            }
+            for status in statuses
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"mastodon:{len(payload)}:{digest}"
 
     def _federalregister_source_signature(self, source: str) -> str:
         query = source.split(":", 1)[1].strip() if source.startswith("federalregister:") else source.strip()
@@ -7196,6 +7229,12 @@ class ForecastLedger:
             query = source.split(":", 1)[1].strip() if source.startswith("bluesky:") else source
             return (
                 f"Run `forecast import bluesky \"{query}\" --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "mastodon" and scope_type == "question" and scope_ref:
+            source_value = source.split(":", 1)[1].strip() if source.startswith("mastodon:") else source
+            return (
+                f"Run `forecast import mastodon \"{source_value}\" --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "reliefweb" and scope_type == "question" and scope_ref:

@@ -37,6 +37,7 @@ from forecasting.source_adapters import (
     GitHubIssue,
     GitHubRelease,
     GitHubWorkflowRun,
+    MastodonStatus,
     NasaEonetEvent,
     NpmPackageVersion,
     NvdCve,
@@ -3610,6 +3611,168 @@ def test_forecast_cli_bluesky_import_captures_posts_as_evidence(tmp_path, capsys
     assert evidence[0].metadata["post_uri"] == "at://did:plc:abc/app.bsky.feed.post/3kforecast"
     assert evidence[0].metadata["author_handle"] == "analyst.bsky.social"
     assert evidence[0].metadata["like_count"] == 128
+
+
+def test_mastodon_adapter_loads_hashtag_timeline(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return [
+            {
+                "id": "110123",
+                "uri": "https://mastodon.social/users/analyst/statuses/110123",
+                "url": "https://mastodon.social/@analyst/110123",
+                "content": "<p>Forecast Desk launches public beta &amp; opens signups.</p>",
+                "created_at": "2026-05-21T14:30:00.000Z",
+                "replies_count": 4,
+                "reblogs_count": 12,
+                "favourites_count": 128,
+                "language": "en",
+                "visibility": "public",
+                "account": {
+                    "acct": "analyst",
+                    "username": "analyst",
+                    "display_name": "Analyst",
+                    "url": "https://mastodon.social/@analyst",
+                },
+                "tags": [{"name": "forecasting"}, {"name": "prediction"}],
+                "card": {
+                    "url": "https://example.test/forecast-desk",
+                    "title": "Forecast Desk",
+                },
+            }
+        ]
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    statuses = source_adapters.load_mastodon_statuses(
+        "mastodon.social/forecasting",
+        limit=2,
+        since="2026-05-01T00:00:00Z",
+        local=True,
+        only_media=True,
+        api_base_url="https://mastodon.social/api/v1/timelines/tag",
+    )
+    parsed = urlparse(captured["endpoint"])
+    params = parse_qs(parsed.query)
+
+    assert captured["label"] == "mastodon hashtag timeline"
+    assert parsed.netloc == "mastodon.social"
+    assert parsed.path == "/api/v1/timelines/tag/forecasting"
+    assert params["limit"] == ["2"]
+    assert params["local"] == ["true"]
+    assert params["only_media"] == ["true"]
+    assert statuses[0].status_id == "110123"
+    assert statuses[0].url == "https://mastodon.social/@analyst/110123"
+    assert statuses[0].content_text == "Forecast Desk launches public beta & opens signups."
+    assert statuses[0].account_acct == "analyst"
+    assert statuses[0].created_at == "2026-05-21T14:30:00Z"
+    assert statuses[0].replies_count == 4
+    assert statuses[0].reblogs_count == 12
+    assert statuses[0].favourites_count == 128
+    assert statuses[0].tags == ["forecasting", "prediction"]
+    assert statuses[0].card_url == "https://example.test/forecast-desk"
+
+
+def test_forecast_cli_mastodon_import_captures_statuses_as_evidence(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_mastodon_statuses(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            MastodonStatus(
+                status_id="110123",
+                uri="https://mastodon.social/users/analyst/statuses/110123",
+                url="https://mastodon.social/@analyst/110123",
+                content_text="Forecast Desk launches public beta.",
+                account_acct="analyst",
+                account_username="analyst",
+                account_display_name="Analyst",
+                account_url="https://mastodon.social/@analyst",
+                created_at="2026-05-21T14:30:00Z",
+                replies_count=4,
+                reblogs_count=12,
+                favourites_count=128,
+                language="en",
+                visibility="public",
+                tags=["forecasting", "prediction"],
+                card_url="https://example.test/forecast-desk",
+                card_title="Forecast Desk",
+                source_name="Mastodon @analyst",
+                entry_id="110123",
+                raw={"id": "110123"},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_mastodon_statuses", fake_load_mastodon_statuses)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will Mastodon evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if Mastodon evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "mastodon",
+            "mastodon.social/forecasting",
+            "--question",
+            question_id,
+            "--limit",
+            "3",
+            "--since",
+            "2026-05-01T00:00:00Z",
+            "--local",
+            "--only-media",
+            "--api-base-url",
+            "https://mastodon.social/api/v1/timelines/tag",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.64",
+            "--relevance",
+            "0.73",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 mastodon evidence item(s)" in output
+    assert captured["source"] == "mastodon.social/forecasting"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["since"] == "2026-05-01T00:00:00Z"
+    assert captured["kwargs"]["local"] is True
+    assert captured["kwargs"]["only_media"] is True
+    assert captured["kwargs"]["api_base_url"] == "https://mastodon.social/api/v1/timelines/tag"
+    assert evidence[0].claim == "Mastodon: Forecast Desk launches public beta."
+    assert evidence[0].summary.startswith("Mastodon status by @analyst")
+    assert evidence[0].source_name == "Mastodon @analyst"
+    assert evidence[0].source_type == "adapter:mastodon"
+    assert evidence[0].published_at == "2026-05-21T14:30:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.64
+    assert evidence[0].relevance_rating == 0.73
+    assert evidence[0].metadata["adapter"] == "mastodon"
+    assert evidence[0].metadata["status_id"] == "110123"
+    assert evidence[0].metadata["favourites_count"] == 128
 
 
 def test_reliefweb_adapter_loads_reports(monkeypatch):
@@ -8117,6 +8280,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "hackernews:<query>" in output
     assert "reddit:<query>" in output
     assert "bluesky:<query>" in output
+    assert "mastodon:<tag-or-instance/tag>" in output
     assert "reliefweb:<query>" in output
     assert "nvd:<keyword-or-CVE>" in output
     assert "cisakev:<keyword-or-CVE-or-all>" in output
@@ -8132,7 +8296,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "fivethirtyeight", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "bluesky", "reliefweb", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "fivethirtyeight", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "fivethirtyeight:<dataset-or-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
@@ -8156,6 +8320,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     assert any(source["watch_prefix"] == "hackernews:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "reddit:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "bluesky:<query>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "mastodon:<tag-or-instance/tag>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "reliefweb:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "cisakev:<keyword-or-CVE-or-all>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "courtlistener:<query>" for source in payload["sources"])

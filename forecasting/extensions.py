@@ -89,6 +89,7 @@ def register_builtin_extensions() -> None:
         ("hackernews-search", "importer", "Capture Hacker News search results as public-attention evidence."),
         ("reddit-search", "importer", "Capture Reddit search results as public-attention evidence."),
         ("bluesky-search", "importer", "Capture Bluesky public search results as public-attention evidence."),
+        ("mastodon-hashtag-timeline", "importer", "Capture Mastodon hashtag timelines as public-attention evidence."),
         ("reliefweb-reports", "importer", "Capture ReliefWeb humanitarian reports as timestamped evidence."),
         ("federal-register-documents", "importer", "Capture Federal Register documents as timestamped evidence."),
         ("courtlistener-search", "importer", "Capture CourtListener legal search results as timestamped evidence."),
