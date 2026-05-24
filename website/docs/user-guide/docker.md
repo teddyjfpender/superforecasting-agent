@@ -13,8 +13,8 @@ Docker supports two different workflows:
 
 This page focuses on the first workflow. The container stores all user data in a host-mounted directory at `/opt/data`: configuration, API keys, sessions, forecast ledger state, calibration reports, skills, source snapshots, cron jobs, and logs. The image itself is disposable; keep the mounted data directory backed up.
 
-:::note Compatibility image and names
-The current Docker entrypoint and published image still use inherited runtime names such as `nousresearch/hermes-agent`, `/opt/hermes`, `HERMES_HOME`, and `HERMES_DASHBOARD`. Treat those as compatibility identifiers. New host paths and product docs should prefer `~/.superforecasting-agent`, `superforecasting-agent`, `forecast`, and `SUPERFORECASTING_AGENT_HOME` where the fork-native entry points are available.
+:::note Compatibility internals
+The Docker image still keeps inherited internal paths such as `/opt/hermes` and supports legacy variables such as `HERMES_HOME` and `HERMES_DASHBOARD`. Treat those as compatibility identifiers. New deployments should prefer `~/.superforecasting-agent`, `superforecasting-agent`, `forecast`, `SUPERFORECASTING_AGENT_HOME`, and `SUPERFORECASTING_AGENT_DASHBOARD`.
 :::
 
 ## Quick Start
@@ -25,7 +25,7 @@ Create a host data directory and run setup:
 mkdir -p ~/.superforecasting-agent
 docker run -it --rm \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/hermes-agent setup
+  nousresearch/superforecasting-agent setup
 ```
 
 Setup prompts for model credentials and writes secrets to `/opt/data/.env` inside the container, which maps to `~/.superforecasting-agent/.env` on the host. Existing `~/.hermes` directories can still be mounted during migration, but new deployments should use the fork-native home.
@@ -40,7 +40,7 @@ docker run -d \
   --restart unless-stopped \
   -v ~/.superforecasting-agent:/opt/data \
   -p 8642:8642 \
-  nousresearch/hermes-agent gateway run
+  nousresearch/superforecasting-agent gateway run
 ```
 
 Port `8642` exposes the [OpenAI-compatible API server](./features/api-server.md) and health endpoint when enabled. It is optional for pure CLI or chat-platform operation, but useful for automation that submits forecast questions, exports ledger data, or drives review jobs.
@@ -57,7 +57,7 @@ docker run -d \
   -e API_SERVER_HOST=0.0.0.0 \
   -e API_SERVER_KEY=your_api_key_here \
   -e API_SERVER_CORS_ORIGINS='*' \
-  nousresearch/hermes-agent gateway run
+  nousresearch/superforecasting-agent gateway run
 ```
 
 Opening a forecasting API on an internet-facing machine can expose private research, source notes, credentials, and forecast rationales. Put it behind a trusted network, reverse proxy, or VPN unless you intentionally want remote access.
@@ -73,20 +73,20 @@ docker run -d \
   -v ~/.superforecasting-agent:/opt/data \
   -p 8642:8642 \
   -p 9119:9119 \
-  -e HERMES_DASHBOARD=1 \
-  nousresearch/hermes-agent gateway run
+  -e SUPERFORECASTING_AGENT_DASHBOARD=1 \
+  nousresearch/superforecasting-agent gateway run
 ```
 
-The entrypoint starts the inherited `hermes dashboard` command in the background before launching the foreground command. Dashboard output is prefixed with `[dashboard]` in `docker logs`.
+The entrypoint starts `superforecasting-agent dashboard` in the background before launching the foreground command. Dashboard output is prefixed with `[dashboard]` in `docker logs`.
 
 | Environment variable | Description | Default |
 |---------------------|-------------|---------|
-| `HERMES_DASHBOARD` | Compatibility toggle for launching the dashboard side process | *(unset)* |
-| `HERMES_DASHBOARD_HOST` | Dashboard bind address | `0.0.0.0` |
-| `HERMES_DASHBOARD_PORT` | Dashboard HTTP port | `9119` |
-| `HERMES_DASHBOARD_TUI` | Expose the embedded terminal UI in the browser | *(unset)* |
+| `SUPERFORECASTING_AGENT_DASHBOARD` / `FORECAST_DASHBOARD` / `HERMES_DASHBOARD` | Toggle for launching the dashboard side process | *(unset)* |
+| `SUPERFORECASTING_AGENT_DASHBOARD_HOST` / `FORECAST_DASHBOARD_HOST` / `HERMES_DASHBOARD_HOST` | Dashboard bind address | `0.0.0.0` |
+| `SUPERFORECASTING_AGENT_DASHBOARD_PORT` / `FORECAST_DASHBOARD_PORT` / `HERMES_DASHBOARD_PORT` | Dashboard HTTP port | `9119` |
+| `SUPERFORECASTING_AGENT_DASHBOARD_TUI` / `FORECAST_DASHBOARD_TUI` / `HERMES_DASHBOARD_TUI` | Expose the embedded terminal UI in the browser | *(unset)* |
 
-The default `HERMES_DASHBOARD_HOST=0.0.0.0` is required for the host to reach the dashboard through the published port. The entrypoint automatically passes `--insecure` to the dashboard in that case. Use `127.0.0.1` behind a reverse proxy if you want local-only binding.
+The default dashboard host of `0.0.0.0` is required for the host to reach the dashboard through the published port. The entrypoint automatically passes `--insecure` to the dashboard in that case. Use `127.0.0.1` behind a reverse proxy if you want local-only binding.
 
 :::note
 The dashboard side process is not supervised. If it crashes, restart the container.
@@ -99,7 +99,7 @@ Open a one-off interactive session against the mounted data directory:
 ```sh
 docker run -it --rm \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/hermes-agent
+  nousresearch/superforecasting-agent
 ```
 
 Run forecast lifecycle commands through the same image:
@@ -107,15 +107,15 @@ Run forecast lifecycle commands through the same image:
 ```sh
 docker run -it --rm \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/hermes-agent forecast list
+  nousresearch/superforecasting-agent forecast list
 
 docker run -it --rm \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/hermes-agent forecast review --last 30d
+  nousresearch/superforecasting-agent forecast review --last 30d
 
 docker run -it --rm \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/hermes-agent forecast backtest
+  nousresearch/superforecasting-agent forecast backtest
 ```
 
 If you have opened a shell inside the running container, the legacy executable path is still:
@@ -124,7 +124,7 @@ If you have opened a shell inside the running container, the legacy executable p
 /opt/hermes/.venv/bin/hermes
 ```
 
-Prefer `superforecasting-agent` or `forecast` once the fork-native command is installed in the container image.
+Prefer `/opt/hermes/.venv/bin/superforecasting-agent` or `/opt/hermes/.venv/bin/forecast` for fork-native scripts inside the image.
 
 ## Persistent Volume
 
@@ -159,7 +159,7 @@ docker run -d \
   --restart unless-stopped \
   -v ~/.superforecasting-agent-elections:/opt/data \
   -p 8642:8642 \
-  nousresearch/hermes-agent gateway run
+  nousresearch/superforecasting-agent gateway run
 
 # Macro profile
 docker run -d \
@@ -167,7 +167,7 @@ docker run -d \
   --restart unless-stopped \
   -v ~/.superforecasting-agent-macro:/opt/data \
   -p 8643:8642 \
-  nousresearch/hermes-agent gateway run
+  nousresearch/superforecasting-agent gateway run
 ```
 
 Separate containers keep credentials, source watchlists, scheduler jobs, calibration history, and ledger state isolated. They also make it easier to back up or pause a domain without touching the others.
@@ -179,17 +179,18 @@ For a persistent deployment with gateway, dashboard, and cron-capable runtime:
 ```yaml
 services:
   superforecasting-agent:
-    image: nousresearch/hermes-agent:latest
+    image: nousresearch/superforecasting-agent:latest
     container_name: superforecasting-agent
     restart: unless-stopped
     command: gateway run
     ports:
       - "8642:8642"   # gateway API
-      - "9119:9119"   # dashboard when HERMES_DASHBOARD=1
+      - "9119:9119"   # dashboard when SUPERFORECASTING_AGENT_DASHBOARD=1
     volumes:
       - ~/.superforecasting-agent:/opt/data
     environment:
-      - HERMES_DASHBOARD=1
+      - SUPERFORECASTING_AGENT_HOME=/opt/data
+      - SUPERFORECASTING_AGENT_DASHBOARD=1
       # Forward specific env vars instead of storing them in .env if needed:
       # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       # - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -212,7 +213,7 @@ docker run -it --rm \
   -v ~/.superforecasting-agent:/opt/data \
   -e ANTHROPIC_API_KEY="sk-ant-..." \
   -e OPENAI_API_KEY="sk-..." \
-  nousresearch/hermes-agent forecast list
+  nousresearch/superforecasting-agent forecast list
 ```
 
 Direct `-e` values override `.env`. This is useful for CI, short-lived evaluation runs, and secret-manager integrations.
@@ -235,7 +236,7 @@ docker run -d \
   --restart unless-stopped \
   --memory=4g --cpus=2 \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/hermes-agent gateway run
+  nousresearch/superforecasting-agent gateway run
 ```
 
 ## What the Dockerfile Does
@@ -254,11 +255,11 @@ The compatibility entrypoint (`docker/entrypoint.sh`) bootstraps the mounted dat
 - copies `.env.example` and default `config.yaml` if missing
 - copies default `SOUL.md` if missing
 - syncs bundled skills while preserving user edits
-- optionally launches the dashboard when `HERMES_DASHBOARD=1`
-- runs the requested command through the inherited `hermes` wrapper
+- optionally launches the dashboard when `SUPERFORECASTING_AGENT_DASHBOARD=1`
+- runs the requested command through the fork-native `superforecasting-agent` wrapper
 
 :::warning
-Do not override the image entrypoint unless you keep `/opt/hermes/docker/entrypoint.sh` in the command chain. The entrypoint drops root privileges to the `hermes` user before gateway state files are created. Starting the gateway as root can leave root-owned files in `/opt/data` and break later starts. Use `HERMES_ALLOW_ROOT_GATEWAY=1` only when you intentionally accept that risk.
+Do not override the image entrypoint unless you keep `/opt/hermes/docker/entrypoint.sh` in the command chain. The entrypoint drops root privileges to the runtime user before gateway state files are created. Starting the gateway as root can leave root-owned files in `/opt/data` and break later starts. Use `HERMES_ALLOW_ROOT_GATEWAY=1` only when you intentionally accept that risk.
 :::
 
 ## Upgrading
@@ -266,13 +267,13 @@ Do not override the image entrypoint unless you keep `/opt/hermes/docker/entrypo
 Pull the latest image and recreate the container. The mounted data directory is untouched.
 
 ```sh
-docker pull nousresearch/hermes-agent:latest
+docker pull nousresearch/superforecasting-agent:latest
 docker rm -f superforecasting-agent
 docker run -d \
   --name superforecasting-agent \
   --restart unless-stopped \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/hermes-agent gateway run
+  nousresearch/superforecasting-agent gateway run
 ```
 
 With Docker Compose:
@@ -287,7 +288,7 @@ After upgrades that change forecast data structures, run a quick ledger check:
 ```sh
 docker run -it --rm \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/hermes-agent forecast calibration
+  nousresearch/superforecasting-agent forecast calibration
 ```
 
 ## Skills and Credential Files
@@ -320,7 +321,7 @@ services:
       - forecast-net
 
   superforecasting-agent:
-    image: nousresearch/hermes-agent:latest
+    image: nousresearch/superforecasting-agent:latest
     container_name: superforecasting-agent
     restart: unless-stopped
     command: gateway run
@@ -362,7 +363,7 @@ docker run -d \
   --name superforecasting-agent \
   -v ~/.superforecasting-agent:/opt/data \
   -p 8642:8642 \
-  nousresearch/hermes-agent gateway run
+  nousresearch/superforecasting-agent gateway run
 ```
 
 ```yaml
@@ -380,7 +381,7 @@ docker run -d \
   --name superforecasting-agent \
   --network host \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/hermes-agent gateway run
+  nousresearch/superforecasting-agent gateway run
 ```
 
 ```yaml
@@ -415,7 +416,7 @@ Common causes are missing credentials, invalid config, and port conflicts.
 
 ### Permission denied errors
 
-The entrypoint drops privileges to the non-root `hermes` user. If the host data directory is owned by another UID, set `HERMES_UID` and `HERMES_GID` to match your host user, or make the directory writable:
+The entrypoint drops privileges to the non-root runtime user. If the host data directory is owned by another UID, set `HERMES_UID` and `HERMES_GID` to match your host user, or make the directory writable:
 
 ```sh
 chmod -R 755 ~/.superforecasting-agent
@@ -430,7 +431,7 @@ docker run -d \
   --name superforecasting-agent \
   --shm-size=1g \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/hermes-agent gateway run
+  nousresearch/superforecasting-agent gateway run
 ```
 
 ### Gateway or scheduler stops updating
@@ -441,13 +442,13 @@ Restart the container, then inspect stale forecasts and scheduled review jobs:
 docker restart superforecasting-agent
 docker run -it --rm \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/hermes-agent forecast review --stale
+  nousresearch/superforecasting-agent forecast review --stale
 ```
 
 ### Check health
 
 ```sh
 docker logs --tail 50 superforecasting-agent
-docker run -it --rm nousresearch/hermes-agent:latest version
+docker run -it --rm nousresearch/superforecasting-agent:latest version
 docker stats superforecasting-agent
 ```

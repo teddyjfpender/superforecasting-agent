@@ -192,6 +192,31 @@ def test_web_dashboard_titles_are_forecast_native():
     assert "Hermes Agent - Dashboard" not in text
 
 
+def test_docker_entrypoint_and_compose_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    entrypoint = (root / "docker" / "entrypoint.sh").read_text(encoding="utf-8")
+    compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
+
+    assert "SUPERFORECASTING_AGENT_HOME" in entrypoint
+    assert "FORECAST_HOME" in entrypoint
+    assert "exec superforecasting-agent \"$@\"" in entrypoint
+    assert "superforecasting-agent dashboard" in entrypoint
+    assert "SUPERFORECASTING_AGENT_DASHBOARD" in entrypoint
+    assert "FORECAST_DASHBOARD" in entrypoint
+    assert "exec hermes \"$@\"" not in entrypoint
+    assert "hermes dashboard" not in entrypoint
+
+    assert "# docker-compose.yml for Superforecasting Agent" in compose
+    assert "image: superforecasting-agent" in compose
+    assert "container_name: superforecasting-agent-gateway" in compose
+    assert "container_name: superforecasting-agent-dashboard" in compose
+    assert "~/.superforecasting-agent:/opt/data" in compose
+    assert "SUPERFORECASTING_AGENT_HOME=/opt/data" in compose
+    assert "image: hermes-agent" not in compose
+    assert "container_name: hermes" not in compose
+    assert "~/.hermes:/opt/data" not in compose
+
+
 def test_high_attention_docs_navigation_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     sidebars = (root / "website" / "sidebars.ts").read_text(encoding="utf-8")

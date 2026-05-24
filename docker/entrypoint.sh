@@ -1,8 +1,11 @@
 #!/bin/bash
-# Docker/Podman entrypoint: bootstrap config files into the mounted volume, then run hermes.
+# Docker/Podman entrypoint: bootstrap config files into the mounted volume, then run Superforecasting Agent.
 set -e
 
-HERMES_HOME="${HERMES_HOME:-/opt/data}"
+AGENT_HOME="${SUPERFORECASTING_AGENT_HOME:-${FORECAST_HOME:-${HERMES_HOME:-/opt/data}}}"
+export SUPERFORECASTING_AGENT_HOME="$AGENT_HOME"
+export FORECAST_HOME="$AGENT_HOME"
+export HERMES_HOME="$AGENT_HOME"
 INSTALL_DIR="/opt/hermes"
 
 # --- Privilege dropping via gosu ---
@@ -107,23 +110,31 @@ if [ -d "$INSTALL_DIR/skills" ]; then
     python3 "$INSTALL_DIR/tools/skills_sync.py"
 fi
 
-# Optionally start `hermes dashboard` as a side-process.
+# Optionally start the dashboard as a side-process.
 #
-# Toggled by HERMES_DASHBOARD=1 (also accepts "true"/"yes", case-insensitive).
+# Toggled by SUPERFORECASTING_AGENT_DASHBOARD=1, FORECAST_DASHBOARD=1, or the
+# legacy HERMES_DASHBOARD=1 (also accepts "true"/"yes", case-insensitive).
 # Host/port/TUI can be overridden via:
-#   HERMES_DASHBOARD_HOST  (default 0.0.0.0 — exposed outside the container)
-#   HERMES_DASHBOARD_PORT  (default 9119, matches `hermes dashboard` default)
-#   HERMES_DASHBOARD_TUI   (already honored by `hermes dashboard` itself)
+#   SUPERFORECASTING_AGENT_DASHBOARD_HOST, FORECAST_DASHBOARD_HOST, or HERMES_DASHBOARD_HOST
+#   SUPERFORECASTING_AGENT_DASHBOARD_PORT, FORECAST_DASHBOARD_PORT, or HERMES_DASHBOARD_PORT
+#   SUPERFORECASTING_AGENT_DASHBOARD_TUI, FORECAST_DASHBOARD_TUI, or HERMES_DASHBOARD_TUI
 #
 # The dashboard is a long-lived server.  We background it *before* the final
-# `exec hermes "$@"` so the user's chosen foreground command (chat, gateway,
-# sleep infinity, …) remains PID-of-interest for the container runtime.  When
-# the container stops the whole process tree is torn down, so no explicit
-# cleanup is needed.
-case "${HERMES_DASHBOARD:-}" in
+# `exec superforecasting-agent "$@"` so the user's chosen foreground command
+# (forecast, gateway, sleep infinity, …) remains PID-of-interest for the
+# container runtime.  When the container stops the whole process tree is torn
+# down, so no explicit cleanup is needed.
+dashboard_flag="${SUPERFORECASTING_AGENT_DASHBOARD:-${FORECAST_DASHBOARD:-${HERMES_DASHBOARD:-}}}"
+case "$dashboard_flag" in
     1|true|TRUE|True|yes|YES|Yes)
-        dash_host="${HERMES_DASHBOARD_HOST:-0.0.0.0}"
-        dash_port="${HERMES_DASHBOARD_PORT:-9119}"
+        dash_host="${SUPERFORECASTING_AGENT_DASHBOARD_HOST:-${FORECAST_DASHBOARD_HOST:-${HERMES_DASHBOARD_HOST:-0.0.0.0}}}"
+        dash_port="${SUPERFORECASTING_AGENT_DASHBOARD_PORT:-${FORECAST_DASHBOARD_PORT:-${HERMES_DASHBOARD_PORT:-9119}}}"
+        dash_tui="${SUPERFORECASTING_AGENT_DASHBOARD_TUI:-${FORECAST_DASHBOARD_TUI:-${HERMES_DASHBOARD_TUI:-}}}"
+        if [ -n "$dash_tui" ]; then
+            export SUPERFORECASTING_AGENT_DASHBOARD_TUI="$dash_tui"
+            export FORECAST_DASHBOARD_TUI="$dash_tui"
+            export HERMES_DASHBOARD_TUI="$dash_tui"
+        fi
         dash_args=(--host "$dash_host" --port "$dash_port" --no-open)
         # Binding to anything other than localhost requires --insecure — the
         # dashboard refuses otherwise because it exposes API keys.  Inside a
@@ -132,11 +143,11 @@ case "${HERMES_DASHBOARD:-}" in
         if [ "$dash_host" != "127.0.0.1" ] && [ "$dash_host" != "localhost" ]; then
             dash_args+=(--insecure)
         fi
-        echo "Starting hermes dashboard on ${dash_host}:${dash_port} (background)"
+        echo "Starting Superforecasting Agent dashboard on ${dash_host}:${dash_port} (background)"
         # Prefix dashboard output so it's distinguishable from the main
         # process in `docker logs`.  stdbuf keeps the pipe line-buffered.
         (
-            stdbuf -oL -eL hermes dashboard "${dash_args[@]}" 2>&1 \
+            stdbuf -oL -eL superforecasting-agent dashboard "${dash_args[@]}" 2>&1 \
                 | sed -u 's/^/[dashboard] /'
         ) &
         ;;
@@ -144,17 +155,19 @@ esac
 
 # Final exec: two supported invocation patterns.
 #
-#   docker run <image>                 -> exec `hermes` with no args (legacy default)
-#   docker run <image> chat -q "..."   -> exec `hermes chat -q "..."` (legacy wrap)
+#   docker run <image>                 -> exec `superforecasting-agent` with no args
+#   docker run <image> forecast list   -> exec `superforecasting-agent forecast list`
+#   docker run <image> chat -q "..."   -> exec `superforecasting-agent chat -q "..."`
 #   docker run <image> sleep infinity  -> exec `sleep infinity` directly
 #   docker run <image> bash            -> exec `bash` directly
 #
 # If the first positional arg resolves to an executable on PATH, we assume the
 # caller wants to run it directly (needed by the launcher which runs long-lived
 # `sleep infinity` sandbox containers — see tools/environments/docker.py).
-# Otherwise we treat the args as a hermes subcommand and wrap with `hermes`,
-# preserving the documented `docker run <image> <subcommand>` behavior.
+# Otherwise we treat the args as a Superforecasting Agent subcommand and wrap
+# with `superforecasting-agent`, preserving the documented
+# `docker run <image> <subcommand>` behavior.
 if [ $# -gt 0 ] && command -v "$1" >/dev/null 2>&1; then
     exec "$@"
 fi
-exec hermes "$@"
+exec superforecasting-agent "$@"

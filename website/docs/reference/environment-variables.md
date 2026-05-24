@@ -605,6 +605,9 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 | `SUPERFORECASTING_AGENT_TUI_SIDECAR_URL` / `FORECAST_TUI_SIDECAR_URL` / `HERMES_TUI_SIDECAR_URL` | Mirror TUI gateway events to a sidecar websocket, usually for dashboard embedding or diagnostics. |
 | `SUPERFORECASTING_AGENT_HEAPDUMP_DIR` / `FORECAST_HEAPDUMP_DIR` / `HERMES_HEAPDUMP_DIR` | Directory for TUI heap dumps and memory diagnostics. Defaults under the forecast home directory. |
 | `SUPERFORECASTING_AGENT_HEAPDUMP_ON_START` / `FORECAST_HEAPDUMP_ON_START` / `HERMES_HEAPDUMP_ON_START` | Write a heap dump when the TUI starts. Intended for local diagnostics and memory-regression investigation. |
+| `SUPERFORECASTING_AGENT_DASHBOARD` / `FORECAST_DASHBOARD` / `HERMES_DASHBOARD` | Docker entrypoint toggle for launching the dashboard as a side process before the foreground command. |
+| `SUPERFORECASTING_AGENT_DASHBOARD_HOST` / `FORECAST_DASHBOARD_HOST` / `HERMES_DASHBOARD_HOST` | Docker entrypoint dashboard bind address. Defaults to `0.0.0.0` inside containers. |
+| `SUPERFORECASTING_AGENT_DASHBOARD_PORT` / `FORECAST_DASHBOARD_PORT` / `HERMES_DASHBOARD_PORT` | Docker entrypoint dashboard HTTP port. Defaults to `9119`. |
 | `SUPERFORECASTING_AGENT_DASHBOARD_TUI` / `FORECAST_DASHBOARD_TUI` / `HERMES_DASHBOARD_TUI` | Expose the in-browser Chat tab backed by the embedded TUI when running the dashboard. The forecast dashboard remains the primary surface. |
 | `SUPERFORECASTING_AGENT_WEB_DIST` / `FORECAST_WEB_DIST` / `HERMES_WEB_DIST` | Override the dashboard web build directory served by `superforecasting-agent dashboard`. |
 | `HERMES_INFERENCE_MODEL` | Force the model for `superforecasting-agent -z` / `superforecasting-agent chat` without mutating `config.yaml`. Pairs with `HERMES_INFERENCE_PROVIDER`. Useful for scripted callers (sweeper, CI, batch runners) that need to override the default model per run. |
