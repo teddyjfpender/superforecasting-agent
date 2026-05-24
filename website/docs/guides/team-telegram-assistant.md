@@ -135,7 +135,7 @@ tail -f ~/.superforecasting-agent/logs/gateway.log
 ```
 
 :::tip Service names
-The managed service may still use a compatibility unit name such as `hermes-gateway`. Prefer `superforecasting-agent gateway status`, `start`, `stop`, and `restart` so the CLI chooses the correct profile and service scope.
+The managed service now uses names such as `superforecasting-agent-gateway` and `ai.superforecasting-agent.gateway`. Prefer `superforecasting-agent gateway status`, `start`, `stop`, and `restart` so the CLI chooses the correct profile and service scope and can warn about older compatibility units.
 :::
 
 ## Step 4: Set Up Team Access
@@ -377,10 +377,10 @@ superforecasting-agent logs gateway -f
 On Linux, the service log may also be available through systemd:
 
 ```bash
-journalctl --user -u hermes-gateway -f
+journalctl --user -u superforecasting-agent-gateway -f
 ```
 
-That unit name is retained for compatibility. Use the CLI status command to find the profile-specific service if you run multiple installations.
+Older installs may still have a `hermes-gateway` compatibility unit. Use the CLI status command to find the active profile-specific service if you run multiple installations.
 
 ### Update Safely
 

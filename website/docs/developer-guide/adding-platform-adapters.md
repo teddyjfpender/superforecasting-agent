@@ -571,8 +571,8 @@ Five touchpoints:
 
 ### 8. Toolsets
 
-1. **`toolsets.py`** — Add `"hermes-newplat"` toolset definition with `_HERMES_CORE_TOOLS` (inherited compatibility names)
-2. **`toolsets.py`** — Add `"hermes-newplat"` to the `"hermes-gateway"` includes list
+1. **`toolsets.py`** — Add a fork-native `"forecast-newplat"` toolset definition with `_HERMES_CORE_TOOLS`; add a `"hermes-newplat"` compatibility alias only if existing integrations need it.
+2. **`toolsets.py`** — Add `"forecast-newplat"` to the `"forecast-gateway"` includes list and keep any `"hermes-gateway"` wiring explicitly marked as compatibility.
 
 ### 9. Optional: Platform Hints
 

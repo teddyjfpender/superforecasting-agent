@@ -570,7 +570,7 @@ superforecasting-agent gateway start      # Detects the updated plist and reload
 You can verify the plist has the correct PATH:
 ```bash
 /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:PATH" \
-  ~/Library/LaunchAgents/ai.hermes.gateway.plist
+  ~/Library/LaunchAgents/ai.superforecasting-agent.gateway.plist
 ```
 
 ---

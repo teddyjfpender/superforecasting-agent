@@ -255,7 +255,7 @@ rm -rf ~/.superforecasting-agent            # Optional - keep if you plan to rei
 If you installed the gateway as a system service, stop and disable it first:
 ```bash
 superforecasting-agent gateway stop
-# Linux: systemctl --user disable hermes-gateway
-# macOS: launchctl remove ai.hermes.gateway
+# Linux: systemctl --user disable superforecasting-agent-gateway
+# macOS: launchctl remove ai.superforecasting-agent.gateway
 ```
 :::

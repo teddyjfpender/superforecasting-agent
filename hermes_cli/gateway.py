@@ -97,27 +97,28 @@ def _get_service_pids() -> set:
     if supports_systemd_services():
         for scope_args in [["systemctl", "--user"], ["systemctl"]]:
             try:
-                result = subprocess.run(
-                    scope_args + ["list-units", "hermes-gateway*",
-                                  "--plain", "--no-legend", "--no-pager"],
-                    capture_output=True, text=True, timeout=5,
-                )
-                for line in result.stdout.strip().splitlines():
-                    parts = line.split()
-                    if not parts or not parts[0].endswith(".service"):
-                        continue
-                    svc = parts[0]
-                    try:
-                        show = subprocess.run(
-                            scope_args + ["show", svc,
-                                          "--property=MainPID", "--value"],
-                            capture_output=True, text=True, timeout=5,
-                        )
-                        pid = int(show.stdout.strip())
-                        if pid > 0:
-                            pids.add(pid)
-                    except (ValueError, subprocess.TimeoutExpired):
-                        pass
+                for unit_glob in (f"{_SERVICE_BASE}*", f"{_LEGACY_SERVICE_BASE}*"):
+                    result = subprocess.run(
+                        scope_args + ["list-units", unit_glob,
+                                      "--plain", "--no-legend", "--no-pager"],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    for line in result.stdout.strip().splitlines():
+                        parts = line.split()
+                        if not parts or not parts[0].endswith(".service"):
+                            continue
+                        svc = parts[0]
+                        try:
+                            show = subprocess.run(
+                                scope_args + ["show", svc,
+                                              "--property=MainPID", "--value"],
+                                capture_output=True, text=True, timeout=5,
+                            )
+                            pid = int(show.stdout.strip())
+                            if pid > 0:
+                                pids.add(pid)
+                        except (ValueError, subprocess.TimeoutExpired):
+                            pass
             except (FileNotFoundError, subprocess.TimeoutExpired):
                 pass
 
@@ -1268,7 +1269,8 @@ def _windows_gateway_should_absorb_console_controls() -> bool:
 # Service Configuration
 # =============================================================================
 
-_SERVICE_BASE = "hermes-gateway"
+_SERVICE_BASE = "superforecasting-agent-gateway"
+_LEGACY_SERVICE_BASE = "hermes-gateway"
 SERVICE_DESCRIPTION = "Superforecasting Agent Gateway - Messaging Platform Integration"
 
 
@@ -1328,10 +1330,11 @@ def _profile_arg(hermes_home: str | None = None) -> str:
 
 
 def get_service_name() -> str:
-    """Derive a systemd service name scoped to this HERMES_HOME.
+    """Derive a systemd service name scoped to this runtime home.
 
-    Default ``~/.hermes`` returns ``hermes-gateway`` (backward compatible).
-    Profile ``~/.hermes/profiles/coder`` returns ``hermes-gateway-coder``.
+    Default root returns ``superforecasting-agent-gateway``.
+    Profile ``<root>/profiles/coder`` returns
+    ``superforecasting-agent-gateway-coder``.
     Any other HERMES_HOME appends a short hash for uniqueness.
     """
     suffix = _profile_suffix()
@@ -1588,11 +1591,14 @@ def has_conflicting_systemd_units() -> bool:
     return len(get_installed_systemd_scopes()) > 1
 
 
-# Legacy service names from older Hermes installs that predate the
-# hermes-gateway rename. Kept as an explicit allowlist (NOT a glob) so
-# profile units (hermes-gateway-*.service) and unrelated third-party
-# "hermes" units are never matched.
-_LEGACY_SERVICE_NAMES: tuple[str, ...] = ("hermes.service",)
+def _legacy_service_names_for_current_profile() -> tuple[str, ...]:
+    """Return legacy systemd unit names that can conflict with this profile."""
+    suffix = _profile_suffix()
+    if suffix:
+        names = [f"{_LEGACY_SERVICE_BASE}-{suffix}.service"]
+    else:
+        names = ["hermes.service", f"{_LEGACY_SERVICE_BASE}.service"]
+    return tuple(dict.fromkeys(names))
 
 # ExecStart content markers that identify a unit as running our gateway.
 # A legacy unit is only flagged when its file contains one of these.
@@ -1618,20 +1624,20 @@ def _legacy_unit_search_paths() -> list[tuple[bool, Path]]:
 
 
 def _find_legacy_hermes_units() -> list[tuple[str, Path, bool]]:
-    """Return ``[(unit_name, unit_path, is_system)]`` for legacy Hermes gateway units.
+    """Return ``[(unit_name, unit_path, is_system)]`` for legacy gateway units.
 
-    Detects unit files installed by older Hermes versions that used a
-    different service name (e.g. ``hermes.service`` before the rename to
-    ``hermes-gateway.service``). When both a legacy unit and the current
-    ``hermes-gateway.service`` are active, they fight over the same bot
+    Detects unit files installed by older Hermes/Superforecasting Agent
+    versions that used a different service name. When both a legacy unit and
+    the current ``superforecasting-agent-gateway.service`` are active, they
+    fight over the same bot
     token — the PR #5646 signal-recovery change turns this into a 30-second
     SIGTERM flap loop.
 
     Safety guards:
 
-    * Explicit allowlist of legacy names (no globbing). Profile units such
-      as ``hermes-gateway-coder.service`` and unrelated third-party
-      ``hermes-*`` services are never matched.
+    * Explicit allowlist of legacy names (no globbing). Only the default
+      legacy unit and the current profile's legacy unit are matched;
+      unrelated third-party ``hermes-*`` services are never matched.
     * ExecStart content check — only flag units that invoke our gateway
       entrypoint. A user-created ``hermes.service`` running an unrelated
       binary is left untouched.
@@ -1639,8 +1645,9 @@ def _find_legacy_hermes_units() -> list[tuple[str, Path, bool]]:
       never mutates or removes anything.
     """
     results: list[tuple[str, Path, bool]] = []
+    names = _legacy_service_names_for_current_profile()
     for is_system, base in _legacy_unit_search_paths():
-        for name in _LEGACY_SERVICE_NAMES:
+        for name in names:
             unit_path = base / name
             try:
                 if not unit_path.exists():
@@ -1673,7 +1680,7 @@ def print_legacy_unit_warning() -> None:
     for name, path, is_system in legacy:
         scope = "system" if is_system else "user"
         print_info(f"    {path}  ({scope} scope)")
-    print_info("  These run alongside the current hermes-gateway service and")
+    print_info("  These run alongside the current superforecasting-agent-gateway service and")
     print_info("  cause SIGTERM flap loops — both try to use the same bot token.")
     print_info("  Remove them with:")
     print_info("    superforecasting-agent gateway migrate-legacy")
@@ -1960,11 +1967,16 @@ def _launchd_user_home() -> Path:
 def get_launchd_plist_path() -> Path:
     """Return the launchd plist path, scoped per profile.
 
-    Default ``~/.hermes`` → ``ai.hermes.gateway.plist`` (backward compatible).
-    Profile ``~/.hermes/profiles/coder`` → ``ai.hermes.gateway-coder.plist``.
+    Default root → ``ai.superforecasting-agent.gateway.plist``.
+    Profile ``<root>/profiles/coder`` →
+    ``ai.superforecasting-agent.gateway-coder.plist``.
     """
     suffix = _profile_suffix()
-    name = f"ai.hermes.gateway-{suffix}" if suffix else "ai.hermes.gateway"
+    name = (
+        f"ai.superforecasting-agent.gateway-{suffix}"
+        if suffix
+        else "ai.superforecasting-agent.gateway"
+    )
     return _launchd_user_home() / "Library" / "LaunchAgents" / f"{name}.plist"
 
 def _detect_venv_dir() -> Path | None:
@@ -2469,11 +2481,10 @@ def systemd_install(
     if system:
         _require_root_for_system_service("install")
 
-    # Offer to remove legacy units (hermes.service from pre-rename installs)
-    # before installing the new hermes-gateway.service. If both remain, they
-    # flap-fight for the Telegram bot token on every gateway startup.
-    # Only removes units matching _LEGACY_SERVICE_NAMES + our ExecStart
-    # signature — profile units are never touched.
+    # Offer to remove legacy units (hermes.service / hermes-gateway.service)
+    # before installing the new superforecasting-agent-gateway.service. If both
+    # remain, they flap-fight for the Telegram bot token on every gateway startup.
+    # Only removes allowlisted legacy names with our ExecStart signature.
     if has_legacy_hermes_units():
         print()
         print_legacy_unit_warning()
@@ -2796,7 +2807,11 @@ def systemd_status(deep: bool = False, system: bool = False, full: bool = False)
 def get_launchd_label() -> str:
     """Return the launchd service label, scoped per profile."""
     suffix = _profile_suffix()
-    return f"ai.hermes.gateway-{suffix}" if suffix else "ai.hermes.gateway"
+    return (
+        f"ai.superforecasting-agent.gateway-{suffix}"
+        if suffix
+        else "ai.superforecasting-agent.gateway"
+    )
 
 
 def _launchd_domain() -> str:

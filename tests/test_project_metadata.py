@@ -1340,6 +1340,9 @@ def test_gateway_setup_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "hermes_cli" / "gateway.py").read_text(encoding="utf-8")
 
+    assert '_SERVICE_BASE = "superforecasting-agent-gateway"' in text
+    assert 'else "ai.superforecasting-agent.gateway"' in text
+    assert '_LEGACY_SERVICE_BASE = "hermes-gateway"' in text
     assert "before the Hermes command" not in text
     assert "Hermes will log in directly" not in text
     assert "where Hermes delivers cron results" not in text

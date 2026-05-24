@@ -243,7 +243,7 @@ macro gateway install
 policy gateway install
 ```
 
-Each profile gets its own service name and runs independently. Some systemd/launchd names still include inherited `hermes-gateway-<profile>` identifiers for compatibility with existing services.
+Each profile gets its own service name and runs independently. Current systemd/launchd names use fork-native prefixes such as `superforecasting-agent-gateway-<profile>` and `ai.superforecasting-agent.gateway-<profile>`; older `hermes-gateway-*` units are treated as migration compatibility.
 
 ## Configuring Profiles
 
