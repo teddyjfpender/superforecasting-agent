@@ -32,7 +32,10 @@ SKILL_SOURCES = [
 ]
 
 LEGACY_REPO_BLOB_BASE = "https://github.com/NousResearch/hermes-agent/blob/main/"
-FORK_REPO_BLOB_BASE = "https://github.com/NousResearch/superforecasting-agent/blob/main/"
+FORK_REPO_BLOB_BASE = (
+    "https://github.com/teddyjfpender/superforecasting-agent/blob/"
+    "superforecasting-agent-snapshot/"
+)
 
 # Pages the user had previously hand-written in user-guide/skills/.
 # We leave these alone (they get first-class sidebar treatment separately).
@@ -238,7 +241,7 @@ def rewrite_relative_links(body: str, meta: dict[str, Any]) -> str:
     """
     body = body.replace(LEGACY_REPO_BLOB_BASE, FORK_REPO_BLOB_BASE)
     source_dir = "skills" if meta["source_kind"] == "bundled" else "optional-skills"
-    base = f"https://github.com/NousResearch/superforecasting-agent/blob/main/{source_dir}/{meta['rel_path']}"
+    base = f"{FORK_REPO_BLOB_BASE}{source_dir}/{meta['rel_path']}"
 
     def sub_link(m: re.Match) -> str:
         text = m.group(1)

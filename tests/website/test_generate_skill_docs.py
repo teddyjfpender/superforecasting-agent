@@ -125,5 +125,8 @@ def test_legacy_repo_reference_links_are_rewritten_to_fork(gen_module):
 
     result = gen_module.rewrite_relative_links(body, meta)
 
-    assert "https://github.com/NousResearch/superforecasting-agent/blob/main/" in result
+    assert (
+        "https://github.com/teddyjfpender/superforecasting-agent/blob/"
+        "superforecasting-agent-snapshot/"
+    ) in result
     assert "https://github.com/NousResearch/hermes-agent/blob/main/" not in result

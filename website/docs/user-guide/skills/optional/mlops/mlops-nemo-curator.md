@@ -390,8 +390,8 @@ cluster.close()
 
 ## References
 
-- **[Filtering Guide](https://github.com/NousResearch/superforecasting-agent/blob/main/optional-skills/mlops/nemo-curator/references/filtering.md)** - 30+ quality filters, heuristics
-- **[Deduplication Guide](https://github.com/NousResearch/superforecasting-agent/blob/main/optional-skills/mlops/nemo-curator/references/deduplication.md)** - Exact, fuzzy, semantic methods
+- **[Filtering Guide](https://github.com/teddyjfpender/superforecasting-agent/blob/superforecasting-agent-snapshot/optional-skills/mlops/nemo-curator/references/filtering.md)** - 30+ quality filters, heuristics
+- **[Deduplication Guide](https://github.com/teddyjfpender/superforecasting-agent/blob/superforecasting-agent-snapshot/optional-skills/mlops/nemo-curator/references/deduplication.md)** - Exact, fuzzy, semantic methods
 
 ## Resources
 
