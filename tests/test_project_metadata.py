@@ -271,6 +271,19 @@ def test_install_helpers_use_forecast_native_visible_copy():
     assert "Hermes-managed" not in node_bootstrap
 
 
+def test_modal_cleanup_script_is_forecast_native_with_legacy_matching():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "scripts" / "kill_modal.sh").read_text(encoding="utf-8")
+
+    assert "Stop Superforecasting Agent sandboxes" in text
+    assert "Stopping Superforecasting Agent sandboxes" in text
+    assert "Current Superforecasting Agent Modal status" in text
+    assert "superforecasting-agent|hermes-agent" in text
+    assert "Stop hermes-agent sandboxes" not in text
+    assert "Stopping hermes-agent sandboxes" not in text
+    assert "Current hermes-agent status" not in text
+
+
 def test_runtime_docstrings_use_forecast_native_home_paths():
     root = Path(__file__).resolve().parents[1]
     checked = {
