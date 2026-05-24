@@ -146,6 +146,12 @@ forecast schedule install-cron --schedule "every 1h" --auto-score --auto-postmor
 The installed job runs `forecast_self_check.py` without invoking the LLM. It
 emits output only when the ledger produces review alerts, scores, postmortems,
 lessons, or error-profile updates.
+If you install from an isolated ledger, pass the same `--db` you use for the
+desk; the generated bridge script preserves that path:
+
+```bash
+forecast --db "$FORECAST_DB" schedule install-cron --schedule "every 1h"
+```
 
 General scheduling remains available through the inherited runtime:
 

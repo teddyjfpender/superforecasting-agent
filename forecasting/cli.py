@@ -5552,6 +5552,7 @@ def _cmd_schedule_install_cron(args: argparse.Namespace) -> None:
         name=args.name,
         deliver=args.deliver,
         profile=args.profile,
+        db_path=args.db,
         auto_score=args.auto_score,
         auto_postmortem=args.auto_postmortem,
     )

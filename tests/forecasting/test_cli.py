@@ -11981,6 +11981,7 @@ def test_forecast_cli_correction_and_resolver_policy(tmp_path, capsys):
 def test_forecast_cli_installs_no_agent_cron_bridge(tmp_path, capsys, monkeypatch):
     parser = _parser()
     hermes_home = tmp_path / "home"
+    db_path = tmp_path / "pilot.db"
     token = set_hermes_home_override(hermes_home)
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     sys.modules.pop("cron.jobs", None)
@@ -11989,6 +11990,8 @@ def test_forecast_cli_installs_no_agent_cron_bridge(tmp_path, capsys, monkeypatc
             parser,
             [
                 "forecast",
+                "--db",
+                str(db_path),
                 "schedule",
                 "install-cron",
                 "--schedule",
@@ -12008,6 +12011,8 @@ def test_forecast_cli_installs_no_agent_cron_bridge(tmp_path, capsys, monkeypatc
     assert "cron_job:" in output
     script = hermes_home / "scripts" / "forecast_self_check.py"
     assert script.exists()
+    assert "--db" in script.read_text(encoding="utf-8")
+    assert str(db_path) in script.read_text(encoding="utf-8")
     assert "--auto-score" in script.read_text(encoding="utf-8")
     assert "--auto-postmortem" in script.read_text(encoding="utf-8")
     assert jobs[0]["name"] == "Forecast checks"

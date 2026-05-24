@@ -143,6 +143,7 @@ forecast --db "$FORECAST_DB" schedule add --question <id> \
   --auto-score \
   --auto-postmortem
 forecast --db "$FORECAST_DB" self-check --question <id>
+forecast --db "$FORECAST_DB" schedule install-cron --schedule "every 1h"
 ```
 
 Review the book:

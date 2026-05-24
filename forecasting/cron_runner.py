@@ -69,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
 def install_script(
     script_path: Path,
     *,
+    db_path: str | None = None,
     auto_score: bool = False,
     auto_postmortem: bool = False,
 ) -> None:
@@ -76,6 +77,8 @@ def install_script(
 
     script_path.parent.mkdir(parents=True, exist_ok=True)
     args = []
+    if db_path:
+        args.extend(["--db", db_path])
     if auto_score:
         args.append("--auto-score")
     if auto_postmortem:
