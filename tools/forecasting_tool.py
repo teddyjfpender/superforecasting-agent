@@ -44,6 +44,7 @@ from forecasting.source_adapters import (
     load_openfda_drug_applications,
     load_openmeteo_air_quality_forecasts,
     load_openmeteo_daily_forecasts,
+    load_openmeteo_historical_weather,
     load_owid_observations,
     load_pubmed_articles,
     load_pypi_releases,
@@ -196,6 +197,8 @@ FORECAST_LEDGER_SCHEMA = {
             "start_year": {"type": "integer"},
             "end_year": {"type": "integer"},
             "forecast_days": {"type": "integer"},
+            "start_date": {"type": "string"},
+            "end_date": {"type": "string"},
             "entity": {"type": "string"},
             "value_column": {"type": "string"},
             "date_field": {"type": "string"},
@@ -279,6 +282,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "cisakev",
                     "openmeteo",
                     "airquality",
+                    "weatherhistory",
                     "usgs",
                     "eonet",
                     "nws",
@@ -1289,6 +1293,16 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_openmeteo_air_quality_forecasts(source, **kwargs)
+    if adapter_name == "weatherhistory":
+        kwargs = {
+            "limit": limit,
+            "since": since,
+            "start_date": args.get("start_date"),
+            "end_date": args.get("end_date"),
+        }
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_openmeteo_historical_weather(source, **kwargs)
     if adapter_name == "usgs":
         kwargs = {"limit": limit, "since": since}
         if api_base_url:
@@ -1515,6 +1529,12 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         return (
             f"Open-Meteo air quality forecast for {data.get('latitude')},{data.get('longitude')} "
             f"at {data.get('forecast_time')}: US AQI {data.get('us_aqi')}, PM2.5 {data.get('pm2_5')}"
+        )
+    if adapter == "weatherhistory":
+        return (
+            f"Open-Meteo historical weather for {data.get('latitude')},{data.get('longitude')} "
+            f"on {data.get('observation_date')}: mean {data.get('temperature_2m_mean')}, "
+            f"precip {data.get('precipitation_sum')}"
         )
     if adapter == "usgs":
         magnitude = data.get("magnitude")

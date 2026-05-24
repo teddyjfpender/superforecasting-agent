@@ -27,6 +27,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "owid",
     "openmeteo",
     "airquality",
+    "weatherhistory",
     "usgs",
     "eonet",
     "nws",

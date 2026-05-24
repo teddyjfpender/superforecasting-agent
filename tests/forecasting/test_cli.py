@@ -42,6 +42,7 @@ from forecasting.source_adapters import (
     OpenFdaDrugApplication,
     OpenMeteoAirQualityForecast,
     OpenMeteoDailyForecast,
+    OpenMeteoHistoricalWeatherObservation,
     OpenAlexWork,
     OwidObservation,
     PubMedArticle,
@@ -4284,6 +4285,138 @@ def test_forecast_cli_airquality_import_captures_forecasts_as_evidence(
     assert evidence[0].metadata["pm2_5"] == 8.4
 
 
+def test_weatherhistory_adapter_loads_daily_observations(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return {
+            "latitude": 37.77,
+            "longitude": -122.42,
+            "daily_units": {"temperature_2m_mean": "C", "precipitation_sum": "mm"},
+            "daily": {
+                "time": ["2026-05-20", "2026-05-21"],
+                "temperature_2m_mean": [16.2, 17.4],
+                "temperature_2m_max": [21.5, 22.0],
+                "temperature_2m_min": [12.1, 13.2],
+                "precipitation_sum": [0.0, 2.5],
+                "wind_speed_10m_max": [18.0, 20.5],
+            },
+        }
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    observations = source_adapters.load_openmeteo_historical_weather(
+        "weatherhistory:37.77,-122.42?start=2026-05-20&end=2026-05-21",
+        limit=2,
+        since="2026-05-20T00:00:00Z",
+        api_base_url="https://history.test/v1/archive",
+    )
+    parsed = urlparse(captured["endpoint"])
+    params = parse_qs(parsed.query)
+
+    assert captured["label"] == "openmeteo historical weather"
+    assert parsed.path == "/v1/archive"
+    assert params["latitude"] == ["37.77"]
+    assert params["longitude"] == ["-122.42"]
+    assert params["start_date"] == ["2026-05-20"]
+    assert params["end_date"] == ["2026-05-21"]
+    assert "temperature_2m_mean" in params["daily"][0]
+    assert observations[0].observation_date == "2026-05-20"
+    assert observations[0].temperature_2m_mean == 16.2
+    assert observations[0].precipitation_sum == 0.0
+    assert observations[0].source_name == "Open-Meteo Historical Weather"
+
+
+def test_forecast_cli_weatherhistory_import_captures_observations_as_evidence(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_openmeteo_historical_weather(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            OpenMeteoHistoricalWeatherObservation(
+                latitude=37.77,
+                longitude=-122.42,
+                observation_date="2026-05-20",
+                temperature_2m_mean=16.2,
+                temperature_2m_max=21.5,
+                temperature_2m_min=12.1,
+                precipitation_sum=0.0,
+                wind_speed_10m_max=18.0,
+                source_name="Open-Meteo Historical Weather",
+                entry_id="37.77,-122.42:2026-05-20",
+                raw={"daily_units": {"temperature_2m_mean": "C"}},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_openmeteo_historical_weather", fake_load_openmeteo_historical_weather)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will Open-Meteo historical weather evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if Open-Meteo historical weather evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "weatherhistory",
+            "37.77,-122.42",
+            "--question",
+            question_id,
+            "--start-date",
+            "2026-05-20",
+            "--end-date",
+            "2026-05-21",
+            "--limit",
+            "3",
+            "--claim-type",
+            "fact",
+            "--reliability",
+            "0.86",
+            "--relevance",
+            "0.91",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 weatherhistory evidence item(s)" in output
+    assert captured["source"] == "37.77,-122.42"
+    assert captured["kwargs"]["start_date"] == "2026-05-20"
+    assert captured["kwargs"]["end_date"] == "2026-05-21"
+    assert evidence[0].claim == "Open-Meteo historical weather 2026-05-20: mean 16.2, precip 0.0"
+    assert evidence[0].summary.startswith("Open-Meteo historical weather for 37.77,-122.42")
+    assert evidence[0].source_name == "Open-Meteo Historical Weather"
+    assert evidence[0].source_type == "adapter:weatherhistory"
+    assert evidence[0].claim_type == "fact"
+    assert evidence[0].reliability_rating == 0.86
+    assert evidence[0].relevance_rating == 0.91
+    assert evidence[0].metadata["adapter"] == "weatherhistory"
+    assert evidence[0].metadata["observation_date"] == "2026-05-20"
+    assert evidence[0].metadata["temperature_2m_mean"] == 16.2
+
+
 def test_usgs_adapter_loads_earthquake_events(monkeypatch):
     captured = {}
 
@@ -7435,6 +7568,7 @@ def test_forecast_cli_lists_extension_points(capsys):
     assert "nvd-cves" in output
     assert "openmeteo-daily-forecast" in output
     assert "openmeteo-air-quality" in output
+    assert "openmeteo-historical-weather" in output
     assert "usgs-earthquakes" in output
     assert "nasa-eonet-events" in output
     assert "nws-alerts" in output
@@ -7488,6 +7622,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "secfacts:<cik>/<concept>" in output
     assert "openmeteo:<lat,lon>" in output
     assert "airquality:<lat,lon>" in output
+    assert "weatherhistory:<lat,lon>?start=<date>&end=<date>" in output
     assert "usgs:<query>" in output
     assert "eonet:<query-or-category>" in output
     assert "nws:<area-or-point-or-query>" in output
@@ -7516,7 +7651,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "fivethirtyeight", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "fivethirtyeight", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "fivethirtyeight:<dataset-or-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
@@ -7527,6 +7662,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     assert any(source["watch_prefix"] == "coingecko:<coin-id>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "secfacts:<cik>/<concept>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "airquality:<lat,lon>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "weatherhistory:<lat,lon>?start=<date>&end=<date>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "clinicaltrials:<query-or-NCT-id>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "openfda:<query-or-application-number>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "pubmed:<query-or-PMID>" for source in payload["sources"])

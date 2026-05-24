@@ -98,6 +98,7 @@ forecast import openfda "BLA125514" --question <id>
 forecast import pubmed "forecasting calibration" --question <id>
 forecast import openmeteo 38.7,-9.1 --question <id>
 forecast import airquality 38.7,-9.1 --question <id>
+forecast import weatherhistory 38.7,-9.1 --start-date 2025-01-01 --end-date 2025-12-31 --question <id>
 forecast import usgs "minmagnitude=5" --question <id>
 forecast import eonet "category=wildfires&status=open" --question <id>
 forecast import nws "area=CA&event=Flood Warning" --question <id>

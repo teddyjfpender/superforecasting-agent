@@ -42,6 +42,7 @@ from forecasting.source_adapters import (
     OpenFdaDrugApplication,
     OpenMeteoAirQualityForecast,
     OpenMeteoDailyForecast,
+    OpenMeteoHistoricalWeatherObservation,
     OpenAlexWork,
     OwidObservation,
     PolymarketMarketImport,
@@ -2478,6 +2479,66 @@ def test_watched_airquality_source_creates_alert_on_forecast_change(tmp_path, mo
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert f"forecast import airquality 37.77,-122.42 --question {question.id}" in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_weatherhistory_source_creates_alert_on_observation_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched historical weather be detected?",
+        resolution_criteria="Resolved yes if watched historical weather changes create alerts.",
+    )
+    mean_temps = [16.2]
+    captured_sources = []
+
+    def fake_load_openmeteo_historical_weather(source: str, **kwargs):
+        captured_sources.append(source)
+        return [
+            OpenMeteoHistoricalWeatherObservation(
+                latitude=37.77,
+                longitude=-122.42,
+                observation_date="2026-05-20",
+                temperature_2m_mean=mean_temps[0],
+                temperature_2m_max=21.5,
+                temperature_2m_min=12.1,
+                precipitation_sum=0.0,
+                wind_speed_10m_max=18.0,
+                source_name="Open-Meteo Historical Weather",
+                entry_id="37.77,-122.42:2026-05-20",
+                raw={"temperature_2m_mean": mean_temps[0]},
+            )
+        ]
+
+    monkeypatch.setattr(
+        "forecasting.source_adapters.load_openmeteo_historical_weather",
+        fake_load_openmeteo_historical_weather,
+    )
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="weatherhistory:37.77,-122.42?start=2026-05-20&end=2026-05-21",
+    )
+
+    assert watch["source_type"] == "weatherhistory"
+    assert watch["last_seen_signature"].startswith("weatherhistory:1:")
+    assert captured_sources[-1] == "37.77,-122.42?start=2026-05-20&end=2026-05-21"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    mean_temps[0] = 18.0
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert (
+        f"forecast import weatherhistory 37.77,-122.42 --start-date 2026-05-20 "
+        f"--end-date 2026-05-21 --question {question.id}"
+    ) in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]

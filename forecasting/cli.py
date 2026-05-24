@@ -88,6 +88,7 @@ from forecasting.source_adapters import (
     load_openfda_drug_applications,
     load_openmeteo_air_quality_forecasts,
     load_openmeteo_daily_forecasts,
+    load_openmeteo_historical_weather,
     load_openalex_works,
     load_owid_observations,
     load_pubmed_articles,
@@ -148,6 +149,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "domain": "hourly air-quality forecasts",
         "import_command": "forecast import airquality <lat,lon> --question <id>",
         "watch_prefix": "airquality:<lat,lon>",
+    },
+    {
+        "name": "weatherhistory",
+        "domain": "historical daily weather observations",
+        "import_command": "forecast import weatherhistory <lat,lon> --start-date <date> --end-date <date> --question <id>",
+        "watch_prefix": "weatherhistory:<lat,lon>?start=<date>&end=<date>",
     },
     {
         "name": "usgs",
@@ -537,6 +544,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "cisakev",
         "openmeteo",
         "airquality",
+        "weatherhistory",
         "usgs",
         "eonet",
         "nws",
@@ -618,6 +626,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "cisakev",
             "openmeteo",
             "airquality",
+            "weatherhistory",
             "usgs",
             "eonet",
             "nws",
@@ -755,6 +764,14 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://air-quality-api.open-meteo.com/v1/air-quality",
                 help="Override Open-Meteo Air Quality API endpoint for tests or private mirrors",
+            )
+        if name == "weatherhistory":
+            adapter.add_argument("--start-date")
+            adapter.add_argument("--end-date")
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://archive-api.open-meteo.com/v1/archive",
+                help="Override Open-Meteo Historical Weather API endpoint for tests or private mirrors",
             )
         if name == "usgs":
             adapter.add_argument(
@@ -3534,6 +3551,65 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} airquality evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "weatherhistory":
+        if not args.question_id:
+            raise SystemExit("forecast import weatherhistory requires --question")
+        observations = load_openmeteo_historical_weather(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for observation in observations:
+            summary = (
+                f"Open-Meteo historical weather for {observation.latitude:g},{observation.longitude:g} "
+                f"on {observation.observation_date}: mean {observation.temperature_2m_mean}, "
+                f"max {observation.temperature_2m_max}, min {observation.temperature_2m_min}, "
+                f"precipitation {observation.precipitation_sum}, wind max {observation.wind_speed_10m_max}."
+            )
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=(
+                        f"OpenMeteoHistory:{observation.latitude:g},{observation.longitude:g}:"
+                        f"{observation.observation_date}"
+                    ),
+                    source_name=observation.source_name,
+                    source_type="adapter:weatherhistory",
+                    available_at=args.as_of,
+                    claim=(
+                        f"Open-Meteo historical weather {observation.observation_date}: "
+                        f"mean {observation.temperature_2m_mean}, precip {observation.precipitation_sum}"
+                    ),
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "weatherhistory",
+                        "latitude": observation.latitude,
+                        "longitude": observation.longitude,
+                        "observation_date": observation.observation_date,
+                        "temperature_2m_mean": observation.temperature_2m_mean,
+                        "temperature_2m_max": observation.temperature_2m_max,
+                        "temperature_2m_min": observation.temperature_2m_min,
+                        "precipitation_sum": observation.precipitation_sum,
+                        "wind_speed_10m_max": observation.wind_speed_10m_max,
+                        "api_base_url": args.api_base_url,
+                        "start_date": args.start_date,
+                        "end_date": args.end_date,
+                        "raw": observation.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} weatherhistory evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

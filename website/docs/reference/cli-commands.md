@@ -50,7 +50,7 @@ For in-chat slash commands, see [Slash Commands Reference](./slash-commands.md).
 | `forecast export` | Export auditable question or portfolio packets. |
 | `forecast about` | Show fork context and forecast-desk scope. |
 
-Common sources for `forecast import` include `data`, `rss`, `gdelt`, `fivethirtyeight`, `fred`, `eia`, `treasury`, `bls`, `worldbank`, `census`, `socrata`, `stooq`, `yahoo`, `coingecko`, `sec`, `secfacts`, `arxiv`, `openalex`, `pubmed`, `wikipedia`, `wikipediapageviews`, `github`, `githubissues`, `githubcommits`, `githubactions`, `pypi`, `npm`, `hackernews`, `reddit`, `federalregister`, `courtlistener`, `nvd`, `cisakev`, `clinicaltrials`, `openfda`, `openmeteo`, `airquality`, `usgs`, `eonet`, `nws`, `owid`, `metaculus`, `manifold`, `polymarket`, `kalshi`, `benchmark`, and `tournament`. Run `forecast sources` or `forecast sources --json` for the current adapter list and watch-prefix guidance.
+Common sources for `forecast import` include `data`, `rss`, `gdelt`, `fivethirtyeight`, `fred`, `eia`, `treasury`, `bls`, `worldbank`, `census`, `socrata`, `stooq`, `yahoo`, `coingecko`, `sec`, `secfacts`, `arxiv`, `openalex`, `pubmed`, `wikipedia`, `wikipediapageviews`, `github`, `githubissues`, `githubcommits`, `githubactions`, `pypi`, `npm`, `hackernews`, `reddit`, `federalregister`, `courtlistener`, `nvd`, `cisakev`, `clinicaltrials`, `openfda`, `openmeteo`, `airquality`, `weatherhistory`, `usgs`, `eonet`, `nws`, `owid`, `metaculus`, `manifold`, `polymarket`, `kalshi`, `benchmark`, and `tournament`. Run `forecast sources` or `forecast sources --json` for the current adapter list and watch-prefix guidance.
 
 Backtest probability sources include:
 

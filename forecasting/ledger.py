@@ -15,7 +15,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 from urllib.request import Request, urlopen
 
 from hermes_constants import get_hermes_home
@@ -77,6 +77,7 @@ WATCH_SOURCE_TYPES = {
     "cisakev",
     "openmeteo",
     "airquality",
+    "weatherhistory",
     "usgs",
     "eonet",
     "nws",
@@ -3024,7 +3025,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
+                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
                 "sec, secfacts, arxiv, openalex, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -3125,6 +3126,7 @@ class ForecastLedger:
                     "cisakev",
                     "openmeteo",
                     "airquality",
+                    "weatherhistory",
                     "usgs",
                     "eonet",
                     "nws",
@@ -5637,6 +5639,8 @@ class ForecastLedger:
             return "openmeteo"
         if source.startswith("airquality:"):
             return "airquality"
+        if source.startswith("weatherhistory:"):
+            return "weatherhistory"
         if source.startswith("usgs:"):
             return "usgs"
         if source.startswith("eonet:"):
@@ -5729,6 +5733,8 @@ class ForecastLedger:
             return self._openmeteo_source_signature(source)
         if source_type == "airquality":
             return self._airquality_source_signature(source)
+        if source_type == "weatherhistory":
+            return self._weatherhistory_source_signature(source)
         if source_type == "usgs":
             return self._usgs_source_signature(source)
         if source_type == "eonet":
@@ -6296,6 +6302,31 @@ class ForecastLedger:
         ]
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"airquality:{len(payload)}:{digest}"
+
+    def _weatherhistory_source_signature(self, source: str) -> str:
+        source_value = source.split(":", 1)[1].strip() if source.startswith("weatherhistory:") else source.strip()
+        if not source_value:
+            return "missing:weatherhistory:empty-source"
+        try:
+            from forecasting.source_adapters import load_openmeteo_historical_weather
+
+            observations = load_openmeteo_historical_weather(source_value, limit=366)
+        except Exception as exc:
+            return f"missing:weatherhistory:{source_value}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "entry_id": observation.entry_id,
+                "observation_date": observation.observation_date,
+                "precipitation_sum": observation.precipitation_sum,
+                "temperature_2m_mean": observation.temperature_2m_mean,
+                "temperature_2m_max": observation.temperature_2m_max,
+                "temperature_2m_min": observation.temperature_2m_min,
+                "wind_speed_10m_max": observation.wind_speed_10m_max,
+            }
+            for observation in observations
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"weatherhistory:{len(payload)}:{digest}"
 
     def _usgs_source_signature(self, source: str) -> str:
         source_value = source.split(":", 1)[1].strip() if source.startswith("usgs:") else source.strip()
@@ -7096,6 +7127,17 @@ class ForecastLedger:
             return (
                 f"Run `forecast import airquality {source_value} --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "weatherhistory" and scope_type == "question" and scope_ref:
+            source_value = source.split(":", 1)[1].strip() if source.startswith("weatherhistory:") else source
+            location, query = (source_value.split("?", 1) + [""])[:2] if "?" in source_value else (source_value, "")
+            params = dict(parse_qsl(query, keep_blank_values=False))
+            start_date = params.get("start") or params.get("start_date")
+            end_date = params.get("end") or params.get("end_date")
+            date_args = f" --start-date {start_date} --end-date {end_date}" if start_date and end_date else ""
+            return (
+                f"Run `forecast import weatherhistory {location}{date_args} --question {scope_ref}` and then append "
+                "a forecast update if the historical base rate should move."
             )
         if watch["source_type"] == "usgs" and scope_type == "question" and scope_ref:
             query = source.split(":", 1)[1].strip() if source.startswith("usgs:") else source
