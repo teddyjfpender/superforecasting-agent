@@ -84,6 +84,7 @@ class FakeTree:
 
     def command(self, *, name, description):
         def decorator(fn):
+            fn.__discord_description__ = description
             self.commands[name] = fn
             return fn
 
@@ -114,6 +115,12 @@ def adapter():
     return adapter
 
 
+def _command_description(command):
+    return getattr(command, "description", None) or getattr(
+        command, "__discord_description__", ""
+    )
+
+
 # ------------------------------------------------------------------
 # /thread slash command registration
 # ------------------------------------------------------------------
@@ -139,6 +146,23 @@ async def test_registers_native_thread_slash_command(adapter):
     # auth check passes — not by the closure.
     interaction.response.defer.assert_not_awaited()
     adapter._handle_thread_create_slash.assert_awaited_once_with(interaction, "Planning", "", 1440)
+
+
+def test_native_discord_command_descriptions_are_forecast_native(adapter):
+    with patch(
+        "hermes_cli.commands.discord_skill_commands_by_category",
+        return_value=({"forecasting": [("briefing", "Brief forecast evidence", "/briefing")]}, [], 0),
+    ):
+        adapter._register_slash_commands()
+
+    for name in ("reset", "status", "stop", "thread", "skill"):
+        description = _command_description(adapter._client.tree.commands[name])
+        assert "Hermes" not in description
+
+    assert "forecast research session" in _command_description(
+        adapter._client.tree.commands["thread"]
+    )
+    assert "forecast skill" in _command_description(adapter._client.tree.commands["skill"])
 
 
 @pytest.mark.asyncio
@@ -980,4 +1004,3 @@ def test_register_skill_command_autocomplete_filters_by_name_and_description(ada
     # (covered in other tests). The autocomplete filter itself is exercised
     # via direct function call in the real-discord integration path.
     assert skill_cmd.callback is not None
-
