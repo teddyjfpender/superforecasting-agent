@@ -30,7 +30,7 @@ Load this skill whenever the user asks to:
 
 Also apply this skill to **your own** output when writing user-facing prose — release notes, PR descriptions, documentation, long-form explanations, summaries. Superforecasting Agent's baseline voice already strips most of these, but a focused pass catches what slips through.
 
-## How to use it in Hermes
+## How to use it in Superforecasting Agent
 
 The text usually arrives one of three ways:
 1. **Inline** — user pastes the text directly into the message. Work on it in-place, reply with the rewrite.

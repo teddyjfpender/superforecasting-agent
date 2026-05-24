@@ -729,6 +729,88 @@ def test_airtable_and_neuroskill_skill_docs_are_forecast_native():
     assert "Connect Hermes to a running" not in text
 
 
+def test_parallel_touchdesigner_and_creative_skill_docs_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "optional-skills" / "research" / "parallel-cli" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "optional"
+            / "research"
+            / "research-parallel-cli.md"
+        ),
+        root / "skills" / "creative" / "touchdesigner-mcp" / "SKILL.md",
+        root / "skills" / "creative" / "touchdesigner-mcp" / "scripts" / "setup.sh",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "creative"
+            / "creative-touchdesigner-mcp.md"
+        ),
+        root / "skills" / "creative" / "pretext" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "creative"
+            / "creative-pretext.md"
+        ),
+        root / "skills" / "creative" / "humanizer" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "creative"
+            / "creative-humanizer.md"
+        ),
+        root / "skills" / "creative" / "popular-web-designs" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "creative"
+            / "creative-popular-web-designs.md"
+        ),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths if path.exists())
+
+    assert "core Superforecasting Agent capability" in text
+    assert "inherited Superforecasting Agent `web_search` / `web_extract`" in text
+    assert "Superforecasting Agent config" in text
+    assert "Restart Superforecasting Agent session" in text
+    assert "SUPERFORECASTING_AGENT_HOME" in text
+    assert "FORECAST_HOME" in text
+    assert "How to use it in Superforecasting Agent" in text
+    assert "Superforecasting Agent Implementation Notes" in text
+    assert "Superforecasting Agent notes" in text
+    assert "Hermes core capability" not in text
+    assert "Hermes native `web_search` / `web_extract`" not in text
+    assert "Hermes native tools" not in text
+    assert "Add `twozero_td` MCP server to Hermes config" not in text
+    assert "Restart Hermes session" not in text
+    assert "How to use it in Hermes" not in text
+    assert "Hermes Implementation Notes" not in text
+    assert "template's Hermes notes" not in text
+    assert "${HERMES_HOME:-$HOME/.hermes}/skills/creative/touchdesigner-mcp/scripts/setup.sh" not in text
+
+
 def test_github_auth_skill_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [
