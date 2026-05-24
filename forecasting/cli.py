@@ -58,6 +58,7 @@ from forecasting.models import (
 from forecasting.protocol import PROTOCOL_STAGES, build_protocol_messages
 from forecasting.source_adapters import (
     load_arxiv_papers,
+    load_bluesky_posts,
     load_bls_observations,
     load_census_records,
     load_cisa_kev_vulnerabilities,
@@ -369,6 +370,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "watch_prefix": "reddit:<query>",
     },
     {
+        "name": "bluesky",
+        "domain": "public social posts and attention",
+        "import_command": 'forecast import bluesky "<query>" --question <id>',
+        "watch_prefix": "bluesky:<query>",
+    },
+    {
         "name": "reliefweb",
         "domain": "humanitarian/disaster reports",
         "import_command": 'forecast import reliefweb "<query>" --question <id>',
@@ -552,6 +559,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "npm",
         "hackernews",
         "reddit",
+        "bluesky",
         "reliefweb",
         "federalregister",
         "courtlistener",
@@ -636,6 +644,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "npm",
             "hackernews",
             "reddit",
+            "bluesky",
             "reliefweb",
             "federalregister",
             "courtlistener",
@@ -743,6 +752,17 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://www.reddit.com/search.json",
                 help="Override Reddit JSON search endpoint for tests or private mirrors",
+            )
+        if name == "bluesky":
+            adapter.add_argument("--sort", choices=["latest", "top"], default="latest")
+            adapter.add_argument("--author", help="Filter Bluesky search to an author handle or DID")
+            adapter.add_argument("--lang", help="Filter Bluesky search by BCP-47 language code")
+            adapter.add_argument("--link-domain", help="Filter Bluesky posts by linked domain")
+            adapter.add_argument("--url-filter", help="Filter Bluesky posts by linked URL")
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts",
+                help="Override Bluesky public search endpoint for tests or private mirrors",
             )
         if name == "reliefweb":
             adapter.add_argument(
@@ -2876,6 +2896,82 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} reddit evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "bluesky":
+        if not args.question_id:
+            raise SystemExit("forecast import bluesky requires --question")
+        posts = load_bluesky_posts(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            sort=args.sort,
+            author=args.author,
+            lang=args.lang,
+            link_domain=args.link_domain,
+            url_filter=args.url_filter,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for post in posts:
+            engagement = []
+            if post.reply_count is not None:
+                engagement.append(f"{post.reply_count} replies")
+            if post.repost_count is not None:
+                engagement.append(f"{post.repost_count} reposts")
+            if post.like_count is not None:
+                engagement.append(f"{post.like_count} likes")
+            if post.quote_count is not None:
+                engagement.append(f"{post.quote_count} quotes")
+            engagement_text = f" ({', '.join(engagement)})" if engagement else ""
+            author_text = f" by @{post.author_handle}" if post.author_handle else ""
+            summary = (
+                f"Bluesky post{author_text} at {post.created_at or post.indexed_at or 'unknown'}"
+                f"{engagement_text}."
+            )
+            if post.text:
+                summary = f"{summary} {post.text}"
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=post.url or f"Bluesky:{post.post_uri}",
+                    source_url=post.url,
+                    source_name=post.source_name,
+                    source_type="adapter:bluesky",
+                    published_at=post.created_at,
+                    available_at=post.created_at or post.indexed_at or args.as_of,
+                    claim=f"Bluesky: {post.text[:140] if post.text else post.post_uri}",
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "bluesky",
+                        "query": args.source,
+                        "post_uri": post.post_uri,
+                        "cid": post.cid,
+                        "author_handle": post.author_handle,
+                        "author_display_name": post.author_display_name,
+                        "author_did": post.author_did,
+                        "created_at": post.created_at,
+                        "indexed_at": post.indexed_at,
+                        "reply_count": post.reply_count,
+                        "repost_count": post.repost_count,
+                        "like_count": post.like_count,
+                        "quote_count": post.quote_count,
+                        "sort": args.sort,
+                        "author_filter": args.author,
+                        "lang_filter": args.lang,
+                        "link_domain_filter": args.link_domain,
+                        "url_filter": args.url_filter,
+                        "api_base_url": args.api_base_url,
+                        "raw": post.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} bluesky evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

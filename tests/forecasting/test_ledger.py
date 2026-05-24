@@ -16,6 +16,7 @@ from forecasting.models import OutcomeSpace, ValidationError
 from forecasting.protocol import build_forecast_chat_system_prompt, build_protocol_messages
 from forecasting.source_adapters import (
     ArxivPaper,
+    BlueskyPost,
     BlsObservation,
     CensusRecord,
     CisaKevVulnerability,
@@ -2124,6 +2125,65 @@ def test_watched_reddit_source_creates_alert_on_post_change(tmp_path, monkeypatc
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert f'forecast import reddit "forecast desk" --question {question.id}' in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_bluesky_source_creates_alert_on_post_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched Bluesky search be detected?",
+        resolution_criteria="Resolved yes if watched Bluesky post changes create alerts.",
+    )
+    likes = [128]
+    captured_sources = []
+
+    def fake_load_bluesky_posts(source: str, **kwargs):
+        captured_sources.append(source)
+        return [
+            BlueskyPost(
+                post_uri="at://did:plc:abc/app.bsky.feed.post/3kforecast",
+                cid="bafyforecast",
+                text="Forecast Desk launches public beta",
+                author_handle="analyst.bsky.social",
+                author_display_name="Analyst",
+                author_did="did:plc:abc",
+                created_at="2026-05-21T14:30:00Z",
+                indexed_at="2026-05-21T14:31:00Z",
+                reply_count=4,
+                repost_count=12,
+                like_count=likes[0],
+                quote_count=3,
+                url="https://bsky.app/profile/analyst.bsky.social/post/3kforecast",
+                source_name="Bluesky @analyst.bsky.social",
+                entry_id="at://did:plc:abc/app.bsky.feed.post/3kforecast",
+                raw={"likeCount": likes[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_bluesky_posts", fake_load_bluesky_posts)
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="bluesky:forecast desk",
+    )
+
+    assert watch["source_type"] == "bluesky"
+    assert watch["last_seen_signature"].startswith("bluesky:1:")
+    assert captured_sources[-1] == "forecast desk"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    likes[0] = 180
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f'forecast import bluesky "forecast desk" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]

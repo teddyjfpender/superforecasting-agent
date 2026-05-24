@@ -99,6 +99,7 @@ forecast --db "$FORECAST_DB" import githubcommits owner/repo --question <id>
 forecast --db "$FORECAST_DB" import githubactions owner/repo --question <id>
 forecast --db "$FORECAST_DB" import hackernews "product query" --question <id>
 forecast --db "$FORECAST_DB" import reddit "topic query" --question <id>
+forecast --db "$FORECAST_DB" import bluesky "topic query" --question <id>
 forecast --db "$FORECAST_DB" import courtlistener "case or legal query" --question <id>
 forecast --db "$FORECAST_DB" import cisakev CVE-2026-0001 --question <id>
 ```

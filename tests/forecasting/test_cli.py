@@ -19,6 +19,7 @@ from forecasting.benchmarks import load_builtin_benchmark
 from forecasting.ledger import ForecastLedger
 from forecasting.source_adapters import (
     ArxivPaper,
+    BlueskyPost,
     BlsObservation,
     CensusRecord,
     CisaKevVulnerability,
@@ -3434,6 +3435,181 @@ def test_forecast_cli_reddit_import_captures_posts_as_evidence(tmp_path, capsys,
     assert evidence[0].metadata["post_id"] == "t3_abc123"
     assert evidence[0].metadata["score"] == 128
     assert evidence[0].metadata["comments"] == 34
+
+
+def test_bluesky_adapter_loads_search_results(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return {
+            "posts": [
+                {
+                    "uri": "at://did:plc:abc/app.bsky.feed.post/3kforecast",
+                    "cid": "bafyforecast",
+                    "author": {
+                        "did": "did:plc:abc",
+                        "handle": "analyst.bsky.social",
+                        "displayName": "Analyst",
+                    },
+                    "record": {
+                        "text": "Forecast Desk launches public beta",
+                        "createdAt": "2026-05-21T14:30:00.000Z",
+                    },
+                    "indexedAt": "2026-05-21T14:31:00.000Z",
+                    "replyCount": 4,
+                    "repostCount": 12,
+                    "likeCount": 128,
+                    "quoteCount": 3,
+                }
+            ]
+        }
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    posts = source_adapters.load_bluesky_posts(
+        "forecast desk",
+        limit=2,
+        since="2026-05-01T00:00:00Z",
+        sort="top",
+        author="analyst.bsky.social",
+        lang="en",
+        link_domain="example.test",
+        url_filter="https://example.test/forecast-desk",
+        api_base_url="https://bsky.test/xrpc/app.bsky.feed.searchPosts",
+    )
+    parsed = urlparse(captured["endpoint"])
+    params = parse_qs(parsed.query)
+
+    assert captured["label"] == "bluesky search"
+    assert parsed.path == "/xrpc/app.bsky.feed.searchPosts"
+    assert params["q"] == ["forecast desk"]
+    assert params["sort"] == ["top"]
+    assert params["limit"] == ["2"]
+    assert params["since"] == ["2026-05-01T00:00:00Z"]
+    assert params["author"] == ["analyst.bsky.social"]
+    assert params["lang"] == ["en"]
+    assert params["domain"] == ["example.test"]
+    assert params["url"] == ["https://example.test/forecast-desk"]
+    assert posts[0].post_uri == "at://did:plc:abc/app.bsky.feed.post/3kforecast"
+    assert posts[0].cid == "bafyforecast"
+    assert posts[0].text == "Forecast Desk launches public beta"
+    assert posts[0].author_handle == "analyst.bsky.social"
+    assert posts[0].created_at == "2026-05-21T14:30:00Z"
+    assert posts[0].indexed_at == "2026-05-21T14:31:00Z"
+    assert posts[0].url == "https://bsky.app/profile/analyst.bsky.social/post/3kforecast"
+    assert posts[0].reply_count == 4
+    assert posts[0].repost_count == 12
+    assert posts[0].like_count == 128
+    assert posts[0].quote_count == 3
+
+
+def test_forecast_cli_bluesky_import_captures_posts_as_evidence(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_bluesky_posts(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            BlueskyPost(
+                post_uri="at://did:plc:abc/app.bsky.feed.post/3kforecast",
+                cid="bafyforecast",
+                text="Forecast Desk launches public beta",
+                author_handle="analyst.bsky.social",
+                author_display_name="Analyst",
+                author_did="did:plc:abc",
+                created_at="2026-05-21T14:30:00Z",
+                indexed_at="2026-05-21T14:31:00Z",
+                reply_count=4,
+                repost_count=12,
+                like_count=128,
+                quote_count=3,
+                url="https://bsky.app/profile/analyst.bsky.social/post/3kforecast",
+                source_name="Bluesky @analyst.bsky.social",
+                entry_id="at://did:plc:abc/app.bsky.feed.post/3kforecast",
+                raw={"uri": "at://did:plc:abc/app.bsky.feed.post/3kforecast"},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_bluesky_posts", fake_load_bluesky_posts)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will Bluesky evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if Bluesky evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "bluesky",
+            "forecast desk",
+            "--question",
+            question_id,
+            "--limit",
+            "3",
+            "--since",
+            "2026-05-01T00:00:00Z",
+            "--sort",
+            "top",
+            "--author",
+            "analyst.bsky.social",
+            "--lang",
+            "en",
+            "--link-domain",
+            "example.test",
+            "--url-filter",
+            "https://example.test/forecast-desk",
+            "--api-base-url",
+            "https://bsky.test/xrpc/app.bsky.feed.searchPosts",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.66",
+            "--relevance",
+            "0.74",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 bluesky evidence item(s)" in output
+    assert captured["source"] == "forecast desk"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["since"] == "2026-05-01T00:00:00Z"
+    assert captured["kwargs"]["sort"] == "top"
+    assert captured["kwargs"]["author"] == "analyst.bsky.social"
+    assert captured["kwargs"]["lang"] == "en"
+    assert captured["kwargs"]["link_domain"] == "example.test"
+    assert captured["kwargs"]["url_filter"] == "https://example.test/forecast-desk"
+    assert captured["kwargs"]["api_base_url"] == "https://bsky.test/xrpc/app.bsky.feed.searchPosts"
+    assert evidence[0].claim == "Bluesky: Forecast Desk launches public beta"
+    assert evidence[0].summary.startswith("Bluesky post by @analyst.bsky.social")
+    assert evidence[0].source_name == "Bluesky @analyst.bsky.social"
+    assert evidence[0].source_type == "adapter:bluesky"
+    assert evidence[0].published_at == "2026-05-21T14:30:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.66
+    assert evidence[0].relevance_rating == 0.74
+    assert evidence[0].metadata["adapter"] == "bluesky"
+    assert evidence[0].metadata["post_uri"] == "at://did:plc:abc/app.bsky.feed.post/3kforecast"
+    assert evidence[0].metadata["author_handle"] == "analyst.bsky.social"
+    assert evidence[0].metadata["like_count"] == 128
 
 
 def test_reliefweb_adapter_loads_reports(monkeypatch):
@@ -7940,6 +8116,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "githubactions:<owner/repo>" in output
     assert "hackernews:<query>" in output
     assert "reddit:<query>" in output
+    assert "bluesky:<query>" in output
     assert "reliefweb:<query>" in output
     assert "nvd:<keyword-or-CVE>" in output
     assert "cisakev:<keyword-or-CVE-or-all>" in output
@@ -7955,7 +8132,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "fivethirtyeight", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "reliefweb", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "fivethirtyeight", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "bluesky", "reliefweb", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "fivethirtyeight:<dataset-or-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
@@ -7978,6 +8155,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     assert any(source["watch_prefix"] == "githubactions:<owner/repo>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "hackernews:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "reddit:<query>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "bluesky:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "reliefweb:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "cisakev:<keyword-or-CVE-or-all>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "courtlistener:<query>" for source in payload["sources"])

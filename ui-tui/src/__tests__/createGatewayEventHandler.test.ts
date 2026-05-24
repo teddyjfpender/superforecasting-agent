@@ -791,7 +791,7 @@ describe('createGatewayEventHandler', () => {
       },
       {
         rows: [
-          ['12345678 P=0.630 Δ=+0.080', '1 alert  Will X win the election?']
+          ['12345678 P=0.630 Δ=+0.080', '1 alert  close 2026-11-03  Will X win the election?']
         ],
         title: 'Watchlist'
       },
@@ -850,7 +850,7 @@ describe('createGatewayEventHandler', () => {
             rows: [
               [
                 '12345678  priority 4',
-                'P=0.630  as-of 2026-05-01  review_due, last_update_7d_plus  forecast research fq_123456789abc; forecast update fq_123456789…'
+                'P=0.630  as-of 2026-05-01  close -  review_due, last_update_7d_plus  forecast research fq_123456789abc; forecast update fq_123456789…'
               ]
             ],
             title: 'Review Queue'
@@ -906,7 +906,10 @@ describe('createGatewayEventHandler', () => {
           },
           {
             rows: [
-              ['/forecast show fq_123456789abc', 'load full ledger context for Will X win the election?'],
+              [
+                '/forecast show fq_123456789abc',
+                'P=0.630  as-of 2026-05-01  close -  reasons review_due,last_update_…  load full ledger context for Will X win the election?'
+              ],
               ['/forecast research fq_123456789abc', 'collect source notes and evidence without moving probability'],
               [
                 '/forecast update fq_123456789abc --probability <0-1>',
@@ -943,6 +946,7 @@ describe('createGatewayEventHandler', () => {
               '/forecast import npm <package> --question <id>',
               '/forecast import hackernews "<query>" --question <id>',
               '/forecast import reddit "<query>" --question <id>',
+              '/forecast import bluesky "<query>" --question <id>',
               '/forecast import reliefweb "<query>" --question <id>',
               '/forecast import clinicaltrials <query-or-NCT-id> --question <id>',
               '/forecast import openfda <query-or-application-number> --question <id>',

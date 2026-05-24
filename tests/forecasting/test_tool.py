@@ -7,6 +7,7 @@ import pytest
 
 from forecasting import ForecastLedger
 from forecasting.source_adapters import (
+    BlueskyPost,
     CensusRecord,
     CisaKevVulnerability,
     ClinicalTrialStudy,
@@ -117,7 +118,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "reliefweb", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "bluesky", "reliefweb", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_imports_airquality_forecasts(tmp_path, monkeypatch):
@@ -2721,6 +2722,67 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert reddit_evidence["published_at"] == "2026-05-21T14:30:00Z"
     assert reddit_evidence["metadata"]["adapter"] == "reddit"
     assert reddit_evidence["metadata"]["adapter_item"]["score"] == 128
+
+    def fake_bluesky(source, **kwargs):
+        assert source == "forecast desk"
+        assert kwargs["limit"] == 1
+        assert kwargs["since"] == "2026-05-01"
+        assert kwargs["api_base_url"] == "https://example.test/bsky/search"
+        assert kwargs["sort"] == "top"
+        assert kwargs["author"] == "analyst.bsky.social"
+        assert kwargs["lang"] == "en"
+        assert kwargs["link_domain"] == "example.test"
+        assert kwargs["url_filter"] == "https://example.test/forecast-desk"
+        return [
+            BlueskyPost(
+                post_uri="at://did:plc:abc/app.bsky.feed.post/3kforecast",
+                cid="bafyforecast",
+                text="Forecast Desk launches public beta",
+                author_handle="analyst.bsky.social",
+                author_display_name="Analyst",
+                author_did="did:plc:abc",
+                created_at="2026-05-21T14:30:00Z",
+                indexed_at="2026-05-21T14:31:00Z",
+                reply_count=4,
+                repost_count=12,
+                like_count=128,
+                quote_count=3,
+                url="https://bsky.app/profile/analyst.bsky.social/post/3kforecast",
+                source_name="Bluesky @analyst.bsky.social",
+                entry_id="at://did:plc:abc/app.bsky.feed.post/3kforecast",
+                raw={"uri": "at://did:plc:abc/app.bsky.feed.post/3kforecast"},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_bluesky_posts", fake_bluesky)
+    bluesky_imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "bluesky",
+                "source": "forecast desk",
+                "limit": 1,
+                "since": "2026-05-01",
+                "api_base_url": "https://example.test/bsky/search",
+                "sort": "top",
+                "author": "analyst.bsky.social",
+                "lang": "en",
+                "link_domain": "example.test",
+                "url_filter": "https://example.test/forecast-desk",
+            }
+        )
+    )
+
+    assert bluesky_imported["imported_count"] == 1
+    bluesky_evidence = bluesky_imported["imported"][0]["evidence"]
+    assert bluesky_evidence["source_type"] == "adapter:bluesky"
+    assert bluesky_evidence["source_name"] == "Bluesky @analyst.bsky.social"
+    assert bluesky_evidence["claim"] == "Bluesky: Forecast Desk launches public beta"
+    assert bluesky_evidence["published_at"] == "2026-05-21T14:30:00Z"
+    assert bluesky_evidence["metadata"]["adapter"] == "bluesky"
+    assert bluesky_evidence["metadata"]["adapter_item"]["like_count"] == 128
 
     def fake_reliefweb(source, **kwargs):
         assert source == "Kenya floods"

@@ -71,6 +71,7 @@ WATCH_SOURCE_TYPES = {
     "coingecko",
     "hackernews",
     "reddit",
+    "bluesky",
     "reliefweb",
     "federalregister",
     "courtlistener",
@@ -3027,7 +3028,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, reliefweb, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
+                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, bluesky, reliefweb, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
                 "sec, secfacts, arxiv, openalex, crossref, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -3122,6 +3123,7 @@ class ForecastLedger:
                     "npm",
                     "hackernews",
                     "reddit",
+                    "bluesky",
                     "reliefweb",
                     "federalregister",
                     "courtlistener",
@@ -5631,6 +5633,8 @@ class ForecastLedger:
             return "hackernews"
         if source.startswith("reddit:"):
             return "reddit"
+        if source.startswith("bluesky:"):
+            return "bluesky"
         if source.startswith("federalregister:"):
             return "federalregister"
         if source.startswith("courtlistener:"):
@@ -5729,6 +5733,8 @@ class ForecastLedger:
             return self._hackernews_source_signature(source)
         if source_type == "reddit":
             return self._reddit_source_signature(source)
+        if source_type == "bluesky":
+            return self._bluesky_source_signature(source)
         if source_type == "federalregister":
             return self._federalregister_source_signature(source)
         if source_type == "courtlistener":
@@ -6160,6 +6166,33 @@ class ForecastLedger:
         ]
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"reddit:{len(payload)}:{digest}"
+
+    def _bluesky_source_signature(self, source: str) -> str:
+        query = source.split(":", 1)[1].strip() if source.startswith("bluesky:") else source.strip()
+        if not query:
+            return "missing:bluesky:empty-query"
+        try:
+            from forecasting.source_adapters import load_bluesky_posts
+
+            posts = load_bluesky_posts(query, limit=50)
+        except Exception as exc:
+            return f"missing:bluesky:{query}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "created_at": post.created_at,
+                "entry_id": post.entry_id,
+                "indexed_at": post.indexed_at,
+                "like_count": post.like_count,
+                "post_uri": post.post_uri,
+                "reply_count": post.reply_count,
+                "repost_count": post.repost_count,
+                "text": post.text,
+                "url": post.url,
+            }
+            for post in posts
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"bluesky:{len(payload)}:{digest}"
 
     def _federalregister_source_signature(self, source: str) -> str:
         query = source.split(":", 1)[1].strip() if source.startswith("federalregister:") else source.strip()
@@ -7157,6 +7190,12 @@ class ForecastLedger:
             query = source.split(":", 1)[1].strip() if source.startswith("reddit:") else source
             return (
                 f"Run `forecast import reddit \"{query}\" --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "bluesky" and scope_type == "question" and scope_ref:
+            query = source.split(":", 1)[1].strip() if source.startswith("bluesky:") else source
+            return (
+                f"Run `forecast import bluesky \"{query}\" --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "reliefweb" and scope_type == "question" and scope_ref:

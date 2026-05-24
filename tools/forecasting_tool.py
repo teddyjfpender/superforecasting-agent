@@ -19,6 +19,7 @@ from forecasting.models import ForecastingError, OutcomeSpace
 from forecasting.protocol import build_protocol_messages
 from forecasting.source_adapters import (
     load_arxiv_papers,
+    load_bluesky_posts,
     load_bls_observations,
     load_census_records,
     load_cisa_kev_vulnerabilities,
@@ -260,6 +261,11 @@ FORECAST_LEDGER_SCHEMA = {
             "source": {"type": "string"},
             "source_url": {"type": "string"},
             "source_name": {"type": "string"},
+            "sort": {"type": "string", "enum": ["latest", "top"]},
+            "author": {"type": "string"},
+            "lang": {"type": "string"},
+            "link_domain": {"type": "string"},
+            "url_filter": {"type": "string"},
             "source_type": {
                 "type": "string",
                 "enum": [
@@ -279,6 +285,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "npm",
                     "hackernews",
                     "reddit",
+                    "bluesky",
                     "reliefweb",
                     "federalregister",
                     "courtlistener",
@@ -1261,6 +1268,19 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_reddit_posts(source, **kwargs)
+    if adapter_name == "bluesky":
+        kwargs = {
+            "limit": limit,
+            "since": since,
+            "sort": args.get("sort") or "latest",
+            "author": args.get("author"),
+            "lang": args.get("lang"),
+            "link_domain": args.get("link_domain"),
+            "url_filter": args.get("url_filter"),
+        }
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_bluesky_posts(source, **kwargs)
     if adapter_name == "reliefweb":
         kwargs = {"limit": limit, "since": since, "appname": args.get("appname")}
         if api_base_url:
@@ -1447,7 +1467,7 @@ def _first_adapter_value(data: dict[str, Any], *keys: str) -> str | None:
 
 
 def _adapter_summary(data: dict[str, Any]) -> str:
-    for key in ("summary", "abstract", "extract", "body", "description", "selftext"):
+    for key in ("summary", "abstract", "extract", "body", "description", "selftext", "text"):
         value = data.get(key)
         if value:
             return str(value)
@@ -1529,6 +1549,9 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         return f"Hacker News: {data.get('title')}"
     if adapter == "reddit":
         return f"Reddit: {data.get('title')}"
+    if adapter == "bluesky":
+        text = str(data.get("text") or data.get("post_uri") or "")
+        return f"Bluesky: {text[:140]}"
     if adapter == "reliefweb":
         return f"ReliefWeb: {data.get('title')}"
     if adapter == "courtlistener":

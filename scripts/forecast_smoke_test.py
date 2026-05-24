@@ -63,6 +63,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "npm",
     "hackernews",
     "reddit",
+    "bluesky",
     "reliefweb",
     "markets",
 }

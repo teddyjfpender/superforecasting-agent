@@ -33,6 +33,7 @@ def test_builtin_forecast_extensions_are_registered():
     assert "npm-package-versions" in names
     assert "hackernews-search" in names
     assert "reddit-search" in names
+    assert "bluesky-search" in names
     assert "federal-register-documents" in names
     assert "courtlistener-search" in names
     assert "nvd-cves" in names

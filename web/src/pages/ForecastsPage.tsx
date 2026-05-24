@@ -102,6 +102,10 @@ const EVIDENCE_IMPORTS = [
     label: "Reddit",
   },
   {
+    command: 'forecast import bluesky "<query>" --question <id>',
+    label: "Bluesky",
+  },
+  {
     command: 'forecast import reliefweb "<query>" --question <id>',
     label: "ReliefWeb",
   },
