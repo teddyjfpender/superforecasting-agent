@@ -388,7 +388,7 @@ TIPS = [
     'HERMES_BACKGROUND_NOTIFICATIONS=result only pings when background tasks finish (vs all/error/off).',
     'SUPERFORECASTING_AGENT_WRITE_SAFE_ROOT restricts write_file and patch to a directory prefix; writes outside require approval.',
     'SUPERFORECASTING_AGENT_IGNORE_RULES skips auto-injection of AGENTS.md, SOUL.md, .cursorrules, memory, and preloaded skills.',
-    'HERMES_ACCEPT_HOOKS auto-approves unseen shell hooks declared in config.yaml without a TTY prompt.',
+    'SUPERFORECASTING_AGENT_ACCEPT_HOOKS auto-approves unseen shell hooks declared in config.yaml without a TTY prompt.',
     'auxiliary.goal_judge.model routes the /goal judge to a cheap fast model to keep loop cost near zero.',
     'Checkpoints skip directories with more than 50,000 files to avoid slow git operations on massive monorepos.',
 

@@ -114,7 +114,8 @@ def _add_accept_hooks_flag(parser) -> None:
         default=argparse.SUPPRESS,
         help=(
             "Auto-approve unseen shell hooks without a TTY prompt "
-            "(equivalent to HERMES_ACCEPT_HOOKS=1 / hooks_auto_accept: true)."
+            "(equivalent to SUPERFORECASTING_AGENT_ACCEPT_HOOKS=1 / "
+            "hooks_auto_accept: true)."
         ),
     )
 
@@ -1381,7 +1382,7 @@ def _launch_tui(
     elif quiet:
         _set_tui_env_aliases(env, "TOOL_PROGRESS", "off")
     if accept_hooks:
-        env["HERMES_ACCEPT_HOOKS"] = "1"
+        _set_runtime_env_aliases(env, "ACCEPT_HOOKS", "1")
     # Guarantee an 8GB V8 heap + exposed GC for the TUI. Default node cap is
     # ~1.5–4GB depending on version and can fatal-OOM on long sessions with
     # large transcripts / reasoning blobs. Token-level merge: respect any

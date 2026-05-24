@@ -1,8 +1,8 @@
 """Consent-flow tests for the shell-hook allowlist.
 
 Covers the prompt/non-prompt decision tree: TTY vs non-TTY, and the
-three accept-hooks channels (--accept-hooks, HERMES_ACCEPT_HOOKS env,
-hooks_auto_accept: config key).
+three accept-hooks channels (--accept-hooks, forecast-native accept-hooks env
+aliases, and hooks_auto_accept: config key).
 """
 
 from __future__ import annotations
@@ -15,11 +15,18 @@ import pytest
 
 from agent import shell_hooks
 
+ACCEPT_HOOKS_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_ACCEPT_HOOKS",
+    "FORECAST_ACCEPT_HOOKS",
+    "HERMES_ACCEPT_HOOKS",
+)
+
 
 @pytest.fixture(autouse=True)
 def _isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_home"))
-    monkeypatch.delenv("HERMES_ACCEPT_HOOKS", raising=False)
+    for name in ACCEPT_HOOKS_ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
     shell_hooks.reset_for_tests()
     yield
     shell_hooks.reset_for_tests()
@@ -134,7 +141,22 @@ class TestNonTTYFlow:
             )
         assert len(registered) == 1
 
-    def test_no_tty_with_env_accepts(self, tmp_path, monkeypatch):
+    def test_no_tty_with_fork_native_env_accepts(self, tmp_path, monkeypatch):
+        from hermes_cli import plugins
+
+        script = _write_hook_script(tmp_path)
+        plugins._plugin_manager = plugins.PluginManager()
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_ACCEPT_HOOKS", "1")
+
+        with patch("sys.stdin") as mock_stdin:
+            mock_stdin.isatty.return_value = False
+            registered = shell_hooks.register_from_config(
+                {"hooks": {"on_session_start": [{"command": str(script)}]}},
+                accept_hooks=False,
+            )
+        assert len(registered) == 1
+
+    def test_no_tty_with_legacy_env_accepts(self, tmp_path, monkeypatch):
         from hermes_cli import plugins
 
         script = _write_hook_script(tmp_path)
@@ -311,3 +333,15 @@ class TestHooksAutoAcceptParsing:
             {"hooks_auto_accept": "false"}, accept_hooks_arg=True,
         ) is True
 
+    def test_forecast_env_accepts(self, monkeypatch):
+        monkeypatch.setenv("FORECAST_ACCEPT_HOOKS", "yes")
+        assert shell_hooks._resolve_effective_accept(
+            {}, accept_hooks_arg=False,
+        ) is True
+
+    def test_fork_native_env_precedence_can_disable_legacy(self, monkeypatch):
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_ACCEPT_HOOKS", "0")
+        monkeypatch.setenv("HERMES_ACCEPT_HOOKS", "1")
+        assert shell_hooks._resolve_effective_accept(
+            {}, accept_hooks_arg=False,
+        ) is False

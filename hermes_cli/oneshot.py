@@ -31,6 +31,13 @@ from typing import Optional
 from hermes_cli.model_env import inference_model_env, inference_provider_env
 
 
+def _set_runtime_env_aliases(name: str, value: object) -> None:
+    text = str(value)
+    os.environ[f"SUPERFORECASTING_AGENT_{name}"] = text
+    os.environ[f"FORECAST_{name}"] = text
+    os.environ[f"HERMES_{name}"] = text
+
+
 def _normalize_toolsets(toolsets: object = None) -> list[str] | None:
     if not toolsets:
         return None
@@ -172,10 +179,8 @@ def run_oneshot(
 
     # Auto-approve any shell / tool approvals.  Non-interactive by
     # definition — a prompt would hang forever.
-    os.environ["SUPERFORECASTING_AGENT_YOLO_MODE"] = "1"
-    os.environ["FORECAST_YOLO_MODE"] = "1"
-    os.environ["HERMES_YOLO_MODE"] = "1"
-    os.environ["HERMES_ACCEPT_HOOKS"] = "1"
+    _set_runtime_env_aliases("YOLO_MODE", "1")
+    _set_runtime_env_aliases("ACCEPT_HOOKS", "1")
 
     # Redirect stderr AND stdout to devnull for the entire call tree.
     # We'll print the final response to the real stdout at the end.
@@ -346,7 +351,7 @@ def _run_agent(
         #                the tool's built-in "not available" error
         #   - sudo password prompt → terminal_tool gates on
         #                HERMES_INTERACTIVE which we never set
-        #   - shell-hook approval → auto-approved via HERMES_ACCEPT_HOOKS=1
+        #   - shell-hook approval → auto-approved via SUPERFORECASTING_AGENT_ACCEPT_HOOKS=1
         #                (set above); also falls back to deny on non-tty
         #   - dangerous-command approval → bypassed via fork-native YOLO env aliases
         #   - skill secret capture → returns gracefully when no callback set

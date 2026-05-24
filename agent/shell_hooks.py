@@ -19,7 +19,8 @@ Design notes
 * First-use consent is gated by the allowlist under
   ``~/.hermes/shell-hooks-allowlist.json``.  Non-TTY callers must pass
   ``accept_hooks=True`` (resolved from ``--accept-hooks``,
-  ``HERMES_ACCEPT_HOOKS``, or ``hooks_auto_accept: true`` in config)
+  ``SUPERFORECASTING_AGENT_ACCEPT_HOOKS`` / ``FORECAST_ACCEPT_HOOKS``,
+  legacy ``HERMES_ACCEPT_HOOKS``, or ``hooks_auto_accept: true`` in config)
   for registration to succeed without a prompt.
 * Registration is idempotent — safe to invoke from both the CLI entry
   point (``hermes_cli/main.py``) and the gateway entry point
@@ -84,6 +85,11 @@ DEFAULT_TIMEOUT_SECONDS = 60
 MAX_TIMEOUT_SECONDS = 300
 ALLOWLIST_FILENAME = "shell-hooks-allowlist.json"
 _DEFAULT_BLOCK_MESSAGE = "Blocked by shell hook."
+_ACCEPT_HOOKS_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_ACCEPT_HOOKS",
+    "FORECAST_ACCEPT_HOOKS",
+    "HERMES_ACCEPT_HOOKS",
+)
 
 # (event, matcher, command) triples that have been wired to the plugin
 # manager in the current process.  Matcher is part of the key because
@@ -93,6 +99,19 @@ _DEFAULT_BLOCK_MESSAGE = "Blocked by shell hook."
 # so the CLI and gateway can both call register_from_config() safely.
 _registered: Set[Tuple[str, Optional[str], str]] = set()
 _registered_lock = threading.Lock()
+
+
+def _first_accept_hooks_env(default: str = "") -> tuple[str, str]:
+    for name in _ACCEPT_HOOKS_ENV_NAMES:
+        value = os.environ.get(name)
+        if value is not None:
+            return name, value
+    return "default", default
+
+
+def _accept_hooks_env_enabled() -> bool:
+    _name, value = _first_accept_hooks_env()
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 # Intra-process lock for allowlist read-modify-write on platforms that
 # lack ``fcntl`` (non-POSIX).  Kept separate from ``_registered_lock``
@@ -159,9 +178,10 @@ def register_from_config(
 
     ``accept_hooks=True`` skips the TTY consent prompt — the caller is
     promising that the user has opted in via a flag, env var, or config
-    setting.  ``HERMES_ACCEPT_HOOKS=1`` and ``hooks_auto_accept: true`` are
-    also honored inside this function so either CLI or gateway call sites
-    pick them up.
+    setting.  ``SUPERFORECASTING_AGENT_ACCEPT_HOOKS=1``,
+    ``FORECAST_ACCEPT_HOOKS=1``, legacy ``HERMES_ACCEPT_HOOKS=1``, and
+    ``hooks_auto_accept: true`` are also honored inside this function so
+    either CLI or gateway call sites pick them up.
 
     Returns the list of :class:`ShellHookSpec` entries that ended up wired
     up on the plugin manager.  Skipped entries (unknown events, malformed,
@@ -200,7 +220,7 @@ def register_from_config(
             ):
                 logger.warning(
                     "shell hook for %s (%s) not allowlisted — skipped. "
-                    "Use --accept-hooks / HERMES_ACCEPT_HOOKS=1 / "
+                    "Use --accept-hooks / SUPERFORECASTING_AGENT_ACCEPT_HOOKS=1 / "
                     "hooks_auto_accept: true, or approve at the TTY "
                     "prompt next run.",
                     spec.event, spec.command,
@@ -589,7 +609,7 @@ def save_allowlist(data: Dict[str, Any]) -> None:
             "Failed to persist shell hook allowlist to %s: %s. "
             "The approval is in-memory for this run, but the next "
             "startup will re-prompt (or skip registration on non-TTY "
-            "runs without --accept-hooks / HERMES_ACCEPT_HOOKS).",
+            "runs without --accept-hooks / SUPERFORECASTING_AGENT_ACCEPT_HOOKS).",
             p, exc,
         )
 
@@ -755,15 +775,15 @@ def _resolve_effective_accept(
 ) -> bool:
     """Combine all three opt-in channels into a single boolean.
 
-    Precedence (any truthy source flips us on):
+    Precedence:
       1. ``--accept-hooks`` flag (CLI) / explicit argument
-      2. ``HERMES_ACCEPT_HOOKS`` env var
+      2. ``SUPERFORECASTING_AGENT_ACCEPT_HOOKS`` / ``FORECAST_ACCEPT_HOOKS``
+         env var, with legacy ``HERMES_ACCEPT_HOOKS`` compatibility
       3. ``hooks_auto_accept: true`` in ``cli-config.yaml``
     """
     if accept_hooks_arg:
         return True
-    env = os.environ.get("HERMES_ACCEPT_HOOKS", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
+    if _accept_hooks_env_enabled():
         return True
     cfg_val = cfg.get("hooks_auto_accept", False)
     if isinstance(cfg_val, bool):

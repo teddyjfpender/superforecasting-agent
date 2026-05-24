@@ -975,7 +975,7 @@ Each unique `(event, command)` pair prompts for approval the first time the runt
 Ways to pre-approve in controlled environments:
 
 1. `--accept-hooks` on the CLI, such as `superforecasting-agent --accept-hooks chat`.
-2. `HERMES_ACCEPT_HOOKS=1`, the inherited compatibility environment variable.
+2. `SUPERFORECASTING_AGENT_ACCEPT_HOOKS=1` or `FORECAST_ACCEPT_HOOKS=1`, with `HERMES_ACCEPT_HOOKS=1` retained as an inherited compatibility alias.
 
 Script edits are trusted once the command is allowed. The allowlist keys on the command string, not the script hash. Use `superforecasting-agent hooks doctor` after editing or pulling shared hook configs.
 

@@ -19,7 +19,12 @@ from hermes_cli import hooks as hooks_cli
 @pytest.fixture(autouse=True)
 def _isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
-    monkeypatch.delenv("HERMES_ACCEPT_HOOKS", raising=False)
+    for name in (
+        "SUPERFORECASTING_AGENT_ACCEPT_HOOKS",
+        "FORECAST_ACCEPT_HOOKS",
+        "HERMES_ACCEPT_HOOKS",
+    ):
+        monkeypatch.delenv(name, raising=False)
     shell_hooks.reset_for_tests()
     yield
     shell_hooks.reset_for_tests()

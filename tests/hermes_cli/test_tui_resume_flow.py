@@ -348,6 +348,28 @@ def test_oneshot_provider_accepts_forecast_native_model_env(monkeypatch, capsys)
     assert capsys.readouterr().out == "ok\n"
 
 
+def test_oneshot_sets_accept_hooks_aliases(monkeypatch, capsys):
+    import os
+
+    _stub_plugin_discovery(monkeypatch)
+    from hermes_cli import oneshot
+
+    for name in (
+        "SUPERFORECASTING_AGENT_ACCEPT_HOOKS",
+        "FORECAST_ACCEPT_HOOKS",
+        "HERMES_ACCEPT_HOOKS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(oneshot, "_run_agent", lambda *args, **kwargs: "ok")
+
+    assert oneshot.run_oneshot("hello") == 0
+
+    assert capsys.readouterr().out == "ok\n"
+    assert os.environ.get("SUPERFORECASTING_AGENT_ACCEPT_HOOKS") == "1"
+    assert os.environ.get("FORECAST_ACCEPT_HOOKS") == "1"
+    assert os.environ.get("HERMES_ACCEPT_HOOKS") == "1"
+
+
 def test_oneshot_provider_without_model_mentions_forecast_native_env(capsys):
     from hermes_cli.oneshot import run_oneshot
 
@@ -546,7 +568,10 @@ def test_launch_tui_exports_model_provider_and_toolsets(monkeypatch, main_mod):
 
     with pytest.raises(SystemExit):
         main_mod._launch_tui(
-            model="nous/hermes-test", provider="nous", toolsets="web, terminal"
+            model="nous/hermes-test",
+            provider="nous",
+            toolsets="web, terminal",
+            accept_hooks=True,
         )
 
     env = captured["env"]
@@ -571,6 +596,9 @@ def test_launch_tui_exports_model_provider_and_toolsets(monkeypatch, main_mod):
     assert env["SUPERFORECASTING_AGENT_PYTHON_SRC_ROOT"] == str(main_mod.PROJECT_ROOT)
     assert env["FORECAST_PYTHON_SRC_ROOT"] == str(main_mod.PROJECT_ROOT)
     assert env["HERMES_PYTHON_SRC_ROOT"] == str(main_mod.PROJECT_ROOT)
+    assert env["SUPERFORECASTING_AGENT_ACCEPT_HOOKS"] == "1"
+    assert env["FORECAST_ACCEPT_HOOKS"] == "1"
+    assert env["HERMES_ACCEPT_HOOKS"] == "1"
     assert env["SUPERFORECASTING_AGENT_CWD"] == env["HERMES_CWD"]
     assert env["FORECAST_CWD"] == env["HERMES_CWD"]
     active_path = Path(env["SUPERFORECASTING_AGENT_TUI_ACTIVE_SESSION_FILE"])
