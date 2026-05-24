@@ -79,7 +79,7 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
         '';
 
         # Verify every pyproject.toml [project.scripts] entry has a wrapped binary
-        entry-points-sync = pkgs.runCommand "hermes-entry-points-sync" { } ''
+        entry-points-sync = pkgs.runCommand "superforecasting-agent-entry-points-sync" { } ''
           set -e
           echo "=== Checking entry points match pyproject.toml [project.scripts] ==="
           for bin in forecast superforecast superforecasting-agent hermes hermes-agent hermes-acp; do
@@ -92,7 +92,7 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
         '';
 
         # Verify CLI subcommands are accessible
-        cli-commands = pkgs.runCommand "hermes-cli-commands" { } ''
+        cli-commands = pkgs.runCommand "superforecasting-agent-cli-commands" { } ''
           set -e
           export HOME=$(mktemp -d)
 
@@ -107,7 +107,7 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
         '';
 
         # Verify bundled skills are present in the package
-        bundled-skills = pkgs.runCommand "hermes-bundled-skills" { } ''
+        bundled-skills = pkgs.runCommand "superforecasting-agent-bundled-skills" { } ''
           set -e
           echo "=== Checking bundled skills ==="
           test -d ${superforecastingAgent}/share/superforecasting-agent/skills || (echo "FAIL: skills directory missing"; exit 1)
@@ -118,9 +118,9 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
           test "$SKILL_COUNT" -gt 0 || (echo "FAIL: no SKILL.md files found in skills directory"; exit 1)
           echo "PASS: $SKILL_COUNT bundled skills found"
 
-          grep -q "SUPERFORECASTING_AGENT_BUNDLED_SKILLS" ${superforecastingAgent}/bin/hermes || \
+          grep -q "SUPERFORECASTING_AGENT_BUNDLED_SKILLS" ${superforecastingAgent}/bin/superforecasting-agent || \
             (echo "FAIL: SUPERFORECASTING_AGENT_BUNDLED_SKILLS not in wrapper"; exit 1)
-          grep -q "HERMES_BUNDLED_SKILLS" ${superforecastingAgent}/bin/hermes || \
+          grep -q "HERMES_BUNDLED_SKILLS" ${superforecastingAgent}/bin/superforecasting-agent || \
             (echo "FAIL: HERMES_BUNDLED_SKILLS compatibility alias not in wrapper"; exit 1)
           echo "PASS: bundled skill env aliases set in wrapper"
 
@@ -130,7 +130,7 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
         '';
 
         # Verify bundled plugins (platforms, memory, context_engine) are present
-        bundled-plugins = pkgs.runCommand "hermes-bundled-plugins" { } ''
+        bundled-plugins = pkgs.runCommand "superforecasting-agent-bundled-plugins" { } ''
           set -e
           echo "=== Checking bundled plugins ==="
           test -d ${superforecastingAgent}/share/superforecasting-agent/plugins || (echo "FAIL: plugins directory missing"; exit 1)
@@ -141,9 +141,9 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
             (echo "FAIL: irc plugin manifest missing"; exit 1)
           echo "PASS: irc plugin manifest present"
 
-          grep -q "SUPERFORECASTING_AGENT_BUNDLED_PLUGINS" ${superforecastingAgent}/bin/hermes || \
+          grep -q "SUPERFORECASTING_AGENT_BUNDLED_PLUGINS" ${superforecastingAgent}/bin/superforecasting-agent || \
             (echo "FAIL: SUPERFORECASTING_AGENT_BUNDLED_PLUGINS not in wrapper"; exit 1)
-          grep -q "HERMES_BUNDLED_PLUGINS" ${superforecastingAgent}/bin/hermes || \
+          grep -q "HERMES_BUNDLED_PLUGINS" ${superforecastingAgent}/bin/superforecasting-agent || \
             (echo "FAIL: HERMES_BUNDLED_PLUGINS compatibility alias not in wrapper"; exit 1)
           echo "PASS: bundled plugin env aliases set in wrapper"
 
@@ -153,7 +153,7 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
         '';
 
         # Verify bundled TUI is present and compiled
-        bundled-tui = pkgs.runCommand "hermes-bundled-tui" { } ''
+        bundled-tui = pkgs.runCommand "superforecasting-agent-bundled-tui" { } ''
           set -e
           echo "=== Checking bundled TUI ==="
           test -d ${superforecastingAgent}/ui-tui || (echo "FAIL: ui-tui directory missing"; exit 1)
@@ -164,9 +164,9 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
 
           # self-contained bundle; no runtime node_modules expected
 
-          grep -q "SUPERFORECASTING_AGENT_TUI_DIR" ${superforecastingAgent}/bin/hermes || \
+          grep -q "SUPERFORECASTING_AGENT_TUI_DIR" ${superforecastingAgent}/bin/superforecasting-agent || \
             (echo "FAIL: SUPERFORECASTING_AGENT_TUI_DIR not in wrapper"; exit 1)
-          grep -q "HERMES_TUI_DIR" ${superforecastingAgent}/bin/hermes || \
+          grep -q "HERMES_TUI_DIR" ${superforecastingAgent}/bin/superforecasting-agent || \
             (echo "FAIL: HERMES_TUI_DIR compatibility alias not in wrapper"; exit 1)
           echo "PASS: TUI dir env aliases set in wrapper"
 
@@ -177,16 +177,16 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
 
         # Verify forecast-native Node aliases are set in wrapper and point to Node 20+
         # (string-width uses the /v regex flag which requires Node 20+)
-        hermes-node = pkgs.runCommand "hermes-node-version" { } ''
+        node-wrapper = pkgs.runCommand "superforecasting-agent-node-version" { } ''
           set -e
           echo "=== Checking SUPERFORECASTING_AGENT_NODE in wrapper ==="
-          grep -q "SUPERFORECASTING_AGENT_NODE" ${superforecastingAgent}/bin/hermes || \
+          grep -q "SUPERFORECASTING_AGENT_NODE" ${superforecastingAgent}/bin/superforecasting-agent || \
             (echo "FAIL: SUPERFORECASTING_AGENT_NODE not set in wrapper"; exit 1)
-          grep -q "HERMES_NODE" ${superforecastingAgent}/bin/hermes || \
+          grep -q "HERMES_NODE" ${superforecastingAgent}/bin/superforecasting-agent || \
             (echo "FAIL: HERMES_NODE compatibility alias not set in wrapper"; exit 1)
           echo "PASS: Node env aliases present in wrapper"
 
-          SUPERFORECASTING_AGENT_NODE=$(sed -n "s/^export SUPERFORECASTING_AGENT_NODE='\(.*\)'/\1/p" ${superforecastingAgent}/bin/hermes)
+          SUPERFORECASTING_AGENT_NODE=$(sed -n "s/^export SUPERFORECASTING_AGENT_NODE='\(.*\)'/\1/p" ${superforecastingAgent}/bin/superforecasting-agent)
           test -x "$SUPERFORECASTING_AGENT_NODE" || (echo "FAIL: SUPERFORECASTING_AGENT_NODE=$SUPERFORECASTING_AGENT_NODE not executable"; exit 1)
           echo "PASS: SUPERFORECASTING_AGENT_NODE executable at $SUPERFORECASTING_AGENT_NODE"
 
@@ -206,14 +206,14 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
           superforecastingAgentWithRev = superforecastingAgent.override {
             rev = "forecast-test-rev";
           };
-        in pkgs.runCommand "hermes-revision-env-aliases" { } ''
+        in pkgs.runCommand "superforecasting-agent-revision-env-aliases" { } ''
           set -e
           echo "=== Checking revision env aliases in wrapper ==="
-          grep -q "SUPERFORECASTING_AGENT_REVISION" ${superforecastingAgentWithRev}/bin/hermes || \
+          grep -q "SUPERFORECASTING_AGENT_REVISION" ${superforecastingAgentWithRev}/bin/superforecasting-agent || \
             (echo "FAIL: SUPERFORECASTING_AGENT_REVISION not set in wrapper"; exit 1)
-          grep -q "FORECAST_REVISION" ${superforecastingAgentWithRev}/bin/hermes || \
+          grep -q "FORECAST_REVISION" ${superforecastingAgentWithRev}/bin/superforecasting-agent || \
             (echo "FAIL: FORECAST_REVISION not set in wrapper"; exit 1)
-          grep -q "HERMES_REVISION" ${superforecastingAgentWithRev}/bin/hermes || \
+          grep -q "HERMES_REVISION" ${superforecastingAgentWithRev}/bin/superforecasting-agent || \
             (echo "FAIL: HERMES_REVISION compatibility alias not set in wrapper"; exit 1)
           echo "PASS: revision env aliases present in wrapper"
 
@@ -223,7 +223,7 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
         '';
 
         # Verify managed-install env guards work on all mutation commands
-        managed-guard = pkgs.runCommand "hermes-managed-guard" { } ''
+        managed-guard = pkgs.runCommand "superforecasting-agent-managed-guard" { } ''
           set -e
           export HOME=$(mktemp -d)
 
@@ -254,20 +254,20 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
           superforecastingAgentWithExtra = superforecastingAgent.override {
             extraPythonPackages = [ testPkg ];
           };
-        in pkgs.runCommand "hermes-extra-python-packages" { } ''
+        in pkgs.runCommand "superforecasting-agent-extra-python-packages" { } ''
           set -e
           echo "=== Checking extraPythonPackages PYTHONPATH injection ==="
 
-          grep -q "PYTHONPATH" ${superforecastingAgentWithExtra}/bin/hermes || \
+          grep -q "PYTHONPATH" ${superforecastingAgentWithExtra}/bin/superforecasting-agent || \
             (echo "FAIL: PYTHONPATH not in wrapper"; exit 1)
           echo "PASS: PYTHONPATH present in wrapper"
 
-          grep -q "${testPkg}" ${superforecastingAgentWithExtra}/bin/hermes || \
+          grep -q "${testPkg}" ${superforecastingAgentWithExtra}/bin/superforecasting-agent || \
             (echo "FAIL: test package path not in PYTHONPATH"; exit 1)
           echo "PASS: test package path found in wrapper"
 
           echo "=== Checking base package has no PYTHONPATH ==="
-          if grep -q "PYTHONPATH" ${superforecastingAgent}/bin/hermes; then
+          if grep -q "PYTHONPATH" ${superforecastingAgent}/bin/superforecasting-agent; then
             echo "FAIL: base package should not have PYTHONPATH"; exit 1
           fi
           echo "PASS: base package clean"
@@ -282,7 +282,7 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
           superforecastingAgentWithGroups = superforecastingAgent.override {
             extraDependencyGroups = [ "honcho" ];
           };
-        in pkgs.runCommand "hermes-extra-dependency-groups" { } ''
+        in pkgs.runCommand "superforecasting-agent-extra-dependency-groups" { } ''
           set -e
           echo "=== Checking extraDependencyGroups override evaluates ==="
 

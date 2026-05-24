@@ -29,7 +29,7 @@ let
   superforecastingAgentModule = { config, lib, pkgs, ... }:
 
   let
-    cfg = config.services.hermes-agent;
+    cfg = config.services.superforecasting-agent;
     effectivePackage =
       if cfg.extraPythonPackages == [ ] && cfg.extraDependencyGroups == [ ]
       then cfg.package
@@ -205,10 +205,10 @@ let
 
   in {
     imports = [
-      (lib.mkAliasOptionModule [ "services" "superforecasting-agent" ] [ "services" "hermes-agent" ])
+      (lib.mkAliasOptionModule [ "services" "hermes-agent" ] [ "services" "superforecasting-agent" ])
     ];
 
-    options.services.hermes-agent = with lib; {
+    options.services.superforecasting-agent = with lib; {
       enable = mkEnableOption "Superforecasting Agent gateway service";
 
       # ── Package ──────────────────────────────────────────────────────────
@@ -607,7 +607,7 @@ let
 
       # ── Merge MCP servers into settings ────────────────────────────────
       (lib.mkIf (cfg.mcpServers != { }) {
-        services.hermes-agent.settings.mcp_servers = lib.mapAttrs (_name: srv:
+        services.superforecasting-agent.settings.mcp_servers = lib.mapAttrs (_name: srv:
           # Stdio transport
           lib.optionalAttrs (srv.command != null) { inherit (srv) command args; }
           // lib.optionalAttrs (srv.env != { }) { inherit (srv) env; }

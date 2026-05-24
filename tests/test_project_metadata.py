@@ -1830,6 +1830,8 @@ def test_nix_package_aliases_are_forecast_native():
     nix_overlay = (root / "nix" / "overlays.nix").read_text(encoding="utf-8")
     nix_module = (root / "nix" / "nixosModules.nix").read_text(encoding="utf-8")
     nix_checks = (root / "nix" / "checks.nix").read_text(encoding="utf-8")
+    nix_config_merge = (root / "nix" / "configMergeScript.nix").read_text(encoding="utf-8")
+    nix_dev_shell = (root / "nix" / "devShell.nix").read_text(encoding="utf-8")
     nix_docs = (root / "website" / "docs" / "getting-started" / "nix-setup.md").read_text(
         encoding="utf-8"
     )
@@ -1866,7 +1868,12 @@ def test_nix_package_aliases_are_forecast_native():
     assert '"superforecasting-agent" = superforecastingAgent' in nix_overlay
     assert '"hermes-agent" = superforecastingAgent' in nix_overlay
     assert 'containerName = "superforecasting-agent"' in nix_module
-    assert 'lib.mkAliasOptionModule [ "services" "superforecasting-agent" ] [ "services" "hermes-agent" ]' in nix_module
+    assert 'cfg = config.services.superforecasting-agent' in nix_module
+    assert 'lib.mkAliasOptionModule [ "services" "hermes-agent" ] [ "services" "superforecasting-agent" ]' in nix_module
+    assert "options.services.superforecasting-agent" in nix_module
+    assert "options.services.hermes-agent" not in nix_module
+    assert "services.superforecasting-agent.settings.mcp_servers" in nix_module
+    assert "services.hermes-agent.settings.mcp_servers" not in nix_module
     assert 'mkEnableOption "Superforecasting Agent gateway service"' in nix_module
     assert 'name = "superforecasting-agent-config-attrs"' in nix_module
     assert 'pkgs.writeText "superforecasting-agent-config.yaml"' in nix_module
@@ -1895,8 +1902,34 @@ def test_nix_package_aliases_are_forecast_native():
     assert "superforecastingAgentVenv = superforecastingAgent.superforecastingAgentVenv" in nix_checks
     assert 'pkgs.runCommand "superforecasting-agent-config-keys"' in nix_checks
     assert 'pkgs.runCommand "superforecasting-agent-config-roundtrip"' in nix_checks
+    assert 'pkgs.runCommand "superforecasting-agent-entry-points-sync"' in nix_checks
+    assert 'pkgs.runCommand "superforecasting-agent-cli-commands"' in nix_checks
+    assert 'pkgs.runCommand "superforecasting-agent-bundled-skills"' in nix_checks
+    assert 'pkgs.runCommand "superforecasting-agent-bundled-plugins"' in nix_checks
+    assert 'pkgs.runCommand "superforecasting-agent-bundled-tui"' in nix_checks
+    assert 'node-wrapper = pkgs.runCommand "superforecasting-agent-node-version"' in nix_checks
+    assert 'pkgs.runCommand "superforecasting-agent-revision-env-aliases"' in nix_checks
+    assert 'pkgs.runCommand "superforecasting-agent-managed-guard"' in nix_checks
+    assert 'pkgs.runCommand "superforecasting-agent-extra-python-packages"' in nix_checks
+    assert 'pkgs.runCommand "superforecasting-agent-extra-dependency-groups"' in nix_checks
     assert "hermes-agent = self'.packages.default" not in nix_checks
     assert "hermesVenv = " not in nix_checks
+    assert '"hermes-entry-points-sync"' not in nix_checks
+    assert '"hermes-cli-commands"' not in nix_checks
+    assert '"hermes-bundled-skills"' not in nix_checks
+    assert '"hermes-bundled-plugins"' not in nix_checks
+    assert '"hermes-bundled-tui"' not in nix_checks
+    assert 'hermes-node = pkgs.runCommand "hermes-node-version"' not in nix_checks
+    assert '"hermes-revision-env-aliases"' not in nix_checks
+    assert '"hermes-managed-guard"' not in nix_checks
+    assert '"hermes-extra-python-packages"' not in nix_checks
+    assert '"hermes-extra-dependency-groups"' not in nix_checks
+    assert 'pkgs.writeScript "superforecasting-agent-config-merge"' in nix_config_merge
+    assert 'pkgs.writeScript "hermes-config-merge"' not in nix_config_merge
+    assert "Superforecasting Agent dev shell" in nix_dev_shell
+    assert "Ready. Run 'forecast' or 'superforecasting-agent' to start." in nix_dev_shell
+    assert "Hermes Agent dev shell" not in nix_dev_shell
+    assert "Ready. Run 'hermes' to start." not in nix_dev_shell
     assert "<this-fork-url>#superforecasting-agent" in nix_docs
     assert 'nixosModules."superforecasting-agent"' in nix_docs
     assert "services.superforecasting-agent = {" in nix_docs

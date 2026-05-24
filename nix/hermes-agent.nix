@@ -42,11 +42,11 @@ let
   };
 
   superforecastingAgentTui = callPackage ./tui.nix {
-    hermesNpmLib = superforecastingAgentNpmLib;
+    inherit superforecastingAgentNpmLib;
   };
 
   superforecastingAgentWeb = callPackage ./web.nix {
-    hermesNpmLib = superforecastingAgentNpmLib;
+    inherit superforecastingAgentNpmLib;
   };
 
   bundledSkills = lib.cleanSourceWith {

@@ -1,5 +1,5 @@
 # nix/tui.nix — Superforecasting Agent TUI (Ink/React) compiled with tsc and bundled
-{ pkgs, hermesNpmLib, ... }:
+{ pkgs, superforecastingAgentNpmLib, ... }:
 let
   src = ../ui-tui;
   npmDeps = pkgs.fetchNpmDeps {
@@ -7,7 +7,7 @@ let
     hash = "sha256-dNL/J4tyQQ7Ji3xfIE5b5Jdi6rQyCFjqYpzLYftJVdc=";
   };
 
-  npm = hermesNpmLib.mkNpmPassthru { folder = "ui-tui"; attr = "tui"; pname = "superforecasting-agent-tui"; };
+  npm = superforecastingAgentNpmLib.mkNpmPassthru { folder = "ui-tui"; attr = "tui"; pname = "superforecasting-agent-tui"; };
 
   packageJson = builtins.fromJSON (builtins.readFile (src + "/package.json"));
   version = packageJson.version;
