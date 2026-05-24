@@ -634,6 +634,42 @@ def test_skill_examples_are_forecast_native():
     assert "Hello from Hermes!" not in text
 
 
+def test_media_skill_docs_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "skills" / "media" / "spotify" / "SKILL.md",
+        root / "skills" / "media" / "gif-search" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "media"
+            / "media-spotify.md"
+        ),
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "media"
+            / "media-gif-search.md"
+        ),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "author: Superforecasting Agent" in text
+    assert "| Author | Superforecasting Agent |" in text
+    assert "inherited Spotify toolset" in text
+    assert "author: Hermes Agent" not in text
+    assert "| Author | Hermes Agent |" not in text
+    assert "Hermes Spotify toolset" not in text
+
+
 def test_github_auth_skill_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [

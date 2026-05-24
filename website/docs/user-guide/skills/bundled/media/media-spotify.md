@@ -17,7 +17,7 @@ Spotify: play, search, queue, manage playlists and devices.
 | Source | Bundled (installed by default) |
 | Path | `skills/media/spotify` |
 | Version | `1.0.0` |
-| Author | Hermes Agent |
+| Author | Superforecasting Agent |
 | License | MIT |
 | Platforms | linux, macos, windows |
 | Tags | `spotify`, `music`, `playback`, `playlists`, `media` |
@@ -31,7 +31,7 @@ The following is the complete skill definition that Superforecasting Agent loads
 
 # Spotify
 
-Control the user's Spotify account via the Hermes Spotify toolset (7 tools). Setup guide: /docs/user-guide/features/spotify
+Control the user's Spotify account via the inherited Spotify toolset (7 tools). Setup guide: /docs/user-guide/features/spotify
 
 ## When to use this skill
 

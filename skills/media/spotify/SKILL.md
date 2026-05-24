@@ -2,7 +2,7 @@
 name: spotify
 description: "Spotify: play, search, queue, manage playlists and devices."
 version: 1.0.0
-author: Hermes Agent
+author: Superforecasting Agent
 license: MIT
 platforms: [linux, macos, windows]
 prerequisites:
@@ -15,7 +15,7 @@ metadata:
 
 # Spotify
 
-Control the user's Spotify account via the Hermes Spotify toolset (7 tools). Setup guide: /docs/user-guide/features/spotify
+Control the user's Spotify account via the inherited Spotify toolset (7 tools). Setup guide: /docs/user-guide/features/spotify
 
 ## When to use this skill
 
