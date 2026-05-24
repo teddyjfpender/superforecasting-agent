@@ -770,7 +770,7 @@ nix build .#checks.x86_64-linux.config-roundtrip    # merge script preserves use
 | `entry-points-sync` | Every `[project.scripts]` entry in `pyproject.toml` has a wrapped binary in the Nix package |
 | `cli-commands` | `superforecasting-agent gateway --help` and `superforecasting-agent config --help` delegate to inherited runtime subcommands |
 | `managed-guard` | `HERMES_MANAGED=true superforecasting-agent config set ...` prints the NixOS error |
-| `bundled-skills` | Skills directory exists, contains SKILL.md files, `HERMES_BUNDLED_SKILLS` is set in wrapper |
+| `bundled-skills` | Skills directory exists, contains SKILL.md files, fork-native bundled-skill env aliases are set in wrapper |
 | `config-roundtrip` | 7 merge scenarios: fresh install, Nix override, user key preservation, mixed merge, MCP additive merge, nested deep merge, idempotency |
 
 </details>

@@ -1,4 +1,4 @@
-"""Shared constants for Hermes Agent.
+"""Shared constants for Superforecasting Agent.
 
 Import-safe module with no dependencies — can be imported from anywhere
 without risk of circular imports.
@@ -16,6 +16,16 @@ _HERMES_HOME_OVERRIDE: ContextVar[str | object] = ContextVar(
     "_HERMES_HOME_OVERRIDE", default=_UNSET
 )
 _HOME_ENV_VARS = ("SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME")
+_OPTIONAL_SKILLS_ENV_VARS = (
+    "SUPERFORECASTING_AGENT_OPTIONAL_SKILLS",
+    "FORECAST_OPTIONAL_SKILLS",
+    "HERMES_OPTIONAL_SKILLS",
+)
+_BUNDLED_SKILLS_ENV_VARS = (
+    "SUPERFORECASTING_AGENT_BUNDLED_SKILLS",
+    "FORECAST_BUNDLED_SKILLS",
+    "HERMES_BUNDLED_SKILLS",
+)
 _NATIVE_HOME_DIRNAME = ".superforecasting-agent"
 _LEGACY_HOME_DIRNAME = ".hermes"
 
@@ -32,6 +42,14 @@ def _configured_home_env() -> tuple[str | None, str | None]:
         if value:
             return name, value
     return None, None
+
+
+def _first_configured_env_value(names: tuple[str, ...]) -> str | None:
+    for name in names:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return None
 
 
 def _native_home() -> Path:
@@ -211,9 +229,10 @@ def get_optional_skills_dir(default: Path | None = None) -> Path:
     """Return the optional-skills directory, honoring package-manager wrappers.
 
     Packaged installs may ship ``optional-skills`` outside the Python package
-    tree and expose it via ``HERMES_OPTIONAL_SKILLS``.
+    tree and expose it via ``SUPERFORECASTING_AGENT_OPTIONAL_SKILLS`` or an
+    accepted legacy alias.
     """
-    override = os.getenv("HERMES_OPTIONAL_SKILLS", "").strip()
+    override = _first_configured_env_value(_OPTIONAL_SKILLS_ENV_VARS)
     if override:
         return Path(override)
     packaged = _get_packaged_data_dir("optional-skills")
@@ -228,12 +247,13 @@ def get_bundled_skills_dir(default: Path | None = None) -> Path:
     """Return the bundled skills directory for source and packaged installs.
 
     Resolution order:
-        1. ``HERMES_BUNDLED_SKILLS`` env var (Nix wrapper / explicit override)
+        1. ``SUPERFORECASTING_AGENT_BUNDLED_SKILLS`` / ``FORECAST_BUNDLED_SKILLS``
+           / legacy ``HERMES_BUNDLED_SKILLS`` env var
         2. Wheel-installed ``<sysconfig data>/skills`` (pip install path)
         3. Caller-supplied ``default`` (typically the source-checkout path)
         4. ``<HERMES_HOME>/skills`` last-resort
     """
-    override = os.getenv("HERMES_BUNDLED_SKILLS", "").strip()
+    override = _first_configured_env_value(_BUNDLED_SKILLS_ENV_VARS)
     if override:
         return Path(override)
     packaged = _get_packaged_data_dir("skills")

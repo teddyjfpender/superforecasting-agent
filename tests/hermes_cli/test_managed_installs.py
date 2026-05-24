@@ -51,9 +51,23 @@ def test_cmd_update_blocks_managed_homebrew(monkeypatch, capsys):
     assert "brew upgrade superforecasting-agent" in captured.err
 
 
-def test_optional_skill_source_honors_env_override(monkeypatch, tmp_path):
+def test_optional_skill_source_honors_forecast_env_override(monkeypatch, tmp_path):
     optional_dir = tmp_path / "optional-skills"
     optional_dir.mkdir()
+    monkeypatch.delenv("HERMES_OPTIONAL_SKILLS", raising=False)
+    monkeypatch.delenv("FORECAST_OPTIONAL_SKILLS", raising=False)
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_OPTIONAL_SKILLS", str(optional_dir))
+
+    source = OptionalSkillSource()
+
+    assert source._optional_dir == optional_dir
+
+
+def test_optional_skill_source_honors_legacy_env_override(monkeypatch, tmp_path):
+    optional_dir = tmp_path / "optional-skills"
+    optional_dir.mkdir()
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_OPTIONAL_SKILLS", raising=False)
+    monkeypatch.delenv("FORECAST_OPTIONAL_SKILLS", raising=False)
     monkeypatch.setenv("HERMES_OPTIONAL_SKILLS", str(optional_dir))
 
     source = OptionalSkillSource()

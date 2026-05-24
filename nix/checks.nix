@@ -117,9 +117,11 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
           test "$SKILL_COUNT" -gt 0 || (echo "FAIL: no SKILL.md files found in skills directory"; exit 1)
           echo "PASS: $SKILL_COUNT bundled skills found"
 
+          grep -q "SUPERFORECASTING_AGENT_BUNDLED_SKILLS" ${hermes-agent}/bin/hermes || \
+            (echo "FAIL: SUPERFORECASTING_AGENT_BUNDLED_SKILLS not in wrapper"; exit 1)
           grep -q "HERMES_BUNDLED_SKILLS" ${hermes-agent}/bin/hermes || \
-            (echo "FAIL: HERMES_BUNDLED_SKILLS not in wrapper"; exit 1)
-          echo "PASS: HERMES_BUNDLED_SKILLS set in wrapper"
+            (echo "FAIL: HERMES_BUNDLED_SKILLS compatibility alias not in wrapper"; exit 1)
+          echo "PASS: bundled skill env aliases set in wrapper"
 
           echo "=== All bundled skills checks passed ==="
           mkdir -p $out

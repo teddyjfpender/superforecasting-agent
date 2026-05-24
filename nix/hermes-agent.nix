@@ -150,6 +150,8 @@ stdenv.mkDerivation {
       (name: ''
         makeWrapper ${hermesVenv}/bin/${name} $out/bin/${name} \
           --suffix PATH : "${runtimePath}" \
+          --set SUPERFORECASTING_AGENT_BUNDLED_SKILLS $out/share/hermes-agent/skills \
+          --set FORECAST_BUNDLED_SKILLS $out/share/hermes-agent/skills \
           --set HERMES_BUNDLED_SKILLS $out/share/hermes-agent/skills \
           --set SUPERFORECASTING_AGENT_BUNDLED_PLUGINS $out/share/hermes-agent/plugins \
           --set FORECAST_BUNDLED_PLUGINS $out/share/hermes-agent/plugins \

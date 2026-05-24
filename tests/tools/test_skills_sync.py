@@ -584,21 +584,36 @@ class TestSyncSkills:
 
 
 class TestGetBundledDir:
-    def test_env_var_override(self, tmp_path, monkeypatch):
-        """HERMES_BUNDLED_SKILLS env var overrides the default path resolution."""
+    def test_forecast_env_var_override(self, tmp_path, monkeypatch):
+        """Fork-native bundled skills env var overrides default resolution."""
         custom_dir = tmp_path / "custom_skills"
         custom_dir.mkdir()
+        monkeypatch.delenv("HERMES_BUNDLED_SKILLS", raising=False)
+        monkeypatch.delenv("FORECAST_BUNDLED_SKILLS", raising=False)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_BUNDLED_SKILLS", str(custom_dir))
+        assert _get_bundled_dir() == custom_dir
+
+    def test_legacy_env_var_override(self, tmp_path, monkeypatch):
+        """Legacy bundled skills env var remains accepted."""
+        custom_dir = tmp_path / "custom_skills"
+        custom_dir.mkdir()
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_BUNDLED_SKILLS", raising=False)
+        monkeypatch.delenv("FORECAST_BUNDLED_SKILLS", raising=False)
         monkeypatch.setenv("HERMES_BUNDLED_SKILLS", str(custom_dir))
         assert _get_bundled_dir() == custom_dir
 
     def test_default_without_env_var(self, monkeypatch):
         """Without the env var, falls back to relative path from __file__."""
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_BUNDLED_SKILLS", raising=False)
+        monkeypatch.delenv("FORECAST_BUNDLED_SKILLS", raising=False)
         monkeypatch.delenv("HERMES_BUNDLED_SKILLS", raising=False)
         result = _get_bundled_dir()
         assert result.name == "skills"
 
     def test_env_var_empty_string_ignored(self, monkeypatch):
-        """Empty HERMES_BUNDLED_SKILLS should fall back to default."""
+        """Empty bundled skills env aliases should fall back to default."""
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_BUNDLED_SKILLS", "")
+        monkeypatch.setenv("FORECAST_BUNDLED_SKILLS", "")
         monkeypatch.setenv("HERMES_BUNDLED_SKILLS", "")
         result = _get_bundled_dir()
         assert result.name == "skills"

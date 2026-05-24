@@ -589,8 +589,8 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 | `SUPERFORECASTING_AGENT_WRITE_SAFE_ROOT` / `FORECAST_WRITE_SAFE_ROOT` / `HERMES_WRITE_SAFE_ROOT` | Optional directory prefix that restricts `write_file`/`patch` writes; paths outside require approval. The `HERMES_*` name remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_DISABLE_FILE_STATE_GUARD` / `FORECAST_DISABLE_FILE_STATE_GUARD` / `HERMES_DISABLE_FILE_STATE_GUARD` | Set to `1` to turn off the "file changed since you read it" guard on `patch`/`write_file`; the `HERMES_*` name remains a legacy alias. |
 | `HERMES_CORE_TOOLS` | Comma-separated override for the canonical core tool list (advanced; rarely needed). |
-| `HERMES_BUNDLED_SKILLS` | Comma-separated override for the list of bundled skills loaded at startup. |
-| `HERMES_OPTIONAL_SKILLS` | Comma-separated list of optional-skill names to auto-install on first run. |
+| `SUPERFORECASTING_AGENT_BUNDLED_SKILLS` / `FORECAST_BUNDLED_SKILLS` / `HERMES_BUNDLED_SKILLS` | Advanced packaged-install override for the bundled skills directory. Nix wrappers set this automatically; the `HERMES_*` name remains a legacy alias. |
+| `SUPERFORECASTING_AGENT_OPTIONAL_SKILLS` / `FORECAST_OPTIONAL_SKILLS` / `HERMES_OPTIONAL_SKILLS` | Advanced packaged-install override for the optional-skills directory; the `HERMES_*` name remains a legacy alias. |
 | `HERMES_DEBUG_INTERRUPT` | Set to `1` to log detailed interrupt/cancel tracing to `agent.log`. |
 | `HERMES_DUMP_REQUESTS` | Dump API request payloads to log files (`true`/`false`) |
 | `HERMES_DUMP_REQUEST_STDOUT` | Dump API request payloads to stdout instead of log files. |
