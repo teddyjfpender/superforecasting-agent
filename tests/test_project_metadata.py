@@ -167,6 +167,24 @@ def test_web_locale_app_brand_is_forecast_native():
         assert "~/.hermes" not in text, path
 
 
+def test_web_update_action_names_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "web" / "src" / "App.tsx",
+        root / "web" / "src" / "pages" / "SessionsPage.tsx",
+        root / "web" / "src" / "lib" / "api.ts",
+        root / "web" / "src" / "i18n" / "types.ts",
+        *sorted((root / "web" / "src" / "i18n").glob("*.ts")),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "updateAgent" in text
+    assert "updatingAgent" in text
+    assert "updateLegacyHermes" in text
+    assert "updateHermes" not in text
+    assert "updatingHermes" not in text
+
+
 def test_web_dashboard_titles_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "web" / "index.html").read_text(encoding="utf-8")

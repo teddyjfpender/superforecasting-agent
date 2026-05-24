@@ -288,7 +288,7 @@ export const api = {
     fetchJSON<ActionResponse>("/api/gateway/restart", { method: "POST" }),
   updateSuperforecastingAgent: () =>
     fetchJSON<ActionResponse>("/api/superforecasting-agent/update", { method: "POST" }),
-  updateHermes: () =>
+  updateLegacyHermes: () =>
     fetchJSON<ActionResponse>("/api/hermes/update", { method: "POST" }),
   getActionStatus: (name: string, lines = 200) =>
     fetchJSON<ActionStatusResponse>(
