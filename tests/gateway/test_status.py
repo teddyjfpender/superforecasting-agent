@@ -395,6 +395,32 @@ class TestTerminatePid:
 
 
 class TestScopedLocks:
+    def test_get_lock_dir_uses_forecast_native_default(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_GATEWAY_LOCK_DIR", raising=False)
+        monkeypatch.delenv("FORECAST_GATEWAY_LOCK_DIR", raising=False)
+        monkeypatch.delenv("HERMES_GATEWAY_LOCK_DIR", raising=False)
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+        assert status._get_lock_dir() == (
+            tmp_path / "state" / "superforecasting-agent" / "gateway-locks"
+        )
+
+    def test_get_lock_dir_prefers_fork_native_aliases(self, tmp_path, monkeypatch):
+        primary = tmp_path / "primary"
+        short = tmp_path / "short"
+        legacy = tmp_path / "legacy"
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_GATEWAY_LOCK_DIR", str(primary))
+        monkeypatch.setenv("FORECAST_GATEWAY_LOCK_DIR", str(short))
+        monkeypatch.setenv("HERMES_GATEWAY_LOCK_DIR", str(legacy))
+
+        assert status._get_lock_dir() == primary
+
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_GATEWAY_LOCK_DIR", raising=False)
+        assert status._get_lock_dir() == short
+
+        monkeypatch.delenv("FORECAST_GATEWAY_LOCK_DIR", raising=False)
+        assert status._get_lock_dir() == legacy
+
     def test_windows_file_lock_uses_high_offset(self, tmp_path, monkeypatch):
         lock_path = tmp_path / "gateway.lock"
         handle = open(lock_path, "a+", encoding="utf-8")

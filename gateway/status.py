@@ -62,11 +62,16 @@ def _get_runtime_status_path() -> Path:
 
 def _get_lock_dir() -> Path:
     """Return the machine-local directory for token-scoped gateway locks."""
-    override = os.getenv("HERMES_GATEWAY_LOCK_DIR")
-    if override:
-        return Path(override)
+    for key in (
+        "SUPERFORECASTING_AGENT_GATEWAY_LOCK_DIR",
+        "FORECAST_GATEWAY_LOCK_DIR",
+        "HERMES_GATEWAY_LOCK_DIR",
+    ):
+        override = os.getenv(key)
+        if override:
+            return Path(override)
     state_home = Path(os.getenv("XDG_STATE_HOME", Path.home() / ".local" / "state"))
-    return state_home / "hermes" / _LOCKS_DIRNAME
+    return state_home / "superforecasting-agent" / _LOCKS_DIRNAME
 
 
 def _utc_now_iso() -> str:
