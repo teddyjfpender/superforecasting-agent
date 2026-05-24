@@ -15,6 +15,7 @@ def test_forecast_smoke_required_source_catalog_includes_fiscal_adapter():
     assert "coingecko" in EXPECTED_SOURCE_ADAPTERS
     assert "yahoo" in EXPECTED_SOURCE_ADAPTERS
     assert "secfacts" in EXPECTED_SOURCE_ADAPTERS
+    assert "fivethirtyeight" in EXPECTED_SOURCE_ADAPTERS
 
 
 def test_forecast_smoke_script_runs_local_lifecycle(tmp_path):

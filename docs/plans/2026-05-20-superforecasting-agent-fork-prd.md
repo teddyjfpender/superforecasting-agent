@@ -531,6 +531,7 @@ forecast schedule list
 forecast schedule run [--auto-score] [--auto-postmortem]
 forecast watch add --question <id> <source>
 forecast watch add --question <id> gdelt:<query>
+forecast watch add --question <id> fivethirtyeight:<dataset-or-url>
 forecast watch add --question <id> fred:<series-id>
 forecast watch add --question <id> bls:<series-id>
 forecast watch add --question <id> worldbank:<country>/<indicator>
@@ -554,6 +555,7 @@ forecast import metaculus <url>
 forecast import market <url-or-symbol>
 forecast import data <csv-or-json-url-or-file> --question <id>
 forecast import gdelt <query> --question <id>
+forecast import fivethirtyeight <dataset-or-url> --question <id>
 forecast import fred <series-id> --question <id>
 forecast import bls <series-id> --question <id>
 forecast import worldbank <country>/<indicator> --question <id>

@@ -27,6 +27,7 @@ from forecasting.source_adapters import (
     load_courtlistener_search_results,
     load_eia_observations,
     load_federal_register_documents,
+    load_fivethirtyeight_polls,
     load_fred_observations,
     load_gdelt_articles,
     load_github_commits,
@@ -184,6 +185,11 @@ FORECAST_LEDGER_SCHEMA = {
             "range_value": {"type": "string"},
             "timespan": {"type": "string"},
             "search_type": {"type": "string"},
+            "state": {"type": "string"},
+            "candidate": {"type": "string"},
+            "pollster": {"type": "string"},
+            "cycle": {"type": "integer"},
+            "office_type": {"type": "string"},
             "source_country": {"type": "string"},
             "source_lang": {"type": "string"},
             "start_year": {"type": "integer"},
@@ -256,6 +262,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "manual_note",
                     "rss",
                     "gdelt",
+                    "fivethirtyeight",
                     "github",
                     "githubissues",
                     "githubcommits",
@@ -1057,6 +1064,19 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_gdelt_articles(source, **kwargs)
+    if adapter_name == "fivethirtyeight":
+        kwargs = {
+            "limit": limit,
+            "since": since,
+            "state": args.get("state"),
+            "candidate": args.get("candidate"),
+            "pollster": args.get("pollster"),
+            "cycle": args.get("cycle"),
+            "office_type": args.get("office_type"),
+        }
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_fivethirtyeight_polls(source, **kwargs)
     if adapter_name == "fred":
         kwargs = {"limit": limit, "since": since}
         if api_base_url:
@@ -1352,7 +1372,8 @@ def _source_adapter_evidence_payload(
         "reliability_rating": args.get("reliability_rating"),
         "relevance_rating": args.get("relevance_rating"),
         "stance": args.get("stance") or "context",
-        "claim_type": args.get("claim_type") or ("estimate" if adapter_name == "openmeteo" else "fact"),
+        "claim_type": args.get("claim_type")
+        or ("estimate" if adapter_name in {"fivethirtyeight", "openmeteo"} else "fact"),
         "snapshot_path": args.get("snapshot_path"),
         "admissible_for_backtests": bool(args.get("admissible_for_backtests", True)),
         "metadata": metadata,
@@ -1426,6 +1447,11 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
             f"SEC Company Facts {data.get('company_name') or data.get('cik')} {label} "
             f"was {data.get('value')} {data.get('unit')} for {data.get('observation_date')}"
         )
+    if adapter == "fivethirtyeight":
+        subject = data.get("candidate_name") or data.get("answer") or "poll answer"
+        pct = f"{data.get('pct')}%" if data.get("pct") is not None else "unknown share"
+        geography = data.get("state") or "national"
+        return f"FiveThirtyEight poll {data.get('dataset')}: {subject} {pct} in {geography}"
     if adapter == "wikipediapageviews":
         return f"Wikimedia pageviews for {data.get('article')} were {data.get('views')} on {data.get('observation_date')}"
     if adapter == "github":

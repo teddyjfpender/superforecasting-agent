@@ -27,6 +27,7 @@ from forecasting.source_adapters import (
     CourtListenerSearchResult,
     EiaObservation,
     FederalRegisterDocument,
+    FiveThirtyEightPollObservation,
     FredObservation,
     GdeltArticle,
     HackerNewsItem,
@@ -1817,6 +1818,156 @@ def test_forecast_cli_gdelt_import_captures_articles_as_evidence(tmp_path, capsy
     assert evidence[0].metadata["gdelt_query"] == "policy bill"
     assert evidence[0].metadata["gdelt_article_id"] == "gdelt-article-1"
     assert evidence[0].metadata["domain"] == "example.test"
+
+
+def test_fivethirtyeight_adapter_loads_and_filters_poll_csv(monkeypatch):
+    captured = {}
+    csv_text = "\n".join(
+        [
+            "poll_id,question_id,pollster,fte_grade,state,start_date,end_date,created_at,cycle,office_type,candidate_name,answer,party,pct,sample_size,population,url",
+            "p1,q1,Example Polls,A,PA,5/20/26,5/22/26,5/23/26,2026,PRES,Jane Candidate,Jane Candidate,DEM,48.4,1000,lv,https://polls.test/p1",
+            "p2,q2,Other Polls,B,MI,5/21/26,5/23/26,5/24/26,2026,PRES,Other Candidate,Other Candidate,REP,45.1,900,rv,https://polls.test/p2",
+        ]
+    )
+
+    def fake_read_text_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return csv_text
+
+    monkeypatch.setattr(source_adapters, "_read_text_endpoint", fake_read_text_endpoint)
+
+    observations = source_adapters.load_fivethirtyeight_polls(
+        "fivethirtyeight:president",
+        limit=5,
+        since="2026-05-22",
+        state="PA",
+        candidate="Jane",
+        pollster="Example",
+        cycle=2026,
+        office_type="PRES",
+        api_base_url="https://polls.test/data",
+    )
+
+    assert captured["label"] == "fivethirtyeight polls"
+    assert captured["endpoint"] == "https://polls.test/data/president_polls.csv"
+    assert len(observations) == 1
+    assert observations[0].dataset == "president_polls"
+    assert observations[0].poll_id == "p1"
+    assert observations[0].question_id == "q1"
+    assert observations[0].pollster == "Example Polls"
+    assert observations[0].pollster_grade == "A"
+    assert observations[0].state == "PA"
+    assert observations[0].candidate_name == "Jane Candidate"
+    assert observations[0].pct == 48.4
+    assert observations[0].sample_size == 1000
+    assert observations[0].start_date == "2026-05-20"
+    assert observations[0].end_date == "2026-05-22"
+    assert observations[0].published_at == "2026-05-23T00:00:00Z"
+
+
+def test_forecast_cli_fivethirtyeight_import_captures_polls_as_evidence(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_fivethirtyeight_polls(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            FiveThirtyEightPollObservation(
+                dataset="president_polls",
+                poll_id="p1",
+                question_id="q1",
+                pollster="Example Polls",
+                pollster_grade="A",
+                race_id="r1",
+                office_type="PRES",
+                state="PA",
+                cycle=2026,
+                stage="general",
+                candidate_name="Jane Candidate",
+                answer="Jane Candidate",
+                party="DEM",
+                pct=48.4,
+                sample_size=1000,
+                population="lv",
+                start_date="2026-05-20",
+                end_date="2026-05-22",
+                published_at="2026-05-23T00:00:00Z",
+                source_url="https://polls.test/p1",
+                source_name="Example Polls",
+                entry_id="president_polls:p1:q1:Jane Candidate",
+                raw={"poll_id": "p1"},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_fivethirtyeight_polls", fake_load_fivethirtyeight_polls)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will the candidate win Pennsylvania?",
+            "--resolution-criteria",
+            "Resolved by certified election result.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "fivethirtyeight",
+            "president",
+            "--question",
+            question_id,
+            "--state",
+            "PA",
+            "--candidate",
+            "Jane",
+            "--pollster",
+            "Example",
+            "--cycle",
+            "2026",
+            "--office-type",
+            "PRES",
+            "--limit",
+            "3",
+            "--reliability",
+            "0.8",
+            "--relevance",
+            "0.9",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 fivethirtyeight evidence item(s)" in output
+    assert captured["source"] == "president"
+    assert captured["kwargs"]["state"] == "PA"
+    assert captured["kwargs"]["candidate"] == "Jane"
+    assert captured["kwargs"]["pollster"] == "Example"
+    assert captured["kwargs"]["cycle"] == 2026
+    assert captured["kwargs"]["office_type"] == "PRES"
+    assert evidence[0].source_name == "Example Polls"
+    assert evidence[0].source_type == "adapter:fivethirtyeight"
+    assert evidence[0].published_at == "2026-05-23T00:00:00Z"
+    assert evidence[0].claim == "FiveThirtyEight poll: Jane Candidate 48.4% in PA"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.8
+    assert evidence[0].relevance_rating == 0.9
+    assert evidence[0].metadata["adapter"] == "fivethirtyeight"
+    assert evidence[0].metadata["dataset"] == "president_polls"
+    assert evidence[0].metadata["poll_id"] == "p1"
+    assert evidence[0].metadata["pct"] == 48.4
 
 
 def test_github_adapter_loads_repository_releases(monkeypatch):
@@ -7017,6 +7168,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "Name" in output
     assert 'gdelt' in output
     assert 'forecast import gdelt "<query>" --question <id>' in output
+    assert "fivethirtyeight:<dataset-or-url>" in output
     assert "owid:<grapher-slug>" in output
     assert "eia:<series-id-or-api-url>" in output
     assert "treasury:<dataset-path-or-api-url>" in output
@@ -7055,7 +7207,8 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "fivethirtyeight", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert any(source["watch_prefix"] == "fivethirtyeight:<dataset-or-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "census:<dataset-path?get=...&for=...>" for source in payload["sources"])

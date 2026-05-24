@@ -73,6 +73,7 @@ Examples:
 /forecast
 /forecast review --stale
 /forecast sources
+/forecast import fivethirtyeight president --state PA --question <id>
 /forecast import census "2023/acs/acs5?get=NAME,B01003_001E&for=state:*" --question <id>
 /forecast import socrata data.cdc.gov/abcd-1234 --question <id>
 /forecast import stooq AAPL.US --question <id>

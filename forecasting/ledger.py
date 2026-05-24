@@ -63,6 +63,7 @@ WATCH_SOURCE_TYPES = {
     "manual",
     "rss",
     "gdelt",
+    "fivethirtyeight",
     "github",
     "githubissues",
     "githubcommits",
@@ -2900,7 +2901,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
+                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
                 "sec, secfacts, arxiv, openalex, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -2985,6 +2986,7 @@ class ForecastLedger:
                     "url",
                     "rss",
                     "gdelt",
+                    "fivethirtyeight",
                     "github",
                     "githubissues",
                     "githubcommits",
@@ -5202,6 +5204,8 @@ class ForecastLedger:
             return "rss"
         if source.startswith("gdelt:"):
             return "gdelt"
+        if source.startswith(("fivethirtyeight:", "538:")):
+            return "fivethirtyeight"
         if source.startswith("github:"):
             return "github"
         if source.startswith("githubissues:"):
@@ -5290,6 +5294,8 @@ class ForecastLedger:
             return self._rss_source_signature(source)
         if source_type == "gdelt":
             return self._gdelt_source_signature(source)
+        if source_type == "fivethirtyeight":
+            return self._fivethirtyeight_source_signature(source)
         if source_type == "github":
             return self._github_source_signature(source)
         if source_type == "githubissues":
@@ -5459,6 +5465,40 @@ class ForecastLedger:
         ]
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"gdelt:{len(payload)}:{digest}"
+
+    def _fivethirtyeight_source_signature(self, source: str) -> str:
+        source_value = (
+            source.split(":", 1)[1].strip()
+            if source.startswith(("fivethirtyeight:", "538:"))
+            else source.strip()
+        )
+        if not source_value:
+            return "missing:fivethirtyeight:empty-source"
+        try:
+            from forecasting.source_adapters import load_fivethirtyeight_polls
+
+            observations = load_fivethirtyeight_polls(source_value, limit=50)
+        except Exception as exc:
+            return f"missing:fivethirtyeight:{source_value}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "dataset": observation.dataset,
+                "poll_id": observation.poll_id,
+                "question_id": observation.question_id,
+                "pollster": observation.pollster,
+                "state": observation.state,
+                "cycle": observation.cycle,
+                "candidate_name": observation.candidate_name,
+                "answer": observation.answer,
+                "pct": observation.pct,
+                "sample_size": observation.sample_size,
+                "end_date": observation.end_date,
+                "published_at": observation.published_at,
+            }
+            for observation in observations
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"fivethirtyeight:{len(payload)}:{digest}"
 
     def _github_source_signature(self, source: str) -> str:
         source_value = source.split(":", 1)[1].strip() if source.startswith("github:") else source.strip()
@@ -6523,6 +6563,16 @@ class ForecastLedger:
             query = source.split(":", 1)[1].strip() if source.startswith("gdelt:") else source
             return (
                 f"Run `forecast import gdelt \"{query}\" --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "fivethirtyeight" and scope_type == "question" and scope_ref:
+            source_value = (
+                source.split(":", 1)[1].strip()
+                if source.startswith(("fivethirtyeight:", "538:"))
+                else source
+            )
+            return (
+                f"Run `forecast import fivethirtyeight {source_value} --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "github" and scope_type == "question" and scope_ref:

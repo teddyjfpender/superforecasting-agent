@@ -64,6 +64,7 @@ forecast sources
 forecast sources --json
 forecast import data ./rows.csv --question <id>
 forecast import gdelt "query terms" --question <id>
+forecast import fivethirtyeight president --state PA --question <id>
 forecast import fred UNRATE --question <id>
 forecast import eia PET.RWTC.M --question <id>
 forecast import treasury v2/accounting/od/avg_interest_rates --question <id>

@@ -22,6 +22,7 @@ BACKTEST_RE = re.compile(r"backtest_run: (bt_[a-f0-9]+)")
 EXPECTED_SOURCE_ADAPTERS = {
     "news",
     "gdelt",
+    "fivethirtyeight",
     "data",
     "owid",
     "openmeteo",

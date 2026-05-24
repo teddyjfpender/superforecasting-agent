@@ -38,6 +38,10 @@ const EVIDENCE_IMPORTS = [
     label: "News",
   },
   {
+    command: "forecast import fivethirtyeight <dataset-or-url> --question <id>",
+    label: "Polls",
+  },
+  {
     command: 'forecast import owid <slug> --entity "<entity>" --question <id>',
     label: "Public data",
   },

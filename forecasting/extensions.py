@@ -78,6 +78,7 @@ def register_builtin_extensions() -> None:
         ("rss-atom-news", "importer", "Capture RSS or Atom feed items as timestamped evidence."),
         ("generic-data", "importer", "Capture CSV or JSON data rows as timestamped evidence."),
         ("gdelt-doc-news", "importer", "Capture GDELT DOC article-list results as timestamped evidence."),
+        ("fivethirtyeight-polls", "importer", "Capture FiveThirtyEight polling rows as timestamped evidence."),
         ("github-releases", "importer", "Capture GitHub repository releases as timestamped evidence."),
         ("github-issues", "importer", "Capture GitHub issues and pull requests as timestamped evidence."),
         ("github-commits", "importer", "Capture GitHub commit activity as timestamped evidence."),

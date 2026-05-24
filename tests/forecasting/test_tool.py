@@ -12,6 +12,7 @@ from forecasting.source_adapters import (
     ClinicalTrialStudy,
     CoinGeckoMarketSnapshot,
     EiaObservation,
+    FiveThirtyEightPollObservation,
     HackerNewsItem,
     GitHubCommit,
     GitHubIssue,
@@ -91,7 +92,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_imports_sec_company_facts(tmp_path, monkeypatch):
@@ -169,6 +170,91 @@ def test_forecast_ledger_tool_imports_sec_company_facts(tmp_path, monkeypatch):
     assert evidence["published_at"] == "2025-10-31T00:00:00Z"
     assert evidence["metadata"]["adapter"] == "secfacts"
     assert evidence["metadata"]["adapter_item"]["concept"] == "Revenues"
+
+
+def test_forecast_ledger_tool_imports_fivethirtyeight_polls(tmp_path, monkeypatch):
+    db = str(tmp_path / "forecasting.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will polling import through the tool?",
+                "resolution_criteria": "Resolved yes if polling import through the tool.",
+            }
+        )
+    )
+    question_id = created["question"]["id"]
+    captured = {}
+
+    def fake_fivethirtyeight_polls(source, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            FiveThirtyEightPollObservation(
+                dataset="president_polls",
+                poll_id="p1",
+                question_id="q1",
+                pollster="Example Polls",
+                pollster_grade="A",
+                race_id="r1",
+                office_type="PRES",
+                state="PA",
+                cycle=2026,
+                stage="general",
+                candidate_name="Jane Candidate",
+                answer="Jane Candidate",
+                party="DEM",
+                pct=48.4,
+                sample_size=1000,
+                population="lv",
+                start_date="2026-05-20",
+                end_date="2026-05-22",
+                published_at="2026-05-23T00:00:00Z",
+                source_url="https://polls.test/p1",
+                source_name="Example Polls",
+                entry_id="president_polls:p1:q1:Jane Candidate",
+                raw={"poll_id": "p1"},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_fivethirtyeight_polls", fake_fivethirtyeight_polls)
+    imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "fivethirtyeight",
+                "source": "president",
+                "limit": 1,
+                "since": "2026-05-01",
+                "state": "PA",
+                "candidate": "Jane",
+                "pollster": "Example",
+                "cycle": 2026,
+                "office_type": "PRES",
+                "api_base_url": "https://polls.test/data",
+            }
+        )
+    )
+
+    assert captured["source"] == "president"
+    assert captured["kwargs"]["state"] == "PA"
+    assert captured["kwargs"]["candidate"] == "Jane"
+    assert captured["kwargs"]["pollster"] == "Example"
+    assert captured["kwargs"]["cycle"] == 2026
+    assert captured["kwargs"]["office_type"] == "PRES"
+    assert captured["kwargs"]["api_base_url"] == "https://polls.test/data"
+    assert imported["imported_count"] == 1
+    evidence = imported["imported"][0]["evidence"]
+    assert evidence["source_type"] == "adapter:fivethirtyeight"
+    assert evidence["source_name"] == "Example Polls"
+    assert evidence["claim"] == "FiveThirtyEight poll president_polls: Jane Candidate 48.4% in PA"
+    assert evidence["claim_type"] == "estimate"
+    assert evidence["published_at"] == "2026-05-23T00:00:00Z"
+    assert evidence["metadata"]["adapter"] == "fivethirtyeight"
+    assert evidence["metadata"]["adapter_item"]["pct"] == 48.4
 
 
 def test_forecast_ledger_tool_lifecycle(tmp_path):

@@ -66,6 +66,7 @@ from forecasting.source_adapters import (
     load_courtlistener_search_results,
     load_eia_observations,
     load_federal_register_documents,
+    load_fivethirtyeight_polls,
     load_fred_observations,
     load_gdelt_articles,
     load_github_commits,
@@ -116,6 +117,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "domain": "global news search",
         "import_command": 'forecast import gdelt "<query>" --question <id>',
         "watch_prefix": "gdelt:<query>",
+    },
+    {
+        "name": "fivethirtyeight",
+        "domain": "election and public-opinion polls",
+        "import_command": "forecast import fivethirtyeight <dataset-or-url> --question <id>",
+        "watch_prefix": "fivethirtyeight:<dataset-or-url>",
     },
     {
         "name": "data",
@@ -508,6 +515,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "news",
         "data",
         "gdelt",
+        "fivethirtyeight",
         "github",
         "githubissues",
         "githubcommits",
@@ -587,6 +595,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "news",
             "data",
             "gdelt",
+            "fivethirtyeight",
             "github",
             "githubissues",
             "githubcommits",
@@ -626,7 +635,8 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         }:
             adapter.add_argument("--limit", type=int, default=10)
             adapter.add_argument("--since")
-            adapter.add_argument("--claim-type", choices=sorted(EVIDENCE_CLAIM_TYPES), default="fact")
+            default_claim_type = "estimate" if name == "fivethirtyeight" else "fact"
+            adapter.add_argument("--claim-type", choices=sorted(EVIDENCE_CLAIM_TYPES), default=default_claim_type)
             adapter.add_argument("--reliability", type=float)
             adapter.add_argument("--relevance", type=float)
         if name == "gdelt":
@@ -637,6 +647,17 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://api.gdeltproject.org/api/v2/doc/doc",
                 help="Override GDELT DOC API base URL for tests or private mirrors",
+            )
+        if name == "fivethirtyeight":
+            adapter.add_argument("--state", help="Filter polls by state or seat name")
+            adapter.add_argument("--candidate", help="Filter polls by candidate/answer substring")
+            adapter.add_argument("--pollster", help="Filter polls by pollster substring")
+            adapter.add_argument("--cycle", type=int, help="Filter polls by election cycle")
+            adapter.add_argument("--office-type", help="Filter polls by office_type")
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://projects.fivethirtyeight.com/polls-page/data",
+                help="Override FiveThirtyEight polling CSV base URL or endpoint template for tests or private mirrors",
             )
         if name == "github":
             adapter.add_argument(
@@ -2256,6 +2277,84 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} gdelt evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "fivethirtyeight":
+        if not args.question_id:
+            raise SystemExit("forecast import fivethirtyeight requires --question")
+        observations = load_fivethirtyeight_polls(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            state=args.state,
+            candidate=args.candidate,
+            pollster=args.pollster,
+            cycle=args.cycle,
+            office_type=args.office_type,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for observation in observations:
+            subject = observation.candidate_name or observation.answer or "poll answer"
+            pct = f"{observation.pct:g}%" if observation.pct is not None else "unknown share"
+            geography = observation.state or "national"
+            sample = f"; n={observation.sample_size:g}" if observation.sample_size is not None else ""
+            population = f"; {observation.population}" if observation.population else ""
+            date_span = " to ".join(
+                part for part in (observation.start_date, observation.end_date) if part
+            ) or "unknown dates"
+            summary = (
+                f"FiveThirtyEight {observation.dataset} poll from "
+                f"{observation.pollster or 'unknown pollster'} for {geography}, "
+                f"{date_span}: {subject} at {pct}{sample}{population}."
+            )
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=observation.source_url or f"FiveThirtyEight:{observation.dataset}",
+                    source_url=observation.source_url,
+                    source_name=observation.source_name,
+                    source_type="adapter:fivethirtyeight",
+                    published_at=observation.published_at,
+                    available_at=observation.published_at or args.as_of,
+                    claim=f"FiveThirtyEight poll: {subject} {pct} in {geography}",
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "fivethirtyeight",
+                        "dataset": observation.dataset,
+                        "poll_id": observation.poll_id,
+                        "question_id": observation.question_id,
+                        "pollster": observation.pollster,
+                        "pollster_grade": observation.pollster_grade,
+                        "race_id": observation.race_id,
+                        "office_type": observation.office_type,
+                        "state": observation.state,
+                        "cycle": observation.cycle,
+                        "stage": observation.stage,
+                        "candidate_name": observation.candidate_name,
+                        "answer": observation.answer,
+                        "party": observation.party,
+                        "pct": observation.pct,
+                        "sample_size": observation.sample_size,
+                        "population": observation.population,
+                        "start_date": observation.start_date,
+                        "end_date": observation.end_date,
+                        "api_base_url": args.api_base_url,
+                        "state_filter": args.state,
+                        "candidate_filter": args.candidate,
+                        "pollster_filter": args.pollster,
+                        "cycle_filter": args.cycle,
+                        "office_type_filter": args.office_type,
+                        "raw": observation.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} fivethirtyeight evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

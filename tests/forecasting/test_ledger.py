@@ -24,6 +24,7 @@ from forecasting.source_adapters import (
     CourtListenerSearchResult,
     EiaObservation,
     FederalRegisterDocument,
+    FiveThirtyEightPollObservation,
     FredObservation,
     GdeltArticle,
     HackerNewsItem,
@@ -1584,6 +1585,72 @@ def test_watched_gdelt_source_creates_alert_on_article_change(tmp_path, monkeypa
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert f'forecast import gdelt "policy bill" --question {question.id}' in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-02T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_fivethirtyeight_source_creates_alert_on_poll_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched polling changes be detected?",
+        resolution_criteria="Resolved yes if watched polling changes create alerts.",
+    )
+    pct = [48.4]
+    captured_sources = []
+
+    def fake_load_fivethirtyeight_polls(source: str, **kwargs):
+        captured_sources.append(source)
+        return [
+            FiveThirtyEightPollObservation(
+                dataset="president_polls",
+                poll_id="p1",
+                question_id="q1",
+                pollster="Example Polls",
+                pollster_grade="A",
+                race_id="r1",
+                office_type="PRES",
+                state="PA",
+                cycle=2026,
+                stage="general",
+                candidate_name="Jane Candidate",
+                answer="Jane Candidate",
+                party="DEM",
+                pct=pct[0],
+                sample_size=1000,
+                population="lv",
+                start_date="2026-05-20",
+                end_date="2026-05-22",
+                published_at="2026-05-23T00:00:00Z",
+                source_url="https://polls.test/p1",
+                source_name="Example Polls",
+                entry_id="president_polls:p1:q1:Jane Candidate",
+                raw={"poll_id": "p1", "pct": pct[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_fivethirtyeight_polls", fake_load_fivethirtyeight_polls)
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="fivethirtyeight:president",
+    )
+
+    assert watch["source_type"] == "fivethirtyeight"
+    assert watch["last_seen_signature"].startswith("fivethirtyeight:1:")
+    assert captured_sources[-1] == "president"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    pct[0] = 49.2
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-02T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f"forecast import fivethirtyeight president --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-02T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]
