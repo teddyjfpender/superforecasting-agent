@@ -68,6 +68,11 @@ _IGNORE_RULES_ENV_NAMES = (
     "FORECAST_IGNORE_RULES",
     "HERMES_IGNORE_RULES",
 )
+_SIGTERM_GRACE_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_SIGTERM_GRACE",
+    "FORECAST_SIGTERM_GRACE",
+    "HERMES_SIGTERM_GRACE",
+)
 
 
 def _set_redact_env_aliases(value: object) -> None:
@@ -103,6 +108,16 @@ def _first_present_env(names: tuple[str, ...], default: str = "") -> tuple[str, 
 def _env_flag_exact_one(names: tuple[str, ...]) -> bool:
     _name, value = _first_present_env(names)
     return value == "1"
+
+
+def _sigterm_grace_seconds(default: float = 1.5) -> float:
+    value = env_var_alias_value(_SIGTERM_GRACE_ENV_NAMES)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _resolve_cli_history_file(agent_home: Path) -> Path:
@@ -14063,11 +14078,13 @@ class HermesCLI:
             spawned with ``os.setsid`` and therefore survives as an orphan
             with PPID=1.
 
-            Grace window (``HERMES_SIGTERM_GRACE``, default 1.5 s) gives
-            the daemon time to: detect the interrupt (next 200 ms poll) →
-            call _kill_process (SIGTERM + 1 s wait + SIGKILL if needed) →
-            return from _wait_for_process.  ``time.sleep`` releases the
-            GIL so the daemon actually runs during the window.
+            Grace window (``SUPERFORECASTING_AGENT_SIGTERM_GRACE`` /
+            ``FORECAST_SIGTERM_GRACE`` / ``HERMES_SIGTERM_GRACE``,
+            default 1.5 s) gives the daemon time to: detect the interrupt
+            (next 200 ms poll) → call _kill_process (SIGTERM + 1 s wait +
+            SIGKILL if needed) → return from _wait_for_process.
+            ``time.sleep`` releases the GIL so the daemon actually runs
+            during the window.
 
             Guarded ``logger.debug``: CPython's ``logging`` module is not
             reentrant-safe.  ``Logger.isEnabledFor`` caches level results
@@ -14087,10 +14104,7 @@ class HermesCLI:
             try:
                 if getattr(self, "agent", None) and getattr(self, "_agent_running", False):
                     self.agent.interrupt(f"received signal {signum}")
-                    try:
-                        _grace = float(os.getenv("HERMES_SIGTERM_GRACE", "1.5"))
-                    except (TypeError, ValueError):
-                        _grace = 1.5
+                    _grace = _sigterm_grace_seconds()
                     if _grace > 0:
                         time.sleep(_grace)
             except Exception:
@@ -14532,7 +14546,8 @@ def main(
     # per-thread interrupt flag the worker's poll loop checks every 200 ms.
     # Give the worker a grace window to call _kill_process (SIGTERM to the
     # process group, then SIGKILL after 1 s), then raise KeyboardInterrupt
-    # so main unwinds normally.  HERMES_SIGTERM_GRACE overrides the 1.5 s
+    # so main unwinds normally.  SUPERFORECASTING_AGENT_SIGTERM_GRACE /
+    # FORECAST_SIGTERM_GRACE / HERMES_SIGTERM_GRACE override the 1.5 s
     # default for debugging.
     def _signal_handler_q(signum, frame):
         logger.debug("Received signal %s in single-query mode", signum)
@@ -14540,10 +14555,7 @@ def main(
             _agent = getattr(cli, "agent", None)
             if _agent is not None:
                 _agent.interrupt(f"received signal {signum}")
-                try:
-                    _grace = float(os.getenv("HERMES_SIGTERM_GRACE", "1.5"))
-                except (TypeError, ValueError):
-                    _grace = 1.5
+                _grace = _sigterm_grace_seconds()
                 if _grace > 0:
                     time.sleep(_grace)
         except Exception:
