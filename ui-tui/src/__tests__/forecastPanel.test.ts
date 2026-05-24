@@ -275,6 +275,14 @@ describe('forecast desk panel helpers', () => {
       ['/forecast research fq_review123456', 'collect source notes and evidence without moving probability'],
       ['/forecast update fq_review123456 --probability <0-1>', 'append an explicit probability update with rationale'],
       [
+        '/forecast base-rate fq_review123456 --name <reference-class>',
+        'add reference-class evidence before changing probability'
+      ],
+      [
+        "/trend-model fq_review123456 --series-json '[...]' --target-date <date>",
+        'run a deterministic trend projection when time series matter'
+      ],
+      [
         '/forecast resolve fq_review123456 --outcome <value> --source <url>',
         'record resolution when criteria are met'
       ]

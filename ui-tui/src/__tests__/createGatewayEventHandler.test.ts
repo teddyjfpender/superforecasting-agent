@@ -916,6 +916,14 @@ describe('createGatewayEventHandler', () => {
                 'append an explicit probability update with rationale'
               ],
               [
+                '/forecast base-rate fq_123456789abc --name <reference-class>',
+                'add reference-class evidence before changing probability'
+              ],
+              [
+                "/trend-model fq_123456789abc --series-json '[...]' --target-date <date>",
+                'run a deterministic trend projection when time series matter'
+              ],
+              [
                 '/forecast resolve fq_123456789abc --outcome <value> --source <url>',
                 'record resolution when criteria are met'
               ]

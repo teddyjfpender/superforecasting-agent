@@ -217,7 +217,9 @@ The status line tracks both runtime state and forecast workload:
 The desk counters show active forecasts, open alerts, review queue size,
 calibration sample counts, and learned lessons when available. The forecast desk
 panel shows calibration component contribution when saved ensemble snapshots
-have been scored.
+have been scored. Its focused-action block keeps the top review question close
+to the full research loop: show context, research, update, add base-rate work,
+run a trend model, and resolve when criteria are met.
 
 Other status-line fields include working directory, git branch, elapsed turn
 time, session duration, context compression count, background task count, and a
