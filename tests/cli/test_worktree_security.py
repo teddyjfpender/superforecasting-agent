@@ -38,6 +38,18 @@ def _force_remove_worktree(info: dict | None) -> None:
 
 
 class TestWorktreeIncludeSecurity:
+    def test_creates_forecast_prefixed_worktree(self, git_repo):
+        import cli as cli_mod
+
+        info = None
+        try:
+            info = cli_mod._setup_worktree(str(git_repo))
+            assert info is not None
+            assert Path(info["path"]).name.startswith("forecast-")
+            assert info["branch"].startswith("forecast/forecast-")
+        finally:
+            _force_remove_worktree(info)
+
     def test_rejects_parent_directory_file_traversal(self, git_repo):
         import cli as cli_mod
 

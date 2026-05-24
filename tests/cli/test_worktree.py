@@ -119,8 +119,8 @@ def _setup_worktree(repo_root):
     """Test version of _setup_worktree — creates a worktree."""
     import uuid
     short_id = uuid.uuid4().hex[:8]
-    wt_name = f"hermes-{short_id}"
-    branch_name = f"hermes/{wt_name}"
+    wt_name = f"forecast-{short_id}"
+    branch_name = f"forecast/{wt_name}"
 
     worktrees_dir = Path(repo_root) / ".worktrees"
     worktrees_dir.mkdir(parents=True, exist_ok=True)
@@ -224,7 +224,7 @@ class TestWorktreeCreation:
         info = _setup_worktree(str(git_repo))
         assert info is not None
         assert Path(info["path"]).exists()
-        assert info["branch"].startswith("hermes/hermes-")
+        assert info["branch"].startswith("forecast/forecast-")
         assert info["repo_root"] == str(git_repo)
 
         # Verify it's a valid git worktree
@@ -565,7 +565,7 @@ class TestStaleWorktreePruning:
         cutoff = time.time() - (24 * 3600)
 
         for entry in worktrees_dir.iterdir():
-            if not entry.is_dir() or not entry.name.startswith("hermes-"):
+            if not entry.is_dir() or not entry.name.startswith(("forecast-", "hermes-")):
                 continue
             try:
                 mtime = entry.stat().st_mtime
@@ -611,7 +611,7 @@ class TestStaleWorktreePruning:
 
         pruned = False
         for entry in worktrees_dir.iterdir():
-            if not entry.is_dir() or not entry.name.startswith("hermes-"):
+            if not entry.is_dir() or not entry.name.startswith(("forecast-", "hermes-")):
                 continue
             mtime = entry.stat().st_mtime
             if mtime > cutoff:
@@ -660,7 +660,7 @@ class TestStaleWorktreePruning:
         cutoff = time.time() - (24 * 3600)
 
         for entry in worktrees_dir.iterdir():
-            if not entry.is_dir() or not entry.name.startswith("hermes-"):
+            if not entry.is_dir() or not entry.name.startswith(("forecast-", "hermes-")):
                 continue
             mtime = entry.stat().st_mtime
             if mtime > cutoff:
@@ -702,7 +702,7 @@ class TestStaleWorktreePruning:
         cutoff = time.time() - (24 * 3600)
 
         for entry in worktrees_dir.iterdir():
-            if not entry.is_dir() or not entry.name.startswith("hermes-"):
+            if not entry.is_dir() or not entry.name.startswith(("forecast-", "hermes-")):
                 continue
             mtime = entry.stat().st_mtime
             if mtime > cutoff:
@@ -865,21 +865,26 @@ class TestTerminalCWDIntegration:
 
 
 class TestOrphanedBranchPruning:
-    """Test cleanup of orphaned hermes/* and pr-* branches."""
+    """Test cleanup of orphaned generated worktree and pr-* branches."""
 
-    def test_prunes_orphaned_hermes_branch(self, git_repo):
-        """hermes/hermes-* branches with no worktree should be deleted."""
-        # Create a branch that looks like a worktree branch but has no worktree
+    def test_prunes_orphaned_forecast_and_legacy_branch(self, git_repo):
+        """Generated forecast and legacy Hermes branches should be deleted."""
+        # Create branches that look like worktree branches but have no worktree.
+        subprocess.run(
+            ["git", "branch", "forecast/forecast-deadbeef", "HEAD"],
+            cwd=str(git_repo), capture_output=True,
+        )
         subprocess.run(
             ["git", "branch", "hermes/hermes-deadbeef", "HEAD"],
             cwd=str(git_repo), capture_output=True,
         )
 
-        # Verify it exists
+        # Verify they exist.
         result = subprocess.run(
-            ["git", "branch", "--list", "hermes/hermes-deadbeef"],
+            ["git", "branch", "--format=%(refname:short)"],
             capture_output=True, text=True, cwd=str(git_repo),
         )
+        assert "forecast/forecast-deadbeef" in result.stdout
         assert "hermes/hermes-deadbeef" in result.stdout
 
         # Simulate _prune_orphaned_branches logic
@@ -901,8 +906,13 @@ class TestOrphanedBranchPruning:
         orphaned = [
             b for b in all_branches
             if b not in active_branches
-            and (b.startswith("hermes/hermes-") or b.startswith("pr-"))
+            and (
+                b.startswith("forecast/forecast-")
+                or b.startswith("hermes/hermes-")
+                or b.startswith("pr-")
+            )
         ]
+        assert "forecast/forecast-deadbeef" in orphaned
         assert "hermes/hermes-deadbeef" in orphaned
 
         # Delete them
@@ -912,11 +922,12 @@ class TestOrphanedBranchPruning:
                 capture_output=True, text=True, cwd=str(git_repo),
             )
 
-        # Verify gone
+        # Verify gone.
         result = subprocess.run(
-            ["git", "branch", "--list", "hermes/hermes-deadbeef"],
+            ["git", "branch", "--format=%(refname:short)"],
             capture_output=True, text=True, cwd=str(git_repo),
         )
+        assert "forecast/forecast-deadbeef" not in result.stdout
         assert "hermes/hermes-deadbeef" not in result.stdout
 
     def test_prunes_orphaned_pr_branch(self, git_repo):
@@ -986,7 +997,11 @@ class TestOrphanedBranchPruning:
         orphaned = [
             b for b in all_branches
             if b not in active_branches
-            and (b.startswith("hermes/hermes-") or b.startswith("pr-"))
+            and (
+                b.startswith("forecast/forecast-")
+                or b.startswith("hermes/hermes-")
+                or b.startswith("pr-")
+            )
         ]
         assert "main" not in orphaned
 
