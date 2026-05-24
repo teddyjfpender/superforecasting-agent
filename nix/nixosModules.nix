@@ -8,7 +8,7 @@
 # plain Ubuntu container. The writable layer (apt/pip/npm installs) persists
 # across restarts and agent updates. Only image/volume/options changes trigger
 # container recreation. Environment variables are written to the shared
-# forecast home (.hermes in the inherited module layout).
+# shared forecast home.
 # and read by Superforecasting Agent at startup — no container recreation needed for env changes.
 #
 # Tool resolution: the superforecasting-agent wrapper uses --suffix PATH for nix store tools,
@@ -70,7 +70,7 @@ let
 
     containerName = "superforecasting-agent";
     containerDataDir = "/data";     # stateDir mount point inside container
-    containerHomeDir = "/home/hermes";
+    containerHomeDir = "/home/superforecasting-agent";
 
     # ── Container mode helpers ──────────────────────────────────────────
     containerBin = if cfg.container.backend == "docker"
@@ -78,45 +78,49 @@ let
       else "${pkgs.podman}/bin/podman";
 
     # Runs as root inside the container on every start. Provisions the
-    # hermes user + sudo on first boot (writable layer persists), then
+    # service user + sudo on first boot (writable layer persists), then
     # drops privileges. Supports arbitrary base images (Debian, Alpine, etc).
     containerEntrypoint = pkgs.writeShellScript "superforecasting-agent-container-entrypoint" ''
       set -eu
 
-      HERMES_UID="''${HERMES_UID:?HERMES_UID must be set}"
-      HERMES_GID="''${HERMES_GID:?HERMES_GID must be set}"
+      SUPERFORECASTING_AGENT_UID="''${SUPERFORECASTING_AGENT_UID:-''${FORECAST_UID:-''${HERMES_UID:-}}}"
+      SUPERFORECASTING_AGENT_GID="''${SUPERFORECASTING_AGENT_GID:-''${FORECAST_GID:-''${HERMES_GID:-}}}"
+      SUPERFORECASTING_AGENT_UID="''${SUPERFORECASTING_AGENT_UID:?SUPERFORECASTING_AGENT_UID must be set}"
+      SUPERFORECASTING_AGENT_GID="''${SUPERFORECASTING_AGENT_GID:?SUPERFORECASTING_AGENT_GID must be set}"
+      HERMES_UID="$SUPERFORECASTING_AGENT_UID"
+      HERMES_GID="$SUPERFORECASTING_AGENT_GID"
 
-      # ── Group: ensure a group with GID=$HERMES_GID exists ──
+      # ── Group: ensure a group with GID=$SUPERFORECASTING_AGENT_GID exists ──
       # Check by GID (not name) to avoid collisions with pre-existing groups
       # (e.g. GID 100 = "users" on Ubuntu)
-      EXISTING_GROUP=$(getent group "$HERMES_GID" 2>/dev/null | cut -d: -f1 || true)
+      EXISTING_GROUP=$(getent group "$SUPERFORECASTING_AGENT_GID" 2>/dev/null | cut -d: -f1 || true)
       if [ -n "$EXISTING_GROUP" ]; then
         GROUP_NAME="$EXISTING_GROUP"
       else
-        GROUP_NAME="hermes"
+        GROUP_NAME="superforecasting-agent"
         if command -v groupadd >/dev/null 2>&1; then
-          groupadd -g "$HERMES_GID" "$GROUP_NAME"
+          groupadd -g "$SUPERFORECASTING_AGENT_GID" "$GROUP_NAME"
         elif command -v addgroup >/dev/null 2>&1; then
-          addgroup -g "$HERMES_GID" "$GROUP_NAME" 2>/dev/null || true
+          addgroup -g "$SUPERFORECASTING_AGENT_GID" "$GROUP_NAME" 2>/dev/null || true
         fi
       fi
 
-      # ── User: ensure a user with UID=$HERMES_UID exists ──
-      PASSWD_ENTRY=$(getent passwd "$HERMES_UID" 2>/dev/null || true)
+      # ── User: ensure a user with UID=$SUPERFORECASTING_AGENT_UID exists ──
+      PASSWD_ENTRY=$(getent passwd "$SUPERFORECASTING_AGENT_UID" 2>/dev/null || true)
       if [ -n "$PASSWD_ENTRY" ]; then
         TARGET_USER=$(echo "$PASSWD_ENTRY" | cut -d: -f1)
         TARGET_HOME=$(echo "$PASSWD_ENTRY" | cut -d: -f6)
       else
-        TARGET_USER="hermes"
-        TARGET_HOME="/home/hermes"
+        TARGET_USER="superforecasting-agent"
+        TARGET_HOME="${containerHomeDir}"
         if command -v useradd >/dev/null 2>&1; then
-          useradd -u "$HERMES_UID" -g "$HERMES_GID" -m -d "$TARGET_HOME" -s /bin/bash "$TARGET_USER"
+          useradd -u "$SUPERFORECASTING_AGENT_UID" -g "$SUPERFORECASTING_AGENT_GID" -m -d "$TARGET_HOME" -s /bin/bash "$TARGET_USER"
         elif command -v adduser >/dev/null 2>&1; then
-          adduser -u "$HERMES_UID" -D -h "$TARGET_HOME" -s /bin/sh -G "$GROUP_NAME" "$TARGET_USER" 2>/dev/null || true
+          adduser -u "$SUPERFORECASTING_AGENT_UID" -D -h "$TARGET_HOME" -s /bin/sh -G "$GROUP_NAME" "$TARGET_USER" 2>/dev/null || true
         fi
       fi
       mkdir -p "$TARGET_HOME"
-      chown "$HERMES_UID:$HERMES_GID" "$TARGET_HOME"
+      chown "$SUPERFORECASTING_AGENT_UID:$SUPERFORECASTING_AGENT_GID" "$TARGET_HOME"
       chmod 0750 "$TARGET_HOME"
 
       # Ensure HERMES_HOME is owned by the target user.
@@ -125,7 +129,7 @@ let
       # script sets for group access by hostUsers.  Only touch files with
       # wrong ownership so correctly-owned dirs keep their permission bits.
       if [ -n "''${HERMES_HOME:-}" ] && [ -d "$HERMES_HOME" ]; then
-        find "$HERMES_HOME" \! -user "$HERMES_UID" -exec chown "$HERMES_UID:$HERMES_GID" {} +
+        find "$HERMES_HOME" \! -user "$SUPERFORECASTING_AGENT_UID" -exec chown "$SUPERFORECASTING_AGENT_UID:$SUPERFORECASTING_AGENT_GID" {} +
       fi
 
       # ── Provision apt packages (first boot only, cached in writable layer) ──
@@ -133,7 +137,7 @@ let
       # nodejs/npm: writable node so npm i -g works (nix store copies are read-only)
       #   Node 22 via NodeSource — Ubuntu 24.04 ships Node 18 which is EOL.
       # curl: needed for uv installer + NodeSource setup
-      if [ ! -f /var/lib/hermes-tools-provisioned ] && command -v apt-get >/dev/null 2>&1; then
+      if [ ! -f /var/lib/superforecasting-agent-tools-provisioned ] && command -v apt-get >/dev/null 2>&1; then
         echo "First boot: provisioning agent tools..."
         apt-get update -qq
         apt-get install -y -qq sudo curl ca-certificates gnupg
@@ -144,13 +148,13 @@ let
           > /etc/apt/sources.list.d/nodesource.list
         apt-get update -qq
         apt-get install -y -qq nodejs
-        touch /var/lib/hermes-tools-provisioned
+        touch /var/lib/superforecasting-agent-tools-provisioned
       fi
 
-      if command -v sudo >/dev/null 2>&1 && [ ! -f /etc/sudoers.d/hermes ]; then
+      if command -v sudo >/dev/null 2>&1 && [ ! -f /etc/sudoers.d/superforecasting-agent ]; then
         mkdir -p /etc/sudoers.d
-        echo "$TARGET_USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/hermes
-        chmod 0440 /etc/sudoers.d/hermes
+        echo "$TARGET_USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/superforecasting-agent
+        chmod 0440 /etc/sudoers.d/superforecasting-agent
       fi
 
       # uv (Python manager) — not in Ubuntu repos, retry-safe outside the sentinel
@@ -175,7 +179,7 @@ let
       fi
 
       if command -v setpriv >/dev/null 2>&1; then
-        exec setpriv --reuid="$HERMES_UID" --regid="$HERMES_GID" --init-groups "$@"
+        exec setpriv --reuid="$SUPERFORECASTING_AGENT_UID" --regid="$SUPERFORECASTING_AGENT_GID" --init-groups "$@"
       elif command -v su >/dev/null 2>&1; then
         exec su -s /bin/sh "$TARGET_USER" -c 'exec "$0" "$@"' -- "$@"
       else
@@ -196,7 +200,7 @@ let
 
     identityFile = "${cfg.stateDir}/.container-identity";
 
-    # Default: /var/lib/hermes/workspace → /data/workspace.
+    # Default: /var/lib/superforecasting-agent/workspace → /data/workspace.
     # Custom paths outside stateDir pass through unchanged (user must add extraVolumes).
     containerWorkDir =
       if lib.hasPrefix "${cfg.stateDir}/" cfg.workingDirectory
@@ -221,13 +225,13 @@ let
       # ── Service identity ─────────────────────────────────────────────────
       user = mkOption {
         type = types.str;
-        default = "hermes";
+        default = "superforecasting-agent";
         description = "System user running the gateway.";
       };
 
       group = mkOption {
         type = types.str;
-        default = "hermes";
+        default = "superforecasting-agent";
         description = "System group running the gateway.";
       };
 
@@ -240,7 +244,7 @@ let
       # ── Directories ──────────────────────────────────────────────────────
       stateDir = mkOption {
         type = types.str;
-        default = "/var/lib/hermes";
+        default = "/var/lib/superforecasting-agent";
         description = "State directory. Contains .hermes/ subdir shared by SUPERFORECASTING_AGENT_HOME, FORECAST_HOME, and legacy HERMES_HOME.";
       };
 
@@ -596,7 +600,7 @@ let
           default = [ ];
           description = ''
             Interactive users who get a legacy ~/.hermes symlink to the service
-            stateDir. These users are automatically added to the hermes group.
+            stateDir. These users are automatically added to the Superforecasting Agent group.
           '';
           example = [ "sidbin" ];
         };
@@ -909,7 +913,7 @@ let
             RestartSec = cfg.restartSec;
 
             # Shared-state: files created by the gateway should be group-writable
-            # so interactive users in the hermes group can read/write them.
+            # so interactive users in the service group can read/write them.
             UMask = "0007";
 
             # Hardening
@@ -969,8 +973,8 @@ let
 
             if [ "$NEED_CREATE" = "true" ]; then
               # Resolve numeric UID/GID — passed to entrypoint for in-container user setup
-              HERMES_UID=$(${pkgs.coreutils}/bin/id -u ${cfg.user})
-              HERMES_GID=$(${pkgs.coreutils}/bin/id -g ${cfg.user})
+              SUPERFORECASTING_AGENT_UID=$(${pkgs.coreutils}/bin/id -u ${cfg.user})
+              SUPERFORECASTING_AGENT_GID=$(${pkgs.coreutils}/bin/id -g ${cfg.user})
 
               echo "Creating container..."
               ${containerBin} create \
@@ -981,8 +985,12 @@ let
                 --volume ${cfg.stateDir}:${containerDataDir} \
                 --volume ${cfg.stateDir}/home:${containerHomeDir} \
                 ${lib.concatStringsSep " " (map (v: "--volume ${v}") cfg.container.extraVolumes)} \
-                --env HERMES_UID="$HERMES_UID" \
-                --env HERMES_GID="$HERMES_GID" \
+                --env SUPERFORECASTING_AGENT_UID="$SUPERFORECASTING_AGENT_UID" \
+                --env FORECAST_UID="$SUPERFORECASTING_AGENT_UID" \
+                --env HERMES_UID="$SUPERFORECASTING_AGENT_UID" \
+                --env SUPERFORECASTING_AGENT_GID="$SUPERFORECASTING_AGENT_GID" \
+                --env FORECAST_GID="$SUPERFORECASTING_AGENT_GID" \
+                --env HERMES_GID="$SUPERFORECASTING_AGENT_GID" \
                 --env HERMES_HOME=${containerDataDir}/.hermes \
                 --env SUPERFORECASTING_AGENT_HOME=${containerDataDir}/.hermes \
                 --env FORECAST_HOME=${containerDataDir}/.hermes \

@@ -109,17 +109,17 @@ This module requires NixOS. For non-NixOS systems (macOS, other Linux distros), 
 }
 ```
 
-That's it. `nixos-rebuild switch` creates the `hermes` user, generates `config.yaml`, wires up secrets, and starts the gateway — a long-running service that connects the agent to messaging platforms (Telegram, Discord, etc.) and listens for incoming messages.
+That's it. `nixos-rebuild switch` creates the `superforecasting-agent` user, generates `config.yaml`, wires up secrets, and starts the gateway — a long-running service that connects the agent to messaging platforms (Telegram, Discord, etc.) and listens for incoming messages.
 
 :::warning Secrets are required
 The `environmentFiles` line above assumes you have [sops-nix](https://github.com/Mic92/sops-nix) or [agenix](https://github.com/ryantm/agenix) configured. The file should contain at least one LLM provider key (e.g., `OPENROUTER_API_KEY=sk-or-...`). See [Secrets Management](#secrets-management) for full setup. If you don't have a secrets manager yet, you can use a plain file as a starting point — just ensure it's not world-readable:
 
 ```bash
-echo "OPENROUTER_API_KEY=sk-or-your-key" | sudo install -m 0600 -o hermes /dev/stdin /var/lib/hermes/env
+echo "OPENROUTER_API_KEY=sk-or-your-key" | sudo install -m 0600 -o superforecasting-agent /dev/stdin /var/lib/superforecasting-agent/env
 ```
 
 ```nix
-services.superforecasting-agent.environmentFiles = [ "/var/lib/hermes/env" ];
+services.superforecasting-agent.environmentFiles = [ "/var/lib/superforecasting-agent/env" ];
 ```
 :::
 
@@ -478,7 +478,7 @@ Tokens are stored in `$SUPERFORECASTING_AGENT_HOME/mcp-tokens/<server-name>.json
 
 The first OAuth authorization requires a browser-based consent flow. In a headless deployment, Superforecasting Agent prints the authorization URL to stdout/logs instead of opening a browser.
 
-**Option A: Interactive bootstrap** — run the flow once via `docker exec` (container) or `sudo -u hermes` (native):
+**Option A: Interactive bootstrap** — run the flow once via `docker exec` (container) or `sudo -u superforecasting-agent` (native):
 
 ```bash
 # Container mode
@@ -486,7 +486,7 @@ docker exec -it superforecasting-agent \
   superforecasting-agent mcp add my-oauth-server --url https://mcp.example.com/mcp --auth oauth
 
 # Native mode
-sudo -u hermes SUPERFORECASTING_AGENT_HOME=/var/lib/hermes/.hermes \
+sudo -u superforecasting-agent SUPERFORECASTING_AGENT_HOME=/var/lib/superforecasting-agent/.hermes \
   superforecasting-agent mcp add my-oauth-server --url https://mcp.example.com/mcp --auth oauth
 ```
 
@@ -497,8 +497,8 @@ The container uses `--network=host`, so the OAuth callback listener on `127.0.0.
 ```bash
 superforecasting-agent mcp add my-oauth-server --url https://mcp.example.com/mcp --auth oauth
 scp ~/.superforecasting-agent/mcp-tokens/my-oauth-server{,.client}.json \
-    server:/var/lib/hermes/.hermes/mcp-tokens/
-# Ensure: chown hermes:hermes, chmod 0600
+    server:/var/lib/superforecasting-agent/.hermes/mcp-tokens/
+# Ensure: chown superforecasting-agent:superforecasting-agent, chmod 0600
 ```
 
 </details>
@@ -558,8 +558,8 @@ When container mode is enabled, Superforecasting Agent runs inside a persistent 
 Host                                    Container
 ────                                    ─────────
 /nix/store/...-superforecasting-agent-0.1.0  ──►  /nix/store/... (ro)
-~/.hermes -> /var/lib/hermes/.hermes       (symlink bridge, per hostUsers)
-/var/lib/hermes/                    ──►  /data/          (rw)
+~/.hermes -> /var/lib/superforecasting-agent/.hermes       (symlink bridge, per hostUsers)
+/var/lib/superforecasting-agent/     ──►  /data/          (rw)
   ├── current-package -> /nix/store/...    (symlink, updated each rebuild)
   ├── .gc-root -> /nix/store/...           (prevents nix-collect-garbage)
   ├── .container-identity                  (sha256 hash, triggers recreation)
@@ -570,7 +570,7 @@ Host                                    Container
   │   ├── .container-mode                  (routing metadata: backend, exec_user, etc.)
   │   ├── state.db, sessions/, memories/   (runtime state)
   │   └── mcp-tokens/                      (OAuth tokens for MCP servers)
-  ├── home/                                ──►  /home/hermes    (rw)
+  ├── home/                                ──►  /home/superforecasting-agent    (rw)
   └── workspace/                           (MESSAGING_CWD)
       ├── SOUL.md                          (from documents option)
       └── (agent-created files)
@@ -582,7 +582,7 @@ The Nix-built binary works inside the Ubuntu container because `/nix/store` is b
 
 ### What Persists Across What
 
-| Event | Container recreated? | `/data` (state) | `/home/hermes` | Writable layer (`apt`/`pip`/`npm`) |
+| Event | Container recreated? | `/data` (state) | `/home/superforecasting-agent` | Writable layer (`apt`/`pip`/`npm`) |
 |---|---|---|---|---|
 | `systemctl restart superforecasting-agent` | No | Persists | Persists | Persists |
 | `nixos-rebuild switch` (code change) | No (symlink updated) | Persists | Persists | Persists |
@@ -595,7 +595,7 @@ The Nix-built binary works inside the Ubuntu container because `/nix/store` is b
 The container is only recreated when its **identity hash** changes. The hash covers: schema version, image, `extraVolumes`, `extraOptions`, and the entrypoint script. Changes to environment variables, settings, documents, or the package itself do **not** trigger recreation.
 
 :::warning Writable layer loss
-When the identity hash changes (image upgrade, new volumes, new container options), the container is destroyed and recreated from a fresh pull of `container.image`. Any `apt install`, `pip install`, or `npm install` packages in the writable layer are lost. State in `/data` and `/home/hermes` is preserved (these are bind mounts).
+When the identity hash changes (image upgrade, new volumes, new container options), the container is destroyed and recreated from a fresh pull of `container.image`. Any `apt install`, `pip install`, or `npm install` packages in the writable layer are lost. State in `/data` and `/home/superforecasting-agent` is preserved (these are bind mounts).
 
 If the agent relies on specific packages, consider baking them into a custom image (`container.image = "my-registry/hermes-base:latest"`) or scripting their installation in the agent's SOUL.md.
 :::
@@ -788,10 +788,10 @@ nix build .#checks.x86_64-linux.config-roundtrip    # merge script preserves use
 |---|---|---|---|
 | `enable` | `bool` | `false` | Enable the managed Superforecasting Agent service |
 | `package` | `package` | `superforecasting-agent` | The package to use; `hermes-agent` remains as a compatibility alias |
-| `user` | `str` | `"hermes"` | System user |
-| `group` | `str` | `"hermes"` | System group |
+| `user` | `str` | `"superforecasting-agent"` | System user |
+| `group` | `str` | `"superforecasting-agent"` | System group |
 | `createUser` | `bool` | `true` | Auto-create user/group |
-| `stateDir` | `str` | `"/var/lib/hermes"` | State directory (`SUPERFORECASTING_AGENT_HOME` parent) |
+| `stateDir` | `str` | `"/var/lib/superforecasting-agent"` | State directory (`SUPERFORECASTING_AGENT_HOME` parent) |
 | `workingDirectory` | `str` | `"${stateDir}/workspace"` | Agent working directory (`MESSAGING_CWD`) |
 | `addToSystemPackages` | `bool` | `false` | Add fork-native and compatibility CLIs to system PATH and set shared home aliases system-wide |
 
@@ -839,7 +839,7 @@ nix build .#checks.x86_64-linux.config-roundtrip    # merge script preserves use
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `extraArgs` | `listOf str` | `[]` | Extra args for `superforecasting-agent gateway` |
-| `extraPackages` | `listOf package` | `[]` | Extra packages available to the agent. Added to the inherited `hermes` user's per-user profile so terminal commands, skills, and cron jobs all see them |
+| `extraPackages` | `listOf package` | `[]` | Extra packages available to the agent. Added to the service user's per-user profile so terminal commands, skills, and cron jobs all see them |
 | `extraPlugins` | `listOf package` | `[]` | Directory plugin packages to symlink into `$SUPERFORECASTING_AGENT_HOME/plugins/`. Each must contain `plugin.yaml` |
 | `extraPythonPackages` | `listOf package` | `[]` | Python packages added to PYTHONPATH for entry-point plugin discovery. Build with `python312Packages` |
 | `extraDependencyGroups` | `listOf str` | `[]` | pyproject.toml optional extras to include in the sealed venv (e.g. `["hindsight"]`). Resolved by uv — no collisions |
@@ -855,7 +855,7 @@ nix build .#checks.x86_64-linux.config-roundtrip    # merge script preserves use
 | `container.image` | `str` | `"ubuntu:24.04"` | Base image (pulled at runtime) |
 | `container.extraVolumes` | `listOf str` | `[]` | Extra volume mounts (`host:container:mode`) |
 | `container.extraOptions` | `listOf str` | `[]` | Extra args passed to `docker create` |
-| `container.hostUsers` | `listOf str` | `[]` | Interactive users who get a legacy `~/.hermes` symlink to the service stateDir and are auto-added to the `hermes` group |
+| `container.hostUsers` | `listOf str` | `[]` | Interactive users who get a legacy `~/.hermes` symlink to the service stateDir and are auto-added to the Superforecasting Agent group |
 
 ---
 
@@ -864,7 +864,7 @@ nix build .#checks.x86_64-linux.config-roundtrip    # merge script preserves use
 ### Native Mode
 
 ```
-/var/lib/hermes/                     # stateDir (owned by hermes:hermes, 0750)
+/var/lib/superforecasting-agent/     # stateDir (owned by superforecasting-agent:superforecasting-agent, 0750)
 ├── .hermes/                         # SUPERFORECASTING_AGENT_HOME / FORECAST_HOME / HERMES_HOME
 │   ├── config.yaml                  # Nix-generated (deep-merged each rebuild)
 │   ├── .managed                     # Marker: CLI config mutation blocked
@@ -891,8 +891,8 @@ Same layout, mounted into the container:
 | Container path | Host path | Mode | Notes |
 |---|---|---|---|
 | `/nix/store` | `/nix/store` | `ro` | Superforecasting Agent binary + all Nix deps |
-| `/data` | `/var/lib/hermes` | `rw` | All state, config, workspace |
-| `/home/hermes` | `${stateDir}/home` | `rw` | Persistent agent home — `pip install --user`, tool caches |
+| `/data` | `/var/lib/superforecasting-agent` | `rw` | All state, config, workspace |
+| `/home/superforecasting-agent` | `${stateDir}/home` | `rw` | Persistent agent home — `pip install --user`, tool caches |
 | `/usr`, `/usr/local`, `/tmp` | (writable layer) | `rw` | `apt`/`pip`/`npm` installs — persists across restarts, lost on recreation |
 
 ---
@@ -945,7 +945,7 @@ If you need to reset the writable layer (fresh Ubuntu):
 ```bash
 sudo systemctl stop superforecasting-agent
 docker rm -f superforecasting-agent
-sudo rm /var/lib/hermes/.container-identity
+sudo rm /var/lib/superforecasting-agent/.container-identity
 sudo systemctl start superforecasting-agent
 ```
 
@@ -955,7 +955,7 @@ If the agent starts but can't authenticate with the LLM provider, check that the
 
 ```bash
 # Native mode
-sudo -u hermes cat /var/lib/hermes/.hermes/.env
+sudo -u superforecasting-agent cat /var/lib/superforecasting-agent/.hermes/.env
 
 # Container mode
 docker exec superforecasting-agent cat /data/.hermes/.env
@@ -974,7 +974,7 @@ nix-store --query --roots $(docker exec superforecasting-agent readlink /data/cu
 | `Cannot save configuration: managed by NixOS` | CLI guards active | Edit `configuration.nix` and `nixos-rebuild switch` |
 | Container recreated unexpectedly | `extraVolumes`, `extraOptions`, or `image` changed | Expected — writable layer resets. Reinstall packages or use a custom image |
 | `superforecasting-agent version` shows old version | Container not restarted | `systemctl restart superforecasting-agent` |
-| Permission denied on `/var/lib/hermes` | State dir is `0750 hermes:hermes` | Use `docker exec` or `sudo -u hermes` |
+| Permission denied on `/var/lib/superforecasting-agent` | State dir is `0750 superforecasting-agent:superforecasting-agent` | Use `docker exec` or `sudo -u superforecasting-agent` |
 | `nix-collect-garbage` removed the binary | GC root missing | Restart the service (preStart recreates the GC root) |
 | `no container with name or ID "superforecasting-agent"` (Podman) | Podman rootful container not visible to regular user | Add passwordless sudo for podman (see [Container Mode](#container-mode) section) |
 | `unable to find user hermes` | Container still starting (entrypoint hasn't created user yet) | Wait a few seconds and retry — the CLI retries automatically |

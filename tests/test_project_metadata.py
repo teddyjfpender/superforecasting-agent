@@ -1874,6 +1874,16 @@ def test_nix_package_aliases_are_forecast_native():
     assert "options.services.hermes-agent" not in nix_module
     assert "services.superforecasting-agent.settings.mcp_servers" in nix_module
     assert "services.hermes-agent.settings.mcp_servers" not in nix_module
+    assert 'containerHomeDir = "/home/superforecasting-agent"' in nix_module
+    assert 'default = "superforecasting-agent";' in nix_module
+    assert 'default = "/var/lib/superforecasting-agent";' in nix_module
+    assert '/var/lib/hermes' not in nix_module
+    assert '/home/hermes' not in nix_module
+    assert '/var/lib/hermes-tools-provisioned' not in nix_module
+    assert '/etc/sudoers.d/hermes' not in nix_module
+    assert '--env SUPERFORECASTING_AGENT_UID="$SUPERFORECASTING_AGENT_UID"' in nix_module
+    assert '--env FORECAST_UID="$SUPERFORECASTING_AGENT_UID"' in nix_module
+    assert '--env HERMES_UID="$SUPERFORECASTING_AGENT_UID"' in nix_module
     assert 'mkEnableOption "Superforecasting Agent gateway service"' in nix_module
     assert 'name = "superforecasting-agent-config-attrs"' in nix_module
     assert 'pkgs.writeText "superforecasting-agent-config.yaml"' in nix_module
@@ -1940,6 +1950,10 @@ def test_nix_package_aliases_are_forecast_native():
     assert "systemctl status hermes-agent" not in nix_docs
     assert "journalctl -u hermes-agent -f" not in nix_docs
     assert "systemctl restart hermes-agent" not in nix_docs
+    assert '"/var/lib/superforecasting-agent"' in nix_docs
+    assert '"/var/lib/hermes"' not in nix_docs
+    assert "`/home/superforecasting-agent`" in nix_docs
+    assert '"/home/hermes"' not in nix_docs
     assert 'pkgs."superforecasting-agent".override' in nix_docs
     assert "docker exec -it superforecasting-agent" in nix_docs
     assert "`pkgs.\"hermes-agent\"` remain compatibility names" in nix_docs
