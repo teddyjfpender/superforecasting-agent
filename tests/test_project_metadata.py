@@ -2413,6 +2413,15 @@ def test_revision_env_aliases_are_forecast_native():
     assert "FORECAST_REVISION" in nix_checks
 
 
+def test_banner_home_repo_lookup_prefers_forecast_native_checkout():
+    root = Path(__file__).resolve().parents[1]
+    banner = (root / "hermes_cli" / "banner.py").read_text(encoding="utf-8")
+
+    assert '_HOME_REPO_DIR_NAMES = ("superforecasting-agent", "hermes-agent")' in banner
+    assert "_resolve_home_repo_dir(hermes_home)" in banner
+    assert "active Superforecasting Agent git checkout" in banner
+
+
 def test_banner_logo_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     banner = (root / "hermes_cli" / "banner.py").read_text(encoding="utf-8")

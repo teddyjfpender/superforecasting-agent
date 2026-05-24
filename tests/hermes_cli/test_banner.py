@@ -27,6 +27,19 @@ def test_display_toolset_name_handles_empty():
     assert banner._display_toolset_name(None) == "unknown"
 
 
+def test_resolve_home_repo_dir_prefers_forecast_native_name(tmp_path):
+    (tmp_path / "hermes-agent" / ".git").mkdir(parents=True)
+    (tmp_path / "superforecasting-agent" / ".git").mkdir(parents=True)
+
+    assert banner._resolve_home_repo_dir(tmp_path) == tmp_path / "superforecasting-agent"
+
+
+def test_resolve_home_repo_dir_falls_back_to_legacy_name(tmp_path):
+    (tmp_path / "hermes-agent" / ".git").mkdir(parents=True)
+
+    assert banner._resolve_home_repo_dir(tmp_path) == tmp_path / "hermes-agent"
+
+
 def test_build_welcome_banner_uses_normalized_toolset_names():
     """Unavailable toolsets should not have '_tools' appended in banner output."""
     with (

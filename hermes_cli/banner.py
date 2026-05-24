@@ -145,6 +145,7 @@ UPDATE_AVAILABLE_NO_COUNT = -1
 
 _UPSTREAM_REPO_URL = "https://github.com/teddyjfpender/superforecasting-agent.git"
 _UPSTREAM_BRANCH = "superforecasting-agent-snapshot"
+_HOME_REPO_DIR_NAMES = ("superforecasting-agent", "hermes-agent")
 
 
 def _check_via_rev(local_rev: str) -> Optional[int]:
@@ -189,6 +190,15 @@ def _check_via_local_git(repo_dir: Path) -> Optional[int]:
             return int(result.stdout.strip())
     except Exception:
         pass
+    return None
+
+
+def _resolve_home_repo_dir(hermes_home: Path) -> Optional[Path]:
+    """Return a profile-scoped git checkout, preferring fork-native names."""
+    for dirname in _HOME_REPO_DIR_NAMES:
+        repo_dir = hermes_home / dirname
+        if (repo_dir / ".git").exists():
+            return repo_dir
     return None
 
 
@@ -266,12 +276,12 @@ def check_for_updates() -> Optional[int]:
         behind = _check_via_rev(embedded_rev)
     else:
         # Prefer the running code's location over the profile-scoped path.
-        # $HERMES_HOME/hermes-agent/ may be a stale copy from --clone-all;
-        # Path(__file__) always resolves to the actual installed checkout.
+        # $HERMES_HOME/{superforecasting-agent,hermes-agent}/ may be a stale
+        # copy from --clone-all; Path(__file__) resolves to the installed checkout.
         repo_dir = Path(__file__).parent.parent.resolve()
         if not (repo_dir / ".git").exists():
-            repo_dir = hermes_home / "hermes-agent"
-        if not (repo_dir / ".git").exists():
+            repo_dir = _resolve_home_repo_dir(hermes_home)
+        if repo_dir is None or not (repo_dir / ".git").exists():
             behind = check_via_pypi()
         else:
             behind = _check_via_local_git(repo_dir)
@@ -285,16 +295,18 @@ def check_for_updates() -> Optional[int]:
 
 
 def _resolve_repo_dir() -> Optional[Path]:
-    """Return the active Hermes git checkout, or None if this isn't a git install.
+    """Return the active Superforecasting Agent git checkout, or None.
 
     Prefers the running code's location over the profile-scoped path
-    because ``$HERMES_HOME/hermes-agent/`` may be a stale copy carried
-    over by ``--clone-all``.
+    because ``$HERMES_HOME/{superforecasting-agent,hermes-agent}/`` may be a
+    stale copy carried over by ``--clone-all``.
     """
     repo_dir = Path(__file__).parent.parent.resolve()
     if not (repo_dir / ".git").exists():
         hermes_home = get_hermes_home()
-        repo_dir = hermes_home / "hermes-agent"
+        repo_dir = _resolve_home_repo_dir(hermes_home)
+    if repo_dir is None:
+        return None
     return repo_dir if (repo_dir / ".git").exists() else None
 
 
