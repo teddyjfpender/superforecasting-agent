@@ -98,7 +98,7 @@ def _setup_logging() -> None:
 
 
 def _load_env() -> None:
-    """Load .env from HERMES_HOME (default ``~/.hermes``)."""
+    """Load .env from the active Superforecasting Agent home."""
     from hermes_cli.env_loader import load_hermes_dotenv
 
     hermes_home = get_hermes_home()
@@ -137,8 +137,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--setup-browser",
         action="store_true",
-        help="Install agent-browser + Playwright Chromium into ~/.hermes/node/ "
-             "for browser tool support. Idempotent.",
+        help="Install agent-browser + Playwright Chromium into the active "
+             "agent home node directory for browser tool support. Idempotent.",
     )
     parser.add_argument(
         "--yes",
