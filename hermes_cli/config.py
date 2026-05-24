@@ -189,11 +189,25 @@ _MANAGED_SYSTEM_NAMES = {
     "nix": "NixOS",
     "nixos": "NixOS",
 }
+_MANAGED_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_MANAGED",
+    "FORECAST_MANAGED",
+    "HERMES_MANAGED",
+)
+
+
+def _managed_env_setting() -> tuple[str, str]:
+    """Return the first non-empty managed-install env setting."""
+    for name in _MANAGED_ENV_NAMES:
+        raw = os.getenv(name, "").strip()
+        if raw:
+            return name, raw
+    return "HERMES_MANAGED", ""
 
 
 def get_managed_system() -> Optional[str]:
     """Return the package manager owning this install, if any."""
-    raw = os.getenv("HERMES_MANAGED", "").strip()
+    _env_name, raw = _managed_env_setting()
     if raw:
         normalized = raw.lower()
         if normalized in _MANAGED_TRUE_VALUES:
@@ -207,11 +221,12 @@ def get_managed_system() -> Optional[str]:
 
 
 def is_managed() -> bool:
-    """Check if Hermes is running in package-manager-managed mode.
+    """Check if Superforecasting Agent is running in package-managed mode.
 
-    Two signals: the HERMES_MANAGED env var (set by the systemd service),
-    or a .managed marker file in HERMES_HOME (set by the NixOS activation
-    script, so interactive shells also see it).
+    Two signals: a managed-install env var (prefer
+    SUPERFORECASTING_AGENT_MANAGED / FORECAST_MANAGED; HERMES_MANAGED remains
+    a legacy alias), or a .managed marker file in the agent home (set by the
+    NixOS activation script, so interactive shells also see it).
     """
     return get_managed_system() is not None
 
@@ -230,11 +245,11 @@ def get_managed_update_command() -> Optional[str]:
 
 
 def detect_install_method(project_root: Optional[Path] = None) -> str:
-    """Detect how Hermes was installed: 'docker', 'nixos', 'homebrew', 'git', or 'pip'.
+    """Detect how Superforecasting Agent was installed.
 
     Resolution order:
-    1. Stamped ``~/.hermes/.install_method`` file (written by installers)
-    2. HERMES_MANAGED env / .managed marker (NixOS, Homebrew)
+    1. Stamped ``<agent-home>/.install_method`` file (written by installers)
+    2. Managed env aliases / .managed marker (NixOS, Homebrew)
     3. Container detection (/.dockerenv, /run/.containerenv, cgroup)
     4. .git directory presence -> 'git'
     5. Fallback -> 'pip'
@@ -298,13 +313,14 @@ def recommended_update_command() -> str:
 def format_managed_message(action: str = "modify this Superforecasting Agent installation") -> str:
     """Build a user-facing error for managed installs."""
     managed_system = get_managed_system() or "a package manager"
-    raw = os.getenv("HERMES_MANAGED", "").strip().lower()
+    env_name, raw_value = _managed_env_setting()
+    raw = raw_value.lower()
 
     if managed_system == "NixOS":
         env_hint = "true" if raw in _MANAGED_TRUE_VALUES else raw or "true"
         return (
             f"Cannot {action}: this Superforecasting Agent installation is managed by NixOS "
-            f"(HERMES_MANAGED={env_hint}).\n"
+            f"({env_name}={env_hint}).\n"
             "Edit services.superforecasting-agent.settings in your configuration.nix and run:\n"
             "  sudo nixos-rebuild switch"
         )
@@ -313,7 +329,7 @@ def format_managed_message(action: str = "modify this Superforecasting Agent ins
         env_hint = raw or "homebrew"
         return (
             f"Cannot {action}: this Superforecasting Agent installation is managed by Homebrew "
-            f"(HERMES_MANAGED={env_hint}).\n"
+            f"({env_name}={env_hint}).\n"
             "Use:\n"
             "  brew upgrade superforecasting-agent"
         )

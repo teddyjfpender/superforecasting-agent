@@ -17,6 +17,14 @@ def test_get_managed_system_homebrew(monkeypatch):
     assert recommended_update_command() == "brew upgrade superforecasting-agent"
 
 
+def test_get_managed_system_prefers_forecast_native_alias(monkeypatch):
+    monkeypatch.setenv("HERMES_MANAGED", "true")
+    monkeypatch.setenv("FORECAST_MANAGED", "nix")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_MANAGED", "homebrew")
+
+    assert get_managed_system() == "Homebrew"
+
+
 def test_format_managed_message_homebrew(monkeypatch):
     monkeypatch.setenv("HERMES_MANAGED", "homebrew")
 
@@ -26,7 +34,19 @@ def test_format_managed_message_homebrew(monkeypatch):
     assert "brew upgrade superforecasting-agent" in message
 
 
+def test_format_managed_message_uses_forecast_native_env_hint(monkeypatch):
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_MANAGED", "true")
+
+    message = format_managed_message("edit config")
+
+    assert "managed by NixOS" in message
+    assert "(SUPERFORECASTING_AGENT_MANAGED=true)" in message
+    assert "HERMES_MANAGED=true" not in message
+
+
 def test_recommended_update_command_defaults_to_superforecasting_update(monkeypatch):
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_MANAGED", raising=False)
+    monkeypatch.delenv("FORECAST_MANAGED", raising=False)
     monkeypatch.delenv("HERMES_MANAGED", raising=False)
 
     # Also short-circuit the .managed marker path — CI runners may have an

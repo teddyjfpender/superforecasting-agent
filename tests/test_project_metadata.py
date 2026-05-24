@@ -1667,6 +1667,53 @@ def test_oauth_file_env_aliases_are_forecast_native():
     assert "FORECAST_OAUTH_FILE" in env_reference
 
 
+def test_managed_install_env_aliases_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    config = (root / "hermes_cli" / "config.py").read_text(encoding="utf-8")
+    conftest = (root / "tests" / "conftest.py").read_text(encoding="utf-8")
+    run_tests = (root / "scripts" / "run_tests.sh").read_text(encoding="utf-8")
+    nix_module = (root / "nix" / "nixosModules.nix").read_text(encoding="utf-8")
+    nix_checks = (root / "nix" / "checks.nix").read_text(encoding="utf-8")
+    env_reference = (root / "website" / "docs" / "reference" / "environment-variables.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "SUPERFORECASTING_AGENT_MANAGED" in config
+    assert "FORECAST_MANAGED" in config
+    assert "HERMES_MANAGED" in config
+    assert "def _managed_env_setting" in config
+    assert "SUPERFORECASTING_AGENT_MANAGED" in conftest
+    assert "FORECAST_MANAGED" in run_tests
+    assert "SUPERFORECASTING_AGENT_MANAGED = \"true\"" in nix_module
+    assert "FORECAST_MANAGED = \"true\"" in nix_module
+    assert "SUPERFORECASTING_AGENT_MANAGED" in nix_checks
+    assert "FORECAST_MANAGED" in nix_checks
+    assert "SUPERFORECASTING_AGENT_MANAGED" in env_reference
+    assert "FORECAST_MANAGED" in env_reference
+
+
+def test_homebrew_formula_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    formula_path = root / "packaging" / "homebrew" / "superforecasting-agent.rb"
+    readme = (root / "packaging" / "homebrew" / "README.md").read_text(
+        encoding="utf-8"
+    )
+    formula = formula_path.read_text(encoding="utf-8")
+
+    assert formula_path.exists()
+    assert "class SuperforecastingAgent < Formula" in formula
+    assert "superforecasting_agent-0.14.0.tar.gz" in formula
+    assert "SUPERFORECASTING_AGENT_BUNDLED_SKILLS" in formula
+    assert "FORECAST_OPTIONAL_SKILLS" in formula
+    assert "SUPERFORECASTING_AGENT_MANAGED" in formula
+    assert "FORECAST_MANAGED" in formula
+    assert "superforecasting-agent version" in formula
+    assert "brew upgrade superforecasting-agent" in formula
+    assert "packaging/homebrew/superforecasting-agent.rb" in readme
+    assert "brew test superforecasting-agent" in readme
+    assert not (root / "packaging" / "homebrew" / "hermes-agent.rb").exists()
+
+
 def test_revision_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     banner = (root / "hermes_cli" / "banner.py").read_text(encoding="utf-8")

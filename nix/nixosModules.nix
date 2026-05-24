@@ -879,6 +879,8 @@
             HERMES_HOME = "${cfg.stateDir}/.hermes";
             SUPERFORECASTING_AGENT_HOME = "${cfg.stateDir}/.hermes";
             FORECAST_HOME = "${cfg.stateDir}/.hermes";
+            SUPERFORECASTING_AGENT_MANAGED = "true";
+            FORECAST_MANAGED = "true";
             HERMES_MANAGED = "true";
             MESSAGING_CWD = cfg.workingDirectory;
           };
@@ -977,6 +979,8 @@
                 --env HERMES_HOME=${containerDataDir}/.hermes \
                 --env SUPERFORECASTING_AGENT_HOME=${containerDataDir}/.hermes \
                 --env FORECAST_HOME=${containerDataDir}/.hermes \
+                --env SUPERFORECASTING_AGENT_MANAGED=true \
+                --env FORECAST_MANAGED=true \
                 --env HERMES_MANAGED=true \
                 --env HOME=${containerHomeDir} \
                 --env MESSAGING_CWD=${containerWorkDir} \

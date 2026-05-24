@@ -537,7 +537,7 @@ When Superforecasting Agent runs via the NixOS module, the following CLI command
 
 This prevents drift between what Nix declares and what's on disk. Detection uses two signals:
 
-1. **`HERMES_MANAGED=true`** environment variable — set by the systemd service, visible to the gateway process
+1. **`SUPERFORECASTING_AGENT_MANAGED=true`** environment variable — set by the systemd service, visible to the gateway process; `FORECAST_MANAGED` and legacy `HERMES_MANAGED` are exported as compatibility aliases
 2. **`.managed` marker file** in `SUPERFORECASTING_AGENT_HOME` — set by the activation script, visible to interactive shells (e.g., `docker exec -it hermes-agent superforecasting-agent config set ...` is also blocked)
 
 To change configuration, edit your Nix config and run `sudo nixos-rebuild switch`.
@@ -756,7 +756,7 @@ nix flake check
 nix build .#checks.x86_64-linux.package-contents   # binaries exist + version
 nix build .#checks.x86_64-linux.entry-points-sync  # pyproject.toml ↔ Nix package sync
 nix build .#checks.x86_64-linux.cli-commands        # gateway/config subcommands
-nix build .#checks.x86_64-linux.managed-guard       # HERMES_MANAGED blocks mutation
+nix build .#checks.x86_64-linux.managed-guard       # managed env aliases block mutation
 nix build .#checks.x86_64-linux.bundled-skills      # skills present in package
 nix build .#checks.x86_64-linux.config-roundtrip    # merge script preserves user keys
 ```
@@ -769,7 +769,7 @@ nix build .#checks.x86_64-linux.config-roundtrip    # merge script preserves use
 | `package-contents` | `forecast`, `superforecasting-agent`, and inherited compatibility binaries exist; `superforecasting-agent version` runs |
 | `entry-points-sync` | Every `[project.scripts]` entry in `pyproject.toml` has a wrapped binary in the Nix package |
 | `cli-commands` | `superforecasting-agent gateway --help` and `superforecasting-agent config --help` delegate to inherited runtime subcommands |
-| `managed-guard` | `HERMES_MANAGED=true superforecasting-agent config set ...` prints the NixOS error |
+| `managed-guard` | `SUPERFORECASTING_AGENT_MANAGED=true`, `FORECAST_MANAGED=true`, and legacy `HERMES_MANAGED=true` all make mutation commands print the NixOS error |
 | `bundled-skills` | Skills directory exists, contains SKILL.md files, fork-native bundled-skill env aliases are set in wrapper |
 | `config-roundtrip` | 7 merge scenarios: fresh install, Nix override, user key preservation, mixed merge, MCP additive merge, nested deep merge, idempotency |
 

@@ -220,22 +220,26 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
           echo "ok" > $out/result
         '';
 
-        # Verify HERMES_MANAGED guard works on all mutation commands
+        # Verify managed-install env guards work on all mutation commands
         managed-guard = pkgs.runCommand "hermes-managed-guard" { } ''
           set -e
           export HOME=$(mktemp -d)
 
           check_blocked() {
             local label="$1"
+            local env_name="$2"
             shift
-            OUTPUT=$(HERMES_MANAGED=true "$@" 2>&1 || true)
+            shift
+            OUTPUT=$(env "$env_name=true" "$@" 2>&1 || true)
             echo "$OUTPUT" | grep -q "managed by NixOS" || (echo "FAIL: $label not guarded"; echo "$OUTPUT"; exit 1)
+            echo "$OUTPUT" | grep -q "$env_name=true" || (echo "FAIL: $label did not report $env_name"; echo "$OUTPUT"; exit 1)
             echo "PASS: $label blocked in managed mode"
           }
 
-          echo "=== Checking HERMES_MANAGED guards ==="
-          check_blocked "config set" ${hermes-agent}/bin/superforecasting-agent config set model foo
-          check_blocked "config edit" ${hermes-agent}/bin/superforecasting-agent config edit
+          echo "=== Checking managed-install env guards ==="
+          check_blocked "config set (native)" SUPERFORECASTING_AGENT_MANAGED ${hermes-agent}/bin/superforecasting-agent config set model foo
+          check_blocked "config edit (short)" FORECAST_MANAGED ${hermes-agent}/bin/superforecasting-agent config edit
+          check_blocked "config set (legacy)" HERMES_MANAGED ${hermes-agent}/bin/superforecasting-agent config set model foo
 
           echo "=== All guard checks passed ==="
           mkdir -p $out
