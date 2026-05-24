@@ -861,6 +861,7 @@ def test_remaining_product_facing_skill_examples_are_forecast_native():
         root / "optional-skills" / "research" / "bioinformatics" / "SKILL.md",
         root / "optional-skills" / "research" / "darwinian-evolver" / "SKILL.md",
         root / "optional-skills" / "research" / "gitnexus-explorer" / "SKILL.md",
+        root / "optional-skills" / "research" / "parallel-cli" / "SKILL.md",
         root / "optional-skills" / "research" / "searxng-search" / "SKILL.md",
         *[
             root
@@ -875,6 +876,7 @@ def test_remaining_product_facing_skill_examples_are_forecast_native():
                 "research-bioinformatics.md",
                 "research-darwinian-evolver.md",
                 "research-gitnexus-explorer.md",
+                "research-parallel-cli.md",
                 "research-searxng-search.md",
             )
         ],
@@ -924,6 +926,17 @@ def test_remaining_product_facing_skill_examples_are_forecast_native():
         ),
         root / "skills" / "research" / "research-paper-writing" / "references" / "experiment-patterns.md",
         root / "skills" / "creative" / "pixel-art" / "ATTRIBUTION.md",
+        root / "optional-skills" / "software-development" / "rest-graphql-debug" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "optional"
+            / "software-development"
+            / "software-development-rest-graphql-debug.md"
+        ),
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths if path.exists())
 
@@ -936,6 +949,8 @@ def test_remaining_product_facing_skill_examples_are_forecast_native():
     assert "author: Superforecasting Agent" in text
     assert "ported into Superforecasting Agent" in text
     assert "Superforecasting Agent workflow" in text
+    assert "Recommended Superforecasting Agent workflow" in text
+    assert "Superforecasting Agent Tool Patterns" in text
     assert "already available in Superforecasting Agent" in text
     assert "Superforecasting Agent adaptation" in text
     assert "Superforecasting Agent contributors" in text
@@ -952,6 +967,8 @@ def test_remaining_product_facing_skill_examples_are_forecast_native():
     assert "available in Hermes" not in text
     assert "Hermes adaptation" not in text
     assert "Hermes Agent contributors" not in text
+    assert "Recommended Hermes workflow" not in text
+    assert "Hermes Tool Patterns" not in text
 
 
 def test_github_auth_skill_is_forecast_native():

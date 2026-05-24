@@ -231,7 +231,7 @@ parallel-cli research run \
   --json
 ```
 
-Recommended Hermes workflow:
+Recommended Superforecasting Agent workflow:
 1. launch with `--no-wait --json`
 2. capture the returned run/task ID
 3. if the user wants to continue other work, keep moving
