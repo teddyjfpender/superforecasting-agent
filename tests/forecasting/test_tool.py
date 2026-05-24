@@ -10,6 +10,7 @@ from forecasting.source_adapters import (
     CensusRecord,
     CisaKevVulnerability,
     ClinicalTrialStudy,
+    CoinGeckoMarketSnapshot,
     EiaObservation,
     HackerNewsItem,
     GitHubCommit,
@@ -86,7 +87,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "githubcommits", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "stooq", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "githubcommits", "coingecko", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "stooq", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_lifecycle(tmp_path):
@@ -1810,6 +1811,57 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert github_evidence["published_at"] == "2026-05-21T11:00:00Z"
     assert github_evidence["metadata"]["adapter"] == "githubcommits"
     assert github_evidence["metadata"]["adapter_item"]["sha"] == "abcdef1234567890"
+
+    def fake_coingecko(source, **kwargs):
+        assert source == "bitcoin"
+        assert kwargs["limit"] == 1
+        assert kwargs["since"] == "2026-01-01"
+        assert kwargs["vs_currency"] == "usd"
+        assert kwargs["api_base_url"] == "https://example.test/coingecko"
+        return [
+            CoinGeckoMarketSnapshot(
+                coin_id="bitcoin",
+                symbol="btc",
+                name="Bitcoin",
+                vs_currency="usd",
+                current_price=109500,
+                market_cap=2170000000000,
+                market_cap_rank=1,
+                total_volume=51200000000,
+                price_change_percentage_24h=2.34,
+                last_updated="2026-05-21T11:00:00Z",
+                source_url="https://www.coingecko.com/en/coins/bitcoin",
+                source_name="CoinGecko",
+                entry_id="bitcoin:usd:2026-05-21T11:00:00Z",
+                raw={"id": "bitcoin"},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_coingecko_market_snapshots", fake_coingecko)
+    coingecko_imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "coingecko",
+                "source": "bitcoin",
+                "limit": 1,
+                "since": "2026-01-01",
+                "vs_currency": "usd",
+                "api_base_url": "https://example.test/coingecko",
+            }
+        )
+    )
+
+    assert coingecko_imported["imported_count"] == 1
+    coingecko_evidence = coingecko_imported["imported"][0]["evidence"]
+    assert coingecko_evidence["source_type"] == "adapter:coingecko"
+    assert coingecko_evidence["source_name"] == "CoinGecko"
+    assert coingecko_evidence["claim"] == "CoinGecko bitcoin price was 109500 USD at 2026-05-21T11:00:00Z"
+    assert coingecko_evidence["published_at"] == "2026-05-21T11:00:00Z"
+    assert coingecko_evidence["metadata"]["adapter"] == "coingecko"
+    assert coingecko_evidence["metadata"]["adapter_item"]["current_price"] == 109500
 
     def fake_eia(source, **kwargs):
         assert source == "PET.RWTC.M"

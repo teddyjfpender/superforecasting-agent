@@ -62,6 +62,7 @@ from forecasting.source_adapters import (
     load_census_records,
     load_cisa_kev_vulnerabilities,
     load_clinicaltrials_studies,
+    load_coingecko_market_snapshots,
     load_courtlistener_search_results,
     load_eia_observations,
     load_federal_register_documents,
@@ -207,6 +208,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "domain": "market price history",
         "import_command": "forecast import stooq <symbol-or-csv-url> --question <id>",
         "watch_prefix": "stooq:<symbol-or-csv-url>",
+    },
+    {
+        "name": "coingecko",
+        "domain": "crypto market snapshots",
+        "import_command": "forecast import coingecko <coin-id-or-list> --question <id>",
+        "watch_prefix": "coingecko:<coin-id>",
     },
     {
         "name": "sec",
@@ -499,6 +506,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "worldbank",
         "census",
         "stooq",
+        "coingecko",
         "sec",
         "arxiv",
         "openalex",
@@ -573,6 +581,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "worldbank",
             "census",
             "stooq",
+            "coingecko",
             "sec",
             "arxiv",
             "openalex",
@@ -758,6 +767,13 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://stooq.com/q/d/l/",
                 help="Override Stooq CSV endpoint for tests or private mirrors",
+            )
+        if name == "coingecko":
+            adapter.add_argument("--vs-currency", default="usd")
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://api.coingecko.com/api/v3/coins/markets",
+                help="Override CoinGecko markets API endpoint for tests or private mirrors",
             )
         if name == "sec":
             adapter.add_argument(
@@ -3590,6 +3606,67 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} stooq evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "coingecko":
+        if not args.question_id:
+            raise SystemExit("forecast import coingecko requires --question")
+        snapshots = load_coingecko_market_snapshots(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            vs_currency=args.vs_currency,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for snapshot in snapshots:
+            currency = snapshot.vs_currency.upper()
+            name = snapshot.name or snapshot.coin_id
+            change = (
+                f"; 24h change {snapshot.price_change_percentage_24h}%"
+                if snapshot.price_change_percentage_24h is not None
+                else ""
+            )
+            rank = f"; market cap rank {snapshot.market_cap_rank}" if snapshot.market_cap_rank is not None else ""
+            summary = (
+                f"CoinGecko market snapshot for {name} ({snapshot.symbol or snapshot.coin_id}) "
+                f"last updated {snapshot.last_updated or 'unknown'}: price {snapshot.current_price} {currency}; "
+                f"market cap {snapshot.market_cap}; volume {snapshot.total_volume}{change}{rank}."
+            )
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=snapshot.source_url or f"CoinGecko:{snapshot.coin_id}",
+                    source_url=snapshot.source_url,
+                    source_name=snapshot.source_name,
+                    source_type="adapter:coingecko",
+                    published_at=snapshot.last_updated,
+                    available_at=snapshot.last_updated or args.as_of,
+                    claim=f"CoinGecko {snapshot.coin_id} price: {snapshot.current_price} {currency}",
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "coingecko",
+                        "coin_id": snapshot.coin_id,
+                        "symbol": snapshot.symbol,
+                        "name": snapshot.name,
+                        "vs_currency": snapshot.vs_currency,
+                        "current_price": snapshot.current_price,
+                        "market_cap": snapshot.market_cap,
+                        "market_cap_rank": snapshot.market_cap_rank,
+                        "total_volume": snapshot.total_volume,
+                        "price_change_percentage_24h": snapshot.price_change_percentage_24h,
+                        "last_updated": snapshot.last_updated,
+                        "api_base_url": args.api_base_url,
+                        "raw": snapshot.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} coingecko evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

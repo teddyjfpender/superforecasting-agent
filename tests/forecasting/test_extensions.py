@@ -26,6 +26,7 @@ def test_builtin_forecast_extensions_are_registered():
     assert "github-releases" in names
     assert "github-issues" in names
     assert "github-commits" in names
+    assert "coingecko-market-data" in names
     assert "pypi-releases" in names
     assert "npm-package-versions" in names
     assert "hackernews-search" in names

@@ -58,6 +58,10 @@ const EVIDENCE_IMPORTS = [
     label: "Market data",
   },
   {
+    command: "forecast import coingecko <coin-id> --question <id>",
+    label: "Crypto",
+  },
+  {
     command: "forecast import wikipediapageviews <project>/<article> --question <id>",
     label: "Attention",
   },

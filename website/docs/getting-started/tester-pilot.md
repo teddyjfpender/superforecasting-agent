@@ -91,6 +91,7 @@ forecast --db "$FORECAST_DB" import fred UNRATE --question <id>
 forecast --db "$FORECAST_DB" import eia PET.RWTC.M --question <id>
 forecast --db "$FORECAST_DB" import treasury v2/accounting/od/avg_interest_rates --question <id>
 forecast --db "$FORECAST_DB" import census "2023/acs/acs5?get=NAME,B01003_001E&for=state:*" --question <id>
+forecast --db "$FORECAST_DB" import coingecko bitcoin --question <id>
 forecast --db "$FORECAST_DB" import wikipediapageviews en.wikipedia.org/Topic --question <id>
 forecast --db "$FORECAST_DB" import githubcommits owner/repo --question <id>
 forecast --db "$FORECAST_DB" import hackernews "product query" --question <id>

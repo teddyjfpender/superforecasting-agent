@@ -20,6 +20,7 @@ from forecasting.source_adapters import (
     CensusRecord,
     CisaKevVulnerability,
     ClinicalTrialStudy,
+    CoinGeckoMarketSnapshot,
     CourtListenerSearchResult,
     EiaObservation,
     FederalRegisterDocument,
@@ -1750,6 +1751,63 @@ def test_watched_githubcommits_source_creates_alert_on_commit_change(tmp_path, m
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert f"forecast import githubcommits acme/desk --question {question.id}" in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_coingecko_source_creates_alert_on_market_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched CoinGecko prices be detected?",
+        resolution_criteria="Resolved yes if watched CoinGecko market changes create alerts.",
+    )
+    prices = [109500]
+    captured_sources = []
+
+    def fake_load_coingecko_snapshots(source: str, **kwargs):
+        captured_sources.append(source)
+        return [
+            CoinGeckoMarketSnapshot(
+                coin_id="bitcoin",
+                symbol="btc",
+                name="Bitcoin",
+                vs_currency="usd",
+                current_price=prices[0],
+                market_cap=2170000000000,
+                market_cap_rank=1,
+                total_volume=51200000000,
+                price_change_percentage_24h=2.34,
+                last_updated="2026-05-21T11:00:00Z",
+                source_url="https://www.coingecko.com/en/coins/bitcoin",
+                source_name="CoinGecko",
+                entry_id="bitcoin:usd:2026-05-21T11:00:00Z",
+                raw={"current_price": prices[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_coingecko_market_snapshots", fake_load_coingecko_snapshots)
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="coingecko:bitcoin",
+    )
+
+    assert watch["source_type"] == "coingecko"
+    assert watch["last_seen_signature"].startswith("coingecko:1:")
+    assert captured_sources[-1] == "bitcoin"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    prices[0] = 111000
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f"forecast import coingecko bitcoin --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]

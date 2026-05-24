@@ -50,6 +50,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "github",
     "githubissues",
     "githubcommits",
+    "coingecko",
     "pypi",
     "npm",
     "hackernews",

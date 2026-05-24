@@ -557,6 +557,7 @@ forecast import fred <series-id> --question <id>
 forecast import bls <series-id> --question <id>
 forecast import worldbank <country>/<indicator> --question <id>
 forecast import census <dataset-path?get=...&for=...> --question <id>
+forecast import coingecko <coin-id-or-list> --question <id>
 forecast import sec <cik> --question <id>
 forecast import arxiv <query> --question <id>
 forecast import pubmed <query-or-PMID> --question <id>

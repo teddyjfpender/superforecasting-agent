@@ -75,6 +75,7 @@ Examples:
 /forecast sources
 /forecast import census "2023/acs/acs5?get=NAME,B01003_001E&for=state:*" --question <id>
 /forecast import stooq AAPL.US --question <id>
+/forecast import coingecko bitcoin --question <id>
 /forecast import githubissues owner/repo --question <id>
 /forecast import githubcommits owner/repo --question <id>
 /forecast import pypi package-name --question <id>

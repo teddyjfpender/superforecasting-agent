@@ -22,6 +22,7 @@ from forecasting.source_adapters import (
     CensusRecord,
     CisaKevVulnerability,
     ClinicalTrialStudy,
+    CoinGeckoMarketSnapshot,
     CourtListenerSearchResult,
     EiaObservation,
     FederalRegisterDocument,
@@ -2219,6 +2220,143 @@ def test_forecast_cli_githubcommits_import_captures_commits_as_evidence(tmp_path
     assert evidence[0].metadata["repo"] == "acme/desk"
     assert evidence[0].metadata["sha"] == "abcdef1234567890"
     assert evidence[0].metadata["author_login"] == "ada"
+
+
+def test_coingecko_adapter_loads_market_snapshots(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return [
+            {
+                "id": "bitcoin",
+                "symbol": "btc",
+                "name": "Bitcoin",
+                "current_price": 109500,
+                "market_cap": 2170000000000,
+                "market_cap_rank": 1,
+                "total_volume": 51200000000,
+                "price_change_percentage_24h": 2.34,
+                "last_updated": "2026-05-21T11:00:00.000Z",
+            }
+        ]
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    snapshots = source_adapters.load_coingecko_market_snapshots(
+        "coingecko:bitcoin,ethereum",
+        limit=2,
+        since="2026-05-01T00:00:00Z",
+        vs_currency="usd",
+        api_base_url="https://api.coingecko.test/api/v3/coins/markets",
+    )
+    parsed = urlparse(captured["endpoint"])
+    params = parse_qs(parsed.query)
+
+    assert captured["label"] == "coingecko markets"
+    assert parsed.path == "/api/v3/coins/markets"
+    assert params["ids"] == ["bitcoin,ethereum"]
+    assert params["vs_currency"] == ["usd"]
+    assert params["per_page"] == ["2"]
+    assert params["price_change_percentage"] == ["24h"]
+    assert snapshots[0].coin_id == "bitcoin"
+    assert snapshots[0].symbol == "btc"
+    assert snapshots[0].current_price == 109500
+    assert snapshots[0].market_cap_rank == 1
+    assert snapshots[0].last_updated == "2026-05-21T11:00:00Z"
+
+
+def test_forecast_cli_coingecko_import_captures_snapshots_as_evidence(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_coingecko_snapshots(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            CoinGeckoMarketSnapshot(
+                coin_id="bitcoin",
+                symbol="btc",
+                name="Bitcoin",
+                vs_currency="usd",
+                current_price=109500,
+                market_cap=2170000000000,
+                market_cap_rank=1,
+                total_volume=51200000000,
+                price_change_percentage_24h=2.34,
+                last_updated="2026-05-21T11:00:00Z",
+                source_url="https://www.coingecko.com/en/coins/bitcoin",
+                source_name="CoinGecko",
+                entry_id="bitcoin:usd:2026-05-21T11:00:00Z",
+                raw={"id": "bitcoin"},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_coingecko_market_snapshots", fake_load_coingecko_snapshots)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will CoinGecko evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if CoinGecko crypto evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "coingecko",
+            "bitcoin",
+            "--question",
+            question_id,
+            "--limit",
+            "3",
+            "--since",
+            "2026-05-01T00:00:00Z",
+            "--vs-currency",
+            "usd",
+            "--api-base-url",
+            "https://api.coingecko.test/api/v3/coins/markets",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.8",
+            "--relevance",
+            "0.9",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 coingecko evidence item(s)" in output
+    assert captured["source"] == "bitcoin"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["vs_currency"] == "usd"
+    assert captured["kwargs"]["api_base_url"] == "https://api.coingecko.test/api/v3/coins/markets"
+    assert evidence[0].claim == "CoinGecko bitcoin price: 109500 USD"
+    assert evidence[0].summary.startswith("CoinGecko market snapshot for Bitcoin")
+    assert evidence[0].source_name == "CoinGecko"
+    assert evidence[0].source_type == "adapter:coingecko"
+    assert evidence[0].published_at == "2026-05-21T11:00:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.8
+    assert evidence[0].relevance_rating == 0.9
+    assert evidence[0].metadata["adapter"] == "coingecko"
+    assert evidence[0].metadata["coin_id"] == "bitcoin"
+    assert evidence[0].metadata["current_price"] == 109500
+    assert evidence[0].metadata["price_change_percentage_24h"] == 2.34
 
 
 def test_pypi_adapter_loads_package_releases(monkeypatch):
@@ -6202,6 +6340,7 @@ def test_forecast_cli_lists_extension_points(capsys):
     assert "github-releases" in output
     assert "github-issues" in output
     assert "github-commits" in output
+    assert "coingecko-market-data" in output
     assert "federal-register-documents" in output
     assert "courtlistener-search" in output
     assert "nvd-cves" in output
@@ -6250,6 +6389,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "treasury:<dataset-path-or-api-url>" in output
     assert "census:<dataset-path?get=...&for=...>" in output
     assert "stooq:<symbol-or-csv-url>" in output
+    assert "coingecko:<coin-id>" in output
     assert "openmeteo:<lat,lon>" in output
     assert "usgs:<query>" in output
     assert "eonet:<query-or-category>" in output
@@ -6278,11 +6418,12 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "owid", "eia", "treasury", "census", "stooq", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "owid", "eia", "treasury", "census", "stooq", "coingecko", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "census:<dataset-path?get=...&for=...>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "stooq:<symbol-or-csv-url>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "coingecko:<coin-id>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "clinicaltrials:<query-or-NCT-id>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "openfda:<query-or-application-number>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "pubmed:<query-or-PMID>" for source in payload["sources"])
@@ -8168,6 +8309,72 @@ def test_forecast_cli_watch_add_supports_githubcommits_sources(tmp_path, capsys,
     assert "source_type: githubcommits" in add_output
 
     messages[0] = "New forecast commit"
+    _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
+    check_output = capsys.readouterr().out
+
+    assert "created 1 alert(s)" in check_output
+    assert f"watched_source_changed:{watch_id}" in check_output
+
+
+def test_forecast_cli_watch_add_supports_coingecko_sources(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    prices = [109500]
+
+    def fake_load_coingecko_snapshots(source: str, **kwargs):
+        return [
+            CoinGeckoMarketSnapshot(
+                coin_id="bitcoin",
+                symbol="btc",
+                name="Bitcoin",
+                vs_currency="usd",
+                current_price=prices[0],
+                market_cap=2170000000000,
+                market_cap_rank=1,
+                total_volume=51200000000,
+                price_change_percentage_24h=2.34,
+                last_updated="2026-05-21T11:00:00Z",
+                source_url="https://www.coingecko.com/en/coins/bitcoin",
+                source_name="CoinGecko",
+                entry_id="bitcoin:usd:2026-05-21T11:00:00Z",
+                raw={"current_price": prices[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_coingecko_market_snapshots", fake_load_coingecko_snapshots)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will watched CLI CoinGecko data change?",
+            "--resolution-criteria",
+            "Resolved yes if watched CoinGecko snapshots change.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            "coingecko:bitcoin",
+            "--question",
+            question_id,
+        ],
+    )
+    add_output = capsys.readouterr().out
+    watch_id = re.search(r"watched source (ws_[a-f0-9]+)", add_output).group(1)
+
+    assert "source_type: coingecko" in add_output
+
+    prices[0] = 111000
     _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
     check_output = capsys.readouterr().out
 

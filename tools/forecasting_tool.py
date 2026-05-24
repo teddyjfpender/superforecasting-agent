@@ -23,6 +23,7 @@ from forecasting.source_adapters import (
     load_census_records,
     load_cisa_kev_vulnerabilities,
     load_clinicaltrials_studies,
+    load_coingecko_market_snapshots,
     load_courtlistener_search_results,
     load_eia_observations,
     load_federal_register_documents,
@@ -187,6 +188,7 @@ FORECAST_LEDGER_SCHEMA = {
             "value_column": {"type": "string"},
             "date_field": {"type": "string"},
             "value_field": {"type": "string"},
+            "vs_currency": {"type": "string"},
             "access": {"type": "string"},
             "agent": {"type": "string"},
             "format": {"type": "string", "enum": ["json", "markdown"]},
@@ -249,6 +251,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "github",
                     "githubissues",
                     "githubcommits",
+                    "coingecko",
                     "pypi",
                     "npm",
                     "hackernews",
@@ -1141,6 +1144,15 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_github_commits(source, **kwargs)
+    if adapter_name == "coingecko":
+        kwargs = {
+            "limit": limit,
+            "since": since,
+            "vs_currency": args.get("vs_currency") or "usd",
+        }
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_coingecko_market_snapshots(source, **kwargs)
     if adapter_name == "pypi":
         kwargs = {"limit": limit, "since": since}
         if api_base_url:
@@ -1261,6 +1273,7 @@ def _source_adapter_evidence_payload(
         "last_update_submitted_at",
         "latest_submission_status_date",
         "updated_at",
+        "last_updated",
         "committed_at",
         "authored_at",
         "created_at",
@@ -1366,6 +1379,12 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         return f"GitHub {issue_kind} {data.get('repo')} {number}: {data.get('title')}"
     if adapter == "githubcommits":
         return f"GitHub commit {data.get('repo')} {data.get('short_sha')}: {data.get('message')}"
+    if adapter == "coingecko":
+        currency = str(data.get("vs_currency") or "").upper()
+        return (
+            f"CoinGecko {data.get('coin_id')} price was "
+            f"{data.get('current_price')} {currency} at {data.get('last_updated')}"
+        )
     if adapter == "pypi":
         return f"PyPI release {data.get('package')} {data.get('version')}: {data.get('summary') or 'package release'}"
     if adapter == "npm":

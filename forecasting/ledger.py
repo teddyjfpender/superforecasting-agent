@@ -66,6 +66,7 @@ WATCH_SOURCE_TYPES = {
     "github",
     "githubissues",
     "githubcommits",
+    "coingecko",
     "hackernews",
     "reddit",
     "federalregister",
@@ -2895,7 +2896,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, github, githubissues, githubcommits, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, stooq, "
+                "source_type must be file, url, manual, rss, gdelt, github, githubissues, githubcommits, coingecko, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, stooq, "
                 "sec, arxiv, openalex, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -2983,6 +2984,7 @@ class ForecastLedger:
                     "github",
                     "githubissues",
                     "githubcommits",
+                    "coingecko",
                     "pypi",
                     "npm",
                     "hackernews",
@@ -5198,6 +5200,8 @@ class ForecastLedger:
             return "githubissues"
         if source.startswith("githubcommits:"):
             return "githubcommits"
+        if source.startswith("coingecko:"):
+            return "coingecko"
         if source.startswith("pypi:"):
             return "pypi"
         if source.startswith("npm:"):
@@ -5276,6 +5280,8 @@ class ForecastLedger:
             return self._github_issues_source_signature(source)
         if source_type == "githubcommits":
             return self._github_commits_source_signature(source)
+        if source_type == "coingecko":
+            return self._coingecko_source_signature(source)
         if source_type == "pypi":
             return self._pypi_source_signature(source)
         if source_type == "npm":
@@ -5506,6 +5512,33 @@ class ForecastLedger:
         ]
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"githubcommits:{len(payload)}:{digest}"
+
+    def _coingecko_source_signature(self, source: str) -> str:
+        source_value = source.split(":", 1)[1].strip() if source.startswith("coingecko:") else source.strip()
+        if not source_value:
+            return "missing:coingecko:empty-source"
+        try:
+            from forecasting.source_adapters import load_coingecko_market_snapshots
+
+            snapshots = load_coingecko_market_snapshots(source_value, limit=50)
+        except Exception as exc:
+            return f"missing:coingecko:{source_value}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "coin_id": snapshot.coin_id,
+                "symbol": snapshot.symbol,
+                "vs_currency": snapshot.vs_currency,
+                "current_price": snapshot.current_price,
+                "market_cap": snapshot.market_cap,
+                "market_cap_rank": snapshot.market_cap_rank,
+                "total_volume": snapshot.total_volume,
+                "price_change_percentage_24h": snapshot.price_change_percentage_24h,
+                "last_updated": snapshot.last_updated,
+            }
+            for snapshot in snapshots
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"coingecko:{len(payload)}:{digest}"
 
     def _pypi_source_signature(self, source: str) -> str:
         source_value = source.split(":", 1)[1].strip() if source.startswith("pypi:") else source.strip()
@@ -6376,6 +6409,12 @@ class ForecastLedger:
             source_value = source.split(":", 1)[1].strip() if source.startswith("githubcommits:") else source
             return (
                 f"Run `forecast import githubcommits {source_value} --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "coingecko" and scope_type == "question" and scope_ref:
+            source_value = source.split(":", 1)[1].strip() if source.startswith("coingecko:") else source
+            return (
+                f"Run `forecast import coingecko {source_value} --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "pypi" and scope_type == "question" and scope_ref:
