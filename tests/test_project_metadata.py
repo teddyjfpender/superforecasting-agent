@@ -1551,3 +1551,15 @@ def test_dashboard_oauth_user_agent_is_forecast_native():
 
     assert '"User-Agent": "superforecasting-agent-dashboard/1.0"' in web_server
     assert "hermes-dashboard/1.0" not in web_server
+
+
+def test_dashboard_plugin_loader_has_forecast_native_markers():
+    root = Path(__file__).resolve().parents[1]
+    loader = (root / "web" / "src" / "plugins" / "usePlugins.ts").read_text(
+        encoding="utf-8"
+    )
+
+    assert "forecast_dv" in loader
+    assert "data-superforecasting-agent-plugin" in loader
+    assert "data-forecast-plugin" in loader
+    assert "hermes_dv" not in loader
