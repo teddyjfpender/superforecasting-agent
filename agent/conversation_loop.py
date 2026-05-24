@@ -2416,7 +2416,7 @@ def run_conversation(
 
                 # Actionable hint for GitHub Models (Azure) 413 errors.
                 # The free tier enforces a hard 8K token cap per request,
-                # which Hermes' system prompt + tool schemas alone exceed.
+                # which the agent's system prompt + tool schemas alone exceed.
                 # Compression can't help — the floor is the system prompt
                 # itself, not the conversation — so surface a clear "not
                 # compatible" message instead of looping into three futile
@@ -2431,7 +2431,7 @@ def run_conversation(
                         force=True,
                     )
                     agent._vprint(
-                        f"{agent.log_prefix}      request at ~8K tokens. Hermes' system prompt + tool schemas baseline",
+                        f"{agent.log_prefix}      request at ~8K tokens. The agent system prompt + tool schemas baseline",
                         force=True,
                     )
                     agent._vprint(
