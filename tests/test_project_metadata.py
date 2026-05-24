@@ -692,6 +692,43 @@ def test_skill_author_metadata_is_forecast_native():
     assert not re.search(r"^\| Author \| .*Hermes Agent", generated_text, re.MULTILINE)
 
 
+def test_airtable_and_neuroskill_skill_docs_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "skills" / "productivity" / "airtable" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "productivity"
+            / "productivity-airtable.md"
+        ),
+        root / "optional-skills" / "health" / "neuroskill-bci" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "optional"
+            / "health"
+            / "health-neuroskill-bci.md"
+        ),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths if path.exists())
+
+    assert "Typical Superforecasting Agent Workflow" in text
+    assert "Important Notes for Superforecasting Agent" in text
+    assert "Connect Superforecasting Agent to a running" in text
+    assert "clean for Hermes" not in text
+    assert "Typical Hermes Workflow" not in text
+    assert "Important Notes for Hermes" not in text
+    assert "Connect Hermes to a running" not in text
+
+
 def test_github_auth_skill_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [
