@@ -275,6 +275,19 @@ def test_runtime_docstrings_use_forecast_native_home_paths():
         assert marker in header, rel_path
 
 
+def test_model_picker_guidance_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "hermes_cli" / "models.py").read_text(encoding="utf-8")
+
+    assert "Superforecasting Agent is tool-calling-first" in text
+    assert "superforecasting-agent auth add copilot" in text
+    assert "~/.superforecasting-agent/.env" in text
+    assert "hermes-agent is tool-calling-first" not in text
+    assert "hermes auth add copilot" not in text
+    assert "older Hermes that doesn't ship" not in text
+    assert "without a Hermes release" not in text
+
+
 def test_high_attention_docs_navigation_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     sidebars = (root / "website" / "sidebars.ts").read_text(encoding="utf-8")

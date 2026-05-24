@@ -138,7 +138,7 @@ def _xai_curated_models() -> list[str]:
 
     Reads $HERMES_HOME/models_dev_cache.json directly (no network) so this
     runs at import time without blocking. Falls back to ``_XAI_STATIC_FALLBACK``
-    when the cache is empty or unreadable. Hermes refreshes the cache from
+    when the cache is empty or unreadable. The CLI refreshes the cache from
     https://models.dev/api.json on normal use, so this list self-heals as
     xAI renames models.
 
@@ -591,7 +591,7 @@ def union_with_portal_free_recommendations(
 
     For free-tier users this is the source of truth: any model the Portal
     flags as free should be selectable, even if the user is running an
-    older Hermes that doesn't ship that model in its hardcoded curated
+    older runtime that doesn't ship that model in its hardcoded curated
     list.  This function returns an augmented ``(model_ids, pricing)``
     pair where:
 
@@ -656,7 +656,7 @@ def union_with_portal_paid_recommendations(
     the docs-hosted catalog manifest has been rebuilt since the last release.
 
     For paid-tier users this lets newly-launched paid models surface in the
-    picker even if the user is running an older Hermes that doesn't ship
+    picker even if the user is running an older runtime that doesn't ship
     them in its hardcoded curated list. This function returns an augmented
     ``(model_ids, pricing)`` pair where:
 
@@ -1093,7 +1093,7 @@ def _openrouter_model_is_free(pricing: Any) -> bool:
 def _openrouter_model_supports_tools(item: Any) -> bool:
     """Return True when the model's ``supported_parameters`` advertise tool calling.
 
-    hermes-agent is tool-calling-first — every provider path assumes the model
+    Superforecasting Agent is tool-calling-first — every provider path assumes the model
     can invoke tools. Models that don't advertise ``tools`` in their
     ``supported_parameters`` (e.g. image-only or completion-only models) cannot
     be driven by the agent loop and would fail at the first tool call.
@@ -1166,7 +1166,7 @@ def fetch_openrouter_models(
         live_item = live_by_id.get(preferred_id)
         if live_item is None:
             continue
-        # Hide models that don't advertise tool-calling support — hermes-agent
+        # Hide models that don't advertise tool-calling support — the forecast runtime
         # requires it and surfacing them leads to immediate runtime failures
         # when the user selects them. Ported from Kilo-Org/kilocode#9068.
         if not _openrouter_model_supports_tools(live_item):
@@ -1919,7 +1919,7 @@ def _find_openrouter_slug(model_name: str) -> Optional[str]:
 
 
 def normalize_provider(provider: Optional[str]) -> str:
-    """Normalize provider aliases to Hermes' canonical provider ids.
+    """Normalize provider aliases to runtime-canonical provider ids.
 
     Note: ``"auto"`` passes through unchanged — use
     ``hermes_cli.auth.resolve_provider()`` to resolve it to a concrete
@@ -1987,7 +1987,7 @@ def _strip_vendor_prefix(model_id: str) -> str:
 
 
 def model_supports_fast_mode(model_id: Optional[str]) -> bool:
-    """Return whether Hermes should expose the /fast toggle for this model."""
+    """Return whether the CLI should expose the /fast toggle for this model."""
     return _is_anthropic_fast_model(model_id) or _is_openai_fast_model(model_id)
 
 
@@ -2036,8 +2036,10 @@ def _resolve_copilot_catalog_api_key() -> str:
       2. ``read_credential_pool("copilot")`` — a token (typically a
          ``gho_*`` from device-code login, or a fine-grained PAT) stored in
          ``auth.json`` under ``credential_pool.copilot[]``. The pool is
-         populated by ``hermes auth add copilot`` and by ``_seed_from_env``
-         when the env var is set in ``~/.hermes/.env``.
+         populated by ``superforecasting-agent auth add copilot`` and by
+         ``_seed_from_env`` when the env var is set in
+         ``~/.superforecasting-agent/.env``; legacy ``~/.hermes/.env`` remains
+         readable during migration.
 
     Without (2), users whose only Copilot credential is in the pool see
     the ``/model`` picker fall back to a stale hardcoded list because the
@@ -2161,7 +2163,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
     falling back to static lists. For providers in ``_MODELS_DEV_PREFERRED``
     (opencode-go/zen, xiaomi, deepseek, smaller inference providers, etc.),
     models.dev entries are merged on top of curated so new models released
-    on the platform appear in ``/model`` without a Hermes release.
+    on the platform appear in ``/model`` without a Superforecasting Agent release.
     """
     normalized = normalize_provider(provider)
     if normalized == "openrouter":
@@ -2171,7 +2173,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
 
         # Pass the live OAuth access token so the picker matches whatever
         # ChatGPT lists for this account right now (new models appear without
-        # a Hermes release). Falls back to the hardcoded catalog if no token
+        # a Superforecasting Agent release). Falls back to the hardcoded catalog if no token
         # or the endpoint is unreachable.
         access_token = None
         try:
