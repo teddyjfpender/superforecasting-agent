@@ -25,11 +25,17 @@ def test_copy_copies_latest_assistant_message():
         {"role": "assistant", "content": "latest"},
     ]
 
-    with patch.object(cli_obj, "_write_osc52_clipboard") as mock_copy:
+    with patch.object(cli_obj, "_write_osc52_clipboard") as mock_copy, patch(
+        "cli._cprint"
+    ) as mock_print:
         result = cli_obj.process_command("/copy")
 
     assert result is True
     mock_copy.assert_called_once_with("latest")
+    assert any(
+        "Copied forecast response #2 to clipboard" in str(call)
+        for call in mock_print.call_args_list
+    )
 
 
 def test_copy_with_index_uses_requested_assistant_message():
@@ -64,8 +70,44 @@ def test_copy_invalid_index_does_not_copy():
     cli_obj = _make_cli()
     cli_obj.conversation_history = [{"role": "assistant", "content": "only"}]
 
-    with patch.object(cli_obj, "_write_osc52_clipboard") as mock_copy, patch("cli._cprint") as mock_print:
+    with patch.object(cli_obj, "_write_osc52_clipboard") as mock_copy, patch(
+        "cli._cprint"
+    ) as mock_print:
         cli_obj.process_command("/copy 99")
 
     mock_copy.assert_not_called()
     assert any("Invalid response number" in str(call) for call in mock_print.call_args_list)
+
+
+def test_copy_empty_forecast_response_uses_forecast_copy():
+    cli_obj = _make_cli()
+    cli_obj.conversation_history = [
+        {
+            "role": "assistant",
+            "content": "<REASONING_SCRATCHPAD>internal</REASONING_SCRATCHPAD>",
+        }
+    ]
+
+    with patch.object(cli_obj, "_write_osc52_clipboard") as mock_copy, patch("cli._cprint") as mock_print:
+        cli_obj.process_command("/copy")
+
+    mock_copy.assert_not_called()
+    rendered = "\n".join(str(call) for call in mock_print.call_args_list)
+    assert "forecast responses" in rendered
+    assert "assistant responses" not in rendered
+
+
+def test_undo_confirmation_uses_forecaster_copy():
+    cli_obj = _make_cli()
+    cli_obj.conversation_history = [
+        {"role": "user", "content": "forecast this"},
+        {"role": "assistant", "content": "0.61"},
+    ]
+
+    with patch.object(cli_obj, "_confirm_destructive_slash", return_value=None) as confirm:
+        cli_obj.process_command("/undo")
+
+    confirm.assert_called_once()
+    _name, message = confirm.call_args.args
+    assert "user/forecaster exchange" in message
+    assert "user/assistant exchange" not in message

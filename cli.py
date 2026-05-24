@@ -4851,7 +4851,7 @@ class HermesCLI:
 
         Uses Rich markup with dim/muted styling so the recap is visually
         distinct from the active conversation.  Caps the display at the
-        last ``MAX_DISPLAY_EXCHANGES`` user/assistant exchanges and shows
+        last ``MAX_DISPLAY_EXCHANGES`` user/forecaster exchanges and shows
         an indicator for earlier hidden messages.
         """
         if not self.conversation_history:
@@ -4980,7 +4980,7 @@ class HermesCLI:
                 for ml in msg_lines[1:]:
                     lines.append(f"         {ml}\n", style="dim")
             elif role == "assistant_last":
-                # Last assistant response shown in full, non-dim
+                # Last forecaster response shown in full, non-dim
                 lines.append("  ◆ Forecaster: ", style=f"bold {_assistant_label_c}")
                 msg_lines = text.splitlines()
                 lines.append(msg_lines[0] + "\n", style="")
@@ -5349,7 +5349,7 @@ class HermesCLI:
             )
 
     def _handle_copy_command(self, cmd_original: str) -> None:
-        """Handle /copy [number] — copy assistant output to clipboard."""
+        """Handle /copy [number] — copy forecast output to clipboard."""
         parts = cmd_original.split(maxsplit=1)
         arg = parts[1].strip() if len(parts) > 1 else ""
 
@@ -5372,17 +5372,17 @@ class HermesCLI:
             while idx >= 0 and not _assistant_copy_text(assistant[idx].get("content")):
                 idx -= 1
             if idx < 0:
-                _cprint("  Nothing to copy in assistant responses yet.")
+                _cprint("  Nothing to copy in forecast responses yet.")
                 return
 
         text = _assistant_copy_text(assistant[idx].get("content"))
         if not text:
-            _cprint("  Nothing to copy in that assistant response.")
+            _cprint("  Nothing to copy in that forecast response.")
             return
 
         try:
             self._write_osc52_clipboard(text)
-            _cprint(f"  Copied assistant response #{idx + 1} to clipboard")
+            _cprint(f"  Copied forecast response #{idx + 1} to clipboard")
         except Exception as e:
             _cprint(f"  Clipboard copy failed: {e}")
 
@@ -6613,7 +6613,7 @@ class HermesCLI:
     def retry_last(self):
         """Retry the last user message by removing the last exchange and re-sending.
         
-        Removes the last assistant response (and any tool-call messages) and
+        Removes the last forecaster response (and any tool-call messages) and
         the last user message, then re-sends that user message to the agent.
         Returns the message to re-send, or None if there's nothing to retry.
         """
@@ -6640,10 +6640,10 @@ class HermesCLI:
         return last_message
     
     def undo_last(self):
-        """Remove the last user/assistant exchange from conversation history.
+        """Remove the last user/forecaster exchange from conversation history.
         
         Walks backwards and removes all messages from the last user message
-        onward (including assistant responses, tool calls, etc.).
+        onward (including forecaster responses, tool calls, etc.).
         """
         if not self.conversation_history:
             print("No messages to undo.")
@@ -8052,7 +8052,7 @@ class HermesCLI:
         elif canonical == "undo":
             if self._confirm_destructive_slash(
                 "undo",
-                "This removes the last user/assistant exchange from history.",
+                "This removes the last user/forecaster exchange from history.",
             ) is None:
                 return
             self.undo_last()
