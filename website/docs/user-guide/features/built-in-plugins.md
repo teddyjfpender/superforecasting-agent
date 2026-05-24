@@ -157,12 +157,12 @@ superforecasting-agent plugins enable observability/langfuse
 Put credentials in `~/.superforecasting-agent/.env`:
 
 ```bash
-HERMES_LANGFUSE_PUBLIC_KEY=pk-lf-...
-HERMES_LANGFUSE_SECRET_KEY=sk-lf-...
-HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com
+SUPERFORECASTING_AGENT_LANGFUSE_PUBLIC_KEY=pk-lf-...
+SUPERFORECASTING_AGENT_LANGFUSE_SECRET_KEY=sk-lf-...
+SUPERFORECASTING_AGENT_LANGFUSE_BASE_URL=https://cloud.langfuse.com
 ```
 
-The `HERMES_LANGFUSE_*` names are inherited runtime identifiers. Standard SDK variables (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL`) are also accepted.
+`FORECAST_LANGFUSE_*` and inherited `HERMES_LANGFUSE_*` names remain compatibility aliases. Standard SDK variables (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL`) are also accepted.
 
 **How it works:**
 
@@ -171,7 +171,7 @@ The `HERMES_LANGFUSE_*` names are inherited runtime identifiers. Standard SDK va
 | `pre_api_request` / `pre_llm_call` | Opens or reuses a per-turn root span and starts a generation observation with serialized recent context. |
 | `post_api_request` / `post_llm_call` | Closes the generation, attaches usage, cost, finish reason, model output, and tool calls. |
 | `pre_tool_call` | Starts a child tool observation with sanitized args. |
-| `post_tool_call` | Closes the tool observation with sanitized result. Large `read_file` payloads are summarized under `HERMES_LANGFUSE_MAX_CHARS`. |
+| `post_tool_call` | Closes the tool observation with sanitized result. Large `read_file` payloads are summarized under `SUPERFORECASTING_AGENT_LANGFUSE_MAX_CHARS`. |
 
 Session grouping keys off the inherited session ID via `langfuse.propagate_attributes`, so related CLI/gateway/sub-agent work can be inspected together.
 
@@ -188,11 +188,11 @@ Then check the Langfuse UI for a trace from the run.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `HERMES_LANGFUSE_ENV` | unset | Environment tag such as `production` or `staging` |
-| `HERMES_LANGFUSE_RELEASE` | unset | Release/version tag |
-| `HERMES_LANGFUSE_SAMPLE_RATE` | `1.0` | Sampling rate passed to the SDK |
-| `HERMES_LANGFUSE_MAX_CHARS` | `12000` | Per-field truncation for message content, tool args, and tool results |
-| `HERMES_LANGFUSE_DEBUG` | `false` | Verbose plugin logging to `agent.log` |
+| `SUPERFORECASTING_AGENT_LANGFUSE_ENV` | unset | Environment tag such as `production` or `staging` |
+| `SUPERFORECASTING_AGENT_LANGFUSE_RELEASE` | unset | Release/version tag |
+| `SUPERFORECASTING_AGENT_LANGFUSE_SAMPLE_RATE` | `1.0` | Sampling rate passed to the SDK |
+| `SUPERFORECASTING_AGENT_LANGFUSE_MAX_CHARS` | `12000` | Per-field truncation for message content, tool args, and tool results |
+| `SUPERFORECASTING_AGENT_LANGFUSE_DEBUG` | `false` | Verbose plugin logging to `agent.log` |
 
 **Disable:**
 

@@ -169,14 +169,19 @@ _EXTRA_ENV_KEYS = frozenset({
     # Activation is via plugins.enabled (opt-in through
     # `superforecasting-agent plugins enable observability/langfuse`);
     # credentials gate the plugin at runtime.
-    "HERMES_LANGFUSE_ENV",
-    "HERMES_LANGFUSE_RELEASE",
-    "HERMES_LANGFUSE_SAMPLE_RATE",
-    "HERMES_LANGFUSE_MAX_CHARS",
-    "HERMES_LANGFUSE_DEBUG",
+    "FORECAST_LANGFUSE_PUBLIC_KEY", "HERMES_LANGFUSE_PUBLIC_KEY",
+    "FORECAST_LANGFUSE_SECRET_KEY", "HERMES_LANGFUSE_SECRET_KEY",
+    "FORECAST_LANGFUSE_BASE_URL", "HERMES_LANGFUSE_BASE_URL",
+    "SUPERFORECASTING_AGENT_LANGFUSE_ENV", "FORECAST_LANGFUSE_ENV", "HERMES_LANGFUSE_ENV",
+    "SUPERFORECASTING_AGENT_LANGFUSE_RELEASE", "FORECAST_LANGFUSE_RELEASE", "HERMES_LANGFUSE_RELEASE",
+    "SUPERFORECASTING_AGENT_LANGFUSE_SAMPLE_RATE", "FORECAST_LANGFUSE_SAMPLE_RATE", "HERMES_LANGFUSE_SAMPLE_RATE",
+    "SUPERFORECASTING_AGENT_LANGFUSE_MAX_CHARS", "FORECAST_LANGFUSE_MAX_CHARS", "HERMES_LANGFUSE_MAX_CHARS",
+    "SUPERFORECASTING_AGENT_LANGFUSE_DEBUG", "FORECAST_LANGFUSE_DEBUG", "HERMES_LANGFUSE_DEBUG",
     "LANGFUSE_PUBLIC_KEY",
     "LANGFUSE_SECRET_KEY",
     "LANGFUSE_BASE_URL",
+    "LANGFUSE_ENV",
+    "LANGFUSE_RELEASE",
     "FORECAST_PREFILL_MESSAGES_FILE",
     "HERMES_PREFILL_MESSAGES_FILE",
     "FORECAST_EPHEMERAL_SYSTEM_PROMPT",
@@ -2458,21 +2463,21 @@ OPTIONAL_ENV_VARS = {
     },
 
     # ── Langfuse observability ──
-    "HERMES_LANGFUSE_PUBLIC_KEY": {
+    "SUPERFORECASTING_AGENT_LANGFUSE_PUBLIC_KEY": {
         "description": "Langfuse project public key (pk-lf-...)",
         "prompt": "Langfuse public key",
         "url": "https://cloud.langfuse.com",
         "password": False,
         "category": "tool",
     },
-    "HERMES_LANGFUSE_SECRET_KEY": {
+    "SUPERFORECASTING_AGENT_LANGFUSE_SECRET_KEY": {
         "description": "Langfuse project secret key (sk-lf-...)",
         "prompt": "Langfuse secret key",
         "url": "https://cloud.langfuse.com",
         "password": True,
         "category": "tool",
     },
-    "HERMES_LANGFUSE_BASE_URL": {
+    "SUPERFORECASTING_AGENT_LANGFUSE_BASE_URL": {
         "description": "Langfuse server URL (default: https://cloud.langfuse.com)",
         "prompt": "Langfuse server URL (leave empty for cloud.langfuse.com)",
         "url": None,

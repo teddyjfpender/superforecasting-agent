@@ -196,15 +196,15 @@ Environment variables for the bundled [`observability/langfuse`](/docs/user-guid
 
 | Variable | Description |
 |----------|-------------|
-| `HERMES_LANGFUSE_PUBLIC_KEY` | Langfuse project public key (`pk-lf-...`). Required. |
-| `HERMES_LANGFUSE_SECRET_KEY` | Langfuse project secret key (`sk-lf-...`). Required. |
-| `HERMES_LANGFUSE_BASE_URL` | Langfuse server URL (default: `https://cloud.langfuse.com`). Set for self-hosted. |
-| `HERMES_LANGFUSE_ENV` | Environment tag on traces (`production`, `staging`, …) |
-| `HERMES_LANGFUSE_RELEASE` | Release/version tag on traces |
-| `HERMES_LANGFUSE_SAMPLE_RATE` | SDK sampling rate 0.0–1.0 (default: `1.0`) |
-| `HERMES_LANGFUSE_MAX_CHARS` | Per-field truncation for serialized payloads (default: `12000`) |
-| `HERMES_LANGFUSE_DEBUG` | `true` enables verbose plugin logging to `agent.log` |
-| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_BASE_URL` | Standard Langfuse SDK names. Accepted as fallbacks when the `HERMES_LANGFUSE_*` equivalents are unset. |
+| `SUPERFORECASTING_AGENT_LANGFUSE_PUBLIC_KEY` / `FORECAST_LANGFUSE_PUBLIC_KEY` / `HERMES_LANGFUSE_PUBLIC_KEY` | Langfuse project public key (`pk-lf-...`). Required. The `HERMES_*` name remains a legacy alias. |
+| `SUPERFORECASTING_AGENT_LANGFUSE_SECRET_KEY` / `FORECAST_LANGFUSE_SECRET_KEY` / `HERMES_LANGFUSE_SECRET_KEY` | Langfuse project secret key (`sk-lf-...`). Required. The `HERMES_*` name remains a legacy alias. |
+| `SUPERFORECASTING_AGENT_LANGFUSE_BASE_URL` / `FORECAST_LANGFUSE_BASE_URL` / `HERMES_LANGFUSE_BASE_URL` | Langfuse server URL (default: `https://cloud.langfuse.com`). Set for self-hosted. The `HERMES_*` name remains a legacy alias. |
+| `SUPERFORECASTING_AGENT_LANGFUSE_ENV` / `FORECAST_LANGFUSE_ENV` / `HERMES_LANGFUSE_ENV` | Environment tag on traces (`production`, `staging`, …). The `HERMES_*` name remains a legacy alias. |
+| `SUPERFORECASTING_AGENT_LANGFUSE_RELEASE` / `FORECAST_LANGFUSE_RELEASE` / `HERMES_LANGFUSE_RELEASE` | Release/version tag on traces. The `HERMES_*` name remains a legacy alias. |
+| `SUPERFORECASTING_AGENT_LANGFUSE_SAMPLE_RATE` / `FORECAST_LANGFUSE_SAMPLE_RATE` / `HERMES_LANGFUSE_SAMPLE_RATE` | SDK sampling rate 0.0–1.0 (default: `1.0`). The `HERMES_*` name remains a legacy alias. |
+| `SUPERFORECASTING_AGENT_LANGFUSE_MAX_CHARS` / `FORECAST_LANGFUSE_MAX_CHARS` / `HERMES_LANGFUSE_MAX_CHARS` | Per-field truncation for serialized payloads (default: `12000`). The `HERMES_*` name remains a legacy alias. |
+| `SUPERFORECASTING_AGENT_LANGFUSE_DEBUG` / `FORECAST_LANGFUSE_DEBUG` / `HERMES_LANGFUSE_DEBUG` | `true` enables verbose plugin logging to `agent.log`. The `HERMES_*` name remains a legacy alias. |
+| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_BASE_URL` / `LANGFUSE_ENV` / `LANGFUSE_RELEASE` | Standard Langfuse SDK names. Accepted as fallbacks when the Superforecasting Agent equivalents are unset. |
 
 ### Nous Tool Gateway
 

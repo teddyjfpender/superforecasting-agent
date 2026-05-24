@@ -611,6 +611,30 @@ class TestPromptPluginEnvVars:
         # No prompt should appear — all vars are set
         console.print.assert_not_called()
 
+    def test_skips_when_alias_is_already_set(self):
+        from hermes_cli.plugins_cmd import _missing_requires_env_names, _prompt_plugin_env_vars
+        from unittest.mock import MagicMock, patch
+
+        console = MagicMock()
+        manifest = {
+            "name": "langfuse",
+            "requires_env": [
+                {
+                    "name": "SUPERFORECASTING_AGENT_LANGFUSE_PUBLIC_KEY",
+                    "aliases": ["FORECAST_LANGFUSE_PUBLIC_KEY", "HERMES_LANGFUSE_PUBLIC_KEY"],
+                }
+            ],
+        }
+
+        def fake_get_env(name):
+            return "pk-lf-legacy" if name == "HERMES_LANGFUSE_PUBLIC_KEY" else None
+
+        with patch("hermes_cli.config.get_env_value", side_effect=fake_get_env):
+            assert _missing_requires_env_names(manifest) == []
+            _prompt_plugin_env_vars(manifest, console)
+
+        console.print.assert_not_called()
+
     def test_prompts_for_missing_var_simple_format(self):
         from hermes_cli.plugins_cmd import _prompt_plugin_env_vars
         from unittest.mock import MagicMock, patch

@@ -1,24 +1,28 @@
-"""langfuse — Hermes plugin for Langfuse observability.
+"""langfuse — Superforecasting Agent plugin for Langfuse observability.
 
-Traces Hermes conversations, LLM calls, and tool usage to Langfuse.
+Traces forecast desk turns, LLM calls, and tool usage to Langfuse.
 
-Activation is handled by the Hermes plugin system — standalone plugins only
-load when listed in ``plugins.enabled`` (via ``hermes plugins enable
-observability/langfuse``, or by checking the box in the interactive
-``hermes plugins`` UI). At runtime the plugin also requires the
+Activation is handled by the plugin system — standalone plugins only
+load when listed in ``plugins.enabled`` (via ``superforecasting-agent plugins
+enable observability/langfuse``, or by checking the box in the interactive
+``superforecasting-agent plugins`` UI). At runtime the plugin also requires the
 ``langfuse`` SDK and credentials; if either is missing the hooks are inert.
 
-Required env vars (set in ~/.hermes/.env):
-  HERMES_LANGFUSE_PUBLIC_KEY  - Langfuse project public key (pk-lf-...)
-  HERMES_LANGFUSE_SECRET_KEY  - Langfuse project secret key (sk-lf-...)
-  HERMES_LANGFUSE_BASE_URL    - Langfuse server URL (default: https://cloud.langfuse.com)
+Required env vars (set in ~/.superforecasting-agent/.env):
+  SUPERFORECASTING_AGENT_LANGFUSE_PUBLIC_KEY  - Langfuse project public key (pk-lf-...)
+  SUPERFORECASTING_AGENT_LANGFUSE_SECRET_KEY  - Langfuse project secret key (sk-lf-...)
+  SUPERFORECASTING_AGENT_LANGFUSE_BASE_URL    - Langfuse server URL (default: https://cloud.langfuse.com)
 
 Optional env vars:
-  HERMES_LANGFUSE_ENV         - environment tag (e.g. "production", "local")
-  HERMES_LANGFUSE_RELEASE     - release/version tag
-  HERMES_LANGFUSE_SAMPLE_RATE - sampling rate 0.0–1.0 (default: 1.0)
-  HERMES_LANGFUSE_MAX_CHARS   - max chars per field (default: 12000)
-  HERMES_LANGFUSE_DEBUG       - set to "true" for verbose logging
+  SUPERFORECASTING_AGENT_LANGFUSE_ENV         - environment tag (e.g. "production", "local")
+  SUPERFORECASTING_AGENT_LANGFUSE_RELEASE     - release/version tag
+  SUPERFORECASTING_AGENT_LANGFUSE_SAMPLE_RATE - sampling rate 0.0–1.0 (default: 1.0)
+  SUPERFORECASTING_AGENT_LANGFUSE_MAX_CHARS   - max chars per field (default: 12000)
+  SUPERFORECASTING_AGENT_LANGFUSE_DEBUG       - set to "true" for verbose logging
+
+``FORECAST_LANGFUSE_*`` and inherited ``HERMES_LANGFUSE_*`` names remain
+compatibility aliases. Standard Langfuse SDK names are also accepted for
+public key, secret key, base URL, environment, and release.
 """
 from __future__ import annotations
 
@@ -58,6 +62,53 @@ _LANGFUSE_CLIENT = None
 _READ_FILE_LINE_RE = re.compile(r"^\s*(\d+)\|(.*)$")
 _READ_FILE_HEAD_LINES = 25
 _READ_FILE_TAIL_LINES = 15
+LANGFUSE_PUBLIC_KEY_ENV = "SUPERFORECASTING_AGENT_LANGFUSE_PUBLIC_KEY"
+LANGFUSE_SECRET_KEY_ENV = "SUPERFORECASTING_AGENT_LANGFUSE_SECRET_KEY"
+LANGFUSE_BASE_URL_ENVS = (
+    "SUPERFORECASTING_AGENT_LANGFUSE_BASE_URL",
+    "FORECAST_LANGFUSE_BASE_URL",
+    "HERMES_LANGFUSE_BASE_URL",
+    "LANGFUSE_BASE_URL",
+)
+LANGFUSE_PUBLIC_KEY_ENVS = (
+    LANGFUSE_PUBLIC_KEY_ENV,
+    "FORECAST_LANGFUSE_PUBLIC_KEY",
+    "HERMES_LANGFUSE_PUBLIC_KEY",
+    "LANGFUSE_PUBLIC_KEY",
+)
+LANGFUSE_SECRET_KEY_ENVS = (
+    LANGFUSE_SECRET_KEY_ENV,
+    "FORECAST_LANGFUSE_SECRET_KEY",
+    "HERMES_LANGFUSE_SECRET_KEY",
+    "LANGFUSE_SECRET_KEY",
+)
+LANGFUSE_ENV_ENVS = (
+    "SUPERFORECASTING_AGENT_LANGFUSE_ENV",
+    "FORECAST_LANGFUSE_ENV",
+    "HERMES_LANGFUSE_ENV",
+    "LANGFUSE_ENV",
+)
+LANGFUSE_RELEASE_ENVS = (
+    "SUPERFORECASTING_AGENT_LANGFUSE_RELEASE",
+    "FORECAST_LANGFUSE_RELEASE",
+    "HERMES_LANGFUSE_RELEASE",
+    "LANGFUSE_RELEASE",
+)
+LANGFUSE_SAMPLE_RATE_ENVS = (
+    "SUPERFORECASTING_AGENT_LANGFUSE_SAMPLE_RATE",
+    "FORECAST_LANGFUSE_SAMPLE_RATE",
+    "HERMES_LANGFUSE_SAMPLE_RATE",
+)
+LANGFUSE_MAX_CHARS_ENVS = (
+    "SUPERFORECASTING_AGENT_LANGFUSE_MAX_CHARS",
+    "FORECAST_LANGFUSE_MAX_CHARS",
+    "HERMES_LANGFUSE_MAX_CHARS",
+)
+LANGFUSE_DEBUG_ENVS = (
+    "SUPERFORECASTING_AGENT_LANGFUSE_DEBUG",
+    "FORECAST_LANGFUSE_DEBUG",
+    "HERMES_LANGFUSE_DEBUG",
+)
 
 # Langfuse-issued keys always carry these prefixes (cloud or self-hosted —
 # the prefix is baked into the server-side issuance flow, not a UI hint).
@@ -66,13 +117,21 @@ _READ_FILE_TAIL_LINES = 15
 # credentials at construction time but drop every trace at flush time.
 # See #23823 — the silent-failure bug this guard fixes.
 _LANGFUSE_KEY_PREFIXES: Dict[str, str] = {
-    "HERMES_LANGFUSE_PUBLIC_KEY": "pk-lf-",
-    "HERMES_LANGFUSE_SECRET_KEY": "sk-lf-",
+    LANGFUSE_PUBLIC_KEY_ENV: "pk-lf-",
+    LANGFUSE_SECRET_KEY_ENV: "sk-lf-",
 }
 
 
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
+
+
+def _env_any(*names: str, default: str = "") -> str:
+    for name in names:
+        value = _env(name)
+        if value:
+            return value
+    return default
 
 
 def _env_bool(*names: str) -> bool:
@@ -84,7 +143,7 @@ def _env_bool(*names: str) -> bool:
 
 
 def _debug_enabled() -> bool:
-    return _env_bool("HERMES_LANGFUSE_DEBUG")
+    return _env_bool(*LANGFUSE_DEBUG_ENVS)
 
 
 def _debug(message: str) -> None:
@@ -140,7 +199,7 @@ def _validate_langfuse_key(env_name: str, value: str) -> Optional[str]:
 def _get_langfuse() -> Optional[Langfuse]:
     """Return a cached Langfuse client, or ``None`` if unavailable.
 
-    Activation of this plugin is controlled by the Hermes plugin system —
+    Activation of this plugin is controlled by the plugin system —
     this function only handles the runtime-availability gate (SDK installed
     + credentials present). The result is cached: on the first call we try
     to construct a client, and every subsequent call returns that client
@@ -156,8 +215,8 @@ def _get_langfuse() -> Optional[Langfuse]:
         _LANGFUSE_CLIENT = _INIT_FAILED
         return None
 
-    public_key = _env("HERMES_LANGFUSE_PUBLIC_KEY") or _env("LANGFUSE_PUBLIC_KEY")
-    secret_key = _env("HERMES_LANGFUSE_SECRET_KEY") or _env("LANGFUSE_SECRET_KEY")
+    public_key = _env_any(*LANGFUSE_PUBLIC_KEY_ENVS)
+    secret_key = _env_any(*LANGFUSE_SECRET_KEY_ENVS)
     if not (public_key and secret_key):
         _LANGFUSE_CLIENT = _INIT_FAILED
         return None
@@ -173,8 +232,8 @@ def _get_langfuse() -> Optional[Langfuse]:
     placeholder_issues = [
         msg
         for msg in (
-            _validate_langfuse_key("HERMES_LANGFUSE_PUBLIC_KEY", public_key),
-            _validate_langfuse_key("HERMES_LANGFUSE_SECRET_KEY", secret_key),
+            _validate_langfuse_key(LANGFUSE_PUBLIC_KEY_ENV, public_key),
+            _validate_langfuse_key(LANGFUSE_SECRET_KEY_ENV, secret_key),
         )
         if msg
     ]
@@ -182,17 +241,18 @@ def _get_langfuse() -> Optional[Langfuse]:
         logger.warning(
             "Langfuse plugin: credentials look like placeholders, traces will "
             "NOT be emitted (%s). Set real Langfuse keys (pk-lf-... / sk-lf-...) "
-            "or unset HERMES_LANGFUSE_PUBLIC_KEY / HERMES_LANGFUSE_SECRET_KEY to "
+            "or unset SUPERFORECASTING_AGENT_LANGFUSE_PUBLIC_KEY / "
+            "SUPERFORECASTING_AGENT_LANGFUSE_SECRET_KEY to "
             "silence this warning.",
             "; ".join(placeholder_issues),
         )
         _LANGFUSE_CLIENT = _INIT_FAILED
         return None
 
-    base_url = _env("HERMES_LANGFUSE_BASE_URL") or _env("LANGFUSE_BASE_URL") or "https://cloud.langfuse.com"
-    environment = _env("HERMES_LANGFUSE_ENV") or _env("LANGFUSE_ENV")
-    release = _env("HERMES_LANGFUSE_RELEASE") or _env("LANGFUSE_RELEASE")
-    sample_rate = _env("HERMES_LANGFUSE_SAMPLE_RATE")
+    base_url = _env_any(*LANGFUSE_BASE_URL_ENVS, default="https://cloud.langfuse.com")
+    environment = _env_any(*LANGFUSE_ENV_ENVS)
+    release = _env_any(*LANGFUSE_RELEASE_ENVS)
+    sample_rate = _env_any(*LANGFUSE_SAMPLE_RATE_ENVS)
 
     kwargs: Dict[str, Any] = {
         "public_key": public_key,
@@ -207,7 +267,7 @@ def _get_langfuse() -> Optional[Langfuse]:
         try:
             kwargs["sample_rate"] = float(sample_rate)
         except ValueError:
-            logger.warning("Invalid HERMES_LANGFUSE_SAMPLE_RATE=%r", sample_rate)
+            logger.warning("Invalid SUPERFORECASTING_AGENT_LANGFUSE_SAMPLE_RATE=%r", sample_rate)
 
     try:
         _LANGFUSE_CLIENT = Langfuse(**kwargs)
@@ -363,7 +423,7 @@ def _normalize_payload(value: Any, *, tool_name: str = "", args: Any = None) -> 
 
 def _safe_value(value: Any, *, max_chars: Optional[int] = None, depth: int = 0,
                 parse_json_strings: bool = False) -> Any:
-    max_chars = max_chars if max_chars is not None else int(_env("HERMES_LANGFUSE_MAX_CHARS", "12000") or "12000")
+    max_chars = max_chars if max_chars is not None else int(_env_any(*LANGFUSE_MAX_CHARS_ENVS, default="12000") or "12000")
     if depth > 4:
         return "<max-depth>"
     if value is None or isinstance(value, (int, float, bool)):
@@ -544,7 +604,7 @@ def _start_root_trace(task_key: str, *, task_id: str, session_id: str, platform:
     trace_id = client.create_trace_id(seed=f"{session_id or 'sessionless'}::{task_id or task_key}")
     trace_input = _extract_last_user_message(messages)
     metadata = {
-        "source": "hermes",
+        "source": "superforecasting-agent",
         "task_id": task_id,
         "platform": platform,
         "provider": provider,
@@ -561,12 +621,12 @@ def _start_root_trace(task_key: str, *, task_id: str, session_id: str, platform:
         try:
             with propagate_attributes(
                 session_id=session_id or task_key,
-                trace_name="Hermes turn",
-                tags=["hermes", "langfuse"],
+                trace_name="Forecast desk turn",
+                tags=["superforecasting-agent", "forecasting", "langfuse"],
             ):
                 root_ctx = client.start_as_current_observation(
                     trace_context=trace_ctx,
-                    name="Hermes turn",
+                    name="Forecast desk turn",
                     as_type="chain",
                     input=trace_input,
                     metadata=metadata,
@@ -576,7 +636,7 @@ def _start_root_trace(task_key: str, *, task_id: str, session_id: str, platform:
         except Exception:
             root_ctx = client.start_as_current_observation(
                 trace_context=trace_ctx,
-                name="Hermes turn",
+                name="Forecast desk turn",
                 as_type="chain",
                 input=trace_input,
                 metadata=metadata,
@@ -586,7 +646,7 @@ def _start_root_trace(task_key: str, *, task_id: str, session_id: str, platform:
     else:
         root_ctx = client.start_as_current_observation(
             trace_context=trace_ctx,
-            name="Hermes turn",
+            name="Forecast desk turn",
             as_type="chain",
             input=trace_input,
             metadata=metadata,
@@ -994,7 +1054,7 @@ def on_post_tool_call(*, tool_name: str = "", args: Any = None, result: Any = No
 
 def register(ctx) -> None:
     # Register for both hook name variants so the plugin works across
-    # Hermes versions.  pre_api_request / post_api_request fire per API
+    # inherited Hermes versions.  pre_api_request / post_api_request fire per API
     # call (preferred); pre_llm_call / post_llm_call fire once per turn.
     ctx.register_hook("pre_api_request", on_pre_llm_request)
     ctx.register_hook("post_api_request", on_post_llm_call)

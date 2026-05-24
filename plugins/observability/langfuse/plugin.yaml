@@ -1,10 +1,24 @@
 name: langfuse
 version: "1.0.0"
-description: "Optional Langfuse observability for Hermes — traces conversations, LLM calls, and tool usage. Opt-in via `hermes plugins enable observability/langfuse` (or check the box in `hermes plugins`)."
+description: "Optional Langfuse observability for Superforecasting Agent — traces forecast desk turns, LLM calls, and tool usage. Opt-in via `superforecasting-agent plugins enable observability/langfuse`."
 author: NousResearch
 requires_env:
-  - HERMES_LANGFUSE_PUBLIC_KEY
-  - HERMES_LANGFUSE_SECRET_KEY
+  - name: SUPERFORECASTING_AGENT_LANGFUSE_PUBLIC_KEY
+    description: "Langfuse project public key"
+    url: "https://cloud.langfuse.com"
+    secret: false
+    aliases:
+      - FORECAST_LANGFUSE_PUBLIC_KEY
+      - HERMES_LANGFUSE_PUBLIC_KEY
+      - LANGFUSE_PUBLIC_KEY
+  - name: SUPERFORECASTING_AGENT_LANGFUSE_SECRET_KEY
+    description: "Langfuse project secret key"
+    url: "https://cloud.langfuse.com"
+    secret: true
+    aliases:
+      - FORECAST_LANGFUSE_SECRET_KEY
+      - HERMES_LANGFUSE_SECRET_KEY
+      - LANGFUSE_SECRET_KEY
 hooks:
   - pre_api_request
   - post_api_request

@@ -193,7 +193,7 @@ def _copy_example_files(plugin_dir: Path, console) -> None:
 
 
 def _missing_requires_env_names(manifest: dict) -> list[str]:
-    """Return declared ``requires_env`` names that are unset in ``~/.hermes/.env``."""
+    """Return declared ``requires_env`` names unset in the active agent ``.env``."""
     requires_env = manifest.get("requires_env") or []
     if not requires_env:
         return []
@@ -207,7 +207,23 @@ def _missing_requires_env_names(manifest: dict) -> list[str]:
         elif isinstance(entry, dict) and entry.get("name"):
             env_specs.append(entry)
 
-    return [s["name"] for s in env_specs if s.get("name") and not get_env_value(s["name"])]
+    return [
+        s["name"] for s in env_specs
+        if s.get("name") and not _plugin_env_spec_is_set(s, get_env_value)
+    ]
+
+
+def _plugin_env_spec_names(spec: dict) -> list[str]:
+    names = [str(spec["name"])]
+    aliases = spec.get("aliases") or []
+    if isinstance(aliases, str):
+        aliases = [aliases]
+    names.extend(str(alias) for alias in aliases if alias)
+    return names
+
+
+def _plugin_env_spec_is_set(spec: dict, get_env_value) -> bool:
+    return any(get_env_value(name) for name in _plugin_env_spec_names(spec))
 
 
 def _prompt_plugin_env_vars(manifest: dict, console) -> None:
@@ -228,7 +244,9 @@ def _prompt_plugin_env_vars(manifest: dict, console) -> None:
             url: "https://acme.com/keys"
             secret: true
 
-    Already-set variables are skipped.  Values are saved to the user's ``.env``.
+    Already-set variables are skipped. Rich entries may include ``aliases``;
+    when any alias is set, the primary name is treated as configured. Prompted
+    values are saved to the primary name in the user's ``.env``.
     """
     requires_env = manifest.get("requires_env") or []
     if not requires_env:
@@ -245,8 +263,8 @@ def _prompt_plugin_env_vars(manifest: dict, console) -> None:
         elif isinstance(entry, dict) and entry.get("name"):
             env_specs.append(entry)
 
-    # Filter to only vars that aren't already set
-    missing = [s for s in env_specs if not get_env_value(s["name"])]
+    # Filter to only vars that aren't already set under either primary name or aliases.
+    missing = [s for s in env_specs if not _plugin_env_spec_is_set(s, get_env_value)]
     if not missing:
         return
 
