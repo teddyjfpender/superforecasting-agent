@@ -258,6 +258,12 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
         probability_or_distribution=0.75,
         rationale="Calibration dashboard fixture.",
         as_of="2026-01-01T00:00:00Z",
+        ensemble_components={
+            "components": [
+                {"name": "market", "probability": 0.8, "weight": 3},
+                {"name": "base_rate", "probability": 0.6, "weight": 1},
+            ]
+        },
     )
     ledger.resolve_question(question_id=calibration_question.id, outcome="yes")
     ledger.create_postmortem(
@@ -304,6 +310,11 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     assert summary["calibration"]["count"] == 1
     assert summary["calibration"]["mean_brier"] == pytest.approx(0.0625)
     assert summary["calibration"]["mean_sharpness"] == pytest.approx(0.5)
+    component_rows = {
+        row["name"]: row for row in summary["calibration"]["ensemble_component_contributions"]
+    }
+    assert component_rows["market"]["mean_contribution"] == pytest.approx(0.6)
+    assert component_rows["base_rate"]["mean_contribution"] == pytest.approx(0.15)
     assert summary["learning"]["total_lessons"] == 1
     assert summary["learning"]["tentative_lessons"] == 1
     assert summary["learning"]["top_error_profiles"][0]["domain"] == "dashboard"
@@ -341,6 +352,8 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     assert "Review dashboard render fixture." in text
     assert "Calibration" in text
     assert "mean_brier: 0.062500" in text
+    assert "ensemble_component_contributions:" in text
+    assert "market: n=1 mean_contribution=0.600000 weight_share=0.750000" in text
     assert "Learning Memory" in text
     assert "dashboard:binary" in text
     assert "Dashboard forecasts should keep calibration health visible." in text

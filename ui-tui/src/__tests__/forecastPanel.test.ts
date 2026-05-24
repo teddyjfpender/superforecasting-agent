@@ -168,6 +168,52 @@ describe('forecast desk panel helpers', () => {
     ])
   })
 
+  it('surfaces ensemble component contribution in calibration panels and rail', () => {
+    const response: ForecastDashboardResponse = {
+      summary: {
+        active_count: 0,
+        calibration: {
+          count: 2,
+          ensemble_component_contributions: [
+            {
+              count: 2,
+              mean_contribution: 0.6,
+              mean_probability: 0.8,
+              mean_weight_share: 0.75,
+              name: 'market'
+            },
+            {
+              count: 2,
+              mean_contribution: 0.15,
+              mean_probability: 0.6,
+              mean_weight_share: 0.25,
+              name: 'base_rate'
+            }
+          ]
+        },
+        open_alert_count: 0,
+        product: 'Superforecasting Agent',
+        questions: [],
+        review_queue: [],
+        review_queue_count: 0
+      }
+    }
+
+    const sections = forecastDashboardSections(response)
+    const railSections = forecastDeskRailSections(response)
+
+    expect(sections.find(section => section.title === 'Calibration')?.rows).toEqual(
+      expect.arrayContaining([
+        ['component market', 'n 2  contrib 0.600000  share 0.750000  p 0.800000'],
+        ['component base_rate', 'n 2  contrib 0.150000  share 0.250000  p 0.600000']
+      ])
+    )
+    expect(railSections.find(section => section.title === 'Ensemble')?.rows).toEqual([
+      ['component market', 'n 2  contrib 0.600000  share 0.750000  p 0.800000'],
+      ['component base_rate', 'n 2  contrib 0.150000  share 0.250000  p 0.600000']
+    ])
+  })
+
   it('adds focused per-question actions from the review queue', () => {
     const response: ForecastDashboardResponse = {
       summary: {

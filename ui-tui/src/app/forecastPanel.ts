@@ -1,5 +1,6 @@
 import type {
   ForecastDashboardBacktest,
+  ForecastDashboardCalibration,
   ForecastDashboardQuestion,
   ForecastDashboardResponse,
   ForecastDashboardReview
@@ -150,6 +151,20 @@ const formatErrorScope = (row: { domain?: null | string; question_type?: null | 
 
 const formatLessonScope = (row: { scope_ref?: null | string; scope_type?: null | string }) =>
   `${row.scope_type || 'global'}:${row.scope_ref || '*'}`
+
+const componentContributionRows = (calibration: ForecastDashboardCalibration | undefined, limit: number): [string, string][] => {
+  const rows = calibration?.ensemble_component_contributions
+  if (!Array.isArray(rows)) {
+    return []
+  }
+
+  return rows.slice(0, limit).map(row => [
+    `component ${truncate(String(row?.name || '-'), 24)}`,
+    `n ${formatCount(row?.count)}  contrib ${formatMetric(row?.mean_contribution)}  share ${formatMetric(
+      row?.mean_weight_share
+    )}  p ${formatMetric(row?.mean_probability)}`
+  ])
+}
 
 const forecastStatus = (row: ForecastDashboardQuestion) => {
   const alerts = Number(row.open_alert_count || 0)
@@ -402,15 +417,18 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
   }
 
   if (calibration) {
+    const calibrationRows: [string, string][] = [
+      ['eligible scores', formatCount(calibration.count)],
+      ['mean brier', formatMetric(calibration.mean_brier)],
+      ['mean log score', formatMetric(calibration.mean_log_score)],
+      ['mean sharpness', formatMetric(calibration.mean_sharpness)],
+      ['movement n', formatCount(calibration.probability_movement_count)],
+      ['mean abs movement', formatMetric(calibration.mean_abs_probability_movement_before_close)]
+    ]
+    calibrationRows.push(...componentContributionRows(calibration, 3))
+
     sections.push({
-      rows: [
-        ['eligible scores', formatCount(calibration.count)],
-        ['mean brier', formatMetric(calibration.mean_brier)],
-        ['mean log score', formatMetric(calibration.mean_log_score)],
-        ['mean sharpness', formatMetric(calibration.mean_sharpness)],
-        ['movement n', formatCount(calibration.probability_movement_count)],
-        ['mean abs movement', formatMetric(calibration.mean_abs_probability_movement_before_close)]
-      ],
+      rows: calibrationRows,
       title: 'Calibration'
     })
   }
@@ -655,6 +673,14 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
     sections.push({
       rows: evidenceRows,
       title: 'Evidence'
+    })
+  }
+
+  const topComponents = componentContributionRows(calibration, 2)
+  if (topComponents.length) {
+    sections.push({
+      rows: topComponents,
+      title: 'Ensemble'
     })
   }
 

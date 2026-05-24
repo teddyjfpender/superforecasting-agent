@@ -632,7 +632,23 @@ describe('createGatewayEventHandler', () => {
               mean_log_score: -0.42,
               mean_sharpness: 0.38,
               probability_movement_count: 2,
-              mean_abs_probability_movement_before_close: 0.11
+              mean_abs_probability_movement_before_close: 0.11,
+              ensemble_component_contributions: [
+                {
+                  count: 3,
+                  mean_contribution: 0.42,
+                  mean_probability: 0.56,
+                  mean_weight_share: 0.75,
+                  name: 'market'
+                },
+                {
+                  count: 3,
+                  mean_contribution: 0.12,
+                  mean_probability: 0.48,
+                  mean_weight_share: 0.25,
+                  name: 'base_rate'
+                }
+              ]
             },
             learning: {
               active_lessons: 0,
@@ -779,6 +795,13 @@ describe('createGatewayEventHandler', () => {
       },
       {
         rows: [
+          ['component market', 'n 3  contrib 0.420000  share 0.750000  p 0.560000'],
+          ['component base_rate', 'n 3  contrib 0.120000  share 0.250000  p 0.480000']
+        ],
+        title: 'Ensemble'
+      },
+      {
+        rows: [
           [
             'bt_fixture001',
             'src forecast-engine  agent 0.080000  edge +0.020  replay only'
@@ -828,7 +851,9 @@ describe('createGatewayEventHandler', () => {
               ['mean log score', '-0.420000'],
               ['mean sharpness', '0.380000'],
               ['movement n', '2'],
-              ['mean abs movement', '0.110000']
+              ['mean abs movement', '0.110000'],
+              ['component market', 'n 3  contrib 0.420000  share 0.750000  p 0.560000'],
+              ['component base_rate', 'n 3  contrib 0.120000  share 0.250000  p 0.480000']
             ],
             title: 'Calibration'
           },

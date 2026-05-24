@@ -247,6 +247,7 @@ export interface ForecastDashboardCalibration {
   calibration_eligible?: boolean | null
   count?: number
   domain?: null | string
+  ensemble_component_contributions?: ForecastDashboardCalibrationComponent[]
   forecast_origin?: null | string
   horizon?: null | string
   mean_brier?: null | number
@@ -255,6 +256,16 @@ export interface ForecastDashboardCalibration {
   probability_movement_count?: number
   mean_probability_movement_before_close?: null | number
   mean_abs_probability_movement_before_close?: null | number
+}
+
+export interface ForecastDashboardCalibrationComponent {
+  count?: number
+  mean_abs_distance_from_forecast?: null | number
+  mean_contribution?: null | number
+  mean_probability?: null | number
+  mean_weight?: null | number
+  mean_weight_share?: null | number
+  name?: string
 }
 
 export interface ForecastDashboardBacktest {

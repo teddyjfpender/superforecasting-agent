@@ -249,6 +249,18 @@ def render_dashboard_text(summary: dict[str, Any]) -> str:
             "mean_abs_movement_before_close: "
             f"{format_metric(calibration.get('mean_abs_probability_movement_before_close'))}"
         )
+        components = list(calibration.get("ensemble_component_contributions") or [])
+        if components:
+            lines.append("ensemble_component_contributions:")
+            for row in components[:5]:
+                lines.append(
+                    "  "
+                    f"{row.get('name') or '-'}: "
+                    f"n={int(row.get('count') or 0)} "
+                    f"mean_contribution={format_metric(row.get('mean_contribution'))} "
+                    f"weight_share={format_metric(row.get('mean_weight_share'))} "
+                    f"mean_probability={format_metric(row.get('mean_probability'))}"
+                )
     learning = dict(summary.get("learning") or {})
     if learning:
         lines.extend(["", "Learning Memory"])

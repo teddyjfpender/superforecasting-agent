@@ -50,7 +50,7 @@ On startup the TUI can render the same forecast dashboard used by the CLI:
   stale-review state
 - open alerts and watched-source changes
 - review queue and next actions
-- calibration health and recent scores
+- calibration health, recent scores, and ensemble component contribution
 - learning memory, active lessons, and domain/topic error profiles
 - recent backtests and baseline comparisons
 
@@ -60,7 +60,9 @@ to run any forecast CLI command from inside the TUI.
 On wide terminals, the TUI also keeps a compact forecast desk rail beside the
 transcript. The rail is refreshed from the same dashboard data and keeps the
 active book count, triage queue, at-risk forecasts, evidence-readiness gaps, and
-recent backtest provenance visible while you research or update a question.
+recent backtest provenance visible while you research or update a question. When
+scored ensemble forecasts exist, the rail also shows the top contributing
+forecast components.
 
 The composer also keeps a one-line `desk actions` strip derived from the same
 triage state. It stays visible on narrower terminals where the side rail cannot
@@ -209,7 +211,9 @@ The status line tracks both runtime state and forecast workload:
 | `resuming...` | The TUI is attaching to a prior session |
 
 The desk counters show active forecasts, open alerts, review queue size,
-calibration sample counts, and learned lessons when available.
+calibration sample counts, and learned lessons when available. The forecast desk
+panel shows calibration component contribution when saved ensemble snapshots
+have been scored.
 
 Other status-line fields include working directory, git branch, elapsed turn
 time, session duration, context compression count, background task count, and a

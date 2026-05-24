@@ -480,6 +480,8 @@ function BacktestTable({ rows }: { rows: ForecastDashboardBacktest[] }) {
 function CalibrationPanel({ calibration }: { calibration?: ForecastDashboardCalibration }) {
   if (!calibration) return null;
 
+  const components = calibration.ensemble_component_contributions ?? [];
+
   return (
     <Card>
       <CardHeader>
@@ -489,7 +491,7 @@ function CalibrationPanel({ calibration }: { calibration?: ForecastDashboardCali
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-6">
           <div>
             <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
               Eligible Scores
@@ -530,7 +532,53 @@ function CalibrationPanel({ calibration }: { calibration?: ForecastDashboardCali
               {formatMetric(calibration.mean_abs_probability_movement_before_close)}
             </div>
           </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Components
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {components.length}
+            </div>
+          </div>
         </div>
+        {components.length > 0 && (
+          <div className="mt-5 overflow-x-auto border-t border-border/50 pt-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-xs text-muted-foreground">
+                  <th className="py-2 pr-4 text-left font-medium">Component</th>
+                  <th className="px-4 py-2 text-right font-medium">N</th>
+                  <th className="px-4 py-2 text-right font-medium">Contribution</th>
+                  <th className="px-4 py-2 text-right font-medium">Weight Share</th>
+                  <th className="py-2 pl-4 text-right font-medium">Mean P</th>
+                </tr>
+              </thead>
+              <tbody>
+                {components.slice(0, 6).map((row, index) => (
+                  <tr key={row.name || index} className="border-b border-border/50">
+                    <td className="py-2 pr-4">
+                      <Badge tone="secondary" className="text-[10px]">
+                        {row.name || "-"}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                      {row.count ?? 0}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono-ui text-foreground">
+                      {formatMetric(row.mean_contribution)}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                      {formatMetric(row.mean_weight_share)}
+                    </td>
+                    <td className="py-2 pl-4 text-right font-mono-ui text-muted-foreground">
+                      {formatMetric(row.mean_probability)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

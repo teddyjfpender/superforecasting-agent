@@ -804,10 +804,21 @@ export interface ForecastDashboardCalibration {
   probability_movement_count?: number;
   mean_probability_movement_before_close?: number | null;
   mean_abs_probability_movement_before_close?: number | null;
+  ensemble_component_contributions?: ForecastDashboardCalibrationComponent[];
   domain?: string | null;
   forecast_origin?: string | null;
   horizon?: string | null;
   calibration_eligible?: boolean | null;
+}
+
+export interface ForecastDashboardCalibrationComponent {
+  name?: string;
+  count?: number;
+  mean_probability?: number | null;
+  mean_weight?: number | null;
+  mean_weight_share?: number | null;
+  mean_contribution?: number | null;
+  mean_abs_distance_from_forecast?: number | null;
 }
 
 export interface ForecastDashboardErrorProfile {
