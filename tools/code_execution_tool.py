@@ -316,10 +316,22 @@ _sock = None
 _call_lock = threading.Lock()
 ''' + _COMMON_HELPERS + '''\
 
+def _runtime_env(name, default=""):
+    for key in (
+        f"SUPERFORECASTING_AGENT_{name}",
+        f"FORECAST_{name}",
+        f"HERMES_{name}",
+    ):
+        value = os.environ.get(key)
+        if value is not None:
+            return value
+    return default
+
 def _connect():
     """Connect to the parent's RPC server via the transport it picked.
 
-    HERMES_RPC_SOCKET can be either:
+    SUPERFORECASTING_AGENT_RPC_SOCKET / FORECAST_RPC_SOCKET / HERMES_RPC_SOCKET
+    can be either:
       - a filesystem path (POSIX Unix domain socket — the default on
         Linux and macOS)
       - a string of the form ``tcp://127.0.0.1:<port>`` (Windows, where
@@ -327,7 +339,9 @@ def _connect():
     """
     global _sock
     if _sock is None:
-        endpoint = os.environ["HERMES_RPC_SOCKET"]
+        endpoint = _runtime_env("RPC_SOCKET")
+        if not endpoint:
+            raise KeyError("SUPERFORECASTING_AGENT_RPC_SOCKET")
         if endpoint.startswith("tcp://"):
             # tcp://host:port  (host is always 127.0.0.1 in practice — we
             # only bind loopback server-side)
@@ -372,7 +386,18 @@ _FILE_TRANSPORT_HEADER = '''\
 """Auto-generated agent-tool RPC stubs (file-based transport)."""
 import json, os, shlex, tempfile, threading, time
 
-_RPC_DIR = os.environ.get("HERMES_RPC_DIR") or os.path.join(tempfile.gettempdir(), "hermes_rpc")
+def _runtime_env(name, default=""):
+    for key in (
+        f"SUPERFORECASTING_AGENT_{name}",
+        f"FORECAST_{name}",
+        f"HERMES_{name}",
+    ):
+        value = os.environ.get(key)
+        if value is not None:
+            return value
+    return default
+
+_RPC_DIR = _runtime_env("RPC_DIR") or os.path.join(tempfile.gettempdir(), "forecast_rpc")
 _seq = 0
 # `_seq += 1` is not atomic (read-modify-write), so concurrent _call()
 # invocations from multiple threads could allocate the same sequence number
@@ -864,7 +889,7 @@ def _execute_remote(
 
     sandbox_id = uuid.uuid4().hex[:12]
     temp_dir = _env_temp_dir(env)
-    sandbox_dir = f"{temp_dir}/hermes_exec_{sandbox_id}"
+    sandbox_dir = f"{temp_dir}/forecast_exec_{sandbox_id}"
     quoted_sandbox_dir = shlex.quote(sandbox_dir)
     quoted_rpc_dir = shlex.quote(f"{sandbox_dir}/rpc")
 
@@ -917,8 +942,12 @@ def _execute_remote(
         rpc_thread.start()
 
         # Build environment variable prefix for the script
+        rpc_dir = f"{sandbox_dir}/rpc"
+        quoted_rpc_dir = shlex.quote(rpc_dir)
         env_prefix = (
-            f"HERMES_RPC_DIR={shlex.quote(f'{sandbox_dir}/rpc')} "
+            f"SUPERFORECASTING_AGENT_RPC_DIR={quoted_rpc_dir} "
+            f"FORECAST_RPC_DIR={quoted_rpc_dir} "
+            f"HERMES_RPC_DIR={quoted_rpc_dir} "
             f"PYTHONDONTWRITEBYTECODE=1"
         )
         tz = os.getenv("HERMES_TIMEZONE", "").strip()
@@ -1087,7 +1116,7 @@ def execute_code(
         sandbox_tools = SANDBOX_ALLOWED_TOOLS
 
     # --- Set up temp directory with hermes_tools.py and script.py ---
-    tmpdir = tempfile.mkdtemp(prefix="hermes_sandbox_")
+    tmpdir = tempfile.mkdtemp(prefix="forecast_sandbox_")
     # Use /tmp on macOS to avoid the long /var/folders/... path that pushes
     # Unix domain socket paths past the 104-byte macOS AF_UNIX limit.
     # On Linux, tempfile.gettempdir() already returns /tmp.
@@ -1098,14 +1127,15 @@ def execute_code(
     # on the same temp drive as the script).  Fall back to loopback TCP —
     # same ephemeral port, same 1-connection listen queue, same serialized
     # request/response framing.  The generated client reads the transport
-    # selector from HERMES_RPC_SOCKET (path vs. ``tcp://host:port``).
+    # selector from the forecast-native RPC socket aliases (path vs.
+    # ``tcp://host:port``), with HERMES_RPC_SOCKET kept for compatibility.
     _sock_tmpdir = "/tmp" if sys.platform == "darwin" else tempfile.gettempdir()
     _use_tcp_rpc = _IS_WINDOWS
     if _use_tcp_rpc:
         sock_path = None  # not used on Windows; TCP endpoint stored below
         rpc_endpoint = None  # set after bind()
     else:
-        sock_path = os.path.join(_sock_tmpdir, f"hermes_rpc_{uuid.uuid4().hex}.sock")
+        sock_path = os.path.join(_sock_tmpdir, f"forecast_rpc_{uuid.uuid4().hex}.sock")
         rpc_endpoint = sock_path
 
     tool_call_log: list = []
@@ -1139,8 +1169,9 @@ def execute_code(
         #   Windows: AF_INET stream socket on 127.0.0.1 with an ephemeral
         #   port.  No filesystem permission story, but loopback-only bind
         #   means only the current user's processes (not remote) can
-        #   connect.  HERMES_RPC_SOCKET is set to ``tcp://127.0.0.1:<port>``
-        #   which the generated client parses to pick AF_INET.
+        #   connect.  SUPERFORECASTING_AGENT_RPC_SOCKET / FORECAST_RPC_SOCKET
+        #   / HERMES_RPC_SOCKET are set to ``tcp://127.0.0.1:<port>`` which
+        #   the generated client parses to pick AF_INET.
         if _use_tcp_rpc:
             server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             server_sock.bind(("127.0.0.1", 0))  # ephemeral port
@@ -1173,6 +1204,8 @@ def execute_code(
         # passed through — without those, the child can't create a socket
         # or spawn a subprocess.  See ``_scrub_child_env`` for the rules.
         child_env = _scrub_child_env(os.environ)
+        child_env["SUPERFORECASTING_AGENT_RPC_SOCKET"] = rpc_endpoint
+        child_env["FORECAST_RPC_SOCKET"] = rpc_endpoint
         child_env["HERMES_RPC_SOCKET"] = rpc_endpoint
         child_env["PYTHONDONTWRITEBYTECODE"] = "1"
         # Force UTF-8 for the child's stdio and default file encoding.

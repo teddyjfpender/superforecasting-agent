@@ -642,7 +642,8 @@ class TestCodeExecutionTransportTcpFallback:
 
     We can't easily execute the sandbox on Linux CI in Windows mode, but we
     CAN assert that the generated client module supports both AF_UNIX and
-    AF_INET endpoints based on the HERMES_RPC_SOCKET format.
+    AF_INET endpoints based on the forecast-native RPC socket aliases, with
+    HERMES_RPC_SOCKET kept as a compatibility format.
     """
 
     def test_generated_client_handles_tcp_endpoint(self):

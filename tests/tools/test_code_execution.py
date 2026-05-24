@@ -103,6 +103,8 @@ class TestHermesToolsGeneration(unittest.TestCase):
 
     def test_rpc_infrastructure_present(self):
         src = generate_hermes_tools_module(["terminal"])
+        self.assertIn("SUPERFORECASTING_AGENT_RPC_SOCKET", src)
+        self.assertIn("FORECAST_RPC_SOCKET", src)
         self.assertIn("HERMES_RPC_SOCKET", src)
         self.assertIn("AF_UNIX", src)
         self.assertIn("def _connect(", src)
@@ -119,7 +121,10 @@ class TestHermesToolsGeneration(unittest.TestCase):
     def test_file_transport_uses_tempfile_fallback_for_rpc_dir(self):
         src = generate_hermes_tools_module(["terminal"], transport="file")
         self.assertIn("import json, os, shlex, tempfile, threading, time", src)
-        self.assertIn("os.path.join(tempfile.gettempdir(), \"hermes_rpc\")", src)
+        self.assertIn('f"SUPERFORECASTING_AGENT_{name}"', src)
+        self.assertIn('f"FORECAST_{name}"', src)
+        self.assertIn('f"HERMES_{name}"', src)
+        self.assertIn("os.path.join(tempfile.gettempdir(), \"forecast_rpc\")", src)
         self.assertNotIn('os.environ.get("HERMES_RPC_DIR", "/tmp/hermes_rpc")', src)
 
     def test_uds_transport_serializes_concurrent_calls(self):
@@ -169,10 +174,13 @@ class TestExecuteCodeRemoteTempDir(unittest.TestCase):
         mkdir_cmd = env.commands[1][0]
         run_cmd = next(cmd for cmd, _, _ in env.commands if "python3 script.py" in cmd)
         cleanup_cmd = env.commands[-1][0]
-        self.assertIn("mkdir -p /data/data/com.termux/files/usr/tmp/hermes_exec_", mkdir_cmd)
-        self.assertIn("HERMES_RPC_DIR=/data/data/com.termux/files/usr/tmp/hermes_exec_", run_cmd)
-        self.assertIn("rm -rf /data/data/com.termux/files/usr/tmp/hermes_exec_", cleanup_cmd)
+        self.assertIn("mkdir -p /data/data/com.termux/files/usr/tmp/forecast_exec_", mkdir_cmd)
+        self.assertIn("SUPERFORECASTING_AGENT_RPC_DIR=/data/data/com.termux/files/usr/tmp/forecast_exec_", run_cmd)
+        self.assertIn("FORECAST_RPC_DIR=/data/data/com.termux/files/usr/tmp/forecast_exec_", run_cmd)
+        self.assertIn("HERMES_RPC_DIR=/data/data/com.termux/files/usr/tmp/forecast_exec_", run_cmd)
+        self.assertIn("rm -rf /data/data/com.termux/files/usr/tmp/forecast_exec_", cleanup_cmd)
         self.assertNotIn("mkdir -p /tmp/hermes_exec_", mkdir_cmd)
+        self.assertNotIn("mkdir -p /tmp/forecast_exec_", mkdir_cmd)
 
 
 @unittest.skipIf(sys.platform == "win32", "UDS not available on Windows")
@@ -745,6 +753,8 @@ class TestEnvVarFiltering(unittest.TestCase):
 
     def test_hermes_rpc_socket_injected(self):
         child_env = self._get_child_env()
+        self.assertIn("SUPERFORECASTING_AGENT_RPC_SOCKET", child_env)
+        self.assertIn("FORECAST_RPC_SOCKET", child_env)
         self.assertIn("HERMES_RPC_SOCKET", child_env)
 
     def test_pythondontwritebytecode_set(self):
