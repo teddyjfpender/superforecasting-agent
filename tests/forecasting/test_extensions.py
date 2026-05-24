@@ -37,6 +37,7 @@ def test_builtin_forecast_extensions_are_registered():
     assert "nws-alerts" in names
     assert "clinicaltrials-studies" in names
     assert "openfda-drug-applications" in names
+    assert "pubmed-articles" in names
     assert "owid-grapher" in names
     assert "eia-energy-data" in names
     assert "treasury-fiscal-data" in names

@@ -17,6 +17,7 @@ from forecasting.source_adapters import (
     NwsAlert,
     OpenFdaDrugApplication,
     RedditPost,
+    PubMedArticle,
     StooqPriceObservation,
     TreasuryRecord,
     UsgsEarthquakeEvent,
@@ -82,7 +83,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "owid", "eia", "treasury", "census", "stooq", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "stooq", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_lifecycle(tmp_path):
@@ -2256,6 +2257,54 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert openfda_evidence["published_at"] == "2026-05-21T00:00:00Z"
     assert openfda_evidence["metadata"]["adapter"] == "openfda"
     assert openfda_evidence["metadata"]["adapter_item"]["brand_names"] == ["TESTMAB"]
+
+    def fake_pubmed(source, **kwargs):
+        assert source == "forecasting calibration"
+        assert kwargs["limit"] == 1
+        assert kwargs["since"] == "2026-05-01"
+        assert kwargs["api_base_url"] == "https://example.test/pubmed/esearch.fcgi"
+        return [
+            PubMedArticle(
+                pmid="12345678",
+                title="Calibrated biomedical forecasts",
+                abstract="Forecasts need calibrated biomedical priors.",
+                journal="Journal of Forecasting Medicine",
+                url="https://pubmed.ncbi.nlm.nih.gov/12345678/",
+                doi="10.1234/pubmed.forecast",
+                published_at="2026-05-21T00:00:00Z",
+                revised_at="2026-05-22T00:00:00Z",
+                authors=["Ada Forecaster"],
+                publication_types=["Journal Article"],
+                source_name="PubMed",
+                entry_id="12345678",
+                raw={"pmid": "12345678"},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_pubmed_articles", fake_pubmed)
+    pubmed_imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "pubmed",
+                "source": "forecasting calibration",
+                "limit": 1,
+                "since": "2026-05-01",
+                "api_base_url": "https://example.test/pubmed/esearch.fcgi",
+            }
+        )
+    )
+
+    assert pubmed_imported["imported_count"] == 1
+    pubmed_evidence = pubmed_imported["imported"][0]["evidence"]
+    assert pubmed_evidence["source_type"] == "adapter:pubmed"
+    assert pubmed_evidence["source_name"] == "PubMed"
+    assert pubmed_evidence["claim"] == "PubMed 12345678: Calibrated biomedical forecasts"
+    assert pubmed_evidence["published_at"] == "2026-05-21T00:00:00Z"
+    assert pubmed_evidence["metadata"]["adapter"] == "pubmed"
+    assert pubmed_evidence["metadata"]["adapter_item"]["doi"] == "10.1234/pubmed.forecast"
 
     def fake_usgs(source, **kwargs):
         assert source == "minmagnitude=5"

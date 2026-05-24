@@ -30,6 +30,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "nws",
     "clinicaltrials",
     "openfda",
+    "pubmed",
     "fred",
     "eia",
     "treasury",

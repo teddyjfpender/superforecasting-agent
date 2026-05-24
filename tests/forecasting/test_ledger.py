@@ -39,6 +39,7 @@ from forecasting.source_adapters import (
     OpenAlexWork,
     OwidObservation,
     PolymarketMarketImport,
+    PubMedArticle,
     RedditPost,
     SecFiling,
     StooqPriceObservation,
@@ -2412,6 +2413,62 @@ def test_watched_openfda_source_creates_alert_on_application_change(tmp_path, mo
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert f'forecast import openfda "BLA125514" --question {question.id}' in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_pubmed_source_creates_alert_on_article_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched PubMed articles be detected?",
+        resolution_criteria="Resolved yes if watched PubMed article changes create alerts.",
+    )
+    titles = ["Initial PubMed article"]
+    captured_queries = []
+
+    def fake_load_pubmed_articles(query: str, **kwargs):
+        captured_queries.append(query)
+        return [
+            PubMedArticle(
+                pmid="12345678",
+                title=titles[0],
+                abstract="A biomedical article about forecasting.",
+                journal="Journal of Forecasting Medicine",
+                url="https://pubmed.ncbi.nlm.nih.gov/12345678/",
+                doi="10.1234/pubmed.forecast",
+                published_at="2026-05-21T00:00:00Z",
+                revised_at="2026-05-22T00:00:00Z",
+                authors=["Ada Forecaster"],
+                publication_types=["Journal Article"],
+                source_name="PubMed",
+                entry_id="12345678",
+                raw={"title": titles[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_pubmed_articles", fake_load_pubmed_articles)
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="pubmed:forecasting calibration",
+    )
+
+    assert watch["source_type"] == "pubmed"
+    assert watch["last_seen_signature"].startswith("pubmed:1:")
+    assert captured_queries[-1] == "forecasting calibration"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    titles[0] = "New PubMed article"
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f'forecast import pubmed "forecasting calibration" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]

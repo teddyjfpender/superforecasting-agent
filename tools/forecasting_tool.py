@@ -39,6 +39,7 @@ from forecasting.source_adapters import (
     load_openfda_drug_applications,
     load_openmeteo_daily_forecasts,
     load_owid_observations,
+    load_pubmed_articles,
     load_reddit_posts,
     load_sec_filings,
     load_stooq_prices,
@@ -256,6 +257,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "nws",
                     "clinicaltrials",
                     "openfda",
+                    "pubmed",
                     "owid",
                     "fred",
                     "eia",
@@ -1196,6 +1198,11 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_openfda_drug_applications(source, **kwargs)
+    if adapter_name == "pubmed":
+        kwargs = {"limit": limit, "since": since}
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_pubmed_articles(source, **kwargs)
     if adapter_name == "owid":
         kwargs = {
             "limit": limit,
@@ -1223,6 +1230,7 @@ def _source_adapter_evidence_payload(
     published_at = _first_adapter_value(
         data,
         "published_at",
+        "revised_at",
         "time",
         "latest_geometry_at",
         "sent_at",
@@ -1362,6 +1370,8 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         brand_names = data.get("brand_names")
         brand = ", ".join(brand_names[:3]) if isinstance(brand_names, list) and brand_names else "drug application"
         return f"openFDA {data.get('application_number')}: {data.get('latest_submission_status') or 'application'} - {brand}"
+    if adapter == "pubmed":
+        return f"PubMed {data.get('pmid')}: {data.get('title')}"
     if adapter == "owid":
         return f"OWID {data.get('slug')} {data.get('entity') or ''} {data.get('value_column')} was {data.get('value')} on {data.get('observation_date')}"
     return str(

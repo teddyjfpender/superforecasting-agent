@@ -84,6 +84,7 @@ from forecasting.source_adapters import (
     load_openmeteo_daily_forecasts,
     load_openalex_works,
     load_owid_observations,
+    load_pubmed_articles,
     load_reddit_posts,
     load_polymarket_market,
     load_sec_filings,
@@ -155,6 +156,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "domain": "FDA drug applications",
         "import_command": 'forecast import openfda "<query-or-application-number>" --question <id>',
         "watch_prefix": "openfda:<query-or-application-number>",
+    },
+    {
+        "name": "pubmed",
+        "domain": "biomedical literature",
+        "import_command": 'forecast import pubmed "<query-or-PMID>" --question <id>',
+        "watch_prefix": "pubmed:<query-or-PMID>",
     },
     {
         "name": "fred",
@@ -459,6 +466,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "nws",
         "clinicaltrials",
         "openfda",
+        "pubmed",
         "owid",
         "fred",
         "eia",
@@ -529,6 +537,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "nws",
             "clinicaltrials",
             "openfda",
+            "pubmed",
             "owid",
             "fred",
             "eia",
@@ -643,6 +652,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://api.fda.gov/drug/drugsfda.json",
                 help="Override openFDA Drugs@FDA API endpoint for tests or private mirrors",
+            )
+        if name == "pubmed":
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+                help="Override PubMed E-utilities search endpoint for tests or private mirrors",
             )
         if name == "owid":
             adapter.add_argument("--entity", help="Filter Our World in Data grapher rows by Entity")
@@ -1070,6 +1085,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "sec",
             "arxiv",
             "openalex",
+            "pubmed",
             "courtlistener",
             "manifold",
             "metaculus",
@@ -2856,6 +2872,63 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} openfda evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "pubmed":
+        if not args.question_id:
+            raise SystemExit("forecast import pubmed requires --question")
+        articles = load_pubmed_articles(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for article in articles:
+            author_text = ", ".join(article.authors[:3]) if article.authors else "authors unspecified"
+            type_text = (
+                ", ".join(article.publication_types[:3])
+                if article.publication_types
+                else "publication type unspecified"
+            )
+            summary = (
+                f"PubMed article {article.pmid}: {article.title}. "
+                f"Journal {article.journal or 'unknown'}; {author_text}; {type_text}; "
+                f"published {article.published_at or 'unknown'}; revised {article.revised_at or 'unknown'}. "
+                f"{article.abstract}"
+            ).strip()
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=article.url or f"PubMed:{article.pmid}",
+                    source_url=article.url,
+                    source_name=article.source_name,
+                    source_type="adapter:pubmed",
+                    published_at=article.published_at,
+                    available_at=article.published_at or article.revised_at or args.as_of,
+                    claim=f"PubMed {article.pmid}: {article.title}",
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "pubmed",
+                        "pubmed_query": args.source,
+                        "pmid": article.pmid,
+                        "doi": article.doi,
+                        "journal": article.journal,
+                        "published_at": article.published_at,
+                        "revised_at": article.revised_at,
+                        "authors": article.authors,
+                        "publication_types": article.publication_types,
+                        "api_base_url": args.api_base_url,
+                        "raw": article.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} pubmed evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

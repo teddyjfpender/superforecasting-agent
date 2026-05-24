@@ -92,6 +92,7 @@ def register_builtin_extensions() -> None:
         ("nws-alerts", "importer", "Capture National Weather Service alerts as weather evidence."),
         ("clinicaltrials-studies", "importer", "Capture ClinicalTrials.gov studies as health evidence."),
         ("openfda-drug-applications", "importer", "Capture openFDA drug applications as regulatory evidence."),
+        ("pubmed-articles", "importer", "Capture PubMed biomedical literature as timestamped evidence."),
         ("owid-grapher", "importer", "Capture Our World in Data grapher rows as evidence."),
         ("fred-economic-data", "importer", "Capture FRED CSV observations as timestamped evidence."),
         ("eia-energy-data", "importer", "Capture EIA energy time-series observations as evidence."),

@@ -77,6 +77,7 @@ WATCH_SOURCE_TYPES = {
     "nws",
     "clinicaltrials",
     "openfda",
+    "pubmed",
     "owid",
     "fred",
     "eia",
@@ -2891,7 +2892,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, github, githubissues, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, owid, fred, eia, treasury, bls, worldbank, census, stooq, "
+                "source_type must be file, url, manual, rss, gdelt, github, githubissues, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, stooq, "
                 "sec, arxiv, openalex, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -2990,6 +2991,7 @@ class ForecastLedger:
                     "nws",
                     "clinicaltrials",
                     "openfda",
+                    "pubmed",
                     "owid",
                     "fred",
                     "eia",
@@ -5212,6 +5214,8 @@ class ForecastLedger:
             return "clinicaltrials"
         if source.startswith("openfda:"):
             return "openfda"
+        if source.startswith("pubmed:"):
+            return "pubmed"
         if source.startswith("owid:"):
             return "owid"
         if source.startswith("fred:"):
@@ -5282,6 +5286,8 @@ class ForecastLedger:
             return self._clinicaltrials_source_signature(source)
         if source_type == "openfda":
             return self._openfda_source_signature(source)
+        if source_type == "pubmed":
+            return self._pubmed_source_signature(source)
         if source_type == "owid":
             return self._owid_source_signature(source)
         if source_type == "fred":
@@ -5779,6 +5785,32 @@ class ForecastLedger:
         ]
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"openfda:{len(payload)}:{digest}"
+
+    def _pubmed_source_signature(self, source: str) -> str:
+        source_value = source.split(":", 1)[1].strip() if source.startswith("pubmed:") else source.strip()
+        if not source_value:
+            return "missing:pubmed:empty-query"
+        try:
+            from forecasting.source_adapters import load_pubmed_articles
+
+            articles = load_pubmed_articles(source_value, limit=50)
+        except Exception as exc:
+            return f"missing:pubmed:{source_value}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "doi": article.doi,
+                "entry_id": article.entry_id,
+                "journal": article.journal,
+                "pmid": article.pmid,
+                "publication_types": article.publication_types,
+                "published_at": article.published_at,
+                "revised_at": article.revised_at,
+                "title": article.title,
+            }
+            for article in articles
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"pubmed:{len(payload)}:{digest}"
 
     def _owid_source_signature(self, source: str) -> str:
         source_value = source.split(":", 1)[1].strip() if source.startswith("owid:") else source.strip()
@@ -6315,6 +6347,12 @@ class ForecastLedger:
             query = source.split(":", 1)[1].strip() if source.startswith("openfda:") else source
             return (
                 f"Run `forecast import openfda \"{query}\" --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "pubmed" and scope_type == "question" and scope_ref:
+            query = source.split(":", 1)[1].strip() if source.startswith("pubmed:") else source
+            return (
+                f"Run `forecast import pubmed \"{query}\" --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "owid" and scope_type == "question" and scope_ref:

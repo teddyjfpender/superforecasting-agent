@@ -891,6 +891,7 @@ describe('createGatewayEventHandler', () => {
               '/forecast import reddit "<query>" --question <id>',
               '/forecast import clinicaltrials <query-or-NCT-id> --question <id>',
               '/forecast import openfda <query-or-application-number> --question <id>',
+              '/forecast import pubmed "<query-or-PMID>" --question <id>',
               '/forecast import openmeteo <lat,lon> --question <id>',
               '/forecast import usgs "<query>" --question <id>',
               '/forecast import eonet "<query-or-category>" --question <id>',

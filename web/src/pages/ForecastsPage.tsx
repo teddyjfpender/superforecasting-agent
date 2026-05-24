@@ -82,6 +82,10 @@ const EVIDENCE_IMPORTS = [
     label: "FDA",
   },
   {
+    command: 'forecast import pubmed "<query-or-PMID>" --question <id>',
+    label: "PubMed",
+  },
+  {
     command: "forecast import openmeteo <lat,lon> --question <id>",
     label: "Weather",
   },

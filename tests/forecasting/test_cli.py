@@ -37,6 +37,7 @@ from forecasting.source_adapters import (
     OpenMeteoDailyForecast,
     OpenAlexWork,
     OwidObservation,
+    PubMedArticle,
     RedditPost,
     SecFiling,
     StooqPriceObservation,
@@ -3863,6 +3864,170 @@ def test_forecast_cli_openfda_import_captures_applications_as_evidence(
     assert evidence[0].metadata["latest_submission_class"] == "TYPE 1"
 
 
+def test_pubmed_adapter_loads_article_rows(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["search_endpoint"] = endpoint
+        captured["search_label"] = label
+        return {"esearchresult": {"idlist": ["12345678"]}}
+
+    def fake_read_text_endpoint(endpoint: str, label: str):
+        captured["fetch_endpoint"] = endpoint
+        captured["fetch_label"] = label
+        return """<?xml version="1.0" encoding="UTF-8"?>
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID Version="1">12345678</PMID>
+      <DateRevised><Year>2026</Year><Month>05</Month><Day>22</Day></DateRevised>
+      <Article>
+        <Journal>
+          <Title>Journal of Forecasting Medicine</Title>
+          <JournalIssue><PubDate><Year>2026</Year><Month>May</Month><Day>21</Day></PubDate></JournalIssue>
+        </Journal>
+        <ArticleTitle>Calibrated biomedical forecasts</ArticleTitle>
+        <Abstract>
+          <AbstractText Label="BACKGROUND">Forecasts need calibrated biomedical priors.</AbstractText>
+          <AbstractText Label="METHODS">We tested a forecasting workflow.</AbstractText>
+        </Abstract>
+        <AuthorList>
+          <Author><LastName>Forecaster</LastName><ForeName>Ada</ForeName></Author>
+          <Author><CollectiveName>Forecasting Consortium</CollectiveName></Author>
+        </AuthorList>
+        <PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList>
+      </Article>
+    </MedlineCitation>
+    <PubmedData><ArticleIdList><ArticleId IdType="doi">10.1234/pubmed.forecast</ArticleId></ArticleIdList></PubmedData>
+  </PubmedArticle>
+</PubmedArticleSet>"""
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+    monkeypatch.setattr(source_adapters, "_read_text_endpoint", fake_read_text_endpoint)
+
+    articles = source_adapters.load_pubmed_articles(
+        "forecasting calibration",
+        limit=2,
+        since="2026-05-01",
+        api_base_url="https://pubmed.test/entrez/eutils/esearch.fcgi",
+    )
+    search_params = parse_qs(urlparse(captured["search_endpoint"]).query)
+    fetch = urlparse(captured["fetch_endpoint"])
+    fetch_params = parse_qs(fetch.query)
+
+    assert captured["search_label"] == "pubmed search"
+    assert captured["fetch_label"] == "pubmed articles"
+    assert search_params["term"] == ["forecasting calibration"]
+    assert search_params["retmax"] == ["2"]
+    assert search_params["mindate"] == ["2026/05/01"]
+    assert search_params["datetype"] == ["pdat"]
+    assert fetch.path.endswith("/efetch.fcgi")
+    assert fetch_params["id"] == ["12345678"]
+    assert articles[0].pmid == "12345678"
+    assert articles[0].title == "Calibrated biomedical forecasts"
+    assert articles[0].journal == "Journal of Forecasting Medicine"
+    assert articles[0].doi == "10.1234/pubmed.forecast"
+    assert articles[0].published_at == "2026-05-21T00:00:00Z"
+    assert articles[0].revised_at == "2026-05-22T00:00:00Z"
+    assert articles[0].authors == ["Ada Forecaster", "Forecasting Consortium"]
+    assert articles[0].publication_types == ["Journal Article"]
+    assert "BACKGROUND: Forecasts need calibrated biomedical priors." in articles[0].abstract
+
+
+def test_forecast_cli_pubmed_import_captures_articles_as_evidence(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_pubmed_articles(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            PubMedArticle(
+                pmid="12345678",
+                title="Calibrated biomedical forecasts",
+                abstract="Forecasts need calibrated biomedical priors.",
+                journal="Journal of Forecasting Medicine",
+                url="https://pubmed.ncbi.nlm.nih.gov/12345678/",
+                doi="10.1234/pubmed.forecast",
+                published_at="2026-05-21T00:00:00Z",
+                revised_at="2026-05-22T00:00:00Z",
+                authors=["Ada Forecaster"],
+                publication_types=["Journal Article"],
+                source_name="PubMed",
+                entry_id="12345678",
+                raw={"pmid": "12345678"},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_pubmed_articles", fake_load_pubmed_articles)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will PubMed import work?",
+            "--resolution-criteria",
+            "Resolved yes if biomedical literature evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "pubmed",
+            "forecasting calibration",
+            "--question",
+            question_id,
+            "--limit",
+            "2",
+            "--since",
+            "2026-05-01",
+            "--api-base-url",
+            "https://pubmed.test/entrez/eutils/esearch.fcgi",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.91",
+            "--relevance",
+            "0.86",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 pubmed evidence item(s)" in output
+    assert captured["source"] == "forecasting calibration"
+    assert captured["kwargs"]["limit"] == 2
+    assert captured["kwargs"]["since"] == "2026-05-01"
+    assert captured["kwargs"]["api_base_url"] == "https://pubmed.test/entrez/eutils/esearch.fcgi"
+    assert evidence[0].claim == "PubMed 12345678: Calibrated biomedical forecasts"
+    assert evidence[0].summary.startswith("PubMed article 12345678")
+    assert evidence[0].source_name == "PubMed"
+    assert evidence[0].source_type == "adapter:pubmed"
+    assert evidence[0].published_at == "2026-05-21T00:00:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.91
+    assert evidence[0].relevance_rating == 0.86
+    assert evidence[0].metadata["adapter"] == "pubmed"
+    assert evidence[0].metadata["pubmed_query"] == "forecasting calibration"
+    assert evidence[0].metadata["pmid"] == "12345678"
+    assert evidence[0].metadata["doi"] == "10.1234/pubmed.forecast"
+    assert evidence[0].metadata["authors"] == ["Ada Forecaster"]
+
+
 def test_owid_adapter_loads_grapher_rows(monkeypatch):
     captured = {}
 
@@ -5594,6 +5759,7 @@ def test_forecast_cli_lists_extension_points(capsys):
     assert "nasa-eonet-events" in output
     assert "nws-alerts" in output
     assert "openfda-drug-applications" in output
+    assert "pubmed-articles" in output
     assert "owid-grapher" in output
     assert "fred-economic-data" in output
     assert "eia-energy-data" in output
@@ -5637,6 +5803,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "nws:<area-or-point-or-query>" in output
     assert "clinicaltrials:<query-or-NCT-id>" in output
     assert "openfda:<query-or-application-number>" in output
+    assert "pubmed:<query-or-PMID>" in output
     assert "wikipediapageviews:<project>/<article>" in output
     assert "githubissues:<owner/repo>" in output
     assert "hackernews:<query>" in output
@@ -5655,13 +5822,14 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "owid", "eia", "treasury", "census", "stooq", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "wikipediapageviews", "githubissues", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "owid", "eia", "treasury", "census", "stooq", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "wikipediapageviews", "githubissues", "hackernews", "reddit", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "census:<dataset-path?get=...&for=...>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "stooq:<symbol-or-csv-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "clinicaltrials:<query-or-NCT-id>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "openfda:<query-or-application-number>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "pubmed:<query-or-PMID>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "githubissues:<owner/repo>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "hackernews:<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "reddit:<query>" for source in payload["sources"])
@@ -7830,6 +7998,71 @@ def test_forecast_cli_watch_add_supports_openfda_sources(tmp_path, capsys, monke
     assert "source_type: openfda" in add_output
 
     statuses[0] = "TA"
+    _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
+    check_output = capsys.readouterr().out
+
+    assert "created 1 alert(s)" in check_output
+    assert f"watched_source_changed:{watch_id}" in check_output
+
+
+def test_forecast_cli_watch_add_supports_pubmed_sources(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    titles = ["Initial PubMed article"]
+
+    def fake_load_pubmed_articles(source: str, **kwargs):
+        return [
+            PubMedArticle(
+                pmid="12345678",
+                title=titles[0],
+                abstract="A biomedical article about forecasting.",
+                journal="Journal of Forecasting Medicine",
+                url="https://pubmed.ncbi.nlm.nih.gov/12345678/",
+                doi="10.1234/pubmed.forecast",
+                published_at="2026-05-21T00:00:00Z",
+                revised_at="2026-05-22T00:00:00Z",
+                authors=["Ada Forecaster"],
+                publication_types=["Journal Article"],
+                source_name="PubMed",
+                entry_id="12345678",
+                raw={"title": titles[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_pubmed_articles", fake_load_pubmed_articles)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will watched CLI PubMed articles change?",
+            "--resolution-criteria",
+            "Resolved yes if watched PubMed article evidence changes.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            "pubmed:forecasting calibration",
+            "--question",
+            question_id,
+        ],
+    )
+    add_output = capsys.readouterr().out
+    watch_id = re.search(r"watched source (ws_[a-f0-9]+)", add_output).group(1)
+
+    assert "source_type: pubmed" in add_output
+
+    titles[0] = "New PubMed article"
     _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
     check_output = capsys.readouterr().out
 

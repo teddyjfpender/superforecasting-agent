@@ -81,6 +81,7 @@ Examples:
 /forecast import cisakev CVE-2026-0001 --question <id>
 /forecast import clinicaltrials NCT01234567 --question <id>
 /forecast import openfda BLA125514 --question <id>
+/forecast import pubmed "forecasting calibration" --question <id>
 /forecast backtest --benchmarks
 /forecast schedule list
 ```

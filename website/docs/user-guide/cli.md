@@ -86,6 +86,7 @@ forecast import nvd CVE-2026-0001 --question <id>
 forecast import cisakev CVE-2026-0001 --question <id>
 forecast import clinicaltrials "NCT01234567" --question <id>
 forecast import openfda "BLA125514" --question <id>
+forecast import pubmed "forecasting calibration" --question <id>
 forecast import openmeteo 38.7,-9.1 --question <id>
 forecast import usgs "minmagnitude=5" --question <id>
 forecast import eonet "category=wildfires&status=open" --question <id>
@@ -150,6 +151,7 @@ forecast watch add --question <id> federalregister:"rule query"
 forecast watch add --question <id> courtlistener:"case or legal query"
 forecast watch add --question <id> census:"2023/acs/acs5?get=NAME,B01003_001E&for=state:*"
 forecast watch add --question <id> cisakev:CVE-2026-0001
+forecast watch add --question <id> pubmed:"forecasting calibration"
 forecast watch add --question <id> owid:grapher-slug
 forecast watch add --question <id> usgs:minmagnitude=5
 forecast watch add --question <id> eonet:category=wildfires

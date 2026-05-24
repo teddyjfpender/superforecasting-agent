@@ -559,6 +559,7 @@ forecast import worldbank <country>/<indicator> --question <id>
 forecast import census <dataset-path?get=...&for=...> --question <id>
 forecast import sec <cik> --question <id>
 forecast import arxiv <query> --question <id>
+forecast import pubmed <query-or-PMID> --question <id>
 forecast import manifold <url-or-id-or-slug>
 forecast import polymarket <url-or-id-or-slug>
 forecast import kalshi <url-or-ticker>
