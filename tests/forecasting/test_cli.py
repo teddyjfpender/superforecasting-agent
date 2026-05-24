@@ -11910,9 +11910,12 @@ def test_forecast_cli_schedule_add_can_enable_scoped_learning(tmp_path, capsys):
     assert "domain:macro/inflation" in schedule_output
     assert "score,postmortem" in schedule_output
 
-    _run(parser, ["forecast", "--db", db, "schedule", "run", "--now", "2026-01-03T00:00:00Z"])
+    _run(parser, ["forecast", "--db", db, "schedule", "run", "--due", "--now", "2026-01-03T00:00:00Z"])
     run_output = capsys.readouterr().out
 
+    assert "scores_created: 1" in run_output
+    assert "postmortems_created: 1" in run_output
+    assert "learning_reviews:" in run_output
     assert "score_created:" in run_output
     assert "postmortem_created:" in run_output
     ledger = ForecastLedger(db_path)

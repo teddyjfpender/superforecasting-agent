@@ -146,6 +146,24 @@ forecast --db "$FORECAST_DB" self-check --question <id>
 forecast --db "$FORECAST_DB" schedule install-cron --schedule "every 1h"
 ```
 
+For domain/topic learning checks, add one scoped schedule per tester domain:
+
+```bash
+forecast --db "$FORECAST_DB" schedule add --domain <domain> --topic <topic> \
+  --cadence 1d \
+  --next-run-at 2026-05-24T09:00:00Z \
+  --stale-days 3 \
+  --auto-score \
+  --auto-postmortem
+forecast --db "$FORECAST_DB" schedule run --due --auto-score --auto-postmortem
+forecast --db "$FORECAST_DB" errors --domain <domain> --topic <topic>
+forecast --db "$FORECAST_DB" lesson list --scope-type domain --scope-ref <domain>
+```
+
+`schedule run` should report `scores_created`, `postmortems_created`, and
+`learning_reviews` counts. Those counts tell the operator when a scheduled
+self-check changed calibration memory or domain/topic error profiles.
+
 Review the book:
 
 ```bash
@@ -168,6 +186,10 @@ forecast --db "$FORECAST_DB" postmortem <id> \
   --missed-evidence "..." \
   --overweighted-evidence "..." \
   --lesson "What should change next time."
+forecast --db "$FORECAST_DB" update <id> \
+  --probability 0.52 \
+  --rationale "New forecast after reviewing active calibration lessons." \
+  --use-active-lessons
 ```
 
 ## Tester Feedback

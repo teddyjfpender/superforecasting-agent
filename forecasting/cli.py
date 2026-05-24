@@ -1311,6 +1311,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     schedule_list = schedule_sub.add_parser("list", help="List scheduled reviews")
     schedule_list.set_defaults(_forecast_handler=_cmd_schedule_list)
     schedule_run = schedule_sub.add_parser("run", help="Run due scheduled self-checks")
+    schedule_run.add_argument("--due", action="store_true", help="Run due reviews explicitly; this is the default")
     schedule_run.add_argument("--now")
     schedule_run.add_argument("--auto-score", action="store_true")
     schedule_run.add_argument("--auto-postmortem", action="store_true")
@@ -5565,8 +5566,19 @@ def _cmd_schedule_run(args: argparse.Namespace) -> None:
         print("No scheduled reviews due.")
         return
     total_alerts = sum(len(result["alerts"]) for result in results)
+    alert_rows = [alert for result in results for alert in result["alerts"]]
+    score_events = [alert for alert in alert_rows if alert.reason.startswith("score_created:")]
+    postmortem_events = [alert for alert in alert_rows if alert.reason.startswith("postmortem_created:")]
+    learning_review_events = [
+        alert
+        for alert in alert_rows
+        if alert.reason in {"calibration_lesson_review", "domain_error_profile_review"}
+    ]
     print(f"ran {len(results)} scheduled review(s)")
     print(f"created {total_alerts} alert(s)")
+    print(f"scores_created: {len(score_events)}")
+    print(f"postmortems_created: {len(postmortem_events)}")
+    print(f"learning_reviews: {len(learning_review_events)}")
     for result in results:
         review = result["review"]
         print(f"{review['id']} next_run_at={review['next_run_at']} alerts={len(result['alerts'])}")

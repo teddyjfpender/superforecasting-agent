@@ -1997,6 +1997,20 @@ def test_nix_package_aliases_are_forecast_native():
     assert "legacy alias" in plugin_docs
 
 
+def test_tester_pilot_docs_cover_scheduled_learning_loop():
+    root = Path(__file__).resolve().parents[1]
+    tester_pilot = (root / "website" / "docs" / "getting-started" / "tester-pilot.md").read_text(
+        encoding="utf-8"
+    )
+    forecast_cli = (root / "forecasting" / "cli.py").read_text(encoding="utf-8")
+
+    assert 'schedule_run.add_argument("--due"' in forecast_cli
+    assert "forecast --db \"$FORECAST_DB\" schedule run --due --auto-score --auto-postmortem" in tester_pilot
+    assert "`scores_created`, `postmortems_created`, and" in tester_pilot
+    assert "domain/topic error profiles" in tester_pilot
+    assert "--use-active-lessons" in tester_pilot
+
+
 def test_revision_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     banner = (root / "hermes_cli" / "banner.py").read_text(encoding="utf-8")

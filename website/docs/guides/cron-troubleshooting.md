@@ -119,7 +119,7 @@ cron:
 
 ```bash
 forecast schedule list
-forecast schedule run --dry-run
+forecast schedule run --due
 forecast review
 ```
 
