@@ -41,8 +41,27 @@ describe('shouldUseRichEightBitDowngradeForLegacyAppleTerminal', () => {
     ).toBe(false)
     expect(
       shouldUseRichEightBitDowngradeForLegacyAppleTerminal(
+        { SUPERFORECASTING_AGENT_TUI_TRUECOLOR: '1', TERM_PROGRAM: 'Apple_Terminal' } as NodeJS.ProcessEnv,
+        3
+      )
+    ).toBe(false)
+    expect(
+      shouldUseRichEightBitDowngradeForLegacyAppleTerminal(
         { HERMES_TUI_TRUECOLOR: '1', TERM_PROGRAM: 'Apple_Terminal' } as NodeJS.ProcessEnv,
         3
+      )
+    ).toBe(false)
+  })
+
+  it('prefers fork-native truecolor aliases before legacy names', () => {
+    expect(
+      shouldUseRichEightBitDowngradeForLegacyAppleTerminal(
+        {
+          HERMES_TUI_TRUECOLOR: '0',
+          SUPERFORECASTING_AGENT_TUI_TRUECOLOR: '1',
+          TERM_PROGRAM: 'Apple_Terminal'
+        } as NodeJS.ProcessEnv,
+        2
       )
     ).toBe(false)
   })
@@ -57,4 +76,3 @@ describe('richEightBitColorNumber', () => {
     expect(richEightBitColorNumber(0xff, 0xf8, 0xdc)).toBe(230)
   })
 })
-

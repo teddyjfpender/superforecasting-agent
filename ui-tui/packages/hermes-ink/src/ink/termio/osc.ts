@@ -5,6 +5,7 @@
 import { Buffer } from 'buffer'
 
 import { env as envModule, supportsOsc52Clipboard } from '../../utils/env.js'
+import { tuiEnvValue } from '../../utils/envAlias.js'
 import { execFileNoThrow } from '../../utils/execFileNoThrow.js'
 
 import { BEL, ESC, ESC_TYPE, SEP } from './ansi.js'
@@ -68,18 +69,6 @@ export function wrapForMultiplexer(sequence: string): string {
  * in tmux's default update-environment set and gets cleared.
  */
 export type ClipboardPath = 'native' | 'tmux-buffer' | 'osc52'
-
-function tuiEnvValue(env: NodeJS.ProcessEnv, name: string): string {
-  for (const key of [`SUPERFORECASTING_AGENT_TUI_${name}`, `FORECAST_TUI_${name}`, `HERMES_TUI_${name}`]) {
-    const value = env[key]?.trim()
-
-    if (value) {
-      return value
-    }
-  }
-
-  return ''
-}
 
 export function isClipboardDebugEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return !!tuiEnvValue(env, 'DEBUG_CLIPBOARD')

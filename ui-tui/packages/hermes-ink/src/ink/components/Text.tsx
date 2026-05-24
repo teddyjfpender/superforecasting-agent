@@ -2,6 +2,8 @@ import type { ReactNode } from 'react'
 import React from 'react'
 import { c as _c } from 'react/compiler-runtime'
 
+import { tuiEnvValue } from '../../utils/envAlias.js'
+
 import type { Color, Styles } from '../styles.js'
 
 const ENV_ON_RE = /^(?:1|true|yes|on)$/i
@@ -67,7 +69,7 @@ type WeightProps =
 export type Props = BaseProps & WeightProps
 
 export function shouldUseAnsiDim(env: NodeJS.ProcessEnv = process.env): boolean {
-  const override = (env.HERMES_TUI_DIM ?? '').trim()
+  const override = tuiEnvValue(env, 'DIM')
 
   if (ENV_ON_RE.test(override)) {
     return true
@@ -85,7 +87,7 @@ export function shouldUseAnsiDim(env: NodeJS.ProcessEnv = process.env): boolean 
 }
 
 export function dimColorFallback(env: NodeJS.ProcessEnv = process.env): Color | undefined {
-  const override = (env.HERMES_TUI_DIM ?? '').trim()
+  const override = tuiEnvValue(env, 'DIM')
 
   if (ENV_ON_RE.test(override) || ENV_OFF_RE.test(override)) {
     return undefined
