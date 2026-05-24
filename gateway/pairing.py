@@ -15,7 +15,8 @@ Security features (based on OWASP + NIST SP 800-63-4 guidance):
   - File permissions: chmod 0600 on all data files
   - Codes are never logged to stdout
 
-Storage: ~/.hermes/pairing/
+Storage: ~/.superforecasting-agent/platforms/pairing/ for new installs;
+legacy ~/.hermes/pairing/ remains readable during migration.
 """
 
 import json

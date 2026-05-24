@@ -258,6 +258,23 @@ def test_install_helpers_use_forecast_native_visible_copy():
     assert "Hermes-managed" not in node_bootstrap
 
 
+def test_runtime_docstrings_use_forecast_native_home_paths():
+    root = Path(__file__).resolve().parents[1]
+    checked = {
+        "gateway/pairing.py": "platforms/pairing",
+        "gateway/sticker_cache.py": "sticker_cache.json",
+        "gateway/runtime_footer.py": "runtime_footer",
+        "hermes_cli/skin_engine.py": "skins/",
+        "hermes_cli/skills_config.py": "skills:",
+    }
+    for rel_path, marker in checked.items():
+        text = (root / rel_path).read_text(encoding="utf-8")
+        header = text.split('"""', 2)[1]
+        assert "~/.superforecasting-agent" in header, rel_path
+        assert "legacy ~/.hermes" in header or "legacy ``~/.hermes" in header, rel_path
+        assert marker in header, rel_path
+
+
 def test_high_attention_docs_navigation_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     sidebars = (root / "website" / "sidebars.ts").read_text(encoding="utf-8")

@@ -1,7 +1,8 @@
 """Superforecasting Agent CLI skin/theme engine.
 
 A data-driven skin system that lets users customize the CLI's visual appearance.
-Skins are defined as YAML files in ~/.hermes/skins/ or as built-in presets.
+Skins are defined as YAML files in ~/.superforecasting-agent/skins/ or as
+built-in presets; legacy ~/.hermes/skins/ remains readable during migration.
 No code changes are needed to add a new skin.
 
 SKIN YAML SCHEMA
@@ -93,7 +94,7 @@ USAGE
     print(skin.get_branding("agent_name"))  # "Superforecasting Agent"
 
     set_active_skin("ares")               # Switch to built-in ares skin
-    set_active_skin("mytheme")            # Switch to user skin from ~/.hermes/skins/
+    set_active_skin("mytheme")            # Switch to user skin from ~/.superforecasting-agent/skins/
 
 BUILT-IN SKINS
 ==============
@@ -109,7 +110,7 @@ BUILT-IN SKINS
 USER SKINS
 ==========
 
-Drop a YAML file in ``~/.hermes/skins/<name>.yaml`` following the schema above.
+Drop a YAML file in ``~/.superforecasting-agent/skins/<name>.yaml`` following the schema above.
 Activate with ``/skin <name>`` in the CLI or ``display.skin: <name>`` in config.yaml.
 """
 

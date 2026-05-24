@@ -829,7 +829,9 @@ class TestPromptBuilderConstants:
 
     def test_platform_hints_webui(self):
         hint = PLATFORM_HINTS["webui"]
-        assert "WebUI" in hint
+        assert "Superforecasting Agent web dashboard" in hint
+        assert "forecast desk" in hint
+        assert "Hermes WebUI" not in hint
         assert "MEDIA:" in hint
         assert "Markdown" in hint
         assert "absolute" in hint
@@ -1195,4 +1197,3 @@ class TestOpenAIModelExecutionGuidance:
 # =========================================================================
 # Budget warning history stripping
 # =========================================================================
-

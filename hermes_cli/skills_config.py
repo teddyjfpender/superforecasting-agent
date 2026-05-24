@@ -3,7 +3,9 @@ Skills configuration for Superforecasting Agent.
 `superforecasting-agent skills` enters this module.
 
 Toggle individual skills or categories on/off, globally or per-platform.
-Config stored in ~/.hermes/config.yaml under:
+Config is stored in ~/.superforecasting-agent/config.yaml for new installs;
+legacy ~/.hermes/config.yaml remains readable during migration. The relevant
+config block is:
 
   skills:
     disabled: [skill-a, skill-b]          # global disabled list

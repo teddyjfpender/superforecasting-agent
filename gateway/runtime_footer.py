@@ -4,7 +4,8 @@ Renders a compact footer showing runtime state (model, context %, cwd) and
 appends it to the FINAL message of an agent turn when enabled.  Off by default
 to keep replies minimal.
 
-Config (``~/.hermes/config.yaml``)::
+Config (``~/.superforecasting-agent/config.yaml`` for new installs;
+legacy ``~/.hermes/config.yaml`` remains accepted during migration)::
 
     display:
       runtime_footer:
