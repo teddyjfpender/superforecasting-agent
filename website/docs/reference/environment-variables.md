@@ -43,8 +43,8 @@ Prefer `SUPERFORECASTING_AGENT_HOME` or `FORECAST_HOME` for new deployments. Use
 | `OPENROUTER_BASE_URL` | Override the OpenRouter-compatible base URL |
 | `HERMES_OPENROUTER_CACHE` | Enable OpenRouter response caching (`1`/`true`/`yes`/`on`). Overrides `openrouter.response_cache` in config.yaml. See [Response Caching](https://openrouter.ai/docs/guides/features/response-caching). |
 | `HERMES_OPENROUTER_CACHE_TTL` | Cache TTL in seconds (1-86400). Overrides `openrouter.response_cache_ttl` in config.yaml. |
-| `NOUS_BASE_URL` | Override Nous Portal base URL (rarely needed; development/testing only) |
-| `NOUS_INFERENCE_BASE_URL` | Override Nous inference endpoint directly |
+| `SUPERFORECASTING_AGENT_NOUS_PORTAL_BASE_URL` / `FORECAST_NOUS_PORTAL_BASE_URL` / `HERMES_PORTAL_BASE_URL` / `NOUS_PORTAL_BASE_URL` / `NOUS_BASE_URL` | Override Nous Portal base URL (rarely needed; development/testing only). Prefer the fork-native aliases; `HERMES_*` and `NOUS_*` names remain compatibility aliases. |
+| `SUPERFORECASTING_AGENT_NOUS_INFERENCE_BASE_URL` / `FORECAST_NOUS_INFERENCE_BASE_URL` / `NOUS_INFERENCE_BASE_URL` | Override Nous inference endpoint directly. Prefer the fork-native aliases; `NOUS_INFERENCE_BASE_URL` remains the provider-specific compatibility alias. |
 | `AI_GATEWAY_API_KEY` | Vercel AI Gateway API key ([ai-gateway.vercel.sh](https://ai-gateway.vercel.sh)) |
 | `AI_GATEWAY_BASE_URL` | Override AI Gateway base URL (default: `https://ai-gateway.vercel.sh/v1`) |
 | `OPENAI_API_KEY` | API key for custom OpenAI-compatible endpoints (used with `OPENAI_BASE_URL`) |
@@ -142,10 +142,10 @@ For native Anthropic auth, Superforecasting Agent prefers Claude Code's own cred
 | Variable | Description |
 |----------|-------------|
 | `SUPERFORECASTING_AGENT_INFERENCE_PROVIDER` / `FORECAST_INFERENCE_PROVIDER` / `HERMES_INFERENCE_PROVIDER` | Override provider selection: `auto`, `custom`, `openrouter`, `nous`, `openai-codex`, `copilot`, `copilot-acp`, `anthropic`, `huggingface`, `novita`, `gemini`, `zai`, `kimi-coding`, `kimi-coding-cn`, `minimax`, `minimax-cn`, `minimax-oauth` (browser OAuth login — no API key required; see [MiniMax OAuth guide](../guides/minimax-oauth.md)), `kilocode`, `xiaomi`, `arcee`, `gmi`, `stepfun`, `alibaba`, `alibaba-coding-plan` (alias `alibaba_coding`), `deepseek`, `nvidia`, `ollama-cloud`, `xai` (alias `grok`), `xai-oauth` (browser OAuth login for SuperGrok subscribers — no API key required; see [xAI Grok OAuth guide](../guides/xai-grok-oauth.md)), `google-gemini-cli`, `qwen-oauth`, `bedrock`, `opencode-zen`, `opencode-go`, `ai-gateway`, `tencent-tokenhub` (default: `auto`). The `HERMES_*` name remains a legacy alias. |
-| `HERMES_PORTAL_BASE_URL` | Override Nous Portal URL (for development/testing) |
-| `NOUS_INFERENCE_BASE_URL` | Override Nous inference API URL |
-| `HERMES_NOUS_MIN_KEY_TTL_SECONDS` | Min agent key TTL before re-mint (default: 1800 = 30min) |
-| `HERMES_NOUS_TIMEOUT_SECONDS` | HTTP timeout for Nous credential / token flows |
+| `SUPERFORECASTING_AGENT_NOUS_PORTAL_BASE_URL` / `FORECAST_NOUS_PORTAL_BASE_URL` / `HERMES_PORTAL_BASE_URL` / `NOUS_PORTAL_BASE_URL` / `NOUS_BASE_URL` | Override Nous Portal URL (for development/testing). Prefer the fork-native aliases; `HERMES_*` and `NOUS_*` names remain compatibility aliases. |
+| `SUPERFORECASTING_AGENT_NOUS_INFERENCE_BASE_URL` / `FORECAST_NOUS_INFERENCE_BASE_URL` / `NOUS_INFERENCE_BASE_URL` | Override Nous inference API URL. Prefer the fork-native aliases; `NOUS_INFERENCE_BASE_URL` remains the provider-specific compatibility alias. |
+| `SUPERFORECASTING_AGENT_NOUS_MIN_KEY_TTL_SECONDS` / `FORECAST_NOUS_MIN_KEY_TTL_SECONDS` / `HERMES_NOUS_MIN_KEY_TTL_SECONDS` | Min agent key TTL before re-mint (default: 1800 = 30min); the `HERMES_*` name remains a legacy alias. |
+| `SUPERFORECASTING_AGENT_NOUS_TIMEOUT_SECONDS` / `FORECAST_NOUS_TIMEOUT_SECONDS` / `HERMES_NOUS_TIMEOUT_SECONDS` | HTTP timeout for Nous credential / token flows; the `HERMES_*` name remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_DUMP_REQUESTS` / `FORECAST_DUMP_REQUESTS` / `HERMES_DUMP_REQUESTS` | Dump API request payloads to log files (`true`/`false`); the `HERMES_*` name remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_PREFILL_MESSAGES_FILE` / `FORECAST_PREFILL_MESSAGES_FILE` / `HERMES_PREFILL_MESSAGES_FILE` | Path to a JSON file of ephemeral prefill messages injected at API-call time; the `HERMES_*` name remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_TIMEZONE` / `FORECAST_TIMEZONE` / `HERMES_TIMEZONE` | IANA timezone override (for example `America/New_York`); the `HERMES_*` name remains a legacy alias. |

@@ -48,6 +48,7 @@ import httpx
 import yaml
 
 from hermes_cli.config import get_hermes_home, get_config_path, read_raw_config
+from hermes_cli.nous_env import nous_inference_base_url, nous_portal_base_url
 
 
 _PRIMARY_CLI = "superforecasting-agent"
@@ -4632,8 +4633,7 @@ def resolve_nous_access_token(
 
         portal_base_url = (
             _optional_base_url(state.get("portal_base_url"))
-            or os.getenv("HERMES_PORTAL_BASE_URL")
-            or os.getenv("NOUS_PORTAL_BASE_URL")
+            or nous_portal_base_url()
             or DEFAULT_NOUS_PORTAL_URL
         ).rstrip("/")
         client_id = str(state.get("client_id") or DEFAULT_NOUS_CLIENT_ID)
@@ -4885,7 +4885,7 @@ def persist_nous_credentials(
       ``_seed_from_singletons()`` during pool load.
     - ``credential_pool.nous``: used by the runtime ``pool.select()`` path.
 
-    Historically ``hermes auth add nous`` wrote a ``manual:device_code`` pool
+    Historically ``superforecasting-agent auth add nous`` wrote a ``manual:device_code`` pool
     entry only, skipping ``providers.nous``.  When the 24h agent_key TTL
     expired, the recovery path read the empty singleton state and raised
     ``AuthError`` silently (``logger.debug`` at INFO level).
@@ -4896,7 +4896,7 @@ def persist_nous_credentials(
     place; the pool never accumulates duplicate device_code rows.
 
     ``label`` is an optional user-chosen display name (from
-    ``hermes auth add nous --label <name>``).  It gets embedded in the
+    ``superforecasting-agent auth add nous --label <name>``).  It gets embedded in the
     singleton state so that ``_seed_from_singletons`` uses it as the pool
     entry's label on every subsequent ``load_pool("nous")`` instead of the
     auto-derived token fingerprint.  When ``None``, the auto-derived label
@@ -4917,7 +4917,7 @@ def persist_nous_credentials(
         _save_auth_store(auth_store)
 
     # Mirror to the shared store so a new profile can one-tap import
-    # these credentials via `hermes auth add nous --type oauth`. Best-
+    # these credentials via `superforecasting-agent auth add nous --type oauth`. Best-
     # effort: any I/O failure is logged and swallowed (the per-profile
     # auth.json is still the source of truth).
     _write_shared_nous_state(state)
@@ -4974,13 +4974,12 @@ def resolve_nous_runtime_credentials(
 
         portal_base_url = (
             _optional_base_url(state.get("portal_base_url"))
-            or os.getenv("HERMES_PORTAL_BASE_URL")
-            or os.getenv("NOUS_PORTAL_BASE_URL")
+            or nous_portal_base_url()
             or DEFAULT_NOUS_PORTAL_URL
         ).rstrip("/")
         inference_base_url = (
             _optional_base_url(state.get("inference_base_url"))
-            or os.getenv("NOUS_INFERENCE_BASE_URL")
+            or nous_inference_base_url()
             or DEFAULT_NOUS_INFERENCE_URL
         ).rstrip("/")
         client_id = str(state.get("client_id") or DEFAULT_NOUS_CLIENT_ID)
@@ -7159,13 +7158,12 @@ def _nous_device_code_login(
     pconfig = PROVIDER_REGISTRY["nous"]
     portal_base_url = (
         portal_base_url
-        or os.getenv("HERMES_PORTAL_BASE_URL")
-        or os.getenv("NOUS_PORTAL_BASE_URL")
+        or nous_portal_base_url()
         or pconfig.portal_base_url
     ).rstrip("/")
     requested_inference_url = (
         inference_base_url
-        or os.getenv("NOUS_INFERENCE_BASE_URL")
+        or nous_inference_base_url()
         or pconfig.inference_base_url
     ).rstrip("/")
     client_id = client_id or pconfig.client_id

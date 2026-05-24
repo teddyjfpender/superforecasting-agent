@@ -1713,6 +1713,39 @@ def test_mcp_serve_identity_is_forecast_native():
     assert "superforecasting-agent mcp serve" in mcp_docs
 
 
+def test_nous_runtime_env_aliases_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    nous_env = (root / "hermes_cli" / "nous_env.py").read_text(encoding="utf-8")
+    auth = (root / "hermes_cli" / "auth.py").read_text(encoding="utf-8")
+    runtime_provider = (root / "hermes_cli" / "runtime_provider.py").read_text(
+        encoding="utf-8"
+    )
+    auxiliary_client = (root / "agent" / "auxiliary_client.py").read_text(
+        encoding="utf-8"
+    )
+    web_server = (root / "hermes_cli" / "web_server.py").read_text(encoding="utf-8")
+    env_reference = (root / "website" / "docs" / "reference" / "environment-variables.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "SUPERFORECASTING_AGENT_NOUS_PORTAL_BASE_URL" in nous_env
+    assert "FORECAST_NOUS_PORTAL_BASE_URL" in nous_env
+    assert "HERMES_PORTAL_BASE_URL" in nous_env
+    assert "NOUS_BASE_URL" in nous_env
+    assert "SUPERFORECASTING_AGENT_NOUS_INFERENCE_BASE_URL" in nous_env
+    assert "FORECAST_NOUS_INFERENCE_BASE_URL" in nous_env
+    assert "SUPERFORECASTING_AGENT_NOUS_MIN_KEY_TTL_SECONDS" in nous_env
+    assert "FORECAST_NOUS_TIMEOUT_SECONDS" in nous_env
+    assert "nous_portal_base_url()" in auth
+    assert "nous_inference_base_url()" in auth
+    assert "nous_min_key_ttl_seconds()" in runtime_provider
+    assert "nous_timeout_seconds()" in runtime_provider
+    assert "nous_inference_base_url(_NOUS_DEFAULT_BASE_URL)" in auxiliary_client
+    assert "nous_portal_base_url()" in web_server
+    assert "SUPERFORECASTING_AGENT_NOUS_PORTAL_BASE_URL" in env_reference
+    assert "FORECAST_NOUS_TIMEOUT_SECONDS" in env_reference
+
+
 def test_homebrew_formula_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     formula_path = root / "packaging" / "homebrew" / "superforecasting-agent.rb"

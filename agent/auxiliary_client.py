@@ -50,6 +50,12 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 from urllib.parse import urlparse, parse_qs, urlunparse
 
+from hermes_cli.nous_env import (
+    nous_inference_base_url,
+    nous_min_key_ttl_seconds,
+    nous_timeout_seconds,
+)
+
 # NOTE: `from openai import OpenAI` is deliberately NOT at module top — the
 # openai SDK pulls a large type tree (~240 ms cold, including responses/*,
 # graders/*). We expose `OpenAI` here as a thin proxy that imports the SDK on
@@ -1255,7 +1261,7 @@ def _nous_api_key(provider: dict) -> str:
 
 def _nous_base_url() -> str:
     """Resolve the Nous inference base URL from env or default."""
-    return os.getenv("NOUS_INFERENCE_BASE_URL", _NOUS_DEFAULT_BASE_URL)
+    return nous_inference_base_url(_NOUS_DEFAULT_BASE_URL)
 
 
 def _resolve_nous_runtime_api(*, force_refresh: bool = False) -> Optional[tuple[str, str]]:
@@ -1274,8 +1280,8 @@ def _resolve_nous_runtime_api(*, force_refresh: bool = False) -> Optional[tuple[
         )
 
         creds = resolve_nous_runtime_credentials(
-            min_key_ttl_seconds=max(60, int(os.getenv("HERMES_NOUS_MIN_KEY_TTL_SECONDS", "1800"))),
-            timeout_seconds=float(os.getenv("HERMES_NOUS_TIMEOUT_SECONDS", "15")),
+            min_key_ttl_seconds=nous_min_key_ttl_seconds(),
+            timeout_seconds=nous_timeout_seconds(),
             inference_auth_mode=(
                 NOUS_INFERENCE_AUTH_MODE_LEGACY
                 if force_refresh
@@ -2673,8 +2679,8 @@ def _refresh_provider_credentials(provider: str) -> bool:
             )
 
             creds = resolve_nous_runtime_credentials(
-                min_key_ttl_seconds=max(60, int(os.getenv("HERMES_NOUS_MIN_KEY_TTL_SECONDS", "1800"))),
-                timeout_seconds=float(os.getenv("HERMES_NOUS_TIMEOUT_SECONDS", "15")),
+                min_key_ttl_seconds=nous_min_key_ttl_seconds(),
+                timeout_seconds=nous_timeout_seconds(),
                 inference_auth_mode=NOUS_INFERENCE_AUTH_MODE_LEGACY,
             )
             if not str(creds.get("api_key", "") or "").strip():

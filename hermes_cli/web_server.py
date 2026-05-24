@@ -1879,11 +1879,11 @@ async def _start_device_code_flow(provider_id: str) -> Dict[str, Any]:
             _request_nous_device_code_with_scope_fallback,
             PROVIDER_REGISTRY,
         )
+        from hermes_cli.nous_env import nous_portal_base_url
         import httpx
         pconfig = PROVIDER_REGISTRY["nous"]
         portal_base_url = (
-            os.getenv("HERMES_PORTAL_BASE_URL")
-            or os.getenv("NOUS_PORTAL_BASE_URL")
+            nous_portal_base_url()
             or pconfig.portal_base_url
         ).rstrip("/")
         client_id = pconfig.client_id
