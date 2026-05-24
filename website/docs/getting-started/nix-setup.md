@@ -67,7 +67,7 @@ nix build
 
 ## NixOS Module
 
-The flake exports `nixosModules.default` — a full NixOS service module that declaratively manages user creation, directories, config generation, secrets, documents, and service lifecycle.
+The flake exports `nixosModules.default` and `nixosModules."superforecasting-agent"` — the same full NixOS service module that declaratively manages user creation, directories, config generation, secrets, documents, and service lifecycle. `nixosModules."hermes-agent"` remains as a compatibility alias.
 
 :::note
 This module requires NixOS. For non-NixOS systems (macOS, other Linux distros), use `nix profile install` and the standard CLI workflow above.
@@ -87,7 +87,7 @@ This module requires NixOS. For non-NixOS systems (macOS, other Linux distros), 
     nixosConfigurations.your-host = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
-        superforecasting-agent.nixosModules.default
+        superforecasting-agent.nixosModules."superforecasting-agent"
         ./configuration.nix
       ];
     };
@@ -482,7 +482,7 @@ The first OAuth authorization requires a browser-based consent flow. In a headle
 
 ```bash
 # Container mode
-docker exec -it hermes-agent \
+docker exec -it superforecasting-agent \
   superforecasting-agent mcp add my-oauth-server --url https://mcp.example.com/mcp --auth oauth
 
 # Native mode
@@ -540,7 +540,7 @@ When Superforecasting Agent runs via the NixOS module, the following CLI command
 This prevents drift between what Nix declares and what's on disk. Detection uses two signals:
 
 1. **`SUPERFORECASTING_AGENT_MANAGED=true`** environment variable — set by the systemd service, visible to the gateway process; `FORECAST_MANAGED` and legacy `HERMES_MANAGED` are exported as compatibility aliases
-2. **`.managed` marker file** in `SUPERFORECASTING_AGENT_HOME` — set by the activation script, visible to interactive shells (e.g., `docker exec -it hermes-agent superforecasting-agent config set ...` is also blocked)
+2. **`.managed` marker file** in `SUPERFORECASTING_AGENT_HOME` — set by the activation script, visible to interactive shells (e.g., `docker exec -it superforecasting-agent superforecasting-agent config set ...` is also blocked)
 
 To change configuration, edit your Nix config and run `sudo nixos-rebuild switch`.
 
@@ -557,7 +557,7 @@ When container mode is enabled, Superforecasting Agent runs inside a persistent 
 ```
 Host                                    Container
 ────                                    ─────────
-/nix/store/...-hermes-agent-0.1.0  ──►  /nix/store/... (ro)
+/nix/store/...-superforecasting-agent-0.1.0  ──►  /nix/store/... (ro)
 ~/.hermes -> /var/lib/hermes/.hermes       (symlink bridge, per hostUsers)
 /var/lib/hermes/                    ──►  /data/          (rw)
   ├── current-package -> /nix/store/...    (symlink, updated each rebuild)
@@ -786,8 +786,8 @@ nix build .#checks.x86_64-linux.config-roundtrip    # merge script preserves use
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `enable` | `bool` | `false` | Enable the inherited `hermes-agent` service |
-| `package` | `package` | `hermes-agent` | The package to use; the overlay name remains inherited for compatibility |
+| `enable` | `bool` | `false` | Enable the managed Superforecasting Agent service |
+| `package` | `package` | `superforecasting-agent` | The package to use; `hermes-agent` remains as a compatibility alias |
 | `user` | `str` | `"hermes"` | System user |
 | `group` | `str` | `"hermes"` | System group |
 | `createUser` | `bool` | `true` | Auto-create user/group |
@@ -924,18 +924,18 @@ All `docker` commands below work the same with `podman`. Substitute accordingly 
 journalctl -u hermes-agent -f
 
 # Container mode: also available directly
-docker logs -f hermes-agent
+docker logs -f superforecasting-agent
 ```
 
 ### Container Inspection
 
 ```bash
 systemctl status hermes-agent
-docker ps -a --filter name=hermes-agent
-docker inspect hermes-agent --format='{{.State.Status}}'
-docker exec -it hermes-agent bash
-docker exec hermes-agent readlink /data/current-package
-docker exec hermes-agent cat /data/.container-identity
+docker ps -a --filter name=superforecasting-agent
+docker inspect superforecasting-agent --format='{{.State.Status}}'
+docker exec -it superforecasting-agent bash
+docker exec superforecasting-agent readlink /data/current-package
+docker exec superforecasting-agent cat /data/.container-identity
 ```
 
 ### Force Container Recreation
@@ -944,7 +944,7 @@ If you need to reset the writable layer (fresh Ubuntu):
 
 ```bash
 sudo systemctl stop hermes-agent
-docker rm -f hermes-agent
+docker rm -f superforecasting-agent
 sudo rm /var/lib/hermes/.container-identity
 sudo systemctl start hermes-agent
 ```
@@ -958,13 +958,13 @@ If the agent starts but can't authenticate with the LLM provider, check that the
 sudo -u hermes cat /var/lib/hermes/.hermes/.env
 
 # Container mode
-docker exec hermes-agent cat /data/.hermes/.env
+docker exec superforecasting-agent cat /data/.hermes/.env
 ```
 
 ### GC Root Verification
 
 ```bash
-nix-store --query --roots $(docker exec hermes-agent readlink /data/current-package)
+nix-store --query --roots $(docker exec superforecasting-agent readlink /data/current-package)
 ```
 
 ### Common Issues
@@ -976,6 +976,6 @@ nix-store --query --roots $(docker exec hermes-agent readlink /data/current-pack
 | `superforecasting-agent version` shows old version | Container not restarted | `systemctl restart hermes-agent` |
 | Permission denied on `/var/lib/hermes` | State dir is `0750 hermes:hermes` | Use `docker exec` or `sudo -u hermes` |
 | `nix-collect-garbage` removed the binary | GC root missing | Restart the service (preStart recreates the GC root) |
-| `no container with name or ID "hermes-agent"` (Podman) | Podman rootful container not visible to regular user | Add passwordless sudo for podman (see [Container Mode](#container-mode) section) |
+| `no container with name or ID "superforecasting-agent"` (Podman) | Podman rootful container not visible to regular user | Add passwordless sudo for podman (see [Container Mode](#container-mode) section) |
 | `unable to find user hermes` | Container still starting (entrypoint hasn't created user yet) | Wait a few seconds and retry — the CLI retries automatically |
 | Tool added via `extraPackages` not found in terminal | Requires `nixos-rebuild switch` to update the per-user profile | Rebuild and restart: `nixos-rebuild switch && systemctl restart hermes-agent` |

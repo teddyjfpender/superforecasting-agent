@@ -1824,6 +1824,7 @@ def test_nix_package_aliases_are_forecast_native():
     nix_package = (root / "nix" / "hermes-agent.nix").read_text(encoding="utf-8")
     nix_packages = (root / "nix" / "packages.nix").read_text(encoding="utf-8")
     nix_overlay = (root / "nix" / "overlays.nix").read_text(encoding="utf-8")
+    nix_module = (root / "nix" / "nixosModules.nix").read_text(encoding="utf-8")
     nix_checks = (root / "nix" / "checks.nix").read_text(encoding="utf-8")
     nix_docs = (root / "website" / "docs" / "getting-started" / "nix-setup.md").read_text(
         encoding="utf-8"
@@ -1837,10 +1838,18 @@ def test_nix_package_aliases_are_forecast_native():
     assert '"hermes-agent" = superforecastingAgent' in nix_packages
     assert '"superforecasting-agent" = superforecastingAgent' in nix_overlay
     assert '"hermes-agent" = superforecastingAgent' in nix_overlay
+    assert 'containerName = "superforecasting-agent"' in nix_module
+    assert 'default = superforecasting-agent' in nix_module
+    assert '"${effectivePackage}/bin/superforecasting-agent"' in nix_module
+    assert "${containerDataDir}/current-package/bin/superforecasting-agent gateway run --replace" in nix_module
+    assert 'flake.nixosModules."superforecasting-agent" = superforecastingAgentModule' in nix_module
+    assert 'flake.nixosModules."hermes-agent" = superforecastingAgentModule' in nix_module
     assert "share/superforecasting-agent/skills" in nix_checks
     assert "share/hermes-agent/skills" in nix_checks
     assert "<this-fork-url>#superforecasting-agent" in nix_docs
+    assert 'nixosModules."superforecasting-agent"' in nix_docs
     assert 'pkgs."superforecasting-agent".override' in nix_docs
+    assert "docker exec -it superforecasting-agent" in nix_docs
     assert "`pkgs.\"hermes-agent\"` remain compatibility names" in nix_docs
 
 

@@ -349,7 +349,7 @@ def managed_error(action: str = "modify configuration"):
 # =============================================================================
 
 def get_container_exec_info() -> Optional[dict]:
-    """Read container mode metadata from HERMES_HOME/.container-mode.
+    """Read container mode metadata from the active agent home.
 
     Returns a dict with keys: backend, container_name, exec_user, hermes_bin
     or None if container mode is not active, we're already inside the
@@ -383,7 +383,7 @@ def get_container_exec_info() -> Optional[dict]:
     backend = info.get("backend", "docker")
     container_name = info.get("container_name", "superforecasting-agent")
     exec_user = info.get("exec_user", "hermes")
-    hermes_bin = info.get("hermes_bin", "/data/current-package/bin/hermes")
+    hermes_bin = info.get("hermes_bin", "/data/current-package/bin/superforecasting-agent")
 
     return {
         "backend": backend,

@@ -24,8 +24,9 @@
 #     environmentFiles = [ config.sops.secrets."hermes/env".path ];
 #   };
 #
-{ inputs, ... }: {
-  flake.nixosModules.default = { config, lib, pkgs, ... }:
+{ inputs, ... }:
+let
+  superforecastingAgentModule = { config, lib, pkgs, ... }:
 
   let
     cfg = config.services.hermes-agent;
@@ -33,7 +34,7 @@
       if cfg.extraPythonPackages == [ ] && cfg.extraDependencyGroups == [ ]
       then cfg.package
       else cfg.package.override { inherit (cfg) extraPythonPackages extraDependencyGroups; };
-    hermes-agent = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+    superforecasting-agent = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.default;
 
     # Deep-merge config type (from 0xrsydn/nix-hermes-agent)
     deepConfigType = lib.types.mkOptionType {
@@ -67,7 +68,7 @@
       )
     );
 
-    containerName = "hermes-agent";
+    containerName = "superforecasting-agent";
     containerDataDir = "/data";     # stateDir mount point inside container
     containerHomeDir = "/home/hermes";
 
@@ -209,8 +210,8 @@
       # ── Package ──────────────────────────────────────────────────────────
       package = mkOption {
         type = types.package;
-        default = hermes-agent;
-        description = "The package to use. The overlay attribute remains hermes-agent for compatibility.";
+        default = superforecasting-agent;
+        description = "The package to use. The primary overlay attribute is superforecasting-agent; hermes-agent remains as compatibility.";
       };
 
       # ── Service identity ─────────────────────────────────────────────────
@@ -456,7 +457,7 @@
       extraArgs = mkOption {
         type = types.listOf types.str;
         default = [ ];
-        description = "Extra command-line arguments for `hermes gateway`.";
+        description = "Extra command-line arguments for `superforecasting-agent gateway`.";
       };
 
       extraPackages = mkOption {
@@ -769,7 +770,7 @@
     backend=${cfg.container.backend}
     container_name=${containerName}
     exec_user=${cfg.user}
-    hermes_bin=${containerDataDir}/current-package/bin/hermes
+    hermes_bin=${containerDataDir}/current-package/bin/superforecasting-agent
     HERMES_CONTAINER_MODE_EOF
             chown ${cfg.user}:${cfg.group} ${cfg.stateDir}/.hermes/.container-mode
             chmod 0644 ${cfg.stateDir}/.hermes/.container-mode
@@ -895,7 +896,7 @@
             # reads them at Python startup — no systemd EnvironmentFile needed.
 
             ExecStart = lib.concatStringsSep " " ([
-              "${effectivePackage}/bin/hermes"
+              "${effectivePackage}/bin/superforecasting-agent"
               "gateway"
             ] ++ cfg.extraArgs);
 
@@ -934,7 +935,7 @@
         virtualisation.docker.enable = lib.mkDefault (cfg.container.backend == "docker");
 
         systemd.services.hermes-agent = {
-          description = "Hermes Agent Gateway (container)";
+          description = "Superforecasting Agent Gateway (container)";
           wantedBy = [ "multi-user.target" ];
           after = [ "network-online.target" ]
             ++ lib.optional (cfg.container.backend == "docker") "docker.service";
@@ -986,7 +987,7 @@
                 --env MESSAGING_CWD=${containerWorkDir} \
                 ${lib.concatStringsSep " " cfg.container.extraOptions} \
                 ${cfg.container.image} \
-                ${containerDataDir}/current-package/bin/hermes gateway run --replace ${lib.concatStringsSep " " cfg.extraArgs}
+                ${containerDataDir}/current-package/bin/superforecasting-agent gateway run --replace ${lib.concatStringsSep " " cfg.extraArgs}
 
               echo "${containerIdentity}" > ${identityFile}
             fi
@@ -1010,4 +1011,8 @@
       })
     ]);
   };
+in {
+  flake.nixosModules.default = superforecastingAgentModule;
+  flake.nixosModules."superforecasting-agent" = superforecastingAgentModule;
+  flake.nixosModules."hermes-agent" = superforecastingAgentModule;
 }
