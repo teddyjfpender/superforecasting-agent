@@ -290,6 +290,8 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     assert row["delta"] == pytest.approx(0.15)
     assert row["baseline_count"] == 1
     assert row["open_assumption_count"] == 1
+    assert summary["open_assumption_count"] == 1
+    assert summary["stale_assumption_count"] == 0
     assert row["open_alert_count"] == 1
     assert summary["review_queue_count"] == 1
     assert summary["review_queue"][0]["id"] == question.id
@@ -328,6 +330,7 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     } >= {"live_scored_forecasts", "agent_protocol_scored_cases"}
     assert "Superforecasting Agent" in text
     assert "Will shared forecast dashboard render?" in text
+    assert "assumptions: 1/0" in text
     assert "AsOf" in text
     assert "2026-05-02T00:00:00Z" in text
     assert "Review Queue" in text

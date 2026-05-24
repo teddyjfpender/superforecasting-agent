@@ -81,11 +81,21 @@ const formatRequirement = (value: string | undefined) =>
 const plural = (count: number, singular: string, pluralForm = `${singular}s`) =>
   `${count} ${count === 1 ? singular : pluralForm}`
 
-const assumptionCounts = (questions: ForecastDashboardQuestion[]) => {
+const assumptionCounts = (summary: ForecastDashboardResponse['summary']) => {
+  if (!summary) {
+    return { open: 0, stale: 0 }
+  }
+
+  const summaryOpen = numberValue(summary.open_assumption_count)
+  const summaryStale = numberValue(summary.stale_assumption_count)
+  if (summaryOpen !== null || summaryStale !== null) {
+    return { open: summaryOpen ?? 0, stale: summaryStale ?? 0 }
+  }
+
   let open = 0
   let stale = 0
 
-  for (const row of questions) {
+  for (const row of summary.questions ?? []) {
     open += numberValue(row.open_assumption_count) ?? 0
     stale += numberValue(row.stale_assumption_count) ?? 0
   }
@@ -105,7 +115,7 @@ export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): st
   const reviews = numberValue(summary.review_queue_count) ?? (summary.review_queue ?? []).length
   const calibrationCount = numberValue(summary.calibration?.count)
   const lessonCount = numberValue(summary.learning?.total_lessons)
-  const assumptions = assumptionCounts(summary.questions ?? [])
+  const assumptions = assumptionCounts(summary)
   const bits = [`desk ${active} active`]
 
   if (alerts > 0) {
@@ -172,7 +182,7 @@ const triageRows = (response: ForecastDashboardResponse): [string, string][] => 
   const calibrationCount = numberValue(summary.calibration?.count) ?? 0
   const learning = summary.learning
   const backtests = summary.recent_backtests ?? []
-  const assumptions = assumptionCounts(summary.questions ?? [])
+  const assumptions = assumptionCounts(summary)
   const rows: [string, string][] = []
 
   if (alerts > 0) {
@@ -313,7 +323,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
   const active = summary.active_count ?? questions.length
   const alerts = summary.open_alert_count ?? 0
   const reviews = summary.review_queue_count ?? reviewQueue.length
-  const assumptions = assumptionCounts(questions)
+  const assumptions = assumptionCounts(summary)
 
   const sections: PanelSection[] = [
     {
@@ -572,7 +582,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
   const active = summary.active_count ?? questions.length
   const alerts = summary.open_alert_count ?? 0
   const reviews = summary.review_queue_count ?? reviewQueue.length
-  const assumptions = assumptionCounts(questions)
+  const assumptions = assumptionCounts(summary)
   const sections: PanelSection[] = [
     {
       rows: [

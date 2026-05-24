@@ -131,6 +131,7 @@ describe('forecast desk panel helpers', () => {
         active_count: 2,
         calibration: { count: 1 },
         open_alert_count: 0,
+        open_assumption_count: 5,
         product: 'Superforecasting Agent',
         questions: [
           {
@@ -149,7 +150,8 @@ describe('forecast desk panel helpers', () => {
           }
         ],
         review_queue: [],
-        review_queue_count: 0
+        review_queue_count: 0,
+        stale_assumption_count: 1
       }
     }
 

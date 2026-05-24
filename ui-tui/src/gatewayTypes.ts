@@ -192,11 +192,13 @@ export interface ForecastDashboardSummary {
   evidence_status?: ForecastDashboardEvidenceStatus
   learning?: ForecastDashboardLearning
   open_alert_count?: number
+  open_assumption_count?: number
   product?: string
   questions?: ForecastDashboardQuestion[]
   review_queue?: ForecastDashboardReview[]
   review_queue_count?: number
   recent_backtests?: ForecastDashboardBacktest[]
+  stale_assumption_count?: number
 }
 
 export interface ForecastDashboardAlert {

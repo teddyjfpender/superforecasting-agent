@@ -258,6 +258,8 @@ class TestWebServerEndpoints:
         assert data["product"] == "Superforecasting Agent"
         assert data["active_count"] == 1
         assert data["open_alert_count"] == 1
+        assert data["open_assumption_count"] == 1
+        assert data["stale_assumption_count"] == 0
         assert data["recent_backtests"] == []
         assert data["learning"]["total_lessons"] == 0
         assert data["learning"]["top_error_profiles"] == []

@@ -712,7 +712,9 @@ export interface ForecastDashboardResponse {
   product: string;
   active_count: number;
   open_alert_count: number;
+  open_assumption_count: number;
   review_queue_count: number;
+  stale_assumption_count: number;
   alerts?: ForecastDashboardAlert[];
   calibration: ForecastDashboardCalibration;
   evidence_status?: ForecastDashboardEvidenceStatus;

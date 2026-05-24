@@ -152,11 +152,16 @@ def build_dashboard_summary(*, ledger: ForecastLedger | None = None, limit: int 
             }
         )
 
+    open_assumption_count = sum(int(row.get("open_assumption_count") or 0) for row in rows)
+    stale_assumption_count = sum(int(row.get("stale_assumption_count") or 0) for row in rows)
+
     return {
         "product": PRODUCT_NAME,
         "active_count": len(questions),
         "open_alert_count": len(alerts),
         "review_queue_count": len(review_queue),
+        "open_assumption_count": open_assumption_count,
+        "stale_assumption_count": stale_assumption_count,
         "calibration": calibration,
         "evidence_status": build_forecasting_evidence_status(ledger, backtest_summaries),
         "learning": build_learning_summary(ledger=ledger),
@@ -175,6 +180,7 @@ def render_dashboard_text(summary: dict[str, Any]) -> str:
             f"active: {summary.get('active_count', 0)}  "
             f"open_alerts: {summary.get('open_alert_count', 0)}  "
             f"review_queue: {summary.get('review_queue_count', 0)}  "
+            f"assumptions: {summary.get('open_assumption_count', 0)}/{summary.get('stale_assumption_count', 0)}  "
             f"calibration_n: {(summary.get('calibration') or {}).get('count', 0)}"
         ),
         "",

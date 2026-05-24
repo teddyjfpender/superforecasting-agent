@@ -920,6 +920,19 @@ export default function ForecastsPage() {
           <CardContent className="flex items-center justify-between py-5">
             <div>
               <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                Assumptions
+              </div>
+              <div className="mt-1 font-mono-ui text-2xl text-foreground">
+                {data ? `${data.open_assumption_count}/${data.stale_assumption_count}` : "-"}
+              </div>
+            </div>
+            <BrainCircuit className="h-5 w-5 text-muted-foreground" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center justify-between py-5">
+            <div>
+              <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
                 Brier
               </div>
               <div className="mt-1 font-mono-ui text-2xl text-foreground">
