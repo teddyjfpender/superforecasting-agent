@@ -131,6 +131,7 @@ def _install_modal_test_modules(
     from_id_calls: list[str] = []
     registry_calls: list[tuple[str, list[str] | None]] = []
     create_calls: list[dict] = []
+    lookup_calls: list[tuple[str, bool]] = []
 
     class _FakeImage:
         @staticmethod
@@ -144,7 +145,8 @@ def _install_modal_test_modules(
             return {"kind": "registry", "image": image}
 
     async def _lookup_aio(_name: str, create_if_missing: bool = False):
-        return types.SimpleNamespace(name="hermes-agent", create_if_missing=create_if_missing)
+        lookup_calls.append((_name, create_if_missing))
+        return types.SimpleNamespace(name=_name, create_if_missing=create_if_missing)
 
     class _FakeSandboxInstance:
         def __init__(self, image):
@@ -194,6 +196,7 @@ def _install_modal_test_modules(
         "create_calls": create_calls,
         "from_id_calls": from_id_calls,
         "registry_calls": registry_calls,
+        "lookup_calls": lookup_calls,
     }
 
 
@@ -207,6 +210,7 @@ def test_modal_environment_migrates_legacy_snapshot_key_and_uses_snapshot_id(tmp
     env = modal_module.ModalEnvironment(image="python:3.11", task_id="task-legacy")
 
     try:
+        assert state["lookup_calls"][0] == ("superforecasting-agent", True)
         assert state["from_id_calls"] == ["im-legacy123"]
         assert state["create_calls"][0]["image"] == {"kind": "snapshot", "image_id": "im-legacy123"}
         assert json.loads(snapshot_store.read_text()) == {"direct:task-legacy": "im-legacy123"}

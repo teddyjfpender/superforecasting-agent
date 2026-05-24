@@ -1,7 +1,7 @@
 """Modal cloud execution environment using the native Modal SDK directly.
 
 Uses ``Sandbox.create()`` + ``Sandbox.exec()`` instead of the older runtime
-wrapper, while preserving Hermes' persistent snapshot behavior across sessions.
+wrapper, while preserving inherited persistent snapshot behavior across sessions.
 """
 
 import asyncio
@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 _SNAPSHOT_STORE = get_hermes_home() / "modal_snapshots.json"
 _DIRECT_SNAPSHOT_NAMESPACE = "direct"
+MODAL_APP_NAME = "superforecasting-agent"
 
 
 def _load_snapshots() -> dict:
@@ -239,7 +240,7 @@ class ModalEnvironment(BaseEnvironment):
         self._worker.start()
 
         async def _create_sandbox(image_spec: Any):
-            app = await _modal.App.lookup.aio("hermes-agent", create_if_missing=True)
+            app = await _modal.App.lookup.aio(MODAL_APP_NAME, create_if_missing=True)
             create_kwargs = dict(sandbox_kwargs)
             if cred_mounts:
                 existing_mounts = list(create_kwargs.pop("mounts", []))

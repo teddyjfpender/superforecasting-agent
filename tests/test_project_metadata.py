@@ -252,6 +252,15 @@ def test_voice_install_guidance_is_forecast_native():
     assert 'pip install "hermes-agent[voice]"' not in text
 
 
+def test_modal_runtime_app_name_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "tools" / "environments" / "modal.py").read_text(encoding="utf-8")
+
+    assert 'MODAL_APP_NAME = "superforecasting-agent"' in text
+    assert 'App.lookup.aio("hermes-agent"' not in text
+    assert "preserving Hermes' persistent snapshot behavior" not in text
+
+
 def test_standalone_gateway_script_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "scripts" / "hermes-gateway").read_text(encoding="utf-8")
