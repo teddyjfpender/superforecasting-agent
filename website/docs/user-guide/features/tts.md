@@ -248,13 +248,13 @@ Local Whisper model sizes:
 | `medium` | about 1.5 GB | Slower | Great |
 | `large-v3` | about 3 GB | Slowest | Best |
 
-Custom local command transcription uses the inherited `HERMES_LOCAL_STT_COMMAND` variable because that is still the runtime integration point:
+Custom local command transcription uses a forecast-native environment variable, with inherited Hermes names accepted for migrated installs:
 
 ```bash
-export HERMES_LOCAL_STT_COMMAND='whisper-cli {input_path} --output-dir {output_dir}'
+export SUPERFORECASTING_AGENT_LOCAL_STT_COMMAND='whisper-cli {input_path} --output-dir {output_dir}'
 ```
 
-Your command can use `{input_path}`, `{output_dir}`, `{language}`, and `{model}`. It must write a `.txt` transcript somewhere under `{output_dir}`.
+Your command can use `{input_path}`, `{output_dir}`, `{language}`, and `{model}`. It must write a `.txt` transcript somewhere under `{output_dir}`. `FORECAST_LOCAL_STT_COMMAND` and legacy `HERMES_LOCAL_STT_COMMAND` are compatibility aliases.
 
 ### Example: Doubao / Volcengine ASR
 
@@ -262,7 +262,7 @@ Your command can use `{input_path}`, `{output_dir}`, `{language}`, and `{model}`
 pip install doubao-speech
 export VOLCENGINE_APP_ID="your-app-id"
 export VOLCENGINE_ACCESS_TOKEN="your-access-token"
-export HERMES_LOCAL_STT_COMMAND='doubao-speech transcribe {input_path} --out {output_dir}/transcript.txt'
+export SUPERFORECASTING_AGENT_LOCAL_STT_COMMAND='doubao-speech transcribe {input_path} --out {output_dir}/transcript.txt'
 ```
 
 ```yaml
@@ -274,7 +274,7 @@ stt:
 
 If the configured provider is unavailable, the runtime falls back where possible:
 
-- local `faster-whisper` unavailable: try local `whisper` CLI or `HERMES_LOCAL_STT_COMMAND`
+- local `faster-whisper` unavailable: try local `whisper` CLI or `SUPERFORECASTING_AGENT_LOCAL_STT_COMMAND`
 - Groq key missing: fall back to local transcription, then OpenAI if configured
 - OpenAI key missing: fall back to local transcription, then Groq if configured
 - Mistral key or SDK missing: skip in auto-detect

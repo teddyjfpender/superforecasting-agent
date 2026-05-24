@@ -49,7 +49,11 @@ def clean_env(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_LOCAL_STT_COMMAND", raising=False)
+    monkeypatch.delenv("FORECAST_LOCAL_STT_COMMAND", raising=False)
     monkeypatch.delenv("HERMES_LOCAL_STT_COMMAND", raising=False)
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_LOCAL_STT_LANGUAGE", raising=False)
+    monkeypatch.delenv("FORECAST_LOCAL_STT_LANGUAGE", raising=False)
     monkeypatch.delenv("HERMES_LOCAL_STT_LANGUAGE", raising=False)
 
 
@@ -152,6 +156,17 @@ class TestExplicitProviderRespected:
 
     def test_explicit_local_uses_local_command_fallback(self, monkeypatch):
         """Local-to-local_command fallback is fine — both are local."""
+        monkeypatch.setenv(
+            "SUPERFORECASTING_AGENT_LOCAL_STT_COMMAND",
+            "whisper {input_path} --output_dir {output_dir} --language {language}",
+        )
+        with patch("tools.transcription_tools._HAS_FASTER_WHISPER", False):
+            from tools.transcription_tools import _get_provider
+            result = _get_provider({"provider": "local"})
+            assert result == "local_command"
+
+    def test_explicit_local_accepts_legacy_local_command_alias(self, monkeypatch):
+        """Legacy Hermes STT command env still works for migrated installs."""
         monkeypatch.setenv(
             "HERMES_LOCAL_STT_COMMAND",
             "whisper {input_path} --output_dir {output_dir} --language {language}",
@@ -355,6 +370,8 @@ class TestTranscribeOpenAIExtended:
 
 class TestTranscribeLocalCommand:
     def test_auto_detects_local_whisper_binary(self, monkeypatch):
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_LOCAL_STT_COMMAND", raising=False)
+        monkeypatch.delenv("FORECAST_LOCAL_STT_COMMAND", raising=False)
         monkeypatch.delenv("HERMES_LOCAL_STT_COMMAND", raising=False)
         monkeypatch.setattr("tools.transcription_tools._find_whisper_binary", lambda: "/opt/homebrew/bin/whisper")
 
@@ -372,10 +389,10 @@ class TestTranscribeLocalCommand:
         out_dir.mkdir()
 
         monkeypatch.setenv(
-            "HERMES_LOCAL_STT_COMMAND",
+            "SUPERFORECASTING_AGENT_LOCAL_STT_COMMAND",
             "whisper {input_path} --model {model} --output_dir {output_dir} --language {language}",
         )
-        monkeypatch.setenv("HERMES_LOCAL_STT_LANGUAGE", "en")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_LOCAL_STT_LANGUAGE", "en")
 
         def fake_tempdir(prefix=None):
             class _TempDir:
@@ -1215,7 +1232,7 @@ class TestTranscribeXAI:
         monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
         # Explicitly set language via env to exercise the override chain
         # (config > env > DEFAULT_LOCAL_STT_LANGUAGE)
-        monkeypatch.setenv("HERMES_LOCAL_STT_LANGUAGE", "fr")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_LOCAL_STT_LANGUAGE", "fr")
 
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -1372,6 +1389,8 @@ class TestShellSafety:
     def test_auto_detected_template_is_shlex_safe(self, monkeypatch):
         """Auto-detected whisper command should be safely splittable."""
         import shlex
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_LOCAL_STT_COMMAND", raising=False)
+        monkeypatch.delenv("FORECAST_LOCAL_STT_COMMAND", raising=False)
         monkeypatch.delenv("HERMES_LOCAL_STT_COMMAND", raising=False)
         monkeypatch.setattr(
             "tools.transcription_tools._find_whisper_binary",
@@ -1391,17 +1410,17 @@ class TestShellSafety:
         assert "/tmp/test.wav" in parts
 
     def test_env_var_template_uses_shell_path(self, monkeypatch):
-        """When HERMES_LOCAL_STT_COMMAND is set, use_shell should be True."""
-        import os
-        from tools.transcription_tools import LOCAL_STT_COMMAND_ENV
+        """When the preferred local STT command env is set, use_shell should be True."""
+        from tools.transcription_tools import LOCAL_STT_COMMAND_ENV, _has_configured_local_command_template
         monkeypatch.setenv(LOCAL_STT_COMMAND_ENV, "whisper {input_path} | tee log.txt")
-        use_shell = bool(os.getenv(LOCAL_STT_COMMAND_ENV, "").strip())
+        use_shell = _has_configured_local_command_template()
         assert use_shell is True
 
     def test_no_env_var_uses_list_mode(self, monkeypatch):
-        """When no env var is set, use_shell should be False."""
-        import os
-        from tools.transcription_tools import LOCAL_STT_COMMAND_ENV
+        """When no local STT command env alias is set, use_shell should be False."""
+        from tools.transcription_tools import LOCAL_STT_COMMAND_ENV, _has_configured_local_command_template
         monkeypatch.delenv(LOCAL_STT_COMMAND_ENV, raising=False)
-        use_shell = bool(os.getenv(LOCAL_STT_COMMAND_ENV, "").strip())
+        monkeypatch.delenv("FORECAST_LOCAL_STT_COMMAND", raising=False)
+        monkeypatch.delenv("HERMES_LOCAL_STT_COMMAND", raising=False)
+        use_shell = _has_configured_local_command_template()
         assert use_shell is False

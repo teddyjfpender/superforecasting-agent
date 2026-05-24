@@ -84,8 +84,18 @@ DEFAULT_LOCAL_STT_LANGUAGE = "en"
 DEFAULT_STT_MODEL = os.getenv("STT_OPENAI_MODEL", "whisper-1")
 DEFAULT_GROQ_STT_MODEL = os.getenv("STT_GROQ_MODEL", "whisper-large-v3-turbo")
 DEFAULT_MISTRAL_STT_MODEL = os.getenv("STT_MISTRAL_MODEL", "voxtral-mini-latest")
-LOCAL_STT_COMMAND_ENV = "HERMES_LOCAL_STT_COMMAND"
-LOCAL_STT_LANGUAGE_ENV = "HERMES_LOCAL_STT_LANGUAGE"
+LOCAL_STT_COMMAND_ENV = "SUPERFORECASTING_AGENT_LOCAL_STT_COMMAND"
+LOCAL_STT_COMMAND_ENV_NAMES = (
+    LOCAL_STT_COMMAND_ENV,
+    "FORECAST_LOCAL_STT_COMMAND",
+    "HERMES_LOCAL_STT_COMMAND",
+)
+LOCAL_STT_LANGUAGE_ENV = "SUPERFORECASTING_AGENT_LOCAL_STT_LANGUAGE"
+LOCAL_STT_LANGUAGE_ENV_NAMES = (
+    LOCAL_STT_LANGUAGE_ENV,
+    "FORECAST_LOCAL_STT_LANGUAGE",
+    "HERMES_LOCAL_STT_LANGUAGE",
+)
 COMMON_LOCAL_BIN_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
 
 GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
@@ -153,8 +163,31 @@ def _find_whisper_binary() -> Optional[str]:
     return _find_binary("whisper")
 
 
+def _first_env_value(names: tuple[str, ...]) -> Optional[str]:
+    for name in names:
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    return None
+
+
+def _has_configured_local_command_template() -> bool:
+    return _first_env_value(LOCAL_STT_COMMAND_ENV_NAMES) is not None
+
+
+def _get_local_stt_language_env() -> Optional[str]:
+    return _first_env_value(LOCAL_STT_LANGUAGE_ENV_NAMES)
+
+
+def _local_stt_command_env_hint() -> str:
+    return (
+        "SUPERFORECASTING_AGENT_LOCAL_STT_COMMAND "
+        "(or FORECAST_LOCAL_STT_COMMAND / legacy HERMES_LOCAL_STT_COMMAND)"
+    )
+
+
 def _get_local_command_template() -> Optional[str]:
-    configured = os.getenv(LOCAL_STT_COMMAND_ENV, "").strip()
+    configured = _first_env_value(LOCAL_STT_COMMAND_ENV_NAMES)
     if configured:
         return configured
 
@@ -220,7 +253,8 @@ def _get_provider(stt_config: dict) -> str:
                 return "local_command"
             logger.warning(
                 "STT provider 'local' configured but unavailable "
-                "(install faster-whisper or set HERMES_LOCAL_STT_COMMAND)"
+                "(install faster-whisper or set %s)",
+                _local_stt_command_env_hint(),
             )
             return "none"
 
@@ -415,7 +449,7 @@ def _transcribe_local(file_path: str, model_name: str) -> Dict[str, Any]:
         # Language: config.yaml (stt.local.language) > env var > auto-detect.
         _forced_lang = (
             _load_stt_config().get("local", {}).get("language")
-            or os.getenv(LOCAL_STT_LANGUAGE_ENV)
+            or _get_local_stt_language_env()
             or None
         )
         transcribe_kwargs = {"beam_size": 5}
@@ -488,14 +522,14 @@ def _transcribe_local_command(file_path: str, model_name: str) -> Dict[str, Any]
             "success": False,
             "transcript": "",
             "error": (
-                f"{LOCAL_STT_COMMAND_ENV} not configured and no local whisper binary was found"
+                f"{_local_stt_command_env_hint()} not configured and no local whisper binary was found"
             ),
         }
 
-    # Language: config.yaml (stt.local.language) > env var > "en" default.
+    # Language: config.yaml (stt.local.language) > env var aliases > "en" default.
     language = (
         _load_stt_config().get("local", {}).get("language")
-        or os.getenv(LOCAL_STT_LANGUAGE_ENV)
+        or _get_local_stt_language_env()
         or DEFAULT_LOCAL_STT_LANGUAGE
     )
     normalized_model = _normalize_local_command_model(model_name)
@@ -513,7 +547,7 @@ def _transcribe_local_command(file_path: str, model_name: str) -> Dict[str, Any]
                 model=shlex.quote(normalized_model),
             )
             # User-provided templates (env var) may contain shell syntax; auto-detected commands are safe for list mode.
-            use_shell = bool(os.getenv(LOCAL_STT_COMMAND_ENV, "").strip())
+            use_shell = _has_configured_local_command_template()
             if use_shell:
                 subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
             else:
@@ -541,7 +575,7 @@ def _transcribe_local_command(file_path: str, model_name: str) -> Dict[str, Any]
         return {
             "success": False,
             "transcript": "",
-            "error": f"Invalid {LOCAL_STT_COMMAND_ENV} template, missing placeholder: {e}",
+            "error": f"Invalid {_local_stt_command_env_hint()} template, missing placeholder: {e}",
         }
     except subprocess.CalledProcessError as e:
         details = e.stderr.strip() or e.stdout.strip() or str(e)
@@ -732,7 +766,7 @@ def _transcribe_xai(file_path: str, model_name: str) -> Dict[str, Any]:
     ).strip().rstrip("/")
     language = str(
         xai_config.get("language")
-        or os.getenv("HERMES_LOCAL_STT_LANGUAGE")
+        or _get_local_stt_language_env()
         or DEFAULT_LOCAL_STT_LANGUAGE
     ).strip()
     # .get("format", True) already defaults to True when the key is absent;
@@ -885,7 +919,7 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
         "transcript": "",
         "error": (
             "No STT provider available. Install faster-whisper for free local "
-            f"transcription, configure {LOCAL_STT_COMMAND_ENV} or install a local whisper CLI, "
+            f"transcription, configure {_local_stt_command_env_hint()} or install a local whisper CLI, "
             "set GROQ_API_KEY for free Groq Whisper, set MISTRAL_API_KEY for Mistral "
             "Voxtral Transcribe, configure xAI OAuth or set XAI_API_KEY for xAI Grok STT, or set VOICE_TOOLS_OPENAI_KEY "
             "or OPENAI_API_KEY for the OpenAI Whisper API."

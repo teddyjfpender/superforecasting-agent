@@ -22,7 +22,7 @@ Superforecasting Agent has several distinct pluggable interfaces — some use Py
 | An **image-generation backend** | [Image Generation Provider Plugins](/docs/developer-guide/image-gen-provider-plugin) |
 | A **video-generation backend** | [Video Generation Provider Plugins](/docs/developer-guide/video-gen-provider-plugin) |
 | A **TTS backend** (any CLI — Piper, VoxCPM, Kokoro, voice cloning, …) | [TTS custom command providers](/docs/user-guide/features/tts#custom-command-providers) — config-driven, no Python needed |
-| An **STT backend** (custom whisper / ASR CLI) | [Voice Message Transcription](/docs/user-guide/features/tts#voice-message-transcription-stt) — set the inherited `HERMES_LOCAL_STT_COMMAND` env var to a shell template |
+| An **STT backend** (custom whisper / ASR CLI) | [Voice Message Transcription](/docs/user-guide/features/tts#voice-message-transcription-stt) — set `SUPERFORECASTING_AGENT_LOCAL_STT_COMMAND` to a shell template; legacy `HERMES_LOCAL_STT_COMMAND` is still accepted |
 | **External tools via MCP** (filesystem, GitHub, Linear, any MCP server) | [MCP](/docs/user-guide/features/mcp) — declare `mcp_servers.<name>` in `config.yaml` |
 | **Gateway event hooks** (fire on startup, session events, commands) | [Event Hooks](/docs/user-guide/features/hooks#gateway-event-hooks) — drop `HOOK.yaml` + `handler.py` into `~/.superforecasting-agent/hooks/<name>/` |
 | **Shell hooks** (run a shell command on events) | [Shell Hooks](/docs/user-guide/features/hooks#shell-hooks) — declare under `hooks:` in `config.yaml` |
@@ -1056,7 +1056,7 @@ tts:
       voice_compatible: true
 ```
 
-For STT, point the inherited `HERMES_LOCAL_STT_COMMAND` env var at a shell template. Supported placeholders: `{input_path}`, `{output_path}`, `{format}`, `{voice}`, `{model}`, `{speed}` (TTS); `{input_path}`, `{output_dir}`, `{language}`, `{model}` (STT). Any path-interacting CLI is automatically a plugin.
+For STT, point `SUPERFORECASTING_AGENT_LOCAL_STT_COMMAND` at a shell template; `FORECAST_LOCAL_STT_COMMAND` and legacy `HERMES_LOCAL_STT_COMMAND` are accepted aliases. Supported placeholders: `{input_path}`, `{output_path}`, `{format}`, `{voice}`, `{model}`, `{speed}` (TTS); `{input_path}`, `{output_dir}`, `{language}`, `{model}` (STT). Any path-interacting CLI is automatically a plugin.
 
 **Full guides:** [TTS custom command providers](/docs/user-guide/features/tts#custom-command-providers) · [STT](/docs/user-guide/features/tts#voice-message-transcription-stt).
 
