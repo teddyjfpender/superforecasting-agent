@@ -62,6 +62,22 @@ def test_superforecasting_agent_cli_accepts_explicit_forecast_namespace(tmp_path
     assert '"question_counts": {' in output
 
 
+def test_superforecasting_agent_cli_accepts_db_after_forecast_command(tmp_path, capsys, monkeypatch):
+    db = str(tmp_path / "forecasting.db")
+
+    def fail_inherited_runtime(argv):
+        raise AssertionError(f"unexpected inherited runtime dispatch: {argv}")
+
+    monkeypatch.setattr(forecast_cli, "_run_inherited_runtime", fail_inherited_runtime)
+
+    forecast_main(["status", "--db", db, "--json"])
+    output = capsys.readouterr().out
+
+    assert '"slug": "superforecasting-agent"' in output
+    assert '"ledger_path":' in output
+    assert db in output
+
+
 def test_superforecasting_agent_cli_forecast_namespace_help_uses_fork_native_prog(capsys, monkeypatch):
     def fail_inherited_runtime(argv):
         raise AssertionError(f"unexpected inherited runtime dispatch: {argv}")

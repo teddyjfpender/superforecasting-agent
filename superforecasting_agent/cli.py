@@ -72,6 +72,32 @@ def _forecast_argv(argv: Sequence[str]) -> list[str] | None:
     return None
 
 
+def _hoist_forecast_global_args(argv: Sequence[str]) -> list[str]:
+    """Accept forecast-global options before or after the subcommand.
+
+    ``forecasting.cli`` owns the real parser and expects ``--db`` before the
+    lifecycle command. The fork-native wrapper can be more forgiving because
+    users naturally try ``superforecasting-agent status --db path``.
+    """
+
+    global_args: list[str] = []
+    rest: list[str] = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--db" and i + 1 < len(argv):
+            global_args.extend([arg, argv[i + 1]])
+            i += 2
+            continue
+        if arg.startswith("--db="):
+            global_args.append(arg)
+            i += 1
+            continue
+        rest.append(arg)
+        i += 1
+    return [*global_args, *rest]
+
+
 def _apply_profile(profile_name: str | None) -> None:
     if not profile_name:
         configured_home = (
@@ -118,6 +144,7 @@ def main(argv: list[str] | None = None) -> None:
     normalized_forecast_argv = _forecast_argv(forecast_candidate_argv)
     if normalized_forecast_argv is not None:
         _apply_profile(profile_name)
+        normalized_forecast_argv = _hoist_forecast_global_args(normalized_forecast_argv)
         forecast_main(normalized_forecast_argv, prog="superforecasting-agent")
         return
     _run_inherited_runtime(raw_argv)
