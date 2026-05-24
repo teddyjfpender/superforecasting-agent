@@ -130,10 +130,14 @@ class TestBranchCommandCLI:
         from cli import HermesCLI
         cli_instance.conversation_history = []
 
-        HermesCLI._handle_branch_command(cli_instance, "/branch")
+        with patch("cli._cprint") as mock_print:
+            HermesCLI._handle_branch_command(cli_instance, "/branch")
 
         # session_id should not have changed
         assert cli_instance.session_id == "20260403_120000_abc123"
+        rendered = "\n".join(str(call) for call in mock_print.call_args_list)
+        assert "No research session to branch" in rendered
+        assert "No conversation to branch" not in rendered
 
     def test_branch_no_session_db(self, cli_instance):
         """Branching without a session DB should show an error."""

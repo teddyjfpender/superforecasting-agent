@@ -5897,7 +5897,7 @@ class HermesCLI:
         print()
     
     def _list_recent_sessions(self, limit: int = 10) -> list[dict[str, Any]]:
-        """Return recent CLI sessions for in-chat browsing/resume affordances."""
+        """Return recent CLI sessions for resume affordances."""
         if not self._session_db:
             return []
         try:
@@ -5911,7 +5911,7 @@ class HermesCLI:
         return [s for s in sessions if s.get("id") != self.session_id]
 
     def _show_recent_sessions(self, *, reason: str = "history", limit: int = 10) -> bool:
-        """Render recent sessions inline from the active chat TUI.
+        """Render recent sessions inline from the active CLI.
 
         Returns True when something was shown, False if no session list was available.
         """
@@ -5923,9 +5923,12 @@ class HermesCLI:
 
         print()
         if reason == "history":
-            print("No forecast transcript messages yet — here are recent sessions you can resume:")
+            print(
+                "No forecast transcript messages yet — here are recent "
+                "research sessions you can resume:"
+            )
         else:
-            print("  Recent sessions:")
+            print("  Recent research sessions:")
         print()
         print(f"  {'Title':<32} {'Preview':<40} {'Last Active':<13} {'ID'}")
         print(f"  {'─' * 32} {'─' * 40} {'─' * 13} {'─' * 24}")
@@ -6441,12 +6444,13 @@ class HermesCLI:
     def _handle_branch_command(self, cmd_original: str) -> None:
         """Handle /branch [name] — fork the current session into a new independent copy.
 
-        Copies the full conversation history to a new session so the user can
-        explore a different approach without losing the original session state.
+        Copies the full research-session transcript to a new session so the
+        user can explore a different approach without losing the original
+        session state.
         Inspired by Claude Code's /branch command.
         """
         if not self.conversation_history:
-            _cprint("  No conversation to branch — send a message first.")
+            _cprint("  No research session to branch — send a message first.")
             return
 
         if not self._session_db:
@@ -9328,7 +9332,7 @@ class HermesCLI:
         self._flush_reasoning_preview(force=False)
 
     def _manual_compress(self, cmd_original: str = ""):
-        """Manually trigger context compression on the current conversation.
+        """Manually trigger context compression on the current transcript.
 
         Accepts an optional focus topic: ``/compress <focus>`` guides the
         summariser to preserve information related to *focus* while being
@@ -9336,7 +9340,7 @@ class HermesCLI:
         Claude Code's ``/compact <focus>`` feature.
         """
         if not self.conversation_history or len(self.conversation_history) < 4:
-            print("Not enough conversation to compress (need at least 4 messages).")
+            print("Not enough transcript to compress (need at least 4 messages).")
             return
 
         if not self.agent:
@@ -11638,7 +11642,7 @@ class HermesCLI:
                 except Exception:
                     pass
 
-            print("Resume this session with:")
+            print("Resume this research session with:")
             print(f"  superforecasting-agent --resume {self.session_id}")
             if session_title:
                 print(f"  superforecasting-agent -c \"{session_title}\"")

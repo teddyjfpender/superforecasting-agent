@@ -43,7 +43,7 @@ For `/setcommands`, a useful starting set:
 
 ```
 help - Show help information
-new - Start a new conversation
+new - Start a new research session
 sethome - Set this chat as the home channel
 ```
 :::

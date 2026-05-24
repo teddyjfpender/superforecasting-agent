@@ -38,6 +38,17 @@ def test_manual_compress_reports_noop_without_success_banner(capsys):
     assert "Approx request size: ~100 tokens (unchanged)" in output
 
 
+def test_manual_compress_no_history_uses_transcript_copy(capsys):
+    shell = _make_cli()
+    shell.conversation_history = []
+
+    shell._manual_compress()
+
+    output = capsys.readouterr().out
+    assert "Not enough transcript to compress" in output
+    assert "Not enough conversation to compress" not in output
+
+
 def test_manual_compress_explains_when_token_estimate_rises(capsys):
     shell = _make_cli()
     history = _make_history()

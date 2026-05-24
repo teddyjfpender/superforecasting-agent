@@ -139,7 +139,7 @@ superforecasting-agent gateway status --system         # Linux only: inspect the
 | `/approve` | Approve a pending dangerous command |
 | `/deny` | Reject a pending dangerous command |
 | `/sethome` | Set this chat as the home channel |
-| `/compress` | Manually compress conversation context |
+| `/compress` | Manually compress research-session context |
 | `/title [name]` | Set or show the session title |
 | `/resume [name]` | Resume a previously named session |
 | `/usage` | Show token usage for this session |
