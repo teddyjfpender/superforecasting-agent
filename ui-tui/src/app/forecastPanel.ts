@@ -468,6 +468,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
         const details = [
           `P=${formatProbability(row.probability)}`,
           `as-of ${shortDate(row.as_of)}`,
+          `close ${shortDate(row.close_time)}`,
           truncate(reasons, 52),
           truncate(row.next_action || `/forecast show ${row.id || ''}`, 64)
         ].join('  ')
@@ -720,7 +721,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
     sections.push({
       rows: atRisk.map(row => [
         `${shortId(row.id)} P=${formatProbability(row.probability)} Δ=${formatDelta(row.delta)}`,
-        truncate(`${forecastStatus(row)}  ${row.title || '(untitled forecast)'}`, 58)
+        truncate(`${forecastStatus(row)}  close ${shortDate(row.close_time)}  ${row.title || '(untitled forecast)'}`, 58)
       ]),
       title: 'Watchlist'
     })

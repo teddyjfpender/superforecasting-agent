@@ -248,6 +248,7 @@ describe('forecast desk panel helpers', () => {
         review_queue: [
           {
             as_of: '2026-05-20T00:00:00Z',
+            close_time: '2026-05-31T00:00:00Z',
             id: 'fq_review123456',
             next_action: 'forecast research fq_review123456',
             priority: 1,
@@ -262,6 +263,7 @@ describe('forecast desk panel helpers', () => {
 
     const sections = forecastDashboardSections(response)
     const focused = sections.find(section => section.title === 'Focused Actions')
+    const review = sections.find(section => section.title === 'Review Queue')
 
     expect(focused?.rows).toEqual([
       ['/forecast show fq_review123456', 'load full ledger context for Will review question resolve yes?'],
@@ -281,6 +283,7 @@ describe('forecast desk panel helpers', () => {
         detail: 'append an explicit probability update with rationale'
       }
     ])
+    expect(review?.rows?.[0]?.[1]).toContain('close 2026-05-31')
   })
 
   it('builds a compact desk brief for terminals without the forecast rail', () => {
@@ -303,6 +306,7 @@ describe('forecast desk panel helpers', () => {
         product: 'Superforecasting Agent',
         questions: [
           {
+            close_time: '2026-06-01T00:00:00Z',
             id: 'fq_watch123456',
             open_alert_count: 1,
             probability: 0.71,
@@ -328,7 +332,7 @@ describe('forecast desk panel helpers', () => {
       { detail: '2 active / 1 alerts / 1 reviews / asm 3/2', label: 'book' },
       { detail: '/alerts 1 open alert need source or resolution review', label: 'triage' },
       {
-        detail: 'watch123 P=0.710 Δ=- 1 alert  Will the watched forecast need review?',
+        detail: 'watch123 P=0.710 Δ=- 1 alert  close 2026-06-01  Will the watched forecast need…',
         label: 'watch'
       }
     ])
