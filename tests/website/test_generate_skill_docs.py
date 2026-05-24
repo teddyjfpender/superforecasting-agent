@@ -116,6 +116,60 @@ def test_bundled_catalog_explains_missing_local_skills(gen_module):
     assert "superforecasting-agent skills reset <name> --restore" in result
 
 
+def test_bundled_catalog_displays_fork_native_names_for_compatibility_skill_ids(gen_module):
+    meta = {
+        "source_kind": "bundled",
+        "category": "autonomous-ai-agents",
+        "slug": "hermes-agent",
+        "sub": None,
+        "rel_path": "autonomous-ai-agents/hermes-agent",
+    }
+    parsed = {
+        "frontmatter": {
+            "name": "hermes-agent",
+            "description": "Configure, extend, or contribute to Superforecasting Agent.",
+        }
+    }
+
+    result = gen_module.build_catalog_md_bundled([(meta, parsed)])
+
+    assert "[`superforecasting-agent`](" in result
+    assert "[`hermes-agent`](" not in result
+    assert "`autonomous-ai-agents/hermes-agent`" in result
+
+
+def test_related_skill_links_display_fork_native_names_for_compatibility_ids(gen_module):
+    target_meta = {
+        "source_kind": "bundled",
+        "category": "autonomous-ai-agents",
+        "slug": "hermes-agent",
+        "sub": None,
+        "rel_path": "autonomous-ai-agents/hermes-agent",
+    }
+    page_meta = {
+        "source_kind": "bundled",
+        "category": "autonomous-ai-agents",
+        "slug": "codex",
+        "sub": None,
+        "rel_path": "autonomous-ai-agents/codex",
+    }
+    frontmatter = {
+        "name": "codex",
+        "description": "Delegate coding to OpenAI Codex CLI.",
+        "metadata": {"hermes": {"related_skills": ["hermes-agent"]}},
+    }
+
+    result = gen_module.render_skill_page(
+        page_meta,
+        frontmatter,
+        "# Codex\n\nUse Codex for implementation work.",
+        skill_index={"hermes-agent": target_meta},
+    )
+
+    assert "[`superforecasting-agent`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-hermes-agent)" in result
+    assert "[`hermes-agent`](" not in result
+
+
 def test_legacy_repo_reference_links_are_rewritten_to_fork(gen_module):
     body = (
         "Read [ref](https://github.com/NousResearch/hermes-agent/blob/main/"

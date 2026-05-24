@@ -36,6 +36,11 @@ FORK_REPO_BLOB_BASE = (
     "https://github.com/teddyjfpender/superforecasting-agent/blob/"
     "superforecasting-agent-snapshot/"
 )
+SKILL_DISPLAY_NAME_OVERRIDES = {
+    "debugging-hermes-tui-commands": "debugging-superforecasting-tui-commands",
+    "hermes-agent": "superforecasting-agent",
+    "hermes-agent-skill-authoring": "superforecasting-agent-skill-authoring",
+}
 
 # Pages the user had previously hand-written in user-guide/skills/.
 # We leave these alone (they get first-class sidebar treatment separately).
@@ -50,6 +55,11 @@ _FENCE_RE = re.compile(r"^(?P<indent>\s*)(?P<fence>```+|~~~+)", re.MULTILINE)
 # own ASCII diagram. Skill authors shouldn't need to remember to add the
 # ignore markers in every SKILL.md — the generator handles it defensively.
 _BOX_DRAWING_CHARS = frozenset("┌┐└┘─│═║╔╗╚╝╠╣╦╩╬├┤┬┴┼╭╮╯╰▶◀▲▼")
+
+
+def display_skill_name(name: object) -> str:
+    text = str(name or "").strip()
+    return SKILL_DISPLAY_NAME_OVERRIDES.get(text, text)
 
 
 def _wrap_ascii_art_code_blocks(code_segment: str) -> str:
@@ -408,14 +418,15 @@ def render_skill_page(
             target_meta = None
             if skill_index is not None:
                 target_meta = skill_index.get(r)
+            link_label = display_skill_name(r)
             if target_meta is not None:
                 href = (
                     f"/docs/user-guide/skills/{target_meta['source_kind']}"
                     f"/{target_meta['category']}/{page_id(target_meta)}"
                 )
-                link_parts.append(f"[`{r}`]({href})")
+                link_parts.append(f"[`{link_label}`]({href})")
             else:
-                link_parts.append(f"`{r}`")
+                link_parts.append(f"`{link_label}`")
         info_rows.append(("Related skills", ", ".join(link_parts)))
 
     info_block = "\n".join(f"| {k} | {v} |" for k, v in info_rows)
@@ -508,6 +519,7 @@ def build_catalog_md_bundled(entries: list[tuple[dict[str, Any], dict[str, Any]]
         for meta, parsed in by_cat[category]:
             fm = parsed["frontmatter"]
             name = fm.get("name", meta["slug"])
+            display_name = display_skill_name(name)
             desc = (fm.get("description") or "").strip()
             if len(desc) > 240:
                 desc = desc[:237].rstrip() + "..."
@@ -515,7 +527,7 @@ def build_catalog_md_bundled(entries: list[tuple[dict[str, Any], dict[str, Any]]
             path = f"`{meta['rel_path']}`"
             desc_esc = mdx_escape_body(desc).replace("|", "\\|").replace("\n", " ")
             lines.append(
-                f"| [`{name}`]({link_target}) | {desc_esc} | {path} |"
+                f"| [`{display_name}`]({link_target}) | {desc_esc} | {path} |"
             )
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
@@ -569,12 +581,13 @@ def build_catalog_md_optional(entries: list[tuple[dict[str, Any], dict[str, Any]
         for meta, parsed in by_cat[category]:
             fm = parsed["frontmatter"]
             name = fm.get("name", meta["slug"])
+            display_name = display_skill_name(name)
             desc = (fm.get("description") or "").strip()
             if len(desc) > 240:
                 desc = desc[:237].rstrip() + "..."
             link_target = f"/docs/user-guide/skills/optional/{meta['category']}/{page_id(meta)}"
             desc_esc = mdx_escape_body(desc).replace("|", "\\|").replace("\n", " ")
-            lines.append(f"| [**{name}**]({link_target}) | {desc_esc} |")
+            lines.append(f"| [**{display_name}**]({link_target}) | {desc_esc} |")
         lines.append("")
 
     lines.extend(
