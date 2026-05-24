@@ -118,8 +118,8 @@ def test_make_agent_honors_tui_launch_env_flags():
             os.environ,
             {
                 "SUPERFORECASTING_AGENT_TUI_MAX_TURNS": "7",
-                "HERMES_TUI_CHECKPOINTS": "1",
-                "HERMES_TUI_PASS_SESSION_ID": "1",
+                "SUPERFORECASTING_AGENT_TUI_CHECKPOINTS": "1",
+                "FORECAST_TUI_PASS_SESSION_ID": "1",
                 "HERMES_IGNORE_RULES": "1",
             },
         ),
