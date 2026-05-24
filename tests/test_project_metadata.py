@@ -581,6 +581,40 @@ def test_runtime_operator_guidance_uses_forecast_native_commands():
     assert "stop/restart hermes gateway" not in text
 
 
+def test_tool_runtime_docstrings_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        "agent/process_bootstrap.py",
+        "tools/registry.py",
+        "tools/lazy_deps.py",
+        "tools/mcp_tool.py",
+        "tools/yuanbao_tools.py",
+    ]
+    text = "\n".join(
+        (root / rel_path).read_text(encoding="utf-8") for rel_path in checked_paths
+    )
+    normalized = re.sub(r"\s+", " ", text)
+
+    assert "Central registry for Superforecasting Agent tools" in text
+    assert "Many optional Superforecasting Agent backends" in text
+    assert "superforecasting-agent[all]" in text
+    assert "superforecasting-agent tools" in text
+    assert "superforecasting-agent dashboard" in text
+    assert "superforecasting-agent update" in text
+    assert "Superforecasting Agent tool registry" in normalized
+    assert '"forecast-yuanbao" toolset' in text
+    assert "When Superforecasting Agent runs as a systemd service" in text
+
+    assert "Central registry for all hermes-agent tools" not in text
+    assert "Many Hermes features" not in text
+    assert "hermes-agent[all]" not in text
+    assert "hermes dashboard" not in text
+    assert "hermes update" not in text
+    assert "into the hermes-agent" not in text
+    assert "供 hermes-agent" not in text
+    assert "When hermes-agent runs" not in text
+
+
 def test_xai_oauth_referrer_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "hermes_cli" / "auth.py").read_text(encoding="utf-8")

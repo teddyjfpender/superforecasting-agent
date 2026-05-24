@@ -3,12 +3,12 @@
 MCP (Model Context Protocol) Client Support
 
 Connects to external MCP servers via stdio, HTTP/StreamableHTTP, or SSE
-transport, discovers their tools, and registers them into the hermes-agent
-tool registry so the agent can call them like any built-in tool.
+transport, discovers their tools, and registers them into the Superforecasting
+Agent tool registry so the agent can call them like any built-in tool.
 
-Configuration is read from ~/.hermes/config.yaml under the ``mcp_servers`` key.
-The ``mcp`` Python package is optional -- if not installed, this module is a
-no-op and logs a debug message.
+Configuration is read from the active agent home config file under the
+``mcp_servers`` key. The ``mcp`` Python package is optional -- if not
+installed, this module is a no-op and logs a debug message.
 
 Example config::
 
@@ -108,8 +108,8 @@ logger = logging.getLogger(__name__)
 # corrupts the display and can hang the session.
 #
 # Instead we redirect every stdio MCP subprocess's stderr into a shared
-# per-profile log file (~/.hermes/logs/mcp-stderr.log), tagged with the
-# server name so individual servers remain debuggable.
+# per-profile log file (``logs/mcp-stderr.log`` under the active agent home),
+# tagged with the server name so individual servers remain debuggable.
 #
 # Fallback is os.devnull if opening the log file fails for any reason.
 
@@ -3391,9 +3391,10 @@ def get_mcp_status() -> List[dict]:
 def probe_mcp_server_tools() -> Dict[str, List[tuple]]:
     """Temporarily connect to configured MCP servers and list their tools.
 
-    Designed for ``hermes tools`` interactive configuration — connects to each
-    enabled server, grabs tool names and descriptions, then disconnects.
-    Does NOT register tools in the Hermes registry.
+    Designed for ``superforecasting-agent tools`` interactive configuration —
+    connects to each enabled server, grabs tool names and descriptions, then
+    disconnects.
+    Does NOT register tools in the Superforecasting Agent registry.
 
     Returns:
         Dict mapping server name to list of (tool_name, description) tuples.

@@ -63,9 +63,9 @@ class _OpenAIProxy:
 class _SafeWriter:
     """Transparent stdio wrapper that catches OSError/ValueError from broken pipes.
 
-    When hermes-agent runs as a systemd service, Docker container, or headless
-    daemon, the stdout/stderr pipe can become unavailable (idle timeout, buffer
-    exhaustion, socket reset). Any print() call then raises
+    When Superforecasting Agent runs as a systemd service, Docker container, or
+    headless daemon, the stdout/stderr pipe can become unavailable (idle
+    timeout, buffer exhaustion, socket reset). Any print() call then raises
     ``OSError: [Errno 5] Input/output error``, which can crash agent setup or
     run_conversation() — especially via double-fault when an except handler
     also tries to print.
