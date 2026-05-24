@@ -39,7 +39,14 @@ def _clean_state():
     approval_module._pending.clear()
     approval_module._permanent_approved.clear()
     saved = {}
-    for k in ("HERMES_INTERACTIVE", "HERMES_GATEWAY_SESSION", "HERMES_EXEC_ASK", "HERMES_YOLO_MODE"):
+    for k in (
+        "HERMES_INTERACTIVE",
+        "HERMES_GATEWAY_SESSION",
+        "SUPERFORECASTING_AGENT_EXEC_ASK",
+        "FORECAST_EXEC_ASK",
+        "HERMES_EXEC_ASK",
+        "HERMES_YOLO_MODE",
+    ):
         if k in os.environ:
             saved[k] = os.environ.pop(k)
     yield
@@ -48,7 +55,14 @@ def _clean_state():
     approval_module._permanent_approved.clear()
     for k, v in saved.items():
         os.environ[k] = v
-    for k in ("HERMES_INTERACTIVE", "HERMES_GATEWAY_SESSION", "HERMES_EXEC_ASK", "HERMES_YOLO_MODE"):
+    for k in (
+        "HERMES_INTERACTIVE",
+        "HERMES_GATEWAY_SESSION",
+        "SUPERFORECASTING_AGENT_EXEC_ASK",
+        "FORECAST_EXEC_ASK",
+        "HERMES_EXEC_ASK",
+        "HERMES_YOLO_MODE",
+    ):
         os.environ.pop(k, None)
 
 
@@ -91,6 +105,21 @@ class TestTirithAllowSafeCommand:
 
     @patch(_TIRITH_PATCH, return_value=_tirith_result("allow"))
     def test_noninteractive_skips_external_scan(self, mock_tirith):
+        result = check_all_command_guards("echo hello", "local")
+        assert result["approved"] is True
+        mock_tirith.assert_not_called()
+
+    @patch(_TIRITH_PATCH, return_value=_tirith_result("allow"))
+    def test_forecast_exec_ask_env_runs_external_scan(self, mock_tirith):
+        os.environ["SUPERFORECASTING_AGENT_EXEC_ASK"] = "1"
+        result = check_all_command_guards("echo hello", "local")
+        assert result["approved"] is True
+        mock_tirith.assert_called_once()
+
+    @patch(_TIRITH_PATCH, return_value=_tirith_result("allow"))
+    def test_fork_native_exec_ask_precedence_can_disable_legacy(self, mock_tirith):
+        os.environ["SUPERFORECASTING_AGENT_EXEC_ASK"] = "0"
+        os.environ["HERMES_EXEC_ASK"] = "1"
         result = check_all_command_guards("echo hello", "local")
         assert result["approved"] is True
         mock_tirith.assert_not_called()

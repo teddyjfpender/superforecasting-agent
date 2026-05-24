@@ -569,11 +569,22 @@ _MAX_ITERATIONS_ENV_NAMES = (
     "FORECAST_MAX_ITERATIONS",
     "HERMES_MAX_ITERATIONS",
 )
+_EXEC_ASK_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_EXEC_ASK",
+    "FORECAST_EXEC_ASK",
+    "HERMES_EXEC_ASK",
+)
 
 
 def _set_max_iterations_env_aliases(value: object) -> None:
     text = str(value)
     for name in _MAX_ITERATIONS_ENV_NAMES:
+        os.environ[name] = text
+
+
+def _set_exec_ask_env_aliases(value: object) -> None:
+    text = str(value)
+    for name in _EXEC_ASK_ENV_NAMES:
         os.environ[name] = text
 
 
@@ -819,7 +830,7 @@ except Exception as _bootstrap_exc:
 os.environ["HERMES_QUIET"] = "1"
 
 # Enable interactive exec approval for dangerous commands on messaging platforms
-os.environ["HERMES_EXEC_ASK"] = "1"
+_set_exec_ask_env_aliases("1")
 
 # Set terminal working directory for messaging platforms.
 # config.yaml terminal.cwd is the canonical source (bridged to TERMINAL_CWD

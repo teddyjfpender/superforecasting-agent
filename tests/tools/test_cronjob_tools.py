@@ -132,6 +132,22 @@ class TestCronjobRequirements:
 
         assert check_cronjob_requirements() is True
 
+    def test_accepts_forecast_exec_ask_alias(self, monkeypatch):
+        monkeypatch.delenv("HERMES_INTERACTIVE", raising=False)
+        monkeypatch.delenv("HERMES_GATEWAY_SESSION", raising=False)
+        monkeypatch.delenv("HERMES_EXEC_ASK", raising=False)
+        monkeypatch.setenv("FORECAST_EXEC_ASK", "1")
+
+        assert check_cronjob_requirements() is True
+
+    def test_fork_native_exec_ask_precedence_can_disable_legacy(self, monkeypatch):
+        monkeypatch.delenv("HERMES_INTERACTIVE", raising=False)
+        monkeypatch.delenv("HERMES_GATEWAY_SESSION", raising=False)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_EXEC_ASK", "0")
+        monkeypatch.setenv("HERMES_EXEC_ASK", "1")
+
+        assert check_cronjob_requirements() is False
+
     def test_rejects_when_no_session_env(self, monkeypatch):
         """Without any session env vars, cronjob tool should not be available."""
         monkeypatch.delenv("HERMES_INTERACTIVE", raising=False)
@@ -149,14 +165,26 @@ class TestCronjobRequirements:
 
     @pytest.mark.parametrize(
         "var_name",
-        ["HERMES_INTERACTIVE", "HERMES_GATEWAY_SESSION", "HERMES_EXEC_ASK"],
+        [
+            "HERMES_INTERACTIVE",
+            "HERMES_GATEWAY_SESSION",
+            "SUPERFORECASTING_AGENT_EXEC_ASK",
+            "FORECAST_EXEC_ASK",
+            "HERMES_EXEC_ASK",
+        ],
     )
     @pytest.mark.parametrize("false_like_value", ["0", "false", "no", "off"])
     def test_rejects_false_like_any_session_env(
         self, monkeypatch, var_name, false_like_value
     ):
-        """All three session env vars share the same truthy semantics."""
-        for v in ("HERMES_INTERACTIVE", "HERMES_GATEWAY_SESSION", "HERMES_EXEC_ASK"):
+        """Session env vars and exec-ask aliases share the same truthy semantics."""
+        for v in (
+            "HERMES_INTERACTIVE",
+            "HERMES_GATEWAY_SESSION",
+            "SUPERFORECASTING_AGENT_EXEC_ASK",
+            "FORECAST_EXEC_ASK",
+            "HERMES_EXEC_ASK",
+        ):
             monkeypatch.delenv(v, raising=False)
         monkeypatch.setenv(var_name, false_like_value)
         assert check_cronjob_requirements() is False

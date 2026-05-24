@@ -19,7 +19,7 @@ import unicodedata
 from typing import Optional
 from hermes_cli.config import cfg_get
 
-from utils import env_var_enabled, is_truthy_value
+from utils import env_var_alias_enabled, env_var_enabled, is_truthy_value
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +28,19 @@ YOLO_MODE_ENV_NAMES = (
     "FORECAST_YOLO_MODE",
     "HERMES_YOLO_MODE",
 )
+EXEC_ASK_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_EXEC_ASK",
+    "FORECAST_EXEC_ASK",
+    "HERMES_EXEC_ASK",
+)
 
 
 def is_process_yolo_enabled() -> bool:
     return any(is_truthy_value(os.getenv(name)) for name in YOLO_MODE_ENV_NAMES)
+
+
+def is_exec_ask_enabled() -> bool:
+    return env_var_alias_enabled(EXEC_ASK_ENV_NAMES)
 
 
 def set_process_yolo_enabled(enabled: bool) -> None:
@@ -989,7 +998,7 @@ def check_dangerous_command(command: str, env_type: str,
                 }
         return {"approved": True, "message": None}
 
-    if is_gateway or env_var_enabled("HERMES_EXEC_ASK"):
+    if is_gateway or is_exec_ask_enabled():
         submit_pending(session_key, {
             "command": command,
             "pattern_key": pattern_key,
@@ -1100,7 +1109,7 @@ def check_all_command_guards(command: str, env_type: str,
 
     is_cli = env_var_enabled("HERMES_INTERACTIVE")
     is_gateway = _is_gateway_approval_context()
-    is_ask = env_var_enabled("HERMES_EXEC_ASK")
+    is_ask = is_exec_ask_enabled()
 
     # Preserve the existing non-interactive behavior: outside CLI/gateway/ask
     # flows, we do not block on approvals and we skip external guard work.

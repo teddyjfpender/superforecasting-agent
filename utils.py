@@ -33,6 +33,15 @@ def env_var_enabled(name: str, default: str = "") -> bool:
     return is_truthy_value(os.getenv(name, default), default=False)
 
 
+def env_var_alias_enabled(names: tuple[str, ...], default: str = "") -> bool:
+    """Return True for the first present env var in a compatibility alias set."""
+    for name in names:
+        value = os.getenv(name)
+        if value is not None:
+            return is_truthy_value(value, default=False)
+    return is_truthy_value(default, default=False)
+
+
 def _preserve_file_mode(path: Path) -> "int | None":
     """Capture the permission bits of *path* if it exists, else ``None``."""
     try:

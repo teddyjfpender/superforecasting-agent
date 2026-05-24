@@ -174,7 +174,7 @@ On messaging platforms, the forecast runtime sends the dangerous command details
 - Reply **yes**, **y**, **approve**, **ok**, or **go** to approve
 - Reply **no**, **n**, **deny**, or **cancel** to deny
 
-The inherited `HERMES_EXEC_ASK=1` environment variable is automatically set when running the gateway.
+The fork-native `SUPERFORECASTING_AGENT_EXEC_ASK=1` / `FORECAST_EXEC_ASK=1` environment variables are automatically set when running the gateway, with `HERMES_EXEC_ASK=1` retained as a compatibility alias.
 
 ### Permanent Allowlist
 

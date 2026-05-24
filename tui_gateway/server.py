@@ -783,7 +783,7 @@ def _clear_session_context(tokens: list) -> None:
 def _enable_gateway_prompts() -> None:
     """Route approvals through gateway callbacks instead of CLI input()."""
     os.environ["HERMES_GATEWAY_SESSION"] = "1"
-    os.environ["HERMES_EXEC_ASK"] = "1"
+    _set_runtime_env("EXEC_ASK", "1")
     os.environ["HERMES_INTERACTIVE"] = "1"
 
 

@@ -573,7 +573,7 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 | `HERMES_AGENT_TIMEOUT_WARNING` | Gateway: send a warning message after this many seconds of inactivity (default: 75% of `HERMES_AGENT_TIMEOUT`). |
 | `HERMES_AGENT_NOTIFY_INTERVAL` | Gateway: interval in seconds between progress notifications on long-running agent turns. |
 | `SUPERFORECASTING_AGENT_CHECKPOINT_TIMEOUT` / `FORECAST_CHECKPOINT_TIMEOUT` / `HERMES_CHECKPOINT_TIMEOUT` | Timeout for filesystem checkpoint creation in seconds (default: `30`); the `HERMES_*` name remains a legacy alias. |
-| `HERMES_EXEC_ASK` | Enable execution approval prompts in gateway mode (`true`/`false`) |
+| `SUPERFORECASTING_AGENT_EXEC_ASK` / `FORECAST_EXEC_ASK` / `HERMES_EXEC_ASK` | Enable execution approval prompts in gateway mode (`true`/`false`); the `HERMES_*` name remains a legacy alias. |
 | `HERMES_ENABLE_PROJECT_PLUGINS` | Enable auto-discovery of repo-local plugins from `./.hermes/plugins/` (`true`/`false`, default: `false`). The directory name is inherited compatibility for project-local plugin discovery. |
 | `HERMES_PLUGINS_DEBUG` | `1`/`true` to surface verbose plugin-discovery logs on stderr — directories scanned, manifests parsed, skip reasons, and full tracebacks on parse or `register()` failure. Aimed at plugin authors. |
 | `HERMES_BACKGROUND_NOTIFICATIONS` | Background process notification mode in gateway: `all` (default), `result`, `error`, `off` |

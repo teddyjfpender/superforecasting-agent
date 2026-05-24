@@ -1627,6 +1627,8 @@ def test_config_mouse_uses_documented_key_with_legacy_fallback(monkeypatch):
 
 
 def test_enable_gateway_prompts_sets_gateway_env(monkeypatch):
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_EXEC_ASK", raising=False)
+    monkeypatch.delenv("FORECAST_EXEC_ASK", raising=False)
     monkeypatch.delenv("HERMES_EXEC_ASK", raising=False)
     monkeypatch.delenv("HERMES_GATEWAY_SESSION", raising=False)
     monkeypatch.delenv("HERMES_INTERACTIVE", raising=False)
@@ -1634,6 +1636,8 @@ def test_enable_gateway_prompts_sets_gateway_env(monkeypatch):
     server._enable_gateway_prompts()
 
     assert server.os.environ["HERMES_GATEWAY_SESSION"] == "1"
+    assert server.os.environ["SUPERFORECASTING_AGENT_EXEC_ASK"] == "1"
+    assert server.os.environ["FORECAST_EXEC_ASK"] == "1"
     assert server.os.environ["HERMES_EXEC_ASK"] == "1"
     assert server.os.environ["HERMES_INTERACTIVE"] == "1"
 
