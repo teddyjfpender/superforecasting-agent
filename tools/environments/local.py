@@ -172,7 +172,7 @@ _HERMES_PROVIDER_ENV_BLOCKLIST = _build_provider_env_blocklist()
 
 
 def _inject_context_hermes_home(env: dict) -> None:
-    """Bridge the context-local Hermes home override into subprocess env."""
+    """Bridge the context-local agent-home override into subprocess env."""
     try:
         from hermes_constants import get_hermes_home_override
 

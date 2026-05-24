@@ -451,7 +451,7 @@ def _mcp_image_extension_for_mime_type(mime_type: str) -> str:
 
 def _cache_mcp_image_block(block) -> str:
     """Cache an MCP ``ImageContent`` block to the shared image cache and
-    return a ``MEDIA:<path>`` tag that Hermes gateways know how to render.
+    return a ``MEDIA:<path>`` tag that agent gateways know how to render.
 
     Returns an empty string when *block* is not an image, when the base64
     payload is malformed, or when the cache helper rejects the bytes (e.g.
@@ -2235,7 +2235,7 @@ def _interpolate_env_vars(value):
 
 
 def _load_mcp_config() -> Dict[str, dict]:
-    """Read ``mcp_servers`` from the Hermes config file.
+    """Read ``mcp_servers`` from the agent config file.
 
     Returns a dict of ``{server_name: server_config}`` or empty dict.
     Server config can contain either ``command``/``args``/``env`` for stdio

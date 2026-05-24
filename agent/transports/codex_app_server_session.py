@@ -152,7 +152,7 @@ class _ServerRequestRouting:
 
 
 class CodexAppServerSession:
-    """One Codex thread per Hermes session, lifetime owned by AIAgent.
+    """One Codex thread per forecast research session, lifetime owned by AIAgent.
 
     Not thread-safe — one caller drives it at a time, matching how AIAgent's
     run_conversation() loop is structured today. The codex client itself can

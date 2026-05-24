@@ -144,7 +144,7 @@ def _is_running_as_admin() -> bool:
 
 
 def _current_profile_cli_args() -> list[str]:
-    """Return CLI args that preserve the current Hermes profile."""
+    """Return CLI args that preserve the current agent profile."""
     from hermes_cli.gateway import _profile_arg
 
     profile_arg = _profile_arg()
