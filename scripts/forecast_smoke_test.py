@@ -559,6 +559,38 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
         repo_root=repo_root,
         verbose=verbose,
     )
+    cohort_path = db_path.with_name("forecast-smoke-cohort.json")
+    cohort_path.write_text(
+        json.dumps(
+            {
+                "questions": [
+                    {
+                        "title": "Will the prospective smoke cohort resolve yes?",
+                        "resolution_criteria": "Resolved yes if a future smoke cohort tester confirms success.",
+                        "domain": "tester",
+                        "topics": ["smoke"],
+                        "probability": 0.6,
+                    }
+                ]
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    pilot_cohort = _json_output(
+        _run_forecast(
+            ["pilot-cohort", str(cohort_path), "--dry-run", "--json"],
+            db_path=db_path,
+            repo_root=repo_root,
+            verbose=verbose,
+        ),
+        "pilot-cohort",
+    )
+    if not pilot_cohort.get("dry_run") or pilot_cohort.get("question_count") != 1:
+        raise SmokeError(f"pilot cohort dry-run did not validate:\n{json.dumps(pilot_cohort, indent=2)}")
+    _print_step(f"pilot_cohort_dry_run_questions: {pilot_cohort.get('question_count')}")
+
     pilot_report = _json_output(
         _run_forecast(
             [

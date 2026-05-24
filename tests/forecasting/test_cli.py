@@ -6,6 +6,7 @@ import re
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -7077,6 +7078,100 @@ def test_forecast_cli_pilot_report_outputs_exit_checks(tmp_path, capsys):
     assert payload["next_actions"]
 
 
+def test_forecast_cli_pilot_cohort_seeds_live_questions(tmp_path, capsys):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    manifest = tmp_path / "pilot_cohort.csv"
+    manifest.write_text(
+        "\n".join(
+            [
+                "title,resolution_criteria,probability,rationale,domain,topics,watch_source,close_time",
+                "Will pilot cohort A resolve yes?,Resolved yes if pilot cohort A outcome is confirmed.,0.62,Initial outside-view estimate.,macro,inflation;rates,manual cohort source,2026-06-01T00:00:00Z",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "pilot-cohort",
+            str(manifest),
+            "--schedule-cadence",
+            "1d",
+            "--schedule-next-run-at",
+            "2026-05-25T00:00:00Z",
+        ],
+    )
+    output = capsys.readouterr().out
+    ledger = ForecastLedger(db_path)
+    questions = ledger.list_questions()
+    question = questions[0]
+    snapshot = ledger.get_current_snapshot(question.id)
+    schedules = ledger.list_scheduled_reviews()
+    watches = ledger.list_watched_sources(scope_type="question", scope_ref=question.id, status=None)
+
+    assert "pilot_cohort seeded 1 live question(s)" in output
+    assert question.title == "Will pilot cohort A resolve yes?"
+    assert question.domain == "macro"
+    assert question.topics == ["inflation", "rates"]
+    assert question.metadata["pilot_cohort"] is True
+    assert question.metadata["prospective_live_evidence"] is True
+    assert snapshot is not None
+    assert snapshot.forecast_origin == "live"
+    assert snapshot.probability_or_distribution == 0.62
+    assert snapshot.rationale == "Initial outside-view estimate."
+    assert schedules[0]["scope_ref"] == question.id
+    assert schedules[0]["trigger_reason"] == "pilot_cohort_review"
+    assert watches[0]["source"] == "manual cohort source"
+    assert watches[0]["source_type"] == "manual"
+
+
+def test_forecast_cli_pilot_cohort_dry_run_json_does_not_mutate(tmp_path, capsys):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    manifest = tmp_path / "pilot_cohort.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "questions": [
+                    {
+                        "title": "Will dry-run cohort question resolve yes?",
+                        "resolution_criteria": "Resolved yes if the dry-run outcome is confirmed.",
+                        "domain": "ai",
+                        "topics": ["benchmarks"],
+                        "probability": 0.55,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            str(db_path),
+            "pilot-cohort",
+            str(manifest),
+            "--dry-run",
+            "--json",
+        ],
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["dry_run"] is True
+    assert payload["question_count"] == 1
+    assert payload["questions"][0]["title"] == "Will dry-run cohort question resolve yes?"
+    assert not db_path.exists()
+
+
 def test_forecast_cli_pilot_aggregate_summarizes_export_packets(tmp_path, capsys):
     parser = _parser()
     ledger = ForecastLedger(tmp_path / "tester-a.db")
@@ -9837,6 +9932,43 @@ def test_forecast_cli_watch_add_supports_socrata_sources(tmp_path, capsys, monke
 
     assert "created 1 alert(s)" in check_output
     assert f"watched_source_changed:{watch_id}" in check_output
+
+
+def test_forecast_cli_watch_add_accepts_current_source_type_choices(capsys, monkeypatch):
+    parser = _parser()
+    captured = {}
+
+    class DummyLedger:
+        def add_watched_source(self, **kwargs):
+            captured.update(kwargs)
+            return {
+                "id": "ws_test",
+                "scope_type": kwargs["scope_type"],
+                "scope_ref": kwargs["scope_ref"],
+                "source": kwargs["source"],
+                "source_type": kwargs["source_type"],
+                "status": "active",
+            }
+
+    monkeypatch.setattr("forecasting.cli._ledger", lambda args: DummyLedger())
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "watch",
+            "add",
+            "placeholder source",
+            "--question",
+            "fq_test",
+            "--source-type",
+            "socrata",
+        ],
+    )
+    output = capsys.readouterr().out
+
+    assert captured["source_type"] == "socrata"
+    assert "source_type: socrata" in output
 
 
 def test_forecast_cli_watch_add_supports_stooq_sources(tmp_path, capsys, monkeypatch):

@@ -83,6 +83,7 @@ forecast readiness --json
 forecast readiness --require-evidence
 forecast pilot-report
 forecast pilot-report --json
+forecast pilot-cohort live-cohort.csv --schedule-cadence 1d --schedule-next-run-at 2026-05-25T09:00:00Z
 forecast pilot-aggregate .pilot/*-export.json --json
 # readiness shows evidence gaps and next actions before stronger performance claims
 superforecasting-agent chat       # Forecast-scoped chat remains available explicitly
@@ -127,12 +128,13 @@ The forecast ledger is the product surface. Generic chat and messaging gateways 
 | Review backtest performance | `forecast performance --last 5` or `forecast performance --last 5 --json` |
 | Check claim readiness | `forecast readiness`, `forecast readiness --json`, or `forecast readiness --require-evidence` |
 | Check tester pilot coverage | `forecast pilot-report` or `forecast pilot-report --json` |
+| Seed a live tester cohort | `forecast pilot-cohort live-cohort.csv --schedule-cadence 1d --schedule-next-run-at <time>` |
 | Aggregate tester exports | `forecast pilot-aggregate tester-a.json tester-b.json --json` |
 | Import tournament exports | `forecast import tournament resolved_questions.json --name my-tournament` |
 | Watch sources | `forecast watch add --question <id> rss:<feed-or-file>`, `gdelt:<query>`, `fred:<series-id>`, `eia:<series-id-or-api-url>`, `treasury:<dataset-path-or-api-url>`, `bls:<series-id>`, `worldbank:<country>/<indicator>`, `census:<dataset-path?get=...&for=...>`, `socrata:<domain>/<dataset-id>`, `stooq:<symbol-or-csv-url>`, `yahoo:<symbol>`, `coingecko:<coin-id>`, `sec:<cik>`, `arxiv:<query>`, `openalex:<query>`, `wikipedia:<query>`, `wikipediapageviews:<project>/<article>`, `github:<owner/repo>`, `githubissues:<owner/repo>`, `githubcommits:<owner/repo>`, `githubactions:<owner/repo>`, `pypi:<package>`, `npm:<package>`, `hackernews:<query>`, `reddit:<query>`, `federalregister:<query>`, `courtlistener:<query>`, `nvd:<keyword-or-CVE>`, `cisakev:<keyword-or-CVE-or-all>`, `clinicaltrials:<query-or-NCT-id>`, `openfda:<query-or-application-number>`, `pubmed:<query-or-PMID>`, `openmeteo:<lat,lon>`, `usgs:<query>`, `eonet:<query-or-category>`, `nws:<area-or-point-or-query>`, `owid:<slug>`, or market-prior watches such as `manifold:<slug>`, `metaculus:<id>`, `polymarket:<slug>`, and `kalshi:<ticker>` |
 | Schedule scoped learning | `forecast schedule add --domain macro --topic inflation --cadence 1d --next-run-at <time> --stale-days 3 --auto-score --auto-postmortem` or `forecast schedule add --horizon 30 --cadence 1d --next-run-at <time>` |
 
-In the TUI, `/forecast` opens the structured forecast desk panel; `/new-forecast`, `/base-rate`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/review`, `/alerts`, `/calibration`, `/lessons`, `/backtest`, `/schedule`, `/performance`, and `/readiness` jump to common desk workflows; and `/forecast <subcommand>` remains available for the full forecast CLI.
+In the TUI, `/forecast` opens the structured forecast desk panel; `/new-forecast`, `/base-rate`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/review`, `/alerts`, `/calibration`, `/lessons`, `/backtest`, `/schedule`, `/performance`, `/readiness`, and `/pilot-cohort` jump to common desk workflows; and `/forecast <subcommand>` remains available for the full forecast CLI.
 
 Runtime state defaults to `~/.superforecasting-agent` for new installs. Existing `~/.hermes` homes are reused during the fork transition, and deployments can set `SUPERFORECASTING_AGENT_HOME` or `FORECAST_HOME` instead of the legacy `HERMES_HOME` variable.
 Dashboard overrides also accept `SUPERFORECASTING_AGENT_WEB_DIST`/`FORECAST_WEB_DIST` and `SUPERFORECASTING_AGENT_DASHBOARD_TUI`/`FORECAST_DASHBOARD_TUI` ahead of the legacy Hermes environment names.

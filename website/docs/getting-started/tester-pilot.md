@@ -193,6 +193,18 @@ source adapter involved:
 
 Use `forecast export <id>` or `forecast export all` for shareable artifacts when the data is safe to disclose.
 Use `forecast pilot-report --json` for a compact machine-readable summary of whether the tester ledger has enough questions, forecast updates, evidence, structured-source imports, scheduled self-checks, scores, and postmortems for the pilot exit criteria.
+If testers should start from the same unresolved live question book, seed it from a CSV or JSON manifest:
+
+```bash
+forecast pilot-cohort live-cohort.csv --schedule-cadence 1d --schedule-next-run-at 2026-05-25T09:00:00Z
+forecast pilot-cohort live-cohort.csv --dry-run --json
+```
+
+Useful manifest columns are `title`, `resolution_criteria`, `probability`,
+`rationale`, `domain`, `topics`, `close_time`, `resolution_time`, and
+`watch_source`. The command creates prospective live questions and optional
+initial live snapshots; it does not import resolved outcomes or prove
+forecasting skill.
 Operators can aggregate safe tester exports without merging ledgers:
 
 ```bash

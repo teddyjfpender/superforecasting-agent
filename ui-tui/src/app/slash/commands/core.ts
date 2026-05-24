@@ -133,6 +133,7 @@ export const coreCommands: SlashCommand[] = [
             ['/performance [args]', 'show recent backtest performance'],
             ['/readiness [args]', 'show forecast evidence claim gaps'],
             ['/pilot-report [args]', 'check tester pilot artifact coverage'],
+            ['/pilot-cohort [manifest...]', 'seed prospective live pilot questions'],
             ['/pilot-aggregate [files...]', 'aggregate tester export packets'],
             ['/lessons [args]', 'list calibration lessons'],
             ['/backtest [args]', 'run or inspect historical replay datasets'],
@@ -369,6 +370,12 @@ export const coreCommands: SlashCommand[] = [
     help: 'check tester pilot artifact coverage',
     name: 'pilot-report',
     run: (arg, ctx) => runForecastCommand(ctx, `pilot-report ${arg.trim()}`.trim())
+  },
+
+  {
+    help: 'seed prospective live pilot questions',
+    name: 'pilot-cohort',
+    run: (arg, ctx) => runForecastCommand(ctx, `pilot-cohort ${arg.trim()}`.trim())
   },
 
   {

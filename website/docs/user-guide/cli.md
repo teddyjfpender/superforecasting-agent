@@ -127,6 +127,7 @@ forecast readiness --json
 forecast readiness --require-evidence
 forecast pilot-report
 forecast pilot-report --json
+forecast pilot-cohort live-cohort.csv --schedule-cadence 1d --schedule-next-run-at 2026-05-25T09:00:00Z
 forecast pilot-aggregate tester-a-export.json tester-b-export.json --json
 ```
 
@@ -143,7 +144,9 @@ and `forecast readiness --require-evidence` exits nonzero when readiness gaps re
 `forecast pilot-report` is narrower: it checks whether a tester ledger has the
 workflow artifacts needed for a small pilot, including questions, updates,
 timestamped evidence, structured-source evidence, scheduled self-checks, scores,
-and postmortems. `forecast pilot-aggregate` reads JSON exports from testers and
+and postmortems. `forecast pilot-cohort` seeds prospective live forecast cohorts
+from CSV/JSON manifests so testers can start from the same unresolved question
+book without copying outcomes into the ledger. `forecast pilot-aggregate` reads JSON exports from testers and
 summarizes live-score collection across packets without treating those artifacts
 as proof of superiority.
 
@@ -209,6 +212,7 @@ Useful shortcuts:
 | `/schedule` | Inspect scheduled self-checks |
 | `/performance` | Summarize recent backtests |
 | `/readiness` | Inspect claim-readiness gaps |
+| `/pilot-cohort` | Seed prospective live pilot questions |
 
 The TUI status bar also shows forecast desk health such as active forecast count, open alerts, review queue size, calibration sample count, and learned lesson count when available.
 

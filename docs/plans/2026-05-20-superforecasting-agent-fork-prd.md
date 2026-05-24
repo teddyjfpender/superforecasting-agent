@@ -522,6 +522,7 @@ forecast backtest builtin:manifold-public-120-binary
 forecast backtest --all-benchmarks [--probability-source forecast-engine]
 forecast performance [--last N] [--dataset <filter>] [--json]
 # JSON includes evidence_status with live/backtest claim-readiness gaps.
+forecast pilot-cohort <csv-or-json> [--schedule-cadence <duration>] [--schedule-next-run-at <time>]
 forecast schedule add --question <id> --cadence <duration>
 forecast schedule add --domain <domain> [--topic <topic>] --cadence <duration>
 forecast schedule add --horizon <days|range> --cadence <duration> [--stale-days <days>]

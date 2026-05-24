@@ -41,7 +41,7 @@ from forecasting.ensembles import bayesian_binary_update, weighted_binary_probab
 from forecasting.extensions import extension_registry
 from forecasting.forecast_engine import forecast_engine_binary_probability
 from forecasting.learning import apply_active_lesson_adjustments
-from forecasting.ledger import ForecastLedger
+from forecasting.ledger import ForecastLedger, WATCH_SOURCE_TYPES
 from forecasting.models import (
     ASSUMPTION_STATUSES,
     CALIBRATION_LESSON_STATUSES,
@@ -1179,30 +1179,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     watch_add.add_argument("--domain")
     watch_add.add_argument("--topic")
     watch_add.add_argument("--portfolio")
-    watch_add.add_argument(
-        "--source-type",
-        choices=[
-            "file",
-            "url",
-            "manual",
-            "rss",
-            "gdelt",
-            "fred",
-            "bls",
-            "worldbank",
-            "sec",
-            "arxiv",
-            "openalex",
-            "pubmed",
-            "pypi",
-            "npm",
-            "courtlistener",
-            "manifold",
-            "metaculus",
-            "polymarket",
-            "kalshi",
-        ],
-    )
+    watch_add.add_argument("--source-type", choices=sorted(WATCH_SOURCE_TYPES))
     watch_add.add_argument("--metadata-json", default="{}")
     watch_add.set_defaults(_forecast_handler=_cmd_watch_add)
     watch_list = watch_sub.add_parser("list", help="List watched sources")
@@ -1332,6 +1309,31 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     )
     pilot_parser.add_argument("--json", action="store_true", help="Emit machine-readable pilot-report JSON")
     pilot_parser.set_defaults(_forecast_handler=_cmd_pilot_report)
+
+    pilot_cohort_parser = forecast_sub.add_parser(
+        "pilot-cohort",
+        help="Seed a prospective live tester cohort from a CSV or JSON manifest",
+    )
+    pilot_cohort_parser.add_argument("manifest", help="CSV/JSON file or URL containing unresolved live questions")
+    pilot_cohort_parser.add_argument("--default-domain")
+    pilot_cohort_parser.add_argument("--default-owner")
+    pilot_cohort_parser.add_argument("--default-review-cadence")
+    pilot_cohort_parser.add_argument(
+        "--initial-probability-column",
+        default="probability",
+        help="Column/key containing the operator's initial live probability; set empty to disable",
+    )
+    pilot_cohort_parser.add_argument(
+        "--watch-source-column",
+        default="watch_source",
+        help="Column/key containing one or more watched sources separated by comma or semicolon",
+    )
+    pilot_cohort_parser.add_argument("--schedule-cadence", help="Create one scheduled review per seeded question")
+    pilot_cohort_parser.add_argument("--schedule-next-run-at", help="First run timestamp for --schedule-cadence")
+    pilot_cohort_parser.add_argument("--schedule-stale-days", type=int, default=7)
+    pilot_cohort_parser.add_argument("--dry-run", action="store_true", help="Validate and show the cohort without writing")
+    pilot_cohort_parser.add_argument("--json", action="store_true", help="Emit machine-readable cohort JSON")
+    pilot_cohort_parser.set_defaults(_forecast_handler=_cmd_pilot_cohort)
 
     pilot_aggregate_parser = forecast_sub.add_parser(
         "pilot-aggregate",
@@ -5280,6 +5282,176 @@ def _cmd_pilot_report(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
+def _cmd_pilot_cohort(args: argparse.Namespace) -> None:
+    if args.schedule_cadence and not args.schedule_next_run_at:
+        raise SystemExit("forecast pilot-cohort --schedule-cadence requires --schedule-next-run-at")
+    if args.schedule_stale_days < 0:
+        raise SystemExit("forecast pilot-cohort --schedule-stale-days must be non-negative")
+
+    rows = _load_pilot_cohort_manifest(args.manifest)
+    specs = [
+        _pilot_cohort_spec_from_row(
+            row,
+            index=index,
+            manifest=args.manifest,
+            default_domain=args.default_domain,
+            default_owner=args.default_owner,
+            default_review_cadence=args.default_review_cadence,
+            initial_probability_column=args.initial_probability_column,
+            watch_source_column=args.watch_source_column,
+        )
+        for index, row in enumerate(rows)
+    ]
+    if not specs:
+        raise SystemExit("forecast pilot-cohort manifest has no question rows")
+
+    ledger = None if args.dry_run else _ledger(args)
+    created: list[dict[str, Any]] = []
+    for spec in specs:
+        if args.dry_run:
+            created.append(
+                {
+                    "row_index": spec["row_index"],
+                    "title": spec["title"],
+                    "domain": spec.get("domain"),
+                    "topics": spec.get("topics", []),
+                    "initial_probability": spec.get("initial_probability"),
+                    "watch_sources": spec.get("watch_sources", []),
+                    "dry_run": True,
+                }
+            )
+            continue
+
+        assert ledger is not None
+        question = ledger.create_question(
+            title=spec["title"],
+            description=spec.get("description", ""),
+            resolution_criteria=spec["resolution_criteria"],
+            resolution_source=spec.get("resolution_source"),
+            outcome_space=spec["outcome_space"],
+            close_time=spec.get("close_time"),
+            resolution_time=spec.get("resolution_time"),
+            tags=spec.get("tags", []),
+            domain=spec.get("domain"),
+            topics=spec.get("topics", []),
+            owner=spec.get("owner"),
+            impact=spec.get("impact"),
+            review_cadence=spec.get("review_cadence"),
+            next_review_at=spec.get("next_review_at"),
+            metadata={
+                "pilot_cohort": True,
+                "pilot_cohort_source": args.manifest,
+                "pilot_cohort_row": spec["row_index"],
+                "prospective_live_evidence": True,
+            },
+        )
+        snapshot_id = None
+        if spec.get("initial_probability") is not None:
+            snapshot = ledger.create_snapshot(
+                question_id=question.id,
+                probability_or_distribution=spec["initial_probability"],
+                rationale=spec.get("rationale")
+                or "Initial prospective live forecast from pilot cohort manifest.",
+                as_of=spec.get("as_of"),
+                confidence=spec.get("confidence"),
+                method=spec.get("method") or "pilot_cohort_initial",
+                forecast_origin="live",
+                metadata={
+                    "pilot_cohort": True,
+                    "pilot_cohort_source": args.manifest,
+                    "pilot_cohort_row": spec["row_index"],
+                },
+            )
+            snapshot_id = snapshot.forecast_id
+
+        schedule_id = None
+        if args.schedule_cadence:
+            schedule = ledger.schedule_review(
+                scope_type="question",
+                scope_ref=question.id,
+                cadence=args.schedule_cadence,
+                next_run_at=args.schedule_next_run_at,
+                stale_days=args.schedule_stale_days,
+                trigger_reason="pilot_cohort_review",
+            )
+            schedule_id = schedule["id"]
+
+        watch_ids: list[str] = []
+        for source in spec.get("watch_sources", []):
+            watch = ledger.add_watched_source(
+                scope_type="question",
+                scope_ref=question.id,
+                source=source,
+                metadata={
+                    "pilot_cohort": True,
+                    "pilot_cohort_source": args.manifest,
+                    "pilot_cohort_row": spec["row_index"],
+                },
+            )
+            watch_ids.append(watch["id"])
+
+        created.append(
+            {
+                "row_index": spec["row_index"],
+                "question_id": question.id,
+                "title": question.title,
+                "domain": question.domain,
+                "topics": question.topics,
+                "snapshot_id": snapshot_id,
+                "schedule_id": schedule_id,
+                "watch_ids": watch_ids,
+            }
+        )
+
+    report = {
+        "product": {
+            "product_name": PRODUCT_NAME,
+            "product_slug": PRODUCT_SLUG,
+            "purpose": "prospective_live_pilot_cohort",
+        },
+        "generated_at": utc_now_iso(),
+        "manifest": args.manifest,
+        "dry_run": bool(args.dry_run),
+        "question_count": len(specs),
+        "initial_probability_count": sum(1 for spec in specs if spec.get("initial_probability") is not None),
+        "scheduled_review_count": sum(1 for row in created if row.get("schedule_id")),
+        "watched_source_count": sum(len(row.get("watch_ids", [])) for row in created),
+        "questions": created,
+        "next_actions": [
+            "Run `forecast pilot-report` to check live pilot coverage.",
+            "After outcomes resolve, run `forecast resolve <id> --outcome ...`, `forecast score <id>`, and `forecast postmortem <id> ...`.",
+            "Export tester evidence with `forecast export all --format json` and aggregate with `forecast pilot-aggregate <exports...> --json`.",
+        ],
+        "claim_note": (
+            "Pilot cohorts are prospective live evidence collection artifacts. "
+            "They do not prove superiority until resolved, scored, postmortemed, and aggregated."
+        ),
+    }
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return
+
+    prefix = "would seed" if args.dry_run else "seeded"
+    print(
+        f"pilot_cohort {prefix} {report['question_count']} live question(s): "
+        f"initial_probabilities={report['initial_probability_count']} "
+        f"schedules={report['scheduled_review_count']} "
+        f"watches={report['watched_source_count']}"
+    )
+    for row in created:
+        question_ref = row.get("question_id") or f"row:{row['row_index']}"
+        print(f"  - {question_ref}: {row['title']}")
+        if row.get("snapshot_id"):
+            print(f"    snapshot: {row['snapshot_id']}")
+        if row.get("schedule_id"):
+            print(f"    schedule: {row['schedule_id']}")
+        if row.get("watch_ids"):
+            print(f"    watches: {', '.join(row['watch_ids'])}")
+    print("next_actions:")
+    for action in report["next_actions"]:
+        print(f"  - {action}")
+
+
 def _cmd_pilot_aggregate(args: argparse.Namespace) -> None:
     report = _aggregate_pilot_exports(
         [Path(path) for path in args.exports],
@@ -5320,6 +5492,162 @@ def _cmd_pilot_aggregate(args: argparse.Namespace) -> None:
             print(f"  - {action}")
     if args.require_live_scores and incomplete:
         raise SystemExit(1)
+
+
+def _load_pilot_cohort_manifest(source: str) -> list[dict[str, Any]]:
+    if source.startswith(("http://", "https://")):
+        text = _read_url_text(source, "pilot cohort manifest")
+        label = source
+    else:
+        path = Path(source).expanduser()
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise SystemExit(f"pilot cohort manifest could not be read: {source}") from exc
+        label = str(path)
+
+    stripped = text.lstrip()
+    if label.lower().endswith(".csv") or (stripped and not stripped.startswith(("{", "["))):
+        raw_rows = list(csv.DictReader(text.splitlines()))
+    else:
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"pilot cohort manifest is not valid JSON or CSV: {label}") from exc
+        if isinstance(payload, dict):
+            for key in ("questions", "rows", "items", "cohort"):
+                if isinstance(payload.get(key), list):
+                    raw_rows = payload[key]
+                    break
+            else:
+                raw_rows = [payload]
+        elif isinstance(payload, list):
+            raw_rows = payload
+        else:
+            raise SystemExit("pilot cohort manifest must be a JSON object, array, or CSV table")
+    rows: list[dict[str, Any]] = []
+    for raw in raw_rows:
+        if isinstance(raw, dict):
+            rows.append({str(key): _strip_cell(value) for key, value in raw.items() if key is not None})
+    return rows
+
+
+def _pilot_cohort_spec_from_row(
+    row: dict[str, Any],
+    *,
+    index: int,
+    manifest: str,
+    default_domain: str | None,
+    default_owner: str | None,
+    default_review_cadence: str | None,
+    initial_probability_column: str | None,
+    watch_source_column: str | None,
+) -> dict[str, Any]:
+    title = _cohort_text(_first_present(row, "title", "question", "question_title"))
+    resolution_criteria = _cohort_text(
+        _first_present(row, "resolution_criteria", "resolution", "criteria")
+    )
+    if not title:
+        raise SystemExit(f"pilot cohort row {index + 1} is missing title/question")
+    if not resolution_criteria:
+        raise SystemExit(f"pilot cohort row {index + 1} is missing resolution_criteria")
+
+    outcome_type = _cohort_text(_first_present(row, "outcome_type", "type")) or "binary"
+    choices = _cohort_list(_first_present(row, "choices", "outcomes"))
+    if outcome_type == "binary" and not choices:
+        choices = ["yes", "no"]
+    bounds = _cohort_float_list(_first_present(row, "bounds"))
+    outcome_space = OutcomeSpace(
+        type=outcome_type,
+        choices=choices,
+        units=_cohort_text(_first_present(row, "units", "unit")) or None,
+        bounds=bounds or None,
+    )
+    outcome_space.validate()
+
+    probability_column = (initial_probability_column or "").strip()
+    probability = None
+    if probability_column:
+        probability = _cohort_probability(_first_present(row, probability_column, "initial_probability"))
+
+    domain = _cohort_text(_first_present(row, "domain")) or default_domain
+    owner = _cohort_text(_first_present(row, "owner")) or default_owner
+    review_cadence = _cohort_text(_first_present(row, "review_cadence")) or default_review_cadence
+    watch_column = (watch_source_column or "").strip()
+    watch_sources = _cohort_list(row.get(watch_column)) if watch_column else []
+
+    return {
+        "row_index": index,
+        "title": title,
+        "description": _cohort_text(_first_present(row, "description", "notes")) or "",
+        "resolution_criteria": resolution_criteria,
+        "resolution_source": _cohort_text(_first_present(row, "resolution_source", "resolver")) or None,
+        "outcome_space": outcome_space,
+        "close_time": _cohort_text(_first_present(row, "close_time", "close_date")) or None,
+        "resolution_time": _cohort_text(_first_present(row, "resolution_time", "resolution_date")) or None,
+        "tags": _cohort_list(_first_present(row, "tags")),
+        "domain": domain,
+        "topics": _cohort_list(_first_present(row, "topics", "topic")),
+        "owner": owner,
+        "impact": _cohort_text(_first_present(row, "impact")) or None,
+        "review_cadence": review_cadence,
+        "next_review_at": _cohort_text(_first_present(row, "next_review_at")) or None,
+        "initial_probability": probability,
+        "rationale": _cohort_text(_first_present(row, "rationale", "initial_rationale")) or None,
+        "as_of": _cohort_text(_first_present(row, "as_of", "forecast_as_of")) or None,
+        "confidence": _cohort_probability(_first_present(row, "confidence")),
+        "method": _cohort_text(_first_present(row, "method")) or None,
+        "watch_sources": watch_sources,
+        "manifest": manifest,
+    }
+
+
+def _strip_cell(value: Any) -> Any:
+    return value.strip() if isinstance(value, str) else value
+
+
+def _cohort_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
+def _cohort_list(value: Any) -> list[str]:
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        parsed = json_loads(value, None)
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+        delimiter = ";" if ";" in value else ","
+        return [item.strip() for item in value.split(delimiter) if item.strip()]
+    return [str(value).strip()] if str(value).strip() else []
+
+
+def _cohort_float_list(value: Any) -> list[float]:
+    numbers = []
+    for item in _cohort_list(value):
+        try:
+            numbers.append(float(item))
+        except ValueError as exc:
+            raise SystemExit("pilot cohort bounds must be numeric") from exc
+    return numbers
+
+
+def _cohort_probability(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        probability = float(value)
+    except (TypeError, ValueError) as exc:
+        raise SystemExit("pilot cohort probability/confidence values must be numeric") from exc
+    if not 0 <= probability <= 1:
+        raise SystemExit("pilot cohort probability/confidence values must be between 0 and 1")
+    return probability
 
 
 def _aggregate_pilot_exports(paths: list[Path], *, min_live_scores: int = 10) -> dict[str, Any]:

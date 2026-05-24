@@ -120,6 +120,7 @@ Common desk workflows have direct slash commands:
 | `/self-check` | Create review alerts for stale or changed forecasts |
 | `/performance` | Summarize recent backtest performance |
 | `/pilot-report` | Check tester pilot artifact coverage |
+| `/pilot-cohort` | Seed prospective live pilot questions |
 | `/pilot-aggregate` | Aggregate tester export packets |
 
 These commands route to the forecast CLI and refresh desk counters when they

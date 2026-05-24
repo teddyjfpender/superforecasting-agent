@@ -884,12 +884,14 @@ describe('createGatewayEventHandler', () => {
               '/forecast import eia <series-id-or-api-url> --question <id>',
               '/forecast import treasury <dataset-path-or-api-url> --question <id>',
               '/forecast import census "<dataset-path?get=...&for=...>" --question <id>',
+              '/forecast import socrata <domain>/<dataset-id> --question <id>',
               '/forecast import stooq <symbol-or-csv-url> --question <id>',
               '/forecast import yahoo <symbol> --question <id>',
               '/forecast import coingecko <coin-id> --question <id>',
               '/forecast import wikipediapageviews <project>/<article> --question <id>',
               '/forecast import githubissues <owner/repo> --question <id>',
               '/forecast import githubcommits <owner/repo> --question <id>',
+              '/forecast import githubactions <owner/repo> --question <id>',
               '/forecast import pypi <package> --question <id>',
               '/forecast import npm <package> --question <id>',
               '/forecast import hackernews "<query>" --question <id>',
@@ -918,6 +920,7 @@ describe('createGatewayEventHandler', () => {
               '/forecast performance --last 5',
               '/forecast readiness',
               '/forecast pilot-report',
+              '/forecast pilot-cohort live-cohort.csv --dry-run --json',
               '/forecast backtest --benchmarks'
             ],
             title: 'Next Commands'
