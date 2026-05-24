@@ -942,6 +942,7 @@ describe('createGatewayEventHandler', () => {
               '/forecast import treasury <dataset-path-or-api-url> --question <id>',
               '/forecast import census "<dataset-path?get=...&for=...>" --question <id>',
               '/forecast import socrata <domain>/<dataset-id> --question <id>',
+              '/forecast import ckan <domain>/<query> --question <id>',
               '/forecast import stooq <symbol-or-csv-url> --question <id>',
               '/forecast import yahoo <symbol> --question <id>',
               '/forecast import coingecko <coin-id> --question <id>',

@@ -43,6 +43,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "worldbank",
     "census",
     "socrata",
+    "ckan",
     "stooq",
     "yahoo",
     "sec",

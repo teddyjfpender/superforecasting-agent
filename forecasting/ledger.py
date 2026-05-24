@@ -100,6 +100,7 @@ WATCH_SOURCE_TYPES = {
     "worldbank",
     "census",
     "socrata",
+    "ckan",
     "stooq",
     "yahoo",
     "sec",
@@ -3032,7 +3033,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, bluesky, mastodon, reliefweb, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, whogho, fema, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
+                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, bluesky, mastodon, reliefweb, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, whogho, fema, fred, eia, treasury, bls, worldbank, census, socrata, ckan, stooq, yahoo, "
                 "sec, secfacts, arxiv, openalex, crossref, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -3153,6 +3154,7 @@ class ForecastLedger:
                     "worldbank",
                     "census",
                     "socrata",
+                    "ckan",
                     "stooq",
                     "yahoo",
                     "sec",
@@ -5690,6 +5692,8 @@ class ForecastLedger:
             return "census"
         if source.startswith("socrata:"):
             return "socrata"
+        if source.startswith("ckan:"):
+            return "ckan"
         if source.startswith("stooq:"):
             return "stooq"
         if source.startswith("yahoo:"):
@@ -5796,6 +5800,8 @@ class ForecastLedger:
             return self._census_source_signature(source)
         if source_type == "socrata":
             return self._socrata_source_signature(source)
+        if source_type == "ckan":
+            return self._ckan_source_signature(source)
         if source_type == "stooq":
             return self._stooq_source_signature(source)
         if source_type == "yahoo":
@@ -6841,6 +6847,33 @@ class ForecastLedger:
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"socrata:{len(payload)}:{digest}"
 
+    def _ckan_source_signature(self, source: str) -> str:
+        source_value = source.split(":", 1)[1].strip() if source.startswith("ckan:") else source.strip()
+        if not source_value:
+            return "missing:ckan:empty-source"
+        try:
+            from forecasting.source_adapters import load_ckan_datasets
+
+            datasets = load_ckan_datasets(source_value, limit=50)
+        except Exception as exc:
+            return f"missing:ckan:{source_value}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "entry_id": dataset.entry_id,
+                "metadata_created": dataset.metadata_created,
+                "metadata_modified": dataset.metadata_modified,
+                "name": dataset.name,
+                "package_id": dataset.package_id,
+                "portal": dataset.portal,
+                "resource_count": len(dataset.resources),
+                "tags": dataset.tags,
+                "title": dataset.title,
+            }
+            for dataset in datasets
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"ckan:{len(payload)}:{digest}"
+
     def _stooq_source_signature(self, source: str) -> str:
         source_value = source.split(":", 1)[1].strip() if source.startswith("stooq:") else source.strip()
         if not source_value:
@@ -7458,6 +7491,12 @@ class ForecastLedger:
             source_value = source.split(":", 1)[1].strip() if source.startswith("socrata:") else source
             return (
                 f"Run `forecast import socrata \"{source_value}\" --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "ckan" and scope_type == "question" and scope_ref:
+            source_value = source.split(":", 1)[1].strip() if source.startswith("ckan:") else source
+            return (
+                f"Run `forecast import ckan {self._cli_arg(source_value)} --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "stooq" and scope_type == "question" and scope_ref:

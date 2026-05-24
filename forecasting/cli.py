@@ -65,6 +65,7 @@ from forecasting.source_adapters import (
     load_bluesky_posts,
     load_bls_observations,
     load_census_records,
+    load_ckan_datasets,
     load_cisa_kev_vulnerabilities,
     load_clinicaltrials_studies,
     load_coingecko_market_snapshots,
@@ -255,6 +256,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "domain": "open-data portal rows",
         "import_command": "forecast import socrata <domain>/<dataset-id> --question <id>",
         "watch_prefix": "socrata:<domain>/<dataset-id>",
+    },
+    {
+        "name": "ckan",
+        "domain": "open-data package metadata",
+        "import_command": "forecast import ckan <domain>/<query> --question <id>",
+        "watch_prefix": "ckan:<domain>/<query>",
     },
     {
         "name": "stooq",
@@ -610,6 +617,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "worldbank",
         "census",
         "socrata",
+        "ckan",
         "stooq",
         "yahoo",
         "coingecko",
@@ -698,6 +706,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "worldbank",
             "census",
             "socrata",
+            "ckan",
             "stooq",
             "yahoo",
             "coingecko",
@@ -971,6 +980,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://{domain}/resource/{dataset_id}.json",
                 help="Override Socrata API endpoint template for tests or private mirrors",
+            )
+        if name == "ckan":
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://{domain}/api/3/action/package_search",
+                help="Override CKAN package_search endpoint template for tests or private mirrors",
             )
         if name == "stooq":
             adapter.add_argument("--interval", choices=["d", "w", "m"], default="d")
@@ -4489,6 +4504,69 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} socrata evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "ckan":
+        if not args.question_id:
+            raise SystemExit("forecast import ckan requires --question")
+        datasets = load_ckan_datasets(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for dataset in datasets:
+            tags = ", ".join(dataset.tags[:6])
+            resource_count = len(dataset.resources)
+            summary_parts = [
+                f"CKAN dataset from {dataset.portal}: {dataset.title}.",
+                f"Metadata updated {dataset.metadata_modified or dataset.metadata_created or 'unknown time'}.",
+            ]
+            if dataset.notes:
+                summary_parts.append(dataset.notes)
+            if dataset.organization:
+                summary_parts.append(f"Organization: {dataset.organization}.")
+            if tags:
+                summary_parts.append(f"Tags: {tags}.")
+            if resource_count:
+                summary_parts.append(f"Resources: {resource_count}.")
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=dataset.source_url or f"CKAN:{dataset.portal}/{dataset.name or dataset.package_id}",
+                    source_url=dataset.source_url,
+                    source_name=dataset.source_name,
+                    source_type="adapter:ckan",
+                    published_at=dataset.metadata_modified or dataset.metadata_created,
+                    available_at=dataset.metadata_modified or dataset.metadata_created or args.as_of,
+                    claim=f"CKAN dataset: {dataset.portal} {dataset.title}",
+                    summary=" ".join(summary_parts),
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "ckan",
+                        "portal": dataset.portal,
+                        "package_id": dataset.package_id,
+                        "name": dataset.name,
+                        "url": dataset.url,
+                        "organization": dataset.organization,
+                        "groups": dataset.groups,
+                        "tags": dataset.tags,
+                        "license_title": dataset.license_title,
+                        "metadata_created": dataset.metadata_created,
+                        "metadata_modified": dataset.metadata_modified,
+                        "resource_count": resource_count,
+                        "resources": dataset.resources,
+                        "api_base_url": args.api_base_url,
+                        "raw": dataset.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} ckan evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

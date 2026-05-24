@@ -70,6 +70,10 @@ const EVIDENCE_IMPORTS = [
     label: "Open data",
   },
   {
+    command: "forecast import ckan <domain>/<query> --question <id>",
+    label: "CKAN",
+  },
+  {
     command: "forecast import stooq <symbol-or-csv-url> --question <id>",
     label: "Market data",
   },

@@ -22,6 +22,7 @@ from forecasting.source_adapters import (
     load_bluesky_posts,
     load_bls_observations,
     load_census_records,
+    load_ckan_datasets,
     load_cisa_kev_vulnerabilities,
     load_clinicaltrials_studies,
     load_coingecko_market_snapshots,
@@ -323,6 +324,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "worldbank",
                     "census",
                     "socrata",
+                    "ckan",
                     "stooq",
                     "yahoo",
                     "sec",
@@ -1192,6 +1194,11 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_socrata_records(source, **kwargs)
+    if adapter_name == "ckan":
+        kwargs = {"limit": limit, "since": since}
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_ckan_datasets(source, **kwargs)
     if adapter_name == "stooq":
         kwargs = {
             "limit": limit,
@@ -1482,6 +1489,8 @@ def _source_adapter_evidence_payload(
         "run_started_at",
         "updated_at",
         "last_updated",
+        "metadata_modified",
+        "metadata_created",
         "observation_time",
         "committed_at",
         "authored_at",
@@ -1579,6 +1588,8 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         return f"Census {data.get('dataset')} {geography_text}: {value_text}"
     if adapter == "socrata":
         return f"Socrata row {data.get('domain')}/{data.get('dataset_id')} {data.get('row_id') or data.get('entry_id')}"
+    if adapter == "ckan":
+        return f"CKAN dataset {data.get('portal')} {data.get('title') or data.get('name') or data.get('package_id')}"
     if adapter == "stooq":
         return f"Stooq {data.get('symbol')} close was {data.get('close_price')} on {data.get('observation_date')}"
     if adapter == "yahoo":

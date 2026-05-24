@@ -9,6 +9,7 @@ from forecasting import ForecastLedger
 from forecasting.source_adapters import (
     BlueskyPost,
     CensusRecord,
+    CkanDataset,
     CisaKevVulnerability,
     ClinicalTrialStudy,
     CoinGeckoMarketSnapshot,
@@ -121,7 +122,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "whogho", "fema", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "whogho", "fema", "eia", "treasury", "census", "socrata", "ckan", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_imports_airquality_forecasts(tmp_path, monkeypatch):
@@ -2755,6 +2756,58 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert socrata_evidence["published_at"] == "2026-05-21T11:00:00Z"
     assert socrata_evidence["metadata"]["adapter"] == "socrata"
     assert socrata_evidence["metadata"]["adapter_item"]["values"]["cases"] == "42"
+
+    def fake_ckan(source, **kwargs):
+        assert source == "data.gov/energy"
+        assert kwargs["limit"] == 1
+        assert kwargs["since"] == "2026-01-01"
+        assert kwargs["api_base_url"] == "https://example.test/{domain}/api/3/action/package_search"
+        return [
+            CkanDataset(
+                portal="data.gov",
+                package_id="pkg-1",
+                name="electricity-demand",
+                title="Electricity demand",
+                notes="Hourly grid demand.",
+                url=None,
+                organization="Energy Department",
+                groups=["energy"],
+                tags=["grid", "demand"],
+                license_title="Creative Commons",
+                metadata_created="2026-05-20T10:00:00Z",
+                metadata_modified="2026-05-22T11:30:00Z",
+                resources=[{"id": "res-1", "format": "CSV"}],
+                source_url="https://data.gov/dataset/electricity-demand",
+                source_name="CKAN:data.gov",
+                entry_id="data.gov:electricity-demand",
+                raw={"row_index": 0},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_ckan_datasets", fake_ckan)
+    ckan_imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "ckan",
+                "source": "data.gov/energy",
+                "limit": 1,
+                "since": "2026-01-01",
+                "api_base_url": "https://example.test/{domain}/api/3/action/package_search",
+            }
+        )
+    )
+
+    assert ckan_imported["imported_count"] == 1
+    ckan_evidence = ckan_imported["imported"][0]["evidence"]
+    assert ckan_evidence["source_type"] == "adapter:ckan"
+    assert ckan_evidence["source_name"] == "CKAN:data.gov"
+    assert ckan_evidence["claim"] == "CKAN dataset data.gov Electricity demand"
+    assert ckan_evidence["published_at"] == "2026-05-22T11:30:00Z"
+    assert ckan_evidence["metadata"]["adapter"] == "ckan"
+    assert ckan_evidence["metadata"]["adapter_item"]["resources"][0]["format"] == "CSV"
 
     def fake_githubissues(source, **kwargs):
         assert source == "acme/desk"

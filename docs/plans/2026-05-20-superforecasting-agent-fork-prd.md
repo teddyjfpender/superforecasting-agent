@@ -561,6 +561,7 @@ forecast import bls <series-id> --question <id>
 forecast import worldbank <country>/<indicator> --question <id>
 forecast import census <dataset-path?get=...&for=...> --question <id>
 forecast import socrata <domain>/<dataset-id> --question <id>
+forecast import ckan <domain>/<query> --question <id>
 forecast import stooq <symbol-or-csv-url> --question <id>
 forecast import yahoo <symbol> --question <id>
 forecast import coingecko <coin-id-or-list> --question <id>

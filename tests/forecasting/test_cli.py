@@ -22,6 +22,7 @@ from forecasting.source_adapters import (
     BlueskyPost,
     BlsObservation,
     CensusRecord,
+    CkanDataset,
     CisaKevVulnerability,
     ClinicalTrialStudy,
     CoinGeckoMarketSnapshot,
@@ -7268,6 +7269,163 @@ def test_forecast_cli_socrata_import_captures_records_as_evidence(tmp_path, caps
     assert evidence[0].metadata["values"]["cases"] == "42"
 
 
+def test_ckan_adapter_loads_open_data_package_metadata(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return {
+            "success": True,
+            "result": {
+                "results": [
+                    {
+                        "id": "pkg-1",
+                        "name": "electricity-demand",
+                        "title": "Electricity demand",
+                        "notes": "Hourly grid demand.",
+                        "metadata_created": "2026-05-20T10:00:00",
+                        "metadata_modified": "2026-05-22T11:30:00",
+                        "license_title": "Creative Commons",
+                        "organization": {"title": "Energy Department"},
+                        "groups": [{"name": "energy"}],
+                        "tags": [{"name": "grid"}, {"display_name": "demand"}],
+                        "resources": [
+                            {
+                                "id": "res-1",
+                                "name": "CSV",
+                                "url": "https://example.test/demand.csv",
+                                "format": "CSV",
+                                "last_modified": "2026-05-22T11:00:00",
+                            }
+                        ],
+                    }
+                ]
+            },
+        }
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    datasets = source_adapters.load_ckan_datasets(
+        "ckan:data.gov/energy?fq=tags:energy",
+        limit=1,
+        since="2026-05-01T00:00:00Z",
+        api_base_url="https://api.test/{domain}/api/3/action/package_search",
+    )
+    parsed = urlparse(captured["endpoint"])
+    params = parse_qs(parsed.query)
+
+    assert captured["label"] == "ckan package search"
+    assert parsed.netloc == "api.test"
+    assert parsed.path == "/data.gov/api/3/action/package_search"
+    assert params["q"] == ["energy"]
+    assert params["rows"] == ["1"]
+    assert params["sort"] == ["metadata_modified desc"]
+    assert params["fq"] == ["tags:energy"]
+    assert datasets[0].portal == "data.gov"
+    assert datasets[0].package_id == "pkg-1"
+    assert datasets[0].name == "electricity-demand"
+    assert datasets[0].title == "Electricity demand"
+    assert datasets[0].metadata_modified == "2026-05-22T11:30:00Z"
+    assert datasets[0].organization == "Energy Department"
+    assert datasets[0].tags == ["grid", "demand"]
+    assert datasets[0].resources[0]["format"] == "CSV"
+    assert datasets[0].source_url == "https://data.gov/dataset/electricity-demand"
+
+
+def test_forecast_cli_ckan_import_captures_datasets_as_evidence(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_ckan_datasets(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            CkanDataset(
+                portal="data.gov",
+                package_id="pkg-1",
+                name="electricity-demand",
+                title="Electricity demand",
+                notes="Hourly grid demand.",
+                url="https://example.test/demand.csv",
+                organization="Energy Department",
+                groups=["energy"],
+                tags=["grid", "demand"],
+                license_title="Creative Commons",
+                metadata_created="2026-05-20T10:00:00Z",
+                metadata_modified="2026-05-22T11:30:00Z",
+                resources=[{"id": "res-1", "name": "CSV", "format": "CSV"}],
+                source_url="https://data.gov/dataset/electricity-demand",
+                source_name="CKAN:data.gov",
+                entry_id="data.gov:electricity-demand",
+                raw={"row_index": 0},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_ckan_datasets", fake_load_ckan_datasets)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will CKAN evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if CKAN evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "ckan",
+            "data.gov/energy",
+            "--question",
+            question_id,
+            "--since",
+            "2026-05-01T00:00:00Z",
+            "--limit",
+            "3",
+            "--api-base-url",
+            "https://api.test/{domain}/api/3/action/package_search",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.9",
+            "--relevance",
+            "0.8",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 ckan evidence item(s)" in output
+    assert captured["source"] == "data.gov/energy"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["api_base_url"] == "https://api.test/{domain}/api/3/action/package_search"
+    assert evidence[0].claim == "CKAN dataset: data.gov Electricity demand"
+    assert evidence[0].summary.startswith("CKAN dataset from data.gov")
+    assert evidence[0].source_name == "CKAN:data.gov"
+    assert evidence[0].source_type == "adapter:ckan"
+    assert evidence[0].published_at == "2026-05-22T11:30:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.9
+    assert evidence[0].relevance_rating == 0.8
+    assert evidence[0].metadata["adapter"] == "ckan"
+    assert evidence[0].metadata["portal"] == "data.gov"
+    assert evidence[0].metadata["name"] == "electricity-demand"
+    assert evidence[0].metadata["resource_count"] == 1
+    assert evidence[0].metadata["tags"] == ["grid", "demand"]
+
+
 def test_stooq_adapter_loads_recent_price_observations(monkeypatch):
     captured = {}
 
@@ -8614,6 +8772,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "treasury:<dataset-path-or-api-url>" in output
     assert "census:<dataset-path?get=...&for=...>" in output
     assert "socrata:<domain>/<dataset-id>" in output
+    assert "ckan:<domain>/<query>" in output
     assert "stooq:<symbol-or-csv-url>" in output
     assert "yahoo:<symbol>" in output
     assert "coingecko:<coin-id>" in output
@@ -8653,7 +8812,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "fivethirtyeight", "owid", "whogho", "fema", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "fivethirtyeight", "owid", "whogho", "fema", "eia", "treasury", "census", "socrata", "ckan", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "fivethirtyeight:<dataset-or-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "whogho:<indicator-code>" for source in payload["sources"])
@@ -8661,6 +8820,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "census:<dataset-path?get=...&for=...>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "socrata:<domain>/<dataset-id>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "ckan:<domain>/<query>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "stooq:<symbol-or-csv-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "yahoo:<symbol>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "coingecko:<coin-id>" for source in payload["sources"])
@@ -11991,6 +12151,75 @@ def test_forecast_cli_watch_add_supports_socrata_sources(tmp_path, capsys, monke
     assert f"watched_source_changed:{watch_id}" in check_output
 
 
+def test_forecast_cli_watch_add_supports_ckan_sources(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    modified_at = ["2026-05-22T11:30:00Z"]
+
+    def fake_load_ckan_datasets(source: str, **kwargs):
+        return [
+            CkanDataset(
+                portal="data.gov",
+                package_id="pkg-1",
+                name="electricity-demand",
+                title="Electricity demand",
+                notes="Hourly grid demand.",
+                url=None,
+                organization="Energy Department",
+                groups=["energy"],
+                tags=["grid"],
+                license_title="Creative Commons",
+                metadata_created="2026-05-20T10:00:00Z",
+                metadata_modified=modified_at[0],
+                resources=[{"id": "res-1", "format": "CSV"}],
+                source_url="https://data.gov/dataset/electricity-demand",
+                source_name="CKAN:data.gov",
+                entry_id="data.gov:electricity-demand",
+                raw={"metadata_modified": modified_at[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_ckan_datasets", fake_load_ckan_datasets)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will watched CLI CKAN packages change?",
+            "--resolution-criteria",
+            "Resolved yes if watched CKAN packages change.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            "ckan:data.gov/energy",
+            "--question",
+            question_id,
+        ],
+    )
+    add_output = capsys.readouterr().out
+    watch_id = re.search(r"watched source (ws_[a-f0-9]+)", add_output).group(1)
+
+    assert "source_type: ckan" in add_output
+
+    modified_at[0] = "2026-05-23T11:30:00Z"
+    _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
+    check_output = capsys.readouterr().out
+
+    assert "created 1 alert(s)" in check_output
+    assert f"watched_source_changed:{watch_id}" in check_output
+
+
 def test_forecast_cli_watch_add_accepts_current_source_type_choices(capsys, monkeypatch):
     parser = _parser()
     captured = {}
@@ -12019,13 +12248,13 @@ def test_forecast_cli_watch_add_accepts_current_source_type_choices(capsys, monk
             "--question",
             "fq_test",
             "--source-type",
-            "socrata",
+            "ckan",
         ],
     )
     output = capsys.readouterr().out
 
-    assert captured["source_type"] == "socrata"
-    assert "source_type: socrata" in output
+    assert captured["source_type"] == "ckan"
+    assert "source_type: ckan" in output
 
 
 def test_forecast_cli_watch_add_supports_stooq_sources(tmp_path, capsys, monkeypatch):

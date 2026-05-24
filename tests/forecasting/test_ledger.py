@@ -23,6 +23,7 @@ from forecasting.source_adapters import (
     BlueskyPost,
     BlsObservation,
     CensusRecord,
+    CkanDataset,
     CisaKevVulnerability,
     ClinicalTrialStudy,
     CoinGeckoMarketSnapshot,
@@ -3820,6 +3821,66 @@ def test_watched_socrata_source_creates_alert_on_record_change(tmp_path, monkeyp
     )
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_ckan_source_creates_alert_on_dataset_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched CKAN changes be detected?",
+        resolution_criteria="Resolved yes if watched CKAN packages create alerts.",
+    )
+    modified_at = ["2026-05-22T11:30:00Z"]
+    captured_sources = []
+
+    def fake_load_ckan_datasets(source: str, **kwargs):
+        captured_sources.append(source)
+        return [
+            CkanDataset(
+                portal="data.gov",
+                package_id="pkg-1",
+                name="electricity-demand",
+                title="Electricity demand",
+                notes="Hourly grid demand.",
+                url=None,
+                organization="Energy Department",
+                groups=["energy"],
+                tags=["grid"],
+                license_title="Creative Commons",
+                metadata_created="2026-05-20T10:00:00Z",
+                metadata_modified=modified_at[0],
+                resources=[{"id": "res-1", "format": "CSV"}],
+                source_url="https://data.gov/dataset/electricity-demand",
+                source_name="CKAN:data.gov",
+                entry_id="data.gov:electricity-demand",
+                raw={"metadata_modified": modified_at[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_ckan_datasets", fake_load_ckan_datasets)
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="ckan:data.gov/energy",
+    )
+
+    assert watch["source_type"] == "ckan"
+    assert watch["last_seen_signature"].startswith("ckan:1:")
+    assert captured_sources[-1] == "data.gov/energy"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    modified_at[0] = "2026-05-23T11:30:00Z"
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-24T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f"forecast import ckan data.gov/energy --question {question.id}" in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-24T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]
 
 
