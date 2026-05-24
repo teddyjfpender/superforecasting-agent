@@ -1819,6 +1819,31 @@ def test_homebrew_formula_is_forecast_native():
     assert not (root / "packaging" / "homebrew" / "hermes-agent.rb").exists()
 
 
+def test_nix_package_aliases_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    nix_package = (root / "nix" / "hermes-agent.nix").read_text(encoding="utf-8")
+    nix_packages = (root / "nix" / "packages.nix").read_text(encoding="utf-8")
+    nix_overlay = (root / "nix" / "overlays.nix").read_text(encoding="utf-8")
+    nix_checks = (root / "nix" / "checks.nix").read_text(encoding="utf-8")
+    nix_docs = (root / "website" / "docs" / "getting-started" / "nix-setup.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'pname = "superforecasting-agent"' in nix_package
+    assert 'homepage = "https://github.com/NousResearch/superforecasting-agent"' in nix_package
+    assert "$out/share/superforecasting-agent/skills" in nix_package
+    assert "ln -sfn superforecasting-agent $out/share/hermes-agent" in nix_package
+    assert '"superforecasting-agent" = superforecastingAgent' in nix_packages
+    assert '"hermes-agent" = superforecastingAgent' in nix_packages
+    assert '"superforecasting-agent" = superforecastingAgent' in nix_overlay
+    assert '"hermes-agent" = superforecastingAgent' in nix_overlay
+    assert "share/superforecasting-agent/skills" in nix_checks
+    assert "share/hermes-agent/skills" in nix_checks
+    assert "<this-fork-url>#superforecasting-agent" in nix_docs
+    assert 'pkgs."superforecasting-agent".override' in nix_docs
+    assert "`pkgs.\"hermes-agent\"` remain compatibility names" in nix_docs
+
+
 def test_revision_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     banner = (root / "hermes_cli" / "banner.py").read_text(encoding="utf-8")

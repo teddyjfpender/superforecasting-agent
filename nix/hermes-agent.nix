@@ -2,8 +2,9 @@
 #
 # callPackage auto-wires nixpkgs args; flake inputs are passed explicitly.
 # Users override via:
-#   pkgs.hermes-agent.override { extraPythonPackages = [...]; }
-#   pkgs.hermes-agent.override { extraDependencyGroups = [ "hindsight" ]; }
+#   pkgs."superforecasting-agent".override { extraPythonPackages = [...]; }
+#   pkgs."superforecasting-agent".override { extraDependencyGroups = [ "hindsight" ]; }
+# The inherited pkgs."hermes-agent" alias remains available for compatibility.
 {
   lib,
   stdenv,
@@ -118,7 +119,7 @@ let
                 if line.startswith('Name:'):
                     pkg = canonical(line.split(':', 1)[1].strip())
                     if pkg in core:
-                        print(f'ERROR: plugin package \"{pkg}\" collides with a package in hermes sealed venv', file=sys.stderr)
+                        print(f'ERROR: plugin package \"{pkg}\" collides with a package in the sealed Superforecasting Agent venv', file=sys.stderr)
                         print(f'  from: {di}', file=sys.stderr)
                         print(f'  Remove this dependency from extraPythonPackages.', file=sys.stderr)
                         sys.exit(1)
@@ -128,7 +129,7 @@ let
   '';
 in
 stdenv.mkDerivation {
-  pname = "hermes-agent";
+  pname = "superforecasting-agent";
   version = (fromTOML (builtins.readFile ../pyproject.toml)).project.version;
 
   dontUnpack = true;
@@ -138,10 +139,11 @@ stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
 
-    mkdir -p $out/share/hermes-agent $out/bin
-    cp -r ${bundledSkills} $out/share/hermes-agent/skills
-    cp -r ${bundledPlugins} $out/share/hermes-agent/plugins
-    cp -r ${hermesWeb} $out/share/hermes-agent/web_dist
+    mkdir -p $out/share/superforecasting-agent $out/bin
+    cp -r ${bundledSkills} $out/share/superforecasting-agent/skills
+    cp -r ${bundledPlugins} $out/share/superforecasting-agent/plugins
+    cp -r ${hermesWeb} $out/share/superforecasting-agent/web_dist
+    ln -sfn superforecasting-agent $out/share/hermes-agent
 
     mkdir -p $out/ui-tui
     cp -r ${hermesTui}/lib/hermes-tui/* $out/ui-tui/
@@ -150,15 +152,15 @@ stdenv.mkDerivation {
       (name: ''
         makeWrapper ${hermesVenv}/bin/${name} $out/bin/${name} \
           --suffix PATH : "${runtimePath}" \
-          --set SUPERFORECASTING_AGENT_BUNDLED_SKILLS $out/share/hermes-agent/skills \
-          --set FORECAST_BUNDLED_SKILLS $out/share/hermes-agent/skills \
-          --set HERMES_BUNDLED_SKILLS $out/share/hermes-agent/skills \
-          --set SUPERFORECASTING_AGENT_BUNDLED_PLUGINS $out/share/hermes-agent/plugins \
-          --set FORECAST_BUNDLED_PLUGINS $out/share/hermes-agent/plugins \
-          --set HERMES_BUNDLED_PLUGINS $out/share/hermes-agent/plugins \
-          --set SUPERFORECASTING_AGENT_WEB_DIST $out/share/hermes-agent/web_dist \
-          --set FORECAST_WEB_DIST $out/share/hermes-agent/web_dist \
-          --set HERMES_WEB_DIST $out/share/hermes-agent/web_dist \
+          --set SUPERFORECASTING_AGENT_BUNDLED_SKILLS $out/share/superforecasting-agent/skills \
+          --set FORECAST_BUNDLED_SKILLS $out/share/superforecasting-agent/skills \
+          --set HERMES_BUNDLED_SKILLS $out/share/superforecasting-agent/skills \
+          --set SUPERFORECASTING_AGENT_BUNDLED_PLUGINS $out/share/superforecasting-agent/plugins \
+          --set FORECAST_BUNDLED_PLUGINS $out/share/superforecasting-agent/plugins \
+          --set HERMES_BUNDLED_PLUGINS $out/share/superforecasting-agent/plugins \
+          --set SUPERFORECASTING_AGENT_WEB_DIST $out/share/superforecasting-agent/web_dist \
+          --set FORECAST_WEB_DIST $out/share/superforecasting-agent/web_dist \
+          --set HERMES_WEB_DIST $out/share/superforecasting-agent/web_dist \
           --set SUPERFORECASTING_AGENT_TUI_DIR $out/ui-tui \
           --set FORECAST_TUI_DIR $out/ui-tui \
           --set HERMES_TUI_DIR $out/ui-tui \
@@ -203,7 +205,7 @@ stdenv.mkDerivation {
       ;
 
     devShellHook = ''
-      STAMP=".nix-stamps/hermes-agent"
+      STAMP=".nix-stamps/superforecasting-agent"
       STAMP_VALUE="${pyprojectHash}:${uvLockHash}"
       if [ ! -f "$STAMP" ] || [ "$(cat "$STAMP")" != "$STAMP_VALUE" ]; then
         echo "superforecasting-agent: installing Python dependencies..."
@@ -224,7 +226,7 @@ stdenv.mkDerivation {
 
   meta = with lib; {
     description = "CLI forecasting desk with inherited Hermes runtime compatibility";
-    homepage = "https://github.com/NousResearch/hermes-agent";
+    homepage = "https://github.com/NousResearch/superforecasting-agent";
     mainProgram = "superforecasting-agent";
     license = licenses.mit;
     platforms = platforms.unix;

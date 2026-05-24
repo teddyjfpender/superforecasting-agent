@@ -4,7 +4,7 @@
   perSystem =
     { pkgs, inputs', ... }:
     let
-      hermesAgent = pkgs.callPackage ./hermes-agent.nix {
+      superforecastingAgent = pkgs.callPackage ./hermes-agent.nix {
         inherit (inputs) uv2nix pyproject-nix pyproject-build-systems;
         npm-lockfile-fix = inputs'.npm-lockfile-fix.packages.default;
         # Only embed clean revs — dirtyRev doesn't represent any upstream
@@ -14,12 +14,14 @@
     in
     {
       packages = {
-        default = hermesAgent;
-        tui = hermesAgent.hermesTui;
-        web = hermesAgent.hermesWeb;
+        default = superforecastingAgent;
+        "superforecasting-agent" = superforecastingAgent;
+        "hermes-agent" = superforecastingAgent;
+        tui = superforecastingAgent.hermesTui;
+        web = superforecastingAgent.hermesWeb;
 
-        fix-lockfiles = hermesAgent.hermesNpmLib.mkFixLockfiles {
-          packages = [ hermesAgent.hermesTui hermesAgent.hermesWeb ];
+        fix-lockfiles = superforecastingAgent.hermesNpmLib.mkFixLockfiles {
+          packages = [ superforecastingAgent.hermesTui superforecastingAgent.hermesWeb ];
         };
       };
     };

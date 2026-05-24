@@ -6,7 +6,7 @@ description: "Install and deploy Superforecasting Agent with Nix — from quick 
 
 # Nix & NixOS Setup
 
-Superforecasting Agent inherits the Hermes Nix flake and exposes fork-native CLI wrappers from it. The current Nix module, service, user, and overlay names are still `services.hermes-agent`, `hermes-agent`, `hermes`, and `pkgs.hermes-agent` for compatibility, but new interactive commands should use `forecast` and `superforecasting-agent`.
+Superforecasting Agent inherits the Hermes Nix flake and exposes fork-native CLI wrappers from it. The package and overlay now expose `superforecasting-agent` as the primary attribute, while `hermes-agent`, `hermes`, `services.hermes-agent`, and `pkgs."hermes-agent"` remain compatibility names during the fork transition. New interactive commands should use `forecast` and `superforecasting-agent`.
 
 The Nix integration has three levels:
 
@@ -39,9 +39,11 @@ No clone needed. Nix fetches, builds, and runs everything:
 # Run directly from this fork (builds on first use, cached after)
 nix run <this-fork-url> -- setup
 nix run <this-fork-url> -- status
+nix run <this-fork-url>#superforecasting-agent -- status
 
 # Or install persistently
 nix profile install <this-fork-url>
+nix profile install <this-fork-url>#superforecasting-agent
 superforecasting-agent setup
 forecast status
 ```
@@ -692,8 +694,9 @@ External flakes can override the package directly:
   outputs = { superforecasting-agent, nixpkgs, ... }: {
     nixpkgs.overlays = [ superforecasting-agent.overlays.default ];
     # Then:
-    #   pkgs.hermes-agent.override { extraPythonPackages = [...]; }
-    #   pkgs.hermes-agent.override { extraDependencyGroups = [ "hindsight" ]; }
+    #   pkgs."superforecasting-agent".override { extraPythonPackages = [...]; }
+    #   pkgs."superforecasting-agent".override { extraDependencyGroups = [ "hindsight" ]; }
+    #   pkgs."hermes-agent" remains a compatibility alias.
   };
 }
 ```
