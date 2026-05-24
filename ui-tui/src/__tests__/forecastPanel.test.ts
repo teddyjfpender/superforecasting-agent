@@ -266,7 +266,10 @@ describe('forecast desk panel helpers', () => {
     const review = sections.find(section => section.title === 'Review Queue')
 
     expect(focused?.rows).toEqual([
-      ['/forecast show fq_review123456', 'load full ledger context for Will review question resolve yes?'],
+      [
+        '/forecast show fq_review123456',
+        'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
+      ],
       ['/forecast research fq_review123456', 'collect source notes and evidence without moving probability'],
       ['/forecast update fq_review123456 --probability <0-1>', 'append an explicit probability update with rationale'],
       [
@@ -276,7 +279,10 @@ describe('forecast desk panel helpers', () => {
     ])
     expect(forecastDeskActionStripItems(sections, 4)).toEqual([
       { command: '/review --stale', detail: '1 forecast queued for stale/close/evidence review' },
-      { command: '/forecast show fq_review123456', detail: 'load full ledger context for Will review question resolve yes?' },
+      {
+        command: '/forecast show fq_review123456',
+        detail: 'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
+      },
       { command: '/forecast research fq_review123456', detail: 'collect source notes and evidence without moving probability' },
       {
         command: '/forecast update fq_review123456 --probability <0-1>',

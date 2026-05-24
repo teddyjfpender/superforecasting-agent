@@ -289,6 +289,20 @@ const addUniqueAction = (
 
 type FocusedForecastRow = ForecastDashboardQuestion | ForecastDashboardReview
 
+const focusedForecastContext = (row: FocusedForecastRow) => {
+  const bits = [
+    `P=${formatProbability(row.probability)}`,
+    `as-of ${shortDate(row.as_of)}`,
+    `close ${shortDate(row.close_time)}`
+  ]
+
+  if ('reasons' in row && row.reasons?.length) {
+    bits.push(`reasons ${truncate(row.reasons.slice(0, 2).join(','), 24)}`)
+  }
+
+  return bits.join('  ')
+}
+
 const focusedActionRows = (questions: ForecastDashboardQuestion[], reviewQueue: ForecastDashboardReview[]): [string, string][] => {
   const row: FocusedForecastRow | undefined = reviewQueue.find(candidate => candidate.id) ?? questions.find(candidate => candidate.id)
   if (!row?.id) {
@@ -296,8 +310,9 @@ const focusedActionRows = (questions: ForecastDashboardQuestion[], reviewQueue: 
   }
 
   const label = truncate(row.title || row.id, 64)
+  const context = focusedForecastContext(row)
   return [
-    [`/forecast show ${row.id}`, `load full ledger context for ${label}`],
+    [`/forecast show ${row.id}`, `${context}  load full ledger context for ${label}`],
     [`/forecast research ${row.id}`, 'collect source notes and evidence without moving probability'],
     [`/forecast update ${row.id} --probability <0-1>`, 'append an explicit probability update with rationale'],
     [`/forecast resolve ${row.id} --outcome <value> --source <url>`, 'record resolution when criteria are met']
