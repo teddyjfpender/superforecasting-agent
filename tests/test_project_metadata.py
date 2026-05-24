@@ -670,6 +670,27 @@ def test_media_skill_docs_are_forecast_native():
     assert "Hermes Spotify toolset" not in text
 
 
+def test_skill_author_metadata_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    source_paths = [
+        *sorted((root / "skills").glob("*/*/SKILL.md")),
+        *sorted((root / "skills").glob("*/*/*/SKILL.md")),
+        *sorted((root / "optional-skills").glob("*/*/SKILL.md")),
+        *sorted((root / "optional-skills").glob("*/*/*/SKILL.md")),
+    ]
+    generated_paths = sorted(
+        (root / "website" / "docs" / "user-guide" / "skills").glob("**/*.md")
+    )
+
+    source_text = "\n".join(path.read_text(encoding="utf-8") for path in source_paths)
+    generated_text = "\n".join(path.read_text(encoding="utf-8") for path in generated_paths)
+
+    assert "author: Superforecasting Agent" in source_text
+    assert "| Author | Superforecasting Agent" in generated_text
+    assert "author: Hermes Agent" not in source_text
+    assert "| Author | Hermes Agent" not in generated_text
+
+
 def test_github_auth_skill_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [

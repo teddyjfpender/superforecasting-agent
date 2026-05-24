@@ -17,7 +17,7 @@ MCP client: connect servers, register tools (stdio/HTTP).
 | Source | Bundled (installed by default) |
 | Path | `skills/mcp/native-mcp` |
 | Version | `1.0.0` |
-| Author | Hermes Agent |
+| Author | Superforecasting Agent |
 | License | MIT |
 | Platforms | linux, macos, windows |
 | Tags | `MCP`, `Tools`, `Integrations` |

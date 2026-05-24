@@ -17,7 +17,7 @@ Search personal knowledge bases, notes, docs, and meeting transcripts locally us
 | Source | Optional — install with `superforecasting-agent skills install official/research/qmd` |
 | Path | `optional-skills/research/qmd` |
 | Version | `1.0.0` |
-| Author | Hermes Agent + Teknium |
+| Author | Teknium, Superforecasting Agent |
 | License | MIT |
 | Platforms | macos, linux |
 | Tags | `Search`, `Knowledge-Base`, `RAG`, `Notes`, `MCP`, `Local-AI` |

@@ -2,7 +2,7 @@
 name: kanban-codex-lane
 description: Use when a Superforecasting Agent Kanban worker wants to run Codex CLI as an isolated implementation lane while Superforecasting Agent keeps ownership of task lifecycle, reconciliation, testing, and handoff.
 version: 1.0.0
-author: Hermes Agent
+author: Superforecasting Agent
 license: MIT
 metadata:
   hermes:

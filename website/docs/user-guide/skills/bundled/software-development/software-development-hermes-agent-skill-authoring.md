@@ -17,7 +17,7 @@ Author in-repo SKILL.md: frontmatter, validator, structure.
 | Source | Bundled (installed by default) |
 | Path | `skills/software-development/hermes-agent-skill-authoring` |
 | Version | `1.0.0` |
-| Author | Hermes Agent |
+| Author | Superforecasting Agent |
 | License | MIT |
 | Platforms | linux, macos, windows |
 | Tags | `skills`, `authoring`, `hermes-agent`, `conventions`, `skill-md` |
@@ -62,7 +62,7 @@ Peer-matched shape used by every skill under `skills/software-development/`:
 name: my-skill-name               # lowercase, hyphens, ≤64 chars (MAX_NAME_LENGTH)
 description: Use when <trigger>. <one-line behavior>.
 version: 1.0.0
-author: Hermes Agent
+author: Superforecasting Agent
 license: MIT
 metadata:
   hermes:

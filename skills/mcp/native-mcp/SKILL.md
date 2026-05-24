@@ -2,7 +2,7 @@
 name: native-mcp
 description: "MCP client: connect servers, register tools (stdio/HTTP)."
 version: 1.0.0
-author: Hermes Agent
+author: Superforecasting Agent
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
