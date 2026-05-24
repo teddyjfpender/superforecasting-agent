@@ -166,6 +166,20 @@ const componentContributionRows = (calibration: ForecastDashboardCalibration | u
   ])
 }
 
+const questionTypeCalibrationRows = (calibration: ForecastDashboardCalibration | undefined, limit: number): [string, string][] => {
+  const rows = calibration?.question_type_breakdown
+  if (!Array.isArray(rows)) {
+    return []
+  }
+
+  return rows.slice(0, limit).map(row => [
+    `type ${truncate(String(row?.question_type || '-'), 24)}`,
+    `n ${formatCount(row?.count)}  brier_n ${formatCount(row?.brier_count)}  brier ${formatMetric(
+      row?.mean_brier
+    )}  proper ${formatMetric(row?.mean_proper_score)}`
+  ])
+}
+
 const forecastStatus = (row: ForecastDashboardQuestion) => {
   const alerts = Number(row.open_alert_count || 0)
   const staleAssumptions = Number(row.stale_assumption_count || 0)
@@ -426,6 +440,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
       ['mean abs movement', formatMetric(calibration.mean_abs_probability_movement_before_close)]
     ]
     calibrationRows.push(...componentContributionRows(calibration, 3))
+    calibrationRows.push(...questionTypeCalibrationRows(calibration, 4))
 
     sections.push({
       rows: calibrationRows,

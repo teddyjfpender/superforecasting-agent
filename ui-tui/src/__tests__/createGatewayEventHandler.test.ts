@@ -648,6 +648,17 @@ describe('createGatewayEventHandler', () => {
                   mean_weight_share: 0.25,
                   name: 'base_rate'
                 }
+              ],
+              question_type_breakdown: [
+                {
+                  brier_count: 3,
+                  count: 3,
+                  mean_brier: 0.12,
+                  mean_log_score: -0.42,
+                  mean_proper_score: 0.12,
+                  question_type: 'binary',
+                  score_rules: ['brier']
+                }
               ]
             },
             learning: {
@@ -853,7 +864,8 @@ describe('createGatewayEventHandler', () => {
               ['movement n', '2'],
               ['mean abs movement', '0.110000'],
               ['component market', 'n 3  contrib 0.420000  share 0.750000  p 0.560000'],
-              ['component base_rate', 'n 3  contrib 0.120000  share 0.250000  p 0.480000']
+              ['component base_rate', 'n 3  contrib 0.120000  share 0.250000  p 0.480000'],
+              ['type binary', 'n 3  brier_n 3  brier 0.120000  proper 0.120000']
             ],
             title: 'Calibration'
           },

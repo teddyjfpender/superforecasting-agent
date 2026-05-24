@@ -805,6 +805,7 @@ export interface ForecastDashboardCalibration {
   mean_probability_movement_before_close?: number | null;
   mean_abs_probability_movement_before_close?: number | null;
   ensemble_component_contributions?: ForecastDashboardCalibrationComponent[];
+  question_type_breakdown?: ForecastDashboardQuestionTypeCalibration[];
   domain?: string | null;
   forecast_origin?: string | null;
   horizon?: string | null;
@@ -819,6 +820,17 @@ export interface ForecastDashboardCalibrationComponent {
   mean_weight_share?: number | null;
   mean_contribution?: number | null;
   mean_abs_distance_from_forecast?: number | null;
+}
+
+export interface ForecastDashboardQuestionTypeCalibration {
+  question_type?: string;
+  count?: number;
+  brier_count?: number;
+  mean_brier?: number | null;
+  mean_log_score?: number | null;
+  mean_proper_score?: number | null;
+  mean_sharpness?: number | null;
+  score_rules?: string[];
 }
 
 export interface ForecastDashboardErrorProfile {

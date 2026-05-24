@@ -256,6 +256,7 @@ export interface ForecastDashboardCalibration {
   probability_movement_count?: number
   mean_probability_movement_before_close?: null | number
   mean_abs_probability_movement_before_close?: null | number
+  question_type_breakdown?: ForecastDashboardQuestionTypeCalibration[]
 }
 
 export interface ForecastDashboardCalibrationComponent {
@@ -266,6 +267,17 @@ export interface ForecastDashboardCalibrationComponent {
   mean_weight?: null | number
   mean_weight_share?: null | number
   name?: string
+}
+
+export interface ForecastDashboardQuestionTypeCalibration {
+  brier_count?: number
+  count?: number
+  mean_brier?: null | number
+  mean_log_score?: null | number
+  mean_proper_score?: null | number
+  mean_sharpness?: null | number
+  question_type?: string
+  score_rules?: string[]
 }
 
 export interface ForecastDashboardBacktest {

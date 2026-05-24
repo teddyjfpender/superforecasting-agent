@@ -50,7 +50,8 @@ On startup the TUI can render the same forecast dashboard used by the CLI:
   stale-review state
 - open alerts and watched-source changes
 - review queue and next actions
-- calibration health, recent scores, and ensemble component contribution
+- calibration health, recent scores, question-type performance, and ensemble
+  component contribution
 - learning memory, active lessons, and domain/topic error profiles
 - recent backtests and baseline comparisons
 

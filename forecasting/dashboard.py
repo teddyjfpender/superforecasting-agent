@@ -261,6 +261,18 @@ def render_dashboard_text(summary: dict[str, Any]) -> str:
                     f"weight_share={format_metric(row.get('mean_weight_share'))} "
                     f"mean_probability={format_metric(row.get('mean_probability'))}"
                 )
+        question_types = list(calibration.get("question_type_breakdown") or [])
+        if question_types:
+            lines.append("question_type_breakdown:")
+            for row in question_types[:5]:
+                lines.append(
+                    "  "
+                    f"{row.get('question_type') or '-'}: "
+                    f"n={int(row.get('count') or 0)} "
+                    f"brier_n={int(row.get('brier_count') or 0)} "
+                    f"mean_brier={format_metric(row.get('mean_brier'))} "
+                    f"mean_proper_score={format_metric(row.get('mean_proper_score'))}"
+                )
     learning = dict(summary.get("learning") or {})
     if learning:
         lines.extend(["", "Learning Memory"])

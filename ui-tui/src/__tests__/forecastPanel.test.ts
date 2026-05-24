@@ -189,6 +189,16 @@ describe('forecast desk panel helpers', () => {
               mean_weight_share: 0.25,
               name: 'base_rate'
             }
+          ],
+          question_type_breakdown: [
+            {
+              brier_count: 2,
+              count: 2,
+              mean_brier: 0.18,
+              mean_proper_score: 0.18,
+              question_type: 'binary',
+              score_rules: ['brier']
+            }
           ]
         },
         open_alert_count: 0,
@@ -205,7 +215,8 @@ describe('forecast desk panel helpers', () => {
     expect(sections.find(section => section.title === 'Calibration')?.rows).toEqual(
       expect.arrayContaining([
         ['component market', 'n 2  contrib 0.600000  share 0.750000  p 0.800000'],
-        ['component base_rate', 'n 2  contrib 0.150000  share 0.250000  p 0.600000']
+        ['component base_rate', 'n 2  contrib 0.150000  share 0.250000  p 0.600000'],
+        ['type binary', 'n 2  brier_n 2  brier 0.180000  proper 0.180000']
       ])
     )
     expect(railSections.find(section => section.title === 'Ensemble')?.rows).toEqual([

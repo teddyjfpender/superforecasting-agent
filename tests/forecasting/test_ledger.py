@@ -310,6 +310,10 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     assert summary["calibration"]["count"] == 1
     assert summary["calibration"]["mean_brier"] == pytest.approx(0.0625)
     assert summary["calibration"]["mean_sharpness"] == pytest.approx(0.5)
+    type_rows = {
+        row["question_type"]: row for row in summary["calibration"]["question_type_breakdown"]
+    }
+    assert type_rows["binary"]["mean_brier"] == pytest.approx(0.0625)
     component_rows = {
         row["name"]: row for row in summary["calibration"]["ensemble_component_contributions"]
     }
@@ -354,6 +358,8 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     assert "mean_brier: 0.062500" in text
     assert "ensemble_component_contributions:" in text
     assert "market: n=1 mean_contribution=0.600000 weight_share=0.750000" in text
+    assert "question_type_breakdown:" in text
+    assert "binary: n=1 brier_n=1 mean_brier=0.062500" in text
     assert "Learning Memory" in text
     assert "dashboard:binary" in text
     assert "Dashboard forecasts should keep calibration health visible." in text
@@ -809,6 +815,13 @@ def test_calibration_summary_filters_horizon_and_reports_sharpness(tmp_path):
     assert summary["probability_movement_count"] == 1
     assert summary["mean_probability_movement_before_close"] == pytest.approx(0.2)
     assert summary["mean_abs_probability_movement_before_close"] == pytest.approx(0.2)
+    type_rows = {
+        row["question_type"]: row for row in summary["question_type_breakdown"]
+    }
+    assert type_rows["binary"]["count"] == 1
+    assert type_rows["binary"]["brier_count"] == 1
+    assert type_rows["binary"]["mean_brier"] == pytest.approx(0.0625)
+    assert type_rows["binary"]["mean_proper_score"] == pytest.approx(0.0625)
     contributions = {
         row["name"]: row for row in summary["ensemble_component_contributions"]
     }
@@ -864,6 +877,14 @@ def test_numeric_forecasts_are_scored_with_normalized_squared_error(tmp_path):
     assert score.proper_score == pytest.approx(((123_456_789.0 - 125_000_000.0) / 1_000_000_000.0) ** 2)
     assert score.score_rule == "normalized_squared_error"
     assert score.calibration_bucket == "0.1-0.2"
+    summary = ledger.calibration_summary()
+    type_rows = {
+        row["question_type"]: row for row in summary["question_type_breakdown"]
+    }
+    assert summary["count"] == 0
+    assert type_rows["numeric"]["count"] == 1
+    assert type_rows["numeric"]["brier_count"] == 0
+    assert type_rows["numeric"]["mean_proper_score"] == pytest.approx(score.proper_score)
 
 
 def test_normal_distribution_forecasts_use_negative_log_likelihood(tmp_path):

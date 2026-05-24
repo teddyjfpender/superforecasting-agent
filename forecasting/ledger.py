@@ -1681,6 +1681,16 @@ class ForecastLedger:
         buckets: dict[str, list[float]] = defaultdict(list)
         sharpness_values: list[float] = []
         probability_movements: list[float] = []
+        question_type_stats: dict[str, dict[str, Any]] = defaultdict(
+            lambda: {
+                "brier": [],
+                "log": [],
+                "proper": [],
+                "sharpness": [],
+                "score_rules": set(),
+                "score_count": 0,
+            }
+        )
         component_stats: dict[str, dict[str, list[float]]] = defaultdict(
             lambda: {
                 "probability": [],
@@ -1691,16 +1701,32 @@ class ForecastLedger:
             }
         )
         for score in scores:
-            if score.brier_score is None:
-                continue
-            buckets[score.calibration_bucket or "unknown"].append(score.brier_score)
+            try:
+                question_type = self.get_question(score.question_id).outcome_space.type
+            except LedgerNotFoundError:
+                question_type = "unknown"
+            type_stats = question_type_stats[question_type]
+            type_stats["score_count"] += 1
+            if score.brier_score is not None:
+                type_stats["brier"].append(score.brier_score)
+            if score.log_score is not None:
+                type_stats["log"].append(score.log_score)
+            if score.proper_score is not None:
+                type_stats["proper"].append(score.proper_score)
+            if score.score_rule:
+                type_stats["score_rules"].add(score.score_rule)
+            if score.brier_score is not None:
+                buckets[score.calibration_bucket or "unknown"].append(score.brier_score)
             try:
                 snapshot = self.get_snapshot(score.forecast_id)
             except LedgerNotFoundError:
                 continue
+            if score.brier_score is None:
+                continue
             sharpness = self._sharpness(snapshot.probability_or_distribution)
             if sharpness is not None:
                 sharpness_values.append(sharpness)
+                type_stats["sharpness"].append(sharpness)
             movement = self._score_probability_movement_before_close(score, snapshot)
             if movement is not None:
                 probability_movements.append(movement)
@@ -1744,6 +1770,19 @@ class ForecastLedger:
             for name, stats in component_stats.items()
             if stats["contribution"]
         ]
+        question_type_rows = [
+            {
+                "question_type": question_type,
+                "count": int(stats["score_count"]),
+                "brier_count": len(stats["brier"]),
+                "mean_brier": self._mean(stats["brier"]),
+                "mean_log_score": self._mean(stats["log"]),
+                "mean_proper_score": self._mean(stats["proper"]),
+                "mean_sharpness": self._mean(stats["sharpness"]),
+                "score_rules": sorted(stats["score_rules"]),
+            }
+            for question_type, stats in question_type_stats.items()
+        ]
         return {
             "count": len(all_values),
             "mean_brier": sum(all_values) / len(all_values) if all_values else None,
@@ -1763,6 +1802,10 @@ class ForecastLedger:
             "ensemble_component_contributions": sorted(
                 component_rows,
                 key=lambda row: (-row["count"], -(row["mean_contribution"] or 0.0), row["name"]),
+            ),
+            "question_type_breakdown": sorted(
+                question_type_rows,
+                key=lambda row: (-row["count"], row["question_type"]),
             ),
             "buckets": bucket_rows,
             "domain": domain,

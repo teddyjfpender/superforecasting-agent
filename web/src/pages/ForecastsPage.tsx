@@ -481,6 +481,7 @@ function CalibrationPanel({ calibration }: { calibration?: ForecastDashboardCali
   if (!calibration) return null;
 
   const components = calibration.ensemble_component_contributions ?? [];
+  const questionTypes = calibration.question_type_breakdown ?? [];
 
   return (
     <Card>
@@ -572,6 +573,44 @@ function CalibrationPanel({ calibration }: { calibration?: ForecastDashboardCali
                     </td>
                     <td className="py-2 pl-4 text-right font-mono-ui text-muted-foreground">
                       {formatMetric(row.mean_probability)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {questionTypes.length > 0 && (
+          <div className="mt-5 overflow-x-auto border-t border-border/50 pt-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-xs text-muted-foreground">
+                  <th className="py-2 pr-4 text-left font-medium">Question Type</th>
+                  <th className="px-4 py-2 text-right font-medium">N</th>
+                  <th className="px-4 py-2 text-right font-medium">Brier N</th>
+                  <th className="px-4 py-2 text-right font-medium">Mean Brier</th>
+                  <th className="py-2 pl-4 text-right font-medium">Proper Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {questionTypes.slice(0, 6).map((row, index) => (
+                  <tr key={row.question_type || index} className="border-b border-border/50">
+                    <td className="py-2 pr-4">
+                      <Badge tone="secondary" className="text-[10px]">
+                        {row.question_type || "-"}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                      {row.count ?? 0}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                      {row.brier_count ?? 0}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono-ui text-foreground">
+                      {formatMetric(row.mean_brier)}
+                    </td>
+                    <td className="py-2 pl-4 text-right font-mono-ui text-muted-foreground">
+                      {formatMetric(row.mean_proper_score)}
                     </td>
                   </tr>
                 ))}

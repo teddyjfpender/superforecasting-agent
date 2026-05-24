@@ -4942,6 +4942,17 @@ def _print_calibration_summary(summary: dict[str, Any], *, label: str | None = N
                 f"weight_share={_format_metric(row.get('mean_weight_share'))} "
                 f"mean_probability={_format_metric(row.get('mean_probability'))}"
             )
+    question_types = summary.get("question_type_breakdown") or []
+    if question_types:
+        print("question_type_breakdown:")
+        for row in question_types:
+            print(
+                f"  {row['question_type']}: n={row['count']} "
+                f"brier_n={row.get('brier_count', 0)} "
+                f"mean_brier={_format_metric(row.get('mean_brier'))} "
+                f"mean_proper_score={_format_metric(row.get('mean_proper_score'))} "
+                f"mean_log_score={_format_metric(row.get('mean_log_score'))}"
+            )
     print("buckets:")
     if not summary["buckets"]:
         print("  none")

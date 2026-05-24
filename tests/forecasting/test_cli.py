@@ -178,6 +178,8 @@ def test_forecast_cli_lifecycle(tmp_path, capsys):
     assert "mean_sharpness:" in calibration_output
     assert "probability_movement_n:" in calibration_output
     assert "mean_abs_probability_movement_before_close:" in calibration_output
+    assert "question_type_breakdown:" in calibration_output
+    assert "binary: n=1 brier_n=1" in calibration_output
     assert "empty" in calibration_output
     assert "low_sample" in calibration_output
 
