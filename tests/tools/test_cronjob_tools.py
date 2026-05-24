@@ -5,6 +5,7 @@ import pytest
 from pathlib import Path
 
 from tools.cronjob_tools import (
+    CRONJOB_SCHEMA,
     _scan_cron_prompt,
     check_cronjob_requirements,
     cronjob,
@@ -14,6 +15,14 @@ from tools.cronjob_tools import (
 # =========================================================================
 # Cron prompt scanning
 # =========================================================================
+
+def test_cronjob_profile_schema_uses_forecast_native_copy():
+    description = CRONJOB_SCHEMA["parameters"]["properties"]["profile"]["description"]
+
+    assert "Superforecasting Agent profile" in description
+    assert "root forecast profile" in description
+    assert "Optional Hermes profile" not in description
+
 
 class TestScanCronPrompt:
     def test_clean_prompt_passes(self):

@@ -3,7 +3,14 @@
 import unittest
 from unittest.mock import patch
 
-from tools.delegate_tool import _expand_parent_toolsets
+from tools.delegate_tool import DELEGATE_TASK_SCHEMA, _expand_parent_toolsets
+
+
+def test_acp_command_schema_uses_local_subagent_copy():
+    description = DELEGATE_TASK_SCHEMA["parameters"]["properties"]["acp_command"]["description"]
+
+    assert "local subagents" in description
+    assert "Hermes subagents" not in description
 
 
 class TestExpandParentToolsets(unittest.TestCase):
