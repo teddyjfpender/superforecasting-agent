@@ -1692,6 +1692,27 @@ def test_managed_install_env_aliases_are_forecast_native():
     assert "FORECAST_MANAGED" in env_reference
 
 
+def test_mcp_serve_identity_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    mcp_serve = (root / "mcp_serve.py").read_text(encoding="utf-8")
+    mcp_docs = (root / "website" / "docs" / "user-guide" / "features" / "mcp.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Superforecasting Agent MCP Server" in mcp_serve
+    assert "superforecasting-agent mcp serve" in mcp_serve
+    assert '"superforecasting-agent": {' in mcp_serve
+    assert '"command": "superforecasting-agent"' in mcp_serve
+    assert 'FastMCP(\n        "superforecasting-agent"' in mcp_serve
+    assert "Superforecasting Agent messaging bridge" in mcp_serve
+    assert "SUPERFORECASTING_AGENT_HOME" in mcp_serve
+    assert "FORECAST_HOME" in mcp_serve
+    assert "Path.home() / \".superforecasting-agent\"" in mcp_serve
+    assert "Hermes MCP Server" not in mcp_serve
+    assert "Hermes Agent messaging bridge" not in mcp_serve
+    assert "superforecasting-agent mcp serve" in mcp_docs
+
+
 def test_homebrew_formula_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     formula_path = root / "packaging" / "homebrew" / "superforecasting-agent.rb"

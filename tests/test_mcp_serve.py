@@ -1,5 +1,5 @@
 """
-Tests for mcp_serve — Hermes MCP server.
+Tests for mcp_serve — Superforecasting Agent MCP server.
 
 Three layers of tests:
 1. Unit tests — helpers, content extraction, attachment parsing
@@ -27,7 +27,9 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _isolate_hermes_home(tmp_path, monkeypatch):
-    """Redirect HERMES_HOME to a temp directory."""
+    """Redirect the agent home to a temp directory."""
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path))
+    monkeypatch.setenv("FORECAST_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     try:
         import hermes_constants
@@ -231,6 +233,8 @@ class _FakeToolManager:
 
 class _FakeFastMCP:
     def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
         self._tool_manager = _FakeToolManager()
 
     def tool(self):
@@ -277,6 +281,24 @@ class TestHelpers:
         from mcp_serve import _get_sessions_dir
         result = _get_sessions_dir()
         assert result == tmp_path / "sessions"
+
+    def test_fallback_agent_home_prefers_forecast_native_alias(self, monkeypatch, tmp_path):
+        from mcp_serve import _fallback_agent_home
+
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "legacy"))
+        monkeypatch.setenv("FORECAST_HOME", str(tmp_path / "short"))
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path / "native"))
+
+        assert _fallback_agent_home() == tmp_path / "native"
+
+    def test_fallback_agent_home_preserves_legacy_alias(self, monkeypatch, tmp_path):
+        from mcp_serve import _fallback_agent_home
+
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_HOME", raising=False)
+        monkeypatch.delenv("FORECAST_HOME", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "legacy"))
+
+        assert _fallback_agent_home() == tmp_path / "legacy"
 
     def test_coerce_int_handles_invalid_and_out_of_range_values(self):
         from mcp_serve import _coerce_int
@@ -925,6 +947,13 @@ class TestE2EPermissions:
 # ---------------------------------------------------------------------------
 
 class TestToolRegistration:
+    def test_server_identity_is_forecast_native(self, fake_mcp_server):
+        server, _ = fake_mcp_server
+
+        assert server.args == ("superforecasting-agent",)
+        assert "Superforecasting Agent messaging bridge" in server.kwargs["instructions"]
+        assert "Hermes Agent messaging bridge" not in server.kwargs["instructions"]
+
     def test_all_tools_registered(self, mcp_server_e2e, _event_loop):
         server, _ = mcp_server_e2e
         tools = server._tool_manager.list_tools()
