@@ -1846,6 +1846,8 @@ def test_nix_package_aliases_are_forecast_native():
     assert 'pkgs.runCommand "superforecasting-agent-documents"' in nix_module
     assert 'pkgs.writeShellScript "superforecasting-agent-container-entrypoint"' in nix_module
     assert 'system.activationScripts."superforecasting-agent-setup"' in nix_module
+    assert "systemd.services.superforecasting-agent" in nix_module
+    assert 'aliases = [ "hermes-agent.service" ];' in nix_module
     assert "Hermes Agent gateway service" not in nix_module
     assert "Declarative Hermes config" not in nix_module
     assert "Hermes reads this file" not in nix_module
@@ -1853,6 +1855,7 @@ def test_nix_package_aliases_are_forecast_native():
     assert "hermes-config-attrs" not in nix_module
     assert "hermes-container-entrypoint" not in nix_module
     assert 'system.activationScripts."hermes-agent-setup"' not in nix_module
+    assert "systemd.services.hermes-agent" not in nix_module
     assert "HERMES_CONTAINER_MODE_EOF" not in nix_module
     assert 'default = superforecasting-agent' in nix_module
     assert '"${effectivePackage}/bin/superforecasting-agent"' in nix_module
@@ -1864,6 +1867,13 @@ def test_nix_package_aliases_are_forecast_native():
     assert "<this-fork-url>#superforecasting-agent" in nix_docs
     assert 'nixosModules."superforecasting-agent"' in nix_docs
     assert "services.superforecasting-agent = {" in nix_docs
+    assert "`superforecasting-agent.service`" in nix_docs
+    assert "systemctl status superforecasting-agent" in nix_docs
+    assert "journalctl -u superforecasting-agent -f" in nix_docs
+    assert "systemctl restart superforecasting-agent" in nix_docs
+    assert "systemctl status hermes-agent" not in nix_docs
+    assert "journalctl -u hermes-agent -f" not in nix_docs
+    assert "systemctl restart hermes-agent" not in nix_docs
     assert 'pkgs."superforecasting-agent".override' in nix_docs
     assert "docker exec -it superforecasting-agent" in nix_docs
     assert "`pkgs.\"hermes-agent\"` remain compatibility names" in nix_docs

@@ -873,8 +873,9 @@ let
       # MODE A: Native systemd service (default)
       # ══════════════════════════════════════════════════════════════════
       (lib.mkIf (!cfg.container.enable) {
-        systemd.services.hermes-agent = {
+        systemd.services.superforecasting-agent = {
           description = "Superforecasting Agent Gateway";
+          aliases = [ "hermes-agent.service" ];
           wantedBy = [ "multi-user.target" ];
           after = [ "network-online.target" ];
           wants = [ "network-online.target" ];
@@ -938,8 +939,9 @@ let
         # Ensure the container runtime is available
         virtualisation.docker.enable = lib.mkDefault (cfg.container.backend == "docker");
 
-        systemd.services.hermes-agent = {
+        systemd.services.superforecasting-agent = {
           description = "Superforecasting Agent Gateway (container)";
+          aliases = [ "hermes-agent.service" ];
           wantedBy = [ "multi-user.target" ];
           after = [ "network-online.target" ]
             ++ lib.optional (cfg.container.backend == "docker") "docker.service";

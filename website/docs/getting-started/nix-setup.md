@@ -67,7 +67,7 @@ nix build
 
 ## NixOS Module
 
-The flake exports `nixosModules.default` and `nixosModules."superforecasting-agent"` — the same full NixOS service module that declaratively manages user creation, directories, config generation, secrets, documents, and service lifecycle. `nixosModules."hermes-agent"` remains as a compatibility alias.
+The flake exports `nixosModules.default` and `nixosModules."superforecasting-agent"` — the same full NixOS service module that declaratively manages user creation, directories, config generation, secrets, documents, and service lifecycle. `nixosModules."hermes-agent"` and `hermes-agent.service` remain compatibility aliases; new deployments should use `services.superforecasting-agent` and `superforecasting-agent.service`.
 
 :::note
 This module requires NixOS. For non-NixOS systems (macOS, other Linux distros), use `nix profile install` and the standard CLI workflow above.
@@ -170,10 +170,10 @@ After `nixos-rebuild switch`, check that the service is running:
 
 ```bash
 # Check service status
-systemctl status hermes-agent
+systemctl status superforecasting-agent
 
 # Watch logs (Ctrl+C to stop)
-journalctl -u hermes-agent -f
+journalctl -u superforecasting-agent -f
 
 # If addToSystemPackages is true, test the CLI
 superforecasting-agent version
@@ -342,7 +342,7 @@ Quick reference for the most common things Nix users want to customize:
 Values in Nix expressions end up in `/nix/store`, which is world-readable. Always use `environmentFiles` with a secrets manager.
 :::
 
-Both `environment` (non-secret vars) and `environmentFiles` (secret files) are merged into `$SUPERFORECASTING_AGENT_HOME/.env` at activation time (`nixos-rebuild switch`). Superforecasting Agent reads this file on every startup, so changes take effect with a `systemctl restart hermes-agent` — no container recreation needed.
+Both `environment` (non-secret vars) and `environmentFiles` (secret files) are merged into `$SUPERFORECASTING_AGENT_HOME/.env` at activation time (`nixos-rebuild switch`). Superforecasting Agent reads this file on every startup, so changes take effect with a `systemctl restart superforecasting-agent` — no container recreation needed.
 
 ### sops-nix
 
@@ -584,7 +584,7 @@ The Nix-built binary works inside the Ubuntu container because `/nix/store` is b
 
 | Event | Container recreated? | `/data` (state) | `/home/hermes` | Writable layer (`apt`/`pip`/`npm`) |
 |---|---|---|---|---|
-| `systemctl restart hermes-agent` | No | Persists | Persists | Persists |
+| `systemctl restart superforecasting-agent` | No | Persists | Persists | Persists |
 | `nixos-rebuild switch` (code change) | No (symlink updated) | Persists | Persists | Persists |
 | Host reboot | No | Persists | Persists | Persists |
 | `nix-collect-garbage` | No (GC root) | Persists | Persists | Persists |
@@ -921,7 +921,7 @@ All `docker` commands below work the same with `podman`. Substitute accordingly 
 
 ```bash
 # Both modes use the same systemd unit
-journalctl -u hermes-agent -f
+journalctl -u superforecasting-agent -f
 
 # Container mode: also available directly
 docker logs -f superforecasting-agent
@@ -930,7 +930,7 @@ docker logs -f superforecasting-agent
 ### Container Inspection
 
 ```bash
-systemctl status hermes-agent
+systemctl status superforecasting-agent
 docker ps -a --filter name=superforecasting-agent
 docker inspect superforecasting-agent --format='{{.State.Status}}'
 docker exec -it superforecasting-agent bash
@@ -943,10 +943,10 @@ docker exec superforecasting-agent cat /data/.container-identity
 If you need to reset the writable layer (fresh Ubuntu):
 
 ```bash
-sudo systemctl stop hermes-agent
+sudo systemctl stop superforecasting-agent
 docker rm -f superforecasting-agent
 sudo rm /var/lib/hermes/.container-identity
-sudo systemctl start hermes-agent
+sudo systemctl start superforecasting-agent
 ```
 
 ### Verify Secrets Are Loaded
@@ -973,9 +973,9 @@ nix-store --query --roots $(docker exec superforecasting-agent readlink /data/cu
 |---|---|---|
 | `Cannot save configuration: managed by NixOS` | CLI guards active | Edit `configuration.nix` and `nixos-rebuild switch` |
 | Container recreated unexpectedly | `extraVolumes`, `extraOptions`, or `image` changed | Expected — writable layer resets. Reinstall packages or use a custom image |
-| `superforecasting-agent version` shows old version | Container not restarted | `systemctl restart hermes-agent` |
+| `superforecasting-agent version` shows old version | Container not restarted | `systemctl restart superforecasting-agent` |
 | Permission denied on `/var/lib/hermes` | State dir is `0750 hermes:hermes` | Use `docker exec` or `sudo -u hermes` |
 | `nix-collect-garbage` removed the binary | GC root missing | Restart the service (preStart recreates the GC root) |
 | `no container with name or ID "superforecasting-agent"` (Podman) | Podman rootful container not visible to regular user | Add passwordless sudo for podman (see [Container Mode](#container-mode) section) |
 | `unable to find user hermes` | Container still starting (entrypoint hasn't created user yet) | Wait a few seconds and retry — the CLI retries automatically |
-| Tool added via `extraPackages` not found in terminal | Requires `nixos-rebuild switch` to update the per-user profile | Rebuild and restart: `nixos-rebuild switch && systemctl restart hermes-agent` |
+| Tool added via `extraPackages` not found in terminal | Requires `nixos-rebuild switch` to update the per-user profile | Rebuild and restart: `nixos-rebuild switch && systemctl restart superforecasting-agent` |
