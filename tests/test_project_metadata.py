@@ -696,6 +696,16 @@ def test_model_tool_and_proxy_guidance_are_forecast_native():
     assert "Superforecasting Agent auth store" in config
 
 
+def test_anthropic_oauth_guidance_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "agent" / "anthropic_adapter.py").read_text(encoding="utf-8")
+
+    assert "Authorize Superforecasting Agent with your Claude Pro/Max subscription." in text
+    assert "Authorize Hermes with your Claude Pro/Max subscription." not in text
+    assert "Hermes-managed OAuth" not in text
+    assert "Hermes-native PKCE" not in text
+
+
 def test_support_error_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     profile_distribution = (
