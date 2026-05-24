@@ -37,6 +37,20 @@ load_hermes_dotenv(
 )
 
 
+def _tui_env(name: str, default: str = "") -> str:
+    """Read a TUI env var, preferring fork-native aliases over legacy names."""
+
+    for key in (
+        f"SUPERFORECASTING_AGENT_TUI_{name}",
+        f"FORECAST_TUI_{name}",
+        f"HERMES_TUI_{name}",
+    ):
+        value = os.environ.get(key)
+        if value is not None:
+            return value
+    return default
+
+
 # ── Panic logger ─────────────────────────────────────────────────────
 # Gateway crashes in a TUI session leave no forensics: stdout is the
 # JSON-RPC pipe (TUI side parses it, doesn't log raw), the root logger
@@ -799,7 +813,7 @@ def _resolve_model() -> str:
 
 def _resolve_startup_runtime() -> tuple[str, str | None]:
     model = _resolve_model()
-    explicit_provider = os.environ.get("HERMES_TUI_PROVIDER", "").strip()
+    explicit_provider = _tui_env("PROVIDER").strip()
     if explicit_provider:
         return model, explicit_provider
 
@@ -897,7 +911,7 @@ def _load_show_reasoning() -> bool:
 
 
 def _load_tool_progress_mode() -> str:
-    env = os.environ.get("HERMES_TUI_TOOL_PROGRESS", "").strip().lower()
+    env = _tui_env("TOOL_PROGRESS").strip().lower()
     if env in {"off", "new", "all", "verbose"}:
         return env
     raw = (_load_cfg().get("display") or {}).get("tool_progress", "all")
@@ -912,7 +926,7 @@ def _load_tool_progress_mode() -> str:
 def _load_enabled_toolsets() -> list[str] | None:
     explicit = [
         item.strip()
-        for item in os.environ.get("HERMES_TUI_TOOLSETS", "").split(",")
+        for item in _tui_env("TOOLSETS").split(",")
         if item.strip()
     ]
     cfg = None
@@ -944,7 +958,7 @@ def _load_enabled_toolsets() -> list[str] | None:
             ignored = [name for name in explicit if name not in {"all", "*"}]
             if ignored:
                 print(
-                    "[tui] HERMES_TUI_TOOLSETS=all enables every toolset; "
+                    "[tui] SUPERFORECASTING_AGENT_TUI_TOOLSETS=all enables every toolset; "
                     f"ignoring additional entries: {', '.join(ignored)}",
                     file=sys.stderr,
                     flush=True,
@@ -988,13 +1002,13 @@ def _load_enabled_toolsets() -> list[str] | None:
 
         if unknown:
             print(
-                f"[tui] ignoring unknown HERMES_TUI_TOOLSETS entries: {', '.join(unknown)}",
+                f"[tui] ignoring unknown SUPERFORECASTING_AGENT_TUI_TOOLSETS entries: {', '.join(unknown)}",
                 file=sys.stderr,
                 flush=True,
             )
         if disabled:
             print(
-                "[tui] ignoring disabled MCP servers in HERMES_TUI_TOOLSETS "
+                "[tui] ignoring disabled MCP servers in SUPERFORECASTING_AGENT_TUI_TOOLSETS "
                 "(set enabled: true in config.yaml to use): "
                 f"{', '.join(disabled)}",
                 file=sys.stderr,
@@ -1005,7 +1019,7 @@ def _load_enabled_toolsets() -> list[str] | None:
             return valid
 
         fallback_notice = (
-            "[tui] no valid HERMES_TUI_TOOLSETS entries; using configured CLI toolsets"
+            "[tui] no valid SUPERFORECASTING_AGENT_TUI_TOOLSETS entries; using configured CLI toolsets"
         )
 
     try:
@@ -1029,7 +1043,7 @@ def _load_enabled_toolsets() -> list[str] | None:
     except Exception:
         if fallback_notice is not None:
             print(
-                "[tui] no valid HERMES_TUI_TOOLSETS entries and configured CLI toolsets could not be loaded; enabling all toolsets",
+                "[tui] no valid SUPERFORECASTING_AGENT_TUI_TOOLSETS entries and configured CLI toolsets could not be loaded; enabling all toolsets",
                 file=sys.stderr,
                 flush=True,
             )
@@ -1154,11 +1168,14 @@ def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
     # both pick up the new provider instead of the original one persisted
     # in config or env.
     #
-    # HERMES_TUI_PROVIDER is the canonical "explicit-this-process" carrier
-    # consumed by _resolve_startup_runtime() — set it unconditionally on
-    # /model so /new can't fall through to static-catalog detection and
-    # pick a coincidentally-matching native provider (fixes #16857).
+    # SUPERFORECASTING_AGENT_TUI_PROVIDER is the fork-native
+    # "explicit-this-process" carrier consumed by _resolve_startup_runtime();
+    # keep compatibility aliases in sync so /new cannot fall through to
+    # static-catalog detection and pick a coincidentally-matching native
+    # provider (fixes #16857).
     if result.target_provider:
+        os.environ["SUPERFORECASTING_AGENT_TUI_PROVIDER"] = result.target_provider
+        os.environ["FORECAST_TUI_PROVIDER"] = result.target_provider
         os.environ["HERMES_INFERENCE_PROVIDER"] = result.target_provider
         os.environ["HERMES_TUI_PROVIDER"] = result.target_provider
     if persist_global:
@@ -1805,7 +1822,7 @@ def _apply_personality_to_session(
 
 def _cfg_max_turns(cfg: dict, default: int) -> int:
     try:
-        env_max = int(os.environ.get("HERMES_TUI_MAX_TURNS", "") or 0)
+        env_max = int(_tui_env("MAX_TURNS") or 0)
         if env_max > 0:
             return env_max
     except (TypeError, ValueError):
@@ -1815,7 +1832,7 @@ def _cfg_max_turns(cfg: dict, default: int) -> int:
 
 
 def _parse_tui_skills_env() -> list[str]:
-    raw = os.environ.get("HERMES_TUI_SKILLS", "")
+    raw = _tui_env("SKILLS")
     skills: list[str] = []
     seen: set[str] = set()
     for part in raw.replace("\n", ",").split(","):

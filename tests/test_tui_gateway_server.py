@@ -372,9 +372,16 @@ def test_voice_toggle_tts_branch_also_carries_record_key(monkeypatch):
 
 
 def test_load_enabled_toolsets_prefers_tui_env(monkeypatch):
-    monkeypatch.setenv("HERMES_TUI_TOOLSETS", "web, terminal, ,memory")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_TUI_TOOLSETS", "web, terminal, ,memory")
+    monkeypatch.setenv("HERMES_TUI_TOOLSETS", "all")
 
     assert server._load_enabled_toolsets() == ["web", "terminal", "memory"]
+
+
+def test_load_enabled_toolsets_accepts_legacy_tui_env(monkeypatch):
+    monkeypatch.setenv("HERMES_TUI_TOOLSETS", "web, terminal")
+
+    assert server._load_enabled_toolsets() == ["web", "terminal"]
 
 
 def test_load_enabled_toolsets_filters_invalid_tui_env(monkeypatch, capsys):
@@ -519,7 +526,7 @@ def test_load_enabled_toolsets_reports_disabled_mcp_separately(monkeypatch, caps
 
     assert server._load_enabled_toolsets() == ["web"]
     err = capsys.readouterr().err
-    assert "ignoring unknown HERMES_TUI_TOOLSETS entries: nope" in err
+    assert "ignoring unknown SUPERFORECASTING_AGENT_TUI_TOOLSETS entries: nope" in err
     assert "ignoring disabled MCP servers" in err
     assert "mcp-off" in err
 
@@ -664,6 +671,17 @@ def test_resolve_model_strips_config_model(monkeypatch):
 
 def test_startup_runtime_uses_tui_provider_env(monkeypatch):
     monkeypatch.setenv("HERMES_MODEL", "nous/hermes-test")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_TUI_PROVIDER", "nous")
+    monkeypatch.setenv("HERMES_TUI_PROVIDER", "openrouter")
+    monkeypatch.delenv("HERMES_INFERENCE_PROVIDER", raising=False)
+
+    assert server._resolve_startup_runtime() == ("nous/hermes-test", "nous")
+
+
+def test_startup_runtime_accepts_legacy_tui_provider_env(monkeypatch):
+    monkeypatch.setenv("HERMES_MODEL", "nous/hermes-test")
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_TUI_PROVIDER", raising=False)
+    monkeypatch.delenv("FORECAST_TUI_PROVIDER", raising=False)
     monkeypatch.setenv("HERMES_TUI_PROVIDER", "nous")
     monkeypatch.delenv("HERMES_INFERENCE_PROVIDER", raising=False)
 
@@ -1797,8 +1815,8 @@ def test_config_set_model_syncs_inference_provider_env(monkeypatch):
 
 
 def test_config_set_model_syncs_tui_provider_unconditionally(monkeypatch):
-    """Regression for #16857: /model must set HERMES_TUI_PROVIDER even when
-    it wasn't pre-set on launch, so a later /new (which re-runs
+    """Regression for #16857: /model must set the fork-native TUI provider
+    env even when it wasn't pre-set on launch, so a later /new (which re-runs
     _resolve_startup_runtime) honours the user's explicit provider choice
     instead of falling through to static-catalog detection and picking a
     coincidentally-matching native provider.
@@ -1824,6 +1842,8 @@ def test_config_set_model_syncs_tui_provider_unconditionally(monkeypatch):
     )
 
     server._sessions["sid"] = _session(agent=_Agent())
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_TUI_PROVIDER", raising=False)
+    monkeypatch.delenv("FORECAST_TUI_PROVIDER", raising=False)
     monkeypatch.delenv("HERMES_TUI_PROVIDER", raising=False)
     monkeypatch.delenv("HERMES_INFERENCE_PROVIDER", raising=False)
     monkeypatch.setattr(
@@ -1844,9 +1864,11 @@ def test_config_set_model_syncs_tui_provider_unconditionally(monkeypatch):
         }
     )
 
-    # Both env vars must reflect the user's choice. HERMES_TUI_PROVIDER is
-    # the canonical explicit-this-process carrier consumed by
-    # _resolve_startup_runtime() on /new.
+    # The fork-native env var is the canonical explicit-this-process carrier
+    # consumed by _resolve_startup_runtime() on /new. Compatibility aliases
+    # stay in sync for inherited runtime helpers.
+    assert os.environ["SUPERFORECASTING_AGENT_TUI_PROVIDER"] == "custom:xuanji"
+    assert os.environ["FORECAST_TUI_PROVIDER"] == "custom:xuanji"
     assert os.environ["HERMES_TUI_PROVIDER"] == "custom:xuanji"
     assert os.environ["HERMES_INFERENCE_PROVIDER"] == "custom:xuanji"
 
@@ -1864,7 +1886,7 @@ def test_config_set_model_syncs_tui_provider_env(monkeypatch):
 
     agent = Agent()
     server._sessions["sid"] = _session(agent=agent)
-    monkeypatch.setenv("HERMES_TUI_PROVIDER", "openai-codex")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_TUI_PROVIDER", "openai-codex")
     monkeypatch.setattr(server, "_restart_slash_worker", lambda session: None)
     monkeypatch.setattr(server, "_emit", lambda *args, **kwargs: None)
 
@@ -1895,6 +1917,8 @@ def test_config_set_model_syncs_tui_provider_env(monkeypatch):
         )
 
         assert resp["result"]["value"] == "anthropic/claude-sonnet-4.6"
+        assert os.environ["SUPERFORECASTING_AGENT_TUI_PROVIDER"] == "anthropic"
+        assert os.environ["FORECAST_TUI_PROVIDER"] == "anthropic"
         assert os.environ["HERMES_TUI_PROVIDER"] == "anthropic"
         assert os.environ["HERMES_MODEL"] == "anthropic/claude-sonnet-4.6"
         assert os.environ["HERMES_INFERENCE_MODEL"] == "anthropic/claude-sonnet-4.6"
