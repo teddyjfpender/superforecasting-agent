@@ -1599,6 +1599,78 @@ def test_forecast_ledger_tool_reviews_and_schedules_by_horizon(tmp_path):
     assert scheduled["scheduled_review"]["stale_days"] == 3
 
 
+def test_forecast_ledger_tool_self_check_and_schedule_filter_by_confidence(tmp_path):
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    ledger = ForecastLedger(db_path)
+    low_confidence = ledger.create_question(
+        title="Will tool confidence self-check alert?",
+        resolution_criteria="Resolved yes if confidence-filtered tool checks alert.",
+        domain="macro",
+        next_review_at="2026-01-01T00:00:00Z",
+    )
+    high_confidence = ledger.create_question(
+        title="Will tool confidence self-check skip this?",
+        resolution_criteria="Resolved yes if confidence-filtered tool checks skip this.",
+        domain="macro",
+        next_review_at="2026-01-01T00:00:00Z",
+    )
+    ledger.create_snapshot(
+        question_id=low_confidence.id,
+        probability_or_distribution=0.5,
+        confidence=0.35,
+        rationale="Low-confidence forecast.",
+        as_of="2026-01-01T00:00:00Z",
+    )
+    ledger.create_snapshot(
+        question_id=high_confidence.id,
+        probability_or_distribution=0.5,
+        confidence=0.85,
+        rationale="High-confidence forecast.",
+        as_of="2026-01-01T00:00:00Z",
+    )
+
+    checked = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "self_check",
+                "domain": "macro",
+                "confidence_below": 0.5,
+                "now": "2026-01-10T00:00:00Z",
+            }
+        )
+    )
+    scheduled = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "schedule_review",
+                "domain": "macro",
+                "cadence": "1d",
+                "next_run_at": "2026-01-02T00:00:00Z",
+                "confidence_below": 0.5,
+            }
+        )
+    )
+    ran = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "run_scheduled_reviews",
+                "now": "2026-01-10T00:00:00Z",
+            }
+        )
+    )
+
+    assert checked["alerts"][0]["scope_ref"] == low_confidence.id
+    assert all(alert["scope_ref"] != high_confidence.id for alert in checked["alerts"])
+    assert scheduled["scheduled_review"]["confidence_below"] == pytest.approx(0.5)
+    scheduled_alerts = ran["scheduled_review_results"][0]["alerts"]
+    assert any(alert["scope_ref"] == low_confidence.id for alert in scheduled_alerts)
+    assert all(alert["scope_ref"] != high_confidence.id for alert in scheduled_alerts)
+
+
 def test_forecast_ledger_tool_can_list_and_acknowledge_alerts(tmp_path):
     db = str(tmp_path / "forecasting.db")
     created = json.loads(

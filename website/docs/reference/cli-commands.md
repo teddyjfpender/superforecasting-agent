@@ -34,7 +34,7 @@ For in-chat slash commands, see [Slash Commands Reference](./slash-commands.md).
 | `forecast review` | Triage stale, high-impact, domain/topic, horizon, confidence, or close-date review work. |
 | `forecast watch add` | Attach a watched source that can create review alerts when it changes. |
 | `forecast alerts` | List and acknowledge forecast alerts. |
-| `forecast schedule` | Add, list, and run scheduled self-checks by question, domain, topic, horizon, or portfolio. Use `--stale-days` to tune stale evidence risk per schedule. |
+| `forecast schedule` | Add, list, and run scheduled self-checks by question, domain, topic, horizon, portfolio, or confidence band. Use `--stale-days` to tune stale evidence risk per schedule. |
 | `forecast resolve` | Resolve a question with explicit outcome, source, and confirmation state. |
 | `forecast score` | Score a resolved question. |
 | `forecast postmortem` | Record miss diagnosis and calibration lessons. |

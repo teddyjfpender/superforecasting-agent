@@ -731,6 +731,9 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 horizon=args.get("horizon"),
                 portfolio=args.get("portfolio"),
                 stale_days=args.get("last_days") or 7,
+                now=args.get("now"),
+                confidence_below=args.get("confidence_below"),
+                confidence_above=args.get("confidence_above"),
                 auto_score=bool(args.get("auto_score", False)),
                 auto_postmortem=bool(args.get("auto_postmortem", False)),
             )
@@ -862,6 +865,8 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 auto_score=bool(args.get("auto_score", False)),
                 auto_postmortem=bool(args.get("auto_postmortem", False)),
                 stale_days=int(args.get("stale_days") or args.get("last_days") or 7),
+                confidence_below=args.get("confidence_below"),
+                confidence_above=args.get("confidence_above"),
             )
             return tool_result(success=True, scheduled_review=schedule)
 

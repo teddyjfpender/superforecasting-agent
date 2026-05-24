@@ -181,12 +181,14 @@ forecast watch add --question <id> githubactions:owner/repo
 
 forecast schedule add --question <id> --cadence 1d --next-run-at 2026-05-22T09:00:00Z
 forecast schedule add --domain policy --topic elections --cadence 12h --stale-days 3 --auto-score --auto-postmortem
+forecast schedule add --domain macro --cadence 6h --confidence-below 0.5 --next-run-at 2026-05-22T09:00:00Z
 forecast schedule add --horizon 30 --cadence 1d --next-run-at 2026-05-22T09:00:00Z
 forecast schedule list
 forecast schedule run --due
+forecast self-check --domain macro --confidence-below 0.5
 ```
 
-Scheduled jobs and watched sources create review work. They should not silently change active probabilities. Automatic scoring and learning writes are opt-in.
+Scheduled jobs and watched sources create review work. They can be scoped by question, domain, topic, portfolio, horizon, and confidence band. They should not silently change active probabilities. Automatic scoring and learning writes are opt-in.
 
 ## TUI Shortcuts
 

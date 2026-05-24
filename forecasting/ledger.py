@@ -500,6 +500,8 @@ class ForecastLedger:
                     scope_ref TEXT,
                     cadence TEXT NOT NULL,
                     stale_days INTEGER NOT NULL DEFAULT 7,
+                    confidence_below REAL,
+                    confidence_above REAL,
                     next_run_at TEXT NOT NULL,
                     last_run_at TEXT,
                     trigger_reason TEXT NOT NULL DEFAULT 'scheduled',
@@ -562,6 +564,8 @@ class ForecastLedger:
             self._ensure_column(conn, "scheduled_reviews", "auto_score", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "scheduled_reviews", "auto_postmortem", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "scheduled_reviews", "stale_days", "INTEGER NOT NULL DEFAULT 7")
+            self._ensure_column(conn, "scheduled_reviews", "confidence_below", "REAL")
+            self._ensure_column(conn, "scheduled_reviews", "confidence_above", "REAL")
 
     def _ensure_column(
         self,
@@ -2712,12 +2716,10 @@ class ForecastLedger:
         confidence_above: float | None = None,
         now: str | None = None,
     ) -> list[dict[str, Any]]:
-        for label, value in (
-            ("confidence_below", confidence_below),
-            ("confidence_above", confidence_above),
-        ):
-            if value is not None and not 0 <= value <= 1:
-                raise ValidationError(f"{label} must be between 0 and 1")
+        self._validate_confidence_filters(
+            confidence_below=confidence_below,
+            confidence_above=confidence_above,
+        )
         questions = self.list_questions(status="active", domain=domain)
         if topic:
             questions = [question for question in questions if topic in question.topics]
@@ -2831,6 +2833,8 @@ class ForecastLedger:
         auto_score: bool = False,
         auto_postmortem: bool = False,
         stale_days: int = 7,
+        confidence_below: float | None = None,
+        confidence_above: float | None = None,
     ) -> dict[str, Any]:
         if scope_type not in SCHEDULE_SCOPE_TYPES:
             raise ValidationError(
@@ -2844,15 +2848,20 @@ class ForecastLedger:
             raise ValidationError("cadence is required")
         if stale_days < 0:
             raise ValidationError("stale_days must be non-negative")
+        self._validate_confidence_filters(
+            confidence_below=confidence_below,
+            confidence_above=confidence_above,
+        )
         review_id = f"sr_{uuid.uuid4().hex[:12]}"
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO scheduled_reviews (
                     id, scope_type, scope_ref, cadence, stale_days, next_run_at,
-                    trigger_reason, enabled, auto_score, auto_postmortem
+                    trigger_reason, enabled, auto_score, auto_postmortem,
+                    confidence_below, confidence_above
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     review_id,
@@ -2865,6 +2874,8 @@ class ForecastLedger:
                     1 if enabled else 0,
                     1 if auto_score else 0,
                     1 if auto_postmortem else 0,
+                    confidence_below,
+                    confidence_above,
                 ),
             )
         return self.get_scheduled_review(review_id)
@@ -3078,6 +3089,8 @@ class ForecastLedger:
             scope_type = review["scope_type"]
             scope_ref = review["scope_ref"]
             stale_days = int(review.get("stale_days") or 7)
+            confidence_below = review.get("confidence_below")
+            confidence_above = review.get("confidence_above")
             if scope_type == "question":
                 alerts = self.self_check(
                     question_id=scope_ref,
@@ -3085,6 +3098,8 @@ class ForecastLedger:
                     now=now_ts,
                     auto_score=auto_score or bool(review.get("auto_score")),
                     auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
+                    confidence_below=confidence_below,
+                    confidence_above=confidence_above,
                 )
             elif scope_type == "domain":
                 alerts = self.self_check(
@@ -3093,6 +3108,8 @@ class ForecastLedger:
                     now=now_ts,
                     auto_score=auto_score or bool(review.get("auto_score")),
                     auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
+                    confidence_below=confidence_below,
+                    confidence_above=confidence_above,
                 )
             elif scope_type == "topic":
                 alerts = self.self_check(
@@ -3101,6 +3118,8 @@ class ForecastLedger:
                     now=now_ts,
                     auto_score=auto_score or bool(review.get("auto_score")),
                     auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
+                    confidence_below=confidence_below,
+                    confidence_above=confidence_above,
                 )
             elif scope_type == "domain_topic":
                 scope_filter = json_loads(scope_ref, {})
@@ -3111,6 +3130,8 @@ class ForecastLedger:
                     now=now_ts,
                     auto_score=auto_score or bool(review.get("auto_score")),
                     auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
+                    confidence_below=confidence_below,
+                    confidence_above=confidence_above,
                 )
             elif scope_type == "portfolio":
                 alerts = self.self_check(
@@ -3119,6 +3140,8 @@ class ForecastLedger:
                     now=now_ts,
                     auto_score=auto_score or bool(review.get("auto_score")),
                     auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
+                    confidence_below=confidence_below,
+                    confidence_above=confidence_above,
                 )
             else:
                 alerts = self.self_check(
@@ -3127,6 +3150,8 @@ class ForecastLedger:
                     now=now_ts,
                     auto_score=auto_score or bool(review.get("auto_score")),
                     auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
+                    confidence_below=confidence_below,
+                    confidence_above=confidence_above,
                 )
             next_run_at = self._advance_cadence(now_ts, review["cadence"])
             with self._connect() as conn:
@@ -3213,7 +3238,13 @@ class ForecastLedger:
         now: str | None = None,
         auto_score: bool = False,
         auto_postmortem: bool = False,
+        confidence_below: float | None = None,
+        confidence_above: float | None = None,
     ) -> list[AlertEvent]:
+        self._validate_confidence_filters(
+            confidence_below=confidence_below,
+            confidence_above=confidence_above,
+        )
         if question_id:
             questions = [self.get_question(question_id)]
         else:
@@ -3229,6 +3260,16 @@ class ForecastLedger:
                 ]
             if portfolio:
                 questions = [q for q in questions if self._question_in_portfolio(q, portfolio)]
+        if confidence_below is not None or confidence_above is not None:
+            questions = [
+                q
+                for q in questions
+                if self._question_matches_confidence(
+                    q.id,
+                    confidence_below=confidence_below,
+                    confidence_above=confidence_above,
+                )
+            ]
 
         alerts: list[AlertEvent] = []
         for row in self.review_questions(
@@ -3237,6 +3278,8 @@ class ForecastLedger:
             domain=domain,
             topic=topic,
             horizon=horizon,
+            confidence_below=confidence_below,
+            confidence_above=confidence_above,
             now=now,
         ):
             question = row["question"]
@@ -4768,6 +4811,37 @@ class ForecastLedger:
         if isinstance(metadata_portfolios, list) and portfolio in metadata_portfolios:
             return True
         return False
+
+    def _question_matches_confidence(
+        self,
+        question_id: str,
+        *,
+        confidence_below: float | None,
+        confidence_above: float | None,
+    ) -> bool:
+        if confidence_below is None and confidence_above is None:
+            return True
+        snapshot = self.get_current_snapshot(question_id)
+        if snapshot is None or snapshot.confidence is None:
+            return False
+        if confidence_below is not None and snapshot.confidence >= confidence_below:
+            return False
+        if confidence_above is not None and snapshot.confidence <= confidence_above:
+            return False
+        return True
+
+    @staticmethod
+    def _validate_confidence_filters(
+        *,
+        confidence_below: float | None,
+        confidence_above: float | None,
+    ) -> None:
+        for label, value in (
+            ("confidence_below", confidence_below),
+            ("confidence_above", confidence_above),
+        ):
+            if value is not None and not 0 <= value <= 1:
+                raise ValidationError(f"{label} must be between 0 and 1")
 
     def _domain_error_profile_alerts(
         self,

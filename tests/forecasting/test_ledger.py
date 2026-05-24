@@ -3911,6 +3911,50 @@ def test_horizon_scheduled_review_filters_on_forecast_horizon(tmp_path):
     assert long_horizon.id not in alert_refs
 
 
+def test_scheduled_self_check_filters_by_confidence(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    low_confidence = ledger.create_question(
+        title="Will low-confidence scheduled review run?",
+        resolution_criteria="Resolved yes if low-confidence schedules create alerts.",
+        domain="macro",
+        next_review_at="2026-01-01T00:00:00Z",
+    )
+    high_confidence = ledger.create_question(
+        title="Will high-confidence scheduled review be ignored?",
+        resolution_criteria="Resolved yes if confidence filtering excludes this forecast.",
+        domain="macro",
+        next_review_at="2026-01-01T00:00:00Z",
+    )
+    ledger.create_snapshot(
+        question_id=low_confidence.id,
+        probability_or_distribution=0.5,
+        confidence=0.35,
+        rationale="Low-confidence forecast.",
+        as_of="2026-01-01T00:00:00Z",
+    )
+    ledger.create_snapshot(
+        question_id=high_confidence.id,
+        probability_or_distribution=0.5,
+        confidence=0.85,
+        rationale="High-confidence forecast.",
+        as_of="2026-01-01T00:00:00Z",
+    )
+    schedule = ledger.schedule_review(
+        scope_type="domain",
+        scope_ref="macro",
+        cadence="1d",
+        next_run_at="2026-01-02T00:00:00Z",
+        confidence_below=0.5,
+    )
+
+    results = ledger.run_due_scheduled_reviews(now="2026-01-10T00:00:00Z")
+    alert_refs = {alert.scope_ref for alert in results[0]["alerts"]}
+
+    assert schedule["confidence_below"] == pytest.approx(0.5)
+    assert low_confidence.id in alert_refs
+    assert high_confidence.id not in alert_refs
+
+
 def test_self_check_flags_due_assumptions_and_invalidated_reference_classes(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     question = ledger.create_question(

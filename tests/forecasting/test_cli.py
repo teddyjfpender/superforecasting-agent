@@ -800,6 +800,88 @@ def test_forecast_cli_review_filters_by_confidence(tmp_path, capsys):
     assert "Will high confidence CLI review be hidden?" not in output
 
 
+def test_forecast_cli_self_check_and_schedule_filter_by_confidence(tmp_path, capsys):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    ledger = ForecastLedger(db_path)
+    low_confidence = ledger.create_question(
+        title="Will low confidence CLI self-check alert?",
+        resolution_criteria="Resolved yes if confidence-filtered self-checks alert.",
+        domain="macro",
+        next_review_at="2026-01-01T00:00:00Z",
+    )
+    high_confidence = ledger.create_question(
+        title="Will high confidence CLI self-check be skipped?",
+        resolution_criteria="Resolved yes if confidence-filtered self-checks skip this.",
+        domain="macro",
+        next_review_at="2026-01-01T00:00:00Z",
+    )
+    ledger.create_snapshot(
+        question_id=low_confidence.id,
+        probability_or_distribution=0.5,
+        confidence=0.35,
+        rationale="Uncertain forecast.",
+        as_of="2026-01-01T00:00:00Z",
+    )
+    ledger.create_snapshot(
+        question_id=high_confidence.id,
+        probability_or_distribution=0.5,
+        confidence=0.85,
+        rationale="Confident forecast.",
+        as_of="2026-01-01T00:00:00Z",
+    )
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "self-check",
+            "--domain",
+            "macro",
+            "--confidence-below",
+            "0.5",
+            "--now",
+            "2026-01-10T00:00:00Z",
+        ],
+    )
+    output = capsys.readouterr().out
+
+    assert low_confidence.id in output
+    assert high_confidence.id not in output
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "schedule",
+            "add",
+            "--domain",
+            "macro",
+            "--cadence",
+            "1d",
+            "--next-run-at",
+            "2026-01-02T00:00:00Z",
+            "--confidence-below",
+            "0.5",
+        ],
+    )
+    capsys.readouterr()
+    _run(parser, ["forecast", "--db", db, "schedule", "list"])
+    schedule_output = capsys.readouterr().out
+    assert "<0.50" in schedule_output
+
+    _run(parser, ["forecast", "--db", db, "schedule", "run", "--now", "2026-01-10T00:00:00Z"])
+    run_output = capsys.readouterr().out
+
+    assert low_confidence.id in run_output
+    assert high_confidence.id not in run_output
+
+
 def test_forecast_cli_review_flags_approaching_close_time(tmp_path, capsys):
     parser = _parser()
     db_path = tmp_path / "forecasting.db"
