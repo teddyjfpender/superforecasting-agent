@@ -218,6 +218,25 @@ def test_docker_entrypoint_and_compose_are_forecast_native():
     assert "~/.hermes:/opt/data" not in compose
 
 
+def test_docker_image_guidance_uses_fork_registry():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / ".github" / "workflows" / "docker-publish.yml",
+        root / "website" / "docs" / "user-guide" / "docker.md",
+        root / "hermes_cli" / "config.py",
+        root / "hermes_cli" / "tools_config.py",
+        root / "tools" / "browser_tool.py",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "IMAGE_NAME: teddyjfpender/superforecasting-agent" in text
+    assert "docker pull teddyjfpender/superforecasting-agent:latest" in text
+    assert "docker run -it --rm teddyjfpender/superforecasting-agent:latest version" in text
+    assert "nousresearch/superforecasting-agent" not in text
+    assert "ghcr.io/nousresearch/superforecasting-agent" not in text
+    assert "ghcr.io/nousresearch/hermes-agent" not in text
+
+
 def test_standalone_gateway_script_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "scripts" / "hermes-gateway").read_text(encoding="utf-8")

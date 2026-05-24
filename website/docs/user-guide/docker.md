@@ -25,7 +25,7 @@ Create a host data directory and run setup:
 mkdir -p ~/.superforecasting-agent
 docker run -it --rm \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/superforecasting-agent setup
+  teddyjfpender/superforecasting-agent setup
 ```
 
 Setup prompts for model credentials and writes secrets to `/opt/data/.env` inside the container, which maps to `~/.superforecasting-agent/.env` on the host. Existing `~/.hermes` directories can still be mounted during migration, but new deployments should use the fork-native home.
@@ -40,7 +40,7 @@ docker run -d \
   --restart unless-stopped \
   -v ~/.superforecasting-agent:/opt/data \
   -p 8642:8642 \
-  nousresearch/superforecasting-agent gateway run
+  teddyjfpender/superforecasting-agent gateway run
 ```
 
 Port `8642` exposes the [OpenAI-compatible API server](./features/api-server.md) and health endpoint when enabled. It is optional for pure CLI or chat-platform operation, but useful for automation that submits forecast questions, exports ledger data, or drives review jobs.
@@ -57,7 +57,7 @@ docker run -d \
   -e API_SERVER_HOST=0.0.0.0 \
   -e API_SERVER_KEY=your_api_key_here \
   -e API_SERVER_CORS_ORIGINS='*' \
-  nousresearch/superforecasting-agent gateway run
+  teddyjfpender/superforecasting-agent gateway run
 ```
 
 Opening a forecasting API on an internet-facing machine can expose private research, source notes, credentials, and forecast rationales. Put it behind a trusted network, reverse proxy, or VPN unless you intentionally want remote access.
@@ -74,7 +74,7 @@ docker run -d \
   -p 8642:8642 \
   -p 9119:9119 \
   -e SUPERFORECASTING_AGENT_DASHBOARD=1 \
-  nousresearch/superforecasting-agent gateway run
+  teddyjfpender/superforecasting-agent gateway run
 ```
 
 The entrypoint starts `superforecasting-agent dashboard` in the background before launching the foreground command. Dashboard output is prefixed with `[dashboard]` in `docker logs`.
@@ -99,7 +99,7 @@ Open a one-off interactive session against the mounted data directory:
 ```sh
 docker run -it --rm \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/superforecasting-agent
+  teddyjfpender/superforecasting-agent
 ```
 
 Run forecast lifecycle commands through the same image:
@@ -107,15 +107,15 @@ Run forecast lifecycle commands through the same image:
 ```sh
 docker run -it --rm \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/superforecasting-agent forecast list
+  teddyjfpender/superforecasting-agent forecast list
 
 docker run -it --rm \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/superforecasting-agent forecast review --last 30d
+  teddyjfpender/superforecasting-agent forecast review --last 30d
 
 docker run -it --rm \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/superforecasting-agent forecast backtest
+  teddyjfpender/superforecasting-agent forecast backtest
 ```
 
 If you have opened a shell inside the running container, the legacy executable path is still:
@@ -159,7 +159,7 @@ docker run -d \
   --restart unless-stopped \
   -v ~/.superforecasting-agent-elections:/opt/data \
   -p 8642:8642 \
-  nousresearch/superforecasting-agent gateway run
+  teddyjfpender/superforecasting-agent gateway run
 
 # Macro profile
 docker run -d \
@@ -167,7 +167,7 @@ docker run -d \
   --restart unless-stopped \
   -v ~/.superforecasting-agent-macro:/opt/data \
   -p 8643:8642 \
-  nousresearch/superforecasting-agent gateway run
+  teddyjfpender/superforecasting-agent gateway run
 ```
 
 Separate containers keep credentials, source watchlists, scheduler jobs, calibration history, and ledger state isolated. They also make it easier to back up or pause a domain without touching the others.
@@ -179,7 +179,7 @@ For a persistent deployment with gateway, dashboard, and cron-capable runtime:
 ```yaml
 services:
   superforecasting-agent:
-    image: nousresearch/superforecasting-agent:latest
+    image: teddyjfpender/superforecasting-agent:latest
     container_name: superforecasting-agent
     restart: unless-stopped
     command: gateway run
@@ -213,7 +213,7 @@ docker run -it --rm \
   -v ~/.superforecasting-agent:/opt/data \
   -e ANTHROPIC_API_KEY="sk-ant-..." \
   -e OPENAI_API_KEY="sk-..." \
-  nousresearch/superforecasting-agent forecast list
+  teddyjfpender/superforecasting-agent forecast list
 ```
 
 Direct `-e` values override `.env`. This is useful for CI, short-lived evaluation runs, and secret-manager integrations.
@@ -236,7 +236,7 @@ docker run -d \
   --restart unless-stopped \
   --memory=4g --cpus=2 \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/superforecasting-agent gateway run
+  teddyjfpender/superforecasting-agent gateway run
 ```
 
 ## What the Dockerfile Does
@@ -267,13 +267,13 @@ Do not override the image entrypoint unless you keep `/opt/hermes/docker/entrypo
 Pull the latest image and recreate the container. The mounted data directory is untouched.
 
 ```sh
-docker pull nousresearch/superforecasting-agent:latest
+docker pull teddyjfpender/superforecasting-agent:latest
 docker rm -f superforecasting-agent
 docker run -d \
   --name superforecasting-agent \
   --restart unless-stopped \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/superforecasting-agent gateway run
+  teddyjfpender/superforecasting-agent gateway run
 ```
 
 With Docker Compose:
@@ -288,7 +288,7 @@ After upgrades that change forecast data structures, run a quick ledger check:
 ```sh
 docker run -it --rm \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/superforecasting-agent forecast calibration
+  teddyjfpender/superforecasting-agent forecast calibration
 ```
 
 ## Skills and Credential Files
@@ -321,7 +321,7 @@ services:
       - forecast-net
 
   superforecasting-agent:
-    image: nousresearch/superforecasting-agent:latest
+    image: teddyjfpender/superforecasting-agent:latest
     container_name: superforecasting-agent
     restart: unless-stopped
     command: gateway run
@@ -363,7 +363,7 @@ docker run -d \
   --name superforecasting-agent \
   -v ~/.superforecasting-agent:/opt/data \
   -p 8642:8642 \
-  nousresearch/superforecasting-agent gateway run
+  teddyjfpender/superforecasting-agent gateway run
 ```
 
 ```yaml
@@ -381,7 +381,7 @@ docker run -d \
   --name superforecasting-agent \
   --network host \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/superforecasting-agent gateway run
+  teddyjfpender/superforecasting-agent gateway run
 ```
 
 ```yaml
@@ -431,7 +431,7 @@ docker run -d \
   --name superforecasting-agent \
   --shm-size=1g \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/superforecasting-agent gateway run
+  teddyjfpender/superforecasting-agent gateway run
 ```
 
 ### Gateway or scheduler stops updating
@@ -442,13 +442,13 @@ Restart the container, then inspect stale forecasts and scheduled review jobs:
 docker restart superforecasting-agent
 docker run -it --rm \
   -v ~/.superforecasting-agent:/opt/data \
-  nousresearch/superforecasting-agent forecast review --stale
+  teddyjfpender/superforecasting-agent forecast review --stale
 ```
 
 ### Check health
 
 ```sh
 docker logs --tail 50 superforecasting-agent
-docker run -it --rm nousresearch/superforecasting-agent:latest version
+docker run -it --rm teddyjfpender/superforecasting-agent:latest version
 docker stats superforecasting-agent
 ```

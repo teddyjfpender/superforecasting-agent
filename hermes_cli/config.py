@@ -314,7 +314,7 @@ def recommended_update_command_for_method(method: str) -> str:
     if method == "homebrew":
         return "brew upgrade superforecasting-agent"
     if method == "docker":
-        return "docker pull nousresearch/superforecasting-agent:latest"
+        return "docker pull teddyjfpender/superforecasting-agent:latest"
     if method == "pip":
         import shutil
         uv = shutil.which("uv")

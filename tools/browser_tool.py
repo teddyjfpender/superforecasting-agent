@@ -835,7 +835,7 @@ def _run_chrome_fallback_command(
             hint = (
                 "Chrome fallback requires Chromium, but it is missing. "
                 "You're running in Docker — pull the latest image: "
-                "docker pull ghcr.io/nousresearch/hermes-agent:latest"
+                "docker pull teddyjfpender/superforecasting-agent:latest"
             )
         else:
             hint = (
@@ -1918,7 +1918,7 @@ def _run_browser_command(
             hint = (
                 "Chromium browser is missing. You're running in Docker — pull "
                 "the latest image to get the bundled Chromium: "
-                "docker pull ghcr.io/nousresearch/hermes-agent:latest"
+                "docker pull teddyjfpender/superforecasting-agent:latest"
             )
         else:
             hint = (
@@ -3683,7 +3683,7 @@ if __name__ == "__main__":
                         "     Docker: pull the latest image — the current one "
                         "predates the bundled Chromium install"
                     )
-                    print("       docker pull ghcr.io/nousresearch/hermes-agent:latest")
+                    print("       docker pull teddyjfpender/superforecasting-agent:latest")
                 else:
                     print("     Install it with:")
                     print("       npx agent-browser install --with-deps")

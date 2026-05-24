@@ -757,7 +757,7 @@ def _run_post_setup(post_setup_key: str):
                 "    Pull the latest image to get the bundled Chromium:"
             )
             _print_info(
-                "      docker pull ghcr.io/nousresearch/superforecasting-agent:latest"
+                "      docker pull teddyjfpender/superforecasting-agent:latest"
             )
             return
 
