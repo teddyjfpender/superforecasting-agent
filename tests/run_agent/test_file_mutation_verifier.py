@@ -308,7 +308,12 @@ class TestFormatFooter:
 
 class TestVerifierEnabled:
     def test_default_is_enabled(self, monkeypatch):
-        monkeypatch.delenv("HERMES_FILE_MUTATION_VERIFIER", raising=False)
+        for name in (
+            "SUPERFORECASTING_AGENT_FILE_MUTATION_VERIFIER",
+            "FORECAST_FILE_MUTATION_VERIFIER",
+            "HERMES_FILE_MUTATION_VERIFIER",
+        ):
+            monkeypatch.delenv(name, raising=False)
         agent = _bare_agent()
         # With no env and no config present, safe default is True.
         # load_config may surface a user config.yaml in some envs — stub it.
@@ -322,8 +327,15 @@ class TestVerifierEnabled:
         agent = _bare_agent()
         assert agent._file_mutation_verifier_enabled() is False
 
+    def test_forecast_native_env_disables_before_legacy(self, monkeypatch):
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_FILE_MUTATION_VERIFIER", "false")
+        monkeypatch.setenv("FORECAST_FILE_MUTATION_VERIFIER", "true")
+        monkeypatch.setenv("HERMES_FILE_MUTATION_VERIFIER", "true")
+        agent = _bare_agent()
+        assert agent._file_mutation_verifier_enabled() is False
+
     def test_env_enables_over_config(self, monkeypatch):
-        monkeypatch.setenv("HERMES_FILE_MUTATION_VERIFIER", "1")
+        monkeypatch.setenv("FORECAST_FILE_MUTATION_VERIFIER", "1")
         import hermes_cli.config as _cfg_mod
         monkeypatch.setattr(
             _cfg_mod, "load_config",
@@ -333,7 +345,12 @@ class TestVerifierEnabled:
         assert agent._file_mutation_verifier_enabled() is True
 
     def test_config_disables_when_no_env(self, monkeypatch):
-        monkeypatch.delenv("HERMES_FILE_MUTATION_VERIFIER", raising=False)
+        for name in (
+            "SUPERFORECASTING_AGENT_FILE_MUTATION_VERIFIER",
+            "FORECAST_FILE_MUTATION_VERIFIER",
+            "HERMES_FILE_MUTATION_VERIFIER",
+        ):
+            monkeypatch.delenv(name, raising=False)
         import hermes_cli.config as _cfg_mod
         monkeypatch.setattr(
             _cfg_mod, "load_config",

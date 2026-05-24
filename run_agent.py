@@ -1778,15 +1778,20 @@ class AIAgent:
         """Check whether the per-turn file-mutation verifier footer is on.
 
         Config path: ``display.file_mutation_verifier`` (bool, default True).
-        ``HERMES_FILE_MUTATION_VERIFIER`` env var overrides config.  Exposed
+        Fork-native file-mutation verifier env aliases override config. Exposed
         as a method so tests can patch a single seam without reaching into
         the private ``_turn_failed_file_mutations`` state dict.
         """
         try:
             import os as _os
-            env = _os.environ.get("HERMES_FILE_MUTATION_VERIFIER")
-            if env is not None:
-                return env.strip().lower() not in {"0", "false", "no", "off"}
+            for _env_name in (
+                "SUPERFORECASTING_AGENT_FILE_MUTATION_VERIFIER",
+                "FORECAST_FILE_MUTATION_VERIFIER",
+                "HERMES_FILE_MUTATION_VERIFIER",
+            ):
+                env = _os.environ.get(_env_name)
+                if env is not None:
+                    return env.strip().lower() not in {"0", "false", "no", "off"}
             # Read from the persisted config.yaml so gateway and CLI share
             # the same setting.  Import lazily to avoid a startup-time cycle.
             try:
