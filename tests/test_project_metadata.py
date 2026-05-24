@@ -579,16 +579,30 @@ def test_github_actions_metadata_is_forecast_native():
         root / ".github" / "actions" / "hermes-smoke-test" / "action.yml",
         root / ".github" / "actions" / "nix-setup" / "action.yml",
         root / ".github" / "dependabot.yml",
+        root / ".github" / "workflows" / "deploy-site.yml",
+        root / ".github" / "workflows" / "docker-publish.yml",
+        root / ".github" / "workflows" / "skills-index.yml",
+        root / ".github" / "workflows" / "upload_to_pypi.yml",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
     assert "Superforecasting Agent smoke test" in text
     assert "teddyjfpender/superforecasting-agent:test" in text
+    assert "github.repository == 'teddyjfpender/superforecasting-agent'" in text
+    assert "IMAGE_NAME: teddyjfpender/superforecasting-agent" in text
+    assert "image=teddyjfpender/superforecasting-agent" in text
     assert "/tmp/superforecasting-agent-test" in text
     assert "name: superforecasting-agent" in text
+    assert "https://pypi.org/p/superforecasting-agent" in text
+    assert "https://superforecasting-agent.nousresearch.com/llms.txt" in text
     assert "Dependabot configuration for Superforecasting Agent" in text
     assert "Hermes smoke test" not in text
+    assert "github.repository == 'NousResearch/hermes-agent'" not in text
     assert "nousresearch/hermes-agent:test" not in text
+    assert "IMAGE_NAME: nousresearch/hermes-agent" not in text
+    assert "image=nousresearch/hermes-agent" not in text
+    assert "https://pypi.org/p/hermes-agent" not in text
+    assert "hermes-agent.nousresearch.com/llms.txt" not in text
     assert "/tmp/hermes-test" not in text
     assert "name: hermes-agent" not in text
     assert "Dependabot configuration for hermes-agent" not in text
