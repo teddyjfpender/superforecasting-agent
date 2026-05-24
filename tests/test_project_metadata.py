@@ -469,6 +469,34 @@ def test_model_picker_guidance_is_forecast_native():
     assert "without a Hermes release" not in text
 
 
+def test_runtime_operator_guidance_uses_forecast_native_commands():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        "run_agent.py",
+        "agent/conversation_loop.py",
+        "agent/auxiliary_client.py",
+        "agent/azure_identity_adapter.py",
+        "tools/delegate_tool.py",
+        "tools/approval.py",
+        "gateway/run.py",
+    ]
+    text = "\n".join(
+        (root / rel_path).read_text(encoding="utf-8") for rel_path in checked_paths
+    )
+
+    assert "[superforecasting-agent: tool call arguments were corrupted" in text
+    assert "superforecasting-agent doctor" in text
+    assert "superforecasting-agent auth" in text
+    assert "superforecasting-agent bundles create" in text
+    assert "superforecasting-agent|hermes" in text
+    assert "[hermes-agent: tool call arguments were corrupted" not in text
+    assert "Run `hermes doctor`" not in text
+    assert "run: hermes doctor" not in text
+    assert "run 'hermes auth'" not in text
+    assert "hermes bundles create <name>" not in text
+    assert "stop/restart hermes gateway" not in text
+
+
 def test_xai_oauth_referrer_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "hermes_cli" / "auth.py").read_text(encoding="utf-8")

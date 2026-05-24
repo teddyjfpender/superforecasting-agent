@@ -393,8 +393,8 @@ DANGEROUS_PATTERNS = [
     # Gateway lifecycle protection: prevent the agent from killing its own
     # gateway process.  These commands trigger a gateway restart/stop that
     # terminates all running agents mid-work.
-    (r'\bhermes\s+gateway\s+(stop|restart)\b', "stop/restart hermes gateway (kills running agents)"),
-    (r'\bhermes\s+update\b', "hermes update (restarts gateway, kills running agents)"),
+    (r'\b(?:superforecasting-agent|hermes)\s+gateway\s+(stop|restart)\b', "stop/restart forecast gateway (kills running agents)"),
+    (r'\b(?:superforecasting-agent|hermes)\s+update\b', "forecast desk update (restarts gateway, kills running agents)"),
     # Gateway protection: never start gateway outside systemd management
     (r'gateway\s+run\b.*(&\s*$|&\s*;|\bdisown\b|\bsetsid\b)', "start gateway outside systemd (use 'systemctl --user restart hermes-gateway')"),
     (r'\bnohup\b.*gateway\s+run\b', "start gateway outside systemd (use 'systemctl --user restart hermes-gateway')"),

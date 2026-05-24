@@ -350,7 +350,7 @@ class AIAgent:
     """
 
     _TOOL_CALL_ARGUMENTS_CORRUPTION_MARKER = (
-        "[hermes-agent: tool call arguments were corrupted in this session and "
+        "[superforecasting-agent: tool call arguments were corrupted in this session and "
         "have been dropped to keep the conversation alive. See issue #15236.]"
     )
 
@@ -2594,7 +2594,7 @@ class AIAgent:
         # Guard against silent account swap.
         #
         # When an agent is using a non-singleton credential — e.g. a manual
-        # pool entry (``hermes auth add xai-oauth``) whose tokens belong to
+        # pool entry (``superforecasting-agent auth add xai-oauth``) whose tokens belong to
         # a different account than the loopback_pkce singleton, or an agent
         # constructed with an explicit ``api_key=`` arg — force-refreshing
         # the singleton here and adopting its tokens silently re-routes the

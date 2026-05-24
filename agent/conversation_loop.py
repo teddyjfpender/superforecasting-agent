@@ -2104,7 +2104,7 @@ def run_conversation(
                         # means Azure rejected the JWT (RBAC role missing,
                         # az login expired, IMDS unreachable, etc.).
                         print(f"{agent.log_prefix}   Auth method: Microsoft Entra ID (httpx event hook)")
-                        print(f"{agent.log_prefix}   Run `hermes doctor` for credential-chain diagnostics, or")
+                        print(f"{agent.log_prefix}   Run `superforecasting-agent doctor` for credential-chain diagnostics, or")
                         print(f"{agent.log_prefix}   `az login` if your developer session expired.")
                     else:
                         auth_method = "Bearer (OAuth/setup-token)" if _is_oauth_token(key) else "x-api-key (API key)"

@@ -888,7 +888,7 @@ if _config_path.exists():
         )
         print(
             "  Gateway will fall back to .env values, which may not match "
-            "your current config.yaml. Run `hermes doctor` to investigate.",
+            "your current config.yaml. Run `superforecasting-agent doctor` to investigate.",
             file=sys.stderr,
         )
 
@@ -3812,7 +3812,7 @@ class GatewayRunner:
             if _adv_msg:
                 logger.warning("%s", _adv_msg)
                 logger.warning(
-                    "Run `hermes doctor` on the gateway host for full "
+                    "Run `superforecasting-agent doctor` on the gateway host for full "
                     "remediation steps."
                 )
         except Exception:
@@ -3881,7 +3881,7 @@ class GatewayRunner:
         if not _any_allowlist and not _allow_all:
             logger.warning(
                 "No user allowlists configured. All unauthorized users will be denied. "
-                "Set GATEWAY_ALLOW_ALL_USERS=true in ~/.hermes/.env to allow open access, "
+                f"Set GATEWAY_ALLOW_ALL_USERS=true in {_hermes_home}/.env to allow open access, "
                 "or configure platform allowlists (e.g., TELEGRAM_ALLOWED_USERS=your_id)."
             )
         
@@ -13311,7 +13311,7 @@ class GatewayRunner:
             return (
                 "No skill bundles installed.\n"
                 "Create one on the host with:\n"
-                "  `hermes bundles create <name> --skill <s1> --skill <s2>`\n"
+                "  `superforecasting-agent bundles create <name> --skill <s1> --skill <s2>`\n"
                 f"Directory: `{_bundles_dir()}`"
             )
 
