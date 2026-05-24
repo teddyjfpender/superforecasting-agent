@@ -285,7 +285,7 @@ class TestDisplayResumedHistory:
         cli.conversation_history = _simple_history()
         output = self._capture_display(cli)
 
-        assert "Previous Conversation" in output
+        assert "Previous Research Session" in output
 
     def test_panel_is_stored_as_resize_aware_history_entry(self):
         cli = _make_cli()
@@ -296,7 +296,7 @@ class TestDisplayResumedHistory:
         try:
             output = self._capture_display(cli)
 
-            assert "Previous Conversation" in output
+            assert "Previous Research Session" in output
             assert len(cli_mod._OUTPUT_HISTORY) == 1
             assert callable(cli_mod._OUTPUT_HISTORY[0])
         finally:

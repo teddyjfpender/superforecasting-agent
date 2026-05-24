@@ -4847,7 +4847,7 @@ class HermesCLI:
         return True
 
     def _display_resumed_history(self):
-        """Render a compact recap of previous conversation messages.
+        """Render a compact recap of previous research-session messages.
 
         Uses Rich markup with dim/muted styling so the recap is visually
         distinct from the active conversation.  Caps the display at the
@@ -4997,7 +4997,7 @@ class HermesCLI:
 
         panel = Panel(
             lines,
-            title=f"[dim {_session_label_c}]Previous Conversation[/]",
+            title=f"[dim {_session_label_c}]Previous Research Session[/]",
             border_style=f"dim {_session_border_c}",
             padding=(0, 1),
             style=_history_text_c,
@@ -5940,7 +5940,7 @@ class HermesCLI:
         return True
 
     def show_history(self):
-        """Display conversation history."""
+        """Display forecast transcript history."""
         if not self.conversation_history:
             if not self._show_recent_sessions(reason="history"):
                 print("No forecast transcript history yet.")
@@ -7894,7 +7894,7 @@ class HermesCLI:
             if self._confirm_destructive_slash(
                 "clear",
                 "This clears the screen and starts a new session.\n"
-                "The current conversation history will be discarded.",
+                "The current research-session history will be discarded.",
             ) is None:
                 return
             self.new_session(silent=True)
@@ -8024,7 +8024,7 @@ class HermesCLI:
             if self._confirm_destructive_slash(
                 "new",
                 "This starts a fresh session.\n"
-                "The current conversation history will be discarded.",
+                "The current research-session history will be discarded.",
             ) is None:
                 return
             self.new_session(title=title)
@@ -9705,7 +9705,7 @@ class HermesCLI:
         """Prompt the user to confirm a destructive session slash command.
 
         Used by ``/clear``, ``/new``/``/reset``, and ``/undo`` before they
-        discard conversation state.  Three-option prompt:
+        discard research-session state.  Three-option prompt:
 
           1. Approve Once — proceed this time only
           2. Always Approve — proceed and persist
@@ -9739,10 +9739,10 @@ class HermesCLI:
         choices = [
             ("once", "Approve Once", "proceed this time only"),
             ("always", "Always Approve", "proceed and silence this prompt permanently"),
-            ("cancel", "Cancel", "keep current conversation"),
+            ("cancel", "Cancel", "keep current research session"),
         ]
         raw = self._prompt_text_input_modal(
-            title=f"⚠️  /{command} — destroys conversation state",
+            title=f"⚠️  /{command} — destroys research-session state",
             detail=detail,
             choices=choices,
         )
@@ -9755,7 +9755,7 @@ class HermesCLI:
             return None
 
         if choice == "cancel":
-            print(f"🟡 /{command} cancelled. Conversation unchanged.")
+            print(f"🟡 /{command} cancelled. Research session unchanged.")
             return None
 
         if choice == "always":

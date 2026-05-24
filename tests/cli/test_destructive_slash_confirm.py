@@ -191,7 +191,7 @@ def test_slash_confirm_display_fragments_include_choice_mapping():
 
     self_ = SimpleNamespace(
         _slash_confirm_state={
-            "title": "⚠️  /new — destroys conversation state",
+            "title": "⚠️  /new — destroys research-session state",
             "detail": "This starts a fresh session.",
             "choices": [
                 ("once", "Approve Once", "proceed once"),
@@ -209,3 +209,31 @@ def test_slash_confirm_display_fragments_include_choice_mapping():
     assert "[2] Always Approve" in rendered
     assert "[3] Cancel" in rendered
     assert "Type 1/2/3" in rendered
+
+
+def test_clear_confirmation_uses_research_session_copy():
+    from cli import HermesCLI
+
+    cli_obj = HermesCLI.__new__(HermesCLI)
+
+    with patch.object(cli_obj, "_confirm_destructive_slash", return_value=None) as confirm:
+        cli_obj.process_command("/clear")
+
+    confirm.assert_called_once()
+    _command, detail = confirm.call_args.args
+    assert "research-session history" in detail
+    assert "conversation history" not in detail
+
+
+def test_new_confirmation_uses_research_session_copy():
+    from cli import HermesCLI
+
+    cli_obj = HermesCLI.__new__(HermesCLI)
+
+    with patch.object(cli_obj, "_confirm_destructive_slash", return_value=None) as confirm:
+        cli_obj.process_command("/new")
+
+    confirm.assert_called_once()
+    _command, detail = confirm.call_args.args
+    assert "research-session history" in detail
+    assert "conversation history" not in detail
