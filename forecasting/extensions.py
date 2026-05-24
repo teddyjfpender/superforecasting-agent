@@ -105,6 +105,7 @@ def register_builtin_extensions() -> None:
         ("worldbank-indicators", "importer", "Capture World Bank country indicator observations as evidence."),
         ("census-data", "importer", "Capture U.S. Census API rows as demographic/regional evidence."),
         ("stooq-market-data", "importer", "Capture Stooq market price CSV rows as timestamped evidence."),
+        ("yahoo-finance-chart", "importer", "Capture Yahoo Finance chart observations as market evidence."),
         ("sec-edgar-filings", "importer", "Capture SEC EDGAR company filings as timestamped evidence."),
         ("arxiv-papers", "importer", "Capture arXiv research papers as timestamped evidence."),
         ("openalex-works", "importer", "Capture OpenAlex scholarly works as timestamped evidence."),

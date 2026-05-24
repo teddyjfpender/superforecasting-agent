@@ -98,6 +98,7 @@ from forecasting.source_adapters import (
     load_wikipedia_pages,
     load_wikimedia_pageviews,
     load_worldbank_observations,
+    load_yahoo_finance_prices,
 )
 
 SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
@@ -208,6 +209,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "domain": "market price history",
         "import_command": "forecast import stooq <symbol-or-csv-url> --question <id>",
         "watch_prefix": "stooq:<symbol-or-csv-url>",
+    },
+    {
+        "name": "yahoo",
+        "domain": "multi-asset market chart data",
+        "import_command": "forecast import yahoo <symbol> --question <id>",
+        "watch_prefix": "yahoo:<symbol>",
     },
     {
         "name": "coingecko",
@@ -506,6 +513,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "worldbank",
         "census",
         "stooq",
+        "yahoo",
         "coingecko",
         "sec",
         "arxiv",
@@ -581,6 +589,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "worldbank",
             "census",
             "stooq",
+            "yahoo",
             "coingecko",
             "sec",
             "arxiv",
@@ -767,6 +776,14 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://stooq.com/q/d/l/",
                 help="Override Stooq CSV endpoint for tests or private mirrors",
+            )
+        if name == "yahoo":
+            adapter.add_argument("--range", dest="range_value", default="1mo")
+            adapter.add_argument("--interval", default="1d")
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://query1.finance.yahoo.com/v8/finance/chart",
+                help="Override Yahoo Finance chart API base URL for tests or private mirrors",
             )
         if name == "coingecko":
             adapter.add_argument("--vs-currency", default="usd")
@@ -3606,6 +3623,65 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} stooq evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "yahoo":
+        if not args.question_id:
+            raise SystemExit("forecast import yahoo requires --question")
+        observations = load_yahoo_finance_prices(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            range_value=args.range_value,
+            interval=args.interval,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for observation in observations:
+            currency_suffix = f" {observation.currency}" if observation.currency else ""
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=observation.source_url or f"YahooFinance:{observation.symbol}",
+                    source_url=observation.source_url,
+                    source_name=observation.source_name,
+                    source_type="adapter:yahoo",
+                    published_at=observation.published_at,
+                    available_at=observation.published_at or args.as_of,
+                    claim=(
+                        f"Yahoo Finance {observation.symbol} close {observation.close_price}"
+                        f"{currency_suffix} at {observation.observation_time}"
+                    ),
+                    summary=(
+                        f"Yahoo Finance chart observation for {observation.symbol} "
+                        f"at {observation.observation_time}: close {observation.close_price}{currency_suffix}; "
+                        f"open {observation.open_price}, high {observation.high_price}, "
+                        f"low {observation.low_price}, volume {observation.volume}."
+                    ),
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "yahoo",
+                        "symbol": observation.symbol,
+                        "interval": observation.interval,
+                        "observation_time": observation.observation_time,
+                        "open_price": observation.open_price,
+                        "high_price": observation.high_price,
+                        "low_price": observation.low_price,
+                        "close_price": observation.close_price,
+                        "volume": observation.volume,
+                        "currency": observation.currency,
+                        "exchange_name": observation.exchange_name,
+                        "api_base_url": args.api_base_url,
+                        "range": args.range_value,
+                        "raw": observation.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} yahoo evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

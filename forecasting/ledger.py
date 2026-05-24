@@ -90,6 +90,7 @@ WATCH_SOURCE_TYPES = {
     "worldbank",
     "census",
     "stooq",
+    "yahoo",
     "sec",
     "arxiv",
     "openalex",
@@ -2896,7 +2897,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, github, githubissues, githubcommits, coingecko, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, stooq, "
+                "source_type must be file, url, manual, rss, gdelt, github, githubissues, githubcommits, coingecko, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, stooq, yahoo, "
                 "sec, arxiv, openalex, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -3008,6 +3009,7 @@ class ForecastLedger:
                     "worldbank",
                     "census",
                     "stooq",
+                    "yahoo",
                     "sec",
                     "arxiv",
                     "openalex",
@@ -5248,6 +5250,8 @@ class ForecastLedger:
             return "census"
         if source.startswith("stooq:"):
             return "stooq"
+        if source.startswith("yahoo:"):
+            return "yahoo"
         if source.startswith("sec:"):
             return "sec"
         if source.startswith("arxiv:"):
@@ -5328,6 +5332,8 @@ class ForecastLedger:
             return self._census_source_signature(source)
         if source_type == "stooq":
             return self._stooq_source_signature(source)
+        if source_type == "yahoo":
+            return self._yahoo_source_signature(source)
         if source_type == "sec":
             return self._sec_source_signature(source)
         if source_type == "arxiv":
@@ -6133,6 +6139,31 @@ class ForecastLedger:
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"stooq:{len(payload)}:{digest}"
 
+    def _yahoo_source_signature(self, source: str) -> str:
+        source_value = source.split(":", 1)[1].strip() if source.startswith("yahoo:") else source.strip()
+        if not source_value:
+            return "missing:yahoo:empty-symbol"
+        try:
+            from forecasting.source_adapters import load_yahoo_finance_prices
+
+            observations = load_yahoo_finance_prices(source_value, limit=50)
+        except Exception as exc:
+            return f"missing:yahoo:{source_value}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "close_price": observation.close_price,
+                "currency": observation.currency,
+                "entry_id": observation.entry_id,
+                "interval": observation.interval,
+                "observation_time": observation.observation_time,
+                "symbol": observation.symbol,
+                "volume": observation.volume,
+            }
+            for observation in observations
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"yahoo:{len(payload)}:{digest}"
+
     def _sec_source_signature(self, source: str) -> str:
         source_value = source.split(":", 1)[1].strip() if source.startswith("sec:") else source.strip()
         if not source_value:
@@ -6553,6 +6584,12 @@ class ForecastLedger:
             source_value = source.split(":", 1)[1].strip() if source.startswith("stooq:") else source
             return (
                 f"Run `forecast import stooq {source_value} --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "yahoo" and scope_type == "question" and scope_ref:
+            source_value = source.split(":", 1)[1].strip() if source.startswith("yahoo:") else source
+            return (
+                f"Run `forecast import yahoo {source_value} --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "sec" and scope_type == "question" and scope_ref:
