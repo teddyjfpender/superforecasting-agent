@@ -261,6 +261,19 @@ def test_modal_runtime_app_name_is_forecast_native():
     assert "preserving Hermes' persistent snapshot behavior" not in text
 
 
+def test_singularity_runtime_names_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "tools" / "environments" / "singularity.py").read_text(encoding="utf-8")
+
+    assert '_SCRATCH_USER_FALLBACK = "superforecasting-agent"' in text
+    assert '_SCRATCH_APP_DIR = "superforecasting-agent"' in text
+    assert '_INSTANCE_PREFIX = "forecast"' in text
+    assert '_OVERLAY_DIR = "forecast-overlays"' in text
+    assert 'os.getenv("USER", "hermes")' not in text
+    assert '"hermes-agent"' not in text
+    assert '"hermes-overlays"' not in text
+
+
 def test_standalone_gateway_script_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "scripts" / "hermes-gateway").read_text(encoding="utf-8")

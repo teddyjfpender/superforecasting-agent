@@ -25,6 +25,10 @@ from tools.environments.base import (
 logger = logging.getLogger(__name__)
 
 _SNAPSHOT_STORE = get_hermes_home() / "singularity_snapshots.json"
+_SCRATCH_USER_FALLBACK = "superforecasting-agent"
+_SCRATCH_APP_DIR = "superforecasting-agent"
+_INSTANCE_PREFIX = "forecast"
+_OVERLAY_DIR = "forecast-overlays"
 
 
 def _find_singularity_executable() -> str:
@@ -80,7 +84,7 @@ def _get_scratch_dir() -> Path:
 
     scratch = Path("/scratch")
     if scratch.exists() and os.access(scratch, os.W_OK):
-        user_scratch = scratch / os.getenv("USER", "hermes") / "hermes-agent"
+        user_scratch = scratch / os.getenv("USER", _SCRATCH_USER_FALLBACK) / _SCRATCH_APP_DIR
         user_scratch.mkdir(parents=True, exist_ok=True)
         logger.info("Using /scratch for sandboxes: %s", user_scratch)
         return user_scratch
@@ -175,7 +179,7 @@ class SingularityEnvironment(BaseEnvironment):
         super().__init__(cwd=cwd, timeout=timeout)
         self.executable = _ensure_singularity_available()
         self.image = _get_or_build_sif(image, self.executable)
-        self.instance_id = f"hermes_{uuid.uuid4().hex[:12]}"
+        self.instance_id = f"{_INSTANCE_PREFIX}_{uuid.uuid4().hex[:12]}"
         self._instance_started = False
         self._persistent = persistent_filesystem
         self._task_id = task_id
@@ -184,7 +188,7 @@ class SingularityEnvironment(BaseEnvironment):
         self._memory = memory
 
         if self._persistent:
-            overlay_base = _get_scratch_dir() / "hermes-overlays"
+            overlay_base = _get_scratch_dir() / _OVERLAY_DIR
             overlay_base.mkdir(parents=True, exist_ok=True)
             self._overlay_dir = overlay_base / f"overlay-{task_id}"
             self._overlay_dir.mkdir(parents=True, exist_ok=True)

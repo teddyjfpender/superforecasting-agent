@@ -7,6 +7,7 @@ See: https://github.com/NousResearch/hermes-agent/issues/1511
 """
 
 import subprocess
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -14,6 +15,7 @@ import pytest
 from tools.environments.singularity import (
     _find_singularity_executable,
     _ensure_singularity_available,
+    _get_scratch_dir,
 )
 
 
@@ -41,6 +43,25 @@ class TestFindSingularityExecutable:
         with patch("shutil.which", return_value=None):
             with pytest.raises(RuntimeError, match="Neither.*apptainer.*nor.*singularity"):
                 _find_singularity_executable()
+
+
+class TestGetScratchDir:
+    """_get_scratch_dir runtime path tests."""
+
+    def test_scratch_default_path_is_forecast_native(self, monkeypatch):
+        """When /scratch is usable and USER is unset, use fork-native names."""
+        monkeypatch.delenv("TERMINAL_SCRATCH_DIR", raising=False)
+        monkeypatch.delenv("USER", raising=False)
+
+        with patch("tools.environments.base.get_sandbox_dir", return_value=Path("/unused")), \
+             patch.object(Path, "exists", autospec=True, side_effect=lambda path: str(path) == "/scratch"), \
+             patch("tools.environments.singularity.os.access", return_value=True), \
+             patch.object(Path, "mkdir", autospec=True):
+            assert _get_scratch_dir() == (
+                Path("/scratch")
+                / "superforecasting-agent"
+                / "superforecasting-agent"
+            )
 
 
 class TestEnsureSingularityAvailable:
