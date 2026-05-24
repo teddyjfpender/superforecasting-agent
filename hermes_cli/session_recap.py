@@ -13,9 +13,10 @@ Differences from Claude Code:
     - Works unchanged on CLI and every gateway platform (Telegram,
       Discord, Slack, …) because both call into the same ``build_recap``
       helper. Claude Code only shows this on the CLI.
-    - Tailored to hermes-agent's tool vocabulary (``terminal``, ``patch``,
-      ``write_file``, ``delegate_task``, ``browser_*``, ``web_*``) — the
-      recap surfaces which classes of work were most active.
+    - Tailored to Superforecasting Agent's inherited tool vocabulary
+      (``terminal``, ``patch``, ``write_file``, ``delegate_task``,
+      ``browser_*``, ``web_*``) — the recap surfaces which classes of work
+      were most active.
 """
 from __future__ import annotations
 

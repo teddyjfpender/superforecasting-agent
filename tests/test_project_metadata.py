@@ -310,6 +310,24 @@ def test_developer_utility_scripts_are_forecast_native():
     assert "HERMES_DEV_PERF wired" not in profile_tui
 
 
+def test_plugin_and_session_recap_guidance_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    plugins = (root / "hermes_cli" / "plugins.py").read_text(encoding="utf-8")
+    recap = (root / "hermes_cli" / "session_recap.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Superforecasting Agent Plugin System" in plugins
+    assert "shipped with\n   Superforecasting Agent" in plugins
+    assert "superforecasting-agent plugins enable" in plugins
+    assert "run `hermes plugins enable" not in plugins
+    assert "Hermes Plugin System" not in plugins
+    assert "shipped with hermes-agent" not in plugins
+
+    assert "Tailored to Superforecasting Agent's inherited tool vocabulary" in recap
+    assert "Tailored to hermes-agent's tool vocabulary" not in recap
+
+
 def test_runtime_docstrings_use_forecast_native_home_paths():
     root = Path(__file__).resolve().parents[1]
     checked = {
