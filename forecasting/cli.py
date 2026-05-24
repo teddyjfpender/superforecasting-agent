@@ -1455,6 +1455,7 @@ def _cmd_status(args: argparse.Namespace) -> None:
         for question in active_questions
         for assumption in ledger.list_assumptions(question.id)
     ]
+    review_queue = ledger.review_questions(stale=True, last_days=7)
     open_alerts = ledger.list_alerts(unresolved_only=True)
     schedules = ledger.list_scheduled_reviews()
     watches = ledger.list_watched_sources(status=None)
@@ -1472,6 +1473,7 @@ def _cmd_status(args: argparse.Namespace) -> None:
         "question_counts": question_counts,
         "active_assumption_count": sum(1 for row in active_assumptions if row.get("status") == "active"),
         "stale_assumption_count": sum(1 for row in active_assumptions if row.get("status") in {"stale", "invalidated"}),
+        "review_queue_count": len(review_queue),
         "open_alert_count": len(open_alerts),
         "scheduled_review_count": len(schedules),
         "enabled_scheduled_review_count": sum(1 for row in schedules if row.get("enabled")),
@@ -1502,6 +1504,7 @@ def _cmd_status(args: argparse.Namespace) -> None:
         f"assumptions: active={payload['active_assumption_count']}  "
         f"stale={payload['stale_assumption_count']}"
     )
+    print(f"reviews: queued={payload['review_queue_count']}")
     print(
         f"alerts: open={payload['open_alert_count']}  "
         f"schedules={payload['enabled_scheduled_review_count']}/{payload['scheduled_review_count']}  "

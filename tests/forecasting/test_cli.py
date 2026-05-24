@@ -7140,6 +7140,7 @@ def test_forecast_cli_status_summarizes_operational_desk(tmp_path, capsys):
     assert "Superforecasting Agent" in output
     assert "questions: active=1" in output
     assert "assumptions: active=1  stale=1" in output
+    assert "reviews: queued=1" in output
     assert "alerts: open=1" in output
     assert "schedules=1/1" in output
     assert "learning_schedules=0" in output
@@ -7154,6 +7155,7 @@ def test_forecast_cli_status_summarizes_operational_desk(tmp_path, capsys):
     assert payload["question_counts"]["active"] == 1
     assert payload["active_assumption_count"] == 1
     assert payload["stale_assumption_count"] == 1
+    assert payload["review_queue_count"] == 1
     assert payload["open_alert_count"] == 1
     assert payload["enabled_scheduled_review_count"] == 1
     assert payload["scheduled_review_count"] == 1
