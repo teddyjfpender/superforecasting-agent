@@ -48,11 +48,22 @@ logger = logging.getLogger(__name__)
 # Marker comments wrapping the managed section so re-runs can detect
 # what's ours and what's user-edited. Both must appear or strip is a no-op.
 MIGRATION_MARKER = (
-    "# managed by hermes-agent — `hermes codex-runtime migrate` regenerates this section"
+    "# managed by superforecasting-agent — `superforecasting-agent codex-runtime migrate` regenerates this section"
 )
 MIGRATION_END_MARKER = (
+    "# end superforecasting-agent managed section"
+)
+LEGACY_MIGRATION_MARKER = (
+    "# managed by hermes-agent — `hermes codex-runtime migrate` regenerates this section"
+)
+LEGACY_MIGRATION_END_MARKER = (
     "# end hermes-agent managed section"
 )
+_START_TO_END_MARKERS = {
+    MIGRATION_MARKER: MIGRATION_END_MARKER,
+    LEGACY_MIGRATION_MARKER: LEGACY_MIGRATION_END_MARKER,
+}
+_MANAGED_END_MARKERS = set(_START_TO_END_MARKERS.values())
 
 
 @dataclass
@@ -404,9 +415,12 @@ def _looks_like_table_header(stripped_line: str) -> bool:
 def _strip_existing_managed_block(toml_text: str) -> str:
     """Remove any prior managed section so re-runs idempotently replace it.
 
-    The managed section is everything between MIGRATION_MARKER (start) and
-    MIGRATION_END_MARKER (end), inclusive of both markers. User-edited
-    sections above or below are preserved verbatim.
+    The managed section is everything between a known managed-block start
+    marker and its end marker, inclusive of both markers. User-edited
+    sections above or below are preserved verbatim. Both current
+    Superforecasting Agent markers and inherited Hermes markers are
+    recognized so re-runs replace old managed blocks instead of duplicating
+    them.
 
     Backward compatibility: if the start marker is found but no end marker
     follows, we fall back to the heuristic that swallows lines until we
@@ -418,16 +432,22 @@ def _strip_existing_managed_block(toml_text: str) -> str:
     out: list[str] = []
     in_managed = False
     saw_end_marker = False
+    active_end_marker: Optional[str] = None
     for line in lines:
         line_stripped_nl = line.rstrip("\n")
-        if line_stripped_nl == MIGRATION_MARKER:
+        if line_stripped_nl in _START_TO_END_MARKERS:
             in_managed = True
             saw_end_marker = False
+            active_end_marker = _START_TO_END_MARKERS[line_stripped_nl]
             continue
         if in_managed:
-            if line_stripped_nl == MIGRATION_END_MARKER:
+            if (
+                line_stripped_nl == active_end_marker
+                or line_stripped_nl in _MANAGED_END_MARKERS
+            ):
                 in_managed = False
                 saw_end_marker = True
+                active_end_marker = None
                 continue
             stripped = line.lstrip()
             if not saw_end_marker and stripped.startswith("[") and not (

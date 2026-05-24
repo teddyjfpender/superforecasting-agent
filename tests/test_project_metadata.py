@@ -311,6 +311,37 @@ def test_xai_oauth_referrer_is_forecast_native():
     assert "referrer=hermes-agent" not in text
 
 
+def test_codex_runtime_migration_markers_are_forecast_native():
+    from hermes_cli.codex_runtime_plugin_migration import (
+        LEGACY_MIGRATION_END_MARKER,
+        LEGACY_MIGRATION_MARKER,
+        MIGRATION_END_MARKER,
+        MIGRATION_MARKER,
+    )
+
+    root = Path(__file__).resolve().parents[1]
+    migration_py = (
+        root / "hermes_cli" / "codex_runtime_plugin_migration.py"
+    ).read_text(encoding="utf-8")
+    runtime_doc = (
+        root / "website" / "docs" / "user-guide" / "features"
+        / "codex-app-server-runtime.md"
+    ).read_text(encoding="utf-8")
+
+    assert "superforecasting-agent" in MIGRATION_MARKER
+    assert "superforecasting-agent" in MIGRATION_END_MARKER
+    assert "hermes-agent" not in MIGRATION_MARKER
+    assert "hermes-agent" not in MIGRATION_END_MARKER
+    assert "hermes-agent" in LEGACY_MIGRATION_MARKER
+    assert "hermes-agent" in LEGACY_MIGRATION_END_MARKER
+    assert "_START_TO_END_MARKERS" in migration_py
+    assert "LEGACY_MIGRATION_MARKER" in migration_py
+    assert "LEGACY_MIGRATION_END_MARKER" in migration_py
+    assert "# managed by superforecasting-agent" in runtime_doc
+    assert "# end superforecasting-agent managed section" in runtime_doc
+    assert "The marker still uses inherited `hermes-agent` naming" not in runtime_doc
+
+
 def test_high_attention_docs_navigation_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     sidebars = (root / "website" / "sidebars.ts").read_text(encoding="utf-8")

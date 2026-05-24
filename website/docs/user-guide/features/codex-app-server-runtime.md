@@ -234,14 +234,14 @@ You can override permissions in `~/.codex/config.toml` outside the managed block
 
 ## Editing `~/.codex/config.toml`
 
-The runtime writes a managed block to `~/.codex/config.toml`. The marker still uses inherited `hermes-agent` naming because that is the current transport implementation:
+The runtime writes a managed block to `~/.codex/config.toml` with fork-native markers. Older configs that contain inherited `hermes-agent` managed-block markers are recognized and replaced on the next migration:
 
 ```toml
-# managed by hermes-agent - `superforecasting-agent codex-runtime migrate` regenerates this section
+# managed by superforecasting-agent — `superforecasting-agent codex-runtime migrate` regenerates this section
 default_permissions = ":workspace"
 [mcp_servers.hermes-tools]
 ...
-# end hermes-agent managed section
+# end superforecasting-agent managed section
 ```
 
 Anything outside that block is user-owned and preserved on migration. Anything inside the block can be replaced the next time the runtime is enabled or migrated.

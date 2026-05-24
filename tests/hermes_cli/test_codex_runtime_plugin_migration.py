@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 
 from hermes_cli.codex_runtime_plugin_migration import (
+    LEGACY_MIGRATION_MARKER,
+    LEGACY_MIGRATION_END_MARKER,
     MIGRATION_MARKER,
     MIGRATION_END_MARKER,
     MigrationReport,
@@ -232,6 +234,15 @@ class TestRenderToml:
         out = render_codex_toml_section({})
         assert out.startswith(MIGRATION_MARKER)
 
+    def test_marker_is_forecast_native(self):
+        out = render_codex_toml_section({})
+        assert "superforecasting-agent" in MIGRATION_MARKER
+        assert "superforecasting-agent" in MIGRATION_END_MARKER
+        assert "hermes-agent" not in MIGRATION_MARKER
+        assert "hermes-agent" not in MIGRATION_END_MARKER
+        assert out.startswith(MIGRATION_MARKER)
+        assert out.rstrip().endswith(MIGRATION_END_MARKER)
+
     def test_empty_servers_emits_placeholder(self):
         out = render_codex_toml_section({})
         assert "no MCP servers" in out
@@ -306,6 +317,40 @@ class TestStripExistingManagedBlock:
         assert "mcp_servers.fs" not in out
         assert "[providers]" in out
         assert 'foo = "bar"' in out
+
+    def test_strips_legacy_managed_block(self):
+        text = (
+            "[model]\n"
+            'name = "gpt-5.5"\n'
+            "\n"
+            f"{LEGACY_MIGRATION_MARKER}\n"
+            "[mcp_servers.old]\n"
+            'command = "old-server"\n'
+            f"{LEGACY_MIGRATION_END_MARKER}\n"
+            "\n"
+            "[features]\n"
+            "terminal_resize_reflow = true\n"
+        )
+        out = _strip_existing_managed_block(text)
+        assert LEGACY_MIGRATION_MARKER not in out
+        assert LEGACY_MIGRATION_END_MARKER not in out
+        assert "[mcp_servers.old]" not in out
+        assert "[model]" in out
+        assert "[features]" in out
+
+    def test_strips_mixed_legacy_start_and_current_end_marker(self):
+        text = (
+            f"{LEGACY_MIGRATION_MARKER}\n"
+            "[mcp_servers.old]\n"
+            'command = "old-server"\n'
+            f"{MIGRATION_END_MARKER}\n"
+            "\n"
+            "[features]\n"
+            "terminal_resize_reflow = true\n"
+        )
+        out = _strip_existing_managed_block(text)
+        assert "[mcp_servers.old]" not in out
+        assert "[features]" in out
 
 
 # ---- end-to-end migrate(, expose_hermes_tools=False) ----
@@ -555,6 +600,33 @@ class TestMigrate:
         second_text = (tmp_path / "config.toml").read_text()
         assert "[mcp_servers.a]" not in second_text
         assert "[mcp_servers.b]" in second_text
+
+    def test_migrate_replaces_legacy_managed_block_with_forecast_native_marker(self, tmp_path):
+        target = tmp_path / "config.toml"
+        target.write_text(
+            "[model]\n"
+            'profile = "default"\n'
+            "\n"
+            f"{LEGACY_MIGRATION_MARKER}\n"
+            "[mcp_servers.old]\n"
+            'command = "old-server"\n'
+            f"{LEGACY_MIGRATION_END_MARKER}\n"
+            "\n"
+            "[features]\n"
+            "terminal_resize_reflow = true\n"
+        )
+        migrate({"mcp_servers": {"new": {"command": "new-server"}}},
+                codex_home=tmp_path, discover_plugins=False,
+                expose_hermes_tools=False)
+        new_text = target.read_text()
+        assert MIGRATION_MARKER in new_text
+        assert MIGRATION_END_MARKER in new_text
+        assert LEGACY_MIGRATION_MARKER not in new_text
+        assert LEGACY_MIGRATION_END_MARKER not in new_text
+        assert "[mcp_servers.old]" not in new_text
+        assert "[mcp_servers.new]" in new_text
+        assert "[model]" in new_text
+        assert "[features]" in new_text
 
     def test_preserves_user_codex_config_above_marker(self, tmp_path):
         target = tmp_path / "config.toml"
