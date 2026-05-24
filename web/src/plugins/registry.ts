@@ -4,8 +4,9 @@
  * Exposes React, UI components, hooks, and utilities on the window so
  * that plugin bundles can use them without bundling their own copies.
  *
- * Plugins call window.__HERMES_PLUGINS__.register(name, Component)
- * to register their tab component.
+ * Plugins call window.__SUPERFORECASTING_AGENT_PLUGINS__.register(name, Component)
+ * to register their tab component. The older __HERMES_PLUGINS__ name remains
+ * available as a compatibility alias.
  */
 
 import React, {
@@ -90,7 +91,19 @@ export function getRegisteredCount(): number {
 
 declare global {
   interface Window {
+    __SUPERFORECASTING_AGENT_PLUGIN_SDK__: unknown;
+    __FORECAST_PLUGIN_SDK__: unknown;
+    /** @deprecated Compatibility alias for older dashboard plugins. */
     __HERMES_PLUGIN_SDK__: unknown;
+    __SUPERFORECASTING_AGENT_PLUGINS__: {
+      register: typeof registerPlugin;
+      registerSlot: typeof registerSlot;
+    };
+    __FORECAST_PLUGINS__: {
+      register: typeof registerPlugin;
+      registerSlot: typeof registerSlot;
+    };
+    /** @deprecated Compatibility alias for older dashboard plugins. */
     __HERMES_PLUGINS__: {
       register: typeof registerPlugin;
       registerSlot: typeof registerSlot;
@@ -99,12 +112,15 @@ declare global {
 }
 
 export function exposePluginSDK() {
-  window.__HERMES_PLUGINS__ = {
+  const pluginRegistry = {
     register: registerPlugin,
     registerSlot,
   };
+  window.__SUPERFORECASTING_AGENT_PLUGINS__ = pluginRegistry;
+  window.__FORECAST_PLUGINS__ = pluginRegistry;
+  window.__HERMES_PLUGINS__ = pluginRegistry;
 
-  window.__HERMES_PLUGIN_SDK__ = {
+  const pluginSDK = {
     // React core — plugins use these instead of importing react
     React,
     hooks: {
@@ -148,4 +164,7 @@ export function exposePluginSDK() {
     // Hooks
     useI18n,
   };
+  window.__SUPERFORECASTING_AGENT_PLUGIN_SDK__ = pluginSDK;
+  window.__FORECAST_PLUGIN_SDK__ = pluginSDK;
+  window.__HERMES_PLUGIN_SDK__ = pluginSDK;
 }

@@ -542,7 +542,7 @@ export default function App() {
 
               {sidebarNav.pluginItems.length > 0 && (
                 <div
-                  aria-labelledby="hermes-sidebar-plugin-nav-heading"
+                  aria-labelledby="forecast-sidebar-plugin-nav-heading"
                   className="flex flex-col border-t border-current/10 pb-2"
                   role="group"
                 >
@@ -551,7 +551,7 @@ export default function App() {
                       "px-5 pt-2.5 pb-1",
                       "font-mondwest text-[0.6rem] tracking-[0.15em] uppercase opacity-30",
                     )}
-                    id="hermes-sidebar-plugin-nav-heading"
+                    id="forecast-sidebar-plugin-nav-heading"
                   >
                     {t.app.pluginNavSection}
                   </span>

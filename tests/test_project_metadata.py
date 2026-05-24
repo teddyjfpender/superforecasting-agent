@@ -1563,3 +1563,37 @@ def test_dashboard_plugin_loader_has_forecast_native_markers():
     assert "data-superforecasting-agent-plugin" in loader
     assert "data-forecast-plugin" in loader
     assert "hermes_dv" not in loader
+
+
+def test_dashboard_plugin_sdk_has_forecast_native_aliases():
+    root = Path(__file__).resolve().parents[1]
+    registry = (root / "web" / "src" / "plugins" / "registry.ts").read_text(
+        encoding="utf-8"
+    )
+    slots = (root / "web" / "src" / "plugins" / "slots.ts").read_text(
+        encoding="utf-8"
+    )
+    app = (root / "web" / "src" / "App.tsx").read_text(encoding="utf-8")
+
+    assert "__SUPERFORECASTING_AGENT_PLUGIN_SDK__" in registry
+    assert "__FORECAST_PLUGIN_SDK__" in registry
+    assert "__SUPERFORECASTING_AGENT_PLUGINS__" in registry
+    assert "__FORECAST_PLUGINS__" in registry
+    assert "Compatibility alias for older dashboard plugins" in registry
+    assert "window.__SUPERFORECASTING_AGENT_PLUGINS__.registerSlot" in slots
+    assert "forecast-sidebar-plugin-nav-heading" in app
+    assert "hermes-sidebar-plugin-nav-heading" not in app
+
+
+def test_dashboard_vite_dev_proxy_prefers_forecast_native_names():
+    root = Path(__file__).resolve().parents[1]
+    config = (root / "web" / "vite.config.ts").read_text(encoding="utf-8")
+
+    assert "process.env.SUPERFORECASTING_AGENT_DASHBOARD_URL" in config
+    assert "process.env.FORECAST_DASHBOARD_URL" in config
+    assert "window.__SUPERFORECASTING_AGENT_SESSION_TOKEN__" in config
+    assert "window.__FORECAST_SESSION_TOKEN__" in config
+    assert "window.__SUPERFORECASTING_AGENT_DASHBOARD_EMBEDDED_CHAT__" in config
+    assert "window.__FORECAST_DASHBOARD_EMBEDDED_CHAT__" in config
+    assert "forecast:dev-session-token" in config
+    assert "hermes:dev-session-token" not in config

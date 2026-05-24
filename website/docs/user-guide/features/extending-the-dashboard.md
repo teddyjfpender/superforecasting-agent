@@ -130,7 +130,7 @@ Example bundle:
 
 ```javascript
 (function () {
-  const SDK = window.__HERMES_PLUGIN_SDK__;
+  const SDK = window.__SUPERFORECASTING_AGENT_PLUGIN_SDK__;
   const React = SDK.React;
 
   function SourceWatchPage() {
@@ -141,11 +141,11 @@ Example bundle:
     );
   }
 
-  window.__HERMES_PLUGINS__.register("source-watch", SourceWatchPage);
+  window.__SUPERFORECASTING_AGENT_PLUGINS__.register("source-watch", SourceWatchPage);
 })();
 ```
 
-`window.__HERMES_PLUGIN_SDK__` and `window.__HERMES_PLUGINS__` are inherited runtime names. They remain stable compatibility identifiers even though the product is Superforecasting Agent.
+`window.__SUPERFORECASTING_AGENT_PLUGIN_SDK__` and `window.__SUPERFORECASTING_AGENT_PLUGINS__` are the canonical dashboard extension names. `window.__FORECAST_PLUGIN_SDK__` / `window.__FORECAST_PLUGINS__` are short aliases. The older `window.__HERMES_PLUGIN_SDK__` and `window.__HERMES_PLUGINS__` names remain stable compatibility identifiers for inherited plugins.
 
 Plugins should use the SDK's React copy and shared UI helpers instead of bundling another React instance.
 
@@ -165,17 +165,17 @@ Slot-only plugins can inject compact widgets without adding a tab. Set `tab.hidd
 
 ```javascript
 (function () {
-  const SDK = window.__HERMES_PLUGIN_SDK__;
+  const SDK = window.__SUPERFORECASTING_AGENT_PLUGIN_SDK__;
   const React = SDK.React;
 
   function Banner() {
     return React.createElement("div", null, "Calibration review due");
   }
 
-  window.__HERMES_PLUGINS__.register("calibration-banner", function () {
+  window.__SUPERFORECASTING_AGENT_PLUGINS__.register("calibration-banner", function () {
     return null;
   });
-  window.__HERMES_PLUGINS__.registerSlot(
+  window.__SUPERFORECASTING_AGENT_PLUGINS__.registerSlot(
     "calibration-banner",
     "pre-main",
     Banner
@@ -272,10 +272,10 @@ The primary workflow should stay: CLI forecast workflow first, dashboard support
 
 **Theme does not appear**: check the YAML file is under `~/.superforecasting-agent/dashboard-themes/` or the legacy theme directory, then refresh the dashboard.
 
-**Plugin tab does not appear**: confirm `manifest.json` lives under `<profile-home>/plugins/<name>/dashboard/`, the `entry` path exists, and the bundle calls `window.__HERMES_PLUGINS__.register(...)` with the same plugin name.
+**Plugin tab does not appear**: confirm `manifest.json` lives under `<profile-home>/plugins/<name>/dashboard/`, the `entry` path exists, and the bundle calls `window.__SUPERFORECASTING_AGENT_PLUGINS__.register(...)` with the same plugin name.
 
 **Slot does not render**: verify the slot name exists in the dashboard registry and the plugin is not hidden by a theme or route condition.
 
 **Backend route returns 404**: restart `superforecasting-agent dashboard`; plugin API routes are mounted at startup.
 
-**Compatibility names look wrong**: `window.__HERMES_PLUGIN_SDK__`, `window.__HERMES_PLUGINS__`, `HERMES_ENABLE_PROJECT_PLUGINS`, and some `hermes_cli` module paths are inherited runtime identifiers. They should be documented as compatibility names, not as the product identity.
+**Compatibility names look wrong**: `window.__HERMES_PLUGIN_SDK__`, `window.__HERMES_PLUGINS__`, `HERMES_ENABLE_PROJECT_PLUGINS`, and some `hermes_cli` module paths are inherited runtime identifiers. Prefer the forecast-native aliases for new plugins and document inherited names as compatibility support, not product identity.
