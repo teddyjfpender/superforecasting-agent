@@ -212,13 +212,16 @@ def render_dashboard_text(summary: dict[str, Any]) -> str:
     review_queue = list(summary.get("review_queue") or [])
     if review_queue:
         lines.extend(["", "Review Queue"])
-        lines.append(f"{'ID':<14} {'P(now)':<12} {'AsOf':<20} {'Priority':<8} Reasons")
+        lines.append(
+            f"{'ID':<14} {'P(now)':<12} {'AsOf':<20} {'Close':<20} {'Priority':<8} Reasons"
+        )
         for row in review_queue:
             reasons = ",".join(row.get("reasons") or [])
             lines.append(
                 f"{row.get('id', '-'):<14} "
                 f"{format_probability(row.get('probability')):<12} "
                 f"{str(row.get('as_of') or '-'):<20} "
+                f"{str(row.get('close_time') or '-'):<20} "
                 f"{int(row.get('priority') or 9):<8} "
                 f"{reasons}"
             )

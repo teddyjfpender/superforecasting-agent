@@ -857,6 +857,7 @@ function ReviewQueueTable({ rows }: { rows: ForecastDashboardReview[] }) {
                 <th className="px-4 py-2 text-right font-medium">Priority</th>
                 <th className="px-4 py-2 text-right font-medium">P(now)</th>
                 <th className="px-4 py-2 text-left font-medium">As Of</th>
+                <th className="px-4 py-2 text-left font-medium">Close</th>
                 <th className="px-4 py-2 text-left font-medium">Reasons</th>
                 <th className="py-2 pl-4 text-left font-medium">Next</th>
               </tr>
@@ -883,6 +884,9 @@ function ReviewQueueTable({ rows }: { rows: ForecastDashboardReview[] }) {
                   </td>
                   <td className="px-4 py-2 text-muted-foreground">
                     {formatDate(row.as_of)}
+                  </td>
+                  <td className="px-4 py-2 text-muted-foreground">
+                    {formatDate(row.close_time)}
                   </td>
                   <td className="max-w-[18rem] px-4 py-2 text-muted-foreground">
                     <span className="line-clamp-2">
