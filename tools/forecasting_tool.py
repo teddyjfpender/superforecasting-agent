@@ -42,6 +42,7 @@ from forecasting.source_adapters import (
     load_nws_alerts,
     load_openalex_works,
     load_openfda_drug_applications,
+    load_openmeteo_air_quality_forecasts,
     load_openmeteo_daily_forecasts,
     load_owid_observations,
     load_pubmed_articles,
@@ -277,6 +278,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "nvd",
                     "cisakev",
                     "openmeteo",
+                    "airquality",
                     "usgs",
                     "eonet",
                     "nws",
@@ -1278,6 +1280,15 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_openmeteo_daily_forecasts(source, **kwargs)
+    if adapter_name == "airquality":
+        kwargs = {
+            "limit": limit,
+            "since": since,
+            "forecast_days": int(args.get("forecast_days") or 5),
+        }
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_openmeteo_air_quality_forecasts(source, **kwargs)
     if adapter_name == "usgs":
         kwargs = {"limit": limit, "since": since}
         if api_base_url:
@@ -1357,6 +1368,7 @@ def _source_adapter_evidence_payload(
         "date_argued",
         "observation_date",
         "observation_time",
+        "forecast_time",
         "forecast_date",
         "filing_date",
     )
@@ -1382,7 +1394,7 @@ def _source_adapter_evidence_payload(
         "relevance_rating": args.get("relevance_rating"),
         "stance": args.get("stance") or "context",
         "claim_type": args.get("claim_type")
-        or ("estimate" if adapter_name in {"fivethirtyeight", "openmeteo"} else "fact"),
+        or ("estimate" if adapter_name in {"fivethirtyeight", "openmeteo", "airquality"} else "fact"),
         "snapshot_path": args.get("snapshot_path"),
         "admissible_for_backtests": bool(args.get("admissible_for_backtests", True)),
         "metadata": metadata,
@@ -1499,6 +1511,11 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         return f"CISA KEV {data.get('cve_id')}: {data.get('vendor_project') or ''} {product}".strip()
     if adapter == "openmeteo":
         return f"Open-Meteo daily forecast for {data.get('latitude')},{data.get('longitude')} on {data.get('forecast_date')}"
+    if adapter == "airquality":
+        return (
+            f"Open-Meteo air quality forecast for {data.get('latitude')},{data.get('longitude')} "
+            f"at {data.get('forecast_time')}: US AQI {data.get('us_aqi')}, PM2.5 {data.get('pm2_5')}"
+        )
     if adapter == "usgs":
         magnitude = data.get("magnitude")
         magnitude_label = f"M{magnitude:g}" if isinstance(magnitude, (int, float)) else "event"

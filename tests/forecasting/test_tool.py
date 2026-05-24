@@ -21,6 +21,7 @@ from forecasting.source_adapters import (
     NpmPackageVersion,
     NwsAlert,
     OpenFdaDrugApplication,
+    OpenMeteoAirQualityForecast,
     RedditPost,
     PubMedArticle,
     PypiRelease,
@@ -92,7 +93,75 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
+
+
+def test_forecast_ledger_tool_imports_airquality_forecasts(tmp_path, monkeypatch):
+    db = str(tmp_path / "forecasting.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will air-quality forecasts import through the tool?",
+                "resolution_criteria": "Resolved yes if air-quality evidence is imported.",
+            }
+        )
+    )
+    question_id = created["question"]["id"]
+    captured = {}
+
+    def fake_airquality_forecasts(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            OpenMeteoAirQualityForecast(
+                latitude=37.77,
+                longitude=-122.42,
+                forecast_time="2026-05-21T00:00:00Z",
+                us_aqi=42,
+                european_aqi=31,
+                pm10=12.0,
+                pm2_5=8.4,
+                carbon_monoxide=220.0,
+                nitrogen_dioxide=16.0,
+                ozone=80.0,
+                source_name="Open-Meteo Air Quality",
+                entry_id="37.77,-122.42:2026-05-21T00:00:00Z",
+                raw={"hourly_units": {"us_aqi": "US AQI"}},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_openmeteo_air_quality_forecasts", fake_airquality_forecasts)
+    imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "airquality",
+                "source": "37.77,-122.42",
+                "limit": 12,
+                "since": "2026-05-21T00:00:00Z",
+                "forecast_days": 3,
+                "api_base_url": "https://airquality.test/v1/air-quality",
+            }
+        )
+    )
+
+    assert captured["source"] == "37.77,-122.42"
+    assert captured["kwargs"]["limit"] == 12
+    assert captured["kwargs"]["forecast_days"] == 3
+    assert captured["kwargs"]["api_base_url"] == "https://airquality.test/v1/air-quality"
+    assert imported["imported_count"] == 1
+    evidence = imported["imported"][0]["evidence"]
+    assert evidence["source_type"] == "adapter:airquality"
+    assert evidence["source_name"] == "Open-Meteo Air Quality"
+    assert evidence["published_at"] == "2026-05-21T00:00:00Z"
+    assert evidence["claim_type"] == "estimate"
+    assert evidence["claim"].startswith("Open-Meteo air quality forecast for 37.77,-122.42")
+    assert evidence["metadata"]["adapter"] == "airquality"
+    assert evidence["metadata"]["adapter_item"]["us_aqi"] == 42
 
 
 def test_forecast_ledger_tool_imports_sec_company_facts(tmp_path, monkeypatch):

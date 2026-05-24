@@ -692,6 +692,23 @@ class OpenMeteoDailyForecast:
 
 
 @dataclass(frozen=True)
+class OpenMeteoAirQualityForecast:
+    latitude: float
+    longitude: float
+    forecast_time: str
+    us_aqi: float | None
+    european_aqi: float | None
+    pm10: float | None
+    pm2_5: float | None
+    carbon_monoxide: float | None
+    nitrogen_dioxide: float | None
+    ozone: float | None
+    source_name: str
+    entry_id: str | None
+    raw: dict
+
+
+@dataclass(frozen=True)
 class OwidObservation:
     slug: str
     entity: str | None
@@ -3671,6 +3688,86 @@ def load_openmeteo_daily_forecasts(
                     "longitude": payload.get("longitude", longitude),
                     "forecast_date": forecast_date,
                     "daily_units": payload.get("daily_units") if isinstance(payload.get("daily_units"), dict) else {},
+                },
+            )
+        )
+        if len(forecasts) >= limit:
+            break
+    return forecasts
+
+
+def load_openmeteo_air_quality_forecasts(
+    source: str,
+    *,
+    limit: int = 24,
+    since: str | None = None,
+    forecast_days: int = 5,
+    api_base_url: str = "https://air-quality-api.open-meteo.com/v1/air-quality",
+) -> list[OpenMeteoAirQualityForecast]:
+    """Load Open-Meteo hourly air-quality forecast rows as evidence."""
+
+    latitude, longitude = _openmeteo_coordinates(source, label="airquality")
+    if limit <= 0:
+        raise ValidationError("airquality import --limit must be positive")
+    if forecast_days <= 0 or forecast_days > 7:
+        raise ValidationError("airquality import --forecast-days must be between 1 and 7")
+    since_ts = parse_timestamp(since, field_name="since") if since else None
+    since_dt = timestamp_to_datetime(since_ts) if since_ts else None
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "hourly": ",".join(
+            [
+                "us_aqi",
+                "european_aqi",
+                "pm10",
+                "pm2_5",
+                "carbon_monoxide",
+                "nitrogen_dioxide",
+                "ozone",
+            ]
+        ),
+        "timezone": "UTC",
+        "forecast_days": forecast_days,
+    }
+    endpoint = f"{api_base_url.rstrip('/')}?{urlencode(params)}"
+    payload = _read_json_endpoint(endpoint, "openmeteo air quality")
+    if not isinstance(payload, dict) or not isinstance(payload.get("hourly"), dict):
+        raise ValidationError("airquality response must include an hourly object")
+    hourly = payload["hourly"]
+    times = hourly.get("time")
+    if not isinstance(times, list):
+        raise ValidationError("airquality hourly response must include time")
+
+    forecasts: list[OpenMeteoAirQualityForecast] = []
+    for index, raw_time in enumerate(times):
+        forecast_time = _optional_str(raw_time)
+        if not forecast_time:
+            continue
+        forecast_ts = _openmeteo_time_to_iso(forecast_time)
+        forecast_dt = timestamp_to_datetime(forecast_ts) if forecast_ts else None
+        if since_dt is not None and forecast_dt is not None and forecast_dt < since_dt:
+            continue
+        stored_time = forecast_ts or forecast_time
+        forecasts.append(
+            OpenMeteoAirQualityForecast(
+                latitude=latitude,
+                longitude=longitude,
+                forecast_time=stored_time,
+                us_aqi=_openmeteo_hourly_float(hourly, "us_aqi", index),
+                european_aqi=_openmeteo_hourly_float(hourly, "european_aqi", index),
+                pm10=_openmeteo_hourly_float(hourly, "pm10", index),
+                pm2_5=_openmeteo_hourly_float(hourly, "pm2_5", index),
+                carbon_monoxide=_openmeteo_hourly_float(hourly, "carbon_monoxide", index),
+                nitrogen_dioxide=_openmeteo_hourly_float(hourly, "nitrogen_dioxide", index),
+                ozone=_openmeteo_hourly_float(hourly, "ozone", index),
+                source_name="Open-Meteo Air Quality",
+                entry_id=f"{latitude},{longitude}:{stored_time}",
+                raw={
+                    "latitude": payload.get("latitude", latitude),
+                    "longitude": payload.get("longitude", longitude),
+                    "forecast_time": stored_time,
+                    "hourly_units": payload.get("hourly_units") if isinstance(payload.get("hourly_units"), dict) else {},
                 },
             )
         )
@@ -6800,20 +6897,20 @@ def _cisa_kev_cwes(value: object) -> list[str]:
     return [part.strip() for part in text.replace(";", ",").split(",") if part.strip()]
 
 
-def _openmeteo_coordinates(source: str) -> tuple[float, float]:
-    value = source.split(":", 1)[1].strip() if source.startswith("openmeteo:") else source.strip()
+def _openmeteo_coordinates(source: str, *, label: str = "openmeteo") -> tuple[float, float]:
+    value = source.split(":", 1)[1].strip() if source.startswith(("openmeteo:", "airquality:")) else source.strip()
     parts = [part.strip() for part in value.replace("/", ",").split(",") if part.strip()]
     if len(parts) != 2:
-        raise ValidationError("openmeteo source must be latitude,longitude")
+        raise ValidationError(f"{label} source must be latitude,longitude")
     try:
         latitude = float(parts[0])
         longitude = float(parts[1])
     except ValueError as exc:
-        raise ValidationError("openmeteo source must use numeric latitude and longitude") from exc
+        raise ValidationError(f"{label} source must use numeric latitude and longitude") from exc
     if not -90 <= latitude <= 90:
-        raise ValidationError("openmeteo latitude must be between -90 and 90")
+        raise ValidationError(f"{label} latitude must be between -90 and 90")
     if not -180 <= longitude <= 180:
-        raise ValidationError("openmeteo longitude must be between -180 and 180")
+        raise ValidationError(f"{label} longitude must be between -180 and 180")
     return latitude, longitude
 
 
@@ -6824,8 +6921,22 @@ def _openmeteo_date_to_iso(value: str) -> str | None:
         return None
 
 
+def _openmeteo_time_to_iso(value: str) -> str | None:
+    try:
+        return parse_timestamp(value, field_name="openmeteo forecast time")
+    except ValidationError:
+        return None
+
+
 def _openmeteo_daily_float(daily: dict, key: str, index: int) -> float | None:
     rows = daily.get(key)
+    if not isinstance(rows, list) or index >= len(rows):
+        return None
+    return _optional_float(rows[index])
+
+
+def _openmeteo_hourly_float(hourly: dict, key: str, index: int) -> float | None:
+    rows = hourly.get(key)
     if not isinstance(rows, list) or index >= len(rows):
         return None
     return _optional_float(rows[index])

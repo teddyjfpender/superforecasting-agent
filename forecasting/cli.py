@@ -86,6 +86,7 @@ from forecasting.source_adapters import (
     load_nasa_eonet_events,
     load_nws_alerts,
     load_openfda_drug_applications,
+    load_openmeteo_air_quality_forecasts,
     load_openmeteo_daily_forecasts,
     load_openalex_works,
     load_owid_observations,
@@ -141,6 +142,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "domain": "daily weather forecasts",
         "import_command": "forecast import openmeteo <lat,lon> --question <id>",
         "watch_prefix": "openmeteo:<lat,lon>",
+    },
+    {
+        "name": "airquality",
+        "domain": "hourly air-quality forecasts",
+        "import_command": "forecast import airquality <lat,lon> --question <id>",
+        "watch_prefix": "airquality:<lat,lon>",
     },
     {
         "name": "usgs",
@@ -529,6 +536,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "nvd",
         "cisakev",
         "openmeteo",
+        "airquality",
         "usgs",
         "eonet",
         "nws",
@@ -609,6 +617,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "nvd",
             "cisakev",
             "openmeteo",
+            "airquality",
             "usgs",
             "eonet",
             "nws",
@@ -635,7 +644,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         }:
             adapter.add_argument("--limit", type=int, default=10)
             adapter.add_argument("--since")
-            default_claim_type = "estimate" if name == "fivethirtyeight" else "fact"
+            default_claim_type = "estimate" if name in {"fivethirtyeight", "openmeteo", "airquality"} else "fact"
             adapter.add_argument("--claim-type", choices=sorted(EVIDENCE_CLAIM_TYPES), default=default_claim_type)
             adapter.add_argument("--reliability", type=float)
             adapter.add_argument("--relevance", type=float)
@@ -739,6 +748,13 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://api.open-meteo.com/v1/forecast",
                 help="Override Open-Meteo forecast API endpoint for tests or private mirrors",
+            )
+        if name == "airquality":
+            adapter.add_argument("--forecast-days", type=int, default=5)
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://air-quality-api.open-meteo.com/v1/air-quality",
+                help="Override Open-Meteo Air Quality API endpoint for tests or private mirrors",
             )
         if name == "usgs":
             adapter.add_argument(
@@ -3461,6 +3477,63 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} openmeteo evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "airquality":
+        if not args.question_id:
+            raise SystemExit("forecast import airquality requires --question")
+        forecasts = load_openmeteo_air_quality_forecasts(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            forecast_days=args.forecast_days,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for forecast in forecasts:
+            summary = (
+                f"Open-Meteo air quality forecast for {forecast.latitude:g},{forecast.longitude:g} "
+                f"at {forecast.forecast_time}: US AQI {forecast.us_aqi}, "
+                f"European AQI {forecast.european_aqi}, PM2.5 {forecast.pm2_5}, "
+                f"PM10 {forecast.pm10}, CO {forecast.carbon_monoxide}, "
+                f"NO2 {forecast.nitrogen_dioxide}, O3 {forecast.ozone}."
+            )
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=f"OpenMeteoAirQuality:{forecast.latitude:g},{forecast.longitude:g}:{forecast.forecast_time}",
+                    source_name=forecast.source_name,
+                    source_type="adapter:airquality",
+                    available_at=args.as_of,
+                    claim=(
+                        f"Open-Meteo air quality forecast {forecast.forecast_time}: "
+                        f"US AQI {forecast.us_aqi}, PM2.5 {forecast.pm2_5}"
+                    ),
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "airquality",
+                        "latitude": forecast.latitude,
+                        "longitude": forecast.longitude,
+                        "forecast_time": forecast.forecast_time,
+                        "us_aqi": forecast.us_aqi,
+                        "european_aqi": forecast.european_aqi,
+                        "pm10": forecast.pm10,
+                        "pm2_5": forecast.pm2_5,
+                        "carbon_monoxide": forecast.carbon_monoxide,
+                        "nitrogen_dioxide": forecast.nitrogen_dioxide,
+                        "ozone": forecast.ozone,
+                        "api_base_url": args.api_base_url,
+                        "forecast_days": args.forecast_days,
+                        "raw": forecast.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} airquality evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

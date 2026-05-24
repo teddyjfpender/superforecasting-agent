@@ -40,6 +40,7 @@ from forecasting.source_adapters import (
     NvdCve,
     NwsAlert,
     OpenFdaDrugApplication,
+    OpenMeteoAirQualityForecast,
     OpenMeteoDailyForecast,
     OpenAlexWork,
     OwidObservation,
@@ -2418,6 +2419,65 @@ def test_watched_openmeteo_source_creates_alert_on_forecast_change(tmp_path, mon
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert f"forecast import openmeteo 37.77,-122.42 --question {question.id}" in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_airquality_source_creates_alert_on_forecast_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched air-quality forecasts be detected?",
+        resolution_criteria="Resolved yes if watched air-quality forecast changes create alerts.",
+    )
+    us_aqi_values = [42.0]
+    captured_sources = []
+
+    def fake_load_openmeteo_air_quality_forecasts(source: str, **kwargs):
+        captured_sources.append(source)
+        return [
+            OpenMeteoAirQualityForecast(
+                latitude=37.77,
+                longitude=-122.42,
+                forecast_time="2026-05-21T00:00:00Z",
+                us_aqi=us_aqi_values[0],
+                european_aqi=31.0,
+                pm10=12.0,
+                pm2_5=8.4,
+                carbon_monoxide=220.0,
+                nitrogen_dioxide=16.0,
+                ozone=80.0,
+                source_name="Open-Meteo Air Quality",
+                entry_id="37.77,-122.42:2026-05-21T00:00:00Z",
+                raw={"us_aqi": us_aqi_values[0]},
+            )
+        ]
+
+    monkeypatch.setattr(
+        "forecasting.source_adapters.load_openmeteo_air_quality_forecasts",
+        fake_load_openmeteo_air_quality_forecasts,
+    )
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="airquality:37.77,-122.42",
+    )
+
+    assert watch["source_type"] == "airquality"
+    assert watch["last_seen_signature"].startswith("airquality:1:")
+    assert captured_sources[-1] == "37.77,-122.42"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    us_aqi_values[0] = 60.0
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f"forecast import airquality 37.77,-122.42 --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]

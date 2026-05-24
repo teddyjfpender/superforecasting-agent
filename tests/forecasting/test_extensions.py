@@ -38,6 +38,7 @@ def test_builtin_forecast_extensions_are_registered():
     assert "nvd-cves" in names
     assert "cisa-kev" in names
     assert "openmeteo-daily-forecast" in names
+    assert "openmeteo-air-quality" in names
     assert "usgs-earthquakes" in names
     assert "nasa-eonet-events" in names
     assert "nws-alerts" in names

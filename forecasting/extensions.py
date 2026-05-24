@@ -93,6 +93,7 @@ def register_builtin_extensions() -> None:
         ("nvd-cves", "importer", "Capture NVD CVE records as timestamped security evidence."),
         ("cisa-kev", "importer", "Capture CISA Known Exploited Vulnerabilities as evidence."),
         ("openmeteo-daily-forecast", "importer", "Capture Open-Meteo daily forecasts as weather evidence."),
+        ("openmeteo-air-quality", "importer", "Capture Open-Meteo air-quality forecasts as environmental evidence."),
         ("usgs-earthquakes", "importer", "Capture USGS earthquake events as timestamped geophysical evidence."),
         ("nasa-eonet-events", "importer", "Capture NASA EONET natural events as timestamped hazard evidence."),
         ("nws-alerts", "importer", "Capture National Weather Service alerts as weather evidence."),

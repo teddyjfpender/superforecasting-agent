@@ -76,6 +76,7 @@ WATCH_SOURCE_TYPES = {
     "nvd",
     "cisakev",
     "openmeteo",
+    "airquality",
     "usgs",
     "eonet",
     "nws",
@@ -3023,7 +3024,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
+                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
                 "sec, secfacts, arxiv, openalex, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -3123,6 +3124,7 @@ class ForecastLedger:
                     "nvd",
                     "cisakev",
                     "openmeteo",
+                    "airquality",
                     "usgs",
                     "eonet",
                     "nws",
@@ -5570,6 +5572,8 @@ class ForecastLedger:
             return "cisakev"
         if source.startswith("openmeteo:"):
             return "openmeteo"
+        if source.startswith("airquality:"):
+            return "airquality"
         if source.startswith("usgs:"):
             return "usgs"
         if source.startswith("eonet:"):
@@ -5660,6 +5664,8 @@ class ForecastLedger:
             return self._cisa_kev_source_signature(source)
         if source_type == "openmeteo":
             return self._openmeteo_source_signature(source)
+        if source_type == "airquality":
+            return self._airquality_source_signature(source)
         if source_type == "usgs":
             return self._usgs_source_signature(source)
         if source_type == "eonet":
@@ -6200,6 +6206,33 @@ class ForecastLedger:
         ]
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"openmeteo:{len(payload)}:{digest}"
+
+    def _airquality_source_signature(self, source: str) -> str:
+        source_value = source.split(":", 1)[1].strip() if source.startswith("airquality:") else source.strip()
+        if not source_value:
+            return "missing:airquality:empty-coordinates"
+        try:
+            from forecasting.source_adapters import load_openmeteo_air_quality_forecasts
+
+            forecasts = load_openmeteo_air_quality_forecasts(source_value, limit=48, forecast_days=5)
+        except Exception as exc:
+            return f"missing:airquality:{source_value}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "entry_id": forecast.entry_id,
+                "forecast_time": forecast.forecast_time,
+                "carbon_monoxide": forecast.carbon_monoxide,
+                "european_aqi": forecast.european_aqi,
+                "nitrogen_dioxide": forecast.nitrogen_dioxide,
+                "ozone": forecast.ozone,
+                "pm10": forecast.pm10,
+                "pm2_5": forecast.pm2_5,
+                "us_aqi": forecast.us_aqi,
+            }
+            for forecast in forecasts
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"airquality:{len(payload)}:{digest}"
 
     def _usgs_source_signature(self, source: str) -> str:
         source_value = source.split(":", 1)[1].strip() if source.startswith("usgs:") else source.strip()
@@ -6993,6 +7026,12 @@ class ForecastLedger:
             source_value = source.split(":", 1)[1].strip() if source.startswith("openmeteo:") else source
             return (
                 f"Run `forecast import openmeteo {source_value} --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "airquality" and scope_type == "question" and scope_ref:
+            source_value = source.split(":", 1)[1].strip() if source.startswith("airquality:") else source
+            return (
+                f"Run `forecast import airquality {source_value} --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "usgs" and scope_type == "question" and scope_ref:
