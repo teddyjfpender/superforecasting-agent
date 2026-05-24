@@ -42,7 +42,7 @@ No admin rights required. The installer goes to `%LOCALAPPDATA%\superforecasting
 | `-Tag` | unset | Pin install to a specific git tag (e.g. `v0.14.0`) |
 | `-NoVenv` | off | Skip venv creation (advanced — you manage Python yourself) |
 | `-SkipSetup` | off | Skip the post-install `superforecasting-agent setup` wizard |
-| `-HermesHome` | `%LOCALAPPDATA%\superforecasting-agent` | Override data directory |
+| `-ForecastHome` | `%LOCALAPPDATA%\superforecasting-agent` | Override data directory; `-HermesHome` remains a compatibility alias |
 | `-InstallDir` | `%LOCALAPPDATA%\superforecasting-agent\superforecasting-agent` | Override code location |
 
 The installer auto-retries flaky git fetches and strips BOM from any downloaded `install.ps1` payload, so a UTF-8 BOM picked up during HTTP transit no longer breaks the `[scriptblock]::Create((irm ...))` form.
@@ -78,7 +78,7 @@ Top-to-bottom, in order:
 5. **Clones the repo** to `%LOCALAPPDATA%\superforecasting-agent\superforecasting-agent` and creates a virtualenv inside it.
 6. **Tiered `uv pip install`** — tries `.[all]` first, falls back to progressively smaller sets (`[messaging,dashboard,ext]` → `[messaging]` → `.`) if a `git+https` dep flakes on rate-limited GitHub. Prevents "single flake drops you to a bare install" failure mode.
 7. **Auto-installs messaging SDKs** keyed off `.env` — if `TELEGRAM_BOT_TOKEN` / `DISCORD_BOT_TOKEN` / `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` / `WHATSAPP_ENABLED` are present, runs `python -m ensurepip --upgrade` and targeted `pip install` calls so each platform's SDK is actually importable.
-8. **Sets `HERMES_GIT_BASH_PATH`** to the resolved `bash.exe` so Superforecasting Agent finds it deterministically in fresh shells.
+8. **Sets `SUPERFORECASTING_AGENT_GIT_BASH_PATH`** to the resolved `bash.exe` so Superforecasting Agent finds it deterministically in fresh shells. `FORECAST_GIT_BASH_PATH` and `HERMES_GIT_BASH_PATH` are also written as aliases.
 9. **Adds `%LOCALAPPDATA%\superforecasting-agent\superforecasting-agent\venv\Scripts` to User PATH** — exposes `superforecasting-agent`, `forecast`, and compatibility console scripts after you open a new terminal.
 10. **Runs `superforecasting-agent setup`** — the normal first-run wizard (model, provider, toolsets). Skip with `-SkipSetup`.
 
@@ -107,13 +107,13 @@ Superforecasting Agent's terminal tool runs commands through **Git Bash**, same 
 
 Resolution order for `bash.exe`:
 
-1. `HERMES_GIT_BASH_PATH` environment variable if set.
-2. `%LOCALAPPDATA%\superforecasting-agent\git\usr\bin\bash.exe` (installer-managed PortableGit).
-3. `%LOCALAPPDATA%\superforecasting-agent\git\bin\bash.exe` (older Git-for-Windows layout).
+1. `SUPERFORECASTING_AGENT_GIT_BASH_PATH`, then `FORECAST_GIT_BASH_PATH`, then compatibility `HERMES_GIT_BASH_PATH` if set.
+2. `%LOCALAPPDATA%\superforecasting-agent\git\bin\bash.exe` (installer-managed PortableGit).
+3. `%LOCALAPPDATA%\superforecasting-agent\git\usr\bin\bash.exe` (MinGit / fallback layout).
 4. System Git-for-Windows install (`%ProgramFiles%\Git\bin\bash.exe`, etc.).
 5. MSYS2, Cygwin, or any `bash.exe` on PATH as a last resort.
 
-The installer sets `HERMES_GIT_BASH_PATH` explicitly so fresh PowerShell sessions don't have to re-discover. Override it if you want Superforecasting Agent to use a specific bash — for example, your system Git Bash or a WSL-hosted bash via a symlink.
+The installer sets `SUPERFORECASTING_AGENT_GIT_BASH_PATH` explicitly so fresh PowerShell sessions don't have to re-discover. Override it if you want Superforecasting Agent to use a specific bash — for example, your system Git Bash or a WSL-hosted bash via a symlink.
 
 **Pitfall:** MinGit's layout is different from the full Git-for-Windows installer — bash lives under `usr\bin\bash.exe`, not `bin\bash.exe`. Superforecasting Agent checks both. If you're manually unpacking a MinGit zip, make sure you pick the **non-busybox** variant (`MinGit-*-64-bit.zip`, not `MinGit-*-busybox*.zip`) — busybox builds ship `ash` instead of `bash` and most coreutils are missing.
 
@@ -130,7 +130,7 @@ The fix is in `hermes_cli/stdio.py::configure_windows_stdio()`, called early in 
 
 Idempotent. No-op on non-Windows.
 
-**Opt out:** `HERMES_DISABLE_WINDOWS_UTF8=1` in the environment falls back to the legacy cp1252 stdio path. Useful for bisecting an encoding bug; unlikely to be the right setting in normal operation.
+**Opt out:** `SUPERFORECASTING_AGENT_DISABLE_WINDOWS_UTF8=1` in the environment falls back to the legacy cp1252 stdio path. `FORECAST_DISABLE_WINDOWS_UTF8` and `HERMES_DISABLE_WINDOWS_UTF8` remain aliases. Useful for bisecting an encoding bug; unlikely to be the right setting in normal operation.
 
 ## The editor (`Ctrl-X Ctrl-E`, `/edit`)
 
@@ -176,7 +176,7 @@ superforecasting-agent gateway install
 
 What happens under the hood:
 
-1. `schtasks /Create /SC ONLOGON /RL LIMITED /TN HermesGateway` — registers a task that runs at your login with standard (non-elevated) permissions. No UAC prompt.
+1. `schtasks /Create /SC ONLOGON /RL LIMITED /TN Superforecasting_Agent_Gateway` — registers a task that runs at your login with standard (non-elevated) permissions. No UAC prompt. The old `Hermes_Gateway` task name is still cleaned up during uninstall.
 2. If schtasks is blocked by group policy, falls back to writing a `start /min cmd.exe /d /c <wrapper>` shortcut into `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`. Same effect, slightly cruder.
 3. Spawns the gateway **detached via `pythonw.exe`** — not `python.exe`. `pythonw.exe` has no console attached, which immunizes it against `CTRL_C_EVENT` broadcasts from sibling processes (a real issue that used to kill the gateway when you Ctrl+C'd anything in the same process group).
 
@@ -250,8 +250,8 @@ These only affect native Windows installs:
 
 | Variable | Effect |
 |---|---|
-| `HERMES_GIT_BASH_PATH` | Override bash.exe discovery. Point at any bash — full Git-for-Windows, WSL bash via symlink, MSYS2, Cygwin. The installer sets this automatically. |
-| `HERMES_DISABLE_WINDOWS_UTF8` | Set to `1` to disable the UTF-8 stdio shim and fall back to the locale code page. Useful for bisecting an encoding bug. |
+| `SUPERFORECASTING_AGENT_GIT_BASH_PATH` | Override bash.exe discovery. Point at any bash — full Git-for-Windows, WSL bash via symlink, MSYS2, Cygwin. The installer sets this automatically. `FORECAST_GIT_BASH_PATH` and `HERMES_GIT_BASH_PATH` remain aliases. |
+| `SUPERFORECASTING_AGENT_DISABLE_WINDOWS_UTF8` | Set to `1` to disable the UTF-8 stdio shim and fall back to the locale code page. `FORECAST_DISABLE_WINDOWS_UTF8` and `HERMES_DISABLE_WINDOWS_UTF8` remain aliases. Useful for bisecting an encoding bug. |
 | `EDITOR` / `VISUAL` | Your editor for `/edit` and `Ctrl-X Ctrl-E`. Superforecasting Agent defaults to `notepad` if both are unset. |
 
 ## Uninstall
@@ -295,7 +295,7 @@ You hit a shebang-script invocation that bypassed the `.cmd` shim. Superforecast
 Your download of `install.ps1` picked up a UTF-8 BOM. The `irm | iex` form strips BOMs automatically; `[scriptblock]::Create((irm ...))` does not. Re-run with the simple `irm | iex` form, or download the script manually and save it without a BOM via `[IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding $false))`.
 
 **Gateway won't stay running after restart.**
-Check `superforecasting-agent gateway status` — it merges the schtasks entry, the Startup-folder shortcut (if used), and the live PID. If schtasks is registered but not running, group policy may be blocking `ONLOGON` triggers. Run `schtasks /Query /TN HermesGateway /V /FO LIST` to see the task's failure reason, or fall back to the Startup-folder path by uninstalling and reinstalling with `HERMES_GATEWAY_FORCE_STARTUP=1`.
+Check `superforecasting-agent gateway status` — it merges the schtasks entry, the Startup-folder shortcut (if used), and the live PID. If schtasks is registered but not running, group policy may be blocking `ONLOGON` triggers. Run `schtasks /Query /TN Superforecasting_Agent_Gateway /V /FO LIST` to see the task's failure reason; if task creation is blocked, `superforecasting-agent gateway install` automatically falls back to the Startup-folder path.
 
 **`/edit` still does nothing after setting `$env:EDITOR`.**
 You set it in the current process only; close and reopen the shell, or set it at User scope in System Properties → Environment Variables. Verify with `echo $env:EDITOR` in a new PowerShell window.
@@ -307,7 +307,7 @@ Chromium is auto-installed on first run. If the install failed (rate-limited Git
 The installer provisions Node 22 at `%LOCALAPPDATA%\superforecasting-agent\node` but your PATH may have an older system Node 18 first. Either move Superforecasting Agent's node dir earlier on PATH, or delete the system install if you don't use Node elsewhere.
 
 **Chinese / Japanese / Arabic characters show as `?` in the CLI.**
-The UTF-8 stdio shim didn't activate. Check that `HERMES_DISABLE_WINDOWS_UTF8` is NOT set (`Get-ChildItem env:HERMES_DISABLE_WINDOWS_UTF8`). If it's empty and you still see `?`, the console host (very old `cmd.exe`) may not support UTF-8 at all — switch to Windows Terminal.
+The UTF-8 stdio shim didn't activate. Check that `SUPERFORECASTING_AGENT_DISABLE_WINDOWS_UTF8` is NOT set (`Get-ChildItem env:SUPERFORECASTING_AGENT_DISABLE_WINDOWS_UTF8`). If it's empty and you still see `?`, the console host (very old `cmd.exe`) may not support UTF-8 at all — switch to Windows Terminal.
 
 **Gateway can't send Telegram photos — "`BadRequest: payload contains invalid characters`".**
 This is unrelated to Windows but sometimes surfaces first there. Usually it means your file path contains unescaped backslashes in a JSON body. Telegram should be receiving paths Superforecasting Agent normalizes, not raw Windows paths — if you're seeing this inside a custom plugin, make sure you're passing the Superforecasting Agent-provided path, not `str(Path(...))` from user input.

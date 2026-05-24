@@ -23,6 +23,7 @@ param(
     # exact ref.  Precedence: Commit > Tag > Branch.
     [string]$Commit = "",
     [string]$Tag = "",
+    [Alias("ForecastHome", "SuperforecastingAgentHome")]
     [string]$HermesHome = "$env:LOCALAPPDATA\superforecasting-agent",
     [string]$InstallDir = "$env:LOCALAPPDATA\superforecasting-agent\superforecasting-agent",
 
@@ -506,8 +507,9 @@ function Install-Git {
     and re-running this installer fully recovers.
 
     After install we locate ``bash.exe`` and persist the path in
-    ``HERMES_GIT_BASH_PATH`` (User scope) so the inherited runtime can find it in a fresh
-    shell without a second PATH refresh.
+    ``SUPERFORECASTING_AGENT_GIT_BASH_PATH`` plus compatibility aliases (User
+    scope) so the runtime can find it in a fresh shell without a second PATH
+    refresh.
     #>
     Write-Info "Checking Git..."
 
@@ -640,8 +642,9 @@ function Set-GitBashEnvVar {
     <#
     .SYNOPSIS
     Locate ``bash.exe`` from an already-installed Git and persist the path in
-    ``HERMES_GIT_BASH_PATH`` (User env scope) so the inherited runtime can find it even before
-    PATH propagation completes in a newly-spawned shell.
+    ``SUPERFORECASTING_AGENT_GIT_BASH_PATH`` plus compatibility aliases (User
+    env scope) so the runtime can find it even before PATH propagation
+    completes in a newly-spawned shell.
     #>
     $candidates = @()
 
@@ -677,15 +680,19 @@ function Set-GitBashEnvVar {
 
     foreach ($candidate in $candidates) {
         if ($candidate -and (Test-Path $candidate)) {
+            [Environment]::SetEnvironmentVariable("SUPERFORECASTING_AGENT_GIT_BASH_PATH", $candidate, "User")
+            [Environment]::SetEnvironmentVariable("FORECAST_GIT_BASH_PATH", $candidate, "User")
             [Environment]::SetEnvironmentVariable("HERMES_GIT_BASH_PATH", $candidate, "User")
+            $env:SUPERFORECASTING_AGENT_GIT_BASH_PATH = $candidate
+            $env:FORECAST_GIT_BASH_PATH = $candidate
             $env:HERMES_GIT_BASH_PATH = $candidate
-            Write-Info "Set HERMES_GIT_BASH_PATH=$candidate"
+            Write-Info "Set SUPERFORECASTING_AGENT_GIT_BASH_PATH=$candidate"
             return
         }
     }
 
     Write-Warn "Could not locate bash.exe -- Superforecasting Agent may not find Git Bash."
-    Write-Info "If needed, set HERMES_GIT_BASH_PATH manually to your bash.exe path."
+    Write-Info "If needed, set SUPERFORECASTING_AGENT_GIT_BASH_PATH manually to your bash.exe path."
 }
 
 function Test-Node {

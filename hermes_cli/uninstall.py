@@ -254,10 +254,12 @@ def uninstall_gateway_service():
 # The installer (``scripts/install.ps1``) does four Windows-only things that
 # ``remove_path_from_shell_configs`` / ``remove_wrapper_script`` don't cover:
 #
-#   1. Sets User-scope env vars ``HERMES_HOME`` and ``HERMES_GIT_BASH_PATH``
-#      via ``[Environment]::SetEnvironmentVariable(..., "User")``.  These
-#      don't live in ~/.bashrc — they're in the Windows registry at
-#      HKCU\Environment.
+#   1. Sets User-scope env vars ``SUPERFORECASTING_AGENT_HOME``,
+#      ``FORECAST_HOME``, ``HERMES_HOME``,
+#      ``SUPERFORECASTING_AGENT_GIT_BASH_PATH``, ``FORECAST_GIT_BASH_PATH``,
+#      and ``HERMES_GIT_BASH_PATH`` via
+#      ``[Environment]::SetEnvironmentVariable(..., "User")``.  These don't
+#      live in ~/.bashrc — they're in the Windows registry at HKCU\Environment.
 #   2. Prepends to User-scope ``PATH`` (same registry location) entries
 #      like ``%LOCALAPPDATA%\hermes\git\cmd``, ``%LOCALAPPDATA%\hermes\git\bin``,
 #      ``%LOCALAPPDATA%\hermes\git\usr\bin``, ``%LOCALAPPDATA%\hermes\node``.
@@ -332,7 +334,7 @@ def remove_path_from_windows_registry(hermes_home: Path) -> list[str]:
 
 
 def remove_hermes_env_vars_windows() -> list[str]:
-    """Delete HERMES_HOME and HERMES_GIT_BASH_PATH from User-scope env vars."""
+    """Delete fork-native and compatibility home/Git Bash User env vars."""
     try:
         import winreg
     except ImportError:
@@ -342,7 +344,14 @@ def remove_hermes_env_vars_windows() -> list[str]:
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0,
                             winreg.KEY_READ | winreg.KEY_WRITE) as key:
-            for name in ("HERMES_HOME", "HERMES_GIT_BASH_PATH"):
+            for name in (
+                "SUPERFORECASTING_AGENT_HOME",
+                "FORECAST_HOME",
+                "HERMES_HOME",
+                "SUPERFORECASTING_AGENT_GIT_BASH_PATH",
+                "FORECAST_GIT_BASH_PATH",
+                "HERMES_GIT_BASH_PATH",
+            ):
                 try:
                     winreg.QueryValueEx(key, name)
                 except FileNotFoundError:
@@ -597,7 +606,7 @@ def run_uninstall(args):
         else:
             log_info("No Superforecasting Agent/Hermes-owned PATH entries in User environment")
 
-        log_info("Removing HERMES_HOME / HERMES_GIT_BASH_PATH User env vars...")
+        log_info("Removing Superforecasting Agent User env vars...")
         removed_env = remove_hermes_env_vars_windows()
         if removed_env:
             for name in removed_env:

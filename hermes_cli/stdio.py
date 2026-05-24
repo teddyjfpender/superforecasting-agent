@@ -90,8 +90,10 @@ def configure_windows_stdio() -> bool:
     Returns ``True`` if anything was actually changed, ``False`` on
     non-Windows or on a repeat call.
 
-    Set ``HERMES_DISABLE_WINDOWS_UTF8=1`` in the environment to opt out
-    (for diagnosing encoding-related bugs by forcing the old cp1252 path).
+    Set ``SUPERFORECASTING_AGENT_DISABLE_WINDOWS_UTF8=1`` in the environment
+    to opt out (for diagnosing encoding-related bugs by forcing the old
+    cp1252 path). ``FORECAST_DISABLE_WINDOWS_UTF8`` and legacy
+    ``HERMES_DISABLE_WINDOWS_UTF8`` are accepted as aliases.
 
     Also sets a sensible default ``EDITOR`` on Windows if none is already
     set — see :func:`_default_windows_editor`.
@@ -105,7 +107,14 @@ def configure_windows_stdio() -> bool:
         _CONFIGURED = True
         return False
 
-    if os.environ.get("HERMES_DISABLE_WINDOWS_UTF8") in {"1", "true", "True", "yes"}:
+    if any(
+        os.environ.get(name) in {"1", "true", "True", "yes"}
+        for name in (
+            "SUPERFORECASTING_AGENT_DISABLE_WINDOWS_UTF8",
+            "FORECAST_DISABLE_WINDOWS_UTF8",
+            "HERMES_DISABLE_WINDOWS_UTF8",
+        )
+    ):
         _CONFIGURED = True
         return False
 

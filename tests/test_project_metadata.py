@@ -238,6 +238,12 @@ def test_standalone_gateway_script_is_forecast_native():
 def test_windows_gateway_service_names_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "hermes_cli" / "gateway_windows.py").read_text(encoding="utf-8")
+    windows_doc = (root / "website" / "docs" / "user-guide" / "windows-native.md").read_text(
+        encoding="utf-8"
+    )
+    env_reference = (root / "website" / "docs" / "reference" / "environment-variables.md").read_text(
+        encoding="utf-8"
+    )
 
     assert '_TASK_NAME_DEFAULT = "Superforecasting_Agent_Gateway"' in text
     assert '_LEGACY_TASK_NAME_DEFAULT = "Hermes_Gateway"' in text
@@ -248,6 +254,13 @@ def test_windows_gateway_service_names_are_forecast_native():
     assert "def get_legacy_task_name()" in text
     assert "def get_legacy_startup_entry_path()" in text
     assert "def get_legacy_task_script_path()" in text
+    assert "/TN Superforecasting_Agent_Gateway" in windows_doc
+    assert "/TN HermesGateway" not in windows_doc
+    assert "`SUPERFORECASTING_AGENT_GIT_BASH_PATH`" in windows_doc
+    assert "`SUPERFORECASTING_AGENT_DISABLE_WINDOWS_UTF8`" in windows_doc
+    assert "`-ForecastHome`" in windows_doc
+    assert "`SUPERFORECASTING_AGENT_GIT_BASH_PATH` / `FORECAST_GIT_BASH_PATH`" in env_reference
+    assert "`SUPERFORECASTING_AGENT_DISABLE_WINDOWS_UTF8` / `FORECAST_DISABLE_WINDOWS_UTF8`" in env_reference
 
 
 def test_install_helpers_use_forecast_native_visible_copy():
@@ -261,6 +274,10 @@ def test_install_helpers_use_forecast_native_visible_copy():
     assert "`superforecasting-agent dashboard` should now work" in install_ps1
     assert "Superforecasting Agent needs Git Bash" in install_ps1
     assert "forecast-runtime-managed" in install_ps1
+    assert '[Alias("ForecastHome", "SuperforecastingAgentHome")]' in install_ps1
+    assert "SUPERFORECASTING_AGENT_GIT_BASH_PATH" in install_ps1
+    assert "FORECAST_GIT_BASH_PATH" in install_ps1
+    assert 'Write-Info "Set HERMES_GIT_BASH_PATH=' not in install_ps1
     assert "Cloning Hermes repository" not in install_ps1
     assert "Adding Hermes to PATH" not in install_ps1
     assert "`hermes dashboard` will not work" not in install_ps1

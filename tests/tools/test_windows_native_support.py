@@ -36,7 +36,7 @@ class TestConfigureWindowsStdio:
     - set PYTHONIOENCODING / PYTHONUTF8 without overriding explicit user settings
     - reconfigure sys.stdout/stderr/stdin to UTF-8 on Windows
     - flip the console code page to CP_UTF8 (65001) via ctypes
-    - respect HERMES_DISABLE_WINDOWS_UTF8 opt-out
+    - respect fork-native and legacy DISABLE_WINDOWS_UTF8 opt-outs
     """
 
     @pytest.fixture(autouse=True)
@@ -72,6 +72,8 @@ class TestConfigureWindowsStdio:
         # Pretend the user has no prior setting
         monkeypatch.delenv("PYTHONIOENCODING", raising=False)
         monkeypatch.delenv("PYTHONUTF8", raising=False)
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_DISABLE_WINDOWS_UTF8", raising=False)
+        monkeypatch.delenv("FORECAST_DISABLE_WINDOWS_UTF8", raising=False)
         monkeypatch.delenv("HERMES_DISABLE_WINDOWS_UTF8", raising=False)
         monkeypatch.delenv("EDITOR", raising=False)
         monkeypatch.delenv("VISUAL", raising=False)
@@ -145,12 +147,23 @@ class TestConfigureWindowsStdio:
         stdio.configure_windows_stdio()
         assert os.environ["PYTHONIOENCODING"] == "latin-1"
 
+    @pytest.mark.parametrize(
+        "env_var",
+        [
+            "SUPERFORECASTING_AGENT_DISABLE_WINDOWS_UTF8",
+            "FORECAST_DISABLE_WINDOWS_UTF8",
+            "HERMES_DISABLE_WINDOWS_UTF8",
+        ],
+    )
     @pytest.mark.parametrize("optout", ["1", "true", "True", "yes"])
-    def test_disable_flag_short_circuits(self, monkeypatch, optout):
+    def test_disable_flag_short_circuits(self, monkeypatch, optout, env_var):
         from hermes_cli import stdio
 
         monkeypatch.setattr(stdio, "is_windows", lambda: True)
-        monkeypatch.setenv("HERMES_DISABLE_WINDOWS_UTF8", optout)
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_DISABLE_WINDOWS_UTF8", raising=False)
+        monkeypatch.delenv("FORECAST_DISABLE_WINDOWS_UTF8", raising=False)
+        monkeypatch.delenv("HERMES_DISABLE_WINDOWS_UTF8", raising=False)
+        monkeypatch.setenv(env_var, optout)
 
         reconfigure_hit = []
         monkeypatch.setattr(
@@ -690,6 +703,49 @@ class TestCronSchedulerBashResolution:
         # Windows users without Git Bash see an actionable error instead
         # of a WinError 2 traceback.
         assert "bash not found" in source.lower()
+
+
+class TestLocalEnvironmentFindBash:
+    """Windows shell lookup should prefer fork-native Git Bash surfaces."""
+
+    def test_uses_forecast_native_git_bash_env_alias(self, tmp_path, monkeypatch):
+        from tools.environments import local
+
+        bash = tmp_path / "bash.exe"
+        bash.write_text("")
+        monkeypatch.setattr(local, "_IS_WINDOWS", True)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_GIT_BASH_PATH", str(bash))
+        monkeypatch.delenv("FORECAST_GIT_BASH_PATH", raising=False)
+        monkeypatch.delenv("HERMES_GIT_BASH_PATH", raising=False)
+
+        assert local._find_bash() == str(bash)
+
+    def test_skips_missing_primary_git_bash_alias_and_uses_legacy(self, tmp_path, monkeypatch):
+        from tools.environments import local
+
+        bash = tmp_path / "legacy-bash.exe"
+        bash.write_text("")
+        monkeypatch.setattr(local, "_IS_WINDOWS", True)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_GIT_BASH_PATH", str(tmp_path / "missing.exe"))
+        monkeypatch.delenv("FORECAST_GIT_BASH_PATH", raising=False)
+        monkeypatch.setenv("HERMES_GIT_BASH_PATH", str(bash))
+
+        assert local._find_bash() == str(bash)
+
+    def test_uses_forecast_native_localappdata_portable_git(self, tmp_path, monkeypatch):
+        from tools.environments import local
+
+        bash = tmp_path / "superforecasting-agent" / "git" / "bin" / "bash.exe"
+        bash.parent.mkdir(parents=True)
+        bash.write_text("")
+        monkeypatch.setattr(local, "_IS_WINDOWS", True)
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_GIT_BASH_PATH", raising=False)
+        monkeypatch.delenv("FORECAST_GIT_BASH_PATH", raising=False)
+        monkeypatch.delenv("HERMES_GIT_BASH_PATH", raising=False)
+        monkeypatch.setattr(local.shutil, "which", lambda _name: None)
+
+        assert local._find_bash() == str(bash)
 
 
 # ---------------------------------------------------------------------------

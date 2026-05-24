@@ -227,9 +227,14 @@ def _find_bash() -> str:
             or "/bin/sh"
         )
 
-    custom = os.environ.get("HERMES_GIT_BASH_PATH")
-    if custom and os.path.isfile(custom):
-        return custom
+    for env_name in (
+        "SUPERFORECASTING_AGENT_GIT_BASH_PATH",
+        "FORECAST_GIT_BASH_PATH",
+        "HERMES_GIT_BASH_PATH",
+    ):
+        custom = os.environ.get(env_name)
+        if custom and os.path.isfile(custom):
+            return custom
 
     # Prefer our own portable Git install first — this way a broken or
     # partially-uninstalled system Git can't hijack the bash lookup.  The
@@ -238,17 +243,19 @@ def _find_bash() -> str:
     #
     # Layouts (both checked so upgrades between MinGit and PortableGit
     # installs work transparently):
-    #   PortableGit: %LOCALAPPDATA%\hermes\git\bin\bash.exe   (primary)
-    #   MinGit:      %LOCALAPPDATA%\hermes\git\usr\bin\bash.exe (legacy/32-bit fallback)
+    #   PortableGit: %LOCALAPPDATA%\superforecasting-agent\git\bin\bash.exe
+    #   MinGit:      %LOCALAPPDATA%\superforecasting-agent\git\usr\bin\bash.exe
+    #   Legacy:      %LOCALAPPDATA%\hermes\git\...
     _local_appdata = os.environ.get("LOCALAPPDATA", "")
-    _hermes_portable_git = os.path.join(_local_appdata, "hermes", "git") if _local_appdata else ""
-    if _hermes_portable_git:
-        for candidate in (
-            os.path.join(_hermes_portable_git, "bin", "bash.exe"),        # PortableGit (primary)
-            os.path.join(_hermes_portable_git, "usr", "bin", "bash.exe"), # MinGit fallback
-        ):
-            if os.path.isfile(candidate):
-                return candidate
+    if _local_appdata:
+        for root_name in ("superforecasting-agent", "hermes"):
+            portable_git = os.path.join(_local_appdata, root_name, "git")
+            for candidate in (
+                os.path.join(portable_git, "bin", "bash.exe"),
+                os.path.join(portable_git, "usr", "bin", "bash.exe"),
+            ):
+                if os.path.isfile(candidate):
+                    return candidate
 
     found = shutil.which("bash")
     if found:
@@ -265,7 +272,7 @@ def _find_bash() -> str:
     raise RuntimeError(
         "Git Bash not found. Superforecasting Agent requires Git for Windows on Windows.\n"
         "Install it from: https://git-scm.com/download/win\n"
-        "Or set HERMES_GIT_BASH_PATH to your bash.exe location."
+        "Or set SUPERFORECASTING_AGENT_GIT_BASH_PATH to your bash.exe location."
     )
 
 
