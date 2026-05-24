@@ -144,7 +144,7 @@ Termux support is inherited from the upstream installer path. It can work for ba
 
 ### Nix
 
-The inherited Nix and NixOS module docs remain available in [Nix & NixOS Setup](./nix-setup.md). Treat Hermes-named services and paths in that page as compatibility surfaces until the Nix packaging is fully renamed.
+The Nix and NixOS module docs are available in [Nix & NixOS Setup](./nix-setup.md). New installs should use the fork-native `superforecasting-agent` package, `forecast`/`superforecasting-agent` commands, and `services.superforecasting-agent` module; Hermes-named attributes and services remain compatibility aliases for existing installs.
 
 ## Updating
 

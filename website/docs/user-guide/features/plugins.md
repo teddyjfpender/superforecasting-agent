@@ -124,7 +124,7 @@ Every `ctx.*` API below is available inside a Python plugin's `register(ctx)` fu
 | User | `~/.superforecasting-agent/plugins/` | Personal plugins |
 | Project | `.hermes/plugins/` | Project-specific plugins (inherited directory name; requires `SUPERFORECASTING_AGENT_ENABLE_PROJECT_PLUGINS=true` or an accepted alias) |
 | pip | `hermes_agent.plugins` entry_points | Distributed packages |
-| Nix | `services.hermes-agent.extraPlugins` / `extraPythonPackages` | NixOS declarative installs through the inherited module - see [Nix Setup](/docs/getting-started/nix-setup#plugins) |
+| Nix | `services.superforecasting-agent.extraPlugins` / `extraPythonPackages` | NixOS declarative installs through the fork-native module; `services.hermes-agent` remains a legacy alias - see [Nix Setup](/docs/getting-started/nix-setup#plugins) |
 
 Later sources override earlier ones on name collision, so a user plugin with the same name as a bundled plugin replaces it.
 
@@ -249,10 +249,10 @@ Not everything is a Python plugin. Some extension surfaces intentionally use **c
 
 ## NixOS declarative extensions
 
-On NixOS, extensions can be installed declaratively via the inherited module options, so no `superforecasting-agent plugins install` is needed. See the **[Nix Setup guide](/docs/getting-started/nix-setup#plugins)** for full details.
+On NixOS, extensions can be installed declaratively via the forecast-native module options, so no `superforecasting-agent plugins install` is needed. See the **[Nix Setup guide](/docs/getting-started/nix-setup#plugins)** for full details. Existing `services.hermes-agent` configs continue to work as a compatibility alias.
 
 ```nix
-services.hermes-agent = {
+services.superforecasting-agent = {
   # Directory extension (source tree with plugin.yaml)
   extraPlugins = [ (pkgs.fetchFromGitHub { ... }) ];
   # Entry-point extension (pip package)

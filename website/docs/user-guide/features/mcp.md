@@ -384,7 +384,7 @@ Example MCP client config:
 }
 ```
 
-If only the inherited binary exists:
+If you are temporarily bridging an inherited Hermes virtualenv during the fork transition:
 
 ```json
 {

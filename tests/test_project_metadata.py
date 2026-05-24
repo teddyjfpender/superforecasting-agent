@@ -1836,6 +1836,12 @@ def test_nix_package_aliases_are_forecast_native():
     nix_docs = (root / "website" / "docs" / "getting-started" / "nix-setup.md").read_text(
         encoding="utf-8"
     )
+    install_docs = (root / "website" / "docs" / "getting-started" / "installation.md").read_text(
+        encoding="utf-8"
+    )
+    plugin_docs = (
+        root / "website" / "docs" / "user-guide" / "features" / "plugins.md"
+    ).read_text(encoding="utf-8")
 
     assert 'pname = "superforecasting-agent"' in nix_package
     assert 'homepage = "https://github.com/NousResearch/superforecasting-agent"' in nix_package
@@ -1963,6 +1969,15 @@ def test_nix_package_aliases_are_forecast_native():
     assert 'pkgs."superforecasting-agent".override' in nix_docs
     assert "docker exec -it superforecasting-agent" in nix_docs
     assert "`pkgs.\"hermes-agent\"` remain compatibility names" in nix_docs
+    assert "my-registry/superforecasting-agent-base:latest" in nix_docs
+    assert "my-registry/hermes-base:latest" not in nix_docs
+    assert "`services.superforecasting-agent` module" in install_docs
+    assert "until the Nix packaging is fully renamed" not in install_docs
+    assert "services.superforecasting-agent.extraPlugins" in plugin_docs
+    assert "services.superforecasting-agent = {" in plugin_docs
+    assert "services.hermes-agent.extraPlugins" not in plugin_docs
+    assert "services.hermes-agent = {" not in plugin_docs
+    assert "legacy alias" in plugin_docs
 
 
 def test_revision_env_aliases_are_forecast_native():
