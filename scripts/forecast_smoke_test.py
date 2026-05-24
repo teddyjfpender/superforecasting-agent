@@ -25,6 +25,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "fivethirtyeight",
     "data",
     "owid",
+    "whogho",
     "openmeteo",
     "airquality",
     "weatherhistory",

@@ -117,6 +117,7 @@ forecast --db "$FORECAST_DB" import bluesky "topic query" --question <id>
 forecast --db "$FORECAST_DB" import mastodon mastodon.social/forecasting --question <id>
 forecast --db "$FORECAST_DB" import courtlistener "case or legal query" --question <id>
 forecast --db "$FORECAST_DB" import cisakev CVE-2026-0001 --question <id>
+forecast --db "$FORECAST_DB" import whogho WHOSIS_000001 --country USA --question <id>
 ```
 
 Add a base rate and a model run:

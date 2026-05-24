@@ -111,6 +111,7 @@ from forecasting.source_adapters import (
     load_usgs_earthquakes,
     load_wikipedia_pages,
     load_wikimedia_pageviews,
+    load_who_gho_observations,
     load_worldbank_observations,
     load_yahoo_finance_prices,
 )
@@ -145,6 +146,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "domain": "public indicator data",
         "import_command": 'forecast import owid <grapher-slug> --entity "<entity>" --question <id>',
         "watch_prefix": "owid:<grapher-slug>",
+    },
+    {
+        "name": "whogho",
+        "domain": "global health indicator data",
+        "import_command": "forecast import whogho <indicator-code> --country <ISO3> --question <id>",
+        "watch_prefix": "whogho:<indicator-code>",
     },
     {
         "name": "openmeteo",
@@ -587,6 +594,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "openfda",
         "pubmed",
         "owid",
+        "whogho",
         "fred",
         "eia",
         "treasury",
@@ -673,6 +681,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "openfda",
             "pubmed",
             "owid",
+            "whogho",
             "fred",
             "eia",
             "treasury",
@@ -885,6 +894,19 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 "--api-base-url",
                 default="https://ourworldindata.org/grapher",
                 help="Override Our World in Data grapher base URL for tests or private mirrors",
+            )
+        if name == "whogho":
+            adapter.add_argument("--country", help="Filter WHO GHO rows by SpatialDim ISO3 country code")
+            adapter.add_argument(
+                "--dimension",
+                action="append",
+                default=[],
+                help="Add a WHO GHO OData dimension filter as KEY=VALUE; can be repeated",
+            )
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://ghoapi.azureedge.net/api",
+                help="Override WHO GHO OData API base URL for tests or private mirrors",
             )
         if name == "fred":
             adapter.add_argument(
@@ -3972,6 +3994,69 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} owid evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "whogho":
+        if not args.question_id:
+            raise SystemExit("forecast import whogho requires --question")
+        observations = load_who_gho_observations(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            country=args.country,
+            dimensions=args.dimension,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for observation in observations:
+            geography = f" {observation.spatial_dim}" if observation.spatial_dim else ""
+            time_label = f" {observation.time_dim}" if observation.time_dim else ""
+            interval = ""
+            if observation.low is not None or observation.high is not None:
+                interval = f" (low {observation.low}, high {observation.high})"
+            summary = (
+                f"WHO GHO observation for {observation.indicator}{geography}{time_label}: "
+                f"{observation.value}{interval}."
+            )
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=observation.source_url or f"WHOGHO:{observation.indicator}",
+                    source_url=observation.source_url,
+                    source_name=observation.source_name,
+                    source_type="adapter:whogho",
+                    published_at=observation.published_at,
+                    available_at=observation.published_at or args.as_of,
+                    claim=(
+                        f"WHO GHO {observation.indicator}{geography}{time_label}: "
+                        f"{observation.value}"
+                    ),
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "whogho",
+                        "indicator": observation.indicator,
+                        "spatial_dim": observation.spatial_dim,
+                        "time_dim": observation.time_dim,
+                        "dim1": observation.dim1,
+                        "dim2": observation.dim2,
+                        "dim3": observation.dim3,
+                        "value": observation.value,
+                        "numeric_value": observation.numeric_value,
+                        "low": observation.low,
+                        "high": observation.high,
+                        "country_filter": args.country,
+                        "dimension_filters": args.dimension,
+                        "api_base_url": args.api_base_url,
+                        "raw": observation.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} whogho evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

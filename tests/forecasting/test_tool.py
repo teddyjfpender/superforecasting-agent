@@ -36,6 +36,7 @@ from forecasting.source_adapters import (
     TreasuryRecord,
     UsgsEarthquakeEvent,
     WikimediaPageviewObservation,
+    WhoGhoObservation,
     YahooFinancePriceObservation,
 )
 from hermes_cli.tools_config import _get_platform_tools
@@ -119,7 +120,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "whogho", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_imports_airquality_forecasts(tmp_path, monkeypatch):
@@ -188,6 +189,76 @@ def test_forecast_ledger_tool_imports_airquality_forecasts(tmp_path, monkeypatch
     assert evidence["claim"].startswith("Open-Meteo air quality forecast for 37.77,-122.42")
     assert evidence["metadata"]["adapter"] == "airquality"
     assert evidence["metadata"]["adapter_item"]["us_aqi"] == 42
+
+
+def test_forecast_ledger_tool_imports_who_gho_observations(tmp_path, monkeypatch):
+    db = str(tmp_path / "forecasting.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will WHO GHO observations import through the tool?",
+                "resolution_criteria": "Resolved yes if WHO GHO evidence is imported.",
+            }
+        )
+    )
+    question_id = created["question"]["id"]
+    captured = {}
+
+    def fake_who_gho(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            WhoGhoObservation(
+                indicator="WHOSIS_000001",
+                spatial_dim="USA",
+                time_dim="2025",
+                dim1="BTSX",
+                dim2=None,
+                dim3=None,
+                value=77.4,
+                numeric_value=77.4,
+                low=75.0,
+                high=79.0,
+                published_at="2025-01-01T00:00:00Z",
+                source_url="https://ghoapi.azureedge.net/api/WHOSIS_000001",
+                source_name="WHO Global Health Observatory",
+                entry_id="WHOSIS_000001:USA:2025",
+                raw={"NumericValue": 77.4},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_who_gho_observations", fake_who_gho)
+    imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "whogho",
+                "source": "WHOSIS_000001",
+                "limit": 5,
+                "country": "USA",
+                "dimension": ["Dim1=BTSX"],
+                "api_base_url": "https://who.test/api",
+            }
+        )
+    )
+
+    assert captured["source"] == "WHOSIS_000001"
+    assert captured["kwargs"]["limit"] == 5
+    assert captured["kwargs"]["country"] == "USA"
+    assert captured["kwargs"]["dimensions"] == ["Dim1=BTSX"]
+    assert captured["kwargs"]["api_base_url"] == "https://who.test/api"
+    assert imported["imported_count"] == 1
+    evidence = imported["imported"][0]["evidence"]
+    assert evidence["source_type"] == "adapter:whogho"
+    assert evidence["source_name"] == "WHO Global Health Observatory"
+    assert evidence["published_at"] == "2025-01-01T00:00:00Z"
+    assert evidence["claim"] == "WHO GHO WHOSIS_000001 USA 2025: 77.4"
+    assert evidence["metadata"]["adapter"] == "whogho"
+    assert evidence["metadata"]["adapter_item"]["numeric_value"] == 77.4
 
 
 def test_forecast_ledger_tool_imports_weatherhistory_observations(tmp_path, monkeypatch):

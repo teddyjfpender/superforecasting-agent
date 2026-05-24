@@ -91,6 +91,7 @@ WATCH_SOURCE_TYPES = {
     "pypi",
     "npm",
     "owid",
+    "whogho",
     "fred",
     "eia",
     "treasury",
@@ -3030,7 +3031,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, bluesky, mastodon, reliefweb, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
+                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, bluesky, mastodon, reliefweb, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, whogho, fred, eia, treasury, bls, worldbank, census, socrata, stooq, yahoo, "
                 "sec, secfacts, arxiv, openalex, crossref, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -3142,6 +3143,7 @@ class ForecastLedger:
                     "openfda",
                     "pubmed",
                     "owid",
+                    "whogho",
                     "fred",
                     "eia",
                     "treasury",
@@ -5668,6 +5670,8 @@ class ForecastLedger:
             return "pubmed"
         if source.startswith("owid:"):
             return "owid"
+        if source.startswith("whogho:"):
+            return "whogho"
         if source.startswith("fred:"):
             return "fred"
         if source.startswith("eia:"):
@@ -5770,6 +5774,8 @@ class ForecastLedger:
             return self._pubmed_source_signature(source)
         if source_type == "owid":
             return self._owid_source_signature(source)
+        if source_type == "whogho":
+            return self._who_gho_source_signature(source)
         if source_type == "fred":
             return self._fred_source_signature(source)
         if source_type == "eia":
@@ -6600,6 +6606,36 @@ class ForecastLedger:
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"owid:{len(payload)}:{digest}"
 
+    def _who_gho_source_signature(self, source: str) -> str:
+        source_value = source.split(":", 1)[1].strip() if source.startswith("whogho:") else source.strip()
+        if not source_value:
+            return "missing:whogho:empty-source"
+        try:
+            from forecasting.source_adapters import load_who_gho_observations
+
+            observations = load_who_gho_observations(source_value, limit=50)
+        except Exception as exc:
+            return f"missing:whogho:{source_value}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "dim1": observation.dim1,
+                "dim2": observation.dim2,
+                "dim3": observation.dim3,
+                "entry_id": observation.entry_id,
+                "high": observation.high,
+                "indicator": observation.indicator,
+                "low": observation.low,
+                "numeric_value": observation.numeric_value,
+                "published_at": observation.published_at,
+                "spatial_dim": observation.spatial_dim,
+                "time_dim": observation.time_dim,
+                "value": observation.value,
+            }
+            for observation in observations
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"whogho:{len(payload)}:{digest}"
+
     def _fred_source_signature(self, source: str) -> str:
         series_id = source.split(":", 1)[1].strip() if source.startswith("fred:") else source.strip()
         if not series_id:
@@ -7331,6 +7367,12 @@ class ForecastLedger:
             source_value = source.split(":", 1)[1].strip() if source.startswith("owid:") else source
             return (
                 f"Run `forecast import owid {source_value} --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "whogho" and scope_type == "question" and scope_ref:
+            source_value = source.split(":", 1)[1].strip() if source.startswith("whogho:") else source
+            return (
+                f"Run `forecast import whogho {source_value} --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "fred" and scope_type == "question" and scope_ref:

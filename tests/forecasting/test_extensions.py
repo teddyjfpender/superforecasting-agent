@@ -49,6 +49,7 @@ def test_builtin_forecast_extensions_are_registered():
     assert "openfda-drug-applications" in names
     assert "pubmed-articles" in names
     assert "owid-grapher" in names
+    assert "who-gho-indicators" in names
     assert "eia-energy-data" in names
     assert "treasury-fiscal-data" in names
     assert "bls-economic-data" in names

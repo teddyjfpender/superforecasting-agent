@@ -105,6 +105,7 @@ forecast import cisakev CVE-2026-0001 --question <id>
 forecast import clinicaltrials "NCT01234567" --question <id>
 forecast import openfda "BLA125514" --question <id>
 forecast import pubmed "forecasting calibration" --question <id>
+forecast import whogho WHOSIS_000001 --country USA --question <id>
 forecast import openmeteo 38.7,-9.1 --question <id>
 forecast import airquality 38.7,-9.1 --question <id>
 forecast import weatherhistory 38.7,-9.1 --start-date 2025-01-01 --end-date 2025-12-31 --question <id>
@@ -193,6 +194,7 @@ forecast watch add --question <id> census:"2023/acs/acs5?get=NAME,B01003_001E&fo
 forecast watch add --question <id> socrata:data.cdc.gov/abcd-1234
 forecast watch add --question <id> cisakev:CVE-2026-0001
 forecast watch add --question <id> pubmed:"forecasting calibration"
+forecast watch add --question <id> whogho:WHOSIS_000001
 forecast watch add --question <id> owid:grapher-slug
 forecast watch add --question <id> yahoo:AAPL
 forecast watch add --question <id> coingecko:bitcoin

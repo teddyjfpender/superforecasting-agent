@@ -46,6 +46,10 @@ const EVIDENCE_IMPORTS = [
     label: "Public data",
   },
   {
+    command: "forecast import whogho <indicator-code> --country <ISO3> --question <id>",
+    label: "Health",
+  },
+  {
     command: "forecast import eia <series-id-or-api-url> --question <id>",
     label: "Energy",
   },
@@ -124,6 +128,10 @@ const EVIDENCE_IMPORTS = [
   {
     command: 'forecast import pubmed "<query-or-PMID>" --question <id>',
     label: "PubMed",
+  },
+  {
+    command: "forecast import whogho <indicator-code> --country <ISO3> --question <id>",
+    label: "WHO GHO",
   },
   {
     command: "forecast import pypi <package> --question <id>",

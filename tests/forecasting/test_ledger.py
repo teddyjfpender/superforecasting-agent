@@ -65,6 +65,7 @@ from forecasting.source_adapters import (
     UsgsEarthquakeEvent,
     WikipediaPage,
     WikimediaPageviewObservation,
+    WhoGhoObservation,
     WorldBankObservation,
     YahooFinancePriceObservation,
 )
@@ -3264,6 +3265,67 @@ def test_watched_owid_source_creates_alert_on_observation_change(tmp_path, monke
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     assert f"forecast import owid gdp-per-capita --question {question.id}" in alerts[0].recommended_action
+    updated = ledger.get_watched_source(watch["id"])
+    assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
+    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+
+
+def test_watched_who_gho_source_creates_alert_on_observation_change(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will watched WHO GHO observations be detected?",
+        resolution_criteria="Resolved yes if watched WHO health indicator changes create alerts.",
+    )
+    values = [77.4]
+    captured_sources = []
+
+    def fake_load_who_gho_observations(source: str, **kwargs):
+        captured_sources.append(source)
+        return [
+            WhoGhoObservation(
+                indicator="WHOSIS_000001",
+                spatial_dim="USA",
+                time_dim="2025",
+                dim1="BTSX",
+                dim2=None,
+                dim3=None,
+                value=values[0],
+                numeric_value=values[0],
+                low=75.0,
+                high=79.0,
+                published_at="2025-01-01T00:00:00Z",
+                source_url="https://ghoapi.azureedge.net/api/WHOSIS_000001",
+                source_name="WHO Global Health Observatory",
+                entry_id="123",
+                raw={"value": values[0]},
+            )
+        ]
+
+    monkeypatch.setattr(
+        "forecasting.source_adapters.load_who_gho_observations",
+        fake_load_who_gho_observations,
+    )
+    watch = ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="whogho:WHOSIS_000001",
+    )
+
+    assert watch["source_type"] == "whogho"
+    assert watch["last_seen_signature"].startswith("whogho:1:")
+    assert captured_sources[-1] == "WHOSIS_000001"
+    assert ledger.check_watched_sources(scope_type="question", scope_ref=question.id) == []
+
+    values[0] = 78.1
+    alerts = ledger.check_watched_sources(
+        scope_type="question",
+        scope_ref=question.id,
+        now="2026-05-22T00:00:00Z",
+    )
+
+    assert [alert.scope_ref for alert in alerts] == [question.id]
+    assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
+    assert f"forecast import whogho WHOSIS_000001 --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
     assert updated["last_seen_signature"] != watch["last_seen_signature"]

@@ -61,6 +61,7 @@ from forecasting.source_adapters import (
     load_usgs_earthquakes,
     load_wikimedia_pageviews,
     load_wikipedia_pages,
+    load_who_gho_observations,
     load_worldbank_observations,
     load_yahoo_finance_prices,
 )
@@ -310,6 +311,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "openfda",
                     "pubmed",
                     "owid",
+                    "whogho",
                     "fred",
                     "eia",
                     "treasury",
@@ -1424,6 +1426,16 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_owid_observations(source, **kwargs)
+    if adapter_name == "whogho":
+        kwargs = {
+            "limit": limit,
+            "since": since,
+            "country": args.get("country"),
+            "dimensions": args.get("dimensions") or args.get("dimension"),
+        }
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_who_gho_observations(source, **kwargs)
     raise ValueError(f"source_type is not a supported import adapter: {adapter}")
 
 
@@ -1648,6 +1660,10 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         return f"Crossref work{doi}: {data.get('title')}"
     if adapter == "owid":
         return f"OWID {data.get('slug')} {data.get('entity') or ''} {data.get('value_column')} was {data.get('value')} on {data.get('observation_date')}"
+    if adapter == "whogho":
+        geography = f" {data.get('spatial_dim')}" if data.get("spatial_dim") else ""
+        time_label = f" {data.get('time_dim')}" if data.get("time_dim") else ""
+        return f"WHO GHO {data.get('indicator')}{geography}{time_label}: {data.get('value')}"
     return str(
         _first_adapter_value(
             data,

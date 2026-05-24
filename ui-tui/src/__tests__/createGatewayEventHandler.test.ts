@@ -936,6 +936,7 @@ describe('createGatewayEventHandler', () => {
               '/forecast import gdelt "<query>" --question <id>',
               '/forecast import fivethirtyeight <dataset-or-url> --question <id>',
               '/forecast import owid <slug> --entity "<entity>" --question <id>',
+              '/forecast import whogho <indicator-code> --country <ISO3> --question <id>',
               '/forecast import eia <series-id-or-api-url> --question <id>',
               '/forecast import treasury <dataset-path-or-api-url> --question <id>',
               '/forecast import census "<dataset-path?get=...&for=...>" --question <id>',

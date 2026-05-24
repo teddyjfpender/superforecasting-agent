@@ -60,6 +60,7 @@ from forecasting.source_adapters import (
     UsgsEarthquakeEvent,
     WikipediaPage,
     WikimediaPageviewObservation,
+    WhoGhoObservation,
     WorldBankObservation,
     YahooFinancePriceObservation,
 )
@@ -6039,6 +6040,151 @@ def test_forecast_cli_owid_import_captures_observations_as_evidence(
     assert evidence[0].metadata["value"] == 67000.0
 
 
+def test_who_gho_adapter_loads_indicator_rows(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return {
+            "value": [
+                {
+                    "Id": 123,
+                    "IndicatorCode": "WHOSIS_000001",
+                    "SpatialDim": "USA",
+                    "TimeDim": 2025,
+                    "Dim1": "BTSX",
+                    "NumericValue": 77.4,
+                    "Value": "77.4 [75.0-79.0]",
+                    "Low": 75.0,
+                    "High": 79.0,
+                }
+            ]
+        }
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    observations = source_adapters.load_who_gho_observations(
+        "WHOSIS_000001",
+        limit=2,
+        since="2025-01-01T00:00:00Z",
+        country="usa",
+        dimensions=["Dim1=BTSX"],
+        api_base_url="https://who.test/api",
+    )
+    parsed = urlparse(captured["endpoint"])
+    params = parse_qs(parsed.query)
+
+    assert captured["label"] == "WHO GHO observations"
+    assert parsed.path == "/api/WHOSIS_000001"
+    assert params["$top"] == ["2"]
+    assert params["$orderby"] == ["TimeDim desc"]
+    assert params["$filter"] == ["SpatialDim eq 'USA' and Dim1 eq 'BTSX'"]
+    assert observations[0].indicator == "WHOSIS_000001"
+    assert observations[0].spatial_dim == "USA"
+    assert observations[0].time_dim == "2025"
+    assert observations[0].published_at == "2025-01-01T00:00:00Z"
+    assert observations[0].numeric_value == 77.4
+    assert observations[0].value == 77.4
+    assert observations[0].low == 75.0
+    assert observations[0].high == 79.0
+
+
+def test_forecast_cli_who_gho_import_captures_observations_as_evidence(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_who_gho_observations(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            WhoGhoObservation(
+                indicator="WHOSIS_000001",
+                spatial_dim="USA",
+                time_dim="2025",
+                dim1="BTSX",
+                dim2=None,
+                dim3=None,
+                value=77.4,
+                numeric_value=77.4,
+                low=75.0,
+                high=79.0,
+                published_at="2025-01-01T00:00:00Z",
+                source_url="https://ghoapi.azureedge.net/api/WHOSIS_000001",
+                source_name="WHO Global Health Observatory",
+                entry_id="123",
+                raw={"Id": 123},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_who_gho_observations", fake_load_who_gho_observations)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will WHO GHO evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if WHO GHO evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "whogho",
+            "WHOSIS_000001",
+            "--question",
+            question_id,
+            "--limit",
+            "3",
+            "--country",
+            "USA",
+            "--dimension",
+            "Dim1=BTSX",
+            "--claim-type",
+            "estimate",
+            "--reliability",
+            "0.8",
+            "--relevance",
+            "0.9",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 whogho evidence item(s)" in output
+    assert captured["source"] == "WHOSIS_000001"
+    assert captured["kwargs"]["limit"] == 3
+    assert captured["kwargs"]["country"] == "USA"
+    assert captured["kwargs"]["dimensions"] == ["Dim1=BTSX"]
+    assert evidence[0].claim == "WHO GHO WHOSIS_000001 USA 2025: 77.4"
+    assert evidence[0].summary == "WHO GHO observation for WHOSIS_000001 USA 2025: 77.4 (low 75.0, high 79.0)."
+    assert evidence[0].source_name == "WHO Global Health Observatory"
+    assert evidence[0].source_type == "adapter:whogho"
+    assert evidence[0].published_at == "2025-01-01T00:00:00Z"
+    assert evidence[0].claim_type == "estimate"
+    assert evidence[0].reliability_rating == 0.8
+    assert evidence[0].relevance_rating == 0.9
+    assert evidence[0].metadata["adapter"] == "whogho"
+    assert evidence[0].metadata["indicator"] == "WHOSIS_000001"
+    assert evidence[0].metadata["spatial_dim"] == "USA"
+    assert evidence[0].metadata["numeric_value"] == 77.4
+
+
 def test_fred_adapter_loads_recent_csv_observations(monkeypatch):
     captured = {}
 
@@ -8268,6 +8414,7 @@ def test_forecast_cli_lists_extension_points(capsys):
     assert "pypi-releases" in output
     assert "npm-package-versions" in output
     assert "owid-grapher" in output
+    assert "who-gho-indicators" in output
     assert "fred-economic-data" in output
     assert "eia-energy-data" in output
     assert "treasury-fiscal-data" in output
@@ -8305,6 +8452,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert 'forecast import gdelt "<query>" --question <id>' in output
     assert "fivethirtyeight:<dataset-or-url>" in output
     assert "owid:<grapher-slug>" in output
+    assert "whogho:<indicator-code>" in output
     assert "eia:<series-id-or-api-url>" in output
     assert "treasury:<dataset-path-or-api-url>" in output
     assert "census:<dataset-path?get=...&for=...>" in output
@@ -8348,9 +8496,10 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "fivethirtyeight", "owid", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "fivethirtyeight", "owid", "whogho", "eia", "treasury", "census", "socrata", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "fivethirtyeight:<dataset-or-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "whogho:<indicator-code>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "treasury:<dataset-path-or-api-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "census:<dataset-path?get=...&for=...>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "socrata:<domain>/<dataset-id>" for source in payload["sources"])
@@ -11033,6 +11182,73 @@ def test_forecast_cli_watch_add_supports_pubmed_sources(tmp_path, capsys, monkey
     assert "source_type: pubmed" in add_output
 
     titles[0] = "New PubMed article"
+    _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
+    check_output = capsys.readouterr().out
+
+    assert "created 1 alert(s)" in check_output
+    assert f"watched_source_changed:{watch_id}" in check_output
+
+
+def test_forecast_cli_watch_add_supports_who_gho_sources(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    values = [77.4]
+
+    def fake_load_who_gho_observations(source: str, **kwargs):
+        return [
+            WhoGhoObservation(
+                indicator=source,
+                spatial_dim="USA",
+                time_dim="2025",
+                dim1="BTSX",
+                dim2=None,
+                dim3=None,
+                value=values[0],
+                numeric_value=values[0],
+                low=75.0,
+                high=79.0,
+                published_at="2025-01-01T00:00:00Z",
+                source_url=f"https://ghoapi.azureedge.net/api/{source}",
+                source_name="WHO Global Health Observatory",
+                entry_id=f"{source}:USA:2025",
+                raw={"value": values[0]},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.source_adapters.load_who_gho_observations", fake_load_who_gho_observations)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will watched CLI WHO GHO observations change?",
+            "--resolution-criteria",
+            "Resolved yes if watched WHO GHO evidence changes.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            "whogho:WHOSIS_000001",
+            "--question",
+            question_id,
+        ],
+    )
+    add_output = capsys.readouterr().out
+    watch_id = re.search(r"watched source (ws_[a-f0-9]+)", add_output).group(1)
+
+    assert "source_type: whogho" in add_output
+
+    values[0] = 78.1
     _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
     check_output = capsys.readouterr().out
 
