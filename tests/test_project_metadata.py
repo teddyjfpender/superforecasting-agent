@@ -1673,13 +1673,41 @@ def test_model_catalog_default_url_is_forecast_native():
     catalog_py = (root / "hermes_cli" / "model_catalog.py").read_text(encoding="utf-8")
 
     expected = (
-        "https://raw.githubusercontent.com/NousResearch/"
-        "superforecasting-agent/main/website/static/api/model-catalog.json"
+        "https://raw.githubusercontent.com/teddyjfpender/"
+        "superforecasting-agent/superforecasting-agent-snapshot/website/static/api/model-catalog.json"
     )
     assert expected in config_py
     assert expected in catalog_py
+    old_raw_catalog_url = (
+        "https://raw.githubusercontent.com/NousResearch/"
+        "superforecasting-agent/main/website/static/api/model-catalog.json"
+    )
+    assert old_raw_catalog_url not in config_py
+    assert old_raw_catalog_url not in catalog_py
     assert "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json" not in config_py
     assert "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json" not in catalog_py
+
+
+def test_machine_readable_docs_metadata_points_to_forecast_snapshot():
+    root = Path(__file__).resolve().parents[1]
+    generator = (root / "website" / "scripts" / "generate-llms-txt.py").read_text(
+        encoding="utf-8"
+    )
+    static_llms = (root / "website" / "static" / "llms.txt").read_text(
+        encoding="utf-8"
+    )
+    text = "\n".join([generator, static_llms])
+
+    assert (
+        "raw.githubusercontent.com/teddyjfpender/"
+        "superforecasting-agent/superforecasting-agent-snapshot/scripts/install.sh"
+    ) in text
+    assert (
+        "https://github.com/teddyjfpender/superforecasting-agent/"
+        "tree/superforecasting-agent-snapshot"
+    ) in text
+    assert "raw.githubusercontent.com/NousResearch/superforecasting-agent/main" not in text
+    assert "github.com/NousResearch/superforecasting-agent" not in text
 
 
 def test_web_focused_forecast_panel_shows_probability_timing_context():

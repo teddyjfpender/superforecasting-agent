@@ -1668,7 +1668,7 @@ DEFAULT_CONFIG = {
     # The default URL is served from the fork's raw GitHub catalog snapshot.
     "model_catalog": {
         "enabled": True,
-        "url": "https://raw.githubusercontent.com/NousResearch/superforecasting-agent/main/website/static/api/model-catalog.json",
+        "url": "https://raw.githubusercontent.com/teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot/website/static/api/model-catalog.json",
         # Disk cache TTL in hours.  Beyond this, the CLI refetches on the
         # next /model or `hermes model` invocation; network failures
         # silently fall back to the stale cache.

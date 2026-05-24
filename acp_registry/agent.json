@@ -3,7 +3,7 @@
   "name": "Superforecasting Agent",
   "version": "0.14.0",
   "description": "Command-line forecasting desk with ACP editor integration, forecast ledger workflows, calibration, and rich tool support.",
-  "repository": "https://github.com/NousResearch/superforecasting-agent",
+  "repository": "https://github.com/teddyjfpender/superforecasting-agent",
   "website": "https://superforecasting-agent.nousresearch.com/docs/user-guide/features/acp",
   "authors": ["Nous Research"],
   "license": "MIT",
