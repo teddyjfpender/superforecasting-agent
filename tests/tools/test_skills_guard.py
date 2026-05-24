@@ -248,6 +248,18 @@ class TestScanFile:
         findings = scan_file(f, "config.py")
         assert any(fi.category == "credential_exposure" for fi in findings)
 
+    def test_agent_config_findings_use_forecast_native_copy(self, tmp_path):
+        f = tmp_path / "references.sh"
+        f.write_text("cat ~/.hermes/.env\ncat .hermes/config.yaml\n")
+
+        findings = scan_file(f, "references.sh")
+        messages = {fi.description for fi in findings}
+
+        assert "directly references the agent secrets file" in messages
+        assert "references agent configuration files directly" in messages
+        assert not any("Hermes secrets" in message for message in messages)
+        assert not any("Hermes configuration" in message for message in messages)
+
     def test_detect_eval_string(self, tmp_path):
         f = tmp_path / "evil.py"
         f.write_text("eval('os.system(\"rm -rf /\")')\n")
