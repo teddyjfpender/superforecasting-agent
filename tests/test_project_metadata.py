@@ -476,8 +476,12 @@ def test_runtime_operator_guidance_uses_forecast_native_commands():
         "agent/conversation_loop.py",
         "agent/auxiliary_client.py",
         "agent/azure_identity_adapter.py",
+        "agent/google_oauth.py",
         "tools/delegate_tool.py",
         "tools/approval.py",
+        "tools/mcp_tool.py",
+        "tools/skills_tool.py",
+        "hermes_cli/bundles.py",
         "gateway/run.py",
     ]
     text = "\n".join(
@@ -488,12 +492,24 @@ def test_runtime_operator_guidance_uses_forecast_native_commands():
     assert "superforecasting-agent doctor" in text
     assert "superforecasting-agent auth" in text
     assert "superforecasting-agent bundles create" in text
+    assert "superforecasting-agent login --provider google-gemini-cli" in text
+    assert "superforecasting-agent mcp login" in text
+    assert "superforecasting-agent plugins enable" in text
+    assert "superforecasting-agent skills" in text
+    assert "superforecasting-agent gateway service install --replace" in text
+    assert "superforecasting-agent kanban init" in text
     assert "superforecasting-agent|hermes" in text
     assert "[hermes-agent: tool call arguments were corrupted" not in text
     assert "Run `hermes doctor`" not in text
     assert "run: hermes doctor" not in text
     assert "run 'hermes auth'" not in text
     assert "hermes bundles create <name>" not in text
+    assert "Run `hermes login --provider google-gemini-cli`" not in text
+    assert "Run `hermes mcp login" not in text
+    assert "Re-enable with: hermes plugins enable" not in text
+    assert "Enable it with `hermes skills`" not in text
+    assert "Run `hermes gateway service install --replace`" not in text
+    assert "run `hermes kanban init`" not in text
     assert "stop/restart hermes gateway" not in text
 
 

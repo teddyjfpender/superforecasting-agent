@@ -1925,8 +1925,8 @@ def _handle_auth_error_and_retry(
     return json.dumps({
         "error": (
             f"MCP server '{server_name}' requires re-authentication. "
-            f"Run `hermes mcp login {server_name}` (or delete the tokens "
-            f"file under ~/.hermes/mcp-tokens/ and restart). Do NOT retry "
+            f"Run `superforecasting-agent mcp login {server_name}` (or delete the tokens "
+            f"file under the forecast home mcp-tokens/ directory and restart). Do NOT retry "
             f"this tool — ask the user to re-authenticate."
         ),
         "needs_reauth": True,

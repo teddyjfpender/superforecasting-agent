@@ -3737,7 +3737,7 @@ class GatewayRunner:
                 logger.warning(
                     "Stale systemd unit detected: %s has TimeoutStopSec=%.0fs but "
                     "drain_timeout=%.0fs (expected >=%.0fs). systemd may SIGKILL the "
-                    "gateway mid-drain. Run `hermes gateway service install --replace` "
+                    "gateway mid-drain. Run `superforecasting-agent gateway service install --replace` "
                     "to regenerate the unit, or shorten agent.restart_drain_timeout.",
                     _alignment.get("unit", "(unknown)"),
                     _alignment["timeout_stop_sec"],
@@ -5337,7 +5337,7 @@ class GatewayRunner:
                         "kanban dispatcher: board %s database %s is not a valid "
                         "SQLite database; disabling dispatch for this board "
                         "until the file changes or the gateway restarts. Move "
-                        "or restore the file, then run `hermes kanban init` if "
+                        "or restore the file, then run `superforecasting-agent kanban init` if "
                         "you need a fresh board.",
                         slug,
                         fingerprint[0],
