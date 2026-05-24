@@ -139,7 +139,23 @@ DEFAULT_EXCLUDES = [
 ]
 
 # Git subprocess timeout (seconds).
-_GIT_TIMEOUT: int = max(10, min(60, int(os.getenv("HERMES_CHECKPOINT_TIMEOUT", "30"))))
+_CHECKPOINT_TIMEOUT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_CHECKPOINT_TIMEOUT",
+    "FORECAST_CHECKPOINT_TIMEOUT",
+    "HERMES_CHECKPOINT_TIMEOUT",
+)
+
+
+def _resolve_git_timeout() -> int:
+    """Return the git subprocess timeout, preserving legacy env support."""
+    for env_name in _CHECKPOINT_TIMEOUT_ENV_NAMES:
+        value = os.getenv(env_name)
+        if value:
+            return max(10, min(60, int(value)))
+    return 30
+
+
+_GIT_TIMEOUT: int = _resolve_git_timeout()
 
 # Max files to snapshot — skip huge directories to avoid slowdowns.
 _MAX_FILES = 50_000

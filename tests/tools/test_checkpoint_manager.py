@@ -22,6 +22,7 @@ from tools.checkpoint_manager import (
     _ref_name,
     _project_meta_path,
     _touch_project,
+    _resolve_git_timeout,
     format_checkpoint_list,
     DEFAULT_EXCLUDES,
     CHECKPOINT_BASE,
@@ -79,6 +80,29 @@ def disabled_mgr(checkpoint_base, monkeypatch):
 # =========================================================================
 # Store path + project hash
 # =========================================================================
+
+
+def test_git_timeout_supports_forecast_native_env_aliases(monkeypatch):
+    monkeypatch.delenv("HERMES_CHECKPOINT_TIMEOUT", raising=False)
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_CHECKPOINT_TIMEOUT", "42")
+
+    assert _resolve_git_timeout() == 42
+
+
+def test_git_timeout_prefers_forecast_alias_over_legacy(monkeypatch):
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_CHECKPOINT_TIMEOUT", "12")
+    monkeypatch.setenv("HERMES_CHECKPOINT_TIMEOUT", "55")
+
+    assert _resolve_git_timeout() == 12
+
+
+def test_git_timeout_preserves_legacy_env_alias(monkeypatch):
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_CHECKPOINT_TIMEOUT", raising=False)
+    monkeypatch.delenv("FORECAST_CHECKPOINT_TIMEOUT", raising=False)
+    monkeypatch.setenv("HERMES_CHECKPOINT_TIMEOUT", "45")
+
+    assert _resolve_git_timeout() == 45
+
 
 class TestStorePath:
     def test_store_is_single_shared_path(self, work_dir, checkpoint_base, monkeypatch):

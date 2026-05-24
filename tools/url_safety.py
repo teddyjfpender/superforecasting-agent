@@ -86,13 +86,20 @@ _CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
 # Cached after first read so we don't hit the filesystem on every URL check.
 _allow_private_resolved = False
 _cached_allow_private: bool = False
+_ALLOW_PRIVATE_URLS_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_ALLOW_PRIVATE_URLS",
+    "FORECAST_ALLOW_PRIVATE_URLS",
+    "HERMES_ALLOW_PRIVATE_URLS",
+)
 
 
 def _global_allow_private_urls() -> bool:
     """Return True when the user has opted out of private-IP blocking.
 
     Checks (in priority order):
-    1. ``HERMES_ALLOW_PRIVATE_URLS`` env var  (``true``/``1``/``yes``)
+    1. ``SUPERFORECASTING_AGENT_ALLOW_PRIVATE_URLS`` /
+       ``FORECAST_ALLOW_PRIVATE_URLS`` / ``HERMES_ALLOW_PRIVATE_URLS`` env var
+       (``true``/``1``/``yes``)
     2. ``security.allow_private_urls`` in config.yaml
     3. ``browser.allow_private_urls`` in config.yaml  (legacy / backward compat)
 
@@ -106,13 +113,14 @@ def _global_allow_private_urls() -> bool:
     _cached_allow_private = False  # safe default
 
     # 1. Env var override (highest priority)
-    env_val = os.getenv("HERMES_ALLOW_PRIVATE_URLS", "").strip().lower()
-    if env_val in {"true", "1", "yes"}:
-        _cached_allow_private = True
-        return _cached_allow_private
-    if env_val in {"false", "0", "no"}:
-        # Explicit false — don't fall through to config
-        return _cached_allow_private
+    for env_name in _ALLOW_PRIVATE_URLS_ENV_NAMES:
+        env_val = os.getenv(env_name, "").strip().lower()
+        if env_val in {"true", "1", "yes"}:
+            _cached_allow_private = True
+            return _cached_allow_private
+        if env_val in {"false", "0", "no"}:
+            # Explicit false — don't fall through to lower-priority aliases or config
+            return _cached_allow_private
 
     # 2. Config file
     try:
@@ -275,8 +283,9 @@ def is_safe_url(url: str) -> bool:
     Resolves the hostname to an IP and checks against private ranges.
     Fails closed: DNS errors and unexpected exceptions block the request.
 
-    When ``security.allow_private_urls`` is enabled (or the env var
-    ``HERMES_ALLOW_PRIVATE_URLS=true``), private-IP blocking is skipped.
+    When ``security.allow_private_urls`` is enabled (or a
+    ``SUPERFORECASTING_AGENT_ALLOW_PRIVATE_URLS`` / ``FORECAST_ALLOW_PRIVATE_URLS`` /
+    ``HERMES_ALLOW_PRIVATE_URLS`` env alias is truthy), private-IP blocking is skipped.
     Cloud metadata endpoints (169.254.169.254, metadata.google.internal)
     remain blocked regardless — they are never legitimate agent targets.
     """

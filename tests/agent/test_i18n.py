@@ -110,6 +110,22 @@ def test_env_var_override(monkeypatch):
     assert i18n.get_language() == "ja"
 
 
+def test_forecast_env_var_override(monkeypatch):
+    """SUPERFORECASTING_AGENT_LANGUAGE wins over legacy env and config."""
+    i18n.reset_language_cache()
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_LANGUAGE", "de")
+    monkeypatch.setenv("HERMES_LANGUAGE", "ja")
+    assert i18n.get_language() == "de"
+
+
+def test_short_forecast_env_var_override(monkeypatch):
+    i18n.reset_language_cache()
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_LANGUAGE", raising=False)
+    monkeypatch.setenv("FORECAST_LANGUAGE", "pt")
+    monkeypatch.setenv("HERMES_LANGUAGE", "ja")
+    assert i18n.get_language() == "pt"
+
+
 def test_env_var_normalized(monkeypatch):
     i18n.reset_language_cache()
     monkeypatch.setenv("HERMES_LANGUAGE", "Chinese")
@@ -118,6 +134,8 @@ def test_env_var_normalized(monkeypatch):
 
 def test_default_when_nothing_set(monkeypatch):
     """With no env var and no config override, falls back to English."""
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_LANGUAGE", raising=False)
+    monkeypatch.delenv("FORECAST_LANGUAGE", raising=False)
     monkeypatch.delenv("HERMES_LANGUAGE", raising=False)
     # Force config lookup to return None -- patch the cached reader.
     i18n.reset_language_cache()

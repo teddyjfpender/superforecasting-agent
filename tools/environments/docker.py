@@ -31,6 +31,11 @@ _DOCKER_SEARCH_PATHS = [
 
 _docker_executable: Optional[str] = None  # resolved once, cached
 _ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_DOCKER_BINARY_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_DOCKER_BINARY",
+    "FORECAST_DOCKER_BINARY",
+    "HERMES_DOCKER_BINARY",
+)
 
 
 def _normalize_forward_env_names(forward_env: list[str] | None) -> list[str]:
@@ -102,7 +107,8 @@ def find_docker() -> Optional[str]:
     """Locate the docker (or podman) CLI binary.
 
     Resolution order:
-    1. ``HERMES_DOCKER_BINARY`` env var — explicit override (e.g. ``/usr/bin/podman``)
+    1. ``SUPERFORECASTING_AGENT_DOCKER_BINARY`` / ``FORECAST_DOCKER_BINARY`` /
+       ``HERMES_DOCKER_BINARY`` env var — explicit override (e.g. ``/usr/bin/podman``)
     2. ``docker`` on PATH via ``shutil.which``
     3. ``podman`` on PATH via ``shutil.which``
     4. Well-known macOS Docker Desktop install locations
@@ -114,11 +120,12 @@ def find_docker() -> Optional[str]:
         return _docker_executable
 
     # 1. Explicit override via env var (e.g. for Podman on immutable distros)
-    override = os.getenv("HERMES_DOCKER_BINARY")
-    if override and os.path.isfile(override) and os.access(override, os.X_OK):
-        _docker_executable = override
-        logger.info("Using HERMES_DOCKER_BINARY override: %s", override)
-        return override
+    for env_name in _DOCKER_BINARY_ENV_NAMES:
+        override = os.getenv(env_name)
+        if override and os.path.isfile(override) and os.access(override, os.X_OK):
+            _docker_executable = override
+            logger.info("Using %s override: %s", env_name, override)
+            return override
 
     # 2. docker on PATH
     found = shutil.which("docker")

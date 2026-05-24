@@ -17,6 +17,7 @@ from tools.vision_tools import (
     _image_to_base64_data_url,
     _resize_image_for_vision,
     _is_image_size_error,
+    _resolve_download_timeout,
     _MAX_BASE64_BYTES,
     _RESIZE_TARGET_BYTES,
     vision_analyze_tool,
@@ -27,6 +28,21 @@ from tools.vision_tools import (
 # ---------------------------------------------------------------------------
 # _validate_image_url — urlparse-based validation
 # ---------------------------------------------------------------------------
+
+
+def test_resolve_download_timeout_supports_forecast_native_alias(monkeypatch):
+    monkeypatch.delenv("FORECAST_VISION_DOWNLOAD_TIMEOUT", raising=False)
+    monkeypatch.delenv("HERMES_VISION_DOWNLOAD_TIMEOUT", raising=False)
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_VISION_DOWNLOAD_TIMEOUT", "7.5")
+
+    assert _resolve_download_timeout() == 7.5
+
+
+def test_resolve_download_timeout_prefers_forecast_alias_over_legacy(monkeypatch):
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_VISION_DOWNLOAD_TIMEOUT", "9")
+    monkeypatch.setenv("HERMES_VISION_DOWNLOAD_TIMEOUT", "30")
+
+    assert _resolve_download_timeout() == 9.0
 
 
 class TestValidateImageUrl:

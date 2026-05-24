@@ -14,6 +14,12 @@ from tools.url_safety import (
 import ipaddress
 import pytest
 
+_ALLOW_PRIVATE_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_ALLOW_PRIVATE_URLS",
+    "FORECAST_ALLOW_PRIVATE_URLS",
+    "HERMES_ALLOW_PRIVATE_URLS",
+)
+
 
 class TestIsSafeUrl:
     def test_public_url_allowed(self):
@@ -222,8 +228,10 @@ class TestGlobalAllowPrivateUrls:
     """Tests for the security.allow_private_urls config toggle."""
 
     @pytest.fixture(autouse=True)
-    def _reset_cache(self):
+    def _reset_cache(self, monkeypatch):
         """Reset the module-level toggle cache before and after each test."""
+        for env_name in _ALLOW_PRIVATE_ENV_NAMES:
+            monkeypatch.delenv(env_name, raising=False)
         _reset_allow_private_cache()
         yield
         _reset_allow_private_cache()
@@ -238,6 +246,17 @@ class TestGlobalAllowPrivateUrls:
         """HERMES_ALLOW_PRIVATE_URLS=true enables the toggle."""
         monkeypatch.setenv("HERMES_ALLOW_PRIVATE_URLS", "true")
         assert _global_allow_private_urls() is True
+
+    def test_forecast_env_var_true(self, monkeypatch):
+        """SUPERFORECASTING_AGENT_ALLOW_PRIVATE_URLS=true enables the toggle."""
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_ALLOW_PRIVATE_URLS", "true")
+        assert _global_allow_private_urls() is True
+
+    def test_forecast_env_var_false_overrides_legacy_true(self, monkeypatch):
+        """Forecast-native explicit false wins over lower-priority legacy true."""
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_ALLOW_PRIVATE_URLS", "false")
+        monkeypatch.setenv("HERMES_ALLOW_PRIVATE_URLS", "true")
+        assert _global_allow_private_urls() is False
 
     def test_env_var_1(self, monkeypatch):
         """HERMES_ALLOW_PRIVATE_URLS=1 enables the toggle."""
@@ -309,7 +328,9 @@ class TestAllowPrivateUrlsIntegration:
     """Integration tests: is_safe_url respects the global toggle."""
 
     @pytest.fixture(autouse=True)
-    def _reset_cache(self):
+    def _reset_cache(self, monkeypatch):
+        for env_name in _ALLOW_PRIVATE_ENV_NAMES:
+            monkeypatch.delenv(env_name, raising=False)
         _reset_allow_private_cache()
         yield
         _reset_allow_private_cache()

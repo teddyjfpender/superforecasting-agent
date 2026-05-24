@@ -49,14 +49,22 @@ _debug = DebugSession("vision_tools", env_var="VISION_TOOLS_DEBUG")
 
 # Configurable HTTP download timeout for _download_image().
 # Separate from auxiliary.vision.timeout which governs the LLM API call.
-# Resolution: config.yaml auxiliary.vision.download_timeout → env var → 30s default.
+# Resolution: env var aliases → config.yaml auxiliary.vision.download_timeout → 30s default.
+_VISION_DOWNLOAD_TIMEOUT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_VISION_DOWNLOAD_TIMEOUT",
+    "FORECAST_VISION_DOWNLOAD_TIMEOUT",
+    "HERMES_VISION_DOWNLOAD_TIMEOUT",
+)
+
+
 def _resolve_download_timeout() -> float:
-    env_val = os.getenv("HERMES_VISION_DOWNLOAD_TIMEOUT", "").strip()
-    if env_val:
-        try:
-            return float(env_val)
-        except ValueError:
-            pass
+    for env_name in _VISION_DOWNLOAD_TIMEOUT_ENV_NAMES:
+        env_val = os.getenv(env_name, "").strip()
+        if env_val:
+            try:
+                return float(env_val)
+            except ValueError:
+                pass
     try:
         from hermes_cli.config import cfg_get, load_config
         cfg = load_config()

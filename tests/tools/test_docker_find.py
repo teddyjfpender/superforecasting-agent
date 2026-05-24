@@ -58,6 +58,22 @@ class TestFindDocker:
             result = docker_mod.find_docker()
         assert result == str(fake_binary)
 
+    def test_forecast_env_var_override_takes_precedence(self, tmp_path):
+        """SUPERFORECASTING_AGENT_DOCKER_BINARY overrides legacy and PATH discovery."""
+        fake_binary = tmp_path / "forecast-podman"
+        fake_binary.write_text("#!/bin/sh\n")
+        fake_binary.chmod(0o755)
+        legacy_binary = tmp_path / "legacy-podman"
+        legacy_binary.write_text("#!/bin/sh\n")
+        legacy_binary.chmod(0o755)
+
+        with patch.dict(os.environ, {
+            "SUPERFORECASTING_AGENT_DOCKER_BINARY": str(fake_binary),
+            "HERMES_DOCKER_BINARY": str(legacy_binary),
+        }), patch("tools.environments.docker.shutil.which", return_value="/usr/bin/docker"):
+            result = docker_mod.find_docker()
+        assert result == str(fake_binary)
+
     def test_env_var_override_ignored_if_not_executable(self, tmp_path):
         """Non-executable HERMES_DOCKER_BINARY falls through to normal discovery."""
         fake_binary = tmp_path / "podman"
