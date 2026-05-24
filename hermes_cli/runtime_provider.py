@@ -31,6 +31,7 @@ from hermes_cli.auth import (
     has_usable_secret,
 )
 from hermes_cli.config import get_compatible_custom_providers, load_config
+from hermes_cli.model_env import inference_provider_env
 from hermes_constants import OPENROUTER_BASE_URL
 from utils import base_url_host_matches, base_url_hostname
 
@@ -379,7 +380,7 @@ def resolve_requested_provider(requested: Optional[str] = None) -> str:
 
     # Prefer the persisted config selection over any stale shell/.env
     # provider override so chat uses the endpoint the user last saved.
-    env_provider = os.getenv("HERMES_INFERENCE_PROVIDER", "").strip().lower()
+    env_provider = inference_provider_env().lower()
     if env_provider:
         return env_provider
 

@@ -65,6 +65,26 @@ def _runtime_env(name: str, default: str = "") -> str:
     return default
 
 
+def _runtime_env_value(name: str, default: str = "") -> str:
+    for key in (
+        f"SUPERFORECASTING_AGENT_{name}",
+        f"FORECAST_{name}",
+        f"HERMES_{name}",
+    ):
+        value = os.environ.get(key)
+        if value and value.strip():
+            return value.strip()
+    return default
+
+
+def _first_runtime_env_value(names: tuple[str, ...], default: str = "") -> str:
+    for name in names:
+        value = _runtime_env_value(name)
+        if value:
+            return value
+    return default
+
+
 def _set_runtime_env(name: str, value: str) -> None:
     """Set fork-native and legacy runtime aliases for in-process state."""
 
@@ -819,10 +839,7 @@ def resolve_skin() -> dict:
 
 
 def _resolve_model() -> str:
-    env = (
-        os.environ.get("HERMES_MODEL", "")
-        or os.environ.get("HERMES_INFERENCE_MODEL", "")
-    ).strip()
+    env = _first_runtime_env_value(("MODEL", "INFERENCE_MODEL"))
     if env:
         return env
     m = _load_cfg().get("model", "")
@@ -839,10 +856,7 @@ def _resolve_startup_runtime() -> tuple[str, str | None]:
     if explicit_provider:
         return model, explicit_provider
 
-    explicit_model = (
-        os.environ.get("HERMES_MODEL", "")
-        or os.environ.get("HERMES_INFERENCE_MODEL", "")
-    ).strip()
+    explicit_model = _first_runtime_env_value(("MODEL", "INFERENCE_MODEL"))
     if not explicit_model:
         return model, None
 
@@ -856,7 +870,7 @@ def _resolve_startup_runtime() -> tuple[str, str | None]:
                 if isinstance(cfg, dict)
                 else ""
             )
-            or os.environ.get("HERMES_INFERENCE_PROVIDER", "").strip().lower()
+            or _runtime_env_value("INFERENCE_PROVIDER").lower()
             or "auto"
         )
         detected = detect_static_provider_for_model(explicit_model, current_provider)
@@ -1182,8 +1196,8 @@ def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
         _restart_slash_worker(session)
         _emit("session.info", sid, _session_info(agent))
 
-    os.environ["HERMES_MODEL"] = result.new_model
-    os.environ["HERMES_INFERENCE_MODEL"] = result.new_model
+    _set_runtime_env("MODEL", result.new_model)
+    _set_runtime_env("INFERENCE_MODEL", result.new_model)
     # Keep the process-level provider env vars in sync with the user's
     # explicit choice so any ambient re-resolution (credential pool refresh,
     # compressor rebuild, aux clients) and startup re-resolution on /new
@@ -1198,7 +1212,7 @@ def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
     if result.target_provider:
         os.environ["SUPERFORECASTING_AGENT_TUI_PROVIDER"] = result.target_provider
         os.environ["FORECAST_TUI_PROVIDER"] = result.target_provider
-        os.environ["HERMES_INFERENCE_PROVIDER"] = result.target_provider
+        _set_runtime_env("INFERENCE_PROVIDER", result.target_provider)
         os.environ["HERMES_TUI_PROVIDER"] = result.target_provider
     if persist_global:
         _persist_model_switch(result)

@@ -362,7 +362,7 @@ Make sure the key matches the provider. An OpenAI key won't work with OpenRouter
 superforecasting-agent model
 
 # Set a valid model
-superforecasting-agent config set HERMES_MODEL anthropic/claude-opus-4.7
+superforecasting-agent config set model.default anthropic/claude-opus-4.7
 
 # Or specify per-session
 superforecasting-agent chat --model openrouter/meta-llama/llama-3.1-70b-instruct

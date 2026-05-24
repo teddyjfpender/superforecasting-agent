@@ -16,8 +16,8 @@ Model / provider selection mirrors `superforecasting-agent chat`:
     - If only --provider given, error out (ambiguous — caller must pick a model).
 
 Env var fallbacks (used when the corresponding arg is not passed):
-    - HERMES_INFERENCE_MODEL
-    - HERMES_INFERENCE_PROVIDER  (already read by resolve_runtime_provider)
+    - SUPERFORECASTING_AGENT_INFERENCE_MODEL / FORECAST_INFERENCE_MODEL / HERMES_INFERENCE_MODEL
+    - SUPERFORECASTING_AGENT_INFERENCE_PROVIDER / FORECAST_INFERENCE_PROVIDER / HERMES_INFERENCE_PROVIDER
 """
 
 from __future__ import annotations
@@ -27,6 +27,8 @@ import os
 import sys
 from contextlib import redirect_stderr, redirect_stdout
 from typing import Optional
+
+from hermes_cli.model_env import inference_model_env, inference_provider_env
 
 
 def _normalize_toolsets(toolsets: object = None) -> list[str] | None:
@@ -131,11 +133,11 @@ def run_oneshot(
 
     Args:
         prompt: The user message to send.
-        model: Optional model override. Falls back to HERMES_INFERENCE_MODEL
-            env var, then config.yaml's model.default / model.model.
+        model: Optional model override. Falls back to fork-native inference
+            model env aliases, then config.yaml's model.default / model.model.
         provider: Optional provider override. Falls back to
-            HERMES_INFERENCE_PROVIDER env var, then config.yaml's model.provider,
-            then "auto".
+            fork-native inference provider env aliases, then config.yaml's
+            model.provider, then "auto".
         toolsets: Optional comma-separated string or iterable of toolsets.
 
     Returns the exit code.  Caller should sys.exit() with the return.
@@ -152,10 +154,12 @@ def run_oneshot(
     # not host it), and silently picking the provider's catalog default hides
     # the mismatch.  Require the caller to be explicit.  Validate BEFORE the
     # stderr redirect so the message actually reaches the terminal.
-    env_model_early = os.getenv("HERMES_INFERENCE_MODEL", "").strip()
+    env_model_early = inference_model_env()
     if provider and not ((model or "").strip() or env_model_early):
         sys.stderr.write(
-            "superforecasting-agent -z: --provider requires --model (or HERMES_INFERENCE_MODEL). "
+            "superforecasting-agent -z: --provider requires --model "
+            "(or SUPERFORECASTING_AGENT_INFERENCE_MODEL / FORECAST_INFERENCE_MODEL / "
+            "HERMES_INFERENCE_MODEL). "
             "Pass both explicitly, or neither to use your configured defaults.\n"
         )
         return 2
@@ -243,7 +247,7 @@ def _run_agent(
     else:
         cfg_model = model_cfg.get("default") or model_cfg.get("model") or ""
 
-    env_model = os.getenv("HERMES_INFERENCE_MODEL", "").strip()
+    env_model = inference_model_env()
     effective_model = (model or "").strip() or env_model or cfg_model
 
     # Resolve effective provider: explicit arg → (auto-detect from model if
@@ -282,7 +286,7 @@ def _run_agent(
                     cfg_provider = str(model_cfg.get("provider") or "").strip().lower()
                 current_provider = (
                     cfg_provider
-                    or os.getenv("HERMES_INFERENCE_PROVIDER", "").strip().lower()
+                    or inference_provider_env().lower()
                     or "auto"
                 )
                 detected = detect_provider_for_model(explicit_model, current_provider)

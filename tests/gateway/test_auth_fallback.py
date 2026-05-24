@@ -71,3 +71,36 @@ class TestResolveRuntimeAgentKwargsAuthFallback:
             from gateway.run import _resolve_runtime_agent_kwargs
             with pytest.raises(RuntimeError):
                 _resolve_runtime_agent_kwargs()
+
+    def test_forecast_native_provider_env_reaches_runtime_resolver(self, tmp_path, monkeypatch):
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text("model:\n  provider: auto\n")
+
+        monkeypatch.setattr("gateway.run._hermes_home", tmp_path)
+        monkeypatch.delenv("HERMES_INFERENCE_PROVIDER", raising=False)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_INFERENCE_PROVIDER", "anthropic")
+
+        seen: list[str | None] = []
+
+        def _mock_resolve(**kwargs):
+            seen.append(kwargs.get("requested"))
+            return {
+                "api_key": "test-key",
+                "base_url": "https://api.anthropic.com",
+                "provider": "anthropic",
+                "api_mode": "anthropic_messages",
+                "command": None,
+                "args": None,
+                "credential_pool": None,
+            }
+
+        with patch(
+            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            side_effect=_mock_resolve,
+        ):
+            from gateway.run import _resolve_runtime_agent_kwargs
+
+            result = _resolve_runtime_agent_kwargs()
+
+        assert seen == ["anthropic"]
+        assert result["provider"] == "anthropic"

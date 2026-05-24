@@ -121,7 +121,7 @@ Prefer `SUPERFORECASTING_AGENT_HOME` or `FORECAST_HOME` for new deployments. Use
 | `OPENCODE_GO_API_KEY` | OpenCode Go API key — $10/month subscription for open models ([opencode.ai](https://opencode.ai/auth)) |
 | `OPENCODE_GO_BASE_URL` | Override OpenCode Go base URL |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Explicit Claude Code token override if you export one manually |
-| `HERMES_MODEL` | Override model name at process level (used by cron scheduler; prefer `config.yaml` for normal use) |
+| `SUPERFORECASTING_AGENT_MODEL` / `FORECAST_MODEL` / `HERMES_MODEL` | Override model name at process level (used by cron scheduler; prefer `config.yaml` for normal use). The `HERMES_*` name remains a legacy alias. |
 | `VOICE_TOOLS_OPENAI_KEY` | Preferred OpenAI key for OpenAI speech-to-text and text-to-speech providers |
 | `HERMES_LOCAL_STT_COMMAND` | Optional local speech-to-text command template. Supports `{input_path}`, `{output_dir}`, `{language}`, and `{model}` placeholders |
 | `HERMES_LOCAL_STT_LANGUAGE` | Default language passed to `HERMES_LOCAL_STT_COMMAND` or auto-detected local `whisper` CLI fallback (default: `en`) |
@@ -140,7 +140,7 @@ For native Anthropic auth, Superforecasting Agent prefers Claude Code's own cred
 
 | Variable | Description |
 |----------|-------------|
-| `HERMES_INFERENCE_PROVIDER` | Override provider selection: `auto`, `custom`, `openrouter`, `nous`, `openai-codex`, `copilot`, `copilot-acp`, `anthropic`, `huggingface`, `novita`, `gemini`, `zai`, `kimi-coding`, `kimi-coding-cn`, `minimax`, `minimax-cn`, `minimax-oauth` (browser OAuth login — no API key required; see [MiniMax OAuth guide](../guides/minimax-oauth.md)), `kilocode`, `xiaomi`, `arcee`, `gmi`, `stepfun`, `alibaba`, `alibaba-coding-plan` (alias `alibaba_coding`), `deepseek`, `nvidia`, `ollama-cloud`, `xai` (alias `grok`), `xai-oauth` (browser OAuth login for SuperGrok subscribers — no API key required; see [xAI Grok OAuth guide](../guides/xai-grok-oauth.md)), `google-gemini-cli`, `qwen-oauth`, `bedrock`, `opencode-zen`, `opencode-go`, `ai-gateway`, `tencent-tokenhub` (default: `auto`) |
+| `SUPERFORECASTING_AGENT_INFERENCE_PROVIDER` / `FORECAST_INFERENCE_PROVIDER` / `HERMES_INFERENCE_PROVIDER` | Override provider selection: `auto`, `custom`, `openrouter`, `nous`, `openai-codex`, `copilot`, `copilot-acp`, `anthropic`, `huggingface`, `novita`, `gemini`, `zai`, `kimi-coding`, `kimi-coding-cn`, `minimax`, `minimax-cn`, `minimax-oauth` (browser OAuth login — no API key required; see [MiniMax OAuth guide](../guides/minimax-oauth.md)), `kilocode`, `xiaomi`, `arcee`, `gmi`, `stepfun`, `alibaba`, `alibaba-coding-plan` (alias `alibaba_coding`), `deepseek`, `nvidia`, `ollama-cloud`, `xai` (alias `grok`), `xai-oauth` (browser OAuth login for SuperGrok subscribers — no API key required; see [xAI Grok OAuth guide](../guides/xai-grok-oauth.md)), `google-gemini-cli`, `qwen-oauth`, `bedrock`, `opencode-zen`, `opencode-go`, `ai-gateway`, `tencent-tokenhub` (default: `auto`). The `HERMES_*` name remains a legacy alias. |
 | `HERMES_PORTAL_BASE_URL` | Override Nous Portal URL (for development/testing) |
 | `NOUS_INFERENCE_BASE_URL` | Override Nous inference API URL |
 | `HERMES_NOUS_MIN_KEY_TTL_SECONDS` | Min agent key TTL before re-mint (default: 1800 = 30min) |
@@ -547,7 +547,7 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 | Variable | Description |
 |----------|-------------|
 | `SUPERFORECASTING_AGENT_MAX_ITERATIONS` / `FORECAST_MAX_ITERATIONS` / `HERMES_MAX_ITERATIONS` | Max tool-calling iterations per conversation (default: 90). The `HERMES_*` name remains a legacy alias. |
-| `HERMES_INFERENCE_MODEL` | Override model name at process level (takes priority over `config.yaml` for the session). Also settable via `-m`/`--model` flag. |
+| `SUPERFORECASTING_AGENT_INFERENCE_MODEL` / `FORECAST_INFERENCE_MODEL` / `HERMES_INFERENCE_MODEL` | Override model name for `-z`/oneshot, TUI startup, and scripted runtime paths. Also settable via `-m`/`--model`; the `HERMES_*` name remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_YOLO_MODE` / `FORECAST_YOLO_MODE` / `HERMES_YOLO_MODE` | Set to `1` to bypass dangerous-command approval prompts. Equivalent to `--yolo`; the `HERMES_*` name remains a legacy alias. |
 | `HERMES_ACCEPT_HOOKS` | Auto-approve any unseen shell hooks declared in `config.yaml` without a TTY prompt. Equivalent to `--accept-hooks` or `hooks_auto_accept: true`. |
 | `HERMES_IGNORE_USER_CONFIG` | Skip the active agent `config.yaml` and use built-in defaults (credentials in `.env` still load). Equivalent to `--ignore-user-config`. |
@@ -637,7 +637,7 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 | `SUPERFORECASTING_AGENT_DASHBOARD_PORT` / `FORECAST_DASHBOARD_PORT` / `HERMES_DASHBOARD_PORT` | Docker entrypoint dashboard HTTP port. Defaults to `9119`. |
 | `SUPERFORECASTING_AGENT_DASHBOARD_TUI` / `FORECAST_DASHBOARD_TUI` / `HERMES_DASHBOARD_TUI` | Expose the in-browser Chat tab backed by the embedded TUI when running the dashboard. The forecast dashboard remains the primary surface. |
 | `SUPERFORECASTING_AGENT_WEB_DIST` / `FORECAST_WEB_DIST` / `HERMES_WEB_DIST` | Override the dashboard web build directory served by `superforecasting-agent dashboard`. |
-| `HERMES_INFERENCE_MODEL` | Force the model for `superforecasting-agent -z` / `superforecasting-agent chat` without mutating `config.yaml`. Pairs with `HERMES_INFERENCE_PROVIDER`. Useful for scripted callers (sweeper, CI, batch runners) that need to override the default model per run. |
+| `SUPERFORECASTING_AGENT_INFERENCE_MODEL` / `FORECAST_INFERENCE_MODEL` / `HERMES_INFERENCE_MODEL` | Force the model for `superforecasting-agent -z` / `superforecasting-agent chat` without mutating `config.yaml`. Pairs with `SUPERFORECASTING_AGENT_INFERENCE_PROVIDER` / `FORECAST_INFERENCE_PROVIDER` / `HERMES_INFERENCE_PROVIDER`. Useful for scripted callers that need to override the default model per run. |
 
 ## Session Settings
 

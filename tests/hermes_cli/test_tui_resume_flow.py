@@ -336,6 +336,27 @@ def test_oneshot_rejects_invalid_only_toolsets(monkeypatch, capsys):
     assert "did not contain any valid toolsets" in err
 
 
+def test_oneshot_provider_accepts_forecast_native_model_env(monkeypatch, capsys):
+    _stub_plugin_discovery(monkeypatch)
+    from hermes_cli import oneshot
+
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_INFERENCE_MODEL", "openai/gpt-5.5")
+    monkeypatch.delenv("HERMES_INFERENCE_MODEL", raising=False)
+    monkeypatch.setattr(oneshot, "_run_agent", lambda *args, **kwargs: "ok")
+
+    assert oneshot.run_oneshot("hello", provider="openrouter") == 0
+    assert capsys.readouterr().out == "ok\n"
+
+
+def test_oneshot_provider_without_model_mentions_forecast_native_env(capsys):
+    from hermes_cli.oneshot import run_oneshot
+
+    assert run_oneshot("hello", provider="openrouter") == 2
+    err = capsys.readouterr().err
+    assert "SUPERFORECASTING_AGENT_INFERENCE_MODEL" in err
+    assert "FORECAST_INFERENCE_MODEL" in err
+
+
 def test_oneshot_filters_invalid_toolsets_before_redirect(monkeypatch, capsys):
     _stub_plugin_discovery(monkeypatch)
     from hermes_cli.oneshot import _validate_explicit_toolsets
@@ -529,11 +550,17 @@ def test_launch_tui_exports_model_provider_and_toolsets(monkeypatch, main_mod):
         )
 
     env = captured["env"]
+    assert env["SUPERFORECASTING_AGENT_MODEL"] == "nous/hermes-test"
+    assert env["FORECAST_MODEL"] == "nous/hermes-test"
     assert env["HERMES_MODEL"] == "nous/hermes-test"
+    assert env["SUPERFORECASTING_AGENT_INFERENCE_MODEL"] == "nous/hermes-test"
+    assert env["FORECAST_INFERENCE_MODEL"] == "nous/hermes-test"
     assert env["HERMES_INFERENCE_MODEL"] == "nous/hermes-test"
     assert env["HERMES_TUI_PROVIDER"] == "nous"
     assert env["SUPERFORECASTING_AGENT_TUI_PROVIDER"] == "nous"
     assert env["FORECAST_TUI_PROVIDER"] == "nous"
+    assert env["SUPERFORECASTING_AGENT_INFERENCE_PROVIDER"] == "nous"
+    assert env["FORECAST_INFERENCE_PROVIDER"] == "nous"
     assert env["HERMES_INFERENCE_PROVIDER"] == "nous"
     assert env["HERMES_TUI_TOOLSETS"] == "web,terminal"
     assert env["SUPERFORECASTING_AGENT_TUI_TOOLSETS"] == "web,terminal"

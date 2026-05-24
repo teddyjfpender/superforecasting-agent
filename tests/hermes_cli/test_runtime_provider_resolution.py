@@ -1011,6 +1011,14 @@ def test_resolve_requested_provider_precedence(monkeypatch):
     assert rp.resolve_requested_provider() == "auto"
 
 
+def test_resolve_requested_provider_reads_forecast_native_env_alias(monkeypatch):
+    monkeypatch.delenv("HERMES_INFERENCE_PROVIDER", raising=False)
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_INFERENCE_PROVIDER", "anthropic")
+    monkeypatch.setattr(rp, "_get_model_config", lambda: {})
+
+    assert rp.resolve_requested_provider() == "anthropic"
+
+
 # ── api_mode config override tests ──────────────────────────────────────
 
 

@@ -90,7 +90,7 @@ Full definition in `providers/base.py`. The most useful ones:
 
 | Field | Type | Purpose |
 |---|---|---|
-| `name` | str | Canonical id - matches `--provider` choices and the inherited `HERMES_INFERENCE_PROVIDER` compatibility override |
+| `name` | str | Canonical id - matches `--provider` choices and the fork-native inference-provider env aliases; `HERMES_INFERENCE_PROVIDER` remains a compatibility override |
 | `aliases` | `tuple[str, ...]` | Alternative names resolved by `get_provider_profile()` (e.g. `grok` → `xai`) |
 | `api_mode` | str | `chat_completions` \| `codex_responses` \| `anthropic_messages` \| `bedrock_converse` |
 | `display_name` | str | Human label shown in the `superforecasting-agent model` picker |

@@ -121,7 +121,9 @@ def build_top_level_parser():
         default=None,
         help=(
             "Model override for this invocation (e.g. anthropic/claude-sonnet-4.6). "
-            "Applies to -z/--oneshot and --tui. Also settable via HERMES_INFERENCE_MODEL env var."
+            "Applies to -z/--oneshot and --tui. Also settable via "
+            "SUPERFORECASTING_AGENT_INFERENCE_MODEL / FORECAST_INFERENCE_MODEL "
+            "/ HERMES_INFERENCE_MODEL env vars."
         ),
     )
     _inherited_flag(
@@ -130,7 +132,9 @@ def build_top_level_parser():
         default=None,
         help=(
             "Provider override for this invocation (e.g. openrouter, anthropic). "
-            "Applies to -z/--oneshot and --tui. Also settable via HERMES_INFERENCE_PROVIDER env var."
+            "Applies to -z/--oneshot and --tui. Also settable via "
+            "SUPERFORECASTING_AGENT_INFERENCE_PROVIDER / FORECAST_INFERENCE_PROVIDER "
+            "/ HERMES_INFERENCE_PROVIDER env vars."
         ),
     )
     parser.add_argument(

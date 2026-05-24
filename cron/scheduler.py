@@ -38,6 +38,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from hermes_constants import get_hermes_home
 from hermes_cli._subprocess_compat import windows_hide_flags
+from hermes_cli.model_env import model_env
 from hermes_cli.config import load_config, _expand_env_vars
 from hermes_time import now as _hermes_now
 
@@ -1413,7 +1414,7 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
                 else str(delivery_target["thread_id"])
             )
 
-        model = job.get("model") or os.getenv("HERMES_MODEL") or ""
+        model = job.get("model") or model_env() or ""
 
         # Load config.yaml for model, reasoning, prefill, toolsets, provider routing
         _cfg = {}

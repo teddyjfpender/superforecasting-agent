@@ -175,15 +175,15 @@ answer=$(superforecasting-agent -z "summarize this" < /path/to/file.txt)
 
 Per-run overrides (no mutation to `~/.superforecasting-agent/config.yaml`):
 
-| Flag | Inherited env var | Purpose |
+| Flag | Env vars | Purpose |
 |---|---|---|
-| `-m` / `--model <model>` | `HERMES_INFERENCE_MODEL` | Override the model for this run |
-| `--provider <provider>` | `HERMES_INFERENCE_PROVIDER` | Override the provider for this run |
+| `-m` / `--model <model>` | `SUPERFORECASTING_AGENT_INFERENCE_MODEL` / `FORECAST_INFERENCE_MODEL` / `HERMES_INFERENCE_MODEL` | Override the model for this run |
+| `--provider <provider>` | `SUPERFORECASTING_AGENT_INFERENCE_PROVIDER` / `FORECAST_INFERENCE_PROVIDER` / `HERMES_INFERENCE_PROVIDER` | Override the provider for this run |
 
 ```bash
 superforecasting-agent -z "…" --provider openrouter --model openai/gpt-5.5
 # or:
-HERMES_INFERENCE_MODEL=anthropic/claude-sonnet-4.6 superforecasting-agent -z "…"
+SUPERFORECASTING_AGENT_INFERENCE_MODEL=anthropic/claude-sonnet-4.6 superforecasting-agent -z "…"
 ```
 
 Same agent, same tools, same skills — just strips every interactive / cosmetic layer. If you need tool output in the transcript too, use `superforecasting-agent chat -q` instead; `-z` is explicitly for "I only want the final answer".

@@ -690,6 +690,14 @@ def test_resolve_model_uses_inference_model_env(monkeypatch):
     assert server._resolve_model() == "anthropic/claude-sonnet-4.6"
 
 
+def test_resolve_model_prefers_forecast_native_model_env(monkeypatch):
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_MODEL", "anthropic/native")
+    monkeypatch.setenv("FORECAST_MODEL", "anthropic/short")
+    monkeypatch.setenv("HERMES_MODEL", "anthropic/legacy")
+
+    assert server._resolve_model() == "anthropic/native"
+
+
 def test_resolve_model_strips_config_model(monkeypatch):
     monkeypatch.delenv("HERMES_MODEL", raising=False)
     monkeypatch.delenv("HERMES_INFERENCE_MODEL", raising=False)
@@ -729,6 +737,22 @@ def test_startup_runtime_does_not_treat_inference_provider_as_explicit(monkeypat
     )
 
     assert server._resolve_startup_runtime() == ("nous/hermes-test", None)
+
+
+def test_startup_runtime_reads_forecast_native_inference_provider(monkeypatch):
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_MODEL", "anthropic/native-model")
+    monkeypatch.delenv("HERMES_TUI_PROVIDER", raising=False)
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_INFERENCE_PROVIDER", "anthropic")
+    monkeypatch.setattr(server, "_load_cfg", lambda: {"model": {"provider": ""}})
+
+    def fake_detect(model, provider):
+        assert model == "anthropic/native-model"
+        assert provider == "anthropic"
+        return "anthropic", model
+
+    monkeypatch.setattr("hermes_cli.models.detect_static_provider_for_model", fake_detect)
+
+    assert server._resolve_startup_runtime() == ("anthropic/native-model", "anthropic")
 
 
 def test_startup_runtime_detects_provider_for_model_env(monkeypatch):
@@ -1846,6 +1870,8 @@ def test_config_set_model_syncs_inference_provider_env(monkeypatch):
         }
     )
 
+    assert os.environ["SUPERFORECASTING_AGENT_INFERENCE_PROVIDER"] == "anthropic"
+    assert os.environ["FORECAST_INFERENCE_PROVIDER"] == "anthropic"
     assert os.environ["HERMES_INFERENCE_PROVIDER"] == "anthropic"
 
 
@@ -1905,6 +1931,8 @@ def test_config_set_model_syncs_tui_provider_unconditionally(monkeypatch):
     assert os.environ["SUPERFORECASTING_AGENT_TUI_PROVIDER"] == "custom:xuanji"
     assert os.environ["FORECAST_TUI_PROVIDER"] == "custom:xuanji"
     assert os.environ["HERMES_TUI_PROVIDER"] == "custom:xuanji"
+    assert os.environ["SUPERFORECASTING_AGENT_INFERENCE_PROVIDER"] == "custom:xuanji"
+    assert os.environ["FORECAST_INFERENCE_PROVIDER"] == "custom:xuanji"
     assert os.environ["HERMES_INFERENCE_PROVIDER"] == "custom:xuanji"
 
 
@@ -1955,7 +1983,11 @@ def test_config_set_model_syncs_tui_provider_env(monkeypatch):
         assert os.environ["SUPERFORECASTING_AGENT_TUI_PROVIDER"] == "anthropic"
         assert os.environ["FORECAST_TUI_PROVIDER"] == "anthropic"
         assert os.environ["HERMES_TUI_PROVIDER"] == "anthropic"
+        assert os.environ["SUPERFORECASTING_AGENT_MODEL"] == "anthropic/claude-sonnet-4.6"
+        assert os.environ["FORECAST_MODEL"] == "anthropic/claude-sonnet-4.6"
         assert os.environ["HERMES_MODEL"] == "anthropic/claude-sonnet-4.6"
+        assert os.environ["SUPERFORECASTING_AGENT_INFERENCE_MODEL"] == "anthropic/claude-sonnet-4.6"
+        assert os.environ["FORECAST_INFERENCE_MODEL"] == "anthropic/claude-sonnet-4.6"
         assert os.environ["HERMES_INFERENCE_MODEL"] == "anthropic/claude-sonnet-4.6"
     finally:
         server._sessions.clear()

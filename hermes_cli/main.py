@@ -1345,11 +1345,11 @@ def _launch_tui(
         env["TERMINAL_CWD"] = wt_info["path"]
 
     if model:
-        env["HERMES_MODEL"] = model
-        env["HERMES_INFERENCE_MODEL"] = model
+        _set_runtime_env_aliases(env, "MODEL", model)
+        _set_runtime_env_aliases(env, "INFERENCE_MODEL", model)
     if provider:
         _set_tui_env_aliases(env, "PROVIDER", provider)
-        env["HERMES_INFERENCE_PROVIDER"] = provider
+        _set_runtime_env_aliases(env, "INFERENCE_PROVIDER", provider)
     tui_toolsets = _normalize_tui_toolsets(toolsets)
     if tui_toolsets:
         _set_tui_env_aliases(env, "TOOLSETS", ",".join(tui_toolsets))
@@ -1943,7 +1943,7 @@ def select_provider_and_model(args=None):
         config_provider = model_cfg.get("provider")
 
     effective_provider = (
-        config_provider or os.getenv("HERMES_INFERENCE_PROVIDER") or "auto"
+        config_provider or _runtime_env_value("INFERENCE_PROVIDER") or "auto"
     )
     compatible_custom_providers = get_compatible_custom_providers(config)
     def _named_custom_provider_map(cfg) -> dict[str, dict[str, str]]:

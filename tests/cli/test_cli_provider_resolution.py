@@ -230,6 +230,22 @@ def test_cli_prefers_config_provider_over_stale_env_override(monkeypatch):
     assert shell.requested_provider == "custom"
 
 
+def test_cli_reads_forecast_native_provider_env_alias(monkeypatch):
+    cli = _import_cli()
+
+    monkeypatch.delenv("HERMES_INFERENCE_PROVIDER", raising=False)
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_INFERENCE_PROVIDER", "openrouter")
+    config_copy = dict(cli.CLI_CONFIG)
+    model_copy = dict(config_copy.get("model", {}))
+    model_copy["provider"] = ""
+    config_copy["model"] = model_copy
+    monkeypatch.setattr(cli, "CLI_CONFIG", config_copy)
+
+    shell = cli.HermesCLI(model="openai/gpt-5.5", compact=True, max_turns=1)
+
+    assert shell.requested_provider == "openrouter"
+
+
 def test_codex_provider_replaces_incompatible_default_model(monkeypatch):
     """When provider resolves to openai-codex and no model was explicitly
     chosen, the global config default (e.g. anthropic/claude-opus-4.6) must

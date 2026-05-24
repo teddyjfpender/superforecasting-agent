@@ -16,8 +16,12 @@ def config_home(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(home))
     # Clear any ambient env that could alter provider resolution
     for var in (
+        "SUPERFORECASTING_AGENT_MODEL",
+        "FORECAST_MODEL",
         "HERMES_MODEL",
         "LLM_MODEL",
+        "SUPERFORECASTING_AGENT_INFERENCE_PROVIDER",
+        "FORECAST_INFERENCE_PROVIDER",
         "HERMES_INFERENCE_PROVIDER",
         "OPENAI_BASE_URL",
         "OPENAI_API_KEY",

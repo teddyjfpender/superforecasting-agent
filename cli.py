@@ -44,6 +44,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+from hermes_cli.model_env import inference_provider_env
 
 logger = logging.getLogger(__name__)
 
@@ -2782,7 +2783,7 @@ class HermesCLI:
         self.requested_provider = (
             provider
             or CLI_CONFIG["model"].get("provider")
-            or os.getenv("HERMES_INFERENCE_PROVIDER")
+            or inference_provider_env()
             or "auto"
         )
         self._provider_source: Optional[str] = None
