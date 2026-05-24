@@ -811,6 +811,149 @@ def test_parallel_touchdesigner_and_creative_skill_docs_are_forecast_native():
     assert "${HERMES_HOME:-$HOME/.hermes}/skills/creative/touchdesigner-mcp/scripts/setup.sh" not in text
 
 
+def test_remaining_product_facing_skill_examples_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "optional-skills" / "productivity" / "here-now" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "optional"
+            / "productivity"
+            / "productivity-here-now.md"
+        ),
+        root / "optional-skills" / "productivity" / "shopify" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "optional"
+            / "productivity"
+            / "productivity-shopify.md"
+        ),
+        root / "optional-skills" / "finance" / "3-statement-model" / "SKILL.md",
+        root / "optional-skills" / "finance" / "comps-analysis" / "SKILL.md",
+        root / "optional-skills" / "finance" / "dcf-model" / "SKILL.md",
+        root / "optional-skills" / "finance" / "lbo-model" / "SKILL.md",
+        root / "optional-skills" / "finance" / "merger-model" / "SKILL.md",
+        *[
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "optional"
+            / "finance"
+            / name
+            for name in (
+                "finance-3-statement-model.md",
+                "finance-comps-analysis.md",
+                "finance-dcf-model.md",
+                "finance-lbo-model.md",
+                "finance-merger-model.md",
+            )
+        ],
+        root / "optional-skills" / "research" / "bioinformatics" / "SKILL.md",
+        root / "optional-skills" / "research" / "darwinian-evolver" / "SKILL.md",
+        root / "optional-skills" / "research" / "gitnexus-explorer" / "SKILL.md",
+        root / "optional-skills" / "research" / "searxng-search" / "SKILL.md",
+        *[
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "optional"
+            / "research"
+            / name
+            for name in (
+                "research-bioinformatics.md",
+                "research-darwinian-evolver.md",
+                "research-gitnexus-explorer.md",
+                "research-searxng-search.md",
+            )
+        ],
+        root / "optional-skills" / "creative" / "concept-diagrams" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "optional"
+            / "creative"
+            / "creative-concept-diagrams.md"
+        ),
+        root / "skills" / "mlops" / "inference" / "obliteratus" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "mlops"
+            / "mlops-inference-obliteratus.md"
+        ),
+        root / "skills" / "productivity" / "nano-pdf" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "productivity"
+            / "productivity-nano-pdf.md"
+        ),
+        root / "skills" / "social-media" / "xurl" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "social-media"
+            / "social-media-xurl.md"
+        ),
+        root / "skills" / "research" / "research-paper-writing" / "references" / "experiment-patterns.md",
+        root / "skills" / "creative" / "pixel-art" / "ATTRIBUTION.md",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths if path.exists())
+
+    assert "--client superforecasting-agent" in text
+    assert 'vendor":"Superforecasting Agent"' in text
+    assert "In Superforecasting Agent:" in text
+    assert "Superforecasting Agent core" in text
+    assert "Superforecasting Agent SKILL.md format" in text
+    assert "Superforecasting Agent users don't need" in text
+    assert "author: Superforecasting Agent" in text
+    assert "ported into Superforecasting Agent" in text
+    assert "Superforecasting Agent workflow" in text
+    assert "already available in Superforecasting Agent" in text
+    assert "Superforecasting Agent adaptation" in text
+    assert "Superforecasting Agent contributors" in text
+    assert "--client hermes" not in text
+    assert 'vendor":"Hermes"' not in text
+    assert "In Hermes:" not in text
+    assert "Hermes core" not in text
+    assert "Hermes-format" not in text
+    assert "Hermes SKILL.md format" not in text
+    assert "hermes-agent users don't need" not in text
+    assert "author: hermes-agent" not in text
+    assert "ported into hermes-agent" not in text
+    assert "Hermes agent" not in text
+    assert "available in Hermes" not in text
+    assert "Hermes adaptation" not in text
+    assert "Hermes Agent contributors" not in text
+
+
 def test_github_auth_skill_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [

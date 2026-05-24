@@ -324,7 +324,7 @@ parallel-cli monitor create --help
 
 Use this when the user wants recurring tracking of a page or source rather than a one-time fetch.
 
-## Recommended Hermes usage patterns
+## Recommended Superforecasting Agent usage patterns
 
 ### Fast answer with citations
 1. Run `parallel-cli search ... --json`
