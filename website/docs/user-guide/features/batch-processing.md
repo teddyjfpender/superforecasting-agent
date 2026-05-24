@@ -271,7 +271,7 @@ Use it for:
 - Prompt-protocol regression tests.
 - Tool availability and failure-rate checks.
 - Provider or model comparisons before using them in live forecasts.
-- Generating training trajectories when you need raw conversations.
+- Generating training trajectories when you need raw research-session transcripts.
 
 Do not treat raw batch output as forecast performance. It lacks resolution
 records, proper scoring, evidence cutoff checks, and baseline comparisons unless
@@ -386,10 +386,10 @@ python batch_runner.py \
 
 The raw runner filters or records:
 
-- Samples with no assistant reasoning turns.
+- Samples with no forecaster reasoning turns.
 - Corrupted entries with hallucinated tool names.
 - Tool success and failure counts.
-- Reasoning coverage across assistant turns.
+- Reasoning coverage across forecaster turns.
 
 These are runtime-quality signals. They complement, but do not replace, Brier
 score, log score, calibration curves, and postmortems from the ledger.

@@ -717,7 +717,7 @@ There is no hard limit. Each profile is just a directory under `~/.superforecast
 
 ### Using different models for different tasks (multi-model workflows)
 
-**Scenario:** You use GPT-5.4 as your daily driver, but Gemini or Grok writes better social media content. Manually switching models every time is tedious.
+**Scenario:** You use GPT-5.4 as your daily forecast-reasoning model, but Gemini or Grok is better for source triage, counterargument generation, or concise evidence summaries. Manually switching models every time is tedious.
 
 **Solution: Delegation config.** Superforecasting Agent can route subagents to a different model automatically. Set this in `~/.superforecasting-agent/config.yaml`:
 
@@ -727,9 +727,9 @@ delegation:
   provider: "openrouter"                    # provider for subagents
 ```
 
-Now when you tell Superforecasting Agent "write me a Twitter thread about X" and it spawns a `delegate_task` subagent, that subagent runs on Gemini instead of your main model. Your primary conversation stays on GPT-5.4.
+Now when you tell Superforecasting Agent "delegate a counterargument review for Q-142" and it spawns a `delegate_task` subagent, that subagent runs on Gemini instead of your main model. Your primary research session stays on GPT-5.4.
 
-You can also be explicit in your prompt: *"Delegate a task to write social media posts about our product launch. Use your subagent for the actual writing."* The agent will use `delegate_task`, which automatically picks up the delegation config.
+You can also be explicit in your prompt: *"Delegate a task to review whether my 0.62 forecast is missing a strong base-rate objection. Use your subagent for the critique."* The agent will use `delegate_task`, which automatically picks up the delegation config.
 
 For one-off model switches without delegation, use `/model` in the CLI:
 

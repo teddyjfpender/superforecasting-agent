@@ -112,7 +112,7 @@ See [Honcho](./honcho.md) for the forecast-specific setup and ledger-boundary gu
 
 #### Multi-Profile Honcho
 
-Honcho models conversations as peers in a workspace. A typical setup has one user peer plus one AI peer per profile. For example, a `macro` profile and a `software` profile can share a user workspace while building separate AI-peer context.
+Honcho models research-session interaction streams as peers in a workspace. A typical setup has one user peer plus one forecaster peer per profile. For example, a `macro` profile and a `software` profile can share a user workspace while building separate forecaster-peer context.
 
 Create a cloned profile with a new peer:
 
