@@ -924,6 +924,8 @@ class TestEnvironmentHints:
         assert "PowerShell" not in result
         # Backend info must appear instead.
         assert "Terminal backend: docker" in result
+        assert "Superforecasting Agent" in result
+        assert "where Hermes" not in result
         assert "inside" in result.lower()
 
     def test_build_environment_hints_uses_live_probe_when_available(self, monkeypatch):
@@ -936,6 +938,7 @@ class TestEnvironmentHints:
         _pb._clear_backend_probe_cache()
         result = _pb.build_environment_hints()
         assert "Terminal backend: modal" in result
+        assert "where Hermes" not in result
         assert "Linux 6.8.0" in result
         assert "/workspace" in result
 
@@ -1192,5 +1195,4 @@ class TestOpenAIModelExecutionGuidance:
 # =========================================================================
 # Budget warning history stripping
 # =========================================================================
-
 
