@@ -56,6 +56,9 @@ def _run_gateway_import(hermes_home: Path, initial_env: dict[str, str]) -> dict[
             "SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT",
             "FORECAST_RESTART_DRAIN_TIMEOUT",
             "HERMES_RESTART_DRAIN_TIMEOUT",
+            "SUPERFORECASTING_AGENT_AUTO_CONTINUE_FRESHNESS",
+            "FORECAST_AUTO_CONTINUE_FRESHNESS",
+            "HERMES_AUTO_CONTINUE_FRESHNESS",
             "SUPERFORECASTING_AGENT_GATEWAY_BUSY_INPUT_MODE",
             "FORECAST_GATEWAY_BUSY_INPUT_MODE",
             "HERMES_GATEWAY_BUSY_INPUT_MODE",
@@ -149,6 +152,7 @@ def test_config_gateway_timeout_wins_over_stale_env(hermes_home: Path) -> None:
         "gateway_timeout_warning": 900,
         "gateway_notify_interval": 120,
         "restart_drain_timeout": 45,
+        "gateway_auto_continue_freshness": 300,
     })
     _write_env(hermes_home, {
         "SUPERFORECASTING_AGENT_AGENT_TIMEOUT": "60",
@@ -163,6 +167,9 @@ def test_config_gateway_timeout_wins_over_stale_env(hermes_home: Path) -> None:
         "SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT": "30",
         "FORECAST_RESTART_DRAIN_TIMEOUT": "30",
         "HERMES_RESTART_DRAIN_TIMEOUT": "30",
+        "SUPERFORECASTING_AGENT_AUTO_CONTINUE_FRESHNESS": "30",
+        "FORECAST_AUTO_CONTINUE_FRESHNESS": "30",
+        "HERMES_AUTO_CONTINUE_FRESHNESS": "30",
     })
 
     env = _run_gateway_import(hermes_home, initial_env={})
@@ -179,6 +186,9 @@ def test_config_gateway_timeout_wins_over_stale_env(hermes_home: Path) -> None:
     assert env.get("SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT") == "45"
     assert env.get("FORECAST_RESTART_DRAIN_TIMEOUT") == "45"
     assert env.get("HERMES_RESTART_DRAIN_TIMEOUT") == "45"
+    assert env.get("SUPERFORECASTING_AGENT_AUTO_CONTINUE_FRESHNESS") == "300"
+    assert env.get("FORECAST_AUTO_CONTINUE_FRESHNESS") == "300"
+    assert env.get("HERMES_AUTO_CONTINUE_FRESHNESS") == "300"
 
 
 def test_config_display_busy_input_mode_wins_over_stale_env(hermes_home: Path) -> None:

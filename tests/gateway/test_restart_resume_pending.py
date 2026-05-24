@@ -738,20 +738,34 @@ class TestFreshnessHelpers:
         assert _last_transcript_timestamp(history) is None
 
     def test_auto_continue_freshness_window_reads_env(self, monkeypatch):
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_AUTO_CONTINUE_FRESHNESS", "7200")
+        assert _auto_continue_freshness_window() == 7200.0
+
+    def test_auto_continue_freshness_window_legacy_env(self, monkeypatch):
         monkeypatch.setenv("HERMES_AUTO_CONTINUE_FRESHNESS", "7200")
         assert _auto_continue_freshness_window() == 7200.0
 
+    def test_auto_continue_freshness_window_fork_alias_precedes_legacy(self, monkeypatch):
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_AUTO_CONTINUE_FRESHNESS", "7200")
+        monkeypatch.setenv("HERMES_AUTO_CONTINUE_FRESHNESS", "60")
+        assert _auto_continue_freshness_window() == 7200.0
+
     def test_auto_continue_freshness_window_default_when_unset(self, monkeypatch):
-        monkeypatch.delenv("HERMES_AUTO_CONTINUE_FRESHNESS", raising=False)
+        for name in (
+            "SUPERFORECASTING_AGENT_AUTO_CONTINUE_FRESHNESS",
+            "FORECAST_AUTO_CONTINUE_FRESHNESS",
+            "HERMES_AUTO_CONTINUE_FRESHNESS",
+        ):
+            monkeypatch.delenv(name, raising=False)
         # Default is 1 hour
         assert _auto_continue_freshness_window() == 3600.0
 
     def test_auto_continue_freshness_window_malformed_falls_back(self, monkeypatch):
-        monkeypatch.setenv("HERMES_AUTO_CONTINUE_FRESHNESS", "not-a-number")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_AUTO_CONTINUE_FRESHNESS", "not-a-number")
         assert _auto_continue_freshness_window() == 3600.0
 
     def test_auto_continue_freshness_window_empty_falls_back(self, monkeypatch):
-        monkeypatch.setenv("HERMES_AUTO_CONTINUE_FRESHNESS", "")
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_AUTO_CONTINUE_FRESHNESS", "")
         assert _auto_continue_freshness_window() == 3600.0
 
 

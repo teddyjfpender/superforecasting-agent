@@ -316,15 +316,15 @@ def _coerce_gateway_timestamp(value: Any) -> Optional[float]:
 def _auto_continue_freshness_window() -> float:
     """Return the configured auto-continue freshness window in seconds.
 
-    Reads ``HERMES_AUTO_CONTINUE_FRESHNESS`` (bridged from
+    Reads ``SUPERFORECASTING_AGENT_AUTO_CONTINUE_FRESHNESS`` (bridged from
     ``config.yaml`` ``agent.gateway_auto_continue_freshness`` at gateway
     startup, same pattern as ``SUPERFORECASTING_AGENT_AGENT_TIMEOUT``).
     Falls back to the module default when unset or malformed.  Non-positive values disable
     the freshness gate (restores the pre-fix "always fresh" behaviour for
     users who want to opt out).
     """
-    raw = os.environ.get("HERMES_AUTO_CONTINUE_FRESHNESS")
-    if raw is None or raw == "":
+    _, raw = _first_nonempty_env(_AUTO_CONTINUE_FRESHNESS_ENV_NAMES)
+    if not raw:
         return float(_AUTO_CONTINUE_FRESHNESS_SECS_DEFAULT)
     try:
         return float(raw)
@@ -617,6 +617,16 @@ _GATEWAY_PLATFORM_CONNECT_TIMEOUT_ENV_NAMES = (
     "FORECAST_GATEWAY_PLATFORM_CONNECT_TIMEOUT",
     "HERMES_GATEWAY_PLATFORM_CONNECT_TIMEOUT",
 )
+_AUTO_CONTINUE_FRESHNESS_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_AUTO_CONTINUE_FRESHNESS",
+    "FORECAST_AUTO_CONTINUE_FRESHNESS",
+    "HERMES_AUTO_CONTINUE_FRESHNESS",
+)
+_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT",
+    "FORECAST_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT",
+    "HERMES_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT",
+)
 
 
 def _set_env_aliases(names: tuple[str, ...], value: object) -> None:
@@ -830,8 +840,9 @@ if _config_path.exists():
             if "restart_drain_timeout" in _agent_cfg:
                 _set_env_aliases(_RESTART_DRAIN_TIMEOUT_ENV_NAMES, _agent_cfg["restart_drain_timeout"])
             if "gateway_auto_continue_freshness" in _agent_cfg:
-                os.environ["HERMES_AUTO_CONTINUE_FRESHNESS"] = str(
-                    _agent_cfg["gateway_auto_continue_freshness"]
+                _set_env_aliases(
+                    _AUTO_CONTINUE_FRESHNESS_ENV_NAMES,
+                    _agent_cfg["gateway_auto_continue_freshness"],
                 )
         _display_cfg = _cfg.get("display", {})
         if _display_cfg and isinstance(_display_cfg, dict):
@@ -1974,13 +1985,15 @@ class GatewayRunner:
 
     def _adapter_disconnect_timeout_secs(self) -> float:
         """Return the per-adapter disconnect timeout used during shutdown."""
-        raw = os.getenv("HERMES_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT", "").strip()
+        env_name, raw = _first_nonempty_env(_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT_ENV_NAMES)
+        raw = raw.strip()
         if raw:
             try:
                 timeout = float(raw)
             except ValueError:
                 logger.warning(
-                    "Ignoring invalid HERMES_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT=%r",
+                    "Ignoring invalid %s=%r",
+                    env_name,
                     raw,
                 )
             else:

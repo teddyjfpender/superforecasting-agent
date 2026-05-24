@@ -64,7 +64,7 @@ async def test_safe_disconnect_handles_none_platform(bare_runner):
 @pytest.mark.asyncio
 async def test_safe_disconnect_times_out_and_continues(bare_runner, monkeypatch, caplog):
     """A wedged adapter disconnect must not block gateway shutdown."""
-    monkeypatch.setenv("HERMES_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT", "0.001")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT", "0.001")
     adapter = MagicMock()
 
     async def hang():
@@ -77,3 +77,16 @@ async def test_safe_disconnect_times_out_and_continues(bare_runner, monkeypatch,
 
     adapter.disconnect.assert_awaited_once()
     assert "Timed out after 0.0s while disconnecting feishu adapter" in caplog.text
+
+
+def test_safe_disconnect_timeout_env_alias_precedence(bare_runner, monkeypatch):
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT", "0.002")
+    monkeypatch.setenv("HERMES_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT", "9")
+
+    assert bare_runner._adapter_disconnect_timeout_secs() == 0.002
+
+
+def test_safe_disconnect_timeout_legacy_env_alias(bare_runner, monkeypatch):
+    monkeypatch.setenv("HERMES_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT", "0.002")
+
+    assert bare_runner._adapter_disconnect_timeout_secs() == 0.002
