@@ -4869,6 +4869,9 @@ def test_cron_runner_reports_alerts_and_stays_silent_without_work(tmp_path):
     silent = run_due_reviews(db_path=str(db_path), now="2026-01-03T01:00:00Z")
 
     assert "Forecast self-check alerts" in report
+    assert "scores_created: 0" in report
+    assert "postmortems_created: 0" in report
+    assert "learning_reviews: 0" in report
     assert question.id in report
     assert silent == ""
 
@@ -4901,6 +4904,8 @@ def test_cron_runner_uses_schedule_auto_learning_flags(tmp_path):
 
     assert "score_created:" in report
     assert "postmortem_created:" in report
+    assert "scores_created: 1" in report
+    assert "postmortems_created: 1" in report
     assert ledger.list_calibration_lessons(scope_type="domain", scope_ref="macro")
     assert ledger.list_domain_error_profiles(domain="macro", topic="inflation")[0]["sample_count"] == 1
 

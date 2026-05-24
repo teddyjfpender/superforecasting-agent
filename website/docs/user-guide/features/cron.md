@@ -145,7 +145,10 @@ forecast schedule install-cron --schedule "every 1h" --auto-score --auto-postmor
 
 The installed job runs `forecast_self_check.py` without invoking the LLM. It
 emits output only when the ledger produces review alerts, scores, postmortems,
-lessons, or error-profile updates.
+lessons, or error-profile updates. The report includes explicit
+`scores_created`, `postmortems_created`, and `learning_reviews` counts so
+operators can see when a scheduled check changed learning state without
+parsing every alert line.
 If you install from an isolated ledger, pass the same `--db` you use for the
 desk; the generated bridge script preserves that path:
 

@@ -35,10 +35,21 @@ def run_due_reviews(
     if not results or not alert_rows:
         return ""
 
+    score_events = [alert for alert in alert_rows if alert.reason.startswith("score_created:")]
+    postmortem_events = [alert for alert in alert_rows if alert.reason.startswith("postmortem_created:")]
+    learning_review_events = [
+        alert
+        for alert in alert_rows
+        if alert.reason in {"calibration_lesson_review", "domain_error_profile_review"}
+    ]
+
     lines = [
         "Forecast self-check alerts",
         f"scheduled_reviews: {len(results)}",
         f"alerts: {len(alert_rows)}",
+        f"scores_created: {len(score_events)}",
+        f"postmortems_created: {len(postmortem_events)}",
+        f"learning_reviews: {len(learning_review_events)}",
         "",
     ]
     for alert in alert_rows:
