@@ -21,6 +21,9 @@ Secrets go in `~/.superforecasting-agent/.env` by default. Non-secret settings u
 | `SUPERFORECASTING_AGENT_VOICE` | Preferred startup voice-mode flag for TUI UI state. Set to `1` to show voice as enabled at startup. |
 | `FORECAST_VOICE` | Short alias for `SUPERFORECASTING_AGENT_VOICE`. |
 | `HERMES_VOICE` | Legacy startup voice-mode flag for inherited TUI voice state. |
+| `SUPERFORECASTING_AGENT_BIN` | Preferred executable override when background worker launchers or TUI setup handoff code need to re-enter the CLI from a stripped service environment. |
+| `FORECAST_BIN` | Short alias for `SUPERFORECASTING_AGENT_BIN`. |
+| `HERMES_BIN` | Legacy executable override for inherited worker launchers and install shims. |
 | `FORECAST_LEDGER_DB` | Optional path to the forecast ledger SQLite database used by scheduled self-check runners. When unset, the ledger defaults to the active agent home. |
 | `FORECAST_AUTO_SCORE` | When set truthy for forecast cron/self-check runs, automatically scores newly resolved scoreable forecasts. |
 | `FORECAST_AUTO_POSTMORTEM` | When set truthy for forecast cron/self-check runs, writes postmortem/learning artifacts for scored resolved forecasts where the runner can do so. |

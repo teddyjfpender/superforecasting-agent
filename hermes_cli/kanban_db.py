@@ -5110,10 +5110,10 @@ def _resolve_hermes_argv() -> list[str]:
 
     Tries in order:
 
-    1. ``$SUPERFORECASTING_AGENT_BIN`` / ``$HERMES_BIN`` — explicit operator
-       override. Path-like values are normalized to absolute paths; bare
-       command names keep normal PATH semantics and never prefer a
-       same-directory file before ``PATH``.
+    1. ``$SUPERFORECASTING_AGENT_BIN`` / ``$FORECAST_BIN`` / ``$HERMES_BIN`` —
+       explicit operator override. Path-like values are normalized to
+       absolute paths; bare command names keep normal PATH semantics and
+       never prefer a same-directory file before ``PATH``.
     2. ``shutil.which("superforecasting-agent")`` — the console-script shim,
        normalized to an absolute path.
     3. ``shutil.which("hermes")`` — legacy compatibility shim, normalized to
@@ -5136,6 +5136,7 @@ def _resolve_hermes_argv() -> list[str]:
 
     env_bin = (
         os.environ.get("SUPERFORECASTING_AGENT_BIN", "").strip()
+        or os.environ.get("FORECAST_BIN", "").strip()
         or os.environ.get("HERMES_BIN", "").strip()
     )
     if env_bin:

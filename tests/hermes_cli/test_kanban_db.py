@@ -2151,6 +2151,7 @@ def test_resolve_hermes_argv_prefers_path_shim(monkeypatch):
     import hermes_cli.kanban_db as kb
 
     monkeypatch.delenv("SUPERFORECASTING_AGENT_BIN", raising=False)
+    monkeypatch.delenv("FORECAST_BIN", raising=False)
     monkeypatch.delenv("HERMES_BIN", raising=False)
     monkeypatch.setattr(
         shutil,
@@ -2169,6 +2170,7 @@ def test_resolve_hermes_argv_absolutizes_relative_exe_shim(monkeypatch, tmp_path
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("SUPERFORECASTING_AGENT_BIN", raising=False)
+    monkeypatch.delenv("FORECAST_BIN", raising=False)
     monkeypatch.setenv("HERMES_BIN", ".\\hermes.exe")
     monkeypatch.setattr(kb, "_IS_WINDOWS", True)
 
@@ -2184,6 +2186,7 @@ def test_resolve_hermes_argv_avoids_implicit_windows_batch_shim(monkeypatch, tmp
     bin_dir.mkdir()
     (bin_dir / "hermes.CMD").write_text("@echo off\n", encoding="utf-8")
     monkeypatch.delenv("SUPERFORECASTING_AGENT_BIN", raising=False)
+    monkeypatch.delenv("FORECAST_BIN", raising=False)
     monkeypatch.delenv("HERMES_BIN", raising=False)
     monkeypatch.setenv("PATH", str(bin_dir))
     monkeypatch.setenv("PATHEXT", ".CMD")
@@ -2201,10 +2204,29 @@ def test_resolve_hermes_argv_honors_hermes_bin_path_override(monkeypatch, tmp_pa
     shim.parent.mkdir()
     shim.write_text("#!/bin/sh\n", encoding="utf-8")
     monkeypatch.delenv("SUPERFORECASTING_AGENT_BIN", raising=False)
+    monkeypatch.delenv("FORECAST_BIN", raising=False)
     monkeypatch.setenv("HERMES_BIN", str(shim))
     monkeypatch.setattr(shutil, "which", lambda name: None)
 
     assert kb._resolve_hermes_argv() == [str(shim)]
+
+
+def test_resolve_hermes_argv_forecast_bin_wins_over_hermes_bin(monkeypatch, tmp_path):
+    """FORECAST_BIN is the short fork-native override before legacy HERMES_BIN."""
+    import shutil
+    import hermes_cli.kanban_db as kb
+
+    short = tmp_path / "bin" / "forecast"
+    legacy = tmp_path / "bin" / "hermes"
+    short.parent.mkdir()
+    short.write_text("#!/bin/sh\n", encoding="utf-8")
+    legacy.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_BIN", raising=False)
+    monkeypatch.setenv("FORECAST_BIN", str(short))
+    monkeypatch.setenv("HERMES_BIN", str(legacy))
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+
+    assert kb._resolve_hermes_argv() == [str(short)]
 
 
 def test_resolve_hermes_argv_superforecasting_bin_wins_over_hermes_bin(monkeypatch, tmp_path):
@@ -2213,11 +2235,14 @@ def test_resolve_hermes_argv_superforecasting_bin_wins_over_hermes_bin(monkeypat
     import hermes_cli.kanban_db as kb
 
     primary = tmp_path / "bin" / "superforecasting-agent"
+    short = tmp_path / "bin" / "forecast"
     legacy = tmp_path / "bin" / "hermes"
     primary.parent.mkdir()
     primary.write_text("#!/bin/sh\n", encoding="utf-8")
+    short.write_text("#!/bin/sh\n", encoding="utf-8")
     legacy.write_text("#!/bin/sh\n", encoding="utf-8")
     monkeypatch.setenv("SUPERFORECASTING_AGENT_BIN", str(primary))
+    monkeypatch.setenv("FORECAST_BIN", str(short))
     monkeypatch.setenv("HERMES_BIN", str(legacy))
     monkeypatch.setattr(shutil, "which", lambda name: None)
 
@@ -2238,6 +2263,7 @@ def test_resolve_hermes_argv_hermes_bin_bare_name_uses_path(monkeypatch, tmp_pat
     path_hermes.chmod(path_hermes.stat().st_mode | stat.S_IXUSR)
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("SUPERFORECASTING_AGENT_BIN", raising=False)
+    monkeypatch.delenv("FORECAST_BIN", raising=False)
     monkeypatch.setenv("PATH", str(path_hermes.parent))
     monkeypatch.setenv("HERMES_BIN", "hermes")
 
@@ -2252,6 +2278,7 @@ def test_resolve_hermes_argv_hermes_bin_bare_name_ignores_cwd(monkeypatch, tmp_p
     (tmp_path / "hermes.exe").write_text("wrong\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("SUPERFORECASTING_AGENT_BIN", raising=False)
+    monkeypatch.delenv("FORECAST_BIN", raising=False)
     monkeypatch.setenv("PATH", "")
     monkeypatch.setenv("HERMES_BIN", "hermes")
     monkeypatch.setattr(kb, "_IS_WINDOWS", True)
@@ -2268,6 +2295,7 @@ def test_resolve_hermes_argv_hermes_bin_bare_cmd_uses_module_fallback(monkeypatc
     bin_dir.mkdir()
     (bin_dir / "hermes.CMD").write_text("@echo off\n", encoding="utf-8")
     monkeypatch.delenv("SUPERFORECASTING_AGENT_BIN", raising=False)
+    monkeypatch.delenv("FORECAST_BIN", raising=False)
     monkeypatch.setenv("PATH", str(bin_dir))
     monkeypatch.setenv("PATHEXT", ".CMD")
     monkeypatch.setenv("HERMES_BIN", "hermes")
@@ -2282,6 +2310,7 @@ def test_resolve_hermes_argv_hermes_bin_unresolved_bare_name_falls_back(monkeypa
     import hermes_cli.kanban_db as kb
 
     monkeypatch.delenv("SUPERFORECASTING_AGENT_BIN", raising=False)
+    monkeypatch.delenv("FORECAST_BIN", raising=False)
     monkeypatch.setenv("PATH", "")
     monkeypatch.setenv("HERMES_BIN", "hermes")
 
@@ -2301,6 +2330,7 @@ def test_resolve_hermes_argv_falls_back_to_module_form_when_no_path_shim(monkeyp
     import hermes_cli.kanban_db as kb
 
     monkeypatch.delenv("SUPERFORECASTING_AGENT_BIN", raising=False)
+    monkeypatch.delenv("FORECAST_BIN", raising=False)
     monkeypatch.delenv("HERMES_BIN", raising=False)
     monkeypatch.setattr(shutil, "which", lambda name: None)
     argv = kb._resolve_hermes_argv()
@@ -2324,6 +2354,7 @@ def test_resolve_hermes_argv_module_actually_runs():
 
     with mock.patch.dict(os.environ, {}, clear=False):
         os.environ.pop("SUPERFORECASTING_AGENT_BIN", None)
+        os.environ.pop("FORECAST_BIN", None)
         os.environ.pop("HERMES_BIN", None)
         with mock.patch.object(shutil, "which", return_value=None):
             argv = kb._resolve_hermes_argv()
