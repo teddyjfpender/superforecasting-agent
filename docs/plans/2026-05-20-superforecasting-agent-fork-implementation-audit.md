@@ -1704,7 +1704,7 @@ fork objective still needs the remaining work listed below.
 | Quality gate: `scripts/run_tests.sh -q` | Partial | Many focused suites pass; the full repository gate was not rerun as final completion evidence in this audit |
 | Quality gate: `python3 -m compileall -q forecasting` | Covered | Passed in this audit pass after the PRD checklist update |
 | CLI/TUI manual transcript gate | Covered/Partial | `docs/plans/2026-05-24-forecast-cli-smoke-transcript.md` captures a real CLI smoke transcript with ledger, evidence, reference-class, model-run, schedule, pilot, backtest, performance, and readiness output; a fuller interactive TUI transcript remains a release-hardening task |
-| Docs/link render gate | Partial | Website/web builds pass with inherited warnings; rerun after further docs edits |
+| Docs/link render gate | Covered/Partial | `npm run build` in `website/` passed after the smoke-transcript docs link was added, with inherited zh-Hans/ko broken-link warnings; web/dashboard build coverage remains as recorded above |
 
 ## Remaining Gaps
 
