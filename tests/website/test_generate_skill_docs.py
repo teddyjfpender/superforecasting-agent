@@ -170,6 +170,34 @@ def test_related_skill_links_display_fork_native_names_for_compatibility_ids(gen
     assert "[`hermes-agent`](" not in result
 
 
+def test_skill_page_tags_display_fork_native_names_for_compatibility_ids(gen_module):
+    meta = {
+        "source_kind": "bundled",
+        "category": "software-development",
+        "slug": "debugging-hermes-tui-commands",
+        "sub": None,
+        "rel_path": "software-development/debugging-hermes-tui-commands",
+    }
+    frontmatter = {
+        "name": "debugging-hermes-tui-commands",
+        "description": "Debug Superforecasting Agent TUI slash commands.",
+        "metadata": {
+            "hermes": {
+                "tags": ["debugging", "hermes-agent"],
+            }
+        },
+    }
+
+    result = gen_module.render_skill_page(
+        meta,
+        frontmatter,
+        "# Debugging Superforecasting TUI Commands\n\nInspect the TUI bridge.",
+    )
+
+    assert "`superforecasting-agent`" in result
+    assert "`hermes-agent`" not in result
+
+
 def test_legacy_repo_reference_links_are_rewritten_to_fork(gen_module):
     body = (
         "Read [ref](https://github.com/NousResearch/hermes-agent/blob/main/"

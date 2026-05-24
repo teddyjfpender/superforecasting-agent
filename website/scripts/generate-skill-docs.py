@@ -410,7 +410,7 @@ def render_skill_page(
             plat_str = str(platforms)
         info_rows.append(("Platforms", plat_str))
     if tags:
-        info_rows.append(("Tags", ", ".join(f"`{t}`" for t in tags)))
+        info_rows.append(("Tags", ", ".join(f"`{display_skill_name(t)}`" for t in tags)))
     if related:
         # link to sibling pages when possible -- fall back to plain code
         link_parts = []
