@@ -12009,8 +12009,8 @@ Examples:
     # own argparse tree.  No hardcoded plugin commands in main.py.
     #
     # Skipped when the invocation is already targeting a known built-in
-    # subcommand — ``hermes --help``, ``hermes version``, ``hermes logs``,
-    # etc.  This avoids eagerly importing every bundled plugin module
+    # subcommand — help, version, logs, etc.  This avoids eagerly importing
+    # every bundled plugin module
     # (google.cloud.pubsub_v1, aiohttp, grpc, PIL …) which costs
     # 500-650ms on typical installs.
     # =========================================================================

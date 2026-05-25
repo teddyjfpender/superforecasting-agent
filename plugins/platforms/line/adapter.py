@@ -1488,14 +1488,14 @@ def validate_config(config) -> bool:
 
 
 def is_connected(config) -> bool:
-    """Surface in ``hermes status`` even before the adapter is instantiated."""
+    """Surface in ``superforecasting-agent status`` before adapter init."""
     return validate_config(config)
 
 
 def _env_enablement() -> Optional[Dict[str, Any]]:
     """Auto-seed PlatformConfig.extra from env-only setups.
 
-    Lets ``hermes status`` reflect a LINE configuration that lives entirely
+    Lets ``superforecasting-agent status`` reflect a LINE configuration that lives entirely
     in ``.env`` without a ``platforms.line`` block in ``config.yaml``.
     Mirrors the IRC plugin's pattern.
     """

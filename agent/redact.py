@@ -215,10 +215,11 @@ def mask_secret(
 ) -> str:
     """Mask a secret for display, preserving ``head`` and ``tail`` characters.
 
-    Canonical helper for display-time redaction across Hermes — used by
-    ``hermes config``, ``hermes status``, ``hermes dump``, and anywhere
-    a secret needs to be shown truncated for debuggability while still
-    keeping the bulk hidden.
+    Canonical helper for display-time redaction across the agent runtime —
+    used by ``superforecasting-agent config``,
+    ``superforecasting-agent status``, ``superforecasting-agent dump``, and
+    anywhere a secret needs to be shown truncated for debuggability while
+    still keeping the bulk hidden.
 
     Args:
         value:       The secret to mask. ``None``/empty returns ``empty``.

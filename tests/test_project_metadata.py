@@ -1611,6 +1611,62 @@ def test_cron_gateway_platform_runtime_guidance_is_forecast_native():
     assert "Path.home() / \".hermes\"" not in text
 
 
+def test_runtime_diagnostic_status_guidance_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        root / "acp_adapter" / "tools.py",
+        root / "agent" / "conversation_loop.py",
+        root / "agent" / "models_dev.py",
+        root / "agent" / "redact.py",
+        root / "agent" / "stream_diag.py",
+        root / "agent" / "auxiliary_client.py",
+        root / "gateway" / "config.py",
+        root / "gateway" / "platform_registry.py",
+        root / "gateway" / "session.py",
+        root / "gateway" / "shutdown_forensics.py",
+        root / "gateway" / "run.py",
+        root / "gateway" / "platforms" / "qqbot" / "adapter.py",
+        root / "hermes_cli" / "auth.py",
+        root / "hermes_cli" / "config.py",
+        root / "hermes_cli" / "main.py",
+        root / "hermes_cli" / "model_switch.py",
+        root / "hermes_cli" / "web_server.py",
+        root / "plugins" / "browser" / "browser_use" / "provider.py",
+        root / "plugins" / "image_gen" / "openai" / "__init__.py",
+        root / "plugins" / "kanban" / "dashboard" / "plugin_api.py",
+        root / "plugins" / "memory" / "retaindb" / "__init__.py",
+        root / "plugins" / "platforms" / "line" / "adapter.py",
+        root / "plugins" / "web" / "ddgs" / "provider.py",
+        root / "plugins" / "web" / "firecrawl" / "provider.py",
+        root / "plugins" / "web" / "xai" / "provider.py",
+        root / "scripts" / "discord-voice-doctor.py",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in checked_paths)
+
+    assert "superforecasting-agent logs --level WARNING" in text
+    assert "superforecasting-agent logs --session <id>" in text
+    assert "superforecasting-agent config refresh" in text
+    assert "superforecasting-agent config set gateway.streaming.*" in text
+    assert "superforecasting-agent tools" in text
+    assert "superforecasting-agent status" in text
+    assert "superforecasting-agent setup" in text
+    assert "superforecasting-agent doctor" in text
+    assert "superforecasting-agent dashboard --host 0.0.0.0" in text
+    assert "Superforecasting Agent config.yaml" in text
+    assert "agent tools to ACP ToolKind" in text
+
+    assert "hermes logs" not in text
+    assert "hermes status" not in text
+    assert "hermes setup" not in text
+    assert "hermes doctor" not in text
+    assert "hermes config" not in text
+    assert "hermes tools" not in text
+    assert "mapping hermes tools" not in text
+    assert "Check hermes config.yaml" not in text
+    assert "hermes dashboard --host 0.0.0.0" not in text
+    assert "hermes config.yaml under retaindb" not in text
+
+
 def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [

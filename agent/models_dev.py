@@ -250,7 +250,7 @@ def fetch_models_dev(force_refresh: bool = False) -> Dict[str, Any]:
       4. Network fails → fall back to ANY available disk cache (even stale)
          with a short 5 min in-mem grace period before retrying network.
 
-    When ``force_refresh=True`` (used by ``hermes config refresh``, the
+    When ``force_refresh=True`` (used by ``superforecasting-agent config refresh``, the
     \"refresh model catalog\" code path), stages 1 and 2 are skipped. The
     function always hits the network and only falls back to disk if the
     network call fails.

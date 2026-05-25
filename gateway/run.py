@@ -3786,7 +3786,7 @@ class GatewayRunner:
             pass
 
         # Log any active supply-chain security advisories. Operators see this
-        # in gateway.log and `hermes status` surfaces it; we do NOT block
+        # in gateway.log and `superforecasting-agent status` surfaces it; we do NOT block
         # startup or surface it inline to user messages, since the gateway
         # operator is the one who can act on it (uninstall the package,
         # rotate credentials).  See hermes_cli/security_advisories.py.

@@ -2259,7 +2259,7 @@ def _log_skip_unhealthy(label: str, task: Optional[str] = None) -> None:
 
 def _reset_aux_unhealthy_cache() -> None:
     """Clear the unhealthy cache. Used by tests and by a future explicit
-    user trigger (e.g. ``hermes config aux reset``)."""
+    user trigger (e.g. ``superforecasting-agent config aux reset``)."""
     _aux_unhealthy_until.clear()
     _aux_unhealthy_logged_at.clear()
 

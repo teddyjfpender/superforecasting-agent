@@ -2098,7 +2098,7 @@ def resolve_gemini_oauth_runtime_credentials(
 
 
 def get_gemini_oauth_auth_status() -> Dict[str, Any]:
-    """Return a status dict for `hermes auth list` / `hermes status`."""
+    """Return a status dict for auth-list and status surfaces."""
     try:
         from agent.google_oauth import _credentials_path, load_credentials
     except ImportError:
@@ -5398,11 +5398,13 @@ def _snapshot_nous_pool_status() -> Dict[str, Any]:
 # ── Process-level memo for get_nous_auth_status() ──
 # get_nous_auth_status() validates state by calling resolve_nous_runtime_credentials(),
 # which does a synchronous OAuth refresh POST to portal.nousresearch.com. That can take
-# ~350ms even on the failure path, and read-only UI surfaces (`hermes tools`, status panels,
-# subscription-feature checks) call it many times per render — `hermes tools` → "All Platforms"
+# ~350ms even on the failure path, and read-only UI surfaces
+# (`superforecasting-agent tools`, status panels, subscription-feature checks)
+# call it many times per render — `superforecasting-agent tools` → "All Platforms"
 # was firing the refresh ~31× during one menu paint, racking up >13s of HTTP and burning
 # single-use refresh tokens. Cache the snapshot for a few seconds, keyed on the auth.json
-# mtime so that `hermes auth login/logout/add/remove` invalidate naturally on the next call.
+# mtime so that `superforecasting-agent auth login/logout/add/remove`
+# invalidate naturally on the next call.
 _NOUS_AUTH_STATUS_CACHE_TTL = 15.0  # seconds
 _nous_auth_status_cache: Optional[Tuple[float, Optional[float], Dict[str, Any]]] = None
 
@@ -5727,7 +5729,7 @@ def _get_azure_foundry_auth_status() -> Dict[str, Any]:
     checks:
 
       * ``auth_mode == "entra_id"`` AND ``azure-identity`` is importable
-        (we do NOT mint a token here; ``hermes doctor`` runs the live
+        (we do NOT mint a token here; ``superforecasting-agent doctor`` runs the live
         probe and reports whether the credential chain can acquire one).
       * ``auth_mode == "api_key"`` (default) AND ``AZURE_FOUNDRY_API_KEY``
         is set with a usable value.

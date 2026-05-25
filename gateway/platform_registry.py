@@ -63,7 +63,7 @@ class PlatformEntry:
     # If None, falls back to ``validate_config`` or ``check_fn``.
     is_connected: Optional[Callable[[Any], bool]] = None
 
-    # Env vars this platform needs (for ``hermes setup`` display).
+    # Env vars this platform needs (for ``superforecasting-agent setup`` display).
     required_env: list = field(default_factory=list)
 
     # Hint shown when check_fn returns False.

@@ -233,7 +233,8 @@ def run_conversation(
         pass
 
     # Tag all log records on this thread with the session ID so
-    # ``hermes logs --session <id>`` can filter a single conversation.
+    # ``superforecasting-agent logs --session <id>`` can filter a single
+    # conversation.
     from hermes_logging import set_session_context
     set_session_context(agent.session_id)
 

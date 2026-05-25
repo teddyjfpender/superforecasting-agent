@@ -1558,8 +1558,9 @@ DEFAULT_CONFIG = {
         # Acknowledged supply-chain security advisories. Each entry is the
         # ID of an advisory the user has read and acted on (uninstalled the
         # compromised package, rotated credentials). Acked advisories no
-        # longer trigger the startup banner. Add via `hermes doctor --ack
-        # <id>`; remove by editing the list directly. See
+        # longer trigger the startup banner. Add via
+        # `superforecasting-agent doctor --ack <id>`; remove by editing the
+        # list directly. See
         # ``hermes_cli/security_advisories.py`` for the catalog.
         "acked_advisories": [],
         # Allow Hermes to lazy-install opt-in backend packages from PyPI
@@ -5563,9 +5564,9 @@ _inject_profile_env_vars()
 # ── Platform-plugin env var injection ────────────────────────────────────────
 # Bundled platform plugins under ``plugins/platforms/*/plugin.yaml`` declare
 # their required env vars via ``requires_env``.  This mirror of
-# ``_inject_profile_env_vars`` surfaces them in ``hermes config`` UI so users
-# can configure Teams / IRC / Google Chat without the core repo ever needing
-# to know they exist.
+# ``_inject_profile_env_vars`` surfaces them in
+# ``superforecasting-agent config`` UI so users can configure Teams / IRC /
+# Google Chat without the core repo ever needing to know they exist.
 #
 # Each ``requires_env`` entry may be a bare string (name only) or a dict:
 #

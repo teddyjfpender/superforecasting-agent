@@ -194,10 +194,11 @@ def _load_direct_aliases() -> dict[str, DirectAlias]:
             provider: custom
             base_url: "https://ollama.com/v1"
 
-    Also reads ``model.aliases`` (set by ``hermes config set model.aliases.xxx``)
-    and converts simple string entries (``ds-flash: deepseek/deepseek-v4-flash``)
-    into DirectAlias objects.  The provider is parsed from the ``provider/``
-    prefix in the value; if no slash, the current provider is used.
+    Also reads ``model.aliases`` (set by
+    ``superforecasting-agent config set model.aliases.xxx``) and converts
+    simple string entries (``ds-flash: deepseek/deepseek-v4-flash``) into
+    DirectAlias objects. The provider is parsed from the ``provider/`` prefix
+    in the value; if no slash, the current provider is used.
     """
     merged = dict(_BUILTIN_DIRECT_ALIASES)
     try:

@@ -752,7 +752,7 @@ def _tail_lines(path: Path, n: int) -> List[str]:
 
 @app.post("/api/gateway/restart")
 async def restart_gateway():
-    """Kick off a ``hermes gateway restart`` in the background."""
+    """Kick off a ``superforecasting-agent gateway restart`` in the background."""
     try:
         proc = _spawn_hermes_action(
             ["gateway", "restart"],
