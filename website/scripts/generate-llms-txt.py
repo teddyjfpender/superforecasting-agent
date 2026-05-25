@@ -142,7 +142,16 @@ SECTIONS: list[tuple[str, list[tuple[str, str, str | None]]]] = [
         ("guides/automate-with-cron", "Automate with Cron", None),
         ("guides/work-with-skills", "Work with Skills", None),
         ("guides/delegation-patterns", "Delegation Patterns", None),
-        ("guides/github-pr-review-agent", "GitHub PR Review Agent", None),
+        (
+            "guides/github-repository-forecast-monitor",
+            "GitHub Repository Forecast Monitor",
+            None,
+        ),
+        (
+            "guides/github-webhook-forecast-evidence",
+            "GitHub Webhook Forecast Evidence",
+            None,
+        ),
     ]),
     ("Developer Guide", [
         ("developer-guide/contributing", "Contributing", None),

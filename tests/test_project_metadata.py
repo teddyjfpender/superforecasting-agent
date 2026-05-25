@@ -762,11 +762,15 @@ def test_high_attention_docs_navigation_is_forecast_native():
     assert "guides/use-voice-mode-with-superforecasting-agent" in sidebars
     assert "guides/daily-forecast-brief" in sidebars
     assert "guides/team-telegram-forecast-desk" in sidebars
+    assert "guides/github-repository-forecast-monitor" in sidebars
+    assert "guides/github-webhook-forecast-evidence" in sidebars
     assert "build-a-hermes-plugin" not in sidebars
     assert "use-soul-with-hermes" not in sidebars
     assert "use-voice-mode-with-hermes" not in sidebars
     assert "daily-briefing-bot" not in sidebars
     assert "team-telegram-assistant" not in sidebars
+    assert "github-pr-review-agent" not in sidebars
+    assert "webhook-github-pr-review" not in sidebars
     assert "build-a-superforecasting-agent-plugin" in llms_generator
     assert "use-soul-with-superforecasting-agent" in llms_generator
     assert "use-voice-mode-with-superforecasting-agent" in llms_generator
@@ -774,10 +778,16 @@ def test_high_attention_docs_navigation_is_forecast_native():
     assert "Daily Forecast Brief" in llms_generator
     assert "team-telegram-forecast-desk" in llms_generator
     assert "Team Telegram Forecast Desk" in llms_generator
+    assert "github-repository-forecast-monitor" in llms_generator
+    assert "GitHub Repository Forecast Monitor" in llms_generator
+    assert "github-webhook-forecast-evidence" in llms_generator
+    assert "GitHub Webhook Forecast Evidence" in llms_generator
     assert "daily-briefing-bot" not in llms_generator
     assert "Daily Briefing Bot" not in llms_generator
     assert "team-telegram-assistant" not in llms_generator
     assert "Team Telegram Assistant" not in llms_generator
+    assert "github-pr-review-agent" not in llms_generator
+    assert "GitHub PR Review Agent" not in llms_generator
     assert "Build a Superforecasting Agent Plugin" in docs_text
     assert "Build a Hermes Plugin" not in docs_text
     assert "Building a Hermes Plugin" not in docs_text

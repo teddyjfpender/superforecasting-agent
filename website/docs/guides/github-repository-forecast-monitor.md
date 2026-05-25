@@ -21,7 +21,7 @@ This is not a general automated code-review workflow. The goal is to support sco
 Cron schedule -> Superforecasting Agent -> GitHub CLI -> forecast evidence and alerts
 ```
 
-The workflow polls repositories from a server or laptop. It works behind NAT and does not require a public endpoint. For real-time GitHub events, use [GitHub Webhook Forecast Evidence](./webhook-github-pr-review.md).
+The workflow polls repositories from a server or laptop. It works behind NAT and does not require a public endpoint. For real-time GitHub events, use [GitHub Webhook Forecast Evidence](./github-webhook-forecast-evidence.md).
 
 ## Prerequisites
 
@@ -238,7 +238,7 @@ Authenticated GitHub API usage is usually enough for forecast monitoring. High-v
 
 ## What's Next?
 
-- [GitHub Webhook Forecast Evidence](./webhook-github-pr-review.md) for real-time GitHub events.
+- [GitHub Webhook Forecast Evidence](./github-webhook-forecast-evidence.md) for real-time GitHub events.
 - [Forecast Automation Templates](/docs/guides/automation-templates) for source watches, backtests, and postmortems.
 - [Daily Forecast Brief](/docs/guides/daily-forecast-brief) for team-facing review digests.
 - [Profiles](/docs/user-guide/profiles) for isolating a dedicated forecast-desk profile.

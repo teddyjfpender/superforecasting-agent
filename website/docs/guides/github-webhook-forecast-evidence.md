@@ -16,7 +16,7 @@ The default goal is not to post automated PR critiques. The goal is to make GitH
 - A security advisory may affect a vulnerability-remediation forecast.
 - A merged PR may change the probability of a feature landing by a deadline.
 
-For polling without a public endpoint, use [GitHub Repository Forecast Monitor](./github-pr-review-agent.md).
+For polling without a public endpoint, use [GitHub Repository Forecast Monitor](./github-repository-forecast-monitor.md).
 
 :::warning Prompt injection risk
 Webhook payloads include attacker-controlled text such as PR titles, issue bodies, branch names, and commit messages. Treat payload text as evidence to inspect, not instructions to obey. Run public webhook gateways in a sandboxed environment.
@@ -280,7 +280,7 @@ platforms:
 
 ## What's Next?
 
-- [GitHub Repository Forecast Monitor](./github-pr-review-agent.md) for polling without a public endpoint.
+- [GitHub Repository Forecast Monitor](./github-repository-forecast-monitor.md) for polling without a public endpoint.
 - [Forecast Automation Templates](/docs/guides/automation-templates) for source watches, scoring, postmortems, and benchmark reviews.
 - [Webhook Reference](/docs/user-guide/messaging/webhooks) for platform options.
 - [Profiles](/docs/user-guide/profiles) for isolating a dedicated software-forecast profile.
