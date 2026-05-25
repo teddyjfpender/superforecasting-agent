@@ -45,6 +45,7 @@ def test_forecast_smoke_script_runs_local_lifecycle(tmp_path):
 
     output = result.stdout + result.stderr
     assert result.returncode == 0, output
+    assert "[forecast-smoke] snapshot:" in result.stdout
     assert "[forecast-smoke] source_adapters:" in result.stdout
     assert "[forecast-smoke] benchmark_datasets: 4" in result.stdout
     assert "[forecast-smoke] question_id: fq_" in result.stdout

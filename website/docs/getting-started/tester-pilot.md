@@ -54,9 +54,10 @@ Run the acceptance smoke test:
 python3 scripts/forecast_smoke_test.py
 ```
 
-The smoke output must end with:
+The smoke output must include the source snapshot line and end with the pass line:
 
 ```text
+[forecast-smoke] snapshot: <commit> (<branch>)
 [forecast-smoke] forecast smoke test passed
 ```
 

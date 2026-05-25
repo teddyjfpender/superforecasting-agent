@@ -115,6 +115,40 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+def _git_snapshot(repo_root: Path) -> str:
+    """Return a compact source snapshot for tester artifacts."""
+
+    try:
+        rev = subprocess.run(
+            ["git", "rev-parse", "--short=12", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        ).stdout.strip()
+        branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        ).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    suffix = ", dirty" if dirty else ""
+    return f"{rev} ({branch}{suffix})" if branch else rev
+
+
 def _run_forecast(
     args: list[str],
     *,
@@ -785,6 +819,7 @@ def _main(argv: list[str]) -> int:
             db_path = Path(temp_dir.name) / "forecasting-smoke.db"
 
     try:
+        _print_step(f"snapshot: {_git_snapshot(repo_root)}")
         _exercise_lifecycle(
             repo_root,
             db_path,

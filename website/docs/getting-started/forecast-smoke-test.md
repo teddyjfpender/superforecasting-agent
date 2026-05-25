@@ -15,9 +15,10 @@ source .venv/bin/activate
 python3 scripts/forecast_smoke_test.py
 ```
 
-The expected final line is:
+The expected output includes a source snapshot line and ends with the pass line:
 
 ```text
+[forecast-smoke] snapshot: <commit> (<branch>)
 [forecast-smoke] forecast smoke test passed
 ```
 
