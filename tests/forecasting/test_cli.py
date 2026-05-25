@@ -372,6 +372,64 @@ def test_forecast_cli_can_store_numeric_forecast_value(tmp_path, capsys):
     assert "score_rule: normalized_squared_error" in score_output
 
 
+def test_forecast_cli_can_store_and_score_distribution_forecast(tmp_path, capsys):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "What will inflation average?",
+            "--resolution-criteria",
+            "Resolved by official annual CPI average.",
+            "--outcome-type",
+            "distribution",
+            "--unit",
+            "percent",
+            "--bound",
+            "0",
+            "--bound",
+            "10",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "update",
+            question_id,
+            "--distribution-json",
+            '{"mean": 3.0, "std": 1.0}',
+            "--rationale",
+            "Normal distribution around current inflation run-rate.",
+        ],
+    )
+    output = capsys.readouterr().out
+    snapshot = ForecastLedger(db_path).get_current_snapshot(question_id)
+
+    assert 'probability: {"mean": 3.0, "std": 1.0}' in output
+    assert snapshot is not None
+    assert snapshot.probability_or_distribution == {"mean": 3.0, "std": 1.0}
+
+    _run(parser, ["forecast", "--db", db, "resolve", question_id, "--outcome", "3.4"])
+    capsys.readouterr()
+    _run(parser, ["forecast", "--db", db, "score", question_id])
+    score_output = capsys.readouterr().out
+
+    assert "brier_score: -" in score_output
+    assert "log_score:" in score_output
+    assert "proper_score:" in score_output
+    assert "score_rule: normal_negative_log_likelihood" in score_output
+
+
 def test_forecast_cli_model_can_compute_bayesian_update(tmp_path, capsys):
     parser = _parser()
     db_path = tmp_path / "forecasting.db"

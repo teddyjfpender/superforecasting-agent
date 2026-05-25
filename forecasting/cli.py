@@ -507,7 +507,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     update_parser.add_argument("--numeric-value", type=float)
     update_parser.add_argument(
         "--distribution-json",
-        help="JSON object mapping categorical outcomes to probabilities",
+        help="JSON object mapping categorical outcomes to probabilities or distribution parameters such as mean/std",
     )
     update_parser.add_argument("--rationale")
     update_parser.add_argument("--as-of")
