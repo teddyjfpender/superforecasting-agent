@@ -6392,6 +6392,9 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
         )
         print(f"benchmark_suite: builtin ({len(rows)} datasets)")
         print(f"probability_source: {args.probability_source}")
+        suite_runs = 0
+        suite_cases = 0
+        suite_scored = 0
         for row in rows:
             dataset = f"builtin:{row['name']}"
             cases = _apply_backtest_probability_source(
@@ -6409,6 +6412,9 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
                 allow_calibration_memory=args.allow_calibration_memory,
             )
             summary = run["result_summary"]
+            suite_runs += 1
+            suite_cases += int(summary.get("case_count", 0) or 0)
+            suite_scored += int(summary.get("scored_cases", 0) or 0)
             print(
                 f"{dataset} backtest_run={run['id']} "
                 f"cases={summary.get('case_count', 0)} "
@@ -6416,6 +6422,7 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
                 f"agent_mean_brier={_format_metric(summary.get('agent_mean_brier'))} "
                 f"leakage={run['leakage_checks_passed']}"
             )
+        print(f"suite_summary: runs={suite_runs} cases={suite_cases} scored={suite_scored}")
         return
     if args.list:
         rows = ledger.list_backtest_runs()

@@ -10044,6 +10044,7 @@ def test_forecast_cli_runs_builtin_benchmark_suite(tmp_path, capsys, monkeypatch
     assert "builtin:heldout-120-binary" in output
     assert "builtin:manifold-public-120-binary" in output
     assert output.count("backtest_run=") == 4
+    assert "suite_summary: runs=4 cases=4 scored=4" in output
 
 
 def test_forecast_cli_can_prepare_agent_protocol_prompt_jsonl_for_benchmark_suite(
@@ -10114,6 +10115,81 @@ def test_forecast_cli_can_prepare_agent_protocol_prompt_jsonl_for_benchmark_suit
     assert '"probability": 0.82' not in encoded
     assert '"outcome": "no"' not in encoded
     assert ForecastLedger(db_path).list_backtest_runs() == []
+
+
+def test_forecast_cli_can_replay_agent_protocol_jsonl_for_benchmark_suite(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    parser = _parser()
+    db_path = tmp_path / "forecasting_suite_replay.db"
+    responses = tmp_path / "suite_responses.jsonl"
+    benchmark_names = ["mini-binary", "heldout-120-binary"]
+
+    monkeypatch.setattr(
+        "forecasting.cli.list_builtin_benchmarks",
+        lambda: [
+            {"name": name, "case_count": 1, "description": f"{name} fixture"}
+            for name in benchmark_names
+        ],
+    )
+
+    def fake_backtest_cases(dataset: str, *, ledger=None):
+        return [
+            {
+                "id": f"{dataset}-case-1",
+                "title": f"Will {dataset} replay captured agent protocol outputs?",
+                "resolution_criteria": "Resolved yes for the all-benchmarks replay fixture.",
+                "as_of": "2026-01-01T00:00:00Z",
+                "probability": 0.9,
+                "outcome": "yes",
+            }
+        ]
+
+    monkeypatch.setattr("forecasting.cli._load_backtest_cases", fake_backtest_cases)
+    responses.write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "case_id": f"builtin:{name}-case-1",
+                    "response": {
+                        "probability": 0.7,
+                        "confidence": 0.6,
+                        "rationale": f"Captured suite replay for {name}.",
+                        "agent_model": "suite-fixture-agent",
+                    },
+                }
+            )
+            for name in benchmark_names
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            str(db_path),
+            "backtest",
+            "--all-benchmarks",
+            "--probability-source",
+            "agent-protocol",
+            "--agent-response-jsonl",
+            str(responses),
+        ],
+    )
+    output = capsys.readouterr().out
+    runs = ForecastLedger(db_path).list_backtest_runs()
+
+    assert "benchmark_suite: builtin (2 datasets)" in output
+    assert "probability_source: agent-protocol" in output
+    assert output.count("backtest_run=") == 2
+    assert "suite_summary: runs=2 cases=2 scored=2" in output
+    assert {run["dataset"] for run in runs} == {"builtin:mini-binary", "builtin:heldout-120-binary"}
+    assert all(run["result_summary"]["probability_sources"] == ["agent-protocol"] for run in runs)
 
 
 def test_forecast_cli_runs_public_manifold_benchmark_dataset(tmp_path, capsys):
