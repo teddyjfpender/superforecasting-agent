@@ -8444,8 +8444,8 @@ class GatewayRunner:
                                         _warn_msg = (
                                             "⚠️ Context compression aborted "
                                             f"({_err}). No messages were dropped — "
-                                            "conversation is unchanged. Run /compress "
-                                            "to retry, /reset for a clean session, or "
+                                            "research transcript is unchanged. Run /compress "
+                                            "to retry, /reset for a clean forecast session, or "
                                             "check your auxiliary.compression model "
                                             "configuration."
                                         )
@@ -13969,11 +13969,11 @@ class GatewayRunner:
                     exit_code_raw = exit_code_path.read_text().strip() or "1"
                     exit_code = int(exit_code_raw)
                     if exit_code == 0:
-                        await adapter.send(chat_id, "✅ Hermes update finished.", metadata=metadata)
+                        await adapter.send(chat_id, "✅ Superforecasting Agent update finished.", metadata=metadata)
                     else:
                         await adapter.send(
                             chat_id,
-                            "❌ Hermes update failed (exit code {}).".format(exit_code),
+                            "❌ Superforecasting Agent update failed (exit code {}).".format(exit_code),
                             metadata=metadata,
                         )
                     logger.info("Update finished (exit=%s), notified %s", exit_code, session_key)
@@ -14061,7 +14061,7 @@ class GatewayRunner:
             try:
                 await adapter.send(
                     chat_id,
-                    "❌ Hermes update timed out after 30 minutes.",
+                    "❌ Superforecasting Agent update timed out after 30 minutes.",
                     metadata=metadata,
                 )
             except Exception:

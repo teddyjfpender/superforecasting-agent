@@ -1,4 +1,4 @@
-# Hermes static-message catalog -- English (baseline / source of truth)
+# Superforecasting Agent static-message catalog -- English (baseline / source of truth)
 #
 # Only user-facing static messages from the CLI approval prompt and a handful
 # of gateway slash-command replies live here.  Agent-generated output, log
@@ -60,7 +60,7 @@ gateway:
   agents:
     header:                "🤖 **Active Agents & Tasks**"
     active_agents:         "**Active agents:** {count}"
-    this_chat:             " · this chat"
+    this_chat:             " · this session"
     more:                  "... and {count} more"
     running_processes:     "**Running background processes:** {count}"
     async_jobs:            "**Gateway async jobs:** {count}"
@@ -78,12 +78,12 @@ gateway:
     always_plural:         "✅ Commands approved (pattern approved permanently) ({count} commands). The agent is resuming..."
 
   background:
-    usage:                 "Usage: /background <prompt>\nExample: /background Summarize the top HN stories today\n\nRuns the prompt in a separate session. You can keep chatting — the result will appear here when done."
-    started:               "🔄 Background task started: \"{preview}\"\nTask ID: {task_id}\nYou can keep chatting — results will appear when done."
+    usage:                 "Usage: /background <prompt>\nExample: /background Summarize the top HN stories today\n\nRuns the prompt in a separate research session. You can keep working here — the result will appear here when done."
+    started:               "🔄 Background research task started: \"{preview}\"\nTask ID: {task_id}\nYou can keep working here — results will appear when done."
 
   branch:
     db_unavailable:        "Session database not available."
-    no_conversation:       "No conversation to branch — send a message first."
+    no_conversation:       "No research transcript to branch — send a forecast note first."
     create_failed:         "Failed to create branch: {error}"
     switch_failed:         "Branch created but failed to switch to it."
     branched_one:          "⑂ Branched to **{title}** ({count} message copied)\nOriginal: `{parent}`\nBranch: `{new}`\nUse `/resume` to switch back to the original."
@@ -100,12 +100,12 @@ gateway:
     out_of_range:          "_(Requested page {requested} was out of range, showing page {page}.)_"
 
   compress:
-    not_enough:            "Not enough conversation to compress (need at least 4 messages)."
+    not_enough:            "Not enough transcript to compress (need at least 4 messages)."
     no_provider:           "No provider configured -- cannot compress."
     nothing_to_do:         "Nothing to compress yet (the transcript is still all protected context)."
     focus_line:            "Focus: \"{topic}\""
     summary_failed:        "⚠️ Summary generation failed ({error}). {count} historical message(s) were removed and replaced with a placeholder; earlier context is no longer recoverable. Consider checking your auxiliary.compression model configuration."
-    aborted:               "⚠️ Compression aborted ({error}). No messages were dropped — conversation is unchanged. Run /compress to retry, /reset for a clean session, or check your auxiliary.compression model configuration."
+    aborted:               "⚠️ Compression aborted ({error}). No messages were dropped — transcript is unchanged. Run /compress to retry, /reset for a clean forecast session, or check your auxiliary.compression model configuration."
     aux_failed:            "ℹ️ Configured compression model `{model}` failed ({error}). Recovered using your main model — context is intact — but you may want to check `auxiliary.compression.model` in config.yaml."
     failed:                "Compression failed: {error}"
 
@@ -113,8 +113,8 @@ gateway:
     upload_failed:         "✗ Failed to upload debug report: {error}"
     header:                "**Debug report uploaded:**"
     auto_delete:           "⏱ Pastes will auto-delete in 6 hours."
-    full_logs_hint:        "For full log uploads, use `hermes debug share` from the CLI."
-    share_hint:            "Share these links with the Hermes team for support."
+    full_logs_hint:        "For full log uploads, use `superforecasting-agent debug share` from the CLI."
+    share_hint:            "Share these links with the Superforecasting Agent maintainers for support."
 
   deny:
     stale:                 "❌ Command denied (approval was stale)."
@@ -151,7 +151,7 @@ gateway:
     set:                   "⊙ Goal set ({budget}-turn budget): {goal}\nI'll keep working until the goal is done, you pause/clear it, or the budget is exhausted.\nControls: /goal status · /goal pause · /goal resume · /goal clear"
 
   help:
-    header:                "📖 **Hermes Commands**\n"
+    header:                "📖 **Superforecasting Agent Commands**\n"
     skill_header:          "\n⚡ **Skill Commands** ({count} active):"
     more_use_commands:     "\n... and {count} more. Use `/commands` for the full paginated list."
 
@@ -162,7 +162,7 @@ gateway:
   kanban:
     error_prefix:          "⚠ kanban error: {error}"
     subscribed_suffix:     "(subscribed — you'll be notified when {task_id} completes or blocks)"
-    truncated_suffix:      "… (truncated; use `hermes kanban …` in your terminal for full output)"
+    truncated_suffix:      "… (truncated; use `superforecasting-agent kanban …` in your terminal for full output)"
     no_output:             "(no output)"
 
   personality:
@@ -230,7 +230,7 @@ gateway:
 
   restart:
     in_progress:           "⏳ Gateway restart already in progress..."
-    restarting:            "♻ Restarting gateway. If you aren't notified within 60 seconds, restart from the console with `hermes gateway restart`."
+    restarting:            "♻ Restarting gateway. If you aren't notified within 60 seconds, restart from the console with `superforecasting-agent gateway restart`."
 
   resume:
     db_unavailable:        "Session database not available."
@@ -243,9 +243,9 @@ gateway:
     not_found:             "No session found matching '**{name}**'.\nUse `/resume` with no arguments to see available sessions."
     already_on:            "📌 Already on session **{name}**."
     switch_failed:         "Failed to switch session."
-    resumed_one:           "↻ Resumed session **{title}** ({count} message). Conversation restored."
-    resumed_many:          "↻ Resumed session **{title}** ({count} messages). Conversation restored."
-    resumed_no_count:      "↻ Resumed session **{title}**. Conversation restored."
+    resumed_one:           "↻ Resumed session **{title}** ({count} message). Research transcript restored."
+    resumed_many:          "↻ Resumed session **{title}** ({count} messages). Research transcript restored."
+    resumed_no_count:      "↻ Resumed session **{title}**. Research transcript restored."
 
   retry:
     no_previous:           "No previous message to retry."
@@ -262,7 +262,7 @@ gateway:
     success:               "✅ Home channel set to **{name}** (ID: {chat_id}).\nCron jobs and cross-platform messages will be delivered here."
 
   status:
-    header:                "📊 **Hermes Gateway Status**"
+    header:                "📊 **Superforecasting Agent Gateway Status**"
     session_id:            "**Session ID:** `{session_id}`"
     title:                 "**Title:** {title}"
     created:               "**Created:** {timestamp}"
@@ -305,11 +305,11 @@ gateway:
     removed:               "↩️ Undid {count} message(s).\nRemoved: \"{preview}\""
 
   update:
-    platform_not_messaging:  "✗ /update is only available from messaging platforms. Run `hermes update` from the terminal."
+    platform_not_messaging:  "✗ /update is only available from messaging platforms. Run `superforecasting-agent update` from the terminal."
     not_git_repo:            "✗ Not a git repository — cannot update."
-    hermes_cmd_not_found:    "✗ Could not locate the `hermes` command. Hermes is running, but the update command could not find the executable on PATH or via the current Python interpreter. Try running `hermes update` manually in your terminal."
+    hermes_cmd_not_found:    "✗ Could not locate the `superforecasting-agent` or legacy `hermes` command. The gateway is running, but the update command could not find an executable on PATH or via the current Python interpreter. Try running `superforecasting-agent update` manually in your terminal."
     start_failed:            "✗ Failed to start update: {error}"
-    starting:                "⚕ Starting Hermes update… I'll stream progress here."
+    starting:                "⚕ Starting Superforecasting Agent update… I'll stream progress here."
 
   usage:
     rate_limits:              "⏱️ **Rate Limits:** {state}"
