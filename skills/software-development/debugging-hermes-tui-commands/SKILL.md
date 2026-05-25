@@ -1,13 +1,14 @@
 ---
-name: debugging-hermes-tui-commands
-description: "Debug Superforecasting Agent TUI slash commands: Python, gateway, Ink UI."
+name: debugging-superforecasting-tui-commands
+description: "Debug forecast TUI slash commands."
 version: 1.0.0
 author: Superforecasting Agent
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
   hermes:
-    tags: [debugging, hermes-agent, tui, slash-commands, typescript, python]
+    tags: [debugging, superforecasting-agent, tui, slash-commands, typescript, python]
+    aliases: [debugging-hermes-tui-commands]
     related_skills: [python-debugpy, node-inspect-debugger, systematic-debugging]
 ---
 

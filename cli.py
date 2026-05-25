@@ -818,7 +818,7 @@ from model_tools import get_tool_definitions, get_toolset_for_tool
 # Extracted CLI modules (Phase 3)
 from hermes_cli.banner import build_welcome_banner
 from hermes_cli.commands import SlashCommandCompleter, SlashCommandAutoSuggest
-from toolsets import get_all_toolsets, get_toolset_info, validate_toolset
+from toolsets import get_public_toolset_names, get_toolset_info, validate_toolset
 
 # Cron job system for scheduled tasks (execution is handled by the gateway)
 from cron import get_job
@@ -5915,7 +5915,7 @@ class HermesCLI:
 
     def show_toolsets(self):
         """Display available toolsets with forecast-desk ASCII framing."""
-        all_toolsets = get_all_toolsets()
+        toolset_names = get_public_toolset_names(include_legacy=False)
         
         # Header
         print()
@@ -5927,7 +5927,7 @@ class HermesCLI:
         print("+" + "-" * width + "+")
         print()
         
-        for name in sorted(all_toolsets.keys()):
+        for name in toolset_names:
             info = get_toolset_info(name)
             if info:
                 tool_count = info["tool_count"]
@@ -5941,7 +5941,7 @@ class HermesCLI:
         print("  (*) = currently enabled")
         print()
         print("  Tip: Use 'forecast-desk' for normal forecasting work")
-        print("       Use 'all' or '*' only for inherited compatibility/debugging")
+        print("       Use 'all', '*', or hermes-* only for inherited compatibility/debugging")
         print("  Example: python cli.py --toolsets forecast-desk")
         print()
     

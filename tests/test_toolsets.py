@@ -7,10 +7,12 @@ from toolsets import (
     resolve_toolset,
     resolve_multiple_toolsets,
     get_all_toolsets,
+    get_public_toolset_names,
     get_toolset_names,
     validate_toolset,
     create_custom_toolset,
     get_toolset_info,
+    is_legacy_toolset,
 )
 
 
@@ -162,6 +164,24 @@ class TestGetToolsetInfo:
 
     def test_unknown_returns_none(self):
         assert get_toolset_info("nonexistent") is None
+
+
+class TestPublicToolsetNames:
+    def test_legacy_hermes_presets_are_hidden_from_primary_surfaces(self):
+        names = get_public_toolset_names()
+
+        assert "forecast-desk" in names
+        assert "forecast-gateway" in names
+        assert "hermes-cli" not in names
+        assert "hermes-gateway" not in names
+
+    def test_legacy_hermes_presets_remain_available_explicitly(self):
+        names = get_public_toolset_names(include_legacy=True)
+
+        assert "hermes-cli" in names
+        assert "hermes-gateway" in names
+        assert is_legacy_toolset("hermes-cli") is True
+        assert is_legacy_toolset("forecast-desk") is False
 
 
 class TestCreateCustomToolset:

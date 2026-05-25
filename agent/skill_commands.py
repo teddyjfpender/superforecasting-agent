@@ -27,6 +27,40 @@ _SKILL_INVALID_CHARS = re.compile(r"[^a-z0-9-]")
 _SKILL_MULTI_HYPHEN = re.compile(r"-{2,}")
 
 
+def _skill_command_slug(value: object) -> str:
+    """Normalize a skill name or alias into a slash-command-safe slug."""
+    text = str(value or "").lower().replace(" ", "-").replace("_", "-")
+    text = _SKILL_INVALID_CHARS.sub("", text)
+    return _SKILL_MULTI_HYPHEN.sub("-", text).strip("-")
+
+
+def _skill_aliases(frontmatter: Dict[str, Any]) -> list[str]:
+    """Return compatibility aliases declared by a skill's frontmatter."""
+    aliases: object = frontmatter.get("aliases") or []
+    metadata = frontmatter.get("metadata")
+    if isinstance(metadata, dict):
+        hermes_meta = metadata.get("hermes")
+        if isinstance(hermes_meta, dict) and hermes_meta.get("aliases"):
+            aliases = hermes_meta.get("aliases")
+
+    if isinstance(aliases, str):
+        raw_aliases = [aliases]
+    elif isinstance(aliases, (list, tuple, set)):
+        raw_aliases = list(aliases)
+    else:
+        raw_aliases = []
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for alias in raw_aliases:
+        text = str(alias or "").strip()
+        slug = _skill_command_slug(text)
+        if text and slug and slug not in seen:
+            seen.add(slug)
+            result.append(text)
+    return result
+
+
 def _resolve_skill_commands_platform() -> Optional[str]:
     """Return the current platform scope used for disabled-skill filtering.
 
@@ -273,6 +307,7 @@ def scan_skill_commands() -> Dict[str, Dict[str, Any]]:
         from tools.skills_tool import SKILLS_DIR, _parse_frontmatter, skill_matches_platform, _get_disabled_skill_names
         from agent.skill_utils import get_external_skills_dirs, iter_skill_index_files
         disabled = _get_disabled_skill_names()
+        disabled_slugs = {_skill_command_slug(item) for item in disabled}
         seen_names: set = set()
 
         # Scan local dir first, then external dirs
@@ -291,11 +326,17 @@ def scan_skill_commands() -> Dict[str, Dict[str, Any]]:
                     # Skip skills incompatible with the current OS platform
                     if not skill_matches_platform(frontmatter):
                         continue
-                    name = frontmatter.get('name', skill_md.parent.name)
+                    name = str(frontmatter.get('name', skill_md.parent.name))
                     if name in seen_names:
                         continue
+                    aliases = _skill_aliases(frontmatter)
+                    command_values = [name, *aliases]
+                    command_slugs = [_skill_command_slug(value) for value in command_values]
                     # Respect user's disabled skills config
-                    if name in disabled:
+                    if name in disabled or any(
+                        value in disabled or slug in disabled_slugs
+                        for value, slug in zip(command_values, command_slugs)
+                    ):
                         continue
                     description = frontmatter.get('description', '')
                     if not description:
@@ -305,20 +346,21 @@ def scan_skill_commands() -> Dict[str, Dict[str, Any]]:
                                 description = line[:80]
                                 break
                     seen_names.add(name)
-                    # Normalize to hyphen-separated slug, stripping
-                    # non-alnum chars (e.g. +, /) to avoid invalid
-                    # Telegram command names downstream.
-                    cmd_name = name.lower().replace(' ', '-').replace('_', '-')
-                    cmd_name = _SKILL_INVALID_CHARS.sub('', cmd_name)
-                    cmd_name = _SKILL_MULTI_HYPHEN.sub('-', cmd_name).strip('-')
-                    if not cmd_name:
-                        continue
-                    _skill_commands[f"/{cmd_name}"] = {
-                        "name": name,
-                        "description": description or f"Invoke the {name} skill",
-                        "skill_md_path": str(skill_md),
-                        "skill_dir": str(skill_md.parent),
-                    }
+                    for command_value, cmd_name in zip(command_values, command_slugs):
+                        if not cmd_name:
+                            continue
+                        command_key = f"/{cmd_name}"
+                        if command_key in _skill_commands:
+                            continue
+                        info = {
+                            "name": name,
+                            "description": description or f"Invoke the {name} skill",
+                            "skill_md_path": str(skill_md),
+                            "skill_dir": str(skill_md.parent),
+                        }
+                        if command_value != name:
+                            info["alias_for"] = name
+                        _skill_commands[command_key] = info
                 except Exception:
                     continue
     except Exception:
@@ -377,7 +419,8 @@ def reload_skills() -> Dict[str, Any]:
         out: Dict[str, str] = {}
         for slash_key, info in cmds.items():
             bare = slash_key.lstrip("/")
-            out[bare] = (info or {}).get("description") or ""
+            canonical = (info or {}).get("name") or bare
+            out[str(canonical)] = (info or {}).get("description") or ""
         return out
 
     before = _snapshot(_skill_commands)

@@ -800,3 +800,49 @@ class TestInlineShellExpansion:
         # The command's intended stdout never made it through — only the
         # timeout marker (which echoes the command text) survives.
         assert "DYN_MARKER" not in msg.replace("sleep 5 && printf DYN_MARKER", "")
+
+
+def test_scan_skill_commands_registers_forecast_native_aliases(tmp_path):
+    with (
+        patch("tools.skills_tool.SKILLS_DIR", tmp_path),
+        patch("tools.skills_tool._get_disabled_skill_names", return_value=set()),
+    ):
+        _make_skill(
+            tmp_path,
+            "superforecasting-agent",
+            frontmatter_extra=(
+                "metadata:\n"
+                "  hermes:\n"
+                "    aliases: [hermes-agent]\n"
+            ),
+        )
+
+        result = scan_skill_commands()
+
+    assert result["/superforecasting-agent"]["name"] == "superforecasting-agent"
+    assert result["/hermes-agent"]["name"] == "superforecasting-agent"
+    assert result["/hermes-agent"]["alias_for"] == "superforecasting-agent"
+
+
+def test_scan_skill_commands_legacy_alias_disable_suppresses_skill(tmp_path):
+    with (
+        patch("tools.skills_tool.SKILLS_DIR", tmp_path),
+        patch(
+            "tools.skills_tool._get_disabled_skill_names",
+            return_value={"hermes-agent"},
+        ),
+    ):
+        _make_skill(
+            tmp_path,
+            "superforecasting-agent",
+            frontmatter_extra=(
+                "metadata:\n"
+                "  hermes:\n"
+                "    aliases: [hermes-agent]\n"
+            ),
+        )
+
+        result = scan_skill_commands()
+
+    assert "/superforecasting-agent" not in result
+    assert "/hermes-agent" not in result

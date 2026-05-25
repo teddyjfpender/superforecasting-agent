@@ -73,6 +73,24 @@ _HERMES_CORE_TOOLS = [
 ]
 
 
+def is_legacy_toolset(name: str) -> bool:
+    """Return True for inherited broad Hermes compatibility presets."""
+    return str(name or "").startswith("hermes-")
+
+
+def get_public_toolset_names(*, include_legacy: bool = False) -> List[str]:
+    """Return toolset names appropriate for primary product surfaces.
+
+    Legacy ``hermes-*`` presets remain valid for old configs and explicit
+    debugging, but the forecast desk should not advertise them as normal
+    first-run choices.
+    """
+    names = get_toolset_names()
+    if include_legacy:
+        return names
+    return [name for name in names if not is_legacy_toolset(name)]
+
+
 # Core toolset definitions
 # These can include individual tools or reference other toolsets
 TOOLSETS = {

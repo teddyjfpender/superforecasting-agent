@@ -362,7 +362,10 @@ def render_skill_page(
     # generated-doc churn.
     display_name = name.replace("-", " ").replace("_", " ").title()
     title_match = re.search(r"^#\s+(.+?)\s*$", body, re.MULTILINE)
-    if "hermes" in display_name.lower() and title_match:
+    if (
+        ("hermes" in display_name.lower() or "superforecasting" in display_name.lower())
+        and title_match
+    ):
         display_name = title_match.group(1).strip()
 
     hermes_meta = (fm.get("metadata") or {}).get("hermes") or {}

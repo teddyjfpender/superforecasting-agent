@@ -185,7 +185,7 @@ If a skill is missing from this list but present in the repo, the catalog is reg
 
 | Skill | Description | Path |
 |-------|-------------|------|
-| [`debugging-superforecasting-tui-commands`](/user-guide/skills/bundled/software-development/software-development-debugging-hermes-tui-commands) | Debug Superforecasting Agent TUI slash commands: Python, gateway, Ink UI. | `software-development/debugging-hermes-tui-commands` |
+| [`debugging-superforecasting-tui-commands`](/user-guide/skills/bundled/software-development/software-development-debugging-hermes-tui-commands) | Debug forecast TUI slash commands. | `software-development/debugging-hermes-tui-commands` |
 | [`superforecasting-agent-skill-authoring`](/user-guide/skills/bundled/software-development/software-development-hermes-agent-skill-authoring) | Author in-repo SKILL.md: frontmatter, validator, structure. | `software-development/hermes-agent-skill-authoring` |
 | [`node-inspect-debugger`](/user-guide/skills/bundled/software-development/software-development-node-inspect-debugger) | Debug Node.js via --inspect + Chrome DevTools Protocol CLI. | `software-development/node-inspect-debugger` |
 | [`plan`](/user-guide/skills/bundled/software-development/software-development-plan) | Plan mode: write markdown plan to .superforecasting-agent/plans/, no exec. | `software-development/plan` |

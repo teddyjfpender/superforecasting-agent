@@ -1,14 +1,14 @@
 ---
-title: "Debugging Superforecasting Agent TUI Slash Commands"
+title: "Debugging Superforecasting Agent TUI Slash Commands — Debug forecast TUI slash commands"
 sidebar_label: "Debugging Superforecasting Agent TUI Slash Commands"
-description: "Debug Superforecasting Agent TUI slash commands: Python, gateway, Ink UI"
+description: "Debug forecast TUI slash commands"
 ---
 
 {/* This page is auto-generated from the skill's SKILL.md by website/scripts/generate-skill-docs.py. Edit the source SKILL.md, not this page. */}
 
 # Debugging Superforecasting Agent TUI Slash Commands
 
-Debug Superforecasting Agent TUI slash commands: Python, gateway, Ink UI.
+Debug forecast TUI slash commands.
 
 ## Skill metadata
 

@@ -2547,6 +2547,8 @@ def test_superforecasting_agent_skill_metadata_points_to_fork():
     skill = root / "skills" / "autonomous-ai-agents" / "hermes-agent" / "SKILL.md"
     text = skill.read_text(encoding="utf-8")
 
+    assert "name: superforecasting-agent" in text
+    assert "aliases: [hermes-agent]" in text
     assert "homepage: https://github.com/teddyjfpender/superforecasting-agent" in text
     assert "homepage: https://github.com/NousResearch/hermes-agent" not in text
 

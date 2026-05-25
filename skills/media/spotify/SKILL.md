@@ -15,7 +15,7 @@ metadata:
 
 # Spotify
 
-Control the user's Spotify account via the inherited Spotify toolset (7 tools). Setup guide: /docs/user-guide/features/spotify
+Control the user's Spotify account via the inherited Spotify toolset (7 tools). Setup guide: /user-guide/features/spotify
 
 ## When to use this skill
 
