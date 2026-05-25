@@ -655,6 +655,7 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 | `SESSION_IDLE_MINUTES` | Reset sessions after N minutes of inactivity (default: 1440) |
 | `SESSION_RESET_HOUR` | Daily reset hour in 24h format (default: 4 = 4am) |
 | `SUPERFORECASTING_AGENT_SESSION_ID` / `FORECAST_SESSION_ID` / `HERMES_SESSION_ID` | **Exported automatically into every tool subprocess** Superforecasting Agent spawns (`terminal`, `execute_code`, persistent shell, Docker/Singularity backends, delegated subagent runs). Set by the agent to the current session ID; user scripts called from tools can read it to correlate their output, telemetry, or side effects with the originating session. **You should not set this manually** — overriding it from a parent shell only takes effect outside an agent run, and is overwritten the moment the agent starts a session. |
+| `SUPERFORECASTING_AGENT_SESSION_SOURCE` / `FORECAST_SESSION_SOURCE` / `HERMES_SESSION_SOURCE` | Runtime source tag used when a launcher passes `--source` for third-party integrations, hidden sessions, or operational filtering. Normally set by the CLI wrapper rather than by hand. |
 
 ## Context Compression (config.yaml only)
 

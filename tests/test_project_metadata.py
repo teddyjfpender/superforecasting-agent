@@ -2707,9 +2707,15 @@ def test_session_env_aliases_are_forecast_native():
         encoding="utf-8"
     )
     agent_init = (root / "agent" / "agent_init.py").read_text(encoding="utf-8")
+    background_review = (root / "agent" / "background_review.py").read_text(
+        encoding="utf-8"
+    )
+    cli = (root / "cli.py").read_text(encoding="utf-8")
     compression = (root / "agent" / "conversation_compression.py").read_text(
         encoding="utf-8"
     )
+    main = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
+    utils = (root / "utils.py").read_text(encoding="utf-8")
     conftest = (root / "tests" / "conftest.py").read_text(encoding="utf-8")
     env_reference = (root / "website" / "docs" / "reference" / "environment-variables.md").read_text(
         encoding="utf-8"
@@ -2722,10 +2728,19 @@ def test_session_env_aliases_are_forecast_native():
     assert "def set_process_session_env" in session_context
     assert 'set_process_session_env("SUPERFORECASTING_AGENT_SESSION_ID"' in agent_init
     assert 'set_process_session_env("SUPERFORECASTING_AGENT_SESSION_ID"' in compression
+    assert "SESSION_SOURCE_ENV_NAMES" in utils
+    assert "SESSION_SOURCE_ENV_NAMES" in cli
+    assert "SESSION_SOURCE_ENV_NAMES" in compression
+    assert "SESSION_SOURCE_ENV_NAMES" in background_review
+    assert '_set_runtime_env_aliases(os.environ, "SESSION_SOURCE"' in main
     assert "SUPERFORECASTING_AGENT_SESSION_ID" in conftest
     assert "FORECAST_SESSION_ID" in conftest
+    assert "SUPERFORECASTING_AGENT_SESSION_SOURCE" in conftest
+    assert "FORECAST_SESSION_SOURCE" in conftest
     assert "SUPERFORECASTING_AGENT_SESSION_ID" in env_reference
     assert "FORECAST_SESSION_ID" in env_reference
+    assert "SUPERFORECASTING_AGENT_SESSION_SOURCE" in env_reference
+    assert "FORECAST_SESSION_SOURCE" in env_reference
 
 
 def test_oauth_file_env_aliases_are_forecast_native():

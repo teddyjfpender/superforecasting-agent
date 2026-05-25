@@ -1575,7 +1575,7 @@ def cmd_chat(args):
 
     # --source: tag session source for filtering (e.g. 'tool' for third-party integrations)
     if getattr(args, "source", None):
-        os.environ["HERMES_SESSION_SOURCE"] = args.source
+        _set_runtime_env_aliases(os.environ, "SESSION_SOURCE", args.source)
 
     _pin_kanban_board_env()
 

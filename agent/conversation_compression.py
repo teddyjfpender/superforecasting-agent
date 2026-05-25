@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
 from agent.model_metadata import estimate_request_tokens_rough
+from utils import SESSION_SOURCE_ENV_NAMES, env_var_alias_value
 
 logger = logging.getLogger(__name__)
 
@@ -394,7 +395,8 @@ def compress_context(
             agent._session_db_created = False
             agent._session_db.create_session(
                 session_id=agent.session_id,
-                source=agent.platform or os.environ.get("HERMES_SESSION_SOURCE", "cli"),
+                source=agent.platform
+                or env_var_alias_value(SESSION_SOURCE_ENV_NAMES, "cli"),
                 model=agent.model,
                 model_config=agent._session_init_model_config,
                 parent_session_id=old_session_id,

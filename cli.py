@@ -201,6 +201,7 @@ from utils import (
     EPHEMERAL_SYSTEM_PROMPT_ENV_NAMES,
     INTERACTIVE_ENV_NAMES,
     PREFILL_MESSAGES_FILE_ENV_NAMES,
+    SESSION_SOURCE_ENV_NAMES,
     base_url_host_matches,
     env_var_alias_value,
 )
@@ -6188,7 +6189,7 @@ class HermesCLI:
                     self.agent._session_db_created = False
                     self._session_db.create_session(
                         session_id=self.session_id,
-                        source=os.environ.get("HERMES_SESSION_SOURCE", "cli"),
+                        source=env_var_alias_value(SESSION_SOURCE_ENV_NAMES, "cli"),
                         model=self.model,
                         model_config={
                             "max_iterations": self.max_turns,
@@ -6609,7 +6610,7 @@ class HermesCLI:
         try:
             self._session_db.create_session(
                 session_id=new_session_id,
-                source=os.environ.get("HERMES_SESSION_SOURCE", "cli"),
+                source=env_var_alias_value(SESSION_SOURCE_ENV_NAMES, "cli"),
                 model=self.model,
                 model_config={
                     "max_iterations": self.max_turns,

@@ -1,4 +1,4 @@
-"""Shared utility functions for hermes-agent."""
+"""Shared utility functions for Superforecasting Agent."""
 
 import json
 import logging
@@ -29,6 +29,11 @@ INTERACTIVE_ENV_NAMES = (
     "SUPERFORECASTING_AGENT_INTERACTIVE",
     "FORECAST_INTERACTIVE",
     "HERMES_INTERACTIVE",
+)
+SESSION_SOURCE_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_SESSION_SOURCE",
+    "FORECAST_SESSION_SOURCE",
+    "HERMES_SESSION_SOURCE",
 )
 
 
