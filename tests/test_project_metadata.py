@@ -218,6 +218,7 @@ def test_forecast_cli_public_alias_is_exposed():
         root / "skills" / "software-development"
         / "debugging-hermes-tui-commands" / "SKILL.md"
     ).read_text(encoding="utf-8")
+    slash_worker = (root / "tui_gateway" / "slash_worker.py").read_text(encoding="utf-8")
 
     assert issubclass(ForecastCLI, HermesCLI)
     assert "class ForecastCLI(HermesCLI)" in cli_source
@@ -228,6 +229,10 @@ def test_forecast_cli_public_alias_is_exposed():
     assert "ForecastCLI.process_command()" in skill_doc
     assert "from cli import HermesCLI" not in extension_doc
     assert "class MyCLI(HermesCLI)" not in extension_doc
+    assert "from cli import ForecastCLI" in slash_worker
+    assert "cli = ForecastCLI(" in slash_worker
+    assert "from cli import HermesCLI" not in slash_worker
+    assert "cli = HermesCLI(" not in slash_worker
 
 
 def test_web_locale_app_brand_is_forecast_native():
@@ -1443,6 +1448,8 @@ def test_dashboard_tui_comments_are_forecast_native():
         "hermes_cli/pty_bridge.py",
         "hermes_cli/web_server.py",
         "hermes_cli/uninstall.py",
+        "tui_gateway/entry.py",
+        "tui_gateway/event_publisher.py",
         "ui-tui/src/app/createGatewayEventHandler.ts",
         "ui-tui/src/lib/memoryMonitor.ts",
     ]

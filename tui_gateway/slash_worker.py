@@ -11,12 +11,12 @@ import os
 import sys
 
 import cli as cli_mod
-from cli import HermesCLI
+from cli import ForecastCLI
 from rich.console import Console
 from utils import INTERACTIVE_ENV_NAMES
 
 
-def _run(cli: HermesCLI, command: str) -> str:
+def _run(cli: ForecastCLI, command: str) -> str:
     cmd = (command or "").strip()
     if not cmd:
         return ""
@@ -55,7 +55,7 @@ def main():
         os.environ[name] = "1"
 
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        cli = HermesCLI(model=args.model or None, compact=True, resume=args.session_key, verbose=False)
+        cli = ForecastCLI(model=args.model or None, compact=True, resume=args.session_key, verbose=False)
 
     for raw in sys.stdin:
         line = raw.strip()
