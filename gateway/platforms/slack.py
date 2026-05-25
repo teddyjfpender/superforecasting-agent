@@ -948,7 +948,7 @@ class SlackAdapter(BasePlatformAdapter):
         """Whether top-level Slack DMs get per-message session threads.
 
         Defaults to ``True`` so each visible DM reply thread is isolated as its
-        own Hermes session — matching the per-thread behavior channels already
+        own forecast research session — matching the per-thread behavior channels already
         have.  Set ``platforms.slack.extra.dm_top_level_threads_as_sessions``
         to ``false`` in config.yaml to revert to the legacy behavior where all
         top-level DMs share one continuous session.

@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="250" viewBox="0 0 960 250" role="img" aria-labelledby="title desc">
-  <title id="title">Hermes session recap panel</title>
+  <title id="title">Forecast session recap panel</title>
   <desc id="desc">Stylized panel showing the previous conversation summary displayed when resuming a session.</desc>
   <rect width="960" height="250" rx="18" fill="#07070d"/>
   <rect x="24" y="24" width="912" height="202" rx="16" fill="#0a0a12" stroke="#3a3217"/>

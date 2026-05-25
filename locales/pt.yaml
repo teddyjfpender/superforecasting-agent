@@ -282,7 +282,7 @@ gateway:
     topics_user_disallowed:  "Os topics do Telegram estão ativados, mas os utilizadores não podem criá-los.\n\nAbre @BotFather → escolhe o teu bot → Bot Settings → Threads Settings, depois desativa 'Disallow users to create new threads'.\n\nDepois envia /topic novamente."
     enable_failed:           "Falha ao ativar o modo topic do Telegram: {error}"
     bound_status:            "Este topic está associado a:\nSessão: {label}\nID: {session_id}\n\nUsa /new para substituir este topic por uma sessão nova.\nPara trabalho paralelo, abre All Messages e envia uma mensagem aí para criar outro topic."
-    thread_ready:            "Os topics multi-sessão do Telegram estão ativados.\n\nEste topic será usado como uma sessão independente do Hermes. Usa /new para substituir a sessão atual deste topic. Para trabalho paralelo, abre All Messages e envia uma mensagem aí para criar outro topic."
+    thread_ready:            "Os topics multi-sessão do Telegram estão ativados.\n\nEste topic será usado como uma sessão independente do Superforecasting Agent. Usa /new para substituir a sessão atual deste topic. Para trabalho paralelo, abre All Messages e envia uma mensagem aí para criar outro topic."
     untitled_session:        "Sessão sem título"
 
   undo:

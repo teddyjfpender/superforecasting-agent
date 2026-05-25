@@ -286,7 +286,7 @@ gateway:
     topics_user_disallowed:  "Tá topaicí Telegram cumasaithe, ach níl cead ag úsáideoirí topaicí a chruthú.\n\nOscail @BotFather → roghnaigh do bhot → Bot Settings → Threads Settings, ansin múchadh 'Disallow users to create new threads'.\n\nAnsin seol /topic arís."
     enable_failed:           "Theip ar mhodh topaice Telegram a chumasú: {error}"
     bound_status:            "Tá an topaic seo nasctha le:\nSeisiún: {label}\nID: {session_id}\n\nÚsáid /new chun an topaic seo a athsholáthar le seisiún úr.\nLe haghaidh oibre comhthreomhaire, oscail All Messages agus seol teachtaireacht ann chun topaic eile a chruthú."
-    thread_ready:            "Tá topaicí il-seisiúin Telegram cumasaithe.\n\nÚsáidfear an topaic seo mar sheisiún Hermes neamhspleách. Úsáid /new chun seisiún reatha na topaice seo a athsholáthar. Le haghaidh oibre comhthreomhaire, oscail All Messages agus seol teachtaireacht ann chun topaic eile a chruthú."
+    thread_ready:            "Tá topaicí il-seisiúin Telegram cumasaithe.\n\nÚsáidfear an topaic seo mar sheisiún Superforecasting Agent neamhspleách. Úsáid /new chun seisiún reatha na topaice seo a athsholáthar. Le haghaidh oibre comhthreomhaire, oscail All Messages agus seol teachtaireacht ann chun topaic eile a chruthú."
     untitled_session:        "Seisiún gan teideal"
 
   undo:

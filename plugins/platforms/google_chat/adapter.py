@@ -3274,7 +3274,7 @@ async def _standalone_send(
 
 
 def register(ctx) -> None:
-    """Plugin entry point — called by the Hermes plugin system at startup.
+    """Plugin entry point — called by the agent plugin system at startup.
 
     Registers the Google Chat adapter under the ``google_chat`` name.
     The gateway's ``_create_adapter`` consults the platform registry

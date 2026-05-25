@@ -550,7 +550,7 @@ _ensure_ssl_certs()
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Resolve Hermes home directory (respects HERMES_HOME override)
+# Resolve the agent home directory (respects fork-native and legacy overrides)
 from hermes_constants import get_hermes_home
 from utils import (
     EPHEMERAL_SYSTEM_PROMPT_ENV_NAMES,

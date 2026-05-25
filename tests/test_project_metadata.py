@@ -1027,6 +1027,50 @@ def test_high_attention_docs_navigation_is_forecast_native():
     ).exists()
 
 
+def test_residual_gateway_session_plugin_copy_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "gateway" / "platforms" / "slack.py",
+        root / "gateway" / "platforms" / "sms.py",
+        root / "gateway" / "platforms" / "discord.py",
+        root / "gateway" / "run.py",
+        root / "agent" / "models_dev.py",
+        root / "agent" / "transports" / "codex_app_server_session.py",
+        root / "plugins" / "__init__.py",
+        root / "plugins" / "disk-cleanup" / "__init__.py",
+        root / "plugins" / "disk-cleanup" / "plugin.yaml",
+        root / "plugins" / "google_meet" / "SKILL.md",
+        root / "plugins" / "platforms" / "teams" / "adapter.py",
+        root / "plugins" / "platforms" / "line" / "adapter.py",
+        root / "plugins" / "platforms" / "irc" / "adapter.py",
+        root / "plugins" / "platforms" / "google_chat" / "adapter.py",
+        root / "plugins" / "platforms" / "simplex" / "adapter.py",
+        root / "website" / "static" / "img" / "docs" / "session-recap.svg",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+    thread_ready_lines = "\n".join(
+        line
+        for path in sorted((root / "locales").glob("*.yaml"))
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if "thread_ready:" in line
+    )
+
+    assert "forecast research session" in text
+    assert "ephemeral agent session files" in text
+    assert "Superforecasting Agent bot is in this call taking notes" in text
+    assert "Forecast session recap panel" in text
+    assert "Superforecasting Agent plugins package" in text
+    assert "agent plugin system" in text
+    assert "independent Superforecasting Agent" in thread_ready_lines
+    assert "Hermes session" not in text
+    assert "Hermes agent bot" not in text
+    assert "ephemeral Hermes session" not in text
+    assert "Hermes plugin system" not in text
+    assert "Hermes home directory" not in text
+    assert "Hermes agent traffic" not in text
+    assert "Hermes" not in thread_ready_lines
+
+
 def test_contributor_and_skills_index_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     contributing = (root / "CONTRIBUTING.md").read_text(encoding="utf-8")

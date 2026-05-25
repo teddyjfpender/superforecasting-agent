@@ -1,6 +1,6 @@
 """Session adapter for codex app-server runtime.
 
-Owns one Codex thread per Hermes session. Drives `turn/start`, consumes
+Owns one Codex thread per agent session. Drives `turn/start`, consumes
 streaming notifications via CodexEventProjector, handles server-initiated
 approval requests (apply_patch, exec command), translates cancellation,
 and returns a clean turn result that AIAgent.run_conversation() can splice

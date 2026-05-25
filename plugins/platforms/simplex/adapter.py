@@ -1,11 +1,11 @@
-"""SimpleX Chat platform adapter (Hermes plugin).
+"""SimpleX Chat platform adapter (agent plugin).
 
 Connects to a simplex-chat daemon running in WebSocket mode.
 Inbound messages arrive via a persistent WebSocket connection.
 Outbound messages use the same WebSocket with JSON commands.
 
 This adapter ships as a Hermes platform plugin under
-``plugins/platforms/simplex/``. The Hermes plugin loader scans the
+``plugins/platforms/simplex/``. The agent plugin loader scans the
 directory at startup, calls ``register(ctx)``, and the platform
 becomes available to ``gateway/run.py`` and ``tools/send_message_tool``
 through the registry — no edits to core files are required.
@@ -702,7 +702,7 @@ def interactive_setup() -> None:
 
 
 def register(ctx) -> None:
-    """Plugin entry point — called by the Hermes plugin system at startup."""
+    """Plugin entry point — called by the agent plugin system at startup."""
     ctx.register_platform(
         name="simplex",
         label="SimpleX Chat",

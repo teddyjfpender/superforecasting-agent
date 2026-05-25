@@ -925,7 +925,7 @@ async def _standalone_send(
 
 
 def register(ctx):
-    """Plugin entry point: called by the Hermes plugin system."""
+    """Plugin entry point: called by the agent plugin system."""
     ctx.register_platform(
         name="irc",
         label="IRC",

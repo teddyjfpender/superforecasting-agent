@@ -282,7 +282,7 @@ gateway:
     topics_user_disallowed:  "Telegram-onderwerpe is geaktiveer, maar gebruikers mag nie onderwerpe skep nie.\n\nOpen @BotFather → kies jou bot → Bot Settings → Threads Settings, en skakel dan 'Disallow users to create new threads' af.\n\nStuur dan weer /topic."
     enable_failed:           "Kon nie Telegram-onderwerpmodus aktiveer nie: {error}"
     bound_status:            "Hierdie onderwerp is gekoppel aan:\nSessie: {label}\nID: {session_id}\n\nGebruik /new om hierdie onderwerp met 'n vars sessie te vervang.\nVir parallelle werk, open All Messages en stuur 'n boodskap daar om 'n ander onderwerp te skep."
-    thread_ready:            "Telegram multi-sessie-onderwerpe is geaktiveer.\n\nHierdie onderwerp sal as 'n onafhanklike Hermes-sessie gebruik word. Gebruik /new om hierdie onderwerp se huidige sessie te vervang. Vir parallelle werk, open All Messages en stuur 'n boodskap daar om 'n ander onderwerp te skep."
+    thread_ready:            "Telegram multi-sessie-onderwerpe is geaktiveer.\n\nHierdie onderwerp sal as 'n onafhanklike Superforecasting Agent-sessie gebruik word. Gebruik /new om hierdie onderwerp se huidige sessie te vervang. Vir parallelle werk, open All Messages en stuur 'n boodskap daar om 'n ander onderwerp te skep."
     untitled_session:        "Sessie sonder titel"
 
   undo:

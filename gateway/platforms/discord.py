@@ -3492,7 +3492,7 @@ class DiscordAdapter(BasePlatformAdapter):
         if thread_id:
             self._threads.mark(thread_id)
 
-        # If a message was provided, kick off a new Hermes session in the thread
+        # If a message was provided, kick off a new forecast research session in the thread
         starter = (message or "").strip()
         if starter and thread_id:
             await self._dispatch_thread_session(interaction, thread_id, thread_name, starter)

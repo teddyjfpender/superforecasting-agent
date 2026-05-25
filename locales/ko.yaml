@@ -282,7 +282,7 @@ gateway:
     topics_user_disallowed:  "Telegram 토픽이 활성화되어 있지만, 사용자가 토픽을 만들 수 없습니다.\n\n@BotFather → 봇 선택 → Bot Settings → Threads Settings를 열고 'Disallow users to create new threads'를 끄세요.\n\n그런 다음 다시 /topic을 보내세요."
     enable_failed:           "Telegram 토픽 모드 활성화에 실패했습니다: {error}"
     bound_status:            "이 토픽은 다음에 연결되어 있습니다:\n세션: {label}\nID: {session_id}\n\n이 토픽을 새 세션으로 교체하려면 /new를 사용하세요.\n병렬 작업을 위해서는 All Messages를 열고 메시지를 보내 다른 토픽을 만드세요."
-    thread_ready:            "Telegram 다중 세션 토픽이 활성화되었습니다.\n\n이 토픽은 독립된 Hermes 세션으로 사용됩니다. 이 토픽의 현재 세션을 교체하려면 /new를 사용하세요. 병렬 작업을 위해서는 All Messages를 열고 메시지를 보내 다른 토픽을 만드세요."
+    thread_ready:            "Telegram 다중 세션 토픽이 활성화되었습니다.\n\n이 토픽은 독립된 Superforecasting Agent 세션으로 사용됩니다. 이 토픽의 현재 세션을 교체하려면 /new를 사용하세요. 병렬 작업을 위해서는 All Messages를 열고 메시지를 보내 다른 토픽을 만드세요."
     untitled_session:        "제목 없는 세션"
 
   undo:

@@ -282,7 +282,7 @@ gateway:
     topics_user_disallowed:  "Telegram topics включены, но пользователям не разрешено создавать topics.\n\nОткройте @BotFather → выберите своего бота → Bot Settings → Threads Settings, затем выключите 'Disallow users to create new threads'.\n\nЗатем снова отправьте /topic."
     enable_failed:           "Не удалось включить режим Telegram topic: {error}"
     bound_status:            "Этот topic привязан к:\nСеанс: {label}\nID: {session_id}\n\nИспользуйте /new, чтобы заменить этот topic новым сеансом.\nДля параллельной работы откройте All Messages и отправьте там сообщение, чтобы создать другой topic."
-    thread_ready:            "Многосеансовые Telegram topics включены.\n\nЭтот topic будет использоваться как независимый сеанс Hermes. Используйте /new, чтобы заменить текущий сеанс этого topic. Для параллельной работы откройте All Messages и отправьте там сообщение, чтобы создать другой topic."
+    thread_ready:            "Многосеансовые Telegram topics включены.\n\nЭтот topic будет использоваться как независимый сеанс Superforecasting Agent. Используйте /new, чтобы заменить текущий сеанс этого topic. Для параллельной работы откройте All Messages и отправьте там сообщение, чтобы создать другой topic."
     untitled_session:        "Сеанс без названия"
 
   undo:

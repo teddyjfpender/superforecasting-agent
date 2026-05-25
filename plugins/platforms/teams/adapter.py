@@ -1156,7 +1156,7 @@ def interactive_setup() -> None:
 # ── Plugin entry point ────────────────────────────────────────────────────────
 
 def register(ctx) -> None:
-    """Plugin entry point — called by the Hermes plugin system."""
+    """Plugin entry point — called by the agent plugin system."""
     ctx.register_platform(
         name="teams",
         label="Microsoft Teams",

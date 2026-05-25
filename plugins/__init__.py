@@ -1,1 +1,1 @@
-# Hermes plugins package
+# Superforecasting Agent plugins package

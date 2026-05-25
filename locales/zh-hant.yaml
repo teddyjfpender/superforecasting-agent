@@ -282,7 +282,7 @@ gateway:
     topics_user_disallowed:  "Telegram topics 已啟用，但不允許使用者建立 topics。\n\n開啟 @BotFather → 選擇您的 bot → Bot Settings → Threads Settings，然後關閉 'Disallow users to create new threads'。\n\n然後再次傳送 /topic。"
     enable_failed:           "啟用 Telegram topic 模式失敗：{error}"
     bound_status:            "此 topic 已連結至：\n工作階段：{label}\nID：{session_id}\n\n使用 /new 將此 topic 取代為新工作階段。\n如需平行作業，請開啟 All Messages 並在其中傳送訊息以建立另一個 topic。"
-    thread_ready:            "Telegram 多工作階段 topics 已啟用。\n\n此 topic 將作為獨立的 Hermes 工作階段使用。使用 /new 取代此 topic 目前的工作階段。如需平行作業，請開啟 All Messages 並在其中傳送訊息以建立另一個 topic。"
+    thread_ready:            "Telegram 多工作階段 topics 已啟用。\n\n此 topic 將作為獨立的 Superforecasting Agent 工作階段使用。使用 /new 取代此 topic 目前的工作階段。如需平行作業，請開啟 All Messages 並在其中傳送訊息以建立另一個 topic。"
     untitled_session:        "未命名工作階段"
 
   undo:
