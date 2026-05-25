@@ -1399,6 +1399,43 @@ def test_postmortem_does_not_create_lesson_from_ineligible_backtest_score(tmp_pa
     assert ledger.list_calibration_lessons(scope_type="domain", scope_ref="macro") == []
 
 
+def test_self_check_auto_postmortem_can_learn_from_eligible_backtest_scores(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    run = ledger.run_backtest_dataset(
+        dataset="fixture",
+        default_forecast_time_cutoff="2026-01-10T00:00:00Z",
+        allow_calibration_memory=True,
+        cases=[
+            {
+                "title": "Will eligible replay learning work?",
+                "resolution_criteria": "Resolved no if the replay forecast should miss.",
+                "domain": "macro",
+                "topics": ["inflation"],
+                "probability": 0.9,
+                "outcome": "no",
+                "evidence": [{"note": "before", "available_at": "2026-01-05T00:00:00Z"}],
+            },
+        ],
+    )
+    question_id = ledger.list_backtest_cases(run["id"])[0]["question_id"]
+
+    alerts = ledger.self_check(domain="macro", topic="inflation", auto_postmortem=True)
+    reasons = {alert.reason for alert in alerts}
+
+    assert any(reason.startswith("postmortem_created:") for reason in reasons)
+    postmortem = ledger.list_postmortems(question_id=question_id)[0]
+    assert postmortem["forecast_origin"] == "backtest"
+    assert postmortem["calibration_eligible"] is True
+    lesson = ledger.list_calibration_lessons(scope_type="domain", scope_ref="macro")[0]
+    assert lesson["status"] == "tentative"
+    assert lesson["lesson"].startswith("Eligible backtest replay high-confidence miss in macro")
+    assert lesson["recommended_adjustment"]["forecast_origin"] == "backtest"
+    assert lesson["recommended_adjustment"]["requires_review_before_live_use"] is True
+    profile = ledger.list_domain_error_profiles(domain="macro", topic="inflation")[0]
+    assert profile["sample_count"] == 1
+    assert "overconfidence" in profile["recurring_errors"]
+
+
 def test_forecast_updates_can_only_cite_active_calibration_lessons(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     question = ledger.create_question(

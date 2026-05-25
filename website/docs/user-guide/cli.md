@@ -159,6 +159,11 @@ forecast pilot-aggregate tester-a-export.json tester-b-export.json --json
 ```
 
 Backtests are time-aware. Evidence after the simulated forecast timestamp is excluded unless it is part of the resolution step.
+If a replay run is explicitly created with `--allow-calibration-memory` and
+passes leakage checks, later `forecast self-check --auto-postmortem` or
+scheduled self-checks can turn high-Brier replay misses into tentative
+calibration lessons. Those lessons keep `forecast_origin=backtest` provenance
+and require operator review before live forecasts cite them.
 `forecast calibration` reports Brier/log scores, calibration buckets, sharpness,
 probability movement before close, ensemble component contribution, and
 question-type performance so reviewers can see whether late updates, weighted

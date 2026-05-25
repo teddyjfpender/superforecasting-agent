@@ -5220,24 +5220,29 @@ class ForecastLedger:
         }.get(reason, "Review the forecast and decide whether a new snapshot is warranted.")
 
     def _auto_postmortem_lesson(self, question: ForecastQuestion, score: ScoreRecord) -> str:
-        if not score.calibration_eligible or score.forecast_origin != "live":
+        if not score.calibration_eligible or score.forecast_origin not in {"live", "backtest"}:
             return ""
         if score.brier_score is None or score.brier_score < 0.25:
             return ""
         scope = question.domain or "global"
+        origin_prefix = (
+            "Recent"
+            if score.forecast_origin == "live"
+            else f"Eligible {score.forecast_origin} replay"
+        )
         tags = self._auto_postmortem_error_tags(score)
         if "overconfidence" in tags:
             return (
-                f"Recent high-confidence miss in {scope}; require explicit base-rate, "
+                f"{origin_prefix} high-confidence miss in {scope}; require explicit base-rate, "
                 "counterevidence, and assumption-staleness checks before similar extreme probabilities."
             )
         return (
-            f"Review high-Brier resolved forecasts in {scope}; check base rates, "
+            f"{origin_prefix} high-Brier resolved forecast in {scope}; check base rates, "
             "missed evidence, and confidence before similar updates."
         )
 
     def _auto_postmortem_adjustment(self, question: ForecastQuestion, score: ScoreRecord) -> dict[str, Any]:
-        if not score.calibration_eligible or score.forecast_origin != "live":
+        if not score.calibration_eligible or score.forecast_origin not in {"live", "backtest"}:
             return {}
         tags = self._auto_postmortem_error_tags(score)
         if not tags:
@@ -5249,6 +5254,8 @@ class ForecastLedger:
         ]
         return {
             "error_tags": tags,
+            "forecast_origin": score.forecast_origin,
+            "requires_review_before_live_use": score.forecast_origin != "live",
             "review_checklist": checklist,
             "scope": question.domain or "global",
         }

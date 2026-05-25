@@ -137,6 +137,13 @@ forecast calibration --by-origin --all
 
 Use these in scheduled jobs or local automation to track whether the forecast engine is improving. Keep live forecasts, imported baselines, and backtests separate when interpreting calibration. Readiness checks require external resolved-question corpus coverage and external source-family diversity, so synthetic, local fixture, or single-platform replays should not be treated as enough evidence for stronger performance claims.
 
+When a backtest was run with `--allow-calibration-memory` and leakage checks
+passed, a later self-check with `--auto-postmortem` can create tentative
+lessons from eligible high-Brier replay misses. The lesson and adjustment keep
+`forecast_origin=backtest` provenance and mark that the lesson needs review
+before live use, so replay learning remains auditable and separate from live
+forecast performance.
+
 ## Inherited Cron Runtime
 
 Install a no-agent bridge when you want the inherited cron daemon to run due

@@ -10268,6 +10268,61 @@ def test_forecast_cli_base_rate_model_postmortem_and_backtest(tmp_path, capsys):
     assert re.search(r"origin: imported_baseline\ncount: 1", by_origin)
 
 
+def test_forecast_cli_self_check_learns_from_eligible_backtest_scores(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    dataset = tmp_path / "eligible-backtest.json"
+    dataset.write_text(
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "title": "Will eligible backtest learning work?",
+                        "resolution_criteria": "Resolved no if the replay forecast should miss.",
+                        "domain": "macro",
+                        "topics": ["inflation"],
+                        "as_of": "2026-01-10T00:00:00Z",
+                        "probability": 0.9,
+                        "outcome": "no",
+                        "evidence": [
+                            {"note": "before", "available_at": "2026-01-05T00:00:00Z"}
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _run(parser, ["forecast", "--db", db, "backtest", str(dataset), "--allow-calibration-memory"])
+    assert "leakage_checks_passed: True" in capsys.readouterr().out
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "self-check",
+            "--domain",
+            "macro",
+            "--topic",
+            "inflation",
+            "--auto-postmortem",
+        ],
+    )
+    self_check_output = capsys.readouterr().out
+    assert "postmortem_created:" in self_check_output
+
+    _run(parser, ["forecast", "--db", db, "lesson", "list", "--scope-type", "domain", "--scope-ref", "macro"])
+    lesson_output = capsys.readouterr().out
+    assert "Eligible backtest replay high-confidence miss in macro" in lesson_output
+
+    lesson = ForecastLedger(db).list_calibration_lessons(scope_type="domain", scope_ref="macro")[0]
+    assert lesson["recommended_adjustment"]["forecast_origin"] == "backtest"
+    assert lesson["recommended_adjustment"]["requires_review_before_live_use"] is True
+
+
 def test_forecast_cli_runs_builtin_benchmark_dataset(tmp_path, capsys):
     parser = _parser()
     db = str(tmp_path / "forecasting.db")
