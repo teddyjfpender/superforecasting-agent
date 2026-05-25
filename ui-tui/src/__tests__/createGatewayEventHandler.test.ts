@@ -791,7 +791,10 @@ describe('createGatewayEventHandler', () => {
       },
       {
         rows: [
-          ['12345678 P=0.630 Δ=+0.080', '1 alert  close 2026-11-03  Will X win the election?']
+          [
+            '12345678 P=0.630 Δ=+0.080',
+            '1 alert  as-of 2026-05-01  close 2026-11-03  conf 0.74  Will X win the election?'
+          ]
         ],
         title: 'Watchlist'
       },

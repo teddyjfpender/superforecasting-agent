@@ -61,9 +61,10 @@ to run any forecast CLI command from inside the TUI.
 On wide terminals, the TUI also keeps a compact forecast desk rail beside the
 transcript. The rail is refreshed from the same dashboard data and keeps the
 active book count, triage queue, at-risk forecasts, evidence-readiness gaps, and
-recent backtest provenance visible while you research or update a question. When
-scored ensemble forecasts exist, the rail also shows the top contributing
-forecast components.
+recent backtest provenance visible while you research or update a question. The
+watchlist rows keep each at-risk forecast's probability, delta, as-of date, close
+date, confidence, status, and title visible. When scored ensemble forecasts
+exist, the rail also shows the top contributing forecast components.
 
 The composer also keeps a one-line `desk actions` strip derived from the same
 triage state. It stays visible on narrower terminals where the side rail cannot

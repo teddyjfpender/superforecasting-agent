@@ -378,7 +378,7 @@ describe('forecast desk panel helpers', () => {
       { detail: '2 active / 1 alerts / 1 reviews / asm 3/2', label: 'book' },
       { detail: '/alerts 1 open alert need source or resolution review', label: 'triage' },
       {
-        detail: 'watch123 P=0.710 Δ=- 1 alert  close 2026-06-01  Will the watched forecast need…',
+        detail: 'watch123 P=0.710 Δ=- 1 alert  as-of -  close 2026-06-01  conf -  Will the watched forecast need review?',
         label: 'watch'
       }
     ])

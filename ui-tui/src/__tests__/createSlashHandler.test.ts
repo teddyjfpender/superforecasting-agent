@@ -105,7 +105,10 @@ describe('createSlashHandler', () => {
           expect.objectContaining({ title: 'Book' }),
           expect.objectContaining({
             rows: expect.arrayContaining([
-              ['default0 P=0.210 Δ=-0.040', 'active  close 2026-09-30  Will company Y default?']
+              [
+                'default0 P=0.210 Δ=-0.040',
+                'active  as-of 2026-08-01  close 2026-09-30  conf 0.61  Will company Y default?'
+              ]
             ]),
             title: 'Watchlist'
           })
