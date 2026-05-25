@@ -144,7 +144,7 @@ export const tr: Translations = {
     nextPage: "Sonraki sayfa",
     roles: {
       user: "Kullanıcı",
-      assistant: "Asistan",
+      assistant: "Tahminci",
       system: "Sistem",
       tool: "Araç",
     },

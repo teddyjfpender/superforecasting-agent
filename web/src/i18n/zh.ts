@@ -142,7 +142,7 @@ export const zh: Translations = {
     nextPage: "下一页",
     roles: {
       user: "用户",
-      assistant: "助手",
+      assistant: "预测者",
       system: "系统",
       tool: "工具",
     },

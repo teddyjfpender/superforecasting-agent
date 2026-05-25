@@ -144,7 +144,7 @@ export const ga: Translations = {
     nextPage: "An chéad leathanach eile",
     roles: {
       user: "Úsáideoir",
-      assistant: "Cúntóir",
+      assistant: "Réamhaisnéiseoir",
       system: "Córas",
       tool: "Uirlis",
     },

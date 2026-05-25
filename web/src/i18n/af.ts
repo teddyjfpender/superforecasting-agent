@@ -144,7 +144,7 @@ export const af: Translations = {
     nextPage: "Volgende bladsy",
     roles: {
       user: "Gebruiker",
-      assistant: "Assistent",
+      assistant: "Voorspeller",
       system: "Stelsel",
       tool: "Gereedskap",
     },

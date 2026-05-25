@@ -144,7 +144,7 @@ export const hu: Translations = {
     nextPage: "Következő oldal",
     roles: {
       user: "Felhasználó",
-      assistant: "Asszisztens",
+      assistant: "Előrejelző",
       system: "Rendszer",
       tool: "Eszköz",
     },

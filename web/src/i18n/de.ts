@@ -144,7 +144,7 @@ export const de: Translations = {
     nextPage: "Nächste Seite",
     roles: {
       user: "Benutzer",
-      assistant: "Assistent",
+      assistant: "Prognostiker",
       system: "System",
       tool: "Werkzeug",
     },

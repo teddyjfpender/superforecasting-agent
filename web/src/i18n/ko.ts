@@ -144,7 +144,7 @@ export const ko: Translations = {
     nextPage: "다음 페이지",
     roles: {
       user: "사용자",
-      assistant: "어시스턴트",
+      assistant: "예측자",
       system: "시스템",
       tool: "도구",
     },

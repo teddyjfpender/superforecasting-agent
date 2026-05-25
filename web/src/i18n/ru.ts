@@ -144,7 +144,7 @@ export const ru: Translations = {
     nextPage: "Следующая страница",
     roles: {
       user: "Пользователь",
-      assistant: "Ассистент",
+      assistant: "Прогнозист",
       system: "Система",
       tool: "Инструмент",
     },

@@ -144,7 +144,7 @@ export const zhHant: Translations = {
     nextPage: "下一頁",
     roles: {
       user: "使用者",
-      assistant: "助理",
+      assistant: "預測者",
       system: "系統",
       tool: "工具",
     },

@@ -144,7 +144,7 @@ export const ja: Translations = {
     nextPage: "次のページ",
     roles: {
       user: "ユーザー",
-      assistant: "アシスタント",
+      assistant: "予測者",
       system: "システム",
       tool: "ツール",
     },

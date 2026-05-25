@@ -144,7 +144,7 @@ export const uk: Translations = {
     nextPage: "Наступна сторінка",
     roles: {
       user: "Користувач",
-      assistant: "Асистент",
+      assistant: "Прогнозист",
       system: "Система",
       tool: "Інструмент",
     },

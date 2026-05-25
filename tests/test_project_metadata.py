@@ -167,6 +167,50 @@ def test_web_locale_app_brand_is_forecast_native():
         assert "Hermes Agent ☤" not in text, path
         assert "~/.hermes" not in text, path
 
+    forecast_role_labels = {
+        "af.ts": 'assistant: "Voorspeller"',
+        "de.ts": 'assistant: "Prognostiker"',
+        "en.ts": 'assistant: "Forecaster"',
+        "es.ts": 'assistant: "Pronosticador"',
+        "fr.ts": 'assistant: "Prévisionniste"',
+        "ga.ts": 'assistant: "Réamhaisnéiseoir"',
+        "hu.ts": 'assistant: "Előrejelző"',
+        "it.ts": 'assistant: "Previsore"',
+        "ja.ts": 'assistant: "予測者"',
+        "ko.ts": 'assistant: "예측자"',
+        "pt.ts": 'assistant: "Previsor"',
+        "ru.ts": 'assistant: "Прогнозист"',
+        "tr.ts": 'assistant: "Tahminci"',
+        "uk.ts": 'assistant: "Прогнозист"',
+        "zh-hant.ts": 'assistant: "預測者"',
+        "zh.ts": 'assistant: "预测者"',
+    }
+    legacy_role_labels = {
+        "af.ts": 'assistant: "Assistent"',
+        "de.ts": 'assistant: "Assistent"',
+        "es.ts": 'assistant: "Asistente"',
+        "fr.ts": 'assistant: "Assistant"',
+        "ga.ts": 'assistant: "Cúntóir"',
+        "hu.ts": 'assistant: "Asszisztens"',
+        "it.ts": 'assistant: "Assistente"',
+        "ja.ts": 'assistant: "アシスタント"',
+        "ko.ts": 'assistant: "어시스턴트"',
+        "pt.ts": 'assistant: "Assistente"',
+        "ru.ts": 'assistant: "Ассистент"',
+        "tr.ts": 'assistant: "Asistan"',
+        "uk.ts": 'assistant: "Асистент"',
+        "zh-hant.ts": 'assistant: "助理"',
+        "zh.ts": 'assistant: "助手"',
+    }
+    for path in locale_files:
+        text = path.read_text(encoding="utf-8")
+        expected = forecast_role_labels.get(path.name)
+        if expected:
+            assert expected in text, path
+        legacy = legacy_role_labels.get(path.name)
+        if legacy:
+            assert legacy not in text, path
+
 
 def test_web_update_action_names_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
