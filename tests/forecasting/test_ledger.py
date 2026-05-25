@@ -246,6 +246,20 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
         confidence=0.7,
     )
     ledger.add_assumption(question_id=question.id, text="Dashboard render assumption")
+    active_reference = ledger.add_reference_class(
+        question_id=question.id,
+        name="Comparable dashboard forecasts",
+        inclusion_criteria="Forecasts with dashboard-facing operational review needs.",
+        base_rate=0.5,
+    )
+    stale_reference = ledger.add_reference_class(
+        question_id=question.id,
+        name="Old dashboard base rate",
+        inclusion_criteria="Legacy base-rate examples that need refresh.",
+        base_rate=0.4,
+    )
+    assert active_reference["status"] == "active"
+    ledger.update_reference_class(stale_reference["id"], status="stale")
     ledger.add_baseline_comparison(
         question_id=question.id,
         source="dashboard-market",
@@ -312,6 +326,10 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     assert row["open_assumption_count"] == 1
     assert summary["open_assumption_count"] == 1
     assert summary["stale_assumption_count"] == 0
+    assert row["open_reference_class_count"] == 1
+    assert row["stale_reference_class_count"] == 1
+    assert summary["open_reference_class_count"] == 1
+    assert summary["stale_reference_class_count"] == 1
     assert row["open_alert_count"] == 1
     assert summary["review_queue_count"] == 1
     assert summary["review_queue"][0]["id"] == question.id
@@ -361,6 +379,7 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     assert "Superforecasting Agent" in text
     assert "Will shared forecast dashboard render?" in text
     assert "assumptions: 1/0" in text
+    assert "refs: 1/1" in text
     assert "AsOf" in text
     assert "2026-05-02T00:00:00Z" in text
     assert "Review Queue" in text

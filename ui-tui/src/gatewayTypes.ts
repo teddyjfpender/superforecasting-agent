@@ -194,12 +194,14 @@ export interface ForecastDashboardSummary {
   closing_soon_count?: number
   open_alert_count?: number
   open_assumption_count?: number
+  open_reference_class_count?: number
   product?: string
   questions?: ForecastDashboardQuestion[]
   review_queue?: ForecastDashboardReview[]
   review_queue_count?: number
   recent_backtests?: ForecastDashboardBacktest[]
   stale_assumption_count?: number
+  stale_reference_class_count?: number
 }
 
 export interface ForecastDashboardAlert {
@@ -358,9 +360,11 @@ export interface ForecastDashboardQuestion {
   id?: string
   open_alert_count?: number
   open_assumption_count?: number
+  open_reference_class_count?: number
   probability?: null | number | Record<string, unknown> | string
   resolution_time?: null | string
   stale_assumption_count?: number
+  stale_reference_class_count?: number
   status?: string
   title?: string
   topics?: string[]

@@ -36,6 +36,12 @@ def build_dashboard_summary(
         stale_assumptions = [
             item for item in assumptions if item.get("status") in {"stale", "invalidated"}
         ]
+        reference_classes = ledger.list_reference_classes(question.id)
+        stale_reference_classes = [
+            item
+            for item in reference_classes
+            if item.get("status") in {"stale", "invalidated", "superseded"}
+        ]
         rows.append(
             {
                 "id": question.id,
@@ -55,6 +61,10 @@ def build_dashboard_summary(
                     [item for item in assumptions if item.get("status") == "active"]
                 ),
                 "stale_assumption_count": len(stale_assumptions),
+                "open_reference_class_count": len(
+                    [item for item in reference_classes if item.get("status") == "active"]
+                ),
+                "stale_reference_class_count": len(stale_reference_classes),
                 "open_alert_count": alert_counts.get(question.id, 0),
             }
         )
@@ -162,6 +172,12 @@ def build_dashboard_summary(
 
     open_assumption_count = sum(int(row.get("open_assumption_count") or 0) for row in rows)
     stale_assumption_count = sum(int(row.get("stale_assumption_count") or 0) for row in rows)
+    open_reference_class_count = sum(
+        int(row.get("open_reference_class_count") or 0) for row in rows
+    )
+    stale_reference_class_count = sum(
+        int(row.get("stale_reference_class_count") or 0) for row in rows
+    )
 
     return {
         "product": PRODUCT_NAME,
@@ -171,6 +187,8 @@ def build_dashboard_summary(
         "closing_soon_count": closing_soon_count,
         "open_assumption_count": open_assumption_count,
         "stale_assumption_count": stale_assumption_count,
+        "open_reference_class_count": open_reference_class_count,
+        "stale_reference_class_count": stale_reference_class_count,
         "calibration": calibration,
         "evidence_status": build_forecasting_evidence_status(ledger, backtest_summaries),
         "learning": build_learning_summary(ledger=ledger),
@@ -191,6 +209,7 @@ def render_dashboard_text(summary: dict[str, Any]) -> str:
             f"review_queue: {summary.get('review_queue_count', 0)}  "
             f"closing_soon: {summary.get('closing_soon_count', 0)}  "
             f"assumptions: {summary.get('open_assumption_count', 0)}/{summary.get('stale_assumption_count', 0)}  "
+            f"refs: {summary.get('open_reference_class_count', 0)}/{summary.get('stale_reference_class_count', 0)}  "
             f"calibration_n: {(summary.get('calibration') or {}).get('count', 0)}"
         ),
         "",
@@ -202,10 +221,14 @@ def render_dashboard_text(summary: dict[str, Any]) -> str:
         lines.append("ACTIVE FORECASTS")
         lines.append(
             f"{'ID':<14} {'P(now)':<12} {'AsOf':<20} {'Delta':<8} {'Conf':<6} {'Close':<20} "
-            f"{'Ev':>3} {'Base':>4} {'Assump':>7} {'Alerts':>6}  Question"
+            f"{'Ev':>3} {'Base':>4} {'Refs':>5} {'Assump':>7} {'Alerts':>6}  Question"
         )
         for row in rows:
             assumptions = f"{row.get('open_assumption_count', 0)}/{row.get('stale_assumption_count', 0)}"
+            references = (
+                f"{row.get('open_reference_class_count', 0)}/"
+                f"{row.get('stale_reference_class_count', 0)}"
+            )
             lines.append(
                 f"{row.get('id', '-'):<14} "
                 f"{format_probability(row.get('probability')):<12} "
@@ -215,6 +238,7 @@ def render_dashboard_text(summary: dict[str, Any]) -> str:
                 f"{str(row.get('close_time') or '-'):<20} "
                 f"{int(row.get('evidence_count') or 0):>3} "
                 f"{int(row.get('baseline_count') or 0):>4} "
+                f"{references:>5} "
                 f"{assumptions:>7} "
                 f"{int(row.get('open_alert_count') or 0):>6}  "
                 f"{row.get('title') or ''}"

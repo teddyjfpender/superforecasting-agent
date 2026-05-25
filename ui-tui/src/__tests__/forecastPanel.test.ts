@@ -169,26 +169,32 @@ describe('forecast desk panel helpers', () => {
         closing_soon_count: 1,
         open_alert_count: 0,
         open_assumption_count: 5,
+        open_reference_class_count: 4,
         product: 'Superforecasting Agent',
         questions: [
           {
             id: 'fq_assumption111',
             open_assumption_count: 3,
+            open_reference_class_count: 1,
             probability: 0.61,
             stale_assumption_count: 1,
+            stale_reference_class_count: 1,
             title: 'Will assumptions stay visible?'
           },
           {
             id: 'fq_assumption222',
             open_assumption_count: 2,
+            open_reference_class_count: 3,
             probability: 0.48,
             stale_assumption_count: 0,
+            stale_reference_class_count: 1,
             title: 'Will active assumptions aggregate?'
           }
         ],
         review_queue: [],
         review_queue_count: 0,
-        stale_assumption_count: 1
+        stale_assumption_count: 1,
+        stale_reference_class_count: 2
       }
     }
 
@@ -196,10 +202,13 @@ describe('forecast desk panel helpers', () => {
     const railSections = forecastDeskRailSections(response)
 
     expect(forecastDeskStatusLabel(response)).toContain('asm 5/1')
+    expect(forecastDeskStatusLabel(response)).toContain('refs 4/2')
     expect(forecastDeskStatusLabel(response)).toContain('1 closing forecast')
     expect(sections.find(section => section.title === 'Desk')?.rows).toContainEqual(['assumptions', '5/1'])
+    expect(sections.find(section => section.title === 'Desk')?.rows).toContainEqual(['reference classes', '4/2'])
     expect(sections.find(section => section.title === 'Desk')?.rows).toContainEqual(['closing soon', '1'])
     expect(railSections.find(section => section.title === 'Book')?.rows).toContainEqual(['assumptions', '5/1'])
+    expect(railSections.find(section => section.title === 'Book')?.rows).toContainEqual(['refs', '4/2'])
     expect(railSections.find(section => section.title === 'Book')?.rows).toContainEqual(['closing', '1'])
     expect(sections.find(section => section.title === 'Triage')?.rows).toContainEqual([
       '/review --stale',
@@ -208,6 +217,10 @@ describe('forecast desk panel helpers', () => {
     expect(sections.find(section => section.title === 'Triage')?.rows).toContainEqual([
       '/forecast self-check',
       '1 stale assumption needs evidence or status review'
+    ])
+    expect(sections.find(section => section.title === 'Triage')?.rows).toContainEqual([
+      '/forecast self-check',
+      '2 stale reference classes need base-rate or source review'
     ])
   })
 

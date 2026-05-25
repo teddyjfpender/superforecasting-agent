@@ -109,6 +109,28 @@ const assumptionCounts = (summary: ForecastDashboardResponse['summary']) => {
   return { open, stale }
 }
 
+const referenceClassCounts = (summary: ForecastDashboardResponse['summary']) => {
+  if (!summary) {
+    return { open: 0, stale: 0 }
+  }
+
+  const summaryOpen = numberValue(summary.open_reference_class_count)
+  const summaryStale = numberValue(summary.stale_reference_class_count)
+  if (summaryOpen !== null || summaryStale !== null) {
+    return { open: summaryOpen ?? 0, stale: summaryStale ?? 0 }
+  }
+
+  let open = 0
+  let stale = 0
+
+  for (const row of summary.questions ?? []) {
+    open += numberValue(row.open_reference_class_count) ?? 0
+    stale += numberValue(row.stale_reference_class_count) ?? 0
+  }
+
+  return { open, stale }
+}
+
 export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): string => {
   const summary = response.summary
 
@@ -123,6 +145,7 @@ export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): st
   const calibrationCount = numberValue(summary.calibration?.count)
   const lessonCount = numberValue(summary.learning?.total_lessons)
   const assumptions = assumptionCounts(summary)
+  const referenceClasses = referenceClassCounts(summary)
   const bits = [`desk ${active} active`]
 
   if (alerts > 0) {
@@ -147,6 +170,10 @@ export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): st
 
   if (assumptions.open > 0 || assumptions.stale > 0) {
     bits.push(`asm ${assumptions.open}/${assumptions.stale}`)
+  }
+
+  if (referenceClasses.open > 0 || referenceClasses.stale > 0) {
+    bits.push(`refs ${referenceClasses.open}/${referenceClasses.stale}`)
   }
 
   return bits.join(' / ')
@@ -193,6 +220,7 @@ const questionTypeCalibrationRows = (calibration: ForecastDashboardCalibration |
 const forecastStatus = (row: ForecastDashboardQuestion) => {
   const alerts = Number(row.open_alert_count || 0)
   const staleAssumptions = Number(row.stale_assumption_count || 0)
+  const staleReferenceClasses = Number(row.stale_reference_class_count || 0)
 
   if (alerts > 0) {
     return `${alerts} alert${alerts === 1 ? '' : 's'}`
@@ -200,6 +228,10 @@ const forecastStatus = (row: ForecastDashboardQuestion) => {
 
   if (staleAssumptions > 0) {
     return `${staleAssumptions} stale asm`
+  }
+
+  if (staleReferenceClasses > 0) {
+    return `${staleReferenceClasses} stale ref${staleReferenceClasses === 1 ? '' : 's'}`
   }
 
   if (!row.probability) {
@@ -223,6 +255,7 @@ const triageRows = (response: ForecastDashboardResponse): [string, string][] => 
   const learning = summary.learning
   const backtests = summary.recent_backtests ?? []
   const assumptions = assumptionCounts(summary)
+  const referenceClasses = referenceClassCounts(summary)
   const rows: [string, string][] = []
 
   if (alerts > 0) {
@@ -241,6 +274,15 @@ const triageRows = (response: ForecastDashboardResponse): [string, string][] => 
     rows.push([
       '/forecast self-check',
       `${plural(assumptions.stale, 'stale assumption')} ${assumptions.stale === 1 ? 'needs' : 'need'} evidence or status review`
+    ])
+  }
+
+  if (referenceClasses.stale > 0) {
+    rows.push([
+      '/forecast self-check',
+      `${plural(referenceClasses.stale, 'stale reference class', 'stale reference classes')} ${
+        referenceClasses.stale === 1 ? 'needs' : 'need'
+      } base-rate or source review`
     ])
   }
 
@@ -395,9 +437,14 @@ export const forecastDeskCompactItems = (sections: PanelSection[], max = 3): For
     `${bookRows.get('reviews') ?? '0'} reviews`
   ]
   const assumptions = bookRows.get('assumptions')
+  const referenceClasses = bookRows.get('refs')
 
   if (assumptions) {
     bookBits.push(`asm ${assumptions}`)
+  }
+
+  if (referenceClasses && referenceClasses !== '0/0') {
+    bookBits.push(`refs ${referenceClasses}`)
   }
 
   if (book?.rows?.length) {
@@ -449,6 +496,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
   const reviews = summary.review_queue_count ?? reviewQueue.length
   const closing = summary.closing_soon_count ?? 0
   const assumptions = assumptionCounts(summary)
+  const referenceClasses = referenceClassCounts(summary)
 
   const sections: PanelSection[] = [
     {
@@ -459,6 +507,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
         ['review queue', formatCount(reviews)],
         ['closing soon', formatCount(closing)],
         ['assumptions', `${formatCount(assumptions.open)}/${formatCount(assumptions.stale)}`],
+        ['reference classes', `${formatCount(referenceClasses.open)}/${formatCount(referenceClasses.stale)}`],
         ['calibration n', formatCount(calibration?.count)],
         ['lessons', formatCount(learning?.total_lessons)]
       ],
@@ -476,6 +525,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
           `conf ${formatConfidence(row.confidence)}`,
           `ev ${formatCount(row.evidence_count)}`,
           `base ${formatCount(row.baseline_count)}`,
+          `refs ${formatCount(row.open_reference_class_count)}/${formatCount(row.stale_reference_class_count)}`,
           `asm ${formatCount(row.open_assumption_count)}/${formatCount(row.stale_assumption_count)}`,
           forecastStatus(row),
           truncate(row.title || '(untitled forecast)', 72)
@@ -735,6 +785,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
   const reviews = summary.review_queue_count ?? reviewQueue.length
   const closing = summary.closing_soon_count ?? 0
   const assumptions = assumptionCounts(summary)
+  const referenceClasses = referenceClassCounts(summary)
   const sections: PanelSection[] = [
     {
       rows: [
@@ -743,6 +794,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
         ['reviews', formatCount(reviews)],
         ['closing', formatCount(closing)],
         ['assumptions', `${formatCount(assumptions.open)}/${formatCount(assumptions.stale)}`],
+        ['refs', `${formatCount(referenceClasses.open)}/${formatCount(referenceClasses.stale)}`],
         ['scores', formatCount(calibration?.count)],
         ['lessons', formatCount(learning?.total_lessons)]
       ],
@@ -759,7 +811,13 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
   }
 
   const atRisk = questions
-    .filter(row => Number(row.open_alert_count || 0) > 0 || Number(row.stale_assumption_count || 0) > 0 || !row.probability)
+    .filter(
+      row =>
+        Number(row.open_alert_count || 0) > 0 ||
+        Number(row.stale_assumption_count || 0) > 0 ||
+        Number(row.stale_reference_class_count || 0) > 0 ||
+        !row.probability
+    )
     .concat(questions)
     .filter((row, index, rows) => rows.findIndex(candidate => candidate.id === row.id) === index)
     .slice(0, 4)
