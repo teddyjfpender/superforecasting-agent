@@ -759,6 +759,7 @@ export interface ForecastDashboardEvidenceStatus {
     run_count?: number;
     distinct_dataset_count?: number;
     external_dataset_count?: number;
+    external_source_family_count?: number;
     leakage_free_run_count?: number;
     positive_best_baseline_edge_run_count?: number;
     agent_protocol_scored_count?: number;

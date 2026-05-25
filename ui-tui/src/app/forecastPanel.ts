@@ -637,7 +637,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
       ],
       [
         'backtests',
-        `agent-protocol ${formatCount(backtestCounts.agent_protocol_scored_count)}  leakage-free ${formatCount(backtestCounts.leakage_free_run_count)}  edge ${formatCount(backtestCounts.positive_best_baseline_edge_run_count)}  datasets ${formatCount(backtestCounts.distinct_dataset_count)}  external ${formatCount(backtestCounts.external_dataset_count)}`
+        `agent-protocol ${formatCount(backtestCounts.agent_protocol_scored_count)}  leakage-free ${formatCount(backtestCounts.leakage_free_run_count)}  edge ${formatCount(backtestCounts.positive_best_baseline_edge_run_count)}  datasets ${formatCount(backtestCounts.distinct_dataset_count)}  external ${formatCount(backtestCounts.external_dataset_count)}  families ${formatCount(backtestCounts.external_source_family_count)}`
       ],
       ['gaps', truncate(gaps, 88)]
     ]
@@ -856,7 +856,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
       ['live/backtest', `${formatCount(scoreCounts.live)}/${formatCount(scoreCounts.backtest)}`],
       [
         'replay',
-        `agent ${formatCount(backtestCounts.agent_protocol_scored_count)} edge ${formatCount(backtestCounts.positive_best_baseline_edge_run_count)} sets ${formatCount(backtestCounts.distinct_dataset_count)} ext ${formatCount(backtestCounts.external_dataset_count)}`
+        `agent ${formatCount(backtestCounts.agent_protocol_scored_count)} edge ${formatCount(backtestCounts.positive_best_baseline_edge_run_count)} sets ${formatCount(backtestCounts.distinct_dataset_count)} ext ${formatCount(backtestCounts.external_dataset_count)} fam ${formatCount(backtestCounts.external_source_family_count)}`
       ],
       ['gaps', truncate(gaps, 58)]
     ]

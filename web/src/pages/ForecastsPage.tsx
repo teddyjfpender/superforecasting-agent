@@ -851,7 +851,7 @@ function EvidenceStatusPanel({ evidenceStatus }: { evidenceStatus?: ForecastDash
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-4 text-sm sm:grid-cols-6">
+        <div className="grid gap-4 text-sm sm:grid-cols-7">
           <div>
             <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
               Verdict
@@ -898,6 +898,14 @@ function EvidenceStatusPanel({ evidenceStatus }: { evidenceStatus?: ForecastDash
             </div>
             <div className="mt-1 font-mono-ui text-lg text-foreground">
               {backtests.external_dataset_count ?? 0}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Families
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {backtests.external_source_family_count ?? 0}
             </div>
           </div>
         </div>
