@@ -1306,6 +1306,7 @@ Latest verified result:
 - Resolve command-shape pass: `forecast resolve` now accepts `--resolution-source` as an alias for `--source` and `--confirmed` as an alias for `--status confirmed`, matching the high-traffic quickstart/index examples without changing the stored resolution governance fields.
 - Evidence rating command-shape pass: evidence/research/import `--reliability` and `--relevance` now accept `low`/`medium`/`high` labels as normalized 0-1 scores, so docs that describe source quality in human terms are executable while the ledger still stores numeric ratings for calibration and audit.
 - Evidence source command-shape pass: `forecast evidence add <id>` now accepts either positional source/note text or `--source <value>`, matching support-surface examples that capture voice notes, meeting recalls, or plugin outputs without changing source URL/source-name semantics.
+- Evidence URL/stance alias pass: `forecast evidence add` now accepts `--source-url` as an alias for `--url`, and evidence/research `--stance` accepts human synonyms such as `supports`, `opposes`, and `neutral` while normalizing to the ledger's `increases`/`decreases`/`mixed`/`context` vocabulary.
 
 ## Prompt-To-Artifact Checklist
 

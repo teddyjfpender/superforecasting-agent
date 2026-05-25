@@ -691,10 +691,12 @@ def test_forecast_cli_evidence_claim_type_is_visible(tmp_path, capsys):
             "--relevance",
             "high",
             "--stance",
-            "increases",
+            "supports",
         ],
     )
-    assert "claim_type: rumor" in capsys.readouterr().out
+    add_output = capsys.readouterr().out
+    assert "claim_type: rumor" in add_output
+    assert "stance: increases" in add_output
 
     _run(parser, ["forecast", "--db", db, "evidence", "list", question_id])
     list_output = capsys.readouterr().out
@@ -716,6 +718,8 @@ def test_forecast_cli_evidence_claim_type_is_visible(tmp_path, capsys):
             question_id,
             "--source",
             "voice-note",
+            "--source-url",
+            "https://example.com/voice-note",
             "--summary",
             "Recorded from a voice note.",
         ],

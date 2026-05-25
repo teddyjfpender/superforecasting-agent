@@ -1110,11 +1110,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     research_parser.add_argument("--source-type")
     research_parser.add_argument("--reliability", type=_parse_rating)
     research_parser.add_argument("--relevance", type=_parse_rating)
-    research_parser.add_argument(
-        "--stance",
-        choices=["increases", "decreases", "mixed", "context"],
-        default="context",
-    )
+    research_parser.add_argument("--stance", type=_parse_stance, default="context")
     research_parser.set_defaults(_forecast_handler=_cmd_research)
 
     base_rate_parser = forecast_sub.add_parser("base-rate", help="Store a reference-class base-rate estimate")
@@ -1212,18 +1208,14 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     evidence_add.add_argument("--claim", default="")
     evidence_add.add_argument("--claim-type", choices=sorted(EVIDENCE_CLAIM_TYPES), default="fact")
     evidence_add.add_argument("--summary", default="")
-    evidence_add.add_argument("--url", dest="source_url")
+    evidence_add.add_argument("--url", "--source-url", dest="source_url")
     evidence_add.add_argument("--source-name")
     evidence_add.add_argument("--source-type")
     evidence_add.add_argument("--published-at")
     evidence_add.add_argument("--available-at")
     evidence_add.add_argument("--reliability", type=_parse_rating)
     evidence_add.add_argument("--relevance", type=_parse_rating)
-    evidence_add.add_argument(
-        "--stance",
-        choices=["increases", "decreases", "mixed", "context"],
-        default="context",
-    )
+    evidence_add.add_argument("--stance", type=_parse_stance, default="context")
     evidence_add.add_argument("--snapshot-path")
     evidence_add.add_argument("--not-admissible-for-backtests", action="store_true")
     evidence_add.set_defaults(_forecast_handler=_cmd_evidence_add)
@@ -7362,6 +7354,27 @@ def _parse_rating(value: str) -> float:
     if not 0 <= score <= 1:
         raise argparse.ArgumentTypeError("rating must be between 0 and 1")
     return score
+
+
+def _parse_stance(value: str) -> str:
+    aliases = {
+        "supports": "increases",
+        "support": "increases",
+        "positive": "increases",
+        "increases": "increases",
+        "opposes": "decreases",
+        "oppose": "decreases",
+        "negative": "decreases",
+        "decreases": "decreases",
+        "mixed": "mixed",
+        "neutral": "context",
+        "contextual": "context",
+        "context": "context",
+    }
+    raw = str(value).strip().lower()
+    if raw in aliases:
+        return aliases[raw]
+    raise argparse.ArgumentTypeError("stance must be increases/decreases/mixed/context or supports/opposes")
 
 
 def _parse_day_count(value: str) -> int:
