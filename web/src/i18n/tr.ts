@@ -68,7 +68,7 @@ export const tr: Translations = {
     },
     nav: {
       analytics: "Analiz",
-      chat: "Tahmin Sohbeti",
+      chat: "Forecast Desk",
       config: "Yapılandırma",
       cron: "Cron",
       documentation: "Dokümantasyon",
@@ -139,7 +139,7 @@ export const tr: Translations = {
       "Bu, konuşmayı ve tüm mesajlarını kalıcı olarak siler. Bu işlem geri alınamaz.",
     sessionDeleted: "Oturum silindi",
     failedToDelete: "Oturum silinemedi",
-    resumeInChat: "Tahmin Sohbetinde Devam Et",
+    resumeInChat: "Resume in Forecast Desk",
     previousPage: "Önceki sayfa",
     nextPage: "Sonraki sayfa",
     roles: {

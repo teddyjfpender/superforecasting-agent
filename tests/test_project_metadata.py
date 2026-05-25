@@ -267,6 +267,10 @@ def test_web_locale_app_brand_is_forecast_native():
         if legacy:
             assert legacy not in text, path
 
+    forecast_desk_labels = {
+        path.name: ('chat: "Forecast Desk"', 'resumeInChat: "Resume in Forecast Desk"')
+        for path in locale_files
+    }
     forecast_chat_labels = {
         "af.ts": ('chat: "Voorspellingsklets"', 'resumeInChat: "Hervat in Voorspellingsklets"'),
         "de.ts": ('chat: "Forecast-Chat"', 'resumeInChat: "Im Forecast-Chat fortsetzen"'),
@@ -304,10 +308,14 @@ def test_web_locale_app_brand_is_forecast_native():
     }
     for path in locale_files:
         text = path.read_text(encoding="utf-8")
-        expected_pair = forecast_chat_labels.get(path.name)
+        expected_pair = forecast_desk_labels.get(path.name)
         if expected_pair:
             for expected in expected_pair:
                 assert expected in text, path
+        old_forecast_pair = forecast_chat_labels.get(path.name)
+        if old_forecast_pair:
+            for old_forecast in old_forecast_pair:
+                assert old_forecast not in text, path
         generic_pair = generic_chat_labels.get(path.name)
         if generic_pair:
             for generic in generic_pair:

@@ -68,7 +68,7 @@ export const af: Translations = {
     },
     nav: {
       analytics: "Analise",
-      chat: "Voorspellingsklets",
+      chat: "Forecast Desk",
       config: "Konfigurasie",
       cron: "Cron",
       documentation: "Dokumentasie",
@@ -139,7 +139,7 @@ export const af: Translations = {
       "Dit verwyder die gesprek en al sy boodskappe permanent. Dit kan nie ongedaan gemaak word nie.",
     sessionDeleted: "Sessie geskrap",
     failedToDelete: "Kon nie sessie skrap nie",
-    resumeInChat: "Hervat in Voorspellingsklets",
+    resumeInChat: "Resume in Forecast Desk",
     previousPage: "Vorige bladsy",
     nextPage: "Volgende bladsy",
     roles: {

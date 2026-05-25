@@ -68,7 +68,7 @@ export const ru: Translations = {
     },
     nav: {
       analytics: "Аналитика",
-      chat: "Прогнозный чат",
+      chat: "Forecast Desk",
       config: "Конфигурация",
       cron: "Cron",
       documentation: "Документация",
@@ -139,7 +139,7 @@ export const ru: Translations = {
       "Это безвозвратно удалит разговор и все его сообщения. Действие нельзя отменить.",
     sessionDeleted: "Сессия удалена",
     failedToDelete: "Не удалось удалить сессию",
-    resumeInChat: "Продолжить в прогнозном чате",
+    resumeInChat: "Resume in Forecast Desk",
     previousPage: "Предыдущая страница",
     nextPage: "Следующая страница",
     roles: {

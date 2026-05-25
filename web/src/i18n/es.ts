@@ -68,7 +68,7 @@ export const es: Translations = {
     },
     nav: {
       analytics: "Analíticas",
-      chat: "Chat de pronóstico",
+      chat: "Forecast Desk",
       config: "Configuración",
       cron: "Cron",
       documentation: "Documentación",
@@ -139,7 +139,7 @@ export const es: Translations = {
       "Esto elimina permanentemente la conversación y todos sus mensajes. No se puede deshacer.",
     sessionDeleted: "Sesión eliminada",
     failedToDelete: "No se pudo eliminar la sesión",
-    resumeInChat: "Reanudar en el chat de pronóstico",
+    resumeInChat: "Resume in Forecast Desk",
     previousPage: "Página anterior",
     nextPage: "Página siguiente",
     roles: {

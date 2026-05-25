@@ -68,7 +68,7 @@ export const en: Translations = {
     },
     nav: {
       analytics: "Analytics",
-      chat: "Forecast Chat",
+      chat: "Forecast Desk",
       config: "Config",
       cron: "Cron",
       documentation: "Documentation",
@@ -139,7 +139,7 @@ export const en: Translations = {
       "This permanently removes the research transcript and all of its messages. This cannot be undone.",
     sessionDeleted: "Session deleted",
     failedToDelete: "Failed to delete session",
-    resumeInChat: "Resume in Forecast Chat",
+    resumeInChat: "Resume in Forecast Desk",
     previousPage: "Previous page",
     nextPage: "Next page",
     roles: {
