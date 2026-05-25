@@ -968,7 +968,7 @@ def _setup_worktree(repo_root: str = None) -> Optional[Dict[str, str]]:
     repo_root = repo_root or _git_repo_root()
     if not repo_root:
         print("\033[31m✗ --worktree requires being inside a git repository.\033[0m")
-        print("  cd into your project repo first, then run superforecasting-agent -w")
+        print("  cd into your project repo first, then run superforecasting-agent chat --worktree")
         return None
 
     short_id = uuid.uuid4().hex[:8]
@@ -1318,7 +1318,7 @@ def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
 def _prune_orphaned_branches(repo_root: str) -> None:
     """Delete generated worktree and ``pr-*`` branches with no worktree.
 
-    Forecast-prefixed branches are created by ``superforecasting-agent -w``.
+    Forecast-prefixed branches are created by ``superforecasting-agent chat --worktree``.
     Legacy ``hermes/hermes-*`` branches are still recognized so existing fork
     transition checkouts do not leak old worktree refs.
     """
@@ -14415,8 +14415,8 @@ def main(
         python cli.py -q "Extract forecast-relevant evidence from this chart" --image ~/storage/shared/Pictures/chart.png
         python cli.py --list-tools               # List tools and exit
         python cli.py --resume 20260225_143052_a1b2c3  # Resume session
-        python cli.py -w                         # Start in isolated git worktree
-        python cli.py -w -q "Backtest this scoring-rule change"  # Single query in worktree
+        python cli.py -w                         # Start support chat in an isolated git worktree
+        python cli.py -w -q "Backtest this scoring-rule change"  # Single support query in worktree
     """
     global _active_worktree
 

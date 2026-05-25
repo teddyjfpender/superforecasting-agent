@@ -13401,6 +13401,25 @@ Examples:
         cmd_chat(args)
         return
 
+    # Compatibility: historically top-level -w launched the chat CLI in an
+    # isolated worktree. The forecast desk ignores worktree setup, so preserve
+    # the old behavior instead of silently opening the desk without isolation.
+    if args.command is None and getattr(args, "worktree", False):
+        args.command = "chat"
+        for attr, default in [
+            ("query", None),
+            ("model", None),
+            ("provider", None),
+            ("toolsets", None),
+            ("verbose", False),
+            ("resume", None),
+            ("continue_last", None),
+        ]:
+            if not hasattr(args, attr):
+                setattr(args, attr, default)
+        cmd_chat(args)
+        return
+
     # Default to the forecast desk if no command specified
     if args.command is None:
         if not hasattr(args, "db"):

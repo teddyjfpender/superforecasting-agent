@@ -139,11 +139,11 @@ Notes:
 
 ## Automatic Worktree Mode
 
-Superforecasting Agent keeps the inherited `-w` flag that **automatically creates a disposable git worktree** with its own branch. You don't need to set up worktrees manually. Just `cd` into your repo and run:
+Superforecasting Agent keeps inherited automatic worktree support for explicit chat support sessions. It creates a disposable git worktree with its own branch, so you don't need to set up worktrees manually. Just `cd` into your repo and run:
 
 ```bash
 cd /path/to/your/repo
-superforecasting-agent -w
+superforecasting-agent chat --worktree
 ```
 
 Superforecasting Agent will:
@@ -152,13 +152,13 @@ Superforecasting Agent will:
 - Check out an isolated branch.
 - Run the full CLI session inside that worktree.
 
-This is the easiest way to get worktree isolation. You can also combine it with a single query:
+This is the easiest way to get worktree isolation for inherited support/code sessions. You can also combine it with a single query:
 
 ```bash
-superforecasting-agent -w -q "Add a source-adapter regression test"
+superforecasting-agent chat --worktree -q "Add a source-adapter regression test"
 ```
 
-For parallel forecast-desk sessions, open multiple terminals and run `superforecasting-agent -w` in each. Every invocation gets its own worktree and branch automatically.
+For parallel support/code sessions, open multiple terminals and run `superforecasting-agent chat --worktree` in each. Every invocation gets its own worktree and branch automatically.
 
 ## Putting It All Together
 

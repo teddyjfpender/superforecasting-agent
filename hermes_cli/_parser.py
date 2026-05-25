@@ -60,7 +60,7 @@ Examples:
     superforecasting-agent config set model gpt-4 Set a config value
     superforecasting-agent gateway                Run messaging gateway
     superforecasting-agent -s forecasting,research
-    superforecasting-agent -w                     Start in isolated git worktree
+    superforecasting-agent chat --worktree        Start support chat in an isolated git worktree
     superforecasting-agent gateway install        Install gateway background service
     superforecasting-agent sessions list          List past sessions
     superforecasting-agent sessions browse        Interactive session picker
@@ -165,7 +165,7 @@ def build_top_level_parser():
         "-w",
         action="store_true",
         default=False,
-        help="Run in an isolated git worktree (for parallel agents)",
+        help="Compatibility shortcut: start explicit chat support in an isolated git worktree",
     )
     _inherited_flag(
         parser,

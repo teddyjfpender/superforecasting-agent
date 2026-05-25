@@ -94,6 +94,36 @@ def test_chat_subcommand_accepts_image_flag(monkeypatch):
     }
 
 
+def test_top_level_worktree_flag_routes_to_chat_support(monkeypatch):
+    import hermes_cli.main as main_mod
+    import forecasting.cli as forecast_cli
+
+    captured = {}
+
+    def fake_cmd_chat(args):
+        captured["command"] = args.command
+        captured["worktree"] = args.worktree
+        captured["query"] = args.query
+
+    monkeypatch.setattr(main_mod, "cmd_chat", fake_cmd_chat)
+    monkeypatch.setattr(
+        forecast_cli,
+        "cmd_forecast",
+        lambda _args: (_ for _ in ()).throw(
+            AssertionError("forecast desk should not run")
+        ),
+    )
+    monkeypatch.setattr(sys, "argv", ["hermes", "-w"])
+
+    main_mod.main()
+
+    assert captured == {
+        "command": "chat",
+        "worktree": True,
+        "query": None,
+    }
+
+
 def test_continue_worktree_and_skills_flags_work_together(monkeypatch):
     import hermes_cli.main as main_mod
 

@@ -502,7 +502,9 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
     assert "superforecasting-agent -z" in oneshot
     assert 'superforecasting-agent -z "Hello"' in parser_help
     assert 'superforecasting-agent -z "query"' in main_help
+    assert "superforecasting-agent chat --worktree" in parser_help
     assert 'superforecasting-agent chat -q "Hello"' not in parser_help
+    assert "superforecasting-agent -w                     Start in isolated git worktree" not in parser_help
 
     assert "``hermes skills list``" not in combined
     assert "``hermes skills\n    config``" not in combined

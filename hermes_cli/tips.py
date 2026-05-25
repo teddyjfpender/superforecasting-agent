@@ -64,7 +64,7 @@ TIPS = [
 
     # --- CLI Flags ---
     "superforecasting-agent -c resumes your most recent CLI session. superforecasting-agent -c \"project name\" resumes by title.",
-    "superforecasting-agent -w creates an isolated git worktree — perfect for parallel agent workflows.",
+    "superforecasting-agent chat --worktree creates an isolated git worktree for parallel support/code sessions.",
     "superforecasting-agent -z \"Summarize the active forecast desk\" runs a clean one-shot and exits.",
     "superforecasting-agent -t forecast-desk,web -z \"research question 142\" narrows tools for one-shot work.",
     "Explicit chat sessions can still preload skills: superforecasting-agent chat -s github-pr-workflow.",
@@ -118,7 +118,7 @@ TIPS = [
     "Set fallback_model in config.yaml to automatically fail over to a backup provider.",
     "Set privacy.redact_pii: true to hash user IDs and phone numbers before sending to the LLM.",
     "Set browser.record_sessions: true to auto-record browser sessions as WebM videos.",
-    "Set worktree: true in config.yaml to always create a git worktree (same as superforecasting-agent -w).",
+    "Set worktree: true in config.yaml to make explicit chat support sessions create a git worktree.",
     "Set security.website_blocklist.enabled: true to block specific domains from web tools.",
     "Set cron.wrap_response: false to deliver raw agent output without the cron header/footer.",
     "HERMES_TIMEZONE overrides the server timezone with any IANA timezone string.",
