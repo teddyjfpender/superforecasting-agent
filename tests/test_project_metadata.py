@@ -635,9 +635,20 @@ def test_install_helpers_use_forecast_native_visible_copy():
     assert "Superforecasting Agent Setup Script" in setup_sh
     assert "Superforecasting Agent Setup" in setup_sh
     assert "Superforecasting Agent — ensure ~/.local/bin is on PATH" in setup_sh
+    assert "Setting up superforecasting-agent command" in setup_sh
+    assert "Symlinked superforecasting-agent" in setup_sh
+    assert "SUPERFORECASTING_AGENT_HOME" in setup_sh
+    assert "superforecasting-agent setup" in setup_sh
+    assert "superforecasting-agent doctor" in setup_sh
+    assert "Open the forecast desk" in setup_sh
     assert "Hermes Agent Setup Script" not in setup_sh
     assert "Hermes Agent Setup" not in setup_sh
     assert "Hermes Agent — ensure ~/.local/bin is on PATH" not in setup_sh
+    assert "Setting up hermes command" not in setup_sh
+    assert "Syncing bundled skills to ~/.hermes/skills/" not in setup_sh
+    assert "     hermes setup" not in setup_sh
+    assert "  hermes doctor" not in setup_sh
+    assert "Start chatting" not in setup_sh
     assert "dependency constraints for Superforecasting Agent" in constraints_termux
     assert "dependency constraints for Hermes Agent" not in constraints_termux
 
