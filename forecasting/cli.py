@@ -6755,7 +6755,8 @@ def _cmd_pilot_report(args: argparse.Namespace) -> None:
         f"live_scores={summary['score_counts_by_origin'].get('live', 0)} "
         f"postmortems={summary['postmortem_count']} "
         f"schedules={summary['enabled_scheduled_review_count']} "
-        f"open_alerts={summary['open_alert_count']}"
+        f"open_alerts={summary['open_alert_count']} "
+        f"learned_error_reviews={summary.get('open_learned_error_review_alert_count', 0)}"
     )
     for check in report["checks"]:
         label = "ok" if check["passed"] else "gap"

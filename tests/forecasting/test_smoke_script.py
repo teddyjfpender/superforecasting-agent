@@ -51,7 +51,7 @@ def test_forecast_smoke_script_runs_local_lifecycle(tmp_path):
     assert "[forecast-smoke] question_id: fq_" in result.stdout
     assert "[forecast-smoke] backtest_run_id: bt_" in result.stdout
     assert "[forecast-smoke] agent_protocol_backtest_run_id: bt_" in result.stdout
-    assert "[forecast-smoke] pilot_report_checks: 7/7" in result.stdout
+    assert "[forecast-smoke] pilot_report_checks: 8/8" in result.stdout
     assert "[forecast-smoke] pilot_cohort_dry_run_questions: 1" in result.stdout
     assert "[forecast-smoke] pilot_cohort_example_questions: 5" in result.stdout
     assert "[forecast-smoke] pilot_aggregate_live_scores: 1" in result.stdout

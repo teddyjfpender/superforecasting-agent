@@ -176,7 +176,7 @@ and `forecast readiness --require-evidence` exits nonzero when readiness gaps re
 `forecast pilot-report` is narrower: it checks whether a tester ledger has the
 workflow artifacts needed for a small pilot, including questions, updates,
 timestamped evidence, structured-source evidence, scheduled self-checks, scores,
-and postmortems. `forecast pilot-cohort` seeds prospective live forecast cohorts
+postmortems, and cleared learned-error review alerts. `forecast pilot-cohort` seeds prospective live forecast cohorts
 from CSV/JSON manifests so testers can start from the same unresolved question
 book without copying outcomes into the ledger; the repo ships
 `examples/forecasting/live-cohort.example.csv` as an editable starter manifest

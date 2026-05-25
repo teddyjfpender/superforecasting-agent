@@ -9471,8 +9471,9 @@ def test_forecast_cli_pilot_report_outputs_exit_checks(tmp_path, capsys):
     )
     output = capsys.readouterr().out
 
-    assert "pilot pilot_exit_ready: 7/7 checks passed" in output
+    assert "pilot pilot_exit_ready: 8/8 checks passed" in output
     assert "structured_sources=1" in output
+    assert "learned_error_reviews=0" in output
     assert "source_types:" in output
     assert "fred: 1" in output
 

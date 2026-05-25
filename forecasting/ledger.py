@@ -3642,6 +3642,12 @@ class ForecastLedger:
         watched_sources = self.list_watched_sources(status=None)
         alerts = self.list_alerts(unresolved_only=False)
         open_alert_count = sum(1 for alert in alerts if alert.acknowledged_at is None)
+        open_learned_error_review_alerts = [
+            alert
+            for alert in alerts
+            if alert.acknowledged_at is None
+            and str(alert.reason or "").startswith("domain_error_profile_applies:")
+        ]
         lessons = self.list_calibration_lessons()
         active_lessons = [lesson for lesson in lessons if lesson["status"] == "active"]
 
@@ -3658,6 +3664,23 @@ class ForecastLedger:
                 "label": label,
                 "observed": observed,
                 "required": required,
+                "passed": passed,
+                "recommended_action": "" if passed else action,
+            }
+
+        def max_check(
+            check_id: str,
+            label: str,
+            observed: int,
+            maximum: int,
+            action: str,
+        ) -> dict[str, Any]:
+            passed = observed <= maximum
+            return {
+                "id": check_id,
+                "label": label,
+                "observed": observed,
+                "required": maximum,
                 "passed": passed,
                 "recommended_action": "" if passed else action,
             }
@@ -3712,6 +3735,13 @@ class ForecastLedger:
                 min_postmortems,
                 "Write at least one postmortem with `forecast postmortem <id> ...`.",
             ),
+            max_check(
+                "learned_error_reviews_cleared",
+                "open learned-error profile review alerts",
+                len(open_learned_error_review_alerts),
+                0,
+                "Review active forecasts flagged by learned error profiles, then acknowledge the alerts with `forecast alerts --ack <id>`.",
+            ),
         ]
         passed_count = sum(1 for row in checks if row["passed"])
         next_actions = [row["recommended_action"] for row in checks if row["recommended_action"]]
@@ -3740,6 +3770,7 @@ class ForecastLedger:
                 "watched_source_count": len(watched_sources),
                 "alert_count": len(alerts),
                 "open_alert_count": open_alert_count,
+                "open_learned_error_review_alert_count": len(open_learned_error_review_alerts),
                 "calibration_lesson_count": len(lessons),
                 "active_calibration_lesson_count": len(active_lessons),
             },

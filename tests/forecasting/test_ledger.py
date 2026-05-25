@@ -1144,6 +1144,45 @@ def test_pilot_report_summarizes_tester_exit_artifacts(tmp_path):
     assert report["questions"][0]["structured_source_types"] == ["fred"]
 
 
+def test_pilot_report_blocks_unresolved_learned_error_reviews(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    alert = ledger.create_alert(
+        severity="warning",
+        scope_type="question",
+        scope_ref="fq_active",
+        reason="domain_error_profile_applies:dep_macro",
+        recommended_action="Review active macro forecast against learned errors.",
+    )
+
+    report = ledger.pilot_report(
+        min_questions=0,
+        min_structured_source_questions=0,
+        min_scores=0,
+        min_postmortems=0,
+        min_scheduled_reviews=0,
+    )
+    check = {row["id"]: row for row in report["checks"]}["learned_error_reviews_cleared"]
+
+    assert report["pilot_status"] == "collecting_pilot_evidence"
+    assert report["summary"]["open_learned_error_review_alert_count"] == 1
+    assert check["observed"] == 1
+    assert check["required"] == 0
+    assert not check["passed"]
+    assert "forecast alerts --ack" in check["recommended_action"]
+
+    ledger.acknowledge_alert(alert.id)
+    cleared = ledger.pilot_report(
+        min_questions=0,
+        min_structured_source_questions=0,
+        min_scores=0,
+        min_postmortems=0,
+        min_scheduled_reviews=0,
+    )
+
+    assert cleared["pilot_status"] == "pilot_exit_ready"
+    assert cleared["summary"]["open_learned_error_review_alert_count"] == 0
+
+
 def test_alert_acknowledgement_removes_alert_from_open_list(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     alert = ledger.create_alert(
