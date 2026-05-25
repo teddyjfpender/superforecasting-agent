@@ -9869,6 +9869,9 @@ def test_forecast_cli_base_rate_model_postmortem_and_backtest(tmp_path, capsys):
     _run(parser, ["forecast", "--db", db, "lesson", "list", "--scope-type", "domain", "--scope-ref", "biotech"])
     assert lesson_id in capsys.readouterr().out
 
+    _run(parser, ["forecast", "--db", db, "lessons", "--scope-type", "domain", "--scope-ref", "biotech"])
+    assert lesson_id in capsys.readouterr().out
+
     _run(
         parser,
         [
@@ -10673,6 +10676,60 @@ def test_forecast_cli_imports_tournament_export_as_benchmark(tmp_path, capsys):
     run_output = capsys.readouterr().out
     assert "cases: 1" in run_output
     assert "scored_cases: 1" in run_output
+
+
+def test_forecast_cli_tournament_alias_imports_export_as_benchmark(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    dataset = tmp_path / "tournament_alias.json"
+    dataset.write_text(
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "id": "tournament-alias-1",
+                        "title": "Will top-level tournament import replay?",
+                        "resolution_criteria": "Resolved yes if the tournament alias imports replayable cases.",
+                        "simulated_forecast_time": "2026-01-10T00:00:00Z",
+                        "probability": 0.65,
+                        "outcome": "yes",
+                        "baselines": [
+                            {
+                                "source": "tournament-crowd",
+                                "baseline_type": "crowd",
+                                "probability": 0.6,
+                                "as_of": "2026-01-10T00:00:00Z",
+                            }
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "tournament",
+            str(dataset),
+            "--name",
+            "top-level-tournament",
+            "--description",
+            "Top-level tournament export.",
+        ],
+    )
+    import_output = capsys.readouterr().out
+    dataset_id = re.search(r"imported tournament benchmark dataset (bd_[a-f0-9]+)", import_output).group(1)
+    assert "cases: 1" in import_output
+
+    ledger = ForecastLedger(db)
+    imported = ledger.get_benchmark_dataset(f"imported:{dataset_id}")
+    assert imported["metadata"]["adapter"] == "tournament"
+    assert imported["name"] == "top-level-tournament"
 
 
 def test_forecast_cli_backtest_replays_url_json_benchmark_dataset(tmp_path, capsys):

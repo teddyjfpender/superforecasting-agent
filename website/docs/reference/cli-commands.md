@@ -48,6 +48,7 @@ For in-chat slash commands, see [Slash Commands Reference](./slash-commands.md).
 | `forecast pilot-cohort` | Seed prospective live pilot questions from CSV/JSON manifests, optionally with initial probabilities, schedules, and watched sources. |
 | `forecast pilot-bundle` | Emit one JSON tester handoff bundle with pilot-report, readiness, and optional export data. |
 | `forecast pilot-aggregate` | Aggregate tester JSON exports into live-score, evidence, source-type, domain, and postmortem counts. |
+| `forecast tournament` | Import a resolved tournament export as an optional replay benchmark; equivalent to `forecast import tournament`. |
 | `forecast export` | Export auditable question or portfolio packets. |
 | `forecast about` | Show fork context and forecast-desk scope. |
 

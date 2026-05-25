@@ -1094,6 +1094,27 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         adapter.add_argument("--as-of")
         adapter.set_defaults(_forecast_handler=_cmd_import_adapter)
 
+    tournament_parser = forecast_sub.add_parser(
+        "tournament",
+        help="Import a resolved tournament export as a replay benchmark",
+    )
+    tournament_parser.add_argument("source")
+    tournament_parser.add_argument("--name")
+    tournament_parser.add_argument("--description")
+    tournament_parser.add_argument("--limit", type=int, default=100)
+    tournament_parser.set_defaults(
+        _forecast_handler=_cmd_import_adapter,
+        import_kind="tournament",
+        question_id=None,
+        title=None,
+        resolution_criteria=None,
+        close_time=None,
+        resolution_time=None,
+        baseline_probability=None,
+        baseline_type="imported",
+        as_of=None,
+    )
+
     plugins_parser = forecast_sub.add_parser("plugins", help="List forecast-specific extension points")
     plugins_parser.add_argument("--kind", choices=["importer", "market", "model", "resolver", "alert", "visualizer"])
     plugins_parser.set_defaults(_forecast_handler=_cmd_plugins)
@@ -1301,6 +1322,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     lesson_status.add_argument("--recommended-adjustment-json")
     lesson_status.add_argument("--supersedes")
     lesson_status.set_defaults(_forecast_handler=_cmd_lesson_status)
+
+    lessons_parser = forecast_sub.add_parser("lessons", help="List calibration lessons")
+    lessons_parser.add_argument("--scope-type")
+    lessons_parser.add_argument("--scope-ref")
+    lessons_parser.add_argument("--active", action="store_true")
+    lessons_parser.set_defaults(_forecast_handler=_cmd_lesson_list)
 
     correction_parser = forecast_sub.add_parser("correction", help="Record non-mutating corrections")
     correction_sub = correction_parser.add_subparsers(dest="correction_command")
