@@ -164,6 +164,10 @@ These commands remain available for inherited workflows, optional messaging surf
 
 ### Dynamic CLI slash commands
 
+Dynamic skill commands are optional compatibility playbooks. Use the forecast
+lifecycle commands first unless a skill directly improves research, evidence
+capture, modeling, or review.
+
 | Command | Description |
 |---------|-------------|
 | `/<skill-name>` | Load any installed skill as an on-demand command. Example: `/gif-search`, `/github-pr-workflow`, `/excalidraw`. |

@@ -388,6 +388,13 @@ class TestHistoryDisplay:
         assert "/resume" in output
         assert "Current preview" not in output
 
+    def test_help_labels_dynamic_skills_as_optional_compatibility(self):
+        source = open(os.path.join(os.path.dirname(__file__), "..", "..", "cli.py"), encoding="utf-8").read()
+
+        assert "Optional Skill Commands" in source
+        assert "Compatibility Skill Bundles" in source
+        assert "Forecast Desk Commands" in source
+
     def test_resume_without_target_lists_recent_sessions(self, capsys):
         cli = _make_cli()
         cli.session_id = "current"
