@@ -638,7 +638,7 @@ Topics created outside of the config (e.g., by manually calling the Telegram API
 
 ## Multi-session DM mode (`/topic`)
 
-A ChatGPT-style multi-session DM — one bot, many parallel conversations. Unlike the operator-curated `extra.dm_topics` above, this mode is **user-driven**: no config, no pre-declared topic names. The end user flips it on with `/topic`, then taps the Telegram **+** button to create as many topics as they want, each one a fully independent Superforecasting Agent session.
+A forecast-desk multi-session DM — one gateway, many parallel forecast sessions. Unlike the operator-curated `extra.dm_topics` above, this mode is **user-driven**: no config, no pre-declared topic names. The end user flips it on with `/topic`, then taps the Telegram **+** button to create as many topics as they want, each one a fully independent Superforecasting Agent session.
 
 ### `/topic` subcommands
 
@@ -695,11 +695,11 @@ After activation, the **root DM is a lobby**: normal prompts are rejected with g
 ### Creating a new topic (end-user flow)
 
 1. Open the bot DM in Telegram
-2. Tap **All Messages** at the top of the bot interface, then send any message
+2. Tap **All Messages** at the top of the Telegram chat interface, then send any message
 3. Telegram creates a new topic for that message
 4. Superforecasting Agent responds inside that topic — the topic is now a standalone session
 
-Every topic gets its own conversation history, model state, tool execution, and session ID. The isolation key is `agent:main:telegram:dm:{chat_id}:{thread_id}` — identical to the config-driven DM topics isolation.
+Every topic gets its own forecast transcript, model state, tool execution, and session ID. The isolation key is `agent:main:telegram:dm:{chat_id}:{thread_id}` — identical to the config-driven DM topics isolation.
 
 ### Auto-renamed topics
 

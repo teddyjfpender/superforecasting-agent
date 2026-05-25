@@ -1045,6 +1045,9 @@ def test_high_attention_docs_navigation_is_forecast_native():
         root / "website" / "docs" / "developer-guide" / "model-provider-plugin.md",
         root / "website" / "docs" / "user-guide" / "features" / "hooks.md",
         root / "website" / "docs" / "user-guide" / "messaging" / "telegram.md",
+        root / "website" / "docs" / "user-guide" / "messaging" / "index.md",
+        root / "website" / "docs" / "user-guide" / "messaging" / "yuanbao.md",
+        root / "website" / "docs" / "guides" / "team-telegram-forecast-desk.md",
     ]
     docs_text = "\n".join(path.read_text(encoding="utf-8") for path in docs_paths)
 
@@ -1083,9 +1086,19 @@ def test_high_attention_docs_navigation_is_forecast_native():
     assert "GitHub PR Review Agent" not in llms_generator
     assert "Build a Superforecasting Agent Plugin" in docs_text
     assert "# No skill — default forecast-desk behavior" in docs_text
+    assert "forecast-desk multi-session DM" in docs_text
+    assert "one gateway, many parallel forecast sessions" in docs_text
+    assert "Telegram chat interface" in docs_text
+    assert "fresh forecast session" in docs_text
+    assert "gateway operator" in docs_text
     assert "Build a Hermes Plugin" not in docs_text
     assert "Building a Hermes Plugin" not in docs_text
     assert "# No skill — general purpose" not in docs_text
+    assert "ChatGPT-style multi-session DM" not in docs_text
+    assert "one bot, many parallel conversations" not in docs_text
+    assert "bot interface" not in docs_text
+    assert "fresh conversation" not in docs_text
+    assert "bot owner" not in docs_text
     assert not (
         root / "website" / "docs" / "guides" / "build-a-hermes-plugin.md"
     ).exists()

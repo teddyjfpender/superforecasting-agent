@@ -25,7 +25,7 @@ The bot should not become a broad do-anything team bot. Its job is to help the t
 Before starting, make sure you have:
 
 - **Superforecasting Agent installed** on a server or VPS that can stay online. Follow the [installation guide](/docs/getting-started/installation) if needed.
-- **A Telegram account** for yourself as the bot owner.
+- **A Telegram account** for yourself as the gateway operator.
 - **An LLM provider configured**, with keys in `~/.superforecasting-agent/.env`.
 - **A forecast ledger**, even if it starts empty. Run `superforecasting-agent status` to confirm the forecast desk can start.
 
