@@ -740,6 +740,30 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
         repo_root=repo_root,
         verbose=verbose,
     )
+    import_db_path = db_path.with_name(f"{db_path.stem}-packet-import.db")
+    import_summary = _json_output(
+        _run_forecast(
+            [
+                "import",
+                "packet",
+                str(export_path),
+                "--conflict",
+                "replace",
+                "--json",
+            ],
+            db_path=import_db_path,
+            repo_root=repo_root,
+            verbose=verbose,
+        ),
+        "import packet",
+    )
+    imported_counts = import_summary.get("imported", {})
+    if imported_counts.get("questions", 0) < 1 or imported_counts.get("forecast_history", 0) < 1:
+        raise SmokeError(
+            "packet import did not restore forecast questions and history:\n"
+            f"{json.dumps(import_summary, indent=2)}"
+        )
+    _print_step(f"packet_import_questions: {imported_counts.get('questions')}")
     pilot_aggregate = _json_output(
         _run_forecast(
             [

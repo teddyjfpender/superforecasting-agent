@@ -54,6 +54,7 @@ def test_forecast_smoke_script_runs_local_lifecycle(tmp_path):
     assert "[forecast-smoke] pilot_report_checks: 9/9" in result.stdout
     assert "[forecast-smoke] pilot_cohort_dry_run_questions: 1" in result.stdout
     assert "[forecast-smoke] pilot_cohort_example_questions: 5" in result.stdout
+    assert "[forecast-smoke] packet_import_questions:" in result.stdout
     assert "[forecast-smoke] pilot_aggregate_live_scores: 1" in result.stdout
     assert "[forecast-smoke] readiness_verdict:" in result.stdout
     assert "[forecast-smoke] readiness_gaps: 4" in result.stdout

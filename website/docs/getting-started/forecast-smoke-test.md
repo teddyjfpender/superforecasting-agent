@@ -6,7 +6,7 @@ description: "Run the local forecast lifecycle before external testing."
 
 # Tester Smoke Test
 
-Use this smoke test before handing a build to testers. It exercises the forecast ledger, evidence capture, base rates, model-run records, probability updates, resolution, scoring, postmortem learning, scheduled self-check alerts, pilot-cohort dry-run validation, pilot-report, pilot-bundle and pilot-export aggregation coverage, and a built-in backtest without calling external APIs or an LLM provider.
+Use this smoke test before handing a build to testers. It exercises the forecast ledger, evidence capture, base rates, model-run records, probability updates, resolution, scoring, postmortem learning, scheduled self-check alerts, pilot-cohort dry-run validation, pilot-report, pilot-bundle, packet import, pilot-export aggregation coverage, and a built-in backtest without calling external APIs or an LLM provider.
 
 From the fork checkout:
 
@@ -89,6 +89,7 @@ python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db readi
 - Verifies `forecast doctor --json --require-pilot-ready` reports tester handoff state while preserving live-superiority readiness gaps.
 - Verifies `forecast pilot-report --json` reports complete pilot-exit artifacts and no unresolved learned-error review debt for the smoke ledger.
 - Verifies `forecast pilot-bundle --include-export` emits one tester handoff packet with pilot-report, readiness, and export data.
+- Exports the smoke ledger and verifies `forecast import packet` can restore the JSON packet into a clean ledger.
 - Exports the smoke ledger and verifies `forecast pilot-aggregate` counts the live score from the export packet.
 - Runs `builtin:mini-binary` through the local forecast engine.
 - Runs a local captured agent-protocol replay from JSONL responses without calling an LLM provider.
