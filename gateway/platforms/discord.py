@@ -3048,15 +3048,15 @@ class DiscordAdapter(BasePlatformAdapter):
             # so a rejected invoker can receive an ephemeral rejection.
             await self._handle_thread_create_slash(interaction, name, message, auto_archive_duration)
 
-        @tree.command(name="queue", description="Queue a prompt for the next turn (doesn't interrupt)")
-        @discord.app_commands.describe(prompt="The prompt to queue")
+        @tree.command(name="queue", description="Queue a forecast note for the next turn")
+        @discord.app_commands.describe(prompt="The forecast note to queue")
         async def slash_queue(interaction: discord.Interaction, prompt: str):
             await self._run_simple_slash(interaction, f"/queue {prompt}", "Queued for the next turn.")
 
-        @tree.command(name="background", description="Run a prompt in the background")
-        @discord.app_commands.describe(prompt="The prompt to run in the background")
+        @tree.command(name="background", description="Run a forecast note in the background")
+        @discord.app_commands.describe(prompt="The forecast note to run in the background")
         async def slash_background(interaction: discord.Interaction, prompt: str):
-            await self._run_simple_slash(interaction, f"/background {prompt}", "Background task started~")
+            await self._run_simple_slash(interaction, f"/background {prompt}", "Background forecast task started.")
 
         # ── Auto-register any gateway-available commands not yet on the tree ──
         # This ensures new commands added to COMMAND_REGISTRY in

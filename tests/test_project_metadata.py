@@ -791,9 +791,13 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "New forecast session started." in discord
     assert "Forecast session reset." in discord
     assert "Retrying last forecast note." in discord
+    assert "Queue a forecast note for the next turn" in discord
+    assert "Run a forecast note in the background" in discord
+    assert "Background forecast task started." in discord
     assert "New conversation started~" not in discord
     assert "Session reset~" not in discord
     assert "Retrying~" not in discord
+    assert "Background task started~" not in discord
     assert "Available Forecast Styles" in locale_en
     assert "Unknown forecast style" in locale_en
     assert "Hermes's prompt-injection scanner" not in install_ps1
