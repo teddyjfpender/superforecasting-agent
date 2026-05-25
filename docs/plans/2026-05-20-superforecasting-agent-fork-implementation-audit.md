@@ -1461,6 +1461,7 @@ Latest verified result:
 - Relaunch/debug runtime pass: the self-relaunch helper now prefers the `superforecasting-agent` console script before the legacy `hermes` shim, keeps a compatibility alias for inherited callers, and debug-share/delete/dump runtime copy plus multipart boundaries now use forecast-native command and product names.
 - Backup/import runtime pass: backup, quick-snapshot, pre-update, and pre-migration helper comments now use `superforecasting-agent backup`, `superforecasting-agent import`, `superforecasting-agent update`, and `superforecasting-agent claw migrate` as primary command names while preserving legacy checkout exclusion behavior.
 - Tool setup update-copy pass: Computer Use/cua-driver and Camofox post-setup comments now use `superforecasting-agent update` and `superforecasting-agent computer-use install --upgrade` as primary command names for updater and tool install flows.
+- Forecast packet import pass: `ForecastLedger.import_packet`, `forecast import packet <export.json>`, and `forecast_ledger` action `import_packet` now restore JSON question or portfolio packets produced by `forecast export`, preserve ledger IDs for questions, forecast history, evidence, schedules, watched sources, alerts, candidates, and learning artifacts, and support `error`, `skip`, or `replace` conflict handling. Focused ledger, CLI, and tool round-trip regressions cover the path.
 
 ## Prompt-To-Artifact Checklist
 
@@ -1737,8 +1738,8 @@ Latest verified result:
 | Active calibration lessons can influence future forecast updates | Covered | `forecast update --use-active-lessons` and `forecast_ledger` tool `use_active_lessons=true` attach active lessons, apply supported numeric probability adjustments, record raw probability and applied lesson provenance, focused CLI/tool tests |
 | Correction records invalidate affected learning records | Covered | correction tests |
 | Agent tool can create and inspect correction records | Covered | `forecast_ledger` tool actions `create_correction` and `list_corrections`; focused tool regression verifies applied corrections invalidate affected score, postmortem, and calibration lesson records |
-| Export auditable packets | Covered | JSON/markdown export tests |
-| Agent tool can export auditable packets | Covered | `forecast_ledger` tool actions `export_question` and `export_all` return JSON packets or markdown exports; focused tool regression verifies question and portfolio packet contents |
+| Import/export auditable packets | Covered | JSON/markdown export tests plus `ForecastLedger.import_packet` and `forecast import packet <export.json>` round-trip tests for question and portfolio packets |
+| Agent tool can import/export auditable packets | Covered | `forecast_ledger` tool actions `export_question`, `export_all`, and `import_packet` return JSON packets/markdown exports or restore JSON packets; focused tool regression verifies export contents and packet import round-trip |
 | Export fork metadata and watched sources | Covered | export tests |
 | Time-aware backtesting with evidence cutoff and leakage checks | Covered | backtest tests |
 | Backtest baseline comparisons | Covered | provided baseline plus auto naive/base-rate tests |
@@ -1914,7 +1915,7 @@ fork objective still needs the remaining work listed below.
 | FR-12 | Covered | Structured postmortems for resolved forecasts |
 | FR-13 | Covered | Forecasting workflows are first-class CLI commands under `forecast` |
 | FR-14 | Covered/Partial | CLI/chat prompts, top-level parser examples, command-reference chat examples, classic CLI usage examples, and default toolsets are forecast-scoped; inherited general surfaces still require broader demotion |
-| FR-15 | Covered | Forecast packet import/export and generic ingest/export support |
+| FR-15 | Covered | `forecast export`, `forecast import packet`, `ForecastLedger.import_packet`, and `forecast_ledger import_packet` support auditable question/portfolio packet export and restore, alongside generic ingest/export support |
 | FR-16 | Covered | Extension/source adapter surfaces support future data, market, model, and tournament integrations |
 | FR-17 | Covered | Snapshot provenance stores model, prompt, protocol, and toolset versions |
 | FR-18 | Covered | Baseline comparison records and paired model/market/crowd/ensemble performance summaries |

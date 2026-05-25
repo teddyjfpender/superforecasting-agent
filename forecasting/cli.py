@@ -636,6 +636,11 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         help="Run an optional source adapter without making it the core workflow",
     )
     import_sub = import_parser.add_subparsers(dest="import_kind")
+    packet_import = import_sub.add_parser("packet", help="Import a JSON forecast export packet")
+    packet_import.add_argument("source", help="Path to a JSON packet, or '-' for stdin")
+    packet_import.add_argument("--conflict", choices=["error", "skip", "replace"], default="error")
+    packet_import.add_argument("--json", action="store_true", help="Print the import summary as JSON")
+    packet_import.set_defaults(_forecast_handler=_cmd_import_packet)
     for name in (
         "metaculus",
         "market",
@@ -2458,6 +2463,41 @@ def _cmd_ingest(args: argparse.Namespace) -> None:
     print(f"captured evidence {item.id}")
     print(f"question: {item.question_id}")
     print(f"available_at: {item.available_at}")
+
+
+def _cmd_import_packet(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    source_label = "stdin"
+    try:
+        if args.source == "-":
+            text = sys.stdin.read()
+        else:
+            path = Path(args.source).expanduser()
+            source_label = str(path)
+            text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ForecastingError(f"could not read forecast packet {source_label}: {exc}") from exc
+    try:
+        packet = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ForecastingError(f"forecast packet is not valid JSON: {source_label}") from exc
+    if not isinstance(packet, dict):
+        raise ForecastingError(f"forecast packet must be a JSON object: {source_label}")
+
+    summary = ledger.import_packet(packet, conflict=args.conflict)
+    summary["source"] = source_label
+    if args.json:
+        print(json_dumps(summary))
+        return
+    print("imported forecast packet")
+    print(f"source: {source_label}")
+    print(f"conflict: {summary['conflict']}")
+    print(f"imported_total: {summary['imported_total']}")
+    for label, count in summary["imported"].items():
+        print(f"{label}: {count}")
+    print(f"skipped_existing: {summary['skipped_existing']}")
+    print(f"replaced_existing: {summary['replaced_existing']}")
+    print(f"duplicates_in_packet: {summary['duplicates_in_packet']}")
 
 
 def _cmd_import_adapter(args: argparse.Namespace) -> None:

@@ -133,6 +133,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "list_trusted_resolver_policies",
                     "export_question",
                     "export_all",
+                    "import_packet",
                     "protocol",
                 ],
             },
@@ -224,6 +225,8 @@ FORECAST_LEDGER_SCHEMA = {
             "access": {"type": "string"},
             "agent": {"type": "string"},
             "format": {"type": "string", "enum": ["json", "markdown"]},
+            "packet": {"type": "object"},
+            "conflict": {"type": "string", "enum": ["error", "skip", "replace"]},
             "cases": {"type": "array", "items": {"type": "object"}},
             "run_id": {"type": "string"},
             "forecast_id": {"type": "string"},
@@ -1079,6 +1082,13 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             if fmt == "json":
                 return tool_result(success=True, format=fmt, packet=json.loads(exported))
             return tool_result(success=True, format=fmt, export=exported)
+
+        if action == "import_packet":
+            packet = args.get("packet")
+            if not isinstance(packet, dict):
+                return tool_error("import_packet requires a packet object", success=False)
+            summary = ledger.import_packet(packet, conflict=args.get("conflict") or "error")
+            return tool_result(success=True, import_summary=summary)
 
         if action == "protocol":
             messages = build_protocol_messages(

@@ -177,6 +177,77 @@ def _export_metadata() -> dict[str, Any]:
     }
 
 
+_PACKET_PRIMARY_KEYS = {
+    "forecast_snapshots": "forecast_id",
+}
+_PACKET_JSON_FIELDS = {
+    "forecast_questions": {"outcome_space", "tags", "topics", "metadata"},
+    "forecast_snapshots": {
+        "probability_or_distribution",
+        "ensemble_components",
+        "key_assumptions",
+        "assumption_refs",
+        "reference_class_refs",
+        "evidence_refs",
+        "model_run_refs",
+        "source_snapshot_refs",
+        "calibration_lesson_refs",
+        "calibration_adjustment",
+        "metadata",
+    },
+    "evidence_items": {"metadata"},
+    "ingest_candidates": {"outcome_space", "metadata"},
+    "assumptions": {"evidence_refs"},
+    "reference_classes": {"source_refs"},
+    "model_runs": {"inputs", "parameters", "output", "diagnostics", "artifact_paths"},
+    "resolutions": {"outcome"},
+    "postmortems": {"calibration_adjustment"},
+    "calibration_lessons": {
+        "recommended_adjustment",
+        "source_postmortem_refs",
+        "source_score_record_refs",
+        "metadata",
+    },
+    "forecast_corrections": {
+        "old_value",
+        "new_value",
+        "patch",
+        "affected_score_record_refs",
+        "affected_postmortem_refs",
+        "affected_calibration_lesson_refs",
+    },
+    "baseline_comparisons": {"probability_or_distribution", "metadata"},
+    "watched_sources": {"metadata"},
+    "scheduled_review_runs": {"metadata"},
+}
+_PACKET_BOOL_FIELDS = {
+    "evidence_items": {"admissible_for_backtests"},
+    "resolutions": {"criteria_satisfied", "scoreable"},
+    "score_records": {"calibration_eligible"},
+    "postmortems": {"calibration_eligible"},
+    "scheduled_reviews": {"enabled", "auto_score", "auto_postmortem"},
+}
+_PACKET_RECORD_LABELS = {
+    "forecast_questions": "questions",
+    "forecast_snapshots": "forecast_history",
+    "evidence_items": "evidence",
+    "ingest_candidates": "ingest_candidates",
+    "assumptions": "assumptions",
+    "reference_classes": "reference_classes",
+    "model_runs": "model_runs",
+    "resolutions": "resolutions",
+    "score_records": "scores",
+    "postmortems": "postmortems",
+    "calibration_lessons": "calibration_lessons",
+    "forecast_corrections": "corrections",
+    "baseline_comparisons": "baseline_comparisons",
+    "watched_sources": "watched_sources",
+    "scheduled_reviews": "scheduled_reviews",
+    "scheduled_review_runs": "scheduled_review_runs",
+    "alert_events": "alerts",
+}
+
+
 class ForecastLedger:
     """Local-first SQLite ledger for questions, evidence, forecasts, and scores."""
 
@@ -4239,6 +4310,211 @@ class ForecastLedger:
         for question in questions:
             lines.append(self.export_question(question.id, fmt="markdown"))
         return "\n".join(lines)
+
+    def import_packet(self, packet: dict[str, Any], *, conflict: str = "error") -> dict[str, Any]:
+        """Import a JSON packet produced by ``export_question`` or ``export_all``."""
+
+        if conflict not in {"error", "skip", "replace"}:
+            raise ValidationError("conflict must be error, skip, or replace")
+        if not isinstance(packet, dict):
+            raise ValidationError("forecast packet must be a JSON object")
+
+        question_packets = self._question_packets_from_import(packet)
+        if not question_packets and not any(
+            isinstance(packet.get(key), list)
+            for key in (
+                "ingest_candidates",
+                "watched_sources",
+                "scheduled_reviews",
+                "scheduled_review_runs",
+                "alerts",
+            )
+        ):
+            raise ValidationError("forecast packet has no importable records")
+
+        summary: dict[str, Any] = {
+            "product": _export_metadata(),
+            "imported_at": utc_now_iso(),
+            "source_product": packet.get("product") if isinstance(packet.get("product"), dict) else None,
+            "source_generated_at": packet.get("generated_at"),
+            "conflict": conflict,
+            "imported": defaultdict(int),
+            "skipped_existing": 0,
+            "replaced_existing": 0,
+            "duplicates_in_packet": 0,
+        }
+        seen: set[tuple[str, str]] = set()
+
+        with self._connect() as conn:
+            for question_packet in question_packets:
+                self._import_question_packet(conn, question_packet, conflict=conflict, summary=summary, seen=seen)
+            self._import_packet_rows(
+                conn,
+                "ingest_candidates",
+                packet.get("ingest_candidates"),
+                conflict=conflict,
+                summary=summary,
+                seen=seen,
+            )
+            self._import_packet_rows(
+                conn,
+                "watched_sources",
+                packet.get("watched_sources"),
+                conflict=conflict,
+                summary=summary,
+                seen=seen,
+            )
+            self._import_packet_rows(
+                conn,
+                "scheduled_reviews",
+                packet.get("scheduled_reviews"),
+                conflict=conflict,
+                summary=summary,
+                seen=seen,
+            )
+            self._import_packet_rows(
+                conn,
+                "scheduled_review_runs",
+                packet.get("scheduled_review_runs"),
+                conflict=conflict,
+                summary=summary,
+                seen=seen,
+            )
+            self._import_packet_rows(
+                conn,
+                "alert_events",
+                packet.get("alerts"),
+                conflict=conflict,
+                summary=summary,
+                seen=seen,
+            )
+
+        imported = dict(sorted(summary["imported"].items()))
+        summary["imported"] = imported
+        summary["imported_total"] = sum(imported.values())
+        return summary
+
+    def _question_packets_from_import(self, packet: dict[str, Any]) -> list[dict[str, Any]]:
+        if isinstance(packet.get("question"), dict):
+            return [packet]
+        questions = packet.get("questions")
+        if questions is None:
+            return []
+        if not isinstance(questions, list):
+            raise ValidationError("forecast packet questions field must be a list")
+        result: list[dict[str, Any]] = []
+        for index, question_packet in enumerate(questions):
+            if not isinstance(question_packet, dict):
+                raise ValidationError(f"forecast packet question entry {index} must be an object")
+            result.append(question_packet)
+        return result
+
+    def _import_question_packet(
+        self,
+        conn: sqlite3.Connection,
+        packet: dict[str, Any],
+        *,
+        conflict: str,
+        summary: dict[str, Any],
+        seen: set[tuple[str, str]],
+    ) -> None:
+        question = packet.get("question")
+        if not isinstance(question, dict):
+            raise ValidationError("question packet must include a question object")
+        self._insert_packet_row(conn, "forecast_questions", question, conflict=conflict, summary=summary, seen=seen)
+        for table, key in (
+            ("assumptions", "assumptions"),
+            ("reference_classes", "reference_classes"),
+            ("model_runs", "model_runs"),
+            ("evidence_items", "evidence"),
+            ("forecast_snapshots", "forecast_history"),
+            ("resolutions", "resolution"),
+            ("score_records", "scores"),
+            ("postmortems", "postmortems"),
+            ("calibration_lessons", "calibration_lessons"),
+            ("forecast_corrections", "corrections"),
+            ("baseline_comparisons", "baseline_comparisons"),
+            ("watched_sources", "watched_sources"),
+            ("scheduled_reviews", "scheduled_reviews"),
+            ("scheduled_review_runs", "scheduled_review_runs"),
+        ):
+            self._import_packet_rows(conn, table, packet.get(key), conflict=conflict, summary=summary, seen=seen)
+
+    def _import_packet_rows(
+        self,
+        conn: sqlite3.Connection,
+        table: str,
+        rows: Any,
+        *,
+        conflict: str,
+        summary: dict[str, Any],
+        seen: set[tuple[str, str]],
+    ) -> None:
+        if rows is None:
+            return
+        if isinstance(rows, dict):
+            rows_to_import = [rows]
+        elif isinstance(rows, list):
+            rows_to_import = rows
+        else:
+            raise ValidationError(f"{_PACKET_RECORD_LABELS[table]} must be an object or list")
+        for index, row in enumerate(rows_to_import):
+            if row is None:
+                continue
+            if not isinstance(row, dict):
+                raise ValidationError(f"{_PACKET_RECORD_LABELS[table]} entry {index} must be an object")
+            self._insert_packet_row(conn, table, row, conflict=conflict, summary=summary, seen=seen)
+
+    def _insert_packet_row(
+        self,
+        conn: sqlite3.Connection,
+        table: str,
+        row: dict[str, Any],
+        *,
+        conflict: str,
+        summary: dict[str, Any],
+        seen: set[tuple[str, str]],
+    ) -> None:
+        pk = _PACKET_PRIMARY_KEYS.get(table, "id")
+        record_id = str(row.get(pk) or "").strip()
+        if not record_id:
+            raise ValidationError(f"{_PACKET_RECORD_LABELS[table]} import row is missing {pk}")
+        seen_key = (table, record_id)
+        if seen_key in seen:
+            summary["duplicates_in_packet"] += 1
+            return
+        seen.add(seen_key)
+
+        existing = conn.execute(f"SELECT 1 FROM {table} WHERE {pk} = ?", (record_id,)).fetchone()
+        if existing is not None:
+            if conflict == "error":
+                raise ValidationError(f"{_PACKET_RECORD_LABELS[table]} record already exists: {record_id}")
+            if conflict == "skip":
+                summary["skipped_existing"] += 1
+                return
+            conn.execute(f"DELETE FROM {table} WHERE {pk} = ?", (record_id,))
+            summary["replaced_existing"] += 1
+
+        table_columns = [column["name"] for column in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+        columns = [column for column in table_columns if column in row]
+        if pk not in columns:
+            raise ValidationError(f"{_PACKET_RECORD_LABELS[table]} import row is missing {pk}")
+        json_fields = _PACKET_JSON_FIELDS.get(table, set())
+        bool_fields = _PACKET_BOOL_FIELDS.get(table, set())
+        values: list[Any] = []
+        for column in columns:
+            value = row[column]
+            if column in json_fields:
+                value = json_dumps(value)
+            elif column in bool_fields:
+                value = 1 if bool(value) else 0
+            values.append(value)
+        placeholders = ", ".join("?" for _ in columns)
+        conn.execute(
+            f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})",
+            values,
+        )
+        summary["imported"][_PACKET_RECORD_LABELS[table]] += 1
 
     def _existing_score(self, forecast_id: str, resolution_id: str) -> ScoreRecord | None:
         with self._connect() as conn:

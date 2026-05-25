@@ -1495,6 +1495,28 @@ def test_forecast_ledger_tool_exports_audit_packets(tmp_path):
     assert markdown_packet["export"].startswith("# Forecast Packet:")
     assert portfolio_packet["packet"]["questions"][0]["question"]["id"] == question_id
 
+    imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": str(tmp_path / "imported.db"),
+                "action": "import_packet",
+                "packet": portfolio_packet["packet"],
+            }
+        )
+    )
+    restored = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": str(tmp_path / "imported.db"),
+                "action": "show_question",
+                "question_id": question_id,
+            }
+        )
+    )
+
+    assert imported["import_summary"]["imported"]["questions"] == 1
+    assert restored["forecast_history"][0]["probability_or_distribution"] == 0.61
+
 
 def test_forecast_ledger_tool_returns_pilot_report(tmp_path):
     db = str(tmp_path / "forecasting.db")

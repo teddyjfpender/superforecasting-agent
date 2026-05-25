@@ -200,6 +200,9 @@ summarizes live-score collection across packets without treating those artifacts
 as proof of superiority. `forecast pilot-bundle` emits one JSON handoff packet
 containing pilot-report, scheduled self-check run history, and readiness output,
 with optional export data when the operator passes `--include-export`.
+`forecast import packet <export.json>` restores a JSON question or portfolio
+packet from `forecast export`, with `--conflict skip|replace` for already-seen
+ledger IDs.
 
 ## Scheduled Self-Checks
 

@@ -9528,6 +9528,44 @@ def test_forecast_cli_export_all(tmp_path, capsys):
     assert packet["questions"][0]["question"]["title"] == "Will all exports include this?"
 
 
+def test_forecast_cli_import_packet_restores_exported_json(tmp_path, capsys):
+    parser = _parser()
+    source_db = str(tmp_path / "source.db")
+    target_db = str(tmp_path / "target.db")
+    packet_path = tmp_path / "forecast-packet.json"
+    source = ForecastLedger(source_db)
+    question = source.create_question(
+        title="Will CLI packet import restore this?",
+        resolution_criteria="Resolved yes if the CLI import recreates the exported question.",
+    )
+    evidence = source.add_evidence(
+        question_id=question.id,
+        source_or_note="CLI import evidence.",
+        available_at="2026-05-25T12:00:00Z",
+    )
+    source.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.57,
+        rationale="The CLI should import exported packets.",
+        evidence_refs=[evidence.id],
+    )
+    packet_path.write_text(source.export_all(fmt="json"), encoding="utf-8")
+
+    _run(parser, ["forecast", "--db", target_db, "import", "packet", str(packet_path), "--json"])
+    summary = json.loads(capsys.readouterr().out)
+
+    assert summary["imported"]["questions"] == 1
+    assert summary["imported"]["forecast_history"] == 1
+    assert summary["source"] == str(packet_path)
+
+    _run(parser, ["forecast", "--db", target_db, "export", "all", "--format", "json"])
+    restored = json.loads(capsys.readouterr().out)
+
+    assert restored["questions"][0]["question"]["id"] == question.id
+    assert restored["questions"][0]["forecast_history"][0]["probability_or_distribution"] == 0.57
+    assert restored["questions"][0]["evidence"][0]["available_at"] == "2026-05-25T12:00:00Z"
+
+
 def test_forecast_cli_pilot_report_outputs_exit_checks(tmp_path, capsys):
     parser = _parser()
     db = str(tmp_path / "forecasting.db")

@@ -1151,6 +1151,67 @@ def test_export_all_includes_questions_candidates_and_alerts(tmp_path):
     assert packet["scheduled_review_runs"][0]["scheduled_review_id"] == schedule["id"]
 
 
+def test_import_packet_round_trips_export_all(tmp_path):
+    source = ForecastLedger(tmp_path / "source.db")
+    question = source.create_question(
+        title="Will packet imports preserve the ledger?",
+        resolution_criteria="Resolved yes if an exported packet can be restored.",
+        domain="software",
+        topics=["forecast-ledger"],
+    )
+    evidence = source.add_evidence(
+        question_id=question.id,
+        source_or_note="Packet import evidence.",
+        available_at="2026-05-25T10:00:00Z",
+    )
+    snapshot = source.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.64,
+        rationale="The exported packet should be restorable.",
+        evidence_refs=[evidence.id],
+    )
+    candidate = source.create_ingest_candidate(source="future packet import candidate")
+    watch = source.add_watched_source(
+        scope_type="question",
+        scope_ref=question.id,
+        source="packet import manual watch",
+        source_type="manual",
+    )
+    schedule = source.schedule_review(
+        scope_type="question",
+        scope_ref=question.id,
+        cadence="1d",
+        next_run_at="2026-05-25T00:00:00Z",
+    )
+    source.create_alert(
+        severity="warning",
+        scope_type="question",
+        scope_ref=question.id,
+        reason="packet_import_test",
+        recommended_action="Verify imported alerts stay auditable.",
+    )
+    source.run_due_scheduled_reviews(now="2026-05-26T00:00:00Z")
+    packet = json.loads(source.export_all(fmt="json"))
+
+    restored = ForecastLedger(tmp_path / "restored.db")
+    summary = restored.import_packet(packet)
+
+    assert summary["imported"]["questions"] == 1
+    assert summary["imported"]["forecast_history"] == 1
+    assert summary["duplicates_in_packet"] >= 2
+    assert restored.get_question(question.id).title == "Will packet imports preserve the ledger?"
+    assert restored.get_snapshot(snapshot.forecast_id).probability_or_distribution == 0.64
+    assert restored.get_evidence(evidence.id).available_at == "2026-05-25T10:00:00Z"
+    assert restored.list_ingest_candidates()[0]["id"] == candidate["id"]
+    assert restored.list_watched_sources(status=None)[0]["id"] == watch["id"]
+    assert restored.list_scheduled_reviews()[0]["id"] == schedule["id"]
+    assert (
+        restored.list_scheduled_review_runs(scheduled_review_id=schedule["id"])[0]["scheduled_review_id"]
+        == schedule["id"]
+    )
+    assert any(alert.reason == "packet_import_test" for alert in restored.list_alerts(unresolved_only=False))
+
+
 def test_pilot_report_summarizes_tester_exit_artifacts(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     question = ledger.create_question(
