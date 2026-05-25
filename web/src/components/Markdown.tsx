@@ -3,7 +3,7 @@ import { useMemo, type ReactNode } from "react";
 /**
  * Lightweight markdown renderer for LLM output.
  * Handles: code blocks, inline code, bold, italic, headers, links, lists, horizontal rules.
- * NOT a full CommonMark parser — optimized for typical assistant message patterns.
+ * NOT a full CommonMark parser — optimized for typical forecast response patterns.
  *
  * `streaming` renders a blinking caret at the tail of the last block so it
  * appears to hug the final character instead of wrapping onto a new line

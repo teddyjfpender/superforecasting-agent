@@ -130,7 +130,7 @@ export const en: Translations = {
     searchPlaceholder: "Search forecast session content...",
     noSessions: "No research sessions yet",
     noMatch: "No research sessions match your search",
-    startConversation: "Start a forecast chat or CLI run to see it here",
+    startConversation: "Start a forecast research session or CLI run to see it here",
     noMessages: "No messages",
     untitledSession: "Untitled research session",
     deleteSession: "Delete session",

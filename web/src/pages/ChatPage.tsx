@@ -215,7 +215,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   }, []);
 
   useEffect(() => {
-    // When hidden (non-chat tab) we must not register the header button —
+    // When hidden (non-Forecast-Chat tab) we must not register the header button —
     // another page owns the header's end slot at that point.
     if (!isActive) {
       setEnd(null);
@@ -298,7 +298,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       // is false; enabling it gives users a single-action selection
       // path on top of the modifier-based bypass above.
       rightClickSelectsWord: true,
-      // Browser-embedded chat runs the TUI in inline mode. Keep transcript
+      // Browser-embedded Forecast Chat runs the TUI in inline mode. Keep transcript
       // history in xterm.js so the browser wheel can scroll it directly.
       scrollback: 5000,
       theme: TERMINAL_THEME,
