@@ -1634,6 +1634,23 @@ def test_contributor_and_skills_index_guidance_is_forecast_native():
     assert "Hermes Skills Index" not in combined
 
 
+def test_root_agents_guidance_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "AGENTS.md").read_text(encoding="utf-8")
+    opening = text[:5000]
+
+    assert text.startswith("# Superforecasting Agent - Development Guide")
+    assert "superforecasting-agent fork" in opening
+    assert "The north star is a command-line forecasting desk" in opening
+    assert "`forecast self-check`, and `forecast schedule`" in opening
+    assert "`~/.superforecasting-agent/config.yaml`" in text
+    assert "superforecasting-agent --tui" in text
+    assert "primary forecast-chat experience" in text
+    assert "# Hermes Agent - Development Guide" not in opening
+    assert "animated faces during API calls" not in opening
+    assert "primary chat experience" not in opening
+
+
 def test_github_issue_and_pr_templates_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [

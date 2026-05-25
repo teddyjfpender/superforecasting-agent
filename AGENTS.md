@@ -1,6 +1,35 @@
-# Hermes Agent - Development Guide
+# Superforecasting Agent - Development Guide
 
-Instructions for AI coding assistants and developers working on the hermes-agent codebase.
+Instructions for AI coding assistants and developers working on the
+superforecasting-agent fork.
+
+This repository still contains many inherited Hermes module names, compatibility
+commands, and storage aliases. Treat those as compatibility infrastructure, not
+product direction. New user-facing work should lead with Superforecasting Agent,
+the `superforecasting-agent` command, `~/.superforecasting-agent`, and the
+forecast ledger unless a legacy name is explicitly required for backwards
+compatibility.
+
+## Product Direction
+
+The north star is a command-line forecasting desk that compounds judgment over
+time. The core primitive is the scoreable forecast: a durable question with
+resolution criteria, probability history, timestamped evidence, model runs,
+assumptions, reference classes, resolutions, scores, postmortems, calibration
+lessons, and domain/topic error profiles.
+
+Keep forecast workflows primary:
+
+- `forecast new`, `forecast research`, `forecast base-rate`, `forecast model`,
+  `forecast update`, `forecast review`, `forecast resolve`, `forecast score`,
+  `forecast postmortem`, `forecast calibration`, `forecast errors`,
+  `forecast backtest`, `forecast self-check`, and `forecast schedule`.
+- Scheduled jobs and watched sources should create alerts, evidence, scores,
+  postmortems, and learning records, but must not silently mutate active
+  forecast probabilities.
+- Generic chat, messaging, skills, plugins, and memory surfaces are support
+  infrastructure unless they improve evidence quality, probability estimation,
+  review discipline, calibration, or tester operations.
 
 ## Development Environment
 
@@ -10,8 +39,8 @@ source .venv/bin/activate   # or: source venv/bin/activate
 ```
 
 `scripts/run_tests.sh` probes `.venv` first, then `venv`, then
-`$HOME/.hermes/hermes-agent/venv` (for worktrees that share a venv with the
-main checkout).
+`$HOME/.superforecasting-agent/superforecasting-agent/venv`, then the legacy
+`$HOME/.hermes/hermes-agent/venv` for compatibility worktrees.
 
 ## Project Structure
 
@@ -20,17 +49,19 @@ The canonical source is the filesystem. The notes call out the load-bearing
 entry points you'll actually edit.
 
 ```
-hermes-agent/
+superforecasting-agent/
 ├── run_agent.py          # AIAgent class — core conversation loop (~12k LOC)
 ├── model_tools.py        # Tool orchestration, discover_builtin_tools(), handle_function_call()
 ├── toolsets.py           # Toolset definitions, _HERMES_CORE_TOOLS list
-├── cli.py                # HermesCLI class — interactive CLI orchestrator (~11k LOC)
+├── cli.py                # inherited classic CLI shell + forecast-desk entrypoint
 ├── hermes_state.py       # SessionDB — SQLite session store (FTS5 search)
 ├── hermes_constants.py   # get_hermes_home(), display_hermes_home() — profile-aware paths
 ├── hermes_logging.py     # setup_logging() — agent.log / errors.log / gateway.log (profile-aware)
+├── forecasting/          # Forecast ledger, scoring, learning, backtesting, source adapters
+├── superforecasting_agent/ # Fork-native public package / python -m entrypoint
 ├── batch_runner.py       # Parallel batch processing
 ├── agent/                # Agent internals (provider adapters, memory, caching, compression, etc.)
-├── hermes_cli/           # CLI subcommands, setup wizard, plugins loader, skin engine
+├── hermes_cli/           # Inherited CLI/runtime modules with fork-native visible copy
 ├── tools/                # Tool implementations — auto-discovered via tools/registry.py
 │   └── environments/     # Terminal backends (local, docker, ssh, modal, daytona, singularity)
 ├── gateway/              # Messaging gateway — run.py + session.py + platforms/
@@ -51,7 +82,7 @@ hermes-agent/
 │                         #   spotify, strike-freedom-cockpit, ...
 ├── optional-skills/      # Heavier/niche skills shipped but NOT active by default
 ├── skills/               # Built-in skills bundled with the repo
-├── ui-tui/               # Ink (React) terminal UI — `hermes --tui`
+├── ui-tui/               # Ink (React) terminal UI — `superforecasting-agent --tui`
 │   └── src/              # entry.tsx, app.tsx, gatewayClient.ts + app/components/hooks/lib
 ├── tui_gateway/          # Python JSON-RPC backend for the TUI
 ├── acp_adapter/          # ACP server (VS Code / Zed / JetBrains integration)
@@ -61,10 +92,13 @@ hermes-agent/
 └── tests/                # Pytest suite (~17k tests across ~900 files as of May 2026)
 ```
 
-**User config:** `~/.hermes/config.yaml` (settings), `~/.hermes/.env` (API keys only).
-**Logs:** `~/.hermes/logs/` — `agent.log` (INFO+), `errors.log` (WARNING+),
-`gateway.log` when running the gateway. Profile-aware via `get_hermes_home()`.
-Browse with `hermes logs [--follow] [--level ...] [--session ...]`.
+**User config:** `~/.superforecasting-agent/config.yaml` (settings),
+`~/.superforecasting-agent/.env` (API keys only). Legacy `~/.hermes` homes stay
+supported for existing installs.
+**Logs:** `~/.superforecasting-agent/logs/` — `agent.log` (INFO+),
+`errors.log` (WARNING+), `gateway.log` when running the gateway. Profile-aware
+via `get_hermes_home()`. Browse with
+`superforecasting-agent logs [--follow] [--level ...] [--session ...]`.
 
 ## File Dependency Chain
 
@@ -143,11 +177,11 @@ Reasoning content is stored in `assistant_msg["reasoning"]`.
 ## CLI Architecture (cli.py)
 
 - **Rich** for banner/panels, **prompt_toolkit** for input with autocomplete
-- **KawaiiSpinner** (`agent/display.py`) — animated faces during API calls, `┊` activity feed for tool results
+- **ForecastSpinner** (`agent/display.py`) — neutral forecast-desk markers during API calls; `KawaiiSpinner` remains a compatibility alias
 - `load_cli_config()` in cli.py merges hardcoded defaults + user config YAML
 - **Skin engine** (`hermes_cli/skin_engine.py`) — data-driven CLI theming; initialized from `display.skin` config key at startup; skins customize banner colors, spinner faces/verbs/wings, tool prefix, response box, branding text
-- `process_command()` is a method on `HermesCLI` — dispatches on canonical command name resolved via `resolve_command()` from the central registry
-- Skill slash commands: `agent/skill_commands.py` scans `~/.hermes/skills/`, injects as **user message** (not system prompt) to preserve prompt caching
+- `process_command()` is a method on the inherited `HermesCLI` class — dispatches on canonical command name resolved via `resolve_command()` from the central registry
+- Skill slash commands: `agent/skill_commands.py` scans the active forecast home's `skills/` directory, injects as **user message** (not system prompt) to preserve prompt caching
 
 ### Slash Command Registry (`hermes_cli/commands.py`)
 
@@ -157,7 +191,7 @@ All slash commands are defined in a central `COMMAND_REGISTRY` list of `CommandD
 - **Gateway** — `GATEWAY_KNOWN_COMMANDS` frozenset for hook emission, `resolve_command()` for dispatch
 - **Gateway help** — `gateway_help_lines()` generates `/help` output
 - **Telegram** — `telegram_bot_commands()` generates the BotCommand menu
-- **Slack** — `slack_subcommand_map()` generates `/hermes` subcommand routing
+- **Slack** — `slack_subcommand_map()` generates compatibility `/hermes` subcommand routing
 - **Autocomplete** — `COMMANDS` flat dict feeds `SlashCommandCompleter`
 - **CLI help** — `COMMANDS_BY_CATEGORY` dict feeds `show_help()`
 
@@ -196,12 +230,14 @@ if canonical == "mycommand":
 
 ## TUI Architecture (ui-tui + tui_gateway)
 
-The TUI is a full replacement for the classic (prompt_toolkit) CLI, activated via `hermes --tui` or `HERMES_TUI=1`.
+The TUI is a full replacement for the classic (prompt_toolkit) CLI, activated
+via `superforecasting-agent --tui`, `SUPERFORECASTING_AGENT_TUI=1`, or the
+compatibility `hermes --tui` / `HERMES_TUI=1` paths.
 
 ### Process Model
 
 ```
-hermes --tui
+superforecasting-agent --tui
   └─ Node (Ink)  ──stdio JSON-RPC──  Python (tui_gateway)
        │                                  └─ AIAgent + tools + sessions
        └─ renders transcript, composer, prompts, activity
@@ -245,16 +281,18 @@ npm run fmt       # prettier
 npm test          # vitest
 ```
 
-### TUI in the Dashboard (`hermes dashboard` → `/chat`)
+### TUI in the Dashboard (`superforecasting-agent dashboard` → `/chat`)
 
-The dashboard embeds the real `hermes --tui` — **not** a rewrite.  See `hermes_cli/pty_bridge.py` + the `@app.websocket("/api/pty")` endpoint in `hermes_cli/web_server.py`.
+The dashboard embeds the real forecast TUI — **not** a rewrite. See
+`hermes_cli/pty_bridge.py` + the `@app.websocket("/api/pty")` endpoint in
+`hermes_cli/web_server.py`.
 
 - Browser loads `web/src/pages/ChatPage.tsx`, which mounts xterm.js's `Terminal` with the WebGL renderer, `@xterm/addon-fit` for container-driven resize, and `@xterm/addon-unicode11` for modern wide-character widths.
 - `/api/pty?token=…` upgrades to a WebSocket; auth uses the same ephemeral `_SESSION_TOKEN` as REST, via query param (browsers can't set `Authorization` on WS upgrade).
-- The server spawns whatever `hermes --tui` would spawn, through `ptyprocess` (POSIX PTY — WSL works, native Windows does not).
+- The server spawns whatever `superforecasting-agent --tui` would spawn, through `ptyprocess` (POSIX PTY — WSL works, native Windows does not).
 - Frames: raw PTY bytes each direction; resize via `\x1b[RESIZE:<cols>;<rows>]` intercepted on the server and applied with `TIOCSWINSZ`.
 
-**Do not re-implement the primary chat experience in React.** The main transcript, composer/input flow (including slash-command behavior), and PTY-backed terminal belong to the embedded `hermes --tui` — anything new you add to Ink shows up in the dashboard automatically. If you find yourself rebuilding the transcript or composer for the dashboard, stop and extend Ink instead.
+**Do not re-implement the primary forecast-chat experience in React.** The main transcript, composer/input flow (including slash-command behavior), and PTY-backed terminal belong to the embedded forecast TUI — anything new you add to Ink shows up in the dashboard automatically. If you find yourself rebuilding the transcript or composer for the dashboard, stop and extend Ink instead.
 
 **Structured React UI around the TUI is allowed when it is not a second chat surface.** Sidebar widgets, inspectors, summaries, status panels, and similar supporting views (e.g. `ChatSidebar`, `ModelPickerDialog`, `ToolCall`) are fine when they complement the embedded TUI rather than replacing the transcript / composer / terminal. Keep their state independent of the PTY child's session and surface their failures non-destructively so the terminal pane keeps working unimpaired.
 
@@ -262,14 +300,15 @@ The dashboard embeds the real `hermes --tui` — **not** a rewrite.  See `hermes
 
 ## Adding New Tools
 
-For most custom or local-only tools, do **not** edit Hermes core. Use the plugin
-route instead: create `~/.hermes/plugins/<name>/plugin.yaml` and
-`~/.hermes/plugins/<name>/__init__.py`, then register tools with
+For most custom or local-only tools, do **not** edit inherited core runtime.
+Use the plugin route instead: create
+`~/.superforecasting-agent/plugins/<name>/plugin.yaml` and
+`~/.superforecasting-agent/plugins/<name>/__init__.py`, then register tools with
 `ctx.register_tool(...)`. Plugin toolsets are discovered automatically and can be
 enabled or disabled without touching `tools/` or `toolsets.py`.
 
 Use the built-in route below only when the user is explicitly contributing a new
-core Hermes tool that should ship in the base system.
+core Superforecasting Agent tool that should ship in the base system.
 
 Built-in/core tools require changes in **2 files**:
 
@@ -486,14 +525,16 @@ Activate with `/skin cyberpunk` or `display.skin: cyberpunk` in config.yaml.
 
 ## Plugins
 
-Hermes has two plugin surfaces. Both live under `plugins/` in the repo so
-repo-shipped plugins can be discovered alongside user-installed ones in
-`~/.hermes/plugins/` and pip-installed entry points.
+Superforecasting Agent has two inherited plugin surfaces. Both live under
+`plugins/` in the repo so repo-shipped plugins can be discovered alongside
+user-installed ones in `~/.superforecasting-agent/plugins/`, legacy
+`~/.hermes/plugins/`, and pip-installed entry points.
 
 ### General plugins (`hermes_cli/plugins.py` + `plugins/<name>/`)
 
-`PluginManager` discovers plugins from `~/.hermes/plugins/`, `./.hermes/plugins/`,
-and pip entry points. Each plugin exposes a `register(ctx)` function that
+`PluginManager` discovers plugins from the active forecast home, legacy
+`~/.hermes/plugins/`, optional project `.hermes/plugins/`, and pip entry points.
+Each plugin exposes a `register(ctx)` function that
 can:
 
 - Register Python-callback lifecycle hooks:
@@ -501,8 +542,8 @@ can:
   `on_session_start`, `on_session_end`
 - Register new tools via `ctx.register_tool(...)`
 - Register CLI subcommands via `ctx.register_cli_command(...)` — the
-  plugin's argparse tree is wired into `hermes` at startup so
-  `hermes <pluginname> <subcmd>` works with no change to `main.py`
+  plugin's argparse tree is wired into `superforecasting-agent` at startup so
+  `superforecasting-agent <pluginname> <subcmd>` works with no change to `main.py`
 
 Hooks are invoked from `model_tools.py` (pre/post tool) and `run_agent.py`
 (lifecycle). **Discovery timing pitfall:** `discover_plugins()` only runs
@@ -519,14 +560,15 @@ holographic, openviking, retaindb**.
 Each provider implements the `MemoryProvider` ABC (see `agent/memory_provider.py`)
 and is orchestrated by `agent/memory_manager.py`. Lifecycle hooks include
 `sync_turn(turn_messages)`, `prefetch(query)`, `shutdown()`, and optional
-`post_setup(hermes_home, config)` for setup-wizard integration.
+`post_setup(hermes_home, config)` for setup-wizard integration. The parameter
+name is inherited; pass the active forecast home.
 
 **CLI commands via `plugins/memory/<name>/cli.py`:** if a memory plugin
 defines `register_cli(subparser)`, `discover_plugin_cli_commands()` finds
-it at argparse setup time and wires it into `hermes <plugin>`. The
+it at argparse setup time and wires it into `superforecasting-agent <plugin>`. The
 framework only exposes CLI commands for the **currently active** memory
 provider (read from `memory.provider` in config.yaml), so disabled
-providers don't clutter `hermes --help`.
+providers don't clutter `superforecasting-agent --help`.
 
 **Rule (Teknium, May 2026):** plugins MUST NOT modify core files
 (`run_agent.py`, `cli.py`, `gateway/run.py`, `hermes_cli/main.py`, etc.).
@@ -538,9 +580,10 @@ honcho argparse from `main.py` for exactly this reason.
 **No new in-tree memory providers (policy, May 2026):** the set of
 built-in memory providers under `plugins/memory/` is closed. New memory
 backends must ship as **standalone plugin repos** that users install
-into `~/.hermes/plugins/` (or via pip entry points) — they implement
+into `~/.superforecasting-agent/plugins/` (or via pip entry points; legacy
+`~/.hermes/plugins/` remains supported) — they implement
 the same `MemoryProvider` ABC, register through the same discovery
-path, and integrate via `hermes memory setup` / `post_setup()` without
+path, and integrate via `superforecasting-agent memory setup` / `post_setup()` without
 landing in this tree. PRs that add a new directory under
 `plugins/memory/` will be closed with a pointer to publish the
 provider as its own repo. Existing in-tree providers stay; bug fixes
