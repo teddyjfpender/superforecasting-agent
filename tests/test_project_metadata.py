@@ -3809,6 +3809,8 @@ def test_nix_package_aliases_are_forecast_native():
     assert "`pkgs.\"hermes-agent\"` remain compatibility names" in nix_docs
     assert "my-registry/superforecasting-agent-base:latest" in nix_docs
     assert "my-registry/hermes-base:latest" not in nix_docs
+    assert 'toolsets = [ "forecast-desk" ];' in nix_docs
+    assert 'toolsets = [ "all" ];' not in nix_docs
     assert "`services.superforecasting-agent` module" in install_docs
     assert "until the Nix packaging is fully renamed" not in install_docs
     assert "services.superforecasting-agent.extraPlugins" in plugin_docs

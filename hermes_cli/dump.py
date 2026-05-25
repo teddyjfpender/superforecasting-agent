@@ -123,7 +123,11 @@ def _memory_provider(config: dict) -> str:
     """Return the active memory provider name."""
     mem = config.get("memory", {})
     provider = mem.get("provider", "")
-    return provider if provider else "built-in"
+    if provider:
+        return provider
+    if mem.get("memory_enabled", False) or mem.get("user_profile_enabled", False):
+        return "built-in"
+    return "off"
 
 
 def _get_model_and_provider(config: dict) -> tuple[str, str]:

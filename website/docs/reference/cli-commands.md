@@ -591,9 +591,9 @@ api_keys:
   ...
 
 features:
-  toolsets:           all
+  toolsets:           forecast-desk
   mcp_servers:        0
-  memory_provider:    built-in
+  memory_provider:    off
   gateway:            running (systemd)
   platforms:          telegram, discord
   cron_jobs:          3 active / 5 total

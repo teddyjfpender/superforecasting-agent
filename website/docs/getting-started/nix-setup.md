@@ -222,7 +222,7 @@ The `settings` option accepts an arbitrary attrset that is rendered as `config.y
 # base.nix
 services.superforecasting-agent.settings = {
   model.default = "anthropic/claude-sonnet-4";
-  toolsets = [ "all" ];
+  toolsets = [ "forecast-desk" ];
   terminal = { backend = "local"; timeout = 180; };
 };
 
@@ -263,7 +263,7 @@ Run `nix build .#configKeys && cat result` to see every leaf config key extracte
         base_url = "https://openrouter.ai/api/v1";
         default = "anthropic/claude-opus-4.6";
       };
-      toolsets = [ "all" ];
+      toolsets = [ "forecast-desk" ];
       max_turns = 100;
       terminal = { backend = "local"; cwd = "."; timeout = 180; };
       compression = {
