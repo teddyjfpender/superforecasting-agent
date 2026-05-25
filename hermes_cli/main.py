@@ -13132,7 +13132,7 @@ Examples:
         "--tui",
         action="store_true",
         help=(
-            "Expose the in-browser Chat tab (embedded `superforecasting-agent --tui` via PTY/WebSocket). "
+            "Expose the in-browser Forecast Chat tab (embedded `superforecasting-agent --tui` via PTY/WebSocket). "
             "Alternatively set SUPERFORECASTING_AGENT_DASHBOARD_TUI=1, "
             "FORECAST_DASHBOARD_TUI=1, or HERMES_DASHBOARD_TUI=1."
         ),
@@ -13383,8 +13383,8 @@ Examples:
         cmd_chat(args)
         return
 
-    # Explicit TUI launches remain chat-backed until the Ink interface is fully
-    # forecast-native. Bare CLI opens the forecast desk instead.
+    # Explicit TUI launches use the inherited session transport, but the Ink
+    # surface is forecast-scoped and opens with the forecast desk state.
     if args.command is None and getattr(args, "tui", False):
         for attr, default in [
             ("query", None),
