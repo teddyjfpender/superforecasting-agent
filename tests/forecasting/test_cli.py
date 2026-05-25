@@ -1027,6 +1027,35 @@ def test_forecast_cli_review_and_schedule_flag_large_delta(tmp_path, capsys):
     assert "large_forecast_delta:+0.330" in run_output
 
 
+def test_forecast_cli_schedule_add_defaults_next_run_at(tmp_path, capsys):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "schedule",
+            "add",
+            "--domain",
+            "macro",
+            "--cadence",
+            "1d",
+        ],
+    )
+    output = capsys.readouterr().out
+
+    assert "scheduled review" in output
+    assert "next_run_at:" in output
+    review = ForecastLedger(db_path).list_scheduled_reviews()[0]
+    assert review["scope_type"] == "domain"
+    assert review["scope_ref"] == "macro"
+    assert review["next_run_at"]
+
+
 def test_forecast_cli_review_flags_approaching_close_time(tmp_path, capsys):
     parser = _parser()
     db_path = tmp_path / "forecasting.db"

@@ -1383,7 +1383,10 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     schedule_add.add_argument("--portfolio")
     schedule_add.add_argument("--horizon", help="Scope scheduled review to forecast horizon in days or range")
     schedule_add.add_argument("--cadence", required=True)
-    schedule_add.add_argument("--next-run-at", required=True)
+    schedule_add.add_argument(
+        "--next-run-at",
+        help="First run timestamp; defaults to now so the review is due immediately",
+    )
     schedule_add.add_argument("--stale-days", type=int, default=7)
     schedule_add.add_argument("--trigger-reason", default="scheduled")
     schedule_add.add_argument("--auto-score", action="store_true")

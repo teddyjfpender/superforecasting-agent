@@ -214,7 +214,7 @@ forecast watch add --question <id> githubrepo:owner/repo
 forecast watch add --question <id> githubcommits:owner/repo
 forecast watch add --question <id> githubactions:owner/repo
 
-forecast schedule add --question <id> --cadence 1d --next-run-at 2026-05-22T09:00:00Z
+forecast schedule add --question <id> --cadence 1d
 forecast schedule add --domain policy --topic elections --cadence 12h --stale-days 3 --auto-score --auto-postmortem
 forecast schedule add --domain macro --cadence 6h --confidence-below 0.5 --next-run-at 2026-05-22T09:00:00Z
 forecast schedule add --domain macro --cadence 6h --large-delta-threshold 0.2 --next-run-at 2026-05-22T09:00:00Z
@@ -224,6 +224,8 @@ forecast schedule run --due
 forecast self-check --domain macro --confidence-below 0.5
 forecast self-check --domain macro --large-delta-threshold 0.2
 ```
+
+`--next-run-at` is optional; omit it to make the scheduled review due immediately.
 
 Scheduled jobs and watched sources create review work. They can be scoped by question, domain, topic, portfolio, horizon, confidence band, and large forecast-delta threshold. Question-scoped watched-source alerts point to an explicit import/update command; domain, topic, and portfolio alerts point to scoped `forecast self-check` commands with opt-in scoring/postmortem learning writes. They should not silently change active probabilities.
 

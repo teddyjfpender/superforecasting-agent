@@ -18,8 +18,7 @@ Use `forecast schedule` for forecast-native review jobs. The inherited `superfor
 
 ```bash
 forecast schedule add --question <id> \
-  --cadence 1d \
-  --next-run-at 2026-05-22T09:00:00Z
+  --cadence 1d
 
 forecast schedule add --domain policy --topic elections \
   --cadence 12h \
@@ -34,6 +33,8 @@ forecast schedule add --horizon 30 \
 forecast schedule list
 forecast schedule run --due
 ```
+
+`--next-run-at` is optional. When omitted, the first run is due immediately.
 
 Scheduled checks can:
 

@@ -2946,7 +2946,7 @@ class ForecastLedger:
         scope_type: str,
         scope_ref: str | None,
         cadence: str,
-        next_run_at: str,
+        next_run_at: str | None = None,
         trigger_reason: str = "scheduled",
         enabled: bool = True,
         auto_score: bool = False,

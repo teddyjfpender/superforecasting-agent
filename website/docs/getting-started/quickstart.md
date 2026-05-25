@@ -155,7 +155,6 @@ Schedule recurring checks:
 ```bash
 forecast schedule add --question <id> \
   --cadence 1d \
-  --next-run-at 2026-05-22T09:00:00Z \
   --auto-score \
   --auto-postmortem
 ```
