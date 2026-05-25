@@ -723,6 +723,7 @@ export interface ForecastDashboardResponse {
   stale_reference_class_count: number;
   alerts?: ForecastDashboardAlert[];
   calibration: ForecastDashboardCalibration;
+  doctor?: ForecastDashboardDoctor;
   evidence_status?: ForecastDashboardEvidenceStatus;
   learning: ForecastDashboardLearning;
   questions: ForecastDashboardQuestion[];
@@ -730,6 +731,26 @@ export interface ForecastDashboardResponse {
   recent_backtests: ForecastDashboardBacktest[];
   scheduled_review_run_count?: number;
   scheduled_review_runs?: ForecastDashboardScheduleRun[];
+}
+
+export interface ForecastDashboardDoctor {
+  doctor_status?: string;
+  tester_handoff_ready?: boolean;
+  claim_live_superforecasting?: boolean;
+  pilot_status?: string;
+  pilot_passed_checks?: number;
+  pilot_total_checks?: number;
+  pilot_gap_count?: number;
+  readiness_verdict?: string;
+  readiness_gap_count?: number;
+  scheduled_review_run_count?: number;
+  next_action?: string;
+  next_requirement?: string;
+  next_actions?: Array<{
+    source?: string;
+    requirement_id?: string;
+    action?: string;
+  }>;
 }
 
 export interface ForecastDashboardAlert {

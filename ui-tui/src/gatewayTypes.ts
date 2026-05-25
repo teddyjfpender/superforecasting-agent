@@ -189,6 +189,7 @@ export interface ForecastDashboardSummary {
   active_count?: number
   alerts?: ForecastDashboardAlert[]
   calibration?: ForecastDashboardCalibration
+  doctor?: ForecastDashboardDoctor
   evidence_status?: ForecastDashboardEvidenceStatus
   learning?: ForecastDashboardLearning
   closing_soon_count?: number
@@ -204,6 +205,26 @@ export interface ForecastDashboardSummary {
   scheduled_review_runs?: ForecastDashboardScheduleRun[]
   stale_assumption_count?: number
   stale_reference_class_count?: number
+}
+
+export interface ForecastDashboardDoctor {
+  claim_live_superforecasting?: boolean
+  doctor_status?: string
+  next_action?: string
+  next_actions?: Array<{
+    action?: string
+    requirement_id?: string
+    source?: string
+  }>
+  next_requirement?: string
+  pilot_gap_count?: number
+  pilot_passed_checks?: number
+  pilot_status?: string
+  pilot_total_checks?: number
+  readiness_gap_count?: number
+  readiness_verdict?: string
+  scheduled_review_run_count?: number
+  tester_handoff_ready?: boolean
 }
 
 export interface ForecastDashboardAlert {

@@ -7,6 +7,7 @@ import {
   Gauge,
   ListChecks,
   RefreshCw,
+  ShieldCheck,
   SquareTerminal,
   TrendingUp,
 } from "lucide-react";
@@ -14,6 +15,7 @@ import { api } from "@/lib/api";
 import type {
   ForecastDashboardBacktest,
   ForecastDashboardCalibration,
+  ForecastDashboardDoctor,
   ForecastDashboardErrorProfile,
   ForecastDashboardEvidenceStatus,
   ForecastDashboardLearning,
@@ -924,6 +926,100 @@ function ScheduledRunsPanel({ rows }: { rows: ForecastDashboardScheduleRun[] }) 
   );
 }
 
+function DoctorGatePanel({ doctor }: { doctor?: ForecastDashboardDoctor }) {
+  if (!doctor) return null;
+
+  const nextActions = doctor.next_actions ?? [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-muted-foreground" />
+            <CardTitle className="text-base">Doctor Gate</CardTitle>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={doctor.tester_handoff_ready ? "success" : "secondary"}>
+              {doctor.tester_handoff_ready ? "tester ready" : "pilot gaps"}
+            </Badge>
+            <Badge tone={doctor.claim_live_superforecasting ? "success" : "secondary"}>
+              {doctor.claim_live_superforecasting ? "live claim ready" : "live claim blocked"}
+            </Badge>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-4 text-sm sm:grid-cols-5">
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Status
+            </div>
+            <div className="mt-1 text-sm text-foreground">
+              {formatVerdict(doctor.doctor_status)}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Pilot
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {doctor.pilot_passed_checks ?? 0}/{doctor.pilot_total_checks ?? 0}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {formatVerdict(doctor.pilot_status)}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Readiness
+            </div>
+            <div className="mt-1 text-sm text-foreground">
+              {formatVerdict(doctor.readiness_verdict)}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Gaps
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {doctor.readiness_gap_count ?? 0}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Schedule Runs
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {doctor.scheduled_review_run_count ?? 0}
+            </div>
+          </div>
+        </div>
+        {nextActions.length > 0 && (
+          <div className="mt-4 grid gap-2 text-xs">
+            {nextActions.slice(0, 3).map((item) => (
+              <div
+                key={`${item.source || "doctor"}:${item.requirement_id || ""}:${item.action || ""}`}
+                className="rounded-md border border-border/70 px-3 py-2"
+              >
+                <div className="font-medium text-foreground">
+                  {(item.requirement_id || item.source || "doctor").replaceAll("_", " ")}
+                </div>
+                <div className="mt-1 font-mono-ui text-muted-foreground">
+                  {item.action || "forecast doctor --json"}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="mt-2 font-mono-ui text-xs text-muted-foreground">
+          forecast doctor --json
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function EvidenceStatusPanel({ evidenceStatus }: { evidenceStatus?: ForecastDashboardEvidenceStatus }) {
   if (!evidenceStatus) return null;
 
@@ -1324,6 +1420,7 @@ export default function ForecastsPage() {
       <CalibrationPanel calibration={data?.calibration} />
       <LearningPanel learning={data?.learning} />
       <ScheduledRunsPanel rows={data?.scheduled_review_runs ?? []} />
+      <DoctorGatePanel doctor={data?.doctor} />
       <EvidenceStatusPanel evidenceStatus={data?.evidence_status} />
       <PilotHandoffPanel />
       <BacktestTable rows={data?.recent_backtests ?? []} />

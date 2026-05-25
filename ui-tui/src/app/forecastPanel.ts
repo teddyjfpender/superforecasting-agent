@@ -1,6 +1,7 @@
 import type {
   ForecastDashboardBacktest,
   ForecastDashboardCalibration,
+  ForecastDashboardDoctor,
   ForecastDashboardQuestion,
   ForecastDashboardResponse,
   ForecastDashboardReview,
@@ -98,8 +99,38 @@ const formatVerdict = (value: string | undefined) =>
 const formatRequirement = (value: string | undefined) =>
   value ? truncate(String(value).replace(/_/g, ' '), 28) : 'evidence'
 
+const formatDoctorStatus = (value: string | undefined) =>
+  value ? truncate(String(value).replace(/_/g, ' '), 42) : '-'
+
 const plural = (count: number, singular: string, pluralForm = `${singular}s`) =>
   `${count} ${count === 1 ? singular : pluralForm}`
+
+const doctorRows = (doctor: ForecastDashboardDoctor): [string, string][] => {
+  const rows: [string, string][] = [
+    ['status', formatDoctorStatus(doctor.doctor_status)],
+    [
+      'pilot',
+      `${formatCount(doctor.pilot_passed_checks)}/${formatCount(doctor.pilot_total_checks)} ${formatVerdict(
+        doctor.pilot_status
+      )}`
+    ],
+    [
+      'readiness',
+      `${formatVerdict(doctor.readiness_verdict)}  gaps ${formatCount(doctor.readiness_gap_count)}`
+    ],
+    ['scheduled runs', formatCount(doctor.scheduled_review_run_count)],
+    ['claim live superiority', doctor.claim_live_superforecasting === true ? 'yes' : 'no']
+  ]
+
+  for (const item of (doctor.next_actions ?? []).slice(0, 3)) {
+    rows.push([
+      `next ${formatRequirement(item.requirement_id || item.source)}`,
+      truncate(item.action || '/forecast doctor --json', 88)
+    ])
+  }
+
+  return rows
+}
 
 const assumptionCounts = (summary: ForecastDashboardResponse['summary']) => {
   if (!summary) {
@@ -190,6 +221,10 @@ export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): st
     bits.push(`refs ${referenceClasses.open}/${referenceClasses.stale}`)
   }
 
+  if (summary.doctor?.doctor_status) {
+    bits.push(`doctor ${formatDoctorStatus(summary.doctor.doctor_status)}`)
+  }
+
   return bits.join(' / ')
 }
 
@@ -272,6 +307,7 @@ const triageRows = (response: ForecastDashboardResponse): [string, string][] => 
   const backtests = summary.recent_backtests ?? []
   const assumptions = assumptionCounts(summary)
   const referenceClasses = referenceClassCounts(summary)
+  const doctor = summary.doctor
   const rows: [string, string][] = []
 
   if (alerts > 0) {
@@ -317,6 +353,24 @@ const triageRows = (response: ForecastDashboardResponse): [string, string][] => 
       nextAction
         ? `${plural(evidenceGaps.length, 'evidence gap')}; ${truncate(nextAction, 88)}`
         : `${plural(evidenceGaps.length, 'evidence gap')} blocking stronger benchmark claims`
+    ])
+  }
+
+  if (doctor?.doctor_status === 'needs_tester_pilot_artifacts') {
+    const nextAction = doctor.next_actions?.[0]?.action || doctor.next_action
+    rows.push([
+      '/forecast doctor --json',
+      nextAction
+        ? `pilot ${formatCount(doctor.pilot_passed_checks)}/${formatCount(doctor.pilot_total_checks)}; ${truncate(
+            nextAction,
+            88
+          )}`
+        : `pilot ${formatCount(doctor.pilot_passed_checks)}/${formatCount(doctor.pilot_total_checks)} still missing tester artifacts`
+    ])
+  } else if (doctor?.tester_handoff_ready && doctor.claim_live_superforecasting === false) {
+    rows.push([
+      '/forecast doctor --json',
+      `tester handoff ready; ${formatVerdict(doctor.readiness_verdict)}; live superiority claim remains blocked`
     ])
   }
 
@@ -474,6 +528,12 @@ export const forecastDeskCompactItems = (sections: PanelSection[], max = 3): For
     addCompactItem(items, 'book', bookBits.join(' / '), max)
   }
 
+  const doctor = findSection(sections, 'Doctor') ?? findSection(sections, 'Doctor Gate')
+  const doctorStatus = doctor?.rows?.find(row => row[0] === 'status')
+  if (doctorStatus) {
+    addCompactItem(items, 'doctor', doctorStatus[1], max)
+  }
+
   const triage = findSection(sections, 'Triage')?.rows?.[0]
   if (triage) {
     addCompactItem(items, 'triage', `${triage[0]} ${triage[1]}`, max)
@@ -509,6 +569,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
   const calibration = summary?.calibration
   const evidenceStatus = summary?.evidence_status
   const learning = summary?.learning
+  const doctor = summary?.doctor
   const scheduledRuns = summary?.scheduled_review_runs ?? []
 
   if (!summary) {
@@ -538,6 +599,13 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
       title: 'Desk'
     }
   ]
+
+  if (doctor) {
+    sections.push({
+      rows: doctorRows(doctor),
+      title: 'Doctor Gate'
+    })
+  }
 
   if (questions.length) {
     sections.push({
@@ -831,6 +899,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
   const calibration = summary.calibration
   const evidenceStatus = summary.evidence_status
   const learning = summary.learning
+  const doctor = summary.doctor
   const active = summary.active_count ?? questions.length
   const alerts = summary.open_alert_count ?? 0
   const reviews = summary.review_queue_count ?? reviewQueue.length
@@ -852,6 +921,21 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
       title: 'Book'
     }
   ]
+
+  if (doctor) {
+    const rows = doctorRows(doctor)
+    const next = rows.find(row => row[0].startsWith('next '))
+    sections.push({
+      rows: [
+        ['status', rows.find(row => row[0] === 'status')?.[1] ?? '-'],
+        ['pilot', rows.find(row => row[0] === 'pilot')?.[1] ?? '-'],
+        ['readiness', rows.find(row => row[0] === 'readiness')?.[1] ?? '-'],
+        ['claim live', doctor.claim_live_superforecasting === true ? 'yes' : 'no'],
+        ...(next ? ([[next[0], truncate(next[1], 58)]] as [string, string][]) : [])
+      ],
+      title: 'Doctor'
+    })
+  }
 
   const triage = triageRows(response)
   if (triage.length) {

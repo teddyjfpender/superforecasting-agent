@@ -223,6 +223,10 @@ def build_dashboard_summary(
         for row in ledger.list_scheduled_review_runs(limit=min(limit, 8))
     ]
 
+    evidence_status = build_forecasting_evidence_status(ledger, backtest_summaries)
+    pilot_report = ledger.pilot_report()
+    doctor = build_doctor_gate_summary(pilot_report, evidence_status)
+
     return {
         "product": PRODUCT_NAME,
         "active_count": len(questions),
@@ -234,7 +238,8 @@ def build_dashboard_summary(
         "open_reference_class_count": open_reference_class_count,
         "stale_reference_class_count": stale_reference_class_count,
         "calibration": calibration,
-        "evidence_status": build_forecasting_evidence_status(ledger, backtest_summaries),
+        "doctor": doctor,
+        "evidence_status": evidence_status,
         "learning": build_learning_summary(ledger=ledger),
         "scheduled_review_run_count": len(scheduled_review_runs),
         "scheduled_review_runs": scheduled_review_runs,
@@ -403,6 +408,23 @@ def render_dashboard_text(summary: dict[str, Any]) -> str:
                     f"- {row.get('status') or '-'} {scope} "
                     f"{truncate(str(row.get('lesson') or ''), 96)}"
                 )
+    doctor = dict(summary.get("doctor") or {})
+    if doctor:
+        lines.extend(["", "Doctor Gate"])
+        lines.append(
+            f"status: {doctor.get('doctor_status') or '-'}  "
+            f"pilot: {int(doctor.get('pilot_passed_checks') or 0)}/"
+            f"{int(doctor.get('pilot_total_checks') or 0)}  "
+            f"readiness: {doctor.get('readiness_verdict') or '-'}  "
+            f"gaps: {int(doctor.get('readiness_gap_count') or 0)}  "
+            f"schedule_runs: {int(doctor.get('scheduled_review_run_count') or 0)}  "
+            f"claim_live_superforecasting: {bool(doctor.get('claim_live_superforecasting'))}"
+        )
+        next_actions = list(doctor.get("next_actions") or [])
+        for item in next_actions[:3]:
+            requirement = item.get("requirement_id") or item.get("source") or "doctor"
+            action = item.get("action") or "-"
+            lines.append(f"  next {requirement}: {action}")
     evidence_status = dict(summary.get("evidence_status") or {})
     if evidence_status:
         score_counts = dict(evidence_status.get("score_counts") or {})
@@ -449,6 +471,71 @@ def render_dashboard_text(summary: dict[str, Any]) -> str:
                 f"{row.get('dataset') or '-'}"
             )
     return "\n".join(lines)
+
+
+def build_doctor_gate_summary(
+    pilot_report: dict[str, Any],
+    evidence_status: dict[str, Any],
+) -> dict[str, Any]:
+    pilot_ready = pilot_report.get("passed_checks") == pilot_report.get("total_checks")
+    readiness_gaps = list(evidence_status.get("gaps") or [])
+    if not pilot_ready:
+        doctor_status = "needs_tester_pilot_artifacts"
+    elif readiness_gaps:
+        doctor_status = "tester_handoff_ready_live_claim_unproven"
+    else:
+        doctor_status = "benchmark_evidence_ready_live_claim_unproven"
+
+    pilot_gaps = [row for row in pilot_report.get("checks", []) if not row.get("passed")]
+    pilot_next_actions = list(pilot_report.get("next_actions") or [])
+    readiness_next_actions = list(evidence_status.get("next_actions") or [])
+    next_actions: list[dict[str, str | None]] = []
+    for row in pilot_gaps:
+        action = row.get("recommended_action")
+        if action:
+            next_actions.append(
+                {
+                    "source": "pilot",
+                    "requirement_id": row.get("id"),
+                    "action": str(action),
+                }
+            )
+    if not next_actions:
+        for action in pilot_next_actions:
+            next_actions.append(
+                {
+                    "source": "pilot",
+                    "requirement_id": "pilot",
+                    "action": str(action),
+                }
+            )
+    for item in readiness_next_actions:
+        next_actions.append(
+            {
+                "source": "readiness",
+                "requirement_id": item.get("requirement_id"),
+                "action": item.get("action"),
+            }
+        )
+    first_action = next_actions[0] if next_actions else {}
+
+    return {
+        "doctor_status": doctor_status,
+        "tester_handoff_ready": pilot_ready,
+        "claim_live_superforecasting": bool(evidence_status.get("can_claim_live_superforecasting")),
+        "pilot_status": pilot_report.get("pilot_status"),
+        "pilot_passed_checks": int(pilot_report.get("passed_checks") or 0),
+        "pilot_total_checks": int(pilot_report.get("total_checks") or 0),
+        "pilot_gap_count": len(pilot_gaps),
+        "readiness_verdict": evidence_status.get("verdict"),
+        "readiness_gap_count": len(readiness_gaps),
+        "scheduled_review_run_count": int(
+            (pilot_report.get("summary") or {}).get("scheduled_review_run_count") or 0
+        ),
+        "next_actions": next_actions[:5],
+        "next_action": first_action.get("action"),
+        "next_requirement": first_action.get("requirement_id"),
+    }
 
 
 def build_learning_summary(*, ledger: ForecastLedger, limit: int = 5) -> dict[str, Any]:

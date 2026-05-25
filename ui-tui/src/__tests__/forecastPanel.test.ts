@@ -81,6 +81,72 @@ describe('forecast desk panel helpers', () => {
     ])
   })
 
+  it('surfaces the forecast doctor gate across panel, rail, status, and actions', () => {
+    const response: ForecastDashboardResponse = {
+      summary: {
+        active_count: 1,
+        calibration: { count: 1 },
+        doctor: {
+          claim_live_superforecasting: false,
+          doctor_status: 'needs_tester_pilot_artifacts',
+          next_actions: [
+            {
+              action: 'Run due schedule rows with `forecast schedule run --due`.',
+              requirement_id: 'scheduled_self_check_runs',
+              source: 'pilot'
+            }
+          ],
+          pilot_gap_count: 2,
+          pilot_passed_checks: 7,
+          pilot_status: 'collecting_pilot_evidence',
+          pilot_total_checks: 9,
+          readiness_gap_count: 3,
+          readiness_verdict: 'insufficient_live_evidence',
+          scheduled_review_run_count: 0,
+          tester_handoff_ready: false
+        },
+        open_alert_count: 0,
+        product: 'Superforecasting Agent',
+        questions: [],
+        recent_backtests: [{ case_count: 4, id: 'bt_doctor', probability_sources: ['dataset'] }],
+        review_queue: [],
+        review_queue_count: 0
+      }
+    }
+
+    const sections = forecastDashboardSections(response)
+    const railSections = forecastDeskRailSections(response)
+
+    expect(forecastDeskStatusLabel(response)).toContain('doctor needs tester pilot artifacts')
+    expect(sections.find(section => section.title === 'Doctor Gate')?.rows).toEqual(
+      expect.arrayContaining([
+        ['status', 'needs tester pilot artifacts'],
+        ['pilot', '7/9 collecting pilot evidence'],
+        ['readiness', 'insufficient live evidence  gaps 3'],
+        ['claim live superiority', 'no'],
+        [
+          'next scheduled self check runs',
+          'Run due schedule rows with `forecast schedule run --due`.'
+        ]
+      ])
+    )
+    expect(railSections.find(section => section.title === 'Doctor')?.rows).toEqual(
+      expect.arrayContaining([
+        ['status', 'needs tester pilot artifacts'],
+        ['pilot', '7/9 collecting pilot evidence'],
+        ['claim live', 'no']
+      ])
+    )
+    expect(forecastDeskActionStripItems(railSections)[0]).toEqual({
+      command: '/forecast doctor --json',
+      detail: 'pilot 7/9; Run due schedule rows with `forecast schedule run --due`.'
+    })
+    expect(forecastDeskCompactItems(railSections)).toContainEqual({
+      detail: 'needs tester pilot artifacts',
+      label: 'doctor'
+    })
+  })
+
   it('makes learned-error profile reviews visible in triage and review rows', () => {
     const response: ForecastDashboardResponse = {
       summary: {

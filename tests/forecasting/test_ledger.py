@@ -376,6 +376,12 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
         item["requirement_id"]
         for item in summary["evidence_status"]["next_actions"]
     } >= {"live_scored_forecasts", "agent_protocol_scored_cases"}
+    assert summary["doctor"]["doctor_status"] == "needs_tester_pilot_artifacts"
+    assert summary["doctor"]["claim_live_superforecasting"] is False
+    assert summary["doctor"]["readiness_verdict"] == "insufficient_live_evidence"
+    assert summary["doctor"]["pilot_gap_count"] >= 1
+    assert summary["doctor"]["readiness_gap_count"] >= 1
+    assert summary["doctor"]["next_actions"][0]["source"] == "pilot"
     assert "Superforecasting Agent" in text
     assert "Will shared forecast dashboard render?" in text
     assert "assumptions: 1/0" in text
@@ -398,6 +404,9 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     assert "Learning Memory" in text
     assert "dashboard:binary" in text
     assert "Dashboard forecasts should keep calibration health visible." in text
+    assert "Doctor Gate" in text
+    assert "status: needs_tester_pilot_artifacts" in text
+    assert "claim_live_superforecasting: False" in text
     assert "Evidence Status" in text
     assert "positive_edge_runs: 0" in text
     assert "external_datasets: 0" in text
