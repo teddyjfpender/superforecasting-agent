@@ -1536,6 +1536,22 @@ def test_tools_config_update_copy_prefers_forecast_native_commands():
     assert "hermes computer-use install --upgrade" not in text
 
 
+def test_update_hangup_log_copy_prefers_forecast_native_command():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        root / "hermes_cli" / "main.py",
+        root / "tests" / "hermes_cli" / "test_update_hangup_protection.py",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in checked_paths)
+
+    assert "superforecasting-agent update started" in text
+    assert "superforecasting-agent update --gateway" in text
+    assert "superforecasting-agent update --check" in text
+    assert "hermes update started" not in text
+    assert "hermes update --gateway" not in text
+    assert "hermes update --check" not in text
+
+
 def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
