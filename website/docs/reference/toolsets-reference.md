@@ -117,7 +117,7 @@ actually needs them.
 | `todo` | `todo` | Session task planning and tracking. |
 | `clarify` | `clarify` | Ask the user for a needed decision or missing input. |
 | `memory` | `memory` | Generic cross-session memory. Forecast learning should be stored in the forecast ledger. |
-| `session_search` | `session_search` | Search prior chat sessions. |
+| `session_search` | `session_search` | Search prior research sessions. |
 | `skills` | `skills_list`, `skill_view`, `skill_manage` | Browse and manage skill documents. |
 | `delegation` | `delegate_task` | Spawn isolated subagent instances for complex subtasks. |
 | `vision` | `vision_analyze` | Analyze images. |

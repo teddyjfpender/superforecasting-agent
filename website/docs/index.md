@@ -108,7 +108,7 @@ The Ink TUI opens with forecast desk context and routes common workflows directl
 
 ## Compatibility Notes
 
-This fork still carries substantial inherited runtime code and documentation. Generic chat, skills, messaging gateways, voice, dashboard chat, and broad platform integrations remain available when useful, but they are subordinate to the forecast lifecycle.
+This fork still carries substantial inherited runtime code and documentation. Generic chat, skills, messaging gateways, voice, Forecast Chat, and broad platform integrations remain available when useful, but they are subordinate to the forecast lifecycle.
 
 Runtime state defaults to `~/.superforecasting-agent` for new installs. Existing `~/.hermes` homes are reused during the fork transition.
 

@@ -193,7 +193,7 @@ Same agent, same tools, same skills — just strips every interactive / cosmetic
 
 ## `superforecasting-agent model`
 
-Interactive provider + model selector. **This is the command for adding new providers, setting up API keys, and running OAuth flows.** Run it from your terminal — not from inside an active Superforecasting Agent chat session.
+Interactive provider + model selector. **This is the command for adding new providers, setting up API keys, and running OAuth flows.** Run it from your terminal, not from inside an active Superforecasting Agent session.
 
 ```bash
 superforecasting-agent model
@@ -210,7 +210,7 @@ Use this when you want to:
 :::warning superforecasting-agent model vs /model — know the difference
 **`superforecasting-agent model`** (run from your terminal, outside any Superforecasting Agent session) is the **full provider setup wizard**. It can add new providers, run OAuth flows, prompt for API keys, and configure endpoints.
 
-**`/model`** (typed inside an active Superforecasting Agent chat session) can only **switch between providers and models you've already set up**. It cannot add new providers, run OAuth, or prompt for API keys.
+**`/model`** (typed inside an active Superforecasting Agent session) can only **switch between providers and models you've already set up**. It cannot add new providers, run OAuth, or prompt for API keys.
 
 **If you need to add a new provider:** Exit your Superforecasting Agent session first (`Ctrl+C` or `/quit`), then run `superforecasting-agent model` from your terminal prompt.
 :::
@@ -905,7 +905,7 @@ superforecasting-agent bundles show backend-dev
 superforecasting-agent bundles delete backend-dev
 ```
 
-In a chat session, `/bundles` lists installed bundles and `/<bundle-name>` loads one.
+In an interactive forecast session, `/bundles` lists installed bundles and `/<bundle-name>` loads one.
 
 ## `superforecasting-agent curator`
 

@@ -312,12 +312,12 @@ uv pip install -e ".[all,dev]"
 
 #### `/model` only shows one provider / can't switch providers
 
-**Cause:** `/model` (inside a chat session) can only switch between providers you've **already configured**. If you've only set up OpenRouter, that's all `/model` will show.
+**Cause:** `/model` (inside an interactive forecast session) can only switch between providers you've **already configured**. If you've only set up OpenRouter, that's all `/model` will show.
 
 **Solution:** Exit your session and use `superforecasting-agent model` from your terminal to add new providers:
 
 ```bash
-# Exit the Superforecasting Agent chat session first (Ctrl+C or /quit)
+# Exit the Superforecasting Agent session first (Ctrl+C or /quit)
 
 # Run the full provider setup wizard
 superforecasting-agent model
@@ -325,7 +325,7 @@ superforecasting-agent model
 # This lets you: add providers, run OAuth, enter API keys, configure endpoints
 ```
 
-After adding a new provider via `superforecasting-agent model`, start a new chat session — `/model` will now show all your configured providers.
+After adding a new provider via `superforecasting-agent model`, start a new interactive forecast session; `/model` will now show all your configured providers.
 
 :::tip Quick reference
 | Want to... | Use |

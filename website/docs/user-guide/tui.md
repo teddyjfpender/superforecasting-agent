@@ -284,7 +284,7 @@ Legacy `HERMES_TUI_*` names remain accepted for compatibility with the inherited
 TUI and classic CLI sessions share the same session store under the active
 agent home. You can start in one surface and resume in the other.
 
-Forecast learning state is separate from chat session transcripts. Questions,
+Forecast learning state is separate from interactive session transcripts. Questions,
 evidence, reference classes, snapshots, scores, postmortems, backtests, alerts,
 and lessons live in the forecast ledger.
 

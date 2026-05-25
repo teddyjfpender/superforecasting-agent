@@ -8,7 +8,7 @@ description: "Browser dashboard for forecast review, configuration, logs, resear
 
 The web dashboard is a local browser UI for inspecting the Superforecasting Agent runtime. It is secondary to the CLI, but useful for reviewing the forecast book, checking configuration, managing credentials, inspecting research sessions, and watching logs without editing YAML by hand.
 
-The fork-native landing page is **Forecasts**. It shows active questions, review queue, focused action commands, calibration health, learning memory, domain/topic error profiles, alerts, and recent backtests. The embedded chat pane is optional and exists to support forecast work, not to replace the CLI forecast workflow.
+The fork-native landing page is **Forecasts**. It shows active questions, review queue, focused action commands, calibration health, learning memory, domain/topic error profiles, alerts, and recent backtests. The embedded Forecast Chat pane is optional and exists to support forecast work, not to replace the CLI forecast workflow.
 
 ## Quick Start
 
@@ -120,7 +120,7 @@ How it works:
 - Keystrokes travel to the PTY; ANSI output streams back to the browser.
 - Resizing the browser window resizes the TUI through xterm.js.
 
-Resume from Research Sessions by opening a session and launching the chat pane with that session id. Close the browser tab to reap the PTY process on the server.
+Resume from Research Sessions by opening a session and launching the Forecast Chat pane with that session id. Close the browser tab to reap the PTY process on the server.
 
 ### Config
 

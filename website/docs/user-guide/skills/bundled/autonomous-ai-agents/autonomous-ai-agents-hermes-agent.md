@@ -243,7 +243,7 @@ superforecasting-agent uninstall            Uninstall Superforecasting Agent
 
 ## Slash Commands (In-Session)
 
-Type these during an interactive chat session. New commands land fairly
+Type these during an interactive forecast session. New commands land fairly
 often; if something below looks stale, run `/help` in-session for the
 authoritative list or see the [live slash commands reference](/docs/reference/slash-commands).
 The registry of record is `hermes_cli/commands.py` — every consumer

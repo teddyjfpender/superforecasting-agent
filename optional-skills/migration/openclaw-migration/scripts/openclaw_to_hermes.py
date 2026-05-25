@@ -2925,7 +2925,7 @@ class Migrator:
                 "## Imported Skills",
                 "",
                 "Imported skills require a new session to take effect. After migration,",
-                "restart your agent or start a new chat session, then run `/skills`",
+                "restart your agent or start a new interactive session, then run `/skills`",
                 "to verify they loaded correctly.",
                 "",
             ])

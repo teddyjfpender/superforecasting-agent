@@ -113,7 +113,7 @@ Blackbox's unique feature is running the same task through multiple models and j
 | `--prompt "task"` | Non-interactive one-shot execution |
 | `--resume-checkpoint "tag"` | Resume from a saved checkpoint |
 | `--yolo` | Auto-approve all actions and model switches |
-| `blackbox session` | Start interactive chat session |
+| `blackbox session` | Start an interactive Blackbox session |
 | `blackbox configure` | Change settings, providers, models |
 | `blackbox info` | Display system information |
 

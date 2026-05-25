@@ -1340,6 +1340,7 @@ Latest verified result:
 - Tester smoke transcript refresh: `python3 scripts/forecast_smoke_test.py` passed at snapshot `07f93306fcc5` with 52 source adapters, 4 benchmark datasets, pilot-report checks `7/7`, two performance runs, pilot bundle export included, and the expected `insufficient_live_evidence` readiness guard; the smoke transcript now reflects the current pushed tester branch.
 - Reference-class docs parity pass: CLI, TUI, and web-dashboard user docs now describe open/stale reference-class counts as forecast-desk health and base-rate review pressure, matching the shared CLI/TUI/web dashboard implementation.
 - Tester smoke transcript refresh: `python3 scripts/forecast_smoke_test.py` passed at snapshot `42d15e0eff63` with 52 source adapters, 4 benchmark datasets, pilot-report checks `7/7`, one aggregated live score, two performance runs, pilot bundle export included, and the expected `insufficient_live_evidence` readiness guard; the smoke transcript now reflects the latest pushed tester branch.
+- Interactive-session wording pass: high-traffic model, provider, slash-command, TUI, web-dashboard, installation, skills, toolset, FAQ, and session-storage docs now use forecast/research-session wording and reserve generic chat terms for explicit compatibility or contrast notes.
 
 ## Prompt-To-Artifact Checklist
 

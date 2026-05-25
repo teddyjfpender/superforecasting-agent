@@ -132,7 +132,7 @@ The website currently still carries inherited localized documentation. A success
 
 ### Linux, macOS, and WSL2
 
-Use the fork checkout install above. WSL2 remains the safest Windows path for the embedded PTY-backed dashboard chat pane.
+Use the fork checkout install above. WSL2 remains the safest Windows path for the embedded PTY-backed Forecast Chat pane.
 
 ### Native Windows
 
@@ -140,7 +140,7 @@ Native Windows support is inherited and still early beta. Most CLI, gateway, cro
 
 ## Windows (native, PowerShell) — Early Beta
 
-This heading is retained as a compatibility anchor for inherited Windows docs. Native Windows uses the same transition posture as above: forecast-desk CLI workflows can run natively, while the PTY-backed dashboard chat pane remains WSL2-only.
+This heading is retained as a compatibility anchor for inherited Windows docs. Native Windows uses the same transition posture as above: forecast-desk CLI workflows can run natively, while the PTY-backed dashboard Forecast Chat pane remains WSL2-only.
 
 ### Termux
 

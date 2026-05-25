@@ -37,7 +37,7 @@ The picker has two columns:
 
 Type in the filter box to narrow by provider name, slug, or model ID.
 
-Pick a model, hit **Switch**, and Superforecasting Agent writes it to `~/.superforecasting-agent/config.yaml` under the `model` section. **This applies to new sessions only** — any chat tab you already have open keeps running whatever model it started with. To hot-swap the current chat, use the `/model` slash command inside it. Existing `~/.hermes/config.yaml` profiles remain readable during the compatibility transition.
+Pick a model, hit **Switch**, and Superforecasting Agent writes it to `~/.superforecasting-agent/config.yaml` under the `model` section. **This applies to new sessions only** — any interactive session you already have open keeps running whatever model it started with. To hot-swap the current session, use the `/model` slash command inside it. Existing `~/.hermes/config.yaml` profiles remain readable during the compatibility transition.
 
 ## Setting auxiliary models
 
@@ -123,9 +123,9 @@ auxiliary:
 
 - **Forecast desk** (`forecast`, `superforecasting-agent`, or `superforecasting-agent chat`): next new agent session. Existing sessions keep their model.
 - **Gateway** (Telegram, Discord, Slack, etc.): next *new* session. Existing sessions keep their model. Restart the gateway (`superforecasting-agent gateway restart`) if you want to force all sessions to pick up the change.
-- **Dashboard chat tab** (`/chat`): next new PTY. The currently-open chat keeps its model — use `/model` inside it to hot-swap.
+- **Dashboard Forecast Chat tab** (`/chat`): next new PTY. The currently-open embedded TUI keeps its model; use `/model` inside it to hot-swap.
 
-Changes never invalidate prompt caches on running sessions. That's deliberate: swapping the main model inside a session requires a cache reset (the system prompt contains model-specific content), and we reserve that for the explicit `/model` slash command inside chat.
+Changes never invalidate prompt caches on running sessions. That's deliberate: swapping the main model inside a session requires a cache reset (the system prompt contains model-specific content), and we reserve that for the explicit `/model` slash command inside the active session.
 
 ## Troubleshooting
 

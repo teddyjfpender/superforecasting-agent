@@ -9,7 +9,7 @@ This is **not** the forecast ledger. Session storage is for transcripts,
 resumability, search, token accounting, and prompt replay. Forecast questions,
 evidence, snapshots, model runs, resolutions, scores, postmortems, calibration
 lessons, and domain error profiles live under the forecast ledger and must remain
-scoreable outside any one chat session.
+scoreable outside any one research session.
 
 Source file: `hermes_state.py`
 

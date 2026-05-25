@@ -162,7 +162,7 @@ Superforecasting Agent has **two** model commands that serve different purposes:
 | Command | Where to run | What it does |
 |---------|-------------|--------------|
 | **`superforecasting-agent model`** | Your terminal (outside any session) | Full setup wizard — add providers, run OAuth, enter API keys, configure endpoints |
-| **`/model`** | Inside a forecast chat session | Quick switch between **already-configured** providers and models |
+| **`/model`** | Inside an interactive forecast session | Quick switch between **already-configured** providers and models |
 
 If you're trying to switch to a provider you haven't set up yet (e.g. you only have OpenRouter configured and want to use Anthropic), you need `superforecasting-agent model`, not `/model`. Exit your session first (`Ctrl+C` or `/quit`), run `superforecasting-agent model`, complete the provider setup, then start a new session.
 
@@ -632,9 +632,9 @@ Both approaches persist to `config.yaml`, which is the source of truth for model
 ### Switching Models with `/model`
 
 :::warning superforecasting-agent model vs /model
-**`superforecasting-agent model`** (run from your terminal, outside any chat session) is the **full provider setup wizard**. Use it to add new providers, run OAuth flows, enter API keys, and configure custom endpoints.
+**`superforecasting-agent model`** (run from your terminal, outside any active session) is the **full provider setup wizard**. Use it to add new providers, run OAuth flows, enter API keys, and configure custom endpoints.
 
-**`/model`** (typed inside an active forecast chat session) can only **switch between providers and models you've already set up**. It cannot add new providers, run OAuth, or prompt for API keys. If you've only configured one provider (e.g. OpenRouter), `/model` will only show models for that provider.
+**`/model`** (typed inside an active interactive forecast session) can only **switch between providers and models you've already set up**. It cannot add new providers, run OAuth, or prompt for API keys. If you've only configured one provider (e.g. OpenRouter), `/model` will only show models for that provider.
 
 **To add a new provider:** Exit your session (`Ctrl+C` or `/quit`), run `superforecasting-agent model`, set up the new provider, then start a new session.
 :::
