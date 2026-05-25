@@ -27,7 +27,7 @@ superforecasting-agent acp / superforecasting-agent-acp / superforecast-acp / he
   -> parse --version / --check / --setup before server startup
   -> load ~/.superforecasting-agent/.env (legacy ~/.hermes/.env accepted)
   -> configure stderr logging
-  -> construct HermesACPAgent
+  -> construct the ACP agent implementation (legacy class name: HermesACPAgent)
   -> acp.run_agent(agent, use_unstable_protocol=True)
 ```
 
@@ -37,9 +37,11 @@ Stdout is reserved for ACP JSON-RPC transport. Human-readable logs go to stderr.
 
 ## Major components
 
-### `HermesACPAgent`
+### ACP Agent Implementation
 
-`acp_adapter/server.py` implements the ACP agent protocol.
+`acp_adapter/server.py` implements the ACP agent protocol. The Python class is
+still named `HermesACPAgent` for compatibility with inherited tests and import
+paths; the product-facing ACP server is Superforecasting Agent.
 
 Responsibilities:
 
@@ -116,7 +118,7 @@ Examples:
 ```text
 new_session(cwd)
   -> create SessionState
-  -> create AIAgent(platform="acp", enabled_toolsets=["hermes-acp"])
+  -> create AIAgent(platform="acp", enabled_toolsets=["forecast-acp"])
   -> bind task_id/session_id to cwd override
 
 prompt(..., session_id)
@@ -180,6 +182,6 @@ ACP temporarily installs an approval callback on the terminal tool during prompt
 ## Related files
 
 - `tests/acp/` — ACP test suite
-- `toolsets.py` — `hermes-acp` toolset definition
+- `toolsets.py` — `forecast-acp` alias and inherited `hermes-acp` toolset definition
 - `hermes_cli/main.py` — `superforecasting-agent acp` CLI subcommand plus inherited aliases
 - `pyproject.toml` — `[acp]` optional dependency plus fork-native and compatibility ACP scripts

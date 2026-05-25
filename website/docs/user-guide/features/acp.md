@@ -21,7 +21,10 @@ Durable forecast state still belongs in the forecast ledger. Editor chat, file d
 
 ## What ACP Exposes
 
-ACP runs with a curated `hermes-acp` toolset name for compatibility with the inherited runtime. The product-facing surface is Superforecasting Agent; the toolset identifier remains legacy.
+ACP runs with the fork-native `forecast-acp` toolset alias, which expands to
+the inherited `hermes-acp` editor-integration preset for compatibility. The
+product-facing surface is Superforecasting Agent; the legacy toolset identifier
+remains available for migrated configs.
 
 The ACP toolset is designed for editor workflows and includes:
 

@@ -512,6 +512,7 @@ def test_acp_adapter_copy_is_forecast_native():
     assert "Superforecasting Agent v{HERMES_VERSION}" in text
     assert "Configure Superforecasting Agent provider" in text
     assert "ACP-managed forecast agent" in text
+    assert '["forecast-acp"]' in text
     assert "Hermes Agent via the Agent Client Protocol" not in text
     assert "Hermes Agent v{HERMES_VERSION}" not in text
     assert "Configure Hermes provider" not in text
@@ -530,6 +531,8 @@ def test_acp_registry_docs_are_fork_native():
     assert "uvx --from 'superforecasting-agent[acp]==<version>' superforecasting-agent acp" in text
     assert "source registry manifest under `acp_registry/agent.json` is fork-native" in text
     assert "fork-native registry identity" in text
+    assert "`forecast-acp` toolset alias" in text
+    assert 'enabled_toolsets=["forecast-acp"]' in text
     assert "the manifest is still the inherited registry entry" not in text
     assert "current compatibility registry entry" not in text
     assert "pointed at the legacy `hermes-agent` PyPI release" not in text

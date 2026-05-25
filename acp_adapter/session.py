@@ -143,7 +143,7 @@ def _expand_acp_enabled_toolsets(
 ) -> List[str]:
     """Return ACP toolsets plus explicit MCP server toolsets for this session."""
     expanded: List[str] = []
-    for name in list(toolsets or ["hermes-acp"]):
+    for name in list(toolsets or ["forecast-acp"]):
         if name and name not in expanded:
             expanded.append(name)
 
@@ -596,7 +596,7 @@ class SessionManager:
         kwargs = {
             "platform": "acp",
             "enabled_toolsets": _expand_acp_enabled_toolsets(
-                ["hermes-acp"],
+                ["forecast-acp"],
                 mcp_server_names=configured_mcp_servers,
             ),
             "quiet_mode": True,
