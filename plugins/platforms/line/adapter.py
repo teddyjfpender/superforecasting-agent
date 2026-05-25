@@ -1577,7 +1577,7 @@ def interactive_setup() -> None:
     try:
         from hermes_cli.config import get_env_var, set_env_var
     except ImportError:
-        print("hermes_cli.config not available; set LINE_* vars manually in ~/.hermes/.env")
+        print("hermes_cli.config not available; set LINE_* vars manually in the active agent-home .env")
         return
 
     def _prompt(var: str, prompt: str, *, secret: bool = False) -> None:

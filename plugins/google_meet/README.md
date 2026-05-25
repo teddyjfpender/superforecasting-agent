@@ -109,7 +109,7 @@ hermes meet node run --display-name my-mac --host 0.0.0.0 --port 18789
 
 On the gateway:
 ```bash
-hermes meet node approve my-mac ws://<mac-ip>:18789 <token>
+superforecasting-agent meet node approve my-mac ws://<mac-ip>:18789 <token>
 hermes meet node ping my-mac
 # now any meet_* tool call accepts node='my-mac' (or 'auto')
 ```

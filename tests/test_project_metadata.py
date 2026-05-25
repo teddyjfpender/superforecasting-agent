@@ -1043,6 +1043,67 @@ def test_runtime_operator_guidance_uses_forecast_native_commands():
     assert "stop/restart hermes gateway" not in text
 
 
+def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        "gateway/platforms/base.py",
+        "trajectory_compressor.py",
+        "tools/terminal_tool.py",
+        "tools/transcription_tools.py",
+        "plugins/memory/honcho/cli.py",
+        "plugins/spotify/__init__.py",
+        "plugins/spotify/client.py",
+        "plugins/spotify/plugin.yaml",
+        "plugins/video_gen/fal/__init__.py",
+        "plugins/web/firecrawl/provider.py",
+        "plugins/web/xai/provider.py",
+        "plugins/web/xai/plugin.yaml",
+        "plugins/image_gen/openai/__init__.py",
+        "plugins/image_gen/openai-codex/__init__.py",
+        "plugins/image_gen/xai/__init__.py",
+        "plugins/platforms/line/adapter.py",
+        "plugins/platforms/simplex/adapter.py",
+        "plugins/platforms/google_chat/adapter.py",
+        "plugins/google_meet/tools.py",
+        "plugins/google_meet/node/cli.py",
+        "plugins/google_meet/node/protocol.py",
+        "plugins/google_meet/node/server.py",
+        "plugins/google_meet/SKILL.md",
+        "plugins/google_meet/README.md",
+    ]
+    text = "\n".join(
+        (root / rel_path).read_text(encoding="utf-8") for rel_path in checked_paths
+    )
+
+    assert "superforecasting-agent auth spotify" in text
+    assert "superforecasting-agent tools" in text
+    assert "superforecasting-agent setup" in text
+    assert "superforecasting-agent model" in text
+    assert "superforecasting-agent auth codex" in text
+    assert "superforecasting-agent auth" in text
+    assert "superforecasting-agent memory setup" in text
+    assert "superforecasting-agent meet node approve" in text
+    assert "active agent-home .env" in text
+    assert "active agent-home auth store" in text
+
+    assert "Run: hermes config set memory.provider honcho" not in text
+    assert "Running 'hermes memory setup'" not in text
+    assert "redirects to hermes memory setup" not in text
+    assert "hermes auth spotify" not in text
+    assert "Run `hermes tools`" not in text
+    assert "run `hermes tools`" not in text
+    assert "via `hermes tools`" not in text
+    assert "`hermes setup`" not in text
+    assert "hermes auth codex" not in text
+    assert "`hermes model`" not in text
+    assert "Run `hermes auth`" not in text
+    assert "add the key to ~/.hermes/.env manually" not in text
+    assert "run: hermes setup" not in text
+    assert "Check ~/.hermes/.env" not in text
+    assert "vars manually in ~/.hermes/.env" not in text
+    assert "hermes meet node approve" not in text
+
+
 def test_tool_runtime_docstrings_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [

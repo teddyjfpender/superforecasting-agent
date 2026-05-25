@@ -26,7 +26,7 @@ Optional environment variables:
     SIMPLEX_HOME_CHANNEL_NAME  Human label for the home channel
 
 The ``websockets`` Python package is imported lazily — the plugin is
-discoverable and `hermes setup` can describe it even when websockets is
+discoverable and `superforecasting-agent setup` can describe it even when websockets is
 not installed. ``check_requirements()`` returns False until the package
 is present, so the gateway will not attempt to instantiate the adapter.
 """
@@ -677,7 +677,7 @@ def interactive_setup() -> None:
     try:
         from hermes_cli.config import get_env_value, save_env_value
     except ImportError:
-        print("hermes_cli.config not available; set SIMPLEX_* vars manually in ~/.hermes/.env")
+        print("hermes_cli.config not available; set SIMPLEX_* vars manually in the active agent-home .env")
         return
 
     def _prompt(var: str, prompt: str, *, secret: bool = False) -> None:
