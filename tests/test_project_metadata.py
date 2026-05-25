@@ -484,8 +484,14 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
         encoding="utf-8"
     )
     oneshot = (root / "hermes_cli" / "oneshot.py").read_text(encoding="utf-8")
+    parser_help = (root / "hermes_cli" / "_parser.py").read_text(
+        encoding="utf-8"
+    )
+    main_help = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
 
-    combined = "\n".join([commands, plugins_cmd, skills_config, oneshot])
+    combined = "\n".join(
+        [commands, plugins_cmd, skills_config, oneshot, parser_help, main_help]
+    )
 
     assert "superforecasting-agent skills list" in commands
     assert "superforecasting-agent skills config" in commands
@@ -494,6 +500,9 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
     assert "configured for \"cli\" in `superforecasting-agent tools`" in oneshot
     assert "Model / provider selection mirrors `superforecasting-agent chat`" in oneshot
     assert "superforecasting-agent -z" in oneshot
+    assert 'superforecasting-agent -z "Hello"' in parser_help
+    assert 'superforecasting-agent -z "query"' in main_help
+    assert 'superforecasting-agent chat -q "Hello"' not in parser_help
 
     assert "``hermes skills list``" not in combined
     assert "``hermes skills\n    config``" not in combined

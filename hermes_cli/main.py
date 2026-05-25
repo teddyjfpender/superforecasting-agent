@@ -6,7 +6,8 @@ Usage:
     superforecasting-agent                     # Forecast desk dashboard (default)
     superforecasting-agent forecast            # Forecast desk dashboard
     superforecasting-agent forecast new        # Create a scoreable forecast question
-    superforecasting-agent chat                # Forecast-scoped interactive chat
+    superforecasting-agent -z "query"          # Forecast-scoped one-shot support query
+    superforecasting-agent chat                # Explicit forecast-scoped support chat
     superforecasting-agent gateway             # Run gateway in foreground
     superforecasting-agent gateway start       # Start gateway as service
     superforecasting-agent gateway stop        # Stop gateway service

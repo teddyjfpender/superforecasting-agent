@@ -41,7 +41,7 @@ _EPILOGUE = """
 Examples:
     superforecasting-agent                        Open the forecast desk dashboard
     superforecasting-agent forecast new "Will X happen?" --resolution-criteria "Resolved by ..."
-    superforecasting-agent chat -q "Hello"        Forecast-scoped single query mode
+    superforecasting-agent -z "Hello"             Forecast-scoped one-shot mode
     superforecasting-agent -c                     Resume the most recent session
     superforecasting-agent -c "my project"        Resume a session by name (latest in lineage)
     superforecasting-agent --resume <session_id>  Resume a specific session by ID
@@ -234,12 +234,12 @@ def build_top_level_parser():
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # =========================================================================
-    # chat command
+    # Explicit chat support path.
     # =========================================================================
     chat_parser = subparsers.add_parser(
         "chat",
-        help="Forecast-scoped interactive chat with the agent",
-        description="Start an interactive chat session scoped to forecasting work",
+        help="Explicit forecast-scoped support chat",
+        description="Start an explicit chat session scoped to forecasting support work",
     )
     chat_parser.add_argument(
         "-q", "--query", help="Single query (non-interactive mode)"
