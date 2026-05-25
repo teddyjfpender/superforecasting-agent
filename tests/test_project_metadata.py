@@ -3197,6 +3197,23 @@ def test_mcp_serve_identity_is_forecast_native():
     assert "Use MCP with the inherited runtime" not in mcp_link_docs
 
 
+def test_cli_command_reference_chat_examples_are_forecast_scoped():
+    root = Path(__file__).resolve().parents[1]
+    cli_docs = (
+        root / "website" / "docs" / "reference" / "cli-commands.md"
+    ).read_text(encoding="utf-8")
+
+    assert 'chat -q "Summarize new evidence that could move forecast fq_123"' in cli_docs
+    assert "superforecasting-agent chat --toolsets forecasting,file,web" in cli_docs
+    assert "Extract forecast-relevant claims from this source note." in cli_docs
+    assert "Same forecast-scoped runtime" in cli_docs
+    assert "Summarize the latest PRs" not in cli_docs
+    assert "Review this repo and open a PR" not in cli_docs
+    assert "What's the capital of France?" not in cli_docs
+    assert 'answer=$(superforecasting-agent -z "summarize this"' not in cli_docs
+    assert "forecast-research,file,web" not in cli_docs
+
+
 def test_nous_runtime_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     nous_env = (root / "hermes_cli" / "nous_env.py").read_text(encoding="utf-8")

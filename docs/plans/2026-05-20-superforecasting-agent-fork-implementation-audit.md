@@ -870,6 +870,7 @@ Latest verified result:
 - Generic tournament export importer focused checks: passed; 3 passed
 - Numeric/distributional scoring focused checks: passed; 5 passed
 - Distributional CLI workflow check: `forecast new --outcome-type distribution`, `forecast update --distribution-json '{"mean": ..., "std": ...}'`, `forecast resolve`, and `forecast score` are covered end to end; focused numeric/distributional CLI and ledger scoring checks passed 4, and the `--distribution-json` help now names both categorical probability maps and distribution parameters.
+- Inherited chat reference demotion pass: the CLI command reference now presents `superforecasting-agent chat` and `-z` examples only as forecast-support/source-triage workflows, removes generic PR/repo/capital-city examples from the high-attention inherited runtime section, and guards that copy through project metadata coverage.
 - Scoped scheduled-learning focused checks: passed; 3 passed
 - Scoped scheduled-learning/status focused checks: passed; 4 passed
 - Scheduled calibration-lesson review checks: passed; scoped self-checks now emit `calibration_lesson_review` alerts for tentative lessons in the reviewed question/domain/topic scope and stop alerting once the lesson is promoted; focused learning-loop regressions passed 4 and the full forecasting suite passed 345
@@ -1813,7 +1814,7 @@ fork objective still needs the remaining work listed below.
 | FR-11 | Covered | Calibration reports by bucket, domain, horizon, origin, and question type |
 | FR-12 | Covered | Structured postmortems for resolved forecasts |
 | FR-13 | Covered | Forecasting workflows are first-class CLI commands under `forecast` |
-| FR-14 | Covered/Partial | CLI/chat prompts and default toolsets are forecast-scoped; inherited general surfaces still require broader demotion |
+| FR-14 | Covered/Partial | CLI/chat prompts, command-reference chat examples, and default toolsets are forecast-scoped; inherited general surfaces still require broader demotion |
 | FR-15 | Covered | Forecast packet import/export and generic ingest/export support |
 | FR-16 | Covered | Extension/source adapter surfaces support future data, market, model, and tournament integrations |
 | FR-17 | Covered | Snapshot provenance stores model, prompt, protocol, and toolset versions |

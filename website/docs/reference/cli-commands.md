@@ -163,12 +163,12 @@ Examples:
 
 ```bash
 superforecasting-agent
-superforecasting-agent chat -q "Summarize the latest PRs"
+superforecasting-agent chat -q "Summarize new evidence that could move forecast fq_123"
 superforecasting-agent chat --provider openrouter --model anthropic/claude-sonnet-4.6
-superforecasting-agent chat --toolsets web,terminal,skills
-superforecasting-agent chat --quiet -q "Return only JSON"
-superforecasting-agent chat --worktree -q "Review this repo and open a PR"
-superforecasting-agent chat --ignore-user-config --ignore-rules -q "Repro without my personal setup"
+superforecasting-agent chat --toolsets forecasting,file,web
+superforecasting-agent chat --quiet -q "Return only JSON evidence candidates for this forecast"
+superforecasting-agent chat --worktree -q "Inspect this source adapter patch for forecast-ledger risks"
+superforecasting-agent chat --ignore-user-config --ignore-rules -q "Reproduce this forecast CLI bug without my personal setup"
 ```
 
 ### `superforecasting-agent -z <prompt>` — scripted one-shot
@@ -176,11 +176,11 @@ superforecasting-agent chat --ignore-user-config --ignore-rules -q "Repro withou
 For programmatic callers (shell scripts, CI, cron, parent processes piping in a prompt), `superforecasting-agent -z` is the purest one-shot entry point: **single prompt in, final response text out, nothing else on stdout or stderr.** No banner, no spinner, no tool previews, no `Session:` line — just the agent's final reply as plain text.
 
 ```bash
-superforecasting-agent -z "What's the capital of France?"
-# → Paris.
+superforecasting-agent -z "Extract forecast-relevant claims from this source note."
+# → Three forecast-relevant claims: ...
 
 # Parent scripts can cleanly capture the response:
-answer=$(superforecasting-agent -z "summarize this" < /path/to/file.txt)
+answer=$(superforecasting-agent -z "summarize forecast-relevant evidence" < /path/to/source-note.txt)
 ```
 
 Per-run overrides (no mutation to `~/.superforecasting-agent/config.yaml`):
@@ -196,7 +196,7 @@ superforecasting-agent -z "…" --provider openrouter --model openai/gpt-5.5
 SUPERFORECASTING_AGENT_INFERENCE_MODEL=anthropic/claude-sonnet-4.6 superforecasting-agent -z "…"
 ```
 
-Same agent, same tools, same skills — just strips every interactive / cosmetic layer. If you need tool output in the transcript too, use `superforecasting-agent chat -q` instead; `-z` is explicitly for "I only want the final answer".
+Same forecast-scoped runtime, tools, and skills — just strips every interactive / cosmetic layer. If you need tool output in the transcript too, use `superforecasting-agent chat -q` instead; `-z` is explicitly for "I only want the final answer".
 
 ## `superforecasting-agent model`
 
