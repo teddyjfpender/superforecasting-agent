@@ -66,6 +66,7 @@ It shows:
 - As-of timestamps, forecast deltas, confidence, and close dates.
 - Alerts from watched sources and scheduled self-checks.
 - Stale forecasts and review queue items.
+- Open and stale reference-class counts for base-rate review pressure.
 - Focused `show`, `research`, `update`, and `resolve` commands for the top
   review or active forecast.
 - Calibration health by bucket, horizon, domain, and origin.

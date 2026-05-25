@@ -148,7 +148,7 @@ complete.
   scrollback.
 - Slash command completion shows command descriptions and arguments.
 - The status bar tracks active forecast workload, alerts, review pressure,
-  calibration samples, and learned lessons.
+  open and stale reference classes, calibration samples, and learned lessons.
 
 The TUI is not a second product surface. It is the terminal interface for the
 same ledger and CLI workflows.
@@ -285,8 +285,8 @@ TUI and classic CLI sessions share the same session store under the active
 agent home. You can start in one surface and resume in the other.
 
 Forecast learning state is separate from chat session transcripts. Questions,
-evidence, snapshots, scores, postmortems, backtests, alerts, and lessons live in
-the forecast ledger.
+evidence, reference classes, snapshots, scores, postmortems, backtests, alerts,
+and lessons live in the forecast ledger.
 
 See [Research Sessions](sessions.md) for session lifecycle, search, compression, and
 export.

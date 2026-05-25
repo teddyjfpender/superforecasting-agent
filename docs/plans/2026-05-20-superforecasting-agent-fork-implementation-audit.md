@@ -1338,6 +1338,7 @@ Latest verified result:
 - Reference-class desk signal pass: shared dashboard summaries, CLI dashboard text, and the Ink Forecast Desk status/rail/triage/watchlist panels now surface open/stale reference-class counts alongside assumptions, making stale base-rate scaffolding visible as operational forecast work.
 - Web forecast desk reference-class pass: the React Forecasts page and `/api/forecast/dashboard` regression now expose open/stale reference-class counts in summary cards and the active forecast table, keeping web parity with the CLI/TUI desk signal.
 - Tester smoke transcript refresh: `python3 scripts/forecast_smoke_test.py` passed at snapshot `07f93306fcc5` with 52 source adapters, 4 benchmark datasets, pilot-report checks `7/7`, two performance runs, pilot bundle export included, and the expected `insufficient_live_evidence` readiness guard; the smoke transcript now reflects the current pushed tester branch.
+- Reference-class docs parity pass: CLI, TUI, and web-dashboard user docs now describe open/stale reference-class counts as forecast-desk health and base-rate review pressure, matching the shared CLI/TUI/web dashboard implementation.
 
 ## Prompt-To-Artifact Checklist
 

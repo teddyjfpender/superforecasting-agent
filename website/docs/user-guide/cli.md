@@ -260,7 +260,7 @@ Useful shortcuts:
 | `/readiness` | Inspect claim-readiness gaps |
 | `/pilot-cohort` | Seed prospective live pilot questions |
 
-The TUI status bar also shows forecast desk health such as active forecast count, open alerts, review queue size, calibration sample count, and learned lesson count when available.
+The TUI status bar also shows forecast desk health such as active forecast count, open alerts, review queue size, open and stale reference-class count, calibration sample count, and learned lesson count when available.
 
 ## Interactive Runtime Commands
 
