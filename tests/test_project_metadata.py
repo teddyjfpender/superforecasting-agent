@@ -1454,6 +1454,30 @@ def test_internal_runtime_copy_is_forecast_native_where_not_compatibility():
     assert "$HERMES_HOME/bin/tirith" not in text
 
 
+def test_gateway_service_helper_comments_prefer_forecast_native_commands():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        "hermes_cli/gateway.py",
+        "hermes_cli/gateway_windows.py",
+    ]
+    text = "\n".join(
+        (root / rel_path).read_text(encoding="utf-8") for rel_path in checked_paths
+    )
+
+    assert "superforecasting-agent gateway status" in text
+    assert "superforecasting-agent gateway run" in text
+    assert "superforecasting-agent gateway start/restart" in text
+    assert "superforecasting-agent -p <profile> gateway install" in text
+
+    assert "Hermes builds and failed" not in text
+    assert "Profile-mode Hermes" not in text
+    assert "hermes update" not in text
+    assert "hermes -p <profile> gateway install" not in text
+    assert "hermes gateway status" not in text
+    assert "Foreground ``hermes gateway run``" not in text
+    assert "HERMES_HOME directories" not in text
+
+
 def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [

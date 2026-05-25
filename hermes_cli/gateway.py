@@ -278,8 +278,8 @@ def _get_ancestor_pids() -> set[int]:
 
     Walks from the current PID up to PID 1 (init) so that process-table scans
     never match the calling CLI process or any of its parents.  This prevents
-    ``hermes gateway status`` from falsely counting the ``hermes`` CLI that
-    invoked it as a running gateway instance (see #13242).
+    ``superforecasting-agent gateway status`` from falsely counting the CLI
+    process that invoked it as a running gateway instance (see #13242).
     """
     ancestors: set[int] = set()
     pid = os.getpid()
@@ -309,8 +309,8 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
     discover gateways outside the current profile.
     """
     # Exclude the entire ancestor chain so the CLI process that invoked this
-    # scan (e.g. ``hermes gateway status``) is never mistaken for a running
-    # gateway.  See #13242.
+    # scan (e.g. ``superforecasting-agent gateway status``) is never mistaken
+    # for a running gateway. See #13242.
     exclude_pids = exclude_pids | _get_ancestor_pids()
     pids: list[int] = []
     patterns = [
@@ -600,9 +600,10 @@ def launch_detached_profile_gateway_restart(profile: str, old_pid: int) -> bool:
     #
     # Windows — ``start_new_session`` is silently accepted but does NOT
     # detach.  The watcher stays attached to the CLI's console and dies
-    # when the user closes the terminal, leaving ``hermes update`` users
-    # with no running gateway until they re-invoke ``hermes gateway``
-    # manually.  The Win32 equivalent is the ``CREATE_NEW_PROCESS_GROUP |
+    # when the user closes the terminal, leaving
+    # ``superforecasting-agent update`` users with no running gateway until
+    # they re-invoke ``superforecasting-agent gateway`` manually. The Win32
+    # equivalent is the ``CREATE_NEW_PROCESS_GROUP |
     # DETACHED_PROCESS | CREATE_NO_WINDOW`` creationflags bundle.
     #
     # ``windows_detach_popen_kwargs()`` returns the right kwargs for the
@@ -1048,9 +1049,9 @@ def _print_gateway_process_mismatch(snapshot: GatewayRuntimeSnapshot) -> None:
 def _print_other_profiles_gateway_status() -> None:
     """Print a summary of gateway status across all profiles.
 
-    Shown at the bottom of ``hermes gateway status`` output so users with
-    multiple profiles can tell at a glance which gateways are running and
-    avoid confusing another profile's process with the current one.
+    Shown at the bottom of ``superforecasting-agent gateway status`` output
+    so users with multiple profiles can tell at a glance which gateways are
+    running and avoid confusing another profile's process with the current one.
     """
     try:
         from hermes_cli.profiles import get_active_profile_name
@@ -1248,7 +1249,7 @@ def is_windows() -> bool:
 def _windows_gateway_should_absorb_console_controls() -> bool:
     """Return True for detached Windows gateway runs that should ignore Ctrl+C.
 
-    Foreground ``hermes gateway run`` must remain interruptible from
+    Foreground ``superforecasting-agent gateway run`` must remain interruptible from
     PowerShell/CMD. Detached service-style launches opt in via
     ``HERMES_GATEWAY_DETACHED=1``; older wrappers without the env marker are
     treated as detached when no interactive stdin is attached.
@@ -1957,8 +1958,8 @@ def print_systemd_linger_guidance() -> None:
 def _launchd_user_home() -> Path:
     """Return the real macOS user home for launchd artifacts.
 
-    Profile-mode Hermes often sets ``HOME`` to a profile-scoped directory, but
-    launchd user agents still live under the actual account home.
+    Profile mode often sets ``HOME`` to a profile-scoped directory, but launchd
+    user agents still live under the actual account home.
     """
     import pwd
 
@@ -3020,7 +3021,8 @@ def launchd_stop():
     # bootout unloads the service definition so KeepAlive doesn't respawn
     # the process.  A plain `kill SIGTERM` only signals the process — launchd
     # immediately restarts it because KeepAlive.SuccessfulExit = false.
-    # `hermes gateway start` re-bootstraps when it detects the job is unloaded.
+    # `superforecasting-agent gateway start` re-bootstraps when it detects the
+    # job is unloaded.
     try:
         subprocess.run(["launchctl", "bootout", target], check=True, timeout=90)
     except subprocess.CalledProcessError as e:
@@ -3036,7 +3038,7 @@ def _wait_for_gateway_exit(timeout: float = 10.0, force_after: float | None = 5.
 
     Uses the PID from the gateway.pid file — not launchd labels — so this
     works correctly when multiple gateway instances run under separate
-    HERMES_HOME directories.
+    active agent-home directories.
 
     Args:
         timeout: Total seconds to wait before giving up.
@@ -3198,8 +3200,9 @@ def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False):
     sys.path.insert(0, str(PROJECT_ROOT))
 
     # Detached Windows gateway runs must ignore console-control broadcasts
-    # from sibling CLI processes, but foreground `hermes gateway run` still
-    # needs to obey the banner's "Press Ctrl+C to stop" contract.
+    # from sibling CLI processes, but foreground
+    # `superforecasting-agent gateway run` still needs to obey the banner's
+    # "Press Ctrl+C to stop" contract.
     # Service-style launchers set HERMES_GATEWAY_DETACHED=1; older wrappers
     # without the marker are handled by the non-TTY fallback.
     try:
@@ -3239,11 +3242,12 @@ def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False):
     # Refresh the systemd unit definition on every boot so that restart
     # settings (RestartSec, StartLimitIntervalSec, etc.) stay current even
     # when the process was respawned via exit-code-75 (stale-code or
-    # /restart) rather than through `hermes gateway restart` which already
-    # calls refresh_systemd_unit_if_needed().  Without this, a code update
-    # that ships new unit settings won't take effect until the next manual
-    # `hermes gateway start/restart` — leaving the gateway vulnerable to
-    # the exact failure mode the new settings were meant to prevent.
+    # /restart) rather than through `superforecasting-agent gateway restart`
+    # which already calls refresh_systemd_unit_if_needed(). Without this, a
+    # code update that ships new unit settings won't take effect until the next
+    # manual `superforecasting-agent gateway start/restart` — leaving the
+    # gateway vulnerable to the exact failure mode the new settings were meant
+    # to prevent.
     if supports_systemd_services():
         try:
             refresh_systemd_unit_if_needed(system=False)
@@ -5087,7 +5091,7 @@ def gateway_command(args):
             print(f"  {line}")
         sys.exit(1)
     except SystemScopeRequiresRootError as e:
-        # The direct ``hermes gateway install|uninstall|start|stop|restart``
+        # The direct ``superforecasting-agent gateway install|uninstall|start|stop|restart``
         # path lands here when the user typed a system-scope action without
         # sudo. Same exit code as before — just gives the wizard a way to
         # intercept the same condition with friendlier guidance before the
