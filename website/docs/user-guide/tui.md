@@ -205,8 +205,8 @@ output or overlays:
 | `/reload` | Re-read the active profile `.env` without restarting |
 | `/mouse` | Toggle mouse tracking and persist the setting |
 
-Installed skills, quick commands, personality toggles, and inherited runtime
-slash commands continue to work. See [Slash Commands Reference](../reference/slash-commands.md).
+Installed skills, quick commands, forecast-style overlays, and inherited
+runtime slash commands continue to work. See [Slash Commands Reference](../reference/slash-commands.md).
 
 ## Status Line
 

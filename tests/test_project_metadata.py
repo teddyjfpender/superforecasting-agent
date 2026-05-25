@@ -946,6 +946,7 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
         "website/docs/user-guide/features/personality.md",
+        "website/docs/user-guide/tui.md",
         "website/docs/reference/slash-commands.md",
         "web/src/themes/presets.ts",
         "web/src/i18n/en.ts",
@@ -962,6 +963,8 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
     assert "/style concise" in text
     assert "| `/style [name]` | Switch forecast style overlays" in text
     assert "SOUL.md (style / system prompt)" in text
+    assert "You are a precise forecasting analyst." in text
+    assert "forecast-style overlays" in text
     assert "theme's dashboard role" in text
     assert "Warm crimson and bronze for focused review" in text
 
@@ -977,6 +980,26 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
     assert "theme's personality" not in text
     assert "forge vibes" not in text
     assert "SOUL.md (personality / system prompt)" not in text
+    assert "You are a pragmatic senior engineer with strong taste." not in text
+    assert "personality toggles" not in text
+
+
+def test_faq_messaging_workarounds_are_forecast_scoped():
+    root = Path(__file__).resolve().parents[1]
+    faq = (root / "website" / "docs" / "reference" / "faq.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Running multiple forecast desks on one WhatsApp number" in faq
+    assert "separate forecasts by domain/topic" in faq
+    assert "Use `/style` for session-level review posture" in faq
+    assert "Use scheduled jobs for specialized forecast reviews" in faq
+    assert "probabilities, evidence, lessons, and scores still live in the forecast ledger" in faq
+    assert "Running multiple agents on one WhatsApp number" not in faq
+    assert "personality switching" not in faq
+    assert "family shopping list group" not in faq
+    assert "shopping list tracker" not in faq
+    assert "use the `/personality` command to change behavior per chat" not in faq
 
 
 def test_runtime_user_guidance_prefers_active_forecast_home():

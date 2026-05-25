@@ -745,21 +745,23 @@ For one-off model switches without delegation, use `/model` in the CLI:
 
 See [Subagent Delegation](../user-guide/features/delegation.md) for more on how delegation works.
 
-### Running multiple agents on one WhatsApp number (per-chat binding)
+### Running multiple forecast desks on one WhatsApp number
 
-**Scenario:** In OpenClaw, you had multiple independent agents bound to specific WhatsApp chats — one for a family shopping list group, another for your private chat. Can Superforecasting Agent do this?
+**Scenario:** You want separate forecast desks for different WhatsApp threads, such as one desk for election forecasts and another for market-risk forecasts, while using the same WhatsApp number.
 
-**Current limitation:** Superforecasting Agent profiles each require their own WhatsApp number/session. You cannot bind multiple profiles to different chats on the same WhatsApp number — the WhatsApp bridge (Baileys) uses one authenticated session per number.
+**Current limitation:** Superforecasting Agent profiles each require their own WhatsApp number/session. You cannot bind multiple profiles to different chats on the same WhatsApp number because the WhatsApp bridge (Baileys) uses one authenticated session per number.
 
 **Workarounds:**
 
-1. **Use a single profile with personality switching.** Create different `AGENTS.md` context files or use the `/personality` command to change behavior per chat. The agent sees which chat it's in and can adapt.
+1. **Use one profile and separate forecasts by domain/topic.** Put election, macro, company, or policy questions in the same ledger, then filter with `forecast list --domain ...`, `forecast review --topic ...`, and scheduled self-checks scoped to each area.
 
-2. **Use cron jobs for specialized tasks.** For a shopping list tracker, set up a cron job that monitors a specific chat and manages the list — no separate agent needed.
+2. **Use `/style` for session-level review posture, not durable state.** For example, switch to `/style skeptical` before a source-quality review or `/style calibration` before reviewing recent misses. Forecast probabilities, evidence, lessons, and scores still live in the forecast ledger.
 
-3. **Use separate numbers.** If you need truly independent agents, pair each profile with its own WhatsApp number. Virtual numbers from services like Google Voice work for this.
+3. **Use scheduled jobs for specialized forecast reviews.** For example, add a domain-scoped self-check that scans watched sources, creates review alerts, scores resolved questions, and updates calibration lessons when explicitly configured.
 
-4. **Use Telegram or Discord instead.** These platforms support per-chat binding more naturally — each Telegram group or Discord channel gets its own session, and you can run multiple bot tokens (one per profile) on the same account.
+4. **Use separate numbers for truly separate ledgers.** If you need isolated profiles with separate homes, credentials, and ledgers, pair each profile with its own WhatsApp number.
+
+5. **Use Telegram or Discord for per-channel desks.** These platforms support per-chat binding more naturally. Each Telegram group or Discord channel gets its own session, and you can run multiple bot tokens or profiles when you need stronger separation.
 
 See [Profiles](../user-guide/profiles.md) and [WhatsApp setup](../user-guide/messaging/whatsapp.md) for more details.
 
