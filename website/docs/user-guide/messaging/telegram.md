@@ -804,7 +804,7 @@ platforms:
           skill: arxiv
         - name: General
           thread_id: 1
-          # No skill — general purpose
+          # No skill — default forecast-desk behavior
 ```
 
 **Fields:**

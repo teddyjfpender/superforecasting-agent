@@ -752,6 +752,7 @@ def test_high_attention_docs_navigation_is_forecast_native():
         root / "website" / "docs" / "developer-guide" / "contributing.md",
         root / "website" / "docs" / "developer-guide" / "model-provider-plugin.md",
         root / "website" / "docs" / "user-guide" / "features" / "hooks.md",
+        root / "website" / "docs" / "user-guide" / "messaging" / "telegram.md",
     ]
     docs_text = "\n".join(path.read_text(encoding="utf-8") for path in docs_paths)
 
@@ -789,8 +790,10 @@ def test_high_attention_docs_navigation_is_forecast_native():
     assert "github-pr-review-agent" not in llms_generator
     assert "GitHub PR Review Agent" not in llms_generator
     assert "Build a Superforecasting Agent Plugin" in docs_text
+    assert "# No skill — default forecast-desk behavior" in docs_text
     assert "Build a Hermes Plugin" not in docs_text
     assert "Building a Hermes Plugin" not in docs_text
+    assert "# No skill — general purpose" not in docs_text
     assert not (
         root / "website" / "docs" / "guides" / "build-a-hermes-plugin.md"
     ).exists()
