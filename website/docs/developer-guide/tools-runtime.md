@@ -99,7 +99,7 @@ Toolsets are named bundles of tools. The runtime resolves them through:
 - explicit enabled/disabled toolset lists
 - platform presets (`forecast-desk` for routine CLI forecasting, plus inherited compatibility presets such as `hermes-cli`, `hermes-telegram`, etc.)
 - dynamic MCP toolsets
-- curated special-purpose sets like `hermes-acp` (inherited ACP compatibility)
+- curated special-purpose sets like `forecast-acp` (with `hermes-acp` retained for inherited ACP compatibility)
 
 ### How `get_tool_definitions()` filters tools
 

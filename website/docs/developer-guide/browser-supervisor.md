@@ -201,7 +201,7 @@ Issue planned against `jo-inc/camofox-browser` adding:
 
 ### Modified
 
-- `toolsets.py` — register `browser_dialog` in `browser`, `hermes-acp`, `hermes-api-server`, core toolsets (gated on CDP reachability)
+- `toolsets.py` — register `browser_dialog` in `browser`, `forecast-acp`, `forecast-api-server`, and core toolsets, with inherited `hermes-*` presets kept as compatibility aliases (gated on CDP reachability)
 - `tools/browser_tool.py`
   - `browser_navigate` start-hook: if CDP URL resolvable, `SupervisorRegistry.get_or_start(task_id, cdp_url)`
   - `browser_snapshot` (at ~line 1536): merge supervisor state into return payload
