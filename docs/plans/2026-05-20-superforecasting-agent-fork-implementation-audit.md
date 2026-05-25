@@ -1337,6 +1337,7 @@ Latest verified result:
 - Scheduled-learning non-mutation guard: `tests/forecasting/test_ledger.py::test_scheduled_auto_learning_does_not_create_forecast_updates` now verifies that due scheduled reviews with opt-in auto-score and auto-postmortem create scores, postmortems, calibration lessons, and domain-error learning without appending a new forecast snapshot or replacing the current standing probability.
 - Reference-class desk signal pass: shared dashboard summaries, CLI dashboard text, and the Ink Forecast Desk status/rail/triage/watchlist panels now surface open/stale reference-class counts alongside assumptions, making stale base-rate scaffolding visible as operational forecast work.
 - Web forecast desk reference-class pass: the React Forecasts page and `/api/forecast/dashboard` regression now expose open/stale reference-class counts in summary cards and the active forecast table, keeping web parity with the CLI/TUI desk signal.
+- Tester smoke transcript refresh: `python3 scripts/forecast_smoke_test.py` passed at snapshot `07f93306fcc5` with 52 source adapters, 4 benchmark datasets, pilot-report checks `7/7`, two performance runs, pilot bundle export included, and the expected `insufficient_live_evidence` readiness guard; the smoke transcript now reflects the current pushed tester branch.
 
 ## Prompt-To-Artifact Checklist
 
