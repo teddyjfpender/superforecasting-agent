@@ -1301,6 +1301,7 @@ Latest verified result:
 - High-traffic docs support-surface wording pass: README, the learning path, and tools overview now describe inherited chat/memory/tool breadth as compatibility/support surfaces behind forecast workflows instead of product-level assistant features; Forecast Chat is named explicitly in the learning path.
 - Schedule PRD-shape pass: `forecast schedule add` and the agent-facing `forecast_ledger` `schedule_review` action no longer require `--next-run-at` / `next_run_at`, so the PRD examples that create question/domain/horizon schedules with only `--cadence` work directly; omitted first-run timestamps default to now so no-agent self-check jobs can run immediately. Focused CLI/tool regressions, Python compile, docs updates, and `git diff --check` passed.
 - Base-rate command-shape pass: bare `forecast base-rate <id>` now inspects existing reference-class work and prints the add command shape without mutating probability, while `--name`/`--inclusion-criteria`/`--base-rate` remain required only when writing a new base-rate record; CLI docs now use the implemented base-rate flags.
+- Model command-shape pass: bare `forecast model <id>` now inspects recent model runs and prints the add command shape without mutating probability, while `--type` remains required only when writing a new quantitative model run; CLI docs now use implemented Bayesian and trend-model flags instead of unsupported rationale flags on model runs.
 
 ## Prompt-To-Artifact Checklist
 

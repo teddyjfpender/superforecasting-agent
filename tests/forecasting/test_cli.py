@@ -404,6 +404,13 @@ def test_forecast_cli_model_can_compute_bayesian_update(tmp_path, capsys):
     assert "posterior: 0.727" in output
     assert model_run["output"]["posterior"] == pytest.approx(0.7272727273)
 
+    _run(parser, ["forecast", "--db", db, "model", question_id])
+    inspect_output = capsys.readouterr().out
+    assert "model_runs: 1" in inspect_output
+    assert model_run_id in inspect_output
+    assert "posterior=0.727" in inspect_output
+    assert "probability unchanged" in inspect_output
+
 
 def test_forecast_cli_model_can_compute_trend_projection(tmp_path, capsys):
     parser = _parser()

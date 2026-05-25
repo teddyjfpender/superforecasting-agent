@@ -1131,7 +1131,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
 
     model_parser = forecast_sub.add_parser("model", help="Record a probabilistic model run")
     model_parser.add_argument("id")
-    model_parser.add_argument("--type", dest="model_type", required=True)
+    model_parser.add_argument("--type", dest="model_type")
     model_parser.add_argument("--status", choices=["success", "failure"], default="success")
     model_parser.add_argument("--input-json", default="{}")
     model_parser.add_argument("--parameters-json", default="{}")
@@ -5458,6 +5458,54 @@ def _cmd_base_rate(args: argparse.Namespace) -> None:
 
 
 def _cmd_model(args: argparse.Namespace) -> None:
+    if not args.model_type:
+        write_fields = [
+            args.status != "success",
+            args.input_json != "{}",
+            args.parameters_json != "{}",
+            args.output_json != "{}",
+            args.diagnostics_json != "{}",
+            args.prior is not None,
+            args.likelihood_if_true is not None,
+            args.likelihood_if_false is not None,
+            args.series_json is not None,
+            args.target_date is not None,
+            args.target_x is not None,
+            args.date_field != "date",
+            args.value_field != "value",
+            args.code_ref is not None,
+            bool(args.artifact_paths),
+            args.model_version is not None,
+            args.prompt_version is not None,
+            args.data_version is not None,
+            args.evidence_cutoff is not None,
+        ]
+        if any(write_fields):
+            raise SystemExit("model run add requires --type")
+        rows = _ledger(args).list_model_runs(args.id)
+        print(f"model_runs: {len(rows)}")
+        if rows:
+            print("ID             Status   Type              CreatedAt             Result")
+            for row in rows[-5:]:
+                result = ""
+                output = row.get("output") or {}
+                if "posterior" in output:
+                    try:
+                        result = f"posterior={float(output['posterior']):.3f}"
+                    except (TypeError, ValueError):
+                        result = f"posterior={output['posterior']}"
+                elif "projected_value" in output:
+                    try:
+                        result = f"projected={float(output['projected_value']):.3f}"
+                    except (TypeError, ValueError):
+                        result = f"projected={output['projected_value']}"
+                print(
+                    f"{row['id']:<14} {row['status']:<8} {row['model_type']:<17} "
+                    f"{row['created_at']:<21} {result}"
+                )
+        print(f"add: forecast model {args.id} --type <model_type> [model options]")
+        print("probability unchanged")
+        return
     inputs = _json_arg(args.input_json, "input-json")
     parameters = _json_arg(args.parameters_json, "parameters-json")
     output = _json_arg(args.output_json, "output-json")

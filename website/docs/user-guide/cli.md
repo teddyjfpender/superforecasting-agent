@@ -39,14 +39,15 @@ forecast base-rate <id> --name "Comparable cases" \
   --inclusion-criteria "Similar historical cases" \
   --base-rate 0.47
 
+forecast model <id>
 forecast model <id> --type bayesian_update \
-  --input-json '{"prior":0.47,"likelihood_ratio":1.3}' \
-  --rationale "Evidence is positive but noisy."
+  --prior 0.47 \
+  --likelihood-if-true 0.65 \
+  --likelihood-if-false 0.45
 
 forecast model <id> --type trend_projection \
   --series-json '[{"date":"2026-01-01","value":10},{"date":"2026-01-02","value":12}]' \
-  --target-date 2026-01-03 \
-  --rationale "Linear trend projection over dated observations."
+  --target-date 2026-01-03
 
 forecast update <id> \
   --probability 0.58 \
