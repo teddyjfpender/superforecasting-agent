@@ -733,6 +733,10 @@ def test_install_helpers_use_forecast_native_visible_copy():
     assert "Superforecasting Agent needs Git Bash" in install_ps1
     assert "forecast-runtime-managed" in install_ps1
     assert '[Alias("ForecastHome", "SuperforecastingAgentHome")]' in install_ps1
+    assert "Superforecasting Agent Forecast Style" in install_ps1
+    assert "Superforecasting Agent Forecast Style" in install_sh
+    assert "You prioritize calibration, base rates, and error tracking over fluency." in installer_text
+    assert "edit to customize forecast style" in installer_text
     assert "SUPERFORECASTING_AGENT_GIT_BASH_PATH" in install_ps1
     assert "FORECAST_GIT_BASH_PATH" in install_ps1
     assert "https://github.com/teddyjfpender/superforecasting-agent.git" in installer_text
@@ -745,6 +749,10 @@ def test_install_helpers_use_forecast_native_visible_copy():
     assert "`hermes dashboard` should now work" not in install_ps1
     assert "Hermes needs Git Bash" not in install_ps1
     assert "Hermes-managed" not in install_ps1
+    assert "Superforecasting Agent Persona" not in installer_text
+    assert "warm, playful assistant" not in installer_text
+    assert "happens to know everything" not in installer_text
+    assert "edit to customize personality" not in installer_text
     assert "raw.githubusercontent.com/NousResearch/superforecasting-agent/main/scripts/install" not in installer_text
 
     assert "Superforecasting Agent Setup Script" in setup_sh

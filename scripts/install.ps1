@@ -1482,25 +1482,25 @@ function Copy-ConfigTemplates {
     $soulPath = "$HermesHome\SOUL.md"
     if (-not (Test-Path $soulPath)) {
         $soulContent = @"
-# Superforecasting Agent Persona
+# Superforecasting Agent Forecast Style
 
 <!--
-This file defines the agent's personality and tone.
-The agent will embody whatever you write here.
-Edit this to customize how Superforecasting Agent communicates with you.
+This file defines the agent's forecasting style and operating tone.
+Edit this to customize how Superforecasting Agent handles uncertainty,
+evidence, calibration, and forecast review with you.
 
 Examples:
-  - "You are a warm, playful assistant who uses kaomoji occasionally."
-  - "You are a concise technical expert. No fluff, just facts."
-  - "You speak like a friendly coworker who happens to know everything."
+  - "You are a precise forecasting analyst. State assumptions and uncertainty."
+  - "You are concise and skeptical. Separate evidence from model judgment."
+  - "You prioritize calibration, base rates, and error tracking over fluency."
 
 This file is loaded fresh each message -- no restart needed.
-Delete the contents (or this file) to use the default personality.
+Delete the contents (or this file) to use the default forecast style.
 -->
 "@
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($soulPath, $soulContent, $utf8NoBom)
-        Write-Success "Created $soulPath (edit to customize personality)"
+        Write-Success "Created $soulPath (edit to customize forecast style)"
     }
     
     Write-Success "Configuration directory ready: $HermesHome"

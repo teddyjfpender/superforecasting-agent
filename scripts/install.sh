@@ -1484,12 +1484,12 @@ copy_config_templates() {
     # Create SOUL.md if it doesn't exist (global persona file)
     if [ ! -f "$HERMES_HOME/SOUL.md" ]; then
         cat > "$HERMES_HOME/SOUL.md" << 'SOUL_EOF'
-# Superforecasting Agent Persona
+# Superforecasting Agent Forecast Style
 
 <!--
-This file defines the agent's personality and tone.
-The agent will embody whatever you write here.
-Edit this to customize how Superforecasting Agent communicates with you.
+This file defines the agent's forecasting style and operating tone.
+Edit this to customize how Superforecasting Agent handles uncertainty,
+evidence, calibration, and forecast review with you.
 
 Examples:
   - "You are a precise forecasting analyst. State assumptions and uncertainty."
@@ -1497,10 +1497,10 @@ Examples:
   - "You prioritize calibration, base rates, and error tracking over fluency."
 
 This file is loaded fresh each message -- no restart needed.
-Delete the contents (or this file) to use the default personality.
+Delete the contents (or this file) to use the default forecast style.
 -->
 SOUL_EOF
-        log_success "Created $HERMES_HOME/SOUL.md (edit to customize personality)"
+        log_success "Created $HERMES_HOME/SOUL.md (edit to customize forecast style)"
     fi
 
     log_success "Configuration directory ready: $HERMES_HOME/"
