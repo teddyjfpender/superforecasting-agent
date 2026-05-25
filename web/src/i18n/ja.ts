@@ -68,7 +68,7 @@ export const ja: Translations = {
     },
     nav: {
       analytics: "分析",
-      chat: "チャット",
+      chat: "予測チャット",
       config: "設定",
       cron: "Cron",
       documentation: "ドキュメント",
@@ -139,7 +139,7 @@ export const ja: Translations = {
       "会話とそのすべてのメッセージが完全に削除されます。この操作は取り消せません。",
     sessionDeleted: "セッションを削除しました",
     failedToDelete: "セッションの削除に失敗しました",
-    resumeInChat: "チャットで再開",
+    resumeInChat: "予測チャットで再開",
     previousPage: "前のページ",
     nextPage: "次のページ",
     roles: {

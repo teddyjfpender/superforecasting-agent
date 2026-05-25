@@ -68,7 +68,7 @@ export const hu: Translations = {
     },
     nav: {
       analytics: "Analitika",
-      chat: "Csevegés",
+      chat: "Előrejelzési csevegés",
       config: "Beállítások",
       cron: "Cron",
       documentation: "Dokumentáció",
@@ -139,7 +139,7 @@ export const hu: Translations = {
       "Ez véglegesen eltávolítja a beszélgetést és minden üzenetét. A művelet nem vonható vissza.",
     sessionDeleted: "Munkamenet törölve",
     failedToDelete: "Nem sikerült törölni a munkamenetet",
-    resumeInChat: "Folytatás a csevegésben",
+    resumeInChat: "Folytatás az előrejelzési csevegésben",
     previousPage: "Előző oldal",
     nextPage: "Következő oldal",
     roles: {

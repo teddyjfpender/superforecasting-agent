@@ -68,7 +68,7 @@ export const ga: Translations = {
     },
     nav: {
       analytics: "Anailís",
-      chat: "Comhrá",
+      chat: "Comhrá Réamhaisnéise",
       config: "Cumraíocht",
       cron: "Cron",
       documentation: "Doiciméadú",
@@ -139,7 +139,7 @@ export const ga: Translations = {
       "Baineann sé seo an comhrá agus a chuid teachtaireachtaí ar fad go buan. Ní féidir é seo a chealú.",
     sessionDeleted: "Seisiún scriosta",
     failedToDelete: "Theip ar scriosadh an tseisiúin",
-    resumeInChat: "Lean ar aghaidh sa chomhrá",
+    resumeInChat: "Lean ar aghaidh sa chomhrá réamhaisnéise",
     previousPage: "Leathanach roimhe seo",
     nextPage: "An chéad leathanach eile",
     roles: {

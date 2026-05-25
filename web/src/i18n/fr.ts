@@ -68,7 +68,7 @@ export const fr: Translations = {
     },
     nav: {
       analytics: "Analyses",
-      chat: "Chat",
+      chat: "Chat de prévision",
       config: "Configuration",
       cron: "Cron",
       documentation: "Documentation",
@@ -139,7 +139,7 @@ export const fr: Translations = {
       "Cela supprime définitivement la conversation et tous ses messages. Cette action est irréversible.",
     sessionDeleted: "Session supprimée",
     failedToDelete: "Échec de la suppression de la session",
-    resumeInChat: "Reprendre dans le chat",
+    resumeInChat: "Reprendre dans le chat de prévision",
     previousPage: "Page précédente",
     nextPage: "Page suivante",
     roles: {

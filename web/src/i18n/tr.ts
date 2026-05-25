@@ -68,7 +68,7 @@ export const tr: Translations = {
     },
     nav: {
       analytics: "Analiz",
-      chat: "Sohbet",
+      chat: "Tahmin Sohbeti",
       config: "Yapılandırma",
       cron: "Cron",
       documentation: "Dokümantasyon",
@@ -139,7 +139,7 @@ export const tr: Translations = {
       "Bu, konuşmayı ve tüm mesajlarını kalıcı olarak siler. Bu işlem geri alınamaz.",
     sessionDeleted: "Oturum silindi",
     failedToDelete: "Oturum silinemedi",
-    resumeInChat: "Sohbette Devam Et",
+    resumeInChat: "Tahmin Sohbetinde Devam Et",
     previousPage: "Önceki sayfa",
     nextPage: "Sonraki sayfa",
     roles: {
