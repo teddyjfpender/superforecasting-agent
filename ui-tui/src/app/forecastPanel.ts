@@ -1,7 +1,9 @@
 import type {
   ForecastDashboardBacktest,
   ForecastDashboardCalibration,
+  ForecastDashboardClaimStatus,
   ForecastDashboardDoctor,
+  ForecastDashboardLiveBaseline,
   ForecastDashboardQuestion,
   ForecastDashboardResponse,
   ForecastDashboardReview,
@@ -71,14 +73,26 @@ const formatBacktestWins = (row: { paired_agent_wins?: number; paired_baseline_w
 const formatBacktestSources = (row: ForecastDashboardBacktest) =>
   truncate((row.probability_sources && row.probability_sources.length ? row.probability_sources : ['dataset']).join(','), 24)
 
-const formatClaimStatus = (row: ForecastDashboardBacktest) => {
-  const verdict = row.claim_status?.verdict
+const formatClaimVerdict = (claimStatus: ForecastDashboardClaimStatus | undefined) => {
+  const verdict = claimStatus?.verdict
   if (verdict === 'benchmark_replay_only') {
     return 'replay only'
   }
 
   return verdict ? truncate(String(verdict).replace(/_/g, ' '), 24) : '-'
 }
+
+const formatClaimStatus = (row: ForecastDashboardBacktest) => {
+  return formatClaimVerdict(row.claim_status)
+}
+
+const formatCi95 = (low: null | number | undefined, high: null | number | undefined) =>
+  numberValue(low) === null || numberValue(high) === null
+    ? '-'
+    : `[${formatDelta(low)},${formatDelta(high)}]`
+
+const formatLiveBaselineName = (row: ForecastDashboardLiveBaseline) =>
+  truncate(`${row.baseline_type || '-'}:${row.source || '-'}`, 28)
 
 const formatScheduleRunScope = (row: ForecastDashboardScheduleRun) => {
   if (row.scope_type === 'domain_topic' && row.scope_ref) {
@@ -566,6 +580,8 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
   const reviewQueue = summary?.review_queue ?? []
   const alertsList = summary?.alerts ?? []
   const backtests = summary?.recent_backtests ?? []
+  const livePerformance = summary?.live_performance
+  const liveBaselines = livePerformance?.baselines ?? []
   const calibration = summary?.calibration
   const evidenceStatus = summary?.evidence_status
   const learning = summary?.learning
@@ -760,6 +776,34 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
     })
   }
 
+  if (livePerformance && ((numberValue(livePerformance.score_count) ?? 0) > 0 || liveBaselines.length > 0)) {
+    const liveRows: [string, string][] = [
+      [
+        'scores',
+        `live ${formatCount(livePerformance.score_count)}  agent brier ${formatMetric(
+          livePerformance.agent?.mean_brier
+        )}  baselines ${formatCount(liveBaselines.length)}`
+      ],
+      ['claim', formatClaimVerdict(livePerformance.claim_status)]
+    ]
+
+    for (const row of liveBaselines.slice(0, 4)) {
+      liveRows.push([
+        formatLiveBaselineName(row),
+        `brier ${formatMetric(row.mean_brier)}  paired ${formatCount(row.paired_count)}  edge ${formatDelta(
+          row.mean_brier_improvement_vs_baseline
+        )}  ci95 ${formatCi95(row.paired_agent_edge_ci95_low, row.paired_agent_edge_ci95_high)}  wins ${formatBacktestWins(
+          row
+        )}`
+      ])
+    }
+
+    sections.push({
+      rows: liveRows,
+      title: 'Live Performance'
+    })
+  }
+
   if (backtests.length) {
     sections.push({
       rows: backtests.slice(0, 3).map(row => {
@@ -895,6 +939,8 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
   const reviewQueue = summary.review_queue ?? []
   const alertsList = summary.alerts ?? []
   const backtests = summary.recent_backtests ?? []
+  const livePerformance = summary.live_performance
+  const liveBaselines = livePerformance?.baselines ?? []
   const scheduledRuns = summary.scheduled_review_runs ?? []
   const calibration = summary.calibration
   const evidenceStatus = summary.evidence_status
@@ -1018,6 +1064,37 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
     sections.push({
       rows: evidenceRows,
       title: 'Evidence'
+    })
+  }
+
+  if (livePerformance && ((numberValue(livePerformance.score_count) ?? 0) > 0 || liveBaselines.length > 0)) {
+    const liveRows: [string, string][] = [
+      [
+        'scores',
+        `live ${formatCount(livePerformance.score_count)} brier ${formatMetric(
+          livePerformance.agent?.mean_brier
+        )} bases ${formatCount(liveBaselines.length)}`
+      ],
+      ['claim', formatClaimVerdict(livePerformance.claim_status)]
+    ]
+    const topBaseline = liveBaselines[0]
+    if (topBaseline) {
+      liveRows.push([
+        formatLiveBaselineName(topBaseline),
+        truncate(
+          `brier ${formatMetric(topBaseline.mean_brier)} paired ${formatCount(
+            topBaseline.paired_count
+          )} edge ${formatDelta(topBaseline.mean_brier_improvement_vs_baseline)} wins ${formatBacktestWins(
+            topBaseline
+          )}`,
+          64
+        )
+      ])
+    }
+
+    sections.push({
+      rows: liveRows,
+      title: 'Live'
     })
   }
 

@@ -191,6 +191,7 @@ export interface ForecastDashboardSummary {
   calibration?: ForecastDashboardCalibration
   doctor?: ForecastDashboardDoctor
   evidence_status?: ForecastDashboardEvidenceStatus
+  live_performance?: ForecastDashboardLivePerformance
   learning?: ForecastDashboardLearning
   closing_soon_count?: number
   open_alert_count?: number
@@ -270,6 +271,32 @@ export interface ForecastDashboardEvidenceStatus {
     live?: number
   }
   verdict?: string
+}
+
+export interface ForecastDashboardLivePerformance {
+  agent?: {
+    mean_brier?: null | number
+    mean_log_score?: null | number
+  }
+  baselines?: ForecastDashboardLiveBaseline[]
+  claim_status?: ForecastDashboardClaimStatus
+  score_count?: number
+}
+
+export interface ForecastDashboardLiveBaseline {
+  baseline_type?: string
+  mean_brier?: null | number
+  mean_brier_improvement_vs_baseline?: null | number
+  paired_agent_edge_ci95_high?: null | number
+  paired_agent_edge_ci95_low?: null | number
+  paired_agent_edge_mean_brier?: null | number
+  paired_agent_mean_brier?: null | number
+  paired_agent_wins?: number
+  paired_baseline_mean_brier?: null | number
+  paired_baseline_wins?: number
+  paired_count?: number
+  paired_ties?: number
+  source?: string
 }
 
 export interface ForecastDashboardCalibration {

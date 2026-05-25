@@ -20,6 +20,7 @@ import type {
   ForecastDashboardEvidenceStatus,
   ForecastDashboardLearning,
   ForecastDashboardLesson,
+  ForecastDashboardLivePerformance,
   ForecastDashboardQuestion,
   ForecastDashboardResponse,
   ForecastDashboardReview,
@@ -287,6 +288,11 @@ function formatBacktestSources(row: ForecastDashboardBacktest): string {
 function formatBacktestClaim(row: ForecastDashboardBacktest): string {
   if (row.claim_status?.verdict === "benchmark_replay_only") return "replay";
   return row.claim_status?.verdict?.replaceAll("_", " ") || "-";
+}
+
+function formatCi95(low?: number | null, high?: number | null): string {
+  if (low === null || low === undefined || high === null || high === undefined) return "-";
+  return `[${formatDelta(low)}, ${formatDelta(high)}]`;
 }
 
 function formatVerdict(value?: string): string {
@@ -606,6 +612,122 @@ function BacktestTable({ rows }: { rows: ForecastDashboardBacktest[] }) {
               ))}
             </tbody>
           </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LivePerformancePanel({
+  livePerformance,
+}: {
+  livePerformance?: ForecastDashboardLivePerformance;
+}) {
+  if (!livePerformance) return null;
+
+  const baselines = livePerformance.baselines ?? [];
+  const scoreCount = livePerformance.score_count ?? 0;
+  if (scoreCount === 0 && baselines.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-muted-foreground" />
+            <CardTitle className="text-base">Live Performance</CardTitle>
+          </div>
+          <Badge
+            tone={
+              livePerformance.claim_status?.can_claim_live_superforecasting
+                ? "success"
+                : "secondary"
+            }
+            className="text-[10px]"
+          >
+            {formatVerdict(livePerformance.claim_status?.verdict)}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-4 text-sm sm:grid-cols-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Live Scores
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {scoreCount}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Agent Brier
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {formatMetric(livePerformance.agent?.mean_brier)}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Scored Baselines
+            </div>
+            <div className="mt-1 font-mono-ui text-lg text-foreground">
+              {baselines.length}
+            </div>
+          </div>
+        </div>
+
+        {baselines.length > 0 && (
+          <div className="mt-5 overflow-x-auto border-t border-border/50 pt-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-xs text-muted-foreground">
+                  <th className="py-2 pr-4 text-left font-medium">Baseline</th>
+                  <th className="px-4 py-2 text-right font-medium">Brier</th>
+                  <th className="px-4 py-2 text-right font-medium">Paired</th>
+                  <th className="px-4 py-2 text-right font-medium">Edge</th>
+                  <th className="px-4 py-2 text-right font-medium">CI95</th>
+                  <th className="py-2 pl-4 text-right font-medium">W/L/T</th>
+                </tr>
+              </thead>
+              <tbody>
+                {baselines.slice(0, 8).map((row, index) => (
+                  <tr
+                    key={`${row.baseline_type || "baseline"}:${row.source || index}`}
+                    className="border-b border-border/50"
+                  >
+                    <td className="py-2 pr-4 text-foreground">
+                      {row.baseline_type || "-"}:{row.source || "-"}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                      {formatMetric(row.mean_brier)}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                      {row.paired_count ?? 0}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                      {formatDelta(row.mean_brier_improvement_vs_baseline)}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                      {formatCi95(row.paired_agent_edge_ci95_low, row.paired_agent_edge_ci95_high)}
+                    </td>
+                    <td className="py-2 pl-4 text-right font-mono-ui text-muted-foreground">
+                      {row.paired_agent_wins ?? 0}/{row.paired_baseline_wins ?? 0}/{row.paired_ties ?? 0}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {livePerformance.claim_status?.message && (
+          <div className="mt-3 rounded-md border border-border/70 px-3 py-2 text-xs text-muted-foreground">
+            {livePerformance.claim_status.message}
+          </div>
+        )}
+        <div className="mt-2 font-mono-ui text-xs text-muted-foreground">
+          forecast performance --live --json
         </div>
       </CardContent>
     </Card>
@@ -1422,6 +1544,7 @@ export default function ForecastsPage() {
       <ScheduledRunsPanel rows={data?.scheduled_review_runs ?? []} />
       <DoctorGatePanel doctor={data?.doctor} />
       <EvidenceStatusPanel evidenceStatus={data?.evidence_status} />
+      <LivePerformancePanel livePerformance={data?.live_performance} />
       <PilotHandoffPanel />
       <BacktestTable rows={data?.recent_backtests ?? []} />
       <EvidenceImportsPanel />

@@ -431,6 +431,65 @@ describe('forecast desk panel helpers', () => {
     ])
   })
 
+  it('surfaces resolved live performance against scored imported baselines', () => {
+    const response: ForecastDashboardResponse = {
+      summary: {
+        active_count: 0,
+        live_performance: {
+          agent: {
+            mean_brier: 0.0625,
+            mean_log_score: -0.28
+          },
+          baselines: [
+            {
+              baseline_type: 'crowd',
+              mean_brier: 0.16,
+              mean_brier_improvement_vs_baseline: 0.0975,
+              paired_agent_edge_ci95_high: 0.12,
+              paired_agent_edge_ci95_low: 0.07,
+              paired_agent_wins: 1,
+              paired_baseline_wins: 0,
+              paired_count: 1,
+              paired_ties: 0,
+              source: 'dashboard-crowd'
+            }
+          ],
+          claim_status: {
+            can_claim_live_superforecasting: false,
+            message: 'Prospective evidence remains too small for a stronger claim.',
+            verdict: 'live_comparison_evidence'
+          },
+          score_count: 1
+        },
+        open_alert_count: 0,
+        product: 'Superforecasting Agent',
+        questions: [],
+        review_queue: [],
+        review_queue_count: 0
+      }
+    }
+
+    const sections = forecastDashboardSections(response)
+    const railSections = forecastDeskRailSections(response)
+
+    expect(sections.find(section => section.title === 'Live Performance')?.rows).toEqual([
+      ['scores', 'live 1  agent brier 0.062500  baselines 1'],
+      ['claim', 'live comparison evidence'],
+      [
+        'crowd:dashboard-crowd',
+        'brier 0.160000  paired 1  edge +0.098  ci95 [+0.070,+0.120]  wins 1/0/0'
+      ]
+    ])
+    expect(railSections.find(section => section.title === 'Live')?.rows).toEqual([
+      ['scores', 'live 1 brier 0.062500 bases 1'],
+      ['claim', 'live comparison evidence'],
+      [
+        'crowd:dashboard-crowd',
+        'brier 0.160000 paired 1 edge +0.098 wins 1/0/0'
+      ]
+    ])
+  })
+
   it('adds focused per-question actions from the review queue', () => {
     const response: ForecastDashboardResponse = {
       summary: {

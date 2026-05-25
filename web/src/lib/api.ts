@@ -725,6 +725,7 @@ export interface ForecastDashboardResponse {
   calibration: ForecastDashboardCalibration;
   doctor?: ForecastDashboardDoctor;
   evidence_status?: ForecastDashboardEvidenceStatus;
+  live_performance?: ForecastDashboardLivePerformance;
   learning: ForecastDashboardLearning;
   questions: ForecastDashboardQuestion[];
   review_queue: ForecastDashboardReview[];
@@ -796,6 +797,32 @@ export interface ForecastDashboardEvidenceStatus {
     passed?: boolean;
     recommended_action?: string;
   }>;
+}
+
+export interface ForecastDashboardLivePerformance {
+  agent?: {
+    mean_brier?: number | null;
+    mean_log_score?: number | null;
+  };
+  baselines?: ForecastDashboardLiveBaseline[];
+  claim_status?: ForecastDashboardClaimStatus;
+  score_count?: number;
+}
+
+export interface ForecastDashboardLiveBaseline {
+  baseline_type?: string;
+  source?: string;
+  mean_brier?: number | null;
+  mean_brier_improvement_vs_baseline?: number | null;
+  paired_count?: number;
+  paired_agent_mean_brier?: number | null;
+  paired_baseline_mean_brier?: number | null;
+  paired_agent_edge_mean_brier?: number | null;
+  paired_agent_edge_ci95_low?: number | null;
+  paired_agent_edge_ci95_high?: number | null;
+  paired_agent_wins?: number;
+  paired_baseline_wins?: number;
+  paired_ties?: number;
 }
 
 export interface ForecastDashboardBacktest {
