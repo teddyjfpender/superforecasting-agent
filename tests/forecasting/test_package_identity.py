@@ -93,6 +93,43 @@ def test_superforecasting_agent_cli_forecast_namespace_help_uses_fork_native_pro
     assert "forecast forecast" not in output
 
 
+def test_legacy_hermes_agent_entrypoint_warns_and_still_runs_forecast_cli(
+    tmp_path, capsys, monkeypatch
+):
+    db = str(tmp_path / "forecasting.db")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["hermes-agent", "--db", db, "forecast", "status", "--json"],
+    )
+    monkeypatch.setattr(forecast_cli, "_legacy_entrypoint_notice_shown", False)
+
+    forecast_cli.main()
+    captured = capsys.readouterr()
+
+    assert "`hermes-agent` is a compatibility alias" in captured.err
+    assert "Use `superforecasting-agent` or `forecast`" in captured.err
+    assert '"slug": "superforecasting-agent"' in captured.out
+
+
+def test_fork_native_entrypoint_does_not_warn_for_forecast_cli(
+    tmp_path, capsys, monkeypatch
+):
+    db = str(tmp_path / "forecasting.db")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["superforecasting-agent", "--db", db, "forecast", "status", "--json"],
+    )
+    monkeypatch.setattr(forecast_cli, "_legacy_entrypoint_notice_shown", False)
+
+    forecast_cli.main()
+    captured = capsys.readouterr()
+
+    assert "compatibility alias" not in captured.err
+    assert '"slug": "superforecasting-agent"' in captured.out
+
+
 def test_superforecasting_agent_cli_profiled_forecast_namespace_avoids_inherited_runtime(
     tmp_path, capsys, monkeypatch
 ):

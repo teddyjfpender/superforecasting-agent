@@ -11,6 +11,8 @@ from typing import Sequence
 from forecasting.cli import cmd_forecast, main as forecast_main, register_cli
 
 _PROFILE_FLAGS = {"-p", "--profile"}
+_LEGACY_ENTRYPOINTS = {"hermes-agent"}
+_legacy_entrypoint_notice_shown = False
 
 
 @lru_cache(maxsize=1)
@@ -128,6 +130,23 @@ def _run_inherited_runtime(argv: Sequence[str]) -> None:
         sys.argv = previous_argv
 
 
+def _warn_legacy_entrypoint_if_needed(argv_was_supplied: bool) -> None:
+    """Nudge direct legacy-entrypoint invocations toward fork-native commands."""
+
+    global _legacy_entrypoint_notice_shown
+    if argv_was_supplied or _legacy_entrypoint_notice_shown:
+        return
+    invoked_as = os.path.basename(sys.argv[0])
+    if invoked_as not in _LEGACY_ENTRYPOINTS:
+        return
+    print(
+        f"Warning: `{invoked_as}` is a compatibility alias. "
+        "Use `superforecasting-agent` or `forecast` for new workflows.",
+        file=sys.stderr,
+    )
+    _legacy_entrypoint_notice_shown = True
+
+
 def main(argv: list[str] | None = None) -> None:
     """Run the fork-native CLI.
 
@@ -139,6 +158,7 @@ def main(argv: list[str] | None = None) -> None:
     ``hermes`` binary.
     """
 
+    _warn_legacy_entrypoint_if_needed(argv is not None)
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     forecast_candidate_argv, profile_name = _strip_profile_args(raw_argv)
     normalized_forecast_argv = _forecast_argv(forecast_candidate_argv)
