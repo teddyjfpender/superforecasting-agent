@@ -10378,6 +10378,101 @@ def test_forecast_cli_backtest_can_replay_captured_agent_protocol_outputs(tmp_pa
     assert "agent_protocol_scored_cases" in payload["evidence_status"]["gaps"]
 
 
+def test_forecast_cli_backtest_live_agent_protocol_writes_capture_jsonl(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    dataset = tmp_path / "agent_protocol_live_cases.json"
+    captured = tmp_path / "live_captured_responses.jsonl"
+    dataset.write_text(
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "id": "agent-live-1",
+                        "title": "Will live agent protocol capture include case identity?",
+                        "resolution_criteria": "Resolved yes for this fixture.",
+                        "as_of": "2026-01-10T00:00:00Z",
+                        "close_time": "2026-01-20T00:00:00Z",
+                        "probability": 0.95,
+                        "outcome": "yes",
+                        "evidence": [
+                            {
+                                "note": "Visible pre-cutoff evidence supports yes.",
+                                "available_at": "2026-01-09T00:00:00Z",
+                            }
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    seen_prompts: list[tuple[str, str | None]] = []
+
+    class DummyAgent:
+        def __init__(self, **kwargs):
+            assert kwargs["model"] == "mock-live-agent"
+            assert kwargs["provider"] == "mock-provider"
+
+        def run_conversation(self, user_message, system_message=None):
+            seen_prompts.append((user_message, system_message))
+            assert '"probability": 0.95' not in user_message
+            assert '"outcome": "yes"' not in user_message
+            return {
+                "final_response": json.dumps(
+                    {
+                        "probability": 0.7,
+                        "confidence": 0.6,
+                        "rationale": "Mock live protocol response from sanitized case data.",
+                        "agent_model": "mock-live-agent",
+                    }
+                )
+            }
+
+    import run_agent
+
+    monkeypatch.setattr(run_agent, "AIAgent", DummyAgent)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            str(db_path),
+            "backtest",
+            str(dataset),
+            "--probability-source",
+            "agent-protocol",
+            "--agent-output-jsonl",
+            str(captured),
+            "--agent-model",
+            "mock-live-agent",
+            "--agent-provider",
+            "mock-provider",
+        ],
+    )
+    run_output = capsys.readouterr().out
+    run_id = re.search(r"backtest_run: (bt_[a-f0-9]+)", run_output).group(1)
+
+    assert seen_prompts
+    captured_rows = [json.loads(line) for line in captured.read_text(encoding="utf-8").splitlines()]
+    assert captured_rows[0]["case_id"] == "agent-live-1"
+    assert captured_rows[0]["index"] == 0
+    captured_response = json.loads(captured_rows[0]["response"])
+    assert captured_response["probability"] == pytest.approx(0.7)
+    assert captured_response["confidence"] == pytest.approx(0.6)
+    assert captured_response["rationale"] == "Mock live protocol response from sanitized case data."
+    assert captured_response["agent_model"] == "mock-live-agent"
+
+    ledger = ForecastLedger(db_path)
+    case = ledger.list_backtest_cases(run_id)[0]
+    snapshot = ledger.get_snapshot(case["generated_forecast_id"])
+    assert snapshot.probability_or_distribution == pytest.approx(0.7)
+    assert snapshot.method == "agent_protocol_v0"
+    assert snapshot.agent_model == "mock-live-agent"
+
+
 def test_forecast_cli_imports_csv_benchmark_dataset_and_replays_it(tmp_path, capsys):
     parser = _parser()
     db = str(tmp_path / "forecasting.db")

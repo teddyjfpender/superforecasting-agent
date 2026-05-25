@@ -7361,7 +7361,6 @@ def _backtest_agent_protocol_runner(args: argparse.Namespace):
     )
 
     def live_runner(messages: list[dict[str, str]], case: dict[str, Any], index: int) -> Any:
-        del case, index
         result = agent.run_conversation(
             messages[1]["content"],
             system_message=messages[0]["content"],
