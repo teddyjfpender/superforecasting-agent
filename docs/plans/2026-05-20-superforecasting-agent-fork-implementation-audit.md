@@ -697,6 +697,7 @@ Concrete success means the fork behaves as a command-line forecasting desk cente
 
 Latest verified result:
 
+- Gateway topic-help session wording pass: gateway `/topic` help now describes multi-session DM mode as `one gateway, many parallel forecast sessions` instead of forecast chats; project metadata guards the user-facing phrase.
 - Web dashboard route-label demotion pass: localized dashboard navigation and session-resume labels now call the embedded TUI surface `Forecast Desk` / `Resume in Forecast Desk` instead of `Forecast Chat` or localized forecast-chat variants; project metadata guards both the new desk labels and the removed chat variants.
 - Kanban video skill matrix path pass: the optional Kanban video orchestrator tool matrix now describes bundled creative/media/devops skills as shipping in the Superforecasting Agent repository under `superforecasting-agent/skills/...` instead of inherited `hermes-agent/skills/...`; project metadata guards those reference paths.
 - Developer architecture tree pass: the developer architecture guide now shows the fork root as `superforecasting-agent/` in its directory-structure map instead of the inherited `hermes-agent/` checkout name; project metadata guards that tree root.

@@ -12397,7 +12397,7 @@ class GatewayRunner:
 
     def _telegram_topic_help_text(self) -> str:
         return (
-            "/topic — enable multi-session DM mode (one gateway, many parallel forecast chats)\n"
+            "/topic — enable multi-session DM mode (one gateway, many parallel forecast sessions)\n"
             "\n"
             "Usage:\n"
             "  /topic             Enable topic mode, or show status if already on\n"

@@ -2856,8 +2856,9 @@ def test_gateway_runtime_copy_is_forecast_native():
     assert "`superforecasting-agent pairing approve" in text
     assert "fresh forecast session with no prior context" in text
     assert "compress the forecast transcript" in text
-    assert "one gateway, many parallel forecast chats" in text
+    assert "one gateway, many parallel forecast sessions" in text
     assert "For full setup instructions, run `superforecasting-agent setup` on the gateway host." in text
+    assert "one gateway, many parallel forecast chats" not in text
     assert "local setup wizard `superforecasting-agent setup`" in text
     assert "bot interface and send any message there" not in text
     assert "Ask the bot owner to run" not in text
