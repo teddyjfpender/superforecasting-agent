@@ -740,8 +740,8 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             adapter.add_argument("--since")
             default_claim_type = "estimate" if name in {"fivethirtyeight", "imf", "openmeteo", "airquality"} else "fact"
             adapter.add_argument("--claim-type", choices=sorted(EVIDENCE_CLAIM_TYPES), default=default_claim_type)
-            adapter.add_argument("--reliability", type=float)
-            adapter.add_argument("--relevance", type=float)
+            adapter.add_argument("--reliability", type=_parse_rating)
+            adapter.add_argument("--relevance", type=_parse_rating)
         if name == "gdelt":
             adapter.add_argument("--timespan", help="GDELT timespan such as 24h, 7d, or 1month")
             adapter.add_argument("--source-country", help="Limit to a GDELT sourcecountry query operator")
@@ -1108,8 +1108,8 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     research_parser.add_argument("--published-at")
     research_parser.add_argument("--source-name")
     research_parser.add_argument("--source-type")
-    research_parser.add_argument("--reliability", type=float)
-    research_parser.add_argument("--relevance", type=float)
+    research_parser.add_argument("--reliability", type=_parse_rating)
+    research_parser.add_argument("--relevance", type=_parse_rating)
     research_parser.add_argument(
         "--stance",
         choices=["increases", "decreases", "mixed", "context"],
@@ -1216,8 +1216,8 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     evidence_add.add_argument("--source-type")
     evidence_add.add_argument("--published-at")
     evidence_add.add_argument("--available-at")
-    evidence_add.add_argument("--reliability", type=float)
-    evidence_add.add_argument("--relevance", type=float)
+    evidence_add.add_argument("--reliability", type=_parse_rating)
+    evidence_add.add_argument("--relevance", type=_parse_rating)
     evidence_add.add_argument(
         "--stance",
         choices=["increases", "decreases", "mixed", "context"],
@@ -7334,6 +7334,28 @@ def _format_metric(value: float | None) -> str:
 
 def _format_optional_float(value: float | None) -> str:
     return "-" if value is None else f"{value:.2f}"
+
+
+def _parse_rating(value: str) -> float:
+    labels = {
+        "low": 0.25,
+        "medium": 0.50,
+        "med": 0.50,
+        "moderate": 0.50,
+        "high": 0.75,
+        "very-high": 0.90,
+        "very_high": 0.90,
+    }
+    raw = str(value).strip().lower()
+    if raw in labels:
+        return labels[raw]
+    try:
+        score = float(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("rating must be 0..1 or low/medium/high") from exc
+    if not 0 <= score <= 1:
+        raise argparse.ArgumentTypeError("rating must be between 0 and 1")
+    return score
 
 
 def _parse_day_count(value: str) -> int:

@@ -658,7 +658,8 @@ def test_forecast_cli_update_can_require_citations(tmp_path, capsys):
 
 def test_forecast_cli_evidence_claim_type_is_visible(tmp_path, capsys):
     parser = _parser()
-    db = str(tmp_path / "forecasting.db")
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
     _run(
         parser,
         [
@@ -685,6 +686,10 @@ def test_forecast_cli_evidence_claim_type_is_visible(tmp_path, capsys):
             "A market desk rumor.",
             "--claim-type",
             "rumor",
+            "--reliability",
+            "medium",
+            "--relevance",
+            "high",
             "--stance",
             "increases",
         ],
@@ -692,7 +697,13 @@ def test_forecast_cli_evidence_claim_type_is_visible(tmp_path, capsys):
     assert "claim_type: rumor" in capsys.readouterr().out
 
     _run(parser, ["forecast", "--db", db, "evidence", "list", question_id])
-    assert "rumor" in capsys.readouterr().out
+    list_output = capsys.readouterr().out
+    assert "rumor" in list_output
+    assert "0.50" in list_output
+    assert "0.75" in list_output
+    evidence = ForecastLedger(db_path).list_evidence(question_id)[0]
+    assert evidence.reliability_rating == 0.5
+    assert evidence.relevance_rating == 0.75
 
 
 def test_forecast_cli_research_summarizes_new_evidence_since_current_forecast(tmp_path, capsys):
