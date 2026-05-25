@@ -1569,6 +1569,86 @@ def test_forecast_ledger_tool_returns_pilot_report(tmp_path):
     assert report["pilot_report"]["source_types"]["fred"] == 1
 
 
+def test_forecast_ledger_tool_returns_doctor_report(tmp_path):
+    db = str(tmp_path / "forecasting.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will tool doctor report summarize pilot readiness?",
+                "resolution_criteria": "Resolved yes if tool reports combined readiness checks.",
+                "domain": "macro",
+            }
+        )
+    )
+    question_id = created["question"]["id"]
+    evidence = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "add_evidence",
+                "question_id": question_id,
+                "source_or_note": "Structured source row.",
+                "source_type": "fred",
+            }
+        )
+    )
+    forecast_ledger_tool(
+        {
+            "db": db,
+            "action": "update_forecast",
+            "question_id": question_id,
+            "probability": 0.55,
+            "rationale": "Structured evidence is enough for the tester handoff gate.",
+            "evidence_refs": [evidence["evidence"]["id"]],
+        }
+    )
+    forecast_ledger_tool(
+        {
+            "db": db,
+            "action": "schedule_review",
+            "question_id": question_id,
+            "cadence": "1d",
+            "next_run_at": "2026-05-24T09:00:00Z",
+        }
+    )
+    forecast_ledger_tool(
+        {
+            "db": db,
+            "action": "run_scheduled_reviews",
+            "now": "2026-05-24T10:00:00Z",
+        }
+    )
+
+    report = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "doctor_report",
+                "min_questions": 1,
+                "min_structured_source_questions": 1,
+                "min_scores": 0,
+                "min_postmortems": 0,
+                "min_scheduled_reviews": 1,
+                "min_scheduled_review_runs": 1,
+            }
+        )
+    )
+
+    assert report["success"] is True
+    assert report["doctor_status"] == "tester_handoff_ready_live_claim_unproven"
+    assert report["tester_handoff_ready"] is True
+    assert report["claim_live_superforecasting"] is False
+    assert report["pilot_report"]["pilot_status"] == "pilot_exit_ready"
+    assert report["pilot_report"]["summary"]["scheduled_review_run_count"] == 1
+    assert report["readiness"]["evidence_status"]["verdict"] == "insufficient_live_evidence"
+    assert report["readiness"]["inspected_backtest_run_ids"] == []
+    assert report["status"]["scheduled_review_run_count"] == 1
+    assert report["status"]["question_counts"]["active"] == 1
+    assert report["operational_status"]["scheduled_review_run_count"] == 1
+
+
 def test_forecast_ledger_tool_records_corrections_and_invalidates_learning(tmp_path):
     db = str(tmp_path / "forecasting.db")
     created = json.loads(
@@ -2365,6 +2445,7 @@ def test_forecast_ledger_tool_runs_and_reports_backtests(tmp_path):
     db = str(tmp_path / "forecasting.db")
     actions = set(FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["action"]["enum"])
     assert "evidence_readiness" in actions
+    assert "doctor_report" in actions
 
     run = json.loads(
         forecast_ledger_tool(

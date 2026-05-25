@@ -6,7 +6,7 @@ from dataclasses import asdict, is_dataclass
 import json
 from typing import Any
 
-from forecasting import ForecastLedger
+from forecasting import ForecastLedger, PRODUCT_NAME, PRODUCT_SLUG
 from forecasting.backtesting import (
     DEFAULT_MIN_AGENT_PROTOCOL_CASES_FOR_CLAIM,
     DEFAULT_MIN_EXTERNAL_SOURCE_FAMILIES_FOR_CLAIM,
@@ -16,7 +16,7 @@ from forecasting.backtesting import (
 )
 from forecasting.ensembles import linear_trend_projection, weighted_binary_probability
 from forecasting.learning import apply_active_lesson_adjustments
-from forecasting.models import ForecastingError, OutcomeSpace
+from forecasting.models import ForecastingError, OutcomeSpace, utc_now_iso
 from forecasting.protocol import build_protocol_messages
 from forecasting.source_adapters import (
     load_arxiv_papers,
@@ -115,6 +115,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "list_backtest_runs",
                     "backtest_performance_report",
                     "evidence_readiness",
+                    "doctor_report",
                     "pilot_report",
                     "add_watched_source",
                     "list_watched_sources",
@@ -859,45 +860,62 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             return tool_result(success=True, backtest_performance=report)
 
         if action == "evidence_readiness":
-            rows = ledger.list_backtest_runs()
-            if args.get("dataset"):
-                rows = [row for row in rows if str(args["dataset"]) in row["dataset"]]
-            last = int(args.get("last", 20) or 0)
-            rows = rows[: max(last, 0)]
-            summaries = build_backtest_performance_summaries(ledger, rows)
-            evidence_status = build_forecasting_evidence_status(
-                ledger,
-                summaries,
-                min_live_scores=max(
-                    int(args.get("min_live_scores", DEFAULT_MIN_LIVE_SCORES_FOR_CLAIM) or 0),
-                    0,
-                ),
-                min_agent_protocol_cases=max(
-                    int(
-                        args.get(
-                            "min_agent_protocol_cases",
-                            DEFAULT_MIN_AGENT_PROTOCOL_CASES_FOR_CLAIM,
-                        )
-                        or 0
-                    ),
-                    0,
-                ),
-                min_external_source_families=max(
-                    int(
-                        args.get(
-                            "min_external_source_families",
-                            DEFAULT_MIN_EXTERNAL_SOURCE_FAMILIES_FOR_CLAIM,
-                        )
-                        or 0
-                    ),
-                    0,
-                ),
-            )
+            rows, summaries, evidence_status, _last = _forecast_readiness_payload(ledger, args)
             return tool_result(
                 success=True,
                 evidence_status=evidence_status,
                 backtest_summaries=summaries,
                 inspected_backtest_run_ids=[row["id"] for row in rows],
+            )
+
+        if action == "doctor_report":
+            rows, summaries, evidence_status, last = _forecast_readiness_payload(ledger, args)
+            pilot_report = ledger.pilot_report(
+                min_questions=int(args.get("min_questions", 3) or 0),
+                min_structured_source_questions=int(
+                    args.get("min_structured_source_questions", 1) or 0
+                ),
+                min_scores=int(args.get("min_scores", 1) or 0),
+                min_postmortems=int(args.get("min_postmortems", 1) or 0),
+                min_scheduled_reviews=int(args.get("min_scheduled_reviews", 1) or 0),
+                min_scheduled_review_runs=int(args.get("min_scheduled_review_runs", 1) or 0),
+            )
+            pilot_ready = pilot_report["passed_checks"] == pilot_report["total_checks"]
+            readiness_gaps = bool(evidence_status.get("gaps"))
+            if not pilot_ready:
+                doctor_status = "needs_tester_pilot_artifacts"
+            elif readiness_gaps:
+                doctor_status = "tester_handoff_ready_live_claim_unproven"
+            else:
+                doctor_status = "benchmark_evidence_ready_live_claim_unproven"
+
+            operational_status = _forecast_operational_status(ledger, pilot_report)
+            return tool_result(
+                success=True,
+                product=PRODUCT_NAME,
+                generated_at=utc_now_iso(),
+                doctor_status=doctor_status,
+                tester_handoff_ready=pilot_ready,
+                claim_live_superforecasting=evidence_status.get("can_claim_live_superforecasting"),
+                status=operational_status,
+                operational_status=operational_status,
+                pilot_report=pilot_report,
+                readiness={
+                    "last": last,
+                    "dataset_filter": args.get("dataset"),
+                    "run_count": len(summaries),
+                    "inspected_backtest_run_ids": [row["id"] for row in rows],
+                    "evidence_status": evidence_status,
+                },
+                evidence_status=evidence_status,
+                backtest_summaries=summaries,
+                inspected_backtest_run_ids=[row["id"] for row in rows],
+                required_exit_gates={
+                    "pilot_ready_required": False,
+                    "readiness_required": False,
+                    "pilot_ready": pilot_ready,
+                    "readiness_gaps": readiness_gaps,
+                },
             )
 
         if action == "pilot_report":
@@ -1082,6 +1100,94 @@ def _required(args: dict[str, Any], key: str) -> str:
     if not value:
         raise ValueError(f"{key} is required")
     return value
+
+
+def _forecast_readiness_payload(
+    ledger: ForecastLedger,
+    args: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], int]:
+    rows = ledger.list_backtest_runs()
+    dataset = args.get("dataset")
+    if dataset:
+        rows = [row for row in rows if str(dataset) in str(row.get("dataset", ""))]
+    last = max(int(args.get("last", 20) or 0), 0)
+    rows = rows[:last]
+    summaries = build_backtest_performance_summaries(ledger, rows)
+    evidence_status = build_forecasting_evidence_status(
+        ledger,
+        summaries,
+        min_live_scores=max(
+            int(args.get("min_live_scores", DEFAULT_MIN_LIVE_SCORES_FOR_CLAIM) or 0),
+            0,
+        ),
+        min_agent_protocol_cases=max(
+            int(
+                args.get(
+                    "min_agent_protocol_cases",
+                    DEFAULT_MIN_AGENT_PROTOCOL_CASES_FOR_CLAIM,
+                )
+                or 0
+            ),
+            0,
+        ),
+        min_external_source_families=max(
+            int(
+                args.get(
+                    "min_external_source_families",
+                    DEFAULT_MIN_EXTERNAL_SOURCE_FAMILIES_FOR_CLAIM,
+                )
+                or 0
+            ),
+            0,
+        ),
+    )
+    return rows, summaries, evidence_status, last
+
+
+def _forecast_operational_status(
+    ledger: ForecastLedger,
+    pilot_report: dict[str, Any],
+) -> dict[str, Any]:
+    statuses = ["active", "closed", "resolved", "archived"]
+    active_questions = ledger.list_questions(status="active")
+    question_counts = {
+        status: len(active_questions) if status == "active" else len(ledger.list_questions(status=status))
+        for status in statuses
+    }
+    active_assumptions = [
+        assumption
+        for question in active_questions
+        for assumption in ledger.list_assumptions(question.id)
+    ]
+    schedules = ledger.list_scheduled_reviews()
+    watches = ledger.list_watched_sources(status=None)
+    scores = ledger.list_scores(calibration_eligible=None, include_invalidated=True)
+    lessons = ledger.list_calibration_lessons()
+    active_lessons = ledger.list_calibration_lessons(active_only=True)
+    calibration = ledger.calibration_summary(calibration_eligible=True)
+    return {
+        "product": PRODUCT_NAME,
+        "slug": PRODUCT_SLUG,
+        "ledger_path": str(ledger.db_path),
+        "question_counts": question_counts,
+        "active_question_count": question_counts["active"],
+        "active_assumption_count": sum(1 for row in active_assumptions if row.get("status") == "active"),
+        "stale_assumption_count": sum(
+            1 for row in active_assumptions if row.get("status") in {"stale", "invalidated"}
+        ),
+        "review_queue_count": len(ledger.review_questions(stale=True, last_days=7)),
+        "open_alert_count": len(ledger.list_alerts(unresolved_only=True)),
+        "scheduled_review_count": len(schedules),
+        "enabled_scheduled_review_count": sum(1 for row in schedules if row.get("enabled")),
+        "scheduled_review_run_count": pilot_report["summary"].get("scheduled_review_run_count", 0),
+        "watched_source_count": len(watches),
+        "active_watched_source_count": sum(1 for row in watches if row.get("status") == "active"),
+        "score_count": len(scores),
+        "calibration_eligible_score_count": calibration["count"],
+        "calibration_mean_brier": calibration["mean_brier"],
+        "calibration_lesson_count": len(lessons),
+        "active_calibration_lesson_count": len(active_lessons),
+    }
 
 
 def _infer_schedule_scope_type(args: dict[str, Any]) -> str:
