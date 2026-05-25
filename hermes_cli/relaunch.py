@@ -22,7 +22,7 @@ from hermes_cli._parser import (
 def _build_inherited_flag_table() -> list[tuple[str, bool]]:
     """Build the ``(option_string, takes_value)`` table of flags that must
     survive a self-relaunch, by introspecting the real parser used by
-    ``hermes`` itself.
+    ``superforecasting-agent`` itself.
 
     A flag participates if its argparse Action carries
     ``inherit_on_relaunch = True`` — set by ``_parser._inherited_flag``.
@@ -52,7 +52,7 @@ _INHERITED_FLAGS_TABLE = _build_inherited_flag_table()
 
 
 def _extract_inherited_flags(argv: Sequence[str]) -> list[str]:
-    """Pull out flags that should carry over into a self-relaunched hermes."""
+    """Pull out flags that should carry over into a self-relaunched CLI."""
     flags: list[str] = []
     i = 0
     while i < len(argv):
@@ -77,13 +77,14 @@ def _extract_inherited_flags(argv: Sequence[str]) -> list[str]:
     return flags
 
 
-def resolve_hermes_bin() -> Optional[str]:
-    """Find the hermes entry point.
+def resolve_cli_bin() -> Optional[str]:
+    """Find the Superforecasting Agent CLI entry point.
 
     Priority:
       1. ``sys.argv[0]`` if it resolves to a real executable.
-      2. ``shutil.which("hermes")`` on PATH.
-      3. ``None`` → caller should fall back to ``python -m hermes_cli.main``.
+      2. ``shutil.which("superforecasting-agent")`` on PATH.
+      3. ``shutil.which("hermes")`` on PATH for legacy compatibility.
+      4. ``None`` → caller should fall back to ``python -m hermes_cli.main``.
 
     Windows note: ``os.access(path, os.X_OK)`` returns True for ``.py`` and
     ``.pyc`` files on Windows (the OS treats anything listed in PATHEXT as
@@ -92,8 +93,8 @@ def resolve_hermes_bin() -> Optional[str]:
     directly — CreateProcessW needs a real .exe, not a script associated
     with the Python launcher.  On Windows we therefore skip the argv[0]
     fast-path when it points at a .py file and fall through to either
-    ``hermes.exe`` on PATH or the ``sys.executable -m hermes_cli.main``
-    fallback.
+    ``superforecasting-agent.exe`` / ``hermes.exe`` on PATH or the
+    ``sys.executable -m hermes_cli.main`` fallback.
     """
     argv0 = sys.argv[0]
     _is_windows = sys.platform == "win32"
@@ -113,12 +114,19 @@ def resolve_hermes_bin() -> Optional[str]:
             if not (_is_windows and _is_python_script(abs_path)):
                 return abs_path
 
-    # PATH lookup
-    path_bin = shutil.which("hermes")
-    if path_bin:
-        return path_bin
+    # PATH lookup. Prefer the fork-native command but keep the inherited
+    # compatibility launcher working for users who have not refreshed PATH yet.
+    for candidate in ("superforecasting-agent", "hermes"):
+        path_bin = shutil.which(candidate)
+        if path_bin:
+            return path_bin
 
     return None
+
+
+def resolve_hermes_bin() -> Optional[str]:
+    """Compatibility alias for callers/tests using the inherited helper name."""
+    return resolve_cli_bin()
 
 
 def build_relaunch_argv(
@@ -127,7 +135,7 @@ def build_relaunch_argv(
     preserve_inherited: bool = True,
     original_argv: Optional[Sequence[str]] = None,
 ) -> list[str]:
-    """Construct an argv list for replacing the current process with hermes.
+    """Construct an argv list for replacing the current process with the CLI.
 
     Args:
         extra_args: Arguments to append (e.g. ``["--resume", id]``).
@@ -136,7 +144,7 @@ def build_relaunch_argv(
         original_argv: The original argv to scan for flags (defaults to
             ``sys.argv[1:]``).
     """
-    bin_path = resolve_hermes_bin()
+    bin_path = resolve_cli_bin()
 
     if bin_path:
         argv = [bin_path]
@@ -192,8 +200,9 @@ def relaunch(
         except OSError as exc:
             # Surface a helpful error rather than the raw OSError — the
             # caller used to see ``[Errno 8] Exec format error`` which is
-            # cryptic.  Common causes: ``hermes`` not on PATH yet (install
-            # hasn't propagated User PATH into this shell) or a stale shim.
+            # cryptic. Common causes: ``superforecasting-agent`` not on PATH
+            # yet (install hasn't propagated User PATH into this shell) or a
+            # stale shim.
             print(
                 f"\nSuperforecasting Agent relaunch failed: {exc}\n"
                 f"Command: {' '.join(new_argv)}\n"

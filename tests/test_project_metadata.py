@@ -948,8 +948,12 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Handles: hermes gateway" not in gateway
 
     assert "run the forecast CLI again" in relaunch
+    assert "Find the Superforecasting Agent CLI entry point" in relaunch
+    assert 'for candidate in ("superforecasting-agent", "hermes")' in relaunch
     assert "run hermes again" not in relaunch
     assert "new hermes started" not in relaunch
+    assert "Find the hermes entry point" not in relaunch
+    assert "self-relaunched hermes" not in relaunch
 
     assert "active Superforecasting Agent home `.env`" in callbacks
     assert "Each function takes the HermesCLI instance" not in callbacks
@@ -1476,6 +1480,26 @@ def test_gateway_service_helper_comments_prefer_forecast_native_commands():
     assert "hermes gateway status" not in text
     assert "Foreground ``hermes gateway run``" not in text
     assert "HERMES_HOME directories" not in text
+
+
+def test_debug_runtime_copy_prefers_forecast_native_commands():
+    root = Path(__file__).resolve().parents[1]
+    debug_py = (root / "hermes_cli" / "debug.py").read_text(encoding="utf-8")
+    debug_tests = (root / "tests" / "hermes_cli" / "test_debug.py").read_text(
+        encoding="utf-8"
+    )
+    text = debug_py + "\n" + debug_tests
+
+    assert "superforecasting-agent debug share" in text
+    assert "superforecasting-agent debug delete" in text
+    assert "superforecasting-agent dump" in text
+    assert "SuperforecastingAgentDebugBoundary" in text
+
+    assert "hermes debug share" not in text
+    assert "hermes debug delete" not in text
+    assert "hermes debug``" not in text
+    assert "hermes dump" not in text
+    assert "HermesDebugBoundary" not in text
 
 
 def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():

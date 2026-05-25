@@ -1,4 +1,4 @@
-"""Tests for ``hermes debug`` CLI command and debug utilities."""
+"""Tests for ``superforecasting-agent debug`` CLI command and debug utilities."""
 
 import os
 import sys
@@ -872,8 +872,8 @@ class TestScheduleAutoDelete:
 
     The new implementation is stateless: it records pending deletions to
     ``~/.hermes/pastes/pending.json`` and lets ``_sweep_expired_pastes``
-    handle the DELETE requests synchronously on the next ``hermes debug``
-    invocation.
+    handle the DELETE requests synchronously on the next
+    ``superforecasting-agent debug`` invocation.
     """
 
     def test_does_not_spawn_subprocess(self, hermes_home):
