@@ -11421,9 +11421,10 @@ def main():
         "hooks",
         help="Inspect and manage shell-script hooks",
         description=(
-            "Inspect shell-script hooks declared in ~/.hermes/config.yaml, "
-            "test them against synthetic payloads, and manage the first-use "
-            "consent allowlist at ~/.hermes/shell-hooks-allowlist.json."
+            "Inspect shell-script hooks declared in the active "
+            "Superforecasting Agent config.yaml, test them against synthetic "
+            "payloads, and manage the first-use consent allowlist in the "
+            "active agent home."
         ),
     )
     hooks_subparsers = hooks_parser.add_subparsers(dest="hooks_action")
@@ -12863,8 +12864,10 @@ Examples:
     acp_parser.add_argument(
         "--setup-browser",
         action="store_true",
-        help="Install agent-browser + Playwright Chromium into ~/.hermes/node/ "
-             "for browser tool support (idempotent).",
+        help=(
+            "Install agent-browser + Playwright Chromium into the active "
+            "agent home node/ directory for browser tool support (idempotent)."
+        ),
     )
     acp_parser.add_argument(
         "--yes",

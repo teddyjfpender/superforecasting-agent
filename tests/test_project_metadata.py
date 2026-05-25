@@ -808,6 +808,33 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Hermes's prompt-injection scanner" not in install_ps1
 
 
+def test_runtime_user_guidance_prefers_active_forecast_home():
+    root = Path(__file__).resolve().parents[1]
+    goals = (root / "hermes_cli" / "goals.py").read_text(encoding="utf-8")
+    main = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
+    plugins_cmd = (root / "hermes_cli" / "plugins_cmd.py").read_text(
+        encoding="utf-8"
+    )
+    tools_config = (root / "hermes_cli" / "tools_config.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "active Superforecasting Agent config.yaml" in goals
+    assert "superforecasting-agent config set " in tools_config
+    assert "tts.piper.voice <voice-name>" in tools_config
+    assert "active " in main
+    assert "agent home node/ directory" in main
+    assert "first-use consent allowlist in the " in main
+    assert "active agent home." in main
+    assert "active agent home's ``plugins/`` directory" in plugins_cmd
+    assert "model in ~/.hermes/config.yaml" not in goals
+    assert "tts.piper.voice in ~/.hermes/config.yaml" not in tools_config
+    assert "into ~/.hermes/node/" not in main
+    assert "declared in ~/.hermes/config.yaml" not in main
+    assert "consent allowlist at ~/.hermes/shell-hooks-allowlist.json" not in main
+    assert "``~/.hermes/plugins" not in plugins_cmd
+
+
 def test_plugin_and_session_recap_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     plugins = (root / "hermes_cli" / "plugins.py").read_text(encoding="utf-8")

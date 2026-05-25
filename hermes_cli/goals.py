@@ -700,12 +700,12 @@ class GoalManager:
                 "message": (
                     f"⏸ Goal paused — the judge model ({state.consecutive_parse_failures} turns) "
                     "isn't returning the required JSON verdict. Route the judge to a stricter "
-                    "model in ~/.hermes/config.yaml:\n"
+                    "model in your active Superforecasting Agent config.yaml:\n"
                     "  auxiliary:\n"
                     "    goal_judge:\n"
                     "      provider: openrouter\n"
                     "      model: google/gemini-3-flash-preview\n"
-                    "Then /goal resume to continue."
+                    "Then run /goal resume to continue."
                 ),
             }
 

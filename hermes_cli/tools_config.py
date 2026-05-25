@@ -894,7 +894,10 @@ def _run_post_setup(post_setup_key: str):
                 return
         _print_info("    Default voice: en_US-lessac-medium (downloaded on first TTS call)")
         _print_info("    Full voice list: https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/VOICES.md")
-        _print_info("    Switch voices by setting tts.piper.voice in ~/.hermes/config.yaml")
+        _print_info(
+            "    Switch voices with: superforecasting-agent config set "
+            "tts.piper.voice <voice-name>"
+        )
 
     elif post_setup_key == "ddgs":
         try:
