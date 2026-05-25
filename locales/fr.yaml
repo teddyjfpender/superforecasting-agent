@@ -1,4 +1,4 @@
-# Hermes static-message catalog -- French (français)
+# Superforecasting Agent static-message catalog -- French (français)
 # See locales/en.yaml for the source of truth; keep keys in sync.
 
 approval:
@@ -98,8 +98,8 @@ gateway:
     upload_failed:         "✗ Échec de l'envoi du rapport de débogage : {error}"
     header:                "**Rapport de débogage envoyé :**"
     auto_delete:           "⏱ Les pastes s'effaceront automatiquement dans 6 heures."
-    full_logs_hint:        "Pour envoyer les journaux complets, utilisez `hermes debug share` depuis la CLI."
-    share_hint:            "Partagez ces liens avec l'équipe Hermes pour obtenir de l'aide."
+    full_logs_hint:        "Pour envoyer les journaux complets, utilisez `superforecasting-agent debug share` depuis la CLI."
+    share_hint:            "Partagez ces liens avec l'équipe Superforecasting Agent pour obtenir de l'aide."
 
   deny:
     stale:                 "❌ Commande refusée (l'approbation était périmée)."
@@ -136,7 +136,7 @@ gateway:
     set:                   "⊙ Objectif défini (budget de {budget} tours) : {goal}\nJe continuerai jusqu'à ce que l'objectif soit terminé, que vous le mettiez en pause/effaciez, ou que le budget soit épuisé.\nContrôles : /goal status · /goal pause · /goal resume · /goal clear"
 
   help:
-    header:                "📖 **Commandes Hermes**\n"
+    header:                "📖 **Commandes Superforecasting Agent**\n"
     skill_header:          "\n⚡ **Commandes de skill** ({count} actives) :"
     more_use_commands:     "\n... et {count} de plus. Utilisez `/commands` pour la liste paginée complète."
 
@@ -147,7 +147,7 @@ gateway:
   kanban:
     error_prefix:          "⚠ erreur kanban : {error}"
     subscribed_suffix:     "(abonné — vous serez notifié lorsque {task_id} se terminera ou sera bloqué)"
-    truncated_suffix:      "… (tronqué ; utilisez `hermes kanban …` dans votre terminal pour la sortie complète)"
+    truncated_suffix:      "… (tronqué ; utilisez `superforecasting-agent kanban …` dans votre terminal pour la sortie complète)"
     no_output:             "(aucune sortie)"
 
   personality:
@@ -215,7 +215,7 @@ gateway:
 
   restart:
     in_progress:           "⏳ Redémarrage du gateway déjà en cours..."
-    restarting:            "♻ Redémarrage du gateway. Si vous n'êtes pas notifié dans les 60 secondes, redémarrez depuis la console avec `hermes gateway restart`."
+    restarting:            "♻ Redémarrage du gateway. Si vous n'êtes pas notifié dans les 60 secondes, redémarrez depuis la console avec `superforecasting-agent gateway restart`."
 
   resume:
     db_unavailable:        "Base de données des sessions indisponible."
@@ -247,7 +247,7 @@ gateway:
     success:               "✅ Canal principal défini sur **{name}** (ID : {chat_id}).\nLes tâches cron et les messages multi-plateformes seront livrés ici."
 
   status:
-    header:                "📊 **État de Hermes Gateway**"
+    header:                "📊 **État de Superforecasting Agent Gateway**"
     session_id:            "**ID de session :** `{session_id}`"
     title:                 "**Titre :** {title}"
     created:               "**Créé :** {timestamp}"
@@ -290,11 +290,11 @@ gateway:
     removed:               "↩️ {count} message(s) annulé(s).\nSupprimé : « {preview} »"
 
   update:
-    platform_not_messaging:  "✗ /update n'est disponible que depuis les plateformes de messagerie. Exécutez `hermes update` depuis le terminal."
+    platform_not_messaging:  "✗ /update n'est disponible que depuis les plateformes de messagerie. Exécutez `superforecasting-agent update` depuis le terminal."
     not_git_repo:            "✗ Pas un dépôt git — impossible de mettre à jour."
-    hermes_cmd_not_found:    "✗ Impossible de localiser la commande `hermes`. Hermes est en cours d'exécution, mais la commande de mise à jour n'a pas pu trouver l'exécutable dans le PATH ni via l'interpréteur Python actuel. Essayez d'exécuter `hermes update` manuellement dans votre terminal."
+    hermes_cmd_not_found:    "✗ Impossible de localiser la commande `superforecasting-agent`. Superforecasting Agent est en cours d'exécution, mais la commande de mise à jour n'a pas pu trouver l'exécutable dans le PATH ni via l'interpréteur Python actuel. Essayez d'exécuter `superforecasting-agent update` manuellement dans votre terminal."
     start_failed:            "✗ Échec du démarrage de la mise à jour : {error}"
-    starting:                "⚕ Démarrage de la mise à jour Hermes… Je diffuserai la progression ici."
+    starting:                "⚕ Démarrage de la mise à jour Superforecasting Agent… Je diffuserai la progression ici."
 
   usage:
     rate_limits:              "⏱️ **Limites de débit :** {state}"
