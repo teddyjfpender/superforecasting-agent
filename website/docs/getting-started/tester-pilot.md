@@ -176,6 +176,7 @@ forecast --db "$FORECAST_DB" schedule add --domain <domain> --topic <topic> \
   --auto-score \
   --auto-postmortem
 forecast --db "$FORECAST_DB" schedule run --due --auto-score --auto-postmortem
+forecast --db "$FORECAST_DB" schedule history --json
 forecast --db "$FORECAST_DB" errors --domain <domain> --topic <topic>
 forecast --db "$FORECAST_DB" lesson list --scope-type domain --scope-ref <domain>
 ```
@@ -184,6 +185,8 @@ forecast --db "$FORECAST_DB" lesson list --scope-type domain --scope-ref <domain
 `learning_reviews` counts. Those counts tell the operator when a scheduled
 self-check changed calibration memory, domain/topic error profiles, or active
 forecast learned-error review alerts.
+`schedule history --json` is the audit trail to include in tester evidence
+bundles when proving that scheduled learning actually ran.
 
 Review the book:
 

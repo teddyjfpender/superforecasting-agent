@@ -13850,7 +13850,22 @@ def test_forecast_cli_schedule_add_can_enable_scoped_learning(tmp_path, capsys):
     assert "score_created:" in run_output
     assert "postmortem_created:" in run_output
     assert "domain_error_profile_applies:" in run_output
+    assert "run=srr_" in run_output
     assert active_question_id in run_output
+
+    _run(parser, ["forecast", "--db", db, "schedule", "history", "--limit", "1"])
+    history_output = capsys.readouterr().out
+    assert "srr_" in history_output
+    assert "Scores" in history_output
+    assert "Postmortems" in history_output
+
+    _run(parser, ["forecast", "--db", db, "schedule", "history", "--limit", "1", "--json"])
+    history_payload = json.loads(capsys.readouterr().out)
+    assert history_payload["count"] == 1
+    assert history_payload["runs"][0]["score_count"] == 1
+    assert history_payload["runs"][0]["postmortem_count"] == 1
+    assert history_payload["runs"][0]["learning_review_count"] == 5
+    assert history_payload["runs"][0]["metadata"]["scope_type"] == "domain_topic"
 
     _run(parser, ["forecast", "--db", db, "review", "--domain", "macro", "--topic", "inflation"])
     review_output = capsys.readouterr().out

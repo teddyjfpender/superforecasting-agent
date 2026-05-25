@@ -47,6 +47,7 @@ def run_due_reviews(
     lines = [
         "Forecast self-check alerts",
         f"scheduled_reviews: {len(results)}",
+        "run_ids: " + ", ".join(result["run"]["id"] for result in results if result.get("run")),
         f"alerts: {len(alert_rows)}",
         f"scores_created: {len(score_events)}",
         f"postmortems_created: {len(postmortem_events)}",

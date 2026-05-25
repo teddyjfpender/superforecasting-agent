@@ -1445,6 +1445,11 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     schedule_run.add_argument("--auto-score", action="store_true")
     schedule_run.add_argument("--auto-postmortem", action="store_true")
     schedule_run.set_defaults(_forecast_handler=_cmd_schedule_run)
+    schedule_history = schedule_sub.add_parser("history", help="Show scheduled self-check run history")
+    schedule_history.add_argument("--schedule", dest="scheduled_review_id")
+    schedule_history.add_argument("--limit", type=int, default=20)
+    schedule_history.add_argument("--json", action="store_true", help="Emit machine-readable run history JSON")
+    schedule_history.set_defaults(_forecast_handler=_cmd_schedule_history)
     schedule_cron = schedule_sub.add_parser(
         "install-cron",
         help="Install a no-agent cron bridge for forecast self-checks",
@@ -6402,9 +6407,35 @@ def _cmd_schedule_run(args: argparse.Namespace) -> None:
     print(f"learning_reviews: {len(learning_review_events)}")
     for result in results:
         review = result["review"]
-        print(f"{review['id']} next_run_at={review['next_run_at']} alerts={len(result['alerts'])}")
+        run = result.get("run") or {}
+        run_suffix = f" run={run['id']}" if run.get("id") else ""
+        print(f"{review['id']} next_run_at={review['next_run_at']} alerts={len(result['alerts'])}{run_suffix}")
         for alert in result["alerts"]:
             print(f"  {alert.id} {alert.scope_type}:{alert.scope_ref} {alert.reason}")
+
+
+def _cmd_schedule_history(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    rows = ledger.list_scheduled_review_runs(
+        scheduled_review_id=args.scheduled_review_id,
+        limit=args.limit,
+    )
+    if args.json:
+        print(json.dumps({"runs": rows, "count": len(rows)}, indent=2, sort_keys=True))
+        return
+    if not rows:
+        print("No scheduled review runs found.")
+        return
+    print("Run ID         Schedule       Run at               Alerts  Scores  Postmortems  Learning  Next run")
+    for row in rows:
+        print(
+            f"{row['id']:<14} {row['scheduled_review_id']:<14} {row['run_at']:<20} "
+            f"{int(row.get('alert_count') or 0):<7} "
+            f"{int(row.get('score_count') or 0):<7} "
+            f"{int(row.get('postmortem_count') or 0):<12} "
+            f"{int(row.get('learning_review_count') or 0):<9} "
+            f"{row['next_run_at']}"
+        )
 
 
 def _cmd_schedule_install_cron(args: argparse.Namespace) -> None:

@@ -598,6 +598,20 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
     )
     if "ran 1 scheduled review(s)" not in schedule_output or "alert(s)" not in schedule_output:
         raise SmokeError(f"scheduled review did not run:\n{schedule_output}")
+    schedule_history = _json_output(
+        _run_forecast(
+            ["schedule", "history", "--limit", "1", "--json"],
+            db_path=db_path,
+            repo_root=repo_root,
+            verbose=verbose,
+        ),
+        "schedule history",
+    )
+    history_runs = schedule_history.get("runs")
+    if not isinstance(history_runs, list) or not history_runs:
+        raise SmokeError(f"scheduled review history did not include the run:\n{json.dumps(schedule_history, indent=2)}")
+    if history_runs[0].get("alert_count", 0) < 1:
+        raise SmokeError(f"scheduled review history did not count alerts:\n{json.dumps(schedule_history, indent=2)}")
     _print_step(f"scheduled_self_check_question_id: {stale_question_id}")
 
     _run_forecast(

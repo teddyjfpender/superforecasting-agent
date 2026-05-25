@@ -524,6 +524,22 @@ class ForecastLedger:
                     auto_postmortem INTEGER NOT NULL DEFAULT 0
                 );
 
+                CREATE TABLE IF NOT EXISTS scheduled_review_runs (
+                    id TEXT PRIMARY KEY,
+                    scheduled_review_id TEXT NOT NULL REFERENCES scheduled_reviews(id) ON DELETE CASCADE,
+                    run_at TEXT NOT NULL,
+                    next_run_at TEXT NOT NULL,
+                    alert_count INTEGER NOT NULL DEFAULT 0,
+                    score_count INTEGER NOT NULL DEFAULT 0,
+                    postmortem_count INTEGER NOT NULL DEFAULT 0,
+                    learning_review_count INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'completed',
+                    metadata TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_scheduled_review_runs_review
+                    ON scheduled_review_runs(scheduled_review_id, run_at DESC);
+
                 CREATE TABLE IF NOT EXISTS watched_sources (
                     id TEXT PRIMARY KEY,
                     scope_type TEXT NOT NULL,
@@ -3019,6 +3035,32 @@ class ForecastLedger:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_scheduled_review_runs(
+        self,
+        *,
+        scheduled_review_id: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        limit = max(int(limit), 1)
+        clauses: list[str] = []
+        params: list[Any] = []
+        if scheduled_review_id:
+            clauses.append("scheduled_review_id = ?")
+            params.append(scheduled_review_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM scheduled_review_runs
+                {where}
+                ORDER BY run_at DESC, id DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [self._row_to_scheduled_review_run(row) for row in rows]
+
     def add_watched_source(
         self,
         *,
@@ -3306,13 +3348,74 @@ class ForecastLedger:
                     """,
                     (now_ts, next_run_at, review["id"]),
                 )
+            run = self._record_scheduled_review_run(
+                review=review,
+                run_at=now_ts,
+                next_run_at=next_run_at,
+                alerts=alerts,
+            )
             results.append(
                 {
                     "review": self.get_scheduled_review(review["id"]),
+                    "run": run,
                     "alerts": alerts,
                 }
             )
         return results
+
+    def _record_scheduled_review_run(
+        self,
+        *,
+        review: dict[str, Any],
+        run_at: str,
+        next_run_at: str,
+        alerts: list[AlertEvent],
+    ) -> dict[str, Any]:
+        score_count = sum(1 for alert in alerts if alert.reason.startswith("score_created:"))
+        postmortem_count = sum(1 for alert in alerts if alert.reason.startswith("postmortem_created:"))
+        learning_review_count = sum(1 for alert in alerts if self._is_learning_alert_reason(alert.reason))
+        run_id = f"srr_{uuid.uuid4().hex[:12]}"
+        metadata = {
+            "scope_type": review.get("scope_type"),
+            "scope_ref": review.get("scope_ref"),
+            "cadence": review.get("cadence"),
+            "trigger_reason": review.get("trigger_reason"),
+            "auto_score": bool(review.get("auto_score")),
+            "auto_postmortem": bool(review.get("auto_postmortem")),
+            "alert_reasons": [alert.reason for alert in alerts],
+            "alert_ids": [alert.id for alert in alerts],
+        }
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO scheduled_review_runs (
+                    id, scheduled_review_id, run_at, next_run_at, alert_count,
+                    score_count, postmortem_count, learning_review_count,
+                    status, metadata
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    review["id"],
+                    run_at,
+                    next_run_at,
+                    len(alerts),
+                    score_count,
+                    postmortem_count,
+                    learning_review_count,
+                    "completed",
+                    json_dumps(metadata),
+                ),
+            )
+        return self.list_scheduled_review_runs(scheduled_review_id=review["id"], limit=1)[0]
+
+    @staticmethod
+    def _is_learning_alert_reason(reason: str | None) -> bool:
+        text = str(reason or "")
+        return text in {"calibration_lesson_review", "domain_error_profile_review"} or text.startswith(
+            "domain_error_profile_applies:"
+        )
 
     def create_alert(
         self,
@@ -5512,6 +5615,11 @@ class ForecastLedger:
             recommended_action=row["recommended_action"],
             acknowledged_at=row["acknowledged_at"],
         )
+
+    def _row_to_scheduled_review_run(self, row: sqlite3.Row) -> dict[str, Any]:
+        data = dict(row)
+        data["metadata"] = json_loads(data["metadata"], {})
+        return data
 
     def _row_to_model_run(self, row: sqlite3.Row) -> dict[str, Any]:
         data = dict(row)

@@ -761,6 +761,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
       '/forecast lesson list',
       '/forecast errors',
       '/forecast schedule run --due --auto-score --auto-postmortem',
+      '/forecast schedule history --json',
       '/forecast performance --last 5',
       '/forecast readiness',
       '/forecast pilot-report',

@@ -1579,6 +1579,12 @@ def test_due_scheduled_review_runs_self_check_and_advances_next_run(tmp_path):
     assert results[0]["review"]["last_run_at"] == "2026-01-10T00:00:00Z"
     assert results[0]["review"]["next_run_at"] == "2026-01-11T00:00:00Z"
     assert {alert.reason for alert in results[0]["alerts"]} >= {"review_due", "last_update_3d_plus"}
+    assert results[0]["run"]["scheduled_review_id"] == review["id"]
+    assert results[0]["run"]["run_at"] == "2026-01-10T00:00:00Z"
+    assert results[0]["run"]["next_run_at"] == "2026-01-11T00:00:00Z"
+    assert results[0]["run"]["alert_count"] == len(results[0]["alerts"])
+    assert results[0]["run"]["metadata"]["scope_type"] == "domain"
+    assert ledger.list_scheduled_review_runs(scheduled_review_id=review["id"])[0]["id"] == results[0]["run"]["id"]
 
 
 def test_watched_file_source_creates_alert_on_change(tmp_path):
@@ -5263,8 +5269,10 @@ def test_cron_runner_reports_alerts_and_stays_silent_without_work(tmp_path):
     assert "scores_created: 0" in report
     assert "postmortems_created: 0" in report
     assert "learning_reviews: 0" in report
+    assert "run_ids: srr_" in report
     assert question.id in report
     assert silent == ""
+    assert len(ForecastLedger(db_path).list_scheduled_review_runs()) == 1
 
 
 def test_cron_runner_uses_schedule_auto_learning_flags(tmp_path):
