@@ -1872,9 +1872,9 @@ function Invoke-SetupWizard {
 
     # Run setup using the venv Python directly (no activation needed).
     if (-not $NoVenv) {
-        & ".\venv\Scripts\python.exe" -m hermes_cli.main setup
+        & ".\venv\Scripts\python.exe" -m superforecasting_agent setup
     } else {
-        python -m hermes_cli.main setup
+        python -m superforecasting_agent setup
     }
 
     Pop-Location
