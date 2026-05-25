@@ -161,6 +161,10 @@ Backtests are time-aware. Evidence after the simulated forecast timestamp is exc
 probability movement before close, ensemble component contribution, and
 question-type performance so reviewers can see whether late updates, weighted
 model inputs, and outcome formats are improving or simply adding churn.
+`forecast review` includes active forecasts flagged by learned domain/topic error
+profiles, and `forecast errors` lists those active review rows with the profile
+and alert ID so operators can clear learned-error review debt without searching
+raw alerts.
 Agent-protocol backtests additionally hide answer-side replay fields from the
 agent prompt, can export sanitized prompt packets for one dataset or the whole
 built-in benchmark suite, can write captured JSONL responses, and can replay

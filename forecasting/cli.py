@@ -47,7 +47,12 @@ from forecasting.ensembles import (
 )
 from forecasting.extensions import extension_registry
 from forecasting.forecast_engine import forecast_engine_binary_probability
-from forecasting.learning import apply_active_lesson_adjustments
+from forecasting.learning import (
+    apply_active_lesson_adjustments,
+    is_learned_error_review_reason,
+    is_learning_review_reason,
+    learned_error_profile_id,
+)
 from forecasting.ledger import ForecastLedger, WATCH_SOURCE_TYPES
 from forecasting.models import (
     ASSUMPTION_STATUSES,
@@ -1390,6 +1395,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     errors_parser = forecast_sub.add_parser("errors", help="Show domain error profile summary")
     errors_parser.add_argument("--domain")
     errors_parser.add_argument("--topic")
+    errors_parser.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Maximum active learned-error review rows to print",
+    )
     errors_parser.set_defaults(_forecast_handler=_cmd_errors)
 
     review_parser = forecast_sub.add_parser("review", help="Review stale or active forecasts")
@@ -6119,6 +6130,12 @@ def _cmd_errors(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
     profiles = ledger.list_domain_error_profiles(domain=args.domain, topic=args.topic)
     summary = ledger.calibration_summary(domain=args.domain)
+    active_reviews = _active_learned_error_review_rows(
+        ledger,
+        domain=args.domain,
+        topic=args.topic,
+        limit=args.limit,
+    )
     domain_label = args.domain or "all"
     print(f"domain: {domain_label}")
     print(f"scored_forecasts: {summary['count']}")
@@ -6132,6 +6149,18 @@ def _cmd_errors(args: argparse.Namespace) -> None:
                 f"  {profile['id']} scope={scope} n={profile['sample_count']} "
                 f"errors={errors} adjustments={adjustments}"
             )
+    if active_reviews:
+        print("active_reviews:")
+        for row in active_reviews:
+            question = row["question"]
+            alert = row["alert"]
+            profile_id = row["profile_id"] or "-"
+            topics = ",".join(question.topics) or "*"
+            print(
+                f"  {question.id} profile={profile_id} scope={question.domain or '*'}:{topics} "
+                f"alert={alert.id}"
+            )
+            print(f"    next: {alert.recommended_action or _review_next_action(question.id, [alert.reason])}")
     if summary["mean_brier"] is None:
         print("recurring_errors: insufficient scored forecasts")
     elif summary["mean_brier"] > 0.25:
@@ -6141,7 +6170,8 @@ def _cmd_errors(args: argparse.Namespace) -> None:
 
 
 def _cmd_review(args: argparse.Namespace) -> None:
-    rows = _ledger(args).review_questions(
+    ledger = _ledger(args)
+    rows = ledger.review_questions(
         stale=args.stale,
         last_days=args.last_days,
         domain=args.domain,
@@ -6151,6 +6181,15 @@ def _cmd_review(args: argparse.Namespace) -> None:
         confidence_above=args.confidence_above,
         large_delta_threshold=args.large_delta_threshold,
         now=args.now,
+    )
+    _merge_learned_error_reviews(
+        rows,
+        ledger=ledger,
+        domain=args.domain,
+        topic=args.topic,
+        horizon=args.horizon,
+        confidence_below=args.confidence_below,
+        confidence_above=args.confidence_above,
     )
     if not rows:
         print("No forecasts need review.")
@@ -6168,6 +6207,136 @@ def _cmd_review(args: argparse.Namespace) -> None:
             f"{row.get('priority', 9):<9} {reasons:<20} {question.title}"
         )
         print(f"  next: {_review_next_action(question.id, row['reasons'])}")
+
+
+def _active_learned_error_review_rows(
+    ledger: ForecastLedger,
+    *,
+    domain: str | None = None,
+    topic: str | None = None,
+    horizon: str | None = None,
+    confidence_below: float | None = None,
+    confidence_above: float | None = None,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    if limit is not None and limit <= 0:
+        return []
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for alert in ledger.list_alerts(unresolved_only=True):
+        if alert.scope_type != "question" or not is_learned_error_review_reason(alert.reason):
+            continue
+        key = (alert.scope_ref, alert.reason)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            question = ledger.get_question(alert.scope_ref)
+        except ForecastingError:
+            continue
+        if question.status != "active":
+            continue
+        snapshot = ledger.get_current_snapshot(question.id)
+        if not _review_alert_matches_filters(
+            ledger,
+            question=question,
+            snapshot=snapshot,
+            domain=domain,
+            topic=topic,
+            horizon=horizon,
+            confidence_below=confidence_below,
+            confidence_above=confidence_above,
+        ):
+            continue
+        rows.append(
+            {
+                "alert": alert,
+                "question": question,
+                "current_snapshot": snapshot,
+                "profile_id": learned_error_profile_id(alert.reason),
+            }
+        )
+        if limit is not None and len(rows) >= limit:
+            break
+    return rows
+
+
+def _merge_learned_error_reviews(
+    rows: list[dict[str, Any]],
+    *,
+    ledger: ForecastLedger,
+    domain: str | None = None,
+    topic: str | None = None,
+    horizon: str | None = None,
+    confidence_below: float | None = None,
+    confidence_above: float | None = None,
+) -> None:
+    rows_by_id = {row["question"].id: row for row in rows}
+    for learned_row in _active_learned_error_review_rows(
+        ledger,
+        domain=domain,
+        topic=topic,
+        horizon=horizon,
+        confidence_below=confidence_below,
+        confidence_above=confidence_above,
+    ):
+        question = learned_row["question"]
+        alert = learned_row["alert"]
+        existing = rows_by_id.get(question.id)
+        if existing is not None:
+            reasons = existing.setdefault("reasons", [])
+            if alert.reason not in reasons:
+                reasons.append(alert.reason)
+            existing["priority"] = min(int(existing.get("priority") or 9), 4)
+            continue
+        row = {
+            "question": question,
+            "current_snapshot": learned_row["current_snapshot"],
+            "reasons": [alert.reason],
+            "priority": 4,
+        }
+        rows.append(row)
+        rows_by_id[question.id] = row
+    _sort_review_rows(rows)
+
+
+def _review_alert_matches_filters(
+    ledger: ForecastLedger,
+    *,
+    question: Any,
+    snapshot: Any,
+    domain: str | None,
+    topic: str | None,
+    horizon: str | None,
+    confidence_below: float | None,
+    confidence_above: float | None,
+) -> bool:
+    if domain and question.domain != domain:
+        return False
+    if topic and topic not in question.topics:
+        return False
+    if horizon and (
+        snapshot is None or not ledger._horizon_matches(snapshot.forecast_horizon_days, horizon)
+    ):
+        return False
+    if confidence_below is not None or confidence_above is not None:
+        if snapshot is None or snapshot.confidence is None:
+            return False
+        if confidence_below is not None and snapshot.confidence >= confidence_below:
+            return False
+        if confidence_above is not None and snapshot.confidence <= confidence_above:
+            return False
+    return True
+
+
+def _sort_review_rows(rows: list[dict[str, Any]]) -> None:
+    rows.sort(
+        key=lambda row: (
+            int(row.get("priority") or 9),
+            row["question"].close_time or row["question"].resolution_time or "9999-12-31T00:00:00Z",
+            row["question"].title.lower(),
+        )
+    )
 
 
 def _cmd_schedule_add(args: argparse.Namespace) -> None:
@@ -6224,7 +6393,7 @@ def _cmd_schedule_run(args: argparse.Namespace) -> None:
     learning_review_events = [
         alert
         for alert in alert_rows
-        if alert.reason in {"calibration_lesson_review", "domain_error_profile_review"}
+        if is_learning_review_reason(alert.reason)
     ]
     print(f"ran {len(results)} scheduled review(s)")
     print(f"created {total_alerts} alert(s)")
@@ -7464,6 +7633,8 @@ def _research_change_summary(evidence: list[Any], current_snapshot: Any) -> str:
 def _review_next_action(question_id: str, reasons: list[str]) -> str:
     if any(reason.startswith("new_evidence:") for reason in reasons):
         return f"forecast research {question_id}; forecast update {question_id} --preview ..."
+    if any(is_learned_error_review_reason(reason) for reason in reasons):
+        return f"forecast show {question_id}; forecast update {question_id} --preview ..."
     if "no_forecast_snapshot" in reasons:
         return f"forecast update {question_id} --preview ..."
     if any(

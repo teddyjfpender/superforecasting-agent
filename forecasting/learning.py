@@ -7,6 +7,31 @@ from typing import Any
 
 from forecasting.ledger import ForecastLedger
 
+LEARNING_REVIEW_REASONS = frozenset(
+    {
+        "calibration_lesson_review",
+        "domain_error_profile_review",
+    }
+)
+LEARNED_ERROR_REVIEW_PREFIX = "domain_error_profile_applies:"
+
+
+def is_learned_error_review_reason(reason: str | None) -> bool:
+    return str(reason or "").startswith(LEARNED_ERROR_REVIEW_PREFIX)
+
+
+def learned_error_profile_id(reason: str | None) -> str | None:
+    text = str(reason or "")
+    if not text.startswith(LEARNED_ERROR_REVIEW_PREFIX):
+        return None
+    profile_id = text[len(LEARNED_ERROR_REVIEW_PREFIX) :].strip()
+    return profile_id or None
+
+
+def is_learning_review_reason(reason: str | None) -> bool:
+    text = str(reason or "")
+    return text in LEARNING_REVIEW_REASONS or is_learned_error_review_reason(text)
+
 
 def apply_active_lesson_adjustments(
     *,

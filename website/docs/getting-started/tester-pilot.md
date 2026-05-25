@@ -182,7 +182,8 @@ forecast --db "$FORECAST_DB" lesson list --scope-type domain --scope-ref <domain
 
 `schedule run` should report `scores_created`, `postmortems_created`, and
 `learning_reviews` counts. Those counts tell the operator when a scheduled
-self-check changed calibration memory or domain/topic error profiles.
+self-check changed calibration memory, domain/topic error profiles, or active
+forecast learned-error review alerts.
 
 Review the book:
 

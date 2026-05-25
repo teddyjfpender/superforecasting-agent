@@ -512,7 +512,7 @@ forecast postmortem <id>
 forecast lesson list [--scope-type ...] [--scope-ref ...] [--active]
 forecast lesson status <lesson-id> --status tentative|active|superseded|rejected
 forecast calibration [--domain ...] [--horizon ...] [--origin live|backtest|imported_baseline] [--by-origin]
-forecast errors [--domain ...] [--topic ...]
+forecast errors [--domain ...] [--topic ...] [--limit N]
 forecast review [--stale] [--last 30d] [--horizon <days|range>]
 forecast backtest <dataset> [--as-of <timestamp>]
 forecast backtest <dataset> --probability-source baseline-ensemble
@@ -901,6 +901,7 @@ Requirements:
 - [ ] Empty or low-sample buckets are clearly marked.
 - [ ] The output distinguishes accuracy from sharpness.
 - [ ] `forecast errors` displays recurring error patterns and recommended calibration adjustments by domain/topic.
+- [ ] `forecast errors` and `forecast review` surface active forecasts that have unresolved learned-error profile alerts.
 
 ### US-012: Export An Auditable Forecast Packet
 

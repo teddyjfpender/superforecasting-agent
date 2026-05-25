@@ -5282,6 +5282,17 @@ def test_cron_runner_uses_schedule_auto_learning_flags(tmp_path):
         rationale="High-confidence forecast that should miss.",
     )
     ledger.resolve_question(question_id=question.id, outcome="no")
+    active_question = ledger.create_question(
+        title="Will cron flag active forecast error patterns?",
+        resolution_criteria="Resolved yes if active forecasts receive learned-error alerts.",
+        domain="macro",
+        topics=["inflation"],
+    )
+    ledger.create_snapshot(
+        question_id=active_question.id,
+        probability_or_distribution=0.65,
+        rationale="Active forecast to compare against learned error patterns.",
+    )
     ledger.schedule_review(
         scope_type="domain_topic",
         scope_ref=json.dumps({"domain": "macro", "topic": "inflation"}, sort_keys=True),
@@ -5297,6 +5308,9 @@ def test_cron_runner_uses_schedule_auto_learning_flags(tmp_path):
     assert "postmortem_created:" in report
     assert "scores_created: 1" in report
     assert "postmortems_created: 1" in report
+    assert "learning_reviews: 5" in report
+    assert "domain_error_profile_applies:" in report
+    assert active_question.id in report
     assert ledger.list_calibration_lessons(scope_type="domain", scope_ref="macro")
     assert ledger.list_domain_error_profiles(domain="macro", topic="inflation")[0]["sample_count"] == 1
 

@@ -13846,11 +13846,25 @@ def test_forecast_cli_schedule_add_can_enable_scoped_learning(tmp_path, capsys):
 
     assert "scores_created: 1" in run_output
     assert "postmortems_created: 1" in run_output
-    assert "learning_reviews:" in run_output
+    assert "learning_reviews: 5" in run_output
     assert "score_created:" in run_output
     assert "postmortem_created:" in run_output
     assert "domain_error_profile_applies:" in run_output
     assert active_question_id in run_output
+
+    _run(parser, ["forecast", "--db", db, "review", "--domain", "macro", "--topic", "inflation"])
+    review_output = capsys.readouterr().out
+    assert active_question_id in review_output
+    assert "domain_error_profile_applies:" in review_output
+    assert f"forecast show {active_question_id}; forecast update {active_question_id} --preview" in review_output
+
+    _run(parser, ["forecast", "--db", db, "errors", "--domain", "macro", "--topic", "inflation"])
+    errors_output = capsys.readouterr().out
+    assert "active_reviews:" in errors_output
+    assert active_question_id in errors_output
+    assert "profile=dep_" in errors_output
+    assert "Inspect `forecast show" in errors_output
+
     ledger = ForecastLedger(db_path)
     assert ledger.list_calibration_lessons(scope_type="domain", scope_ref="macro")
     assert ledger.list_domain_error_profiles(domain="macro", topic="inflation")[0]["sample_count"] == 1

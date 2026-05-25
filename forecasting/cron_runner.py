@@ -6,6 +6,7 @@ import argparse
 import os
 from pathlib import Path
 
+from forecasting.learning import is_learning_review_reason
 from forecasting.ledger import ForecastLedger
 
 
@@ -40,7 +41,7 @@ def run_due_reviews(
     learning_review_events = [
         alert
         for alert in alert_rows
-        if alert.reason in {"calibration_lesson_review", "domain_error_profile_review"}
+        if is_learning_review_reason(alert.reason)
     ]
 
     lines = [
