@@ -1999,6 +1999,16 @@ def test_update_upstream_metadata_is_forecast_native():
     assert "hermes-agent/archive/refs/heads" not in main_py
 
 
+def test_update_docs_messaging_restart_copy_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (
+        root / "website" / "docs" / "getting-started" / "updating.md"
+    ).read_text(encoding="utf-8")
+
+    assert "Forecast alert delivery may pause briefly" in text
+    assert "The bot will briefly go offline" not in text
+
+
 def test_model_catalog_default_url_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     config_py = (root / "hermes_cli" / "config.py").read_text(encoding="utf-8")

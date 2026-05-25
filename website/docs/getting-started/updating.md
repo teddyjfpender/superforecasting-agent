@@ -150,7 +150,7 @@ You can also update directly from Telegram, Discord, Slack, WhatsApp, or Teams b
 /update
 ```
 
-This pulls the latest code, updates dependencies, and restarts running gateways. The bot will briefly go offline during the restart (typically 5–15 seconds) and then resume.
+This pulls the latest code, updates dependencies, and restarts running gateways. Forecast alert delivery may pause briefly during the restart (typically 5-15 seconds) and then resume.
 
 ### Manual Update
 
