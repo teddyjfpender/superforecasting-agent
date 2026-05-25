@@ -90,9 +90,9 @@ Extend the desk with new research inputs, monitors, scoring helpers, or benchmar
 
 For most new integrations, prefer plugins or MCP servers before editing core. Built-in tools should be reserved for capabilities that belong in the base forecast desk.
 
-### "I need inherited assistant features"
+### "I need inherited support surfaces"
 
-General chat, messaging gateways, voice, skills, image generation, dashboard chat, and IDE surfaces remain available for compatibility. Use them when they support forecasting work, but keep durable beliefs and learning in the forecast ledger.
+General chat, messaging gateways, voice, skills, image generation, Forecast Chat, and IDE surfaces remain available for compatibility. Use them when they support forecasting work, but keep durable beliefs and learning in the forecast ledger.
 
 1. [Features Overview](../user-guide/features/overview.md)
 2. [Messaging](../user-guide/messaging/)

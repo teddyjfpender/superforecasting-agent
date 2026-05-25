@@ -52,7 +52,7 @@ forecasting work:
 - todo and clarify tools
 - cron scheduling for self-checks and alerts
 
-It does not enable broad assistant features by default. Memory-provider tools,
+It does not enable broad inherited support surfaces by default. Memory-provider tools,
 skills marketplace tools, image generation, delegation, messaging delivery,
 Home Assistant, Spotify, Discord administration, RL training, and other broad
 integrations are opt-in.

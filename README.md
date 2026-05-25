@@ -14,7 +14,7 @@
 
 **A CLI-first forecasting desk forked from Hermes Agent.** The core product primitive is the scoreable forecast: a durable question with an append-only probability history, timestamped evidence, assumptions, reference classes, model runs, resolutions, scores, postmortems, and calibration lessons. The north star is a command-line forecasting desk that compounds judgment over time.
 
-This fork keeps the useful Hermes runtime pieces: model-provider adapters, local storage, tool execution, logging, profiles, plugins, and the CLI/TUI foundation. It demotes broad chat, gateway-first messaging, and generic assistant memory behind forecasting workflows.
+This fork keeps the useful Hermes runtime pieces: model-provider adapters, local storage, tool execution, logging, profiles, plugins, and the CLI/TUI foundation. It demotes broad chat, gateway-first messaging, and generic chat memory behind forecasting workflows.
 
 Use any model you want — [Nous Portal](https://portal.nousresearch.com), [OpenRouter](https://openrouter.ai) (200+ models), [NovitaAI](https://novita.ai) (AI-native cloud for Model API, Agent Sandbox, and GPU Cloud), [NVIDIA NIM](https://build.nvidia.com) (Nemotron), [Xiaomi MiMo](https://platform.xiaomimimo.com), [z.ai/GLM](https://z.ai), [Kimi/Moonshot](https://platform.moonshot.ai), [MiniMax](https://www.minimax.io), [Hugging Face](https://huggingface.co), OpenAI, or your own endpoint. Switch with `superforecasting-agent model` — no code changes, no lock-in.
 
