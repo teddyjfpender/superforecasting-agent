@@ -109,6 +109,10 @@ def _apply_profile(profile_name: str | None) -> None:
         )
         if configured_home:
             os.environ["HERMES_HOME"] = configured_home
+        else:
+            from hermes_constants import get_native_hermes_home
+
+            os.environ["HERMES_HOME"] = str(get_native_hermes_home())
         return
     try:
         from hermes_cli.profiles import resolve_profile_env

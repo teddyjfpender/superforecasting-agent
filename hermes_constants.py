@@ -56,6 +56,12 @@ def _native_home() -> Path:
     return Path.home() / _NATIVE_HOME_DIRNAME
 
 
+def get_native_hermes_home() -> Path:
+    """Return the fork-native default home directory path."""
+
+    return _native_home()
+
+
 def _legacy_home() -> Path:
     return Path.home() / _LEGACY_HOME_DIRNAME
 
