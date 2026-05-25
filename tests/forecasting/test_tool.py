@@ -1956,6 +1956,28 @@ def test_forecast_ledger_tool_manages_scheduled_reviews(tmp_path):
     assert ran["scheduled_review_results"][0]["alerts"][0]["reason"] == "no_forecast_snapshot"
 
 
+def test_forecast_ledger_tool_schedule_review_defaults_next_run_at(tmp_path):
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+
+    scheduled = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "schedule_review",
+                "domain": "macro",
+                "cadence": "1d",
+            }
+        )
+    )
+
+    review = scheduled["scheduled_review"]
+    assert review["scope_type"] == "domain"
+    assert review["scope_ref"] == "macro"
+    assert review["next_run_at"]
+    assert ForecastLedger(db_path).list_scheduled_reviews()[0]["id"] == review["id"]
+
+
 def test_forecast_ledger_tool_reviews_and_schedules_by_horizon(tmp_path):
     db_path = tmp_path / "forecasting.db"
     db = str(db_path)
