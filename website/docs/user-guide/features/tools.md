@@ -87,7 +87,7 @@ forecast new "Will Company X file for bankruptcy before 2027?"
 forecast research <id>
 forecast evidence add <id> "https://example.com/filing" --source-type url
 forecast base-rate <id>
-forecast update <id> --probability 0.18
+forecast update <id> --probability 0.18 --rationale "New filing lowers default risk."
 ```
 
 The agent should leave an evidence trail for every material probability move:

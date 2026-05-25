@@ -34,10 +34,10 @@ forecast evidence add <id> "New source or note" \
   --claim-type fact \
   --stance increases
 
+forecast base-rate <id>
 forecast base-rate <id> --name "Comparable cases" \
-  --population "Similar historical cases" \
-  --sample-size 100 \
-  --successes 47
+  --inclusion-criteria "Similar historical cases" \
+  --base-rate 0.47
 
 forecast model <id> --type bayesian_update \
   --input-json '{"prior":0.47,"likelihood_ratio":1.3}' \

@@ -1213,6 +1213,11 @@ def test_forecast_cli_assumption_and_reference_class_status(tmp_path, capsys):
         ],
     )
     reference_id = re.search(r"reference_class: (rc_[a-f0-9]+)", capsys.readouterr().out).group(1)
+    _run(parser, ["forecast", "--db", db, "base-rate", question_id])
+    base_rate_output = capsys.readouterr().out
+    assert "reference_classes: 1" in base_rate_output
+    assert reference_id in base_rate_output
+    assert "probability unchanged" in base_rate_output
     _run(
         parser,
         [

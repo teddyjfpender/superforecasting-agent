@@ -1119,10 +1119,10 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
 
     base_rate_parser = forecast_sub.add_parser("base-rate", help="Store a reference-class base-rate estimate")
     base_rate_parser.add_argument("id")
-    base_rate_parser.add_argument("--name", required=True)
-    base_rate_parser.add_argument("--inclusion-criteria", required=True)
+    base_rate_parser.add_argument("--name")
+    base_rate_parser.add_argument("--inclusion-criteria")
     base_rate_parser.add_argument("--exclusion-criteria", default="")
-    base_rate_parser.add_argument("--base-rate", type=float, required=True)
+    base_rate_parser.add_argument("--base-rate", type=float)
     base_rate_parser.add_argument("--uncertainty", type=float)
     base_rate_parser.add_argument("--source-ref", dest="source_refs", action="append", default=[])
     base_rate_parser.add_argument("--check-cadence")
@@ -5403,6 +5403,33 @@ def _cmd_research(args: argparse.Namespace) -> None:
 
 def _cmd_base_rate(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
+    add_fields = {
+        "name": args.name,
+        "inclusion_criteria": args.inclusion_criteria,
+        "base_rate": args.base_rate,
+    }
+    if not any(value is not None for value in add_fields.values()):
+        rows = ledger.list_reference_classes(args.id)
+        print(f"reference_classes: {len(rows)}")
+        if rows:
+            print("ID             Status      BaseRate  Name")
+            for row in rows[-5:]:
+                print(
+                    f"{row['id']:<14} {row['status']:<11} "
+                    f"{_format_optional_float(row['base_rate']):<9} {row['name']}"
+                )
+        print(
+            "add: forecast base-rate "
+            f"{args.id} --name <name> --inclusion-criteria <criteria> --base-rate <p>"
+        )
+        print("probability unchanged")
+        return
+    missing = [name for name, value in add_fields.items() if value is None]
+    if missing:
+        raise SystemExit(
+            "base-rate add requires --name, --inclusion-criteria, and --base-rate "
+            f"(missing: {', '.join(missing)})"
+        )
     ref = ledger.add_reference_class(
         question_id=args.id,
         name=args.name,
