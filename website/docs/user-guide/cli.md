@@ -139,6 +139,7 @@ forecast errors
 forecast lessons
 forecast backtest --benchmarks
 forecast backtest --all-benchmarks --probability-source forecast-engine
+forecast backtest path/to/cases.json --probability-source agent-protocol --agent-prompt-jsonl path/to/prompts.jsonl --prepare-agent-prompts
 forecast backtest path/to/cases.json --probability-source agent-protocol --agent-response-jsonl path/to/agent-responses.jsonl
 forecast backtest path/to/cases.json --probability-source agent-protocol --agent-output-jsonl path/to/captured-responses.jsonl
 forecast performance --last 5 --json
@@ -160,8 +161,9 @@ probability movement before close, ensemble component contribution, and
 question-type performance so reviewers can see whether late updates, weighted
 model inputs, and outcome formats are improving or simply adding churn.
 Agent-protocol backtests additionally hide answer-side replay fields from the
-agent prompt, can write captured JSONL responses, and can replay captured JSONL
-outputs. `forecast performance --json` includes an `evidence_status` section so
+agent prompt, can export sanitized prompt packets for offline model runs, can
+write captured JSONL responses, and can replay captured JSONL outputs.
+`forecast performance --json` includes an `evidence_status` section so
 automation can see live-score counts, agent-protocol replay counts, leakage-free
 runs, positive baseline-edge runs, distinct dataset coverage, external resolved
 question corpus coverage, and remaining

@@ -11,7 +11,11 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from forecasting.agent_protocol import build_backtest_agent_protocol_messages, parse_agent_protocol_response
+from forecasting.agent_protocol import (
+    build_agent_protocol_prompt_packet,
+    build_backtest_agent_protocol_messages,
+    parse_agent_protocol_response,
+)
 from forecasting.cli import main as forecast_main
 from forecasting.cli import _apply_backtest_probability_source
 from forecasting.cli import register_cli
@@ -10374,6 +10378,37 @@ def test_agent_protocol_probability_source_uses_sanitized_case_context():
     assert captured_prompts
 
 
+def test_agent_protocol_prompt_packet_excludes_answer_side_fields():
+    packet = build_agent_protocol_prompt_packet(
+        {
+            "id": "agent-prompt-1",
+            "title": "Will prompt export hide the answer?",
+            "resolution_criteria": "Resolved no by the fixture.",
+            "as_of": "2026-01-10T00:00:00Z",
+            "probability": 0.91,
+            "outcome": "no",
+            "evidence": [
+                {"note": "visible before cutoff", "available_at": "2026-01-08T00:00:00Z"},
+                {"note": "hidden after cutoff", "available_at": "2026-01-18T00:00:00Z"},
+            ],
+        },
+        case_index=3,
+        dataset="fixture:agent-protocol",
+    )
+    encoded = json.dumps(packet, sort_keys=True)
+
+    assert packet["case_id"] == "agent-prompt-1"
+    assert packet["index"] == 3
+    assert packet["dataset"] == "fixture:agent-protocol"
+    assert packet["prompt_version"] == "backtest-agent-protocol-v0"
+    assert packet["messages"][0]["role"] == "system"
+    assert "visible before cutoff" in encoded
+    assert "hidden after cutoff" not in encoded
+    assert '"probability": 0.91' not in encoded
+    assert '"outcome": "no"' not in encoded
+    assert packet["response_schema"]["probability"].startswith("number between 0 and 1")
+
+
 def test_agent_protocol_response_parser_accepts_fenced_json():
     parsed = parse_agent_protocol_response(
         """
@@ -10483,6 +10518,132 @@ def test_forecast_cli_backtest_can_replay_captured_agent_protocol_outputs(tmp_pa
     assert payload["runs"][0]["claim_status"]["can_claim_live_superforecasting"] is False
     assert payload["evidence_status"]["backtests"]["agent_protocol_scored_count"] == 1
     assert "agent_protocol_scored_cases" in payload["evidence_status"]["gaps"]
+
+
+def test_forecast_cli_backtest_can_prepare_agent_protocol_prompt_jsonl(tmp_path, capsys):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    dataset = tmp_path / "agent_protocol_cases.json"
+    prompts = tmp_path / "agent_prompts.jsonl"
+    dataset.write_text(
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "id": "agent-prompt-1",
+                        "title": "Will offline agent prompt export hide answer fields?",
+                        "resolution_criteria": "Resolved no for this fixture.",
+                        "as_of": "2026-01-10T00:00:00Z",
+                        "close_time": "2026-01-20T00:00:00Z",
+                        "probability": 0.95,
+                        "outcome": "no",
+                        "evidence": [
+                            {
+                                "note": "Visible pre-cutoff evidence.",
+                                "available_at": "2026-01-09T00:00:00Z",
+                            },
+                            {
+                                "note": "Hidden post-cutoff evidence.",
+                                "available_at": "2026-01-21T00:00:00Z",
+                            },
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            str(db_path),
+            "backtest",
+            str(dataset),
+            "--probability-source",
+            "agent-protocol",
+            "--agent-prompt-jsonl",
+            str(prompts),
+            "--prepare-agent-prompts",
+        ],
+    )
+    output = capsys.readouterr().out
+    rows = [json.loads(line) for line in prompts.read_text(encoding="utf-8").splitlines()]
+    packet_text = json.dumps(rows[0], sort_keys=True)
+
+    assert f"agent_protocol_prompts: {prompts}" in output
+    assert "cases: 1" in output
+    assert "--agent-response-jsonl <responses.jsonl>" in output
+    assert rows[0]["case_id"] == "agent-prompt-1"
+    assert rows[0]["dataset"] == str(dataset)
+    assert rows[0]["messages"][0]["role"] == "system"
+    assert "Visible pre-cutoff evidence." in packet_text
+    assert "Hidden post-cutoff evidence." not in packet_text
+    assert '"probability": 0.95' not in packet_text
+    assert '"outcome": "no"' not in packet_text
+    assert ForecastLedger(db_path).list_backtest_runs() == []
+
+
+def test_forecast_cli_backtest_prompt_export_rejects_conflicting_modes(tmp_path):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    dataset = tmp_path / "agent_protocol_cases.json"
+    prompts = tmp_path / "agent_prompts.jsonl"
+    responses = tmp_path / "agent_responses.jsonl"
+    dataset.write_text(
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "id": "agent-prompt-conflict-1",
+                        "title": "Will prompt export reject conflicting modes?",
+                        "resolution_criteria": "Resolved yes for this fixture.",
+                        "as_of": "2026-01-10T00:00:00Z",
+                        "probability": 0.65,
+                        "outcome": "yes",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="--agent-prompt-jsonl requires --prepare-agent-prompts"):
+        _run(
+            parser,
+            [
+                "forecast",
+                "--db",
+                str(db_path),
+                "backtest",
+                str(dataset),
+                "--probability-source",
+                "agent-protocol",
+                "--agent-prompt-jsonl",
+                str(prompts),
+            ],
+        )
+
+    with pytest.raises(SystemExit, match="cannot be combined"):
+        _run(
+            parser,
+            [
+                "forecast",
+                "--db",
+                str(db_path),
+                "backtest",
+                str(dataset),
+                "--probability-source",
+                "agent-protocol",
+                "--agent-prompt-jsonl",
+                str(prompts),
+                "--prepare-agent-prompts",
+                "--agent-response-jsonl",
+                str(responses),
+            ],
+        )
 
 
 def test_forecast_cli_backtest_live_agent_protocol_writes_capture_jsonl(tmp_path, capsys, monkeypatch):

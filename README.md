@@ -79,6 +79,7 @@ forecast sources
 forecast backtest --benchmarks
 forecast backtest --all-benchmarks --probability-source forecast-engine
 forecast backtest builtin:manifold-public-120-binary --probability-source forecast-engine
+forecast backtest path/to/cases.json --probability-source agent-protocol --agent-prompt-jsonl path/to/prompts.jsonl --prepare-agent-prompts
 forecast backtest path/to/cases.json --probability-source agent-protocol --agent-response-jsonl path/to/agent-responses.jsonl
 forecast backtest path/to/cases.json --probability-source agent-protocol --agent-output-jsonl path/to/captured-responses.jsonl
 forecast performance --last 5
@@ -132,6 +133,7 @@ The forecast ledger is the product surface. Generic chat and messaging gateways 
 | Backtest | `forecast backtest builtin:heldout-120-binary` |
 | Run benchmark suite | `forecast backtest --all-benchmarks --probability-source forecast-engine` |
 | Replay forecast engine | `forecast backtest builtin:manifold-public-120-binary --probability-source forecast-engine` |
+| Prepare agent-protocol prompts | `forecast backtest cases.json --probability-source agent-protocol --agent-prompt-jsonl prompts.jsonl --prepare-agent-prompts` |
 | Replay captured agent protocol | `forecast backtest cases.json --probability-source agent-protocol --agent-response-jsonl responses.jsonl` |
 | Capture agent protocol outputs | `forecast backtest cases.json --probability-source agent-protocol --agent-output-jsonl captured.jsonl` |
 | Review backtest performance | `forecast performance --last 5` or `forecast performance --last 5 --json` |

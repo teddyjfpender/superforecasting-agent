@@ -94,6 +94,34 @@ def build_backtest_agent_protocol_messages(case: dict[str, Any]) -> list[dict[st
     ]
 
 
+def build_agent_protocol_prompt_packet(
+    case: dict[str, Any],
+    *,
+    case_index: int,
+    dataset: str | None = None,
+) -> dict[str, Any]:
+    """Build a JSONL-safe prompt packet for offline agent-protocol runs."""
+
+    public_case = sanitize_backtest_case_for_agent(case)
+    packet = {
+        "case_id": case.get("id"),
+        "index": case_index,
+        "prompt_version": AGENT_PROTOCOL_PROMPT_VERSION,
+        "method": AGENT_PROTOCOL_METHOD,
+        "messages": build_backtest_agent_protocol_messages(case),
+        "public_case": public_case,
+        "response_schema": {
+            "probability": "number between 0 and 1 for YES",
+            "confidence": "optional number between 0 and 1",
+            "rationale": "concise audit trail citing visible evidence, base rates, baselines, assumptions, and uncertainty",
+            "components": "optional object or list of component probabilities",
+        },
+    }
+    if dataset:
+        packet["dataset"] = dataset
+    return packet
+
+
 def sanitize_backtest_case_for_agent(case: dict[str, Any]) -> dict[str, Any]:
     """Return the case context visible to the agent during replay."""
 

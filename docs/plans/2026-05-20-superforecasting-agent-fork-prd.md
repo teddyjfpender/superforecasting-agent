@@ -517,6 +517,7 @@ forecast review [--stale] [--last 30d] [--horizon <days|range>]
 forecast backtest <dataset> [--as-of <timestamp>]
 forecast backtest <dataset> --probability-source baseline-ensemble
 forecast backtest <dataset> --probability-source forecast-engine
+forecast backtest <dataset> --probability-source agent-protocol --agent-prompt-jsonl <path> --prepare-agent-prompts
 forecast backtest <dataset> --probability-source agent-protocol [--agent-response-jsonl <path>] [--agent-output-jsonl <path>]
 forecast backtest builtin:manifold-public-120-binary
 forecast backtest --all-benchmarks [--probability-source forecast-engine]

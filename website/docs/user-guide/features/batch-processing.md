@@ -96,6 +96,11 @@ local scoring without calling a model during the benchmark run:
 ```bash
 forecast backtest path/to/cases.json \
   --probability-source agent-protocol \
+  --agent-prompt-jsonl path/to/prompts.jsonl \
+  --prepare-agent-prompts
+
+forecast backtest path/to/cases.json \
+  --probability-source agent-protocol \
   --agent-response-jsonl path/to/agent-responses.jsonl
 ```
 
@@ -110,6 +115,9 @@ Without `--agent-response-jsonl`, `agent-protocol` calls the configured agent
 for each case. The prompt excludes dataset probability, resolved outcome,
 resolution-time fields, notes, and metadata, and it filters evidence and
 baselines to the simulated evidence cutoff before the agent sees the case.
+Use `--agent-prompt-jsonl ... --prepare-agent-prompts` when you want to export
+those exact sanitized prompt packets first, run them through a model/provider
+outside the benchmark process, and replay the resulting response JSONL later.
 Add `--agent-output-jsonl path/to/captured.jsonl` to write the responses used
 by a run so the same agent outputs can be replayed later without another model
 call.

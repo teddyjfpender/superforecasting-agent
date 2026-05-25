@@ -16,6 +16,7 @@ from forecasting.agent_protocol import (
     AGENT_PROTOCOL_METHOD,
     AGENT_PROTOCOL_PROMPT_VERSION,
     agent_protocol_binary_probability,
+    build_agent_protocol_prompt_packet,
 )
 from forecasting.backtesting import (
     DEFAULT_MIN_AGENT_PROTOCOL_CASES_FOR_CLAIM,
@@ -1518,6 +1519,18 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "Write agent protocol responses as JSONL for later deterministic replay; "
             "used only with --probability-source agent-protocol."
         ),
+    )
+    backtest_parser.add_argument(
+        "--agent-prompt-jsonl",
+        help=(
+            "Write sanitized agent protocol prompt packets as JSONL for offline model runs; "
+            "used with --prepare-agent-prompts and --probability-source agent-protocol."
+        ),
+    )
+    backtest_parser.add_argument(
+        "--prepare-agent-prompts",
+        action="store_true",
+        help="Only write --agent-prompt-jsonl packets for the selected dataset and do not run the backtest",
     )
     backtest_parser.add_argument("--agent-model", help="Model used for agent-protocol backtests")
     backtest_parser.add_argument("--agent-provider", help="Provider used for agent-protocol backtests")
@@ -6316,11 +6329,18 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
         raise SystemExit("--agent-response-jsonl requires --probability-source agent-protocol")
     if args.agent_output_jsonl and args.probability_source != "agent-protocol":
         raise SystemExit("--agent-output-jsonl requires --probability-source agent-protocol")
-    agent_runner = (
-        _backtest_agent_protocol_runner(args)
-        if args.probability_source == "agent-protocol"
-        else None
-    )
+    if args.agent_prompt_jsonl and args.probability_source != "agent-protocol":
+        raise SystemExit("--agent-prompt-jsonl requires --probability-source agent-protocol")
+    if args.agent_prompt_jsonl and not args.prepare_agent_prompts:
+        raise SystemExit("--agent-prompt-jsonl requires --prepare-agent-prompts")
+    if args.prepare_agent_prompts and args.probability_source != "agent-protocol":
+        raise SystemExit("--prepare-agent-prompts requires --probability-source agent-protocol")
+    if args.prepare_agent_prompts and not args.agent_prompt_jsonl:
+        raise SystemExit("--prepare-agent-prompts requires --agent-prompt-jsonl")
+    if args.prepare_agent_prompts and (args.agent_response_jsonl or args.agent_output_jsonl):
+        raise SystemExit("--prepare-agent-prompts cannot be combined with agent response or output JSONL")
+    if args.prepare_agent_prompts and (args.benchmarks or args.all_benchmarks or args.list or args.show):
+        raise SystemExit("--prepare-agent-prompts requires exactly one dataset")
     if args.benchmarks:
         rows = list_builtin_benchmarks()
         imported = ledger.list_benchmark_datasets()
@@ -6341,6 +6361,11 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
         if not rows:
             print("No built-in benchmarks found.")
             return
+        agent_runner = (
+            _backtest_agent_protocol_runner(args)
+            if args.probability_source == "agent-protocol"
+            else None
+        )
         print(f"benchmark_suite: builtin ({len(rows)} datasets)")
         print(f"probability_source: {args.probability_source}")
         for row in rows:
@@ -6437,8 +6462,27 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
                 f"{snapshot_details}"
             )
         return
+    if args.prepare_agent_prompts:
+        if not args.dataset:
+            raise SystemExit("forecast backtest --prepare-agent-prompts requires a dataset")
+        cases = _load_backtest_cases(args.dataset, ledger=ledger)
+        path = _write_agent_protocol_prompt_jsonl(args.agent_prompt_jsonl, cases, dataset=args.dataset)
+        print(f"agent_protocol_prompts: {path}")
+        print(f"cases: {len(cases)}")
+        print("next: run the prompt packets through an agent, then replay responses with:")
+        print(
+            "  forecast backtest "
+            f"{args.dataset} --probability-source agent-protocol "
+            "--agent-response-jsonl <responses.jsonl>"
+        )
+        return
     if not args.dataset:
         raise SystemExit("forecast backtest requires a dataset, --list, or --show")
+    agent_runner = (
+        _backtest_agent_protocol_runner(args)
+        if args.probability_source == "agent-protocol"
+        else None
+    )
     cases = _apply_backtest_probability_source(
         _load_backtest_cases(args.dataset, ledger=ledger),
         args.probability_source,
@@ -7634,6 +7678,16 @@ def _prepare_agent_protocol_output_jsonl(path_value: str | None) -> Path | None:
     path = Path(path_value).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("", encoding="utf-8")
+    return path
+
+
+def _write_agent_protocol_prompt_jsonl(path_value: str, cases: list[dict[str, Any]], *, dataset: str) -> Path:
+    path = Path(path_value).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for index, case in enumerate(cases):
+            packet = build_agent_protocol_prompt_packet(case, case_index=index, dataset=dataset)
+            handle.write(json.dumps(packet, sort_keys=True) + "\n")
     return path
 
 

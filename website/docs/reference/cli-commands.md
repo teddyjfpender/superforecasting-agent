@@ -70,6 +70,12 @@ keyed by `case_id`, `id`, or `index`. Use `--agent-output-jsonl <path>` to
 write the responses used by a run for later deterministic replay. These runs
 are auditable benchmark evidence, not a live-superiority claim.
 
+Use `--agent-prompt-jsonl <path> --prepare-agent-prompts` to export sanitized
+prompt packets without calling a model or writing a backtest run. The packets
+include the strict response schema and the pre-cutoff case context that the
+agent is allowed to see. After an offline model run produces response JSONL,
+replay it with `--agent-response-jsonl`.
+
 ## Runtime Entrypoints
 
 ```bash
