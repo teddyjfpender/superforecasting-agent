@@ -1871,12 +1871,16 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
     assert "ephemeral agent session files" in text
     assert "Superforecasting Agent bot is in this call taking notes" in text
     assert "Forecast session recap panel" in text
+    assert "Previous Forecast Session" in text
+    assert "Forecaster:" in text
     assert "Legacy Hermes CLI compatibility launcher" in text
     assert "Superforecasting Agent plugins package" in text
     assert "agent plugin system" in text
     assert "agent session ID" in text
     assert "independent Superforecasting Agent" in thread_ready_lines
     assert "Hermes session" not in text
+    assert "Hermes:" not in text
+    assert "Previous Conversation" not in text
     assert "in the Hermes venv" not in text
     assert "hermes-agent[slack]" not in text
     assert "System topic for Hermes commands and status" not in text
