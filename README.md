@@ -165,7 +165,7 @@ The fork documentation leads with forecasting workflows. Inherited runtime featu
 | Section | What's Covered |
 |---------|---------------|
 | [Quickstart](https://superforecasting-agent.nousresearch.com/docs/getting-started/quickstart) | Install and setup |
-| [Tester Smoke Test](https://superforecasting-agent.nousresearch.com/docs/getting-started/forecast-smoke-test) | Local lifecycle, self-check, and backtest acceptance check |
+| [Tester Smoke Test](https://superforecasting-agent.nousresearch.com/docs/getting-started/forecast-smoke-test) | Local lifecycle, self-check, backtest, and tester handoff gates |
 | [Tester Pilot Runbook](https://superforecasting-agent.nousresearch.com/docs/getting-started/tester-pilot) | One-week friendly-alpha workflow, evidence bundle, and exit criteria |
 | [CLI Usage](https://superforecasting-agent.nousresearch.com/docs/user-guide/cli) | Forecast desk commands and inherited keybindings |
 | [Configuration](https://superforecasting-agent.nousresearch.com/docs/user-guide/configuration) | Config file, providers, models, all options |

@@ -48,7 +48,15 @@ source .venv/bin/activate
 uv pip install -e ".[all,dev]"
 ```
 
-Run the acceptance smoke test:
+Run the operator handoff gate:
+
+```bash
+python3 scripts/tester_handoff_check.py
+```
+
+This runs the forecast smoke test plus fork identity, compile, focused
+regression, and whitespace checks. For a quicker local lifecycle-only check,
+run the smoke test directly:
 
 ```bash
 python3 scripts/forecast_smoke_test.py

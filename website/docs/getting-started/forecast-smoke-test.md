@@ -15,6 +15,17 @@ source .venv/bin/activate
 python3 scripts/forecast_smoke_test.py
 ```
 
+For an operator handoff gate that also checks fork identity, Python compile
+health, focused regression coverage, and whitespace safety, run:
+
+```bash
+python3 scripts/tester_handoff_check.py
+```
+
+Use `--include-website-build` when you want the handoff gate to also render the
+docs site. The website build may still print inherited localized broken-link
+warnings, but the handoff gate fails if the build exits nonzero.
+
 The expected output includes a source snapshot line and ends with the pass line:
 
 ```text
@@ -97,6 +108,7 @@ python3 scripts/forecast_smoke_test.py --db /tmp/smoke.db --verbose
 
 A build is ready for friendly testers when:
 
+- `python3 scripts/tester_handoff_check.py` passes on the exact snapshot being handed off
 - this smoke test passes on a fresh checkout
 - `forecast status --json` reports `Superforecasting Agent`; the smoke script checks this
 - `forecast sources --json` lists the built-in adapter set; the smoke script checks this
