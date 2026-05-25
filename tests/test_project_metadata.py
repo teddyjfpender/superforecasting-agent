@@ -760,16 +760,22 @@ def test_high_attention_docs_navigation_is_forecast_native():
     assert "guides/build-a-superforecasting-agent-plugin" in sidebars
     assert "guides/use-soul-with-superforecasting-agent" in sidebars
     assert "guides/use-voice-mode-with-superforecasting-agent" in sidebars
+    assert "guides/daily-forecast-brief" in sidebars
     assert "guides/team-telegram-forecast-desk" in sidebars
     assert "build-a-hermes-plugin" not in sidebars
     assert "use-soul-with-hermes" not in sidebars
     assert "use-voice-mode-with-hermes" not in sidebars
+    assert "daily-briefing-bot" not in sidebars
     assert "team-telegram-assistant" not in sidebars
     assert "build-a-superforecasting-agent-plugin" in llms_generator
     assert "use-soul-with-superforecasting-agent" in llms_generator
     assert "use-voice-mode-with-superforecasting-agent" in llms_generator
+    assert "daily-forecast-brief" in llms_generator
+    assert "Daily Forecast Brief" in llms_generator
     assert "team-telegram-forecast-desk" in llms_generator
     assert "Team Telegram Forecast Desk" in llms_generator
+    assert "daily-briefing-bot" not in llms_generator
+    assert "Daily Briefing Bot" not in llms_generator
     assert "team-telegram-assistant" not in llms_generator
     assert "Team Telegram Assistant" not in llms_generator
     assert "Build a Superforecasting Agent Plugin" in docs_text

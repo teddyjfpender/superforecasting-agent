@@ -240,5 +240,5 @@ Authenticated GitHub API usage is usually enough for forecast monitoring. High-v
 
 - [GitHub Webhook Forecast Evidence](./webhook-github-pr-review.md) for real-time GitHub events.
 - [Forecast Automation Templates](/docs/guides/automation-templates) for source watches, backtests, and postmortems.
-- [Daily Forecast Brief](/docs/guides/daily-briefing-bot) for team-facing review digests.
+- [Daily Forecast Brief](/docs/guides/daily-forecast-brief) for team-facing review digests.
 - [Profiles](/docs/user-guide/profiles) for isolating a dedicated forecast-desk profile.

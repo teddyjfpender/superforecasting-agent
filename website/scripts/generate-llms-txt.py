@@ -116,7 +116,7 @@ SECTIONS: list[tuple[str, list[tuple[str, str, str | None]]]] = [
     ("Guides & Tutorials", [
         ("guides/tips", "Tips & Best Practices", None),
         ("guides/local-llm-on-mac", "Local LLMs on Mac", None),
-        ("guides/daily-briefing-bot", "Daily Briefing Bot", None),
+        ("guides/daily-forecast-brief", "Daily Forecast Brief", None),
         ("guides/team-telegram-forecast-desk", "Team Telegram Forecast Desk", None),
         ("guides/python-library", "Programmatic Forecast Workflows", None),
         (

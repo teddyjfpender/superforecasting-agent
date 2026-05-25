@@ -657,7 +657,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'guides/tips',
         'guides/local-llm-on-mac',
-        'guides/daily-briefing-bot',
+        'guides/daily-forecast-brief',
         'guides/team-telegram-forecast-desk',
         'guides/python-library',
         'guides/use-mcp-with-superforecasting-agent',

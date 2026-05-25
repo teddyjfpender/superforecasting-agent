@@ -353,4 +353,4 @@ Use this before changing the deployment:
 - [Teams Meetings setup](/docs/user-guide/messaging/teams-meetings)
 - [Microsoft Teams bot setup](/docs/user-guide/messaging/teams)
 - [Forecast Automation Templates](/docs/guides/automation-templates)
-- [Daily Forecast Brief](/docs/guides/daily-briefing-bot)
+- [Daily Forecast Brief](/docs/guides/daily-forecast-brief)
