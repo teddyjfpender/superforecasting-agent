@@ -442,8 +442,12 @@ The skin engine (`hermes_cli/skin_engine.py`) provides data-driven CLI visual cu
 
 ```
 hermes_cli/skin_engine.py    # SkinConfig dataclass, built-in skins, YAML loader
-~/.hermes/skins/*.yaml       # User-installed custom skins (drop-in)
+~/.superforecasting-agent/skins/*.yaml  # User-installed custom skins (drop-in)
 ```
+
+Legacy `~/.hermes/skins/*.yaml` skins remain readable as compatibility
+imports, but new documentation and setup flows should prefer the active
+Superforecasting Agent home.
 
 - `init_skin_from_config()` — called at CLI startup, reads `display.skin` from config
 - `get_active_skin()` — returns cached `SkinConfig` for the current skin
@@ -474,10 +478,14 @@ hermes_cli/skin_engine.py    # SkinConfig dataclass, built-in skins, YAML loader
 
 ### Built-in skins
 
-- `default` — Classic Hermes gold/kawaii (the current look)
-- `ares` — Crimson/bronze war-god theme with custom spinner wings
+- `forecast` — Neutral forecast desk default
+- `default` — Compatibility base skin with forecast-native branding
+- `ares` — Crimson/bronze focused-review theme with custom spinner wings
 - `mono` — Clean grayscale monochrome
 - `slate` — Cool blue developer-focused theme
+
+New built-in skins should keep the product framed as a serious forecasting
+desk. Avoid adding playful persona or general-assistant themes as defaults.
 
 ### Adding a built-in skin
 
@@ -496,7 +504,7 @@ Add to `_BUILTIN_SKINS` dict in `hermes_cli/skin_engine.py`:
 
 ### User skins (YAML)
 
-Users create `~/.hermes/skins/<name>.yaml`:
+Users create `~/.superforecasting-agent/skins/<name>.yaml`:
 
 ```yaml
 name: cyberpunk

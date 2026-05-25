@@ -1660,11 +1660,15 @@ def test_root_agents_guidance_is_forecast_native():
     assert "The north star is a command-line forecasting desk" in opening
     assert "`forecast self-check`, and `forecast schedule`" in opening
     assert "`~/.superforecasting-agent/config.yaml`" in text
+    assert "~/.superforecasting-agent/skins/*.yaml" in text
+    assert "`forecast` — Neutral forecast desk default" in text
     assert "superforecasting-agent --tui" in text
     assert "primary forecast-chat experience" in text
     assert "# Hermes Agent - Development Guide" not in opening
     assert "animated faces during API calls" not in opening
     assert "primary chat experience" not in opening
+    assert "Classic Hermes gold/kawaii" not in text
+    assert "Users create `~/.hermes/skins/" not in text
 
 
 def test_github_issue_and_pr_templates_are_forecast_native():
