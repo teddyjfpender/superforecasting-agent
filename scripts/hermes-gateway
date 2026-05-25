@@ -7,19 +7,19 @@ It is not tied to the interactive CLI and runs independently.
 
 Usage:
     # Run in foreground (for testing)
-    ./scripts/hermes-gateway
+    ./scripts/superforecasting-agent-gateway
     
     # Install as systemd service
-    ./scripts/hermes-gateway install
+    ./scripts/superforecasting-agent-gateway install
     
     # Manage the service
-    ./scripts/hermes-gateway start
-    ./scripts/hermes-gateway stop
-    ./scripts/hermes-gateway restart
-    ./scripts/hermes-gateway status
+    ./scripts/superforecasting-agent-gateway start
+    ./scripts/superforecasting-agent-gateway stop
+    ./scripts/superforecasting-agent-gateway restart
+    ./scripts/superforecasting-agent-gateway status
     
     # Uninstall
-    ./scripts/hermes-gateway uninstall
+    ./scripts/superforecasting-agent-gateway uninstall
 """
 
 import argparse
@@ -36,10 +36,15 @@ sys.path.insert(0, str(PROJECT_DIR))
 
 from hermes_constants import display_hermes_home, get_hermes_home
 
-# Load .env file
-from dotenv import load_dotenv
+# Load .env file when python-dotenv is available. Help and service-management
+# commands should still work in minimal Python environments.
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
 env_path = PROJECT_DIR / '.env'
-if env_path.exists():
+if load_dotenv is not None and env_path.exists():
     load_dotenv(dotenv_path=env_path)
 
 
@@ -80,6 +85,15 @@ def get_python_path() -> str:
 def get_gateway_script_path() -> str:
     """Get the path to this script."""
     return str(Path(__file__).resolve())
+
+
+def get_invocation_command() -> str:
+    """Return a repo-relative command name for help and fallback output."""
+
+    invoked = Path(sys.argv[0]).name or "superforecasting-agent-gateway"
+    if invoked == "hermes-gateway":
+        invoked = "superforecasting-agent-gateway"
+    return f"./scripts/{invoked}"
 
 
 # =============================================================================
@@ -323,25 +337,27 @@ def run_gateway():
 # =============================================================================
 
 def main():
+    command = get_invocation_command()
     parser = argparse.ArgumentParser(
+        prog=Path(command).name,
         description="Superforecasting Agent Gateway - Messaging Platform Integration",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog=f"""
 Examples:
     # Run in foreground (for testing)
-    ./scripts/hermes-gateway run
+    {command} run
     
     # Install as system service
-    ./scripts/hermes-gateway install
+    {command} install
     
     # Manage the service
-    ./scripts/hermes-gateway start
-    ./scripts/hermes-gateway stop
-    ./scripts/hermes-gateway restart
-    ./scripts/hermes-gateway status
+    {command} start
+    {command} stop
+    {command} restart
+    {command} status
     
     # Uninstall
-    ./scripts/hermes-gateway uninstall
+    {command} uninstall
 
 Configuration:
     Set environment variables in .env file or system environment:
@@ -380,7 +396,7 @@ Configuration:
             install_launchd()
         else:
             print("Service installation not supported on this platform.")
-            print("Please run manually: ./scripts/hermes-gateway run")
+            print(f"Please run manually: {get_invocation_command()} run")
             sys.exit(1)
     
     elif args.command == "uninstall":
