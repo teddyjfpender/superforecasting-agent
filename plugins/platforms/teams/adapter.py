@@ -675,7 +675,7 @@ class TeamsAdapter(BasePlatformAdapter):
                 client_secret=self._client_secret,
                 tenant_id=self._tenant_id,
                 http_server_adapter=_AiohttpBridgeAdapter(aiohttp_app),
-                client=ClientOptions(headers={"User-Agent": "Hermes"}),
+                client=ClientOptions(headers={"User-Agent": "SuperforecastingAgent"}),
             )
 
             # Register message handler before initialize()
@@ -1108,7 +1108,7 @@ def interactive_setup() -> None:
     print()
     print_info("Then expose port 3978 publicly (devtunnel / ngrok / cloudflared),")
     print_info("and create your bot:")
-    print_info("  teams app create --name \"Hermes\" --endpoint \"https://<tunnel>/api/messages\"")
+    print_info("  teams app create --name \"Superforecasting Agent\" --endpoint \"https://<tunnel>/api/messages\"")
     print()
     print_info("The CLI will print CLIENT_ID, CLIENT_SECRET, and TENANT_ID. Paste them below.")
     print()
@@ -1150,7 +1150,7 @@ def interactive_setup() -> None:
     print()
     print_success("Teams configuration saved to ~/.hermes/.env")
     print_info("Install the app in Teams:  teams app install --id <teamsAppId>")
-    print_info("Restart the gateway:       hermes gateway restart")
+    print_info("Restart the gateway:       superforecasting-agent gateway restart")
 
 
 # ── Plugin entry point ────────────────────────────────────────────────────────

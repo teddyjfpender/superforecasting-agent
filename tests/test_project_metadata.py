@@ -1077,6 +1077,9 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
     assert "Hermes is thinking" not in text
     assert "hermes-agent[google_chat]" not in text
     assert "Google Chat user-OAuth setup for Hermes" not in text
+    assert 'User-Agent": "Hermes"' not in text
+    assert 'teams app create --name "Hermes"' not in text
+    assert "Restart the gateway:       hermes gateway restart" not in text
     assert "Hermes Agent CLI launcher" not in text
     assert "Hermes agent bot" not in text
     assert "ephemeral Hermes session" not in text
