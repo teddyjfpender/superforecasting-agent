@@ -962,7 +962,7 @@ class ContextCompressor(ContextEngine):
 task assignment verbatim — the exact words they used. If multiple tasks
 were requested and only some are done, list only the ones NOT yet completed.
 Continuation should pick up exactly here. Example:
-"User asked: 'Now refactor the auth module to use JWT instead of sessions'"
+"User asked: 'Review the macro forecasts, score resolved questions, and update calibration lessons'"
 If no outstanding task exists, write "None."]
 
 ## Goal

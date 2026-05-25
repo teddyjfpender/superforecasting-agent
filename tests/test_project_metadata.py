@@ -1136,6 +1136,22 @@ def test_profile_description_prompt_uses_forecast_native_examples():
     assert "opens GitHub PRs" not in text
 
 
+def test_core_prompt_fallbacks_use_forecast_native_examples():
+    root = Path(__file__).resolve().parents[1]
+    combined = "\n".join(
+        [
+            (root / "agent" / "auxiliary_client.py").read_text(encoding="utf-8"),
+            (root / "agent" / "context_compressor.py").read_text(encoding="utf-8"),
+        ]
+    )
+
+    assert "Superforecasting Agent auxiliary worker" in combined
+    assert "Review the macro forecasts" in combined
+    assert "update calibration lessons" in combined
+    assert "You are a helpful assistant." not in combined
+    assert "refactor the auth module" not in combined
+
+
 def test_model_picker_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "hermes_cli" / "models.py").read_text(encoding="utf-8")
