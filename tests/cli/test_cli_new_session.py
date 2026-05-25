@@ -278,5 +278,5 @@ def test_new_session_with_duplicate_title_surfaces_error(capsys):
 
     # The success banner must NOT claim the rejected title as the session name.
     captured = capsys.readouterr()
-    assert "New session started: Dup" not in captured.out
-    assert "New session started!" in captured.out
+    assert "New forecast session started: Dup" not in captured.out
+    assert "New forecast session started!" in captured.out

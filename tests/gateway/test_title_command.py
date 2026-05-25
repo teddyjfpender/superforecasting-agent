@@ -338,7 +338,7 @@ class TestResetCommandWithTitle:
         assert "already in use" in reply
         assert "session started untitled" in reply
         # Header must NOT claim the rejected title as the session name
-        assert "New session started: Dup" not in reply
+        assert "New forecast session started: Dup" not in reply
 
 
 # ---------------------------------------------------------------------------

@@ -5250,7 +5250,7 @@ class HermesCLI:
             # matches the restored filesystem state
             if self.conversation_history:
                 self.undo_last()
-                print("  Chat turn undone to match restored file state.")
+                print("  Forecast turn undone to match restored file state.")
         else:
             print(f"  ❌ {result['error']}")
 
@@ -5910,7 +5910,7 @@ class HermesCLI:
         from hermes_cli.config import load_config
         self.enabled_toolsets = _get_platform_tools(load_config(), "cli")
         self.new_session()
-        _cprint(f"{_DIM}Session reset. New tool configuration is active.{_RST}")
+        _cprint(f"{_DIM}Forecast session reset. New tool configuration is active.{_RST}")
 
     def show_toolsets(self):
         """Display available toolsets with forecast-desk ASCII framing."""
@@ -6240,9 +6240,9 @@ class HermesCLI:
 
         if not silent:
             if title:
-                print(f"New session started: {title}")
+                print(f"New forecast session started: {title}")
             else:
-                print("New session started!")
+                print("New forecast session started!")
 
     def _handle_handoff_command(self, cmd_original: str) -> bool:
         """Handle ``/handoff <platform>`` — transfer this CLI session to a gateway platform.
@@ -9462,7 +9462,7 @@ class HermesCLI:
             return
 
         if not self.agent:
-            print("No active agent -- send a message first.")
+            print("No active forecast session -- send a forecast note first.")
             return
 
         if not self.agent.compression_enabled:
@@ -9616,7 +9616,7 @@ class HermesCLI:
     def _show_usage(self):
         """Show rate limits (if available) and session token usage."""
         if not self.agent:
-            print("No active agent -- send a message first.")
+            print("No active forecast session -- send a forecast note first.")
             return
 
         agent = self.agent
@@ -14415,7 +14415,7 @@ def main(
         python cli.py -q "Extract forecast-relevant evidence from this chart" --image ~/storage/shared/Pictures/chart.png
         python cli.py --list-tools               # List tools and exit
         python cli.py --resume 20260225_143052_a1b2c3  # Resume session
-        python cli.py -w                         # Start support chat in an isolated git worktree
+        python cli.py -w                         # Start forecast support in an isolated git worktree
         python cli.py -w -q "Backtest this scoring-rule change"  # Single support query in worktree
     """
     global _active_worktree

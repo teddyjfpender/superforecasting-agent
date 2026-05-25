@@ -633,7 +633,7 @@ export default function App() {
                       >
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Spinner />
-                          <span>Loading forecast chat…</span>
+                          <span>Loading Forecast Chat…</span>
                         </div>
                       </div>
                     ) : null

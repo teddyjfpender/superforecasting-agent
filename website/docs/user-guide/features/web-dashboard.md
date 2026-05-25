@@ -156,7 +156,7 @@ Research sessions are conversation continuity and operational history. They are 
 
 Use this page to:
 
-- Search prior forecast chats and CLI research sessions with FTS5.
+- Search prior Forecast Chat and CLI research sessions with FTS5.
 - Inspect message history and tool calls.
 - Resume a prior terminal/TUI session.
 - Delete obsolete research transcripts.

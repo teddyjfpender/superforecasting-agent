@@ -211,7 +211,7 @@ All context files are:
 These are intentionally *not* persisted as part of the cached system prompt:
 
 - `ephemeral_system_prompt`
-- forecast chat overlays from `forecasting.protocol.build_forecast_chat_system_prompt()`
+- forecast-session overlays from `forecasting.protocol.build_forecast_chat_system_prompt()`
 - prefill messages
 - gateway-derived session context overlays
 - later-turn Honcho recall injected into the current-turn user message

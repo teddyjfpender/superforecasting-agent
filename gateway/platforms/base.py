@@ -3128,7 +3128,7 @@ class BasePlatformAdapter(ABC):
 
             # Slash-command handlers may return an EphemeralReply sentinel to
             # request that their reply message auto-delete after a TTL (used
-            # for system notices like "✨ New session started!" that the user
+            # for system notices like "New forecast session started!" that the user
             # doesn't need to keep in the thread).  Unwrap here so all the
             # downstream extract_media / text-processing logic sees a plain
             # string, and remember the TTL + platform capability so the

@@ -561,9 +561,9 @@ async def test_auto_create_thread_strips_mention_syntax_from_name(adapter):
 
 
 @pytest.mark.asyncio
-async def test_auto_create_thread_falls_back_to_forecast_chat_when_only_mentions(adapter):
+async def test_auto_create_thread_falls_back_to_forecast_session_when_only_mentions(adapter):
     """If a message contains only mention syntax, the stripped content is
-    empty — fall back to the forecast chat default rather than ''."""
+    empty — fall back to the forecast session default rather than ''."""
     thread = SimpleNamespace(id=999, name="Forecast Chat")
     message = SimpleNamespace(
         content="<@&1490963422786093149>",

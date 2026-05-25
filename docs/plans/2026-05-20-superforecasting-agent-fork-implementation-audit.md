@@ -1343,6 +1343,7 @@ Latest verified result:
 - Interactive-session wording pass: high-traffic model, provider, slash-command, TUI, web-dashboard, installation, skills, toolset, FAQ, and session-storage docs now use forecast/research-session wording and reserve generic chat terms for explicit compatibility or contrast notes.
 - TUI session-wording pass: Ink quick-help, clarify prompt heading, session picker counters, and `/new` confirmation/status copy now use forecast-session and research-session wording instead of generic chat/session phrasing; focused slash-handler coverage verifies the `/new` status text.
 - Web dashboard embedded-TUI wording pass: the English Sessions empty state now prompts users to start a forecast research session, and Forecast Chat comments/helper docs in the React dashboard use Forecast Chat or forecast-response language instead of generic chat/assistant wording.
+- Classic CLI/gateway support-session wording pass: parser examples/help, `/new` output, gateway reset and Telegram topic copy, rollback context repair text, no-agent guidance, worktree tips/docs, prompt-assembly docs, and the dashboard loading state now say forecast support, Forecast Chat, or forecast session instead of generic support chat/session language; focused CLI/gateway regressions, project metadata checks, web build, and website build passed.
 
 ## Prompt-To-Artifact Checklist
 

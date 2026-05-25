@@ -139,7 +139,7 @@ Notes:
 
 ## Automatic Worktree Mode
 
-Superforecasting Agent keeps inherited automatic worktree support for explicit chat support sessions. It creates a disposable git worktree with its own branch, so you don't need to set up worktrees manually. Just `cd` into your repo and run:
+Superforecasting Agent keeps inherited automatic worktree support for explicit forecast-support sessions. It creates a disposable git worktree with its own branch, so you don't need to set up worktrees manually. Just `cd` into your repo and run:
 
 ```bash
 cd /path/to/your/repo

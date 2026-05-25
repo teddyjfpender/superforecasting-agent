@@ -85,7 +85,7 @@ async def test_gate_off_runs_execute_immediately(monkeypatch):
     runner._read_user_config = lambda: {"approvals": {"destructive_slash_confirm": False}}
     runner._session_key_for_source = lambda src: build_session_key(src)
 
-    sentinel = "✨ Session reset!"
+    sentinel = "✨ Forecast session reset!"
     execute = AsyncMock(return_value=sentinel)
 
     result = await runner._maybe_confirm_destructive_slash(

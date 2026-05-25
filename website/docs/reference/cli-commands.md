@@ -85,7 +85,7 @@ hermes [global-options] <command> [subcommand/options]  # compatibility
 | `--profile <name>`, `-p <name>` | Select which profile to use for this invocation. Overrides the sticky default set by `superforecasting-agent profile use`. |
 | `--resume <session>`, `-r <session>` | Resume a previous session by ID or title. |
 | `--continue [name]`, `-c [name]` | Resume the most recent session, or the most recent session matching a title. |
-| `--worktree`, `-w` | Compatibility shortcut: start explicit chat support in an isolated git worktree. |
+| `--worktree`, `-w` | Compatibility shortcut: start forecast support in an isolated git worktree. |
 | `--yolo` | Bypass dangerous-command approval prompts. |
 | `--pass-session-id` | Include the session ID in the agent's system prompt. |
 | `--ignore-user-config` | Ignore user config and fall back to built-in defaults. Credentials in `.env` are still loaded. |

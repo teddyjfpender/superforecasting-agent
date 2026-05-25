@@ -2139,7 +2139,7 @@ class GatewayRunner:
     def _telegram_topic_root_lobby_message(self) -> str:
         return (
             "This main chat is reserved for system commands.\n\n"
-            "To start a new forecast chat, open the All Messages topic at the top "
+            "To start a new forecast research session, open the All Messages topic at the top "
             "of this bot interface and send any message there. Telegram will "
             "create a new topic for that message; each topic works as an "
             "independent forecast research session."
@@ -2147,7 +2147,7 @@ class GatewayRunner:
 
     def _telegram_topic_root_new_message(self) -> str:
         return (
-            "To start a new parallel forecast chat, open the All Messages topic "
+            "To start a new parallel forecast research session, open the All Messages topic "
             "at the top of this bot interface and send any message there. "
             "Telegram will create a new topic for it.\n\n"
             "Each topic is an independent forecast research session. Use /new inside an "
@@ -7319,8 +7319,8 @@ class GatewayRunner:
                 command="new",
                 title="/new",
                 detail=(
-                    "This starts a fresh session and discards the current "
-                    "conversation history."
+                    "This starts a fresh forecast session and discards the current "
+                    "research transcript."
                 ),
                 execute=_do_reset,
             )
@@ -12463,7 +12463,7 @@ class GatewayRunner:
             "Multi-session topic mode is now OFF for this chat.\n\n"
             "Existing topics in Telegram aren't removed — they'll just stop "
             "being gated as independent sessions. The root DM works as a "
-            "normal forecast chat again. Run /topic to re-enable later."
+            "normal forecast research session again. Run /topic to re-enable later."
         )
 
     async def _handle_topic_command(self, event: MessageEvent, args: str = "") -> str:
@@ -12559,7 +12559,7 @@ class GatewayRunner:
         lines = [
             "Telegram multi-session topics are enabled.",
             "",
-            "To create a new forecast chat, open All Messages at the top of this "
+            "To create a new forecast research session, open All Messages at the top of this "
             "bot interface and send any message there. Telegram will create a "
             "new topic for it.",
             "",
