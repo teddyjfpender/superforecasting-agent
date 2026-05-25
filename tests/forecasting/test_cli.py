@@ -791,6 +791,9 @@ def test_forecast_cli_research_summarizes_new_evidence_since_current_forecast(tm
     output = capsys.readouterr().out
 
     assert "new_since_current_forecast: 1" in output
+    assert "change_summary: 1 evidence item(s) newer than current forecast" in output
+    assert "latest=2026-01-05T00:00:00Z" in output
+    assert "stances=mixed=1" in output
     assert "reliability=0.40" in output
     assert "relevance=0.80" in output
     ledger = ForecastLedger(db_path)

@@ -5445,8 +5445,10 @@ def _cmd_research(args: argparse.Namespace) -> None:
     current = ledger.get_current_snapshot(args.id)
     if not args.sources:
         evidence = ledger.list_evidence(args.id)
+        new_items = _new_evidence_items(evidence, current)
         print(f"evidence_count: {len(evidence)}")
-        print(f"new_since_current_forecast: {_new_evidence_count(evidence, current)}")
+        print(f"new_since_current_forecast: {len(new_items)}")
+        print(_research_change_summary(evidence, current))
         for item in evidence[-5:]:
             source = item.source_url or item.source_name or item.claim or item.summary
             print(f"{item.id} {item.available_at} {item.stance} {item.claim_type} {source}")
@@ -5470,8 +5472,10 @@ def _cmd_research(args: argparse.Namespace) -> None:
                 stance=args.stance,
             )
         )
+    new_items = _new_evidence_items(created, current)
     print(f"captured {len(created)} evidence item(s)")
-    print(f"new_since_current_forecast: {_new_evidence_count(created, current)}")
+    print(f"new_since_current_forecast: {len(new_items)}")
+    print(_research_change_summary(created, current))
     for item in created:
         print(
             f"{item.id} available_at={item.available_at} stance={item.stance} "
@@ -7303,17 +7307,39 @@ def _question_delta(ledger: ForecastLedger, question_id: str) -> float | None:
 
 
 def _new_evidence_count(evidence: list[Any], current_snapshot: Any) -> int:
+    return len(_new_evidence_items(evidence, current_snapshot))
+
+
+def _new_evidence_items(evidence: list[Any], current_snapshot: Any) -> list[Any]:
     if current_snapshot is None:
-        return 0
+        return []
     snapshot_dt = timestamp_to_datetime(current_snapshot.as_of)
     if snapshot_dt is None:
-        return 0
-    count = 0
+        return []
+    new_items = []
     for item in evidence:
         available_dt = timestamp_to_datetime(item.available_at)
         if available_dt and available_dt > snapshot_dt:
-            count += 1
-    return count
+            new_items.append(item)
+    return new_items
+
+
+def _research_change_summary(evidence: list[Any], current_snapshot: Any) -> str:
+    if current_snapshot is None:
+        return (
+            "change_summary: no current forecast snapshot; "
+            f"{len(evidence)} evidence item(s) are pre-update research context"
+        )
+    new_items = _new_evidence_items(evidence, current_snapshot)
+    if not new_items:
+        return f"change_summary: no evidence newer than current forecast as-of {current_snapshot.as_of}"
+    stance_counts = Counter(str(getattr(item, "stance", "") or "unknown") for item in new_items)
+    stance_summary = ", ".join(f"{stance}={count}" for stance, count in sorted(stance_counts.items()))
+    latest = max(str(getattr(item, "available_at", "") or "-") for item in new_items)
+    return (
+        f"change_summary: {len(new_items)} evidence item(s) newer than current forecast "
+        f"as-of {current_snapshot.as_of}; latest={latest}; stances={stance_summary}"
+    )
 
 
 def _review_next_action(question_id: str, reasons: list[str]) -> str:

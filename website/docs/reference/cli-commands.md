@@ -26,6 +26,7 @@ For in-chat slash commands, see [Slash Commands Reference](./slash-commands.md).
 | `forecast new` | Create a scoreable question with resolution criteria, outcome space, domain/topic, and review cadence. |
 | `forecast ingest` | Stage a URL or file as a forecast candidate before confirming it into the ledger. |
 | `forecast evidence add` | Add timestamped evidence or notes to a question. |
+| `forecast research` | Capture or inspect evidence without moving probability, including a summary of what changed since the current forecast. |
 | `forecast sources` | List built-in evidence/source adapters, import command shapes, and watched-source prefixes. |
 | `forecast import <source>` | Import evidence, baselines, market/crowd priors, or benchmark data from supported adapters. |
 | `forecast base-rate` | Propose, add, or inspect reference-class/base-rate work. |
