@@ -1328,6 +1328,7 @@ Latest verified result:
 - ACP adapter identity pass: `acp_adapter` now exposes Superforecasting Agent in the server module docstring, `/version` response, terminal setup auth method, and ACP session/tool/event comments, while preserving protocol-compatible constants such as `HERMES_VERSION` and `hermes-setup`.
 - CLI layout visual pass: `website/static/img/docs/cli-layout.svg` now labels the terminal visual as a Forecast Desk CLI with Superforecasting Agent, forecast transcript, research command, and evidence/update stream copy instead of inherited Hermes CLI/banner text.
 - Legacy setup script identity pass: `setup-hermes.sh` keeps its compatibility filename while the visible setup banner, file header, and shell PATH helper now say Superforecasting Agent instead of Hermes Agent, under project-metadata coverage.
+- Tester smoke transcript refresh: `python3 scripts/forecast_smoke_test.py` passed at snapshot `9f33b14d299f` with 52 source adapters, 4 benchmark datasets, pilot-report checks `7/7`, two performance runs, pilot bundle export included, and the expected `insufficient_live_evidence` readiness guard; the smoke transcript now reflects the latest tester branch commit.
 
 ## Prompt-To-Artifact Checklist
 
