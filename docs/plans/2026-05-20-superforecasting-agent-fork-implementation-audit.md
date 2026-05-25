@@ -1890,7 +1890,7 @@ fork objective still needs the remaining work listed below.
 | Closed feedback loop | Covered | Forecast, observe, resolve, score, diagnose, recalibrate loop exists through ledger, scoring, postmortems, lessons, and schedules |
 | Learning memory replaces chat memory | Covered/Partial | Calibration lessons, domain profiles, and evidence memory exist; inherited general memory remains compatibility surface |
 | LLMs are not sole probability engine | Covered | Base-rate, market/crowd baseline, statistical/model-run, ensemble, forecast-engine, and agent-protocol sources |
-| Backtesting and benchmark evidence | Covered/Partial | Time-aware replay, suite-scale sanitized agent-protocol prompt packets, deterministic response replay, and claim guards exist; live superiority remains unproven pending accumulated resolved live forecasts |
+| Backtesting and benchmark evidence | Covered/Partial | Time-aware replay, suite-scale sanitized agent-protocol prompt packets, deterministic response replay, live-vs-imported-baseline status/performance summaries, and claim guards exist; live superiority remains unproven pending accumulated resolved live forecasts |
 | Scheduled self-checks and alerts | Covered | Cron/scheduler bridge, scoped reviews, watched-source alerts, opt-in learning writes, and no silent probability mutation |
 | First surgery 1: rename product and strip gateway-first defaults | Partial | Product identity/default toolsets are largely forecast-native; compatibility surfaces and broad inherited modules remain |
 | First surgery 2: forecasting protocols | Covered | Forecast protocol prompts, stage narrowing, TUI/classic/oneshot forecast-scoped prompts |

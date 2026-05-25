@@ -260,6 +260,20 @@ def test_forecast_cli_scores_live_baselines_and_reports_live_performance(tmp_pat
     assert "live baseline market:example-market brier=0.202500 paired=1 agent_edge=+0.112" in output
     assert "live claim live_comparison_evidence" in output
 
+    _run(parser, ["forecast", "--db", db, "status", "--json"])
+    status_payload = json.loads(capsys.readouterr().out)
+    assert status_payload["live_performance"]["score_count"] == 1
+    assert status_payload["live_performance"]["baseline_count"] == 1
+    assert status_payload["live_performance"]["agent_mean_brier"] == pytest.approx(0.09)
+    assert status_payload["live_performance"]["best_baseline"]["name"] == "market:example-market"
+    assert status_payload["live_performance"]["best_baseline"]["agent_edge_mean_brier"] == pytest.approx(0.1125)
+
+    _run(parser, ["forecast", "--db", db, "status"])
+    status_output = capsys.readouterr().out
+    assert "live_performance: scores=1  agent_brier=0.090000  baselines=1" in status_output
+    assert "best=market:example-market edge=+0.112 wins=1/0/0" in status_output
+    assert "claim=live_comparison_evidence" in status_output
+
 
 def test_forecast_cli_update_can_derive_weighted_ensemble_probability(tmp_path, capsys):
     parser = _parser()

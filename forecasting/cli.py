@@ -1850,6 +1850,13 @@ def _forecast_status_payload(ledger: ForecastLedger) -> dict[str, Any]:
     active_lessons = ledger.list_calibration_lessons(active_only=True)
     scores = ledger.list_scores(calibration_eligible=None, include_invalidated=True)
     calibration = ledger.calibration_summary(calibration_eligible=True)
+    live_performance = ledger.live_performance_report()
+    live_baselines = list(live_performance.get("baselines") or [])
+    live_best_baseline = min(
+        [row for row in live_baselines if row.get("mean_brier") is not None],
+        key=lambda row: float(row.get("mean_brier")),
+        default=None,
+    )
     extensions = extension_registry.list()
     return {
         "product": PRODUCT_NAME,
@@ -1870,6 +1877,29 @@ def _forecast_status_payload(ledger: ForecastLedger) -> dict[str, Any]:
         "score_count": len(scores),
         "calibration_eligible_score_count": calibration["count"],
         "calibration_mean_brier": calibration["mean_brier"],
+        "live_performance": {
+            "score_count": live_performance.get("score_count", 0),
+            "agent_mean_brier": (live_performance.get("agent") or {}).get("mean_brier"),
+            "baseline_count": len(live_baselines),
+            "best_baseline": (
+                {
+                    "name": (
+                        f"{live_best_baseline.get('baseline_type')}:{live_best_baseline.get('source')}"
+                    ),
+                    "mean_brier": live_best_baseline.get("mean_brier"),
+                    "agent_edge_mean_brier": live_best_baseline.get(
+                        "mean_brier_improvement_vs_baseline"
+                    ),
+                    "paired_count": live_best_baseline.get("paired_count", 0),
+                    "paired_agent_wins": live_best_baseline.get("paired_agent_wins", 0),
+                    "paired_baseline_wins": live_best_baseline.get("paired_baseline_wins", 0),
+                    "paired_ties": live_best_baseline.get("paired_ties", 0),
+                }
+                if live_best_baseline is not None
+                else None
+            ),
+            "claim_status": live_performance.get("claim_status"),
+        },
         "calibration_lesson_count": len(lessons),
         "active_calibration_lesson_count": len(active_lessons),
         "builtin_benchmark_count": len(benchmarks),
@@ -1906,6 +1936,25 @@ def _cmd_status(args: argparse.Namespace) -> None:
         f"scores: total={payload['score_count']}  "
         f"calibration_eligible={payload['calibration_eligible_score_count']}  "
         f"mean_brier={_format_metric(payload['calibration_mean_brier'])}"
+    )
+    live_performance = payload["live_performance"]
+    best_live_baseline = live_performance.get("best_baseline") or {}
+    best_live_text = (
+        f" best={best_live_baseline.get('name')} "
+        f"edge={_format_delta(best_live_baseline.get('agent_edge_mean_brier'))} "
+        f"wins={best_live_baseline.get('paired_agent_wins', 0)}/"
+        f"{best_live_baseline.get('paired_baseline_wins', 0)}/"
+        f"{best_live_baseline.get('paired_ties', 0)}"
+        if best_live_baseline
+        else ""
+    )
+    claim_status = (live_performance.get("claim_status") or {}).get("verdict") or "-"
+    print(
+        "live_performance: "
+        f"scores={live_performance.get('score_count', 0)}  "
+        f"agent_brier={_format_metric(live_performance.get('agent_mean_brier'))}  "
+        f"baselines={live_performance.get('baseline_count', 0)}"
+        f"{best_live_text}  claim={claim_status}"
     )
     print(
         f"lessons: active={payload['active_calibration_lesson_count']} "
