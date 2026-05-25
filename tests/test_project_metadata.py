@@ -2038,6 +2038,30 @@ def test_skill_author_metadata_is_forecast_native():
     assert not re.search(r"^\| Author \| .*Hermes Agent", generated_text, re.MULTILINE)
 
 
+def test_superforecasting_agent_skill_paths_are_fork_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "skills" / "autonomous-ai-agents" / "hermes-agent" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "autonomous-ai-agents"
+            / "autonomous-ai-agents-hermes-agent.md"
+        ),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "~/.superforecasting-agent/superforecasting-agent/" in text
+    assert "superforecasting-agent/\n├── run_agent.py" in text
+    assert "~/.superforecasting-agent/hermes-agent/     Source code" not in text
+    assert "| Source code | `~/.superforecasting-agent/hermes-agent/` |" not in text
+    assert "\nhermes-agent/\n├── run_agent.py" not in text
+
+
 def test_airtable_and_neuroskill_skill_docs_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [

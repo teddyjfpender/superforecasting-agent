@@ -141,7 +141,7 @@ When surface-level inspection doesn't reveal the bug:
 
 ## Pitfalls
 
-- Don't forget to set the appropriate category for the command in `CommandDef` (e.g., "Forecast Desk", "Session", "Configuration", "Tools & Skills", "Compatibility", "Info", "Exit")
+- Don't forget to set the appropriate category for the command in `CommandDef` (e.g., "Session", "Configuration", "Tools & Skills", "Info", "Exit")
 - Make sure any aliases are properly registered in the `aliases` tuple — no other file changes are needed, everything downstream (Telegram menu, Slack mapping, autocomplete, help) derives from it
 - For commands with subcommands, ensure the `subcommands` tuple in `CommandDef` matches what's in the TUI code
 - `cli_only=True` commands won't work in gateway/messaging platforms — unless you add a `gateway_config_gate` and the gate is truthy

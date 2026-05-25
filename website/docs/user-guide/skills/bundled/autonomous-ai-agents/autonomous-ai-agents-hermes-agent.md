@@ -354,7 +354,7 @@ $HERMES_HOME/skills/        Installed skills
 ~/.superforecasting-agent/sessions/         Session transcripts
 ~/.superforecasting-agent/logs/             Gateway and error logs
 ~/.superforecasting-agent/auth.json         OAuth tokens and credential pools
-~/.superforecasting-agent/hermes-agent/     Source code (if git-installed)
+~/.superforecasting-agent/superforecasting-agent/  Source code (if git-installed)
 ```
 
 Profiles use `~/.superforecasting-agent/profiles/<name>/` with the same layout.
@@ -594,11 +594,11 @@ terminal(command="tmux send-keys -t agent1 '/exit' Enter && sleep 2 && tmux kill
 
 ```
 # Agent A: backend
-terminal(command="tmux new-session -d -s backend -x 120 -y 40 'superforecasting-agent chat --worktree'", timeout=10)
+terminal(command="tmux new-session -d -s backend -x 120 -y 40 'superforecasting-agent -w'", timeout=10)
 terminal(command="sleep 8 && tmux send-keys -t backend 'Build REST API for user management' Enter", timeout=15)
 
 # Agent B: frontend
-terminal(command="tmux new-session -d -s frontend -x 120 -y 40 'superforecasting-agent chat --worktree'", timeout=10)
+terminal(command="tmux new-session -d -s frontend -x 120 -y 40 'superforecasting-agent -w'", timeout=10)
 terminal(command="sleep 8 && tmux send-keys -t frontend 'Build React dashboard for user management' Enter", timeout=15)
 
 # Check progress, relay context between them
@@ -883,7 +883,7 @@ superforecasting-agent config set auxiliary.vision.model <model_name>
 | CLI commands | `superforecasting-agent --help` or [CLI reference](/docs/reference/cli-commands) |
 | Gateway logs | `~/.superforecasting-agent/logs/gateway.log` |
 | Session files | `~/.superforecasting-agent/sessions/` or `superforecasting-agent sessions browse` |
-| Source code | `~/.superforecasting-agent/hermes-agent/` |
+| Source code | `~/.superforecasting-agent/superforecasting-agent/` |
 
 ---
 
@@ -895,7 +895,7 @@ For occasional contributors and PR authors. Full developer docs: /docs/developer
 
 <!-- ascii-guard-ignore -->
 ```
-hermes-agent/
+superforecasting-agent/
 ├── run_agent.py          # AIAgent — core conversation loop
 ├── model_tools.py        # Tool discovery and dispatch
 ├── toolsets.py           # Toolset definitions

@@ -337,7 +337,7 @@ $HERMES_HOME/skills/        Installed skills
 ~/.superforecasting-agent/sessions/         Session transcripts
 ~/.superforecasting-agent/logs/             Gateway and error logs
 ~/.superforecasting-agent/auth.json         OAuth tokens and credential pools
-~/.superforecasting-agent/hermes-agent/     Source code (if git-installed)
+~/.superforecasting-agent/superforecasting-agent/  Source code (if git-installed)
 ```
 
 Profiles use `~/.superforecasting-agent/profiles/<name>/` with the same layout.
@@ -866,7 +866,7 @@ superforecasting-agent config set auxiliary.vision.model <model_name>
 | CLI commands | `superforecasting-agent --help` or [CLI reference](/docs/reference/cli-commands) |
 | Gateway logs | `~/.superforecasting-agent/logs/gateway.log` |
 | Session files | `~/.superforecasting-agent/sessions/` or `superforecasting-agent sessions browse` |
-| Source code | `~/.superforecasting-agent/hermes-agent/` |
+| Source code | `~/.superforecasting-agent/superforecasting-agent/` |
 
 ---
 
@@ -877,7 +877,7 @@ For occasional contributors and PR authors. Full developer docs: /docs/developer
 ### Project Layout
 
 ```
-hermes-agent/
+superforecasting-agent/
 ├── run_agent.py          # AIAgent — core conversation loop
 ├── model_tools.py        # Tool discovery and dispatch
 ├── toolsets.py           # Toolset definitions

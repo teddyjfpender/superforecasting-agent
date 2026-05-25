@@ -157,7 +157,7 @@ If a skill is missing from this list but present in the repo, the catalog is reg
 
 | Skill | Description | Path |
 |-------|-------------|------|
-| [`godmode`](/docs/user-guide/skills/bundled/red-teaming/red-teaming-godmode) | Jailbreak LLMs: Parseltongue, GODMODE, ULTRAPLINIAN. | `red-teaming/godmode` |
+| [`godmode`](/docs/user-guide/skills/bundled/red-teaming/red-teaming-godmode) | Evaluate LLM safety behavior with red-team probes. | `red-teaming/godmode` |
 
 ## research
 
