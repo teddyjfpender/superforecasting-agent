@@ -603,6 +603,12 @@ def test_forecast_cli_update_can_require_citations(tmp_path, capsys):
     )
     question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
 
+    _run(parser, ["forecast", "--db", db, "update", question_id, "--require-citations"])
+    inspect_output = capsys.readouterr().out
+    assert "citation_policy: required on next saved update" in inspect_output
+    assert "--evidence-ref <ref> --require-citations" in inspect_output
+    assert ForecastLedger(db_path).list_snapshots(question_id) == []
+
     with pytest.raises(SystemExit) as exc:
         _run(
             parser,

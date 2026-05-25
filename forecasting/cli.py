@@ -1892,8 +1892,7 @@ def _cmd_update(args: argparse.Namespace) -> None:
         value is not None
         for value in (args.probability, args.numeric_value, args.distribution_json)
     ) or bool(components)
-    update_fields = [
-        has_payload,
+    non_citation_update_fields = [
         args.rationale is not None,
         args.as_of is not None,
         args.confidence is not None,
@@ -1904,7 +1903,6 @@ def _cmd_update(args: argparse.Namespace) -> None:
         bool(args.evidence_refs),
         args.stale_evidence_days != 30,
         args.ack_stale_evidence,
-        args.require_citations,
         bool(args.model_run_refs),
         args.forecast_origin != "live",
         args.agent_model is not None,
@@ -1921,7 +1919,9 @@ def _cmd_update(args: argparse.Namespace) -> None:
         args.use_active_lessons,
         args.preview,
     ]
-    if not any(update_fields):
+    update_fields = [has_payload, args.require_citations, *non_citation_update_fields]
+    citation_policy_inspection = args.require_citations and not has_payload and not any(non_citation_update_fields)
+    if not any(update_fields) or citation_policy_inspection:
         previous = ledger.get_current_snapshot(args.id)
         print(f"question: {question.id}")
         print(f"title: {question.title}")
@@ -1929,7 +1929,14 @@ def _cmd_update(args: argparse.Namespace) -> None:
         print(f"current_probability: {probability}")
         print(f"current_as_of: {previous.as_of if previous else '-'}")
         print(f"current_confidence: {_format_optional_float(previous.confidence) if previous else '-'}")
-        print(f"add: forecast update {args.id} --probability <p> --rationale <why>")
+        if args.require_citations:
+            print("citation_policy: required on next saved update")
+            print(
+                f"add: forecast update {args.id} --probability <p> --rationale <why> "
+                "--evidence-ref <ref> --require-citations"
+            )
+        else:
+            print(f"add: forecast update {args.id} --probability <p> --rationale <why>")
         print("probability unchanged")
         return
     payload = _probability_payload(args, components)
