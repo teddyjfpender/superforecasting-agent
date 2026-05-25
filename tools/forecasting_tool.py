@@ -437,6 +437,7 @@ FORECAST_LEDGER_SCHEMA = {
             "min_scores": {"type": "integer"},
             "min_postmortems": {"type": "integer"},
             "min_scheduled_reviews": {"type": "integer"},
+            "min_scheduled_review_runs": {"type": "integer"},
             "auto_score": {"type": "boolean"},
             "auto_postmortem": {"type": "boolean"},
             "cadence": {"type": "string"},
@@ -910,6 +911,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                     min_scores=int(args.get("min_scores", 1) or 0),
                     min_postmortems=int(args.get("min_postmortems", 1) or 0),
                     min_scheduled_reviews=int(args.get("min_scheduled_reviews", 1) or 0),
+                    min_scheduled_review_runs=int(args.get("min_scheduled_review_runs", 1) or 0),
                 ),
             )
 

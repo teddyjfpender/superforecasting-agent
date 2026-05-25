@@ -9449,6 +9449,7 @@ def test_forecast_cli_pilot_report_outputs_exit_checks(tmp_path, capsys):
         cadence="1d",
         next_run_at="2026-05-24T09:00:00Z",
     )
+    ledger.run_due_scheduled_reviews(now="2026-05-24T10:00:00Z")
 
     _run(
         parser,
@@ -9467,12 +9468,15 @@ def test_forecast_cli_pilot_report_outputs_exit_checks(tmp_path, capsys):
             "0",
             "--min-scheduled-reviews",
             "1",
+            "--min-scheduled-review-runs",
+            "1",
         ],
     )
     output = capsys.readouterr().out
 
-    assert "pilot pilot_exit_ready: 8/8 checks passed" in output
+    assert "pilot pilot_exit_ready: 9/9 checks passed" in output
     assert "structured_sources=1" in output
+    assert "schedule_runs=1" in output
     assert "learned_error_reviews=0" in output
     assert "source_types:" in output
     assert "fred: 1" in output
@@ -9685,6 +9689,8 @@ def test_forecast_cli_pilot_bundle_outputs_handoff_packet(tmp_path, capsys):
             "1",
             "--min-scheduled-reviews",
             "1",
+            "--min-scheduled-review-runs",
+            "1",
             "--min-live-scores",
             "1",
             "--min-agent-protocol-cases",
@@ -9696,6 +9702,7 @@ def test_forecast_cli_pilot_bundle_outputs_handoff_packet(tmp_path, capsys):
 
     assert payload["product"]["purpose"] == "tester_pilot_handoff_bundle"
     assert payload["pilot_report"]["pilot_status"] == "pilot_exit_ready"
+    assert payload["pilot_report"]["summary"]["scheduled_review_run_count"] == 1
     assert payload["readiness"]["evidence_status"]["score_counts"]["live"] == 1
     assert payload["export_included"] is True
     assert payload["export_packet"]["questions"][0]["question"]["id"] == question.id

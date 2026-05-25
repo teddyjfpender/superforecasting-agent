@@ -1540,6 +1540,13 @@ def test_forecast_ledger_tool_returns_pilot_report(tmp_path):
             "next_run_at": "2026-05-24T09:00:00Z",
         }
     )
+    forecast_ledger_tool(
+        {
+            "db": db,
+            "action": "run_scheduled_reviews",
+            "now": "2026-05-24T10:00:00Z",
+        }
+    )
 
     report = json.loads(
         forecast_ledger_tool(
@@ -1551,12 +1558,14 @@ def test_forecast_ledger_tool_returns_pilot_report(tmp_path):
                 "min_scores": 0,
                 "min_postmortems": 0,
                 "min_scheduled_reviews": 1,
+                "min_scheduled_review_runs": 1,
             }
         )
     )
 
     assert report["pilot_report"]["pilot_status"] == "pilot_exit_ready"
     assert report["pilot_report"]["summary"]["questions_with_structured_sources"] == 1
+    assert report["pilot_report"]["summary"]["scheduled_review_run_count"] == 1
     assert report["pilot_report"]["source_types"]["fred"] == 1
 
 

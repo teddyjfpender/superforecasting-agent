@@ -3669,6 +3669,7 @@ class ForecastLedger:
         min_scores: int = 1,
         min_postmortems: int = 1,
         min_scheduled_reviews: int = 1,
+        min_scheduled_review_runs: int = 1,
     ) -> dict[str, Any]:
         """Summarize whether a tester ledger has the artifacts needed for a pilot."""
 
@@ -3677,6 +3678,7 @@ class ForecastLedger:
         min_scores = max(int(min_scores), 0)
         min_postmortems = max(int(min_postmortems), 0)
         min_scheduled_reviews = max(int(min_scheduled_reviews), 0)
+        min_scheduled_review_runs = max(int(min_scheduled_review_runs), 0)
 
         questions = self.list_questions()
         status_counts = Counter(question.status for question in questions)
@@ -3742,6 +3744,7 @@ class ForecastLedger:
         score_origin_counts.update(score.forecast_origin for score in scores)
         postmortems = self.list_postmortems()
         schedules = self.list_scheduled_reviews()
+        scheduled_review_runs = self.list_scheduled_review_runs(limit=1000)
         watched_sources = self.list_watched_sources(status=None)
         alerts = self.list_alerts(unresolved_only=False)
         open_alert_count = sum(1 for alert in alerts if alert.acknowledged_at is None)
@@ -3825,6 +3828,13 @@ class ForecastLedger:
                 "Schedule review work with `forecast schedule add --question <id> ...`.",
             ),
             check(
+                "scheduled_self_check_runs",
+                "scheduled self-checks run",
+                len(scheduled_review_runs),
+                min_scheduled_review_runs,
+                "Run due schedule rows with `forecast schedule run --due`, or install the cron bridge with `forecast schedule install-cron`.",
+            ),
+            check(
                 "live_scores_recorded",
                 "resolved live forecasts scored",
                 score_origin_counts.get("live", 0),
@@ -3870,6 +3880,7 @@ class ForecastLedger:
                 "postmortem_count": len(postmortems),
                 "scheduled_review_count": len(schedules),
                 "enabled_scheduled_review_count": len([row for row in schedules if row.get("enabled")]),
+                "scheduled_review_run_count": len(scheduled_review_runs),
                 "watched_source_count": len(watched_sources),
                 "alert_count": len(alerts),
                 "open_alert_count": open_alert_count,

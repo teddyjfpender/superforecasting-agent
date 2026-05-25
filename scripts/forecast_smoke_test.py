@@ -687,6 +687,8 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
                 "1",
                 "--min-scheduled-reviews",
                 "1",
+                "--min-scheduled-review-runs",
+                "1",
                 "--json",
             ],
             db_path=db_path,
@@ -697,6 +699,8 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
     )
     if pilot_report.get("pilot_status") != "pilot_exit_ready":
         raise SmokeError(f"pilot report did not pass tester exit checks:\n{json.dumps(pilot_report, indent=2)}")
+    if pilot_report.get("summary", {}).get("scheduled_review_run_count", 0) < 1:
+        raise SmokeError(f"pilot report did not count scheduled self-check runs:\n{json.dumps(pilot_report, indent=2)}")
     _print_step(
         "pilot_report_checks: "
         f"{pilot_report.get('passed_checks')}/{pilot_report.get('total_checks')}"
@@ -792,6 +796,8 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
                 "1",
                 "--min-scheduled-reviews",
                 "1",
+                "--min-scheduled-review-runs",
+                "1",
                 "--min-live-scores",
                 "1",
                 "--min-agent-protocol-cases",
@@ -806,6 +812,8 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
     )
     if pilot_bundle.get("pilot_report", {}).get("pilot_status") != "pilot_exit_ready":
         raise SmokeError(f"pilot bundle did not include a passing pilot report:\n{json.dumps(pilot_bundle, indent=2)}")
+    if pilot_bundle.get("pilot_report", {}).get("summary", {}).get("scheduled_review_run_count", 0) < 1:
+        raise SmokeError(f"pilot bundle did not count scheduled self-check runs:\n{json.dumps(pilot_bundle, indent=2)}")
     if pilot_bundle.get("readiness", {}).get("evidence_status", {}).get("score_counts", {}).get("live", 0) < 1:
         raise SmokeError(f"pilot bundle did not include live-score readiness data:\n{json.dumps(pilot_bundle, indent=2)}")
     if not pilot_bundle.get("export_included") or not pilot_bundle.get("export_packet", {}).get("questions"):

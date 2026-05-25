@@ -140,7 +140,7 @@ The forecast ledger is the product surface. Generic chat and messaging gateways 
 | Capture agent protocol outputs | `forecast backtest cases.json --probability-source agent-protocol --agent-output-jsonl captured.jsonl` |
 | Review backtest performance | `forecast performance --last 5` or `forecast performance --last 5 --json` |
 | Check claim readiness | `forecast readiness`, `forecast readiness --json`, or `forecast readiness --require-evidence` |
-| Check tester pilot coverage | `forecast pilot-report` or `forecast pilot-report --json` |
+| Check tester pilot coverage | `forecast pilot-report` or `forecast pilot-report --json` checks schedules and scheduled self-check run history |
 | Seed a live tester cohort | `cp examples/forecasting/live-cohort.example.csv live-cohort.csv` then `forecast pilot-cohort live-cohort.csv --dry-run --json` |
 | Bundle tester evidence | `forecast pilot-bundle --include-export --output .pilot/tester-bundle.json` includes pilot checks, readiness, export data, and scheduled self-check run history |
 | Aggregate tester exports | `forecast pilot-aggregate tester-a.json tester-b.json --json` |

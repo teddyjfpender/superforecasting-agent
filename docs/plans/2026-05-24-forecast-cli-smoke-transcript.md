@@ -28,7 +28,7 @@ python3 scripts/forecast_smoke_test.py
 [forecast-smoke] scheduled_self_check_question_id: fq_f708e2e55e72
 [forecast-smoke] pilot_cohort_dry_run_questions: 1
 [forecast-smoke] pilot_cohort_example_questions: 5
-[forecast-smoke] pilot_report_checks: 8/8
+[forecast-smoke] pilot_report_checks: 9/9
 [forecast-smoke] pilot_aggregate_live_scores: 1
 [forecast-smoke] backtest_run_id: bt_563e9b8006d2
 [forecast-smoke] agent_protocol_backtest_run_id: bt_1732504c43ee

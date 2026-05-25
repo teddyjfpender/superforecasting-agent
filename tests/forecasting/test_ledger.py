@@ -1132,6 +1132,7 @@ def test_pilot_report_summarizes_tester_exit_artifacts(tmp_path):
         cadence="1d",
         next_run_at="2026-05-24T09:00:00Z",
     )
+    ledger.run_due_scheduled_reviews(now="2026-05-24T10:00:00Z")
     ledger.resolve_question(
         question_id=question.id,
         outcome="yes",
@@ -1150,12 +1151,14 @@ def test_pilot_report_summarizes_tester_exit_artifacts(tmp_path):
         min_scores=1,
         min_postmortems=1,
         min_scheduled_reviews=1,
+        min_scheduled_review_runs=1,
     )
 
     assert report["pilot_status"] == "pilot_exit_ready"
     assert report["passed_checks"] == report["total_checks"]
     assert report["summary"]["question_count"] == 1
     assert report["summary"]["score_counts_by_origin"]["live"] == 1
+    assert report["summary"]["scheduled_review_run_count"] == 1
     assert report["source_types"]["fred"] == 1
     assert report["domains"]["macro"] == 1
     assert report["topics"]["rates"] == 1
@@ -1178,6 +1181,7 @@ def test_pilot_report_blocks_unresolved_learned_error_reviews(tmp_path):
         min_scores=0,
         min_postmortems=0,
         min_scheduled_reviews=0,
+        min_scheduled_review_runs=0,
     )
     check = {row["id"]: row for row in report["checks"]}["learned_error_reviews_cleared"]
 
@@ -1195,6 +1199,7 @@ def test_pilot_report_blocks_unresolved_learned_error_reviews(tmp_path):
         min_scores=0,
         min_postmortems=0,
         min_scheduled_reviews=0,
+        min_scheduled_review_runs=0,
     )
 
     assert cleared["pilot_status"] == "pilot_exit_ready"

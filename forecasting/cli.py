@@ -1614,6 +1614,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     pilot_parser.add_argument("--min-scores", type=int, default=1)
     pilot_parser.add_argument("--min-postmortems", type=int, default=1)
     pilot_parser.add_argument("--min-scheduled-reviews", type=int, default=1)
+    pilot_parser.add_argument("--min-scheduled-review-runs", type=int, default=1)
     pilot_parser.add_argument(
         "--require-complete",
         action="store_true",
@@ -1675,6 +1676,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     pilot_bundle_parser.add_argument("--min-scores", type=int, default=1)
     pilot_bundle_parser.add_argument("--min-postmortems", type=int, default=1)
     pilot_bundle_parser.add_argument("--min-scheduled-reviews", type=int, default=1)
+    pilot_bundle_parser.add_argument("--min-scheduled-review-runs", type=int, default=1)
     pilot_bundle_parser.add_argument("--last", type=int, default=20, help="Number of recent backtest runs to inspect")
     pilot_bundle_parser.add_argument("--dataset", help="Filter to runs whose dataset contains this text")
     pilot_bundle_parser.add_argument(
@@ -6933,6 +6935,7 @@ def _cmd_pilot_report(args: argparse.Namespace) -> None:
         min_scores=args.min_scores,
         min_postmortems=args.min_postmortems,
         min_scheduled_reviews=args.min_scheduled_reviews,
+        min_scheduled_review_runs=args.min_scheduled_review_runs,
     )
     incomplete = report["passed_checks"] < report["total_checks"]
     if args.json:
@@ -6955,6 +6958,7 @@ def _cmd_pilot_report(args: argparse.Namespace) -> None:
         f"live_scores={summary['score_counts_by_origin'].get('live', 0)} "
         f"postmortems={summary['postmortem_count']} "
         f"schedules={summary['enabled_scheduled_review_count']} "
+        f"schedule_runs={summary.get('scheduled_review_run_count', 0)} "
         f"open_alerts={summary['open_alert_count']} "
         f"learned_error_reviews={summary.get('open_learned_error_review_alert_count', 0)}"
     )
@@ -7193,6 +7197,7 @@ def _cmd_pilot_bundle(args: argparse.Namespace) -> None:
         min_scores=args.min_scores,
         min_postmortems=args.min_postmortems,
         min_scheduled_reviews=args.min_scheduled_reviews,
+        min_scheduled_review_runs=args.min_scheduled_review_runs,
     )
     rows, summaries = _recent_backtest_summaries(
         ledger,

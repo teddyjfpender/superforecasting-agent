@@ -3759,7 +3759,7 @@ def test_forecast_cli_smoke_transcript_captures_tester_path():
         "[forecast-smoke] model_run_id:",
         "[forecast-smoke] scheduled_self_check_question_id:",
         "[forecast-smoke] pilot_cohort_example_questions: 5",
-        "[forecast-smoke] pilot_report_checks: 8/8",
+        "[forecast-smoke] pilot_report_checks: 9/9",
         "[forecast-smoke] pilot_aggregate_live_scores:",
         "[forecast-smoke] backtest_run_id:",
         "[forecast-smoke] agent_protocol_backtest_run_id:",
