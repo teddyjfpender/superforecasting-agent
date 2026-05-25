@@ -194,6 +194,8 @@ class TestSendMatrix:
 
         assert len(txn_ids) == 2
         assert txn_ids[0] != txn_ids[1]
+        assert txn_ids[0].startswith("forecast_")
+        assert txn_ids[1].startswith("forecast_")
 
 
 # ---------------------------------------------------------------------------

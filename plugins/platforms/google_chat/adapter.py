@@ -3051,7 +3051,7 @@ def interactive_setup() -> None:
     print_info("Walkthrough:")
     print_info("  1. Create or select a GCP project; enable Google Chat API + Cloud Pub/Sub API.")
     print_info("  2. Create a Service Account (no project-level IAM role needed).")
-    print_info("  3. Create a Pub/Sub topic (e.g. hermes-chat-events) and a Pull subscription.")
+    print_info("  3. Create a Pub/Sub topic (e.g. forecast-chat-events) and a Pull subscription.")
     print_info("  4. On the TOPIC: add chat-api-push@system.gserviceaccount.com as Pub/Sub Publisher.")
     print_info("  5. On the SUBSCRIPTION: grant your Service Account Pub/Sub Subscriber.")
     print_info("  6. Download the Service Account JSON key.")

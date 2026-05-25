@@ -109,7 +109,7 @@ def _get_camofox_config() -> Dict[str, Any]:
 
 
 def _managed_persistence_enabled() -> bool:
-    """Return whether Hermes-managed persistence is enabled for Camofox.
+    """Return whether agent-managed persistence is enabled for Camofox.
 
     When enabled, sessions use a stable profile-scoped userId so the
     Camofox server can map it to a persistent browser profile directory.
@@ -124,7 +124,7 @@ def _camofox_identity_override(task_id: Optional[str], camofox_cfg: Dict[str, An
     """Return an externally configured Camofox identity, if one is set.
 
     Integrations that own the visible Camofox browser can set a shared user ID
-    so Hermes operates in the same browser profile instead of creating a
+    so the agent operates in the same browser profile instead of creating a
     separate private session.
     """
     user_id = os.getenv("CAMOFOX_USER_ID", "").strip() or str(camofox_cfg.get("user_id") or "").strip()
@@ -152,7 +152,7 @@ def _env_flag(name: str) -> Optional[bool]:
 
 
 def _adopt_existing_tab_enabled(camofox_cfg: Dict[str, Any]) -> bool:
-    """Return whether Hermes should recover an existing Camofox tab ID."""
+    """Return whether the agent should recover an existing Camofox tab ID."""
     env_value = _env_flag("CAMOFOX_ADOPT_EXISTING_TAB")
     if env_value is not None:
         return env_value
@@ -170,7 +170,7 @@ _sessions_lock = threading.Lock()
 def _adopt_existing_tab(session: Dict[str, Any]) -> Dict[str, Any]:
     """Attach process-local state to an already-open managed Camofox tab.
 
-    Some integrations own the visible Camofox tab outside Hermes. Gateway
+    Some integrations own the visible Camofox tab outside the agent. Gateway
     restarts can leave this module's in-memory session cache empty even though
     Camofox still has that tab, so rehydrate tab_id before creating a new tab.
     """
@@ -209,7 +209,7 @@ def _get_session(task_id: Optional[str]) -> Dict[str, Any]:
     """Get or create a camofox session for the given task.
 
     When managed persistence is enabled, uses a deterministic userId
-    derived from the Hermes profile so the Camofox server can map it
+    derived from the forecast profile so the Camofox server can map it
     to the same persistent browser profile across restarts.
     """
     task_id = task_id or "default"
@@ -238,7 +238,7 @@ def _get_session(task_id: Optional[str]) -> Dict[str, Any]:
             }
         else:
             session = {
-                "user_id": f"hermes_{uuid.uuid4().hex[:10]}",
+                "user_id": f"forecast_{uuid.uuid4().hex[:10]}",
                 "tab_id": None,
                 "session_key": f"task_{task_id[:16]}",
                 "managed": False,
@@ -694,6 +694,5 @@ def camofox_console(clear: bool = False, task_id: Optional[str] = None) -> str:
         "note": "Console log capture is not available with the Camofox backend. "
                 "Use browser_snapshot or browser_vision to inspect page state.",
     })
-
 
 

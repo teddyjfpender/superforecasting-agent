@@ -22,14 +22,14 @@ class TestCleanForDisplay:
 
     def test_media_tag_stripped(self):
         """Basic MEDIA:<path> tag is removed."""
-        text = "Here is the image\nMEDIA:/tmp/hermes/image.png"
+        text = "Here is the image\nMEDIA:/tmp/superforecasting-agent/image.png"
         result = GatewayStreamConsumer._clean_for_display(text)
         assert "MEDIA:" not in result
         assert "Here is the image" in result
 
     def test_media_tag_with_space(self):
         """MEDIA: tag with space after colon is removed."""
-        text = "Audio generated\nMEDIA: /home/user/.hermes/audio_cache/voice.mp3"
+        text = "Audio generated\nMEDIA: /home/user/.superforecasting-agent/audio_cache/voice.mp3"
         result = GatewayStreamConsumer._clean_for_display(text)
         assert "MEDIA:" not in result
         assert "Audio generated" in result
@@ -1780,4 +1780,3 @@ class TestUtf16OverflowDetection:
         # auto-attr mock. Verified indirectly by all the other tests in
         # this file passing — they all use MagicMock adapters.
         assert consumer is not None
-

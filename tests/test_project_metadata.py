@@ -2038,9 +2038,27 @@ def test_tool_runtime_guidance_is_forecast_native():
     assert "hermes-agent's python" not in text
 
 
+def test_messaging_runtime_examples_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "tools" / "send_message_tool.py",
+        root / "plugins" / "platforms" / "google_chat" / "adapter.py",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "MEDIA:{display_hermes_home()}/cache/img_xxx.jpg" in text
+    assert "forecast-chat-events" in text
+    assert 'txn_id = f"forecast_' in text
+
+    assert "MEDIA:/tmp/hermes/cache/img_xxx.jpg" not in text
+    assert "hermes-chat-events" not in text
+    assert 'txn_id = f"hermes_' not in text
+
+
 def test_residual_runtime_identity_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [
+        root / "tools" / "browser_camofox.py",
         root / "tools" / "browser_camofox_state.py",
         root / "agent" / "gemini_native_adapter.py",
         root / "tools" / "kanban_tools.py",
@@ -2049,7 +2067,10 @@ def test_residual_runtime_identity_copy_is_forecast_native():
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
     assert "Superforecasting Agent-managed Camofox state helpers" in text
+    assert "agent-managed persistence is enabled for Camofox" in text
     assert "same forecast profile = same userId" in text
+    assert 'f"forecast_{uuid.uuid4().hex[:10]}"' in text
+    assert 'f"forecast_{user_digest}"' in text
     assert "Superforecasting Agent keeps ``api_mode='chat_completions'``" in text
     assert "agent retry/error classification" in text
     assert "superforecasting-agent kanban complete" in text
@@ -2059,6 +2080,8 @@ def test_residual_runtime_identity_copy_is_forecast_native():
 
     assert "Hermes-managed" not in text
     assert "same Hermes profile" not in text
+    assert 'f"hermes_{uuid.uuid4().hex[:10]}"' not in text
+    assert 'f"hermes_{user_digest}"' not in text
     assert "Hermes keeps ``api_mode='chat_completions'``" not in text
     assert "Hermes's multi-turn" not in text
     assert "Hermes retry/error classification" not in text
