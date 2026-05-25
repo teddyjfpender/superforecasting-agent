@@ -296,6 +296,22 @@ def test_web_readme_is_forecast_native():
     assert "python -m hermes_cli.main web --no-open" not in text
 
 
+def test_cli_layout_svg_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "website" / "static" / "img" / "docs" / "cli-layout.svg").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Forecast Desk CLI interface layout" in text
+    assert "SUPERFORECASTING AGENT" in text
+    assert "Forecast transcript" in text
+    assert "forecast research fq_123" in text
+    assert "Hermes CLI" not in text
+    assert "HERMES AGENT" not in text
+    assert "Caduceus banner" not in text
+    assert "Hermes:" not in text
+
+
 def test_acp_adapter_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [

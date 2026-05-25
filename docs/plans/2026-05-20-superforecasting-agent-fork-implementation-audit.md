@@ -1326,6 +1326,7 @@ Latest verified result:
 - Cron scheduler identity pass: `cron/__init__.py`, `cron/scheduler.py`, and `cron/jobs.py` now use Superforecasting Agent and neutral agent-profile/home wording in scheduler docs, gateway install examples, profile logs, and job profile parameter docs while preserving compatibility function names.
 - Session state identity pass: `hermes_state.py` now describes the SQLite store as Superforecasting Agent infrastructure and uses neutral agent-process/session wording in write-contention comments, Telegram topic migration docs, and topic-binding helpers under metadata coverage.
 - ACP adapter identity pass: `acp_adapter` now exposes Superforecasting Agent in the server module docstring, `/version` response, terminal setup auth method, and ACP session/tool/event comments, while preserving protocol-compatible constants such as `HERMES_VERSION` and `hermes-setup`.
+- CLI layout visual pass: `website/static/img/docs/cli-layout.svg` now labels the terminal visual as a Forecast Desk CLI with Superforecasting Agent, forecast transcript, research command, and evidence/update stream copy instead of inherited Hermes CLI/banner text.
 
 ## Prompt-To-Artifact Checklist
 
