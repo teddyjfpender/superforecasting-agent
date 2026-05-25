@@ -184,6 +184,9 @@ def test_achievements_plugin_visible_copy_is_forecast_native():
     assert "Hermes sessions" not in text
     assert "Hermes Achievements" not in text
     assert "Hermes Dashboard" not in text
+    assert "Hermes is scanning" not in text
+    assert "run Hermes more" not in text
+    assert "Hermes sees" not in text
     assert "Plugin Goblin" not in text
     assert "Agentic Gamerscore" not in text
     assert "hermes dashboard" not in text

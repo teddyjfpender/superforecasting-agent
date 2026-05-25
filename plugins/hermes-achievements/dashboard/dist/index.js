@@ -481,7 +481,7 @@
       React.createElement("section", { className: "ha-guide ha-loading-guide" },
         React.createElement("div", null,
           React.createElement("strong", null, tx(t, "guide.scan_status_header", "Scan status")),
-          React.createElement("p", null, tx(t, "guide.scan_status_body", "Hermes is scanning local history once, then cards will appear automatically. Nothing is stuck if this takes a few seconds."))
+          React.createElement("p", null, tx(t, "guide.scan_status_body", "The dashboard is scanning local history once, then cards will appear automatically. Nothing is stuck if this takes a few seconds."))
         ),
         React.createElement("div", null,
           React.createElement("strong", null, tx(t, "guide.what_scanned_header", "What is scanned")),
@@ -684,7 +684,7 @@
         React.createElement(StatCard, { label: tx(t, "stats.discovered", "Discovered"), value: discovered.length, hint: tx(t, "stats.discovered_hint", "known, not earned yet") }),
         React.createElement(StatCard, { label: tx(t, "stats.secrets", "Secrets"), value: secret.length, hint: tx(t, "stats.secrets_hint", "hidden until first signal") }),
         React.createElement(StatCard, { label: tx(t, "stats.highest_tier", "Highest tier"), value: highest, hint: tx(t, "stats.highest_tier_hint", "Copper → Silver → Gold → Diamond → Olympian") }),
-        React.createElement(StatCard, { label: tx(t, "stats.latest", "Latest"), value: latest[0] ? latest[0].name : tx(t, "stats.none_yet", "None yet"), hint: latest[0] ? latest[0].category : tx(t, "stats.latest_hint_empty", "run Hermes more") })
+        React.createElement(StatCard, { label: tx(t, "stats.latest", "Latest"), value: latest[0] ? latest[0].name : tx(t, "stats.none_yet", "None yet"), hint: latest[0] ? latest[0].category : tx(t, "stats.latest_hint_empty", "run more forecast-desk sessions") })
       ),
       React.createElement("section", { className: "ha-guide" },
         React.createElement("div", null,
@@ -693,7 +693,7 @@
         ),
         React.createElement("div", null,
           React.createElement("strong", null, tx(t, "guide.secret_header", "Secret achievements")),
-          React.createElement("p", null, tx(t, "guide.secret_body", "Secrets hide their exact trigger. Once Hermes sees a related signal, the card becomes Discovered and shows its requirement."))
+          React.createElement("p", null, tx(t, "guide.secret_body", "Secrets hide their exact trigger. Once a related forecast-desk signal appears, the card becomes Discovered and shows its requirement."))
         )
       ),
       React.createElement("div", { className: "ha-toolbar" },
