@@ -10999,6 +10999,8 @@ def test_forecast_cli_imports_csv_benchmark_dataset_and_replays_it(tmp_path, cap
     import_output = capsys.readouterr().out
     dataset_id = re.search(r"imported benchmark dataset (bd_[a-f0-9]+)", import_output).group(1)
     assert "cases: 1" in import_output
+    assert "provenance: imported_local" in import_output
+    assert "source_families: -" in import_output
 
     _run(parser, ["forecast", "--db", db, "backtest", "--benchmarks"])
     benchmarks_output = capsys.readouterr().out
@@ -11066,6 +11068,8 @@ def test_forecast_cli_imports_tournament_export_as_benchmark(tmp_path, capsys):
     import_output = capsys.readouterr().out
     dataset_id = re.search(r"imported tournament benchmark dataset (bd_[a-f0-9]+)", import_output).group(1)
     assert "cases: 1" in import_output
+    assert "provenance: imported_local" in import_output
+    assert "source_families: -" in import_output
 
     ledger = ForecastLedger(db)
     imported = ledger.get_benchmark_dataset(f"imported:{dataset_id}")
@@ -11124,6 +11128,8 @@ def test_forecast_cli_tournament_alias_imports_export_as_benchmark(tmp_path, cap
     import_output = capsys.readouterr().out
     dataset_id = re.search(r"imported tournament benchmark dataset (bd_[a-f0-9]+)", import_output).group(1)
     assert "cases: 1" in import_output
+    assert "provenance: imported_local" in import_output
+    assert "source_families: -" in import_output
 
     ledger = ForecastLedger(db)
     imported = ledger.get_benchmark_dataset(f"imported:{dataset_id}")
@@ -11233,6 +11239,8 @@ def test_forecast_cli_imports_manifold_resolved_benchmark_dataset(tmp_path, caps
 
     assert "name: manifold-fixture" in import_output
     assert "cases: 2" in import_output
+    assert "provenance: public_external" in import_output
+    assert "source_families: manifold" in import_output
 
     _run(parser, ["forecast", "--db", db, "backtest", f"imported:{dataset_id}"])
     run_output = capsys.readouterr().out
@@ -11321,6 +11329,8 @@ def test_forecast_cli_imports_metaculus_resolved_benchmark_dataset(tmp_path, cap
 
     assert "name: metaculus-fixture" in import_output
     assert "cases: 2" in import_output
+    assert "provenance: public_external" in import_output
+    assert "source_families: metaculus" in import_output
 
     _run(parser, ["forecast", "--db", db, "backtest", f"imported:{dataset_id}"])
     run_output = capsys.readouterr().out
@@ -11409,6 +11419,8 @@ def test_forecast_cli_imports_kalshi_resolved_benchmark_dataset(tmp_path, capsys
 
     assert "name: kalshi-fixture" in import_output
     assert "cases: 2" in import_output
+    assert "provenance: public_external" in import_output
+    assert "source_families: kalshi" in import_output
 
     _run(parser, ["forecast", "--db", db, "backtest", f"imported:{dataset_id}"])
     run_output = capsys.readouterr().out

@@ -2234,11 +2234,7 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 "limit": args.limit,
             },
         )
-        print(f"imported benchmark dataset {dataset['id']}")
-        print(f"name: {dataset['name']}")
-        print(f"cases: {dataset['case_count']}")
-        print(f"source: {args.source}")
-        print(f"run: forecast backtest imported:{dataset['id']}")
+        _print_imported_benchmark_dataset(dataset, source=args.source)
         return
     if args.import_kind == "benchmark" and not args.question_id and str(args.source).startswith("kalshi:"):
         if args.source != "kalshi:resolved":
@@ -2260,11 +2256,7 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 "limit": args.limit,
             },
         )
-        print(f"imported benchmark dataset {dataset['id']}")
-        print(f"name: {dataset['name']}")
-        print(f"cases: {dataset['case_count']}")
-        print(f"source: {args.source}")
-        print(f"run: forecast backtest imported:{dataset['id']}")
+        _print_imported_benchmark_dataset(dataset, source=args.source)
         return
     if args.import_kind == "benchmark" and not args.question_id and str(args.source).startswith("manifold:"):
         if args.source != "manifold:resolved":
@@ -2283,11 +2275,7 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 "limit": args.limit,
             },
         )
-        print(f"imported benchmark dataset {dataset['id']}")
-        print(f"name: {dataset['name']}")
-        print(f"cases: {dataset['case_count']}")
-        print(f"source: {args.source}")
-        print(f"run: forecast backtest imported:{dataset['id']}")
+        _print_imported_benchmark_dataset(dataset, source=args.source)
         return
     if args.import_kind == "benchmark" and not args.question_id and _is_importable_benchmark_source(args.source):
         cases = _load_backtest_cases(args.source, ledger=ledger)
@@ -2298,10 +2286,7 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
             cases=cases,
             metadata={"adapter": "benchmark"},
         )
-        print(f"imported benchmark dataset {dataset['id']}")
-        print(f"name: {dataset['name']}")
-        print(f"cases: {dataset['case_count']}")
-        print(f"run: forecast backtest imported:{dataset['id']}")
+        _print_imported_benchmark_dataset(dataset, source=args.source)
         return
     if args.import_kind == "tournament" and not args.question_id and _is_importable_benchmark_source(args.source):
         cases = _load_backtest_cases(args.source, ledger=ledger)
@@ -2312,10 +2297,11 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
             cases=cases[: args.limit] if args.limit else cases,
             metadata={"adapter": "tournament"},
         )
-        print(f"imported tournament benchmark dataset {dataset['id']}")
-        print(f"name: {dataset['name']}")
-        print(f"cases: {dataset['case_count']}")
-        print(f"run: forecast backtest imported:{dataset['id']}")
+        _print_imported_benchmark_dataset(
+            dataset,
+            source=args.source,
+            label="imported tournament benchmark dataset",
+        )
         return
     if args.import_kind == "metaculus" and _should_use_metaculus_adapter(args):
         question = load_metaculus_question(args.source, api_base_url=args.api_base_url)
@@ -2374,6 +2360,7 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
         if baseline is not None:
             print(f"crowd_probability: {_format_probability(baseline['probability_or_distribution'])}")
         return
+
     if args.import_kind == "manifold":
         market = load_manifold_market(args.source, api_base_url=args.api_base_url)
         baseline = market.baseline_payload()
@@ -5439,6 +5426,27 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
             metadata={"source": args.source},
         )
         print(f"captured baseline comparison {baseline['id']}")
+
+
+def _print_imported_benchmark_dataset(
+    dataset: dict[str, Any],
+    *,
+    source: str | None = None,
+    label: str = "imported benchmark dataset",
+) -> None:
+    evidence = build_benchmark_evidence_profile(
+        f"imported:{dataset['id']}",
+        dataset.get("cases") or [],
+    )
+    families = ", ".join(evidence.get("source_families") or []) or "-"
+    print(f"{label} {dataset['id']}")
+    print(f"name: {dataset['name']}")
+    print(f"cases: {dataset['case_count']}")
+    print(f"provenance: {evidence.get('provenance') or '-'}")
+    print(f"source_families: {families}")
+    if source:
+        print(f"source: {source}")
+    print(f"run: forecast backtest imported:{dataset['id']}")
 
 
 def _cmd_plugins(args: argparse.Namespace) -> None:
