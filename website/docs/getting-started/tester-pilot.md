@@ -22,10 +22,11 @@ Avoid claiming the system is better than Metaculus, markets, or human superforec
 
 ## Operator Setup
 
-For the current friendly alpha snapshot, give testers the pinned tester tag:
+For the current friendly alpha snapshot, give testers the moving snapshot
+branch after the operator has pushed and verified the handoff commit:
 
 ```bash
-git clone --branch tester-alpha-2026-05-25 \
+git clone --branch superforecasting-agent-snapshot \
   https://github.com/teddyjfpender/superforecasting-agent.git \
   superforecasting-agent
 cd superforecasting-agent
@@ -34,8 +35,8 @@ source .venv/bin/activate
 uv pip install -e ".[all,dev]"
 ```
 
-Use the `superforecasting-agent-snapshot` branch instead when you want the
-latest moving snapshot rather than the pinned alpha.
+Pin the resulting commit hash in the tester brief when you need every tester
+on an identical build.
 
 For a future default-branch or release-candidate handoff, use the same setup
 shape against the fork URL:

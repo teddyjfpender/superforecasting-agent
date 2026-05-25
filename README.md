@@ -31,10 +31,10 @@ Use any model you want — [Nous Portal](https://portal.nousresearch.com), [Open
 
 ## Quick Install
 
-This alpha is installed from the pinned tester snapshot while the packaging and installer names finish moving away from Hermes:
+This alpha is installed from the moving tester snapshot branch while the packaging and installer names finish moving away from Hermes:
 
 ```bash
-git clone --branch tester-alpha-2026-05-25 \
+git clone --branch superforecasting-agent-snapshot \
   https://github.com/teddyjfpender/superforecasting-agent.git \
   superforecasting-agent
 cd superforecasting-agent
@@ -44,7 +44,7 @@ uv pip install -e ".[all,dev]"
 python3 scripts/forecast_smoke_test.py
 ```
 
-Use the `superforecasting-agent-snapshot` branch instead when you want the latest moving snapshot rather than the pinned alpha.
+Operators can pin a specific commit from `superforecasting-agent-snapshot` for a fixed tester cohort after the smoke gate passes.
 
 On native Windows, use the PowerShell installer:
 

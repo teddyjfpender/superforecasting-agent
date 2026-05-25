@@ -5649,17 +5649,32 @@ class ForecastLedger:
         return last_dt + self._cadence_delta(cadence) <= now_dt
 
     def _cadence_delta(self, cadence: str) -> timedelta:
-        raw = cadence.strip().lower()
+        raw = re.sub(r"\s+", " ", cadence.strip().lower())
+        if raw.startswith("every "):
+            raw = raw[len("every "):].strip()
         if raw in {"daily", "1d"}:
             return timedelta(days=1)
         elif raw in {"weekly", "1w"}:
             return timedelta(days=7)
-        elif raw.endswith("d"):
-            return timedelta(days=max(int(raw[:-1] or "1"), 1))
-        elif raw.endswith("h"):
-            return timedelta(hours=max(int(raw[:-1] or "1"), 1))
-        elif raw.endswith("m"):
-            return timedelta(minutes=max(int(raw[:-1] or "1"), 1))
+        elif raw == "hourly":
+            return timedelta(hours=1)
+        elif raw == "minutely":
+            return timedelta(minutes=1)
+
+        match = re.fullmatch(
+            r"(?P<count>\d*)\s*(?P<unit>w|week|weeks|d|day|days|h|hr|hrs|hour|hours|m|min|mins|minute|minutes)",
+            raw,
+        )
+        if match:
+            count = max(int(match.group("count") or "1"), 1)
+            unit = match.group("unit")
+            if unit in {"w", "week", "weeks"}:
+                return timedelta(days=count * 7)
+            if unit in {"d", "day", "days"}:
+                return timedelta(days=count)
+            if unit in {"h", "hr", "hrs", "hour", "hours"}:
+                return timedelta(hours=count)
+            return timedelta(minutes=count)
         return timedelta(days=1)
 
     def _row_to_question(self, row: sqlite3.Row) -> ForecastQuestion:

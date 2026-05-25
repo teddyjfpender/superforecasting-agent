@@ -1,0 +1,166 @@
+# Superforecasting Agent MVP Tester Handoff
+
+Date: 2026-05-25
+
+This is the handoff for a friendly tester MVP of the Hermes fork as a CLI-first
+forecasting desk. It is meant to get real users through the system and collect
+workflow feedback. It is not evidence that the agent is already better than
+Metaculus, markets, or human superforecasters.
+
+## Install The Snapshot
+
+Use the fork snapshot branch:
+
+```bash
+git clone --branch superforecasting-agent-snapshot \
+  https://github.com/teddyjfpender/superforecasting-agent.git \
+  superforecasting-agent
+cd superforecasting-agent
+uv venv .venv --python 3.11
+source .venv/bin/activate
+uv pip install -e ".[all,dev]"
+```
+
+After editable install, testers should have these commands:
+
+```bash
+forecast
+superforecasting-agent
+python -m superforecasting_agent status
+```
+
+In a raw source checkout before installation, `./superforecasting-agent` and
+`python -m superforecasting_agent ...` work; the `forecast` console script is
+created by package installation.
+
+## Operator Gate
+
+Run this before inviting testers:
+
+```bash
+python3 scripts/tester_handoff_check.py
+```
+
+For a quicker lifecycle-only check:
+
+```bash
+python3 scripts/forecast_smoke_test.py
+```
+
+The expected readiness verdict is still `insufficient_live_evidence`. That is
+correct: the MVP verifies the forecast desk loop and guardrails, not live
+forecasting superiority.
+
+## Commands To Try
+
+Give each tester a dedicated ledger:
+
+```bash
+export FORECAST_DB="$PWD/.pilot/forecasting-${USER}.db"
+mkdir -p .pilot
+```
+
+Run the forecast lifecycle:
+
+```bash
+forecast --db "$FORECAST_DB" new "Will <event> happen by <date>?" \
+  --resolution-criteria "Resolved yes if ..." \
+  --close-time 2026-06-30T00:00:00Z \
+  --domain <domain> \
+  --topic <topic>
+forecast --db "$FORECAST_DB" evidence add <id> "Observed evidence or source note." \
+  --claim-type fact \
+  --stance context \
+  --reliability 0.7 \
+  --relevance 0.8
+forecast --db "$FORECAST_DB" base-rate <id> --name "Comparable cases" \
+  --inclusion-criteria "Comparable cases before the forecast date" \
+  --base-rate 0.45 \
+  --uncertainty 0.12
+forecast --db "$FORECAST_DB" model <id> --type bayesian_update \
+  --prior 0.45 \
+  --likelihood-if-true 0.65 \
+  --likelihood-if-false 0.50
+forecast --db "$FORECAST_DB" update <id> \
+  --probability 0.55 \
+  --confidence 0.6 \
+  --method weighted_ensemble \
+  --rationale "Base rate plus current evidence moves the probability modestly upward."
+forecast --db "$FORECAST_DB" review
+forecast --db "$FORECAST_DB" self-check --question <id>
+forecast --db "$FORECAST_DB" schedule add --question <id> --cadence "every 1h" \
+  --auto-score \
+  --auto-postmortem
+forecast --db "$FORECAST_DB" schedule run --due --auto-score --auto-postmortem
+forecast --db "$FORECAST_DB" resolve <id> --outcome yes --source "<resolution source>"
+forecast --db "$FORECAST_DB" score <id> --baselines
+forecast --db "$FORECAST_DB" postmortem <id> \
+  --what-happened "..." \
+  --what-was-expected "..." \
+  --lesson "What should change next time."
+forecast --db "$FORECAST_DB" calibration --by-origin --all
+forecast --db "$FORECAST_DB" backtest builtin:mini-binary --probability-source dataset
+forecast --db "$FORECAST_DB" performance --last 5
+forecast --db "$FORECAST_DB" readiness
+forecast --db "$FORECAST_DB" pilot-report
+```
+
+The TUI and dashboard paths to check:
+
+```bash
+superforecasting-agent --tui
+superforecasting-agent dashboard --no-open
+```
+
+In the TUI, `/forecast` opens the forecast desk panel and `/schedule`,
+`/backtest`, `/calibration`, `/alerts`, `/doctor`, and `/readiness` jump to
+common workflow checks.
+
+## Smoke Evidence
+
+The manual MVP smoke used a clean ledger at:
+
+```text
+/private/tmp/sfa-mvp-smoke-985c1c565.db
+```
+
+It verified:
+
+- `forecast new`, manual evidence, research/evidence capture, base-rate model,
+  Bayesian model run, and forecast update.
+- Review, resolve, score, postmortem, calibration, and performance reporting.
+- Backtest replay on `builtin:mini-binary` with leakage checks passing.
+- Scheduled self-check with `--cadence "every 1h"`, alert creation, learning
+  review counts, and durable schedule history.
+- Source-tree `./superforecasting-agent`, `python -m superforecasting_agent`,
+  and the package-defined `forecast` command path.
+- Dashboard forecast API and TUI forecast panel test coverage.
+
+## Feedback To Collect
+
+Ask testers for:
+
+- install and first-run failures
+- commands that were hard to discover
+- source adapters missing for their domain
+- awkward evidence, timestamp, or resolution-criteria workflows
+- forecast updates that could not cite the right evidence/model/assumption
+- noisy, stale, or missing self-check alerts
+- whether postmortems and calibration lessons changed their next forecast
+- dashboard/TUI issues that slow down reviewing the book
+
+Each report should include the tested commit, commands run, forecast id, domain
+and topic, `forecast pilot-report --json`, `forecast readiness --json`, and any
+export or bundle path.
+
+## Known Limits
+
+- The MVP is tester-ready for workflow feedback, not performance claims.
+- Many inherited Hermes module names and compatibility entry points remain.
+- `forecast` exists after package installation; raw source checkouts should use
+  `./superforecasting-agent` or `python -m superforecasting_agent`.
+- Scheduled checks create alerts, scores, postmortems, lessons, and error
+  profiles where configured, but they do not silently change active forecast
+  probabilities.
+- Live superiority requires accumulated prospective forecasts, resolutions,
+  baseline comparisons, and held-out replay evidence over time.

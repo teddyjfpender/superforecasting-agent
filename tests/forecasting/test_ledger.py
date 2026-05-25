@@ -4718,6 +4718,28 @@ def test_scheduled_review_includes_watched_source_alerts(tmp_path):
     assert f"watched_source_changed:{watch['id']}" in {alert.reason for alert in results[0]["alerts"]}
 
 
+def test_scheduled_review_accepts_every_cadence_phrases(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will every-cadence phrasing run?",
+        resolution_criteria="Resolved yes if documented schedule cadence phrasing is accepted.",
+        next_review_at="2026-01-01T00:00:00Z",
+    )
+    review = ledger.schedule_review(
+        scope_type="question",
+        scope_ref=question.id,
+        cadence="every 1h",
+        next_run_at="2026-01-02T00:00:00Z",
+    )
+
+    results = ledger.run_due_scheduled_reviews(now="2026-01-02T00:30:00Z")
+    updated = ledger.get_scheduled_review(review["id"])
+
+    assert results[0]["review"]["id"] == review["id"]
+    assert results[0]["run"]["scheduled_review_id"] == review["id"]
+    assert updated["next_run_at"] == "2026-01-02T01:30:00Z"
+
+
 def test_portfolio_scheduled_review_only_checks_matching_questions(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     alpha = ledger.create_question(

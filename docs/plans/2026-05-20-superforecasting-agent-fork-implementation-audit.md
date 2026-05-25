@@ -1,6 +1,6 @@
 # Superforecasting Agent Fork Implementation Audit
 
-Date: 2026-05-24
+Date: 2026-05-25
 
 ## Objective
 
@@ -10,6 +10,26 @@ Deliver the scope described in:
 - `docs/plans/2026-05-20-superforecasting-agent-fork-context.md`
 
 Concrete success means the fork behaves as a command-line forecasting desk centered on durable, scoreable forecasts: create, research, model, update, review, resolve, score, postmortem, backtest, self-check, alert, and recalibrate.
+
+## MVP Tester Snapshot Status
+
+The 2026-05-25 tester handoff is tracked in
+`docs/plans/2026-05-25-superforecasting-agent-mvp-tester-handoff.md`. The
+operator path is the moving `superforecasting-agent-snapshot` branch; pin the
+verified commit hash in each tester brief after the final push.
+
+Latest manual smoke evidence used a clean ledger at
+`/private/tmp/sfa-mvp-smoke-985c1c565.db` and exercised `forecast new`,
+evidence/research, base-rate, model run, update, review, resolve/score,
+postmortem, calibration, backtest replay, scheduled self-check, alert creation,
+and schedule history. The smoke surfaced and fixed schedule cadence parsing for
+documented phrases such as `every 1h`.
+
+The source-tree `./superforecasting-agent` launcher, `python -m
+superforecasting_agent`, the package-defined `forecast` console-script target,
+dashboard forecast API, and TUI forecast panel tests have all been checked for
+the MVP handoff. The `forecast` shell command is expected to appear after
+editable/package installation.
 
 ## Evidence Inspected
 
@@ -172,7 +192,7 @@ Concrete success means the fork behaves as a command-line forecasting desk cente
 - Forecast-native OpenRouter cache env aliases: `agent/auxiliary_client.py`, `hermes_cli/config.py`, `tests/agent/test_openrouter_response_cache.py`, `tests/tools/test_local_env_blocklist.py`, `tests/test_project_metadata.py`, `website/docs/reference/environment-variables.md`
 - Forecast-native Anthropic OAuth file env aliases: `agent/anthropic_adapter.py`, `hermes_cli/web_server.py`, `website/docs/reference/environment-variables.md`, `tests/agent/test_anthropic_adapter.py`, `tests/hermes_cli/test_web_server.py`, `tests/test_project_metadata.py`
 - Forecast-native managed-install env aliases and Homebrew formula: `hermes_cli/config.py`, `packaging/homebrew/superforecasting-agent.rb`, `packaging/homebrew/README.md`, `nix/nixosModules.nix`, `nix/checks.nix`, `scripts/run_tests.sh`, `website/docs/reference/environment-variables.md`, `website/docs/getting-started/nix-setup.md`, `tests/hermes_cli/test_managed_installs.py`, `tests/test_project_metadata.py`
-- Forecast-native tester snapshot install/update URLs and pinned alpha handoff: `README.md`, `CONTRIBUTING.md`, `scripts/install.sh`, `scripts/install.ps1`, `scripts/install.cmd`, `scripts/release.py`, `hermes_cli/banner.py`, `hermes_cli/main.py`, `nix/superforecasting-agent.nix`, `website/docs/index.md`, `website/docs/getting-started/installation.md`, `website/docs/getting-started/quickstart.md`, `website/docs/getting-started/tester-pilot.md`, `website/docs/getting-started/termux.md`, `website/docs/getting-started/nix-setup.md`, `website/docs/getting-started/updating.md`, `website/docs/user-guide/windows-native.md`, `website/docs/user-guide/windows-wsl-quickstart.md`, `website/docs/reference/faq.md`, `website/docs/guides/python-library.md`, `tests/test_project_metadata.py`, `tests/hermes_cli/test_update_check.py`, `tests/hermes_cli/test_banner.py`
+- Forecast-native tester snapshot install/update URLs and MVP handoff: `README.md`, `CONTRIBUTING.md`, `scripts/install.sh`, `scripts/install.ps1`, `scripts/install.cmd`, `scripts/release.py`, `hermes_cli/banner.py`, `hermes_cli/main.py`, `nix/superforecasting-agent.nix`, `website/docs/index.md`, `website/docs/getting-started/installation.md`, `website/docs/getting-started/quickstart.md`, `website/docs/getting-started/tester-pilot.md`, `website/docs/getting-started/termux.md`, `website/docs/getting-started/nix-setup.md`, `website/docs/getting-started/updating.md`, `website/docs/user-guide/windows-native.md`, `website/docs/user-guide/windows-wsl-quickstart.md`, `website/docs/reference/faq.md`, `website/docs/guides/python-library.md`, `tests/test_project_metadata.py`, `tests/hermes_cli/test_update_check.py`, `tests/hermes_cli/test_banner.py`
 - Forecast-native root Node package metadata: `package.json`, `package-lock.json`, `tests/test_project_metadata.py`
 - Forecast-native public metadata URLs: `hermes_cli/config.py`, `hermes_cli/model_catalog.py`, `website/scripts/generate-llms-txt.py`, `website/static/llms.txt`, `acp_registry/agent.json`, `tests/test_project_metadata.py`, `tests/acp/test_registry_manifest.py`
 - Forecast-native MCP serve identity and home fallback: `mcp_serve.py`, `tests/test_mcp_serve.py`, `tests/test_project_metadata.py`
@@ -1815,7 +1835,7 @@ Latest verified result:
 | Tester-facing fork snapshot install/update surfaces | Covered | README, docs homepage, installation, quickstart, tester pilot, Termux, WSL, Windows native, FAQ, Python-library, Nix, and updating docs now use concrete `teddyjfpender/superforecasting-agent` clone/flake/raw URLs for the `superforecasting-agent-snapshot` branch instead of `<this-fork-url>` placeholders or inherited `NousResearch` raw installer URLs; POSIX/PowerShell/CMD installers clone the fork snapshot by default; update checks, ZIP fallback, upstream prompts, release URL generation, and Nix package metadata point at the fork snapshot; metadata/update/banner tests guard the behavior |
 | Root Node package metadata is forecast-native | Covered | root `package.json` and `package-lock.json` now use `superforecasting-agent`, forecast-desk description, fork repository/issue/homepage URLs, and fork-native postinstall guidance; project metadata tests guard against inherited `hermes-agent`/NousResearch package metadata |
 | Tester smoke provenance | Covered | `scripts/forecast_smoke_test.py` prints the short commit, branch, and dirty-state snapshot before the lifecycle smoke, and the smoke docs/runbook tell testers to include that line with feedback so pilot reports can be tied to an exact moving-branch source state |
-| Pinned tester alpha handoff | Covered | README and the tester-pilot runbook now direct testers to the immutable `tester-alpha-2026-05-25` tag for the current alpha while preserving `superforecasting-agent-snapshot` as the moving branch for operators who want the newest pushed work |
+| Tester MVP handoff | Covered | README, tester-pilot runbook, and `docs/plans/2026-05-25-superforecasting-agent-mvp-tester-handoff.md` now direct testers to the `superforecasting-agent-snapshot` branch and instruct operators to pin the verified commit hash per cohort |
 | Public machine-readable metadata points at the fork snapshot | Covered | Remote model-catalog defaults, machine-readable `llms.txt` generation/static output, ACP registry repository metadata, Docusaurus edit/navbar/footer/discussions links, public user-story edit link, package author metadata, skill homepages, watcher examples, and source-helper user-agent URLs now point at the `teddyjfpender/superforecasting-agent` fork or its `superforecasting-agent-snapshot` branch instead of inherited `NousResearch/superforecasting-agent` URLs; focused metadata and ACP registry tests guard the URLs |
 | Generated skill-doc source links point at the fork snapshot | Covered | `website/scripts/generate-skill-docs.py` now rewrites legacy Hermes source links and relative skill reference/template links to `teddyjfpender/superforecasting-agent/blob/superforecasting-agent-snapshot/...`; regenerated generated skill pages no longer point source-reference links at `NousResearch/superforecasting-agent/blob/main`, and focused generator tests guard the rewrite |
 | Forecast-native MCP serve identity and home fallback | Covered | The standalone MCP serve module now advertises `superforecasting-agent mcp serve`, registers the FastMCP server as `superforecasting-agent`, describes the bridge as Superforecasting Agent, and its import-fallback home resolver prefers `SUPERFORECASTING_AGENT_HOME` / `FORECAST_HOME` before legacy `HERMES_HOME`; MCP reference/FAQ/CLI/docs sidebar/LLMs index now point at `guides/use-mcp-with-superforecasting-agent`, the MCP server section anchor is forecast-native, the visible MCP client examples use `superforecasting-agent`, and focused MCP/metadata tests cover identity, docs labels, route names, legacy-route absence, and alias precedence |
@@ -1946,4 +1966,4 @@ fork objective still needs the remaining work listed below.
 
 ## Current Conclusion
 
-The core CLI forecasting desk and feedback-loop substrate are substantially implemented and tested, and there is now a concrete, machine-checkable tester pilot path for validating installability, workflow quality, evidence capture, scheduled self-checks, scoring, and postmortems. The tester handoff now has both an immutable alpha tag (`tester-alpha-2026-05-25`) for stable pilot installs and the moving `superforecasting-agent-snapshot` branch for operators who want the latest pushed work. The full PRD is not complete because the remaining gaps above require broader product surgery, actual benchmark performance evidence against baselines, and a fuller forecast-native TUI.
+The core CLI forecasting desk and feedback-loop substrate are substantially implemented and tested, and there is now a concrete, machine-checkable tester pilot path for validating installability, workflow quality, evidence capture, scheduled self-checks, scoring, and postmortems. The current tester handoff uses the moving `superforecasting-agent-snapshot` branch, with operators expected to pin the final pushed commit hash for a stable cohort. The full PRD is not complete because the remaining gaps above require broader product surgery, actual benchmark performance evidence against baselines, and a fuller forecast-native TUI.
