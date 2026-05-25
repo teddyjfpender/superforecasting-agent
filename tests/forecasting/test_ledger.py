@@ -5054,6 +5054,59 @@ def test_self_check_auto_postmortem_updates_learning_records(tmp_path):
     assert "overconfidence" in profile["recurring_errors"]
 
 
+def test_self_check_applies_domain_error_profiles_to_active_forecasts(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    resolved = ledger.create_question(
+        title="Will a resolved macro miss create a reusable error profile?",
+        resolution_criteria="Resolved no if the profile should warn active macro forecasts.",
+        domain="macro",
+        topics=["inflation"],
+    )
+    active = ledger.create_question(
+        title="Will an active macro forecast receive learned-error review?",
+        resolution_criteria="Resolved yes if learned profile alerts apply to active matching forecasts.",
+        domain="macro",
+        topics=["inflation"],
+    )
+    ignored = ledger.create_question(
+        title="Will unrelated macro topic be ignored?",
+        resolution_criteria="Resolved yes if non-matching topics are not alerted.",
+        domain="macro",
+        topics=["growth"],
+    )
+    ledger.create_snapshot(
+        question_id=resolved.id,
+        probability_or_distribution=0.9,
+        rationale="High-confidence forecast that should miss.",
+    )
+    ledger.create_snapshot(
+        question_id=active.id,
+        probability_or_distribution=0.65,
+        rationale="Active standing forecast.",
+    )
+    ledger.create_snapshot(
+        question_id=ignored.id,
+        probability_or_distribution=0.55,
+        rationale="Different topic.",
+    )
+    ledger.resolve_question(question_id=resolved.id, outcome="no")
+    ledger.self_check(question_id=resolved.id, auto_score=True, auto_postmortem=True)
+    profile = ledger.list_domain_error_profiles(domain="macro", topic="inflation")[0]
+
+    alerts = ledger.self_check(domain="macro", topic="inflation")
+    profile_alert = [alert for alert in alerts if alert.reason == "domain_error_profile_review"][0]
+    applies = [
+        alert
+        for alert in alerts
+        if alert.reason == f"domain_error_profile_applies:{profile['id']}"
+    ]
+
+    assert active.id in profile_alert.recommended_action
+    assert [alert.scope_ref for alert in applies] == [active.id]
+    assert "overconfidence" in applies[0].recommended_action
+    assert ignored.id not in {alert.scope_ref for alert in alerts}
+
+
 def test_domain_topic_schedule_can_auto_update_learning_records(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     matching = ledger.create_question(

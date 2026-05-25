@@ -233,7 +233,7 @@ forecast self-check --domain macro --large-delta-threshold 0.2
 
 `--next-run-at` is optional; omit it to make the scheduled review due immediately.
 
-Scheduled jobs and watched sources create review work. They can be scoped by question, domain, topic, portfolio, horizon, confidence band, and large forecast-delta threshold. Question-scoped watched-source alerts point to an explicit import/update command; domain, topic, and portfolio alerts point to scoped `forecast self-check` commands with opt-in scoring/postmortem learning writes. They should not silently change active probabilities.
+Scheduled jobs and watched sources create review work. They can be scoped by question, domain, topic, portfolio, horizon, confidence band, and large forecast-delta threshold. Question-scoped watched-source alerts point to an explicit import/update command; domain, topic, and portfolio alerts point to scoped `forecast self-check` commands with opt-in scoring/postmortem learning writes. When those writes create a domain/topic error profile, later checks create `domain_error_profile_applies:<id>` alerts on matching active forecasts so learned misses turn into review work. They should not silently change active probabilities.
 
 ## TUI Shortcuts
 

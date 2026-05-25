@@ -5161,6 +5161,13 @@ class ForecastLedger:
                 if not profile["recurring_errors"] and not profile["recommended_adjustments"]:
                     continue
                 seen_profiles.add(profile["id"])
+                matching_questions = self._active_questions_for_error_profile(profile, questions)
+                matching_ids = [question.id for question in matching_questions[:5]]
+                matching_summary = (
+                    f" Active matching forecasts: {', '.join(matching_ids)}."
+                    if matching_ids
+                    else ""
+                )
                 alerts.append(
                     self.create_alert(
                         severity="info",
@@ -5170,10 +5177,58 @@ class ForecastLedger:
                         recommended_action=(
                             "Review active forecasts in this scope against recurring errors: "
                             + ", ".join(profile["recurring_errors"] or profile["recommended_adjustments"])
+                            + "."
+                            + matching_summary
                         ),
                     )
                 )
+                for question in matching_questions:
+                    alerts.append(
+                        self.create_alert(
+                            severity="warning",
+                            scope_type="question",
+                            scope_ref=question.id,
+                            reason=f"domain_error_profile_applies:{profile['id']}",
+                            recommended_action=self._error_profile_question_action(profile, question),
+                        )
+                    )
         return alerts
+
+    def _active_questions_for_error_profile(
+        self,
+        profile: dict[str, Any],
+        questions: list[ForecastQuestion],
+    ) -> list[ForecastQuestion]:
+        profile_domain = profile.get("domain")
+        profile_topic = profile.get("topic")
+        profile_question_type = profile.get("question_type")
+        result: list[ForecastQuestion] = []
+        seen: set[str] = set()
+        for question in questions:
+            if question.id in seen or question.status != "active":
+                continue
+            if profile_domain and question.domain != profile_domain:
+                continue
+            if profile_topic and profile_topic not in question.topics:
+                continue
+            if profile_question_type and question.outcome_space.type != profile_question_type:
+                continue
+            result.append(question)
+            seen.add(question.id)
+        return result
+
+    def _error_profile_question_action(
+        self,
+        profile: dict[str, Any],
+        question: ForecastQuestion,
+    ) -> str:
+        recurring = list(profile.get("recurring_errors") or profile.get("recommended_adjustments") or [])
+        patterns = ", ".join(str(item) for item in recurring[:4]) or "recent misses"
+        return (
+            "Review this active forecast against learned error patterns "
+            f"({patterns}). Inspect `forecast show {question.id}`, refresh evidence, "
+            "and save any probability change explicitly with `forecast update`."
+        )
 
     def _calibration_lesson_review_alerts(
         self,

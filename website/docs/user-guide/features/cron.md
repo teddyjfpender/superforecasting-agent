@@ -87,7 +87,7 @@ forecast schedule run --due --auto-score --auto-postmortem
 forecast schedule add --domain macro --cadence 1d --auto-score --auto-postmortem
 ```
 
-Use these flags only when the schedule is allowed to write scores, postmortems, lessons, and error-profile updates. Without them, checks create alerts and review state but leave learning artifacts untouched.
+Use these flags only when the schedule is allowed to write scores, postmortems, lessons, and error-profile updates. Without them, checks create alerts and review state but leave learning artifacts untouched. Once an error profile exists, scheduled checks also create `domain_error_profile_applies:<id>` alerts on matching active forecasts so recurring misses are pulled back into the review queue without changing the standing probability.
 
 ## Review Cadence
 

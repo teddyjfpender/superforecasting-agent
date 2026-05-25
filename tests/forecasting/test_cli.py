@@ -13788,6 +13788,38 @@ def test_forecast_cli_schedule_add_can_enable_scoped_learning(tmp_path, capsys):
             "forecast",
             "--db",
             db,
+            "new",
+            "Will active scoped forecast receive learned-error review?",
+            "--resolution-criteria",
+            "Resolved yes if schedule run points learned errors at active forecasts.",
+            "--domain",
+            "macro",
+            "--topic",
+            "inflation",
+        ],
+    )
+    active_question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "update",
+            active_question_id,
+            "--probability",
+            "0.65",
+            "--rationale",
+            "Active forecast that should be checked against learned errors.",
+        ],
+    )
+    capsys.readouterr()
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
             "schedule",
             "add",
             "--domain",
@@ -13816,6 +13848,8 @@ def test_forecast_cli_schedule_add_can_enable_scoped_learning(tmp_path, capsys):
     assert "learning_reviews:" in run_output
     assert "score_created:" in run_output
     assert "postmortem_created:" in run_output
+    assert "domain_error_profile_applies:" in run_output
+    assert active_question_id in run_output
     ledger = ForecastLedger(db_path)
     assert ledger.list_calibration_lessons(scope_type="domain", scope_ref="macro")
     assert ledger.list_domain_error_profiles(domain="macro", topic="inflation")[0]["sample_count"] == 1
