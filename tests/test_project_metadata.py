@@ -436,6 +436,19 @@ def test_acp_adapter_copy_is_forecast_native():
     assert "Hermes' local kawaii" not in text
 
 
+def test_acp_registry_docs_are_fork_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "website" / "docs" / "user-guide" / "features" / "acp.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "uvx --from 'superforecasting-agent[acp]==<version>' superforecasting-agent acp" in text
+    assert "source registry manifest under `acp_registry/agent.json` is fork-native" in text
+    assert "hermes-agent[acp]==<version>" not in text
+    assert "the manifest is still the inherited registry entry" not in text
+    assert "current compatibility registry entry" not in text
+
+
 def test_user_stories_page_demotes_general_assistant_positioning():
     root = Path(__file__).resolve().parents[1]
     collage = (

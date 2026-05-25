@@ -59,19 +59,19 @@ This installs the `agent-client-protocol` dependency and enables:
 
 ### Registry Compatibility
 
-The current source registry manifest under `acp_registry/agent.json` still targets the inherited ACP Registry entry:
+The source registry manifest under `acp_registry/agent.json` is fork-native and launches the same local runtime through the package extra:
 
 ```bash
-uvx --from 'hermes-agent[acp]==<version>' hermes-acp
+uvx --from 'superforecasting-agent[acp]==<version>' superforecasting-agent acp
 ```
 
-That path is kept for compatibility with existing ACP registry clients and release tests. Fork-native manual setup should prefer:
+Fork-native manual setup should prefer the same command shape:
 
 ```bash
 superforecasting-agent acp
 ```
 
-When a fork-native public ACP registry entry is published, it should point at `superforecasting-agent[acp]` while preserving a compatibility note for `hermes-acp`.
+Older ACP clients may still have an inherited Hermes registry entry cached. That compatibility path can continue to launch the same adapter, but new registry and manual setup should use `superforecasting-agent[acp]` and `superforecasting-agent acp`.
 
 ## Launching the ACP Server
 
@@ -117,7 +117,7 @@ superforecasting-agent acp --setup-browser
 superforecasting-agent acp --setup-browser --yes
 ```
 
-The Zed registry terminal-auth flow may still invoke the compatibility command `hermes acp --setup`. It offers the same browser bootstrap after provider/model setup.
+Older installed Zed registry entries may still invoke the compatibility command `hermes acp --setup`. It offers the same browser bootstrap after provider/model setup.
 
 What browser setup does:
 
@@ -154,7 +154,7 @@ Zed v0.221.x and newer installs external agents through the ACP Registry.
 
 1. Open the Agent Panel.
 2. Click **Add Agent**, or run `zed: acp registry`.
-3. Search for the available Superforecasting Agent entry. If only **Hermes Agent** is available, that is the current compatibility registry entry.
+3. Search for the available Superforecasting Agent entry. If only **Hermes Agent** is available, that is an inherited compatibility registry entry.
 4. Install it and start a new external-agent thread.
 
 Prerequisites:
@@ -184,7 +184,7 @@ Use an ACP-compatible plugin and point it at the local ACP adapter command:
 superforecasting-agent acp
 ```
 
-If the plugin expects a registry directory, the inherited source copy currently lives at:
+If the plugin expects a registry directory, the source registry metadata lives at:
 
 ```text
 acp_registry/
@@ -199,13 +199,13 @@ acp_registry/agent.json
 acp_registry/icon.svg
 ```
 
-At the time of this fork pass, the manifest is still the inherited registry entry and uses:
+The checked-in manifest uses the fork-native package and launch command:
 
 ```text
-uvx --from 'hermes-agent[acp]==<version>' hermes-acp
+uvx --from 'superforecasting-agent[acp]==<version>' superforecasting-agent acp
 ```
 
-That is a compatibility surface, not the desired long-term fork identity. The package-level fork already exposes `superforecasting-agent acp`; the registry manifest should move to `superforecasting-agent[acp]` when the public registry migration is ready and its tests are updated accordingly.
+The `hermes-acp` script and older `hermes-agent[acp]` registry entry remain compatibility surfaces for migrated clients. They are not the desired long-term registry identity.
 
 ## Configuration and Credentials
 
