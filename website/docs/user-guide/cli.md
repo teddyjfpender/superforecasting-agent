@@ -49,6 +49,7 @@ forecast model <id> --type trend_projection \
   --series-json '[{"date":"2026-01-01","value":10},{"date":"2026-01-02","value":12}]' \
   --target-date 2026-01-03
 
+forecast update <id>
 forecast update <id> \
   --probability 0.58 \
   --confidence 0.66 \

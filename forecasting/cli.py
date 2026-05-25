@@ -508,7 +508,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "--distribution-json",
         help="JSON object mapping categorical outcomes to probabilities",
     )
-    update_parser.add_argument("--rationale", required=True)
+    update_parser.add_argument("--rationale")
     update_parser.add_argument("--as-of")
     update_parser.add_argument("--confidence", type=float)
     update_parser.add_argument("--method")
@@ -1886,9 +1886,53 @@ def _cmd_show(args: argparse.Namespace) -> None:
 
 def _cmd_update(args: argparse.Namespace) -> None:
     components = _json_arg(args.component_json, "component-json")
-    payload = _probability_payload(args, components)
     ledger = _ledger(args)
     question = ledger.get_question(args.id)
+    has_payload = any(
+        value is not None
+        for value in (args.probability, args.numeric_value, args.distribution_json)
+    ) or bool(components)
+    update_fields = [
+        has_payload,
+        args.rationale is not None,
+        args.as_of is not None,
+        args.confidence is not None,
+        args.method is not None,
+        bool(args.key_assumptions),
+        bool(args.assumption_refs),
+        bool(args.reference_class_refs),
+        bool(args.evidence_refs),
+        args.stale_evidence_days != 30,
+        args.ack_stale_evidence,
+        args.require_citations,
+        bool(args.model_run_refs),
+        args.forecast_origin != "live",
+        args.agent_model is not None,
+        args.prompt_version is not None,
+        args.protocol_version is not None,
+        args.toolset_version is not None,
+        bool(args.source_snapshot_refs),
+        args.evidence_cutoff is not None,
+        args.backtest_run_id is not None,
+        args.calibration_ineligible,
+        args.calibration_weight != 1.0,
+        bool(args.calibration_lesson_refs),
+        args.calibration_adjustment_json != "{}",
+        args.use_active_lessons,
+        args.preview,
+    ]
+    if not any(update_fields):
+        previous = ledger.get_current_snapshot(args.id)
+        print(f"question: {question.id}")
+        print(f"title: {question.title}")
+        probability = _format_probability(previous.probability_or_distribution) if previous else "-"
+        print(f"current_probability: {probability}")
+        print(f"current_as_of: {previous.as_of if previous else '-'}")
+        print(f"current_confidence: {_format_optional_float(previous.confidence) if previous else '-'}")
+        print(f"add: forecast update {args.id} --probability <p> --rationale <why>")
+        print("probability unchanged")
+        return
+    payload = _probability_payload(args, components)
     calibration_adjustment = _json_arg(args.calibration_adjustment_json, "calibration-adjustment-json")
     calibration_lesson_refs = list(args.calibration_lesson_refs)
     if args.use_active_lessons:
@@ -1911,6 +1955,8 @@ def _cmd_update(args: argparse.Namespace) -> None:
             calibration_adjustment,
         )
         return
+    if not args.rationale:
+        raise SystemExit("forecast update requires --rationale when saving a snapshot")
     snapshot = ledger.create_snapshot(
         question_id=args.id,
         probability_or_distribution=payload,
@@ -7149,7 +7195,10 @@ def _probability_payload(args: argparse.Namespace, components: dict[str, Any] | 
         if probability is not None:
             return probability
     if args.probability is None:
-        raise SystemExit("forecast update requires --probability, --distribution-json, or weighted --component-json")
+        raise SystemExit(
+            "forecast update requires --probability, --numeric-value, --distribution-json, "
+            "or weighted --component-json"
+        )
     return args.probability
 
 

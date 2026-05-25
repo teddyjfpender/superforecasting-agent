@@ -150,6 +150,12 @@ def test_forecast_cli_lifecycle(tmp_path, capsys):
     )
     assert "created forecast snapshot" in capsys.readouterr().out
 
+    _run(parser, ["forecast", "--db", db, "update", question_id])
+    inspect_output = capsys.readouterr().out
+    assert "current_probability: 0.640" in inspect_output
+    assert "current_as_of: 2026-05-01T00:00:00Z" in inspect_output
+    assert "probability unchanged" in inspect_output
+
     _run(parser, ["forecast", "--db", db, "list"])
     list_output = capsys.readouterr().out
     assert "AsOf" in list_output
@@ -491,8 +497,6 @@ def test_forecast_cli_update_preview_does_not_write_snapshot(tmp_path, capsys):
             question_id,
             "--component-json",
             '{"base_rate":{"probability":0.4,"weight":1},"inside_view":{"probability":0.8,"weight":1}}',
-            "--rationale",
-            "Preview only.",
             "--as-of",
             "2026-05-01T00:00:00Z",
             "--preview",
