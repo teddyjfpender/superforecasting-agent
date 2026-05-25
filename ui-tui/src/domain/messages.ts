@@ -28,7 +28,7 @@ export const userDisplay = (text: string) => {
   const words = first.split(/\s+/).filter(Boolean)
   const prefix = (words.length > 1 ? words.slice(0, 4).join(' ') : first).slice(0, 80)
 
-  return `${prefix || '(message)'} [long message]`
+  return `${prefix || '(forecast note)'} [long forecast note]`
 }
 
 export const toTranscriptMessages = (rows: unknown): Msg[] => {

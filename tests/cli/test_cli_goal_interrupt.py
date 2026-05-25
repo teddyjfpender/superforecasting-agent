@@ -136,7 +136,7 @@ class TestEmptyResponseSkip:
         assert mgr.state.status == "active"
 
     def test_no_assistant_message_skipped(self, hermes_home):
-        """Conversation with zero assistant replies must not trip the judge."""
+        """A turn with no agent reply must not trip the judge."""
         sid = f"sid-noassistant-{uuid.uuid4().hex}"
         cli, mgr = _make_cli_with_goal(sid)
         cli._last_turn_interrupted = False

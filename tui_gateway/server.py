@@ -2244,7 +2244,7 @@ def _(rid, params: dict) -> dict:
     if db is None:
         return _db_unavailable_error(rid, code=5006)
     try:
-        # Resume picker should surface human conversation sessions from every
+        # Resume picker should surface human research sessions from every
         # user-facing surface — CLI, TUI, all gateway platforms (including new
         # ones not enumerated here), ACP adapter clients, webhook sessions,
         # custom `HERMES_SESSION_SOURCE` values, and older installs with
@@ -4791,7 +4791,7 @@ def _(rid, params: dict) -> dict:
 
     if name in {"queue", "q"}:
         if not arg:
-            return _err(rid, 4004, "usage: /queue <prompt>")
+            return _err(rid, 4004, "usage: /queue <forecast note>")
         return _ok(rid, {"type": "send", "message": arg})
 
     if name == "retry":
@@ -4830,7 +4830,7 @@ def _(rid, params: dict) -> dict:
 
     if name == "steer":
         if not arg:
-            return _err(rid, 4004, "usage: /steer <prompt>")
+            return _err(rid, 4004, "usage: /steer <forecast note>")
         agent = session.get("agent") if session else None
         if agent and hasattr(agent, "steer"):
             try:
@@ -4884,7 +4884,7 @@ def _(rid, params: dict) -> dict:
                     "type": "exec",
                     "output": (
                         f"▶ Goal resumed: {state.goal}\n"
-                        "Send any message to continue, or wait — I'll take the next step on the next turn."
+                        "Send any follow-up to continue, or wait — I'll take the next step on the next turn."
                     ),
                 },
             )

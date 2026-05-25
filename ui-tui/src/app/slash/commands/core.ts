@@ -802,11 +802,11 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'inspect or enqueue a message',
+    help: 'inspect or enqueue a forecast note',
     name: 'queue',
     run: (arg, ctx) => {
       if (!arg) {
-        return ctx.transcript.sys(`${ctx.composer.queueRef.current.length} queued message(s)`)
+        return ctx.transcript.sys(`${ctx.composer.queueRef.current.length} queued forecast note(s)`)
       }
 
       ctx.composer.enqueue(arg)
@@ -815,17 +815,17 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'inject a message after the next tool call (no interrupt)',
+    help: 'inject a forecast note after the next tool call (no interrupt)',
     name: 'steer',
     run: (arg, ctx) => {
       const payload = arg?.trim() ?? ''
 
       if (!payload) {
-        return ctx.transcript.sys('usage: /steer <prompt>')
+        return ctx.transcript.sys('usage: /steer <forecast note>')
       }
 
       // If the agent isn't running, fall back to the queue so the user's
-      // message isn't lost — identical semantics to the gateway handler.
+      // forecast note isn't lost — identical semantics to the gateway handler.
       if (!ctx.ui.busy || !ctx.sid) {
         ctx.composer.enqueue(payload)
         ctx.transcript.sys(

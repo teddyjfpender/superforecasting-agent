@@ -28,7 +28,7 @@ resetTerminalModes()
 
 // Desktop terminals benefit from a clean startup slate because the TUI usually
 // runs in AlternateScreen. On Termux we keep prior output intact so users can
-// review/copy earlier assistant replies after reopening the app.
+// review/copy earlier forecast desk replies after reopening the app.
 if (TERMUX_TUI_MODE) {
   process.stdout.write('\n')
 } else {

@@ -152,13 +152,13 @@ export const MessageLine = memo(function MessageLine({
     }
 
     if (msg.role === 'user' && msg.text.length > LONG_MSG && isPasteBackedText(msg.text)) {
-      const [head, ...rest] = userDisplay(msg.text).split('[long message]')
+      const [head, ...rest] = userDisplay(msg.text).split('[long forecast note]')
 
       return (
         <Text color={body}>
           {head}
           <Text color={t.color.muted} dimColor>
-            [long message]
+            [long forecast note]
           </Text>
           {rest.join('')}
         </Text>

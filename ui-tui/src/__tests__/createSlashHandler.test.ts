@@ -808,7 +808,7 @@ describe('createSlashHandler', () => {
     expect(ctx.transcript.send).toHaveBeenCalledWith(skillMessage)
   })
 
-  it('/history pages the current TUI transcript (user + assistant)', () => {
+  it('/history pages the current TUI research transcript', () => {
     const ctx = buildCtx({
       local: {
         ...buildLocal(),
