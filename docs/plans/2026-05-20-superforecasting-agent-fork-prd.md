@@ -521,6 +521,7 @@ forecast backtest <dataset> --probability-source agent-protocol --agent-prompt-j
 forecast backtest <dataset> --probability-source agent-protocol [--agent-response-jsonl <path>] [--agent-output-jsonl <path>]
 forecast backtest builtin:manifold-public-120-binary
 forecast backtest --all-benchmarks [--probability-source forecast-engine]
+forecast backtest --all-benchmarks --probability-source agent-protocol --agent-prompt-jsonl <path> --prepare-agent-prompts
 forecast performance [--last N] [--dataset <filter>] [--json]
 # JSON includes evidence_status with live/backtest claim-readiness gaps.
 forecast pilot-cohort <csv-or-json> [--schedule-cadence <duration>] [--schedule-next-run-at <time>]

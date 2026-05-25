@@ -6339,8 +6339,12 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
         raise SystemExit("--prepare-agent-prompts requires --agent-prompt-jsonl")
     if args.prepare_agent_prompts and (args.agent_response_jsonl or args.agent_output_jsonl):
         raise SystemExit("--prepare-agent-prompts cannot be combined with agent response or output JSONL")
-    if args.prepare_agent_prompts and (args.benchmarks or args.all_benchmarks or args.list or args.show):
-        raise SystemExit("--prepare-agent-prompts requires exactly one dataset")
+    if args.prepare_agent_prompts and (args.benchmarks or args.list or args.show):
+        raise SystemExit("--prepare-agent-prompts requires a dataset or --all-benchmarks")
+    if args.prepare_agent_prompts and args.dataset and args.all_benchmarks:
+        raise SystemExit("--prepare-agent-prompts cannot combine a dataset with --all-benchmarks")
+    if args.prepare_agent_prompts and not (args.dataset or args.all_benchmarks):
+        raise SystemExit("--prepare-agent-prompts requires a dataset or --all-benchmarks")
     if args.benchmarks:
         rows = list_builtin_benchmarks()
         imported = ledger.list_benchmark_datasets()
@@ -6360,6 +6364,26 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
         rows = list_builtin_benchmarks()
         if not rows:
             print("No built-in benchmarks found.")
+            return
+        if args.prepare_agent_prompts:
+            datasets: list[tuple[str, list[dict[str, Any]]]] = []
+            for row in rows:
+                dataset = f"builtin:{row['name']}"
+                datasets.append((dataset, _load_backtest_cases(dataset, ledger=ledger)))
+            path, total_cases = _write_agent_protocol_prompt_jsonl_for_datasets(
+                args.agent_prompt_jsonl,
+                datasets,
+            )
+            print(f"agent_protocol_prompts: {path}")
+            print(f"benchmark_suite: builtin ({len(rows)} datasets)")
+            print(f"cases: {total_cases}")
+            for dataset, cases in datasets:
+                print(f"  {dataset}: {len(cases)}")
+            print("next: run the prompt packets through an agent, then replay responses with:")
+            print(
+                "  forecast backtest --all-benchmarks --probability-source agent-protocol "
+                "--agent-response-jsonl <responses.jsonl>"
+            )
             return
         agent_runner = (
             _backtest_agent_protocol_runner(args)
@@ -7682,13 +7706,24 @@ def _prepare_agent_protocol_output_jsonl(path_value: str | None) -> Path | None:
 
 
 def _write_agent_protocol_prompt_jsonl(path_value: str, cases: list[dict[str, Any]], *, dataset: str) -> Path:
+    path, _ = _write_agent_protocol_prompt_jsonl_for_datasets(path_value, [(dataset, cases)])
+    return path
+
+
+def _write_agent_protocol_prompt_jsonl_for_datasets(
+    path_value: str,
+    datasets: list[tuple[str, list[dict[str, Any]]]],
+) -> tuple[Path, int]:
     path = Path(path_value).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
+    total_cases = 0
     with path.open("w", encoding="utf-8") as handle:
-        for index, case in enumerate(cases):
-            packet = build_agent_protocol_prompt_packet(case, case_index=index, dataset=dataset)
-            handle.write(json.dumps(packet, sort_keys=True) + "\n")
-    return path
+        for dataset, cases in datasets:
+            for index, case in enumerate(cases):
+                packet = build_agent_protocol_prompt_packet(case, case_index=index, dataset=dataset)
+                handle.write(json.dumps(packet, sort_keys=True) + "\n")
+                total_cases += 1
+    return path, total_cases
 
 
 def _write_agent_protocol_response_jsonl(

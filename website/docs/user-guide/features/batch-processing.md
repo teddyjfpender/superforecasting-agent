@@ -94,6 +94,11 @@ For agent-protocol evaluations, use captured JSONL when you need repeatable
 local scoring without calling a model during the benchmark run:
 
 ```bash
+forecast backtest --all-benchmarks \
+  --probability-source agent-protocol \
+  --agent-prompt-jsonl path/to/suite-prompts.jsonl \
+  --prepare-agent-prompts
+
 forecast backtest path/to/cases.json \
   --probability-source agent-protocol \
   --agent-prompt-jsonl path/to/prompts.jsonl \
@@ -116,8 +121,9 @@ for each case. The prompt excludes dataset probability, resolved outcome,
 resolution-time fields, notes, and metadata, and it filters evidence and
 baselines to the simulated evidence cutoff before the agent sees the case.
 Use `--agent-prompt-jsonl ... --prepare-agent-prompts` when you want to export
-those exact sanitized prompt packets first, run them through a model/provider
-outside the benchmark process, and replay the resulting response JSONL later.
+those exact sanitized prompt packets first, for one dataset or the whole built-in
+benchmark suite, run them through a model/provider outside the benchmark
+process, and replay the resulting response JSONL later.
 Add `--agent-output-jsonl path/to/captured.jsonl` to write the responses used
 by a run so the same agent outputs can be replayed later without another model
 call.

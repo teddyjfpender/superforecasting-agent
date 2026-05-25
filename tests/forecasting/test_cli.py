@@ -10046,6 +10046,76 @@ def test_forecast_cli_runs_builtin_benchmark_suite(tmp_path, capsys, monkeypatch
     assert output.count("backtest_run=") == 4
 
 
+def test_forecast_cli_can_prepare_agent_protocol_prompt_jsonl_for_benchmark_suite(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    parser = _parser()
+    db_path = tmp_path / "forecasting_suite.db"
+    prompts = tmp_path / "suite_prompts.jsonl"
+    benchmark_names = ["mini-binary", "heldout-120-binary"]
+
+    monkeypatch.setattr(
+        "forecasting.cli.list_builtin_benchmarks",
+        lambda: [
+            {"name": name, "case_count": 1, "description": f"{name} fixture"}
+            for name in benchmark_names
+        ],
+    )
+
+    def fake_backtest_cases(dataset: str, *, ledger=None):
+        return [
+            {
+                "id": f"{dataset}-case-1",
+                "title": f"Will {dataset} prompt export hide answers?",
+                "resolution_criteria": "Resolved no for the all-benchmarks fixture.",
+                "as_of": "2026-01-01T00:00:00Z",
+                "probability": 0.82,
+                "outcome": "no",
+                "evidence": [
+                    {"note": f"{dataset} visible evidence", "available_at": "2025-12-31T00:00:00Z"},
+                    {"note": f"{dataset} hidden evidence", "available_at": "2026-01-03T00:00:00Z"},
+                ],
+            }
+        ]
+
+    monkeypatch.setattr("forecasting.cli._load_backtest_cases", fake_backtest_cases)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            str(db_path),
+            "backtest",
+            "--all-benchmarks",
+            "--probability-source",
+            "agent-protocol",
+            "--agent-prompt-jsonl",
+            str(prompts),
+            "--prepare-agent-prompts",
+        ],
+    )
+    output = capsys.readouterr().out
+    rows = [json.loads(line) for line in prompts.read_text(encoding="utf-8").splitlines()]
+    encoded = json.dumps(rows, sort_keys=True)
+
+    assert f"agent_protocol_prompts: {prompts}" in output
+    assert "benchmark_suite: builtin (2 datasets)" in output
+    assert "cases: 2" in output
+    assert "builtin:mini-binary: 1" in output
+    assert "builtin:heldout-120-binary: 1" in output
+    assert "forecast backtest --all-benchmarks --probability-source agent-protocol" in output
+    assert [row["dataset"] for row in rows] == ["builtin:mini-binary", "builtin:heldout-120-binary"]
+    assert all(row["index"] == 0 for row in rows)
+    assert "visible evidence" in encoded
+    assert "hidden evidence" not in encoded
+    assert '"probability": 0.82' not in encoded
+    assert '"outcome": "no"' not in encoded
+    assert ForecastLedger(db_path).list_backtest_runs() == []
+
+
 def test_forecast_cli_runs_public_manifold_benchmark_dataset(tmp_path, capsys):
     parser = _parser()
     db = str(tmp_path / "forecasting.db")
