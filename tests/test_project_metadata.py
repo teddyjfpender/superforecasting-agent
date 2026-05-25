@@ -904,6 +904,36 @@ def test_operator_readiness_surfaces_use_forecast_home_guidance():
     assert "~/.hermes/cron" not in combined
 
 
+def test_skill_runtime_surfaces_use_active_home_guidance():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        "tools/skill_manager_tool.py",
+        "tools/skills_sync.py",
+        "tools/skills_tool.py",
+        "agent/skill_commands.py",
+        "agent/skill_utils.py",
+        "agent/curator_backup.py",
+        "hermes_cli/skills_hub.py",
+        "tests/tools/test_skill_manager_tool.py",
+    ]
+    text = "\n".join(
+        (root / rel_path).read_text(encoding="utf-8") for rel_path in checked_paths
+    )
+
+    assert "active agent-home skills/ directory" in text
+    assert "active-home ``skills/`` directory" in text
+    assert "active-home skills/ and external dirs" in text
+    assert "superforecasting-agent config set skills.guard_agent_created true" in text
+    assert "Syncing bundled skills into {display_hermes_home()}/skills/" in text
+    assert "display_hermes_home()}/skills/" in text
+
+    assert "~/.hermes/skills" not in text
+    assert "hermes config set skills.guard_agent_created true" not in text
+    assert "Syncing bundled skills into ~/.hermes" not in text
+    assert "trusted skills directory (~/.hermes/skills/" not in text
+    assert "used by ``hermes skills`` config UI" not in text
+
+
 def test_plugin_and_session_recap_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     plugins = (root / "hermes_cli" / "plugins.py").read_text(encoding="utf-8")

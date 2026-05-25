@@ -1,8 +1,8 @@
 """Curator snapshot + rollback.
 
-A pre-run snapshot of ``~/.hermes/skills/`` (excluding ``.curator_backups/``
-itself) is taken before any mutating curator pass. Snapshots are tar.gz
-files under ``~/.hermes/skills/.curator_backups/<utc-iso>/`` with a
+A pre-run snapshot of the active agent-home ``skills/`` directory (excluding
+``.curator_backups/`` itself) is taken before any mutating curator pass.
+Snapshots are tar.gz files under ``skills/.curator_backups/<utc-iso>/`` with a
 companion ``manifest.json`` describing the snapshot (reason, time, size,
 counted skill files). Rollback picks a snapshot, moves the current
 ``skills/`` tree aside into another snapshot so even the rollback itself
@@ -22,8 +22,8 @@ It DOES include:
     tick)
   - ``.bundled_manifest`` (so protection markers stay consistent)
 
-Alongside the skills tarball, each snapshot also captures a copy of
-``~/.hermes/cron/jobs.json`` as ``cron-jobs.json`` when it exists. Cron
+Alongside the skills tarball, each snapshot also captures a copy of the active
+agent-home ``cron/jobs.json`` as ``cron-jobs.json`` when it exists. Cron
 jobs reference skills by name in their ``skills``/``skill`` fields; the
 curator's consolidation pass rewrites those in place via
 ``cron.jobs.rewrite_skill_refs()``. Without capturing the pre-run state,
@@ -76,7 +76,7 @@ def _skills_dir() -> Path:
 
 
 def _cron_jobs_file() -> Path:
-    """Source path for the live cron jobs store (``~/.hermes/cron/jobs.json``)."""
+    """Source path for the live active-home cron jobs store."""
     return get_hermes_home() / "cron" / "jobs.json"
 
 
@@ -207,7 +207,7 @@ def _write_manifest(dest: Path, reason: str, archive_path: Path,
 
 
 def snapshot_skills(reason: str = "manual") -> Optional[Path]:
-    """Create a tar.gz snapshot of ``~/.hermes/skills/`` and prune old ones.
+    """Create a tar.gz snapshot of the active-home ``skills/`` tree and prune old ones.
 
     Returns the snapshot directory path, or ``None`` if the snapshot was
     skipped (backup disabled, skills dir missing, or an IO error occurred —
@@ -220,7 +220,7 @@ def snapshot_skills(reason: str = "manual") -> Optional[Path]:
 
     skills = _skills_dir()
     if not skills.exists():
-        logger.debug("No ~/.hermes/skills/ directory — nothing to back up")
+        logger.debug("No active-home skills/ directory — nothing to back up")
         return None
 
     backups = _backups_dir()
@@ -525,7 +525,7 @@ def _restore_cron_skill_links(snapshot_dir: Path) -> Dict[str, Any]:
 
 
 def rollback(backup_id: Optional[str] = None) -> Tuple[bool, str, Optional[Path]]:
-    """Restore ``~/.hermes/skills/`` from a snapshot.
+    """Restore the active-home ``skills/`` tree from a snapshot.
 
     Strategy:
       1. Resolve the target snapshot (explicit id or newest regular).
@@ -534,7 +534,7 @@ def rollback(backup_id: Optional[str] = None) -> Tuple[bool, str, Optional[Path]
          undoable.
       3. Move all current top-level entries (except ``.curator_backups``
          and ``.hub``) into a tempdir.
-      4. Extract the chosen snapshot into ``~/.hermes/skills/``.
+      4. Extract the chosen snapshot into the active-home ``skills/`` tree.
       5. On failure during 4, move the tempdir contents back (best-effort)
          and return failure.
 
