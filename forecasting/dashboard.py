@@ -317,7 +317,8 @@ def render_dashboard_text(summary: dict[str, Any]) -> str:
             f"agent_protocol_scored: {backtest_counts.get('agent_protocol_scored_count', 0)}  "
             f"leakage_free_runs: {backtest_counts.get('leakage_free_run_count', 0)}  "
             f"positive_edge_runs: {backtest_counts.get('positive_best_baseline_edge_run_count', 0)}  "
-            f"datasets: {backtest_counts.get('distinct_dataset_count', 0)}"
+            f"datasets: {backtest_counts.get('distinct_dataset_count', 0)}  "
+            f"external_datasets: {backtest_counts.get('external_dataset_count', 0)}"
         )
         gaps = list(evidence_status.get("gaps") or [])
         if gaps:

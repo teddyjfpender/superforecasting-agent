@@ -691,6 +691,7 @@ describe('createGatewayEventHandler', () => {
               backtests: {
                 agent_protocol_scored_count: 0,
                 distinct_dataset_count: 1,
+                external_dataset_count: 1,
                 leakage_free_run_count: 1,
                 positive_best_baseline_edge_run_count: 1
               },
@@ -802,7 +803,7 @@ describe('createGatewayEventHandler', () => {
         rows: [
           ['readiness', 'insufficient live evidence'],
           ['live/backtest', '3/12'],
-          ['replay', 'agent 0 edge 1 sets 1'],
+          ['replay', 'agent 0 edge 1 sets 1 ext 1'],
           ['gaps', 'live scored forecasts, agent protocol scored cases']
         ],
         title: 'Evidence'
@@ -884,7 +885,7 @@ describe('createGatewayEventHandler', () => {
             rows: [
               ['verdict', 'insufficient live evidence'],
               ['scores', 'live 3  backtest 12  baseline 12'],
-              ['backtests', 'agent-protocol 0  leakage-free 1  edge 1  datasets 1'],
+              ['backtests', 'agent-protocol 0  leakage-free 1  edge 1  datasets 1  external 1'],
               ['gaps', 'live scored forecasts, agent protocol scored cases']
             ],
             title: 'Evidence Status'

@@ -381,6 +381,7 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     assert "Dashboard forecasts should keep calibration health visible." in text
     assert "Evidence Status" in text
     assert "positive_edge_runs: 0" in text
+    assert "external_datasets: 0" in text
     assert "next live_scored_forecasts:" in text
     assert "Recent Backtests" in text
     assert "dataset" in text
