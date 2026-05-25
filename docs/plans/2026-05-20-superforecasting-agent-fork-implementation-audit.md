@@ -1317,6 +1317,7 @@ Latest verified result:
 - Citation-policy inspection pass: `forecast update <id> --require-citations` now behaves as a read-only command-shape reminder, printing the current forecast and the cited save-command shape without writing a snapshot; saved updates still enforce citation refs before ledger writes.
 - TUI focused-action command-shape pass: Forecast Desk focused actions now show executable update/base-rate/resolve commands with required rationale, base-rate criteria/probability, and `--resolution-source`; slash help/docs describe model and update shortcuts as inspect-or-record workflows to match the CLI lifecycle, and slash-routing tests no longer encode incomplete base-rate write commands.
 - Generic ingest source-evidence regression pass: the generic URL ingest flow now has focused coverage that a confirmed candidate preserves the original URL as an evidence item, retains the ingest-candidate provenance metadata, and archives a source snapshot, keeping US-002's original-source evidence requirement explicit in the test suite.
+- Logging module identity pass: `hermes_logging.py` now describes the logging subsystem as Superforecasting Agent infrastructure, avoids hardcoding legacy home-path copy in the module docstring, and points component filtering comments at the fork-native logs command while preserving the compatibility function and parameter names.
 
 ## Prompt-To-Artifact Checklist
 

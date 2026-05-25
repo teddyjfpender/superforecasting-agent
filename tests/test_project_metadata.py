@@ -392,6 +392,21 @@ def test_standalone_gateway_script_is_forecast_native():
     assert "~/.hermes/logs/gateway.log" not in text
 
 
+def test_logging_module_copy_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "hermes_logging.py").read_text(encoding="utf-8")
+
+    assert "Centralized logging setup for Superforecasting Agent." in text
+    assert "Configure the Superforecasting Agent logging subsystem." in text
+    assert "active agent home ``logs/`` directory" in text
+    assert "superforecasting-agent logs --component" in text
+    assert "configured service group" in text
+    assert "Centralized logging setup for Hermes Agent." not in text
+    assert "Configure the Hermes logging subsystem." not in text
+    assert "Hermes home directory" not in text
+    assert "hermes logs --component" not in text
+
+
 def test_windows_gateway_service_names_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "hermes_cli" / "gateway_windows.py").read_text(encoding="utf-8")
