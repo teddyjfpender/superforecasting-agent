@@ -10,17 +10,17 @@ import random
 
 TIPS = [
     # --- Slash Commands ---
-    "/background <prompt> (alias /bg or /btw) runs a task in a separate session while your current one stays free.",
+    "/background <forecast note> (alias /bg or /btw) runs a side task while your current session stays free.",
     "/branch forks the current session so you can explore a different direction without losing progress.",
-    "/compress manually compresses conversation context when things get long.",
+    "/compress manually compresses forecast transcript context when things get long.",
     "/rollback lists filesystem checkpoints — restore files the agent modified to any prior state.",
     "/rollback diff 2 previews what changed since checkpoint 2 without restoring anything.",
     "/rollback 2 src/file.py restores a single file from a specific checkpoint.",
     "/title \"my project\" names your session — resume it later with /resume or superforecasting-agent -c.",
     "/resume picks up where you left off in a previously named session.",
-    "/queue <prompt> queues a message for the next turn without interrupting the current one.",
+    "/queue <forecast note> queues a note for the next turn without interrupting the current one.",
     "/undo removes the last user/forecaster exchange from the transcript.",
-    "/retry resends your last message — useful when the agent's response wasn't quite right.",
+    "/retry resends your last forecast note — useful when the previous response missed the mark.",
     "/verbose cycles tool progress display: off → new → all → verbose.",
     "/reasoning high increases the model's thinking depth. /reasoning show displays the reasoning.",
     "/fast toggles priority processing for faster API responses (provider-dependent).",
@@ -33,47 +33,47 @@ TIPS = [
     "/tools disable browser temporarily removes browser tools for the current session.",
     "/browser connect attaches browser tools to your running Chromium-family browser via CDP.",
     "/plugins lists installed plugins and their status.",
-    "/cron manages scheduled tasks — set up recurring prompts with delivery to any platform.",
+    "/cron manages scheduled reviews — set up recurring forecast checks with delivery to any platform.",
     "/reload-mcp hot-reloads MCP server configuration without restarting.",
     "/usage shows token usage, cost breakdown, and session duration.",
     "/insights shows usage analytics for the last 30 days.",
-    "/paste checks your clipboard for an image and attaches it to your next message.",
+    "/paste checks your clipboard for an image and attaches it to your next forecast note.",
     "/profile shows which profile is active and its home directory.",
     "/config shows your current configuration at a glance.",
     "/stop kills all running background processes spawned by the agent.",
 
     # --- @ Context References ---
-    "@file:path/to/file.py injects file contents directly into your message.",
+    "@file:path/to/file.py injects file contents directly into your forecast note.",
     "@file:main.py:10-50 injects only lines 10-50 of a file.",
     "@folder:src/ injects a directory tree listing.",
-    "@diff injects your unstaged git changes into the message.",
+    "@diff injects your unstaged git changes into the forecast note.",
     "@staged injects your staged git changes (git diff --staged).",
     "@git:5 injects the last 5 commits with full patches.",
     "@url:https://example.com fetches and injects a web page's content.",
     "Typing @ triggers filesystem path completion — navigate to any file interactively.",
-    "Combine multiple references: \"Review @file:main.py and @file:test.py for consistency.\"",
+    "Combine references: \"Review @file:brief.md and @url:https://example.com for this forecast.\"",
 
     # --- Keybindings ---
     "Alt+Enter inserts a newline for multi-line input. (Windows Terminal intercepts Alt+Enter — use Ctrl+Enter instead.)",
     "Ctrl+C interrupts the agent. Double-press within 2 seconds to force exit.",
     "Ctrl+Z suspends Superforecasting Agent to the background — run fg in your shell to resume.",
     "Tab accepts auto-suggestion ghost text or autocompletes slash commands.",
-    "Type a new message while the agent is working to interrupt and redirect it.",
-    "Alt+V pastes an image from your clipboard into the conversation.",
+    "Type a new forecast note while the agent is working to interrupt and redirect it.",
+    "Alt+V pastes an image from your clipboard into the forecast note.",
     "Pasting 5+ lines auto-saves to a file and inserts a compact reference instead.",
 
     # --- CLI Flags ---
     "superforecasting-agent -c resumes your most recent CLI session. superforecasting-agent -c \"project name\" resumes by title.",
     "superforecasting-agent -w creates an isolated git worktree — perfect for parallel agent workflows.",
-    "superforecasting-agent -w -q \"Fix issue #42\" combines worktree isolation with a one-shot query.",
-    "superforecasting-agent chat -t web,terminal enables only specific toolsets for a focused session.",
-    "superforecasting-agent chat -s github-pr-workflow preloads a skill at launch.",
-    "superforecasting-agent chat -q \"query\" runs a single non-interactive query and exits.",
-    "superforecasting-agent chat --max-turns 200 overrides the default 90-iteration limit per turn.",
-    "superforecasting-agent chat --checkpoints enables filesystem snapshots before every destructive file change.",
+    "superforecasting-agent -z \"Summarize the active forecast desk\" runs a clean one-shot and exits.",
+    "superforecasting-agent -t forecast-desk,web -z \"research question 142\" narrows tools for one-shot work.",
+    "Explicit chat sessions can still preload skills: superforecasting-agent chat -s github-pr-workflow.",
+    "superforecasting-agent -z \"query\" runs a single non-interactive query and prints only the final answer.",
+    "Explicit chat sessions can raise the turn budget: superforecasting-agent chat --max-turns 200.",
+    "Explicit chat sessions can enable checkpoints: superforecasting-agent chat --checkpoints.",
     "superforecasting-agent --yolo bypasses all dangerous command approval prompts for the entire session.",
-    "superforecasting-agent chat --source telegram tags the session for filtering in superforecasting-agent sessions list.",
-    "superforecasting-agent -p work chat runs under a specific profile without changing your default.",
+    "Explicit chat sessions can set --source telegram for filtering in superforecasting-agent sessions list.",
+    "superforecasting-agent -p work forecast review runs forecast workflows under a named profile.",
 
     # --- CLI Subcommands ---
     "superforecasting-agent doctor --fix diagnoses and auto-repairs config and dependency issues.",
@@ -109,8 +109,8 @@ TIPS = [
     "Set display.streaming: true to see tokens appear in real time as the model generates.",
     "Set display.show_reasoning: true to watch the model's chain-of-thought reasoning.",
     "Set display.compact: true to reduce whitespace in output for denser information.",
-    "Set display.busy_input_mode: queue to queue messages instead of interrupting the agent, or steer to inject them mid-run via /steer.",
-    "Set display.resume_display: minimal to skip the full conversation recap on session resume.",
+    "Set display.busy_input_mode: queue to queue forecast notes instead of interrupting, or steer to inject them mid-run.",
+    "Set display.resume_display: minimal to skip the full forecast transcript recap on session resume.",
     "Set compression.threshold: 0.50 to control when auto-compression fires (default: 50% of context).",
     "Set agent.max_turns: 200 to let the agent take more tool-calling steps per turn.",
     "Set file_read_max_chars: 200000 to increase the max content per read_file call.",
@@ -142,7 +142,7 @@ TIPS = [
     "text_to_speech converts text to audio — plays as voice bubbles on Telegram.",
     "send_message can reach any connected messaging platform from within a session.",
     "The todo tool helps the agent track complex multi-step tasks during a session.",
-    "session_search performs full-text search across ALL past conversations.",
+    "session_search performs full-text search across ALL past forecast transcripts.",
     "The agent automatically saves preferences, corrections, and environment facts to memory.",
     "mixture_of_agents routes hard problems through 4 frontier LLMs collaboratively.",
     "Terminal commands support background mode with notify_on_complete for long-running tasks.",
@@ -182,7 +182,7 @@ TIPS = [
     "Cron delivery targets include telegram, discord, slack, email, sms, and 12+ more platforms.",
     "If a cron response starts with [SILENT], delivery is suppressed — useful for monitoring-only jobs.",
     "Cron supports relative delays (30m), intervals (every 2h), cron expressions, and ISO timestamps.",
-    "Cron jobs run in completely fresh agent sessions — prompts must be self-contained.",
+    "Cron jobs run in fresh agent sessions — scheduled forecast instructions must be self-contained.",
 
     # --- Voice ---
     "Voice mode works with zero API keys if faster-whisper is installed (free local speech-to-text).",
@@ -235,12 +235,12 @@ TIPS = [
     # --- Checkpoints & Rollback ---
     "Checkpoints have zero overhead when no files are modified — enabled by default.",
     "A pre-rollback snapshot is saved automatically so you can undo the undo.",
-    "/rollback also undoes the conversation turn, so the agent doesn't remember rolled-back changes.",
+    "/rollback also undoes the forecast turn, so the agent doesn't remember rolled-back changes.",
     "Checkpoints use shadow repos in ~/.superforecasting-agent/checkpoints/ — your project's .git is never touched.",
 
     # --- Batch & Data ---
     "batch_runner.py processes hundreds of prompts in parallel for training data generation.",
-    "superforecasting-agent chat -Q enables quiet mode for programmatic use — suppresses banner and spinner.",
+    "superforecasting-agent -z enables quiet programmatic use — final answer on stdout, no banner or spinner.",
     "Trajectory saving (--save-trajectories) captures full tool-use traces for model training.",
 
     # --- Plugins ---
@@ -336,7 +336,7 @@ TIPS = [
     "The skills quarantine at ~/.superforecasting-agent/skills/.hub/quarantine/ holds skills pending security review.",
 
     # --- Advanced Slash Commands ---
-    '/steer <prompt> injects a note after the next tool call — nudge direction mid-task without interrupting.',
+    '/steer <forecast note> injects a note after the next tool call — nudge direction mid-task without interrupting.',
     '/goal <text> sets a standing Ralph-loop objective — Superforecasting Agent auto-continues turn after turn until a judge says done.',
     '/snapshot create [label] saves a full state snapshot of Superforecasting Agent config; /snapshot restore <id> reverts later.',
     '/copy [N] copies the last forecast response to your clipboard, or the Nth-from-last with a number.',
@@ -347,7 +347,7 @@ TIPS = [
     '/topic in Telegram DMs enables user-managed multi-session topic mode — /topic <id> restores past sessions inline.',
     '/approve session|always runs a pending dangerous command with your chosen trust scope; /deny rejects it.',
     '/restart gracefully restarts the gateway after draining active runs, then pings the requester when back up.',
-    '/kanban boards switch <slug> changes the active multi-project Kanban board from inside chat.',
+    '/kanban boards switch <slug> changes the active multi-project Kanban board from the session.',
     '/reload reloads ~/.superforecasting-agent/.env into the running session — pick up new API keys without restarting.',
 
     # --- Cron (no-agent & scripts) ---
@@ -375,7 +375,7 @@ TIPS = [
     # --- TUI & Dashboard ---
     'SUPERFORECASTING_AGENT_TUI_RESUME=<session-id> re-attaches a specific TUI research session after a disconnect.',
     "SUPERFORECASTING_AGENT_TUI_THEME=light|dark|<hex> forces the TUI theme on terminals that don't set COLORFGBG.",
-    'Ctrl+G or Ctrl+X Ctrl+E in the TUI opens the input buffer in $EDITOR for long multi-line prompts.',
+    'Ctrl+G or Ctrl+X Ctrl+E in the TUI opens the input buffer in $EDITOR for long forecast notes.',
     'The TUI renders LaTeX inline — $E=mc^2$ becomes Unicode math instead of raw TeX.',
     'superforecasting-agent dashboard launches a local web UI at 127.0.0.1:9119 — zero data leaves localhost.',
     'superforecasting-agent dashboard --tui embeds the full Superforecasting Agent TUI in your browser via xterm.js and a WebSocket PTY.',
@@ -410,25 +410,25 @@ TIPS = [
     # --- Less-Known Slash Commands ---
     '/new starts a fresh session in place (alias /reset) — fresh session ID, clean history, CLI stays open.',
     '/clear wipes the terminal screen AND starts a new session — one shortcut for a visual reset.',
-    '/history prints the current conversation in-line without leaving the CLI — useful for a quick re-read.',
-    '/save writes the current conversation to disk without ending the session.',
+    '/history prints the current forecast transcript in-line without leaving the CLI.',
+    '/save writes the current forecast transcript to disk without ending the session.',
     '/status shows session info at a glance: ID, title, model, token usage, and elapsed time.',
-    '/image <path> attaches a local image file for your next prompt without pasting or drag-and-drop.',
-    '/platforms shows gateway and messaging-platform connection status right from inside chat.',
+    '/image <path> attaches a local image file for your next forecast note.',
+    '/platforms shows gateway and messaging-platform connection status from the active session.',
     '/commands paginates the full slash-command + installed-skill list — useful on platforms without tab completion.',
     '/toolsets lists every available toolset so you know what -t/--toolsets accepts.',
     '/gquota shows Google Gemini Code Assist quota usage with progress bars when that provider is active.',
-    '/voice tts toggles TTS-only mode — agent replies out loud but you still type your prompts.',
+    '/voice tts toggles TTS-only mode — agent replies out loud but you still type forecast notes.',
     '/reload-skills re-scans ~/.superforecasting-agent/skills/ so drop-in skills appear without restarting the session.',
     '/indicator markers|emoji|unicode|ascii picks the TUI busy-indicator style shown during forecast runs.',
-    '/debug uploads a support bundle (system info + logs) and returns shareable links — works in chat too.',
+    '/debug uploads a support bundle (system info + logs) and returns shareable links from forecast sessions too.',
 
     # --- CLI Subcommands & Flags ---
-    'superforecasting-agent -z "<prompt>" is the purest one-shot: final answer on stdout, nothing else — ideal for piping in scripts.',
-    'superforecasting-agent chat --pass-session-id injects the session ID into the system prompt so the agent can self-reference it.',
-    'superforecasting-agent chat --image path/to/pic.png attaches a local image to a single -q query without a separate upload step.',
-    'superforecasting-agent chat --ignore-user-config skips ~/.superforecasting-agent/config.yaml — reproducible bug reports and CI runs.',
-    "superforecasting-agent chat --source tool tags programmatic chats so they don't clutter superforecasting-agent sessions list.",
+    'superforecasting-agent -z "<forecast note>" is the purest one-shot: final answer on stdout, nothing else.',
+    'Explicit chat sessions can use --pass-session-id when the model needs to cite its own session ID.',
+    'For image one-shots, superforecasting-agent chat -q "inspect" --image path/to/pic.png attaches a local image.',
+    'superforecasting-agent --ignore-user-config skips ~/.superforecasting-agent/config.yaml for reproducible runs.',
+    "Explicit chat sessions can use --source tool so support runs don't clutter superforecasting-agent sessions list.",
     'superforecasting-agent dump --show-keys includes redacted API key fingerprints for deeper support debugging.',
     'superforecasting-agent sessions rename <ID> "new title" renames any past session; superforecasting-agent sessions delete <ID> removes one.',
     'superforecasting-agent import restores a session export or profile archive produced by sessions export or profile export.',
@@ -449,7 +449,7 @@ TIPS = [
     'SUPERFORECASTING_AGENT_STREAM_RETRIES (default 3) controls mid-stream reconnect attempts; FORECAST_/HERMES_ aliases work.',
 
     # --- Gateway Behavior Env Vars ---
-    'SUPERFORECASTING_AGENT_GATEWAY_BUSY_ACK_ENABLED=false silences the ⚡/⏳/⏩ ack messages when a user messages a busy agent.',
+    'SUPERFORECASTING_AGENT_GATEWAY_BUSY_ACK_ENABLED=false silences busy-agent ack notices in messaging platforms.',
     'SUPERFORECASTING_AGENT_AGENT_NOTIFY_INTERVAL (default 180s) sets how often the gateway pings with progress on long turns.',
     'SUPERFORECASTING_AGENT_RESTART_DRAIN_TIMEOUT (default 900s) caps how long /restart waits for in-flight runs before forcing.',
     'SUPERFORECASTING_AGENT_CHECKPOINT_TIMEOUT (default 30s) caps checkpoint creation; FORECAST_/HERMES_ aliases work.',
@@ -464,7 +464,7 @@ TIPS = [
     'TIRITH_FAIL_OPEN env var overrides the tirith_fail_open config — a quick toggle without editing config.yaml.',
 
     # --- Sessions & Source Tags ---
-    '--source tool chats are excluded from superforecasting-agent sessions list by default — set --source explicitly to see them.',
+    '--source tool support sessions are excluded from superforecasting-agent sessions list by default.',
     'Session IDs are timestamp-prefixed (20250305_091523_abcd) so sorting works naturally in ls and jq.',
 
     # --- Misc ---

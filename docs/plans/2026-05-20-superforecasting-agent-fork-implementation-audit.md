@@ -235,7 +235,7 @@ Concrete success means the fork behaves as a command-line forecasting desk cente
 - Forecast-native Windows gateway guidance and service names: `hermes_cli/gateway_windows.py`, `tests/hermes_cli/test_gateway_windows.py`
 - Forecast-native pairing command guidance: `hermes_cli/pairing.py`
 - Forecast-native status output: `hermes_cli/status.py`
-- Forecast-native startup tips: `hermes_cli/tips.py`
+- Forecast-native startup tips and one-shot guidance: `hermes_cli/tips.py`, `tests/hermes_cli/test_tips.py`
 - Forecast-native memory setup guidance: `hermes_cli/memory_setup.py`
 - Forecast-native cron guidance: `hermes_cli/cron.py`
 - Forecast-native model inventory guidance: `hermes_cli/inventory.py`

@@ -48,6 +48,11 @@ class TestTipsCorpus:
         assert not any(tip.startswith("HERMES_ALLOW_PRIVATE_URLS") for tip in TIPS)
         assert not any(tip.startswith("HERMES_CHECKPOINT_TIMEOUT") for tip in TIPS)
 
+    def test_one_shot_tips_prefer_forecast_native_entrypoint(self):
+        assert any('superforecasting-agent -z "query"' in tip for tip in TIPS)
+        assert not any('superforecasting-agent chat -q "query"' in tip for tip in TIPS)
+        assert not any("superforecasting-agent chat -Q" in tip for tip in TIPS)
+
 
 class TestGetRandomTip:
     """Validate the get_random_tip() function."""
