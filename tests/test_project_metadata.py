@@ -1250,6 +1250,43 @@ def test_provider_extension_docstrings_are_forecast_native():
     assert "~/.hermes/config.yaml" not in text
 
 
+def test_setup_model_toolpicker_docs_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        "hermes_cli/tools_config.py",
+        "hermes_cli/main.py",
+        "hermes_cli/config.py",
+        "hermes_cli/plugins.py",
+        "hermes_cli/model_catalog.py",
+        "tools/web_tools.py",
+        "tools/tts_tool.py",
+    ]
+    text = "\n".join(
+        (root / rel_path).read_text(encoding="utf-8") for rel_path in checked_paths
+    )
+    normalized = re.sub(r"\s+", " ", text)
+
+    assert "superforecasting-agent tools" in text
+    assert "superforecasting-agent model" in text
+    assert "superforecasting-agent logs" in text
+    assert "Superforecasting Agent uses lightweight" in text
+    assert "Superforecasting Agent writes the input text" in text
+    assert "active agent-home config.yaml" in normalized
+    assert "active agent-home .env" in normalized
+    assert "active agent-home ``checkpoints/``" in text
+    assert "Entry point for `superforecasting-agent tools` and setup tools." in text
+
+    assert "hermes tools" not in text
+    assert "hermes model" not in text
+    assert "hermes setup" not in text
+    assert "~/.hermes/config.yaml" not in text
+    assert "~/.hermes/checkpoints" not in text
+    assert "Hermes uses lightweight" not in text
+    assert "Hermes writes the input text" not in text
+    assert "into Hermes without any Python code" not in text
+    assert "Hermes actually needs a non-default format" not in text
+
+
 def test_profile_runtime_exclusions_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "hermes_cli" / "profiles.py").read_text(encoding="utf-8")

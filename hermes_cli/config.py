@@ -60,16 +60,17 @@ _CONFIG_PARSE_WARNED: set = set()
 def _warn_config_parse_failure(config_path: Path, exc: Exception) -> None:
     """Surface a config.yaml parse failure to user, log, and stderr.
 
-    A YAML parse error in ``~/.hermes/config.yaml`` causes ``load_config()``
-    to silently fall back to ``DEFAULT_CONFIG``, which means every user
-    override (auxiliary providers, fallback chain, model overrides, etc.)
-    is dropped. Before this helper that was a one-line ``print(...)`` that
-    scrolled off-screen on the first invocation and was never seen again.
+    A YAML parse error in the active agent-home config.yaml causes
+    ``load_config()`` to silently fall back to ``DEFAULT_CONFIG``, which means
+    every user override (auxiliary providers, fallback chain, model overrides,
+    etc.) is dropped. Before this helper that was a one-line ``print(...)``
+    that scrolled off-screen on the first invocation and was never seen again.
 
     Now: warn once per (path, mtime_ns, size) on stderr **and** in
-    ``agent.log`` / ``errors.log`` at WARNING level so ``hermes logs``
-    surfaces it. Re-warns automatically if the file changes (different
-    mtime/size), so users editing the config see the next failure.
+    ``agent.log`` / ``errors.log`` at WARNING level so
+    ``superforecasting-agent logs`` surfaces it. Re-warns automatically if the
+    file changes (different mtime/size), so users editing the config see the
+    next failure.
     """
     try:
         st = config_path.stat()
@@ -792,7 +793,7 @@ DEFAULT_CONFIG = {
         # limited the `/rollback` listing; v2 actually rewrites the ref and
         # garbage-collects older commits.
         "max_snapshots": 20,
-        # Hard ceiling on total ``~/.hermes/checkpoints/`` size (MB).  When
+        # Hard ceiling on total active agent-home ``checkpoints/`` size (MB). When
         # exceeded, the oldest checkpoint per project is dropped in a
         # round-robin pass until total size falls under the cap.
         # 0 disables the size cap.
@@ -1059,8 +1060,9 @@ DEFAULT_CONFIG = {
         # Curator — skill-usage review fork. Timeout is generous because the
         # review pass can take several minutes on reasoning models (umbrella
         # building over hundreds of candidate skills). "auto" = use main chat
-        # model; override via `hermes model` → auxiliary → Curator to route
-        # to a cheaper aux model (e.g. openrouter google/gemini-3-flash-preview).
+        # model; override via `superforecasting-agent model` → auxiliary →
+        # Curator to route to a cheaper aux model (e.g. openrouter
+        # google/gemini-3-flash-preview).
         "curator": {
             "provider": "auto",
             "model": "",
@@ -1670,7 +1672,7 @@ DEFAULT_CONFIG = {
         "enabled": True,
         "url": "https://raw.githubusercontent.com/teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot/website/static/api/model-catalog.json",
         # Disk cache TTL in hours.  Beyond this, the CLI refetches on the
-        # next /model or `hermes model` invocation; network failures
+        # next /model or `superforecasting-agent model` invocation; network failures
         # silently fall back to the stale cache.
         "ttl_hours": 24,
         # Optional per-provider override URLs for third parties that want
@@ -1792,7 +1794,8 @@ DEFAULT_CONFIG = {
     # X (Twitter) Search via xAI's built-in x_search Responses tool.
     # The tool registers when xAI credentials are available (SuperGrok
     # OAuth or XAI_API_KEY) AND the x_search toolset is enabled in
-    # `hermes tools`. These settings tune the backing Responses API call.
+    # `superforecasting-agent tools`. These settings tune the backing Responses
+    # API call.
     "x_search": {
         # xAI model used for the Responses call. grok-4.20-reasoning is
         # the recommended default; any Grok model with x_search tool
@@ -4376,7 +4379,7 @@ def cfg_get(cfg: Optional[Dict[str, Any]], *keys: str, default: Any = None) -> A
 
 
 def read_raw_config() -> Dict[str, Any]:
-    """Read ~/.hermes/config.yaml as-is, without merging defaults or migrating.
+    """Read active agent-home config.yaml as-is, without merging defaults or migrating.
 
     Returns the raw YAML dict, or ``{}`` if the file doesn't exist or can't
     be parsed.  Use this for lightweight config reads where you just need a
@@ -4601,7 +4604,7 @@ _COMMENTED_SECTIONS = """
 
 
 def save_config(config: Dict[str, Any]):
-    """Save configuration to ~/.hermes/config.yaml."""
+    """Save configuration to the active agent-home config.yaml."""
     with _CONFIG_LOCK:
         if is_managed():
             managed_error("save configuration")
@@ -4645,7 +4648,7 @@ def save_config(config: Dict[str, Any]):
 
 
 def load_env() -> Dict[str, str]:
-    """Load environment variables from ~/.hermes/.env.
+    """Load environment variables from the active agent-home .env.
 
     Sanitizes lines before parsing so that corrupted files (e.g.
     concatenated KEY=VALUE pairs on a single line) are handled
@@ -4654,9 +4657,9 @@ def load_env() -> Dict[str, str]:
 
     The parsed dict is memoised keyed on the .env file mtime, because
     ``get_env_value()`` is called dozens-to-hundreds of times per
-    interactive menu render (`hermes tools`, `hermes setup`, status
+    interactive menu render (`superforecasting-agent tools`, setup, status
     panels). Sanitisation is O(lines × known-keys), so re-parsing the
-    same file on every call was burning ~300ms of CPU per `hermes tools`
+    same file on every call was burning ~300ms of CPU per `superforecasting-agent tools`
     menu paint on top of the OAuth-refresh slowness. The mtime check
     invalidates the cache when the user edits .env mid-process.
     """

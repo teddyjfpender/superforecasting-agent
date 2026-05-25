@@ -125,7 +125,7 @@ def _has_env(name: str) -> bool:
     return bool(val and val.strip())
 
 def _load_web_config() -> dict:
-    """Load the ``web:`` section from ~/.hermes/config.yaml."""
+    """Load the ``web:`` section from the active agent-home config.yaml."""
     try:
         from hermes_cli.config import load_config
         return load_config().get("web", {})
@@ -135,7 +135,7 @@ def _load_web_config() -> dict:
 def _get_backend() -> str:
     """Determine which web backend to use (shared fallback).
 
-    Reads ``web.backend`` from config.yaml (set by ``hermes tools``).
+    Reads ``web.backend`` from config.yaml (set by ``superforecasting-agent tools``).
     Falls back to whichever API key is present for users who configured
     keys manually without running setup.
     """
@@ -222,7 +222,7 @@ def _is_backend_available(backend: str) -> bool:
         # Cheap probe — env var OR auth.json has OAuth tokens. Must not
         # call resolve_xai_http_credentials() here because the OAuth path
         # can trigger a network token refresh, and _is_backend_available
-        # runs on every web_search dispatch + every `hermes tools` repaint.
+        # runs on every web_search dispatch + every `superforecasting-agent tools` repaint.
         try:
             from tools.xai_http import has_xai_credentials
             return has_xai_credentials()

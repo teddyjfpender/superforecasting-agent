@@ -16,16 +16,18 @@ Built-in TTS providers:
 
 Custom command providers:
 - Users can declare any number of named providers with ``type: command``
-  under ``tts.providers.<name>`` in ``~/.hermes/config.yaml``. Hermes
-  writes the input text to a temp file and runs the configured shell
-  command, which must produce the audio file at the expected path.
+  under ``tts.providers.<name>`` in the active agent-home config.yaml.
+  Superforecasting Agent writes the input text to a temp file and runs the
+  configured shell command, which must produce the audio file at the expected
+  path.
   See the Local Command section of ``website/docs/user-guide/features/tts.md``.
 
 Output formats:
 - Opus (.ogg) for Telegram voice bubbles (requires ffmpeg for Edge TTS)
 - MP3 (.mp3) for everything else (CLI, Discord, WhatsApp)
 
-Configuration is loaded from ~/.hermes/config.yaml under the 'tts:' key.
+Configuration is loaded from the active agent-home config.yaml under the
+'tts:' key.
 The user chooses the provider and voice; the model just sends text.
 
 Usage:
@@ -279,11 +281,11 @@ def _resolve_max_text_length(
 
 
 # ===========================================================================
-# Config loader -- reads tts: section from ~/.hermes/config.yaml
+# Config loader -- reads tts: section from the active agent-home config.yaml
 # ===========================================================================
 def _load_tts_config() -> Dict[str, Any]:
     """
-    Load TTS configuration from ~/.hermes/config.yaml.
+    Load TTS configuration from the active agent-home config.yaml.
 
     Returns a dict with provider settings. Falls back to defaults
     for any missing fields.
@@ -311,8 +313,8 @@ def _get_provider(tts_config: Dict[str, Any]) -> str:
 #
 # Users can declare any number of command-type providers alongside the
 # built-ins so they can plug any local CLI (Piper, VoxCPM, Kokoro CLIs,
-# custom voice-cloning scripts, etc.) into Hermes without any Python code
-# changes. The config shape is::
+# custom voice-cloning scripts, etc.) into Superforecasting Agent without any
+# Python code changes. The config shape is::
 #
 #     tts:
 #       provider: piper-en
@@ -322,8 +324,8 @@ def _get_provider(tts_config: Dict[str, Any]) -> str:
 #           command: "piper -m ~/model.onnx -f {output_path} < {input_path}"
 #           output_format: wav
 #
-# Hermes writes the input text to a temp UTF-8 file, runs the command with
-# placeholder substitution, and reads the audio file the command wrote to
+# Superforecasting Agent writes the input text to a temp UTF-8 file, runs the
+# command with placeholder substitution, and reads the audio file the command wrote to
 # ``{output_path}``. Supported placeholders: ``{input_path}``,
 # ``{text_path}`` (alias for input_path), ``{output_path}``, ``{format}``,
 # ``{voice}``, ``{model}``, ``{speed}``. Use ``{{`` / ``}}`` for literal braces.
@@ -949,7 +951,7 @@ def _generate_xai_tts(text: str, output_path: str, tts_config: Dict[str, Any]) -
     ).strip().rstrip("/")
 
     # Match the documented minimal POST /v1/tts shape by default. Only send
-    # output_format when Hermes actually needs a non-default format/override.
+    # output_format when the runtime actually needs a non-default format/override.
     codec = "wav" if output_path.endswith(".wav") else "mp3"
     payload: Dict[str, Any] = {
         "text": text,
@@ -1653,7 +1655,8 @@ def text_to_speech_tool(
     """
     Convert text to speech audio.
 
-    Reads provider/voice config from ~/.hermes/config.yaml (tts: section).
+    Reads provider/voice config from the active agent-home config.yaml
+    (tts: section).
     The model sends text; the user configures voice and provider.
 
     On messaging platforms, the returned MEDIA:<path> tag is intercepted
