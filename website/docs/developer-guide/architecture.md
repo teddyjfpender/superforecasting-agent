@@ -50,7 +50,7 @@ The main architectural change from upstream Hermes is persistence. A general ass
 ## Directory Structure
 
 ```text
-hermes-agent/
+superforecasting-agent/
 ├── forecasting/                  # Forecast desk domain package
 │   ├── cli.py                    # `forecast ...` lifecycle commands
 │   ├── ledger.py                 # durable forecast ledger and review state

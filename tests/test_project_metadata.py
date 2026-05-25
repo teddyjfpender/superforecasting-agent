@@ -1552,6 +1552,16 @@ def test_high_attention_docs_navigation_is_forecast_native():
     ).exists()
 
 
+def test_developer_architecture_tree_is_fork_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (
+        root / "website" / "docs" / "developer-guide" / "architecture.md"
+    ).read_text(encoding="utf-8")
+
+    assert "superforecasting-agent/\n├── forecasting/" in text
+    assert "\nhermes-agent/\n├── forecasting/" not in text
+
+
 def test_residual_gateway_session_plugin_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [
