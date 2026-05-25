@@ -165,3 +165,26 @@ def test_superforecasting_agent_cli_entrypoint_delegates_runtime_commands(monkey
     forecast_cli.main(["dashboard", "--no-open"])
 
     assert calls == [["superforecasting-agent", "dashboard", "--no-open"]]
+
+
+def test_runtime_command_missing_optional_dependency_gets_forecast_native_guidance(
+    capsys,
+    monkeypatch,
+):
+    def fail_import(name, *args, **kwargs):
+        if name == "hermes_cli.main":
+            raise ModuleNotFoundError("No module named 'dotenv'", name="dotenv")
+        return original_import(name, *args, **kwargs)
+
+    original_import = __import__
+    monkeypatch.setattr("builtins.__import__", fail_import)
+
+    with pytest.raises(SystemExit) as exc:
+        forecast_cli.main(["chat", "--help"])
+
+    assert exc.value.code == 1
+    captured = capsys.readouterr()
+    assert "optional CLI runtime dependencies" in captured.err
+    assert "Use `forecast ...` or `superforecasting-agent status`" in captured.err
+    assert 'uv pip install -e ".[all,dev]"' in captured.err
+    assert "Traceback" not in captured.err

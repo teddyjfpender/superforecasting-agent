@@ -124,7 +124,23 @@ def _apply_profile(profile_name: str | None) -> None:
 
 
 def _run_inherited_runtime(argv: Sequence[str]) -> None:
-    from hermes_cli.main import main as inherited_main
+    try:
+        from hermes_cli.main import main as inherited_main
+    except ModuleNotFoundError as exc:
+        missing_name = exc.name or str(exc)
+        print(
+            "Error: this inherited runtime command needs optional CLI runtime "
+            f"dependencies that are not installed ({missing_name}).",
+            file=sys.stderr,
+        )
+        print(
+            "Use `forecast ...` or `superforecasting-agent status` for the "
+            "forecast desk, or run `uv pip install -e \".[all,dev]\"` from "
+            "the checkout before using chat, dashboard, setup, model, gateway, "
+            "or other compatibility runtime commands.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from exc
 
     previous_argv = sys.argv[:]
     try:
