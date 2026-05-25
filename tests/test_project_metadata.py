@@ -722,7 +722,8 @@ def test_install_helpers_use_forecast_native_visible_copy():
     install_ps1 = (root / "scripts" / "install.ps1").read_text(encoding="utf-8")
     install_sh = (root / "scripts" / "install.sh").read_text(encoding="utf-8")
     install_cmd = (root / "scripts" / "install.cmd").read_text(encoding="utf-8")
-    setup_sh = (root / "setup-hermes.sh").read_text(encoding="utf-8")
+    setup_sh = (root / "setup-superforecasting-agent.sh").read_text(encoding="utf-8")
+    setup_legacy_sh = (root / "setup-hermes.sh").read_text(encoding="utf-8")
     node_bootstrap = (root / "scripts" / "lib" / "node-bootstrap.sh").read_text(encoding="utf-8")
     installer_text = "\n".join([install_ps1, install_sh, install_cmd])
 
@@ -757,6 +758,7 @@ def test_install_helpers_use_forecast_native_visible_copy():
 
     assert "Superforecasting Agent Setup Script" in setup_sh
     assert "Superforecasting Agent Setup" in setup_sh
+    assert "./setup-superforecasting-agent.sh" in setup_sh
     assert "Superforecasting Agent — ensure ~/.local/bin is on PATH" in setup_sh
     assert "Setting up superforecasting-agent command" in setup_sh
     assert "Symlinked superforecasting-agent" in setup_sh
@@ -764,6 +766,8 @@ def test_install_helpers_use_forecast_native_visible_copy():
     assert "superforecasting-agent setup" in setup_sh
     assert "superforecasting-agent doctor" in setup_sh
     assert "Open the forecast desk" in setup_sh
+    assert "Compatibility wrapper" in setup_legacy_sh
+    assert "setup-superforecasting-agent.sh" in setup_legacy_sh
     assert "Hermes Agent Setup Script" not in setup_sh
     assert "Hermes Agent Setup" not in setup_sh
     assert "Hermes Agent — ensure ~/.local/bin is on PATH" not in setup_sh
