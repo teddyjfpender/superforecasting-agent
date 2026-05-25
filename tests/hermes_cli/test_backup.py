@@ -1,4 +1,4 @@
-"""Tests for hermes backup and import commands."""
+"""Tests for Superforecasting Agent backup and import commands."""
 
 import json
 import os
@@ -418,8 +418,8 @@ class TestImport:
         with pytest.raises(SystemExit):
             run_import(args)
 
-    def test_rejects_non_hermes_zip(self, tmp_path, monkeypatch):
-        """Import rejects a zip that doesn't look like a hermes backup."""
+    def test_rejects_non_agent_backup_zip(self, tmp_path, monkeypatch):
+        """Import rejects a zip that doesn't look like an agent backup."""
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()
         monkeypatch.setenv("HERMES_HOME", str(hermes_home))
@@ -1328,12 +1328,11 @@ class TestQuickSnapshot:
         assert snap_id is not None
 
 # ---------------------------------------------------------------------------
-# Pre-update backup (hermes update safety net)
+# Pre-update backup (superforecasting-agent update safety net)
 # ---------------------------------------------------------------------------
 
 class TestPreUpdateBackup:
-    """Tests for create_pre_update_backup — the auto-backup ``hermes update``
-    runs before touching anything."""
+    """Tests for the auto-backup before superforecasting-agent update."""
 
     @pytest.fixture
     def hermes_home(self, tmp_path):
@@ -1353,7 +1352,8 @@ class TestPreUpdateBackup:
 
     def test_backup_contents_match_full_backup(self, hermes_home):
         """Pre-update backup should include the same user data that
-        ``hermes backup`` would, and should exclude the same directories."""
+        ``superforecasting-agent backup`` would, and should exclude the same
+        directories."""
         from hermes_cli.backup import create_pre_update_backup
         out = create_pre_update_backup(hermes_home=hermes_home)
         assert out is not None
@@ -1365,7 +1365,7 @@ class TestPreUpdateBackup:
         assert "sessions/abc123.json" in names
         assert "skills/my-skill/SKILL.md" in names
         assert "profiles/coder/config.yaml" in names
-        # hermes-agent repo excluded
+        # legacy hermes-agent repo excluded
         assert not any(n.startswith("hermes-agent/") for n in names)
         # __pycache__ excluded
         assert not any("__pycache__" in n for n in names)
@@ -1596,12 +1596,11 @@ class TestRunPreUpdateBackup:
 
 
 # ---------------------------------------------------------------------------
-# Pre-migration backup (hermes claw migrate safety net)
+# Pre-migration backup (superforecasting-agent claw migrate safety net)
 # ---------------------------------------------------------------------------
 
 class TestPreMigrationBackup:
-    """Tests for create_pre_migration_backup — the auto-backup
-    ``hermes claw migrate`` runs before mutating ~/.hermes/."""
+    """Tests for the auto-backup before superforecasting-agent claw migrate."""
 
     @pytest.fixture
     def hermes_home(self, tmp_path):
@@ -1615,15 +1614,17 @@ class TestPreMigrationBackup:
         out = create_pre_migration_backup(hermes_home=hermes_home)
         assert out is not None
         assert out.exists()
-        # Shares the backups/ directory with pre-update backups so `hermes
-        # import` and the update-backup listing both pick them up.
+        # Shares the backups/ directory with pre-update backups so
+        # `superforecasting-agent import` and update-backup listing both pick
+        # them up.
         assert out.parent == hermes_home / "backups"
         assert out.name.startswith("pre-migration-")
         assert out.suffix == ".zip"
 
     def test_backup_uses_shared_exclusion_rules(self, hermes_home):
         """Pre-migration backup reuses the same exclusion rules as
-        ``hermes backup`` / ``create_pre_update_backup`` — no drift."""
+        ``superforecasting-agent backup`` / ``create_pre_update_backup`` — no
+        drift."""
         from hermes_cli.backup import create_pre_migration_backup
         out = create_pre_migration_backup(hermes_home=hermes_home)
         assert out is not None
@@ -1638,9 +1639,8 @@ class TestPreMigrationBackup:
         assert not any("__pycache__" in n for n in names)
         assert "gateway.pid" not in names
 
-    def test_restorable_with_hermes_import(self, hermes_home, tmp_path):
-        """The zip produced by pre-migration backup must be a valid Hermes
-        backup — `hermes import` should accept it."""
+    def test_restorable_with_superforecasting_agent_import(self, hermes_home, tmp_path):
+        """The pre-migration zip must be a valid Superforecasting Agent backup."""
         from hermes_cli.backup import create_pre_migration_backup, _validate_backup_zip
         out = create_pre_migration_backup(hermes_home=hermes_home)
         assert out is not None

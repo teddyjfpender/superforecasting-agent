@@ -73,7 +73,7 @@ _SECRET_FILE_NAMES = {".env", "auth.json", "state.db"}
 
 
 def _should_exclude(rel_path: Path) -> bool:
-    """Return True if *rel_path* (relative to hermes root) should be skipped."""
+    """Return True if *rel_path* (relative to agent home) should be skipped."""
     parts = rel_path.parts
 
     # Any path component matches an excluded dir name
@@ -188,7 +188,7 @@ def run_backup(args) -> None:
             if _should_exclude(rel):
                 continue
 
-            # Skip the output zip itself if it happens to be inside hermes root
+            # Skip the output zip itself if it happens to be inside agent home.
             try:
                 if fpath.resolve() == out_path.resolve():
                     continue
@@ -477,7 +477,8 @@ def run_import(args) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Quick state snapshots (used by /snapshot slash command and hermes backup --quick)
+# Quick state snapshots (used by /snapshot slash command and
+# superforecasting-agent backup --quick)
 # ---------------------------------------------------------------------------
 
 # Critical state files to include in quick snapshots (relative to HERMES_HOME).
@@ -487,8 +488,8 @@ def run_import(args) -> None:
 # Entries may be individual files OR directories.  Directories are captured
 # recursively; missing entries are silently skipped.  Pairing data lives in
 # platform-specific JSON blobs outside state.db, so it's listed here explicitly
-# — `hermes update` snapshots this set before pulling so approved-user lists
-# are recoverable if anything goes wrong (issue #15733).
+# — `superforecasting-agent update` snapshots this set before pulling so
+# approved-user lists are recoverable if anything goes wrong (issue #15733).
 _QUICK_STATE_FILES = (
     "state.db",
     "config.yaml",
@@ -702,7 +703,7 @@ def prune_quick_snapshots(
 
 
 def run_quick_backup(args) -> None:
-    """CLI entry point for hermes backup --quick."""
+    """CLI entry point for superforecasting-agent backup --quick."""
     label = getattr(args, "label", None)
     snap_id = create_quick_snapshot(label=label)
     if snap_id:
@@ -848,8 +849,9 @@ def create_pre_update_backup(
     auto-prunes old pre-update backups.
 
     Returns the path to the created zip, or ``None`` if no files were
-    found or the backup could not be created.  Never raises — the caller
-    (``hermes update``) should continue even if the backup fails.
+    found or the backup could not be created. Never raises — the caller
+    (``superforecasting-agent update``) should continue even if the backup
+    fails.
     """
     hermes_root = hermes_home or get_default_hermes_root()
     if not hermes_root.is_dir():
@@ -874,7 +876,7 @@ def create_pre_update_backup(
 
 
 # ---------------------------------------------------------------------------
-# Pre-migration auto-backup (used by `hermes claw migrate`)
+# Pre-migration auto-backup (used by `superforecasting-agent claw migrate`)
 # ---------------------------------------------------------------------------
 
 _PRE_MIGRATION_PREFIX = "pre-migration-"
@@ -914,11 +916,11 @@ def create_pre_migration_backup(
     keep: int = _PRE_MIGRATION_DEFAULT_KEEP,
 ) -> Optional[Path]:
     """Create a full zip backup of HERMES_HOME under ``backups/`` before a
-    ``hermes claw migrate`` apply.
+    ``superforecasting-agent claw migrate`` apply.
 
     Shares implementation with :func:`create_pre_update_backup` via
     ``_write_full_zip_backup`` — same exclusions, same SQLite safe-copy,
-    restorable with ``hermes import <archive>``.  Writes to
+    restorable with ``superforecasting-agent import <archive>``. Writes to
     ``<HERMES_HOME>/backups/pre-migration-<timestamp>.zip`` and auto-prunes
     old pre-migration backups.
 
@@ -930,8 +932,8 @@ def create_pre_migration_backup(
     if not hermes_root.is_dir():
         return None
 
-    # Reuses the shared backups/ directory so `hermes import` and the
-    # update-backup listing pick up pre-migration archives too.
+    # Reuses the shared backups/ directory so `superforecasting-agent import`
+    # and the update-backup listing pick up pre-migration archives too.
     backup_dir = _pre_update_backup_dir(hermes_root)
     try:
         backup_dir.mkdir(parents=True, exist_ok=True)

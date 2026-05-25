@@ -1502,6 +1502,26 @@ def test_debug_runtime_copy_prefers_forecast_native_commands():
     assert "HermesDebugBoundary" not in text
 
 
+def test_backup_runtime_copy_prefers_forecast_native_commands():
+    root = Path(__file__).resolve().parents[1]
+    backup_py = (root / "hermes_cli" / "backup.py").read_text(encoding="utf-8")
+    backup_tests = (root / "tests" / "hermes_cli" / "test_backup.py").read_text(
+        encoding="utf-8"
+    )
+    text = backup_py + "\n" + backup_tests
+
+    assert "superforecasting-agent backup --quick" in text
+    assert "superforecasting-agent update" in text
+    assert "superforecasting-agent claw migrate" in text
+    assert "superforecasting-agent import" in text
+
+    assert "hermes backup --quick" not in text
+    assert "hermes update" not in text
+    assert "hermes claw migrate" not in text
+    assert "hermes import" not in text
+    assert "relative to hermes root" not in text
+
+
 def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
