@@ -462,20 +462,25 @@ prompt_caching:
 #                           #   enable_thinking: false
 
 # =============================================================================
-# Persistent Memory
+# Generic Assistant Memory
 # =============================================================================
-# Bounded curated memory injected into the system prompt every session.
+# Forecast learning is ledger-first: snapshots, scores, postmortems,
+# calibration lessons, and domain error profiles are the default memory path.
+# This generic assistant memory is still available for profiles that need
+# free-form chat recall outside the forecast ledger.
+#
+# When enabled, bounded curated memory is injected into the system prompt every
+# session.
 # Two stores: MEMORY.md (agent's notes) and USER.md (user profile).
 # Character limits keep the memory small and focused. The agent manages
 # pruning -- when at the limit, it must consolidate or replace entries.
-# Disabled by default in batch_runner.
 #
 memory:
   # Agent's personal notes: environment facts, conventions, things learned
-  memory_enabled: true
+  memory_enabled: false
   
   # User profile: preferences, communication style, expectations
-  user_profile_enabled: true
+  user_profile_enabled: false
   
   # Character limits (~2.75 chars per token, model-independent)
   memory_char_limit: 2200   # ~800 tokens

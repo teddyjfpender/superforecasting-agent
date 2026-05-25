@@ -235,6 +235,11 @@ services.superforecasting-agent.settings = {
 
 Both are deep-merged at evaluation time. Nix-declared keys always win over keys in an existing `config.yaml` on disk, but **user-added keys that Nix doesn't touch are preserved**. This means if the agent or a manual edit adds keys like `skills.disabled` or `streaming.enabled`, they survive `nixos-rebuild switch`.
 
+Generic assistant memory is off by default because forecast learning is handled
+by the ledger, score records, postmortems, calibration lessons, and domain
+error profiles. Set `memory.memory_enabled` and `memory.user_profile_enabled`
+only for profiles that also need free-form chat recall.
+
 :::note Model naming
 `settings.model.default` uses the model identifier your provider expects. With [OpenRouter](https://openrouter.ai) (the default), these look like `"anthropic/claude-sonnet-4"` or `"google/gemini-3-flash"`. If you're using a provider directly (Anthropic, OpenAI), set `settings.model.base_url` to point at their API and use their native model IDs (e.g., `"claude-sonnet-4-20250514"`). When no `base_url` is set, Superforecasting Agent defaults to OpenRouter.
 :::
@@ -266,7 +271,8 @@ Run `nix build .#configKeys && cat result` to see every leaf config key extracte
         threshold = 0.85;
         summary_model = "google/gemini-3-flash-preview";
       };
-      memory = { memory_enabled = true; user_profile_enabled = true; };
+      # Optional generic chat recall; forecast learning remains ledger-first.
+      memory = { memory_enabled = false; user_profile_enabled = false; };
       display = { compact = false; personality = "neutral"; };
       agent = { max_turns = 60; verbose = false; };
     };
