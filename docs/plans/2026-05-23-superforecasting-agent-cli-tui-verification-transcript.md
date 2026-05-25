@@ -305,24 +305,44 @@ Ledger change: stored backtest run `bt_09de19d36792`, five scored historical
 cases, leakage status, performance-vs-baseline summary, and an explicit
 readiness guard that blocks live-superforecasting claims.
 
-## TUI Shortcut Verification
+## TUI Shortcut And Render Verification
 
-The TUI route test verifies that forecast desk panels and gateway events render
+The TUI route tests verify that forecast desk panels and gateway events render
 the forecast lifecycle shortcuts, evidence imports, alerts, readiness,
 assumption/reference-class review signals, and focused actions used by the CLI
-workflow above.
+workflow above. The render test additionally mounts the real Ink `AppLayout`
+path through `GatewayProvider` with a deterministic forecast-dashboard payload
+and two terminal widths, so the transcript covers both the wide forecast rail
+and the narrow `desk brief` fallback without a model call.
 
 ```bash
 cd ui-tui
-npm test -- src/__tests__/forecastPanel.test.ts src/__tests__/createGatewayEventHandler.test.ts
+npm test -- src/__tests__/forecastPanel.test.ts src/__tests__/createGatewayEventHandler.test.ts src/__tests__/forecastDeskInkRender.test.tsx
 ```
 
 ```text
 > superforecasting-agent-tui@0.0.1 test
-> vitest run src/__tests__/forecastPanel.test.ts src/__tests__/createGatewayEventHandler.test.ts
+> vitest run src/__tests__/forecastPanel.test.ts src/__tests__/createGatewayEventHandler.test.ts src/__tests__/forecastDeskInkRender.test.tsx
 
- Test Files  2 passed (2)
-      Tests  50 passed (50)
+ Test Files  3 passed (3)
+      Tests  52 passed (52)
+```
+
+Selected normalized Ink-frame assertions from the render gate:
+
+```text
+wide terminal:
+  Forecast Desk rail visible
+  desk 2 active / 1 alert / 1 review / cal 7 / 2 lessons / asm 3/1 / refs 2/1
+  Triage: /forecast readiness
+  Watchlist: watch123 P=0.630
+  desk actions: /forecast show fq_review123456
+
+narrow terminal:
+  desk brief visible
+  book 2 active / 1 alerts / review queue 1 / asm 3/1 / reference classes 2/1
+  triage: /alerts 1 open alert
+  desk actions: /forecast show fq_review123456
 ```
 
 ## Result
