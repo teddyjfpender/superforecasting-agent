@@ -1,8 +1,9 @@
 """Regression tests for packaging metadata in pyproject.toml."""
 
-from pathlib import Path
+import json
 import re
 import tomllib
+from pathlib import Path
 
 
 def _load_project():
@@ -1166,6 +1167,24 @@ def test_github_actions_metadata_is_forecast_native():
     assert "/tmp/hermes-test" not in text
     assert "name: hermes-agent" not in text
     assert "Dependabot configuration for hermes-agent" not in text
+
+
+def test_root_node_package_metadata_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    package_json = json.loads((root / "package.json").read_text(encoding="utf-8"))
+    package_lock = json.loads((root / "package-lock.json").read_text(encoding="utf-8"))
+
+    assert package_json["name"] == "superforecasting-agent"
+    assert "command-line forecasting desk" in package_json["description"]
+    assert package_json["repository"]["url"] == "git+https://github.com/teddyjfpender/superforecasting-agent.git"
+    assert package_json["bugs"]["url"] == "https://github.com/teddyjfpender/superforecasting-agent/issues"
+    assert package_json["homepage"] == "https://github.com/teddyjfpender/superforecasting-agent#readme"
+    assert package_lock["name"] == "superforecasting-agent"
+    assert package_lock["packages"][""]["name"] == "superforecasting-agent"
+
+    combined = json.dumps({"package": package_json, "lock": package_lock}, sort_keys=True)
+    assert "NousResearch/Hermes-Agent" not in combined
+    assert "\"name\": \"hermes-agent\"" not in combined
 
 
 def test_website_public_repository_links_point_to_fork():

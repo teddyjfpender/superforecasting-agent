@@ -1,20 +1,20 @@
 {
-  "name": "hermes-agent",
+  "name": "superforecasting-agent",
   "version": "1.0.0",
-  "description": "An AI agent with advanced tool-calling capabilities, featuring a flexible toolsets system for organizing and managing tools.",
+  "description": "A command-line forecasting desk for durable probabilistic beliefs, evidence, calibration, and backtesting.",
   "private": true,
   "scripts": {
-    "postinstall": "echo '✅ Browser tools ready. Run: python run_agent.py --help'"
+    "postinstall": "echo '✅ Browser tools ready. Run: superforecasting-agent --help'"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/NousResearch/Hermes-Agent.git"
+    "url": "git+https://github.com/teddyjfpender/superforecasting-agent.git"
   },
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/NousResearch/Hermes-Agent/issues"
+    "url": "https://github.com/teddyjfpender/superforecasting-agent/issues"
   },
-  "homepage": "https://github.com/NousResearch/Hermes-Agent#readme",
+  "homepage": "https://github.com/teddyjfpender/superforecasting-agent#readme",
   "dependencies": {
     "agent-browser": "^0.26.0"
   },
