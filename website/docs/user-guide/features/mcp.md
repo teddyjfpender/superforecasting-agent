@@ -349,7 +349,7 @@ mcp_servers:
 
 The sampling handler has rate limits, per-request timeouts, and tool-loop depth limits. Treat sampled text as an intermediate artifact unless it is attached to a forecast ledger record with source and model provenance.
 
-## Running the Runtime as an MCP Server {#running-hermes-as-an-mcp-server}
+## Running Superforecasting Agent as an MCP Server {#running-superforecasting-agent-as-an-mcp-server}
 
 Superforecasting Agent can also expose a stdio MCP server for other MCP clients. This is an inherited bridge for messaging and approval workflows; it is not the primary forecast product surface.
 
@@ -365,11 +365,8 @@ Start the server:
 superforecasting-agent mcp serve
 ```
 
-Compatibility installs may still use:
-
-```bash
-hermes mcp serve
-```
+Compatibility installs may still expose the legacy `hermes` entrypoint, but
+new MCP client configs should point at `superforecasting-agent`.
 
 Example MCP client config:
 
@@ -384,13 +381,13 @@ Example MCP client config:
 }
 ```
 
-If you are temporarily bridging an inherited Hermes virtualenv during the fork transition:
+If you need an absolute path to a fork-managed virtualenv:
 
 ```json
 {
   "mcpServers": {
     "superforecasting-agent": {
-      "command": "/home/user/.hermes/hermes-agent/venv/bin/hermes",
+      "command": "/home/user/.superforecasting-agent/superforecasting-agent/venv/bin/superforecasting-agent",
       "args": ["mcp", "serve"]
     }
   }
@@ -451,7 +448,7 @@ Those wrappers appear only when your config allows them and the MCP session supp
 
 ## Related Docs
 
-- [Use MCP with Superforecasting Agent](/docs/guides/use-mcp-with-hermes)
+- [Use MCP with Superforecasting Agent](/docs/guides/use-mcp-with-superforecasting-agent)
 - [CLI Commands](/docs/reference/cli-commands)
 - [Slash Commands](/docs/reference/slash-commands)
 - [FAQ](/docs/reference/faq)

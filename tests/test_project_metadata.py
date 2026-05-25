@@ -2096,7 +2096,25 @@ def test_mcp_serve_identity_is_forecast_native():
     cli_docs = (
         root / "website" / "docs" / "reference" / "cli-commands.md"
     ).read_text(encoding="utf-8")
-    mcp_link_docs = "\n".join([mcp_docs, mcp_config_docs, faq_docs, cli_docs])
+    mcp_guide_path = (
+        root / "website" / "docs" / "guides" / "use-mcp-with-superforecasting-agent.md"
+    )
+    mcp_guide_docs = mcp_guide_path.read_text(encoding="utf-8")
+    sidebars_docs = (root / "website" / "sidebars.ts").read_text(encoding="utf-8")
+    llms_generator = (
+        root / "website" / "scripts" / "generate-llms-txt.py"
+    ).read_text(encoding="utf-8")
+    mcp_link_docs = "\n".join(
+        [
+            mcp_docs,
+            mcp_config_docs,
+            faq_docs,
+            cli_docs,
+            mcp_guide_docs,
+            sidebars_docs,
+            llms_generator,
+        ]
+    )
 
     assert "Superforecasting Agent MCP Server" in mcp_serve
     assert "superforecasting-agent mcp serve" in mcp_serve
@@ -2111,6 +2129,14 @@ def test_mcp_serve_identity_is_forecast_native():
     assert "Hermes Agent messaging bridge" not in mcp_serve
     assert "superforecasting-agent mcp serve" in mcp_docs
     assert "Use MCP with Superforecasting Agent" in mcp_link_docs
+    assert "use-mcp-with-superforecasting-agent" in mcp_link_docs
+    assert not (
+        root / "website" / "docs" / "guides" / "use-mcp-with-hermes.md"
+    ).exists()
+    assert "use-mcp-with-hermes" not in mcp_link_docs
+    assert "wsl2-bridge-hermes" not in mcp_link_docs
+    assert "running-hermes-as-an-mcp-server" not in mcp_link_docs
+    assert "hermes mcp serve" not in mcp_link_docs
     assert "Use MCP with the inherited runtime" not in mcp_link_docs
 
 

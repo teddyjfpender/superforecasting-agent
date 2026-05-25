@@ -193,7 +193,7 @@ dos2unix path/to/script.sh
 
 Clone inside WSL. Always, unless you have a specific reason not to. A typical Superforecasting Agent workflow (`forecast`, `superforecasting-agent chat`, tool calls that `rg`/`ripgrep` the repo, file watchers, background gateway) will be dramatically faster and more reliable against `~/code/myrepo` than `/mnt/c/Users/you/myrepo`.
 
-One exception: **MCP bridges that launch Windows binaries.** If you're using `chrome-devtools-mcp` through `cmd.exe` (see [MCP guide: WSL to Windows Chrome](/docs/guides/use-mcp-with-hermes#wsl2-bridge-hermes-in-wsl-to-windows-chrome)), Windows may complain with a `UNC` warning if the agent's current working directory is `~`. In that case, start Superforecasting Agent from somewhere under `/mnt/c/` so the Windows process has a drive-letter cwd.
+One exception: **MCP bridges that launch Windows binaries.** If you're using `chrome-devtools-mcp` through `cmd.exe` (see [MCP guide: WSL to Windows Chrome](/docs/guides/use-mcp-with-superforecasting-agent#wsl2-bridge-superforecasting-agent-in-wsl-to-windows-chrome)), Windows may complain with a `UNC` warning if the agent's current working directory is `~`. In that case, start Superforecasting Agent from somewhere under `/mnt/c/` so the Windows process has a drive-letter cwd.
 
 ## Networking: WSL ↔ Windows
 
@@ -338,5 +338,5 @@ WSL2 stores its VM disk as a sparse VHDX under `%LOCALAPPDATA%\Packages\...`. It
 
 - **[Installation](/docs/getting-started/installation)** — fork checkout install steps for Linux, WSL2, Termux, and native Windows.
 - **[Integrations → Providers → WSL2 Networking](/docs/integrations/providers#wsl2-networking-windows-users)** — the canonical networking deep-dive for local model servers.
-- **[MCP guide -> WSL -> Windows Chrome](/docs/guides/use-mcp-with-hermes#wsl2-bridge-hermes-in-wsl-to-windows-chrome)** - controlling your signed-in Windows Chrome from Superforecasting Agent in WSL.
+- **[MCP guide -> WSL -> Windows Chrome](/docs/guides/use-mcp-with-superforecasting-agent#wsl2-bridge-superforecasting-agent-in-wsl-to-windows-chrome)** - controlling your signed-in Windows Chrome from Superforecasting Agent in WSL.
 - **[Tool Gateway](/docs/user-guide/features/tool-gateway)** and **[Web Dashboard](/docs/user-guide/features/web-dashboard)** — the long-lived services you'll most often want to expose from WSL to the rest of your network.

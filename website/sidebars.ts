@@ -660,7 +660,7 @@ const sidebars: SidebarsConfig = {
         'guides/daily-briefing-bot',
         'guides/team-telegram-assistant',
         'guides/python-library',
-        'guides/use-mcp-with-hermes',
+        'guides/use-mcp-with-superforecasting-agent',
         'guides/use-soul-with-hermes',
         'guides/use-voice-mode-with-hermes',
         'guides/build-a-hermes-plugin',

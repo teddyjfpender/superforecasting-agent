@@ -10,7 +10,7 @@ This page is the compact reference companion to the main MCP docs. MCP servers a
 
 For conceptual guidance, see:
 - [MCP (Model Context Protocol)](/docs/user-guide/features/mcp)
-- [Use MCP with Superforecasting Agent](/docs/guides/use-mcp-with-hermes)
+- [Use MCP with Superforecasting Agent](/docs/guides/use-mcp-with-superforecasting-agent)
 
 ## Root config shape
 

@@ -119,7 +119,11 @@ SECTIONS: list[tuple[str, list[tuple[str, str, str | None]]]] = [
         ("guides/daily-briefing-bot", "Daily Briefing Bot", None),
         ("guides/team-telegram-assistant", "Team Telegram Assistant", None),
         ("guides/python-library", "Use Hermes as a Python Library", None),
-        ("guides/use-mcp-with-hermes", "Use MCP with Hermes", None),
+        (
+            "guides/use-mcp-with-superforecasting-agent",
+            "Use MCP with Superforecasting Agent",
+            None,
+        ),
         ("guides/use-voice-mode-with-hermes", "Use Voice Mode with Hermes", None),
         ("guides/use-soul-with-hermes", "Use SOUL.md with Hermes", None),
         ("guides/build-a-hermes-plugin", "Build a Hermes Plugin", None),

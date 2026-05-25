@@ -330,7 +330,7 @@ For that setup, prefer `chrome-devtools-mcp` through MCP support.
 
 See:
 
-- [Use MCP with Superforecasting Agent](../../guides/use-mcp-with-hermes.md#wsl2-bridge-hermes-in-wsl-to-windows-chrome)
+- [Use MCP with Superforecasting Agent](../../guides/use-mcp-with-superforecasting-agent.md#wsl2-bridge-superforecasting-agent-in-wsl-to-windows-chrome)
 - [MCP](./mcp)
 
 ### Local Browser Mode
