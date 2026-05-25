@@ -45,7 +45,7 @@ export function useSubmission(opts: UseSubmissionOptions) {
     composerRefs,
     composerState,
     gw,
-    maybeGoodVibes,
+    maybeForecastPulse,
     setLastUserMsg,
     slashRef,
     submitRef,
@@ -96,7 +96,7 @@ export function useSubmission(opts: UseSubmissionOptions) {
         }
 
         turnController.clearStatusTimer()
-        maybeGoodVibes(submitText)
+        maybeForecastPulse(submitText)
         setLastUserMsg(text)
 
         if (showUserMessage) {
@@ -145,7 +145,7 @@ export function useSubmission(opts: UseSubmissionOptions) {
         })
         .catch(() => startSubmit(text, expand(text), showUserMessage))
     },
-    [appendMessage, composerActions, composerState.pasteSnips, gw, maybeGoodVibes, setLastUserMsg, sys]
+    [appendMessage, composerActions, composerState.pasteSnips, gw, maybeForecastPulse, setLastUserMsg, sys]
   )
 
   const shellExec = useCallback(
@@ -421,7 +421,7 @@ export interface UseSubmissionOptions {
   composerRefs: ComposerRefs
   composerState: ComposerState
   gw: GatewayClient
-  maybeGoodVibes: (text: string) => void
+  maybeForecastPulse: (text: string) => void
   setLastUserMsg: (value: string) => void
   slashRef: MutableRefObject<(cmd: string) => boolean>
   submitRef: MutableRefObject<(value: string) => void>

@@ -20,7 +20,7 @@ import { composerPromptText } from '../lib/prompt.js'
 import type { PanelSection } from '../types.js'
 
 import { AgentsOverlay } from './agentsOverlay.js'
-import { GoodVibesHeart, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
+import { ForecastPulse, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { Banner, Panel, SessionPanel } from './branding.js'
 import { FpsOverlay } from './fpsOverlay.js'
@@ -315,7 +315,7 @@ const ComposerPane = memo(function ComposerPane({
               </Box>
 
               <Box position="absolute" right={0}>
-                <GoodVibesHeart t={ui.theme} tick={status.goodVibesTick} />
+                <ForecastPulse t={ui.theme} tick={status.forecastPulseTick} />
               </Box>
             </Box>
           </>

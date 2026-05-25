@@ -26,6 +26,14 @@ describe('createSlashHandler', () => {
     expect(ctx.transcript.sys).toHaveBeenCalledWith('ui redrawn')
   })
 
+  it('handles /heuristic locally as a forecast-native compatibility alias', () => {
+    const ctx = buildCtx()
+
+    expect(createSlashHandler(ctx)('/heuristic daily')).toBe(true)
+    expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
+    expect(ctx.transcript.sys).toHaveBeenCalledWith(expect.stringMatching(/^(P|CAL) /))
+  })
+
   it('exits locally for /quit', () => {
     const ctx = buildCtx()
 

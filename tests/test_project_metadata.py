@@ -711,6 +711,31 @@ def test_tui_readme_uses_forecast_native_product_copy():
     assert "Input history is stored in `~/.hermes" not in readme
 
 
+def test_tui_visible_affordances_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "ui-tui" / "src" / "app" / "slash" / "commands" / "core.ts",
+        root / "ui-tui" / "src" / "app" / "useMainApp.ts",
+        root / "ui-tui" / "src" / "components" / "appChrome.tsx",
+        root / "ui-tui" / "src" / "components" / "appLayout.tsx",
+        root / "ui-tui" / "src" / "content" / "fortunes.ts",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "/heuristic [random|daily]" in text
+    assert "forecasting maxim" in text
+    assert "FORECAST_PULSE_RE" in text
+    assert "ForecastPulse" in text
+    assert "postmortems are part of the model" in text
+    assert "GoodVibes" not in text
+    assert "goodVibes" not in text
+    assert "local fortune" not in text
+    assert "random or daily local fortune" not in text
+    assert "clean refactor" not in text
+    assert "legendary drop" not in text
+    assert "♥" not in text
+
+
 def test_runtime_docstrings_and_markers_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     goals = (root / "hermes_cli" / "goals.py").read_text(encoding="utf-8")

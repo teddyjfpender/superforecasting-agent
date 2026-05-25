@@ -18,8 +18,6 @@ import type { Theme } from '../theme.js'
 import type { Msg, Usage } from '../types.js'
 
 const FACE_TICK_MS = 2500
-const HEART_COLORS = ['#ff5fa2', '#ff4d6d']
-
 // Keep verb segment width stable so status-bar content to the right doesn't
 // jitter when the ticker rotates between short/long verbs.
 export const VERB_PAD_LEN = VERBS.reduce((max, v) => Math.max(max, v.length), 0) + 1 // + ellipsis
@@ -245,7 +243,7 @@ const shortModelLabel = (model: string) =>
 const modelLabel = (model: string, effort?: string, fast?: boolean) =>
   [shortModelLabel(model), effortLabel(effort), fast ? 'fast' : ''].filter(Boolean).join(' ')
 
-export function GoodVibesHeart({ tick, t }: { tick: number; t: Theme }) {
+export function ForecastPulse({ tick, t }: { tick: number; t: Theme }) {
   const [active, setActive] = useState(false)
   const [color, setColor] = useState(t.color.accent)
 
@@ -267,7 +265,7 @@ export function GoodVibesHeart({ tick, t }: { tick: number; t: Theme }) {
     return null
   }
 
-  return <Text color={color}>♥</Text>
+  return <Text color={color}>Δ</Text>
 }
 
 export function StatusRule({

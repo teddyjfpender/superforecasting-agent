@@ -114,7 +114,7 @@ export const coreCommands: SlashCommand[] = [
               '/details <section> [hidden|collapsed|expanded|reset]',
               'override one section (thinking/tools/subagents/activity)'
             ],
-            ['/fortune [random|daily]', 'show a random or daily local fortune'],
+            ['/heuristic [random|daily]', 'show a random or daily forecasting maxim'],
             ['/forecast [limit|subcommand]', 'show active forecasts or run forecast lifecycle commands'],
             ['/sources [--json]', 'list evidence source adapters and watch prefixes'],
             ['/new-forecast [args]', 'create a scoreable forecast question'],
@@ -594,7 +594,8 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'local fortune',
+    aliases: ['heuristic'],
+    help: 'forecasting maxim',
     name: 'fortune',
     run: (arg, ctx) => {
       const key = arg.trim().toLowerCase()
@@ -607,7 +608,7 @@ export const coreCommands: SlashCommand[] = [
         return ctx.transcript.sys(dailyFortune(ctx.sid))
       }
 
-      ctx.transcript.sys('usage: /fortune [random|daily]')
+      ctx.transcript.sys('usage: /heuristic [random|daily]')
     }
   },
 

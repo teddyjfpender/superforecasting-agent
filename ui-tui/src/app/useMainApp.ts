@@ -42,7 +42,7 @@ import { useLongRunToolCharms } from './useLongRunToolCharms.js'
 import { useSessionLifecycle } from './useSessionLifecycle.js'
 import { useSubmission } from './useSubmission.js'
 
-const GOOD_VIBES_RE = /\b(good bot|thanks|thank you|thx|ty|ily|love you)\b/i
+const FORECAST_PULSE_RE = /\b(forecast|probability|base[- ]rate|calibration|calibrate|resolve|score|brier|log score|update|evidence)\b/i
 const BRACKET_PASTE_ON = '\x1b[?2004h'
 const BRACKET_PASTE_OFF = '\x1b[?2004l'
 const MAX_HEIGHT_CACHE_BUCKETS = 12
@@ -108,7 +108,7 @@ export function useMainApp(gw: GatewayClient) {
   const [voiceRecordKey, setVoiceRecordKey] = useState<ParsedVoiceRecordKey>(DEFAULT_VOICE_RECORD_KEY)
   const [sessionStartedAt, setSessionStartedAt] = useState(() => Date.now())
   const [turnStartedAt, setTurnStartedAt] = useState<null | number>(null)
-  const [goodVibesTick, setGoodVibesTick] = useState(0)
+  const [forecastPulseTick, setForecastPulseTick] = useState(0)
   const [bellOnComplete, setBellOnComplete] = useState(false)
 
   const ui = useStore($uiState)
@@ -335,9 +335,9 @@ export function useMainApp(gw: GatewayClient) {
     [sys]
   )
 
-  const maybeGoodVibes = useCallback((text: string) => {
-    if (GOOD_VIBES_RE.test(text)) {
-      setGoodVibesTick(v => v + 1)
+  const maybeForecastPulse = useCallback((text: string) => {
+    if (FORECAST_PULSE_RE.test(text)) {
+      setForecastPulseTick(v => v + 1)
     }
   }, [])
 
@@ -507,7 +507,7 @@ export function useMainApp(gw: GatewayClient) {
     composerRefs,
     composerState,
     gw,
-    maybeGoodVibes,
+    maybeForecastPulse,
     setLastUserMsg,
     slashRef,
     submitRef,
@@ -820,7 +820,7 @@ export function useMainApp(gw: GatewayClient) {
   const appStatus = useMemo(
     () => ({
       cwdLabel: fmtCwdBranch(cwd, gitBranch),
-      goodVibesTick,
+      forecastPulseTick,
       sessionStartedAt: ui.sid ? sessionStartedAt : null,
       showStickyPrompt: !!stickyPrompt,
       statusColor: statusColorOf(ui.status, ui.theme.color),
@@ -833,7 +833,7 @@ export function useMainApp(gw: GatewayClient) {
     [
       cwd,
       gitBranch,
-      goodVibesTick,
+      forecastPulseTick,
       sessionStartedAt,
       stickyPrompt,
       turnStartedAt,
