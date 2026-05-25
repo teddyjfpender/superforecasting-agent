@@ -889,10 +889,11 @@ async def search_sessions(q: str = "", limit: int = 20):
 def _normalize_config_for_web(config: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize config for the web UI.
 
-    Hermes supports ``model`` as either a bare string (``"anthropic/claude-sonnet-4"``)
-    or a dict (``{default: ..., provider: ..., base_url: ...}``).  The schema is built
-    from DEFAULT_CONFIG where ``model`` is a string, but user configs often have the
-    dict form.  Normalize to the string form so the frontend schema matches.
+    The inherited runtime accepts ``model`` as either a bare string
+    (``"anthropic/claude-sonnet-4"``) or a dict
+    (``{default: ..., provider: ..., base_url: ...}``). The schema is built from
+    DEFAULT_CONFIG where ``model`` is a string, but user configs often have the
+    dict form. Normalize to the string form so the frontend schema matches.
 
     Also surfaces ``model_context_length`` as a top-level field so the web UI can
     display and edit it.  A value of 0 means "auto-detect".

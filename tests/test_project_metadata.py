@@ -3038,6 +3038,8 @@ def test_support_error_copy_is_forecast_native():
     assert "re-run hermes" not in relaunch
     assert "Hermes wire shape" not in hooks
     assert "Install Hermes inside WSL2" not in web_server
+    assert "Hermes supports ``model``" not in web_server
+    assert "The inherited runtime accepts ``model``" in web_server
     assert "rely on Hermes' lazy-install" not in auth
     assert "Close Hermes Desktop" not in main
     assert "No Hermes-owned PATH entries" not in uninstall
