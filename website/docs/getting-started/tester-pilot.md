@@ -18,7 +18,7 @@ Good tester domains:
 - questions with clear resolution criteria and plausible evidence updates during the pilot
 - at least one short-horizon question that can resolve during or shortly after the pilot
 
-Avoid claiming the system is better than Metaculus, markets, or human superforecasters during the pilot. The readiness gate should keep reporting evidence gaps until enough live scored forecasts and held-out agent-protocol backtests exist.
+Avoid claiming the system is better than Metaculus, markets, or human superforecasters during the pilot. The readiness gate should keep reporting evidence gaps until enough live scored forecasts, held-out agent-protocol backtests, and external resolved-question corpus coverage exist.
 
 ## Operator Setup
 
@@ -67,7 +67,7 @@ It should also report local source-adapter and benchmark counts, an agent-protoc
 [forecast-smoke] readiness_verdict: insufficient_live_evidence
 ```
 
-That verdict is expected. It means the product is correctly refusing to infer live forecasting superiority from smoke or replay evidence.
+That verdict is expected. It means the product is correctly refusing to infer live forecasting superiority from smoke or replay evidence, including local fixtures that do not satisfy the external-corpus gate.
 
 ## Tester Workflow
 

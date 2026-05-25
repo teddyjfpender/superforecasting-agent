@@ -27,6 +27,12 @@ A captured passing run from the fork snapshot is checked in at
 reference for the markers a tester should see; generated ids and temporary
 ledger paths will differ.
 
+The smoke ledger should keep `readiness_verdict` at
+`insufficient_live_evidence`. Current smoke runs intentionally report three
+readiness gaps: live score volume, agent-protocol replay volume, and external
+resolved-question corpus coverage. That is the expected non-claim state for a
+local acceptance test.
+
 ## Keep The Smoke Ledger
 
 By default the script uses a temporary ledger and removes it. Keep the database when you want to inspect the records:
