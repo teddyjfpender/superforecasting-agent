@@ -38,7 +38,6 @@ async def test_enrich_message_with_transcription_surfaces_path_when_stt_disabled
 
     runner = GatewayRunner.__new__(GatewayRunner)
     runner.config = GatewayConfig(stt_enabled=False)
-    runner._has_setup_skill = lambda: True  # Should NOT be consulted in disabled branch.
 
     with patch(
         "tools.transcription_tools.transcribe_audio",
@@ -108,7 +107,6 @@ async def test_prepare_inbound_message_text_transcribes_queued_voice_event():
     runner.adapters = {}
     runner._model = "test-model"
     runner._base_url = ""
-    runner._has_setup_skill = lambda: False
 
     source = SessionSource(
         platform=Platform.TELEGRAM,

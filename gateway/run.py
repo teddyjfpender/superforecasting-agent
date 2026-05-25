@@ -1830,18 +1830,6 @@ class GatewayRunner:
             "for container-local paths like '/workspace/...' or '/output/...'."
         )
 
-
-
-    # -- Setup skill availability ----------------------------------------
-
-    def _has_setup_skill(self) -> bool:
-        """Check if the hermes-agent-setup skill is installed."""
-        try:
-            from tools.skill_manager_tool import _find_skill
-            return _find_skill("hermes-agent-setup") is not None
-        except Exception:
-            return False
-
     # -- Voice mode persistence ------------------------------------------
 
     _VOICE_MODE_PATH = _hermes_home / "gateway_voice_mode.json"
@@ -7815,8 +7803,7 @@ class GatewayRunner:
                                 "and set `stt.enabled: true` in config.yaml, "
                                 "then /restart the gateway."
                             )
-                            if self._has_setup_skill():
-                                _stt_msg += "\n\nFor full setup instructions, type: `/skill hermes-agent-setup`"
+                            _stt_msg += "\n\nFor full setup instructions, run `superforecasting-agent setup` on the gateway host."
                             await _stt_adapter.send(
                                 source.chat_id,
                                 _stt_msg,
@@ -14471,12 +14458,11 @@ class GatewayRunner:
                             "A direct message has already been sent to the user "
                             "with setup instructions."
                         )
-                        if self._has_setup_skill():
-                            _no_stt_note += (
-                                " You have a skill called hermes-agent-setup "
-                                "that can help users configure Superforecasting Agent features "
-                                "including voice, tools, and more."
-                            )
+                        _no_stt_note += (
+                            " The local setup wizard `superforecasting-agent setup` "
+                            "can help users configure Superforecasting Agent features "
+                            "including voice, tools, and more."
+                        )
                         _no_stt_note += "]"
                         enriched_parts.append(_no_stt_note)
                     else:

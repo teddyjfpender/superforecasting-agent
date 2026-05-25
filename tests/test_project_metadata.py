@@ -2278,9 +2278,13 @@ def test_gateway_runtime_copy_is_forecast_native():
     assert "fresh forecast session with no prior context" in text
     assert "compress the forecast transcript" in text
     assert "one gateway, many parallel forecast chats" in text
+    assert "For full setup instructions, run `superforecasting-agent setup` on the gateway host." in text
+    assert "local setup wizard `superforecasting-agent setup`" in text
     assert "bot interface and send any message there" not in text
     assert "Ask the bot owner to run" not in text
     assert "`hermes pairing approve" not in text
+    assert "hermes-agent-setup" not in text
+    assert "/skill hermes-agent-setup" not in text
     assert "Hi~" not in text
     assert "Too many pairing requests right now~" not in text
     assert "compress the conversation" not in text
