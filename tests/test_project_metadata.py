@@ -29,6 +29,24 @@ def _load_setuptools_find():
     return tool["setuptools"]["packages"]["find"]
 
 
+def test_top_level_scheduled_routines_note_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    old_note = root / "hermes-already-has-routines.md"
+    note = root / "forecasting-scheduled-routines.md"
+    text = note.read_text(encoding="utf-8")
+
+    assert not old_note.exists()
+    assert text.startswith("# Scheduled Forecasting Routines")
+    assert "superforecasting-agent schedule add" in text
+    assert "superforecasting-agent watch add" in text
+    assert "superforecasting-agent readiness --require-evidence" in text
+    assert "not the same thing as proving live\nsuperforecasting performance" in text
+    assert "--source-url" not in text
+    assert "Hermes Agent Has Had" not in text
+    assert "hermes cron create" not in text
+    assert "Full automation templates gallery" not in text
+
+
 def test_matrix_extra_not_in_all():
     """The [matrix] extra pulls `mautrix[encryption]` -> `python-olm`,
     which has Linux-only wheels and no native build path on Windows or
@@ -470,6 +488,14 @@ def test_logging_module_copy_is_forecast_native():
     assert "hermes logs --component" not in text
 
 
+def test_constants_module_home_override_docs_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "hermes_constants.py").read_text(encoding="utf-8")
+
+    assert "context-local agent home override" in text
+    assert "context-local Hermes home override" not in text
+
+
 def test_session_state_module_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "hermes_state.py").read_text(encoding="utf-8")
@@ -539,6 +565,7 @@ def test_windows_stdio_path_repair_prefers_forecast_native_dirs():
 
 def test_install_helpers_use_forecast_native_visible_copy():
     root = Path(__file__).resolve().parents[1]
+    constraints_termux = (root / "constraints-termux.txt").read_text(encoding="utf-8")
     install_ps1 = (root / "scripts" / "install.ps1").read_text(encoding="utf-8")
     install_sh = (root / "scripts" / "install.sh").read_text(encoding="utf-8")
     install_cmd = (root / "scripts" / "install.cmd").read_text(encoding="utf-8")
@@ -573,6 +600,8 @@ def test_install_helpers_use_forecast_native_visible_copy():
     assert "Hermes Agent Setup Script" not in setup_sh
     assert "Hermes Agent Setup" not in setup_sh
     assert "Hermes Agent — ensure ~/.local/bin is on PATH" not in setup_sh
+    assert "dependency constraints for Superforecasting Agent" in constraints_termux
+    assert "dependency constraints for Hermes Agent" not in constraints_termux
 
     assert "SUPERFORECASTING_AGENT_HOME" in node_bootstrap
     assert "SUPERFORECASTING_AGENT_NODE_MIN_VERSION" in node_bootstrap
