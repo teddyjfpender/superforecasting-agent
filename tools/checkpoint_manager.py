@@ -13,10 +13,10 @@ controlled by the ``checkpoints`` config flag or ``--checkpoints`` CLI flag.
 Storage layout (single shared store, git objects deduplicated across projects)
 -----------------------------------------------------------------------------
 
-    ~/.hermes/checkpoints/
+    <active-agent-home>/checkpoints/
         store/                          — single bare-ish git repo
             HEAD, config, objects/      — standard git internals (shared)
-            refs/hermes/<hash16>        — per-project branch tip
+            refs/hermes/<hash16>        — inherited per-project branch tip
             indexes/<hash16>            — per-project git index
             projects/<hash16>.json      — {workdir, created_at, last_touch}
             info/exclude                — default excludes (shared)
@@ -70,7 +70,7 @@ CHECKPOINT_BASE = get_hermes_home() / "checkpoints"
 
 # Single shared store directory under CHECKPOINT_BASE.
 _STORE_DIRNAME = "store"
-_REFS_PREFIX = "refs/hermes"
+_REFS_PREFIX = "refs/hermes"  # inherited storage namespace; keep for compatibility
 _INDEXES_DIRNAME = "indexes"
 _PROJECTS_DIRNAME = "projects"
 _LEGACY_PREFIX = "legacy-"
@@ -360,7 +360,7 @@ def _migrate_legacy_store(base: Path) -> Optional[Path]:
     Rather than delete the old data (users might want to recover), rename
     everything except our own v2 entries into ``legacy-<timestamp>/``.  The
     legacy dir is subject to the same retention sweep and can be manually
-    cleared with ``hermes checkpoints clear-legacy``.
+    cleared with ``superforecasting-agent checkpoints clear-legacy``.
 
     Returns the legacy-archive path, or None if nothing to migrate.
     """
@@ -394,7 +394,7 @@ def _migrate_legacy_store(base: Path) -> Optional[Path]:
     if legacy_root is not None:
         logger.info(
             "Migrated pre-v2 checkpoint repos to %s. "
-            "Clear with `hermes checkpoints clear-legacy` when safe.",
+            "Clear with `superforecasting-agent checkpoints clear-legacy` when safe.",
             legacy_root,
         )
     return legacy_root

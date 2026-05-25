@@ -1208,6 +1208,48 @@ def test_tool_runtime_docstrings_are_forecast_native():
     assert "When hermes-agent runs" not in text
 
 
+def test_provider_extension_docstrings_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        "agent/browser_provider.py",
+        "agent/image_gen_provider.py",
+        "agent/video_gen_provider.py",
+        "agent/web_search_provider.py",
+        "agent/image_gen_registry.py",
+        "agent/video_gen_registry.py",
+        "agent/web_search_registry.py",
+        "agent/memory_provider.py",
+        "agent/curator.py",
+        "tools/website_policy.py",
+        "tools/checkpoint_manager.py",
+    ]
+    text = "\n".join(
+        (root / rel_path).read_text(encoding="utf-8") for rel_path in checked_paths
+    )
+    normalized = re.sub(r"\s+", " ", text)
+
+    assert "active agent-home ``plugins/browser/<name>/``" in text
+    assert "active agent-home ``plugins/image_gen/<name>/``" in text
+    assert "active agent-home ``plugins/video_gen/<name>/``" in text
+    assert "active agent-home ``plugins/web/<name>/``" in text
+    assert "superforecasting-agent tools" in text
+    assert "superforecasting-agent memory setup" in text
+    assert "superforecasting-agent model" in text
+    assert "active agent-home directory path" in text
+    assert "active agent-home config.yaml" in normalized
+    assert "<active-agent-home>/checkpoints/" in text
+    assert "inherited storage namespace" in text
+    assert "superforecasting-agent checkpoints clear-legacy" in text
+
+    assert "or ``~/.hermes/plugins" not in text
+    assert "``hermes tools``" not in text
+    assert "`hermes model`" not in text
+    assert "``hermes model``" not in text
+    assert "hermes memory setup" not in text
+    assert "hermes checkpoints clear-legacy" not in text
+    assert "~/.hermes/config.yaml" not in text
+
+
 def test_profile_runtime_exclusions_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "hermes_cli" / "profiles.py").read_text(encoding="utf-8")

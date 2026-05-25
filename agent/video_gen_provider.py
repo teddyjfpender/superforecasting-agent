@@ -8,8 +8,9 @@ instances via ``PluginContext.register_video_gen_provider()``; the active one
 ``video_generate`` tool call.
 
 Providers live in ``<repo>/plugins/video_gen/<name>/`` (built-in, auto-loaded
-as ``kind: backend``) or ``~/.hermes/plugins/video_gen/<name>/`` (user, opt-in
-via ``plugins.enabled``).
+as ``kind: backend``) or the active agent-home ``plugins/video_gen/<name>/``
+tree (user, opt-in via ``plugins.enabled``). Legacy
+``~/.hermes/plugins/video_gen/`` remains readable during migration.
 
 Mirrors the ``image_gen`` provider design (``agent/image_gen_provider.py``) so
 the two surfaces stay learnable together.
@@ -89,7 +90,7 @@ class VideoGenProvider(abc.ABC):
 
     @property
     def display_name(self) -> str:
-        """Human-readable label shown in ``hermes tools``. Defaults to ``name.title()``."""
+        """Human-readable label shown in ``superforecasting-agent tools``."""
         return self.name.title()
 
     def is_available(self) -> bool:
@@ -101,7 +102,7 @@ class VideoGenProvider(abc.ABC):
         return True
 
     def list_models(self) -> List[Dict[str, Any]]:
-        """Return catalog entries for ``hermes tools`` model picker.
+        """Return catalog entries for ``superforecasting-agent tools`` picker.
 
         Each entry represents a **model family** that supports text-to-video
         and/or image-to-video routing internally::
@@ -120,7 +121,7 @@ class VideoGenProvider(abc.ABC):
         return []
 
     def get_setup_schema(self) -> Dict[str, Any]:
-        """Return provider metadata for the ``hermes tools`` picker."""
+        """Return provider metadata for the ``superforecasting-agent tools`` picker."""
         return {
             "name": self.display_name,
             "badge": "",
@@ -151,8 +152,8 @@ class VideoGenProvider(abc.ABC):
                 "max_reference_images": 7,
             }
 
-        Used by the tool layer for soft validation and by ``hermes tools``
-        for the picker. Default: text-only.
+        Used by the tool layer for soft validation and by
+        ``superforecasting-agent tools`` for the picker. Default: text-only.
         """
         return {
             "modalities": ["text"],
