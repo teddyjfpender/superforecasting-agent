@@ -641,7 +641,7 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 | `SUPERFORECASTING_AGENT_DASHBOARD` / `FORECAST_DASHBOARD` / `HERMES_DASHBOARD` | Docker entrypoint toggle for launching the dashboard as a side process before the foreground command. |
 | `SUPERFORECASTING_AGENT_DASHBOARD_HOST` / `FORECAST_DASHBOARD_HOST` / `HERMES_DASHBOARD_HOST` | Docker entrypoint dashboard bind address. Defaults to `0.0.0.0` inside containers. |
 | `SUPERFORECASTING_AGENT_DASHBOARD_PORT` / `FORECAST_DASHBOARD_PORT` / `HERMES_DASHBOARD_PORT` | Docker entrypoint dashboard HTTP port. Defaults to `9119`. |
-| `SUPERFORECASTING_AGENT_DASHBOARD_TUI` / `FORECAST_DASHBOARD_TUI` / `HERMES_DASHBOARD_TUI` | Expose the in-browser Chat tab backed by the embedded TUI when running the dashboard. The forecast dashboard remains the primary surface. |
+| `SUPERFORECASTING_AGENT_DASHBOARD_TUI` / `FORECAST_DASHBOARD_TUI` / `HERMES_DASHBOARD_TUI` | Expose the in-browser Forecast Chat tab backed by the embedded TUI when running the dashboard. The forecast dashboard remains the primary surface. |
 | `SUPERFORECASTING_AGENT_WEB_DIST` / `FORECAST_WEB_DIST` / `HERMES_WEB_DIST` | Override the dashboard web build directory served by `superforecasting-agent dashboard`. |
 | `SUPERFORECASTING_AGENT_UID` / `FORECAST_UID` / `HERMES_UID` | Docker entrypoint UID to assign to the unprivileged runtime user before dropping root. Use this when the mounted forecast home is owned by a host UID other than `10000`. |
 | `SUPERFORECASTING_AGENT_GID` / `FORECAST_GID` / `HERMES_GID` | Docker entrypoint GID to assign to the unprivileged runtime group before dropping root. |

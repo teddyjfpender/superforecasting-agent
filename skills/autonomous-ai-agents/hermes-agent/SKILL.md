@@ -265,7 +265,7 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 /busy [sub]          Control what Enter does while Superforecasting Agent is working (CLI)
                      (subcommands: queue, steer, interrupt, status)
 /indicator [style]   Pick the TUI busy-indicator style (CLI)
-                     (styles: kaomoji, emoji, unicode, ascii)
+                     (styles: markers, emoji, unicode, ascii)
 /footer [on|off]     Toggle gateway runtime-metadata footer on final replies
 /skin [name]         Change theme (CLI)
 /statusbar           Toggle status bar (CLI)
