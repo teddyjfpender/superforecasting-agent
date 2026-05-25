@@ -1049,6 +1049,7 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
         root / "plugins" / "platforms" / "line" / "adapter.py",
         root / "plugins" / "platforms" / "irc" / "adapter.py",
         root / "plugins" / "platforms" / "google_chat" / "adapter.py",
+        root / "plugins" / "platforms" / "google_chat" / "oauth.py",
         root / "plugins" / "platforms" / "simplex" / "adapter.py",
         root / "plugins" / "memory" / "honcho" / "README.md",
         root / "plugins" / "memory" / "honcho" / "client.py",
@@ -1073,6 +1074,9 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
     assert "independent Superforecasting Agent" in thread_ready_lines
     assert "Hermes session" not in text
     assert "Hermes needs your input" not in text
+    assert "Hermes is thinking" not in text
+    assert "hermes-agent[google_chat]" not in text
+    assert "Google Chat user-OAuth setup for Hermes" not in text
     assert "Hermes Agent CLI launcher" not in text
     assert "Hermes agent bot" not in text
     assert "ephemeral Hermes session" not in text
