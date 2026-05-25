@@ -5489,6 +5489,7 @@ def _cmd_base_rate(args: argparse.Namespace) -> None:
         "base_rate": args.base_rate,
     }
     if not any(value is not None for value in add_fields.values()):
+        question = ledger.get_question(args.id)
         rows = ledger.list_reference_classes(args.id)
         print(f"reference_classes: {len(rows)}")
         if rows:
@@ -5498,6 +5499,23 @@ def _cmd_base_rate(args: argparse.Namespace) -> None:
                     f"{row['id']:<14} {row['status']:<11} "
                     f"{_format_optional_float(row['base_rate']):<9} {row['name']}"
                 )
+        domain = question.domain or "the question domain"
+        topic = question.topics[0] if question.topics else "the main outcome driver"
+        horizon = question.close_time or question.resolution_time or "the target horizon"
+        suggested_name = f"Comparable {domain} cases for {topic}"
+        suggested_inclusion = (
+            f"Resolved {domain} cases with {question.outcome_space.type} outcomes, "
+            f"similar resolution criteria, and timing comparable to {horizon}."
+        )
+        suggested_exclusion = (
+            "Exclude cases with materially different base populations, outcome definitions, "
+            "or resolution sources."
+        )
+        print("suggested_reference_class:")
+        print(f"name: {suggested_name}")
+        print(f"inclusion_criteria: {suggested_inclusion}")
+        print(f"exclusion_criteria: {suggested_exclusion}")
+        print("estimate_next: compute numerator/denominator from timestamped evidence before saving a base rate")
         print(
             "add: forecast base-rate "
             f"{args.id} --name <name> --inclusion-criteria <criteria> --base-rate <p>"

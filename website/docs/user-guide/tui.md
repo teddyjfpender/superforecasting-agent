@@ -114,7 +114,7 @@ Common desk workflows have direct slash commands:
 | `/ingest` | Stage a URL or file as a forecast candidate |
 | `/evidence` | Add or inspect timestamped evidence |
 | `/research` | Collect evidence without moving probability |
-| `/base-rate` | Add or inspect reference-class work |
+| `/base-rate` | Propose, add, or inspect reference-class work |
 | `/model-run` | Inspect or record a quantitative forecast model run |
 | `/trend-model` | Record a deterministic trend projection model run |
 | `/update-forecast` | Inspect or append a probability snapshot |

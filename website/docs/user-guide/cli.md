@@ -245,7 +245,7 @@ Useful shortcuts:
 |---|---|
 | `/forecast` | Forecast dashboard or raw forecast subcommand |
 | `/new-forecast` | Create a scoreable question |
-| `/base-rate` | Add or inspect reference-class work |
+| `/base-rate` | Propose, add, or inspect reference-class work |
 | `/update-forecast` | Inspect or save a probability update |
 | `/resolve` | Resolve a question |
 | `/score` | Score a resolved question |

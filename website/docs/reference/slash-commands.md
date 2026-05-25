@@ -25,7 +25,7 @@ The forecast desk is the primary product surface. Use these before reaching for 
 | `/ingest [args]` | TUI | Stage a URL or file as a forecast candidate. Equivalent to `forecast ingest ...`. |
 | `/evidence [args]` | TUI | Add or inspect timestamped evidence. Equivalent to `forecast evidence ...`. |
 | `/research [args]` | TUI | Collect evidence or source notes without moving probability. Equivalent to `forecast research ...`. |
-| `/base-rate [args]` | TUI | Add or inspect reference-class/base-rate work. |
+| `/base-rate [args]` | TUI | Propose, add, or inspect reference-class/base-rate work. |
 | `/model-run [args]` | TUI | Inspect or record a quantitative model run. Equivalent to `forecast model ...`. |
 | `/trend-model [args]` | TUI | Record a deterministic trend projection model run. Equivalent to `forecast model ... --type trend_projection`. |
 | `/update-forecast [args]` | TUI | Inspect or append a probability update to a forecast. |
