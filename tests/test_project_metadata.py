@@ -1043,9 +1043,18 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
         encoding="utf-8"
     )
     main_help = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
+    classic_cli = (root / "cli.py").read_text(encoding="utf-8")
 
     combined = "\n".join(
-        [commands, plugins_cmd, skills_config, oneshot, parser_help, main_help]
+        [
+            commands,
+            plugins_cmd,
+            skills_config,
+            oneshot,
+            parser_help,
+            main_help,
+            classic_cli,
+        ]
     )
 
     assert "superforecasting-agent skills list" in commands
@@ -1055,10 +1064,17 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
     assert "configured for \"cli\" in `superforecasting-agent tools`" in oneshot
     assert "Model / provider selection mirrors `superforecasting-agent chat`" in oneshot
     assert "superforecasting-agent -z" in oneshot
-    assert 'superforecasting-agent -z "Hello"' in parser_help
-    assert 'superforecasting-agent -z "query"' in main_help
+    assert 'superforecasting-agent -z "Summarize evidence for fq_123"' in parser_help
+    assert 'superforecasting-agent -z "Summarize evidence for fq_123"' in main_help
     assert "superforecasting-agent chat --worktree" in parser_help
+    assert "superforecasting-agent --toolsets forecast-desk" in parser_help
+    assert "python cli.py --toolsets forecast-desk" in classic_cli
     assert 'superforecasting-agent chat -q "Hello"' not in parser_help
+    assert 'superforecasting-agent -z "Hello"' not in parser_help
+    assert 'superforecasting-agent -z "query"' not in main_help
+    assert "python cli.py --toolsets web,terminal" not in classic_cli
+    assert "python cli.py --skills forecasting,research" not in classic_cli
+    assert "superforecasting-agent -s forecasting,research" not in parser_help
     assert "superforecasting-agent -w                     Start in isolated git worktree" not in parser_help
 
     assert "``hermes skills list``" not in combined

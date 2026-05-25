@@ -41,7 +41,8 @@ _EPILOGUE = """
 Examples:
     superforecasting-agent                        Open the forecast desk dashboard
     superforecasting-agent forecast new "Will X happen?" --resolution-criteria "Resolved by ..."
-    superforecasting-agent -z "Hello"             Forecast-scoped one-shot mode
+    superforecasting-agent -z "Summarize evidence for fq_123"
+                                                 Forecast-scoped one-shot mode
     superforecasting-agent -c                     Resume the most recent session
     superforecasting-agent -c "my project"        Resume a session by name (latest in lineage)
     superforecasting-agent --resume <session_id>  Resume a specific session by ID
@@ -59,7 +60,7 @@ Examples:
     superforecasting-agent config edit            Edit config in $EDITOR
     superforecasting-agent config set model gpt-4 Set a config value
     superforecasting-agent gateway                Run messaging gateway
-    superforecasting-agent -s forecasting,research
+    superforecasting-agent --toolsets forecast-desk
     superforecasting-agent chat --worktree        Start forecast support in an isolated git worktree
     superforecasting-agent gateway install        Install gateway background service
     superforecasting-agent sessions list          List past sessions

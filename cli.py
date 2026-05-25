@@ -6,9 +6,9 @@ A command-line interface for Superforecasting Agent.
 Features terminal branding, interactive REPL, toolset selection, and rich formatting.
 
 Usage:
-    python cli.py                          # Start interactive mode with all tools
-    python cli.py --toolsets web,terminal  # Start with specific toolsets
-    python cli.py --skills forecasting,research
+    python cli.py                          # Start forecast-scoped interactive mode
+    python cli.py --toolsets forecast-desk # Start with the forecast-desk preset
+    python cli.py --toolsets forecasting,file,web
     python cli.py --list-tools             # List available tools and exit
 """
 
@@ -5941,7 +5941,7 @@ class HermesCLI:
         print("  (*) = currently enabled")
         print()
         print("  Tip: Use 'all' or '*' to enable all toolsets")
-        print("  Example: python cli.py --toolsets web,terminal")
+        print("  Example: python cli.py --toolsets forecast-desk")
         print()
     
     def _handle_profile_command(self):

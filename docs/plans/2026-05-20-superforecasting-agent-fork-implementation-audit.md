@@ -1814,7 +1814,7 @@ fork objective still needs the remaining work listed below.
 | FR-11 | Covered | Calibration reports by bucket, domain, horizon, origin, and question type |
 | FR-12 | Covered | Structured postmortems for resolved forecasts |
 | FR-13 | Covered | Forecasting workflows are first-class CLI commands under `forecast` |
-| FR-14 | Covered/Partial | CLI/chat prompts, command-reference chat examples, and default toolsets are forecast-scoped; inherited general surfaces still require broader demotion |
+| FR-14 | Covered/Partial | CLI/chat prompts, top-level parser examples, command-reference chat examples, classic CLI usage examples, and default toolsets are forecast-scoped; inherited general surfaces still require broader demotion |
 | FR-15 | Covered | Forecast packet import/export and generic ingest/export support |
 | FR-16 | Covered | Extension/source adapter surfaces support future data, market, model, and tournament integrations |
 | FR-17 | Covered | Snapshot provenance stores model, prompt, protocol, and toolset versions |
