@@ -1069,12 +1069,15 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
     assert "superforecasting-agent chat --worktree" in parser_help
     assert "superforecasting-agent --toolsets forecast-desk" in parser_help
     assert "python cli.py --toolsets forecast-desk" in classic_cli
+    assert "Use 'forecast-desk' for normal forecasting work" in classic_cli
+    assert "only for inherited compatibility/debugging" in classic_cli
     assert 'superforecasting-agent chat -q "Hello"' not in parser_help
     assert 'superforecasting-agent -z "Hello"' not in parser_help
     assert 'superforecasting-agent -z "query"' not in main_help
     assert "python cli.py --toolsets web,terminal" not in classic_cli
     assert "python cli.py --skills forecasting,research" not in classic_cli
     assert "superforecasting-agent -s forecasting,research" not in parser_help
+    assert "Tip: Use 'all' or '*' to enable all toolsets" not in classic_cli
     assert "superforecasting-agent -w                     Start in isolated git worktree" not in parser_help
 
     assert "``hermes skills list``" not in combined

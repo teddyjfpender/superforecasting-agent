@@ -5940,7 +5940,8 @@ class HermesCLI:
         print()
         print("  (*) = currently enabled")
         print()
-        print("  Tip: Use 'all' or '*' to enable all toolsets")
+        print("  Tip: Use 'forecast-desk' for normal forecasting work")
+        print("       Use 'all' or '*' only for inherited compatibility/debugging")
         print("  Example: python cli.py --toolsets forecast-desk")
         print()
     
