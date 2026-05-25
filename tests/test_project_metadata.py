@@ -1072,6 +1072,7 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
     assert "agent session ID" in text
     assert "independent Superforecasting Agent" in thread_ready_lines
     assert "Hermes session" not in text
+    assert "Hermes needs your input" not in text
     assert "Hermes Agent CLI launcher" not in text
     assert "Hermes agent bot" not in text
     assert "ephemeral Hermes session" not in text
