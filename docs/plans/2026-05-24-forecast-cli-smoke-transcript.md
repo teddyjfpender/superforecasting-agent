@@ -17,20 +17,21 @@ python3 scripts/forecast_smoke_test.py
 ## Observed Output
 
 ```text
-[forecast-smoke] ledger: /var/folders/5x/7hym3yzn05z0k_z3g1m17brc0000gn/T/superforecasting-agent-smoke-nojij7zk/forecasting-smoke.db
+[forecast-smoke] snapshot: 7f2c9361d329 (main)
+[forecast-smoke] ledger: /var/folders/5x/7hym3yzn05z0k_z3g1m17brc0000gn/T/superforecasting-agent-smoke-o2mtxn37/forecasting-smoke.db
 [forecast-smoke] source_adapters: 52
 [forecast-smoke] benchmark_datasets: 4
-[forecast-smoke] question_id: fq_0eb3e7d2e4db
-[forecast-smoke] evidence_id: ev_c9268e621ebe
-[forecast-smoke] reference_class_id: rc_d875c84c165c
-[forecast-smoke] model_run_id: mr_94d690989610
-[forecast-smoke] scheduled_self_check_question_id: fq_a31b64baec65
+[forecast-smoke] question_id: fq_f086257a11f5
+[forecast-smoke] evidence_id: ev_527f682d2deb
+[forecast-smoke] reference_class_id: rc_696860aac0a5
+[forecast-smoke] model_run_id: mr_eaa444fbce18
+[forecast-smoke] scheduled_self_check_question_id: fq_7b6b1aba0cf9
 [forecast-smoke] pilot_cohort_dry_run_questions: 1
 [forecast-smoke] pilot_cohort_example_questions: 5
 [forecast-smoke] pilot_report_checks: 7/7
 [forecast-smoke] pilot_aggregate_live_scores: 1
-[forecast-smoke] backtest_run_id: bt_1ec4669a80f4
-[forecast-smoke] agent_protocol_backtest_run_id: bt_f287f82f3260
+[forecast-smoke] backtest_run_id: bt_1c31a7d21dfb
+[forecast-smoke] agent_protocol_backtest_run_id: bt_3f0ee1ffc9ea
 [forecast-smoke] performance_runs: 2
 [forecast-smoke] readiness_verdict: insufficient_live_evidence
 [forecast-smoke] readiness_gaps: 3
@@ -41,6 +42,7 @@ python3 scripts/forecast_smoke_test.py
 ## Ledger Effects Verified
 
 - Creates an isolated SQLite forecast ledger.
+- Prints the source snapshot used for the tester evidence bundle.
 - Discovers source adapters and packaged benchmark datasets.
 - Creates a scoreable forecast question.
 - Adds evidence, a reference class, and a model run.
