@@ -1316,6 +1316,7 @@ Latest verified result:
 - Evidence URL/stance alias pass: `forecast evidence add` now accepts `--source-url` as an alias for `--url`, and evidence/research `--stance` accepts human synonyms such as `supports`, `opposes`, and `neutral` while normalizing to the ledger's `increases`/`decreases`/`mixed`/`context` vocabulary.
 - Citation-policy inspection pass: `forecast update <id> --require-citations` now behaves as a read-only command-shape reminder, printing the current forecast and the cited save-command shape without writing a snapshot; saved updates still enforce citation refs before ledger writes.
 - TUI focused-action command-shape pass: Forecast Desk focused actions now show executable update/base-rate/resolve commands with required rationale, base-rate criteria/probability, and `--resolution-source`; slash help/docs describe model and update shortcuts as inspect-or-record workflows to match the CLI lifecycle, and slash-routing tests no longer encode incomplete base-rate write commands.
+- Generic ingest source-evidence regression pass: the generic URL ingest flow now has focused coverage that a confirmed candidate preserves the original URL as an evidence item, retains the ingest-candidate provenance metadata, and archives a source snapshot, keeping US-002's original-source evidence requirement explicit in the test suite.
 
 ## Prompt-To-Artifact Checklist
 

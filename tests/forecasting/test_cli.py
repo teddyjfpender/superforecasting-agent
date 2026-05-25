@@ -1387,23 +1387,32 @@ def test_forecast_cli_ingest_extracts_url_html_candidate(tmp_path, capsys):
     try:
         url = f"http://127.0.0.1:{server.server_address[1]}/forecast.html"
         _run(parser, ["forecast", "--db", db, "ingest", url])
+
+        output = capsys.readouterr().out
+        candidate_id = re.search(r"created ingest candidate (ic_[a-f0-9]+)", output).group(1)
+
+        _run(parser, ["forecast", "--db", db, "ingest", "--show", candidate_id])
+        show_output = capsys.readouterr().out
+        assert "Will URL HTML ingest work?" in show_output
+        assert "Resolved yes if URL HTML ingest extracts metadata." in show_output
+
+        _run(parser, ["forecast", "--db", db, "ingest", "--confirm", candidate_id, "--domain", "web"])
+        question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
     finally:
         server.shutdown()
         server.server_close()
 
-    output = capsys.readouterr().out
-    candidate_id = re.search(r"created ingest candidate (ic_[a-f0-9]+)", output).group(1)
-
-    _run(parser, ["forecast", "--db", db, "ingest", "--show", candidate_id])
-    show_output = capsys.readouterr().out
-    assert "Will URL HTML ingest work?" in show_output
-    assert "Resolved yes if URL HTML ingest extracts metadata." in show_output
-
-    _run(parser, ["forecast", "--db", db, "ingest", "--confirm", candidate_id, "--domain", "web"])
-    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
-    question = ForecastLedger(db_path).get_question(question_id)
+    ledger = ForecastLedger(db_path)
+    evidence = ledger.list_evidence(question_id)
+    source_evidence = [item for item in evidence if item.claim == "Original ingest source for forecast question."]
+    question = ledger.get_question(question_id)
     assert question.title == "Will URL HTML ingest work?"
     assert question.close_time == "2026-06-01T00:00:00Z"
+    assert len(source_evidence) == 1
+    assert source_evidence[0].source_url == url
+    assert source_evidence[0].source_type == "url"
+    assert source_evidence[0].metadata["ingest_candidate_id"] == candidate_id
+    assert source_evidence[0].metadata["source_snapshot"]["url"] == url
 
 
 def test_forecast_cli_market_import_extracts_local_csv_baseline(tmp_path, capsys):
