@@ -428,7 +428,7 @@ export const fr: Translations = {
   },
   achievements: {
     hero: {
-      kicker: "Agentic Gamerscore",
+      kicker: "Forecast Desk Progress",
       title: "Superforecasting Agent Achievements",
       subtitle:
         "Badges Superforecasting Agent à collectionner, gagnés à partir de l'historique réel des sessions. Les succès connus non terminés sont affichés comme Découverts ; les succès secrets restent cachés jusqu'à l'apparition du premier comportement correspondant.",

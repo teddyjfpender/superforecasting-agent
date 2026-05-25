@@ -429,7 +429,7 @@ export const ga: Translations = {
 
   achievements: {
     hero: {
-      kicker: "Agentic Gamerscore",
+      kicker: "Forecast Desk Progress",
       title: "Superforecasting Agent Achievements",
       subtitle:
         "Suaitheantais Superforecasting Agent inbhailithe a thuilltear ó stair fíor-session. Léirítear gnóthachtálacha aitheanta neamhchríochnaithe mar Discovered; fanann gnóthachtálacha Secret i bhfolach go dtí go bhfeictear an chéad iompar comhoiriúnach.",

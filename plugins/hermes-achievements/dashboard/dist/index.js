@@ -448,9 +448,9 @@
     return React.createElement("div", { className: "ha-page ha-page-loading" },
       React.createElement("section", { className: "ha-hero ha-loading-hero" },
         React.createElement("div", null,
-          React.createElement("div", { className: "ha-kicker" }, tx(t, "hero.kicker", "Agentic Gamerscore")),
-          React.createElement("h1", null, tx(t, "hero.title", "Hermes Achievements")),
-          React.createElement("p", null, tx(t, "hero.scan_subtitle", "Scanning Hermes session history. First scan can take 5–10 seconds on large histories."))
+          React.createElement("div", { className: "ha-kicker" }, tx(t, "hero.kicker", "Forecast Desk Progress")),
+          React.createElement("h1", null, tx(t, "hero.title", "Forecast Achievements")),
+          React.createElement("p", null, tx(t, "hero.scan_subtitle", "Scanning local agent session history. First scan can take 5–10 seconds on large histories."))
         ),
         React.createElement("div", { className: "ha-scan-status", role: "status", "aria-live": "polite" },
           React.createElement("span", { className: "ha-scan-pulse", "aria-hidden": "true" }),
@@ -671,9 +671,9 @@
     return React.createElement("div", { className: "ha-page" },
       React.createElement("section", { className: "ha-hero" },
         React.createElement("div", null,
-          React.createElement("div", { className: "ha-kicker" }, tx(t, "hero.kicker", "Agentic Gamerscore")),
-          React.createElement("h1", null, tx(t, "hero.title", "Hermes Achievements")),
-          React.createElement("p", null, tx(t, "hero.subtitle", "Collectible Hermes badges earned from real session history. Known unfinished achievements are shown as Discovered; Secret achievements stay hidden until the first matching behavior appears."))
+          React.createElement("div", { className: "ha-kicker" }, tx(t, "hero.kicker", "Forecast Desk Progress")),
+          React.createElement("h1", null, tx(t, "hero.title", "Forecast Achievements")),
+          React.createElement("p", null, tx(t, "hero.subtitle", "Collectible agent badges earned from real session history. Known unfinished achievements are shown as Discovered; Secret achievements stay hidden until the first matching behavior appears."))
         ),
         React.createElement(C.Button, { onClick: load, className: "ha-refresh" }, tx(t, "actions.rescan", "Rescan"))
       ),

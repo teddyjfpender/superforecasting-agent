@@ -429,7 +429,7 @@ export const pt: Translations = {
 
   achievements: {
     hero: {
-      kicker: "Agentic Gamerscore",
+      kicker: "Forecast Desk Progress",
       title: "Superforecasting Agent Achievements",
       subtitle:
         "Distintivos colecionáveis do Superforecasting Agent obtidos a partir do histórico real de sessões. Conquistas conhecidas mas ainda não obtidas aparecem como Descobertas; conquistas Secretas permanecem ocultas até surgir o primeiro comportamento correspondente.",

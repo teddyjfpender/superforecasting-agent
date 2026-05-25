@@ -429,7 +429,7 @@ export const zhHant: Translations = {
 
   achievements: {
     hero: {
-      kicker: "Agentic Gamerscore",
+      kicker: "Forecast Desk Progress",
       title: "Superforecasting Agent Achievements",
       subtitle:
         "從真實工作階段歷史中獲得的 Superforecasting Agent 可收集徽章。已知尚未達成的成就會顯示為「已發現」；秘密成就在首次出現相符行為之前保持隱藏。",

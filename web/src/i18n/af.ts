@@ -429,7 +429,7 @@ export const af: Translations = {
 
   achievements: {
     hero: {
-      kicker: "Agentic Gamerscore",
+      kicker: "Forecast Desk Progress",
       title: "Superforecasting Agent Achievements",
       subtitle:
         "Versamelbare Superforecasting Agent-kentekens wat verdien word uit werklike sessiegeskiedenis. Bekende, onvoltooide prestasies word as Ontdek vertoon; Geheime prestasies bly verborge totdat die eerste ooreenstemmende gedrag verskyn.",

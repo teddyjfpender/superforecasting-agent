@@ -429,7 +429,7 @@ export const tr: Translations = {
 
   achievements: {
     hero: {
-      kicker: "Agentic Gamerscore",
+      kicker: "Forecast Desk Progress",
       title: "Superforecasting Agent Achievements",
       subtitle:
         "Gerçek oturum geçmişinden kazanılan, koleksiyonluk Superforecasting Agent rozetleri. Bilinen ama henüz tamamlanmamış başarılar Keşfedildi olarak gösterilir; Gizli başarılar ilk eşleşen davranış görünene kadar saklı kalır.",

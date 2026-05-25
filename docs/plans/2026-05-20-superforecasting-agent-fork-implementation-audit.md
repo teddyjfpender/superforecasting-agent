@@ -1330,6 +1330,7 @@ Latest verified result:
 - Legacy setup script identity pass: `setup-hermes.sh` keeps its compatibility filename while the visible setup banner, file header, and shell PATH helper now say Superforecasting Agent instead of Hermes Agent, under project-metadata coverage.
 - Tester smoke transcript refresh: `python3 scripts/forecast_smoke_test.py` passed at snapshot `9f33b14d299f` with 52 source adapters, 4 benchmark datasets, pilot-report checks `7/7`, two performance runs, pilot bundle export included, and the expected `insufficient_live_evidence` readiness guard; the smoke transcript now reflects the latest tester branch commit.
 - Scheduled routines cleanup pass: the stale top-level Hermes automation marketing note was replaced with `forecasting-scheduled-routines.md`, a forecast-native guide to scheduled self-checks, watched sources, resolution/learning checks, and readiness accounting; Termux constraints and home-override docstrings now use Superforecasting Agent or neutral agent-home language while preserving compatibility function names.
+- Achievements plugin visible-copy pass: the bundled `hermes-achievements` compatibility plugin now presents Forecast Achievements, Runtime Infrastructure categories, local agent-session history, fork-native dashboard/home paths, localized Forecast Desk Progress copy, and neutral achievement names/descriptions instead of Hermes-native/gamified assistant copy while preserving stable plugin and achievement ids.
 
 ## Prompt-To-Artifact Checklist
 

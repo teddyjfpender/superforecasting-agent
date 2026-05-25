@@ -429,7 +429,7 @@ export const ja: Translations = {
 
   achievements: {
     hero: {
-      kicker: "Agentic Gamerscore",
+      kicker: "Forecast Desk Progress",
       title: "Superforecasting Agent Achievements",
       subtitle:
         "実際のセッション履歴から獲得できる Superforecasting Agent のコレクタブル バッジです。既知の未達成の実績は「Discovered」として表示され、Secret 実績は最初の該当する挙動が検出されるまで非表示のままです。",

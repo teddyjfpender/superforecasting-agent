@@ -429,7 +429,7 @@ export const hu: Translations = {
 
   achievements: {
     hero: {
-      kicker: "Agentic Gamerscore",
+      kicker: "Forecast Desk Progress",
       title: "Superforecasting Agent Achievements",
       subtitle:
         "Gyűjthető Superforecasting Agent-jelvények, valós munkamenet-előzmények alapján szerezve. Az ismert, de még nem szerzett teljesítmények Felfedezettként jelennek meg; a Titkos teljesítmények rejtve maradnak az első egyező viselkedésig.",

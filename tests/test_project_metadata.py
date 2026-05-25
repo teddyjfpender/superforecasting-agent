@@ -155,6 +155,40 @@ def test_dashboard_plugin_manifests_and_assets_are_packaged():
     assert "*/dashboard/dist/**/*" in plugin_data
 
 
+def test_achievements_plugin_visible_copy_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    plugin_dir = root / "plugins" / "hermes-achievements"
+    paths = [
+        plugin_dir / "README.md",
+        plugin_dir / "dashboard" / "manifest.json",
+        plugin_dir / "dashboard" / "plugin_api.py",
+        plugin_dir / "dashboard" / "dist" / "index.js",
+        plugin_dir / "docs" / "achievements-performance-spec.md",
+        plugin_dir / "docs" / "achievements-performance-implementation-plan.md",
+        plugin_dir / "docs" / "achievements-performance-implementation-spec.md",
+    ]
+    paths.extend(sorted((root / "web" / "src" / "i18n").glob("*.ts")))
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "Forecast Achievements" in text
+    assert "Runtime Infrastructure" in text
+    assert "distinct agent tools used in one session" in text
+    assert "$SUPERFORECASTING_AGENT_HOME/plugins/hermes-achievements" in text
+    assert "superforecasting-agent dashboard" in text
+    assert "Hermes Native" not in text
+    assert "Hermes tools" not in text
+    assert "Hermes skills" not in text
+    assert "Hermes workflows" not in text
+    assert "Hermes history" not in text
+    assert "Hermes sessions" not in text
+    assert "Hermes Achievements" not in text
+    assert "Hermes Dashboard" not in text
+    assert "Plugin Goblin" not in text
+    assert "Agentic Gamerscore" not in text
+    assert "hermes dashboard" not in text
+    assert "~/.hermes/plugins/hermes-achievements" not in text
+
+
 def test_forecast_native_package_namespace_is_exposed():
     project = _load_project()
     scripts = project["scripts"]
