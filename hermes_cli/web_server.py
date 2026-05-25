@@ -57,8 +57,9 @@ try:
     from pydantic import BaseModel
 except ImportError:
     # First try lazy-installing the dashboard extras. Only the user actually
-    # running `hermes dashboard` needs fastapi+uvicorn; lazy install keeps
-    # them out of every other install path. After install, re-import.
+    # running `superforecasting-agent dashboard` needs fastapi+uvicorn; lazy
+    # install keeps them out of every other install path. After install,
+    # re-import.
     try:
         from tools.lazy_deps import ensure as _lazy_ensure
         _lazy_ensure("tool.dashboard", prompt=False)
@@ -106,8 +107,9 @@ _SESSION_HEADER_NAMES = (
     "X-Hermes-Session-Token",
 )
 
-# In-browser Chat tab (/chat, /api/pty, ...). Off unless ``hermes dashboard --tui``
-# or a dashboard TUI env alias is set. Set from :func:`start_server`.
+# In-browser Chat tab (/chat, /api/pty, ...). Off unless
+# ``superforecasting-agent dashboard --tui`` or a dashboard TUI env alias is
+# set. Set from :func:`start_server`.
 _DASHBOARD_EMBEDDED_CHAT_ENABLED = False
 
 # Simple rate limiter for the reveal endpoint
@@ -3326,9 +3328,9 @@ async def get_models_analytics(days: int = 30):
 # ---------------------------------------------------------------------------
 # /api/pty — PTY-over-WebSocket bridge for the dashboard Forecast Desk tab.
 #
-# The endpoint spawns the same ``hermes --tui`` binary the CLI uses, behind
-# a POSIX pseudo-terminal, and forwards bytes + resize escapes across a
-# WebSocket.  The browser renders the ANSI through xterm.js (see
+# The endpoint spawns the same ``superforecasting-agent --tui`` binary the CLI
+# uses, behind a POSIX pseudo-terminal, and forwards bytes + resize escapes
+# across a WebSocket. The browser renders the ANSI through xterm.js (see
 # web/src/pages/ChatPage.tsx, retained as the compatibility route host).
 #
 # Auth: ``?token=<session_token>`` query param (browsers can't set
@@ -3426,9 +3428,9 @@ def _resolve_chat_argv(
 ) -> tuple[list[str], Optional[str], Optional[dict]]:
     """Resolve the argv + cwd + env for the chat PTY.
 
-    Default: whatever ``hermes --tui`` would run.  Tests monkeypatch this
-    function to inject a tiny fake command (``cat``, ``sh -c 'printf …'``)
-    so nothing has to build Node or the TUI bundle.
+    Default: whatever ``superforecasting-agent --tui`` would run. Tests
+    monkeypatch this function to inject a tiny fake command (``cat``,
+    ``sh -c 'printf …'``) so nothing has to build Node or the TUI bundle.
 
     Session resume is propagated via fork-native TUI env aliases, with the
     legacy ``HERMES_TUI_RESUME`` name preserved for compatibility. Appending

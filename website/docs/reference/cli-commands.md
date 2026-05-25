@@ -276,7 +276,7 @@ Options:
 | `--all` | On `start` / `restart` / `stop`: act on **every profile's** gateway, not just the active profile home. Useful if you run multiple profiles side-by-side and want to restart them all after `superforecasting-agent update`. |
 
 :::tip WSL users
-Use `superforecasting-agent gateway run` instead of `superforecasting-agent gateway start` — WSL's systemd support is unreliable. Wrap it in tmux for persistence: `tmux new -s forecast-gateway 'superforecasting-agent gateway run'`. See [WSL FAQ](/docs/reference/faq#wsl-gateway-keeps-disconnecting-or-hermes-gateway-start-fails) for details.
+Use `superforecasting-agent gateway run` instead of `superforecasting-agent gateway start` — WSL's systemd support is unreliable. Wrap it in tmux for persistence: `tmux new -s forecast-gateway 'superforecasting-agent gateway run'`. See [WSL FAQ](./faq#wsl-gateway-keeps-disconnecting-or-superforecasting-agent-gateway-start-fails) for details.
 :::
 
 ## `superforecasting-agent lsp`

@@ -18,11 +18,11 @@ export interface MemoryMonitorOptions {
 
 const GB = 1024 ** 3
 
-// Deferred @hermes/ink import: loading `@hermes/ink` at module top-level
+// Deferred @hermes/ink import: loading the inherited Ink package at module top-level
 // pulls the full ~414KB Ink bundle (React, renderer, components, hooks) onto
 // the critical path before the Python gateway can even be spawned. That
 // serialised roughly 150ms of Node work in front of gw.start() on every
-// cold `hermes --tui` launch.
+// cold `superforecasting-agent --tui` launch.
 //
 // evictInkCaches only runs inside `tick()`, which fires on a 10s timer and
 // only when heap pressure crosses the high-water mark — by then Ink has

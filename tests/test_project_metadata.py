@@ -1413,6 +1413,25 @@ def test_tool_runtime_docstrings_are_forecast_native():
     assert "When hermes-agent runs" not in text
 
 
+def test_dashboard_tui_comments_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        "hermes_cli/pty_bridge.py",
+        "hermes_cli/web_server.py",
+        "hermes_cli/uninstall.py",
+        "ui-tui/src/app/createGatewayEventHandler.ts",
+        "ui-tui/src/lib/memoryMonitor.ts",
+    ]
+    text = "\n".join(
+        (root / rel_path).read_text(encoding="utf-8") for rel_path in checked_paths
+    )
+
+    assert "superforecasting-agent --tui" in text
+    assert "superforecasting-agent dashboard" in text
+    assert "hermes --tui" not in text
+    assert "hermes dashboard" not in text
+
+
 def test_provider_extension_docstrings_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
@@ -3709,6 +3728,37 @@ def test_nix_package_aliases_are_forecast_native():
     assert "services.hermes-agent.extraPlugins" not in plugin_docs
     assert "services.hermes-agent = {" not in plugin_docs
     assert "legacy alias" in plugin_docs
+    plugin_authoring = (
+        root / "website" / "docs" / "guides"
+        / "build-a-superforecasting-agent-plugin.md"
+    ).read_text(encoding="utf-8")
+    assert "services.superforecasting-agent.extraPythonPackages" in plugin_authoring
+    assert "services.superforecasting-agent.extraPlugins" in plugin_authoring
+    assert "services.hermes-agent.extraPythonPackages" not in plugin_authoring
+    assert "services.hermes-agent.extraPlugins" not in plugin_authoring
+    assert "legacy alias" in plugin_authoring
+    cli_commands = (
+        root / "website" / "docs" / "reference" / "cli-commands.md"
+    ).read_text(encoding="utf-8")
+    faq = (
+        root / "website" / "docs" / "reference" / "faq.md"
+    ).read_text(encoding="utf-8")
+    assert (
+        "wsl-gateway-keeps-disconnecting-or-superforecasting-agent-gateway-start-fails"
+        in cli_commands
+    )
+    assert (
+        "./faq#wsl-gateway-keeps-disconnecting-or-superforecasting-agent-gateway-start-fails"
+        in cli_commands
+    )
+    assert "/docs/reference/faq#wsl-gateway-keeps-disconnecting-or-" not in cli_commands
+    assert (
+        "{#wsl-gateway-keeps-disconnecting-or-superforecasting-agent-gateway-start-fails}"
+        in faq
+    )
+    assert "wsl-gateway-keeps-disconnecting-or-hermes-gateway-start-fails" not in (
+        cli_commands + faq
+    )
 
 
 def test_tester_pilot_docs_cover_scheduled_learning_loop():

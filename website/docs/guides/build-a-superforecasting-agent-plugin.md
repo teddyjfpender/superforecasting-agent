@@ -1081,12 +1081,12 @@ pip install hermes-plugin-calculator
 
 NixOS users can install your plugin declaratively if you provide a `pyproject.toml` with entry points:
 
-The `services.hermes-agent` option name below is the inherited Nix service key. It remains the compatibility integration point for this fork.
+Use the fork-native `services.superforecasting-agent` module options for new deployments. Existing `services.hermes-agent` configs still work as a legacy alias during migration.
 
 **Entry-point plugins** (recommended for distribution):
 ```nix
 # User's configuration.nix
-services.hermes-agent.extraPythonPackages = [
+services.superforecasting-agent.extraPythonPackages = [
   (pkgs.python312Packages.buildPythonPackage {
     pname = "my-plugin";
     version = "1.0.0";
@@ -1104,7 +1104,7 @@ services.hermes-agent.extraPythonPackages = [
 
 **Directory plugins** (no `pyproject.toml` needed):
 ```nix
-services.hermes-agent.extraPlugins = [
+services.superforecasting-agent.extraPlugins = [
   (pkgs.fetchFromGitHub {
     owner = "you";
     repo = "forecast-my-plugin";
