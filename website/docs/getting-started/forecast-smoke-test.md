@@ -53,6 +53,7 @@ Inspect it with normal forecast commands:
 python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db status
 python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db list
 python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db calibration --by-origin --all
+python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db doctor
 python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db pilot-report
 python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db pilot-bundle --include-export
 python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db performance --last 3
@@ -73,6 +74,7 @@ python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db readi
 - Creates a second stale active forecast and verifies self-check alerts.
 - Adds and runs a scheduled self-check with learning flags enabled.
 - Validates a prospective live `forecast pilot-cohort --dry-run --json` manifest.
+- Verifies `forecast doctor --json --require-pilot-ready` reports tester handoff state while preserving live-superiority readiness gaps.
 - Verifies `forecast pilot-report --json` reports complete pilot-exit artifacts and no unresolved learned-error review debt for the smoke ledger.
 - Verifies `forecast pilot-bundle --include-export` emits one tester handoff packet with pilot-report, readiness, and export data.
 - Exports the smoke ledger and verifies `forecast pilot-aggregate` counts the live score from the export packet.

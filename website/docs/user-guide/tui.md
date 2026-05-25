@@ -131,6 +131,8 @@ Common desk workflows have direct slash commands:
 | `/schedule` | List or manage scheduled self-checks |
 | `/self-check` | Create review alerts for stale or changed forecasts |
 | `/performance` | Summarize recent backtest performance |
+| `/readiness` | Inspect claim-readiness gaps |
+| `/doctor` | Run combined pilot/readiness/operator checks |
 | `/pilot-report` | Check tester pilot artifact coverage |
 | `/pilot-cohort` | Seed prospective live pilot questions |
 | `/pilot-aggregate` | Aggregate tester export packets |

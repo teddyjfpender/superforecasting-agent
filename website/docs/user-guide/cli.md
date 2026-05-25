@@ -147,6 +147,8 @@ forecast performance --last 5 --json
 forecast readiness
 forecast readiness --json
 forecast readiness --require-evidence
+forecast doctor
+forecast doctor --require-pilot-ready
 forecast pilot-report
 forecast pilot-report --json
 cp examples/forecasting/live-cohort.example.csv live-cohort.csv
@@ -177,6 +179,9 @@ claim gaps without scraping terminal text. `forecast readiness` exposes the same
 claim-readiness state directly for cron jobs and evaluation harnesses, prints
 next actions for missing evidence such as live scoring or agent-protocol replay,
 and `forecast readiness --require-evidence` exits nonzero when readiness gaps remain.
+`forecast doctor` is the one-shot operator gate: it combines `forecast status`,
+`forecast pilot-report`, scheduled self-check run history, and readiness gaps, and
+can fail with `--require-pilot-ready` or `--require-readiness` for release scripts.
 `forecast pilot-report` is narrower: it checks whether a tester ledger has the
 workflow artifacts needed for a small pilot, including questions, updates,
 timestamped evidence, structured-source evidence, scheduled self-checks, scores,
@@ -268,6 +273,7 @@ Useful shortcuts:
 | `/schedule` | Inspect scheduled self-checks |
 | `/performance` | Summarize recent backtests |
 | `/readiness` | Inspect claim-readiness gaps |
+| `/doctor` | Run combined pilot/readiness/operator checks |
 | `/pilot-cohort` | Seed prospective live pilot questions |
 
 The TUI status bar also shows forecast desk health such as active forecast count, open alerts, review queue size, open and stale reference-class count, calibration sample count, and learned lesson count when available.

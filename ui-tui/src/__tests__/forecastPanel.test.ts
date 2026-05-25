@@ -194,6 +194,7 @@ describe('forecast desk panel helpers', () => {
         '/forecast errors',
         '/forecast schedule run --due --auto-score --auto-postmortem',
         '/forecast schedule history --json',
+        '/forecast doctor',
         '/forecast pilot-report',
         '/forecast pilot-cohort examples/forecasting/live-cohort.example.csv --dry-run --json',
         '/forecast pilot-bundle --include-export --output .pilot/tester-bundle.json',

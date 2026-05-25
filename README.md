@@ -68,6 +68,7 @@ hermes              # also opens the forecast desk during the fork transition
 
 ```bash
 forecast status     # Show the forecasting desk state
+forecast doctor     # One-shot pilot/readiness/operator gate
 python3 scripts/forecast_smoke_test.py  # Local tester-readiness smoke test
 forecast new "Will X happen?" --resolution-criteria "Resolved by ..."
 forecast list       # List standing forecasts
@@ -88,6 +89,7 @@ forecast performance --last 5 --json
 forecast readiness
 forecast readiness --json
 forecast readiness --require-evidence
+forecast doctor --require-pilot-ready
 forecast pilot-report
 forecast pilot-report --json
 cp examples/forecasting/live-cohort.example.csv live-cohort.csv
@@ -140,6 +142,7 @@ The forecast ledger is the product surface. Generic chat and messaging gateways 
 | Capture agent protocol outputs | `forecast backtest cases.json --probability-source agent-protocol --agent-output-jsonl captured.jsonl` |
 | Review backtest performance | `forecast performance --last 5` or `forecast performance --last 5 --json` |
 | Check claim readiness | `forecast readiness`, `forecast readiness --json`, or `forecast readiness --require-evidence` |
+| Run operator doctor | `forecast doctor`, `forecast doctor --json`, or `forecast doctor --require-pilot-ready` combines status, pilot checks, scheduled run history, and readiness gaps |
 | Check tester pilot coverage | `forecast pilot-report` or `forecast pilot-report --json` checks schedules and scheduled self-check run history |
 | Seed a live tester cohort | `cp examples/forecasting/live-cohort.example.csv live-cohort.csv` then `forecast pilot-cohort live-cohort.csv --dry-run --json` |
 | Bundle tester evidence | `forecast pilot-bundle --include-export --output .pilot/tester-bundle.json` includes pilot checks, readiness, export data, and scheduled self-check run history |
@@ -148,7 +151,7 @@ The forecast ledger is the product surface. Generic chat and messaging gateways 
 | Watch sources | `forecast watch add --question <id> rss:<feed-or-file>`, `gdelt:<query>`, `fivethirtyeight:<dataset-or-url>`, `fred:<series-id>`, `eia:<series-id-or-api-url>`, `treasury:<dataset-path-or-api-url>`, `bls:<series-id>`, `worldbank:<country>/<indicator>`, `imf:<indicator>/<country>`, `census:<dataset-path?get=...&for=...>`, `socrata:<domain>/<dataset-id>`, `ckan:<domain>/<query>`, `stooq:<symbol-or-csv-url>`, `yahoo:<symbol>`, `coingecko:<coin-id>`, `sec:<cik>`, `secfacts:<cik>/<concept>`, `arxiv:<query>`, `openalex:<query>`, `crossref:<query-or-DOI>`, `wikipedia:<query>`, `wikipediapageviews:<project>/<article>`, `github:<owner/repo>`, `githubrepo:<owner/repo>`, `githubissues:<owner/repo>`, `githubcommits:<owner/repo>`, `githubactions:<owner/repo>`, `pypi:<package>`, `npm:<package>`, `hackernews:<query>`, `reddit:<query>`, `bluesky:<query>`, `mastodon:<tag-or-instance/tag>`, `reliefweb:<query>`, `federalregister:<query>`, `courtlistener:<query>`, `nvd:<keyword-or-CVE>`, `cisakev:<keyword-or-CVE-or-all>`, `clinicaltrials:<query-or-NCT-id>`, `openfda:<query-or-application-number>`, `pubmed:<query-or-PMID>`, `whogho:<indicator-code>`, `fema:<state|disaster-number|query>`, `openmeteo:<lat,lon>`, `airquality:<lat,lon>`, `weatherhistory:<lat,lon>?start=<date>&end=<date>`, `usgs:<query>`, `eonet:<query-or-category>`, `nws:<area-or-point-or-query>`, `owid:<slug>`, or market-prior watches such as `manifold:<slug>`, `metaculus:<id>`, `polymarket:<slug>`, and `kalshi:<ticker>` |
 | Schedule scoped learning | `forecast schedule add --domain macro --topic inflation --cadence 1d --next-run-at <time> --stale-days 3 --confidence-below 0.5 --large-delta-threshold 0.2 --auto-score --auto-postmortem`, `forecast schedule run --due`, and `forecast schedule history --json`; recurring error profiles create active-forecast review alerts without changing probabilities |
 
-In the TUI, `/forecast` opens the structured forecast desk panel; `/new-forecast`, `/base-rate`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/review`, `/alerts`, `/self-check`, `/calibration`, `/lessons`, `/errors`, `/backtest`, `/schedule`, `/performance`, `/readiness`, `/pilot-report`, `/pilot-cohort`, and `/pilot-aggregate` jump to common desk workflows; and `/forecast <subcommand>` remains available for the full forecast CLI.
+In the TUI, `/forecast` opens the structured forecast desk panel; `/new-forecast`, `/base-rate`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/review`, `/alerts`, `/self-check`, `/calibration`, `/lessons`, `/errors`, `/backtest`, `/schedule`, `/performance`, `/readiness`, `/doctor`, `/pilot-report`, `/pilot-cohort`, and `/pilot-aggregate` jump to common desk workflows; and `/forecast <subcommand>` remains available for the full forecast CLI.
 
 Runtime state defaults to `~/.superforecasting-agent` for new installs. Existing `~/.hermes` homes are reused during the fork transition, and deployments can set `SUPERFORECASTING_AGENT_HOME` or `FORECAST_HOME` instead of the legacy `HERMES_HOME` variable.
 Dashboard and Docker overrides also accept `SUPERFORECASTING_AGENT_DASHBOARD`, `SUPERFORECASTING_AGENT_DASHBOARD_HOST`, `SUPERFORECASTING_AGENT_DASHBOARD_PORT`, `SUPERFORECASTING_AGENT_WEB_DIST`, `SUPERFORECASTING_AGENT_DASHBOARD_TUI`, `SUPERFORECASTING_AGENT_UID`, `SUPERFORECASTING_AGENT_GID`, and `SUPERFORECASTING_AGENT_AUTH_JSON_BOOTSTRAP`, plus the shorter `FORECAST_*` aliases, ahead of the legacy Hermes environment names.

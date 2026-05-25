@@ -266,6 +266,8 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'performance --last 3' })
     expect(createSlashHandler(ctx)('/readiness --json')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'readiness --json' })
+    expect(createSlashHandler(ctx)('/doctor --json')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'doctor --json' })
     expect(createSlashHandler(ctx)('/pilot-report --json')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'pilot-report --json' })
     expect(createSlashHandler(ctx)('/pilot')).toBe(true)

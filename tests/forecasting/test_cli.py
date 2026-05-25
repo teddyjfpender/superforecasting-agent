@@ -9502,6 +9502,121 @@ def test_forecast_cli_pilot_report_outputs_exit_checks(tmp_path, capsys):
     assert payload["next_actions"]
 
 
+def test_forecast_cli_doctor_combines_pilot_and_readiness_gates(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    ledger = ForecastLedger(db)
+    question = ledger.create_question(
+        title="Will doctor see tester handoff state?",
+        resolution_criteria="Resolved yes if doctor combines pilot and readiness checks.",
+        domain="software",
+    )
+    evidence = ledger.add_evidence(
+        question_id=question.id,
+        source_or_note="GitHub Actions run completed.",
+        source_type="github_actions",
+        available_at="2026-05-23T00:00:00Z",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.64,
+        rationale="Structured software evidence supports yes.",
+        evidence_refs=[evidence.id],
+    )
+    ledger.schedule_review(
+        scope_type="question",
+        scope_ref=question.id,
+        cadence="1d",
+        next_run_at="2026-05-24T09:00:00Z",
+    )
+    ledger.run_due_scheduled_reviews(now="2026-05-24T10:00:00Z")
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "doctor",
+            "--min-questions",
+            "1",
+            "--min-structured-source-questions",
+            "1",
+            "--min-scores",
+            "0",
+            "--min-postmortems",
+            "0",
+            "--min-scheduled-reviews",
+            "1",
+            "--min-scheduled-review-runs",
+            "1",
+        ],
+    )
+    output = capsys.readouterr().out
+
+    assert "doctor tester_handoff_ready_live_claim_unproven:" in output
+    assert "pilot 9/9 checks" in output
+    assert "readiness insufficient_live_evidence" in output
+    assert "schedule_runs=1" in output
+    assert "claim_live_superforecasting: False" in output
+    assert "readiness_gaps:" in output
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "doctor",
+            "--min-questions",
+            "1",
+            "--min-structured-source-questions",
+            "1",
+            "--min-scores",
+            "0",
+            "--min-postmortems",
+            "0",
+            "--min-scheduled-reviews",
+            "1",
+            "--min-scheduled-review-runs",
+            "1",
+            "--require-pilot-ready",
+            "--json",
+        ],
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["doctor_status"] == "tester_handoff_ready_live_claim_unproven"
+    assert payload["tester_handoff_ready"] is True
+    assert payload["pilot_report"]["summary"]["scheduled_review_run_count"] == 1
+    assert payload["readiness"]["evidence_status"]["can_claim_live_superforecasting"] is False
+
+    with pytest.raises(SystemExit) as exc:
+        _run(
+            parser,
+            [
+                "forecast",
+                "--db",
+                db,
+                "doctor",
+                "--min-questions",
+                "1",
+                "--min-structured-source-questions",
+                "1",
+                "--min-scores",
+                "0",
+                "--min-postmortems",
+                "0",
+                "--min-scheduled-reviews",
+                "1",
+                "--min-scheduled-review-runs",
+                "1",
+                "--require-readiness",
+            ],
+        )
+    assert exc.value.code == 1
+
+
 def test_forecast_cli_pilot_cohort_seeds_live_questions(tmp_path, capsys):
     parser = _parser()
     db_path = tmp_path / "forecasting.db"

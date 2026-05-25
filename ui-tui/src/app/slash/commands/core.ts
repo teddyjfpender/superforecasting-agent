@@ -133,6 +133,7 @@ export const coreCommands: SlashCommand[] = [
             ['/calibration [args]', 'show calibration analytics; defaults to --by-origin'],
             ['/performance [args]', 'show recent backtest performance'],
             ['/readiness [args]', 'show forecast evidence claim gaps'],
+            ['/doctor [args]', 'run combined pilot/readiness/operator checks'],
             ['/pilot-report [args]', 'check tester pilot artifact coverage'],
             ['/pilot-cohort [manifest...]', 'seed prospective live pilot questions'],
             ['/pilot-bundle [args]', 'bundle tester handoff evidence'],
@@ -375,6 +376,12 @@ export const coreCommands: SlashCommand[] = [
     help: 'show forecast evidence claim gaps',
     name: 'readiness',
     run: (arg, ctx) => runForecastCommand(ctx, `readiness ${arg.trim()}`.trim())
+  },
+
+  {
+    help: 'run combined pilot/readiness/operator checks',
+    name: 'doctor',
+    run: (arg, ctx) => runForecastCommand(ctx, `doctor ${arg.trim()}`.trim())
   },
 
   {

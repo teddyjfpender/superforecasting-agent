@@ -226,6 +226,10 @@ const PILOT_HANDOFFS = [
     label: "Report",
   },
   {
+    command: "forecast doctor --json --require-pilot-ready",
+    label: "Doctor",
+  },
+  {
     command: "forecast pilot-bundle --include-export --output .pilot/tester-bundle.json",
     label: "Bundle",
   },

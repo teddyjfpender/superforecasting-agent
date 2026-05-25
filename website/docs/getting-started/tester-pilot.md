@@ -195,6 +195,7 @@ forecast --db "$FORECAST_DB" list
 forecast --db "$FORECAST_DB" review --stale
 forecast --db "$FORECAST_DB" alerts
 forecast --db "$FORECAST_DB" calibration --by-origin --all
+forecast --db "$FORECAST_DB" doctor
 forecast --db "$FORECAST_DB" readiness
 forecast --db "$FORECAST_DB" pilot-report
 ```

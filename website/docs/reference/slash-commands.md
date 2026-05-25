@@ -10,7 +10,7 @@ Superforecasting Agent has three slash-command surfaces:
 
 - **Classic interactive CLI slash commands** — dispatched by `cli.py`, with autocomplete from the central `COMMAND_REGISTRY` in `hermes_cli/commands.py`
 - **Messaging slash commands** — dispatched by `gateway/run.py`, with help text and platform menus generated from the registry
-- **TUI forecast shortcuts** — local Ink handlers for forecast-desk workflows such as `/forecast`, `/sources`, `/new-forecast`, `/ingest`, `/evidence`, `/research`, `/base-rate`, `/model-run`, `/trend-model`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/review`, `/alerts`, `/calibration`, `/lessons`, `/backtest`, `/schedule`, `/performance`, `/pilot-report`, `/pilot-cohort`, and `/pilot-aggregate`
+- **TUI forecast shortcuts** — local Ink handlers for forecast-desk workflows such as `/forecast`, `/sources`, `/new-forecast`, `/ingest`, `/evidence`, `/research`, `/base-rate`, `/model-run`, `/trend-model`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/review`, `/alerts`, `/calibration`, `/lessons`, `/backtest`, `/schedule`, `/performance`, `/readiness`, `/doctor`, `/pilot-report`, `/pilot-cohort`, and `/pilot-aggregate`
 
 Installed skills are also exposed as dynamic slash commands on the classic CLI and messaging surfaces. That includes bundled skills like `/plan`, which opens plan mode and saves markdown plans under the workspace-local compatibility plans directory.
 
@@ -40,8 +40,11 @@ The forecast desk is the primary product surface. Use these before reaching for 
 | `/backtest [args]` | TUI | Run or inspect historical replay datasets. |
 | `/schedule [args]` | TUI | Manage scheduled self-checks. |
 | `/performance [args]` | TUI | Show recent backtest performance. |
+| `/readiness [args]` | TUI | Show live/backtest/external-corpus evidence gaps. |
+| `/doctor [args]` | TUI | Run combined pilot/readiness/operator checks. |
 | `/pilot-report [args]` | TUI | Check tester pilot artifact coverage. |
 | `/pilot-cohort [manifest...]` | TUI | Seed prospective live pilot questions. |
+| `/pilot-bundle [args]` | TUI | Bundle tester handoff evidence. |
 | `/pilot-aggregate [files...]` | TUI | Aggregate tester export packets. |
 
 ## Permissions and admin/user split

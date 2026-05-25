@@ -782,6 +782,41 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
     gaps = evidence_status.get("gaps") or []
     if not gaps:
         raise SmokeError("smoke readiness should still list evidence gaps for tester handoff")
+    doctor = _json_output(
+        _run_forecast(
+            [
+                "doctor",
+                "--min-questions",
+                "1",
+                "--min-structured-source-questions",
+                "1",
+                "--min-scores",
+                "1",
+                "--min-postmortems",
+                "1",
+                "--min-scheduled-reviews",
+                "1",
+                "--min-scheduled-review-runs",
+                "1",
+                "--min-live-scores",
+                "1",
+                "--min-agent-protocol-cases",
+                "0",
+                "--require-pilot-ready",
+                "--json",
+            ],
+            db_path=db_path,
+            repo_root=repo_root,
+            verbose=verbose,
+        ),
+        "doctor",
+    )
+    if doctor.get("doctor_status") != "tester_handoff_ready_live_claim_unproven":
+        raise SmokeError(f"doctor did not report tester handoff state:\n{json.dumps(doctor, indent=2)}")
+    if doctor.get("claim_live_superforecasting") is not False:
+        raise SmokeError("doctor should not allow a live superforecasting claim")
+    if doctor.get("pilot_report", {}).get("summary", {}).get("scheduled_review_run_count", 0) < 1:
+        raise SmokeError(f"doctor did not count scheduled self-check runs:\n{json.dumps(doctor, indent=2)}")
     pilot_bundle = _json_output(
         _run_forecast(
             [
@@ -823,6 +858,7 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
     _print_step(f"performance_runs: {performance.get('run_count')}")
     _print_step(f"readiness_verdict: {evidence_status.get('verdict')}")
     _print_step(f"readiness_gaps: {len(gaps)}")
+    _print_step(f"doctor_status: {doctor.get('doctor_status')}")
     _print_step("pilot_bundle_export_included: true")
 
 

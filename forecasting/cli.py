@@ -470,6 +470,49 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     status_parser.add_argument("--json", action="store_true", help="Emit machine-readable status JSON")
     status_parser.set_defaults(_forecast_handler=_cmd_status)
 
+    doctor_parser = forecast_sub.add_parser(
+        "doctor",
+        help="Run operational, pilot, and readiness checks",
+    )
+    doctor_parser.add_argument("--last", type=int, default=20, help="Number of recent backtest runs to inspect")
+    doctor_parser.add_argument("--dataset", help="Filter readiness to runs whose dataset contains this text")
+    doctor_parser.add_argument("--min-questions", type=int, default=3)
+    doctor_parser.add_argument("--min-structured-source-questions", type=int, default=1)
+    doctor_parser.add_argument("--min-scores", type=int, default=1)
+    doctor_parser.add_argument("--min-postmortems", type=int, default=1)
+    doctor_parser.add_argument("--min-scheduled-reviews", type=int, default=1)
+    doctor_parser.add_argument("--min-scheduled-review-runs", type=int, default=1)
+    doctor_parser.add_argument(
+        "--min-live-scores",
+        type=int,
+        default=DEFAULT_MIN_LIVE_SCORES_FOR_CLAIM,
+        help="Required resolved live scores for readiness accounting",
+    )
+    doctor_parser.add_argument(
+        "--min-agent-protocol-cases",
+        type=int,
+        default=DEFAULT_MIN_AGENT_PROTOCOL_CASES_FOR_CLAIM,
+        help="Required scored agent-protocol replay cases for readiness accounting",
+    )
+    doctor_parser.add_argument(
+        "--min-external-source-families",
+        type=int,
+        default=DEFAULT_MIN_EXTERNAL_SOURCE_FAMILIES_FOR_CLAIM,
+        help="Required distinct external resolved-question source families for readiness accounting",
+    )
+    doctor_parser.add_argument(
+        "--require-pilot-ready",
+        action="store_true",
+        help="Exit nonzero if tester pilot artifacts are incomplete",
+    )
+    doctor_parser.add_argument(
+        "--require-readiness",
+        action="store_true",
+        help="Exit nonzero if benchmark/live evidence-readiness gaps remain",
+    )
+    doctor_parser.add_argument("--json", action="store_true", help="Emit machine-readable doctor JSON")
+    doctor_parser.set_defaults(_forecast_handler=_cmd_doctor)
+
     sources_parser = forecast_sub.add_parser("sources", help="List forecast evidence source adapters")
     sources_parser.add_argument("--json", action="store_true", help="Emit machine-readable adapter guidance")
     sources_parser.set_defaults(_forecast_handler=_cmd_sources)
@@ -1775,8 +1818,7 @@ def _cmd_about(args: argparse.Namespace) -> None:
         print(f"  - {item}")
 
 
-def _cmd_status(args: argparse.Namespace) -> None:
-    ledger = _ledger(args)
+def _forecast_status_payload(ledger: ForecastLedger) -> dict[str, Any]:
     statuses = ["active", "closed", "resolved", "archived"]
     active_questions = ledger.list_questions(status="active")
     question_counts = {
@@ -1799,7 +1841,7 @@ def _cmd_status(args: argparse.Namespace) -> None:
     scores = ledger.list_scores(calibration_eligible=None, include_invalidated=True)
     calibration = ledger.calibration_summary(calibration_eligible=True)
     extensions = extension_registry.list()
-    payload = {
+    return {
         "product": PRODUCT_NAME,
         "slug": PRODUCT_SLUG,
         "ledger_path": str(ledger.db_path),
@@ -1824,6 +1866,12 @@ def _cmd_status(args: argparse.Namespace) -> None:
         "imported_benchmark_count": len(imported_benchmarks),
         "extension_count": len(extensions),
     }
+
+
+def _cmd_status(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    payload = _forecast_status_payload(ledger)
+    question_counts = payload["question_counts"]
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
         return
@@ -1858,6 +1906,127 @@ def _cmd_status(args: argparse.Namespace) -> None:
         f"imported={payload['imported_benchmark_count']}"
     )
     print(f"extensions: {payload['extension_count']}")
+
+
+def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
+    ledger = _ledger(args)
+    status = _forecast_status_payload(ledger)
+    pilot_report = ledger.pilot_report(
+        min_questions=args.min_questions,
+        min_structured_source_questions=args.min_structured_source_questions,
+        min_scores=args.min_scores,
+        min_postmortems=args.min_postmortems,
+        min_scheduled_reviews=args.min_scheduled_reviews,
+        min_scheduled_review_runs=args.min_scheduled_review_runs,
+    )
+    rows, summaries = _recent_backtest_summaries(
+        ledger,
+        last=args.last,
+        dataset=getattr(args, "dataset", None),
+    )
+    evidence_status = build_forecasting_evidence_status(
+        ledger,
+        summaries,
+        min_live_scores=max(args.min_live_scores, 0),
+        min_agent_protocol_cases=max(args.min_agent_protocol_cases, 0),
+        min_external_source_families=max(args.min_external_source_families, 0),
+    )
+    pilot_ready = pilot_report["passed_checks"] == pilot_report["total_checks"]
+    readiness_gaps = bool(evidence_status.get("gaps"))
+    if not pilot_ready:
+        doctor_status = "needs_tester_pilot_artifacts"
+    elif readiness_gaps:
+        doctor_status = "tester_handoff_ready_live_claim_unproven"
+    else:
+        doctor_status = "benchmark_evidence_ready_live_claim_unproven"
+
+    return {
+        "product": PRODUCT_NAME,
+        "generated_at": utc_now_iso(),
+        "doctor_status": doctor_status,
+        "tester_handoff_ready": pilot_ready,
+        "claim_live_superforecasting": evidence_status.get("can_claim_live_superforecasting"),
+        "status": status,
+        "pilot_report": pilot_report,
+        "readiness": {
+            "last": max(args.last, 0),
+            "dataset_filter": args.dataset,
+            "run_count": len(summaries),
+            "inspected_backtest_run_ids": [row["id"] for row in rows],
+            "evidence_status": evidence_status,
+        },
+        "required_exit_gates": {
+            "pilot_ready_required": bool(args.require_pilot_ready),
+            "readiness_required": bool(args.require_readiness),
+            "pilot_ready": pilot_ready,
+            "readiness_gaps": readiness_gaps,
+        },
+    }
+
+
+def _cmd_doctor(args: argparse.Namespace) -> None:
+    report = _build_doctor_report(args)
+    pilot_report = report["pilot_report"]
+    readiness = report["readiness"]["evidence_status"]
+    status = report["status"]
+    summary = pilot_report["summary"]
+    should_fail = (
+        args.require_pilot_ready
+        and not report["tester_handoff_ready"]
+    ) or (
+        args.require_readiness
+        and bool(readiness.get("gaps"))
+    )
+
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+        if should_fail:
+            raise SystemExit(1)
+        return
+
+    print(
+        f"doctor {report['doctor_status']}: "
+        f"pilot {pilot_report['passed_checks']}/{pilot_report['total_checks']} checks, "
+        f"readiness {readiness.get('verdict')}"
+    )
+    print(f"ledger: {status['ledger_path']}")
+    print(
+        "book: "
+        f"active={status['question_counts'].get('active', 0)} "
+        f"reviews={status['review_queue_count']} "
+        f"alerts={status['open_alert_count']} "
+        f"schedules={status['enabled_scheduled_review_count']}/{status['scheduled_review_count']} "
+        f"schedule_runs={summary.get('scheduled_review_run_count', 0)}"
+    )
+    print(
+        "learning: "
+        f"live_scores={summary['score_counts_by_origin'].get('live', 0)} "
+        f"postmortems={summary['postmortem_count']} "
+        f"lessons={status['active_calibration_lesson_count']}/{status['calibration_lesson_count']} "
+        f"mean_brier={_format_metric(status['calibration_mean_brier'])}"
+    )
+    print(f"claim_live_superforecasting: {report['claim_live_superforecasting']}")
+
+    pilot_gaps = [check for check in pilot_report["checks"] if not check["passed"]]
+    if pilot_gaps:
+        print("pilot_gaps:")
+        for check in pilot_gaps[:7]:
+            print(
+                f"  - {check['id']}: {check['observed']}/{check['required']} "
+                f"- {check['recommended_action']}"
+            )
+
+    readiness_actions = list(readiness.get("next_actions") or [])
+    if readiness_actions:
+        print("readiness_gaps:")
+        for item in readiness_actions[:7]:
+            print(f"  - {item.get('requirement_id')}: {item.get('action')}")
+
+    if not pilot_gaps and not readiness_actions:
+        print("next_actions: none")
+
+    if should_fail:
+        raise SystemExit(1)
 
 
 def _cmd_dashboard(args: argparse.Namespace) -> None:
