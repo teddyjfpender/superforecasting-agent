@@ -1575,6 +1575,31 @@ def test_provider_extension_docstrings_are_forecast_native():
     assert "~/.hermes/config.yaml" not in text
 
 
+def test_memory_provider_readmes_are_ledger_first_and_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    readmes = sorted((root / "plugins" / "memory").glob("*/README.md"))
+    text_by_path = {
+        path.relative_to(root).as_posix(): path.read_text(encoding="utf-8")
+        for path in readmes
+    }
+    combined = "\n".join(text_by_path.values())
+
+    assert readmes
+    for rel_path, text in text_by_path.items():
+        assert "Forecast ledger note: this provider is auxiliary recall." in text, rel_path
+        assert "superforecasting-agent memory setup" in text, rel_path
+
+    assert "superforecasting-agent config set memory.provider" in combined
+    assert "~/.superforecasting-agent/.env" in combined
+
+    assert "hermes memory setup" not in combined
+    assert "hermes config set memory.provider" not in combined
+    assert "~/.hermes/.env" not in combined
+    assert "When enabled, Hermes can" not in combined
+    assert "per Hermes profile" not in combined
+    assert "active Hermes profile" not in combined
+
+
 def test_setup_model_toolpicker_docs_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [

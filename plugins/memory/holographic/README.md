@@ -2,6 +2,8 @@
 
 Local SQLite fact store with FTS5 search, trust scoring, entity resolution, and HRR-based compositional retrieval.
 
+Forecast ledger note: this provider is auxiliary recall. Scoreable questions, probabilities, evidence, resolutions, postmortems, calibration lessons, and domain error profiles belong in the forecast ledger.
+
 ## Requirements
 
 None — uses SQLite (always available). NumPy optional for HRR algebra.
@@ -9,17 +11,17 @@ None — uses SQLite (always available). NumPy optional for HRR algebra.
 ## Setup
 
 ```bash
-hermes memory setup    # select "holographic"
+superforecasting-agent memory setup    # select "holographic"
 ```
 
 Or manually:
 ```bash
-hermes config set memory.provider holographic
+superforecasting-agent config set memory.provider holographic
 ```
 
 ## Config
 
-Config in `config.yaml` under `plugins.hermes-memory-store`:
+Config in `config.yaml` under the inherited `plugins.hermes-memory-store` namespace:
 
 | Key | Default | Description |
 |-----|---------|-------------|

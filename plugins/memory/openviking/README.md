@@ -2,6 +2,8 @@
 
 Context database by Volcengine (ByteDance) with filesystem-style knowledge hierarchy, tiered retrieval, and automatic memory extraction.
 
+Forecast ledger note: this provider is auxiliary recall. Scoreable questions, probabilities, evidence, resolutions, postmortems, calibration lessons, and domain error profiles belong in the forecast ledger.
+
 ## Requirements
 
 - `pip install openviking`
@@ -11,13 +13,13 @@ Context database by Volcengine (ByteDance) with filesystem-style knowledge hiera
 ## Setup
 
 ```bash
-hermes memory setup    # select "openviking"
+superforecasting-agent memory setup    # select "openviking"
 ```
 
 Or manually:
 ```bash
-hermes config set memory.provider openviking
-echo "OPENVIKING_ENDPOINT=http://localhost:1933" >> ~/.hermes/.env
+superforecasting-agent config set memory.provider openviking
+echo "OPENVIKING_ENDPOINT=http://localhost:1933" >> ~/.superforecasting-agent/.env
 ```
 
 ## Config

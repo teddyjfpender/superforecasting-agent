@@ -2,6 +2,8 @@
 
 Cloud memory API with hybrid search (Vector + BM25 + Reranking) and 7 memory types.
 
+Forecast ledger note: this provider is auxiliary recall. Scoreable questions, probabilities, evidence, resolutions, postmortems, calibration lessons, and domain error profiles belong in the forecast ledger.
+
 ## Requirements
 
 - RetainDB account ($20/month) from [retaindb.com](https://www.retaindb.com)
@@ -10,13 +12,13 @@ Cloud memory API with hybrid search (Vector + BM25 + Reranking) and 7 memory typ
 ## Setup
 
 ```bash
-hermes memory setup    # select "retaindb"
+superforecasting-agent memory setup    # select "retaindb"
 ```
 
 Or manually:
 ```bash
-hermes config set memory.provider retaindb
-echo "RETAINDB_API_KEY=your-key" >> ~/.hermes/.env
+superforecasting-agent config set memory.provider retaindb
+echo "RETAINDB_API_KEY=your-key" >> ~/.superforecasting-agent/.env
 ```
 
 ## Config

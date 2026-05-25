@@ -4,6 +4,8 @@ AI-native cross-session user modeling with multi-pass dialectic reasoning, sessi
 
 > **Honcho docs:** <https://docs.honcho.dev/v3/guides/integrations/hermes>
 
+Forecast ledger note: this provider is auxiliary recall. Scoreable questions, probabilities, evidence, resolutions, postmortems, calibration lessons, and domain error profiles belong in the forecast ledger.
+
 ## Requirements
 
 - `pip install honcho-ai`
@@ -12,14 +14,14 @@ AI-native cross-session user modeling with multi-pass dialectic reasoning, sessi
 ## Setup
 
 ```bash
-hermes honcho setup    # full interactive wizard (cloud or local)
-hermes memory setup    # generic picker, also works
+superforecasting-agent honcho setup    # full interactive wizard (cloud or local)
+superforecasting-agent memory setup    # generic picker, also works
 ```
 
 Or manually:
 ```bash
-hermes config set memory.provider honcho
-echo "HONCHO_API_KEY=***" >> ~/.hermes/.env
+superforecasting-agent config set memory.provider honcho
+echo "HONCHO_API_KEY=***" >> ~/.superforecasting-agent/.env
 ```
 
 ## Architecture Overview
@@ -105,11 +107,11 @@ Config is read from the first file that exists:
 
 | Priority | Path | Scope |
 |----------|------|-------|
-| 1 | `$HERMES_HOME/honcho.json` | Profile-local (isolated Hermes instances) |
-| 2 | `~/.hermes/honcho.json` | Default profile (shared host blocks) |
+| 1 | `$SUPERFORECASTING_AGENT_HOME/honcho.json` | Profile-local (isolated forecast-runtime instances) |
+| 2 | `~/.superforecasting-agent/honcho.json` | Default profile (shared host blocks) |
 | 3 | `~/.honcho/config.json` | Global (cross-app interop) |
 
-Host key is derived from the active Hermes profile: `hermes` (default) or `hermes.<profile>`.
+Host key is derived from the active forecast profile. Existing installs may still use `hermes` (default) or `hermes.<profile>` host keys for compatibility.
 
 For every key, resolution order is: **host block > root > env var > default**.
 
@@ -201,7 +203,7 @@ Multiple agent profiles can share one workspace while maintaining separate AI id
 
 Both profiles see the same user (`yourname`) in the same shared environment (`hermes`), but each AI peer builds its own observations, conclusions, and behavior patterns. The coder's memory stays code-oriented; the main agent's stays broad.
 
-Host key is derived from the active Hermes profile: `hermes` (default) or `hermes.<profile>` (e.g. `hermes -p coder` → host key `hermes.coder`).
+Host key is derived from the active forecast profile. Existing installs may still resolve to `hermes` (default) or `hermes.<profile>` for compatibility (e.g. `superforecasting-agent -p coder` -> host key `hermes.coder`).
 
 ### Dialectic & Reasoning
 
@@ -272,16 +274,16 @@ Presets:
 
 | Command | Description |
 |---------|-------------|
-| `hermes honcho setup` | Full interactive setup wizard |
-| `hermes honcho status` | Show resolved config for active profile |
-| `hermes honcho enable` / `disable` | Toggle Honcho for active profile |
-| `hermes honcho mode <mode>` | Change recall or observation mode |
-| `hermes honcho peer --user <name>` | Update user peer name |
-| `hermes honcho peer --ai <name>` | Update AI peer name |
-| `hermes honcho tokens --context <N>` | Set context token budget |
-| `hermes honcho tokens --dialectic <N>` | Set dialectic max chars |
-| `hermes honcho map <name>` | Map current directory to a session name |
-| `hermes honcho sync` | Create host blocks for all Hermes profiles |
+| `superforecasting-agent honcho setup` | Full interactive setup wizard |
+| `superforecasting-agent honcho status` | Show resolved config for active profile |
+| `superforecasting-agent honcho enable` / `disable` | Toggle Honcho for active profile |
+| `superforecasting-agent honcho mode <mode>` | Change recall or observation mode |
+| `superforecasting-agent honcho peer --user <name>` | Update user peer name |
+| `superforecasting-agent honcho peer --ai <name>` | Update AI peer name |
+| `superforecasting-agent honcho tokens --context <N>` | Set context token budget |
+| `superforecasting-agent honcho tokens --dialectic <N>` | Set dialectic max chars |
+| `superforecasting-agent honcho map <name>` | Map current directory to a session name |
+| `superforecasting-agent honcho sync` | Create host blocks for all forecast profiles |
 
 ## Example Config
 

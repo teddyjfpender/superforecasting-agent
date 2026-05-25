@@ -2,6 +2,8 @@
 
 Server-side LLM fact extraction with semantic search, reranking, and automatic deduplication.
 
+Forecast ledger note: this provider is auxiliary recall. Scoreable questions, probabilities, evidence, resolutions, postmortems, calibration lessons, and domain error profiles belong in the forecast ledger.
+
 ## Requirements
 
 - `pip install mem0ai`
@@ -10,13 +12,13 @@ Server-side LLM fact extraction with semantic search, reranking, and automatic d
 ## Setup
 
 ```bash
-hermes memory setup    # select "mem0"
+superforecasting-agent memory setup    # select "mem0"
 ```
 
 Or manually:
 ```bash
-hermes config set memory.provider mem0
-echo "MEM0_API_KEY=your-key" >> ~/.hermes/.env
+superforecasting-agent config set memory.provider mem0
+echo "MEM0_API_KEY=your-key" >> ~/.superforecasting-agent/.env
 ```
 
 ## Config
@@ -25,8 +27,8 @@ Config file: `$HERMES_HOME/mem0.json`
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `user_id` | `hermes-user` | User identifier on Mem0 |
-| `agent_id` | `hermes` | Agent identifier |
+| `user_id` | `hermes-user` | Inherited compatibility default user identifier on Mem0 |
+| `agent_id` | `hermes` | Inherited compatibility default agent identifier |
 | `rerank` | `true` | Enable reranking for recall |
 
 ## Tools

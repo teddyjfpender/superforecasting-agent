@@ -2,6 +2,8 @@
 
 Persistent memory via the `brv` CLI — hierarchical knowledge tree with tiered retrieval (fuzzy text → LLM-driven search).
 
+Forecast ledger note: this provider is auxiliary recall. Scoreable questions, probabilities, evidence, resolutions, postmortems, calibration lessons, and domain error profiles belong in the forecast ledger.
+
 ## Requirements
 
 Install the ByteRover CLI:
@@ -14,14 +16,14 @@ npm install -g byterover-cli
 ## Setup
 
 ```bash
-hermes memory setup    # select "byterover"
+superforecasting-agent memory setup    # select "byterover"
 ```
 
 Or manually:
 ```bash
-hermes config set memory.provider byterover
+superforecasting-agent config set memory.provider byterover
 # Optional cloud sync:
-echo "BRV_API_KEY=your-key" >> ~/.hermes/.env
+echo "BRV_API_KEY=your-key" >> ~/.superforecasting-agent/.env
 ```
 
 ## Config
