@@ -928,6 +928,9 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     tui_gateway = (root / "tui_gateway" / "server.py").read_text(encoding="utf-8")
     callbacks = (root / "hermes_cli" / "callbacks.py").read_text(encoding="utf-8")
     cli = (root / "cli.py").read_text(encoding="utf-8")
+    conversation_loop = (root / "agent" / "conversation_loop.py").read_text(
+        encoding="utf-8"
+    )
     commands = (root / "hermes_cli" / "commands.py").read_text(encoding="utf-8")
     discord = (root / "gateway" / "platforms" / "discord.py").read_text(
         encoding="utf-8"
@@ -964,6 +967,8 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Forecast style set to" in cli
     assert "Unknown forecast style" in cli
     assert "Unknown personality" not in cli
+    assert "system prompt belongs to the core forecast protocol" in conversation_loop
+    assert "system prompt is Hermes's territory" not in conversation_loop
     assert '@tree.command(name="style", description="Set forecast style")' in discord
     assert "Start a new forecast session" in discord
     assert "New forecast session started." in discord
@@ -1795,6 +1800,8 @@ def test_high_attention_docs_navigation_is_forecast_native():
     assert "gateway operator" in docs_text
     assert "Review stale public-health forecasts and summarize evidence gaps" in docs_text
     assert "Watched-source triage" in docs_text
+    assert "treat it as the final forecaster response" in docs_text
+    assert "not a forecast snapshot unless the ledger was explicitly updated" in docs_text
     sessions_doc = (
         root / "website" / "docs" / "user-guide" / "sessions.md"
     ).read_text(encoding="utf-8")

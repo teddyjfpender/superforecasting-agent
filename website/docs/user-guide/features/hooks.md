@@ -520,10 +520,12 @@ def my_callback(session_id: str, user_message: str, assistant_response: str,
 |-----------|------|-------------|
 | `session_id` | `str` | Current session ID. |
 | `user_message` | `str` | Original user message. |
-| `assistant_response` | `str` | Final text response. |
+| `assistant_response` | `str` | Final forecaster response (inherited parameter name). |
 | `conversation_history` | `list` | Message list after the turn. |
 | `model` | `str` | Model identifier. |
 | `platform` | `str` | Runtime surface. |
+
+`assistant_response` is the inherited OpenAI-role parameter name. In Superforecasting Agent, treat it as the final forecaster response; it is not a forecast snapshot unless the ledger was explicitly updated.
 
 Return value is ignored.
 

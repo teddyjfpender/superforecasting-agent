@@ -495,8 +495,8 @@ def run_conversation(
     # Context is ALWAYS injected into the user message, never the
     # system prompt.  This preserves the prompt cache prefix — the
     # system prompt stays identical across turns so cached tokens
-    # are reused.  The system prompt is Hermes's territory; plugins
-    # contribute context alongside the user's input.
+    # are reused.  The system prompt belongs to the core forecast protocol;
+    # plugins contribute context alongside the user's input.
     #
     # All injected context is ephemeral (not persisted to session DB).
     _plugin_user_context = ""
