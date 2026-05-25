@@ -5174,6 +5174,46 @@ def test_cron_runner_uses_schedule_auto_learning_flags(tmp_path):
     assert ledger.list_domain_error_profiles(domain="macro", topic="inflation")[0]["sample_count"] == 1
 
 
+def test_scheduled_auto_learning_does_not_create_forecast_updates(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will scheduled learning preserve the prior forecast?",
+        resolution_criteria="Resolved yes if scheduled learning leaves forecast snapshots append-only.",
+        domain="macro",
+        topics=["inflation"],
+    )
+    original = ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.84,
+        rationale="High-confidence forecast before resolution.",
+        as_of="2026-01-01T00:00:00Z",
+    )
+    ledger.resolve_question(question_id=question.id, outcome="no")
+    ledger.schedule_review(
+        scope_type="question",
+        scope_ref=question.id,
+        cadence="1d",
+        next_run_at="2026-01-02T00:00:00Z",
+        auto_score=True,
+        auto_postmortem=True,
+    )
+
+    results = ledger.run_due_scheduled_reviews(now="2026-01-03T00:00:00Z")
+
+    reasons = {alert.reason for alert in results[0]["alerts"]}
+    assert any(reason.startswith("score_created:") for reason in reasons)
+    assert any(reason.startswith("postmortem_created:") for reason in reasons)
+    snapshots = ledger.list_snapshots(question.id)
+    assert [snapshot.forecast_id for snapshot in snapshots] == [original.forecast_id]
+    current = ledger.get_current_snapshot(question.id)
+    assert current is not None
+    assert current.forecast_id == original.forecast_id
+    assert current.probability_or_distribution == 0.84
+    assert [score.question_id for score in ledger.list_scores()] == [question.id]
+    assert ledger.list_postmortems(question_id=question.id)
+    assert ledger.list_calibration_lessons(scope_type="domain", scope_ref="macro")
+
+
 def test_weighted_binary_probability_supports_component_dicts():
     probability = weighted_binary_probability(
         {
