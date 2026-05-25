@@ -1463,6 +1463,11 @@ def test_high_attention_docs_navigation_is_forecast_native():
     assert "gateway operator" in docs_text
     assert "Review stale public-health forecasts and summarize evidence gaps" in docs_text
     assert "Watched-source triage" in docs_text
+    sessions_doc = (
+        root / "website" / "docs" / "user-guide" / "sessions.md"
+    ).read_text(encoding="utf-8")
+    assert "/new public-health-forecast-review" in sessions_doc
+    assert "/new payments-refactor" not in sessions_doc
     assert "Build a Hermes Plugin" not in docs_text
     assert "Building a Hermes Plugin" not in docs_text
     assert "# No skill — general purpose" not in docs_text

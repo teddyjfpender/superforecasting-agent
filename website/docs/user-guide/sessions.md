@@ -75,7 +75,7 @@ into the transcript. For forecasting work, promote compact, source-backed claims
 Use `/compress` when a session gets long, `/new` for a fresh thread, and
 `superforecasting-agent sessions prune` only when you want to delete old ended sessions from
 storage. Compression reduces the active context; it is not a privacy delete and does not replace forecast scoring or postmortem writes.
-Pass a name to `/new` (e.g. `/new payments-refactor`) to set the new session's
+Pass a name to `/new` (e.g. `/new public-health-forecast-review`) to set the new session's
 initial title up front — useful for finding it later with `/resume <name>` or
 in the `/sessions` picker.
 :::
