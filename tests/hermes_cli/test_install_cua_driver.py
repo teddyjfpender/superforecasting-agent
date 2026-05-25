@@ -4,8 +4,9 @@ The cua-driver upstream installer always pulls the latest release tag, so
 re-running it is the canonical upgrade path. ``install_cua_driver(upgrade=True)``
 must:
 
-* Be macOS-only — no-op silently on Linux/Windows so ``hermes update`` can
-  call it unconditionally without warning every non-macOS user.
+* Be macOS-only — no-op silently on Linux/Windows so
+  ``superforecasting-agent update`` can call it unconditionally without warning
+  every non-macOS user.
 * Re-run the installer even when the binary is already on PATH (this is the
   fix for the "we only pulled cua-driver once on enable" complaint).
 * Preserve original ``upgrade=False`` behaviour for the toolset-enable flow:
@@ -19,8 +20,8 @@ from unittest.mock import patch
 
 class TestInstallCuaDriverUpgrade:
     def test_upgrade_on_non_macos_is_silent_noop(self):
-        """``hermes update`` calls install_cua_driver(upgrade=True) for every
-        user. On Linux/Windows it must return False without printing the
+        """``superforecasting-agent update`` calls upgrade=True for every user.
+        On Linux/Windows it must return False without printing the
         "macOS-only; skipping" warning that the toolset-enable path emits."""
         from hermes_cli import tools_config
 
@@ -55,7 +56,8 @@ class TestInstallCuaDriverUpgrade:
             assert tools_config.install_cua_driver(upgrade=True) is True
             runner.assert_called_once()
             # Refresh path uses non-verbose mode so we don't re-print the
-            # "grant macOS permissions" block on every `hermes update`.
+            # "grant macOS permissions" block on every
+            # `superforecasting-agent update`.
             kwargs = runner.call_args.kwargs
             assert kwargs.get("verbose") is False
 

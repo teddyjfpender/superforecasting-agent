@@ -578,8 +578,8 @@ def install_cua_driver(upgrade: bool = False) -> bool:
       installed, install otherwise. Used by the toolset enable flow where
       we don't want to surprise the user with a network fetch.
     * ``upgrade=True`` — always re-run the installer (or call ``cua-driver
-      update`` if the binary supports it). Used by ``hermes update`` and
-      by ``hermes computer-use install --upgrade``.
+      update`` if the binary supports it). Used by ``superforecasting-agent
+      update`` and by ``superforecasting-agent computer-use install --upgrade``.
 
     Returns True iff cua-driver is installed (or successfully refreshed)
     when the function returns. macOS-only — silently returns False on
@@ -591,8 +591,8 @@ def install_cua_driver(upgrade: bool = False) -> bool:
 
     if _plat.system() != "Darwin":
         if upgrade:
-            # Silent on non-macOS — `hermes update` calls this for every
-            # user; only macOS users with cua-driver care.
+            # Silent on non-macOS — `superforecasting-agent update` calls this
+            # for every user; only macOS users with cua-driver care.
             return False
         _print_warning("    Computer Use (cua-driver) is macOS-only; skipping.")
         return False
@@ -814,8 +814,9 @@ def _run_post_setup(post_setup_key: str):
             _print_info("    First run downloads the Camoufox engine (~300MB) — this can take several minutes.")
             import subprocess
             # Install @askjo/camofox-browser on-demand. It is NOT in
-            # package.json so that `hermes update` does not silently pull
-            # the ~300MB Camoufox Firefox-fork binary for every user.
+            # package.json so that `superforecasting-agent update` does not
+            # silently pull the ~300MB Camoufox Firefox-fork binary for every
+            # user.
             # Stream output (no capture, no --silent) so the long-running
             # postinstall download is visible instead of looking frozen.
             try:

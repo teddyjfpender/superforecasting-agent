@@ -1522,6 +1522,20 @@ def test_backup_runtime_copy_prefers_forecast_native_commands():
     assert "relative to hermes root" not in text
 
 
+def test_tools_config_update_copy_prefers_forecast_native_commands():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        root / "hermes_cli" / "tools_config.py",
+        root / "tests" / "hermes_cli" / "test_install_cua_driver.py",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in checked_paths)
+
+    assert "superforecasting-agent update" in text
+    assert "superforecasting-agent computer-use install --upgrade" in text
+    assert "hermes update" not in text
+    assert "hermes computer-use install --upgrade" not in text
+
+
 def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
