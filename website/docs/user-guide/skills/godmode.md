@@ -263,7 +263,7 @@ Claude Sonnet 4 is robust against all current techniques for clearly harmful con
 |:-----|:------------|
 | `SKILL.md` | Main skill document (loaded by the agent) |
 | `scripts/load_godmode.py` | Loader script for execute_code (handles argparse/`__name__` issues) |
-| `scripts/auto_jailbreak.py` | Auto-detect model, test strategies, write winning config |
+| `scripts/auto_jailbreak.py` | Auto-detect model, test strategies, write temporary evaluation config |
 | `scripts/parseltongue.py` | 33 input obfuscation techniques across 3 tiers |
 | `scripts/godmode_race.py` | Multi-model racing via OpenRouter (55 models, 5 tiers) |
 | `references/jailbreak-templates.md` | All 5 GODMODE CLASSIC system prompt templates |

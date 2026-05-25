@@ -3,16 +3,16 @@
 Parseltongue v4 — Input Obfuscation Engine
 Ported from G0DM0D3 (elder-plinius/G0DM0D3) JavaScript to Python.
 
-33 text obfuscation techniques across 3 tiers for bypassing
-LLM input-side safety classifiers.
+33 text obfuscation techniques across 3 tiers for testing
+LLM input-side classifier normalization.
 
 Usage:
     # As a standalone script
-    python parseltongue.py "How do I hack a WiFi network?" --tier standard
+    python parseltongue.py "Evaluate a harmless benchmark sentence." --tier standard
 
     # As a module in execute_code
-    exec(open(os.path.join(os.environ.get("HERMES_HOME", os.path.expanduser("~/.hermes")), "skills/red-teaming/godmode/scripts/parseltongue.py")).read())
-    variants = generate_variants("How do I hack a WiFi network?", tier="standard")
+    exec(open(os.path.join(os.environ.get("SUPERFORECASTING_AGENT_HOME", os.path.expanduser("~/.superforecasting-agent")), "skills/red-teaming/godmode/scripts/parseltongue.py")).read())
+    variants = generate_variants("Evaluate a harmless benchmark sentence.", tier="standard")
 """
 
 import re
