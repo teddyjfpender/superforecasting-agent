@@ -11912,6 +11912,127 @@ def test_forecast_cli_new_with_review_cadence_creates_schedule(tmp_path, capsys)
     assert "2d" in output
 
 
+def test_forecast_cli_schedule_portfolio_scope_runs_only_matching_questions(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will alpha portfolio forecast need review?",
+            "--resolution-criteria",
+            "Resolved yes if the alpha portfolio forecast needs review.",
+            "--tag",
+            "portfolio:alpha",
+        ],
+    )
+    alpha_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "update",
+            alpha_id,
+            "--probability",
+            "0.52",
+            "--rationale",
+            "Initial alpha portfolio forecast.",
+            "--as-of",
+            "2026-01-01T00:00:00Z",
+        ],
+    )
+    capsys.readouterr()
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will beta portfolio forecast be ignored?",
+            "--resolution-criteria",
+            "Resolved yes if the beta portfolio forecast is ignored by alpha.",
+            "--tag",
+            "portfolio:beta",
+        ],
+    )
+    beta_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "update",
+            beta_id,
+            "--probability",
+            "0.52",
+            "--rationale",
+            "Initial beta portfolio forecast.",
+            "--as-of",
+            "2026-01-01T00:00:00Z",
+        ],
+    )
+    capsys.readouterr()
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "schedule",
+            "add",
+            "--portfolio",
+            "alpha",
+            "--cadence",
+            "every 1h",
+            "--next-run-at",
+            "2026-01-05T00:00:00Z",
+            "--stale-days",
+            "1",
+        ],
+    )
+    add_output = capsys.readouterr().out
+    schedule_id = re.search(r"scheduled review (sr_[a-f0-9]+)", add_output).group(1)
+    assert "scope: portfolio alpha" in add_output
+
+    _run(parser, ["forecast", "--db", db, "schedule", "list"])
+    list_output = capsys.readouterr().out
+    assert schedule_id in list_output
+    assert "portfolio:alpha" in list_output
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "schedule",
+            "run",
+            "--now",
+            "2026-01-05T00:30:00Z",
+        ],
+    )
+    run_output = capsys.readouterr().out
+    assert "ran 1 scheduled review(s)" in run_output
+    assert alpha_id in run_output
+    assert beta_id not in run_output
+    assert "last_update_1d_plus" in run_output
+
+    _run(parser, ["forecast", "--db", db, "schedule", "history"])
+    history_output = capsys.readouterr().out
+    assert schedule_id in history_output
+    assert "srr_" in history_output
+
+
 def test_forecast_cli_watch_add_list_and_check(tmp_path, capsys):
     parser = _parser()
     db = str(tmp_path / "forecasting.db")
