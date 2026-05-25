@@ -80,7 +80,7 @@ See [Browser Automation](/docs/user-guide/features/browser) for setup and usage.
 ## Plugins & Custom Connectors
 
 - **[Plugin System](/docs/user-guide/features/plugins)** — Extend the forecast desk with custom tools, lifecycle hooks, CLI commands, source adapters, model runners, and review workflows without modifying core code. Plugins are discovered from `~/.superforecasting-agent/plugins/`, legacy `~/.hermes/plugins/`, project-local `.hermes/plugins/`, and pip-installed entry points.
-- **[Build a Plugin](/docs/guides/build-a-hermes-plugin)** — The legacy-named plugin authoring guide covers tools, hooks, and CLI commands that can be used to add forecasting-specific connectors.
+- **[Build a Plugin](/docs/guides/build-a-superforecasting-agent-plugin)** — The plugin authoring guide covers tools, hooks, and CLI commands that can be used to add forecasting-specific connectors.
 
 Good plugin candidates include market-data connectors, policy trackers, source reliability scorers, evidence snapshotters, reference-class builders, and domain-specific model runners.
 

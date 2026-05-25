@@ -13,7 +13,7 @@ For forecasting work, use plugins when an extension improves the desk's ability 
 
 If you want to create a custom tool for yourself, your team, or one project, this is usually the right path. The developer guide's [Adding Tools](/docs/developer-guide/adding-tools) page is for built-in core tools that live in `tools/` and `toolsets.py`.
 
-**[Build a Plugin](/docs/guides/build-a-hermes-plugin)** - step-by-step guide with a complete working example. The guide still uses the legacy Hermes filename in the URL during the compatibility transition.
+**[Build a Plugin](/docs/guides/build-a-superforecasting-agent-plugin)** - step-by-step guide with a complete working example.
 
 ## Quick overview
 
@@ -224,10 +224,10 @@ The table above shows the four plugin categories, but within "General plugins" t
 
 | Want to add… | How | Authoring guide |
 |---|---|---|
-| A **forecast evidence/source tool** | Python plugin - `ctx.register_tool()` that writes source-backed claims into the ledger | [Build a Plugin](/docs/guides/build-a-hermes-plugin) · [Adding Tools](/docs/developer-guide/adding-tools) |
-| A **tool** the LLM can call | Python plugin - `ctx.register_tool()` | [Build a Plugin](/docs/guides/build-a-hermes-plugin) · [Adding Tools](/docs/developer-guide/adding-tools) |
-| A **lifecycle hook** (pre/post LLM, session start/end, tool filter) | Python plugin - `ctx.register_hook()` | [Hooks reference](/docs/user-guide/features/hooks) · [Build a Plugin](/docs/guides/build-a-hermes-plugin) |
-| A **slash command** for the CLI / gateway | Python plugin - `ctx.register_command()` | [Build a Plugin](/docs/guides/build-a-hermes-plugin) · [Extending the CLI](/docs/developer-guide/extending-the-cli) |
+| A **forecast evidence/source tool** | Python plugin - `ctx.register_tool()` that writes source-backed claims into the ledger | [Build a Plugin](/docs/guides/build-a-superforecasting-agent-plugin) · [Adding Tools](/docs/developer-guide/adding-tools) |
+| A **tool** the LLM can call | Python plugin - `ctx.register_tool()` | [Build a Plugin](/docs/guides/build-a-superforecasting-agent-plugin) · [Adding Tools](/docs/developer-guide/adding-tools) |
+| A **lifecycle hook** (pre/post LLM, session start/end, tool filter) | Python plugin - `ctx.register_hook()` | [Hooks reference](/docs/user-guide/features/hooks) · [Build a Plugin](/docs/guides/build-a-superforecasting-agent-plugin) |
+| A **slash command** for the CLI / gateway | Python plugin - `ctx.register_command()` | [Build a Plugin](/docs/guides/build-a-superforecasting-agent-plugin) · [Extending the CLI](/docs/developer-guide/extending-the-cli) |
 | A **subcommand** for `superforecasting-agent <thing>` | Python plugin - `ctx.register_cli_command()` | [Extending the CLI](/docs/developer-guide/extending-the-cli) |
 | A bundled **skill** that your plugin ships | Python plugin - `ctx.register_skill()` | [Creating Skills](/docs/developer-guide/creating-skills) |
 | An **inference backend** (LLM provider: OpenAI-compat, Codex, Anthropic-Messages, Bedrock) | Provider plugin - `register_provider(ProviderProfile(...))` in `plugins/model-providers/<name>/` | **[Model Provider Plugins](/docs/developer-guide/model-provider-plugin)** · [Adding Providers](/docs/developer-guide/adding-providers) |
@@ -351,4 +351,4 @@ This enables extensions like remote control viewers, messaging bridges, webhook 
 `inject_message` is only available in CLI mode. In gateway mode, there is no CLI reference and the method returns `False`.
 :::
 
-See the **[full guide](/docs/guides/build-a-hermes-plugin)** for handler contracts, schema format, hook behavior, error handling, and common mistakes.
+See the **[full guide](/docs/guides/build-a-superforecasting-agent-plugin)** for handler contracts, schema format, hook behavior, error handling, and common mistakes.

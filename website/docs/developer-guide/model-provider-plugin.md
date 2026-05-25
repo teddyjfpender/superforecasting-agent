@@ -257,7 +257,7 @@ acme-inference = "acme_forecasting_plugin:register"
 
 …where `acme_forecasting_plugin:register` is a function that calls `register_provider(profile)`. The general PluginManager picks up entry-point plugins during `discover_and_load()`. For `kind: model-provider` pip plugins, you still need to declare the kind in your manifest (or rely on the source-text heuristic).
 
-See the inherited [Building a Superforecasting Agent Plugin](/docs/guides/build-a-hermes-plugin#distribute-via-pip) guide for the full entry-points setup.
+See the inherited [Building a Superforecasting Agent Plugin](/docs/guides/build-a-superforecasting-agent-plugin#distribute-via-pip) guide for the full entry-points setup.
 
 ## Related pages
 
@@ -265,4 +265,4 @@ See the inherited [Building a Superforecasting Agent Plugin](/docs/guides/build-
 - [Adding Providers](/docs/developer-guide/adding-providers) — end-to-end checklist for new inference backends (covers both the fast plugin path and the full CLI/auth integration)
 - [Memory Provider Plugins](/docs/developer-guide/memory-provider-plugin)
 - [Context Engine Plugins](/docs/developer-guide/context-engine-plugin)
-- [Building a Superforecasting Agent Plugin](/docs/guides/build-a-hermes-plugin) — general plugin authoring
+- [Building a Superforecasting Agent Plugin](/docs/guides/build-a-superforecasting-agent-plugin) — general plugin authoring

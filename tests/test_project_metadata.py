@@ -242,7 +242,7 @@ def test_voice_install_guidance_is_forecast_native():
     paths = [
         root / "tools" / "voice_mode.py",
         root / "website" / "docs" / "user-guide" / "features" / "voice-mode.md",
-        root / "website" / "docs" / "guides" / "use-voice-mode-with-hermes.md",
+        root / "website" / "docs" / "guides" / "use-voice-mode-with-superforecasting-agent.md",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
@@ -676,6 +676,9 @@ def test_codex_runtime_migration_markers_are_forecast_native():
 def test_high_attention_docs_navigation_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     sidebars = (root / "website" / "sidebars.ts").read_text(encoding="utf-8")
+    llms_generator = (
+        root / "website" / "scripts" / "generate-llms-txt.py"
+    ).read_text(encoding="utf-8")
     docs_paths = [
         root / "website" / "docs" / "developer-guide" / "web-search-provider-plugin.md",
         root / "website" / "docs" / "developer-guide" / "image-gen-provider-plugin.md",
@@ -688,9 +691,27 @@ def test_high_attention_docs_navigation_is_forecast_native():
 
     assert "Using the Forecast Desk" in sidebars
     assert "Using Hermes" not in sidebars
+    assert "guides/build-a-superforecasting-agent-plugin" in sidebars
+    assert "guides/use-soul-with-superforecasting-agent" in sidebars
+    assert "guides/use-voice-mode-with-superforecasting-agent" in sidebars
+    assert "build-a-hermes-plugin" not in sidebars
+    assert "use-soul-with-hermes" not in sidebars
+    assert "use-voice-mode-with-hermes" not in sidebars
+    assert "build-a-superforecasting-agent-plugin" in llms_generator
+    assert "use-soul-with-superforecasting-agent" in llms_generator
+    assert "use-voice-mode-with-superforecasting-agent" in llms_generator
     assert "Build a Superforecasting Agent Plugin" in docs_text
     assert "Build a Hermes Plugin" not in docs_text
     assert "Building a Hermes Plugin" not in docs_text
+    assert not (
+        root / "website" / "docs" / "guides" / "build-a-hermes-plugin.md"
+    ).exists()
+    assert not (
+        root / "website" / "docs" / "guides" / "use-soul-with-hermes.md"
+    ).exists()
+    assert not (
+        root / "website" / "docs" / "guides" / "use-voice-mode-with-hermes.md"
+    ).exists()
 
 
 def test_contributor_and_skills_index_guidance_is_forecast_native():

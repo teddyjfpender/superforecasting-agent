@@ -228,7 +228,7 @@ Never change a probability unless the update is recorded in the forecast ledger.
 When evidence is stale, say so directly.
 ```
 
-For a full style guide, see [Use SOUL.md](/docs/guides/use-soul-with-hermes).
+For a full style guide, see [Use SOUL.md](/docs/guides/use-soul-with-superforecasting-agent).
 
 ### Add Team Context
 
@@ -412,5 +412,5 @@ Legacy `~/.hermes` paths may still exist after migration. New configuration shou
 - [Telegram Setup](/docs/user-guide/messaging/telegram) for Telegram-specific options.
 - [Scheduled Tasks](/docs/user-guide/features/cron) for cron expressions and delivery options.
 - [Forecast Automation Templates](/docs/guides/automation-templates) for review, source-watch, backtest, and postmortem recipes.
-- [SOUL.md Style](/docs/guides/use-soul-with-hermes) for style customization without polluting forecast state.
+- [SOUL.md Style](/docs/guides/use-soul-with-superforecasting-agent) for style customization without polluting forecast state.
 - [Discord](/docs/user-guide/messaging/discord), [Slack](/docs/user-guide/messaging/slack), and [WhatsApp](/docs/user-guide/messaging/whatsapp) if your team wants more delivery channels.

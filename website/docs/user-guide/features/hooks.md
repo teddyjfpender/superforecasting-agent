@@ -611,7 +611,7 @@ def my_callback(session_id: str, platform: str, **kwargs):
 
 Gateway order is `on_session_finalize(old_id)`, swap, `on_session_reset(new_id)`, then `on_session_start(new_id)` on the first inbound turn.
 
-See the **[Build a Superforecasting Agent Plugin guide](/docs/guides/build-a-hermes-plugin)** for the inherited plugin-authoring walkthrough, including tool schemas, handlers, and additional hook patterns.
+See the **[Build a Superforecasting Agent Plugin guide](/docs/guides/build-a-superforecasting-agent-plugin)** for the inherited plugin-authoring walkthrough, including tool schemas, handlers, and additional hook patterns.
 
 ### `subagent_stop`
 

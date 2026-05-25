@@ -25,7 +25,7 @@ We value contributions in this order:
 - Adding a forecast lifecycle feature? Start with `forecasting/ledger.py`, `forecasting/cli.py`, and `tests/forecasting/`.
 - Adding an evidence/news/data/market source? Start with `forecasting/source_adapters.py` and `forecasting/extensions.py`.
 - Exposing forecast behavior to the agent loop? Start with `tools/forecasting_tool.py`.
-- Building a local extension without modifying core? Start with [Build a Superforecasting Agent Plugin](../guides/build-a-hermes-plugin.md); this is an inherited plugin surface.
+- Building a local extension without modifying core? Start with [Build a Superforecasting Agent Plugin](../guides/build-a-superforecasting-agent-plugin.md); this is an inherited plugin surface.
 - Building a new inherited runtime tool? Start with [Adding Tools](./adding-tools.md), but prefer forecast ledger actions or plugins first.
 - Building a new skill? Start with [Creating Skills](./creating-skills.md).
 - Building a new inference provider? Start with [Adding Providers](./adding-providers.md).

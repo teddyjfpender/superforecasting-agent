@@ -11,7 +11,7 @@ Superforecasting Agent ships a small set of bundled plugins under `<repo>/plugin
 
 The ledger remains the source of truth for forecast questions, evidence, assumptions, model runs, snapshots, resolutions, scores, postmortems, calibration lessons, domain error profiles, schedules, and alerts. A plugin output only affects a forecast after it is explicitly imported or recorded through `forecast` workflows.
 
-See [Plugins](./plugins) for the general plugin system and [Build a plugin](../../guides/build-a-hermes-plugin) for authoring guidance. The tutorial keeps its inherited slug for compatibility, but the supported product target is Superforecasting Agent.
+See [Plugins](./plugins) for the general plugin system and [Build a plugin](../../guides/build-a-superforecasting-agent-plugin) for authoring guidance. The supported product target is Superforecasting Agent.
 
 ## How Discovery Works
 
@@ -270,7 +270,7 @@ Legacy `~/.hermes/state.db` remains readable when the active runtime home points
 
 ## Adding a Bundled Plugin
 
-Bundled plugins are written like other plugins. Use [Build a plugin](../../guides/build-a-hermes-plugin) for the API details, then keep the bundled scope tight.
+Bundled plugins are written like other plugins. Use [Build a plugin](../../guides/build-a-superforecasting-agent-plugin) for the API details, then keep the bundled scope tight.
 
 A plugin is a good candidate for bundling when:
 

@@ -14,7 +14,7 @@ If you want a personal, project-local, or otherwise custom tool without
 modifying the core runtime, use the plugin route instead:
 
 - [Plugins](/docs/user-guide/features/plugins)
-- [Build a Superforecasting Agent Plugin](/docs/guides/build-a-hermes-plugin) (inherited plugin guide)
+- [Build a Superforecasting Agent Plugin](/docs/guides/build-a-superforecasting-agent-plugin) (inherited plugin guide)
 
 Default to plugins for most custom tool creation. Only follow this page when
 you explicitly want to ship a new built-in tool in `tools/` and `toolsets.py`.

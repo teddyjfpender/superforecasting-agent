@@ -80,7 +80,7 @@ Create an `AGENTS.md` in your project root with architecture decisions, coding c
 
 Want Superforecasting Agent to have a stable default voice? Edit `~/.superforecasting-agent/SOUL.md` (or the inherited `$HERMES_HOME/SOUL.md` compatibility path if you use a legacy home). The fork seeds a starter SOUL automatically and uses that global file as the instance-wide style source.
 
-For a full walkthrough, see [Use SOUL.md with Superforecasting Agent](/docs/guides/use-soul-with-hermes).
+For a full walkthrough, see [Use SOUL.md with Superforecasting Agent](/docs/guides/use-soul-with-superforecasting-agent).
 
 ```markdown
 # Soul

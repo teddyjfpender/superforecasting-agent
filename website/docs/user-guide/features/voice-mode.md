@@ -17,7 +17,7 @@ resolve a question, score a result, or write a postmortem through the forecast
 workflow.
 
 For a practical setup walkthrough, see
-[Use Voice Mode with Superforecasting Agent](/docs/guides/use-voice-mode-with-hermes).
+[Use Voice Mode with Superforecasting Agent](/docs/guides/use-voice-mode-with-superforecasting-agent).
 
 ## Prerequisites
 
