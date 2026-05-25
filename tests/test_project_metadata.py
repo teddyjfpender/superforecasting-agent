@@ -787,6 +787,13 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Unknown forecast style" in cli
     assert "Unknown personality" not in cli
     assert '@tree.command(name="style", description="Set forecast style")' in discord
+    assert "Start a new forecast session" in discord
+    assert "New forecast session started." in discord
+    assert "Forecast session reset." in discord
+    assert "Retrying last forecast note." in discord
+    assert "New conversation started~" not in discord
+    assert "Session reset~" not in discord
+    assert "Retrying~" not in discord
     assert "Available Forecast Styles" in locale_en
     assert "Unknown forecast style" in locale_en
     assert "Hermes's prompt-injection scanner" not in install_ps1

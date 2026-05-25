@@ -2913,13 +2913,13 @@ class DiscordAdapter(BasePlatformAdapter):
 
         tree = self._client.tree
 
-        @tree.command(name="new", description="Start a new conversation")
+        @tree.command(name="new", description="Start a new forecast session")
         async def slash_new(interaction: discord.Interaction):
-            await self._run_simple_slash(interaction, "/reset", "New conversation started~")
+            await self._run_simple_slash(interaction, "/reset", "New forecast session started.")
 
         @tree.command(name="reset", description="Reset this forecast research session")
         async def slash_reset(interaction: discord.Interaction):
-            await self._run_simple_slash(interaction, "/reset", "Session reset~")
+            await self._run_simple_slash(interaction, "/reset", "Forecast session reset.")
 
         @tree.command(name="model", description="Show or change the model")
         @discord.app_commands.describe(name="Model name (e.g. anthropic/claude-sonnet-4). Leave empty to see current.")
@@ -2938,7 +2938,7 @@ class DiscordAdapter(BasePlatformAdapter):
 
         @tree.command(name="retry", description="Retry your last message")
         async def slash_retry(interaction: discord.Interaction):
-            await self._run_simple_slash(interaction, "/retry", "Retrying~")
+            await self._run_simple_slash(interaction, "/retry", "Retrying last forecast note.")
 
         @tree.command(name="undo", description="Remove the last exchange")
         async def slash_undo(interaction: discord.Interaction):
