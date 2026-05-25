@@ -25,6 +25,7 @@ from forecasting.backtesting import (
     build_backtest_performance_summaries,
     build_forecasting_evidence_status,
 )
+from forecasting.benchmark_evidence import build_benchmark_evidence_profile
 from forecasting.benchmarks import list_builtin_benchmarks, load_builtin_benchmark
 from forecasting.branding import (
     CLI_SURFACE,
@@ -6364,12 +6365,30 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
         if not rows and not imported:
             print("No benchmarks found.")
             return
-        print("Name                 Cases  Description")
+        print("Name                              Cases  Provenance        Source Families  Description")
         for row in rows:
-            print(f"builtin:{row['name']:<12} {row['case_count']:<6} {row['description']}")
+            evidence = row.get("benchmark_evidence") or {}
+            families = ",".join(evidence.get("source_families") or []) or "-"
+            provenance = str(evidence.get("provenance") or "-")
+            print(
+                f"builtin:{row['name']:<25} "
+                f"{row['case_count']:<6} "
+                f"{provenance:<16} "
+                f"{families:<16} "
+                f"{row['description']}"
+            )
         for row in imported:
             description = row.get("description") or f"Imported from {row['source']}"
-            print(f"imported:{row['id']:<11} {row['case_count']:<6} {description}")
+            evidence = build_benchmark_evidence_profile(f"imported:{row['id']}", row.get("cases") or [])
+            families = ",".join(evidence.get("source_families") or []) or "-"
+            provenance = str(evidence.get("provenance") or "-")
+            print(
+                f"imported:{row['id']:<24} "
+                f"{row['case_count']:<6} "
+                f"{provenance:<16} "
+                f"{families:<16} "
+                f"{description}"
+            )
         return
     if args.all_benchmarks:
         if args.dataset:

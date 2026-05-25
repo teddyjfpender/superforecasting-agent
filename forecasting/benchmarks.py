@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 from importlib.resources import files
 from typing import Any
 
+from forecasting.benchmark_evidence import build_benchmark_evidence_profile
+
 
 _MINI_BINARY_CASES: list[dict[str, Any]] = [
     {
@@ -285,6 +287,10 @@ def list_builtin_benchmarks() -> list[dict[str, Any]]:
             "name": row["name"],
             "description": row["description"],
             "case_count": row["case_count"],
+            "benchmark_evidence": build_benchmark_evidence_profile(
+                f"builtin:{row['name']}",
+                row["cases"],
+            ),
         }
         for row in BUILTIN_BENCHMARKS.values()
     ]

@@ -10037,6 +10037,9 @@ def test_forecast_cli_runs_builtin_benchmark_dataset(tmp_path, capsys):
     assert "builtin:synthetic-100-binary" in benchmarks_output
     assert "builtin:heldout-120-binary" in benchmarks_output
     assert "builtin:manifold-public-120-binary" in benchmarks_output
+    assert "Source Families" in benchmarks_output
+    assert "public_external" in benchmarks_output
+    assert "manifold" in benchmarks_output
 
     _run(parser, ["forecast", "--db", db, "backtest", "builtin:mini-binary"])
     run_output = capsys.readouterr().out
@@ -11001,6 +11004,7 @@ def test_forecast_cli_imports_csv_benchmark_dataset_and_replays_it(tmp_path, cap
     benchmarks_output = capsys.readouterr().out
     assert f"imported:{dataset_id}" in benchmarks_output
     assert "CSV resolved fixture." in benchmarks_output
+    assert "Source Families" in benchmarks_output
 
     _run(parser, ["forecast", "--db", db, "backtest", f"imported:{dataset_id}"])
     run_output = capsys.readouterr().out
