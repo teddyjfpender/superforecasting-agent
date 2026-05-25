@@ -1190,15 +1190,27 @@ def test_import_packet_round_trips_export_all(tmp_path):
         reason="packet_import_test",
         recommended_action="Verify imported alerts stay auditable.",
     )
+    source.resolve_question(question_id=question.id, outcome="no")
+    source.create_postmortem(
+        question_id=question.id,
+        summary="The ledger import test resolved against the forecast.",
+        base_rate_error="Underweighted restore-path regressions.",
+        lesson="Packet restore tests should carry domain error memory.",
+        calibration_adjustment={"software_packet_penalty": 0.04},
+    )
     source.run_due_scheduled_reviews(now="2026-05-26T00:00:00Z")
     packet = json.loads(source.export_all(fmt="json"))
+    source_profiles = source.list_domain_error_profiles(domain="software")
 
     restored = ForecastLedger(tmp_path / "restored.db")
     summary = restored.import_packet(packet)
 
     assert summary["imported"]["questions"] == 1
     assert summary["imported"]["forecast_history"] == 1
+    assert summary["imported"]["domain_error_profiles"] == len(source_profiles)
     assert summary["duplicates_in_packet"] >= 2
+    assert packet["domain_error_profiles"]
+    assert packet["questions"][0]["domain_error_profiles"]
     assert restored.get_question(question.id).title == "Will packet imports preserve the ledger?"
     assert restored.get_snapshot(snapshot.forecast_id).probability_or_distribution == 0.64
     assert restored.get_evidence(evidence.id).available_at == "2026-05-25T10:00:00Z"
@@ -1209,6 +1221,9 @@ def test_import_packet_round_trips_export_all(tmp_path):
         restored.list_scheduled_review_runs(scheduled_review_id=schedule["id"])[0]["scheduled_review_id"]
         == schedule["id"]
     )
+    restored_profiles = restored.list_domain_error_profiles(domain="software")
+    assert len(restored_profiles) == len(source_profiles)
+    assert any("base_rate_error" in profile["recurring_errors"] for profile in restored_profiles)
     assert any(alert.reason == "packet_import_test" for alert in restored.list_alerts(unresolved_only=False))
 
 

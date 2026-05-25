@@ -1740,7 +1740,7 @@ Latest verified result:
 | Active calibration lessons can influence future forecast updates | Covered | `forecast update --use-active-lessons` and `forecast_ledger` tool `use_active_lessons=true` attach active lessons, apply supported numeric probability adjustments, record raw probability and applied lesson provenance, focused CLI/tool tests |
 | Correction records invalidate affected learning records | Covered | correction tests |
 | Agent tool can create and inspect correction records | Covered | `forecast_ledger` tool actions `create_correction` and `list_corrections`; focused tool regression verifies applied corrections invalidate affected score, postmortem, and calibration lesson records |
-| Import/export auditable packets | Covered | JSON/markdown export tests plus `ForecastLedger.import_packet` and `forecast import packet <export.json>` round-trip tests for question and portfolio packets |
+| Import/export auditable packets | Covered | JSON/markdown export tests plus `ForecastLedger.import_packet` and `forecast import packet <export.json>` round-trip tests for question and portfolio packets; packets carry durable learning memory including calibration lessons and domain/topic error profiles |
 | Agent tool can import/export auditable packets | Covered | `forecast_ledger` tool actions `export_question`, `export_all`, and `import_packet` return JSON packets/markdown exports or restore JSON packets; focused tool regression verifies export contents and packet import round-trip |
 | Export fork metadata and watched sources | Covered | export tests |
 | Time-aware backtesting with evidence cutoff and leakage checks | Covered | backtest tests |
@@ -1894,7 +1894,7 @@ fork objective still needs the remaining work listed below.
 | US-009 | Covered | Resolution and scoring workflows compute Brier/log/proper scores where applicable and expose score filters |
 | US-010 | Covered | Postmortems link snapshots, resolutions, scores, expected/actual outcomes, error sources, and provenance-linked lessons |
 | US-011 | Covered | Calibration reports include buckets, samples, Brier/log scores, sharpness, filters, and domain/topic error recommendations |
-| US-012 | Covered | Export writes auditable JSON/markdown packets with metadata, history, evidence, models, scores, generated time, and as-of data |
+| US-012 | Covered | Export writes auditable JSON/markdown packets with metadata, history, evidence, models, scores, postmortems, calibration lessons, domain/topic error profiles, generated time, and as-of data |
 | US-013 | Covered | Time-aware backtests store runs/cases, cutoffs, generated snapshots, baselines, scores, leakage flags, and performance summaries |
 | US-014 | Covered | Scoped schedules persist cadence, stale thresholds, horizon/domain/topic/portfolio filters, alerts, auto-score/postmortem options, and profile updates |
 | US-015 | Covered | Resolution governance blocks unconfirmed/disputed/criteria-incomplete scoring and records corrections that invalidate affected learning artifacts |
@@ -1944,7 +1944,7 @@ fork objective still needs the remaining work listed below.
 | North star: command-line forecasting desk | Covered/Partial | CLI desk and forecast ledger exist; full product surgery and TUI redesign remain incomplete |
 | Domain-general, not Metaculus-centric | Covered | Generic URL/file/data ingest, broad adapters, optional Metaculus/crowd baseline flow, and platform-neutral ledger |
 | Closed feedback loop | Covered | Forecast, observe, resolve, score, diagnose, recalibrate loop exists through ledger, scoring, postmortems, lessons, and schedules |
-| Learning memory replaces chat memory | Covered | Calibration lessons, domain profiles, and evidence memory exist; inherited general memory remains an opt-in compatibility surface and is disabled in new default configs |
+| Learning memory replaces chat memory | Covered | Calibration lessons, domain profiles, and evidence memory exist; learned error profiles are exported/imported with forecast packets; inherited general memory remains an opt-in compatibility surface and is disabled in new default configs |
 | LLMs are not sole probability engine | Covered | Base-rate, market/crowd baseline, statistical/model-run, ensemble, forecast-engine, and agent-protocol sources |
 | Backtesting and benchmark evidence | Covered/Partial | Time-aware replay, suite-scale sanitized agent-protocol prompt packets, deterministic response replay, live-vs-imported-baseline status/performance summaries, eligible replay lessons with backtest provenance, and claim guards exist; live superiority remains unproven pending accumulated resolved live forecasts |
 | Scheduled self-checks and alerts | Covered | Cron/scheduler bridge, scoped reviews, watched-source alerts, opt-in live or eligible-replay learning writes, and no silent probability mutation |

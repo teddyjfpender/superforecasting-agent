@@ -216,6 +216,11 @@ _PACKET_JSON_FIELDS = {
         "affected_postmortem_refs",
         "affected_calibration_lesson_refs",
     },
+    "domain_error_profiles": {
+        "calibration_summary",
+        "recurring_errors",
+        "recommended_adjustments",
+    },
     "baseline_comparisons": {"probability_or_distribution", "metadata"},
     "watched_sources": {"metadata"},
     "scheduled_review_runs": {"metadata"},
@@ -240,6 +245,7 @@ _PACKET_RECORD_LABELS = {
     "postmortems": "postmortems",
     "calibration_lessons": "calibration_lessons",
     "forecast_corrections": "corrections",
+    "domain_error_profiles": "domain_error_profiles",
     "baseline_comparisons": "baseline_comparisons",
     "watched_sources": "watched_sources",
     "scheduled_reviews": "scheduled_reviews",
@@ -4109,6 +4115,7 @@ class ForecastLedger:
         resolution = self.get_latest_resolution(question_id)
         scores = [s for s in self.list_scores(include_invalidated=True) if s.question_id == question_id]
         calibration_lessons = self._calibration_lessons_for_question(scores, postmortems)
+        domain_error_profiles = self._domain_error_profiles_for_question(question)
         corrections = self._corrections_for_question(
             question_id=question_id,
             snapshots=snapshots,
@@ -4140,6 +4147,7 @@ class ForecastLedger:
                     "scores": [self._score_to_dict(score) for score in scores],
                     "postmortems": postmortems,
                     "calibration_lessons": calibration_lessons,
+                    "domain_error_profiles": domain_error_profiles,
                     "corrections": corrections,
                 }
             )
@@ -4293,6 +4301,7 @@ class ForecastLedger:
                     "watched_sources": self.list_watched_sources(status=None),
                     "scheduled_reviews": self.list_scheduled_reviews(),
                     "scheduled_review_runs": self.list_scheduled_review_runs(limit=1000),
+                    "domain_error_profiles": self.list_domain_error_profiles(),
                     "alerts": [alert.__dict__ for alert in self.list_alerts(unresolved_only=False)],
                 }
             )
@@ -4327,6 +4336,7 @@ class ForecastLedger:
                 "watched_sources",
                 "scheduled_reviews",
                 "scheduled_review_runs",
+                "domain_error_profiles",
                 "alerts",
             )
         ):
@@ -4376,6 +4386,14 @@ class ForecastLedger:
                 conn,
                 "scheduled_review_runs",
                 packet.get("scheduled_review_runs"),
+                conflict=conflict,
+                summary=summary,
+                seen=seen,
+            )
+            self._import_packet_rows(
+                conn,
+                "domain_error_profiles",
+                packet.get("domain_error_profiles"),
                 conflict=conflict,
                 summary=summary,
                 seen=seen,
@@ -4437,6 +4455,7 @@ class ForecastLedger:
             ("watched_sources", "watched_sources"),
             ("scheduled_reviews", "scheduled_reviews"),
             ("scheduled_review_runs", "scheduled_review_runs"),
+            ("domain_error_profiles", "domain_error_profiles"),
         ):
             self._import_packet_rows(conn, table, packet.get(key), conflict=conflict, summary=summary, seen=seen)
 
@@ -5331,6 +5350,20 @@ class ForecastLedger:
             elif postmortem_ids & set(lesson["source_postmortem_refs"]):
                 lessons.append(lesson)
         return lessons
+
+    def _domain_error_profiles_for_question(self, question: ForecastQuestion) -> list[dict[str, Any]]:
+        if not question.domain:
+            return []
+        profiles = []
+        for profile in self.list_domain_error_profiles(domain=question.domain):
+            profile_topic = profile.get("topic")
+            if profile_topic and profile_topic not in question.topics:
+                continue
+            profile_type = profile.get("question_type")
+            if profile_type and profile_type != question.outcome_space.type:
+                continue
+            profiles.append(profile)
+        return profiles
 
     def _corrections_for_question(
         self,
