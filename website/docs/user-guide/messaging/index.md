@@ -308,13 +308,13 @@ When enabled, the bot sends status messages as it works:
 Run a forecast-support note in a separate background session so the agent works on it independently while your main chat stays responsive:
 
 ```
-/background Check all servers in the cluster and report any that are down
+/background Review stale public-health forecasts and summarize evidence gaps
 ```
 
 Superforecasting Agent confirms immediately:
 
 ```
-🔄 Background task started: "Check all servers in the cluster..."
+🔄 Background task started: "Review stale public-health forecasts..."
    Task ID: bg_143022_a1b2c3
 ```
 
@@ -351,10 +351,10 @@ SUPERFORECASTING_AGENT_BACKGROUND_NOTIFICATIONS=result
 
 ### Use Cases
 
-- **Server monitoring** — "/background Check the health of all services and alert me if anything is down"
-- **Long builds** — "/background Build and deploy the staging environment" while you continue chatting
-- **Research tasks** — "/background Research competitor pricing and summarize in a table"
-- **File operations** — "/background Organize the photos in ~/Downloads by date into folders"
+- **Forecast review** — "/background Review stale forecasts closing this month and list evidence gaps"
+- **Watched-source triage** — "/background Check new source alerts for fq_123 and summarize possible probability-moving claims"
+- **Backtest digest** — "/background Summarize the latest forecast backtest run and baseline edge"
+- **Evidence organization** — "/background Extract dated claims from this source packet and suggest ledger evidence entries"
 
 :::tip
 Background tasks on messaging platforms are fire-and-forget — you don't need to wait or check on them. Results arrive in the same chat automatically when the task finishes.

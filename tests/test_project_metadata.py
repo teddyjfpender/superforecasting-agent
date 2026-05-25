@@ -1458,6 +1458,8 @@ def test_high_attention_docs_navigation_is_forecast_native():
     assert "Telegram chat interface" in docs_text
     assert "fresh forecast session" in docs_text
     assert "gateway operator" in docs_text
+    assert "Review stale public-health forecasts and summarize evidence gaps" in docs_text
+    assert "Watched-source triage" in docs_text
     assert "Build a Hermes Plugin" not in docs_text
     assert "Building a Hermes Plugin" not in docs_text
     assert "# No skill — general purpose" not in docs_text
@@ -1466,6 +1468,8 @@ def test_high_attention_docs_navigation_is_forecast_native():
     assert "bot interface" not in docs_text
     assert "fresh conversation" not in docs_text
     assert "bot owner" not in docs_text
+    assert "Check all servers in the cluster" not in docs_text
+    assert "Server monitoring" not in docs_text
     assert not (
         root / "website" / "docs" / "guides" / "build-a-hermes-plugin.md"
     ).exists()
