@@ -1671,6 +1671,7 @@ def test_root_agents_guidance_is_forecast_native():
     assert "superforecasting-agent --tui" in text
     assert "primary forecast-chat experience" in text
     assert "# Hermes Agent - Development Guide" not in opening
+    assert "Hermes Agent" not in text
     assert "animated faces during API calls" not in opening
     assert "primary chat experience" not in opening
     assert "Classic Hermes gold/kawaii" not in text
