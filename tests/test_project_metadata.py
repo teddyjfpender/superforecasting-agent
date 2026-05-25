@@ -860,6 +860,7 @@ def test_runtime_user_guidance_prefers_active_forecast_home():
     root = Path(__file__).resolve().parents[1]
     goals = (root / "hermes_cli" / "goals.py").read_text(encoding="utf-8")
     main = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
+    config = (root / "hermes_cli" / "config.py").read_text(encoding="utf-8")
     plugins_cmd = (root / "hermes_cli" / "plugins_cmd.py").read_text(
         encoding="utf-8"
     )
@@ -875,6 +876,8 @@ def test_runtime_user_guidance_prefers_active_forecast_home():
     assert "agent home node/ directory" in main
     assert "first-use consent allowlist in the " in main
     assert "active agent home." in main
+    assert "active forecast home's skills/.bundled_manifest" in main
+    assert "active forecast home's skills/ directory" in config
     assert "active agent home's ``plugins/`` directory" in plugins_cmd
     assert "active user-facing agent home path" in doctor
     assert "active agent-home .env contains provider settings" in doctor
@@ -886,6 +889,8 @@ def test_runtime_user_guidance_prefers_active_forecast_home():
     assert "into ~/.hermes/node/" not in main
     assert "declared in ~/.hermes/config.yaml" not in main
     assert "consent allowlist at ~/.hermes/shell-hooks-allowlist.json" not in main
+    assert "~/.hermes/skills/.bundled_manifest" not in main
+    assert "always goes to ~/.hermes/skills/" not in config
     assert "``~/.hermes/plugins" not in plugins_cmd
     assert "Check ~/.hermes/config.yaml is writable." not in doctor
     assert "Check ~/.hermes/.env" not in doctor

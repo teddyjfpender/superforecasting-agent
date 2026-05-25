@@ -11847,7 +11847,7 @@ Examples:
         "reset",
         help="Reset a bundled skill — clears 'user-modified' tracking so updates work again",
         description=(
-            "Clear a bundled skill's entry from the sync manifest (~/.hermes/skills/.bundled_manifest) "
+            "Clear a bundled skill's entry from the active forecast home's skills/.bundled_manifest "
             "so future 'superforecasting-agent update' runs stop marking it as user-modified. Pass --restore to also "
             "replace the current copy with the bundled version."
         ),
