@@ -1,5 +1,5 @@
 /**
- * ChatPage - embeds the forecast TUI inside the dashboard.
+ * Forecast Desk host - embeds the forecast TUI inside the dashboard.
  *
  *   <div host> (dashboard chrome)                                         .
  *     └─ <div wrapper> (rounded, dark bg, padded — the "terminal window"  .
@@ -56,7 +56,7 @@ function generateChannelId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }
-  return `chat-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+  return `forecast-desk-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
 }
 
 // Colors for the terminal body.  Matches the dashboard's dark teal canvas
@@ -149,8 +149,8 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       : false,
   );
 
-  // The dashboard keeps ChatPage mounted persistently so the PTY survives tab
-  // switches. That is great for ordinary /chat navigation, but it means query
+  // The dashboard keeps the Forecast Desk host mounted persistently so the PTY
+  // survives tab switches. That is great for ordinary /chat navigation, but it means query
   // param changes do NOT remount the component. Resume-in-Forecast-Desk from the
   // Sessions page relies on `/chat?resume=<id>` changing at runtime, so we must
   // treat the current resume target as part of the PTY identity and rebuild the
@@ -230,7 +230,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         ghost
         onClick={() => setMobilePanelOpenRaw(true)}
         aria-expanded={mobilePanelOpen}
-        aria-controls="chat-side-panel"
+        aria-controls="forecast-desk-side-panel"
         className={cn(
           "shrink-0 rounded border border-current/20",
           "px-2 py-1 text-[0.65rem] font-medium tracking-wide normal-case",
@@ -660,7 +660,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // after two animation frames so layout has committed.
   //
   // Focus handling: we only steal focus back into the terminal when
-  // nothing else inside ChatPage was holding it (typically the first
+  // nothing else inside the Forecast Desk page was holding it (typically the first
   // activation after mount, where document.activeElement is <body>; or
   // a return after the user had been typing in the terminal, where
   // focus was already on the xterm textarea before the tab got hidden
@@ -681,12 +681,12 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         const active = typeof document !== "undefined"
           ? document.activeElement
           : null;
-        const focusIsElsewhereInChatPage =
+        const focusIsElsewhereInForecastDesk =
           active !== null &&
           active !== document.body &&
           host !== null &&
           !host.contains(active);
-        if (!focusIsElsewhereInChatPage) {
+        if (!focusIsElsewhereInForecastDesk) {
           termRef.current?.focus();
         }
       });
@@ -734,7 +734,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         )}
 
         <div
-          id="chat-side-panel"
+          id="forecast-desk-side-panel"
           role="complementary"
           aria-label={modelToolsLabel}
           className={cn(
@@ -814,7 +814,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         >
           <div
             ref={hostRef}
-            className="hermes-chat-xterm-host min-h-0 min-w-0 flex-1"
+            className="forecast-desk-xterm-host min-h-0 min-w-0 flex-1"
           />
 
           <Button
@@ -844,7 +844,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
 
         {!narrow && (
           <div
-            id="chat-side-panel"
+            id="forecast-desk-side-panel"
             role="complementary"
             aria-label={modelToolsLabel}
             className="flex min-h-0 shrink-0 flex-col overflow-hidden lg:h-full lg:w-80"

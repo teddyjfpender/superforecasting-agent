@@ -122,11 +122,11 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/docs": DocsPage,
 };
 
-// Route placeholder for /chat.  The persistent ChatPage host (rendered
-// outside <Routes> when embedded chat is on) paints on top; this empty
+// Route placeholder for /chat.  The persistent Forecast Desk host (rendered
+// outside <Routes> when embedded Forecast Desk is on) paints on top; this empty
 // element just claims the path so the `*` catch-all redirect doesn't
 // fire when the user navigates to /chat.
-function ChatRouteSink() {
+function ForecastDeskRouteSink() {
   return null;
 }
 
@@ -339,14 +339,14 @@ export default function App() {
       .catch(() => setShowTokenAnalytics(false));
   }, []);
 
-  // A plugin can replace the built-in /chat page via `tab.override: "/chat"`
+  // A plugin can replace the built-in Forecast Desk page via `tab.override: "/chat"`
   // in its manifest.  When one does, `buildRoutes` already swaps the route
   // element for <PluginPage /> — but we also have to suppress the
-  // persistent ChatPage host below, or the plugin's page and the built-in
+  // persistent Forecast Desk host below, or the plugin's page and the built-in
   // terminal would paint on top of each other.  The override is niche
   // (nothing ships overriding /chat today) but it's an advertised
   // extension point, so preserve the pre-persistence contract: when a
-  // plugin owns /chat, the built-in chat UI is entirely absent.
+  // plugin owns /chat, the built-in Forecast Desk UI is entirely absent.
   //
   // Waiting on `pluginsLoading` is load-bearing: manifests arrive
   // asynchronously from /api/dashboard/plugins, so on initial render
@@ -364,7 +364,7 @@ export default function App() {
   const builtinRoutes = useMemo(
     () => ({
       ...BUILTIN_ROUTES_CORE,
-      ...(embeddedChat ? { "/chat": ChatRouteSink } : {}),
+      ...(embeddedChat ? { "/chat": ForecastDeskRouteSink } : {}),
     }),
     [embeddedChat],
   );

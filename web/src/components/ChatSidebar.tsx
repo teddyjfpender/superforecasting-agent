@@ -16,8 +16,7 @@
  *      the dashboard fanned out.  This is how `tool.start/progress/
  *      complete` from the agent loop reach the sidebar even though the
  *      PTY child runs three processes deep from us.  The `channel` id
- *      ties this listener to the same Forecast Desk tab's PTY child — see
- *      `ChatPage.tsx` for where the id is generated.
+ *      ties this listener to the same Forecast Desk tab's PTY child.
  *
  * Best-effort throughout: WS failures show in the badge / banner, the
  * terminal pane keeps working unimpaired.

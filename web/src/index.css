@@ -16,7 +16,7 @@
 /* JetBrains Mono — bundled for the embedded Forecast Desk TUI.        */
 /* Gives the terminal a proper monospace font even on systems where    */
 /* the user doesn't have one installed locally; xterm.js picks it up   */
-/* via ChatPage's `fontFamily` option.                                 */
+/* via the Forecast Desk terminal host's `fontFamily` option.          */
 /* Apache-2.0.                                                         */
 /* ------------------------------------------------------------------ */
 

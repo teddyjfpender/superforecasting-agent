@@ -3324,12 +3324,12 @@ async def get_models_analytics(days: int = 30):
 
 
 # ---------------------------------------------------------------------------
-# /api/pty — PTY-over-WebSocket bridge for the dashboard "Chat" tab.
+# /api/pty — PTY-over-WebSocket bridge for the dashboard Forecast Desk tab.
 #
 # The endpoint spawns the same ``hermes --tui`` binary the CLI uses, behind
 # a POSIX pseudo-terminal, and forwards bytes + resize escapes across a
 # WebSocket.  The browser renders the ANSI through xterm.js (see
-# web/src/pages/ChatPage.tsx).
+# web/src/pages/ChatPage.tsx, retained as the compatibility route host).
 #
 # Auth: ``?token=<session_token>`` query param (browsers can't set
 # Authorization on the WS upgrade).  Same ephemeral ``_SESSION_TOKEN`` as
@@ -3445,7 +3445,7 @@ def _resolve_chat_argv(
     argv, cwd = _make_tui_argv(PROJECT_ROOT / "ui-tui", tui_dev=False)
     env = os.environ.copy()
     env.setdefault("NODE_ENV", "production")
-    # Browser-embedded chat should prefer stable wheel-based scrollback over
+    # Browser-embedded Forecast Desk should prefer stable wheel-based scrollback over
     # native terminal mouse tracking. When mouse tracking is enabled, wheel
     # events are consumed by the TUI and forwarded as terminal input, which
     # makes browser-side transcript scrolling feel broken. Keep the terminal
@@ -3612,7 +3612,7 @@ async def pty_ws(ws: WebSocket) -> None:
 
 
 # ---------------------------------------------------------------------------
-# /api/ws — JSON-RPC WebSocket sidecar for the dashboard "Chat" tab.
+# /api/ws — JSON-RPC WebSocket sidecar for the dashboard Forecast Desk tab.
 #
 # Drives the same `tui_gateway.dispatch` surface Ink uses over stdio, so the
 # dashboard can render structured metadata (model badge, tool-call sidebar,

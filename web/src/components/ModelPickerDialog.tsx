@@ -21,7 +21,7 @@ import { createPortal } from "react-dom";
  * 1. Forecast Desk mode (ChatSidebar) — pass `gw` + `sessionId`. The picker
  *    loads options via `model.options` JSON-RPC and emits the result as a
  *    slash command string (`/model <model> --provider <slug> [--global]`)
- *    through `onSubmit`, which the ChatPage pipes to `slashExec`.
+ *    through `onSubmit`, which the Forecast Desk page pipes to `slashExec`.
  *
  * 2. Standalone mode (ModelsPage, Config settings) — pass a `loader` and
  *    `onApply`. The picker fetches options via the REST endpoint and calls
