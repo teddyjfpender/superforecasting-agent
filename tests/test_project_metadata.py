@@ -1662,6 +1662,12 @@ def test_root_agents_guidance_is_forecast_native():
     assert "`~/.superforecasting-agent/config.yaml`" in text
     assert "~/.superforecasting-agent/skins/*.yaml" in text
     assert "`forecast` — Neutral forecast desk default" in text
+    assert "`superforecasting-agent tools`" in text
+    assert "`superforecasting-agent setup`" in text
+    assert "`superforecasting-agent cron <verb>`" in text
+    assert "`superforecasting-agent kanban`" in text
+    assert "`SUPERFORECASTING_AGENT_BACKGROUND_NOTIFICATIONS`" in text
+    assert "### DO NOT hardcode agent-home paths" in text
     assert "superforecasting-agent --tui" in text
     assert "primary forecast-chat experience" in text
     assert "# Hermes Agent - Development Guide" not in opening
@@ -1669,6 +1675,14 @@ def test_root_agents_guidance_is_forecast_native():
     assert "primary chat experience" not in opening
     assert "Classic Hermes gold/kawaii" not in text
     assert "Users create `~/.hermes/skins/" not in text
+    assert "go to `~/.hermes/skills/.archive/`" not in text
+    assert "File lock at `~/.hermes/cron/.tick.lock`" not in text
+    assert "Hermes supports **profiles**" not in text
+    assert "Hermes-Agent ensures caching" not in text
+    assert "`hermes tools`" not in text
+    assert "`hermes setup`" not in text
+    assert "`hermes kanban` with verbs" not in text
+    assert "in config.yaml (or `HERMES_BACKGROUND_NOTIFICATIONS` env var)" not in text
 
 
 def test_github_issue_and_pr_templates_are_forecast_native():
