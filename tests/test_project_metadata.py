@@ -1077,6 +1077,7 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
     assert "independent Superforecasting Agent" in thread_ready_lines
     assert "Hermes session" not in text
     assert "in the Hermes venv" not in text
+    assert "hermes-agent[slack]" not in text
     assert "System topic for Hermes commands and status" not in text
     assert "configure Hermes features" not in text
     assert "Another local Hermes gateway" not in text
