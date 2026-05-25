@@ -1875,6 +1875,28 @@ def test_classic_cli_visible_labels_are_forecast_native():
     assert "Hermes-managed isolated debug" not in text
 
 
+def test_cli_config_example_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "cli-config.yaml.example").read_text(encoding="utf-8")
+
+    assert text.startswith("# Superforecasting Agent CLI Configuration")
+    assert "SUPERFORECASTING_AGENT_INFERENCE_PROVIDER" in text
+    assert "forecast-desk" in text
+    assert "forecast-telegram" in text
+    assert "forecaster:" in text
+    assert "calibrated forecasting analyst" in text
+    assert "superforecasting-agent chat --list-toolsets" in text
+    assert "~/.superforecasting-agent/skills/" in text
+    assert "Hermes Agent CLI Configuration" not in text
+    assert "Captain Hermes" not in text
+    assert "They call me Hermes" not in text
+    assert "kawaii:" not in text
+    assert "catgirl:" not in text
+    assert "uwu:" not in text
+    assert "HERMES_INFERENCE_PROVIDER" not in text
+    assert "~/.hermes" not in text
+
+
 def test_gateway_setup_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "hermes_cli" / "gateway.py").read_text(encoding="utf-8")

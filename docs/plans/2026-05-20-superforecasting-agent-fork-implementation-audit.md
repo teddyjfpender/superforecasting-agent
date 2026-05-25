@@ -1320,6 +1320,7 @@ Latest verified result:
 - Logging module identity pass: `hermes_logging.py` now describes the logging subsystem as Superforecasting Agent infrastructure, avoids hardcoding legacy home-path copy in the module docstring, and points component filtering comments at the fork-native logs command while preserving the compatibility function and parameter names.
 - Tester smoke refresh pass: `python3 scripts/forecast_smoke_test.py` passed at snapshot `7e8956498d58` with 52 source adapters, 4 benchmark datasets, pilot-report checks `7/7`, two performance runs, pilot bundle export included, and the expected `insufficient_live_evidence` readiness guard; the smoke transcript was refreshed with that output.
 - Security policy identity pass: top-level `SECURITY.md` now names Superforecasting Agent throughout the trust model, uses the fork-native GitHub Security Advisory URL, points environment details at `superforecasting-agent --version`, and removes legacy Hermes product/security-policy wording under a metadata guard.
+- Config example forecast-first pass: `cli-config.yaml.example` now presents Superforecasting Agent configuration, fork-native provider/hook env aliases, fork-native home paths, `superforecasting-agent` command examples, `forecast-*` toolset presets, and forecasting-oriented operating modes instead of novelty/general-assistant personalities.
 
 ## Prompt-To-Artifact Checklist
 
