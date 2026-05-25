@@ -1201,7 +1201,7 @@ def resolve_runtime_provider(
         # compatibility field: either an invoke JWT or legacy opaque key.
         # The pool doesn't
         # refresh it during selection (that would trigger network calls in
-        # non-runtime contexts like `hermes auth list`).  If the key is
+        # non-runtime contexts like `superforecasting-agent auth list`). If the key is
         # expired, clear pool_api_key so we fall through to
         # resolve_nous_runtime_credentials() which handles refresh + fallback.
         if provider == "nous" and entry is not None and pool_api_key:

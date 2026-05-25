@@ -146,7 +146,8 @@ from hermes_cli.config import (
     get_env_value,
     ensure_hermes_home,
 )
-# display_hermes_home imported lazily at call sites (stale-module safety during hermes update)
+# display_hermes_home imported lazily at call sites (stale-module safety during
+# superforecasting-agent update)
 
 from hermes_cli.colors import Colors, color
 

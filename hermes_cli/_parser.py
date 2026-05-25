@@ -114,7 +114,7 @@ def build_top_level_parser():
     # --model / --provider are accepted at the top level so they can pair
     # with -z without needing the `chat` subcommand.  If neither -z nor a
     # subcommand consumes them, they fall through harmlessly as None.
-    # Mirrors `hermes chat --model ... --provider ...` semantics.
+    # Mirrors `superforecasting-agent chat --model ... --provider ...` semantics.
     _inherited_flag(
         parser,
         "-m",

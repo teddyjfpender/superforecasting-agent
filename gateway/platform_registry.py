@@ -79,7 +79,7 @@ class PlatformEntry:
     source: str = "plugin"
 
     # Name of the plugin manifest that registered this entry (empty for
-    # built-ins).  Used by ``hermes gateway setup`` to auto-enable the
+    # built-ins). Used by ``superforecasting-agent gateway setup`` to auto-enable the
     # owning plugin when the user configures its platform.
     plugin_name: str = ""
 

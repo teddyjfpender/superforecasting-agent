@@ -1445,12 +1445,12 @@ def _pin_kanban_board_env() -> None:
     """Pin the active kanban board into kanban board env aliases for the chat session.
 
     Without this, in-process tools (``kanban_*``) and shelled-out CLI calls
-    (``hermes kanban …``) resolve the board on different paths: the env-pin if
-    set, otherwise the global ``<root>/kanban/current`` file. A concurrent
-    ``hermes kanban boards switch`` from another session can flip the file
-    mid-turn, so the same chat sees its tool calls hit board A while its shell
-    calls hit board B (#20074). Pinning at chat boot mirrors what the
-    dispatcher already does for spawned workers.
+    (``superforecasting-agent kanban …``) resolve the board on different
+    paths: the env-pin if set, otherwise the global ``<root>/kanban/current``
+    file. A concurrent ``superforecasting-agent kanban boards switch`` from
+    another session can flip the file mid-turn, so the same chat sees its tool
+    calls hit board A while its shell calls hit board B (#20074). Pinning at
+    chat boot mirrors what the dispatcher already does for spawned workers.
     """
     try:
         from hermes_cli.kanban_db import KANBAN_BOARD_ENV_NAMES, get_current_board
@@ -1710,8 +1710,9 @@ def cmd_whatsapp(args):
     # We intentionally don't write WHATSAPP_ENABLED=true here.  If the user
     # aborts the wizard later (Ctrl+C, failed npm install, missed QR scan),
     # we'd otherwise leave .env claiming WhatsApp is ready when the bridge
-    # has no creds.json.  Every subsequent `hermes gateway` then paid a 30s
-    # bridge-bootstrap timeout and queued WhatsApp for indefinite retries.
+    # has no creds.json. Every subsequent `superforecasting-agent gateway` then
+    # paid a 30s bridge-bootstrap timeout and queued WhatsApp for indefinite
+    # retries.
     # Now: aborted setup leaves WHATSAPP_ENABLED unset → gateway skips it.
     # Re-runs that already have WHATSAPP_ENABLED=true (from a prior
     # successful pairing) stay enabled — we just don't write it pre-emptively.
@@ -3052,8 +3053,8 @@ def _model_flow_openai_codex(config, current_model=""):
             return
 
     _codex_token = None
-    # Prefer credential pool (where `hermes auth` stores device_code tokens),
-    # fall back to legacy provider state.
+    # Prefer credential pool (where `superforecasting-agent auth` stores
+    # device_code tokens), fall back to legacy provider state.
     try:
         _codex_status = get_codex_auth_status()
         if _codex_status.get("logged_in"):
@@ -3152,9 +3153,10 @@ def _model_flow_xai_oauth(_config, current_model="", *, args=None):
 
     # Resolve a usable base URL.  ``resolve_xai_oauth_runtime_credentials``
     # only reads from the auth.json singleton — but credentials may legitimately
-    # live only in the pool (e.g. after ``hermes auth add xai-oauth``).  Fall
-    # back to the default base URL in that case so the model picker still
-    # completes successfully instead of bailing out with
+    # live only in the pool (e.g. after
+    # ``superforecasting-agent auth add xai-oauth``). Fall back to the default
+    # base URL in that case so the model picker still completes successfully
+    # instead of bailing out with
     # ``Could not resolve xAI OAuth credentials``.
     base_url = DEFAULT_XAI_OAUTH_BASE_URL
     try:
@@ -9307,7 +9309,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                             # the RestartSec backoff and leave the unit
                             # dead.  Clearing the failed state first makes
                             # the restart idempotent.  Mirrors the recovery
-                            # path in `hermes gateway restart`
+                            # path in `superforecasting-agent gateway restart`
                             # (`systemd_restart()`) as of PR #20949.
                             subprocess.run(
                                 scope_cmd + ["reset-failed", svc_name],
@@ -12357,7 +12359,7 @@ Examples:
     # subparser's args.command attribute, which the dispatcher reads to
     # route to cmd_mcp.  Without an explicit dest, argparse derives
     # dest="command" from the flag name and sets it to None when the
-    # flag is omitted, causing `hermes mcp add ...` to fall through to
+    # flag is omitted, causing `superforecasting-agent mcp add ...` to fall through to
     # interactive chat.
     mcp_add_p.add_argument(
         "--command", dest="mcp_command", help="Stdio command (e.g. npx)"

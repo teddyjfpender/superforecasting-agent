@@ -9,8 +9,8 @@ Where this fits relative to the existing pieces:
 
 * ``superforecasting-agent profile export/import`` — local backup / restore for a profile
   on your own machine. NOT a distribution format. Stays as-is.
-* ``hermes skills install <url>`` — the inherited URL install pattern we're
-  mirroring, but at the profile granularity.
+* ``superforecasting-agent skills install <url>`` — the inherited URL install
+  pattern we're mirroring, but at the profile granularity.
 
 Subcommands (all live under ``superforecasting-agent profile``, not a parallel tree):
 

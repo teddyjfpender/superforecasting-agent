@@ -1667,6 +1667,84 @@ def test_runtime_diagnostic_status_guidance_is_forecast_native():
     assert "hermes config.yaml under retaindb" not in text
 
 
+def test_runtime_command_guidance_is_forecast_native_where_not_compatibility():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        root / "acp_adapter" / "entry.py",
+        root / "agent" / "lsp" / "__init__.py",
+        root / "agent" / "prompt_builder.py",
+        root / "gateway" / "platform_registry.py",
+        root / "gateway" / "platforms" / "ADDING_A_PLATFORM.md",
+        root / "gateway" / "platforms" / "feishu.py",
+        root / "gateway" / "platforms" / "qqbot" / "adapter.py",
+        root / "gateway" / "run.py",
+        root / "hermes_cli" / "_parser.py",
+        root / "hermes_cli" / "auth.py",
+        root / "hermes_cli" / "config.py",
+        root / "hermes_cli" / "main.py",
+        root / "hermes_cli" / "model_switch.py",
+        root / "hermes_cli" / "nous_subscription.py",
+        root / "hermes_cli" / "profile_distribution.py",
+        root / "hermes_cli" / "runtime_provider.py",
+        root / "hermes_cli" / "setup.py",
+        root / "plugins" / "kanban" / "dashboard" / "dist" / "index.js",
+        root / "plugins" / "kanban" / "dashboard" / "plugin_api.py",
+        root / "plugins" / "kanban" / "systemd" / "hermes-kanban-dispatcher.service",
+        root / "plugins" / "memory" / "honcho" / "cli.py",
+        root / "plugins" / "memory" / "supermemory" / "__init__.py",
+        root / "plugins" / "spotify" / "__init__.py",
+        root / "plugins" / "web" / "xai" / "provider.py",
+        root / "tools" / "mcp_oauth_manager.py",
+        root / "tools" / "process_registry.py",
+        root / "tools" / "terminal_tool.py",
+        root / "web" / "vite.config.ts",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in checked_paths)
+
+    assert "superforecasting-agent gateway setup" in text
+    assert "superforecasting-agent model" in text
+    assert "superforecasting-agent kanban reassign" in text
+    assert "superforecasting-agent mcp add" in text
+    assert "superforecasting-agent mcp remove" in text
+    assert "superforecasting-agent chat --model" in text
+    assert "superforecasting-agent skills install <url>" in text
+    assert "superforecasting-agent auth spotify" in text
+    assert "superforecasting-agent memory setup" in text
+    assert "superforecasting-agent update --gateway" in text
+    assert "superforecasting-agent kanban show" in text
+    assert "ExecStart=/usr/bin/env superforecasting-agent kanban daemon" in text
+
+    assert "via `hermes model`" not in text
+    assert "hermes kanban reassign" not in text
+    assert "(``hermes kanban" not in text
+    assert "`hermes gateway` then" not in text
+    assert "where `hermes auth` stores" not in text
+    assert "after ``hermes auth add xai-oauth``" not in text
+    assert "`hermes gateway restart`" not in text
+    assert "`hermes mcp add ..." not in text
+    assert "``hermes mcp remove" not in text
+    assert "``hermes chat`` exit" not in text
+    assert "has not run ``hermes auth" not in text
+    assert "Mirrors `hermes chat" not in text
+    assert "``hermes skills install <url>``" not in text
+    assert "via ``hermes auth``" not in text
+    assert "`hermes gateway status`" not in text
+    assert "Same host as `hermes dashboard`" not in text
+    assert "`hermes memory setup`" not in text
+    assert "Do not shell out to `hermes kanban" not in text
+    assert "`hermes gateway setup` via" not in text
+    assert "partial ``hermes update``" not in text
+    assert "daemon spawned by `hermes update`" not in text
+    assert "stale-module safety during hermes update" not in text
+    assert "break `hermes update`" not in text
+    assert "Called from `hermes update`" not in text
+    assert "detached ``hermes update --gateway``" not in text
+    assert "``gateway/run.py``'s ``hermes update --gateway``" not in text
+    assert "re-run `hermes model`" not in text
+    assert "with `hermes model`)" not in text
+    assert "non-runtime contexts like `hermes auth list`" not in text
+
+
 def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [

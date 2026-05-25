@@ -123,7 +123,7 @@ export default defineConfig({
         target: BACKEND,
         ws: true,
       },
-      // Same host as `hermes dashboard` must serve these; Vite has no
+      // Same host as `superforecasting-agent dashboard` must serve these; Vite has no
       // dashboard-plugins/* files, so without this, plugin scripts 404
       // or receive index.html in dev.
       "/dashboard-plugins": BACKEND,

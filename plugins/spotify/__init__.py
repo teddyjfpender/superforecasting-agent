@@ -2,9 +2,10 @@
 
 Registers 7 tools (playback, devices, queue, search, playlists, albums,
 library) into the ``spotify`` toolset. Each tool's handler is gated by
-``_check_spotify_available()`` — when the user has not run ``hermes auth
-spotify``, the tools remain registered (so they appear in ``hermes
-tools``) but the runtime check prevents dispatch.
+``_check_spotify_available()`` — when the user has not run
+``superforecasting-agent auth spotify``, the tools remain registered (so they
+appear in ``superforecasting-agent tools``) but the runtime check prevents
+dispatch.
 
 Why a plugin instead of a top-level ``tools/`` file?
 

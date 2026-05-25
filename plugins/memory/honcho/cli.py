@@ -210,7 +210,7 @@ def cmd_sync(args) -> None:
 def sync_honcho_profiles_quiet() -> int:
     """Sync Honcho host blocks for all profiles. Returns count of newly created blocks.
 
-    Called from `hermes update` -- no output, no exceptions.
+    Called from `superforecasting-agent update` -- no output, no exceptions.
     """
     try:
         from hermes_cli.profiles import list_profiles

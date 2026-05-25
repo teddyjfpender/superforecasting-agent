@@ -23,9 +23,10 @@ try:
     import hermes_bootstrap  # noqa: F401
 except ModuleNotFoundError:
     # Graceful fallback when hermes_bootstrap isn't registered in the venv
-    # yet — happens during partial ``hermes update`` where git-reset landed
-    # new code but ``uv pip install -e .`` didn't finish.  Missing bootstrap
-    # means UTF-8 stdio setup is skipped on Windows; POSIX is unaffected.
+    # yet — happens during partial ``superforecasting-agent update`` where
+    # git-reset landed new code but ``uv pip install -e .`` didn't finish.
+    # Missing bootstrap means UTF-8 stdio setup is skipped on Windows; POSIX
+    # is unaffected.
     pass
 
 import argparse
