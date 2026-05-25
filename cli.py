@@ -2714,7 +2714,7 @@ def save_config_value(key_path: str, value: any) -> bool:
 
 
 # ============================================================================
-# HermesCLI Class
+# Forecast CLI implementation
 # ============================================================================
 
 class HermesCLI:
@@ -14356,6 +14356,18 @@ class HermesCLI:
         if getattr(self, '_pending_relaunch', None):
             from hermes_cli.relaunch import relaunch
             relaunch(self._pending_relaunch, preserve_inherited=False)
+
+
+class ForecastCLI(HermesCLI):
+    """Fork-native public name for the interactive forecast CLI.
+
+    ``HermesCLI`` remains the inherited compatibility class name used by
+    older wrappers and internal tests. New extension code should import
+    ``ForecastCLI`` so public examples do not bake in the upstream product
+    name.
+    """
+
+    pass
 
 
 # ============================================================================

@@ -6,7 +6,7 @@ description: "Build wrapper CLIs around the forecast desk"
 
 # Extending the CLI
 
-Superforecasting Agent inherits protected extension hooks on `HermesCLI` so wrapper CLIs can add widgets, keybindings, and layout customizations without overriding the large `run()` method. Use these hooks to add forecast-focused panels, status lines, review queues, source alerts, or domain dashboards while keeping durable forecast state in the ledger.
+Superforecasting Agent exposes protected extension hooks on `ForecastCLI` so wrapper CLIs can add widgets, keybindings, and layout customizations without overriding the large `run()` method. Use these hooks to add forecast-focused panels, status lines, review queues, source alerts, or domain dashboards while keeping durable forecast state in the ledger.
 
 ## Extension points
 
@@ -28,12 +28,12 @@ The first three are new protected hooks. The last two already existed.
 #!/usr/bin/env python3
 """my_cli.py -- Example wrapper CLI that extends the forecast desk."""
 
-from cli import HermesCLI
+from cli import ForecastCLI
 from prompt_toolkit.layout import FormattedTextControl, Window
 from prompt_toolkit.filters import Condition
 
 
-class MyCLI(HermesCLI):
+class MyCLI(ForecastCLI):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

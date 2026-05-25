@@ -206,6 +206,28 @@ def test_forecast_native_package_namespace_is_exposed():
     assert "superforecasting_agent.*" in include
 
 
+def test_forecast_cli_public_alias_is_exposed():
+    from cli import ForecastCLI, HermesCLI
+
+    root = Path(__file__).resolve().parents[1]
+    cli_source = (root / "cli.py").read_text(encoding="utf-8")
+    extension_doc = (
+        root / "website" / "docs" / "developer-guide" / "extending-the-cli.md"
+    ).read_text(encoding="utf-8")
+    skill_doc = (
+        root / "skills" / "software-development"
+        / "debugging-hermes-tui-commands" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+
+    assert issubclass(ForecastCLI, HermesCLI)
+    assert "class ForecastCLI(HermesCLI)" in cli_source
+    assert "from cli import ForecastCLI" in extension_doc
+    assert "class MyCLI(ForecastCLI)" in extension_doc
+    assert "ForecastCLI.process_command()" in skill_doc
+    assert "from cli import HermesCLI" not in extension_doc
+    assert "class MyCLI(HermesCLI)" not in extension_doc
+
+
 def test_web_locale_app_brand_is_forecast_native():
     i18n_dir = Path(__file__).resolve().parents[1] / "web" / "src" / "i18n"
     locale_files = []
