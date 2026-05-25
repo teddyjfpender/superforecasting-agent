@@ -1207,7 +1207,8 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     evidence_sub = evidence_parser.add_subparsers(dest="evidence_command")
     evidence_add = evidence_sub.add_parser("add", help="Add evidence to a forecast question")
     evidence_add.add_argument("id")
-    evidence_add.add_argument("source_or_note")
+    evidence_add.add_argument("source_or_note", nargs="?")
+    evidence_add.add_argument("--source", dest="source_or_note_option")
     evidence_add.add_argument("--claim", default="")
     evidence_add.add_argument("--claim-type", choices=sorted(EVIDENCE_CLAIM_TYPES), default="fact")
     evidence_add.add_argument("--summary", default="")
@@ -5726,9 +5727,14 @@ def _cmd_reference_class_status(args: argparse.Namespace) -> None:
 
 
 def _cmd_evidence_add(args: argparse.Namespace) -> None:
+    if args.source_or_note and args.source_or_note_option:
+        raise SystemExit("use either positional source_or_note or --source, not both")
+    source_or_note = args.source_or_note or args.source_or_note_option or ""
+    if not source_or_note and not args.source_url:
+        raise SystemExit("forecast evidence add requires a source/note argument, --source, or --url")
     item = _ledger(args).add_evidence(
         question_id=args.id,
-        source_or_note=args.source_or_note,
+        source_or_note=source_or_note,
         claim=args.claim,
         claim_type=args.claim_type,
         summary=args.summary,

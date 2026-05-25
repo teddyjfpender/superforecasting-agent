@@ -705,6 +705,24 @@ def test_forecast_cli_evidence_claim_type_is_visible(tmp_path, capsys):
     assert evidence.reliability_rating == 0.5
     assert evidence.relevance_rating == 0.75
 
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "evidence",
+            "add",
+            question_id,
+            "--source",
+            "voice-note",
+            "--summary",
+            "Recorded from a voice note.",
+        ],
+    )
+    assert "added evidence" in capsys.readouterr().out
+    assert len(ForecastLedger(db_path).list_evidence(question_id)) == 2
+
 
 def test_forecast_cli_research_summarizes_new_evidence_since_current_forecast(tmp_path, capsys):
     parser = _parser()
