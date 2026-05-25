@@ -45,11 +45,11 @@ const modelValueForConfigSet = (arg: string) => {
 export const sessionCommands: SlashCommand[] = [
   {
     aliases: ['bg', 'btw'],
-    help: 'launch a background prompt',
+    help: 'launch a background forecast note',
     name: 'background',
     run: (arg, ctx) => {
       if (!arg) {
-        return ctx.transcript.sys('/background <prompt>')
+        return ctx.transcript.sys('/background <forecast note>')
       }
 
       ctx.gateway.rpc<BackgroundStartResponse>('prompt.background', { session_id: ctx.sid, text: arg }).then(

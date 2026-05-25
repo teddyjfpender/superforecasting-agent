@@ -592,7 +592,7 @@ def test_command_dispatch_steer_fallback_sends_message(server):
 
 
 def test_command_dispatch_retry_finds_last_user_message(server):
-    """command.dispatch /retry walks session['history'] to find the last user message."""
+    """command.dispatch /retry walks session['history'] to find the last user note."""
     sid = "test-session"
     history = [
         {"role": "user", "content": "first question"},
@@ -618,7 +618,7 @@ def test_command_dispatch_retry_finds_last_user_message(server):
     result = resp["result"]
     assert result["type"] == "send"
     assert result["message"] == "second question"
-    # Verify history was truncated: everything from last user message onward removed
+    # Verify history was truncated: everything from last user note onward removed
     assert len(server._sessions[sid]["history"]) == 2
     assert server._sessions[sid]["history"][-1]["role"] == "assistant"
     assert server._sessions[sid]["history_version"] == 1

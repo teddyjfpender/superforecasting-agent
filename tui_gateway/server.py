@@ -1400,7 +1400,7 @@ def _probe_credentials(agent) -> str:
         key = getattr(agent, "api_key", "") or ""
         provider = getattr(agent, "provider", "") or ""
         if not key or key == "no-key-required":
-            return f"No API key configured for provider '{provider}'. First message will fail."
+            return f"No API key configured for provider '{provider}'. First forecast turn will fail."
     except Exception:
         pass
     return ""
@@ -2810,7 +2810,7 @@ def _(rid, params: dict) -> dict:
     with session["history_lock"]:
         history = [dict(msg) for msg in session.get("history", [])]
     if not history:
-        return _err(rid, 4008, "nothing to branch — send a message first")
+        return _err(rid, 4008, "nothing to branch — send a forecast note first")
     new_key = _new_session_key()
     branch_name = params.get("name", "")
     try:
@@ -4803,15 +4803,15 @@ def _(rid, params: dict) -> dict:
             )
         history = session.get("history", [])
         if not history:
-            return _err(rid, 4018, "no previous user message to retry")
-        # Walk backwards to find the last user message
+            return _err(rid, 4018, "no previous forecast note to retry")
+        # Walk backwards to find the last user note.
         last_user_idx = None
         for i in range(len(history) - 1, -1, -1):
             if history[i].get("role") == "user":
                 last_user_idx = i
                 break
         if last_user_idx is None:
-            return _err(rid, 4018, "no previous user message to retry")
+            return _err(rid, 4018, "no previous forecast note to retry")
         content = history[last_user_idx].get("content", "")
         if isinstance(content, list):
             content = " ".join(
@@ -4820,8 +4820,8 @@ def _(rid, params: dict) -> dict:
                 if isinstance(p, dict) and p.get("type") == "text"
             )
         if not content:
-            return _err(rid, 4018, "last user message is empty")
-        # Truncate history: remove everything from the last user message onward
+            return _err(rid, 4018, "last forecast note is empty")
+        # Truncate history: remove everything from the last user note onward
         # (mirrors CLI retry_last() which strips the failed exchange)
         with session["history_lock"]:
             session["history"] = history[:last_user_idx]

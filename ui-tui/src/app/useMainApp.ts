@@ -514,9 +514,9 @@ export function useMainApp(gw: GatewayClient) {
     sys
   })
 
-  // Drain one queued message whenever the session settles (busy → false):
+  // Drain one queued forecast note whenever the session settles (busy → false):
   // agent turn ends, interrupt, shell.exec finishes, error recovered, or the
-  // session first comes up with pre-queued messages. Without this, shell.exec
+  // session first comes up with pre-queued notes. Without this, shell.exec
   // and error paths never emit message.complete, so anything enqueued while
   // `!sleep` / a failed turn was running would stay stuck forever.
   useEffect(() => {

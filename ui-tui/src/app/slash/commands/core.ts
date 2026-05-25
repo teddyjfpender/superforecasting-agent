@@ -864,7 +864,7 @@ export const coreCommands: SlashCommand[] = [
         ctx.guarded<SessionUndoResponse>(r => {
           if ((r.removed ?? 0) > 0) {
             ctx.transcript.setHistoryItems((prev: Msg[]) => ctx.transcript.trimLastExchange(prev))
-            ctx.transcript.sys(`undid ${r.removed} messages`)
+            ctx.transcript.sys(`undid ${r.removed} transcript entries`)
           } else {
             ctx.transcript.sys('nothing to undo')
           }
@@ -874,7 +874,7 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'retry last user message',
+    help: 'retry last forecast note',
     name: 'retry',
     run: (_arg, ctx) => {
       const last = ctx.local.getLastUserMsg()

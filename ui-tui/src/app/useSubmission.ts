@@ -252,10 +252,10 @@ export function useSubmission(opts: UseSubmissionOptions) {
             const r = asRpcResult<SessionSteerResponse>(raw)
 
             if (r?.status !== 'queued') {
-              fallback('steer rejected — message queued for next turn')
+              fallback('steer rejected — forecast note queued for next turn')
             }
           })
-          .catch(() => fallback('steer failed — message queued for next turn'))
+          .catch(() => fallback('steer failed — forecast note queued for next turn'))
 
         return
       }
