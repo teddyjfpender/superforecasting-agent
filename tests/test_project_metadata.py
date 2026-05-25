@@ -432,6 +432,20 @@ def test_logging_module_copy_is_forecast_native():
     assert "hermes logs --component" not in text
 
 
+def test_session_state_module_copy_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "hermes_state.py").read_text(encoding="utf-8")
+
+    assert "SQLite state store for Superforecasting Agent." in text
+    assert "multiple agent processes" in text
+    assert "upgrade Superforecasting" in text
+    assert "Bind one Telegram DM topic thread to one agent session." in text
+    assert "SQLite State Store for Hermes Agent." not in text
+    assert "multiple hermes processes" not in text
+    assert "upgrade Hermes" not in text
+    assert "Hermes session" not in text
+
+
 def test_security_policy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "SECURITY.md").read_text(encoding="utf-8")

@@ -1324,6 +1324,7 @@ Latest verified result:
 - Web README forecast-desk pass: `web/README.md` now describes the Forecast Desk web UI, starts the backend through `superforecasting-agent dashboard --no-open`, and names forecast dashboard surfaces such as active forecasts, review queues, calibration health, and `ForecastsPage` under metadata coverage.
 - Docker default SOUL pass: `docker/SOUL.md` now seeds a Superforecasting Agent operating style with calibrated forecasting, quantitative research, stale-data, and base-rate examples instead of the inherited generic persona examples.
 - Cron scheduler identity pass: `cron/__init__.py`, `cron/scheduler.py`, and `cron/jobs.py` now use Superforecasting Agent and neutral agent-profile/home wording in scheduler docs, gateway install examples, profile logs, and job profile parameter docs while preserving compatibility function names.
+- Session state identity pass: `hermes_state.py` now describes the SQLite store as Superforecasting Agent infrastructure and uses neutral agent-process/session wording in write-contention comments, Telegram topic migration docs, and topic-binding helpers under metadata coverage.
 
 ## Prompt-To-Artifact Checklist
 

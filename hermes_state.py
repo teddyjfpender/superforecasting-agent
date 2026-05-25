@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SQLite State Store for Hermes Agent.
+SQLite state store for Superforecasting Agent.
 
 Provides persistent session storage with FTS5 full-text search, replacing
 the per-session JSONL file approach. Stores session metadata, full message
@@ -315,7 +315,7 @@ class SessionDB:
     """
 
     # ── Write-contention tuning ──
-    # With multiple hermes processes (gateway + CLI sessions + worktree agents)
+    # With multiple agent processes (gateway + CLI sessions + worktree agents)
     # all sharing one state.db, WAL write-lock contention causes visible TUI
     # freezes.  SQLite's built-in busy handler uses a deterministic sleep
     # schedule that causes convoy effects under high concurrency.
@@ -2615,9 +2615,9 @@ class SessionDB:
         """Create Telegram DM topic-mode tables on explicit /topic opt-in.
 
         This migration is deliberately not part of automatic SessionDB startup
-        reconciliation. Operators must be able to upgrade Hermes, keep the old
-        Telegram bot behavior running, and only mutate topic-mode state when the
-        user executes /topic to opt into the feature.
+        reconciliation. Operators must be able to upgrade Superforecasting
+        Agent, keep the old Telegram bot behavior running, and only mutate
+        topic-mode state when the user executes /topic to opt into the feature.
 
         Schema versions:
           v1 — initial shape (no ON DELETE CASCADE on session_id FK)
@@ -2886,9 +2886,9 @@ class SessionDB:
         session_id: str,
         managed_mode: str = "auto",
     ) -> None:
-        """Bind one Telegram DM topic thread to one Hermes session.
+        """Bind one Telegram DM topic thread to one agent session.
 
-        A Hermes session may only be linked to one Telegram topic in MVP.
+        An agent session may only be linked to one Telegram topic in MVP.
         Rebinding the same topic to the same session is idempotent; trying to
         link the same session to a different topic raises ValueError.
         """
@@ -2941,7 +2941,7 @@ class SessionDB:
         self._execute_write(_do)
 
     def is_telegram_session_linked_to_topic(self, *, session_id: str) -> bool:
-        """Return True if a Hermes session is already bound to any Telegram DM topic.
+        """Return True if an agent session is already bound to any Telegram DM topic.
 
         Read-only: does NOT trigger the telegram-topic migration. If the
         topic-mode tables have not been created yet (i.e. nobody has run
@@ -3235,4 +3235,3 @@ class SessionDB:
                 (error[:500], session_id),
             )
         self._execute_write(_do)
-
