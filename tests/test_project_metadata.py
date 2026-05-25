@@ -1125,6 +1125,17 @@ def test_builtin_skin_display_identity_stays_forecast_native():
     assert "Flame out" not in text
 
 
+def test_profile_description_prompt_uses_forecast_native_examples():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "hermes_cli" / "profile_describer.py").read_text(encoding="utf-8")
+
+    assert "Maintains macro forecast ledgers" in text
+    assert "scores resolved questions" in text
+    assert "calibration lessons" in text
+    assert "refactors functions" not in text
+    assert "opens GitHub PRs" not in text
+
+
 def test_model_picker_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "hermes_cli" / "models.py").read_text(encoding="utf-8")

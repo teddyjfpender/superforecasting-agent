@@ -66,8 +66,8 @@ Rules:
   - The description is what an orchestrator will read to decide whether to
     route a task here. Lead with the profile's strongest capability.
   - Stay concrete. Bad: "an AI agent that helps users."
-                  Good: "Reads and modifies Python codebases — runs tests,
-                         refactors functions, opens GitHub PRs."
+                  Good: "Maintains macro forecast ledgers — reviews evidence,
+                         scores resolved questions, and applies calibration lessons."
   - 1-2 sentences, <= 280 characters total.
   - Never invent capabilities the skills don't suggest.
   - Never write "Superforecasting Agent profile" or other meta-narration.
