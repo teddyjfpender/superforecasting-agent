@@ -1434,7 +1434,7 @@ def _probe_config_health(cfg: dict) -> str:
         ):
             warnings.append(
                 "`display.personality` is set but `agent.personalities` is empty/null; "
-                "personality overlay will be skipped."
+                "forecast style overlay will be skipped."
             )
     return " ".join(warnings).strip()
 
@@ -5610,7 +5610,7 @@ def _mirror_slash_side_effects(sid: str, session: dict, command: str) -> str:
     # worker thread running agent.run_conversation is using.  Parity
     # with the session.compress / session.undo guards and the gateway
     # runner's running-agent /model guard.
-    _MUTATES_WHILE_RUNNING = {"model", "personality", "prompt", "compress"}
+    _MUTATES_WHILE_RUNNING = {"model", "style", "personality", "prompt", "compress"}
     if name in _MUTATES_WHILE_RUNNING and session.get("running"):
         return f"session busy — /interrupt the current turn before running /{name}"
 
@@ -5618,7 +5618,7 @@ def _mirror_slash_side_effects(sid: str, session: dict, command: str) -> str:
         if name == "model" and arg and agent:
             result = _apply_model_switch(sid, session, arg)
             return result.get("warning", "")
-        elif name == "personality" and arg and agent:
+        elif name in {"style", "personality"} and arg and agent:
             _, new_prompt = _validate_personality(arg, _load_cfg())
             _apply_personality_to_session(sid, session, new_prompt)
         elif name == "prompt" and agent:

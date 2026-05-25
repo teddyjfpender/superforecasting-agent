@@ -155,7 +155,7 @@ gateway:
     header:                "🎭 **可用人格**\n"
     none_option:           "• `none` — （不应用人格覆盖）"
     item:                  "• `{name}` — {preview}"
-    usage:                 "\n用法：`/personality <name>`"
+    usage:                 "\n用法：`/style <name>`"
     save_failed:           "⚠️ 保存人格变更失败：{error}"
     cleared:               "🎭 已清除人格 — 使用基础代理行为。\n_（在下一条消息时生效）_"
     set_to:                "🎭 人格已设置为 **{name}**\n_（在下一条消息时生效）_"

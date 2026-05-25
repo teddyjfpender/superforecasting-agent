@@ -289,7 +289,7 @@ class TestAllResolvableCommandsBypassGuard:
             ("/model claude-sonnet-4", "model"),
             ("/model", "model"),
             ("/reasoning high", "reasoning"),
-            ("/personality default", "personality"),
+            ("/style default", "style"),
             ("/voice on", "voice"),
             ("/insights 7", "insights"),
             ("/title my session", "title"),
@@ -324,7 +324,7 @@ class TestAllResolvableCommandsBypassGuard:
         from hermes_cli.commands import should_bypass_active_session
 
         for cmd in (
-            "model", "reasoning", "personality", "voice", "insights", "title",
+            "model", "reasoning", "style", "personality", "voice", "insights", "title",
             "resume", "retry", "undo", "compress", "usage",
             "reload-mcp", "sethome", "reset",
         ):

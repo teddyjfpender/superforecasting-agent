@@ -84,7 +84,6 @@ class TestCommandRegistry:
             "curator",
             "handoff",
             "kanban",
-            "personality",
             "platforms",
             "skills",
             "voice",
@@ -92,6 +91,10 @@ class TestCommandRegistry:
         by_name = {cmd.name: cmd for cmd in COMMAND_REGISTRY}
         for name in compatibility:
             assert by_name[name].category == "Compatibility"
+
+        style = by_name["style"]
+        assert style.category == "Configuration"
+        assert "personality" in style.aliases
 
     def test_reasoning_subcommands_are_in_logical_order(self):
         reasoning = next(cmd for cmd in COMMAND_REGISTRY if cmd.name == "reasoning")

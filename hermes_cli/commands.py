@@ -143,8 +143,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("gquota", "Show Google Gemini Code Assist quota usage", "Info",
                cli_only=True),
 
-    CommandDef("personality", "Adjust a compatibility persona overlay; forecast protocol stays authoritative", "Compatibility",
-               args_hint="[name]"),
+    CommandDef("style", "Switch forecast style overlay; forecast protocol stays authoritative", "Configuration",
+               aliases=("personality",), args_hint="[name]"),
     CommandDef("statusbar", "Toggle the context/model status bar", "Configuration",
                cli_only=True, aliases=("sb",)),
     CommandDef("verbose", "Cycle tool progress display: off -> new -> all -> verbose",
@@ -1185,7 +1185,7 @@ class SlashCommandCompleter(Completer):
     # These should NOT receive a trailing space in completions because:
     # - The TUI's submit handler applies completions on Enter if input differs
     # - Adding space makes "/model" → "/model " which blocks picker execution
-    _PICKER_COMMANDS = frozenset({"model", "skin", "personality"})
+    _PICKER_COMMANDS = frozenset({"model", "skin", "style", "personality"})
 
     @staticmethod
     def _completion_text(cmd_name: str, word: str) -> str:
@@ -1196,7 +1196,7 @@ class SlashCommandCompleter(Completer):
         menu. Appending a trailing space keeps the dropdown visible and makes
         backspacing retrigger it naturally.
 
-        However, commands that open pickers (model, skin, personality) should
+        However, commands that open pickers (model, skin, style) should
         NOT get a trailing space — the TUI would apply the completion on Enter
         and block the picker from opening.
         """
@@ -1530,7 +1530,7 @@ class SlashCommandCompleter(Completer):
 
     @staticmethod
     def _personality_completions(sub_text: str, sub_lower: str):
-        """Yield completions for /personality from configured personalities."""
+        """Yield completions for /style from configured style overlays."""
         try:
             from hermes_cli.config import load_config
             personalities = load_config().get("agent", {}).get("personalities", {})
@@ -1539,7 +1539,7 @@ class SlashCommandCompleter(Completer):
                     "none",
                     start_position=-len(sub_text),
                     display="none",
-                    display_meta="clear personality overlay",
+                    display_meta="clear forecast style overlay",
                 )
             for name, prompt in personalities.items():
                 if name.startswith(sub_lower) and name != sub_lower:
@@ -1631,7 +1631,7 @@ class SlashCommandCompleter(Completer):
                 if base_cmd == "/skin":
                     yield from self._skin_completions(sub_text, sub_lower)
                     return
-                if base_cmd == "/personality":
+                if base_cmd in {"/style", "/personality"}:
                     yield from self._personality_completions(sub_text, sub_lower)
                     return
 

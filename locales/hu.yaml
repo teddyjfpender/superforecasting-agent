@@ -155,7 +155,7 @@ gateway:
     header:                "🎭 **Elérhető személyiségek**\n"
     none_option:           "• `none` — (nincs személyiségréteg)"
     item:                  "• `{name}` — {preview}"
-    usage:                 "\nHasználat: `/personality <name>`"
+    usage:                 "\nHasználat: `/style <name>`"
     save_failed:           "⚠️ Nem sikerült menteni a személyiség módosítását: {error}"
     cleared:               "🎭 Személyiség törölve — alap ügynöki viselkedés használatban.\n_(a következő üzenettől lép életbe)_"
     set_to:                "🎭 Személyiség beállítva: **{name}**\n_(a következő üzenettől lép életbe)_"

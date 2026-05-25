@@ -7512,7 +7512,7 @@ class HermesCLI:
 
     @staticmethod
     def _resolve_personality_prompt(value) -> str:
-        """Accept string or dict personality value; return system prompt string."""
+        """Accept string or dict style value; return system prompt string."""
         if isinstance(value, dict):
             parts = [value.get("system_prompt", "")]
             if value.get("tone"):
@@ -7569,40 +7569,40 @@ class HermesCLI:
         self._console_print()
 
     def _handle_personality_command(self, cmd: str):
-        """Handle the /personality command to set predefined personalities."""
+        """Handle the /style command and legacy /personality alias."""
         parts = cmd.split(maxsplit=1)
         
         if len(parts) > 1:
-            # Set personality
+            # Set style overlay.
             personality_name = parts[1].strip().lower()
             
             if personality_name in {"none", "default", "neutral"}:
                 self.system_prompt = ""
                 self.agent = None  # Force re-init
                 if save_config_value("agent.system_prompt", ""):
-                    print("Personality cleared (saved to config)")
+                    print("Forecast style cleared (saved to config)")
                 else:
-                    print("Personality cleared (session only)")
-                print("  No personality overlay — using base agent behavior.")
+                    print("Forecast style cleared (session only)")
+                print("  No forecast style overlay — using base forecasting-desk behavior.")
             elif personality_name in self.personalities:
                 self.system_prompt = self._resolve_personality_prompt(self.personalities[personality_name])
                 self.agent = None  # Force re-init
                 if save_config_value("agent.system_prompt", self.system_prompt):
-                    print(f"Personality set to '{personality_name}' (saved to config)")
+                    print(f"Forecast style set to '{personality_name}' (saved to config)")
                 else:
-                    print(f"Personality set to '{personality_name}' (session only)")
+                    print(f"Forecast style set to '{personality_name}' (session only)")
                 print(f"  \"{self.system_prompt[:60]}{'...' if len(self.system_prompt) > 60 else ''}\"")
             else:
-                print(f"Unknown personality: {personality_name}")
+                print(f"Unknown forecast style: {personality_name}")
                 print(f"  Available: none, {', '.join(self.personalities.keys())}")
         else:
-            # Show available personalities
+            # Show available style overlays.
             print()
             print("+" + "-" * 50 + "+")
             print("|" + " " * 14 + "Forecast Desk Modes" + " " * 17 + "|")
             print("+" + "-" * 50 + "+")
             print()
-            print(f"  {'none':<12} - (no personality overlay)")
+            print(f"  {'none':<12} - (no forecast style overlay)")
             for name, prompt in self.personalities.items():
                 if isinstance(prompt, dict):
                     preview = prompt.get("description") or prompt.get("system_prompt", "")[:50]
@@ -7610,7 +7610,7 @@ class HermesCLI:
                     preview = str(prompt)[:50]
                 print(f"  {name:<12} - {preview}")
             print()
-            print("  Usage: /personality <name>")
+            print("  Usage: /style <name>  (legacy alias: /personality)")
             print()
     
     def _handle_cron_command(self, cmd: str):
@@ -8163,8 +8163,8 @@ class HermesCLI:
         elif canonical == "gquota":
             self._handle_gquota_command(cmd_original)
 
-        elif canonical == "personality":
-            # Use original case (handler lowercases the personality name itself)
+        elif canonical in {"style", "personality"}:
+            # Use original case (handler lowercases the style name itself)
             self._handle_personality_command(cmd_original)
         elif canonical == "retry":
             retry_msg = self.retry_last()

@@ -159,7 +159,7 @@ gateway:
     header:                "🎭 **Pearsantachtaí ar fáil**\n"
     none_option:           "• `none` — (gan forleagan pearsantachta)"
     item:                  "• `{name}` — {preview}"
-    usage:                 "\nÚsáid: `/personality <name>`"
+    usage:                 "\nÚsáid: `/style <name>`"
     save_failed:           "⚠️ Theip ar shábháil athraithe pearsantachta: {error}"
     cleared:               "🎭 Pearsantacht glanta — ag úsáid iompair bunúsaigh an ghníomhaire.\n_(éifeachtach ón gcéad teachtaireacht eile)_"
     set_to:                "🎭 Pearsantacht socraithe go **{name}**\n_(éifeachtach ón gcéad teachtaireacht eile)_"

@@ -2056,7 +2056,7 @@ def test_config_set_personality_preserves_history_and_returns_info(monkeypatch):
     assert "You are helpful." in session["history"][1]["content"]
     assert session["history_version"] == 5
     # Agent's system prompt was updated in-place with the forecast desk base
-    # prompt plus the selected personality overlay; cached prompt untouched.
+    # prompt plus the selected forecast style overlay; cached prompt untouched.
     assert "Superforecasting Agent" in agent.ephemeral_system_prompt
     assert "You are helpful." in agent.ephemeral_system_prompt
     assert agent._cached_system_prompt == "old"
@@ -3076,7 +3076,7 @@ def test_config_set_model_allowed_when_idle(monkeypatch):
 
 
 def test_mirror_slash_side_effects_rejects_mutating_commands_while_running(monkeypatch):
-    """Slash worker passthrough (e.g. /model, /personality, /prompt,
+    """Slash worker passthrough (e.g. /model, /style, /prompt,
     /compress) must reject during an in-flight turn.  Same race as
     config.set — mutates live agent state while run_conversation is
     reading it."""
@@ -3100,6 +3100,7 @@ def test_mirror_slash_side_effects_rejects_mutating_commands_while_running(monke
 
     for cmd, expected_name in [
         ("/model new/model", "model"),
+        ("/style default", "style"),
         ("/personality default", "personality"),
         ("/prompt", "prompt"),
         ("/compress", "compress"),

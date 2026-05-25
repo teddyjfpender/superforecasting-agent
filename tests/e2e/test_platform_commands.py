@@ -115,12 +115,12 @@ class TestSlashCommands:
         runner.request_restart.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_personality_lists_options(self, adapter, platform):
-        send = await send_and_capture(adapter, "/personality", platform)
+    async def test_style_lists_options(self, adapter, platform):
+        send = await send_and_capture(adapter, "/style", platform)
 
         send.assert_called_once()
         response_text = send.call_args[1].get("content") or send.call_args[0][1]
-        assert "personalit" in response_text.lower()  # matches "personality" or "personalities"
+        assert "forecast style" in response_text.lower()
 
     @pytest.mark.asyncio
     async def test_yolo_toggles_mode(self, adapter, platform):

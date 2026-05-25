@@ -61,7 +61,7 @@ def test_make_agent_passes_resolved_provider():
 
 
 def test_make_agent_ignores_display_personality_without_system_prompt():
-    """The TUI matches the classic CLI: personality only becomes active once
+    """The TUI matches the classic CLI: style only becomes active once
     it has been saved to agent.system_prompt."""
 
     fake_runtime = {
@@ -76,9 +76,9 @@ def test_make_agent_ignores_display_personality_without_system_prompt():
     fake_cfg = {
         "agent": {
             "system_prompt": "",
-            "personalities": {"kawaii": "sparkle system prompt"},
+            "personalities": {"skeptical": "stress-test the assumptions"},
         },
-        "display": {"personality": "kawaii"},
+        "display": {"personality": "skeptical"},
         "model": {"default": "glm-5"},
     }
 
@@ -162,12 +162,13 @@ def test_probe_config_health_flags_null_personalities_with_active_personality():
     msg = _probe_config_health(
         {
             "agent": {"personalities": None},
-            "display": {"personality": "kawaii"},
+            "display": {"personality": "skeptical"},
             "model": {},
         }
     )
     assert "display.personality" in msg
     assert "agent.personalities" in msg
+    assert "forecast style overlay" in msg
 
 
 def test_make_agent_tolerates_null_config_sections():
@@ -216,7 +217,7 @@ def test_make_agent_tolerates_null_personalities_with_active_personality():
     }
     cfg = {
         "agent": {"personalities": None},
-        "display": {"personality": "kawaii"},
+        "display": {"personality": "skeptical"},
         "model": {"default": "glm-5"},
     }
 

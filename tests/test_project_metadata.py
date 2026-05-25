@@ -753,6 +753,12 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     gateway = (root / "hermes_cli" / "gateway.py").read_text(encoding="utf-8")
     relaunch = (root / "hermes_cli" / "relaunch.py").read_text(encoding="utf-8")
     tui_gateway = (root / "tui_gateway" / "server.py").read_text(encoding="utf-8")
+    cli = (root / "cli.py").read_text(encoding="utf-8")
+    commands = (root / "hermes_cli" / "commands.py").read_text(encoding="utf-8")
+    discord = (root / "gateway" / "platforms" / "discord.py").read_text(
+        encoding="utf-8"
+    )
+    locale_en = (root / "locales" / "en.yaml").read_text(encoding="utf-8")
     install_ps1 = (root / "scripts" / "install.ps1").read_text(encoding="utf-8")
 
     assert "Persistent session goals for Superforecasting Agent" in goals
@@ -774,6 +780,15 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "changed the assistant's personality" not in tui_gateway
     assert "Unknown personality" not in tui_gateway
     assert "cleared the personality overlay" not in tui_gateway
+    assert 'CommandDef("style"' in commands
+    assert 'aliases=("personality",)' in commands
+    assert "Switch forecast style overlay" in commands
+    assert "Forecast style set to" in cli
+    assert "Unknown forecast style" in cli
+    assert "Unknown personality" not in cli
+    assert '@tree.command(name="style", description="Set forecast style")' in discord
+    assert "Available Forecast Styles" in locale_en
+    assert "Unknown forecast style" in locale_en
     assert "Hermes's prompt-injection scanner" not in install_ps1
 
 

@@ -7376,7 +7376,7 @@ class GatewayRunner:
         if canonical == "codex-runtime":
             return await self._handle_codex_runtime_command(event)
 
-        if canonical == "personality":
+        if canonical in {"style", "personality"}:
             return await self._handle_personality_command(event)
 
         if canonical == "kanban":
@@ -10419,7 +10419,7 @@ class GatewayRunner:
         return f"{prefix} {result.message}"
 
     async def _handle_personality_command(self, event: MessageEvent) -> str:
-        """Handle /personality command - list or set a personality."""
+        """Handle /style command and legacy /personality alias."""
         from hermes_constants import display_hermes_home
 
         args = event.get_command_args().strip().lower()

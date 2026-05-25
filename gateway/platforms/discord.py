@@ -2931,10 +2931,10 @@ class DiscordAdapter(BasePlatformAdapter):
         async def slash_reasoning(interaction: discord.Interaction, effort: str = ""):
             await self._run_simple_slash(interaction, f"/reasoning {effort}".strip())
 
-        @tree.command(name="personality", description="Set a personality")
-        @discord.app_commands.describe(name="Personality name. Leave empty to list available.")
-        async def slash_personality(interaction: discord.Interaction, name: str = ""):
-            await self._run_simple_slash(interaction, f"/personality {name}".strip())
+        @tree.command(name="style", description="Set forecast style")
+        @discord.app_commands.describe(name="Forecast style name. Leave empty to list available.")
+        async def slash_style(interaction: discord.Interaction, name: str = ""):
+            await self._run_simple_slash(interaction, f"/style {name}".strip())
 
         @tree.command(name="retry", description="Retry your last message")
         async def slash_retry(interaction: discord.Interaction):

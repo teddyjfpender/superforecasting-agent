@@ -166,15 +166,15 @@ gateway:
     no_output:             "(no output)"
 
   personality:
-    none_configured:       "No personalities configured in `{path}/config.yaml`"
-    header:                "🎭 **Available Personalities**\n"
-    none_option:           "• `none` — (no personality overlay)"
+    none_configured:       "No forecast styles configured in `{path}/config.yaml`"
+    header:                "**Available Forecast Styles**\n"
+    none_option:           "• `none` — (no forecast style overlay)"
     item:                  "• `{name}` — {preview}"
-    usage:                 "\nUsage: `/personality <name>`"
-    save_failed:           "⚠️ Failed to save personality change: {error}"
-    cleared:               "🎭 Personality cleared — using base agent behavior.\n_(takes effect on next message)_"
-    set_to:                "🎭 Personality set to **{name}**\n_(takes effect on next message)_"
-    unknown:               "Unknown personality: `{name}`\n\nAvailable: {available}"
+    usage:                 "\nUsage: `/style <name>` (legacy alias: `/personality <name>`)"
+    save_failed:           "Failed to save forecast style change: {error}"
+    cleared:               "Forecast style cleared — using base forecasting-desk behavior.\n_(takes effect on next message)_"
+    set_to:                "Forecast style set to **{name}**\n_(takes effect on next message)_"
+    unknown:               "Unknown forecast style: `{name}`\n\nAvailable: {available}"
 
   profile:
     header:                "👤 **Profile:** `{profile}`"

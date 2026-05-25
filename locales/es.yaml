@@ -155,7 +155,7 @@ gateway:
     header:                "🎭 **Personalidades disponibles**\n"
     none_option:           "• `none` — (sin superposición de personalidad)"
     item:                  "• `{name}` — {preview}"
-    usage:                 "\nUso: `/personality <name>`"
+    usage:                 "\nUso: `/style <name>`"
     save_failed:           "⚠️ No se pudo guardar el cambio de personalidad: {error}"
     cleared:               "🎭 Personalidad eliminada — usando el comportamiento base del agente.\n_(surte efecto en el siguiente mensaje)_"
     set_to:                "🎭 Personalidad establecida en **{name}**\n_(surte efecto en el siguiente mensaje)_"

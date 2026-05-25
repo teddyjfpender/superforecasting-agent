@@ -888,7 +888,7 @@ def run_doctor(args):
         if lines:
             check_ok(f"{_DHH}/SOUL.md exists (persona configured)")
         else:
-            check_info(f"{_DHH}/SOUL.md exists but is empty — edit it to customize personality")
+            check_info(f"{_DHH}/SOUL.md exists but is empty — edit it to customize forecast style")
     else:
         check_warn(f"{_DHH}/SOUL.md not found", "(create it to customize Superforecasting Agent)")
         if should_fix:

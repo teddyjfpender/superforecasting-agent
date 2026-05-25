@@ -9832,17 +9832,17 @@ def cmd_profile(args):
             # Next steps
             print(f"\nNext steps:")
             print(f"  {name} setup              Configure API keys and model")
-            print(f"  {name} chat               Start chatting")
+            print(f"  {name} chat               Start the forecast desk")
             print(f"  {name} gateway start      Start the messaging gateway")
             if clone or clone_all:
                 print(f"\n  Edit {profile_dir_display}/.env for different API keys")
-                print(f"  Edit {profile_dir_display}/SOUL.md for different personality")
+                print(f"  Edit {profile_dir_display}/SOUL.md for a different forecast style")
             else:
                 print(
                     f"\n  ⚠ This profile has no API keys yet. Run '{name} setup' first,"
                 )
                 print(f"    or it will inherit keys from your shell environment.")
-                print(f"  Edit {profile_dir_display}/SOUL.md to customize personality")
+                print(f"  Edit {profile_dir_display}/SOUL.md to customize forecast style")
             print()
 
         except (ValueError, FileExistsError, FileNotFoundError) as e:

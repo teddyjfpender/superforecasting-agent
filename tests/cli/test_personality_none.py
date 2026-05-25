@@ -1,4 +1,4 @@
-"""Tests for /personality none — clearing personality overlay."""
+"""Tests for /style none and the legacy /personality alias."""
 import pytest
 from unittest.mock import MagicMock, patch, mock_open
 import yaml
@@ -15,7 +15,7 @@ class TestCLIPersonalityNone:
             "helpful": "You are helpful.",
             "concise": "You are concise.",
         }
-        cli.system_prompt = "You are kawaii~"
+        cli.system_prompt = "Prior forecast style overlay."
         cli.agent = MagicMock()
         cli.console = MagicMock()
         return cli
@@ -23,49 +23,49 @@ class TestCLIPersonalityNone:
     def test_none_clears_system_prompt(self):
         cli = self._make_cli()
         with patch("cli.save_config_value", return_value=True):
-            cli._handle_personality_command("/personality none")
+            cli._handle_personality_command("/style none")
         assert cli.system_prompt == ""
 
     def test_default_clears_system_prompt(self):
         cli = self._make_cli()
         with patch("cli.save_config_value", return_value=True):
-            cli._handle_personality_command("/personality default")
+            cli._handle_personality_command("/style default")
         assert cli.system_prompt == ""
 
     def test_neutral_clears_system_prompt(self):
         cli = self._make_cli()
         with patch("cli.save_config_value", return_value=True):
-            cli._handle_personality_command("/personality neutral")
+            cli._handle_personality_command("/style neutral")
         assert cli.system_prompt == ""
 
     def test_none_forces_agent_reinit(self):
         cli = self._make_cli()
         with patch("cli.save_config_value", return_value=True):
-            cli._handle_personality_command("/personality none")
+            cli._handle_personality_command("/style none")
         assert cli.agent is None
 
     def test_none_saves_to_config(self):
         cli = self._make_cli()
         with patch("cli.save_config_value", return_value=True) as mock_save:
-            cli._handle_personality_command("/personality none")
+            cli._handle_personality_command("/style none")
         mock_save.assert_called_once_with("agent.system_prompt", "")
 
     def test_known_personality_still_works(self):
         cli = self._make_cli()
         with patch("cli.save_config_value", return_value=True):
-            cli._handle_personality_command("/personality helpful")
+            cli._handle_personality_command("/style helpful")
         assert cli.system_prompt == "You are helpful."
 
     def test_unknown_personality_shows_none_in_available(self, capsys):
         cli = self._make_cli()
-        cli._handle_personality_command("/personality nonexistent")
+        cli._handle_personality_command("/style nonexistent")
         output = capsys.readouterr().out
         assert "none" in output.lower()
 
     def test_list_shows_none_option(self):
         cli = self._make_cli()
         with patch("builtins.print") as mock_print:
-            cli._handle_personality_command("/personality")
+            cli._handle_personality_command("/style")
         output = " ".join(str(c) for c in mock_print.call_args_list)
         assert "none" in output.lower()
 
@@ -76,14 +76,14 @@ class TestGatewayPersonalityNone:
 
     def _make_event(self, args=""):
         event = MagicMock()
-        event.get_command.return_value = "personality"
+        event.get_command.return_value = "style"
         event.get_command_args.return_value = args
         return event
 
     def _make_runner(self, personalities=None):
         from gateway.run import GatewayRunner
         runner = GatewayRunner.__new__(GatewayRunner)
-        runner._ephemeral_system_prompt = "You are kawaii~"
+        runner._ephemeral_system_prompt = "Prior forecast style overlay."
         runner.config = {
             "agent": {
                 "personalities": personalities or {"helpful": "You are helpful."}
@@ -94,7 +94,7 @@ class TestGatewayPersonalityNone:
     @pytest.mark.asyncio
     async def test_none_clears_ephemeral_prompt(self, tmp_path):
         runner = self._make_runner()
-        config_data = {"agent": {"personalities": {"helpful": "You are helpful."}, "system_prompt": "kawaii"}}
+        config_data = {"agent": {"personalities": {"helpful": "You are helpful."}, "system_prompt": "Prior forecast style overlay."}}
         config_file = tmp_path / "config.yaml"
         config_file.write_text(yaml.dump(config_data))
 
@@ -154,7 +154,7 @@ class TestGatewayPersonalityNone:
             event = self._make_event("")
             result = await runner._handle_personality_command(event)
 
-        assert result == "No personalities configured in `~/.hermes/profiles/coder/config.yaml`"
+        assert result == "No forecast styles configured in `~/.hermes/profiles/coder/config.yaml`"
 
 
 class TestPersonalityDictFormat:
@@ -179,7 +179,7 @@ class TestPersonalityDictFormat:
             }
         })
         with patch("cli.save_config_value", return_value=True):
-            cli._handle_personality_command("/personality coder")
+            cli._handle_personality_command("/style coder")
         assert "You are an expert programmer." in cli.system_prompt
 
     def test_dict_personality_includes_tone(self):
@@ -190,7 +190,7 @@ class TestPersonalityDictFormat:
             }
         })
         with patch("cli.save_config_value", return_value=True):
-            cli._handle_personality_command("/personality coder")
+            cli._handle_personality_command("/style coder")
         assert "Tone: technical and precise" in cli.system_prompt
 
     def test_dict_personality_includes_style(self):
@@ -201,13 +201,13 @@ class TestPersonalityDictFormat:
             }
         })
         with patch("cli.save_config_value", return_value=True):
-            cli._handle_personality_command("/personality coder")
+            cli._handle_personality_command("/style coder")
         assert "Style: use code examples" in cli.system_prompt
 
     def test_string_personality_still_works(self):
         cli = self._make_cli({"helper": "You are helpful."})
         with patch("cli.save_config_value", return_value=True):
-            cli._handle_personality_command("/personality helper")
+            cli._handle_personality_command("/style helper")
         assert cli.system_prompt == "You are helpful."
 
     def test_resolve_prompt_dict_no_tone_no_style(self):
