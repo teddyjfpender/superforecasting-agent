@@ -1327,6 +1327,7 @@ Latest verified result:
 - Session state identity pass: `hermes_state.py` now describes the SQLite store as Superforecasting Agent infrastructure and uses neutral agent-process/session wording in write-contention comments, Telegram topic migration docs, and topic-binding helpers under metadata coverage.
 - ACP adapter identity pass: `acp_adapter` now exposes Superforecasting Agent in the server module docstring, `/version` response, terminal setup auth method, and ACP session/tool/event comments, while preserving protocol-compatible constants such as `HERMES_VERSION` and `hermes-setup`.
 - CLI layout visual pass: `website/static/img/docs/cli-layout.svg` now labels the terminal visual as a Forecast Desk CLI with Superforecasting Agent, forecast transcript, research command, and evidence/update stream copy instead of inherited Hermes CLI/banner text.
+- Legacy setup script identity pass: `setup-hermes.sh` keeps its compatibility filename while the visible setup banner, file header, and shell PATH helper now say Superforecasting Agent instead of Hermes Agent, under project-metadata coverage.
 
 ## Prompt-To-Artifact Checklist
 

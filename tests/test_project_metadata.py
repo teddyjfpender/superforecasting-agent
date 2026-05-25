@@ -542,6 +542,7 @@ def test_install_helpers_use_forecast_native_visible_copy():
     install_ps1 = (root / "scripts" / "install.ps1").read_text(encoding="utf-8")
     install_sh = (root / "scripts" / "install.sh").read_text(encoding="utf-8")
     install_cmd = (root / "scripts" / "install.cmd").read_text(encoding="utf-8")
+    setup_sh = (root / "setup-hermes.sh").read_text(encoding="utf-8")
     node_bootstrap = (root / "scripts" / "lib" / "node-bootstrap.sh").read_text(encoding="utf-8")
     installer_text = "\n".join([install_ps1, install_sh, install_cmd])
 
@@ -565,6 +566,13 @@ def test_install_helpers_use_forecast_native_visible_copy():
     assert "Hermes needs Git Bash" not in install_ps1
     assert "Hermes-managed" not in install_ps1
     assert "raw.githubusercontent.com/NousResearch/superforecasting-agent/main/scripts/install" not in installer_text
+
+    assert "Superforecasting Agent Setup Script" in setup_sh
+    assert "Superforecasting Agent Setup" in setup_sh
+    assert "Superforecasting Agent — ensure ~/.local/bin is on PATH" in setup_sh
+    assert "Hermes Agent Setup Script" not in setup_sh
+    assert "Hermes Agent Setup" not in setup_sh
+    assert "Hermes Agent — ensure ~/.local/bin is on PATH" not in setup_sh
 
     assert "SUPERFORECASTING_AGENT_HOME" in node_bootstrap
     assert "SUPERFORECASTING_AGENT_NODE_MIN_VERSION" in node_bootstrap
