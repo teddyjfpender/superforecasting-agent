@@ -1748,11 +1748,12 @@ def test_root_agents_guidance_is_forecast_native():
     assert "native Superforecasting Agent tools" in text
     assert "### DO NOT hardcode agent-home paths" in text
     assert "superforecasting-agent --tui" in text
-    assert "primary forecast-chat experience" in text
+    assert "primary Forecast Desk experience" in text
     assert "# Hermes Agent - Development Guide" not in opening
     assert "Hermes Agent" not in text
     assert "animated faces during API calls" not in opening
     assert "primary chat experience" not in opening
+    assert "primary forecast-chat experience" not in text
     assert "Classic Hermes gold/kawaii" not in text
     assert "Users create `~/.hermes/skins/" not in text
     assert "go to `~/.hermes/skills/.archive/`" not in text
