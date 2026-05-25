@@ -29,7 +29,7 @@ Secrets go in `~/.superforecasting-agent/.env` by default. Non-secret settings u
 | `HERMES_BIN` | Legacy executable override for inherited worker launchers and install shims. |
 | `SUPERFORECASTING_AGENT_NODE` / `FORECAST_NODE` / `HERMES_NODE` | Override the Node.js binary used to launch the inherited Ink TUI. Prefer the fork-native aliases for new service files; `HERMES_NODE` remains a legacy alias. |
 | `SUPERFORECASTING_AGENT_SKIP_NODE_BOOTSTRAP` / `FORECAST_SKIP_NODE_BOOTSTRAP` / `HERMES_SKIP_NODE_BOOTSTRAP` | Disable automatic Node.js bootstrap for TUI startup when set to any non-empty value. Prefer the fork-native aliases for new deployments; `HERMES_SKIP_NODE_BOOTSTRAP` remains a legacy alias. |
-| `FORECAST_LEDGER_DB` | Optional path to the forecast ledger SQLite database used by scheduled self-check runners. When unset, the ledger defaults to the active agent home. |
+| `FORECAST_LEDGER_DB` | Optional path to the forecast ledger SQLite database used by the forecast CLI, forecast tools, and scheduled self-check runners. When unset, the ledger defaults to the active agent home. |
 | `FORECAST_AUTO_SCORE` | When set truthy for forecast cron/self-check runs, automatically scores newly resolved scoreable forecasts. |
 | `FORECAST_AUTO_POSTMORTEM` | When set truthy for forecast cron/self-check runs, writes postmortem/learning artifacts for scored resolved forecasts where the runner can do so. |
 

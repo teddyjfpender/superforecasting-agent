@@ -9415,6 +9415,18 @@ def test_forecast_cli_status_summarizes_operational_desk(tmp_path, capsys):
     assert payload["builtin_benchmark_count"] >= 4
 
 
+def test_forecast_cli_status_uses_forecast_ledger_db_env(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "shared-forecasting.db"
+    monkeypatch.setenv("FORECAST_LEDGER_DB", str(db_path))
+
+    _run(parser, ["forecast", "status", "--json"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["ledger_path"] == str(db_path)
+    assert db_path.exists()
+
+
 def test_standalone_forecast_entrypoint_exposes_product_surface(capsys):
     forecast_main(["about"])
     output = capsys.readouterr().out

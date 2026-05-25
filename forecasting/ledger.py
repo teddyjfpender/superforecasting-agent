@@ -6,6 +6,7 @@ import hashlib
 import csv
 import json
 import math
+import os
 import re
 import shutil
 import sqlite3
@@ -180,7 +181,14 @@ class ForecastLedger:
     """Local-first SQLite ledger for questions, evidence, forecasts, and scores."""
 
     def __init__(self, db_path: str | Path | None = None) -> None:
-        self.db_path = Path(db_path) if db_path else get_hermes_home() / "forecasting" / "forecasting.db"
+        configured_db = os.getenv("FORECAST_LEDGER_DB", "").strip()
+        self.db_path = (
+            Path(db_path).expanduser()
+            if db_path
+            else Path(configured_db).expanduser()
+            if configured_db
+            else get_hermes_home() / "forecasting" / "forecasting.db"
+        )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.initialize_schema()
 

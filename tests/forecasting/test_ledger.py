@@ -184,6 +184,16 @@ def _watch_market_item(kind: str, probability: float):
     raise AssertionError(f"unknown market kind: {kind}")
 
 
+def test_forecast_ledger_db_env_sets_default_database(tmp_path, monkeypatch):
+    db_path = tmp_path / "env-ledger.db"
+    monkeypatch.setenv("FORECAST_LEDGER_DB", str(db_path))
+
+    ledger = ForecastLedger()
+
+    assert ledger.db_path == db_path
+    assert db_path.exists()
+
+
 def test_forecast_updates_are_append_only(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     question = ledger.create_question(
