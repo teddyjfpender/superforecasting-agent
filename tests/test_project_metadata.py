@@ -211,6 +211,52 @@ def test_web_locale_app_brand_is_forecast_native():
         if legacy:
             assert legacy not in text, path
 
+    forecast_chat_labels = {
+        "af.ts": ('chat: "Voorspellingsklets"', 'resumeInChat: "Hervat in Voorspellingsklets"'),
+        "de.ts": ('chat: "Forecast-Chat"', 'resumeInChat: "Im Forecast-Chat fortsetzen"'),
+        "en.ts": ('chat: "Forecast Chat"', 'resumeInChat: "Resume in Forecast Chat"'),
+        "es.ts": ('chat: "Chat de pronóstico"', 'resumeInChat: "Reanudar en el chat de pronóstico"'),
+        "fr.ts": ('chat: "Chat de prévision"', 'resumeInChat: "Reprendre dans le chat de prévision"'),
+        "ga.ts": ('chat: "Comhrá Réamhaisnéise"', 'resumeInChat: "Lean ar aghaidh sa chomhrá réamhaisnéise"'),
+        "hu.ts": ('chat: "Előrejelzési csevegés"', 'resumeInChat: "Folytatás az előrejelzési csevegésben"'),
+        "it.ts": ('chat: "Chat di previsione"', 'resumeInChat: "Riprendi nella chat di previsione"'),
+        "ja.ts": ('chat: "予測チャット"', 'resumeInChat: "予測チャットで再開"'),
+        "ko.ts": ('chat: "예측 채팅"', 'resumeInChat: "예측 채팅에서 다시 시작"'),
+        "pt.ts": ('chat: "Chat de previsão"', 'resumeInChat: "Retomar no Chat de previsão"'),
+        "ru.ts": ('chat: "Прогнозный чат"', 'resumeInChat: "Продолжить в прогнозном чате"'),
+        "tr.ts": ('chat: "Tahmin Sohbeti"', 'resumeInChat: "Tahmin Sohbetinde Devam Et"'),
+        "uk.ts": ('chat: "Прогнозний чат"', 'resumeInChat: "Продовжити в прогнозному чаті"'),
+        "zh-hant.ts": ('chat: "預測對話"', 'resumeInChat: "在預測對話中繼續"'),
+        "zh.ts": ('chat: "预测对话"', 'resumeInChat: "在预测对话中继续"'),
+    }
+    generic_chat_labels = {
+        "af.ts": ('chat: "Klets"', 'resumeInChat: "Hervat in Klets"'),
+        "de.ts": ('chat: "Chat"', 'resumeInChat: "Im Chat fortsetzen"'),
+        "es.ts": ('chat: "Chat"', 'resumeInChat: "Reanudar en el chat"'),
+        "fr.ts": ('chat: "Chat"', 'resumeInChat: "Reprendre dans le chat"'),
+        "ga.ts": ('chat: "Comhrá"', 'resumeInChat: "Lean ar aghaidh sa chomhrá"'),
+        "hu.ts": ('chat: "Csevegés"', 'resumeInChat: "Folytatás a csevegésben"'),
+        "it.ts": ('chat: "Chat"', 'resumeInChat: "Riprendi nella chat"'),
+        "ja.ts": ('chat: "チャット"', 'resumeInChat: "チャットで再開"'),
+        "ko.ts": ('chat: "채팅"', 'resumeInChat: "채팅에서 다시 시작"'),
+        "pt.ts": ('chat: "Chat"', 'resumeInChat: "Retomar no Chat"'),
+        "ru.ts": ('chat: "Чат"', 'resumeInChat: "Продолжить в чате"'),
+        "tr.ts": ('chat: "Sohbet"', 'resumeInChat: "Sohbette Devam Et"'),
+        "uk.ts": ('chat: "Чат"', 'resumeInChat: "Продовжити в чаті"'),
+        "zh-hant.ts": ('chat: "對話"', 'resumeInChat: "在對話中繼續"'),
+        "zh.ts": ('chat: "对话"', 'resumeInChat: "在对话中继续"'),
+    }
+    for path in locale_files:
+        text = path.read_text(encoding="utf-8")
+        expected_pair = forecast_chat_labels.get(path.name)
+        if expected_pair:
+            for expected in expected_pair:
+                assert expected in text, path
+        generic_pair = generic_chat_labels.get(path.name)
+        if generic_pair:
+            for generic in generic_pair:
+                assert generic not in text, path
+
 
 def test_web_update_action_names_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
