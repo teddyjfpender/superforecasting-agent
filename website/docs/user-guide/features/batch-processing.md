@@ -246,12 +246,13 @@ The most useful signals are:
 - Leakage status.
 - `evidence_status` in JSON output, which reports live-score counts,
   agent-protocol scored cases, leakage-free runs, positive baseline edges,
-  distinct datasets, and the remaining evidence gaps before any live
-  superiority claim. Positive-edge runs count generated probability sources
+  distinct datasets, external resolved-question corpus coverage, and the
+  remaining evidence gaps before any live superiority claim. Positive-edge
+  runs count generated probability sources
   such as `forecast-engine`, `baseline-ensemble`, or `agent-protocol`, not raw
   dataset replay probabilities. The same object includes `next_actions` with
   concrete commands for collecting missing live-score, agent-protocol, leakage,
-  positive-edge, or dataset-coverage evidence.
+  positive-edge, external-corpus, or dataset-coverage evidence.
 - Whether misses produce postmortems and calibration lessons.
 
 Performance output marks replay evidence as `benchmark_replay_only`.

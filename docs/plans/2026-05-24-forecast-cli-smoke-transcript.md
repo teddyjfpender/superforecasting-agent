@@ -33,7 +33,7 @@ python3 scripts/forecast_smoke_test.py
 [forecast-smoke] agent_protocol_backtest_run_id: bt_f287f82f3260
 [forecast-smoke] performance_runs: 2
 [forecast-smoke] readiness_verdict: insufficient_live_evidence
-[forecast-smoke] readiness_gaps: 2
+[forecast-smoke] readiness_gaps: 3
 [forecast-smoke] pilot_bundle_export_included: true
 [forecast-smoke] forecast smoke test passed
 ```

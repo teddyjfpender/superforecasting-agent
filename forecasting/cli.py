@@ -6405,7 +6405,8 @@ def _print_evidence_status(evidence_status: dict[str, Any], *, include_passed: b
         f"agent_protocol_scored={backtests.get('agent_protocol_scored_count', 0)} "
         f"leakage_free_runs={backtests.get('leakage_free_run_count', 0)} "
         f"positive_edge_runs={backtests.get('positive_best_baseline_edge_run_count', 0)} "
-        f"datasets={backtests.get('distinct_dataset_count', 0)}"
+        f"datasets={backtests.get('distinct_dataset_count', 0)} "
+        f"external_datasets={backtests.get('external_dataset_count', 0)}"
     )
     for requirement in evidence_status.get("requirements") or []:
         passed = bool(requirement.get("passed"))

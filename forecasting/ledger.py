@@ -29,6 +29,7 @@ from forecasting.branding import (
     PRODUCT_NAME,
     PRODUCT_SLUG,
 )
+from forecasting.benchmark_evidence import build_benchmark_evidence_profile
 from forecasting.models import (
     ASSUMPTION_STATUSES,
     CALIBRATION_LESSON_STATUSES,
@@ -2684,6 +2685,7 @@ class ForecastLedger:
 
         result_summary = {
             "case_count": len(case_rows),
+            "benchmark_evidence": build_benchmark_evidence_profile(dataset, cases),
             "leakage_checks_passed": leakage_passed,
             "scored_cases": sum(1 for row in case_rows if row.get("score_record_id")),
         }

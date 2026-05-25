@@ -43,7 +43,7 @@ For in-chat slash commands, see [Slash Commands Reference](./slash-commands.md).
 | `forecast lessons` | Inspect active, tentative, invalidated, and applied calibration lessons. |
 | `forecast backtest` | Replay resolved benchmark corpora with evidence cutoffs and baseline comparisons. |
 | `forecast performance` | Summarize recent benchmark performance, paired baseline edges, and evidence gaps for live-superiority claims. |
-| `forecast readiness` | Show live/backtest evidence gaps before stronger performance claims. Use `--require-evidence` to fail when gaps remain. |
+| `forecast readiness` | Show live/backtest/external-corpus evidence gaps before stronger performance claims. Use `--require-evidence` to fail when gaps remain. |
 | `forecast pilot-report` | Check whether a tester ledger has the questions, evidence, schedules, scores, and postmortems needed for a small pilot. |
 | `forecast pilot-cohort` | Seed prospective live pilot questions from CSV/JSON manifests, optionally with initial probabilities, schedules, and watched sources. |
 | `forecast pilot-bundle` | Emit one JSON tester handoff bundle with pilot-report, readiness, and optional export data. |

@@ -161,7 +161,8 @@ Agent-protocol backtests additionally hide answer-side replay fields from the
 agent prompt, can write captured JSONL responses, and can replay captured JSONL
 outputs. `forecast performance --json` includes an `evidence_status` section so
 automation can see live-score counts, agent-protocol replay counts, leakage-free
-runs, positive baseline-edge runs, distinct dataset coverage, and remaining
+runs, positive baseline-edge runs, distinct dataset coverage, external resolved
+question corpus coverage, and remaining
 claim gaps without scraping terminal text. `forecast readiness` exposes the same
 claim-readiness state directly for cron jobs and evaluation harnesses, prints
 next actions for missing evidence such as live scoring or agent-protocol replay,

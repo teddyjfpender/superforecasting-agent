@@ -93,7 +93,7 @@ forecast pilot-cohort live-cohort.csv --dry-run --json
 forecast pilot-cohort live-cohort.csv --schedule-cadence 1d --schedule-next-run-at 2026-05-25T09:00:00Z
 forecast pilot-bundle --include-export --output .pilot/tester-bundle.json
 forecast pilot-aggregate .pilot/*-export.json --json
-# readiness shows evidence gaps and next actions before stronger performance claims
+# readiness shows live-score, replay, leakage, baseline-edge, and external-corpus gaps
 superforecasting-agent chat       # Forecast-scoped chat remains available explicitly
 superforecasting-agent dashboard  # Open the forecast-first dashboard
 superforecasting-agent model      # Choose your LLM provider and model

@@ -9951,6 +9951,13 @@ def test_forecast_cli_runs_public_manifold_benchmark_dataset(tmp_path, capsys):
     assert "market:manifold" in manifold_show_output
     assert "naive_0_5:auto mean_brier=0.250000 n=120 paired=120 brier_improvement=0.172650" in manifold_show_output
 
+    _run(parser, ["forecast", "--db", db, "performance", "--last", "5", "--json"])
+    performance_payload = json.loads(capsys.readouterr().out)
+    benchmark_evidence = performance_payload["runs"][0]["benchmark_evidence"]
+    assert benchmark_evidence["has_public_external_source"] is True
+    assert benchmark_evidence["source_families"] == ["manifold"]
+    assert performance_payload["evidence_status"]["backtests"]["external_dataset_count"] == 1
+
 
 def test_forecast_cli_performance_summarizes_backtest_edges(tmp_path, capsys):
     parser = _parser()
@@ -10046,6 +10053,7 @@ def test_forecast_cli_performance_summarizes_backtest_edges(tmp_path, capsys):
     assert "ok leakage_free_backtest_runs: 1/1" in readiness_output
     assert "gap live_scored_forecasts: 0/100" in readiness_output
     assert "gap distinct_backtest_datasets: 1/2" in readiness_output
+    assert "gap external_benchmark_datasets: 0/1" in readiness_output
     assert "next_actions:" in readiness_output
     assert "forecast backtest <cases.json> --probability-source agent-protocol" in readiness_output
 
@@ -10094,6 +10102,21 @@ def test_forecast_cli_readiness_require_evidence_passes_when_evidence_gate_is_me
     db = str(tmp_path / "forecasting.db")
     for index in (1, 2):
         dataset = tmp_path / f"readiness_gate_{index}.json"
+        evidence = [
+            {
+                "note": "Pre-cutoff signal points toward yes.",
+                "available_at": "2026-01-09T00:00:00Z",
+                "stance": "increases",
+            }
+        ]
+        if index == 2:
+            evidence[0].update(
+                {
+                    "source": "https://manifold.markets/test/readiness-gate-fixture",
+                    "source_name": "Manifold",
+                    "source_type": "adapter:manifold",
+                }
+            )
         dataset.write_text(
             json.dumps(
                 {
@@ -10108,13 +10131,7 @@ def test_forecast_cli_readiness_require_evidence_passes_when_evidence_gate_is_me
                             "baselines": [
                                 {"source": "fixture-market", "baseline_type": "market", "probability": 0.6}
                             ],
-                            "evidence": [
-                                {
-                                    "note": "Pre-cutoff signal points toward yes.",
-                                    "available_at": "2026-01-09T00:00:00Z",
-                                    "stance": "increases",
-                                }
-                            ],
+                            "evidence": evidence,
                         }
                     ]
                 }
@@ -10158,6 +10175,7 @@ def test_forecast_cli_readiness_require_evidence_passes_when_evidence_gate_is_me
     assert "ok leakage_free_backtest_runs: 2/1" in output
     assert "ok positive_best_baseline_edge_runs: 2/1" in output
     assert "ok distinct_backtest_datasets: 2/2" in output
+    assert "ok external_benchmark_datasets: 1/1" in output
 
 
 def test_baseline_ensemble_probability_source_replays_public_market_corpus():

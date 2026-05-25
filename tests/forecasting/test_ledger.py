@@ -228,7 +228,7 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     question = ledger.create_question(
         title="Will shared forecast dashboard render?",
         resolution_criteria="Resolved yes if shared dashboard rendering works.",
-        close_time="2026-06-01T00:00:00Z",
+        close_time="2026-12-01T00:00:00Z",
         next_review_at="2026-01-01T00:00:00Z",
     )
     ledger.create_snapshot(
@@ -315,7 +315,7 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     assert row["open_alert_count"] == 1
     assert summary["review_queue_count"] == 1
     assert summary["review_queue"][0]["id"] == question.id
-    assert summary["review_queue"][0]["close_time"] == "2026-06-01T00:00:00Z"
+    assert summary["review_queue"][0]["close_time"] == "2026-12-01T00:00:00Z"
     assert "review_due" in summary["review_queue"][0]["reasons"]
     assert summary["review_queue"][0]["next_action"].startswith("forecast research")
     assert summary["alerts"][0]["scope_ref"] == question.id
@@ -365,7 +365,7 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     assert "2026-05-02T00:00:00Z" in text
     assert "Review Queue" in text
     assert "Close" in text
-    assert "2026-06-01T00:00:00Z" in text
+    assert "2026-12-01T00:00:00Z" in text
     assert "review_due" in text
     assert "Open Alerts" in text
     assert "dashboard_render_fixture" in text

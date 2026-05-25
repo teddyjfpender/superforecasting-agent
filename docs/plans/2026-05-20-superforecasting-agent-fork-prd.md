@@ -723,6 +723,7 @@ Requirements:
 - Backtests must flag or fail when an evidence item lacks enough timestamp metadata to prove it was available before the simulated forecast.
 - Backtests must compare against available baselines such as base-rate-only models, market probabilities, crowd forecasts, and prior agent versions.
 - Agent-protocol backtests must exclude answer-side dataset fields from the prompt and support captured JSON outputs so benchmark runs are repeatable without live model calls.
+- Backtest runs must store benchmark-source provenance so synthetic or local fixtures cannot satisfy external evidence gates by themselves.
 - Backtest run and case results must be stored so later calibration reports can distinguish live forecasts from historical replays.
 - Backtest scores must not update live calibration memory unless the backtest run passes leakage checks and its calibration policy explicitly allows it.
 

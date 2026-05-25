@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from forecasting.benchmark_evidence import build_benchmark_evidence_profile
 from forecasting.ledger import ForecastLedger
 from forecasting.models import ScoreRecord
 
@@ -61,6 +62,11 @@ def build_backtest_performance_summaries(
     summaries = []
     for row in rows:
         report = ledger.backtest_performance_report(row["id"])
+        run_summary = row.get("result_summary") or {}
+        benchmark_evidence = build_benchmark_evidence_profile(
+            row["dataset"],
+            result_summary=run_summary,
+        )
         agent_brier = report["agent"]["mean_brier"]
         best = best_baseline(report["baselines"])
         best_summary = None
@@ -86,6 +92,7 @@ def build_backtest_performance_summaries(
                 "id": row["id"],
                 "dataset": row["dataset"],
                 "case_count": report["case_count"],
+                "benchmark_evidence": benchmark_evidence,
                 "leakage_checks_passed": report["leakage_checks_passed"],
                 "agent": report["agent"],
                 "best_baseline": best_summary,
@@ -125,6 +132,18 @@ def build_forecasting_evidence_status(
         and (summary["best_baseline"]["agent_edge_mean_brier"] > 0)
     )
     dataset_count = len({summary.get("dataset") for summary in backtest_summaries if summary.get("dataset")})
+    external_dataset_count = sum(
+        1
+        for summary in backtest_summaries
+        if (summary.get("benchmark_evidence") or {}).get("has_public_external_source")
+    )
+    source_families = sorted(
+        {
+            family
+            for summary in backtest_summaries
+            for family in ((summary.get("benchmark_evidence") or {}).get("source_families") or [])
+        }
+    )
 
     requirements = [
         _evidence_requirement(
@@ -180,6 +199,17 @@ def build_forecasting_evidence_status(
                 "builtin:heldout-120-binary and builtin:manifold-public-120-binary."
             ),
         ),
+        _evidence_requirement(
+            "external_benchmark_datasets",
+            "Backtest datasets backed by public or imported external resolved-question sources.",
+            observed=external_dataset_count,
+            required=1,
+            recommended_action=(
+                "Replay at least one external resolved-question corpus, for example "
+                "forecast backtest builtin:manifold-public-120-binary --probability-source forecast-engine "
+                "or import resolved Manifold, Metaculus, Kalshi, or Polymarket cases."
+            ),
+        ),
     ]
     gaps = [
         requirement["id"]
@@ -218,6 +248,8 @@ def build_forecasting_evidence_status(
         "backtests": {
             "run_count": len(backtest_summaries),
             "distinct_dataset_count": dataset_count,
+            "external_dataset_count": external_dataset_count,
+            "source_families": source_families,
             "leakage_free_run_count": leakage_free_runs,
             "positive_best_baseline_edge_run_count": positive_best_edge_runs,
             "agent_protocol_scored_count": agent_protocol_scored,
