@@ -224,6 +224,7 @@ def build_dashboard_summary(
     ]
 
     evidence_status = build_forecasting_evidence_status(ledger, backtest_summaries)
+    live_performance = ledger.live_performance_report()
     pilot_report = ledger.pilot_report()
     doctor = build_doctor_gate_summary(pilot_report, evidence_status)
 
@@ -240,6 +241,7 @@ def build_dashboard_summary(
         "calibration": calibration,
         "doctor": doctor,
         "evidence_status": evidence_status,
+        "live_performance": live_performance,
         "learning": build_learning_summary(ledger=ledger),
         "scheduled_review_run_count": len(scheduled_review_runs),
         "scheduled_review_runs": scheduled_review_runs,
@@ -448,6 +450,34 @@ def render_dashboard_text(summary: dict[str, Any]) -> str:
             requirement = item.get("requirement_id") or "evidence"
             action = item.get("action") or "-"
             lines.append(f"  next {requirement}: {action}")
+    live_performance = dict(summary.get("live_performance") or {})
+    if live_performance and (
+        int(live_performance.get("score_count") or 0)
+        or list(live_performance.get("baselines") or [])
+    ):
+        agent = dict(live_performance.get("agent") or {})
+        baselines = list(live_performance.get("baselines") or [])
+        lines.extend(["", "Live Performance"])
+        lines.append(
+            f"scores: {int(live_performance.get('score_count') or 0)}  "
+            f"agent_brier: {format_metric(agent.get('mean_brier'))}  "
+            f"baselines: {len(baselines)}  "
+            f"claim: {format_claim_status((live_performance.get('claim_status') or {}))}"
+        )
+        if baselines:
+            lines.append(
+                f"{'Baseline':<24} {'Brier':<10} {'Paired':>6} {'Edge':<8} {'CI95':<19} {'W/L/T':<7}"
+            )
+            for baseline in baselines:
+                name = f"{baseline.get('baseline_type') or '-'}:{baseline.get('source') or '-'}"
+                lines.append(
+                    f"{truncate(name, 24):<24} "
+                    f"{format_metric(baseline.get('mean_brier')):<10} "
+                    f"{int(baseline.get('paired_count') or 0):>6} "
+                    f"{format_delta(baseline.get('mean_brier_improvement_vs_baseline')):<8} "
+                    f"{format_ci95(baseline.get('paired_agent_edge_ci95_low'), baseline.get('paired_agent_edge_ci95_high')):<19} "
+                    f"{format_wins(baseline):<7}"
+                )
     backtests = list(summary.get("recent_backtests") or [])
     if backtests:
         lines.extend(["", "Recent Backtests"])
@@ -708,6 +738,12 @@ def format_wins(row: dict[str, Any]) -> str:
         f"{int(row.get('paired_baseline_wins') or 0)}/"
         f"{int(row.get('paired_ties') or 0)}"
     )
+
+
+def format_ci95(low: Any, high: Any) -> str:
+    if isinstance(low, (int, float)) and isinstance(high, (int, float)):
+        return f"[{float(low):+.3f},{float(high):+.3f}]"
+    return "-"
 
 
 def format_claim_status(value: Any) -> str:

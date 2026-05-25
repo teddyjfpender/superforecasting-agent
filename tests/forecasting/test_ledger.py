@@ -302,6 +302,13 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
             ]
         },
     )
+    ledger.add_baseline_comparison(
+        question_id=calibration_question.id,
+        source="dashboard-crowd",
+        baseline_type="crowd",
+        probability_or_distribution=0.6,
+        as_of="2026-01-01T00:00:00Z",
+    )
     ledger.resolve_question(question_id=calibration_question.id, outcome="yes")
     ledger.create_postmortem(
         question_id=calibration_question.id,
@@ -309,6 +316,7 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
         lesson="Dashboard forecasts should keep calibration health visible.",
         calibration_adjustment={"dashboard_confidence_cap": 0.05},
     )
+    ledger.score_baseline_comparisons(calibration_question.id)
     ledger.run_backtest_dataset(
         dataset="dashboard-fixture",
         cases=[
@@ -386,6 +394,17 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
         item["requirement_id"]
         for item in summary["evidence_status"]["next_actions"]
     } >= {"live_scored_forecasts", "agent_protocol_scored_cases"}
+    assert summary["live_performance"]["score_count"] == 1
+    assert summary["live_performance"]["agent"]["mean_brier"] == pytest.approx(0.0625)
+    assert summary["live_performance"]["claim_status"]["verdict"] == "live_comparison_evidence"
+    live_baseline = summary["live_performance"]["baselines"][0]
+    assert live_baseline["baseline_type"] == "crowd"
+    assert live_baseline["source"] == "dashboard-crowd"
+    assert live_baseline["mean_brier"] == pytest.approx(0.16)
+    assert live_baseline["mean_brier_improvement_vs_baseline"] == pytest.approx(0.0975)
+    assert live_baseline["paired_agent_wins"] == 1
+    assert live_baseline["paired_baseline_wins"] == 0
+    assert live_baseline["paired_ties"] == 0
     assert summary["doctor"]["doctor_status"] == "needs_tester_pilot_artifacts"
     assert summary["doctor"]["claim_live_superforecasting"] is False
     assert summary["doctor"]["readiness_verdict"] == "insufficient_live_evidence"
@@ -422,6 +441,10 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     assert "external_datasets: 0" in text
     assert "external_source_families: 0" in text
     assert "next live_scored_forecasts:" in text
+    assert "Live Performance" in text
+    assert "scores: 1" in text
+    assert "crowd:dashboard-crowd" in text
+    assert "+0.098" in text
     assert "Recent Backtests" in text
     assert "dataset" in text
     assert "dashboard-fixture" in text
