@@ -21,7 +21,7 @@ from http.cookiejar import CookieJar
 
 USER_AGENT = (
     "Mozilla/5.0 (compatible; SuperforecastingAgent/1.0; "
-    "+https://github.com/NousResearch/superforecasting-agent)"
+    "+https://github.com/teddyjfpender/superforecasting-agent)"
 )
 YF_BASE = "https://query1.finance.yahoo.com"
 YF_BASE2 = "https://query2.finance.yahoo.com"

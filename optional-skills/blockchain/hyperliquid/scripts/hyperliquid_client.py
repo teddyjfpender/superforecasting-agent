@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 
-USER_AGENT = "SuperforecastingAgent/1.0 (+https://github.com/NousResearch/superforecasting-agent)"
+USER_AGENT = "SuperforecastingAgent/1.0 (+https://github.com/teddyjfpender/superforecasting-agent)"
 DEFAULT_USER_ENV = "HYPERLIQUID_USER_ADDRESS"
 DEFAULT_API_BASE = "https://api.hyperliquid.xyz"
 

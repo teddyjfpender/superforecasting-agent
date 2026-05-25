@@ -10,7 +10,7 @@ const config: Config = {
   url: 'https://superforecasting-agent.nousresearch.com',
   baseUrl: '/docs/',
 
-  organizationName: 'NousResearch',
+  organizationName: 'teddyjfpender',
   projectName: 'superforecasting-agent',
 
   onBrokenLinks: 'warn',
@@ -77,7 +77,7 @@ const config: Config = {
         docs: {
           routeBasePath: '/',  // Docs at the root of /docs/
           sidebarPath: './sidebars.ts',
-          editUrl: 'https://github.com/NousResearch/superforecasting-agent/edit/main/website/',
+          editUrl: 'https://github.com/teddyjfpender/superforecasting-agent/edit/superforecasting-agent-snapshot/website/',
         },
         blog: false,
         theme: {
@@ -127,7 +127,7 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://github.com/NousResearch/superforecasting-agent',
+          href: 'https://github.com/teddyjfpender/superforecasting-agent',
           label: 'GitHub',
           position: 'right',
         },
@@ -154,19 +154,19 @@ const config: Config = {
           title: 'Community',
           items: [
             { label: 'Discord', href: 'https://discord.gg/NousResearch' },
-            { label: 'GitHub Discussions', href: 'https://github.com/NousResearch/superforecasting-agent/discussions' },
+            { label: 'GitHub Discussions', href: 'https://github.com/teddyjfpender/superforecasting-agent/discussions' },
             { label: 'Skills Hub', href: 'https://agentskills.io' },
           ],
         },
         {
           title: 'More',
           items: [
-            { label: 'GitHub', href: 'https://github.com/NousResearch/superforecasting-agent' },
-            { label: 'Nous Research', href: 'https://nousresearch.com' },
+            { label: 'GitHub', href: 'https://github.com/teddyjfpender/superforecasting-agent' },
+            { label: 'Fork Origin', href: 'https://nousresearch.com' },
           ],
         },
       ],
-      copyright: `Built by <a href="https://nousresearch.com">Nous Research</a> · MIT License · ${new Date().getFullYear()}`,
+      copyright: `Maintained by Superforecasting Agent contributors · MIT License · ${new Date().getFullYear()}`,
     },
     prism: {
       theme: prismThemes.github,

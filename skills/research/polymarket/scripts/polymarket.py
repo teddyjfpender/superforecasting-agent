@@ -21,7 +21,7 @@ import urllib.error
 GAMMA = "https://gamma-api.polymarket.com"
 CLOB = "https://clob.polymarket.com"
 DATA = "https://data-api.polymarket.com"
-USER_AGENT = "superforecasting-agent/1.0 (+https://github.com/NousResearch/superforecasting-agent)"
+USER_AGENT = "superforecasting-agent/1.0 (+https://github.com/teddyjfpender/superforecasting-agent)"
 
 
 def _get(url: str) -> dict | list:

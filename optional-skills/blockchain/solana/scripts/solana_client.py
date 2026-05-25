@@ -28,7 +28,7 @@ import urllib.request
 import urllib.error
 from typing import Any, Dict, List, Optional
 
-USER_AGENT = "SuperforecastingAgent/1.0 (+https://github.com/NousResearch/superforecasting-agent)"
+USER_AGENT = "SuperforecastingAgent/1.0 (+https://github.com/teddyjfpender/superforecasting-agent)"
 
 RPC_URL = os.environ.get(
     "SOLANA_RPC_URL",

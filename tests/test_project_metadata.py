@@ -805,6 +805,24 @@ def test_github_actions_metadata_is_forecast_native():
     assert "Dependabot configuration for hermes-agent" not in text
 
 
+def test_website_public_repository_links_point_to_fork():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "pyproject.toml",
+        root / "website" / "docusaurus.config.ts",
+        root / "website" / "src" / "components" / "UserStoriesCollage" / "index.tsx",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert 'authors = [{ name = "Superforecasting Agent Contributors" }]' in text
+    assert "organizationName: 'teddyjfpender'" in text
+    assert "https://github.com/teddyjfpender/superforecasting-agent" in text
+    assert "superforecasting-agent-snapshot/website/" in text
+    assert "https://github.com/NousResearch/superforecasting-agent" not in text
+    assert "organizationName: 'NousResearch'" not in text
+    assert 'authors = [{ name = "Nous Research" }]' not in text
+
+
 def test_tool_runtime_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [
@@ -885,7 +903,7 @@ def test_google_workspace_skill_docs_are_forecast_native():
     assert "ask Superforecasting Agent to set up Google Workspace" in text
     assert "superforecasting-agent-google-client-secret.json" in text
     assert "superforecasting-agent[google]" in text
-    assert "https://github.com/NousResearch/superforecasting-agent" in text
+    assert "https://github.com/teddyjfpender/superforecasting-agent" in text
     assert "default: ~/.superforecasting-agent" in text
     assert "Google Workspace OAuth setup for Superforecasting Agent" in text
     assert "integration for Hermes" not in text
@@ -902,7 +920,7 @@ def test_superforecasting_agent_skill_metadata_points_to_fork():
     skill = root / "skills" / "autonomous-ai-agents" / "hermes-agent" / "SKILL.md"
     text = skill.read_text(encoding="utf-8")
 
-    assert "homepage: https://github.com/NousResearch/superforecasting-agent" in text
+    assert "homepage: https://github.com/teddyjfpender/superforecasting-agent" in text
     assert "homepage: https://github.com/NousResearch/hermes-agent" not in text
 
 
@@ -1541,7 +1559,7 @@ def test_watcher_skill_is_forecast_native():
     assert "SUPERFORECASTING_AGENT_HOME" in text
     assert "FORECAST_HOME" in text
     assert "$AGENT_HOME/watcher-state/" in text
-    assert "NousResearch/superforecasting-agent" in text
+    assert "teddyjfpender/superforecasting-agent" in text
     assert "Hermes-Watcher/1.0" not in text
     assert "hermes cron create" not in text
     assert "$HERMES_HOME/watcher-state/" not in text
@@ -1667,7 +1685,7 @@ def test_osint_skill_helpers_use_fork_native_attribution():
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
     assert "superforecasting-agent-osint-investigation/0.2" in text
-    assert "https://github.com/NousResearch/superforecasting-agent" in text
+    assert "https://github.com/teddyjfpender/superforecasting-agent" in text
     assert "SUPERFORECASTING_AGENT_OSINT_UA" in text
     assert "SUPERFORECASTING_AGENT_OSINT_CACHE" in text
     assert "~/.cache/superforecasting-agent-osint/icij" in text

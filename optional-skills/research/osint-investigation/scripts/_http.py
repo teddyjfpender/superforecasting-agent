@@ -13,7 +13,7 @@ import urllib.request
 
 DEFAULT_UA = (
     "superforecasting-agent-osint-investigation/0.2 "
-    "(+https://github.com/NousResearch/superforecasting-agent; "
+    "(+https://github.com/teddyjfpender/superforecasting-agent; "
     "set SUPERFORECASTING_AGENT_OSINT_UA env var to identify yourself per "
     "Wikimedia / SEC fair-use guidance)"
 )

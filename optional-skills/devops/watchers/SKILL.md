@@ -68,7 +68,7 @@ Watch a GitHub repo (set `GITHUB_TOKEN` in `~/.superforecasting-agent/.env` to a
 ```bash
 AGENT_HOME="${SUPERFORECASTING_AGENT_HOME:-${FORECAST_HOME:-${HERMES_HOME:-$HOME/.superforecasting-agent}}}"
 python "$AGENT_HOME/skills/devops/watchers/scripts/watch_github.py" \
-  --name forecast-agent-issues --repo NousResearch/superforecasting-agent --scope issues
+  --name forecast-agent-issues --repo teddyjfpender/superforecasting-agent --scope issues
 ```
 
 Poll an arbitrary JSON API:

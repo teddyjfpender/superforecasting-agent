@@ -31,7 +31,7 @@ import urllib.request
 
 USER_AGENT = (
     "SuperforecastingAgent/1.0 "
-    "(+https://github.com/NousResearch/superforecasting-agent)"
+    "(+https://github.com/teddyjfpender/superforecasting-agent)"
 )
 DATA_SOURCE = "OpenStreetMap/Nominatim"
 

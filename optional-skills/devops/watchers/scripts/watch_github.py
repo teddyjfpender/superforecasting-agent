@@ -6,7 +6,7 @@ Usage (via cron with --no-agent):
     superforecasting-agent cron create forecast-agent-issues \\
       --schedule "*/5 * * * *" --no-agent \\
       --script "$AGENT_HOME/skills/devops/watchers/scripts/watch_github.py" \\
-      --script-args "--name forecast-agent-issues --repo NousResearch/superforecasting-agent --scope issues"
+      --script-args "--name forecast-agent-issues --repo teddyjfpender/superforecasting-agent --scope issues"
 
 Set GITHUB_TOKEN (or GH_TOKEN) in ~/.superforecasting-agent/.env to avoid the 60 req/hr
 anonymous rate limit.

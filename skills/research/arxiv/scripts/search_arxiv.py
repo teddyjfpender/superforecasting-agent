@@ -16,7 +16,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 
 NS = {'a': 'http://www.w3.org/2005/Atom'}
-USER_AGENT = "superforecasting-agent/1.0 (+https://github.com/NousResearch/superforecasting-agent)"
+USER_AGENT = "superforecasting-agent/1.0 (+https://github.com/teddyjfpender/superforecasting-agent)"
 
 def search(query=None, author=None, category=None, ids=None, max_results=5, sort="relevance"):
     params = {}

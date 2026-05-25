@@ -295,7 +295,7 @@ export default function UserStoriesCollage(): JSX.Element {
       <div className={styles.footer}>
         Built something with Superforecasting Agent?{' '}
         <a
-          href="https://github.com/NousResearch/superforecasting-agent/edit/main/website/src/data/userStories.json"
+          href="https://github.com/teddyjfpender/superforecasting-agent/edit/superforecasting-agent-snapshot/website/src/data/userStories.json"
           target="_blank"
           rel="noopener noreferrer"
         >
