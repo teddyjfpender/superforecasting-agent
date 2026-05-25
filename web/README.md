@@ -1,6 +1,8 @@
-# Hermes Agent — Web UI
+# Superforecasting Agent — Forecast Desk Web UI
 
-Browser-based dashboard for managing Hermes Agent configuration, API keys, and monitoring active sessions.
+Browser-based dashboard for the Superforecasting Agent forecast desk:
+active forecasts, review queues, calibration health, source imports,
+configuration, API keys, and runtime status.
 
 ## Stack
 
@@ -13,7 +15,7 @@ Browser-based dashboard for managing Hermes Agent configuration, API keys, and m
 ```bash
 # Start the backend API server
 cd ../
-python -m hermes_cli.main web --no-open
+superforecasting-agent dashboard --no-open
 
 # In another terminal, start the Vite dev server (with HMR + API proxy)
 cd web/
@@ -39,7 +41,8 @@ src/
 │   ├── api.ts       # API client — typed fetch wrappers for all backend endpoints
 │   └── utils.ts     # cn() helper for Tailwind class merging
 ├── pages/
-│   ├── StatusPage   # Agent status, active/recent sessions
+│   ├── ForecastsPage # Active forecasts, review queue, and calibration state
+│   ├── StatusPage   # Runtime status, active/recent sessions
 │   ├── ConfigPage   # Dynamic config editor (reads schema from backend)
 │   └── EnvPage      # API key management with save/clear
 ├── App.tsx          # Main layout and navigation

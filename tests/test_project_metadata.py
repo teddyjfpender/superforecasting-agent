@@ -283,6 +283,19 @@ def test_web_dashboard_titles_are_forecast_native():
     assert "Hermes Agent - Dashboard" not in text
 
 
+def test_web_readme_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "web" / "README.md").read_text(encoding="utf-8")
+
+    assert "# Superforecasting Agent — Forecast Desk Web UI" in text
+    assert "active forecasts, review queues, calibration health" in text
+    assert "superforecasting-agent dashboard --no-open" in text
+    assert "ForecastsPage" in text
+    assert "# Hermes Agent — Web UI" not in text
+    assert "managing Hermes Agent configuration" not in text
+    assert "python -m hermes_cli.main web --no-open" not in text
+
+
 def test_user_stories_page_demotes_general_assistant_positioning():
     root = Path(__file__).resolve().parents[1]
     collage = (
