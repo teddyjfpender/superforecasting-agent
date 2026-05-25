@@ -14,7 +14,9 @@ from forecasting.branding import PRODUCT_NAME
 from forecasting.ledger import ForecastLedger
 
 
-def build_dashboard_summary(*, ledger: ForecastLedger | None = None, limit: int = 50) -> dict[str, Any]:
+def build_dashboard_summary(
+    *, ledger: ForecastLedger | None = None, limit: int = 50, now: str | None = None
+) -> dict[str, Any]:
     ledger = ledger or ForecastLedger()
     questions = ledger.list_questions(status="active", limit=limit)
     alerts = ledger.list_alerts(unresolved_only=True)
@@ -58,7 +60,7 @@ def build_dashboard_summary(*, ledger: ForecastLedger | None = None, limit: int 
         )
 
     review_queue = []
-    for row in ledger.review_questions(stale=True, last_days=7)[: min(limit, 12)]:
+    for row in ledger.review_questions(stale=True, last_days=7, now=now)[: min(limit, 12)]:
         question = row["question"]
         snapshot = row["current_snapshot"]
         reasons = list(row.get("reasons") or [])
@@ -76,6 +78,12 @@ def build_dashboard_summary(*, ledger: ForecastLedger | None = None, limit: int 
                 "next_action": review_next_action(question.id, reasons),
             }
         )
+
+    closing_soon_count = sum(
+        1
+        for row in review_queue
+        if any(is_close_review_reason(reason) for reason in row.get("reasons", []))
+    )
 
     calibration = ledger.calibration_summary(calibration_eligible=True)
     backtest_summaries = []
@@ -160,6 +168,7 @@ def build_dashboard_summary(*, ledger: ForecastLedger | None = None, limit: int 
         "active_count": len(questions),
         "open_alert_count": len(alerts),
         "review_queue_count": len(review_queue),
+        "closing_soon_count": closing_soon_count,
         "open_assumption_count": open_assumption_count,
         "stale_assumption_count": stale_assumption_count,
         "calibration": calibration,
@@ -180,6 +189,7 @@ def render_dashboard_text(summary: dict[str, Any]) -> str:
             f"active: {summary.get('active_count', 0)}  "
             f"open_alerts: {summary.get('open_alert_count', 0)}  "
             f"review_queue: {summary.get('review_queue_count', 0)}  "
+            f"closing_soon: {summary.get('closing_soon_count', 0)}  "
             f"assumptions: {summary.get('open_assumption_count', 0)}/{summary.get('stale_assumption_count', 0)}  "
             f"calibration_n: {(summary.get('calibration') or {}).get('count', 0)}"
         ),
@@ -518,3 +528,10 @@ def review_next_action(question_id: str, reasons: list[str]) -> str:
     if "review_due" in reasons or any(reason.startswith("last_update_") for reason in reasons):
         return f"forecast research {question_id}; forecast update {question_id} --preview ..."
     return f"forecast show {question_id}"
+
+
+def is_close_review_reason(reason: str) -> bool:
+    return (
+        reason in {"resolution_check_due", "close_time_passed"}
+        or reason.startswith("close_time_within_")
+    )

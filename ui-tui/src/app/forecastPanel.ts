@@ -119,6 +119,7 @@ export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): st
   const active = numberValue(summary.active_count) ?? (summary.questions ?? []).length
   const alerts = numberValue(summary.open_alert_count) ?? 0
   const reviews = numberValue(summary.review_queue_count) ?? (summary.review_queue ?? []).length
+  const closing = numberValue(summary.closing_soon_count) ?? 0
   const calibrationCount = numberValue(summary.calibration?.count)
   const lessonCount = numberValue(summary.learning?.total_lessons)
   const assumptions = assumptionCounts(summary)
@@ -130,6 +131,10 @@ export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): st
 
   if (reviews > 0) {
     bits.push(`${plural(reviews, 'review')}`)
+  }
+
+  if (closing > 0) {
+    bits.push(`${plural(closing, 'closing forecast')}`)
   }
 
   if (calibrationCount !== null) {
@@ -213,6 +218,7 @@ const triageRows = (response: ForecastDashboardResponse): [string, string][] => 
   const active = numberValue(summary.active_count) ?? (summary.questions ?? []).length
   const alerts = numberValue(summary.open_alert_count) ?? 0
   const reviews = numberValue(summary.review_queue_count) ?? (summary.review_queue ?? []).length
+  const closing = numberValue(summary.closing_soon_count) ?? 0
   const calibrationCount = numberValue(summary.calibration?.count) ?? 0
   const learning = summary.learning
   const backtests = summary.recent_backtests ?? []
@@ -221,6 +227,10 @@ const triageRows = (response: ForecastDashboardResponse): [string, string][] => 
 
   if (alerts > 0) {
     rows.push(['/alerts', `${plural(alerts, 'open alert')} need source or resolution review`])
+  }
+
+  if (closing > 0) {
+    rows.push(['/review --stale', `${plural(closing, 'forecast')} approaching or past close time`])
   }
 
   if (reviews > 0) {
@@ -437,6 +447,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
   const active = summary.active_count ?? questions.length
   const alerts = summary.open_alert_count ?? 0
   const reviews = summary.review_queue_count ?? reviewQueue.length
+  const closing = summary.closing_soon_count ?? 0
   const assumptions = assumptionCounts(summary)
 
   const sections: PanelSection[] = [
@@ -446,6 +457,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
         ['active forecasts', formatCount(active)],
         ['open alerts', formatCount(alerts)],
         ['review queue', formatCount(reviews)],
+        ['closing soon', formatCount(closing)],
         ['assumptions', `${formatCount(assumptions.open)}/${formatCount(assumptions.stale)}`],
         ['calibration n', formatCount(calibration?.count)],
         ['lessons', formatCount(learning?.total_lessons)]
@@ -721,6 +733,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
   const active = summary.active_count ?? questions.length
   const alerts = summary.open_alert_count ?? 0
   const reviews = summary.review_queue_count ?? reviewQueue.length
+  const closing = summary.closing_soon_count ?? 0
   const assumptions = assumptionCounts(summary)
   const sections: PanelSection[] = [
     {
@@ -728,6 +741,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
         ['active', formatCount(active)],
         ['alerts', formatCount(alerts)],
         ['reviews', formatCount(reviews)],
+        ['closing', formatCount(closing)],
         ['assumptions', `${formatCount(assumptions.open)}/${formatCount(assumptions.stale)}`],
         ['scores', formatCount(calibration?.count)],
         ['lessons', formatCount(learning?.total_lessons)]

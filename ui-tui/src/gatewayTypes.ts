@@ -191,6 +191,7 @@ export interface ForecastDashboardSummary {
   calibration?: ForecastDashboardCalibration
   evidence_status?: ForecastDashboardEvidenceStatus
   learning?: ForecastDashboardLearning
+  closing_soon_count?: number
   open_alert_count?: number
   open_assumption_count?: number
   product?: string

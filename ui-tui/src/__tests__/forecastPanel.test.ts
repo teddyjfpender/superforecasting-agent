@@ -166,6 +166,7 @@ describe('forecast desk panel helpers', () => {
       summary: {
         active_count: 2,
         calibration: { count: 1 },
+        closing_soon_count: 1,
         open_alert_count: 0,
         open_assumption_count: 5,
         product: 'Superforecasting Agent',
@@ -195,8 +196,15 @@ describe('forecast desk panel helpers', () => {
     const railSections = forecastDeskRailSections(response)
 
     expect(forecastDeskStatusLabel(response)).toContain('asm 5/1')
+    expect(forecastDeskStatusLabel(response)).toContain('1 closing forecast')
     expect(sections.find(section => section.title === 'Desk')?.rows).toContainEqual(['assumptions', '5/1'])
+    expect(sections.find(section => section.title === 'Desk')?.rows).toContainEqual(['closing soon', '1'])
     expect(railSections.find(section => section.title === 'Book')?.rows).toContainEqual(['assumptions', '5/1'])
+    expect(railSections.find(section => section.title === 'Book')?.rows).toContainEqual(['closing', '1'])
+    expect(sections.find(section => section.title === 'Triage')?.rows).toContainEqual([
+      '/review --stale',
+      '1 forecast approaching or past close time'
+    ])
     expect(sections.find(section => section.title === 'Triage')?.rows).toContainEqual([
       '/forecast self-check',
       '1 stale assumption needs evidence or status review'

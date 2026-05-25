@@ -391,6 +391,29 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     assert "replay only" in text
 
 
+def test_dashboard_summary_counts_forecasts_near_close(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will close-time risk be visible?",
+        resolution_criteria="Resolved yes if the dashboard counts close-time review work.",
+        close_time="2026-01-05T00:00:00Z",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.64,
+        rationale="Close-time dashboard fixture.",
+        as_of="2026-01-01T00:00:00Z",
+    )
+
+    summary = build_dashboard_summary(ledger=ledger, now="2026-01-01T00:00:00Z")
+    text = render_dashboard_text(summary)
+
+    assert summary["closing_soon_count"] == 1
+    assert summary["review_queue_count"] == 1
+    assert "close_time_within_7d" in summary["review_queue"][0]["reasons"]
+    assert "closing_soon: 1" in text
+
+
 def test_evidence_tracks_available_at_for_backtests(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     question = ledger.create_question(
