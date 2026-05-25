@@ -49,52 +49,52 @@ Without v2: the "realtime" path is skipped; transcribe runs alone.
 | Path | Purpose |
 |---|---|
 | `plugin.yaml` | manifest |
-| `__init__.py` | `register(ctx)` — registers 5 tools + `on_session_end` hook + `hermes meet` CLI |
+| `__init__.py` | `register(ctx)` — registers 5 tools + `on_session_end` hook + `superforecasting-agent meet` CLI |
 | `meet_bot.py` | Playwright bot subprocess (standalone, `python -m plugins.google_meet.meet_bot`) |
 | `process_manager.py` | local bot lifecycle + `enqueue_say` |
 | `tools.py` | agent-facing tools + node-routing helper |
-| `cli.py` | `hermes meet setup / auth / join / status / transcript / say / stop / node ...` |
+| `cli.py` | `superforecasting-agent meet setup / auth / join / status / transcript / say / stop / node ...` |
 | `audio_bridge.py` | v2: PulseAudio null-sink (Linux) + BlackHole probe (macOS) |
 | `realtime/openai_client.py` | v2: `RealtimeSession` + `RealtimeSpeaker` (file-queue → OpenAI Realtime WS → PCM) |
 | `node/protocol.py` | v3: message envelope + validation |
-| `node/registry.py` | v3: `$HERMES_HOME/workspace/meetings/nodes.json` |
+| `node/registry.py` | v3: active agent-home `workspace/meetings/nodes.json` |
 | `node/server.py` | v3: `NodeServer` (runs on host machine) |
 | `node/client.py` | v3: `NodeClient` (used by tool handlers + CLI on gateway) |
-| `node/cli.py` | v3: `hermes meet node {run,list,approve,remove,status,ping}` |
+| `node/cli.py` | v3: `superforecasting-agent meet node {run,list,approve,remove,status,ping}` |
 | `SKILL.md` | agent usage guide |
 
 ## Local quick start
 
 ```bash
-hermes plugins enable google_meet
-hermes meet install                                      # pip + Chromium
-hermes meet setup                                        # preflight
-hermes meet auth                                         # optional
-hermes meet join https://meet.google.com/abc-defg-hij    # transcribe
+superforecasting-agent plugins enable google_meet
+superforecasting-agent meet install                                      # pip + Chromium
+superforecasting-agent meet setup                                        # preflight
+superforecasting-agent meet auth                                         # optional
+superforecasting-agent meet join https://meet.google.com/abc-defg-hij    # transcribe
 ```
 
 ## Realtime mode
 
 Linux (preferred, most automated):
 ```bash
-hermes meet install --realtime                     # installs pulseaudio-utils
-echo 'OPENAI_API_KEY=sk-...' >> ~/.hermes/.env
-hermes meet join https://meet.google.com/abc-defg-hij --mode realtime
+superforecasting-agent meet install --realtime                     # installs pulseaudio-utils
+echo 'OPENAI_API_KEY=sk-...' >> ~/.superforecasting-agent/.env
+superforecasting-agent meet join https://meet.google.com/abc-defg-hij --mode realtime
 # then from the agent or CLI:
-hermes meet say "Good morning everyone, I'm the note-taker bot."
+superforecasting-agent meet say "Good morning everyone, I'm the note-taker bot."
 ```
 
 macOS:
 ```bash
-hermes meet install --realtime     # runs: brew install blackhole-2ch ffmpeg
+superforecasting-agent meet install --realtime     # runs: brew install blackhole-2ch ffmpeg
 # then — manually! — open System Settings → Sound → Input → BlackHole 2ch
-echo 'OPENAI_API_KEY=sk-...' >> ~/.hermes/.env
-hermes meet join https://meet.google.com/abc-defg-hij --mode realtime
+echo 'OPENAI_API_KEY=sk-...' >> ~/.superforecasting-agent/.env
+superforecasting-agent meet join https://meet.google.com/abc-defg-hij --mode realtime
 ```
 
-On macOS, hermes will **not** switch your system audio input automatically — the
-user has to do it. This is deliberate: switching default input on a whim would
-be a surprising side effect.
+On macOS, Superforecasting Agent will **not** switch your system audio input
+automatically — the user has to do it. This is deliberate: switching default
+input on a whim would be a surprising side effect.
 
 ## Remote node host
 
@@ -102,15 +102,15 @@ On the node machine (e.g. user's Mac with a signed-in Chrome):
 ```bash
 pip install playwright websockets
 python -m playwright install chromium
-hermes plugins enable google_meet
-hermes meet node run --display-name my-mac --host 0.0.0.0 --port 18789
+superforecasting-agent plugins enable google_meet
+superforecasting-agent meet node run --display-name my-mac --host 0.0.0.0 --port 18789
 # prints the bearer token on first run; copy it
 ```
 
 On the gateway:
 ```bash
 superforecasting-agent meet node approve my-mac ws://<mac-ip>:18789 <token>
-hermes meet node ping my-mac
+superforecasting-agent meet node ping my-mac
 # now any meet_* tool call accepts node='my-mac' (or 'auto')
 ```
 

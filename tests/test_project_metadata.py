@@ -1462,6 +1462,9 @@ def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     assert "superforecasting-agent auth" in text
     assert "superforecasting-agent memory setup" in text
     assert "superforecasting-agent meet node approve" in text
+    assert "superforecasting-agent plugins enable google_meet" in text
+    assert "superforecasting-agent meet install" in text
+    assert "superforecasting-agent meet setup" in text
     assert "active agent-home .env" in text
     assert "active agent-home auth store" in text
 
@@ -1475,11 +1478,16 @@ def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     assert "`hermes setup`" not in text
     assert "hermes auth codex" not in text
     assert "`hermes model`" not in text
+    assert "hermes plugins enable google_meet" not in text
+    assert "hermes meet install" not in text
+    assert "hermes meet setup" not in text
+    assert "hermes meet auth" not in text
     assert "Run `hermes auth`" not in text
     assert "add the key to ~/.hermes/.env manually" not in text
     assert "run: hermes setup" not in text
     assert "Check ~/.hermes/.env" not in text
     assert "vars manually in ~/.hermes/.env" not in text
+    assert ">> ~/.hermes/.env" not in text
     assert "hermes meet node approve" not in text
 
 
