@@ -564,8 +564,8 @@ def create_job(
                 With ``no_agent=True``, ``workdir`` is still applied as the
                 script's cwd so relative paths inside the script behave
                 predictably.
-        profile: Optional Hermes profile name. When set, the job runs with
-                that profile's HERMES_HOME so profile-specific config,
+        profile: Optional agent profile name. When set, the job runs with
+                that profile's resolved home so profile-specific config,
                 credentials, scripts, skills, and memory paths resolve
                 consistently. ``default`` selects the root profile; empty /
                 None preserves the scheduler's existing behaviour.

@@ -1758,6 +1758,27 @@ def test_watcher_skill_is_forecast_native():
     assert "~/.hermes/.env" not in text
 
 
+def test_cron_scheduler_copy_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = "\n".join(
+        [
+            (root / "cron" / "__init__.py").read_text(encoding="utf-8"),
+            (root / "cron" / "scheduler.py").read_text(encoding="utf-8"),
+            (root / "cron" / "jobs.py").read_text(encoding="utf-8"),
+        ]
+    )
+
+    assert "Cron job scheduling system for Superforecasting Agent." in text
+    assert "superforecasting-agent gateway install" in text
+    assert "using agent profile" in text
+    assert "Optional agent profile name" in text
+    assert "Cron job scheduling system for Hermes Agent." not in text
+    assert "hermes gateway install" not in text
+    assert "using Hermes profile" not in text
+    assert "Optional Hermes profile name" not in text
+    assert "Hermes home" not in text
+
+
 def test_telephony_skill_helper_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [
