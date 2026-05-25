@@ -7811,7 +7811,7 @@ class GatewayRunner:
                                 "🎤 I received your voice message but can't transcribe it — "
                                 "no speech-to-text provider is configured.\n\n"
                                 "To enable voice: install faster-whisper "
-                                "(`pip install faster-whisper` in the Hermes venv) "
+                                "(`pip install faster-whisper` in the active Superforecasting Agent venv) "
                                 "and set `stt.enabled: true` in config.yaml, "
                                 "then /restart the gateway."
                             )
@@ -12192,7 +12192,7 @@ class GatewayRunner:
         try:
             send_result = await adapter.send(
                 source.chat_id,
-                "System topic for Hermes commands and status.",
+                "System topic for Superforecasting Agent commands and status.",
                 metadata={"thread_id": str(thread_id)},
             )
             message_id = getattr(send_result, "message_id", None)
@@ -14474,7 +14474,7 @@ class GatewayRunner:
                         if self._has_setup_skill():
                             _no_stt_note += (
                                 " You have a skill called hermes-agent-setup "
-                                "that can help users configure Hermes features "
+                                "that can help users configure Superforecasting Agent features "
                                 "including voice, tools, and more."
                             )
                         _no_stt_note += "]"

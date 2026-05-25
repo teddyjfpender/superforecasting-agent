@@ -1037,6 +1037,8 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
         root / "gateway" / "platforms" / "slack.py",
         root / "gateway" / "platforms" / "sms.py",
         root / "gateway" / "platforms" / "discord.py",
+        root / "gateway" / "platforms" / "feishu.py",
+        root / "gateway" / "platforms" / "weixin.py",
         root / "gateway" / "run.py",
         root / "agent" / "models_dev.py",
         root / "agent" / "transports" / "codex_app_server_session.py",
@@ -1074,6 +1076,12 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
     assert "agent session ID" in text
     assert "independent Superforecasting Agent" in thread_ready_lines
     assert "Hermes session" not in text
+    assert "in the Hermes venv" not in text
+    assert "System topic for Hermes commands and status" not in text
+    assert "configure Hermes features" not in text
+    assert "Another local Hermes gateway" not in text
+    assert "reach Hermes regardless" not in text
+    assert "not in Hermes" not in text
     assert "Hermes needs your input" not in text
     assert "Hermes is thinking" not in text
     assert "hermes-agent[google_chat]" not in text
