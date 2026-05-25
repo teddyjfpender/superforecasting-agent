@@ -192,7 +192,7 @@ def _json_loads_maybe(value: Optional[str]) -> Any:
     except Exception:
         pass
 
-    # Some Hermes tools append a human hint after a JSON payload, e.g.
+    # Some agent tools append a human hint after a JSON payload, e.g.
     # ``{...}\n\n[Hint: Results truncated...]``. Keep the structured rendering path
     # by decoding the first JSON value instead of falling back to raw text.
     try:

@@ -1,4 +1,4 @@
-"""ACP auth helpers — detect and advertise Hermes authentication methods."""
+"""ACP auth helpers: detect and advertise runtime authentication methods."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ TERMINAL_SETUP_AUTH_METHOD_ID = "hermes-setup"
 
 
 def detect_provider() -> Optional[str]:
-    """Resolve the active Hermes runtime provider, or None if unavailable.
+    """Resolve the active agent runtime provider, or None if unavailable.
 
     Treats a ``Callable`` ``api_key`` (Azure Foundry Entra ID bearer
     token provider — see :mod:`agent.azure_identity_adapter`) as a valid
@@ -34,19 +34,19 @@ def detect_provider() -> Optional[str]:
 
 
 def has_provider() -> bool:
-    """Return True if Hermes can resolve any runtime provider credentials."""
+    """Return True if runtime provider credentials can be resolved."""
     return detect_provider() is not None
 
 
 def build_auth_methods() -> list[Any]:
-    """Return registry-compatible ACP auth methods for Hermes.
+    """Return registry-compatible ACP auth methods for Superforecasting Agent.
 
     The official ACP registry validates that agents advertise at least one
     usable auth method during the initial handshake. A fresh Zed install may
-    not have Hermes provider credentials configured yet, so Hermes always
-    advertises a terminal setup method. When credentials are already present,
-    it also advertises the resolved provider as the default agent-managed
-    runtime credential method.
+    not have provider credentials configured yet, so Superforecasting Agent
+    always advertises a terminal setup method. When credentials are already
+    present, it also advertises the resolved provider as the default
+    agent-managed runtime credential method.
     """
     from acp.schema import AuthMethodAgent, TerminalAuthMethod
 
@@ -58,7 +58,7 @@ def build_auth_methods() -> list[Any]:
                 id=provider,
                 name=f"{provider} runtime credentials",
                 description=(
-                    "Authenticate Hermes using the currently configured "
+                    "Authenticate Superforecasting Agent using the currently configured "
                     f"{provider} runtime credentials."
                 ),
             )
@@ -67,10 +67,11 @@ def build_auth_methods() -> list[Any]:
     methods.append(
         TerminalAuthMethod(
             id=TERMINAL_SETUP_AUTH_METHOD_ID,
-            name="Configure Hermes provider",
+            name="Configure Superforecasting Agent provider",
             description=(
-                "Open Hermes' interactive model/provider setup in a terminal. "
-                "Use this when Hermes has not been configured on this machine yet."
+                "Open Superforecasting Agent's interactive model/provider setup "
+                "in a terminal. Use this when the agent has not been configured "
+                "on this machine yet."
             ),
             type="terminal",
             args=["--setup"],

@@ -1,4 +1,4 @@
-"""ACP agent server — exposes Hermes Agent via the Agent Client Protocol."""
+"""ACP agent server exposing Superforecasting Agent via Agent Client Protocol."""
 
 from __future__ import annotations
 
@@ -232,7 +232,7 @@ def _resource_link_to_parts(block: ResourceContentBlock) -> list[dict[str, Any]]
                 uri=uri,
                 name=name,
                 title=title,
-                body="[Resource link only; Hermes cannot read non-file ACP resource URIs directly.]",
+                body="[Resource link only; the agent cannot read non-file ACP resource URIs directly.]",
             ),
         }]
 
@@ -857,7 +857,7 @@ class HermesACPAgent(acp.Agent):
         # provider we advertised in initialize(). Without this check,
         # authenticate() would acknowledge any method_id as long as the
         # server has provider credentials configured — harmless under
-        # Hermes' threat model (ACP is stdio-only, local-trust), but poor
+        # the ACP local-trust model (stdio-only), but poor
         # API hygiene and confusing if ACP ever grows multi-method auth.
         if not isinstance(method_id, str):
             return None
@@ -1386,9 +1386,9 @@ class HermesACPAgent(acp.Agent):
 
         agent = state.agent
         agent.tool_progress_callback = tool_progress_cb
-        # ACP thought panes should not receive Hermes' local kawaii waiting/status
-        # updates. Route provider/model reasoning deltas instead; if the provider
-        # emits no reasoning, Zed should not get a fake "thinking" accordion.
+        # ACP thought panes should not receive local waiting/status updates.
+        # Route provider/model reasoning deltas instead; if the provider emits
+        # no reasoning, Zed should not get a fake "thinking" accordion.
         agent.thinking_callback = None
         agent.reasoning_callback = reasoning_cb
         agent.step_callback = step_cb
@@ -1871,7 +1871,7 @@ class HermesACPAgent(acp.Agent):
         return f"Queued for the next turn. ({depth} queued)"
 
     def _cmd_version(self, args: str, state: SessionState) -> str:
-        return f"Hermes Agent v{HERMES_VERSION}"
+        return f"Superforecasting Agent v{HERMES_VERSION}"
 
     # ---- Model switching (ACP protocol method) -------------------------------
 

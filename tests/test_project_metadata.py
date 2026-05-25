@@ -296,6 +296,28 @@ def test_web_readme_is_forecast_native():
     assert "python -m hermes_cli.main web --no-open" not in text
 
 
+def test_acp_adapter_copy_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "acp_adapter" / "server.py",
+        root / "acp_adapter" / "session.py",
+        root / "acp_adapter" / "auth.py",
+        root / "acp_adapter" / "events.py",
+        root / "acp_adapter" / "tools.py",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "exposing Superforecasting Agent via Agent Client Protocol" in text
+    assert "Superforecasting Agent v{HERMES_VERSION}" in text
+    assert "Configure Superforecasting Agent provider" in text
+    assert "ACP-managed forecast agent" in text
+    assert "Hermes Agent via the Agent Client Protocol" not in text
+    assert "Hermes Agent v{HERMES_VERSION}" not in text
+    assert "Configure Hermes provider" not in text
+    assert "Authenticate Hermes" not in text
+    assert "Hermes' local kawaii" not in text
+
+
 def test_user_stories_page_demotes_general_assistant_positioning():
     root = Path(__file__).resolve().parents[1]
     collage = (

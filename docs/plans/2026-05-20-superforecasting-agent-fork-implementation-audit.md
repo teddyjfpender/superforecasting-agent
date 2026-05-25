@@ -1325,6 +1325,7 @@ Latest verified result:
 - Docker default SOUL pass: `docker/SOUL.md` now seeds a Superforecasting Agent operating style with calibrated forecasting, quantitative research, stale-data, and base-rate examples instead of the inherited generic persona examples.
 - Cron scheduler identity pass: `cron/__init__.py`, `cron/scheduler.py`, and `cron/jobs.py` now use Superforecasting Agent and neutral agent-profile/home wording in scheduler docs, gateway install examples, profile logs, and job profile parameter docs while preserving compatibility function names.
 - Session state identity pass: `hermes_state.py` now describes the SQLite store as Superforecasting Agent infrastructure and uses neutral agent-process/session wording in write-contention comments, Telegram topic migration docs, and topic-binding helpers under metadata coverage.
+- ACP adapter identity pass: `acp_adapter` now exposes Superforecasting Agent in the server module docstring, `/version` response, terminal setup auth method, and ACP session/tool/event comments, while preserving protocol-compatible constants such as `HERMES_VERSION` and `hermes-setup`.
 
 ## Prompt-To-Artifact Checklist
 

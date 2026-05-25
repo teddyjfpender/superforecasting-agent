@@ -92,11 +92,12 @@ class TestBuildAuthMethods:
             {
                 "args": ["--setup"],
                 "description": (
-                    "Open Hermes' interactive model/provider setup in a terminal. "
-                    "Use this when Hermes has not been configured on this machine yet."
+                    "Open Superforecasting Agent's interactive model/provider setup "
+                    "in a terminal. Use this when the agent has not been configured "
+                    "on this machine yet."
                 ),
                 "id": TERMINAL_SETUP_AUTH_METHOD_ID,
-                "name": "Configure Hermes provider",
+                "name": "Configure Superforecasting Agent provider",
                 "type": "terminal",
             }
         ]
