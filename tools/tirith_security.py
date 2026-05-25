@@ -11,7 +11,8 @@ Operational failures (spawn error, timeout, unknown exit code) respect
 the fail_open config setting. Programming errors propagate.
 
 Auto-install: if tirith is not found on PATH or at the configured path,
-it is automatically downloaded from GitHub releases to $HERMES_HOME/bin/tirith.
+it is automatically downloaded from GitHub releases to the active agent
+home's ``bin/tirith`` path.
 The download always verifies SHA-256 checksums.  When cosign is available on
 PATH, provenance verification (GitHub Actions workflow signature) is also
 performed.  If cosign is not installed, the download proceeds with SHA-256
@@ -134,7 +135,7 @@ _MARKER_TTL = 86400  # 24 hours
 
 
 def _get_hermes_home() -> str:
-    """Return the active agent home directory, respecting HERMES_HOME."""
+    """Return the active agent home directory."""
     return str(get_hermes_home())
 
 
@@ -207,7 +208,7 @@ def _clear_install_failed():
 
 
 def _hermes_bin_dir() -> str:
-    """Return $HERMES_HOME/bin, creating it if needed."""
+    """Return the active agent-home bin directory, creating it if needed."""
     d = os.path.join(_get_hermes_home(), "bin")
     os.makedirs(d, exist_ok=True)
     return d
@@ -327,7 +328,7 @@ def _verify_checksum(archive_path: str, checksums_path: str, archive_name: str) 
 
 
 def _install_tirith(*, log_failures: bool = True) -> tuple[str | None, str]:
-    """Download and install tirith to $HERMES_HOME/bin/tirith.
+    """Download and install tirith to the active agent-home bin directory.
 
     Verifies provenance via cosign and SHA-256 checksum.
     Returns (installed_path, failure_reason).  On success failure_reason is "".
@@ -447,8 +448,8 @@ def _resolve_tirith_path(configured_path: str) -> str:
 
     For the default "tirith":
     1. PATH lookup via shutil.which
-    2. $HERMES_HOME/bin/tirith (previously auto-installed)
-    3. Auto-install from GitHub releases → $HERMES_HOME/bin/tirith
+    2. active agent-home ``bin/tirith`` (previously auto-installed)
+    3. Auto-install from GitHub releases → active agent-home ``bin/tirith``
 
     Failed installs are cached for the process lifetime (and persisted to
     disk for 24h) to avoid repeated network attempts.

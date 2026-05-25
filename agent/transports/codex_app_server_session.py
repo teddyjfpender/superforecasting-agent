@@ -49,7 +49,7 @@ _STDERR_TAIL_LINES = 12
 
 
 # Permission profile mapping mirrors the docstring in PR proposal:
-# Hermes' tools.terminal.security_mode → Codex's permissions profile id.
+# the forecast desk's terminal security mode → Codex's permissions profile id.
 # Defaults if config is missing → workspace-write (matches Codex's own default).
 _HERMES_TO_CODEX_PERMISSION_PROFILE = {
     "auto": "workspace-write",
@@ -212,7 +212,7 @@ class CodexAppServerSession:
         self._client.initialize(
             client_name="superforecasting-agent",
             client_title="Superforecasting Agent",
-            client_version=_get_hermes_version(),
+            client_version=_get_superforecasting_agent_version(),
         )
         # Permission selection is intentionally NOT sent on thread/start.
         # Two reasons (live-tested against codex 0.130.0):
@@ -335,7 +335,7 @@ class CodexAppServerSession:
     ) -> TurnResult:
         """Send a user message and block until turn/completed, while
         forwarding server-initiated approval requests and projecting items
-        into Hermes' messages shape.
+        into the forecast agent's OpenAI-style messages shape.
 
         post_tool_quiet_timeout: if codex emits a tool completion and then
         goes quiet for this many seconds without emitting another item or
@@ -366,7 +366,8 @@ class CodexAppServerSession:
         projector = CodexEventProjector()
 
         # Send turn/start with the user input. Text-only for now (codex
-        # supports rich content but Hermes' text path is the common case).
+        # supports rich content but the forecast agent's text path is the
+        # common case).
         try:
             ts = self._client.request(
                 "turn/start",
@@ -595,8 +596,7 @@ class CodexAppServerSession:
             logger.warning("turn/interrupt timed out")
 
     def _handle_server_request(self, req: dict) -> None:
-        """Translate a codex server request (approval) into Hermes' approval
-        flow, then send the response.
+        """Translate a codex server request into the forecast-agent approval flow.
 
         Method names verified live against codex 0.130.0 (Apr 2026):
           item/commandExecution/requestApproval — exec approvals
@@ -628,9 +628,9 @@ class CodexAppServerSession:
             # Codex's MCP layer asks the user for structured input on
             # behalf of an MCP server (e.g. tool-call confirmation,
             # OAuth, form data). For our own hermes-tools callback we
-            # auto-accept — the user already approved Hermes' tools
-            # by enabling the runtime, and we never expose anything
-            # codex's built-in shell can't already do. For other MCP
+            # auto-accept — the user already approved the forecast agent's
+            # inherited tools by enabling the runtime, and we never expose
+            # anything codex's built-in shell can't already do. For other MCP
             # servers we decline so the user explicitly opts in via
             # codex's own auth flow.
             server_name = params.get("serverName") or ""
@@ -767,10 +767,9 @@ class CodexAppServerSession:
 
 
 def _approval_choice_to_codex_decision(choice: str) -> str:
-    """Map Hermes approval choices onto codex's CommandExecutionApprovalDecision
-    / FileChangeApprovalDecision wire values.
+    """Map forecast-agent choices onto codex approval-decision wire values.
 
-    Hermes returns 'once', 'session', 'always', or 'deny'.
+    The forecast agent returns 'once', 'session', 'always', or 'deny'.
     Codex expects 'accept', 'acceptForSession', 'decline', or 'cancel'
     (verified against codex-rs/app-server-protocol/src/protocol/v2/item.rs
     on codex 0.130.0).
@@ -800,11 +799,16 @@ def _has_turn_aborted_marker(text: str) -> bool:
     return False
 
 
-def _get_hermes_version() -> str:
-    """Best-effort Hermes version string for codex's userAgent line."""
+def _get_superforecasting_agent_version() -> str:
+    """Best-effort Superforecasting Agent version for codex's userAgent line."""
     try:
         from importlib.metadata import version
 
-        return version("hermes-agent")
+        for package_name in ("superforecasting-agent", "hermes-agent"):
+            try:
+                return version(package_name)
+            except Exception:
+                continue
     except Exception:  # pragma: no cover
-        return "0.0.0"
+        pass
+    return "0.0.0"

@@ -143,6 +143,42 @@ class TestCodexAppServerModule:
         assert "boom" in str(err)
         assert "-32600" in str(err)
 
+    def test_codex_session_user_agent_prefers_forecast_package(self, monkeypatch) -> None:
+        import importlib.metadata
+        from agent.transports import codex_app_server_session as session
+
+        calls: list[str] = []
+
+        def fake_version(package_name: str) -> str:
+            calls.append(package_name)
+            if package_name == "superforecasting-agent":
+                return "2.7.1"
+            raise importlib.metadata.PackageNotFoundError(package_name)
+
+        monkeypatch.setattr(importlib.metadata, "version", fake_version)
+
+        assert session._get_superforecasting_agent_version() == "2.7.1"
+        assert calls == ["superforecasting-agent"]
+
+    def test_codex_session_user_agent_keeps_legacy_version_fallback(
+        self, monkeypatch
+    ) -> None:
+        import importlib.metadata
+        from agent.transports import codex_app_server_session as session
+
+        calls: list[str] = []
+
+        def fake_version(package_name: str) -> str:
+            calls.append(package_name)
+            if package_name == "hermes-agent":
+                return "1.9.0"
+            raise importlib.metadata.PackageNotFoundError(package_name)
+
+        monkeypatch.setattr(importlib.metadata, "version", fake_version)
+
+        assert session._get_superforecasting_agent_version() == "1.9.0"
+        assert calls == ["superforecasting-agent", "hermes-agent"]
+
 
 class TestSpawnEnvIsolation:
     """The codex spawn must NOT rewrite HOME — codex's shell tool spawns
@@ -245,8 +281,8 @@ class TestSpawnEnvIsolation:
     def test_kanban_worker_adds_only_kanban_writable_root(self, monkeypatch):
         """Codex-runtime Kanban workers need to write board state outside
         their scratch/worktree workspace, but should not fall back to
-        danger-full-access. Hermes passes a narrow app-server config override
-        for the Kanban root only.
+        danger-full-access. The forecast agent passes a narrow app-server
+        config override for the Kanban root only.
         """
         import subprocess
         from agent.transports import codex_app_server as cas

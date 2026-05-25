@@ -1422,6 +1422,38 @@ def test_runtime_operator_guidance_uses_forecast_native_commands():
     assert "stop/restart hermes gateway" not in text
 
 
+def test_internal_runtime_copy_is_forecast_native_where_not_compatibility():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        "agent/transports/codex_app_server_session.py",
+        "tools/mcp_tool.py",
+        "tools/tts_tool.py",
+        "tools/tirith_security.py",
+        "tools/environments/local.py",
+    ]
+    text = "\n".join(
+        (root / rel_path).read_text(encoding="utf-8") for rel_path in checked_paths
+    )
+
+    assert 'for package_name in ("superforecasting-agent", "hermes-agent")' in text
+    assert '("superforecasting-agent", "hermes-agent")' in text
+    assert "forecast-agent registry schema format" in text
+    assert "forecast agent's MEDIA tag" in text
+    assert "agent-managed secrets" in text
+    assert "active agent-home bin directory" in text
+
+    assert "Hermes' tools.terminal.security_mode" not in text
+    assert "Hermes' messages shape" not in text
+    assert "Hermes approval choices" not in text
+    assert 'version("hermes-agent")' not in text
+    assert "Hermes MEDIA tag" not in text
+    assert "Hermes' MEDIA tag" not in text
+    assert "Hermes's historical behavior" not in text
+    assert "Hermes-managed secrets" not in text
+    assert "Hermes-internal env vars" not in text
+    assert "$HERMES_HOME/bin/tirith" not in text
+
+
 def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [

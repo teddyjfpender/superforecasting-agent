@@ -1443,8 +1443,8 @@ def _check_piper_available() -> bool:
 def _get_piper_voices_dir() -> Path:
     """Return the directory where the agent caches Piper voice models.
 
-    Resolves to ``~/.hermes/cache/piper-voices/`` under the active
-    HERMES_HOME so voice downloads follow profile boundaries.
+    Resolves under the active agent home so voice downloads follow profile
+    boundaries.
     """
     from hermes_constants import get_hermes_dir
     root = Path(get_hermes_dir("cache/piper-voices", "piper_voices_cache"))
