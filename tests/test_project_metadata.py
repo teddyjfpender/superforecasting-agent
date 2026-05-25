@@ -237,6 +237,17 @@ def test_web_dashboard_titles_are_forecast_native():
     assert "Hermes Agent - Dashboard" not in text
 
 
+def test_user_stories_page_demotes_general_assistant_positioning():
+    root = Path(__file__).resolve().parents[1]
+    collage = (
+        root / "website" / "src" / "components" / "UserStoriesCollage" / "index.tsx"
+    ).read_text(encoding="utf-8")
+
+    assert "Personal Ops" in collage
+    assert "not product positioning" in collage
+    assert "Personal Assistant" not in collage
+
+
 def test_docker_entrypoint_and_compose_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     entrypoint = (root / "docker" / "entrypoint.sh").read_text(encoding="utf-8")

@@ -28,7 +28,7 @@ const CATEGORIES: Record<
     strip: 'linear-gradient(90deg, #3b82f6, #60a5fa, #a78bfa)',
   },
   'personal-assistant': {
-    label: 'Personal Assistant',
+    label: 'Personal Ops',
     solid: '#34d399',
     soft: 'rgba(52, 211, 153, 0.14)',
     strip: 'linear-gradient(90deg, #10b981, #34d399, #a7f3d0)',
@@ -177,7 +177,8 @@ export default function UserStoriesCollage(): JSX.Element {
           What the Superforecasting Agent community is actually building. Every tile
           below links to a real post, issue, video, or gist where someone
           describes how they use Superforecasting Agent &mdash; scraped from X, GitHub, Reddit,
-          Hacker News, YouTube, blogs, and podcasts.
+          Hacker News, YouTube, blogs, and podcasts. Some entries predate the forecasting
+          fork and are kept as inherited ecosystem examples, not product positioning.
         </p>
         <div className={styles.meta}>
           <span><strong>{allStories.length}</strong> stories</span>
