@@ -815,6 +815,7 @@ def test_runtime_user_guidance_prefers_active_forecast_home():
     plugins_cmd = (root / "hermes_cli" / "plugins_cmd.py").read_text(
         encoding="utf-8"
     )
+    doctor = (root / "hermes_cli" / "doctor.py").read_text(encoding="utf-8")
     tools_config = (root / "hermes_cli" / "tools_config.py").read_text(
         encoding="utf-8"
     )
@@ -827,12 +828,80 @@ def test_runtime_user_guidance_prefers_active_forecast_home():
     assert "first-use consent allowlist in the " in main
     assert "active agent home." in main
     assert "active agent home's ``plugins/`` directory" in plugins_cmd
+    assert "active user-facing agent home path" in doctor
+    assert "active agent-home .env contains provider settings" in doctor
+    assert "Check {_DHH}/config.yaml is writable." in doctor
+    assert "active agent-home .env" in doctor
+    assert "active agent-home config.yaml" in doctor
     assert "model in ~/.hermes/config.yaml" not in goals
     assert "tts.piper.voice in ~/.hermes/config.yaml" not in tools_config
     assert "into ~/.hermes/node/" not in main
     assert "declared in ~/.hermes/config.yaml" not in main
     assert "consent allowlist at ~/.hermes/shell-hooks-allowlist.json" not in main
     assert "``~/.hermes/plugins" not in plugins_cmd
+    assert "Check ~/.hermes/config.yaml is writable." not in doctor
+    assert "Check ~/.hermes/.env" not in doctor
+    assert "Check ~/.hermes/config.yaml" not in doctor
+    assert "~/.hermes/.env contains provider auth/base URL settings" not in doctor
+    assert "superforecasting-agent doctor --ack" in doctor
+    assert "hermes doctor --ack" not in doctor
+
+
+def test_operator_readiness_surfaces_use_forecast_home_guidance():
+    root = Path(__file__).resolve().parents[1]
+    cli = (root / "cli.py").read_text(encoding="utf-8")
+    cron_jobs = (root / "cron" / "jobs.py").read_text(encoding="utf-8")
+    cron_tools = (root / "tools" / "cronjob_tools.py").read_text(encoding="utf-8")
+    discord = (root / "gateway" / "platforms" / "discord.py").read_text(
+        encoding="utf-8"
+    )
+    tui_gateway = (root / "tui_gateway" / "server.py").read_text(encoding="utf-8")
+    delegate_tool = (root / "tools" / "delegate_tool.py").read_text(
+        encoding="utf-8"
+    )
+    tool_backend_helpers = (
+        root / "tools" / "tool_backend_helpers.py"
+    ).read_text(encoding="utf-8")
+    reload_skills_test = (
+        root / "tests" / "gateway" / "test_reload_skills_discord_resync.py"
+    ).read_text(encoding="utf-8")
+    cron_script_test = (
+        root / "tests" / "cron" / "test_cron_script.py"
+    ).read_text(encoding="utf-8")
+
+    assert "load_forecast_dotenv" in cli
+    assert "load_forecast_dotenv" in tui_gateway
+    assert "active agent-home skills/ directory" in cli
+    assert "active agent-home .env" in tui_gateway
+    assert "active agent-home scripts/ directory" in cron_tools
+    assert "display_hermes_home()}/scripts/" in cron_tools
+    assert "active agent home under cron/jobs.json" in cron_jobs
+    assert "Re-scan forecast skills for new or removed skills" in discord
+    assert "active agent-home ``.env`` is for secrets only" in discord
+    assert "active agent-home\n    ``logs/subagent-<sid>-<ts>.log``" in delegate_tool
+    assert "active agent-home ``.env``" in tool_backend_helpers
+    assert "active agent-home skills/ directory" in reload_skills_test
+    assert "active agent-home scripts/" in cron_script_test
+
+    combined = "\n".join(
+        [
+            cli,
+            cron_jobs,
+            cron_tools,
+            discord,
+            tui_gateway,
+            delegate_tool,
+            tool_backend_helpers,
+            reload_skills_test,
+            cron_script_test,
+        ]
+    )
+    assert "load_hermes_dotenv" not in cli
+    assert "load_hermes_dotenv" not in tui_gateway
+    assert "~/.hermes/skills" not in combined
+    assert "~/.hermes/scripts" not in combined
+    assert "~/.hermes/logs/subagent" not in combined
+    assert "~/.hermes/cron" not in combined
 
 
 def test_plugin_and_session_recap_guidance_is_forecast_native():
