@@ -571,6 +571,7 @@ forecast import sec <cik> --question <id>
 forecast import secfacts <cik>/<concept> --question <id>
 forecast import arxiv <query> --question <id>
 forecast import pubmed <query-or-PMID> --question <id>
+forecast import githubrepo <owner/repo> --question <id>
 forecast import githubcommits <owner/repo> --question <id>
 forecast import githubactions <owner/repo> --question <id>
 forecast import pypi <package> --question <id>

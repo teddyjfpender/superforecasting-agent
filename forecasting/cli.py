@@ -78,6 +78,7 @@ from forecasting.source_adapters import (
     load_fred_observations,
     load_gdelt_articles,
     load_github_commits,
+    load_github_repository_snapshots,
     load_github_workflow_runs,
     load_hackernews_items,
     load_github_issues,
@@ -361,6 +362,12 @@ SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
         "watch_prefix": "github:<owner/repo>",
     },
     {
+        "name": "githubrepo",
+        "domain": "repository metadata and adoption counters",
+        "import_command": "forecast import githubrepo <owner/repo> --question <id>",
+        "watch_prefix": "githubrepo:<owner/repo>",
+    },
+    {
         "name": "githubissues",
         "domain": "repository issues and pull requests",
         "import_command": "forecast import githubissues <owner/repo> --question <id>",
@@ -591,6 +598,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "gdelt",
         "fivethirtyeight",
         "github",
+        "githubrepo",
         "githubissues",
         "githubcommits",
         "githubactions",
@@ -681,6 +689,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "gdelt",
             "fivethirtyeight",
             "github",
+            "githubrepo",
             "githubissues",
             "githubcommits",
             "githubactions",
@@ -754,6 +763,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 help="Override FiveThirtyEight polling CSV base URL or endpoint template for tests or private mirrors",
             )
         if name == "github":
+            adapter.add_argument(
+                "--api-base-url",
+                default="https://api.github.com",
+                help="Override GitHub API base URL for tests or private mirrors",
+            )
+        if name == "githubrepo":
             adapter.add_argument(
                 "--api-base-url",
                 default="https://api.github.com",
@@ -2621,6 +2636,74 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                 )
             )
         print(f"captured {len(evidence_items)} github evidence item(s)")
+        for evidence in evidence_items:
+            print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
+        return
+    if args.import_kind == "githubrepo":
+        if not args.question_id:
+            raise SystemExit("forecast import githubrepo requires --question")
+        snapshots = load_github_repository_snapshots(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            api_base_url=args.api_base_url,
+        )
+        evidence_items = []
+        for snapshot in snapshots:
+            stars = snapshot.stargazers_count if snapshot.stargazers_count is not None else "unknown"
+            forks = snapshot.forks_count if snapshot.forks_count is not None else "unknown"
+            open_issues = snapshot.open_issues_count if snapshot.open_issues_count is not None else "unknown"
+            summary = (
+                f"GitHub repository {snapshot.repo}: {stars} stars, {forks} forks, "
+                f"{open_issues} open issues; default branch {snapshot.default_branch or 'unknown'}; "
+                f"language {snapshot.language or 'unknown'}."
+            )
+            if snapshot.description:
+                summary = f"{summary} Description: {snapshot.description}"
+            evidence_items.append(
+                ledger.add_evidence(
+                    question_id=args.question_id,
+                    source_or_note=snapshot.html_url or snapshot.url or f"GitHub:{snapshot.repo}",
+                    source_url=snapshot.html_url or snapshot.url,
+                    source_name=snapshot.source_name,
+                    source_type="adapter:githubrepo",
+                    published_at=snapshot.updated_at or snapshot.pushed_at or snapshot.created_at,
+                    available_at=snapshot.updated_at or snapshot.pushed_at or snapshot.created_at or args.as_of,
+                    claim=f"GitHub repository snapshot: {snapshot.repo} {stars} stars {forks} forks",
+                    summary=summary,
+                    reliability_rating=args.reliability,
+                    relevance_rating=args.relevance,
+                    stance="context",
+                    claim_type=args.claim_type,
+                    metadata={
+                        "adapter": "githubrepo",
+                        "repo": snapshot.repo,
+                        "repo_id": snapshot.repo_id,
+                        "owner_login": snapshot.owner_login,
+                        "description": snapshot.description,
+                        "language": snapshot.language,
+                        "default_branch": snapshot.default_branch,
+                        "visibility": snapshot.visibility,
+                        "license_spdx_id": snapshot.license_spdx_id,
+                        "topics": snapshot.topics,
+                        "archived": snapshot.archived,
+                        "disabled": snapshot.disabled,
+                        "fork": snapshot.fork,
+                        "stargazers_count": snapshot.stargazers_count,
+                        "watchers_count": snapshot.watchers_count,
+                        "forks_count": snapshot.forks_count,
+                        "open_issues_count": snapshot.open_issues_count,
+                        "subscribers_count": snapshot.subscribers_count,
+                        "network_count": snapshot.network_count,
+                        "created_at": snapshot.created_at,
+                        "updated_at": snapshot.updated_at,
+                        "pushed_at": snapshot.pushed_at,
+                        "api_base_url": args.api_base_url,
+                        "raw": snapshot.raw,
+                    },
+                )
+            )
+        print(f"captured {len(evidence_items)} githubrepo evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")
         return

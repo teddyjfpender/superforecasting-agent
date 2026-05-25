@@ -20,6 +20,7 @@ from forecasting.source_adapters import (
     HackerNewsItem,
     GitHubCommit,
     GitHubIssue,
+    GitHubRepositorySnapshot,
     GitHubWorkflowRun,
     ImfDataMapperObservation,
     MastodonStatus,
@@ -123,7 +124,7 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["source_type"]["enum"]
     )
 
-    assert {"github", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "whogho", "fema", "eia", "treasury", "imf", "census", "socrata", "ckan", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
+    assert {"github", "githubrepo", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "whogho", "fema", "eia", "treasury", "imf", "census", "socrata", "ckan", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
 
 
 def test_forecast_ledger_tool_imports_imf_datamapper_observations(tmp_path, monkeypatch):
@@ -2477,6 +2478,67 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert evidence["metadata"]["adapter"] == "wikipediapageviews"
     assert evidence["metadata"]["adapter_item"]["views"] == 1234
     assert row["adapter_item"]["entry_id"] == "en.wikipedia.org:Artificial_intelligence:2026-01-02"
+
+    def fake_githubrepo(source, **kwargs):
+        assert source == "acme/desk"
+        assert kwargs["limit"] == 1
+        assert kwargs["since"] == "2026-01-01"
+        assert kwargs["api_base_url"] == "https://example.test/github"
+        return [
+            GitHubRepositorySnapshot(
+                repo="acme/desk",
+                repo_id="456",
+                owner_login="acme",
+                description="Forecasting desk repository.",
+                language="Python",
+                default_branch="main",
+                visibility="public",
+                license_spdx_id="MIT",
+                topics=["forecasting", "agents"],
+                archived=False,
+                disabled=False,
+                fork=False,
+                stargazers_count=1234,
+                watchers_count=1234,
+                forks_count=56,
+                open_issues_count=7,
+                subscribers_count=89,
+                network_count=60,
+                created_at="2024-01-01T00:00:00Z",
+                updated_at="2026-05-21T11:00:00Z",
+                pushed_at="2026-05-20T10:00:00Z",
+                url="https://api.github.test/repos/acme/desk",
+                html_url="https://github.com/acme/desk",
+                source_name="GitHub",
+                entry_id="R_456",
+                raw={"id": 456},
+            )
+        ]
+
+    monkeypatch.setattr("tools.forecasting_tool.load_github_repository_snapshots", fake_githubrepo)
+    githubrepo_imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "githubrepo",
+                "source": "acme/desk",
+                "limit": 1,
+                "since": "2026-01-01",
+                "api_base_url": "https://example.test/github",
+            }
+        )
+    )
+
+    assert githubrepo_imported["imported_count"] == 1
+    githubrepo_evidence = githubrepo_imported["imported"][0]["evidence"]
+    assert githubrepo_evidence["source_type"] == "adapter:githubrepo"
+    assert githubrepo_evidence["source_name"] == "GitHub"
+    assert githubrepo_evidence["claim"] == "GitHub repository acme/desk: 1234 stars, 56 forks, 7 open issues"
+    assert githubrepo_evidence["published_at"] == "2026-05-21T11:00:00Z"
+    assert githubrepo_evidence["metadata"]["adapter"] == "githubrepo"
+    assert githubrepo_evidence["metadata"]["adapter_item"]["stargazers_count"] == 1234
 
     def fake_github_commits(source, **kwargs):
         assert source == "acme/desk"

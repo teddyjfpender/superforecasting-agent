@@ -80,6 +80,7 @@ def register_builtin_extensions() -> None:
         ("gdelt-doc-news", "importer", "Capture GDELT DOC article-list results as timestamped evidence."),
         ("fivethirtyeight-polls", "importer", "Capture FiveThirtyEight polling rows as timestamped evidence."),
         ("github-releases", "importer", "Capture GitHub repository releases as timestamped evidence."),
+        ("github-repository-metadata", "importer", "Capture GitHub repository metadata snapshots as evidence."),
         ("github-issues", "importer", "Capture GitHub issues and pull requests as timestamped evidence."),
         ("github-commits", "importer", "Capture GitHub commit activity as timestamped evidence."),
         ("github-actions", "importer", "Capture GitHub Actions workflow runs as timestamped evidence."),

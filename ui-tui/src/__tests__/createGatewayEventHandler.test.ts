@@ -951,6 +951,7 @@ describe('createGatewayEventHandler', () => {
               '/forecast import secfacts <cik>/<concept> --question <id>',
               '/forecast import crossref "<query-or-DOI>" --question <id>',
               '/forecast import wikipediapageviews <project>/<article> --question <id>',
+              '/forecast import githubrepo <owner/repo> --question <id>',
               '/forecast import githubissues <owner/repo> --question <id>',
               '/forecast import githubcommits <owner/repo> --question <id>',
               '/forecast import githubactions <owner/repo> --question <id>',

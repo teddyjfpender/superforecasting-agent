@@ -66,6 +66,7 @@ WATCH_SOURCE_TYPES = {
     "gdelt",
     "fivethirtyeight",
     "github",
+    "githubrepo",
     "githubissues",
     "githubcommits",
     "githubactions",
@@ -3034,7 +3035,7 @@ class ForecastLedger:
             inferred_type = "manual"
         if inferred_type not in WATCH_SOURCE_TYPES:
             raise ValidationError(
-                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, bluesky, mastodon, reliefweb, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, whogho, fema, fred, eia, treasury, bls, worldbank, imf, census, socrata, ckan, stooq, yahoo, "
+                "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubrepo, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, bluesky, mastodon, reliefweb, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, whogho, fema, fred, eia, treasury, bls, worldbank, imf, census, socrata, ckan, stooq, yahoo, "
                 "sec, secfacts, arxiv, openalex, crossref, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
             )
 
@@ -3121,6 +3122,7 @@ class ForecastLedger:
                     "gdelt",
                     "fivethirtyeight",
                     "github",
+                    "githubrepo",
                     "githubissues",
                     "githubcommits",
                     "githubactions",
@@ -5628,6 +5630,8 @@ class ForecastLedger:
             return "fivethirtyeight"
         if source.startswith("github:"):
             return "github"
+        if source.startswith("githubrepo:"):
+            return "githubrepo"
         if source.startswith("githubissues:"):
             return "githubissues"
         if source.startswith("githubcommits:"):
@@ -5738,6 +5742,8 @@ class ForecastLedger:
             return self._fivethirtyeight_source_signature(source)
         if source_type == "github":
             return self._github_source_signature(source)
+        if source_type == "githubrepo":
+            return self._github_repo_metadata_source_signature(source)
         if source_type == "githubissues":
             return self._github_issues_source_signature(source)
         if source_type == "githubcommits":
@@ -5985,6 +5991,36 @@ class ForecastLedger:
         ]
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
         return f"github:{len(payload)}:{digest}"
+
+    def _github_repo_metadata_source_signature(self, source: str) -> str:
+        source_value = source.split(":", 1)[1].strip() if source.startswith("githubrepo:") else source.strip()
+        if not source_value:
+            return "missing:githubrepo:empty-repo"
+        try:
+            from forecasting.source_adapters import load_github_repository_snapshots
+
+            snapshots = load_github_repository_snapshots(source_value, limit=1)
+        except Exception as exc:
+            return f"missing:githubrepo:{source_value}:{exc.__class__.__name__}"
+        payload = [
+            {
+                "repo": item.repo,
+                "default_branch": item.default_branch,
+                "stargazers_count": item.stargazers_count,
+                "watchers_count": item.watchers_count,
+                "forks_count": item.forks_count,
+                "open_issues_count": item.open_issues_count,
+                "subscribers_count": item.subscribers_count,
+                "network_count": item.network_count,
+                "updated_at": item.updated_at,
+                "pushed_at": item.pushed_at,
+                "archived": item.archived,
+                "disabled": item.disabled,
+            }
+            for item in snapshots
+        ]
+        digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
+        return f"githubrepo:{len(payload)}:{digest}"
 
     def _github_issues_source_signature(self, source: str) -> str:
         source_value = source.split(":", 1)[1].strip() if source.startswith("githubissues:") else source.strip()
@@ -7312,6 +7348,12 @@ class ForecastLedger:
             source_value = source.split(":", 1)[1].strip() if source.startswith("github:") else source
             return (
                 f"Run `forecast import github {source_value} --question {scope_ref}` and then append "
+                "a forecast update if the probability should move."
+            )
+        if watch["source_type"] == "githubrepo" and scope_type == "question" and scope_ref:
+            source_value = source.split(":", 1)[1].strip() if source.startswith("githubrepo:") else source
+            return (
+                f"Run `forecast import githubrepo {source_value} --question {scope_ref}` and then append "
                 "a forecast update if the probability should move."
             )
         if watch["source_type"] == "githubissues" and scope_type == "question" and scope_ref:

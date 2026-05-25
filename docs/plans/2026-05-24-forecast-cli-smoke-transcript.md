@@ -18,7 +18,7 @@ python3 scripts/forecast_smoke_test.py
 
 ```text
 [forecast-smoke] ledger: /var/folders/5x/7hym3yzn05z0k_z3g1m17brc0000gn/T/superforecasting-agent-smoke-nojij7zk/forecasting-smoke.db
-[forecast-smoke] source_adapters: 51
+[forecast-smoke] source_adapters: 52
 [forecast-smoke] benchmark_datasets: 4
 [forecast-smoke] question_id: fq_0eb3e7d2e4db
 [forecast-smoke] evidence_id: ev_c9268e621ebe

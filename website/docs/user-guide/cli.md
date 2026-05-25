@@ -90,6 +90,7 @@ forecast import crossref "forecasting calibration" --question <id>
 forecast import wikipedia "topic" --question <id>
 forecast import wikipediapageviews en.wikipedia.org/Topic --question <id>
 forecast import github owner/repo --question <id>
+forecast import githubrepo owner/repo --question <id>
 forecast import githubissues owner/repo --question <id>
 forecast import githubcommits owner/repo --question <id>
 forecast import githubactions owner/repo --question <id>
@@ -208,6 +209,7 @@ forecast watch add --question <id> eonet:category=wildfires
 forecast watch add --question <id> nws:area=CA
 forecast watch add --question <id> manifold:<slug>
 forecast watch add --question <id> wikipediapageviews:en.wikipedia.org/Topic
+forecast watch add --question <id> githubrepo:owner/repo
 forecast watch add --question <id> githubcommits:owner/repo
 forecast watch add --question <id> githubactions:owner/repo
 

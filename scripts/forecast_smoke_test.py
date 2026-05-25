@@ -59,6 +59,7 @@ EXPECTED_SOURCE_ADAPTERS = {
     "wikipedia",
     "wikipediapageviews",
     "github",
+    "githubrepo",
     "githubissues",
     "githubcommits",
     "githubactions",

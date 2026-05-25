@@ -98,6 +98,10 @@ const EVIDENCE_IMPORTS = [
     label: "Attention",
   },
   {
+    command: "forecast import githubrepo <owner/repo> --question <id>",
+    label: "Repo stats",
+  },
+  {
     command: "forecast import githubissues <owner/repo> --question <id>",
     label: "Issues",
   },

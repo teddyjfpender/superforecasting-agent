@@ -38,6 +38,7 @@ from forecasting.source_adapters import (
     GitHubCommit,
     GitHubIssue,
     GitHubRelease,
+    GitHubRepositorySnapshot,
     GitHubWorkflowRun,
     ImfDataMapperObservation,
     MastodonStatus,
@@ -2323,6 +2324,156 @@ def test_forecast_cli_github_import_captures_releases_as_evidence(tmp_path, caps
     assert evidence[0].metadata["release_id"] == "123"
     assert evidence[0].metadata["tag_name"] == "v1.2.3"
     assert evidence[0].metadata["prerelease"] is True
+
+
+def test_githubrepo_adapter_loads_repository_snapshot(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str):
+        captured["endpoint"] = endpoint
+        captured["label"] = label
+        return {
+            "id": 456,
+            "node_id": "R_456",
+            "full_name": "acme/desk",
+            "owner": {"login": "acme"},
+            "description": " Forecasting desk repository. ",
+            "language": "Python",
+            "default_branch": "main",
+            "visibility": "public",
+            "license": {"spdx_id": "MIT"},
+            "topics": ["forecasting", "agents"],
+            "archived": False,
+            "disabled": False,
+            "fork": False,
+            "stargazers_count": 1234,
+            "watchers_count": 1234,
+            "forks_count": 56,
+            "open_issues_count": 7,
+            "subscribers_count": 89,
+            "network_count": 60,
+            "url": "https://api.github.test/repos/acme/desk",
+            "html_url": "https://github.com/acme/desk",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2026-05-21T11:00:00Z",
+            "pushed_at": "2026-05-20T10:00:00Z",
+        }
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    snapshots = source_adapters.load_github_repository_snapshots(
+        "githubrepo:acme/desk",
+        limit=1,
+        since="2026-05-01T00:00:00Z",
+        api_base_url="https://api.github.test",
+    )
+    parsed = urlparse(captured["endpoint"])
+
+    assert captured["label"] == "github repository"
+    assert parsed.path == "/repos/acme/desk"
+    assert snapshots[0].repo == "acme/desk"
+    assert snapshots[0].repo_id == "456"
+    assert snapshots[0].description == "Forecasting desk repository."
+    assert snapshots[0].stargazers_count == 1234
+    assert snapshots[0].forks_count == 56
+    assert snapshots[0].open_issues_count == 7
+    assert snapshots[0].topics == ["forecasting", "agents"]
+
+
+def test_forecast_cli_githubrepo_import_captures_repository_snapshot_as_evidence(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    captured = {}
+
+    def fake_load_github_repository_snapshots(source: str, **kwargs):
+        captured["source"] = source
+        captured["kwargs"] = kwargs
+        return [
+            GitHubRepositorySnapshot(
+                repo="acme/desk",
+                repo_id="456",
+                owner_login="acme",
+                description="Forecasting desk repository.",
+                language="Python",
+                default_branch="main",
+                visibility="public",
+                license_spdx_id="MIT",
+                topics=["forecasting", "agents"],
+                archived=False,
+                disabled=False,
+                fork=False,
+                stargazers_count=1234,
+                watchers_count=1234,
+                forks_count=56,
+                open_issues_count=7,
+                subscribers_count=89,
+                network_count=60,
+                created_at="2024-01-01T00:00:00Z",
+                updated_at="2026-05-21T11:00:00Z",
+                pushed_at="2026-05-20T10:00:00Z",
+                url="https://api.github.test/repos/acme/desk",
+                html_url="https://github.com/acme/desk",
+                source_name="GitHub",
+                entry_id="R_456",
+                raw={"id": 456},
+            )
+        ]
+
+    monkeypatch.setattr("forecasting.cli.load_github_repository_snapshots", fake_load_github_repository_snapshots)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will GitHub repository metadata import work?",
+            "--resolution-criteria",
+            "Resolved yes if GitHub repository metadata evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "githubrepo",
+            "acme/desk",
+            "--question",
+            question_id,
+            "--limit",
+            "1",
+            "--claim-type",
+            "fact",
+            "--reliability",
+            "0.8",
+            "--relevance",
+            "0.9",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 githubrepo evidence item(s)" in output
+    assert captured["source"] == "acme/desk"
+    assert captured["kwargs"]["limit"] == 1
+    assert evidence[0].claim == "GitHub repository snapshot: acme/desk 1234 stars 56 forks"
+    assert "7 open issues" in evidence[0].summary
+    assert evidence[0].source_name == "GitHub"
+    assert evidence[0].source_type == "adapter:githubrepo"
+    assert evidence[0].published_at == "2026-05-21T11:00:00Z"
+    assert evidence[0].claim_type == "fact"
+    assert evidence[0].reliability_rating == 0.8
+    assert evidence[0].relevance_rating == 0.9
+    assert evidence[0].metadata["adapter"] == "githubrepo"
+    assert evidence[0].metadata["repo"] == "acme/desk"
+    assert evidence[0].metadata["stargazers_count"] == 1234
+    assert evidence[0].metadata["topics"] == ["forecasting", "agents"]
 
 
 def test_githubissues_adapter_loads_repository_issues(monkeypatch):
@@ -8846,6 +8997,7 @@ def test_forecast_cli_lists_extension_points(capsys):
     assert "tournament-export" in output
     assert "gdelt-doc-news" in output
     assert "github-releases" in output
+    assert "github-repository-metadata" in output
     assert "github-issues" in output
     assert "github-commits" in output
     assert "coingecko-market-data" in output
@@ -8927,6 +9079,7 @@ def test_forecast_cli_sources_lists_import_commands(capsys):
     assert "pypi:<package>" in output
     assert "npm:<package>" in output
     assert "wikipediapageviews:<project>/<article>" in output
+    assert "githubrepo:<owner/repo>" in output
     assert "githubissues:<owner/repo>" in output
     assert "githubcommits:<owner/repo>" in output
     assert "githubactions:<owner/repo>" in output
@@ -8949,7 +9102,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     names = {source["name"] for source in payload["sources"]}
-    assert {"gdelt", "fivethirtyeight", "owid", "whogho", "fema", "eia", "treasury", "imf", "census", "socrata", "ckan", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
+    assert {"gdelt", "fivethirtyeight", "owid", "whogho", "fema", "eia", "treasury", "imf", "census", "socrata", "ckan", "stooq", "yahoo", "coingecko", "secfacts", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "pypi", "npm", "wikipediapageviews", "githubrepo", "githubissues", "githubcommits", "githubactions", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "nvd", "cisakev", "federalregister", "courtlistener", "markets"} <= names
     assert any(source["watch_prefix"] == "fivethirtyeight:<dataset-or-url>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "owid:<grapher-slug>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "whogho:<indicator-code>" for source in payload["sources"])
@@ -8971,6 +9124,7 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     assert any(source["watch_prefix"] == "crossref:<query-or-DOI>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "pypi:<package>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "npm:<package>" for source in payload["sources"])
+    assert any(source["watch_prefix"] == "githubrepo:<owner/repo>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "githubissues:<owner/repo>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "githubcommits:<owner/repo>" for source in payload["sources"])
     assert any(source["watch_prefix"] == "githubactions:<owner/repo>" for source in payload["sources"])
@@ -11012,6 +11166,87 @@ def test_forecast_cli_watch_add_supports_githubissues_sources(tmp_path, capsys, 
     assert "source_type: githubissues" in add_output
 
     states[0] = "closed"
+    _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
+    check_output = capsys.readouterr().out
+
+    assert "created 1 alert(s)" in check_output
+    assert f"watched_source_changed:{watch_id}" in check_output
+
+
+def test_forecast_cli_watch_add_supports_githubrepo_sources(tmp_path, capsys, monkeypatch):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    stars = [1234]
+
+    def fake_load_github_repository_snapshots(source: str, **kwargs):
+        return [
+            GitHubRepositorySnapshot(
+                repo="acme/desk",
+                repo_id="456",
+                owner_login="acme",
+                description="Forecasting desk repository.",
+                language="Python",
+                default_branch="main",
+                visibility="public",
+                license_spdx_id="MIT",
+                topics=["forecasting", "agents"],
+                archived=False,
+                disabled=False,
+                fork=False,
+                stargazers_count=stars[0],
+                watchers_count=stars[0],
+                forks_count=56,
+                open_issues_count=7,
+                subscribers_count=89,
+                network_count=60,
+                created_at="2024-01-01T00:00:00Z",
+                updated_at="2026-05-21T11:00:00Z",
+                pushed_at="2026-05-20T10:00:00Z",
+                url=None,
+                html_url=None,
+                source_name="GitHub",
+                entry_id="R_456",
+                raw={"stars": stars[0]},
+            )
+        ]
+
+    monkeypatch.setattr(
+        "forecasting.source_adapters.load_github_repository_snapshots",
+        fake_load_github_repository_snapshots,
+    )
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will watched CLI GitHub repository metadata change?",
+            "--resolution-criteria",
+            "Resolved yes if watched GitHub repository metadata changes.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            "githubrepo:acme/desk",
+            "--question",
+            question_id,
+        ],
+    )
+    add_output = capsys.readouterr().out
+    watch_id = re.search(r"watched source (ws_[a-f0-9]+)", add_output).group(1)
+
+    assert "source_type: githubrepo" in add_output
+
+    stars[0] = 1235
     _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
     check_output = capsys.readouterr().out
 

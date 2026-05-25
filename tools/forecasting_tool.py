@@ -35,6 +35,7 @@ from forecasting.source_adapters import (
     load_fred_observations,
     load_gdelt_articles,
     load_github_commits,
+    load_github_repository_snapshots,
     load_github_workflow_runs,
     load_hackernews_items,
     load_github_issues,
@@ -291,6 +292,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "gdelt",
                     "fivethirtyeight",
                     "github",
+                    "githubrepo",
                     "githubissues",
                     "githubcommits",
                     "githubactions",
@@ -1276,6 +1278,11 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_github_releases(source, **kwargs)
+    if adapter_name == "githubrepo":
+        kwargs = {"limit": limit, "since": since}
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_github_repository_snapshots(source, **kwargs)
     if adapter_name == "githubissues":
         kwargs = {
             "limit": limit,
@@ -1622,6 +1629,11 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         return f"Wikimedia pageviews for {data.get('article')} were {data.get('views')} on {data.get('observation_date')}"
     if adapter == "github":
         return f"GitHub release {data.get('repo')} {data.get('tag_name')}: {data.get('name')}"
+    if adapter == "githubrepo":
+        return (
+            f"GitHub repository {data.get('repo')}: {data.get('stargazers_count')} stars, "
+            f"{data.get('forks_count')} forks, {data.get('open_issues_count')} open issues"
+        )
     if adapter == "githubissues":
         issue_kind = "pull request" if data.get("is_pull_request") else "issue"
         number = f"#{data.get('issue_number')}" if data.get("issue_number") is not None else data.get("entry_id")
