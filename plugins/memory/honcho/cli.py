@@ -1,6 +1,7 @@
 """CLI commands for Honcho integration management.
 
-Handles: hermes honcho setup | status | sessions | map | peer
+Handles: superforecasting-agent honcho setup | status | sessions | map | peer.
+The inherited ``hermes honcho`` entry point remains a compatibility alias.
 """
 
 from __future__ import annotations
@@ -13,6 +14,11 @@ from pathlib import Path
 from hermes_constants import get_hermes_home
 from plugins.memory.honcho.client import resolve_active_host, resolve_config_path, HOST
 from hermes_cli.config import cfg_get
+
+
+FORECAST_CLI_CMD = "superforecasting-agent"
+FORECAST_HONCHO_CMD = f"{FORECAST_CLI_CMD} honcho"
+FORECAST_MEMORY_SETUP_CMD = f"{FORECAST_CLI_CMD} memory setup"
 
 
 def clone_honcho_for_profile(profile_name: str) -> bool:
@@ -155,8 +161,8 @@ def cmd_disable(args) -> None:
 def cmd_sync(args) -> None:
     """Sync Honcho config to all existing profiles.
 
-    Scans all Hermes profiles and creates host blocks for any that don't
-    have one yet. Inherits settings from the default host block.
+    Scans all Superforecasting Agent profiles and creates host blocks for
+    any that don't have one yet. Inherits settings from the default host block.
     """
     try:
         from hermes_cli.profiles import list_profiles
@@ -167,7 +173,7 @@ def cmd_sync(args) -> None:
 
     cfg = _read_config()
     if not cfg:
-        print("  No Honcho config found. Run 'hermes honcho setup' first.\n")
+        print(f"  No Honcho config found. Run '{FORECAST_HONCHO_CMD} setup' first.\n")
         return
 
     hosts = cfg.get("hosts", {})
@@ -175,7 +181,10 @@ def cmd_sync(args) -> None:
     has_key = bool(cfg.get("apiKey") or os.environ.get("HONCHO_API_KEY"))
 
     if not default_block and not has_key:
-        print("  Honcho not configured on default profile. Run 'hermes honcho setup' first.\n")
+        print(
+            "  Honcho not configured on default profile. "
+            f"Run '{FORECAST_HONCHO_CMD} setup' first.\n"
+        )
         return
 
     created = 0
@@ -231,7 +240,7 @@ _profile_override: str | None = None
 
 
 def _host_key() -> str:
-    """Return the active Honcho host key, derived from the current Hermes profile."""
+    """Return the active Honcho host key for the current forecast-agent profile."""
     if _profile_override:
         if _profile_override in {"default", "custom"}:
             return HOST
@@ -247,9 +256,10 @@ def _config_path() -> Path:
 def _local_config_path() -> Path:
     """Return the instance-local Honcho config path for writing.
 
-    Always returns $HERMES_HOME/honcho.json so each profile/instance gets
-    its own config file.  The global ~/.honcho/config.json is only used as
-    a read fallback (via resolve_config_path) for cross-app interop.
+    Always returns the active forecast-agent home ``honcho.json`` so each
+    profile/instance gets its own config file. The global
+    ``~/.honcho/config.json`` is only used as a read fallback via
+    ``resolve_config_path`` for cross-app interop.
     """
     return get_hermes_home() / "honcho.json"
 
@@ -361,7 +371,8 @@ def cmd_setup(args) -> None:
     write_path = _local_config_path()
     read_path = _config_path()
     print("\nHoncho memory setup\n" + "─" * 40)
-    print("  Honcho gives Hermes persistent cross-session memory.")
+    print("  Honcho gives Superforecasting Agent auxiliary cross-session recall.")
+    print("  Forecast questions, probabilities, evidence, scores, and lessons remain ledger-owned.")
     print(f"  Config: {write_path}")
     if read_path != write_path and read_path.exists():
         print(f"  (seeding from existing config at {read_path})")
@@ -416,7 +427,7 @@ def cmd_setup(args) -> None:
 
         if not cfg.get("apiKey"):
             print("\n  No API key configured. Get yours at https://app.honcho.dev")
-            print("  Run 'hermes honcho setup' again once you have a key.\n")
+            print(f"  Run '{FORECAST_HONCHO_CMD} setup' again once you have a key.\n")
             return
 
     # --- 3. Identity ---
@@ -578,15 +589,15 @@ def cmd_setup(args) -> None:
     print("    honcho_reasoning -- ask Honcho a question, synthesized answer")
     print("    honcho_conclude  -- persist a user fact to memory")
     print("\n  Other commands:")
-    print("    hermes honcho status     -- show full config")
-    print("    hermes honcho mode       -- change recall/observation mode")
-    print("    hermes honcho tokens     -- tune context and dialectic budgets")
-    print("    hermes honcho peer       -- update peer names")
-    print("    hermes honcho map <name> -- map this directory to a session name\n")
+    print(f"    {FORECAST_HONCHO_CMD} status     -- show full config")
+    print(f"    {FORECAST_HONCHO_CMD} mode       -- change recall/observation mode")
+    print(f"    {FORECAST_HONCHO_CMD} tokens     -- tune context and dialectic budgets")
+    print(f"    {FORECAST_HONCHO_CMD} peer       -- update peer names")
+    print(f"    {FORECAST_HONCHO_CMD} map <name> -- map this directory to a session name\n")
 
 
 def _active_profile_name() -> str:
-    """Return the active Hermes profile name (respects --target-profile override)."""
+    """Return the active forecast-agent profile name (respects --target-profile override)."""
     if _profile_override:
         return _profile_override
     try:
@@ -635,7 +646,7 @@ def cmd_status(args) -> None:
     try:
         import honcho  # noqa: F401
     except ImportError:
-        print("  honcho-ai is not installed. Run: hermes honcho setup\n")
+        print(f"  honcho-ai is not installed. Run: {FORECAST_HONCHO_CMD} setup\n")
         return
 
     cfg = _read_config()
@@ -645,7 +656,7 @@ def cmd_status(args) -> None:
 
     if not cfg:
         print(f"  No Honcho config found at {active_path}")
-        print("  Run 'hermes honcho setup' to configure.\n")
+        print(f"  Run '{FORECAST_HONCHO_CMD} setup' to configure.\n")
         return
 
     try:
@@ -796,7 +807,7 @@ def cmd_sessions(args) -> None:
 
     if not sessions:
         print("  No session mappings configured.\n")
-        print("  Add one with: hermes honcho map <session-name>")
+        print(f"  Add one with: {FORECAST_HONCHO_CMD} map <session-name>")
         print(f"  Or edit {_config_path()} directly.\n")
         return
 
@@ -856,7 +867,10 @@ def cmd_peer(args) -> None:
         print(f"  User peer:   {user}")
         print("    Your identity in Honcho. Messages you send build this peer's card.")
         print(f"  AI peer:     {ai}")
-        print("    Hermes' identity in Honcho. Seed with 'hermes honcho identity <file>'.")
+        print(
+            "    Superforecasting Agent's auxiliary identity in Honcho. "
+            f"Seed with '{FORECAST_HONCHO_CMD} identity <file>'."
+        )
         print("    Dialectic calls ask this peer questions to warm session context.")
         print()
         print(f"  Dialectic reasoning:  {lvl}  ({', '.join(REASONING_LEVELS)})")
@@ -909,7 +923,7 @@ def cmd_mode(args) -> None:
         for m, desc in MODES.items():
             marker = " <-" if m == current else ""
             print(f"  {m:<10}  {desc}{marker}")
-        print(f"\n  Set with: hermes honcho mode [hybrid|context|tools]\n")
+        print(f"\n  Set with: {FORECAST_HONCHO_CMD} mode [hybrid|context|tools]\n")
         return
 
     if mode_arg not in MODES:
@@ -944,7 +958,7 @@ def cmd_strategy(args) -> None:
         for s, desc in STRATEGIES.items():
             marker = " <-" if s == current else ""
             print(f"  {s:<15}  {desc}{marker}")
-        print(f"\n  Set with: hermes honcho strategy [per-session|per-directory|per-repo|global]\n")
+        print(f"\n  Set with: {FORECAST_HONCHO_CMD} strategy [per-session|per-directory|per-repo|global]\n")
         return
 
     if strat_arg not in STRATEGIES:
@@ -978,11 +992,11 @@ def cmd_tokens(args) -> None:
         print("    the user and session, injected directly into the system prompt.")
         print()
         print(f"  Dialectic   {d_chars} chars, reasoning: {d_level}")
-        print("    AI-to-AI inference. Hermes asks Honcho's AI peer a question")
+        print("    AI-to-AI inference. The forecast agent asks Honcho's AI peer a question")
         print("    (e.g. \"what were we working on?\") and Honcho runs its own model")
         print("    to synthesize an answer. Used for first-turn session continuity.")
         print("    Level controls how much reasoning Honcho spends on the answer.")
-        print("\n  Set with: hermes honcho tokens [--context N] [--dialectic N]\n")
+        print(f"\n  Set with: {FORECAST_HONCHO_CMD} tokens [--context N] [--dialectic N]\n")
         return
 
     host = _host_key()
@@ -1006,7 +1020,7 @@ def cmd_identity(args) -> None:
     """Seed AI peer identity or show both peer representations."""
     cfg = _read_config()
     if not _resolve_api_key(cfg):
-        print("  No API key configured. Run 'hermes honcho setup' first.\n")
+        print(f"  No API key configured. Run '{FORECAST_HONCHO_CMD} setup' first.\n")
         return
 
     file_path = getattr(args, "file", None)
@@ -1043,7 +1057,7 @@ def cmd_identity(args) -> None:
             print(ai_rep["card"])
         else:
             print("  No representation built yet.")
-            print("  Run 'hermes honcho identity <file>' to seed one.")
+            print(f"  Run '{FORECAST_HONCHO_CMD} identity <file>' to seed one.")
         print()
         return
 
@@ -1052,8 +1066,8 @@ def cmd_identity(args) -> None:
         print(f"  User peer: {hcfg.peer_name or 'not set'}")
         print(f"  AI peer:   {hcfg.ai_peer}")
         print()
-        print("    hermes honcho identity --show        — show both peer representations")
-        print("    hermes honcho identity <file>        — seed AI peer from SOUL.md or any .md/.txt\n")
+        print(f"    {FORECAST_HONCHO_CMD} identity --show        — show both peer representations")
+        print(f"    {FORECAST_HONCHO_CMD} identity <file>        — seed AI peer from SOUL.md or any .md/.txt\n")
         return
 
     from pathlib import Path
@@ -1077,7 +1091,7 @@ def cmd_identity(args) -> None:
 
 
 def cmd_migrate(args) -> None:
-    """Step-by-step migration guide: OpenClaw native memory → Hermes + Honcho."""
+    """Step-by-step migration guide: OpenClaw memory to forecast-agent Honcho."""
     from pathlib import Path
 
     # ── Detect OpenClaw native memory files ──────────────────────────────────
@@ -1105,7 +1119,7 @@ def cmd_migrate(args) -> None:
     cfg = _read_config()
     has_key = bool(_resolve_api_key(cfg))
 
-    print("\nHoncho migration: OpenClaw native memory → Hermes\n" + "─" * 50)
+    print("\nHoncho migration: OpenClaw native memory to Superforecasting Agent\n" + "─" * 68)
     print()
     print("  OpenClaw's native memory stores context in local markdown files")
     print("  (USER.md, MEMORY.md, SOUL.md, ...) and injects them via QMD search.")
@@ -1122,21 +1136,21 @@ def cmd_migrate(args) -> None:
         print(f"  Honcho API key already configured: {masked}")
         print("  Skip to Step 2.")
     else:
-        print("  Honcho is a cloud memory service that gives Hermes persistent memory")
-        print("  across sessions. You need an API key to use it.")
+        print("  Honcho is a cloud memory service that gives the forecast agent")
+        print("  auxiliary cross-session recall. You need an API key to use it.")
         print()
         print("  1. Get your API key at https://app.honcho.dev")
-        print("  2. Run:  hermes honcho setup")
+        print(f"  2. Run:  {FORECAST_HONCHO_CMD} setup")
         print("     Paste the key when prompted.")
         print()
-        answer = _prompt("  Run 'hermes honcho setup' now?", default="y")
+        answer = _prompt(f"  Run '{FORECAST_HONCHO_CMD} setup' now?", default="y")
         if answer.lower() in {"y", "yes"}:
             cmd_setup(args)
             cfg = _read_config()
             has_key = bool(cfg.get("apiKey", ""))
         else:
             print()
-            print("  Run 'hermes honcho setup' when ready, then re-run this walkthrough.")
+            print(f"  Run '{FORECAST_HONCHO_CMD} setup' when ready, then re-run this walkthrough.")
 
     # ── Step 2: Detected files ────────────────────────────────────────────────
     print()
@@ -1154,7 +1168,7 @@ def cmd_migrate(args) -> None:
     else:
         print("  No OpenClaw native memory files found in cwd or ~/.openclaw/.")
         print("  If your files are elsewhere, copy them here before continuing,")
-        print("  or seed them manually:  hermes honcho identity <path/to/file>")
+        print(f"  or seed them manually:  {FORECAST_HONCHO_CMD} identity <path/to/file>")
 
     # ── Step 3: Migrate user memory ───────────────────────────────────────────
     print()
@@ -1167,13 +1181,13 @@ def cmd_migrate(args) -> None:
     if user_files:
         print(f"  Found: {', '.join(f.name for f in user_files)}")
         print()
-        print("  These are picked up automatically the first time you run 'hermes'")
+        print(f"  These are picked up automatically the first time you run '{FORECAST_CLI_CMD}'")
         print("  with Honcho configured and no prior session history.")
-        print("  (Hermes calls migrate_memory_files() on first session init.)")
+        print("  (Superforecasting Agent calls migrate_memory_files() on first session init.)")
         print()
         print("  If you want to migrate them now without starting a session:")
         for f in user_files:
-            print("    hermes honcho migrate  — this step handles it interactively")
+            print(f"    {FORECAST_HONCHO_CMD} migrate  — this step handles it interactively")
         if has_key:
             answer = _prompt("  Upload user memory files to Honcho now?", default="y")
             if answer.lower() in {"y", "yes"}:
@@ -1204,7 +1218,7 @@ def cmd_migrate(args) -> None:
                 except Exception as e:
                     print(f"  Failed: {e}")
         else:
-            print("  Run 'hermes honcho setup' first, then re-run this step.")
+            print(f"  Run '{FORECAST_HONCHO_CMD} setup' first, then re-run this step.")
     else:
         print("  No user memory files detected. Nothing to migrate here.")
 
@@ -1216,9 +1230,9 @@ def cmd_migrate(args) -> None:
     print("  agent's character, capabilities, and behavioral rules. In OpenClaw")
     print("  these are injected via file search at prompt-build time.")
     print()
-    print("  In Hermes, they are seeded once into Honcho's AI peer through the")
+    print("  In Superforecasting Agent, they are seeded once into Honcho's AI peer through the")
     print("  observation pipeline. Honcho builds a representation from them and")
-    print("  from every subsequent assistant message (observe_me=True). Over time")
+    print("  from every subsequent forecaster message (observe_me=True). Over time")
     print("  the representation reflects actual behavior, not just declaration.")
     print()
     if agent_files:
@@ -1250,12 +1264,12 @@ def cmd_migrate(args) -> None:
                 except Exception as e:
                     print(f"  Failed: {e}")
         else:
-            print("  Run 'hermes honcho setup' first, then seed manually:")
+            print(f"  Run '{FORECAST_HONCHO_CMD} setup' first, then seed manually:")
             for f in agent_files:
-                print(f"    hermes honcho identity {f}")
+                print(f"    {FORECAST_HONCHO_CMD} identity {f}")
     else:
         print("  No agent identity files detected.")
-        print("  To seed manually:  hermes honcho identity <path/to/SOUL.md>")
+        print(f"  To seed manually:  {FORECAST_HONCHO_CMD} identity <path/to/SOUL.md>")
 
     # ── Step 5: What changes ──────────────────────────────────────────────────
     print()
@@ -1263,17 +1277,17 @@ def cmd_migrate(args) -> None:
     print()
     print("  Storage")
     print("    OpenClaw: markdown files on disk, searched via QMD at prompt-build time.")
-    print("    Hermes:   cloud-backed Honcho peers. Files can stay on disk as source")
-    print("              of truth; Honcho holds the live representation.")
+    print("    Forecast: cloud-backed Honcho peers for auxiliary recall. Files can stay")
+    print("              on disk as source of truth; Honcho holds the live representation.")
     print()
     print("  Context injection")
     print("    OpenClaw: file excerpts injected synchronously before each LLM call.")
-    print("    Hermes:   Honcho context fetched async at turn end, injected next turn.")
+    print("    Forecast: Honcho context fetched async at turn end, injected next turn.")
     print("              First turn has no Honcho context; subsequent turns are loaded.")
     print()
     print("  Memory growth")
     print("    OpenClaw: you edit files manually to update memory.")
-    print("    Hermes:   Honcho observes every message and updates representations")
+    print("    Forecast: Honcho observes every message and updates representations")
     print("              automatically. Files become the seed, not the live store.")
     print()
     print("  Honcho tools (available to the agent during conversation)")
@@ -1285,23 +1299,25 @@ def cmd_migrate(args) -> None:
     print()
     print("  Session naming")
     print("    OpenClaw: no persistent session concept — files are global.")
-    print("    Hermes:   per-session by default — each run gets its own session")
-    print("              Map a custom name:  hermes honcho map <session-name>")
+    print("    Forecast: per-session by default — each run gets its own session")
+    print(f"              Map a custom name:  {FORECAST_HONCHO_CMD} map <session-name>")
+    print("    Ledger:   forecast questions, probabilities, evidence, scores,")
+    print("              postmortems, and calibration lessons stay in the forecast ledger.")
 
     # ── Step 6: Next steps ────────────────────────────────────────────────────
     print()
     print("Step 6  Next steps")
     print()
     if not has_key:
-        print("  1. hermes honcho setup              — configure API key (required)")
-        print("  2. hermes honcho migrate            — re-run this walkthrough")
+        print(f"  1. {FORECAST_HONCHO_CMD} setup              — configure API key (required)")
+        print(f"  2. {FORECAST_HONCHO_CMD} migrate            — re-run this walkthrough")
     else:
-        print("  1. hermes honcho status             — verify Honcho connection")
-        print("  2. hermes                           — start a session")
+        print(f"  1. {FORECAST_HONCHO_CMD} status             — verify Honcho connection")
+        print(f"  2. {FORECAST_CLI_CMD}                           — start a forecast desk session")
         print("     (user memory files auto-uploaded on first turn if not done above)")
-        print("  3. hermes honcho identity --show    — verify AI peer representation")
-        print("  4. hermes honcho tokens             — tune context and dialectic budgets")
-        print("  5. hermes honcho mode               — view or change memory mode")
+        print(f"  3. {FORECAST_HONCHO_CMD} identity --show    — verify AI peer representation")
+        print(f"  4. {FORECAST_HONCHO_CMD} tokens             — tune context and dialectic budgets")
+        print(f"  5. {FORECAST_HONCHO_CMD} mode               — view or change memory mode")
     print()
 
 
@@ -1314,7 +1330,7 @@ def honcho_command(args) -> None:
     if sub == "setup":
         # Redirect to memory setup — honcho setup goes through the unified path
         print("\n  Honcho is configured via the memory provider system.")
-        print("  Running 'superforecasting-agent memory setup'...\n")
+        print(f"  Running '{FORECAST_MEMORY_SETUP_CMD}'...\n")
         from hermes_cli.memory_setup import cmd_setup_provider
         cmd_setup_provider("honcho")
         return
@@ -1352,10 +1368,10 @@ def honcho_command(args) -> None:
 
 
 def register_cli(subparser) -> None:
-    """Build the ``hermes honcho`` argparse subcommand tree.
+    """Build the ``superforecasting-agent honcho`` argparse subcommand tree.
 
     Called by the plugin CLI registration system during argparse setup.
-    The *subparser* is the parser for ``hermes honcho``.
+    The *subparser* is the parser for ``superforecasting-agent honcho``.
     """
 
     subparser.add_argument(
@@ -1442,7 +1458,7 @@ def register_cli(subparser) -> None:
 
     subs.add_parser(
         "migrate",
-        help="Step-by-step migration guide from openclaw-honcho to Hermes Honcho",
+        help="Step-by-step migration guide from OpenClaw memory to forecast-agent Honcho",
     )
     subs.add_parser("enable", help="Enable Honcho for the active profile")
     subs.add_parser("disable", help="Disable Honcho for the active profile")

@@ -1,7 +1,7 @@
 """Honcho client initialization and configuration.
 
 Resolution order for config file:
-  1. $HERMES_HOME/honcho.json  (instance-local, enables isolated Hermes instances)
+  1. Active forecast-agent home honcho.json (instance-local)
   2. ~/.honcho/config.json     (global, shared across all Honcho-enabled apps)
   3. Environment variables     (HONCHO_API_KEY, HONCHO_ENVIRONMENT)
 
@@ -33,10 +33,10 @@ HOST = "hermes"
 
 
 def resolve_active_host() -> str:
-    """Derive the Honcho host key from the active Hermes profile.
+    """Derive the Honcho host key from the active forecast-agent profile.
 
     Resolution order:
-      1. HERMES_HONCHO_HOST env var (explicit override)
+      1. HERMES_HONCHO_HOST env var (legacy explicit override)
       2. Active profile name via profiles system -> ``hermes.<profile>``
       3. Fallback: ``"hermes"`` (default profile)
     """
@@ -63,8 +63,8 @@ def resolve_config_path() -> Path:
     """Return the active Honcho config path.
 
     Resolution order:
-      1. $HERMES_HOME/honcho.json      (profile-local, if it exists)
-      2. ~/.hermes/honcho.json          (default profile — shared host blocks live here)
+      1. Active forecast-agent home honcho.json (profile-local, if it exists)
+      2. Default forecast-agent home honcho.json (shared host blocks live here)
       3. ~/.honcho/config.json          (global, cross-app interop)
 
     Returns the global path if none exist (for first-time setup writes).
@@ -274,7 +274,7 @@ class HonchoClientConfig:
     # honcho_reasoning tool param (agentic). When false, always uses
     # dialecticReasoningLevel and ignores model-provided overrides.
     dialectic_dynamic: bool = True
-    # Max chars of dialectic result to inject into Hermes system prompt
+    # Max chars of dialectic result to inject into the forecast-desk system prompt
     dialectic_max_chars: int = 600
     # Dialectic depth: how many .chat() calls per dialectic cycle (1-3).
     # Depth 1: single call. Depth 2: self-audit + targeted synthesis.
@@ -352,8 +352,9 @@ class HonchoClientConfig:
     ) -> HonchoClientConfig:
         """Create config from the resolved Honcho config path.
 
-        Resolution: $HERMES_HOME/honcho.json -> ~/.honcho/config.json -> env vars.
-        When host is None, derives it from the active Hermes profile.
+        Resolution: active forecast-agent home honcho.json ->
+        ~/.honcho/config.json -> env vars. When host is None, derives it from
+        the active forecast-agent profile.
         """
         resolved_host = host or resolve_active_host()
         path = config_path or resolve_config_path()
@@ -684,14 +685,14 @@ def get_honcho_client(config: HonchoClientConfig | None = None) -> Honcho:
         raise ValueError(
             "Honcho API key not found. "
             "Get your API key at https://app.honcho.dev, "
-            "then run 'hermes honcho setup' or set HONCHO_API_KEY. "
+            "then run 'superforecasting-agent honcho setup' or set HONCHO_API_KEY. "
             "For local instances, set HONCHO_BASE_URL instead."
         )
 
     # Lazy-install the honcho SDK on demand. ensure() honors
     # security.allow_lazy_installs (default true). On failure we surface
     # the original ImportError-shape message so existing callers still get
-    # the "go run hermes honcho setup" hint they used to.
+    # actionable setup guidance.
     try:
         from tools.lazy_deps import FeatureUnavailable, ensure as _lazy_ensure
         _lazy_ensure("memory.honcho", prompt=False)
@@ -709,7 +710,7 @@ def get_honcho_client(config: HonchoClientConfig | None = None) -> Honcho:
         raise ImportError(
             "honcho-ai is required for Honcho integration. "
             "Install it with: pip install honcho-ai  "
-            "(or run `hermes honcho setup` to configure)."
+            "(or run `superforecasting-agent honcho setup` to configure)."
         )
 
     # Allow config.yaml honcho.base_url to override the SDK's environment

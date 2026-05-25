@@ -1478,6 +1478,41 @@ def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     assert "hermes meet node approve" not in text
 
 
+def test_honcho_runtime_guidance_is_forecast_native_and_ledger_scoped():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        root / "plugins" / "memory" / "honcho" / "__init__.py",
+        root / "plugins" / "memory" / "honcho" / "cli.py",
+        root / "plugins" / "memory" / "honcho" / "client.py",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in checked_paths)
+
+    assert "superforecasting-agent honcho setup" in text
+    assert "superforecasting-agent memory setup" in text
+    assert "Superforecasting Agent auxiliary cross-session recall" in text
+    assert "Forecast questions, probabilities, evidence, scores, and lessons remain ledger-owned" in text
+    assert "postmortems, and calibration lessons stay in the forecast ledger" in text
+    assert "Active forecast-agent home honcho.json" in text
+    assert "active forecast-agent profile" in text
+
+    assert "Run 'hermes honcho" not in text
+    assert "Run: hermes honcho" not in text
+    assert "Run:  hermes honcho" not in text
+    assert "hermes honcho status" not in text
+    assert "hermes honcho mode" not in text
+    assert "hermes honcho tokens" not in text
+    assert "hermes honcho map" not in text
+    assert "Hermes persistent cross-session memory" not in text
+    assert "Hermes asks Honcho" not in text
+    assert "Hermes:   cloud-backed" not in text
+    assert "In Hermes, they" not in text
+    assert "(Hermes calls" not in text
+    assert "the first time you run 'hermes'" not in text
+    assert "from openclaw-honcho to Hermes Honcho" not in text
+    assert "Hermes system prompt" not in text
+    assert "$HERMES_HOME/honcho.json" not in text
+
+
 def test_tool_runtime_docstrings_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
