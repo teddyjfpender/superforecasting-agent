@@ -45,7 +45,7 @@ Superforecasting Agent is organized around one durable object: the scoreable for
 
 - **CLI desk** - `forecast` and `superforecasting-agent` open the forecast lifecycle rather than generic chat.
 - **TUI** - Common desk actions are available through shortcuts such as `/new-forecast`, `/base-rate`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/calibration`, `/lessons`, `/backtest`, and `/schedule`.
-- **Dashboard** - The web shell lands on the Forecasts page first; embedded chat is a supporting surface.
+- **Dashboard** - The web shell lands on the Forecasts page first; the embedded Forecast Desk is a supporting surface.
 - **[API Server](api-server.md)** and **[IDE Integration (ACP)](acp.md)** - Inherited surfaces remain available for compatibility and specialized workflows.
 
 ## Customization

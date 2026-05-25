@@ -275,7 +275,7 @@ def register(ctx):
 def handle_scan(ctx, argstr):
     """Implement /scan by invoking the terminal tool through the registry."""
     result = ctx.dispatch_tool("terminal", {"command": f"find . -name '{argstr}'"})
-    return result  # returned to the caller's chat UI
+    return result  # returned to the caller's forecast-desk UI
 
 def register(ctx):
     ctx.register_command("scan", handle_scan, help="Find files matching a glob")

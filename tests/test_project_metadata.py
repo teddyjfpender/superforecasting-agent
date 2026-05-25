@@ -368,6 +368,8 @@ def test_embedded_tui_surface_is_forecast_desk():
         root / "website" / "docs" / "user-guide" / "configuring-models.md",
         root / "website" / "docs" / "user-guide" / "features" / "skills.md",
         root / "website" / "docs" / "user-guide" / "features" / "web-dashboard.md",
+        root / "website" / "docs" / "user-guide" / "features" / "overview.md",
+        root / "website" / "docs" / "guides" / "build-a-superforecasting-agent-plugin.md",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in surface_paths)
 
@@ -382,6 +384,8 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert "forecast-desk-side-panel" in text
     assert 'dashboard "Chat" tab' not in text
     assert "Browser-embedded chat" not in text
+    assert "embedded chat is a supporting surface" not in text
+    assert "caller's chat UI" not in text
     assert "inline in ChatPage" not in text
     assert "hermes-chat-xterm-host" not in text
     assert "chat-side-panel" not in text
