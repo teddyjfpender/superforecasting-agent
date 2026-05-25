@@ -2442,9 +2442,14 @@ def test_kanban_video_orchestrator_skill_is_forecast_native():
     assert "every Superforecasting Agent profile" in text
     assert "SUPERFORECASTING_AGENT_HOME" in text
     assert "$AGENT_HOME/.env" in text
+    assert "superforecasting-agent/skills/creative/" in text
+    assert "superforecasting-agent/skills/devops/" in text
 
     assert "hermes profile create" not in text
     assert "hermes kanban create" not in text
+    assert "public hermes-agent repository" not in text
+    assert "hermes-agent/skills/creative/" not in text
+    assert "hermes-agent/skills/devops/" not in text
     assert "Creating Hermes profiles" not in text
     assert "Hermes profile config.yaml" not in text
     assert "per Hermes profile rules" not in text

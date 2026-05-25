@@ -697,6 +697,7 @@ Concrete success means the fork behaves as a command-line forecasting desk cente
 
 Latest verified result:
 
+- Kanban video skill matrix path pass: the optional Kanban video orchestrator tool matrix now describes bundled creative/media/devops skills as shipping in the Superforecasting Agent repository under `superforecasting-agent/skills/...` instead of inherited `hermes-agent/skills/...`; project metadata guards those reference paths.
 - Developer architecture tree pass: the developer architecture guide now shows the fork root as `superforecasting-agent/` in its directory-structure map instead of the inherited `hermes-agent/` checkout name; project metadata guards that tree root.
 - Bundled Superforecasting Agent skill source-path pass: the inherited `skills/autonomous-ai-agents/hermes-agent` compatibility slug now documents fork-native git-installed source paths and project-layout roots as `~/.superforecasting-agent/superforecasting-agent/` / `superforecasting-agent/` in both source `SKILL.md` and generated skill docs; the generated skill catalog/debugging page were refreshed from current source, and project metadata guards the old `~/.superforecasting-agent/hermes-agent/` source-code path and project-root example.
 - Root skill-author identity pass: `AGENTS.md` now tells contributors to credit human skill authors first with Superforecasting Agent only as the secondary collaborator; project metadata rejects reintroducing `Hermes Agent` wording in the root guide.
