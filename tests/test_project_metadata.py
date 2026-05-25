@@ -407,6 +407,19 @@ def test_logging_module_copy_is_forecast_native():
     assert "hermes logs --component" not in text
 
 
+def test_security_policy_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "SECURITY.md").read_text(encoding="utf-8")
+
+    assert text.startswith("# Superforecasting Agent Security Policy")
+    assert "Superforecasting Agent's trust model" in text
+    assert "github.com/teddyjfpender/superforecasting-agent/security/advisories/new" in text
+    assert "superforecasting-agent --version" in text
+    assert "Hermes Agent" not in text
+    assert "Hermes home" not in text
+    assert "hermes version" not in text
+
+
 def test_windows_gateway_service_names_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "hermes_cli" / "gateway_windows.py").read_text(encoding="utf-8")
