@@ -221,6 +221,8 @@ def test_forecast_cli_public_alias_is_exposed():
 
     assert issubclass(ForecastCLI, HermesCLI)
     assert "class ForecastCLI(HermesCLI)" in cli_source
+    assert "cli = ForecastCLI(" in cli_source
+    assert "cli = HermesCLI(" not in cli_source
     assert "from cli import ForecastCLI" in extension_doc
     assert "class MyCLI(ForecastCLI)" in extension_doc
     assert "ForecastCLI.process_command()" in skill_doc

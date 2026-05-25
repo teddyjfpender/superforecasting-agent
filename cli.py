@@ -14505,7 +14505,7 @@ def main(
     parsed_skills = _parse_skills_argument(skills)
 
     # Create CLI instance
-    cli = HermesCLI(
+    cli = ForecastCLI(
         model=model,
         toolsets=toolsets_list,
         provider=provider,
@@ -14560,7 +14560,7 @@ def main(
     atexit.register(_run_cleanup)
 
     # Also install signal handlers in single-query / `-q` mode.  Interactive
-    # mode registers its own inside HermesCLI.run(), but `-q` runs
+    # mode registers its own inside ForecastCLI.run(), but `-q` runs
     # cli.agent.run_conversation() below and AIAgent spawns worker threads
     # for tools — so when SIGTERM arrives on the main thread, raising
     # KeyboardInterrupt only unwinds the main thread, not the worker
