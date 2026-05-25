@@ -3787,6 +3787,7 @@ def test_web_forecast_page_surfaces_tester_pilot_handoff():
     assert "forecast pilot-cohort live-cohort.csv --dry-run --json" in page
     assert "forecast pilot-report --json" in page
     assert "forecast pilot-bundle --include-export --output .pilot/tester-bundle.json" in page
+    assert "forecast export all --format json --output .pilot/tester-export.json" in page
     assert "forecast import packet .pilot/tester-export.json --conflict skip --json" in page
     assert "forecast pilot-aggregate .pilot/*-export.json --json" in page
 
@@ -4329,7 +4330,9 @@ def test_tester_pilot_docs_cover_scheduled_learning_loop():
     assert "--use-active-lessons" in tester_pilot
     assert "forecast readiness --json" in tester_pilot
     assert "live evidence" in tester_pilot
+    assert "forecast export all --format json --output .pilot/${USER}-export.json" in tester_pilot
     assert "forecast pilot-bundle --include-export --output .pilot/${USER}-bundle.json" in tester_pilot
+    assert "forecast export all --format json --output .pilot/alice-export.json" in tester_pilot
     assert "forecast import packet .pilot/alice-export.json --conflict skip --json" in tester_pilot
     assert "forecast pilot-aggregate .pilot/*-export.json --json" in tester_pilot
 

@@ -135,6 +135,7 @@ Common desk workflows have direct slash commands:
 | `/doctor` | Run combined pilot/readiness/operator checks |
 | `/pilot-report` | Check tester pilot artifact coverage |
 | `/pilot-cohort` | Seed prospective live pilot questions |
+| `/export-packet` | Export an auditable forecast packet |
 | `/import-packet` | Restore an exported forecast packet |
 | `/pilot-aggregate` | Aggregate tester export packets |
 

@@ -260,7 +260,7 @@ domain/topic:
 source adapter involved:
 ```
 
-Use `forecast export <id>` or `forecast export all` for shareable artifacts when the data is safe to disclose.
+Use `forecast export <id>` or `forecast export all --format json --output .pilot/${USER}-export.json` for shareable artifacts when the data is safe to disclose.
 Use `forecast import packet <export.json> --conflict skip --json` to restore a safe tester export into a separate review ledger without overwriting already-seen IDs.
 Use `forecast pilot-report --json` for a compact machine-readable summary of whether the tester ledger has enough questions, forecast updates, evidence, structured-source imports, scheduled self-checks, scheduled self-check run history, scores, postmortems, and cleared learned-error review alerts for the pilot exit criteria.
 Use `forecast pilot-bundle --include-export --output .pilot/${USER}-bundle.json` when the tester can safely share a single JSON artifact containing pilot-report, readiness, export data, and scheduled self-check run history.
@@ -283,6 +283,7 @@ forecasting skill.
 Operators can aggregate safe tester exports without merging ledgers:
 
 ```bash
+forecast export all --format json --output .pilot/alice-export.json
 forecast import packet .pilot/alice-export.json --conflict skip --json
 forecast pilot-aggregate .pilot/*-export.json --json
 ```

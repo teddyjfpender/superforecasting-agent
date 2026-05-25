@@ -264,6 +264,7 @@ describe('forecast desk panel helpers', () => {
         '/forecast pilot-report',
         '/forecast pilot-cohort examples/forecasting/live-cohort.example.csv --dry-run --json',
         '/forecast pilot-bundle --include-export --output .pilot/tester-bundle.json',
+        '/forecast export all --format json --output .pilot/tester-export.json',
         '/forecast import packet .pilot/tester-export.json --conflict skip --json',
         '/forecast pilot-aggregate .pilot/*-export.json --json'
       ])
