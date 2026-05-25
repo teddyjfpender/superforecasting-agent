@@ -5601,6 +5601,16 @@ class ForecastLedger:
         gaps = list(status.get("gaps") or [])
         if not gaps:
             return []
+        command_hints = [
+            commands[0]
+            for action in list(status.get("next_actions") or [])[:3]
+            if (commands := list(action.get("commands") or []))
+        ]
+        command_hint = (
+            f" Suggested commands: {'; '.join(command_hints)}."
+            if command_hints
+            else ""
+        )
         return [
             self.create_alert(
                 severity="warning",
@@ -5612,7 +5622,7 @@ class ForecastLedger:
                     f"{', '.join(gaps[:5])}. Collect live scored forecasts and "
                     "agent-protocol held-out runs, and include external resolved-question "
                     "corpora from at least two source families before claiming live "
-                    "superiority."
+                    f"superiority.{command_hint}"
                 ),
             )
         ]

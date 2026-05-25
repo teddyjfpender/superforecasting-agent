@@ -10642,17 +10642,27 @@ def test_forecast_cli_performance_summarizes_backtest_edges(tmp_path, capsys):
     assert readiness_payload["run_count"] == 1
     assert readiness_payload["inspected_backtest_run_ids"] == [run_id]
     assert readiness_requirements["live_scored_forecasts"]["required"] == 7
+    assert readiness_requirements["live_scored_forecasts"]["remaining"] == 7
     assert readiness_requirements["agent_protocol_scored_cases"]["required"] == 9
+    assert readiness_requirements["agent_protocol_scored_cases"]["remaining"] == 9
     assert "forecast postmortem <id>" in readiness_requirements["live_scored_forecasts"]["recommended_action"]
+    assert "forecast score <id> --baselines" in readiness_requirements["live_scored_forecasts"]["command_templates"]
+    assert (
+        "forecast backtest --all-benchmarks --probability-source agent-protocol --agent-prompt-jsonl prompts.jsonl --prepare-agent-prompts"
+        in readiness_requirements["agent_protocol_scored_cases"]["command_templates"]
+    )
     assert readiness_payload["evidence_status"]["next_actions"][0]["requirement_id"] == "live_scored_forecasts"
+    assert readiness_payload["evidence_status"]["next_actions"][0]["remaining"] == 7
+    assert "commands" in readiness_payload["evidence_status"]["next_actions"][0]
 
     with pytest.raises(SystemExit) as exc:
         _run(parser, ["forecast", "--db", db, "readiness", "--last", "5", "--require-evidence"])
     require_output = capsys.readouterr().out
     assert exc.value.code == 1
     assert "readiness insufficient_live_evidence:" in require_output
-    assert "gap live_scored_forecasts: 0/100" in require_output
+    assert "gap live_scored_forecasts: 0/100 remaining=100" in require_output
     assert "next_actions:" in require_output
+    assert "command: forecast pilot-cohort examples/forecasting/live-cohort.example.csv --dry-run" in require_output
 
     _run(parser, ["forecast", "--db", db, "backtest", "--show", run_id])
     show_output = capsys.readouterr().out

@@ -1047,6 +1047,9 @@ def test_global_self_check_flags_benchmark_evidence_gaps(tmp_path):
     assert "live_scored_forecasts" in gap_alerts[0].recommended_action
     assert "external resolved-question" in gap_alerts[0].recommended_action
     assert "two source families" in gap_alerts[0].recommended_action
+    assert "Suggested commands:" in gap_alerts[0].recommended_action
+    assert "forecast pilot-cohort examples/forecasting/live-cohort.example.csv --dry-run" in gap_alerts[0].recommended_action
+    assert "forecast backtest --all-benchmarks --probability-source agent-protocol" in gap_alerts[0].recommended_action
     assert ledger.self_check(domain="macro") == []
 
 

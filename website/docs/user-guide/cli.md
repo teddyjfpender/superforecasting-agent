@@ -178,7 +178,8 @@ question corpus coverage, external source-family diversity, and remaining
 claim gaps without scraping terminal text. `forecast readiness` exposes the same
 claim-readiness state directly for cron jobs and evaluation harnesses, prints
 next actions for missing evidence such as live scoring or agent-protocol replay,
-and `forecast readiness --require-evidence` exits nonzero when readiness gaps remain.
+includes per-gap remaining counts and command templates in JSON output, and
+`forecast readiness --require-evidence` exits nonzero when readiness gaps remain.
 `forecast doctor` is the one-shot operator gate: it combines `forecast status`,
 `forecast pilot-report`, scheduled self-check run history, and readiness gaps, and
 can fail with `--require-pilot-ready` or `--require-readiness` for release scripts.

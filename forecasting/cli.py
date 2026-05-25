@@ -7200,13 +7200,17 @@ def _print_evidence_status(evidence_status: dict[str, Any], *, include_passed: b
             continue
         print(
             f"  {'ok' if passed else 'gap'} {requirement.get('id')}: "
-            f"{requirement.get('observed', 0)}/{requirement.get('required', 0)}"
+            f"{requirement.get('observed', 0)}/{requirement.get('required', 0)} "
+            f"remaining={requirement.get('remaining', 0)}"
         )
     next_actions = list(evidence_status.get("next_actions") or [])
     if next_actions:
         print("next_actions:")
         for item in next_actions[:5]:
             print(f"  - {item.get('requirement_id')}: {item.get('action')}")
+            commands = list(item.get("commands") or [])
+            if commands:
+                print(f"    command: {commands[0]}")
 
 
 def _cmd_pilot_report(args: argparse.Namespace) -> None:

@@ -158,6 +158,12 @@ def build_forecasting_evidence_status(
                 "--outcome <value> --source <url>; forecast score <id>; "
                 "forecast postmortem <id>."
             ),
+            command_templates=[
+                "forecast pilot-cohort examples/forecasting/live-cohort.example.csv --dry-run",
+                "forecast resolve <id> --outcome <value> --source <url>",
+                "forecast score <id> --baselines",
+                "forecast postmortem <id>",
+            ],
         ),
         _evidence_requirement(
             "agent_protocol_scored_cases",
@@ -169,6 +175,11 @@ def build_forecasting_evidence_status(
                 "<cases.json> --probability-source agent-protocol --agent-output-jsonl "
                 "captured-agent-protocol.jsonl."
             ),
+            command_templates=[
+                "forecast backtest --all-benchmarks --probability-source agent-protocol --agent-prompt-jsonl prompts.jsonl --prepare-agent-prompts",
+                "forecast backtest --all-benchmarks --probability-source agent-protocol --agent-response-jsonl responses.jsonl",
+                "forecast backtest <cases.json> --probability-source agent-protocol --agent-output-jsonl captured-agent-protocol.jsonl",
+            ],
         ),
         _evidence_requirement(
             "leakage_free_backtest_runs",
@@ -179,6 +190,9 @@ def build_forecasting_evidence_status(
                 "Run a leakage-checked local replay: forecast backtest "
                 "builtin:heldout-120-binary --probability-source forecast-engine."
             ),
+            command_templates=[
+                "forecast backtest builtin:heldout-120-binary --probability-source forecast-engine",
+            ],
         ),
         _evidence_requirement(
             "positive_best_baseline_edge_runs",
@@ -190,6 +204,10 @@ def build_forecasting_evidence_status(
                 "--all-benchmarks --probability-source forecast-engine; "
                 "forecast performance --last 5."
             ),
+            command_templates=[
+                "forecast backtest --all-benchmarks --probability-source forecast-engine",
+                "forecast performance --last 5",
+            ],
         ),
         _evidence_requirement(
             "distinct_backtest_datasets",
@@ -200,6 +218,10 @@ def build_forecasting_evidence_status(
                 "Run at least two distinct benchmark datasets, for example "
                 "builtin:heldout-120-binary and builtin:manifold-public-120-binary."
             ),
+            command_templates=[
+                "forecast backtest builtin:heldout-120-binary --probability-source forecast-engine",
+                "forecast backtest builtin:manifold-public-120-binary --probability-source forecast-engine",
+            ],
         ),
         _evidence_requirement(
             "external_benchmark_datasets",
@@ -211,6 +233,10 @@ def build_forecasting_evidence_status(
                 "forecast backtest builtin:manifold-public-120-binary --probability-source forecast-engine "
                 "or import resolved Manifold, Metaculus, Kalshi, or Polymarket cases."
             ),
+            command_templates=[
+                "forecast backtest builtin:manifold-public-120-binary --probability-source forecast-engine",
+                "forecast import benchmark <resolved-cases.json>",
+            ],
         ),
         _evidence_requirement(
             "external_source_families",
@@ -222,6 +248,11 @@ def build_forecasting_evidence_status(
                 "Metaculus, Kalshi, Polymarket, or another audited dataset, so readiness "
                 "is not anchored to a single platform."
             ),
+            command_templates=[
+                "forecast import benchmark <metaculus-or-kalshi-or-polymarket-cases.json>",
+                "forecast backtest imported:<dataset-id> --probability-source forecast-engine",
+                "forecast readiness --json",
+            ],
         ),
     ]
     gaps = [
@@ -233,6 +264,8 @@ def build_forecasting_evidence_status(
         {
             "requirement_id": requirement["id"],
             "action": requirement["recommended_action"],
+            "remaining": requirement["remaining"],
+            "commands": requirement["command_templates"],
         }
         for requirement in requirements
         if not requirement["passed"]
@@ -278,14 +311,18 @@ def _evidence_requirement(
     observed: int,
     required: int,
     recommended_action: str,
+    command_templates: list[str] | None = None,
 ) -> dict[str, Any]:
+    remaining = max(required - observed, 0)
     return {
         "id": requirement_id,
         "description": description,
         "observed": observed,
         "required": required,
+        "remaining": remaining,
         "passed": observed >= required,
         "recommended_action": recommended_action,
+        "command_templates": list(command_templates or []),
     }
 
 
