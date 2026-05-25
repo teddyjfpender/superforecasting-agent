@@ -360,6 +360,15 @@ def test_cli_exec_blocked(server, argv):
     assert server._cli_exec_blocked(argv) is not None
 
 
+def test_cli_exec_bare_hint_prefers_forecast_oneshot(server):
+    hint = server._cli_exec_blocked([])
+
+    assert hint is not None
+    assert "/forecast" in hint
+    assert "superforecasting-agent -z" in hint
+    assert "superforecasting-agent chat -q" not in hint
+
+
 @pytest.mark.parametrize("argv", [
     ["version"],
     ["sessions", "list"],

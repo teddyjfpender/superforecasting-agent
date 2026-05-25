@@ -4642,7 +4642,7 @@ def _(rid, params: dict) -> dict:
 def _cli_exec_blocked(argv: list[str]) -> str | None:
     """Return user hint if this argv must not run headless in the gateway process."""
     if not argv:
-        return "bare `superforecasting-agent` is interactive — use `/forecast` commands here, or run `superforecasting-agent chat -q …` in another terminal"
+        return "bare `superforecasting-agent` is interactive — use `/forecast` commands here, or run `superforecasting-agent -z …` in another terminal"
     a0 = argv[0].lower()
     if a0 == "setup":
         return "`superforecasting-agent setup` needs a full terminal — run it outside the TUI"
