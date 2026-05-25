@@ -1745,6 +1745,7 @@ def test_root_agents_guidance_is_forecast_native():
     assert "`superforecasting-agent cron <verb>`" in text
     assert "`superforecasting-agent kanban`" in text
     assert "`SUPERFORECASTING_AGENT_BACKGROUND_NOTIFICATIONS`" in text
+    assert "native Superforecasting Agent tools" in text
     assert "### DO NOT hardcode agent-home paths" in text
     assert "superforecasting-agent --tui" in text
     assert "primary forecast-chat experience" in text
@@ -1758,6 +1759,7 @@ def test_root_agents_guidance_is_forecast_native():
     assert "File lock at `~/.hermes/cron/.tick.lock`" not in text
     assert "Hermes supports **profiles**" not in text
     assert "Hermes-Agent ensures caching" not in text
+    assert "native Hermes tools" not in text
     assert "`hermes tools`" not in text
     assert "`hermes setup`" not in text
     assert "`hermes kanban` with verbs" not in text

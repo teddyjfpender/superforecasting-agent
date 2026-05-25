@@ -697,6 +697,7 @@ Concrete success means the fork behaves as a command-line forecasting desk cente
 
 Latest verified result:
 
+- Root skill-tool guidance pass: `AGENTS.md` now tells skill authors to reference native Superforecasting Agent tools in `SKILL.md` prose instead of native Hermes tools; project metadata guards against reintroducing the old root-guide phrase.
 - Contributor-audit repository default pass: `scripts/contributor_audit.py` now scans merged PR bodies from `teddyjfpender/superforecasting-agent` by default, prints the active GitHub PR source, and accepts `--repo` for explicit upstream/legacy audits instead of hardcoding `NousResearch/hermes-agent`; project metadata and focused script tests guard the fork-native default and override plumbing.
 - ACP registry docs pass: the ACP feature and internals guides now match the checked-in `acp_registry/agent.json` fork-native manifest, documenting `superforecasting-agent[acp]` plus `superforecasting-agent acp` as the registry/manual launch path while scoping `hermes-acp` and `hermes-agent[acp]` to migrated-client compatibility; project metadata guards the stale inherited registry story.
 - Embedded TUI desk-label pass: web dashboard source comments, fallback labels, docs, CLI/environment references, and optional embedded-TUI prose now call the browser PTY surface `Forecast Desk` instead of `Forecast Chat`; default Telegram/Discord empty thread/topic names now use `Forecast Session`; focused gateway/web/docs tests and builds cover the touched surfaces.
