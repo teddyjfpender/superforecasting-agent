@@ -93,7 +93,7 @@ function UnknownRouteFallback({ pluginsLoading }: { pluginsLoading: boolean }) {
 const CHAT_NAV_ITEM: NavItem = {
   path: "/chat",
   labelKey: "chat",
-  label: "Forecast Chat",
+  label: "Forecast Desk",
   icon: Terminal,
 };
 
@@ -633,7 +633,7 @@ export default function App() {
                       >
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Spinner />
-                          <span>Loading Forecast Chat…</span>
+                          <span>Loading Forecast Desk…</span>
                         </div>
                       </div>
                     ) : null

@@ -1,5 +1,5 @@
 /**
- * Slash command execution pipeline for embedded Forecast Chat.
+ * Slash command execution pipeline for embedded Forecast Desk.
  *
  * Mirrors the Ink TUI's createSlashHandler.ts:
  *

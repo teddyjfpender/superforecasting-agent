@@ -347,6 +347,44 @@ def test_web_dashboard_titles_are_forecast_native():
     assert "Hermes Agent - Dashboard" not in text
 
 
+def test_embedded_tui_surface_is_forecast_desk():
+    root = Path(__file__).resolve().parents[1]
+    surface_paths = [
+        root / "web" / "src" / "App.tsx",
+        root / "web" / "src" / "pages" / "ChatPage.tsx",
+        root / "web" / "src" / "components" / "ChatSidebar.tsx",
+        root / "web" / "src" / "components" / "ModelPickerDialog.tsx",
+        root / "web" / "src" / "components" / "SlashPopover.tsx",
+        root / "web" / "src" / "index.css",
+        root / "web" / "src" / "lib" / "dashboard-flags.ts",
+        root / "web" / "src" / "lib" / "slashExec.ts",
+        root / "website" / "docs" / "index.md",
+        root / "website" / "docs" / "getting-started" / "installation.md",
+        root / "website" / "docs" / "getting-started" / "learning-path.md",
+        root / "website" / "docs" / "reference" / "cli-commands.md",
+        root / "website" / "docs" / "reference" / "environment-variables.md",
+        root / "website" / "docs" / "user-guide" / "configuring-models.md",
+        root / "website" / "docs" / "user-guide" / "features" / "skills.md",
+        root / "website" / "docs" / "user-guide" / "features" / "web-dashboard.md",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in surface_paths)
+
+    assert "Forecast Desk" in text
+    assert "Forecast Chat" not in text
+    assert "Forecast-Chat" not in text
+    assert "Forecast Desk is only reachable from localhost." in text
+    assert "Loading Forecast Desk" in text
+
+    gateway_text = "\n".join(
+        [
+            (root / "gateway" / "run.py").read_text(encoding="utf-8"),
+            (root / "gateway" / "platforms" / "discord.py").read_text(encoding="utf-8"),
+        ]
+    )
+    assert "Forecast Session" in gateway_text
+    assert "Forecast Chat" not in gateway_text
+
+
 def test_web_readme_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "web" / "README.md").read_text(encoding="utf-8")

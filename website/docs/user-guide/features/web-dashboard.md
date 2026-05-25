@@ -8,7 +8,7 @@ description: "Browser dashboard for forecast review, configuration, logs, resear
 
 The web dashboard is a local browser UI for inspecting the Superforecasting Agent runtime. It is secondary to the CLI, but useful for reviewing the forecast book, checking configuration, managing credentials, inspecting research sessions, and watching logs without editing YAML by hand.
 
-The fork-native landing page is **Forecasts**. It shows active questions, review queue, focused action commands, calibration health, learning memory, domain/topic error profiles, alerts, and recent backtests. The embedded Forecast Chat pane is optional and exists to support forecast work, not to replace the CLI forecast workflow.
+The fork-native landing page is **Forecasts**. It shows active questions, review queue, focused action commands, calibration health, learning memory, domain/topic error profiles, alerts, and recent backtests. The embedded Forecast Desk pane is optional and exists to support forecast work, not to replace the CLI forecast workflow.
 
 ## Quick Start
 
@@ -28,7 +28,7 @@ This starts a local web server and opens `http://127.0.0.1:9119` in your browser
 | `--host` | `127.0.0.1` | Bind address. |
 | `--no-open` | off | Do not auto-open the browser. |
 | `--insecure` | off | Allow binding to non-localhost hosts. Use only behind trusted network controls. |
-| `--tui` | off | Expose the optional browser Forecast Chat tab by embedding `superforecasting-agent --tui` behind a PTY/WebSocket bridge. Alternatively set `SUPERFORECASTING_AGENT_DASHBOARD_TUI=1` or `FORECAST_DASHBOARD_TUI=1`; legacy `HERMES_DASHBOARD_TUI=1` is still accepted. |
+| `--tui` | off | Expose the optional browser Forecast Desk tab by embedding `superforecasting-agent --tui` behind a PTY/WebSocket bridge. Alternatively set `SUPERFORECASTING_AGENT_DASHBOARD_TUI=1` or `FORECAST_DASHBOARD_TUI=1`; legacy `HERMES_DASHBOARD_TUI=1` is still accepted. |
 
 ```bash
 superforecasting-agent dashboard --port 8080
@@ -44,7 +44,7 @@ The default install may not include the HTTP stack or PTY helper. Install the da
 pip install 'superforecasting-agent[web]'
 ```
 
-For the optional embedded Forecast Chat tab:
+For the optional embedded Forecast Desk tab:
 
 ```bash
 pip install 'superforecasting-agent[web,pty]'
@@ -105,9 +105,9 @@ Status shows the runtime state around the forecasting desk:
 
 This page is operational telemetry. Forecast truth lives in the ledger, not in the session list.
 
-### Forecast Chat
+### Forecast Desk
 
-When started with `--tui`, the dashboard exposes an optional Forecast Chat tab. It embeds the real terminal TUI through xterm.js. The transcript, composer, slash commands, model picker, approvals, clarify prompts, tool activity, and `/forecast` shortcuts are the same TUI flow you get from:
+When started with `--tui`, the dashboard exposes an optional Forecast Desk tab. It embeds the real terminal TUI through xterm.js. The transcript, composer, slash commands, model picker, approvals, clarify prompts, tool activity, and `/forecast` shortcuts are the same TUI flow you get from:
 
 ```bash
 superforecasting-agent --tui
@@ -120,7 +120,7 @@ How it works:
 - Keystrokes travel to the PTY; ANSI output streams back to the browser.
 - Resizing the browser window resizes the TUI through xterm.js.
 
-Resume from Research Sessions by opening a session and launching the Forecast Chat pane with that session id. Close the browser tab to reap the PTY process on the server.
+Resume from Research Sessions by opening a session and launching the Forecast Desk pane with that session id. Close the browser tab to reap the PTY process on the server.
 
 ### Config
 
@@ -156,7 +156,7 @@ Research sessions are conversation continuity and operational history. They are 
 
 Use this page to:
 
-- Search prior Forecast Chat and CLI research sessions with FTS5.
+- Search prior Forecast Desk and CLI research sessions with FTS5.
 - Inspect message history and tool calls.
 - Resume a prior terminal/TUI session.
 - Delete obsolete research transcripts.

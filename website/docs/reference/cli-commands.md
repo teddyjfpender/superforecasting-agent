@@ -1198,7 +1198,7 @@ superforecasting-agent claw migrate --source /home/user/old-openclaw
 superforecasting-agent dashboard [options]
 ```
 
-Launch the web dashboard. The fork-native landing page is the forecast dashboard for active questions, review queue, calibration health, learning memory, and recent backtests. Requires `pip install superforecasting-agent[web]` (FastAPI + Uvicorn). The embedded Forecast Chat tab requires `--tui` plus the `pty` extra. See [Web Dashboard](/docs/user-guide/features/web-dashboard) for full documentation.
+Launch the web dashboard. The fork-native landing page is the forecast dashboard for active questions, review queue, calibration health, learning memory, and recent backtests. Requires `pip install superforecasting-agent[web]` (FastAPI + Uvicorn). The embedded Forecast Desk tab requires `--tui` plus the `pty` extra. See [Web Dashboard](/docs/user-guide/features/web-dashboard) for full documentation.
 
 `superforecasting-agent dashboard` remains accepted for inherited runtime compatibility.
 
@@ -1207,7 +1207,7 @@ Launch the web dashboard. The fork-native landing page is the forecast dashboard
 | `--port` | `9119` | Port to run the web server on |
 | `--host` | `127.0.0.1` | Bind address |
 | `--no-open` | — | Don't auto-open the browser |
-| `--tui` | off | Enable the in-browser Forecast Chat tab by running `superforecasting-agent --tui` behind a PTY/WebSocket bridge. Requires `pip install 'superforecasting-agent[web,pty]'` and a POSIX PTY environment such as Linux, macOS, or WSL2. |
+| `--tui` | off | Enable the in-browser Forecast Desk tab by running `superforecasting-agent --tui` behind a PTY/WebSocket bridge. Requires `pip install 'superforecasting-agent[web,pty]'` and a POSIX PTY environment such as Linux, macOS, or WSL2. |
 | `--insecure` | off | Allow binding to non-localhost hosts. Exposes dashboard credentials on the network; use only behind trusted network controls. |
 | `--stop` | — | Stop running dashboard processes and exit. |
 | `--status` | — | List running dashboard processes and exit. |
@@ -1219,7 +1219,7 @@ superforecasting-agent dashboard
 # Custom port, no browser
 superforecasting-agent dashboard --port 8080 --no-open
 
-# Enable the browser Forecast Chat tab
+# Enable the browser Forecast Desk tab
 superforecasting-agent dashboard --tui
 ```
 

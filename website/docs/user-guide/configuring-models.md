@@ -123,7 +123,7 @@ auxiliary:
 
 - **Forecast desk** (`forecast`, `superforecasting-agent`, or `superforecasting-agent chat`): next new agent session. Existing sessions keep their model.
 - **Gateway** (Telegram, Discord, Slack, etc.): next *new* session. Existing sessions keep their model. Restart the gateway (`superforecasting-agent gateway restart`) if you want to force all sessions to pick up the change.
-- **Dashboard Forecast Chat tab** (`/chat`): next new PTY. The currently-open embedded TUI keeps its model; use `/model` inside it to hot-swap.
+- **Dashboard Forecast Desk tab** (`/chat`): next new PTY. The currently-open embedded TUI keeps its model; use `/model` inside it to hot-swap.
 
 Changes never invalidate prompt caches on running sessions. That's deliberate: swapping the main model inside a session requires a cache reset (the system prompt contains model-specific content), and we reserve that for the explicit `/model` slash command inside the active session.
 

@@ -26,7 +26,7 @@ See also:
 Every installed skill is available as a slash command:
 
 ```bash
-# In the CLI, TUI, Forecast Chat, or a messaging gateway:
+# In the CLI, TUI, Forecast Desk, or a messaging gateway:
 /plan design the evidence plan for a credit-default forecast
 /research-arxiv find recent papers relevant to this resolution criterion
 /github-pr-workflow inspect release activity as evidence for a ship-date forecast

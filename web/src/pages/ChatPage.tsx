@@ -48,7 +48,7 @@ function buildWsUrl(
   return `${proto}//${window.location.host}${FORECAST_BASE_PATH}/api/pty?${qs.toString()}`;
 }
 
-// Channel id ties this Forecast Chat tab's PTY child (publisher) to its sidebar
+// Channel id ties this Forecast Desk tab's PTY child (publisher) to its sidebar
 // (subscriber).  Generated once per mount so a tab refresh starts a fresh
 // channel — the previous PTY child terminates with the old WS, and its
 // channel auto-evicts when no subscribers remain.
@@ -124,7 +124,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
   const copyResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Raw state for the mobile side-sheet + a derived value that force-
-  // closes whenever the Forecast Chat tab isn't active.  The *derived* value is
+  // closes whenever the Forecast Desk tab isn't active.  The *derived* value is
   // what side-effects (body-scroll lock, keydown listener, portal render)
   // key on — that way switching to another tab triggers the effect's
   // cleanup, releasing the scroll-lock on /sessions etc.  Returning to
@@ -151,7 +151,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
 
   // The dashboard keeps ChatPage mounted persistently so the PTY survives tab
   // switches. That is great for ordinary /chat navigation, but it means query
-  // param changes do NOT remount the component. Resume-in-Forecast-Chat from the
+  // param changes do NOT remount the component. Resume-in-Forecast-Desk from the
   // Sessions page relies on `/chat?resume=<id>` changing at runtime, so we must
   // treat the current resume target as part of the PTY identity and rebuild the
   // terminal session when it changes.
@@ -175,7 +175,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         setSearchParams(next, { replace: true });
       })
       .catch(() => {
-        // Best-effort: old servers or missing sessions should not block Forecast Chat.
+        // Best-effort: old servers or missing sessions should not block Forecast Desk.
       });
 
     return () => {
@@ -215,7 +215,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   }, []);
 
   useEffect(() => {
-    // When hidden (non-Forecast-Chat tab) we must not register the header button —
+    // When hidden (non-Forecast-Desk tab) we must not register the header button —
     // another page owns the header's end slot at that point.
     if (!isActive) {
       setEnd(null);
@@ -298,7 +298,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       // is false; enabling it gives users a single-action selection
       // path on top of the modifier-based bypass above.
       rightClickSelectsWord: true,
-      // Browser-embedded Forecast Chat runs the TUI in inline mode. Keep transcript
+      // Browser-embedded Forecast Desk runs the TUI in inline mode. Keep transcript
       // history in xterm.js so the browser wheel can scroll it directly.
       scrollback: 5000,
       theme: TERMINAL_THEME,
@@ -403,7 +403,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     fitRef.current = fit;
     term.loadAddon(fit);
 
-    // Dashboard Forecast Chat should scroll the browser-side transcript, not send
+    // Dashboard Forecast Desk should scroll the browser-side transcript, not send
     // mouse-wheel protocol bytes through the PTY.
     term.attachCustomWheelEventHandler((ev) => {
       const delta = ev.deltaY;
@@ -581,7 +581,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         return;
       }
       if (ev.code === 4403) {
-        setBanner("Forecast Chat is only reachable from localhost.");
+        setBanner("Forecast Desk is only reachable from localhost.");
         return;
       }
       if (ev.code === 1011) {
@@ -594,7 +594,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     // Keystrokes → PTY.
     //
     // IMPORTANT:
-    // The embedded Forecast Chat has occasionally surfaced stray letters/digits
+    // The embedded Forecast Desk has occasionally surfaced stray letters/digits
     // in the input line after a turn completes. The most likely culprit is
     // browser-side terminal control traffic being forwarded back into the
     // PTY as if it were user text. SGR mouse tracking is the highest-risk
@@ -652,7 +652,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     };
   }, [channel, resumeParam]);
 
-  // When the user returns to the Forecast Chat tab (isActive: false → true), the
+  // When the user returns to the Forecast Desk tab (isActive: false → true), the
   // terminal host just transitioned from display:none to display:flex.
   // ResizeObserver won't fire on that kind of style-driven box change —
   // xterm thinks its grid is still whatever it was when the tab was

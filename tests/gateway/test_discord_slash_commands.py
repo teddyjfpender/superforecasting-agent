@@ -564,7 +564,7 @@ async def test_auto_create_thread_strips_mention_syntax_from_name(adapter):
 async def test_auto_create_thread_falls_back_to_forecast_session_when_only_mentions(adapter):
     """If a message contains only mention syntax, the stripped content is
     empty — fall back to the forecast session default rather than ''."""
-    thread = SimpleNamespace(id=999, name="Forecast Chat")
+    thread = SimpleNamespace(id=999, name="Forecast Session")
     message = SimpleNamespace(
         content="<@&1490963422786093149>",
         create_thread=AsyncMock(return_value=thread),
@@ -575,7 +575,7 @@ async def test_auto_create_thread_falls_back_to_forecast_session_when_only_menti
     await adapter._auto_create_thread(message)
 
     name = message.create_thread.await_args[1]["name"]
-    assert name == "Forecast Chat"
+    assert name == "Forecast Session"
 
 
 @pytest.mark.asyncio

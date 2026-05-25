@@ -18,7 +18,7 @@ import { createPortal } from "react-dom";
  *
  * Two invocation modes:
  *
- * 1. Forecast Chat mode (ChatSidebar) — pass `gw` + `sessionId`. The picker
+ * 1. Forecast Desk mode (ChatSidebar) — pass `gw` + `sessionId`. The picker
  *    loads options via `model.options` JSON-RPC and emits the result as a
  *    slash command string (`/model <model> --provider <slug> [--global]`)
  *    through `onSubmit`, which the ChatPage pipes to `slashExec`.
