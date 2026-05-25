@@ -314,6 +314,10 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
     exclude_pids = exclude_pids | _get_ancestor_pids()
     pids: list[int] = []
     patterns = [
+        "superforecasting-agent gateway",
+        "superforecast gateway",
+        "superforecasting_agent gateway",
+        "superforecasting_agent.cli gateway",
         "hermes_cli.main gateway",
         "hermes_cli.main --profile",
         "hermes_cli.main -p",

@@ -23,6 +23,37 @@ def _assert_home_aliases(rendered: str, home: str) -> None:
     assert f"HERMES_HOME={home}" in rendered
 
 
+class TestGatewayProcessScan:
+    def test_process_scan_detects_fork_native_gateway_invocations(self, monkeypatch):
+        original_isdir = gateway_cli.os.path.isdir
+
+        monkeypatch.setattr(gateway_cli, "is_windows", lambda: False)
+        monkeypatch.setattr(gateway_cli, "_get_ancestor_pids", lambda: set())
+        monkeypatch.setattr(
+            gateway_cli.os.path,
+            "isdir",
+            lambda path: False if path == "/proc" else original_isdir(path),
+        )
+
+        ps_output = "\n".join(
+            [
+                "101 /venv/bin/superforecasting-agent gateway run",
+                "102 /venv/bin/superforecast gateway run",
+                "103 python -m superforecasting_agent.cli gateway run",
+                "104 /venv/bin/hermes gateway run",
+                "105 /venv/bin/superforecasting-agent gateway status",
+            ]
+        )
+
+        def fake_run(cmd, **kwargs):
+            assert cmd == ["ps", "-A", "eww", "-o", "pid=,command="]
+            return SimpleNamespace(returncode=0, stdout=ps_output, stderr="")
+
+        monkeypatch.setattr(gateway_cli.subprocess, "run", fake_run)
+
+        assert gateway_cli._scan_gateway_pids(exclude_pids={105}) == [101, 102, 103, 104]
+
+
 class TestUserSystemdPrivateSocketPreflight:
     def test_preflight_accepts_private_socket_without_dbus_bus(self, monkeypatch):
         monkeypatch.setattr(gateway_cli, "_ensure_user_systemd_env", lambda: None)
