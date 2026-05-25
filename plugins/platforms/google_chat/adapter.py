@@ -3110,8 +3110,8 @@ def interactive_setup() -> None:
         save_env_value("GOOGLE_CHAT_HOME_CHANNEL", home.strip())
 
     print()
-    print_success("Google Chat configuration saved to ~/.hermes/.env")
-    print_info("Restart the gateway: hermes gateway restart")
+    print_success("Google Chat configuration saved to the active Superforecasting Agent .env")
+    print_info("Restart the gateway: superforecasting-agent gateway restart")
 
 
 # Strict resource-name pattern.  ``spaces/<id>`` and ``users/<id>`` must

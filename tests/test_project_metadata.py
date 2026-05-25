@@ -1048,6 +1048,7 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
         root / "plugins" / "platforms" / "teams" / "adapter.py",
         root / "plugins" / "platforms" / "line" / "adapter.py",
         root / "plugins" / "platforms" / "irc" / "adapter.py",
+        root / "plugins" / "platforms" / "irc" / "plugin.yaml",
         root / "plugins" / "platforms" / "google_chat" / "adapter.py",
         root / "plugins" / "platforms" / "google_chat" / "oauth.py",
         root / "plugins" / "platforms" / "simplex" / "adapter.py",
@@ -1080,6 +1081,11 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
     assert 'User-Agent": "Hermes"' not in text
     assert 'teams app create --name "Hermes"' not in text
     assert "Restart the gateway:       hermes gateway restart" not in text
+    assert "Restart the gateway: hermes gateway restart" not in text
+    assert "Restart the gateway for changes to take effect: hermes gateway restart" not in text
+    assert "configuration saved to ~/.hermes/.env" not in text
+    assert "#hermes" not in text
+    assert "hermes-bot" not in text
     assert "Hermes Agent CLI launcher" not in text
     assert "Hermes agent bot" not in text
     assert "ephemeral Hermes session" not in text
