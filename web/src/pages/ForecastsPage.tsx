@@ -237,6 +237,10 @@ const PILOT_HANDOFFS = [
     label: "Bundle",
   },
   {
+    command: "forecast import packet .pilot/tester-export.json --conflict skip --json",
+    label: "Restore",
+  },
+  {
     command: "forecast pilot-aggregate .pilot/*-export.json --json",
     label: "Aggregate",
   },
