@@ -5,7 +5,7 @@ Mac laptop with a signed-in Chrome). Exposes a WebSocket endpoint that
 accepts signed RPC requests and dispatches them to the existing
 ``plugins.google_meet.process_manager`` module.
 
-Launched by ``hermes meet node run``.
+Launched by ``superforecasting-agent meet node run``.
 
 Token handling
 --------------
@@ -46,7 +46,7 @@ class NodeServer:
         host: str = "127.0.0.1",
         port: int = 18789,
         token_path: Optional[Path] = None,
-        display_name: str = "hermes-meet-node",
+        display_name: str = "forecast-meet-node",
     ) -> None:
         self.host = host
         self.port = port

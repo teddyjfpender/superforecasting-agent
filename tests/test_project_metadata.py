@@ -1443,6 +1443,8 @@ def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
         "plugins/platforms/line/adapter.py",
         "plugins/platforms/simplex/adapter.py",
         "plugins/platforms/google_chat/adapter.py",
+        "plugins/google_meet/__init__.py",
+        "plugins/google_meet/cli.py",
         "plugins/google_meet/tools.py",
         "plugins/google_meet/node/cli.py",
         "plugins/google_meet/node/protocol.py",
@@ -1462,9 +1464,12 @@ def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     assert "superforecasting-agent auth" in text
     assert "superforecasting-agent memory setup" in text
     assert "superforecasting-agent meet node approve" in text
+    assert "superforecasting-agent meet node: module unavailable" in text
+    assert "usage: superforecasting-agent meet" in text
     assert "superforecasting-agent plugins enable google_meet" in text
     assert "superforecasting-agent meet install" in text
     assert "superforecasting-agent meet setup" in text
+    assert "forecast-meet-node" in text
     assert "active agent-home .env" in text
     assert "active agent-home auth store" in text
 
@@ -1482,6 +1487,9 @@ def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     assert "hermes meet install" not in text
     assert "hermes meet setup" not in text
     assert "hermes meet auth" not in text
+    assert "usage: hermes meet" not in text
+    assert "hermes meet node: module unavailable" not in text
+    assert "hermes-meet-node" not in text
     assert "Run `hermes auth`" not in text
     assert "add the key to ~/.hermes/.env manually" not in text
     assert "run: hermes setup" not in text

@@ -1,8 +1,7 @@
-"""`hermes meet node ...` subcommand tree.
+"""`superforecasting-agent meet node ...` subcommand tree.
 
-Wired into the existing ``hermes meet`` parser by the plugin's top-level
-CLI. This module only defines the subparsers and their dispatch — it
-does not mutate the existing cli.py.
+Wired into the existing ``superforecasting-agent meet`` parser by the plugin's
+top-level CLI. This module only defines the subparsers and their dispatch.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from plugins.google_meet.node.server import NodeServer
 def register_cli(subparser: argparse.ArgumentParser) -> None:
     """Add ``run / list / approve / remove / status / ping`` subparsers.
 
-    *subparser* is the ``hermes meet node`` argparse object — typically
+    *subparser* is the ``superforecasting-agent meet node`` argparse object — typically
     the result of ``meet_parser.add_parser('node', ...)``.
     """
     sp = subparser.add_subparsers(dest="node_cmd", required=True)
@@ -29,7 +28,7 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
     run = sp.add_parser("run", help="Start a node server on this machine.")
     run.add_argument("--host", default="0.0.0.0")
     run.add_argument("--port", type=int, default=18789)
-    run.add_argument("--display-name", default="hermes-meet-node")
+    run.add_argument("--display-name", default="forecast-meet-node")
     run.set_defaults(func=node_command)
 
     lst = sp.add_parser("list", help="List approved remote nodes.")
@@ -55,7 +54,7 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
 
 
 def node_command(args: argparse.Namespace) -> int:
-    """Dispatch for ``hermes meet node ...``.
+    """Dispatch for ``superforecasting-agent meet node ...``.
 
     Returns a process exit code. Side-effects print to stdout/stderr.
     """
