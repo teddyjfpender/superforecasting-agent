@@ -18,8 +18,8 @@ You can also point Superforecasting Agent at **external skill directories** scan
 
 See also:
 
-- [Bundled Skills Catalog](/docs/reference/skills-catalog)
-- [Official Optional Skills Catalog](/docs/reference/optional-skills-catalog)
+- [Bundled Skills Catalog](/reference/skills-catalog)
+- [Official Optional Skills Catalog](/reference/optional-skills-catalog)
 
 ## Using Skills
 
@@ -212,7 +212,7 @@ required_environment_variables:
 
 When a missing value is encountered, Superforecasting Agent asks for it securely only when the skill is actually loaded in the local CLI. Messaging surfaces never ask for secrets in chat; they tell you to use `superforecasting-agent setup` or `~/.superforecasting-agent/.env` locally.
 
-Once set, declared env vars are automatically passed through to `execute_code` and `terminal` sandboxes. For non-skill env vars, use the `terminal.env_passthrough` config option. See [Environment Variable Passthrough](/docs/user-guide/security#environment-variable-passthrough).
+Once set, declared env vars are automatically passed through to `execute_code` and `terminal` sandboxes. For non-skill env vars, use the `terminal.env_passthrough` config option. See [Environment Variable Passthrough](/user-guide/security#environment-variable-passthrough).
 
 Legacy `~/.hermes/.env` and `HERMES_*` runtime names may still appear in compatibility paths. New fork-native setup should prefer `~/.superforecasting-agent/.env` and the documented forecast-desk commands.
 
@@ -232,7 +232,7 @@ metadata:
 
 Settings are stored under `skills.config` in `~/.superforecasting-agent/config.yaml`. `superforecasting-agent config migrate` prompts for unconfigured settings, and `superforecasting-agent config show` displays them. When a skill loads, resolved config values are injected into context so the agent knows the configured values.
 
-See [Skill Settings](/docs/user-guide/configuration#skill-settings) and [Creating Skills: Config Settings](/docs/developer-guide/creating-skills#config-settings-configyaml).
+See [Skill Settings](/user-guide/configuration#skill-settings) and [Creating Skills: Config Settings](/developer-guide/creating-skills#config-settings-configyaml).
 
 ## Skill Directory Structure
 

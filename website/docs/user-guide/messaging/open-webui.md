@@ -273,7 +273,7 @@ Open WebUI persists OpenAI-compatible connection settings in its own database af
 
 ## Multi-User Setup with Profiles
 
-To run separate forecast workspaces per user or domain — each with its own config, memory, skills, and forecast ledger — use [profiles](/docs/user-guide/profiles). Each profile runs its own API server on a different port and advertises the profile name as the model in Open WebUI.
+To run separate forecast workspaces per user or domain — each with its own config, memory, skills, and forecast ledger — use [profiles](/user-guide/profiles). Each profile runs its own API server on a different port and advertises the profile name as the model in Open WebUI.
 
 ### 1. Create profiles and configure API servers
 

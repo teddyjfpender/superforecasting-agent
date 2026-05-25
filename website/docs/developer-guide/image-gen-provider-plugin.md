@@ -9,7 +9,7 @@ description: "Build image-generation backend plugins"
 Image-gen provider plugins register a backend that services every `image_generate` tool call — DALL·E, gpt-image, Grok, Flux, Imagen, Stable Diffusion, fal, Replicate, a local ComfyUI rig, anything. This is an inherited secondary surface in Superforecasting Agent: useful for charts, visual briefs, or generated assets, but not part of the forecast ledger. Built-in providers (OpenAI, OpenAI-Codex, xAI) all ship as plugins. You can add a new one, or override a bundled one, by dropping a directory into `plugins/image_gen/<name>/`.
 
 :::tip
-Image-gen is one of several inherited backend plugin surfaces. The others (with more specialized ABCs) are [Memory Provider Plugins](/docs/developer-guide/memory-provider-plugin), [Context Engine Plugins](/docs/developer-guide/context-engine-plugin), and [Model Provider Plugins](/docs/developer-guide/model-provider-plugin). General tool/hook/CLI plugins live in the inherited [Build a Superforecasting Agent Plugin](/docs/guides/build-a-superforecasting-agent-plugin) guide.
+Image-gen is one of several inherited backend plugin surfaces. The others (with more specialized ABCs) are [Memory Provider Plugins](/developer-guide/memory-provider-plugin), [Context Engine Plugins](/developer-guide/context-engine-plugin), and [Model Provider Plugins](/developer-guide/model-provider-plugin). General tool/hook/CLI plugins live in the inherited [Build a Superforecasting Agent Plugin](/guides/build-a-superforecasting-agent-plugin) guide.
 :::
 
 ## How discovery works
@@ -279,11 +279,11 @@ Or interactively: `superforecasting-agent tools` -> "Image Generation" -> select
 my-backend-imggen = "my_backend_imggen_package"
 ```
 
-`my_backend_imggen_package` must expose a top-level `register` function. See [Distribute via pip](/docs/guides/build-a-superforecasting-agent-plugin#distribute-via-pip) in the general plugin guide for the full setup.
+`my_backend_imggen_package` must expose a top-level `register` function. See [Distribute via pip](/guides/build-a-superforecasting-agent-plugin#distribute-via-pip) in the general plugin guide for the full setup.
 The `hermes_agent.plugins` group is intentionally retained as an inherited compatibility name.
 
 ## Related pages
 
-- [Image Generation](/docs/user-guide/features/image-generation) — user-facing feature documentation
-- [Plugins overview](/docs/user-guide/features/plugins) — all plugin types at a glance
-- [Build a Superforecasting Agent Plugin](/docs/guides/build-a-superforecasting-agent-plugin) — inherited general tools/hooks/slash commands guide
+- [Image Generation](/user-guide/features/image-generation) — user-facing feature documentation
+- [Plugins overview](/user-guide/features/plugins) — all plugin types at a glance
+- [Build a Superforecasting Agent Plugin](/guides/build-a-superforecasting-agent-plugin) — inherited general tools/hooks/slash commands guide

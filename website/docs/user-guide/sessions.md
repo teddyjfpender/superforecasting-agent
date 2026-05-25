@@ -382,7 +382,7 @@ Total messages: 3847
 Database size: 12.4 MB
 ```
 
-For forecast performance analytics, use `superforecasting-agent forecast calibration`, `superforecasting-agent forecast performance`, and `superforecasting-agent forecast backtest`. For inherited runtime analytics such as token usage, cost estimates, tool breakdown, and activity patterns, use [`superforecasting-agent insights`](/docs/reference/cli-commands#hermes-insights).
+For forecast performance analytics, use `superforecasting-agent forecast calibration`, `superforecasting-agent forecast performance`, and `superforecasting-agent forecast backtest`. For inherited runtime analytics such as token usage, cost estimates, tool breakdown, and activity patterns, use [`superforecasting-agent insights`](/reference/cli-commands#hermes-insights).
 
 ## Research Session Search Tool
 

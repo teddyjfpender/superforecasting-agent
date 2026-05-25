@@ -9,8 +9,8 @@ description: "Reference for Superforecasting Agent MCP configuration keys, filte
 This page is the compact reference companion to the main MCP docs. MCP servers are inherited runtime extensions; the forecast desk should enable them selectively when they improve evidence collection, source monitoring, modeling, or forecast review.
 
 For conceptual guidance, see:
-- [MCP (Model Context Protocol)](/docs/user-guide/features/mcp)
-- [Use MCP with Superforecasting Agent](/docs/guides/use-mcp-with-superforecasting-agent)
+- [MCP (Model Context Protocol)](/user-guide/features/mcp)
+- [Use MCP with Superforecasting Agent](/guides/use-mcp-with-superforecasting-agent)
 
 ## Root config shape
 

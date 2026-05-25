@@ -11,9 +11,9 @@ Superforecasting Agent inherits a plugin system for adding custom forecast tools
 
 For forecasting work, use plugins when an extension improves the desk's ability to gather evidence, call a domain data source, run a model, trigger alerts, review stale forecasts, or route outputs to another system. Keep broad assistant-style plugins opt-in unless they directly improve research, probability estimation, scoring, or calibration.
 
-If you want to create a custom tool for yourself, your team, or one project, this is usually the right path. The developer guide's [Adding Tools](/docs/developer-guide/adding-tools) page is for built-in core tools that live in `tools/` and `toolsets.py`.
+If you want to create a custom tool for yourself, your team, or one project, this is usually the right path. The developer guide's [Adding Tools](/developer-guide/adding-tools) page is for built-in core tools that live in `tools/` and `toolsets.py`.
 
-**[Build a Plugin](/docs/guides/build-a-superforecasting-agent-plugin)** - step-by-step guide with a complete working example.
+**[Build a Plugin](/guides/build-a-superforecasting-agent-plugin)** - step-by-step guide with a complete working example.
 
 ## Quick overview
 
@@ -108,23 +108,23 @@ Every `ctx.*` API below is available inside a Python plugin's `register(ctx)` fu
 | Bundle forecast skills | `ctx.register_skill(name, path)` — namespaced as `plugin:skill`, loaded via `skill_view("plugin:skill")` |
 | Gate on env vars | `requires_env: [API_KEY]` in plugin.yaml - prompted during `superforecasting-agent plugins install` |
 | Distribute via pip | `[project.entry-points."hermes_agent.plugins"]` - legacy entry-point group still used by the runtime |
-| Register a gateway platform (Discord, Telegram, IRC, etc.) | `ctx.register_platform(name, label, adapter_factory, check_fn, ...)` - see [Adding Platform Adapters](/docs/developer-guide/adding-platform-adapters) |
-| Register an image-generation backend | `ctx.register_image_gen_provider(provider)` - see [Image Generation Provider Plugins](/docs/developer-guide/image-gen-provider-plugin) |
-| Register a video-generation backend | `ctx.register_video_gen_provider(provider)` - see [Video Generation Provider Plugins](/docs/developer-guide/video-gen-provider-plugin) |
-| Register a context-compression engine | `ctx.register_context_engine(engine)` - see [Context Engine Plugins](/docs/developer-guide/context-engine-plugin) |
-| Register a memory backend | Subclass `MemoryProvider` in `plugins/memory/<name>/__init__.py` - see [Memory Provider Plugins](/docs/developer-guide/memory-provider-plugin) (uses a separate discovery system) |
-| Run a host-owned LLM call | `ctx.llm.complete(...)` / `ctx.llm.complete_structured(...)` - borrow the user's active model and auth for a one-shot completion with optional JSON schema validation. See [Plugin LLM Access](/docs/developer-guide/plugin-llm-access) |
-| Register an inference backend (LLM provider) | `register_provider(ProviderProfile(...))` in `plugins/model-providers/<name>/__init__.py` - see [Model Provider Plugins](/docs/developer-guide/model-provider-plugin) (uses a separate discovery system) |
+| Register a gateway platform (Discord, Telegram, IRC, etc.) | `ctx.register_platform(name, label, adapter_factory, check_fn, ...)` - see [Adding Platform Adapters](/developer-guide/adding-platform-adapters) |
+| Register an image-generation backend | `ctx.register_image_gen_provider(provider)` - see [Image Generation Provider Plugins](/developer-guide/image-gen-provider-plugin) |
+| Register a video-generation backend | `ctx.register_video_gen_provider(provider)` - see [Video Generation Provider Plugins](/developer-guide/video-gen-provider-plugin) |
+| Register a context-compression engine | `ctx.register_context_engine(engine)` - see [Context Engine Plugins](/developer-guide/context-engine-plugin) |
+| Register a memory backend | Subclass `MemoryProvider` in `plugins/memory/<name>/__init__.py` - see [Memory Provider Plugins](/developer-guide/memory-provider-plugin) (uses a separate discovery system) |
+| Run a host-owned LLM call | `ctx.llm.complete(...)` / `ctx.llm.complete_structured(...)` - borrow the user's active model and auth for a one-shot completion with optional JSON schema validation. See [Plugin LLM Access](/developer-guide/plugin-llm-access) |
+| Register an inference backend (LLM provider) | `register_provider(ProviderProfile(...))` in `plugins/model-providers/<name>/__init__.py` - see [Model Provider Plugins](/developer-guide/model-provider-plugin) (uses a separate discovery system) |
 
 ## Extension discovery
 
 | Source | Path | Use case |
 |--------|------|----------|
-| Bundled | `<repo>/plugins/` | Ships with Superforecasting Agent - see [Built-in Plugins](/docs/user-guide/features/built-in-plugins) |
+| Bundled | `<repo>/plugins/` | Ships with Superforecasting Agent - see [Built-in Plugins](/user-guide/features/built-in-plugins) |
 | User | `~/.superforecasting-agent/plugins/` | Personal plugins |
 | Project | `.hermes/plugins/` | Project-specific plugins (inherited directory name; requires `SUPERFORECASTING_AGENT_ENABLE_PROJECT_PLUGINS=true` or an accepted alias) |
 | pip | `hermes_agent.plugins` entry_points | Distributed packages |
-| Nix | `services.superforecasting-agent.extraPlugins` / `extraPythonPackages` | NixOS declarative installs through the fork-native module; `services.hermes-agent` remains a legacy alias - see [Nix Setup](/docs/getting-started/nix-setup#plugins) |
+| Nix | `services.superforecasting-agent.extraPlugins` / `extraPythonPackages` | NixOS declarative installs through the fork-native module; `services.hermes-agent` remains a legacy alias - see [Nix Setup](/getting-started/nix-setup#plugins) |
 
 Later sources override earlier ones on name collision, so a user plugin with the same name as a bundled plugin replaces it.
 
@@ -190,20 +190,20 @@ When you upgrade from a legacy Hermes install to a Superforecasting Agent build 
 
 ## Available hooks
 
-Extensions can register callbacks for these lifecycle events. See the **[Event Hooks page](/docs/user-guide/features/hooks#plugin-hooks)** for full details, callback signatures, and examples.
+Extensions can register callbacks for these lifecycle events. See the **[Event Hooks page](/user-guide/features/hooks#plugin-hooks)** for full details, callback signatures, and examples.
 
 | Hook | Fires when |
 |------|-----------|
-| [`pre_tool_call`](/docs/user-guide/features/hooks#pre_tool_call) | Before any tool executes |
-| [`post_tool_call`](/docs/user-guide/features/hooks#post_tool_call) | After any tool returns |
-| [`pre_llm_call`](/docs/user-guide/features/hooks#pre_llm_call) | Once per turn, before the LLM loop — can return `{"context": "..."}` to [inject context into the user message](/docs/user-guide/features/hooks#pre_llm_call) |
-| [`post_llm_call`](/docs/user-guide/features/hooks#post_llm_call) | Once per turn, after the LLM loop (successful turns only) |
-| [`on_session_start`](/docs/user-guide/features/hooks#on_session_start) | New session created (first turn only) |
-| [`on_session_end`](/docs/user-guide/features/hooks#on_session_end) | End of every `run_conversation` call + CLI exit handler |
-| [`on_session_finalize`](/docs/user-guide/features/hooks#on_session_finalize) | CLI/gateway tears down an active session (`/new`, GC, CLI quit) |
-| [`on_session_reset`](/docs/user-guide/features/hooks#on_session_reset) | Gateway swaps in a new session key (`/new`, `/reset`, `/clear`, idle rotation) |
-| [`subagent_stop`](/docs/user-guide/features/hooks#subagent_stop) | Once per child after `delegate_task` finishes |
-| [`pre_gateway_dispatch`](/docs/user-guide/features/hooks#pre_gateway_dispatch) | Gateway received a user message, before auth + dispatch. Return `{"action": "skip" \| "rewrite" \| "allow", ...}` to influence flow. |
+| [`pre_tool_call`](/user-guide/features/hooks#pre_tool_call) | Before any tool executes |
+| [`post_tool_call`](/user-guide/features/hooks#post_tool_call) | After any tool returns |
+| [`pre_llm_call`](/user-guide/features/hooks#pre_llm_call) | Once per turn, before the LLM loop — can return `{"context": "..."}` to [inject context into the user message](/user-guide/features/hooks#pre_llm_call) |
+| [`post_llm_call`](/user-guide/features/hooks#post_llm_call) | Once per turn, after the LLM loop (successful turns only) |
+| [`on_session_start`](/user-guide/features/hooks#on_session_start) | New session created (first turn only) |
+| [`on_session_end`](/user-guide/features/hooks#on_session_end) | End of every `run_conversation` call + CLI exit handler |
+| [`on_session_finalize`](/user-guide/features/hooks#on_session_finalize) | CLI/gateway tears down an active session (`/new`, GC, CLI quit) |
+| [`on_session_reset`](/user-guide/features/hooks#on_session_reset) | Gateway swaps in a new session key (`/new`, `/reset`, `/clear`, idle rotation) |
+| [`subagent_stop`](/user-guide/features/hooks#subagent_stop) | Once per child after `delegate_task` finishes |
+| [`pre_gateway_dispatch`](/user-guide/features/hooks#pre_gateway_dispatch) | Gateway received a user message, before auth + dispatch. Return `{"action": "skip" \| "rewrite" \| "allow", ...}` to influence flow. |
 
 ## Extension types
 
@@ -224,24 +224,24 @@ The table above shows the four plugin categories, but within "General plugins" t
 
 | Want to add… | How | Authoring guide |
 |---|---|---|
-| A **forecast evidence/source tool** | Python plugin - `ctx.register_tool()` that writes source-backed claims into the ledger | [Build a Plugin](/docs/guides/build-a-superforecasting-agent-plugin) · [Adding Tools](/docs/developer-guide/adding-tools) |
-| A **tool** the LLM can call | Python plugin - `ctx.register_tool()` | [Build a Plugin](/docs/guides/build-a-superforecasting-agent-plugin) · [Adding Tools](/docs/developer-guide/adding-tools) |
-| A **lifecycle hook** (pre/post LLM, session start/end, tool filter) | Python plugin - `ctx.register_hook()` | [Hooks reference](/docs/user-guide/features/hooks) · [Build a Plugin](/docs/guides/build-a-superforecasting-agent-plugin) |
-| A **slash command** for the CLI / gateway | Python plugin - `ctx.register_command()` | [Build a Plugin](/docs/guides/build-a-superforecasting-agent-plugin) · [Extending the CLI](/docs/developer-guide/extending-the-cli) |
-| A **subcommand** for `superforecasting-agent <thing>` | Python plugin - `ctx.register_cli_command()` | [Extending the CLI](/docs/developer-guide/extending-the-cli) |
-| A bundled **skill** that your plugin ships | Python plugin - `ctx.register_skill()` | [Creating Skills](/docs/developer-guide/creating-skills) |
-| An **inference backend** (LLM provider: OpenAI-compat, Codex, Anthropic-Messages, Bedrock) | Provider plugin - `register_provider(ProviderProfile(...))` in `plugins/model-providers/<name>/` | **[Model Provider Plugins](/docs/developer-guide/model-provider-plugin)** · [Adding Providers](/docs/developer-guide/adding-providers) |
-| A **gateway channel** (Discord / Telegram / IRC / Teams / etc.) | Platform plugin - `ctx.register_platform()` in `plugins/platforms/<name>/` | [Adding Platform Adapters](/docs/developer-guide/adding-platform-adapters) |
-| A **memory backend** (Honcho, Mem0, Supermemory, etc.) | Memory plugin - subclass `MemoryProvider` in `plugins/memory/<name>/` | [Memory Provider Plugins](/docs/developer-guide/memory-provider-plugin) |
-| A **context-compression strategy** | Context-engine plugin - `ctx.register_context_engine()` | [Context Engine Plugins](/docs/developer-guide/context-engine-plugin) |
-| An **image-generation backend** (DALL-E, SDXL, etc.) | Backend plugin - `ctx.register_image_gen_provider()` | [Image Generation Provider Plugins](/docs/developer-guide/image-gen-provider-plugin) |
-| A **video-generation backend** (Veo, Kling, Pixverse, Grok-Imagine, Runway, etc.) | Backend plugin - `ctx.register_video_gen_provider()` | [Video Generation Provider Plugins](/docs/developer-guide/video-gen-provider-plugin) |
-| A **TTS backend** (any CLI such as Piper, VoxCPM, Kokoro, xtts, voice-cloning scripts) | Config-driven - declare under `tts.providers.<name>` with `type: command` in `config.yaml` | [TTS setup](/docs/user-guide/features/tts#custom-command-providers) |
-| An **STT backend** (custom whisper binary, local ASR CLI) | Config-driven - set `SUPERFORECASTING_AGENT_LOCAL_STT_COMMAND` env var to a shell template; `HERMES_LOCAL_STT_COMMAND` remains a legacy alias | [Voice Message Transcription (STT)](/docs/user-guide/features/tts#voice-message-transcription-stt) |
-| **External tools via MCP** (filesystem, GitHub, Linear, Notion, any MCP server) | Config-driven - declare `mcp_servers.<name>` with `command:` / `url:` in `config.yaml`. The runtime auto-discovers the server's tools and registers them alongside built-ins. | [MCP](/docs/user-guide/features/mcp) |
-| **Additional skill sources** (custom GitHub repos, private skill indexes) | CLI - `superforecasting-agent skills tap add <repo>` | [Skills Hub](/docs/user-guide/features/skills#skills-hub) · [Publishing a custom tap](/docs/user-guide/features/skills#publishing-a-custom-skill-tap) |
-| **Gateway event hooks** (fire on `gateway:startup`, `session:start`, `agent:end`, `command:*`) | Drop `HOOK.yaml` + `handler.py` into `~/.superforecasting-agent/hooks/<name>/` | [Event Hooks](/docs/user-guide/features/hooks#gateway-event-hooks) |
-| **Shell hooks** (run a shell command on events - notifications, audit logs, desktop alerts) | Config-driven - declare under `hooks:` in `config.yaml` | [Shell Hooks](/docs/user-guide/features/hooks#shell-hooks) |
+| A **forecast evidence/source tool** | Python plugin - `ctx.register_tool()` that writes source-backed claims into the ledger | [Build a Plugin](/guides/build-a-superforecasting-agent-plugin) · [Adding Tools](/developer-guide/adding-tools) |
+| A **tool** the LLM can call | Python plugin - `ctx.register_tool()` | [Build a Plugin](/guides/build-a-superforecasting-agent-plugin) · [Adding Tools](/developer-guide/adding-tools) |
+| A **lifecycle hook** (pre/post LLM, session start/end, tool filter) | Python plugin - `ctx.register_hook()` | [Hooks reference](/user-guide/features/hooks) · [Build a Plugin](/guides/build-a-superforecasting-agent-plugin) |
+| A **slash command** for the CLI / gateway | Python plugin - `ctx.register_command()` | [Build a Plugin](/guides/build-a-superforecasting-agent-plugin) · [Extending the CLI](/developer-guide/extending-the-cli) |
+| A **subcommand** for `superforecasting-agent <thing>` | Python plugin - `ctx.register_cli_command()` | [Extending the CLI](/developer-guide/extending-the-cli) |
+| A bundled **skill** that your plugin ships | Python plugin - `ctx.register_skill()` | [Creating Skills](/developer-guide/creating-skills) |
+| An **inference backend** (LLM provider: OpenAI-compat, Codex, Anthropic-Messages, Bedrock) | Provider plugin - `register_provider(ProviderProfile(...))` in `plugins/model-providers/<name>/` | **[Model Provider Plugins](/developer-guide/model-provider-plugin)** · [Adding Providers](/developer-guide/adding-providers) |
+| A **gateway channel** (Discord / Telegram / IRC / Teams / etc.) | Platform plugin - `ctx.register_platform()` in `plugins/platforms/<name>/` | [Adding Platform Adapters](/developer-guide/adding-platform-adapters) |
+| A **memory backend** (Honcho, Mem0, Supermemory, etc.) | Memory plugin - subclass `MemoryProvider` in `plugins/memory/<name>/` | [Memory Provider Plugins](/developer-guide/memory-provider-plugin) |
+| A **context-compression strategy** | Context-engine plugin - `ctx.register_context_engine()` | [Context Engine Plugins](/developer-guide/context-engine-plugin) |
+| An **image-generation backend** (DALL-E, SDXL, etc.) | Backend plugin - `ctx.register_image_gen_provider()` | [Image Generation Provider Plugins](/developer-guide/image-gen-provider-plugin) |
+| A **video-generation backend** (Veo, Kling, Pixverse, Grok-Imagine, Runway, etc.) | Backend plugin - `ctx.register_video_gen_provider()` | [Video Generation Provider Plugins](/developer-guide/video-gen-provider-plugin) |
+| A **TTS backend** (any CLI such as Piper, VoxCPM, Kokoro, xtts, voice-cloning scripts) | Config-driven - declare under `tts.providers.<name>` with `type: command` in `config.yaml` | [TTS setup](/user-guide/features/tts#custom-command-providers) |
+| An **STT backend** (custom whisper binary, local ASR CLI) | Config-driven - set `SUPERFORECASTING_AGENT_LOCAL_STT_COMMAND` env var to a shell template; `HERMES_LOCAL_STT_COMMAND` remains a legacy alias | [Voice Message Transcription (STT)](/user-guide/features/tts#voice-message-transcription-stt) |
+| **External tools via MCP** (filesystem, GitHub, Linear, Notion, any MCP server) | Config-driven - declare `mcp_servers.<name>` with `command:` / `url:` in `config.yaml`. The runtime auto-discovers the server's tools and registers them alongside built-ins. | [MCP](/user-guide/features/mcp) |
+| **Additional skill sources** (custom GitHub repos, private skill indexes) | CLI - `superforecasting-agent skills tap add <repo>` | [Skills Hub](/user-guide/features/skills#skills-hub) · [Publishing a custom tap](/user-guide/features/skills#publishing-a-custom-skill-tap) |
+| **Gateway event hooks** (fire on `gateway:startup`, `session:start`, `agent:end`, `command:*`) | Drop `HOOK.yaml` + `handler.py` into `~/.superforecasting-agent/hooks/<name>/` | [Event Hooks](/user-guide/features/hooks#gateway-event-hooks) |
+| **Shell hooks** (run a shell command on events - notifications, audit logs, desktop alerts) | Config-driven - declare under `hooks:` in `config.yaml` | [Shell Hooks](/user-guide/features/hooks#shell-hooks) |
 
 :::note
 Not everything is a Python plugin. Some extension surfaces intentionally use **config-driven shell commands** (TTS, STT, shell hooks) so any CLI you already have becomes a plugin without writing Python. Others are **external servers** (MCP) the agent connects to and auto-registers tools from. Some are **drop-in directories** (gateway hooks) with their own manifest format. Pick the right surface for the integration style that fits your use case; the authoring guides in the table above each cover placeholders, discovery, and examples.
@@ -249,7 +249,7 @@ Not everything is a Python plugin. Some extension surfaces intentionally use **c
 
 ## NixOS declarative extensions
 
-On NixOS, extensions can be installed declaratively via the forecast-native module options, so no `superforecasting-agent plugins install` is needed. See the **[Nix Setup guide](/docs/getting-started/nix-setup#plugins)** for full details. Existing `services.hermes-agent` configs continue to work as a compatibility alias.
+On NixOS, extensions can be installed declaratively via the forecast-native module options, so no `superforecasting-agent plugins install` is needed. See the **[Nix Setup guide](/getting-started/nix-setup#plugins)** for full details. Existing `services.hermes-agent` configs continue to work as a compatibility alias.
 
 ```nix
 services.superforecasting-agent = {
@@ -351,4 +351,4 @@ This enables extensions like remote control viewers, messaging bridges, webhook 
 `inject_message` is only available in CLI mode. In gateway mode, there is no CLI reference and the method returns `False`.
 :::
 
-See the **[full guide](/docs/guides/build-a-superforecasting-agent-plugin)** for handler contracts, schema format, hook behavior, error handling, and common mistakes.
+See the **[full guide](/guides/build-a-superforecasting-agent-plugin)** for handler contracts, schema format, hook behavior, error handling, and common mistakes.

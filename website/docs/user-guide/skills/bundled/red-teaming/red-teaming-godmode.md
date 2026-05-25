@@ -21,7 +21,7 @@ Evaluate LLM safety behavior with red-team probes.
 | License | MIT |
 | Platforms | linux, macos, windows |
 | Tags | `red-teaming`, `model-safety`, `G0DM0D3`, `Parseltongue`, `GODMODE`, `prompt-engineering`, `L1B3RT4S` |
-| Related skills | [`obliteratus`](/docs/user-guide/skills/bundled/mlops/mlops-inference-obliteratus) |
+| Related skills | [`obliteratus`](/user-guide/skills/bundled/mlops/mlops-inference-obliteratus) |
 
 ## Reference: full SKILL.md
 

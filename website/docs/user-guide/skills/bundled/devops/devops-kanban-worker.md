@@ -19,7 +19,7 @@ Pitfalls, examples, and edge cases for Superforecasting Agent Kanban workers. Th
 | Version | `2.0.0` |
 | Platforms | linux, macos, windows |
 | Tags | `kanban`, `multi-agent`, `collaboration`, `workflow`, `pitfalls` |
-| Related skills | [`kanban-orchestrator`](/docs/user-guide/skills/bundled/devops/devops-kanban-orchestrator) |
+| Related skills | [`kanban-orchestrator`](/user-guide/skills/bundled/devops/devops-kanban-orchestrator) |
 
 ## Reference: full SKILL.md
 

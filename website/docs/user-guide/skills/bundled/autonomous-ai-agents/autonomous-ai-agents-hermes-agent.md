@@ -21,7 +21,7 @@ Configure, extend, or contribute to Superforecasting Agent.
 | License | MIT |
 | Platforms | linux, macos, windows |
 | Tags | `hermes`, `setup`, `configuration`, `multi-agent`, `spawning`, `cli`, `gateway`, `development` |
-| Related skills | [`claude-code`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-claude-code), [`codex`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-codex), [`opencode`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-opencode) |
+| Related skills | [`claude-code`](/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-claude-code), [`codex`](/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-codex), [`opencode`](/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-opencode) |
 
 ## Reference: full SKILL.md
 
@@ -166,7 +166,7 @@ superforecasting-agent gateway setup        Configure platforms
 
 Supported platforms: Telegram, Discord, Slack, WhatsApp, Signal, Email, SMS, Matrix, Mattermost, Home Assistant, DingTalk, Feishu, WeCom, BlueBubbles (iMessage), Weixin (WeChat), API Server, Webhooks. Open WebUI connects via the API Server adapter.
 
-Platform docs: /docs/user-guide/messaging/
+Platform docs: /user-guide/messaging/
 
 ### Sessions
 
@@ -245,7 +245,7 @@ superforecasting-agent uninstall            Uninstall Superforecasting Agent
 
 Type these during an interactive forecast session. New commands land fairly
 often; if something below looks stale, run `/help` in-session for the
-authoritative list or see the [live slash commands reference](/docs/reference/slash-commands).
+authoritative list or see the [live slash commands reference](/reference/slash-commands).
 The registry of record is `hermes_cli/commands.py` — every consumer
 (autocomplete, Telegram menu, Slack mapping, `/help`) derives from it.
 
@@ -377,7 +377,7 @@ Edit with `superforecasting-agent config edit` or `superforecasting-agent config
 | `delegation` | `model`, `provider`, `base_url`, `api_key`, `max_iterations` (50), `reasoning_effort` |
 | `checkpoints` | `enabled`, `max_snapshots` (50) |
 
-Full config reference: /docs/user-guide/configuration
+Full config reference: /user-guide/configuration
 
 ### Providers
 
@@ -408,7 +408,7 @@ Full config reference: /docs/user-guide/configuration
 | Custom endpoint | Config | `model.base_url` + `model.api_key` in config.yaml |
 | GitHub Copilot ACP | External | `COPILOT_CLI_PATH` or Copilot CLI |
 
-Full provider docs: /docs/integrations/providers
+Full provider docs: /integrations/providers
 
 ### Toolsets
 
@@ -668,7 +668,7 @@ the `cronjob` tool, the `superforecasting-agent cron` CLI (`list`, `add`, `edit`
   header/footer instead of being mirrored into the target gateway
   session (keeps role alternation intact).
 
-User docs: /docs/user-guide/features/cron
+User docs: /user-guide/features/cron
 
 ### Curator (skill lifecycle)
 
@@ -689,7 +689,7 @@ so nothing is lost.
 
 Config: `curator.*` (`enabled`, `interval_hours`, `min_idle_hours`,
 `stale_after_days`, `archive_after_days`, `backup.*`).
-User docs: /docs/user-guide/features/curator
+User docs: /user-guide/features/curator
 
 ### Kanban (multi-agent work queue)
 
@@ -718,7 +718,7 @@ sessions still have zero `kanban_*` schema footprint unless configured.
   `HERMES_KANBAN_BOARD` pinned in env); tenant is a soft namespace
   within a board for workspace-path + memory-key isolation.
 
-User docs: /docs/user-guide/features/kanban
+User docs: /user-guide/features/kanban
 
 ---
 
@@ -869,18 +869,18 @@ superforecasting-agent config set auxiliary.vision.model <model_name>
 
 | Looking for... | Location |
 |----------------|----------|
-| Config options | `superforecasting-agent config edit` or [Configuration docs](/docs/user-guide/configuration) |
-| Available tools | `superforecasting-agent tools list` or [Tools reference](/docs/reference/tools-reference) |
-| Slash commands | `/help` in session or [Slash commands reference](/docs/reference/slash-commands) |
-| Skills catalog | `superforecasting-agent skills browse` or [Skills catalog](/docs/reference/skills-catalog) |
-| Provider setup | `superforecasting-agent model` or [Providers guide](/docs/integrations/providers) |
-| Platform setup | `superforecasting-agent gateway setup` or [Messaging docs](/docs/user-guide/messaging/) |
-| MCP servers | `superforecasting-agent mcp list` or [MCP guide](/docs/user-guide/features/mcp) |
-| Profiles | `superforecasting-agent profile list` or [Profiles docs](/docs/user-guide/profiles) |
-| Cron jobs | `superforecasting-agent cron list` or [Cron docs](/docs/user-guide/features/cron) |
-| Memory | `superforecasting-agent memory status` or [Memory docs](/docs/user-guide/features/memory) |
-| Env variables | `superforecasting-agent config env-path` or [Env vars reference](/docs/reference/environment-variables) |
-| CLI commands | `superforecasting-agent --help` or [CLI reference](/docs/reference/cli-commands) |
+| Config options | `superforecasting-agent config edit` or [Configuration docs](/user-guide/configuration) |
+| Available tools | `superforecasting-agent tools list` or [Tools reference](/reference/tools-reference) |
+| Slash commands | `/help` in session or [Slash commands reference](/reference/slash-commands) |
+| Skills catalog | `superforecasting-agent skills browse` or [Skills catalog](/reference/skills-catalog) |
+| Provider setup | `superforecasting-agent model` or [Providers guide](/integrations/providers) |
+| Platform setup | `superforecasting-agent gateway setup` or [Messaging docs](/user-guide/messaging/) |
+| MCP servers | `superforecasting-agent mcp list` or [MCP guide](/user-guide/features/mcp) |
+| Profiles | `superforecasting-agent profile list` or [Profiles docs](/user-guide/profiles) |
+| Cron jobs | `superforecasting-agent cron list` or [Cron docs](/user-guide/features/cron) |
+| Memory | `superforecasting-agent memory status` or [Memory docs](/user-guide/features/memory) |
+| Env variables | `superforecasting-agent config env-path` or [Env vars reference](/reference/environment-variables) |
+| CLI commands | `superforecasting-agent --help` or [CLI reference](/reference/cli-commands) |
 | Gateway logs | `~/.superforecasting-agent/logs/gateway.log` |
 | Session files | `~/.superforecasting-agent/sessions/` or `superforecasting-agent sessions browse` |
 | Source code | `~/.superforecasting-agent/superforecasting-agent/` |
@@ -889,7 +889,7 @@ superforecasting-agent config set auxiliary.vision.model <model_name>
 
 ## Contributor Quick Reference
 
-For occasional contributors and PR authors. Full developer docs: /docs/developer-guide/
+For occasional contributors and PR authors. Full developer docs: /developer-guide/
 
 ### Project Layout
 

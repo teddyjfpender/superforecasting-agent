@@ -179,7 +179,7 @@ superforecasting-agent cron create "0 9 * * *"       # standard cron: 9am daily
 superforecasting-agent cron create "30m"             # one-shot: run once in 30 minutes
 ```
 
-See the [cron feature reference](/docs/user-guide/features/cron) for the full syntax.
+See the [cron feature reference](/user-guide/features/cron) for the full syntax.
 
 ## Delivery Targets
 
@@ -242,13 +242,13 @@ Silent when both filesystems are under 90%; fires exactly one line per over-thre
 | `cronjob --no-agent` | Your script on the inherited scheduler | Deterministic source monitors, watchdogs, alerts, and metrics |
 | `forecast schedule` | Forecast lifecycle review | Stale forecasts, watched evidence, scoring, postmortems, and calibration refreshes |
 | `cronjob` with an LLM prompt | Agent with optional pre-check script | Message content requires interpretation |
-| OS cron plus `curl` to a [webhook subscription](/docs/user-guide/messaging/webhooks) | Your script on the OS schedule | The scheduler or gateway itself might be unhealthy |
+| OS cron plus `curl` to a [webhook subscription](/user-guide/messaging/webhooks) | Your script on the OS schedule | The scheduler or gateway itself might be unhealthy |
 
 For critical system-health watchdogs that must fire even when the gateway is down, use OS-level cron with a plain `curl` to a webhook subscription or an external alerting endpoint. Use the in-gateway scheduler when the monitored thing is external and delivery should reuse the forecast desk's configured channels.
 
 ## Related
 
-- [Automate Forecast Reviews with Cron](/docs/guides/automate-with-cron) - LLM-driven and ledger-aware scheduled workflows.
-- [Scheduled Tasks (Cron) reference](/docs/user-guide/features/cron) - full schedule syntax, lifecycle, and delivery routing.
-- [Webhook Subscriptions](/docs/user-guide/messaging/webhooks) - HTTP entry points for external schedulers.
-- [Gateway Internals](/docs/developer-guide/gateway-internals) - delivery-router internals.
+- [Automate Forecast Reviews with Cron](/guides/automate-with-cron) - LLM-driven and ledger-aware scheduled workflows.
+- [Scheduled Tasks (Cron) reference](/user-guide/features/cron) - full schedule syntax, lifecycle, and delivery routing.
+- [Webhook Subscriptions](/user-guide/messaging/webhooks) - HTTP entry points for external schedulers.
+- [Gateway Internals](/developer-guide/gateway-internals) - delivery-router internals.

@@ -448,7 +448,7 @@ Those wrappers appear only when your config allows them and the MCP session supp
 
 ## Related Docs
 
-- [Use MCP with Superforecasting Agent](/docs/guides/use-mcp-with-superforecasting-agent)
-- [CLI Commands](/docs/reference/cli-commands)
-- [Slash Commands](/docs/reference/slash-commands)
-- [FAQ](/docs/reference/faq)
+- [Use MCP with Superforecasting Agent](/guides/use-mcp-with-superforecasting-agent)
+- [CLI Commands](/reference/cli-commands)
+- [Slash Commands](/reference/slash-commands)
+- [FAQ](/reference/faq)

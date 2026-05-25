@@ -130,7 +130,7 @@ Common values include:
 | Microsoft Foundry | `azure-foundry` | `AZURE_FOUNDRY_API_KEY` and `AZURE_FOUNDRY_BASE_URL` |
 | Local/custom | `custom` | `base_url` and optional `key_env` |
 
-The provider registry also supports additional plugin-backed providers listed in [AI Providers](/docs/integrations/providers).
+The provider registry also supports additional plugin-backed providers listed in [AI Providers](/integrations/providers).
 
 ## Where Primary Fallback Applies
 

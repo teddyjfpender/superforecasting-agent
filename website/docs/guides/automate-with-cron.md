@@ -6,17 +6,17 @@ description: "Real-world forecast automation patterns: source monitoring, review
 
 # Automate Forecast Reviews with Cron
 
-The [Scheduled Tasks (Cron)](/docs/user-guide/features/cron) feature page covers the basics. This guide goes further — five real-world automation patterns you can adapt for forecast reviews, source monitoring, evidence collection, and alert delivery.
+The [Scheduled Tasks (Cron)](/user-guide/features/cron) feature page covers the basics. This guide goes further — five real-world automation patterns you can adapt for forecast reviews, source monitoring, evidence collection, and alert delivery.
 
-For the full feature reference, see [Scheduled Tasks (Cron)](/docs/user-guide/features/cron).
+For the full feature reference, see [Scheduled Tasks (Cron)](/user-guide/features/cron).
 
 :::info Key Concept
 Cron jobs run in fresh agent sessions with no memory of your current chat. Prompts must be **completely self-contained** — include everything the agent needs to know.
 :::
 
 :::tip Don't need the LLM? You have two zero-token options.
-- **Recurring watchdog** where the script already produces the exact message (source alerts, disk alerts, heartbeats): use [script-only cron jobs](/docs/guides/cron-script-only). Same scheduler, no LLM. You can ask Superforecasting Agent to set one up in chat — the `cronjob` tool knows when to pick `no_agent=True` and writes the script for you.
-- **One-shot from a script that's already running** (CI step, post-commit hook, deploy script, externally-scheduled monitor): use [`superforecasting-agent send`](/docs/guides/pipe-script-output) to pipe stdout or a file straight to Telegram / Discord / Slack / etc. without setting up a cron entry.
+- **Recurring watchdog** where the script already produces the exact message (source alerts, disk alerts, heartbeats): use [script-only cron jobs](/guides/cron-script-only). Same scheduler, no LLM. You can ask Superforecasting Agent to set one up in chat — the `cronjob` tool knows when to pick `no_agent=True` and writes the script for you.
+- **One-shot from a script that's already running** (CI step, post-commit hook, deploy script, externally-scheduled monitor): use [`superforecasting-agent send`](/guides/pipe-script-output) to pipe stdout or a file straight to Telegram / Discord / Slack / etc. without setting up a cron entry.
 :::
 
 ---
@@ -263,4 +263,4 @@ The `--deliver` flag controls where results go:
 
 ---
 
-*For the complete cron reference — all parameters, edge cases, and internals — see [Scheduled Tasks (Cron)](/docs/user-guide/features/cron).*
+*For the complete cron reference — all parameters, edge cases, and internals — see [Scheduled Tasks (Cron)](/user-guide/features/cron).*

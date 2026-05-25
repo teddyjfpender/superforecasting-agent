@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import Layout from "@theme/Layout";
+import useBaseUrl from "@docusaurus/useBaseUrl";
 import skills from "../../data/skills.json";
 import styles from "./styles.module.css";
 
@@ -131,6 +132,9 @@ function SkillCard({
 }) {
   const src = SOURCE_CONFIG[skill.source] || SOURCE_CONFIG["optional"];
   const icon = CATEGORY_ICONS[skill.category] || "\u{1F4E6}";
+  const docsHref = useBaseUrl(
+    skill.docsPath ? `/user-guide/skills/${skill.docsPath}` : "/skills",
+  );
 
   return (
     <div
@@ -255,7 +259,7 @@ function SkillCard({
             {skill.docsPath && (
               <a
                 className={styles.docsLink}
-                href={`/docs/user-guide/skills/${skill.docsPath}`}
+                href={docsHref}
                 onClick={(e) => e.stopPropagation()}
               >
                 View full documentation →

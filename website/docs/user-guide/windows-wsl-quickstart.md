@@ -65,7 +65,7 @@ Superforecasting Agent does not work reliably on WSL1. WSL1 translates Linux sys
 
 ### Distro choice
 
-Ubuntu (LTS) is what we test against. Debian works. Arch and NixOS work for people who want them, but many optional dependency recipes assume a Debian-derived `apt` system. See the [Nix setup guide](/docs/getting-started/nix-setup) for that path.
+Ubuntu (LTS) is what we test against. Debian works. Arch and NixOS work for people who want them, but many optional dependency recipes assume a Debian-derived `apt` system. See the [Nix setup guide](/getting-started/nix-setup) for that path.
 
 ### Enable systemd (recommended)
 
@@ -110,7 +110,7 @@ uv pip install -e ".[all,dev]"
 superforecasting-agent
 ```
 
-The fork checkout install treats WSL2 as plain Linux. See [Installation](/docs/getting-started/installation) for the full layout.
+The fork checkout install treats WSL2 as plain Linux. See [Installation](/getting-started/installation) for the full layout.
 
 ## Filesystem: crossing the Windows ↔ WSL2 boundary
 
@@ -193,7 +193,7 @@ dos2unix path/to/script.sh
 
 Clone inside WSL. Always, unless you have a specific reason not to. A typical Superforecasting Agent workflow (`forecast`, `superforecasting-agent chat`, tool calls that `rg`/`ripgrep` the repo, file watchers, background gateway) will be dramatically faster and more reliable against `~/code/myrepo` than `/mnt/c/Users/you/myrepo`.
 
-One exception: **MCP bridges that launch Windows binaries.** If you're using `chrome-devtools-mcp` through `cmd.exe` (see [MCP guide: WSL to Windows Chrome](/docs/guides/use-mcp-with-superforecasting-agent#wsl2-bridge-superforecasting-agent-in-wsl-to-windows-chrome)), Windows may complain with a `UNC` warning if the agent's current working directory is `~`. In that case, start Superforecasting Agent from somewhere under `/mnt/c/` so the Windows process has a drive-letter cwd.
+One exception: **MCP bridges that launch Windows binaries.** If you're using `chrome-devtools-mcp` through `cmd.exe` (see [MCP guide: WSL to Windows Chrome](/guides/use-mcp-with-superforecasting-agent#wsl2-bridge-superforecasting-agent-in-wsl-to-windows-chrome)), Windows may complain with a `UNC` warning if the agent's current working directory is `~`. In that case, start Superforecasting Agent from somewhere under `/mnt/c/` so the Windows process has a drive-letter cwd.
 
 ## Networking: WSL ↔ Windows
 
@@ -205,7 +205,7 @@ Two cases come up constantly.
 
 Most common: you're running **Ollama, LM Studio, or a llama-server on Windows**, and Superforecasting Agent inside WSL needs to hit it.
 
-The canonical how-to for this lives in the providers guide: **[WSL2 Networking for Local Models →](/docs/integrations/providers#wsl2-networking-windows-users)**
+The canonical how-to for this lives in the providers guide: **[WSL2 Networking for Local Models →](/integrations/providers#wsl2-networking-windows-users)**
 
 Short version:
 
@@ -219,7 +219,7 @@ For the full table (Ollama / LM Studio / vLLM / SGLang bind addresses, firewall 
 This is the reverse direction and is less documented elsewhere, but it's what you need for:
 
 - Using the forecast-first **web dashboard** from a Windows browser.
-- Using the **OpenAI-compatible API server** (exposed by `superforecasting-agent gateway` when `API_SERVER_ENABLED=true`) from a Windows-side tool. See the [API Server feature page](/docs/user-guide/features/api-server).
+- Using the **OpenAI-compatible API server** (exposed by `superforecasting-agent gateway` when `API_SERVER_ENABLED=true`) from a Windows-side tool. See the [API Server feature page](/user-guide/features/api-server).
 - Testing a **messaging gateway** (Telegram, Discord, etc.) where the platform pings a local webhook URL — usually you'd use `cloudflared`/`ngrok` rather than raw port forwarding.
 
 #### Subcase 2a: from the Windows host itself
@@ -259,11 +259,11 @@ This is the real pain. Traffic flows **LAN device → Windows host → WSL VM**,
 
 Because the WSL VM IP drifts on each restart in NAT mode, a one-shot rule survives only until the next `wsl --shutdown`. For anything persistent, either use mirrored mode or put the port-proxy step in a script that runs at Windows login.
 
-For webhooks from cloud messaging providers (Telegram `setWebhook`, Slack events, etc.), do not fight port-forwarding. Use `cloudflared` tunnels. See the [webhooks guide](/docs/user-guide/messaging/webhooks).
+For webhooks from cloud messaging providers (Telegram `setWebhook`, Slack events, etc.), do not fight port-forwarding. Use `cloudflared` tunnels. See the [webhooks guide](/user-guide/messaging/webhooks).
 
 ## Running Superforecasting Agent services long-term on Windows
 
-The inherited [Tool Gateway](/docs/user-guide/features/tool-gateway), messaging gateway, forecast dashboard, and API server are long-lived processes. In WSL2 you have a few options for keeping them up.
+The inherited [Tool Gateway](/user-guide/features/tool-gateway), messaging gateway, forecast dashboard, and API server are long-lived processes. In WSL2 you have a few options for keeping them up.
 
 ### Inside WSL with systemd (recommended)
 
@@ -297,7 +297,7 @@ If you're running a **Windows-native** local-model server (Ollama for Windows, L
 ## Common pitfalls
 
 **"Connection refused" to my Windows-hosted Ollama / LM Studio.**
-See [WSL2 Networking](/docs/integrations/providers#wsl2-networking-windows-users). Ninety percent of the time the server is bound to `127.0.0.1` and needs `0.0.0.0` (Ollama: `OLLAMA_HOST=0.0.0.0`), or you're missing a firewall rule.
+See [WSL2 Networking](/integrations/providers#wsl2-networking-windows-users). Ninety percent of the time the server is bound to `127.0.0.1` and needs `0.0.0.0` (Ollama: `OLLAMA_HOST=0.0.0.0`), or you're missing a firewall rule.
 
 **Massive slowness on `git status` / `superforecasting-agent chat` in a repo.**
 You're probably working under `/mnt/c/...`. Move the repo to `~/code/...` (Linux side). Order-of-magnitude faster.
@@ -336,7 +336,7 @@ WSL2 stores its VM disk as a sparse VHDX under `%LOCALAPPDATA%\Packages\...`. It
 
 ## Where to go next
 
-- **[Installation](/docs/getting-started/installation)** — fork checkout install steps for Linux, WSL2, Termux, and native Windows.
-- **[Integrations → Providers → WSL2 Networking](/docs/integrations/providers#wsl2-networking-windows-users)** — the canonical networking deep-dive for local model servers.
-- **[MCP guide -> WSL -> Windows Chrome](/docs/guides/use-mcp-with-superforecasting-agent#wsl2-bridge-superforecasting-agent-in-wsl-to-windows-chrome)** - controlling your signed-in Windows Chrome from Superforecasting Agent in WSL.
-- **[Tool Gateway](/docs/user-guide/features/tool-gateway)** and **[Web Dashboard](/docs/user-guide/features/web-dashboard)** — the long-lived services you'll most often want to expose from WSL to the rest of your network.
+- **[Installation](/getting-started/installation)** — fork checkout install steps for Linux, WSL2, Termux, and native Windows.
+- **[Integrations → Providers → WSL2 Networking](/integrations/providers#wsl2-networking-windows-users)** — the canonical networking deep-dive for local model servers.
+- **[MCP guide -> WSL -> Windows Chrome](/guides/use-mcp-with-superforecasting-agent#wsl2-bridge-superforecasting-agent-in-wsl-to-windows-chrome)** - controlling your signed-in Windows Chrome from Superforecasting Agent in WSL.
+- **[Tool Gateway](/user-guide/features/tool-gateway)** and **[Web Dashboard](/user-guide/features/web-dashboard)** — the long-lived services you'll most often want to expose from WSL to the rest of your network.

@@ -20,7 +20,7 @@ Hooks are not the forecast ledger. They should not silently overwrite probabilit
 | System | Registered via | Runs in | Forecast-desk use |
 |--------|----------------|---------|-------------------|
 | **[Gateway hooks](#gateway-event-hooks)** | `HOOK.yaml` + `handler.py` in `~/.superforecasting-agent/hooks/` | Gateway only | Delivery alerts, webhook calls, startup checks |
-| **[Plugin hooks](#plugin-hooks)** | `ctx.register_hook()` in a [plugin](/docs/user-guide/features/plugins) | CLI + Gateway | Tool interception, metrics, guardrails, context injection |
+| **[Plugin hooks](#plugin-hooks)** | `ctx.register_hook()` in a [plugin](/user-guide/features/plugins) | CLI + Gateway | Tool interception, metrics, guardrails, context injection |
 | **[Shell hooks](#shell-hooks)** | `hooks:` in `~/.superforecasting-agent/config.yaml` | CLI + Gateway | Drop-in scripts for blocking, formatting, context, notifications |
 
 Most hooks are best-effort observers: errors are caught and logged so the main runtime keeps going. A few hook return values intentionally affect behavior, such as blocking a tool call, injecting context, rewriting gateway messages, or transforming tool/model output.
@@ -341,7 +341,7 @@ Startup automation can spend tokens, call tools, and write learning artifacts if
 
 ## Plugin Hooks
 
-[Plugins](/docs/user-guide/features/plugins) can register hooks that fire in both CLI and gateway sessions. They are registered with `ctx.register_hook()` inside a plugin's `register(ctx)` function.
+[Plugins](/user-guide/features/plugins) can register hooks that fire in both CLI and gateway sessions. They are registered with `ctx.register_hook()` inside a plugin's `register(ctx)` function.
 
 ```python
 def register(ctx):
@@ -611,7 +611,7 @@ def my_callback(session_id: str, platform: str, **kwargs):
 
 Gateway order is `on_session_finalize(old_id)`, swap, `on_session_reset(new_id)`, then `on_session_start(new_id)` on the first inbound turn.
 
-See the **[Build a Superforecasting Agent Plugin guide](/docs/guides/build-a-superforecasting-agent-plugin)** for the inherited plugin-authoring walkthrough, including tool schemas, handlers, and additional hook patterns.
+See the **[Build a Superforecasting Agent Plugin guide](/guides/build-a-superforecasting-agent-plugin)** for the inherited plugin-authoring walkthrough, including tool schemas, handlers, and additional hook patterns.
 
 ### `subagent_stop`
 

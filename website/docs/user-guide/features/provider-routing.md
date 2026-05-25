@@ -167,4 +167,4 @@ The same configuration is used by CLI and gateway processes loaded from the acti
 
 Provider routing controls which sub-provider handles a request **inside OpenRouter**.
 
-Fallback providers control which entirely different provider/model pair Superforecasting Agent tries when the primary runtime fails. See [Fallback Providers](/docs/user-guide/features/fallback-providers).
+Fallback providers control which entirely different provider/model pair Superforecasting Agent tries when the primary runtime fails. See [Fallback Providers](/user-guide/features/fallback-providers).

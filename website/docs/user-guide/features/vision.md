@@ -169,7 +169,7 @@ When a user attaches an image from the CLI clipboard, a gateway upload, or anoth
 | Vision-capable | The image is sent as pixels using the provider's native image format. |
 | Text-only | The image is routed through `vision_analyze`; an auxiliary vision model describes it and the text summary is injected into the conversation. |
 
-The auxiliary model is configured under `auxiliary.vision`; see [Auxiliary Models](/docs/user-guide/configuration#auxiliary-models).
+The auxiliary model is configured under `auxiliary.vision`; see [Auxiliary Models](/user-guide/configuration#auxiliary-models).
 
 ### `vision_analyze`
 

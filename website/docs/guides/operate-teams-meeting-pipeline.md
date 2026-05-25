@@ -5,7 +5,7 @@ description: "Runbook, go-live checklist, and operator worksheet for Microsoft T
 
 # Operate the Teams Meeting Forecast Pipeline
 
-Use this guide after you have enabled the Teams Meetings integration from [Teams Meetings](/docs/user-guide/messaging/teams-meetings).
+Use this guide after you have enabled the Teams Meetings integration from [Teams Meetings](/user-guide/messaging/teams-meetings).
 
 For the Superforecasting Agent fork, the Teams meeting pipeline is a secondary evidence-capture surface. Its job is to turn meeting transcripts, recordings, and follow-up artifacts into forecast review work:
 
@@ -350,7 +350,7 @@ Use this before changing the deployment:
 
 ## Related Docs
 
-- [Teams Meetings setup](/docs/user-guide/messaging/teams-meetings)
-- [Microsoft Teams bot setup](/docs/user-guide/messaging/teams)
-- [Forecast Automation Templates](/docs/guides/automation-templates)
-- [Daily Forecast Brief](/docs/guides/daily-forecast-brief)
+- [Teams Meetings setup](/user-guide/messaging/teams-meetings)
+- [Microsoft Teams bot setup](/user-guide/messaging/teams)
+- [Forecast Automation Templates](/guides/automation-templates)
+- [Daily Forecast Brief](/guides/daily-forecast-brief)

@@ -8,7 +8,7 @@ description: "Use skills for repeatable forecasting workflows."
 
 Skills are on-demand knowledge documents for repeatable forecasting work: source adapters, research protocols, benchmark setup, model checks, and domain-specific evidence handling. They are useful when they improve forecast quality; durable beliefs, evidence, scores, postmortems, and calibration lessons still belong in the forecast ledger.
 
-For the full technical reference, see [Skills System](/docs/user-guide/features/skills).
+For the full technical reference, see [Skills System](/user-guide/features/skills).
 
 ---
 
@@ -287,4 +287,4 @@ Both are persistent across sessions, but they serve different purposes:
 
 ---
 
-*For the complete skills reference — frontmatter fields, conditional activation, external directories, and more — see [Skills System](/docs/user-guide/features/skills).*
+*For the complete skills reference — frontmatter fields, conditional activation, external directories, and more — see [Skills System](/user-guide/features/skills).*

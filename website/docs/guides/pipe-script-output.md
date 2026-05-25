@@ -200,6 +200,6 @@ Use `superforecasting-agent send` when the message already exists. Use `cronjob(
 
 ## Related
 
-- [Automate Forecast Reviews with Cron](/docs/guides/automate-with-cron) - scheduled jobs whose output can deliver to any configured platform.
-- [Gateway Internals](/docs/developer-guide/gateway-internals) - the delivery router shared with cron delivery.
-- [Messaging Platform Setup](/docs/user-guide/messaging/) - one-time configuration for each platform.
+- [Automate Forecast Reviews with Cron](/guides/automate-with-cron) - scheduled jobs whose output can deliver to any configured platform.
+- [Gateway Internals](/developer-guide/gateway-internals) - the delivery router shared with cron delivery.
+- [Messaging Platform Setup](/user-guide/messaging/) - one-time configuration for each platform.

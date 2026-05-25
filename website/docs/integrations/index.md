@@ -24,9 +24,9 @@ Not every inherited Hermes integration is equally central to the fork. AI provid
 
 Superforecasting Agent supports multiple inference providers out of the box. Use `superforecasting-agent model` to configure them interactively, or set them in `config.yaml`.
 
-- **[AI Providers](/docs/user-guide/features/provider-routing)** — OpenRouter, Anthropic, OpenAI, Google, and any OpenAI-compatible endpoint. The runtime auto-detects capabilities like vision, streaming, and tool use per provider.
-- **[Provider Routing](/docs/user-guide/features/provider-routing)** — Fine-grained control over which underlying providers handle your OpenRouter requests. Use routing to separate high-judgment forecast synthesis from cheaper extraction and summarization work.
-- **[Fallback Providers](/docs/user-guide/features/fallback-providers)** — Automatic failover to backup LLM providers when your primary model encounters errors. Includes primary model fallback and independent auxiliary task fallback for vision, compression, and web extraction.
+- **[AI Providers](/user-guide/features/provider-routing)** — OpenRouter, Anthropic, OpenAI, Google, and any OpenAI-compatible endpoint. The runtime auto-detects capabilities like vision, streaming, and tool use per provider.
+- **[Provider Routing](/user-guide/features/provider-routing)** — Fine-grained control over which underlying providers handle your OpenRouter requests. Use routing to separate high-judgment forecast synthesis from cheaper extraction and summarization work.
+- **[Fallback Providers](/user-guide/features/fallback-providers)** — Automatic failover to backup LLM providers when your primary model encounters errors. Includes primary model fallback and independent auxiliary task fallback for vision, compression, and web extraction.
 
 ## Evidence & Source Acquisition
 
@@ -71,30 +71,30 @@ Browser automation is useful when a forecast depends on pages that require inter
 - **Local Chromium-family CDP** — Connect to your running Chrome, Brave, Chromium, or Edge browser using `/browser connect`
 - **Local Chromium** — Headless local browser via the `agent-browser` CLI
 
-See [Browser Automation](/docs/user-guide/features/browser) for setup and usage.
+See [Browser Automation](/user-guide/features/browser) for setup and usage.
 
 ### Tool Servers (MCP)
 
-- **[MCP Servers](/docs/user-guide/features/mcp)** — Connect Superforecasting Agent to external tool servers via Model Context Protocol. Access GitHub, databases, file systems, browser stacks, internal APIs, data warehouses, and custom source systems without writing native tools. Supports both stdio and SSE transports, per-server tool filtering, and capability-aware resource/prompt registration.
+- **[MCP Servers](/user-guide/features/mcp)** — Connect Superforecasting Agent to external tool servers via Model Context Protocol. Access GitHub, databases, file systems, browser stacks, internal APIs, data warehouses, and custom source systems without writing native tools. Supports both stdio and SSE transports, per-server tool filtering, and capability-aware resource/prompt registration.
 
 ## Plugins & Custom Connectors
 
-- **[Plugin System](/docs/user-guide/features/plugins)** — Extend the forecast desk with custom tools, lifecycle hooks, CLI commands, source adapters, model runners, and review workflows without modifying core code. Plugins are discovered from `~/.superforecasting-agent/plugins/`, legacy `~/.hermes/plugins/`, project-local `.hermes/plugins/`, and pip-installed entry points.
-- **[Build a Plugin](/docs/guides/build-a-superforecasting-agent-plugin)** — The plugin authoring guide covers tools, hooks, and CLI commands that can be used to add forecasting-specific connectors.
+- **[Plugin System](/user-guide/features/plugins)** — Extend the forecast desk with custom tools, lifecycle hooks, CLI commands, source adapters, model runners, and review workflows without modifying core code. Plugins are discovered from `~/.superforecasting-agent/plugins/`, legacy `~/.hermes/plugins/`, project-local `.hermes/plugins/`, and pip-installed entry points.
+- **[Build a Plugin](/guides/build-a-superforecasting-agent-plugin)** — The plugin authoring guide covers tools, hooks, and CLI commands that can be used to add forecasting-specific connectors.
 
 Good plugin candidates include market-data connectors, policy trackers, source reliability scorers, evidence snapshotters, reference-class builders, and domain-specific model runners.
 
 ## Review, Alerts & Automation
 
-- **[Cron](/docs/user-guide/features/cron)** — Schedule stale-forecast checks, domain watchlists, recurring evidence scans, calibration reviews, and post-resolution learning jobs.
-- **[Webhooks](/docs/user-guide/messaging/webhooks)** — Trigger forecast review or evidence capture from external systems.
+- **[Cron](/user-guide/features/cron)** — Schedule stale-forecast checks, domain watchlists, recurring evidence scans, calibration reviews, and post-resolution learning jobs.
+- **[Webhooks](/user-guide/messaging/webhooks)** — Trigger forecast review or evidence capture from external systems.
 - **Messaging platforms** — Deliver alerts, review reminders, and forecast summaries where a team already works.
 
 ## Memory, Backtesting & Evaluation
 
-- **[Built-in Memory](/docs/user-guide/features/memory)** — Support persistent lessons and user preferences via `MEMORY.md` and `USER.md` files. Forecast probabilities, evidence, scores, and resolutions belong in the forecast ledger, not ordinary chat memory.
-- **[Memory Providers](/docs/user-guide/features/memory-providers)** — Plug in external memory backends for deeper retrieval of domain lessons and prior mistakes. Eight providers are supported: Honcho, OpenViking, Mem0, Hindsight, Holographic, RetainDB, ByteRover, and Supermemory.
-- **[Batch Processing](/docs/user-guide/features/batch-processing)** — Run the agent across many prompts in parallel for backtesting, evaluation, or structured trajectory generation.
+- **[Built-in Memory](/user-guide/features/memory)** — Support persistent lessons and user preferences via `MEMORY.md` and `USER.md` files. Forecast probabilities, evidence, scores, and resolutions belong in the forecast ledger, not ordinary chat memory.
+- **[Memory Providers](/user-guide/features/memory-providers)** — Plug in external memory backends for deeper retrieval of domain lessons and prior mistakes. Eight providers are supported: Honcho, OpenViking, Mem0, Hindsight, Holographic, RetainDB, ByteRover, and Supermemory.
+- **[Batch Processing](/user-guide/features/batch-processing)** — Run the agent across many prompts in parallel for backtesting, evaluation, or structured trajectory generation.
 
 The closed learning loop is forecast -> observe -> resolve -> score -> diagnose -> recalibrate. Integrations should feed that loop instead of becoming standalone chat surfaces.
 
@@ -102,13 +102,13 @@ The closed learning loop is forecast -> observe -> resolve -> score -> diagnose 
 
 Superforecasting Agent can run inherited gateway bots on 19+ messaging platforms, all configured through the same `gateway` subsystem. Treat these as alert and collaboration channels for the CLI forecast desk rather than the primary product surface.
 
-- **[Telegram](/docs/user-guide/messaging/telegram)**, **[Discord](/docs/user-guide/messaging/discord)**, **[Slack](/docs/user-guide/messaging/slack)**, **[WhatsApp](/docs/user-guide/messaging/whatsapp)**, **[Signal](/docs/user-guide/messaging/signal)**, **[Matrix](/docs/user-guide/messaging/matrix)**, **[Mattermost](/docs/user-guide/messaging/mattermost)**, **[Email](/docs/user-guide/messaging/email)**, **[SMS](/docs/user-guide/messaging/sms)**, **[DingTalk](/docs/user-guide/messaging/dingtalk)**, **[Feishu/Lark](/docs/user-guide/messaging/feishu)**, **[WeCom](/docs/user-guide/messaging/wecom)**, **[WeCom Callback](/docs/user-guide/messaging/wecom-callback)**, **[Weixin](/docs/user-guide/messaging/weixin)**, **[BlueBubbles](/docs/user-guide/messaging/bluebubbles)**, **[QQ Bot](/docs/user-guide/messaging/qqbot)**, **[Yuanbao](/docs/user-guide/messaging/yuanbao)**, **[Home Assistant](/docs/user-guide/messaging/homeassistant)**, **[Microsoft Teams](/docs/user-guide/messaging/teams)**, **[Webhooks](/docs/user-guide/messaging/webhooks)**
+- **[Telegram](/user-guide/messaging/telegram)**, **[Discord](/user-guide/messaging/discord)**, **[Slack](/user-guide/messaging/slack)**, **[WhatsApp](/user-guide/messaging/whatsapp)**, **[Signal](/user-guide/messaging/signal)**, **[Matrix](/user-guide/messaging/matrix)**, **[Mattermost](/user-guide/messaging/mattermost)**, **[Email](/user-guide/messaging/email)**, **[SMS](/user-guide/messaging/sms)**, **[DingTalk](/user-guide/messaging/dingtalk)**, **[Feishu/Lark](/user-guide/messaging/feishu)**, **[WeCom](/user-guide/messaging/wecom)**, **[WeCom Callback](/user-guide/messaging/wecom-callback)**, **[Weixin](/user-guide/messaging/weixin)**, **[BlueBubbles](/user-guide/messaging/bluebubbles)**, **[QQ Bot](/user-guide/messaging/qqbot)**, **[Yuanbao](/user-guide/messaging/yuanbao)**, **[Home Assistant](/user-guide/messaging/homeassistant)**, **[Microsoft Teams](/user-guide/messaging/teams)**, **[Webhooks](/user-guide/messaging/webhooks)**
 
-See the [Messaging Gateway overview](/docs/user-guide/messaging) for the platform comparison table and setup guide.
+See the [Messaging Gateway overview](/user-guide/messaging) for the platform comparison table and setup guide.
 
 ## Secondary Inherited Surfaces
 
-- **[IDE Integration (ACP)](/docs/user-guide/features/acp)** — Use Superforecasting Agent inside ACP-compatible editors such as VS Code, Zed, and JetBrains when code, notebooks, or model artifacts are part of the forecasting workflow.
-- **[API Server](/docs/user-guide/features/api-server)** — Expose Superforecasting Agent as an OpenAI-compatible HTTP endpoint. This is useful for internal tools that need forecast-desk capabilities through an API.
-- **[Voice & TTS](/docs/user-guide/features/tts)** and **[Voice Mode](/docs/user-guide/features/voice-mode)** — Speech-to-text and text-to-speech remain available for messaging workflows, but they are not core to the forecast lifecycle.
-- **[Home Assistant](/docs/user-guide/messaging/homeassistant)** — Home automation remains available through the inherited gateway/toolset, but it is secondary unless it supports a concrete forecasting or alerting workflow.
+- **[IDE Integration (ACP)](/user-guide/features/acp)** — Use Superforecasting Agent inside ACP-compatible editors such as VS Code, Zed, and JetBrains when code, notebooks, or model artifacts are part of the forecasting workflow.
+- **[API Server](/user-guide/features/api-server)** — Expose Superforecasting Agent as an OpenAI-compatible HTTP endpoint. This is useful for internal tools that need forecast-desk capabilities through an API.
+- **[Voice & TTS](/user-guide/features/tts)** and **[Voice Mode](/user-guide/features/voice-mode)** — Speech-to-text and text-to-speech remain available for messaging workflows, but they are not core to the forecast lifecycle.
+- **[Home Assistant](/user-guide/messaging/homeassistant)** — Home automation remains available through the inherited gateway/toolset, but it is secondary unless it supports a concrete forecasting or alerting workflow.

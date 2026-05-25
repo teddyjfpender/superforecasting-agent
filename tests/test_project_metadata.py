@@ -437,6 +437,31 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert "Forecast Chat" not in gateway_text
 
 
+def test_website_internal_links_are_base_url_relative():
+    root = Path(__file__).resolve().parents[1]
+    checked_files = [
+        *(
+            path
+            for path in (root / "website" / "docs").rglob("*")
+            if path.suffix in {".md", ".mdx"}
+        ),
+        root / "website" / "scripts" / "generate-skill-docs.py",
+        root / "website" / "src" / "pages" / "skills" / "index.tsx",
+    ]
+    internal_doc_path = re.compile(
+        r"(\]\(/docs/|href=\"/docs/|to=\"/docs/|[\s(=:]/docs/"
+        r"(getting-started|user-guide|developer-guide|guides|reference|integrations))"
+    )
+
+    offenders = []
+    for path in checked_files:
+        text = path.read_text(encoding="utf-8")
+        if internal_doc_path.search(text):
+            offenders.append(str(path.relative_to(root)))
+
+    assert offenders == []
+
+
 def test_web_readme_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "web" / "README.md").read_text(encoding="utf-8")

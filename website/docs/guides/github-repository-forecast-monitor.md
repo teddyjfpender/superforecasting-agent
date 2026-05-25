@@ -25,7 +25,7 @@ The workflow polls repositories from a server or laptop. It works behind NAT and
 
 ## Prerequisites
 
-- **Superforecasting Agent installed**. See the [installation guide](/docs/getting-started/installation).
+- **Superforecasting Agent installed**. See the [installation guide](/getting-started/installation).
 - **Gateway running** if you want scheduled delivery:
 
   ```bash
@@ -239,6 +239,6 @@ Authenticated GitHub API usage is usually enough for forecast monitoring. High-v
 ## What's Next?
 
 - [GitHub Webhook Forecast Evidence](./github-webhook-forecast-evidence.md) for real-time GitHub events.
-- [Forecast Automation Templates](/docs/guides/automation-templates) for source watches, backtests, and postmortems.
-- [Daily Forecast Brief](/docs/guides/daily-forecast-brief) for team-facing review digests.
-- [Profiles](/docs/user-guide/profiles) for isolating a dedicated forecast-desk profile.
+- [Forecast Automation Templates](/guides/automation-templates) for source watches, backtests, and postmortems.
+- [Daily Forecast Brief](/guides/daily-forecast-brief) for team-facing review digests.
+- [Profiles](/user-guide/profiles) for isolating a dedicated forecast-desk profile.

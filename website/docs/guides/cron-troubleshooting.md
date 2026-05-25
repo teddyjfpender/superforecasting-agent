@@ -272,4 +272,4 @@ If the issue persists:
 2. Check `~/.superforecasting-agent/logs/agent.log` and `~/.superforecasting-agent/logs/errors.log`.
 3. Capture the job ID, schedule, delivery target, expected behavior, actual behavior, and relevant log lines.
 
-For the complete reference, see [Automate Forecast Reviews with Cron](/docs/guides/automate-with-cron) and [Scheduled Tasks (Cron)](/docs/user-guide/features/cron).
+For the complete reference, see [Automate Forecast Reviews with Cron](/guides/automate-with-cron) and [Scheduled Tasks (Cron)](/user-guide/features/cron).

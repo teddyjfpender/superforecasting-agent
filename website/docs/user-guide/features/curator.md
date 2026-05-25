@@ -259,6 +259,6 @@ The curator also refuses to run if `min_idle_hours` has not elapsed.
 
 ## See Also
 
-- [Skills System](/docs/user-guide/features/skills) for procedural forecasting playbooks
-- [Memory](/docs/user-guide/features/memory) for auxiliary recall outside the forecast ledger
-- [Bundled Skills Catalog](/docs/reference/skills-catalog)
+- [Skills System](/user-guide/features/skills) for procedural forecasting playbooks
+- [Memory](/user-guide/features/memory) for auxiliary recall outside the forecast ledger
+- [Bundled Skills Catalog](/reference/skills-catalog)

@@ -12,7 +12,7 @@ The forecast gateway connects to SMS through the [Twilio](https://www.twilio.com
 SMS is not a durable learning layer. Source details, probabilities, evidence, assumptions, resolutions, postmortems, and calibration lessons should be written to the forecast ledger.
 
 :::info Shared Credentials
-The SMS gateway shares credentials with the optional [telephony skill](/docs/reference/skills-catalog). If you've already set up Twilio for voice calls or one-off SMS, the gateway works with the same `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_PHONE_NUMBER`.
+The SMS gateway shares credentials with the optional [telephony skill](/reference/skills-catalog). If you've already set up Twilio for voice calls or one-off SMS, the gateway works with the same `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_PHONE_NUMBER`.
 :::
 
 ---

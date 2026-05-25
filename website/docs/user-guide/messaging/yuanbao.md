@@ -338,6 +338,6 @@ superforecasting-agent chat -q "Send the forecast review digest to yuanbao:group
 ## Related Documentation
 
 - [Messaging Gateway Overview](./index.md)
-- [Slash Commands Reference](/docs/reference/slash-commands.md)
-- [Cron Jobs](/docs/user-guide/features/cron.md)
-- [Background Sessions](/docs/user-guide/cli#background-sessions)
+- [Slash Commands Reference](/reference/slash-commands.md)
+- [Cron Jobs](/user-guide/features/cron.md)
+- [Background Sessions](/user-guide/cli#background-sessions)

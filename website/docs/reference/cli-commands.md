@@ -309,7 +309,7 @@ Subcommands:
 | `restart` | Tear down running clients so the next edit re-spawns. |
 | `which <id>` | Print the resolved binary path for one server. |
 
-See [LSP — Semantic Diagnostics](/docs/user-guide/features/lsp) for
+See [LSP — Semantic Diagnostics](/user-guide/features/lsp) for
 the full guide, supported languages, and configuration knobs.
 
 ## `superforecasting-agent setup`
@@ -384,7 +384,7 @@ up any new commands.
 
 ## `superforecasting-agent auth`
 
-Manage credential pools for same-provider key rotation. See [Credential Pools](/docs/user-guide/features/credential-pools) for full documentation.
+Manage credential pools for same-provider key rotation. See [Credential Pools](/user-guide/features/credential-pools) for full documentation.
 
 ```bash
 superforecasting-agent auth                                              # Interactive wizard
@@ -444,7 +444,7 @@ Forecast work board for coordinating research, modeling, evidence review, postmo
 |------|---------|
 | `--board <slug>` | Operate on a specific board. Defaults to the current board (set via `superforecasting-agent kanban boards switch`, `SUPERFORECASTING_AGENT_KANBAN_BOARD` / `FORECAST_KANBAN_BOARD` / legacy `HERMES_KANBAN_BOARD`, or `default`). |
 
-**This is the human / scripting surface.** Agent workers spawned by the dispatcher drive the board through a dedicated `kanban_*` [toolset](/docs/user-guide/features/kanban#how-workers-interact-with-the-board) (`kanban_show`, `kanban_complete`, `kanban_block`, `kanban_create`, `kanban_link`, `kanban_comment`, `kanban_heartbeat`; orchestrator profiles also get `kanban_list` and `kanban_unblock`) instead of shelling to `superforecasting-agent kanban`. Workers have all kanban board aliases pinned in their env so they physically cannot see other boards.
+**This is the human / scripting surface.** Agent workers spawned by the dispatcher drive the board through a dedicated `kanban_*` [toolset](/user-guide/features/kanban#how-workers-interact-with-the-board) (`kanban_show`, `kanban_complete`, `kanban_block`, `kanban_create`, `kanban_link`, `kanban_comment`, `kanban_heartbeat`; orchestrator profiles also get `kanban_list` and `kanban_unblock`) instead of shelling to `superforecasting-agent kanban`. Workers have all kanban board aliases pinned in their env so they physically cannot see other boards.
 
 | Action | Purpose |
 |--------|---------|
@@ -472,7 +472,7 @@ Forecast work board for coordinating research, modeling, evidence review, postmo
 | `dispatch` | One dispatcher pass on the active board. Flags: `--dry-run`, `--max N`, `--failure-limit N`, `--json`. |
 | `context <id>` | Print the full context a worker would see (title + body + parent results + comments). |
 | `specify <id>` / `specify --all` | Flesh out a triage-column task into a concrete spec (title + body with goal, approach, acceptance criteria) via the auxiliary LLM, then promote it to `todo`. Flags: `--tenant` (scope `--all` to one tenant), `--author`, `--json`. Configure the model under `auxiliary.triage_specifier` in `config.yaml`. |
-| `decompose <id>` / `decompose --all` | Fan a triage-column task out into a graph of child tasks routed to specialist profiles by description (the orchestrator-driven path). Falls back to specify-style single-task promotion when the LLM decides the task doesn't benefit from fan-out. Same flags as `specify`. Configure the model under `auxiliary.kanban_decomposer` in `config.yaml`. Also runs automatically every dispatcher tick when `kanban.auto_decompose: true` (the default). See [Auto vs Manual orchestration](/docs/user-guide/features/kanban#auto-vs-manual-orchestration). |
+| `decompose <id>` / `decompose --all` | Fan a triage-column task out into a graph of child tasks routed to specialist profiles by description (the orchestrator-driven path). Falls back to specify-style single-task promotion when the LLM decides the task doesn't benefit from fan-out. Same flags as `specify`. Configure the model under `auxiliary.kanban_decomposer` in `config.yaml`. Also runs automatically every dispatcher tick when `kanban.auto_decompose: true` (the default). See [Auto vs Manual orchestration](/user-guide/features/kanban#auto-vs-manual-orchestration). |
 | `gc` | Remove scratch workspaces for archived tasks. |
 
 Examples:
@@ -495,7 +495,7 @@ Board resolution order (highest precedence first): `--board <slug>` flag → `SU
 
 All actions are also available as a slash command in the gateway (`/kanban …`), with the same argument surface — including `boards` subcommands and the `--board` flag.
 
-For the forecast-desk operating model, see the [Kanban user guide](/docs/user-guide/features/kanban), [tutorial](/docs/user-guide/features/kanban-tutorial), and [worker lanes guide](/docs/user-guide/features/kanban-worker-lanes).
+For the forecast-desk operating model, see the [Kanban user guide](/user-guide/features/kanban), [tutorial](/user-guide/features/kanban-tutorial), and [worker lanes guide](/user-guide/features/kanban-worker-lanes).
 
 ## `superforecasting-agent webhook`
 
@@ -1205,7 +1205,7 @@ superforecasting-agent claw migrate --source /home/user/old-openclaw
 superforecasting-agent dashboard [options]
 ```
 
-Launch the web dashboard. The fork-native landing page is the forecast dashboard for active questions, review queue, calibration health, learning memory, and recent backtests. Requires `pip install superforecasting-agent[web]` (FastAPI + Uvicorn). The embedded Forecast Desk tab requires `--tui` plus the `pty` extra. See [Web Dashboard](/docs/user-guide/features/web-dashboard) for full documentation.
+Launch the web dashboard. The fork-native landing page is the forecast dashboard for active questions, review queue, calibration health, learning memory, and recent backtests. Requires `pip install superforecasting-agent[web]` (FastAPI + Uvicorn). The embedded Forecast Desk tab requires `--tui` plus the `pty` extra. See [Web Dashboard](/user-guide/features/web-dashboard) for full documentation.
 
 `superforecasting-agent dashboard` remains accepted for inherited runtime compatibility.
 

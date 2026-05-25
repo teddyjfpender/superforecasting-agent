@@ -14,7 +14,7 @@ This page focuses on setup and enablement:
 - Teams delivery modes
 - pipeline config shape
 
-For subscription renewal, go-live checks, and the operator worksheet, use the dedicated guide: [Operate the Teams Meeting Forecast Pipeline](/docs/guides/operate-teams-meeting-pipeline).
+For subscription renewal, go-live checks, and the operator worksheet, use the dedicated guide: [Operate the Teams Meeting Forecast Pipeline](/guides/operate-teams-meeting-pipeline).
 
 ## What This Feature Does
 
@@ -47,7 +47,7 @@ superforecasting-agent teams-pipeline maintain-subscriptions
 Before enabling the meetings pipeline, make sure you have:
 
 - a working Superforecasting Agent install
-- the existing [Microsoft Teams bot setup](/docs/user-guide/messaging/teams) if you want Teams outbound delivery
+- the existing [Microsoft Teams bot setup](/user-guide/messaging/teams) if you want Teams outbound delivery
 - Microsoft Graph application credentials with the permissions required for the meeting resources you plan to subscribe to
 - a public HTTPS URL that Microsoft Graph can call for webhook delivery
 - `ffmpeg` installed if you want recording-plus-STT fallback
@@ -209,11 +209,11 @@ superforecasting-agent teams-pipeline subscribe \
 
 :::warning Graph subscriptions expire in 72 hours
 
-Microsoft Graph caps webhook subscriptions at 72 hours and will not auto-renew them. Schedule `superforecasting-agent teams-pipeline maintain-subscriptions` before going live, or notifications will silently stop three days after any manual subscription creation. See [Automating subscription renewal](/docs/guides/operate-teams-meeting-pipeline#automating-subscription-renewal) in the operator runbook for scheduler, systemd, and crontab options.
+Microsoft Graph caps webhook subscriptions at 72 hours and will not auto-renew them. Schedule `superforecasting-agent teams-pipeline maintain-subscriptions` before going live, or notifications will silently stop three days after any manual subscription creation. See [Automating subscription renewal](/guides/operate-teams-meeting-pipeline#automating-subscription-renewal) in the operator runbook for scheduler, systemd, and crontab options.
 
 :::
 
-For subscription maintenance and day-2 operator flows, continue with the guide: [Operate the Teams Meeting Forecast Pipeline](/docs/guides/operate-teams-meeting-pipeline).
+For subscription maintenance and day-2 operator flows, continue with the guide: [Operate the Teams Meeting Forecast Pipeline](/guides/operate-teams-meeting-pipeline).
 
 ## Validation
 
@@ -243,5 +243,5 @@ superforecasting-agent teams-pipeline subscriptions
 
 ## Related Docs
 
-- [Microsoft Teams bot setup](/docs/user-guide/messaging/teams)
-- [Operate the Teams Meeting Forecast Pipeline](/docs/guides/operate-teams-meeting-pipeline)
+- [Microsoft Teams bot setup](/user-guide/messaging/teams)
+- [Operate the Teams Meeting Forecast Pipeline](/guides/operate-teams-meeting-pipeline)

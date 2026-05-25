@@ -348,6 +348,6 @@ Legacy `$HERMES_HOME` and `~/.hermes` paths remain compatibility inputs. New for
 
 ## Building a Memory Provider
 
-See [Developer Guide: Memory Provider Plugins](/docs/developer-guide/memory-provider-plugin) to create a provider plugin.
+See [Developer Guide: Memory Provider Plugins](/developer-guide/memory-provider-plugin) to create a provider plugin.
 
 Provider plugins should expose recall and context capabilities. They should not bypass the forecast ledger for evidence, forecasts, scores, resolutions, postmortems, or calibration learning.

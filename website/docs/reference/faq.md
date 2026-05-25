@@ -673,9 +673,9 @@ superforecasting-agent chat
 ```
 
 See also:
-- [MCP (Model Context Protocol)](/docs/user-guide/features/mcp)
-- [Use MCP with Superforecasting Agent](/docs/guides/use-mcp-with-superforecasting-agent)
-- [MCP Config Reference](/docs/reference/mcp-config-reference)
+- [MCP (Model Context Protocol)](/user-guide/features/mcp)
+- [Use MCP with Superforecasting Agent](/guides/use-mcp-with-superforecasting-agent)
+- [MCP Config Reference](/reference/mcp-config-reference)
 
 #### MCP timeout errors
 

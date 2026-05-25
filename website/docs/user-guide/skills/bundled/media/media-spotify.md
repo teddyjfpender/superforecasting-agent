@@ -21,7 +21,7 @@ Spotify: play, search, queue, manage playlists and devices.
 | License | MIT |
 | Platforms | linux, macos, windows |
 | Tags | `spotify`, `music`, `playback`, `playlists`, `media` |
-| Related skills | [`gif-search`](/docs/user-guide/skills/bundled/media/media-gif-search) |
+| Related skills | [`gif-search`](/user-guide/skills/bundled/media/media-gif-search) |
 
 ## Reference: full SKILL.md
 
@@ -31,7 +31,7 @@ The following is the complete skill definition that Superforecasting Agent loads
 
 # Spotify
 
-Control the user's Spotify account via the inherited Spotify toolset (7 tools). Setup guide: /docs/user-guide/features/spotify
+Control the user's Spotify account via the inherited Spotify toolset (7 tools). Setup guide: /user-guide/features/spotify
 
 ## When to use this skill
 

@@ -24,7 +24,7 @@ The bot should not become a broad do-anything team bot. Its job is to help the t
 
 Before starting, make sure you have:
 
-- **Superforecasting Agent installed** on a server or VPS that can stay online. Follow the [installation guide](/docs/getting-started/installation) if needed.
+- **Superforecasting Agent installed** on a server or VPS that can stay online. Follow the [installation guide](/getting-started/installation) if needed.
 - **A Telegram account** for yourself as the gateway operator.
 - **An LLM provider configured**, with keys in `~/.superforecasting-agent/.env`.
 - **A forecast ledger**, even if it starts empty. Run `superforecasting-agent status` to confirm the forecast desk can start.
@@ -228,7 +228,7 @@ Never change a probability unless the update is recorded in the forecast ledger.
 When evidence is stale, say so directly.
 ```
 
-For a full style guide, see [Use SOUL.md](/docs/guides/use-soul-with-superforecasting-agent).
+For a full style guide, see [Use SOUL.md](/guides/use-soul-with-superforecasting-agent).
 
 ### Add Team Context
 
@@ -408,9 +408,9 @@ Legacy `~/.hermes` paths may still exist after migration. New configuration shou
 
 ## Going Further
 
-- [Messaging Gateway](/docs/user-guide/messaging) for platform architecture and session behavior.
-- [Telegram Setup](/docs/user-guide/messaging/telegram) for Telegram-specific options.
-- [Scheduled Tasks](/docs/user-guide/features/cron) for cron expressions and delivery options.
-- [Forecast Automation Templates](/docs/guides/automation-templates) for review, source-watch, backtest, and postmortem recipes.
-- [SOUL.md Style](/docs/guides/use-soul-with-superforecasting-agent) for style customization without polluting forecast state.
-- [Discord](/docs/user-guide/messaging/discord), [Slack](/docs/user-guide/messaging/slack), and [WhatsApp](/docs/user-guide/messaging/whatsapp) if your team wants more delivery channels.
+- [Messaging Gateway](/user-guide/messaging) for platform architecture and session behavior.
+- [Telegram Setup](/user-guide/messaging/telegram) for Telegram-specific options.
+- [Scheduled Tasks](/user-guide/features/cron) for cron expressions and delivery options.
+- [Forecast Automation Templates](/guides/automation-templates) for review, source-watch, backtest, and postmortem recipes.
+- [SOUL.md Style](/guides/use-soul-with-superforecasting-agent) for style customization without polluting forecast state.
+- [Discord](/user-guide/messaging/discord), [Slack](/user-guide/messaging/slack), and [WhatsApp](/user-guide/messaging/whatsapp) if your team wants more delivery channels.

@@ -166,7 +166,7 @@ def test_related_skill_links_display_fork_native_names_for_compatibility_ids(gen
         skill_index={"hermes-agent": target_meta},
     )
 
-    assert "[`superforecasting-agent`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-hermes-agent)" in result
+    assert "[`superforecasting-agent`](/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-hermes-agent)" in result
     assert "[`hermes-agent`](" not in result
 
 

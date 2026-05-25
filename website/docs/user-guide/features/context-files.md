@@ -88,7 +88,7 @@ Important details:
 - empty files are ignored
 - content is scanned and truncated before prompt injection
 
-See [Personality](/docs/user-guide/features/personality) for profile identity guidance.
+See [Personality](/user-guide/features/personality) for profile identity guidance.
 
 ## Cursor Rules
 

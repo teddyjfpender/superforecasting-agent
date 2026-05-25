@@ -169,7 +169,7 @@ These are saved to `~/.superforecasting-agent/migration/openclaw/<timestamp>/arc
 | `HEARTBEAT.md` | `archive/workspace/HEARTBEAT.md` | Use cron jobs for periodic tasks |
 | `BOOTSTRAP.md` | `archive/workspace/BOOTSTRAP.md` | Use context files or skills |
 | Cron jobs | `archive/cron-config.json` | Recreate with `superforecasting-agent cron create` |
-| Plugins | `archive/plugins-config.json` | See [plugins guide](/docs/user-guide/features/hooks) |
+| Plugins | `archive/plugins-config.json` | See [plugins guide](/user-guide/features/hooks) |
 | Hooks/webhooks | `archive/hooks-config.json` | Use `superforecasting-agent webhook` or gateway hooks |
 | Memory backend | `archive/memory-backend-config.json` | Configure via `superforecasting-agent honcho` |
 | Skills registry | `archive/skills-registry-config.json` | Use `superforecasting-agent skills config` |

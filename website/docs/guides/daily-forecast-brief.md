@@ -28,7 +28,7 @@ Use the briefing to decide what to update in the ledger. Do not treat it as a fo
 
 Before starting, make sure you have:
 
-- **Superforecasting Agent installed** - see the [Installation guide](/docs/getting-started/installation).
+- **Superforecasting Agent installed** - see the [Installation guide](/getting-started/installation).
 - **A configured model/provider** - run `superforecasting-agent model` if needed.
 - **Gateway running** - the gateway daemon handles general cron execution:
 
@@ -40,7 +40,7 @@ Before starting, make sure you have:
   ```
 
 - **Source/research tools configured** - web search or source adapters for the domains you care about.
-- **Messaging configured** - optional but useful; [Telegram](/docs/user-guide/messaging/telegram), Discord, Slack, or another delivery target.
+- **Messaging configured** - optional but useful; [Telegram](/user-guide/messaging/telegram), Discord, Slack, or another delivery target.
 
 :::tip No messaging target yet
 Use `deliver: "local"` while testing. Briefings are saved under `~/.superforecasting-agent/cron/output/`. The inherited `~/.hermes/cron/output/` path is still supported for migrated profiles.
@@ -238,7 +238,7 @@ publication time, and relevance. The main agent must reconcile the results
 against the forecast ledger and avoid probability updates unless cited.
 ```
 
-See [Delegation](/docs/user-guide/features/delegation) for the inherited parallel-worker runtime.
+See [Delegation](/user-guide/features/delegation) for the inherited parallel-worker runtime.
 
 ### Personal Context
 
@@ -298,12 +298,12 @@ sudo superforecasting-agent gateway install --system
 
 ## Going Further
 
-- [Scheduled Tasks (Cron)](/docs/user-guide/features/cron) - full schedule formats, repeat limits, and delivery options.
-- [Automate Forecast Reviews with Cron](/docs/guides/automate-with-cron) - ledger-aware scheduled review patterns.
-- [Script-Only Scheduled Jobs](/docs/guides/cron-script-only) - deterministic monitors that skip the model.
-- [Messaging Platforms](/docs/user-guide/messaging) - configure Telegram, Discord, Slack, or other delivery targets.
-- [Memory](/docs/user-guide/features/memory) - runtime recall; not the source of truth for forecast state.
-- [Tips & Best Practices](/docs/guides/tips) - prompt and ledger hygiene.
+- [Scheduled Tasks (Cron)](/user-guide/features/cron) - full schedule formats, repeat limits, and delivery options.
+- [Automate Forecast Reviews with Cron](/guides/automate-with-cron) - ledger-aware scheduled review patterns.
+- [Script-Only Scheduled Jobs](/guides/cron-script-only) - deterministic monitors that skip the model.
+- [Messaging Platforms](/user-guide/messaging) - configure Telegram, Discord, Slack, or other delivery targets.
+- [Memory](/user-guide/features/memory) - runtime recall; not the source of truth for forecast state.
+- [Tips & Best Practices](/guides/tips) - prompt and ledger hygiene.
 
 :::tip What else can you schedule?
 The same pattern works for competitor monitoring, policy watches, earnings-cycle review, macro data releases, model artifact checks, or resolver-source monitoring. Keep the output tied to active forecast questions and ledger actions.

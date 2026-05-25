@@ -8,7 +8,7 @@ description: "Use messaging platforms for forecast-desk alerts, approvals, revie
 
 Use the messaging gateway when forecast work needs to leave the terminal: review alerts, watched-source notifications, scheduled digests, approval prompts, voice capture, and delivery to team channels. The gateway is a single background process that connects to configured platforms, handles session routing, runs scheduled jobs, and delivers media.
 
-For the full voice feature set, including CLI microphone mode, spoken replies in messaging, and Discord voice-channel conversations, see [Voice Mode](/docs/user-guide/features/voice-mode).
+For the full voice feature set, including CLI microphone mode, spoken replies in messaging, and Discord voice-channel conversations, see [Voice Mode](/user-guide/features/voice-mode).
 
 ## Platform Comparison
 
@@ -256,7 +256,7 @@ gateway:
 
 #### Inspecting your access
 
-Use `/whoami` from any platform to see the active scope, your tier (admin / user / unrestricted), and which slash commands you can run. See the [Telegram](/docs/user-guide/messaging/telegram#slash-command-access-control) and [Discord](/docs/user-guide/messaging/discord#slash-command-access-control) pages for platform-specific examples.
+Use `/whoami` from any platform to see the active scope, your tier (admin / user / unrestricted), and which slash commands you can run. See the [Telegram](/user-guide/messaging/telegram#slash-command-access-control) and [Discord](/user-guide/messaging/discord#slash-command-access-control) pages for platform-specific examples.
 
 ## Interrupting the Agent
 

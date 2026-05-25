@@ -281,6 +281,6 @@ platforms:
 ## What's Next?
 
 - [GitHub Repository Forecast Monitor](./github-repository-forecast-monitor.md) for polling without a public endpoint.
-- [Forecast Automation Templates](/docs/guides/automation-templates) for source watches, scoring, postmortems, and benchmark reviews.
-- [Webhook Reference](/docs/user-guide/messaging/webhooks) for platform options.
-- [Profiles](/docs/user-guide/profiles) for isolating a dedicated software-forecast profile.
+- [Forecast Automation Templates](/guides/automation-templates) for source watches, scoring, postmortems, and benchmark reviews.
+- [Webhook Reference](/user-guide/messaging/webhooks) for platform options.
+- [Profiles](/user-guide/profiles) for isolating a dedicated software-forecast profile.

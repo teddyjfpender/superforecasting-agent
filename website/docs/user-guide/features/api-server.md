@@ -201,7 +201,7 @@ Delete a stored response.
 
 ### GET /v1/models
 
-Lists the advertised server-side agent model. Set `API_SERVER_MODEL_NAME` when a profile should expose a custom name. If unset, the default profile advertises `superforecasting-agent`; named profiles advertise the active [profile](/docs/user-guide/profiles) name.
+Lists the advertised server-side agent model. Set `API_SERVER_MODEL_NAME` when a profile should expose a custom name. If unset, the default profile advertises `superforecasting-agent`; named profiles advertise the active [profile](/user-guide/profiles) name.
 
 ### GET /v1/capabilities
 
@@ -420,7 +420,7 @@ Any client that supports the OpenAI API format can connect. Useful examples:
 
 | Client | Use |
 |--------|-----|
-| [Open WebUI](/docs/user-guide/messaging/open-webui) | Browser monitoring and occasional forecast-desk prompts. |
+| [Open WebUI](/user-guide/messaging/open-webui) | Browser monitoring and occasional forecast-desk prompts. |
 | LobeChat | Custom provider endpoint. |
 | LibreChat | Custom endpoint in `librechat.yaml`. |
 | AnythingLLM | Generic OpenAI provider. |
@@ -469,4 +469,4 @@ Each profile advertises its configured model name through `/v1/models`.
 
 The API server also serves as the backend for gateway proxy mode. When another compatible gateway is configured with `GATEWAY_PROXY_URL` pointing at this API server, it forwards messages here instead of running its own agent. This supports split deployments, such as a container handling Matrix E2EE while the host-side forecast desk owns tools and ledger access.
 
-See [Matrix Proxy Mode](/docs/user-guide/messaging/matrix#proxy-mode-e2ee-on-macos) for setup details.
+See [Matrix Proxy Mode](/user-guide/messaging/matrix#proxy-mode-e2ee-on-macos) for setup details.

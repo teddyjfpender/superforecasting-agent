@@ -9,7 +9,7 @@ description: "How to build a memory provider plugin for Superforecasting Agent."
 Memory provider plugins give Superforecasting Agent persistent, cross-session knowledge beyond the built-in MEMORY.md and USER.md. In this fork they are supporting infrastructure: scoreable probabilities, evidence, postmortems, calibration lessons, and domain error records belong in the forecast ledger, while memory providers are useful for user preferences, recurring context, and optional recall that can help future research.
 
 :::tip
-Memory providers are one of three **provider plugin** types. The others are [Model Provider Plugins](/docs/developer-guide/model-provider-plugin), which define inference backends, and [Context Engine Plugins](/docs/developer-guide/context-engine-plugin), which replace the built-in context compressor. These follow the same "drop a directory, declare a profile, no repo edits" pattern, with inherited compatibility management still available through the plugin surface.
+Memory providers are one of three **provider plugin** types. The others are [Model Provider Plugins](/developer-guide/model-provider-plugin), which define inference backends, and [Context Engine Plugins](/developer-guide/context-engine-plugin), which replace the built-in context compressor. These follow the same "drop a directory, declare a profile, no repo edits" pattern, with inherited compatibility management still available through the plugin surface.
 :::
 
 ## Directory Structure

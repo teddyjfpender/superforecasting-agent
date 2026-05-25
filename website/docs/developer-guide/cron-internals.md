@@ -233,6 +233,6 @@ forecast self-check --domain "ai-funding"
 
 ## Related Docs
 
-- [Cron Feature Guide](/docs/user-guide/features/cron)
+- [Cron Feature Guide](/user-guide/features/cron)
 - [Gateway Internals](./gateway-internals.md)
 - [Agent Loop Internals](./agent-loop.md)

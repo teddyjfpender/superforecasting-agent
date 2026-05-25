@@ -679,7 +679,7 @@ Superforecasting Agent supports Discord voice messages:
 - **Text-to-speech**: Use `/voice tts` to have the bot send spoken audio responses alongside text replies.
 - **Discord voice channels**: Superforecasting Agent can also join a voice channel, listen to users speaking, and talk back in the channel.
 
-For the full setup and operational guide, see [Voice Mode](/docs/user-guide/features/voice-mode).
+For the full setup and operational guide, see [Voice Mode](/user-guide/features/voice-mode).
 
 ## Forum Channels
 
