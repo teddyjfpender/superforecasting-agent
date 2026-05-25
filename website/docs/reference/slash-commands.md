@@ -10,7 +10,7 @@ Superforecasting Agent has three slash-command surfaces:
 
 - **Classic interactive CLI slash commands** — dispatched by `cli.py`, with autocomplete from the central `COMMAND_REGISTRY` in `hermes_cli/commands.py`
 - **Messaging slash commands** — dispatched by `gateway/run.py`, with help text and platform menus generated from the registry
-- **TUI forecast shortcuts** — local Ink handlers for forecast-desk workflows such as `/forecast`, `/sources`, `/new-forecast`, `/ingest`, `/evidence`, `/research`, `/base-rate`, `/model-run`, `/trend-model`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/review`, `/alerts`, `/calibration`, `/lessons`, `/backtest`, `/schedule`, `/performance`, `/readiness`, `/doctor`, `/pilot-report`, `/pilot-cohort`, and `/pilot-aggregate`
+- **TUI forecast shortcuts** — local Ink handlers for forecast-desk workflows such as `/forecast`, `/sources`, `/new-forecast`, `/ingest`, `/evidence`, `/research`, `/base-rate`, `/model-run`, `/trend-model`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/review`, `/alerts`, `/calibration`, `/lessons`, `/backtest`, `/schedule`, `/performance`, `/readiness`, `/doctor`, `/pilot-report`, `/pilot-cohort`, `/import-packet`, and `/pilot-aggregate`
 
 Installed skills are also exposed as dynamic slash commands on the classic CLI and messaging surfaces. That includes bundled skills like `/plan`, which opens plan mode and saves markdown plans under the workspace-local compatibility plans directory.
 
@@ -20,7 +20,7 @@ The forecast desk is the primary product surface. Use these before reaching for 
 
 | Command | Surface | Description |
 |---------|---------|-------------|
-| `/forecast [limit\|subcommand]` | CLI, TUI | Show the forecast dashboard or run `forecast <subcommand>` from the active session. Common subcommands include `new`, `research`, `base-rate`, `model`, `update`, `resolve`, `score`, `calibration`, `review`, `self-check`, `backtest`, and `export`. |
+| `/forecast [limit\|subcommand]` | CLI, TUI | Show the forecast dashboard or run `forecast <subcommand>` from the active session. Common subcommands include `new`, `research`, `base-rate`, `model`, `update`, `resolve`, `score`, `calibration`, `review`, `self-check`, `backtest`, `export`, and `import packet`. |
 | `/new-forecast [args]` | TUI | Create a scoreable forecast question. Equivalent to `forecast new ...`. |
 | `/ingest [args]` | TUI | Stage a URL or file as a forecast candidate. Equivalent to `forecast ingest ...`. |
 | `/evidence [args]` | TUI | Add or inspect timestamped evidence. Equivalent to `forecast evidence ...`. |
@@ -45,6 +45,7 @@ The forecast desk is the primary product surface. Use these before reaching for 
 | `/pilot-report [args]` | TUI | Check tester pilot artifact coverage. |
 | `/pilot-cohort [manifest...]` | TUI | Seed prospective live pilot questions. |
 | `/pilot-bundle [args]` | TUI | Bundle tester handoff evidence. |
+| `/import-packet <export.json>` | TUI | Restore an exported forecast packet. |
 | `/pilot-aggregate [files...]` | TUI | Aggregate tester export packets. |
 
 ## Permissions and admin/user split
@@ -70,7 +71,7 @@ Type `/` in the CLI to open the autocomplete menu. Built-in commands are case-in
 
 | Command | Description |
 |---------|-------------|
-| `/forecast [limit\|subcommand]` (alias: `/forecasts`) | Run forecast desk lifecycle commands from the active session. With no subcommand it shows the desk summary; common subcommands include `status`, `new`, `research`, `base-rate`, `model`, `update`, `resolve`, `score`, `calibration`, `review`, `self-check`, `backtest`, and `export`. |
+| `/forecast [limit\|subcommand]` (alias: `/forecasts`) | Run forecast desk lifecycle commands from the active session. With no subcommand it shows the desk summary; common subcommands include `status`, `new`, `research`, `base-rate`, `model`, `update`, `resolve`, `score`, `calibration`, `review`, `self-check`, `backtest`, `export`, and `import packet`. |
 
 ### Session
 

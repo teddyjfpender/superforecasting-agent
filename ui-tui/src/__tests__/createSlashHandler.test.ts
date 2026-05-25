@@ -276,6 +276,14 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'pilot-cohort cohort.csv --dry-run' })
     expect(createSlashHandler(ctx)('/pilot-bundle --include-export')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'pilot-bundle --include-export' })
+    expect(createSlashHandler(ctx)('/import-packet tester-a-export.json --conflict skip')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', {
+      arg: 'import packet tester-a-export.json --conflict skip'
+    })
+    expect(createSlashHandler(ctx)('/packet-import tester-b-export.json --json')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', {
+      arg: 'import packet tester-b-export.json --json'
+    })
     expect(createSlashHandler(ctx)('/pilot-aggregate tester-a.json tester-b.json --json')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', {
       arg: 'pilot-aggregate tester-a.json tester-b.json --json'

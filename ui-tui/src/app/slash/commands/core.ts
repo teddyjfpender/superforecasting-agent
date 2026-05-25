@@ -137,6 +137,7 @@ export const coreCommands: SlashCommand[] = [
             ['/pilot-report [args]', 'check tester pilot artifact coverage'],
             ['/pilot-cohort [manifest...]', 'seed prospective live pilot questions'],
             ['/pilot-bundle [args]', 'bundle tester handoff evidence'],
+            ['/import-packet <export.json>', 'restore an exported forecast packet'],
             ['/pilot-aggregate [files...]', 'aggregate tester export packets'],
             ['/lessons [args]', 'list calibration lessons'],
             ['/backtest [args]', 'run or inspect historical replay datasets'],
@@ -401,6 +402,13 @@ export const coreCommands: SlashCommand[] = [
     help: 'bundle tester handoff evidence',
     name: 'pilot-bundle',
     run: (arg, ctx) => runForecastCommand(ctx, `pilot-bundle ${arg.trim()}`.trim())
+  },
+
+  {
+    aliases: ['packet-import'],
+    help: 'restore an exported forecast packet',
+    name: 'import-packet',
+    run: (arg, ctx) => runForecastCommand(ctx, `import packet ${arg.trim()}`.trim())
   },
 
   {
