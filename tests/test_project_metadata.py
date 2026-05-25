@@ -332,6 +332,18 @@ def test_docker_entrypoint_and_compose_are_forecast_native():
     assert "~/.hermes:/opt/data" not in compose
 
 
+def test_docker_default_soul_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "docker" / "SOUL.md").read_text(encoding="utf-8")
+
+    assert "# Superforecasting Agent Operating Style" in text
+    assert "calibrated forecasting analyst" in text
+    assert "stale data and missed base rates" in text
+    assert "# Hermes Agent Persona" not in text
+    assert "warm, playful assistant" not in text
+    assert "kaomoji" not in text
+
+
 def test_docker_image_guidance_uses_fork_registry():
     root = Path(__file__).resolve().parents[1]
     paths = [

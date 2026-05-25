@@ -1322,6 +1322,7 @@ Latest verified result:
 - Security policy identity pass: top-level `SECURITY.md` now names Superforecasting Agent throughout the trust model, uses the fork-native GitHub Security Advisory URL, points environment details at `superforecasting-agent --version`, and removes legacy Hermes product/security-policy wording under a metadata guard.
 - Config example forecast-first pass: `cli-config.yaml.example` now presents Superforecasting Agent configuration, fork-native provider/hook env aliases, fork-native home paths, `superforecasting-agent` command examples, `forecast-*` toolset presets, and forecasting-oriented operating modes instead of novelty/general-assistant personalities.
 - Web README forecast-desk pass: `web/README.md` now describes the Forecast Desk web UI, starts the backend through `superforecasting-agent dashboard --no-open`, and names forecast dashboard surfaces such as active forecasts, review queues, calibration health, and `ForecastsPage` under metadata coverage.
+- Docker default SOUL pass: `docker/SOUL.md` now seeds a Superforecasting Agent operating style with calibrated forecasting, quantitative research, stale-data, and base-rate examples instead of the inherited generic persona examples.
 
 ## Prompt-To-Artifact Checklist
 
