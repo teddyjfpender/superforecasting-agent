@@ -218,6 +218,10 @@ def build_dashboard_summary(
     stale_reference_class_count = sum(
         int(row.get("stale_reference_class_count") or 0) for row in rows
     )
+    scheduled_review_runs = [
+        summarize_scheduled_review_run(row)
+        for row in ledger.list_scheduled_review_runs(limit=min(limit, 8))
+    ]
 
     return {
         "product": PRODUCT_NAME,
@@ -232,6 +236,8 @@ def build_dashboard_summary(
         "calibration": calibration,
         "evidence_status": build_forecasting_evidence_status(ledger, backtest_summaries),
         "learning": build_learning_summary(ledger=ledger),
+        "scheduled_review_run_count": len(scheduled_review_runs),
+        "scheduled_review_runs": scheduled_review_runs,
         "questions": rows,
         "review_queue": review_queue,
         "alerts": alert_rows,
@@ -315,6 +321,23 @@ def render_dashboard_text(summary: dict[str, Any]) -> str:
             )
             if row.get("recommended_action"):
                 lines.append(f"  next: {row['recommended_action']}")
+    scheduled_runs = list(summary.get("scheduled_review_runs") or [])
+    if scheduled_runs:
+        lines.extend(["", "Scheduled Self-Checks"])
+        lines.append(
+            f"{'Run':<14} {'Schedule':<14} {'Scope':<22} {'Alerts':>6} {'Scores':>6} {'PMs':>4} {'Learn':>5} Next"
+        )
+        for row in scheduled_runs:
+            lines.append(
+                f"{row.get('id', '-'):<14} "
+                f"{row.get('scheduled_review_id', '-'):<14} "
+                f"{truncate(format_schedule_run_scope(row), 22):<22} "
+                f"{int(row.get('alert_count') or 0):>6} "
+                f"{int(row.get('score_count') or 0):>6} "
+                f"{int(row.get('postmortem_count') or 0):>4} "
+                f"{int(row.get('learning_review_count') or 0):>5} "
+                f"{row.get('next_run_at') or '-'}"
+            )
     calibration = dict(summary.get("calibration") or {})
     if calibration:
         lines.extend(["", "Calibration"])
@@ -503,6 +526,27 @@ def summarize_alert(alert: Any) -> dict[str, Any]:
     }
 
 
+def summarize_scheduled_review_run(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = dict(row.get("metadata") or {})
+    return {
+        "id": row.get("id"),
+        "scheduled_review_id": row.get("scheduled_review_id"),
+        "run_at": row.get("run_at"),
+        "next_run_at": row.get("next_run_at"),
+        "alert_count": int(row.get("alert_count") or 0),
+        "score_count": int(row.get("score_count") or 0),
+        "postmortem_count": int(row.get("postmortem_count") or 0),
+        "learning_review_count": int(row.get("learning_review_count") or 0),
+        "status": row.get("status"),
+        "scope_type": metadata.get("scope_type"),
+        "scope_ref": metadata.get("scope_ref"),
+        "cadence": metadata.get("cadence"),
+        "auto_score": bool(metadata.get("auto_score")),
+        "auto_postmortem": bool(metadata.get("auto_postmortem")),
+        "alert_reasons": list(metadata.get("alert_reasons") or []),
+    }
+
+
 def format_error_profile_scope(row: dict[str, Any]) -> str:
     scope = str(row.get("domain") or "global")
     if row.get("topic"):
@@ -510,6 +554,19 @@ def format_error_profile_scope(row: dict[str, Any]) -> str:
     if row.get("question_type"):
         scope = f"{scope}:{row['question_type']}"
     return truncate(scope, 24)
+
+
+def format_schedule_run_scope(row: dict[str, Any]) -> str:
+    scope_type = str(row.get("scope_type") or "schedule")
+    scope_ref = row.get("scope_ref")
+    if scope_type == "domain_topic" and isinstance(scope_ref, str):
+        try:
+            payload = json.loads(scope_ref)
+        except json.JSONDecodeError:
+            payload = {}
+        if isinstance(payload, dict):
+            return f"domain:{payload.get('domain', '*')}/{payload.get('topic', '*')}"
+    return f"{scope_type}:{scope_ref or '*'}"
 
 
 def truncate(value: str, max_length: int) -> str:

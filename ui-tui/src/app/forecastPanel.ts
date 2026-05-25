@@ -3,7 +3,8 @@ import type {
   ForecastDashboardCalibration,
   ForecastDashboardQuestion,
   ForecastDashboardResponse,
-  ForecastDashboardReview
+  ForecastDashboardReview,
+  ForecastDashboardScheduleRun
 } from '../gatewayTypes.js'
 import type { PanelSection } from '../types.js'
 
@@ -76,6 +77,19 @@ const formatClaimStatus = (row: ForecastDashboardBacktest) => {
   }
 
   return verdict ? truncate(String(verdict).replace(/_/g, ' '), 24) : '-'
+}
+
+const formatScheduleRunScope = (row: ForecastDashboardScheduleRun) => {
+  if (row.scope_type === 'domain_topic' && row.scope_ref) {
+    try {
+      const parsed = JSON.parse(row.scope_ref) as { domain?: string; topic?: string }
+      return `domain:${parsed.domain || '*'}/${parsed.topic || '*'}`
+    } catch {
+      return `domain:${row.scope_ref}`
+    }
+  }
+
+  return `${row.scope_type || 'schedule'}:${row.scope_ref || '*'}`
 }
 
 const formatVerdict = (value: string | undefined) =>
@@ -495,6 +509,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
   const calibration = summary?.calibration
   const evidenceStatus = summary?.evidence_status
   const learning = summary?.learning
+  const scheduledRuns = summary?.scheduled_review_runs ?? []
 
   if (!summary) {
     return [{ text: response.output || '(no forecasts)' }]
@@ -631,6 +646,22 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
     sections.push({
       rows: learningRows,
       title: 'Learning Memory'
+    })
+  }
+
+  if (scheduledRuns.length) {
+    sections.push({
+      rows: scheduledRuns.slice(0, 5).map(row => [
+        `${shortId(row.id)}  alerts ${formatCount(row.alert_count)}`,
+        [
+          formatScheduleRunScope(row),
+          `scores ${formatCount(row.score_count)}`,
+          `postmortems ${formatCount(row.postmortem_count)}`,
+          `learning ${formatCount(row.learning_review_count)}`,
+          `next ${shortDate(row.next_run_at)}`
+        ].join('  ')
+      ]),
+      title: 'Scheduled Self-Checks'
     })
   }
 
@@ -795,6 +826,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
   const reviewQueue = summary.review_queue ?? []
   const alertsList = summary.alerts ?? []
   const backtests = summary.recent_backtests ?? []
+  const scheduledRuns = summary.scheduled_review_runs ?? []
   const calibration = summary.calibration
   const evidenceStatus = summary.evidence_status
   const learning = summary.learning
@@ -862,6 +894,21 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
         truncate(`${row.reason || 'alert'}  ${row.recommended_action || '/forecast alerts'}`, 64)
       ]),
       title: 'Alerts'
+    })
+  }
+
+  if (scheduledRuns.length) {
+    sections.push({
+      rows: scheduledRuns.slice(0, 2).map(row => [
+        `${shortId(row.id)} alerts ${formatCount(row.alert_count)}`,
+        truncate(
+          `${formatScheduleRunScope(row)}  scores ${formatCount(row.score_count)}  pm ${formatCount(
+            row.postmortem_count
+          )}  learn ${formatCount(row.learning_review_count)}  next ${shortDate(row.next_run_at)}`,
+          64
+        )
+      ]),
+      title: 'Schedules'
     })
   }
 

@@ -193,12 +193,55 @@ describe('forecast desk panel helpers', () => {
         '/forecast lesson list',
         '/forecast errors',
         '/forecast schedule run --due --auto-score --auto-postmortem',
+        '/forecast schedule history --json',
         '/forecast pilot-report',
         '/forecast pilot-cohort examples/forecasting/live-cohort.example.csv --dry-run --json',
         '/forecast pilot-bundle --include-export --output .pilot/tester-bundle.json',
         '/forecast pilot-aggregate .pilot/*-export.json --json'
       ])
     )
+  })
+
+  it('surfaces scheduled self-check run history in panel and rail', () => {
+    const response: ForecastDashboardResponse = {
+      summary: {
+        active_count: 0,
+        open_alert_count: 0,
+        product: 'Superforecasting Agent',
+        questions: [],
+        review_queue: [],
+        review_queue_count: 0,
+        scheduled_review_runs: [
+          {
+            alert_count: 3,
+            id: 'srr_abcdef123456',
+            learning_review_count: 2,
+            next_run_at: '2026-05-25T09:00:00Z',
+            postmortem_count: 1,
+            scheduled_review_id: 'sr_macro123456',
+            scope_ref: '{"domain":"macro","topic":"inflation"}',
+            scope_type: 'domain_topic',
+            score_count: 1
+          }
+        ]
+      }
+    }
+
+    const sections = forecastDashboardSections(response)
+    const railSections = forecastDeskRailSections(response)
+
+    expect(sections.find(section => section.title === 'Scheduled Self-Checks')?.rows).toEqual([
+      [
+        'srr_abcd  alerts 3',
+        'domain:macro/inflation  scores 1  postmortems 1  learning 2  next 2026-05-25'
+      ]
+    ])
+    expect(railSections.find(section => section.title === 'Schedules')?.rows).toEqual([
+      [
+        'srr_abcd alerts 3',
+        'domain:macro/inflation  scores 1  pm 1  learn 2  next 2026-05-25'
+      ]
+    ])
   })
 
   it('surfaces aggregate assumption counts in desk status and triage', () => {

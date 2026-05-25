@@ -21,6 +21,7 @@ import type {
   ForecastDashboardQuestion,
   ForecastDashboardResponse,
   ForecastDashboardReview,
+  ForecastDashboardScheduleRun,
 } from "@/lib/api";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
@@ -295,6 +296,18 @@ function formatErrorScope(row: ForecastDashboardErrorProfile): string {
 
 function formatLessonScope(row: ForecastDashboardLesson): string {
   return `${row.scope_type || "global"}:${row.scope_ref || "*"}`;
+}
+
+function formatScheduleRunScope(row: ForecastDashboardScheduleRun): string {
+  if (row.scope_type === "domain_topic" && row.scope_ref) {
+    try {
+      const parsed = JSON.parse(row.scope_ref) as { domain?: string; topic?: string };
+      return `domain:${parsed.domain || "*"}/${parsed.topic || "*"}`;
+    } catch {
+      return `domain:${row.scope_ref}`;
+    }
+  }
+  return `${row.scope_type || "schedule"}:${row.scope_ref || "*"}`;
 }
 
 function isLearnedErrorReviewReason(reason?: string): boolean {
@@ -848,6 +861,65 @@ function LearningPanel({ learning }: { learning?: ForecastDashboardLearning }) {
   );
 }
 
+function ScheduledRunsPanel({ rows }: { rows: ForecastDashboardScheduleRun[] }) {
+  if (!rows.length) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <ListChecks className="h-5 w-5 text-muted-foreground" />
+          <CardTitle className="text-base">Scheduled Self-Checks</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-xs text-muted-foreground">
+                <th className="py-2 pr-4 text-left font-medium">Run</th>
+                <th className="px-4 py-2 text-left font-medium">Scope</th>
+                <th className="px-4 py-2 text-right font-medium">Alerts</th>
+                <th className="px-4 py-2 text-right font-medium">Scores</th>
+                <th className="px-4 py-2 text-right font-medium">Postmortems</th>
+                <th className="px-4 py-2 text-right font-medium">Learning</th>
+                <th className="py-2 pl-4 text-left font-medium">Next Run</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.slice(0, 6).map((row) => (
+                <tr key={row.id || `${row.scheduled_review_id}:${row.run_at}`} className="border-b border-border/50">
+                  <td className="py-2 pr-4 font-mono-ui text-xs text-foreground">
+                    {row.id || "-"}
+                  </td>
+                  <td className="max-w-[18rem] px-4 py-2 font-mono-ui text-xs text-muted-foreground">
+                    <span className="line-clamp-2">{formatScheduleRunScope(row)}</span>
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                    {row.alert_count ?? 0}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                    {row.score_count ?? 0}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                    {row.postmortem_count ?? 0}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
+                    {row.learning_review_count ?? 0}
+                  </td>
+                  <td className="py-2 pl-4 font-mono-ui text-xs text-muted-foreground">
+                    {formatDate(row.next_run_at)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function EvidenceStatusPanel({ evidenceStatus }: { evidenceStatus?: ForecastDashboardEvidenceStatus }) {
   if (!evidenceStatus) return null;
 
@@ -1247,6 +1319,7 @@ export default function ForecastsPage() {
       />
       <CalibrationPanel calibration={data?.calibration} />
       <LearningPanel learning={data?.learning} />
+      <ScheduledRunsPanel rows={data?.scheduled_review_runs ?? []} />
       <EvidenceStatusPanel evidenceStatus={data?.evidence_status} />
       <PilotHandoffPanel />
       <BacktestTable rows={data?.recent_backtests ?? []} />

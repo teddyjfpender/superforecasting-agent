@@ -200,6 +200,8 @@ export interface ForecastDashboardSummary {
   review_queue?: ForecastDashboardReview[]
   review_queue_count?: number
   recent_backtests?: ForecastDashboardBacktest[]
+  scheduled_review_run_count?: number
+  scheduled_review_runs?: ForecastDashboardScheduleRun[]
   stale_assumption_count?: number
   stale_reference_class_count?: number
 }
@@ -304,6 +306,24 @@ export interface ForecastDashboardBacktest {
   paired_count?: number
   paired_ties?: number
   probability_sources?: string[]
+}
+
+export interface ForecastDashboardScheduleRun {
+  alert_count?: number
+  alert_reasons?: string[]
+  auto_postmortem?: boolean
+  auto_score?: boolean
+  cadence?: null | string
+  id?: string
+  learning_review_count?: number
+  next_run_at?: string
+  postmortem_count?: number
+  run_at?: string
+  scheduled_review_id?: string
+  scope_ref?: null | string
+  scope_type?: null | string
+  score_count?: number
+  status?: string
 }
 
 export interface ForecastDashboardClaimStatus {

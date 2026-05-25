@@ -728,6 +728,8 @@ export interface ForecastDashboardResponse {
   questions: ForecastDashboardQuestion[];
   review_queue: ForecastDashboardReview[];
   recent_backtests: ForecastDashboardBacktest[];
+  scheduled_review_run_count?: number;
+  scheduled_review_runs?: ForecastDashboardScheduleRun[];
 }
 
 export interface ForecastDashboardAlert {
@@ -793,6 +795,24 @@ export interface ForecastDashboardBacktest {
   paired_baseline_wins?: number;
   paired_ties?: number;
   leakage_checks_passed: boolean;
+}
+
+export interface ForecastDashboardScheduleRun {
+  id?: string;
+  scheduled_review_id?: string;
+  run_at?: string;
+  next_run_at?: string;
+  alert_count?: number;
+  score_count?: number;
+  postmortem_count?: number;
+  learning_review_count?: number;
+  status?: string;
+  scope_type?: string | null;
+  scope_ref?: string | null;
+  cadence?: string | null;
+  auto_score?: boolean;
+  auto_postmortem?: boolean;
+  alert_reasons?: string[];
 }
 
 export interface ForecastDashboardClaimStatus {

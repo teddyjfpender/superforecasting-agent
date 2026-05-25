@@ -11570,6 +11570,12 @@ def test_forecast_cli_default_dashboard_and_schedule_run(tmp_path, capsys):
     assert question_id in output
     assert "review_due" in output
 
+    _run(parser, ["forecast", "--db", db])
+    post_schedule_dashboard = capsys.readouterr().out
+    assert "Scheduled Self-Checks" in post_schedule_dashboard
+    assert "srr_" in post_schedule_dashboard
+    assert "Alerts" in post_schedule_dashboard
+
 
 def test_forecast_cli_new_with_review_cadence_creates_schedule(tmp_path, capsys):
     parser = _parser()
