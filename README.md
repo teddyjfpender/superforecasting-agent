@@ -240,7 +240,7 @@ scripts/run_tests.sh
 - 🐛 Issues: [teddyjfpender/superforecasting-agent/issues](https://github.com/teddyjfpender/superforecasting-agent/issues)
 - 💬 Upstream community: [Nous Research Discord](https://discord.gg/NousResearch)
 - 📚 [Skills Hub](https://agentskills.io)
-- 🔌 [computer-use-linux](https://github.com/avifenesh/computer-use-linux) — Linux desktop-control MCP server for Hermes and other MCP hosts, with AT-SPI accessibility trees, Wayland/X11 input, screenshots, and compositor window targeting.
+- 🔌 [computer-use-linux](https://github.com/avifenesh/computer-use-linux) — Linux desktop-control MCP server for upstream Hermes and other MCP hosts, with AT-SPI accessibility trees, Wayland/X11 input, screenshots, and compositor window targeting.
 - 🔌 [HermesClaw](https://github.com/AaronWong1999/hermesclaw) — Legacy WeChat bridge from the upstream Hermes/OpenClaw ecosystem.
 
 ---

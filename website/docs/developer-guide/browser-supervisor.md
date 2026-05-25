@@ -22,10 +22,10 @@ the two biggest gaps in our browser tooling:
    snapshot but could not click, type, or eval inside them — especially
    cross-origin (OOPIF) iframes that live in separate Chromium processes.
 
-[PR #12550](https://github.com/NousResearch/hermes-agent/pull/12550) proposed a
-stateless `browser_dialog` wrapper. That doesn't solve detection — it's a
-cleaner CDP call for when the agent already knows (via symptoms) that a dialog
-is open. Closed as superseded.
+The upstream Hermes [PR #12550](https://github.com/NousResearch/hermes-agent/pull/12550)
+proposed a stateless `browser_dialog` wrapper. That doesn't solve detection —
+it's a cleaner CDP call for when the agent already knows (via symptoms) that a
+dialog is open. Closed as superseded.
 
 ## Backend capability matrix (verified live 2026-04-23)
 

@@ -244,8 +244,9 @@ fix(security): prevent shell injection in sudo password piping
 
 ## Community
 
-- **Discord**: [discord.gg/NousResearch](https://discord.gg/NousResearch)
-- **GitHub Discussions**: For design proposals and architecture discussions
+- **Fork issues**: [teddyjfpender/superforecasting-agent/issues](https://github.com/teddyjfpender/superforecasting-agent/issues)
+- **Upstream community Discord**: [discord.gg/NousResearch](https://discord.gg/NousResearch) for inherited-runtime and broader Nous ecosystem discussion
+- **GitHub Discussions**: Use fork discussions if enabled; otherwise file design proposals as issues
 - **Skills Hub**: Upload specialized skills and share with the community
 
 ## License

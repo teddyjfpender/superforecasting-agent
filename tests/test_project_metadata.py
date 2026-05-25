@@ -1648,6 +1648,9 @@ def test_high_attention_docs_navigation_is_forecast_native():
     assert "GitHub PR Review Agent" not in llms_generator
     assert "Build a Superforecasting Agent Plugin" in docs_text
     assert "# No skill — default forecast-desk behavior" in docs_text
+    assert "Fork issues" in docs_text
+    assert "teddyjfpender/superforecasting-agent/issues" in docs_text
+    assert "Upstream community Discord" in docs_text
     assert "forecast-desk multi-session DM" in docs_text
     assert "one gateway, many parallel forecast sessions" in docs_text
     assert "Telegram chat interface" in docs_text
@@ -1662,6 +1665,7 @@ def test_high_attention_docs_navigation_is_forecast_native():
     assert "/new payments-refactor" not in sessions_doc
     assert "Build a Hermes Plugin" not in docs_text
     assert "Building a Hermes Plugin" not in docs_text
+    assert "**Discord**: [discord.gg/NousResearch]" not in docs_text
     assert "# No skill — general purpose" not in docs_text
     assert "ChatGPT-style multi-session DM" not in docs_text
     assert "one bot, many parallel conversations" not in docs_text
@@ -3154,6 +3158,8 @@ def test_readme_primary_links_are_fork_native():
     assert "Upstream-Hermes%20Agent" in zh_readme
     assert "[CONTRIBUTING.md](CONTRIBUTING.md)" in readme
     assert "upstream Hermes contributing guide" not in readme
+    assert "for Hermes and other MCP hosts" not in readme
+    assert "for upstream Hermes and other MCP hosts" in readme
 
 
 def test_high_attention_help_docs_are_fork_local():
