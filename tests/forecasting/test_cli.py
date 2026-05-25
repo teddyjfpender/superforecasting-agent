@@ -9666,6 +9666,7 @@ def test_forecast_cli_pilot_bundle_outputs_handoff_packet(tmp_path, capsys):
         summary="Bundle fixture completed one live loop.",
         lesson="Keep pilot handoff artifacts bundled.",
     )
+    ledger.run_due_scheduled_reviews(now="2026-05-24T10:00:00Z")
 
     _run(
         parser,
@@ -9698,6 +9699,8 @@ def test_forecast_cli_pilot_bundle_outputs_handoff_packet(tmp_path, capsys):
     assert payload["readiness"]["evidence_status"]["score_counts"]["live"] == 1
     assert payload["export_included"] is True
     assert payload["export_packet"]["questions"][0]["question"]["id"] == question.id
+    assert payload["export_packet"]["scheduled_review_runs"][0]["scheduled_review_id"].startswith("sr_")
+    assert payload["export_packet"]["questions"][0]["scheduled_review_runs"][0]["id"].startswith("srr_")
     assert "not, by themselves, proof" in payload["claim_note"]
 
     output_path = tmp_path / ".pilot" / "pilot-bundle.json"
@@ -9741,6 +9744,13 @@ def test_forecast_cli_pilot_aggregate_summarizes_export_packets(tmp_path, capsys
         summary="Aggregation fixture completed one loop.",
         lesson="Keep tester export packets machine-readable.",
     )
+    ledger.schedule_review(
+        scope_type="question",
+        scope_ref=question.id,
+        cadence="1d",
+        next_run_at="2026-05-24T09:00:00Z",
+    )
+    ledger.run_due_scheduled_reviews(now="2026-05-24T10:00:00Z")
     export_path = tmp_path / "tester-a-export.json"
     export_path.write_text(ledger.export_all(fmt="json"), encoding="utf-8")
 
@@ -9758,6 +9768,9 @@ def test_forecast_cli_pilot_aggregate_summarizes_export_packets(tmp_path, capsys
 
     assert payload["aggregate_status"] == "collecting_live_evidence"
     assert payload["summary"]["live_score_count"] == 1
+    assert payload["summary"]["scheduled_review_count"] == 1
+    assert payload["summary"]["scheduled_review_run_count"] == 1
+    assert payload["exports"][0]["scheduled_review_run_count"] == 1
     assert payload["checks"][0]["required"] == 2
     assert payload["next_actions"]
     assert "not, by themselves, proof" in payload["claim_note"]

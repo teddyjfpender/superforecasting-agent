@@ -1050,6 +1050,13 @@ def test_export_packet_includes_auditable_forecast_data(tmp_path):
         source="https://example.com/macro-calendar",
         source_type="url",
     )
+    schedule = ledger.schedule_review(
+        scope_type="question",
+        scope_ref=question.id,
+        cadence="1d",
+        next_run_at="2026-05-06T00:00:00Z",
+    )
+    ledger.run_due_scheduled_reviews(now="2026-05-07T00:00:00Z")
 
     packet = json.loads(ledger.export_question(question.id, fmt="json"))
 
@@ -1058,6 +1065,8 @@ def test_export_packet_includes_auditable_forecast_data(tmp_path):
     assert packet["forecast_history"][0]["probability_or_distribution"] == 0.63
     assert packet["evidence"][0]["available_at"] == "2026-05-05T08:30:00Z"
     assert packet["watched_sources"][0]["id"] == watch["id"]
+    assert packet["scheduled_reviews"][0]["id"] == schedule["id"]
+    assert packet["scheduled_review_runs"][0]["scheduled_review_id"] == schedule["id"]
 
 
 def test_export_all_includes_questions_candidates_and_alerts(tmp_path):
@@ -1079,6 +1088,13 @@ def test_export_all_includes_questions_candidates_and_alerts(tmp_path):
         reason="test_alert",
         recommended_action="Inspect test alert.",
     )
+    schedule = ledger.schedule_review(
+        scope_type="question",
+        scope_ref=question.id,
+        cadence="1d",
+        next_run_at="2026-01-01T00:00:00Z",
+    )
+    ledger.run_due_scheduled_reviews(now="2026-01-02T00:00:00Z")
 
     packet = json.loads(ledger.export_all(fmt="json"))
 
@@ -1086,6 +1102,8 @@ def test_export_all_includes_questions_candidates_and_alerts(tmp_path):
     assert packet["questions"][0]["question"]["id"] == question.id
     assert packet["ingest_candidates"][0]["id"] == candidate["id"]
     assert packet["alerts"][0]["reason"] == "test_alert"
+    assert packet["scheduled_reviews"][0]["id"] == schedule["id"]
+    assert packet["scheduled_review_runs"][0]["scheduled_review_id"] == schedule["id"]
 
 
 def test_pilot_report_summarizes_tester_exit_artifacts(tmp_path):

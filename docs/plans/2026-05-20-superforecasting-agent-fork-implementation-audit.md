@@ -697,6 +697,7 @@ Concrete success means the fork behaves as a command-line forecasting desk cente
 
 Latest verified result:
 
+- Tester evidence export pass: `forecast export <id>`, `forecast export all`, `forecast pilot-bundle --include-export`, and `forecast pilot-aggregate` now carry/count scheduled self-check definitions and run-history records so tester handoff artifacts can prove the scheduled learning loop ran, not just that it was configured.
 - Scheduled self-check dashboard-surface pass: shared forecast dashboard JSON/text, the Ink Forecast Desk panel/rail, and the web Forecasts page now show recent scheduled self-check runs with alert, score, postmortem, learning-review, scope, and next-run fields so cron learning is visible beyond raw CLI history.
 - Scheduled self-check audit-ledger pass: due scheduled reviews now append `scheduled_review_runs` records with run time, next run, alert count, score/postmortem learning writes, learning-review count, and metadata; `forecast schedule history [--json]` exposes that cron/self-check history for testers and operators, and the smoke script, TUI command panel, plus tester runbook surface the audit command.
 - Dashboard CLI help desk-label pass: top-level `superforecasting-agent dashboard --tui` help now exposes the in-browser `Forecast Desk` tab instead of the stale `Forecast Chat` label; project metadata guards the CLI help string.

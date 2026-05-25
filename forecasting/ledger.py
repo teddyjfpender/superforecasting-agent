@@ -3891,6 +3891,16 @@ class ForecastLedger:
         reference_classes = self.list_reference_classes(question_id)
         model_runs = self.list_model_runs(question_id)
         watched_sources = self.list_watched_sources(scope_type="question", scope_ref=question_id, status=None)
+        scheduled_reviews = [
+            row
+            for row in self.list_scheduled_reviews()
+            if row.get("scope_type") == "question" and row.get("scope_ref") == question_id
+        ]
+        scheduled_review_runs = [
+            run
+            for review in scheduled_reviews
+            for run in self.list_scheduled_review_runs(scheduled_review_id=review["id"], limit=100)
+        ]
         postmortems = self.list_postmortems(question_id, include_invalidated=True)
         baselines = self.list_baseline_comparisons(question_id)
         resolution = self.get_latest_resolution(question_id)
@@ -3920,6 +3930,8 @@ class ForecastLedger:
                     "reference_classes": reference_classes,
                     "model_runs": model_runs,
                     "watched_sources": watched_sources,
+                    "scheduled_reviews": scheduled_reviews,
+                    "scheduled_review_runs": scheduled_review_runs,
                     "baseline_comparisons": baselines,
                     "resolution": self._resolution_to_dict(resolution) if resolution else None,
                     "scores": [self._score_to_dict(score) for score in scores],
@@ -4002,6 +4014,27 @@ class ForecastLedger:
                 lines.append(f"- {item['id']} {item['scope_type']}:{item['scope_ref']} {item['source_type']} {item['source']}")
         else:
             lines.append("- None")
+        lines.extend(["", "## Scheduled Self-Checks"])
+        if scheduled_reviews:
+            for item in scheduled_reviews:
+                lines.append(
+                    f"- {item['id']} {item['scope_type']}:{item['scope_ref']} "
+                    f"cadence={item['cadence']} next={item['next_run_at']} "
+                    f"learning=score:{bool(item.get('auto_score'))}/postmortem:{bool(item.get('auto_postmortem'))}"
+                )
+        else:
+            lines.append("- None")
+        lines.extend(["", "## Scheduled Self-Check Runs"])
+        if scheduled_review_runs:
+            for item in scheduled_review_runs:
+                lines.append(
+                    f"- {item['id']} schedule={item['scheduled_review_id']} "
+                    f"run_at={item['run_at']} alerts={item['alert_count']} "
+                    f"scores={item['score_count']} postmortems={item['postmortem_count']} "
+                    f"learning_reviews={item['learning_review_count']} next={item['next_run_at']}"
+                )
+        else:
+            lines.append("- None")
         lines.extend(["", "## Resolution"])
         if resolution:
             lines.append(
@@ -4055,6 +4088,8 @@ class ForecastLedger:
                     ],
                     "ingest_candidates": self.list_ingest_candidates(),
                     "watched_sources": self.list_watched_sources(status=None),
+                    "scheduled_reviews": self.list_scheduled_reviews(),
+                    "scheduled_review_runs": self.list_scheduled_review_runs(limit=1000),
                     "alerts": [alert.__dict__ for alert in self.list_alerts(unresolved_only=False)],
                 }
             )

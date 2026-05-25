@@ -251,7 +251,7 @@ source adapter involved:
 
 Use `forecast export <id>` or `forecast export all` for shareable artifacts when the data is safe to disclose.
 Use `forecast pilot-report --json` for a compact machine-readable summary of whether the tester ledger has enough questions, forecast updates, evidence, structured-source imports, scheduled self-checks, scores, postmortems, and cleared learned-error review alerts for the pilot exit criteria.
-Use `forecast pilot-bundle --include-export --output .pilot/${USER}-bundle.json` when the tester can safely share a single JSON artifact containing pilot-report, readiness, and export data.
+Use `forecast pilot-bundle --include-export --output .pilot/${USER}-bundle.json` when the tester can safely share a single JSON artifact containing pilot-report, readiness, export data, and scheduled self-check run history.
 If testers should start from the same unresolved live question book, seed it from a CSV or JSON manifest:
 
 ```bash

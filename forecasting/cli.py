@@ -7421,11 +7421,23 @@ def _aggregate_pilot_exports(paths: list[Path], *, min_live_scores: int = 10) ->
     score_count = 0
     postmortem_count = 0
     calibration_lesson_count = 0
+    scheduled_review_count = 0
+    scheduled_review_run_count = 0
     non_structured_source_types = {"manual_note", "note"}
 
     for path in paths:
         packet = _load_pilot_export_packet(path)
         question_packets = _question_packets_from_export(packet, path)
+        packet_schedules = packet.get("scheduled_reviews") if isinstance(packet.get("scheduled_reviews"), list) else None
+        packet_schedule_runs = (
+            packet.get("scheduled_review_runs")
+            if isinstance(packet.get("scheduled_review_runs"), list)
+            else None
+        )
+        packet_scheduled_review_count = len(packet_schedules or [])
+        packet_scheduled_review_run_count = len(packet_schedule_runs or [])
+        scheduled_review_count += packet_scheduled_review_count
+        scheduled_review_run_count += packet_scheduled_review_run_count
         packet_live_scores = 0
         packet_question_count = 0
         for question_packet in question_packets:
@@ -7444,6 +7456,14 @@ def _aggregate_pilot_exports(paths: list[Path], *, min_live_scores: int = 10) ->
             scores = question_packet.get("scores") or []
             postmortems = question_packet.get("postmortems") or []
             lessons = question_packet.get("calibration_lessons") or []
+            if packet_schedules is None:
+                question_schedules = question_packet.get("scheduled_reviews") or []
+                scheduled_review_count += len(question_schedules)
+                packet_scheduled_review_count += len(question_schedules)
+            if packet_schedule_runs is None:
+                question_schedule_runs = question_packet.get("scheduled_review_runs") or []
+                scheduled_review_run_count += len(question_schedule_runs)
+                packet_scheduled_review_run_count += len(question_schedule_runs)
             forecast_snapshot_count += len(snapshots)
             evidence_count += len(evidence)
             score_count += len(scores)
@@ -7465,6 +7485,8 @@ def _aggregate_pilot_exports(paths: list[Path], *, min_live_scores: int = 10) ->
                 "generated_at": packet.get("generated_at"),
                 "question_count": packet_question_count,
                 "live_score_count": packet_live_scores,
+                "scheduled_review_count": packet_scheduled_review_count,
+                "scheduled_review_run_count": packet_scheduled_review_run_count,
             }
         )
 
@@ -7505,6 +7527,8 @@ def _aggregate_pilot_exports(paths: list[Path], *, min_live_scores: int = 10) ->
             "live_score_count": live_score_count,
             "postmortem_count": postmortem_count,
             "calibration_lesson_count": calibration_lesson_count,
+            "scheduled_review_count": scheduled_review_count,
+            "scheduled_review_run_count": scheduled_review_run_count,
         },
         "source_types": dict(sorted(source_type_counts.items())),
         "domains": dict(sorted(domain_counts.items())),

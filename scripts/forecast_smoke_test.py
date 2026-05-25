@@ -810,6 +810,8 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
         raise SmokeError(f"pilot bundle did not include live-score readiness data:\n{json.dumps(pilot_bundle, indent=2)}")
     if not pilot_bundle.get("export_included") or not pilot_bundle.get("export_packet", {}).get("questions"):
         raise SmokeError(f"pilot bundle did not include export data:\n{json.dumps(pilot_bundle, indent=2)}")
+    if not pilot_bundle.get("export_packet", {}).get("scheduled_review_runs"):
+        raise SmokeError(f"pilot bundle did not include scheduled self-check run history:\n{json.dumps(pilot_bundle, indent=2)}")
     _print_step(f"performance_runs: {performance.get('run_count')}")
     _print_step(f"readiness_verdict: {evidence_status.get('verdict')}")
     _print_step(f"readiness_gaps: {len(gaps)}")
