@@ -10272,6 +10272,7 @@ def test_forecast_cli_runs_public_manifold_benchmark_dataset(tmp_path, capsys):
     assert benchmark_evidence["has_public_external_source"] is True
     assert benchmark_evidence["source_families"] == ["manifold"]
     assert performance_payload["evidence_status"]["backtests"]["external_dataset_count"] == 1
+    assert performance_payload["evidence_status"]["backtests"]["external_source_family_count"] == 1
 
 
 def test_forecast_cli_performance_summarizes_backtest_edges(tmp_path, capsys):
@@ -10369,6 +10370,7 @@ def test_forecast_cli_performance_summarizes_backtest_edges(tmp_path, capsys):
     assert "gap live_scored_forecasts: 0/100" in readiness_output
     assert "gap distinct_backtest_datasets: 1/2" in readiness_output
     assert "gap external_benchmark_datasets: 0/1" in readiness_output
+    assert "gap external_source_families: 0/2" in readiness_output
     assert "next_actions:" in readiness_output
     assert "forecast backtest <cases.json> --probability-source agent-protocol" in readiness_output
 
@@ -10424,6 +10426,14 @@ def test_forecast_cli_readiness_require_evidence_passes_when_evidence_gate_is_me
                 "stance": "increases",
             }
         ]
+        if index == 1:
+            evidence[0].update(
+                {
+                    "source": "https://kalshi.com/markets/readiness-gate-fixture",
+                    "source_name": "Kalshi",
+                    "source_type": "adapter:kalshi",
+                }
+            )
         if index == 2:
             evidence[0].update(
                 {
@@ -10490,7 +10500,8 @@ def test_forecast_cli_readiness_require_evidence_passes_when_evidence_gate_is_me
     assert "ok leakage_free_backtest_runs: 2/1" in output
     assert "ok positive_best_baseline_edge_runs: 2/1" in output
     assert "ok distinct_backtest_datasets: 2/2" in output
-    assert "ok external_benchmark_datasets: 1/1" in output
+    assert "ok external_benchmark_datasets: 2/1" in output
+    assert "ok external_source_families: 2/2" in output
 
 
 def test_baseline_ensemble_probability_source_replays_public_market_corpus():

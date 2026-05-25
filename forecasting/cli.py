@@ -20,6 +20,7 @@ from forecasting.agent_protocol import (
 )
 from forecasting.backtesting import (
     DEFAULT_MIN_AGENT_PROTOCOL_CASES_FOR_CLAIM,
+    DEFAULT_MIN_EXTERNAL_SOURCE_FAMILIES_FOR_CLAIM,
     DEFAULT_MIN_LIVE_SCORES_FOR_CLAIM,
     build_backtest_performance_summaries,
     build_forecasting_evidence_status,
@@ -1574,6 +1575,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         help="Required scored agent-protocol replay cases for readiness accounting",
     )
     readiness_parser.add_argument(
+        "--min-external-source-families",
+        type=int,
+        default=DEFAULT_MIN_EXTERNAL_SOURCE_FAMILIES_FOR_CLAIM,
+        help="Required distinct external resolved-question source families for readiness accounting",
+    )
+    readiness_parser.add_argument(
         "--require-evidence",
         action="store_true",
         help="Exit nonzero when readiness requirements still have gaps",
@@ -1664,6 +1671,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         type=int,
         default=DEFAULT_MIN_AGENT_PROTOCOL_CASES_FOR_CLAIM,
         help="Required scored agent-protocol replay cases for readiness accounting",
+    )
+    pilot_bundle_parser.add_argument(
+        "--min-external-source-families",
+        type=int,
+        default=DEFAULT_MIN_EXTERNAL_SOURCE_FAMILIES_FOR_CLAIM,
+        help="Required distinct external resolved-question source families for readiness accounting",
     )
     pilot_bundle_parser.add_argument(
         "--include-export",
@@ -6616,6 +6629,7 @@ def _cmd_readiness(args: argparse.Namespace) -> None:
         summaries,
         min_live_scores=max(args.min_live_scores, 0),
         min_agent_protocol_cases=max(args.min_agent_protocol_cases, 0),
+        min_external_source_families=max(args.min_external_source_families, 0),
     )
     evidence_gaps = bool(evidence_status.get("gaps"))
 
@@ -6666,7 +6680,8 @@ def _print_evidence_status(evidence_status: dict[str, Any], *, include_passed: b
         f"leakage_free_runs={backtests.get('leakage_free_run_count', 0)} "
         f"positive_edge_runs={backtests.get('positive_best_baseline_edge_run_count', 0)} "
         f"datasets={backtests.get('distinct_dataset_count', 0)} "
-        f"external_datasets={backtests.get('external_dataset_count', 0)}"
+        f"external_datasets={backtests.get('external_dataset_count', 0)} "
+        f"external_source_families={backtests.get('external_source_family_count', 0)}"
     )
     for requirement in evidence_status.get("requirements") or []:
         passed = bool(requirement.get("passed"))
@@ -6961,6 +6976,7 @@ def _cmd_pilot_bundle(args: argparse.Namespace) -> None:
         summaries,
         min_live_scores=max(args.min_live_scores, 0),
         min_agent_protocol_cases=max(args.min_agent_protocol_cases, 0),
+        min_external_source_families=max(args.min_external_source_families, 0),
     )
     export_packet = json.loads(ledger.export_all(fmt="json")) if args.include_export else None
     payload = {

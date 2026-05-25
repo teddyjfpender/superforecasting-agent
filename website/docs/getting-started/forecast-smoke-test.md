@@ -28,10 +28,10 @@ reference for the markers a tester should see; generated ids and temporary
 ledger paths will differ.
 
 The smoke ledger should keep `readiness_verdict` at
-`insufficient_live_evidence`. Current smoke runs intentionally report three
-readiness gaps: live score volume, agent-protocol replay volume, and external
-resolved-question corpus coverage. That is the expected non-claim state for a
-local acceptance test.
+`insufficient_live_evidence`. Current smoke runs intentionally report four
+readiness gaps: live score volume, agent-protocol replay volume, external
+resolved-question corpus coverage, and external source-family diversity. That
+is the expected non-claim state for a local acceptance test.
 
 ## Keep The Smoke Ledger
 

@@ -9,6 +9,7 @@ from typing import Any
 from forecasting import ForecastLedger
 from forecasting.backtesting import (
     DEFAULT_MIN_AGENT_PROTOCOL_CASES_FOR_CLAIM,
+    DEFAULT_MIN_EXTERNAL_SOURCE_FAMILIES_FOR_CLAIM,
     DEFAULT_MIN_LIVE_SCORES_FOR_CLAIM,
     build_backtest_performance_summaries,
     build_forecasting_evidence_status,
@@ -430,6 +431,7 @@ FORECAST_LEDGER_SCHEMA = {
             "last": {"type": "integer"},
             "min_live_scores": {"type": "integer"},
             "min_agent_protocol_cases": {"type": "integer"},
+            "min_external_source_families": {"type": "integer"},
             "min_questions": {"type": "integer"},
             "min_structured_source_questions": {"type": "integer"},
             "min_scores": {"type": "integer"},
@@ -874,6 +876,16 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                         args.get(
                             "min_agent_protocol_cases",
                             DEFAULT_MIN_AGENT_PROTOCOL_CASES_FOR_CLAIM,
+                        )
+                        or 0
+                    ),
+                    0,
+                ),
+                min_external_source_families=max(
+                    int(
+                        args.get(
+                            "min_external_source_families",
+                            DEFAULT_MIN_EXTERNAL_SOURCE_FAMILIES_FOR_CLAIM,
                         )
                         or 0
                     ),

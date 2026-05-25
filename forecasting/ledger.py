@@ -5254,8 +5254,9 @@ class ForecastLedger:
                 recommended_action=(
                     "Run `forecast performance --json` and close evidence gaps: "
                     f"{', '.join(gaps[:5])}. Collect live scored forecasts and "
-                    "agent-protocol held-out runs, and include at least one external "
-                    "resolved-question corpus before claiming live superiority."
+                    "agent-protocol held-out runs, and include external resolved-question "
+                    "corpora from at least two source families before claiming live "
+                    "superiority."
                 ),
             )
         ]

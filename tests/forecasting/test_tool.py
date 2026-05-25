@@ -2401,6 +2401,7 @@ def test_forecast_ledger_tool_runs_and_reports_backtests(tmp_path):
                 "last": 5,
                 "min_live_scores": 3,
                 "min_agent_protocol_cases": 4,
+                "min_external_source_families": 5,
             }
         )
     )
@@ -2421,6 +2422,7 @@ def test_forecast_ledger_tool_runs_and_reports_backtests(tmp_path):
     }
     assert requirements["live_scored_forecasts"]["required"] == 3
     assert requirements["agent_protocol_scored_cases"]["required"] == 4
+    assert requirements["external_source_families"]["required"] == 5
     assert readiness["evidence_status"]["next_actions"][0]["requirement_id"] == "live_scored_forecasts"
     assert "forecast backtest <cases.json>" in readiness["evidence_status"]["next_actions"][1]["action"]
 

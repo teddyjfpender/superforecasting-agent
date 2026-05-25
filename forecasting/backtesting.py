@@ -11,6 +11,7 @@ from forecasting.models import ScoreRecord
 
 DEFAULT_MIN_LIVE_SCORES_FOR_CLAIM = 100
 DEFAULT_MIN_AGENT_PROTOCOL_CASES_FOR_CLAIM = 100
+DEFAULT_MIN_EXTERNAL_SOURCE_FAMILIES_FOR_CLAIM = 2
 
 
 def best_baseline(baselines: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -111,6 +112,7 @@ def build_forecasting_evidence_status(
     *,
     min_live_scores: int = DEFAULT_MIN_LIVE_SCORES_FOR_CLAIM,
     min_agent_protocol_cases: int = DEFAULT_MIN_AGENT_PROTOCOL_CASES_FOR_CLAIM,
+    min_external_source_families: int = DEFAULT_MIN_EXTERNAL_SOURCE_FAMILIES_FOR_CLAIM,
 ) -> dict[str, Any]:
     """Summarize whether stored evidence can support live superiority claims."""
 
@@ -210,6 +212,17 @@ def build_forecasting_evidence_status(
                 "or import resolved Manifold, Metaculus, Kalshi, or Polymarket cases."
             ),
         ),
+        _evidence_requirement(
+            "external_source_families",
+            "Distinct external resolved-question source families represented in benchmark evidence.",
+            observed=len(source_families),
+            required=min_external_source_families,
+            recommended_action=(
+                "Replay or import at least one more resolved-question family, for example "
+                "Metaculus, Kalshi, Polymarket, or another audited dataset, so readiness "
+                "is not anchored to a single platform."
+            ),
+        ),
     ]
     gaps = [
         requirement["id"]
@@ -249,6 +262,7 @@ def build_forecasting_evidence_status(
             "run_count": len(backtest_summaries),
             "distinct_dataset_count": dataset_count,
             "external_dataset_count": external_dataset_count,
+            "external_source_family_count": len(source_families),
             "source_families": source_families,
             "leakage_free_run_count": leakage_free_runs,
             "positive_best_baseline_edge_run_count": positive_best_edge_runs,

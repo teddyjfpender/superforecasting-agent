@@ -77,7 +77,7 @@ The fork should also expose a named local forecast-engine replay mode. Unlike da
 
 The replay layer should also support an explicit agent-protocol mode. This mode should build a historical forecast prompt from the same pre-cutoff case data, exclude answer-side fields such as dataset probability and resolved outcome, and either call the live forecast agent or replay captured JSON outputs from prior agent runs. It should also be able to export sanitized prompt packets before any model call for one dataset or the built-in benchmark suite, and write the responses used by a run as JSONL so future benchmark runs can replay the same agent outputs. Captured agent-protocol prompts and outputs make benchmark runs deterministic and auditable while preserving the distinction between historical replay evidence and live forecast performance.
 
-The CLI should make that plumbing visible without forcing the operator into a full case dump. A compact performance view should show recent backtest runs, agent mean Brier, the best available baseline, and the agent's Brier edge against that baseline, while keeping live forecasts, backtests, and imported baselines separate. The same performance summary should be exportable as structured JSON so cron jobs, evaluation harnesses, and external reports can consume benchmark results without scraping terminal text. It should also summarize evidence readiness for stronger claims by showing live scored-forecast counts, agent-protocol replay counts, leakage-free runs, generated-source positive baseline-edge runs, distinct dataset coverage, external resolved-question corpus coverage, and the remaining gaps before any live superiority claim is justified.
+The CLI should make that plumbing visible without forcing the operator into a full case dump. A compact performance view should show recent backtest runs, agent mean Brier, the best available baseline, and the agent's Brier edge against that baseline, while keeping live forecasts, backtests, and imported baselines separate. The same performance summary should be exportable as structured JSON so cron jobs, evaluation harnesses, and external reports can consume benchmark results without scraping terminal text. It should also summarize evidence readiness for stronger claims by showing live scored-forecast counts, agent-protocol replay counts, leakage-free runs, generated-source positive baseline-edge runs, distinct dataset coverage, external resolved-question corpus coverage, external source-family diversity, and the remaining gaps before any live superiority claim is justified.
 
 The system should also run scheduled self-checks by domain, topic, forecast horizon, confidence band, large forecast-delta threshold, and stale-evidence risk. These jobs should not silently overwrite forecasts. They should detect new evidence, flag stale assumptions, identify resolved questions, flag large probability moves for review, trigger postmortems, and update calibration memory or domain error profiles after scoring.
 
@@ -102,8 +102,8 @@ Useful scheduled jobs include:
 - For global self-checks, alert when the benchmark evidence ledger is still
   missing live scored forecasts, agent-protocol held-out cases, leakage-free
   benchmark runs, generated-source positive baseline edges, enough distinct
-  datasets, or at least one external resolved-question corpus to justify
-  stronger performance claims.
+  datasets, external resolved-question corpus coverage, or enough external
+  source-family diversity to justify stronger performance claims.
 
 ## Forecasting Protocol
 

@@ -401,6 +401,7 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     assert "Evidence Status" in text
     assert "positive_edge_runs: 0" in text
     assert "external_datasets: 0" in text
+    assert "external_source_families: 0" in text
     assert "next live_scored_forecasts:" in text
     assert "Recent Backtests" in text
     assert "dataset" in text
@@ -1002,7 +1003,8 @@ def test_global_self_check_flags_benchmark_evidence_gaps(tmp_path):
     assert gap_alerts[0].scope_ref == "benchmark_evidence"
     assert "forecast performance --json" in gap_alerts[0].recommended_action
     assert "live_scored_forecasts" in gap_alerts[0].recommended_action
-    assert "external resolved-question corpus" in gap_alerts[0].recommended_action
+    assert "external resolved-question" in gap_alerts[0].recommended_action
+    assert "two source families" in gap_alerts[0].recommended_action
     assert ledger.self_check(domain="macro") == []
 
 

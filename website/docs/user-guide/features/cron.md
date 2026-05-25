@@ -135,7 +135,7 @@ forecast readiness --require-evidence
 forecast calibration --by-origin --all
 ```
 
-Use these in scheduled jobs or local automation to track whether the forecast engine is improving. Keep live forecasts, imported baselines, and backtests separate when interpreting calibration. Readiness checks require external resolved-question corpus coverage, so synthetic or local fixture replays should not be treated as enough evidence for stronger performance claims.
+Use these in scheduled jobs or local automation to track whether the forecast engine is improving. Keep live forecasts, imported baselines, and backtests separate when interpreting calibration. Readiness checks require external resolved-question corpus coverage and external source-family diversity, so synthetic, local fixture, or single-platform replays should not be treated as enough evidence for stronger performance claims.
 
 ## Inherited Cron Runtime
 

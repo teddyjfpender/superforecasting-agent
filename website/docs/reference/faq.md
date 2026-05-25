@@ -65,7 +65,7 @@ forecast backtest builtin:manifold-public-120-binary --probability-source foreca
 forecast performance --last 10
 ```
 
-Replay results are not proof that the live system beats expert forecasters, but they are the feedback loop needed to measure and improve it. `forecast readiness` also tracks whether benchmark evidence includes at least one externally sourced resolved-question corpus, so synthetic or local fixtures do not satisfy the stronger evidence gate by themselves.
+Replay results are not proof that the live system beats expert forecasters, but they are the feedback loop needed to measure and improve it. `forecast readiness` also tracks whether benchmark evidence includes externally sourced resolved-question corpora and at least two external source families, so synthetic, local, or single-platform fixtures do not satisfy the stronger evidence gate by themselves.
 
 ### What LLM providers work with Superforecasting Agent?
 
