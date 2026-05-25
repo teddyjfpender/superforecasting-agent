@@ -37,12 +37,12 @@ Legacy `~/.hermes/config.yaml` remains readable during migration.
 | `slate` | Cool blue terminal theme | Superforecasting Agent |
 | `daylight` | Light theme for bright terminals | Superforecasting Agent |
 | `warm-lightmode` | Warm light terminal theme | Superforecasting Agent |
-| `ares` | Crimson and bronze thematic skin | Ares Agent |
-| `poseidon` | Ocean-blue thematic skin | Poseidon Agent |
-| `sisyphus` | Austere persistence theme | Sisyphus Agent |
-| `charizard` | Ember and volcanic theme | Charizard Agent |
+| `ares` | Crimson and bronze palette | Superforecasting Agent |
+| `poseidon` | Ocean-blue palette | Superforecasting Agent |
+| `sisyphus` | Austere persistence palette | Superforecasting Agent |
+| `charizard` | Ember and volcanic palette | Superforecasting Agent |
 
-Thematic skins may intentionally use alternate display names. They are visual/persona-flavored wrappers around the same forecast desk runtime.
+Built-in skins are visual palette wrappers around the same forecast desk runtime. They keep the fork-native product identity and do not change the agent persona.
 
 ## Configurable Keys
 
@@ -97,10 +97,10 @@ Color values are hex strings consumed by Rich and terminal renderers.
 |-----|---------|------------------|
 | `agent_name` | Banner title and status display | `Superforecasting Agent` |
 | `welcome` | Startup message | `Welcome to Superforecasting Agent. Type /forecast to inspect the desk or /help for commands.` |
-| `goodbye` | Exit message | `Goodbye!` |
+| `goodbye` | Exit message | `Goodbye.` |
 | `response_label` | Response box label | ` Forecast ` |
 | `prompt_symbol` | Input prompt symbol | `>` |
-| `help_header` | `/help` heading | `Available Commands` |
+| `help_header` | `/help` heading | `Forecast Desk Commands` |
 
 ### Other Keys
 
@@ -189,7 +189,7 @@ branding:
   goodbye: "Goodbye."
   response_label: " Forecast "
   prompt_symbol: ">"
-  help_header: "Available Commands"
+  help_header: "Forecast Desk Commands"
 
 tool_prefix: "|"
 

@@ -1105,6 +1105,26 @@ def test_runtime_docstrings_use_forecast_native_home_paths():
         assert marker in header, rel_path
 
 
+def test_builtin_skin_display_identity_stays_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = "\n".join(
+        [
+            (root / "hermes_cli" / "skin_engine.py").read_text(encoding="utf-8"),
+            (root / "website" / "docs" / "user-guide" / "features" / "skins.md").read_text(encoding="utf-8"),
+        ]
+    )
+
+    assert "Ares Agent" not in text
+    assert "Poseidon Agent" not in text
+    assert "Sisyphus Agent" not in text
+    assert "Charizard Agent" not in text
+    assert "persona-flavored" not in text
+    assert "Farewell, warrior" not in text
+    assert "Fair winds" not in text
+    assert "The boulder waits" not in text
+    assert "Flame out" not in text
+
+
 def test_model_picker_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "hermes_cli" / "models.py").read_text(encoding="utf-8")

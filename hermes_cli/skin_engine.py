@@ -241,12 +241,12 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
             ],
         },
         "branding": {
-            "agent_name": "Ares Agent",
-            "welcome": "Welcome to Ares Agent. Type /forecast to inspect the desk or /help for commands.",
-            "goodbye": "Farewell, warrior! ⚔",
-            "response_label": " ⚔ Ares ",
+            "agent_name": "Superforecasting Agent",
+            "welcome": "Welcome to Superforecasting Agent. Type /forecast to inspect the desk or /help for commands.",
+            "goodbye": "Goodbye.",
+            "response_label": " Forecast ",
             "prompt_symbol": "⚔",
-            "help_header": "(⚔) Available Commands",
+            "help_header": "Forecast Desk Commands",
         },
         "tool_prefix": "╎",
         "banner_logo": """[bold #A3261F] █████╗ ██████╗ ███████╗███████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗[/]
@@ -305,7 +305,7 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
             "goodbye": "Goodbye.",
             "response_label": " Forecast ",
             "prompt_symbol": "❯",
-            "help_header": "[?] Available Commands",
+            "help_header": "Forecast Desk Commands",
         },
         "tool_prefix": "┊",
     },
@@ -344,7 +344,7 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
             "goodbye": "Goodbye.",
             "response_label": " Forecast ",
             "prompt_symbol": "❯",
-            "help_header": "[?] Available Commands",
+            "help_header": "Forecast Desk Commands",
         },
         "tool_prefix": "┊",
     },
@@ -431,7 +431,7 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
             "goodbye": "Goodbye.",
             "response_label": " Forecast ",
             "prompt_symbol": "❯",
-            "help_header": "[?] Available Commands",
+            "help_header": "Forecast Desk Commands",
         },
         "tool_prefix": "│",
     },
@@ -468,7 +468,7 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
             "goodbye": "Goodbye.",
             "response_label": " Forecast ",
             "prompt_symbol": "\u276f",
-            "help_header": "[?] Available Commands",
+            "help_header": "Forecast Desk Commands",
         },
         "tool_prefix": "\u250a",
     },
@@ -516,12 +516,12 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
             ],
         },
         "branding": {
-            "agent_name": "Poseidon Agent",
-            "welcome": "Welcome to Poseidon Agent. Type /forecast to inspect the desk or /help for commands.",
-            "goodbye": "Fair winds! Ψ",
-            "response_label": " Ψ Poseidon ",
+            "agent_name": "Superforecasting Agent",
+            "welcome": "Welcome to Superforecasting Agent. Type /forecast to inspect the desk or /help for commands.",
+            "goodbye": "Goodbye.",
+            "response_label": " Forecast ",
             "prompt_symbol": "Ψ",
-            "help_header": "(Ψ) Available Commands",
+            "help_header": "Forecast Desk Commands",
         },
         "tool_prefix": "│",
         "banner_logo": """[bold #B8E8FF]██████╗  ██████╗ ███████╗███████╗██╗██████╗  ██████╗ ███╗   ██╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗[/]
@@ -588,12 +588,12 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
             ],
         },
         "branding": {
-            "agent_name": "Sisyphus Agent",
-            "welcome": "Welcome to Sisyphus Agent. Type /forecast to inspect the desk or /help for commands.",
-            "goodbye": "The boulder waits. ◉",
-            "response_label": " ◉ Sisyphus ",
+            "agent_name": "Superforecasting Agent",
+            "welcome": "Welcome to Superforecasting Agent. Type /forecast to inspect the desk or /help for commands.",
+            "goodbye": "Goodbye.",
+            "response_label": " Forecast ",
             "prompt_symbol": "◉",
-            "help_header": "(◉) Available Commands",
+            "help_header": "Forecast Desk Commands",
         },
         "tool_prefix": "│",
         "banner_logo": """[bold #F5F5F5]███████╗██╗███████╗██╗   ██╗██████╗ ██╗  ██╗██╗   ██╗███████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗[/]
@@ -666,12 +666,12 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
             ],
         },
         "branding": {
-            "agent_name": "Charizard Agent",
-            "welcome": "Welcome to Charizard Agent. Type /forecast to inspect the desk or /help for commands.",
-            "goodbye": "Flame out! ✦",
-            "response_label": " ✦ Charizard ",
+            "agent_name": "Superforecasting Agent",
+            "welcome": "Welcome to Superforecasting Agent. Type /forecast to inspect the desk or /help for commands.",
+            "goodbye": "Goodbye.",
+            "response_label": " Forecast ",
             "prompt_symbol": "✦",
-            "help_header": "(✦) Available Commands",
+            "help_header": "Forecast Desk Commands",
         },
         "tool_prefix": "│",
         "banner_logo": """[bold #FFF0D4] ██████╗██╗  ██╗ █████╗ ██████╗ ██╗███████╗ █████╗ ██████╗ ██████╗        █████╗  ██████╗ ███████╗███╗   ██╗████████╗[/]
@@ -740,6 +740,9 @@ def _mapping_or_empty(value: Any, *, section: str, skin_name: str) -> Dict[str, 
     return {}
 
 
+_FORECAST_NATIVE_BUILTIN_THEMES = {"ares", "poseidon", "sisyphus", "charizard"}
+
+
 def _build_skin_config(data: Dict[str, Any]) -> SkinConfig:
     """Build a SkinConfig from a raw dict (built-in or loaded from YAML)."""
     # Start with default values as base for missing keys
@@ -756,6 +759,11 @@ def _build_skin_config(data: Dict[str, Any]) -> SkinConfig:
     spinner.update(spinner_overrides)
     branding = dict(default.get("branding", {}))
     branding.update(branding_overrides)
+    banner_logo = data.get("banner_logo", "")
+    banner_hero = data.get("banner_hero", "")
+    if _BUILTIN_SKINS.get(skin_name) is data and skin_name in _FORECAST_NATIVE_BUILTIN_THEMES:
+        banner_logo = ""
+        banner_hero = ""
 
     return SkinConfig(
         name=skin_name,
@@ -765,8 +773,8 @@ def _build_skin_config(data: Dict[str, Any]) -> SkinConfig:
         branding=branding,
         tool_prefix=data.get("tool_prefix", default.get("tool_prefix", "┊")),
         tool_emojis=emoji_overrides,
-        banner_logo=data.get("banner_logo", ""),
-        banner_hero=data.get("banner_hero", ""),
+        banner_logo=banner_logo,
+        banner_hero=banner_hero,
     )
 
 

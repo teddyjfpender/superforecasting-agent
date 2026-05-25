@@ -56,7 +56,9 @@ class TestBuiltinSkins:
         assert skin.get_color("response_border") == "#C7A96B"
         assert skin.get_color("session_label") == "#C7A96B"
         assert skin.get_color("session_border") == "#6E584B"
-        assert skin.get_branding("agent_name") == "Ares Agent"
+        assert skin.get_branding("agent_name") == "Superforecasting Agent"
+        assert skin.banner_logo == ""
+        assert skin.banner_hero == ""
 
     def test_ares_has_spinner_customization(self):
         from hermes_cli.skin_engine import load_skin
@@ -326,13 +328,13 @@ class TestCliBrandingHelpers:
         from hermes_cli.skin_engine import set_active_skin, get_active_help_header
 
         set_active_skin("ares")
-        assert get_active_help_header() == "(⚔) Available Commands"
+        assert get_active_help_header() == "Forecast Desk Commands"
 
     def test_active_goodbye_ares(self):
         from hermes_cli.skin_engine import set_active_skin, get_active_goodbye
 
         set_active_skin("ares")
-        assert get_active_goodbye() == "Farewell, warrior! ⚔"
+        assert get_active_goodbye() == "Goodbye."
 
     def test_prompt_toolkit_style_overrides_cover_tui_classes(self):
         from hermes_cli.skin_engine import set_active_skin, get_prompt_toolkit_style_overrides
