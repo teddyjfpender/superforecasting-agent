@@ -5,6 +5,7 @@ from prompt_toolkit.document import Document
 
 from hermes_cli.commands import (
     COMMAND_REGISTRY,
+    COMMAND_CATEGORY_ORDER,
     COMMANDS,
     COMMANDS_BY_CATEGORY,
     CommandDef,
@@ -67,9 +68,30 @@ class TestCommandRegistry:
                         f"Alias '{alias}' of '{cmd.name}' shadows canonical '{target.name}'"
 
     def test_every_entry_has_valid_category(self):
-        valid_categories = {"Session", "Configuration", "Tools & Skills", "Info", "Exit"}
+        valid_categories = set(COMMAND_CATEGORY_ORDER)
         for cmd in COMMAND_REGISTRY:
             assert cmd.category in valid_categories, f"{cmd.name} has invalid category '{cmd.category}'"
+
+    def test_forecast_category_is_first_class(self):
+        forecast = next(cmd for cmd in COMMAND_REGISTRY if cmd.name == "forecast")
+        assert forecast.category == "Forecast Desk"
+        assert next(iter(COMMANDS_BY_CATEGORY)) == "Forecast Desk"
+        assert "/forecast" in COMMANDS_BY_CATEGORY["Forecast Desk"]
+
+    def test_inherited_broad_surfaces_are_compatibility_category(self):
+        compatibility = {
+            "bundles",
+            "curator",
+            "handoff",
+            "kanban",
+            "personality",
+            "platforms",
+            "skills",
+            "voice",
+        }
+        by_name = {cmd.name: cmd for cmd in COMMAND_REGISTRY}
+        for name in compatibility:
+            assert by_name[name].category == "Compatibility"
 
     def test_reasoning_subcommands_are_in_logical_order(self):
         reasoning = next(cmd for cmd in COMMAND_REGISTRY if cmd.name == "reasoning")

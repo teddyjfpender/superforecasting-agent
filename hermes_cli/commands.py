@@ -48,7 +48,7 @@ class CommandDef:
 
     name: str                          # canonical name without slash: "background"
     description: str                   # human-readable description
-    category: str                      # "Session", "Configuration", etc.
+    category: str                      # "Forecast Desk", "Session", etc.
     aliases: tuple[str, ...] = ()      # alternative names: ("bg",)
     args_hint: str = ""                # argument placeholder: "<prompt>", "[name]"
     subcommands: tuple[str, ...] = ()  # tab-completable subcommands
@@ -60,6 +60,16 @@ class CommandDef:
 # ---------------------------------------------------------------------------
 # Central registry -- single source of truth
 # ---------------------------------------------------------------------------
+
+COMMAND_CATEGORY_ORDER: tuple[str, ...] = (
+    "Forecast Desk",
+    "Session",
+    "Configuration",
+    "Tools & Skills",
+    "Compatibility",
+    "Info",
+    "Exit",
+)
 
 COMMAND_REGISTRY: list[CommandDef] = [
     # Session
@@ -79,7 +89,7 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("undo", "Remove the last user/forecaster exchange", "Session"),
     CommandDef("title", "Set a title for the current session", "Session",
                args_hint="[name]"),
-    CommandDef("handoff", "Hand off this session to a messaging platform (Telegram, Discord, etc.)", "Session",
+    CommandDef("handoff", "Hand off this session to an optional messaging compatibility surface", "Compatibility",
                args_hint="<platform>", cli_only=True),
     CommandDef("branch", "Branch the current session (explore a different path)", "Session",
                aliases=("fork",), args_hint="[name]"),
@@ -114,9 +124,9 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("resume", "Resume a previously-named session", "Session",
                args_hint="[name]"),
 
-    # Configuration
+    # Forecast desk
     CommandDef("sessions", "Browse and resume previous sessions", "Session"),
-    CommandDef("forecast", "Run forecast desk lifecycle commands", "Tools & Skills",
+    CommandDef("forecast", "Run forecast desk lifecycle commands", "Forecast Desk",
                aliases=("forecasts",), args_hint="[subcommand]", cli_only=True,
                subcommands=("status", "new", "list", "show", "update", "research",
                             "base-rate", "model", "resolve", "score", "calibration",
@@ -133,7 +143,7 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("gquota", "Show Google Gemini Code Assist quota usage", "Info",
                cli_only=True),
 
-    CommandDef("personality", "Set a predefined personality", "Configuration",
+    CommandDef("personality", "Adjust a compatibility persona overlay; forecast protocol stays authoritative", "Compatibility",
                args_hint="[name]"),
     CommandDef("statusbar", "Toggle the context/model status bar", "Configuration",
                cli_only=True, aliases=("sb",)),
@@ -156,7 +166,7 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("indicator", "Pick the TUI busy-indicator style", "Configuration",
                cli_only=True, args_hint="[markers|emoji|unicode|ascii]",
                subcommands=("markers", "emoji", "unicode", "ascii")),
-    CommandDef("voice", "Toggle voice mode", "Configuration",
+    CommandDef("voice", "Toggle optional voice compatibility mode", "Compatibility",
                args_hint="[on|off|tts|status]", subcommands=("on", "off", "tts", "status")),
     CommandDef("busy", "Control what Enter does while the forecast desk is working", "Configuration",
                cli_only=True, args_hint="[queue|steer|interrupt|status]",
@@ -167,19 +177,19 @@ COMMAND_REGISTRY: list[CommandDef] = [
                args_hint="[list|disable|enable] [name...]", cli_only=True),
     CommandDef("toolsets", "List available toolsets", "Tools & Skills",
                cli_only=True),
-    CommandDef("skills", "Search, install, inspect, or manage skills",
-               "Tools & Skills", cli_only=True,
+    CommandDef("skills", "Search, install, inspect, or manage optional skill playbooks",
+               "Compatibility", cli_only=True,
                subcommands=("search", "browse", "inspect", "install")),
-    CommandDef("bundles", "List skill bundles (aliases /<name> for multiple skills)",
-               "Tools & Skills"),
+    CommandDef("bundles", "List optional skill bundles (aliases /<name> for multiple skills)",
+               "Compatibility"),
     CommandDef("cron", "Manage scheduled tasks", "Tools & Skills",
                cli_only=True, args_hint="[subcommand]",
                subcommands=("list", "add", "create", "edit", "pause", "resume", "run", "remove")),
-    CommandDef("curator", "Background skill maintenance (status, run, pin, archive, list-archived)",
-               "Tools & Skills", args_hint="[subcommand]",
+    CommandDef("curator", "Optional background skill maintenance (status, run, pin, archive, list-archived)",
+               "Compatibility", args_hint="[subcommand]",
                subcommands=("status", "run", "pause", "resume", "pin", "unpin", "restore", "list-archived")),
-    CommandDef("kanban", "Multi-profile collaboration board (tasks, links, comments)",
-               "Tools & Skills", args_hint="[subcommand]",
+    CommandDef("kanban", "Optional multi-profile collaboration board (tasks, links, comments)",
+               "Compatibility", args_hint="[subcommand]",
                subcommands=("init", "boards", "create", "list", "ls", "show", "assign",
                             "reclaim", "reassign", "diagnostics", "diag", "link", "unlink",
                             "claim", "comment", "complete", "edit", "block", "unblock",
@@ -207,7 +217,7 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("usage", "Show token usage and rate limits for the current session", "Info"),
     CommandDef("insights", "Show usage insights and analytics", "Info",
                args_hint="[days]"),
-    CommandDef("platforms", "Show gateway/messaging platform status", "Info",
+    CommandDef("platforms", "Show optional gateway/messaging platform status", "Compatibility",
                cli_only=True, aliases=("gateway",)),
     CommandDef("platform", "Pause, resume, or list a failing gateway platform", "Info",
                gateway_only=True, args_hint="<pause|resume|list> [name]"),
@@ -266,14 +276,20 @@ for _cmd in COMMAND_REGISTRY:
         for _alias in _cmd.aliases:
             COMMANDS[f"/{_alias}"] = f"{_cmd.description} (alias for /{_cmd.name})"
 
-# Backwards-compatible categorized dict
-COMMANDS_BY_CATEGORY: dict[str, dict[str, str]] = {}
+# Backwards-compatible categorized dict.  Keep the forecast-native workflow
+# first in ``/help`` even though compatibility commands are still available.
+COMMANDS_BY_CATEGORY: dict[str, dict[str, str]] = {
+    category: {} for category in COMMAND_CATEGORY_ORDER
+}
 for _cmd in COMMAND_REGISTRY:
     if not _cmd.gateway_only:
         _cat = COMMANDS_BY_CATEGORY.setdefault(_cmd.category, {})
         _cat[f"/{_cmd.name}"] = COMMANDS[f"/{_cmd.name}"]
         for _alias in _cmd.aliases:
             _cat[f"/{_alias}"] = COMMANDS[f"/{_alias}"]
+COMMANDS_BY_CATEGORY = {
+    category: commands for category, commands in COMMANDS_BY_CATEGORY.items() if commands
+}
 
 
 # Subcommands lookup: "/cmd" -> ["sub1", "sub2", ...]
