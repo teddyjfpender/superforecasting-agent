@@ -101,8 +101,9 @@ Useful scheduled jobs include:
 - Alert the user when a forecast needs review or when error patterns change.
 - For global self-checks, alert when the benchmark evidence ledger is still
   missing live scored forecasts, agent-protocol held-out cases, leakage-free
-  benchmark runs, generated-source positive baseline edges, or enough distinct
-  datasets to justify stronger performance claims.
+  benchmark runs, generated-source positive baseline edges, enough distinct
+  datasets, or at least one external resolved-question corpus to justify
+  stronger performance claims.
 
 ## Forecasting Protocol
 

@@ -128,11 +128,13 @@ Recurring benchmark reports can run through the forecast CLI:
 ```bash
 forecast backtest --benchmarks
 forecast backtest --all-benchmarks --probability-source forecast-engine
+forecast backtest builtin:manifold-public-120-binary --probability-source forecast-engine
 forecast performance --last 5 --json
+forecast readiness --require-evidence
 forecast calibration --by-origin --all
 ```
 
-Use these in scheduled jobs or local automation to track whether the forecast engine is improving. Keep live forecasts, imported baselines, and backtests separate when interpreting calibration.
+Use these in scheduled jobs or local automation to track whether the forecast engine is improving. Keep live forecasts, imported baselines, and backtests separate when interpreting calibration. Readiness checks require external resolved-question corpus coverage, so synthetic or local fixture replays should not be treated as enough evidence for stronger performance claims.
 
 ## Inherited Cron Runtime
 

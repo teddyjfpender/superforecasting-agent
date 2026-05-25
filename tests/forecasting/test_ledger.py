@@ -960,6 +960,7 @@ def test_global_self_check_flags_benchmark_evidence_gaps(tmp_path):
     assert gap_alerts[0].scope_ref == "benchmark_evidence"
     assert "forecast performance --json" in gap_alerts[0].recommended_action
     assert "live_scored_forecasts" in gap_alerts[0].recommended_action
+    assert "external resolved-question corpus" in gap_alerts[0].recommended_action
     assert ledger.self_check(domain="macro") == []
 
 
