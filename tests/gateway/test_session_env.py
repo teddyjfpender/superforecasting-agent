@@ -124,6 +124,28 @@ def test_get_session_env_falls_back_to_os_environ(monkeypatch):
     assert get_session_env("HERMES_SESSION_PLATFORM") == ""
 
 
+def test_get_session_env_accepts_forecast_native_aliases(monkeypatch):
+    """Fork-native session env aliases should win before legacy names."""
+    monkeypatch.setenv("HERMES_SESSION_PLATFORM", "legacy-discord")
+    monkeypatch.setenv("FORECAST_SESSION_PLATFORM", "forecast-slack")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_SESSION_PLATFORM", "forecast-telegram")
+
+    assert get_session_env("SUPERFORECASTING_AGENT_SESSION_PLATFORM") == "forecast-telegram"
+    assert get_session_env("FORECAST_SESSION_PLATFORM") == "forecast-telegram"
+    assert get_session_env("HERMES_SESSION_PLATFORM") == "forecast-telegram"
+
+
+def test_session_contextvars_are_readable_through_aliases():
+    """Contextvars are shared across fork-native and legacy lookup names."""
+    tokens = set_session_vars(platform="telegram", chat_id="-1001", session_key="session-1")
+    try:
+        assert get_session_env("SUPERFORECASTING_AGENT_SESSION_PLATFORM") == "telegram"
+        assert get_session_env("FORECAST_SESSION_CHAT_ID") == "-1001"
+        assert get_session_env("HERMES_SESSION_KEY") == "session-1"
+    finally:
+        clear_session_vars(tokens)
+
+
 def test_get_session_env_default_when_nothing_set(monkeypatch):
     """get_session_env returns default when neither contextvar nor env is set."""
     monkeypatch.delenv("HERMES_SESSION_PLATFORM", raising=False)

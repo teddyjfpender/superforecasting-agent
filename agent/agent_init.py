@@ -890,11 +890,13 @@ def init_agent(
     # session_context.py for concurrency safety (gateway runs multiple
     # sessions in one process).  Also writes os.environ as fallback for
     # CLI mode where ContextVars aren't used.
-    os.environ["HERMES_SESSION_ID"] = agent.session_id
     try:
-        from gateway.session_context import _SESSION_ID
-        _SESSION_ID.set(agent.session_id)
+        from gateway.session_context import set_process_session_env
+        set_process_session_env("SUPERFORECASTING_AGENT_SESSION_ID", agent.session_id)
     except Exception:
+        os.environ["SUPERFORECASTING_AGENT_SESSION_ID"] = agent.session_id
+        os.environ["FORECAST_SESSION_ID"] = agent.session_id
+        os.environ["HERMES_SESSION_ID"] = agent.session_id
         pass  # CLI/test mode — ContextVar not needed
 
     # Session logs go into ~/.hermes/sessions/ alongside gateway sessions

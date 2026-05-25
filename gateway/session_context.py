@@ -1,9 +1,11 @@
 """
-Session-scoped context variables for the Hermes gateway.
+Session-scoped context variables for the Superforecasting Agent gateway.
 
 Replaces the previous ``os.environ``-based session state
 (``HERMES_SESSION_PLATFORM``, ``HERMES_SESSION_CHAT_ID``, etc.) with
-Python's ``contextvars.ContextVar``.
+Python's ``contextvars.ContextVar``.  The legacy names remain supported,
+but forecast-native callers should prefer ``SUPERFORECASTING_AGENT_SESSION_*``
+or the shorter ``FORECAST_SESSION_*`` aliases.
 
 **Why this matters**
 
@@ -24,8 +26,8 @@ so concurrent messages never interfere.
 **Backward compatibility**
 
 The public helper ``get_session_env(name, default="")`` mirrors the old
-``os.getenv("HERMES_SESSION_*", ...)`` calls.  Existing tool code only
-needs to replace the import + call site:
+``os.getenv("HERMES_SESSION_*", ...)`` calls and accepts the fork-native
+aliases.  Existing tool code only needs to replace the import + call site:
 
     # before
     import os
@@ -34,6 +36,9 @@ needs to replace the import + call site:
     # after
     from gateway.session_context import get_session_env
     platform = get_session_env("HERMES_SESSION_PLATFORM", "")
+
+    # preferred in new fork-native code
+    platform = get_session_env("SUPERFORECASTING_AGENT_SESSION_PLATFORM", "")
 """
 
 from contextvars import ContextVar
@@ -48,39 +53,76 @@ _UNSET: Any = object()
 # Per-task session variables
 # ---------------------------------------------------------------------------
 
-_SESSION_PLATFORM: ContextVar = ContextVar("HERMES_SESSION_PLATFORM", default=_UNSET)
-_SESSION_CHAT_ID: ContextVar = ContextVar("HERMES_SESSION_CHAT_ID", default=_UNSET)
-_SESSION_CHAT_NAME: ContextVar = ContextVar("HERMES_SESSION_CHAT_NAME", default=_UNSET)
-_SESSION_THREAD_ID: ContextVar = ContextVar("HERMES_SESSION_THREAD_ID", default=_UNSET)
-_SESSION_USER_ID: ContextVar = ContextVar("HERMES_SESSION_USER_ID", default=_UNSET)
-_SESSION_USER_NAME: ContextVar = ContextVar("HERMES_SESSION_USER_NAME", default=_UNSET)
-_SESSION_KEY: ContextVar = ContextVar("HERMES_SESSION_KEY", default=_UNSET)
-_SESSION_ID: ContextVar = ContextVar("HERMES_SESSION_ID", default=_UNSET)
+_SESSION_PLATFORM: ContextVar = ContextVar(
+    "SUPERFORECASTING_AGENT_SESSION_PLATFORM", default=_UNSET
+)
+_SESSION_CHAT_ID: ContextVar = ContextVar(
+    "SUPERFORECASTING_AGENT_SESSION_CHAT_ID", default=_UNSET
+)
+_SESSION_CHAT_NAME: ContextVar = ContextVar(
+    "SUPERFORECASTING_AGENT_SESSION_CHAT_NAME", default=_UNSET
+)
+_SESSION_THREAD_ID: ContextVar = ContextVar(
+    "SUPERFORECASTING_AGENT_SESSION_THREAD_ID", default=_UNSET
+)
+_SESSION_USER_ID: ContextVar = ContextVar(
+    "SUPERFORECASTING_AGENT_SESSION_USER_ID", default=_UNSET
+)
+_SESSION_USER_NAME: ContextVar = ContextVar(
+    "SUPERFORECASTING_AGENT_SESSION_USER_NAME", default=_UNSET
+)
+_SESSION_KEY: ContextVar = ContextVar(
+    "SUPERFORECASTING_AGENT_SESSION_KEY", default=_UNSET
+)
+_SESSION_ID: ContextVar = ContextVar(
+    "SUPERFORECASTING_AGENT_SESSION_ID", default=_UNSET
+)
 # ID of the message that triggered the current turn. Used as a reply anchor
 # so background-process notifications stay inside the originating Telegram
 # private-chat topic (those lanes route only with thread id + reply anchor).
-_SESSION_MESSAGE_ID: ContextVar = ContextVar("HERMES_SESSION_MESSAGE_ID", default=_UNSET)
+_SESSION_MESSAGE_ID: ContextVar = ContextVar(
+    "SUPERFORECASTING_AGENT_SESSION_MESSAGE_ID", default=_UNSET
+)
 
 # Cron auto-delivery vars — set per-job in run_job() so concurrent jobs
 # don't clobber each other's delivery targets.
-_CRON_AUTO_DELIVER_PLATFORM: ContextVar = ContextVar("HERMES_CRON_AUTO_DELIVER_PLATFORM", default=_UNSET)
-_CRON_AUTO_DELIVER_CHAT_ID: ContextVar = ContextVar("HERMES_CRON_AUTO_DELIVER_CHAT_ID", default=_UNSET)
-_CRON_AUTO_DELIVER_THREAD_ID: ContextVar = ContextVar("HERMES_CRON_AUTO_DELIVER_THREAD_ID", default=_UNSET)
+_CRON_AUTO_DELIVER_PLATFORM: ContextVar = ContextVar(
+    "SUPERFORECASTING_AGENT_CRON_AUTO_DELIVER_PLATFORM", default=_UNSET
+)
+_CRON_AUTO_DELIVER_CHAT_ID: ContextVar = ContextVar(
+    "SUPERFORECASTING_AGENT_CRON_AUTO_DELIVER_CHAT_ID", default=_UNSET
+)
+_CRON_AUTO_DELIVER_THREAD_ID: ContextVar = ContextVar(
+    "SUPERFORECASTING_AGENT_CRON_AUTO_DELIVER_THREAD_ID", default=_UNSET
+)
 
-_VAR_MAP = {
-    "HERMES_SESSION_PLATFORM": _SESSION_PLATFORM,
-    "HERMES_SESSION_CHAT_ID": _SESSION_CHAT_ID,
-    "HERMES_SESSION_CHAT_NAME": _SESSION_CHAT_NAME,
-    "HERMES_SESSION_THREAD_ID": _SESSION_THREAD_ID,
-    "HERMES_SESSION_USER_ID": _SESSION_USER_ID,
-    "HERMES_SESSION_USER_NAME": _SESSION_USER_NAME,
-    "HERMES_SESSION_KEY": _SESSION_KEY,
-    "HERMES_SESSION_ID": _SESSION_ID,
-    "HERMES_SESSION_MESSAGE_ID": _SESSION_MESSAGE_ID,
-    "HERMES_CRON_AUTO_DELIVER_PLATFORM": _CRON_AUTO_DELIVER_PLATFORM,
-    "HERMES_CRON_AUTO_DELIVER_CHAT_ID": _CRON_AUTO_DELIVER_CHAT_ID,
-    "HERMES_CRON_AUTO_DELIVER_THREAD_ID": _CRON_AUTO_DELIVER_THREAD_ID,
-}
+_ALIAS_GROUPS: dict[str, tuple[str, ...]] = {}
+_VAR_MAP: dict[str, ContextVar] = {}
+
+
+def _register_alias_group(var: ContextVar, suffix: str) -> None:
+    aliases = (
+        f"SUPERFORECASTING_AGENT_{suffix}",
+        f"FORECAST_{suffix}",
+        f"HERMES_{suffix}",
+    )
+    for alias in aliases:
+        _ALIAS_GROUPS[alias] = aliases
+        _VAR_MAP[alias] = var
+
+
+_register_alias_group(_SESSION_PLATFORM, "SESSION_PLATFORM")
+_register_alias_group(_SESSION_CHAT_ID, "SESSION_CHAT_ID")
+_register_alias_group(_SESSION_CHAT_NAME, "SESSION_CHAT_NAME")
+_register_alias_group(_SESSION_THREAD_ID, "SESSION_THREAD_ID")
+_register_alias_group(_SESSION_USER_ID, "SESSION_USER_ID")
+_register_alias_group(_SESSION_USER_NAME, "SESSION_USER_NAME")
+_register_alias_group(_SESSION_KEY, "SESSION_KEY")
+_register_alias_group(_SESSION_ID, "SESSION_ID")
+_register_alias_group(_SESSION_MESSAGE_ID, "SESSION_MESSAGE_ID")
+_register_alias_group(_CRON_AUTO_DELIVER_PLATFORM, "CRON_AUTO_DELIVER_PLATFORM")
+_register_alias_group(_CRON_AUTO_DELIVER_CHAT_ID, "CRON_AUTO_DELIVER_CHAT_ID")
+_register_alias_group(_CRON_AUTO_DELIVER_THREAD_ID, "CRON_AUTO_DELIVER_THREAD_ID")
 
 
 def set_session_vars(
@@ -138,19 +180,39 @@ def clear_session_vars(tokens: list) -> None:
         var.set("")
 
 
-def get_session_env(name: str, default: str = "") -> str:
-    """Read a session context variable by its legacy ``HERMES_SESSION_*`` name.
+def set_process_session_env(name: str, value: str) -> None:
+    """Set process env aliases and the matching ContextVar for session state.
 
-    Drop-in replacement for ``os.getenv("HERMES_SESSION_*", default)``.
+    Use this only for process-scoped session values such as the local CLI
+    agent's session id.  Gateway message routing should continue to use
+    ``set_session_vars`` so concurrent tasks do not mutate ``os.environ``.
+    """
+    import os
+
+    aliases = _ALIAS_GROUPS.get(name, (name,))
+    for alias in aliases:
+        os.environ[alias] = value
+    var = _VAR_MAP.get(name)
+    if var is not None:
+        var.set(value)
+
+
+def get_session_env(name: str, default: str = "") -> str:
+    """Read a session context variable by a fork-native or legacy name.
+
+    Drop-in replacement for ``os.getenv("HERMES_SESSION_*", default)`` with
+    support for ``SUPERFORECASTING_AGENT_SESSION_*`` and ``FORECAST_SESSION_*``.
 
     Resolution order:
     1. Context variable (set by the gateway for concurrency-safe access).
        If the variable was explicitly set (even to ``""``) via
        ``set_session_vars`` or ``clear_session_vars``, that value is
        returned — **no fallback to os.environ**.
-    2. ``os.environ`` (only when the context variable was never set in
-       this context — i.e. CLI, cron scheduler, and test processes that
-       don't use ``set_session_vars`` at all).
+    2. ``os.environ`` aliases in forecast-native precedence order
+       (``SUPERFORECASTING_AGENT_*``, then ``FORECAST_*``, then legacy
+       ``HERMES_*``) only when the context variable was never set in this
+       context — i.e. CLI, cron scheduler, and test processes that don't use
+       ``set_session_vars`` at all.
     3. *default*
     """
     import os
@@ -160,5 +222,9 @@ def get_session_env(name: str, default: str = "") -> str:
         value = var.get()
         if value is not _UNSET:
             return value
-    # Fall back to os.environ for CLI, cron, and test compatibility
-    return os.getenv(name, default)
+    # Fall back to os.environ for CLI, cron, and test compatibility.
+    for alias in _ALIAS_GROUPS.get(name, (name,)):
+        value = os.getenv(alias)
+        if value is not None:
+            return value
+    return default

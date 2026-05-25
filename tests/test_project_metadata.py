@@ -2701,6 +2701,33 @@ def test_prompt_guidance_env_aliases_are_forecast_native():
     assert "get_agent_help_guidance()" in system_prompt
 
 
+def test_session_env_aliases_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    session_context = (root / "gateway" / "session_context.py").read_text(
+        encoding="utf-8"
+    )
+    agent_init = (root / "agent" / "agent_init.py").read_text(encoding="utf-8")
+    compression = (root / "agent" / "conversation_compression.py").read_text(
+        encoding="utf-8"
+    )
+    conftest = (root / "tests" / "conftest.py").read_text(encoding="utf-8")
+    env_reference = (root / "website" / "docs" / "reference" / "environment-variables.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "SUPERFORECASTING_AGENT_SESSION_PLATFORM" in session_context
+    assert 'f"FORECAST_{suffix}"' in session_context
+    assert 'f"HERMES_{suffix}"' in session_context
+    assert '_register_alias_group(_SESSION_PLATFORM, "SESSION_PLATFORM")' in session_context
+    assert "def set_process_session_env" in session_context
+    assert 'set_process_session_env("SUPERFORECASTING_AGENT_SESSION_ID"' in agent_init
+    assert 'set_process_session_env("SUPERFORECASTING_AGENT_SESSION_ID"' in compression
+    assert "SUPERFORECASTING_AGENT_SESSION_ID" in conftest
+    assert "FORECAST_SESSION_ID" in conftest
+    assert "SUPERFORECASTING_AGENT_SESSION_ID" in env_reference
+    assert "FORECAST_SESSION_ID" in env_reference
+
+
 def test_oauth_file_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     anthropic_adapter = (root / "agent" / "anthropic_adapter.py").read_text(
