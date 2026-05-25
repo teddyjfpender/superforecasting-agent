@@ -210,9 +210,12 @@ def test_forecast_native_package_namespace_is_exposed():
 
     root = Path(__file__).resolve().parents[1]
     source_launcher = (root / "superforecasting-agent").read_text(encoding="utf-8")
+    forecast_launcher = (root / "forecast").read_text(encoding="utf-8")
     legacy_launcher = (root / "hermes").read_text(encoding="utf-8")
     assert "from superforecasting_agent.cli import main" in source_launcher
     assert "Source-tree launcher for the Superforecasting Agent CLI" in source_launcher
+    assert "from superforecasting_agent.cli import main" in forecast_launcher
+    assert "Source-tree launcher for the forecast CLI" in forecast_launcher
     assert "Legacy Hermes CLI compatibility launcher" in legacy_launcher
 
 

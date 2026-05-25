@@ -25,11 +25,10 @@ postmortem, calibration, backtest replay, scheduled self-check, alert creation,
 and schedule history. The smoke surfaced and fixed schedule cadence parsing for
 documented phrases such as `every 1h`.
 
-The source-tree `./superforecasting-agent` launcher, `python -m
-superforecasting_agent`, the package-defined `forecast` console-script target,
-dashboard forecast API, and TUI forecast panel tests have all been checked for
-the MVP handoff. The `forecast` shell command is expected to appear after
-editable/package installation.
+The source-tree `./superforecasting-agent` and `./forecast` launchers,
+`python -m superforecasting_agent`, the package-defined `forecast`
+console-script target, dashboard forecast API, and TUI forecast panel tests
+have all been checked for the MVP handoff.
 
 ## Evidence Inspected
 
@@ -1207,7 +1206,7 @@ Latest verified result:
 - Pilot learned-error gate pass: `forecast pilot-report` now includes a zero-tolerance `learned_error_reviews_cleared` check for unresolved `domain_error_profile_applies:<id>` alerts, CLI output reports `learned_error_reviews=<n>`, docs state that pilot exit requires cleared learned-error review debt, and the smoke transcript now reports `pilot_report_checks: 8/8`.
 - Learned-error CLI/cron surfacing pass: `forecast review` now merges unresolved `domain_error_profile_applies:<id>` alerts into the main CLI review list, `forecast errors` prints active learned-error review rows with profile and alert IDs, and scheduled/cron `learning_reviews` counts include forecast-level learned-error alerts rather than only profile/lesson review records.
 - Root agent-instructions identity pass: `AGENTS.md` now opens as the Superforecasting Agent development guide, states the forecast-ledger north star and primary lifecycle commands, uses fork-native home/TUI/plugin guidance for high-attention instructions, and frames inherited Hermes names as compatibility infrastructure rather than product direction; project metadata guards the opening copy.
-- Source-tree launcher pass: the checkout now includes a fork-native executable `./superforecasting-agent` that invokes `superforecasting_agent.cli:main` and renders the forecast-first command surface directly from a source tree, while `./hermes` remains a legacy compatibility launcher for inherited workflows.
+- Source-tree launcher pass: the checkout now includes fork-native executables `./superforecasting-agent` and `./forecast` that invoke `superforecasting_agent.cli:main` and render the forecast-first command surface directly from a source tree, while `./hermes` remains a legacy compatibility launcher for inherited workflows.
 - Manual setup-helper identity pass: `setup-superforecasting-agent.sh` is now the fork-native manual-clone setup helper. It links and recommends `superforecasting-agent`, writes bundled skills under the fork-native forecast home by default, keeps `hermes` only as a compatibility symlink, and no longer prints `hermes setup`/`hermes doctor` or `~/.hermes/skills` as primary tester guidance. `setup-hermes.sh` remains only as a thin compatibility wrapper.
 - Skill-reset guidance cleanup pass: `superforecasting-agent skills reset` help and config comments now describe the active forecast home's skills manifest/directory instead of hardcoded `~/.hermes/skills` paths; focused compile, metadata, and diff checks pass.
 - Additional messaging and voice setup pass: Google Chat, Feishu/Lark, Mattermost, voice mode, DingTalk, and WhatsApp setup docs now frame these channels as secondary forecast-desk alert, approval, scheduled-review, evidence-delivery, voice-capture, and operator-coordination surfaces; they use fork-native homes and commands, state ledger boundaries, and scan clean for inherited Hermes/general-assistant terms; project metadata tests 19 passed; `npm run build` in `website/` passed with inherited localized broken-link/anchor warnings; generated website static files had no diff; `git diff --check` passed

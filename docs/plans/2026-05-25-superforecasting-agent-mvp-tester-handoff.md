@@ -1,11 +1,11 @@
 # Superforecasting Agent MVP Tester Handoff
 
-Date: 2026-05-25
+Date: 2026-05-26
 
-This is the handoff for a friendly tester MVP of the Hermes fork as a CLI-first
-forecasting desk. It is meant to get real users through the system and collect
-workflow feedback. It is not evidence that the agent is already better than
-Metaculus, markets, or human superforecasters.
+This is the handoff for a friendly tester MVP of the Superforecasting Agent
+fork as a CLI-first forecasting desk. It is meant to get real users through the
+system and collect workflow feedback. It is not evidence that the agent is
+already better than Metaculus, markets, or human superforecasters.
 
 ## Install The Snapshot
 
@@ -29,9 +29,13 @@ superforecasting-agent
 python -m superforecasting_agent status
 ```
 
-In a raw source checkout before installation, `./superforecasting-agent` and
-`python -m superforecasting_agent ...` work; the `forecast` console script is
-created by package installation.
+In a raw source checkout before installation, use the source-tree launchers:
+
+```bash
+./forecast status
+./superforecasting-agent status
+python -m superforecasting_agent status
+```
 
 ## Operator Gate
 
@@ -103,6 +107,8 @@ forecast --db "$FORECAST_DB" backtest builtin:mini-binary --probability-source d
 forecast --db "$FORECAST_DB" performance --last 5
 forecast --db "$FORECAST_DB" readiness
 forecast --db "$FORECAST_DB" pilot-report
+forecast --db "$FORECAST_DB" export all --format json --output .pilot/tester-export.json
+forecast --db "$FORECAST_DB" import packet .pilot/tester-export.json --conflict skip --json
 ```
 
 The TUI and dashboard paths to check:
@@ -132,8 +138,11 @@ It verified:
 - Backtest replay on `builtin:mini-binary` with leakage checks passing.
 - Scheduled self-check with `--cadence "every 1h"`, alert creation, learning
   review counts, and durable schedule history.
-- Source-tree `./superforecasting-agent`, `python -m superforecasting_agent`,
-  and the package-defined `forecast` command path.
+- Source-tree `./forecast`, source-tree `./superforecasting-agent`,
+  `python -m superforecasting_agent`, and the package-defined `forecast`
+  command path.
+- Portfolio export/import packets, including forecast history, evidence,
+  schedules, postmortems, calibration lessons, and domain/topic error profiles.
 - Dashboard forecast API and TUI forecast panel test coverage.
 
 ## Feedback To Collect
@@ -157,8 +166,9 @@ export or bundle path.
 
 - The MVP is tester-ready for workflow feedback, not performance claims.
 - Many inherited Hermes module names and compatibility entry points remain.
-- `forecast` exists after package installation; raw source checkouts should use
-  `./superforecasting-agent` or `python -m superforecasting_agent`.
+- `forecast` exists on `PATH` after package installation; raw source checkouts
+  can use `./forecast`, `./superforecasting-agent`, or
+  `python -m superforecasting_agent`.
 - Scheduled checks create alerts, scores, postmortems, lessons, and error
   profiles where configured, but they do not silently change active forecast
   probabilities.
