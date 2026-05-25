@@ -753,6 +753,7 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     gateway = (root / "hermes_cli" / "gateway.py").read_text(encoding="utf-8")
     relaunch = (root / "hermes_cli" / "relaunch.py").read_text(encoding="utf-8")
     tui_gateway = (root / "tui_gateway" / "server.py").read_text(encoding="utf-8")
+    callbacks = (root / "hermes_cli" / "callbacks.py").read_text(encoding="utf-8")
     cli = (root / "cli.py").read_text(encoding="utf-8")
     commands = (root / "hermes_cli" / "commands.py").read_text(encoding="utf-8")
     discord = (root / "gateway" / "platforms" / "discord.py").read_text(
@@ -773,6 +774,10 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "run the forecast CLI again" in relaunch
     assert "run hermes again" not in relaunch
     assert "new hermes started" not in relaunch
+
+    assert "active Superforecasting Agent home `.env`" in callbacks
+    assert "Each function takes the HermesCLI instance" not in callbacks
+    assert "The secret is stored in ~/.hermes/.env" not in callbacks
 
     assert "changed the forecast agent's style" in tui_gateway
     assert "Unknown forecast style" in tui_gateway
@@ -918,6 +923,7 @@ def test_runtime_operator_guidance_uses_forecast_native_commands():
     assert "superforecasting-agent doctor" in text
     assert "superforecasting-agent auth" in text
     assert "superforecasting-agent bundles create" in text
+    assert "superforecasting-agent bundles list" in text
     assert "superforecasting-agent login --provider google-gemini-cli" in text
     assert "superforecasting-agent mcp login" in text
     assert "superforecasting-agent plugins enable" in text
@@ -930,6 +936,8 @@ def test_runtime_operator_guidance_uses_forecast_native_commands():
     assert "run: hermes doctor" not in text
     assert "run 'hermes auth'" not in text
     assert "hermes bundles create <name>" not in text
+    assert "hermes bundles list" not in text
+    assert "``hermes bundles`` CLI subcommand" not in text
     assert "Run `hermes login --provider google-gemini-cli`" not in text
     assert "Run `hermes mcp login" not in text
     assert "Re-enable with: hermes plugins enable" not in text
