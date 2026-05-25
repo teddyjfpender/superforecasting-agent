@@ -808,6 +808,43 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Hermes's prompt-injection scanner" not in install_ps1
 
 
+def test_style_overlay_docs_and_theme_copy_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        "website/docs/user-guide/features/personality.md",
+        "website/docs/reference/slash-commands.md",
+        "web/src/themes/presets.ts",
+        "web/src/i18n/en.ts",
+        "hermes_cli/web_server.py",
+    ]
+    text = "\n".join(
+        (root / rel_path).read_text(encoding="utf-8") for rel_path in checked_paths
+    )
+
+    assert "Forecast Style & SOUL.md" in text
+    assert "`/style` is a session-level overlay" in text
+    assert "legacy compatibility alias for `/style`" in text
+    assert "Switching forecast styles with commands" in text
+    assert "/style concise" in text
+    assert "| `/style [name]` | Switch forecast style overlays" in text
+    assert "SOUL.md (style / system prompt)" in text
+    assert "theme's dashboard role" in text
+    assert "Warm crimson and bronze for focused review" in text
+
+    assert "Personality & SOUL.md" not in text
+    assert "Switching personalities with commands" not in text
+    assert "/personality concise" not in text
+    assert "/personality skeptical" not in text
+    assert "/personality teacher" not in text
+    assert "/personality energy-reviewer" not in text
+    assert "default personality" not in text
+    assert "personality text" not in text
+    assert "How personality interacts" not in text
+    assert "theme's personality" not in text
+    assert "forge vibes" not in text
+    assert "SOUL.md (personality / system prompt)" not in text
+
+
 def test_runtime_user_guidance_prefers_active_forecast_home():
     root = Path(__file__).resolve().parents[1]
     goals = (root / "hermes_cli" / "goals.py").read_text(encoding="utf-8")

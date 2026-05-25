@@ -5,7 +5,7 @@ import type { DashboardTheme, ThemeTypography, ThemeLayout } from "./types";
  *
  * Each theme defines its own palette, typography, and layout so switching
  * themes produces visible changes beyond just color — fonts, density, and
- * corner-radius all shift to match the theme's personality.
+ * corner-radius all shift to match the theme's dashboard role.
  *
  * Theme names must stay in sync with the backend's
  * `_BUILTIN_DASHBOARD_THEMES` list in `hermes_cli/web_server.py`.
@@ -81,7 +81,7 @@ export const midnightTheme: DashboardTheme = {
 export const emberTheme: DashboardTheme = {
   name: "ember",
   label: "Ember",
-  description: "Warm crimson and bronze — forge vibes",
+  description: "Warm crimson and bronze for focused review",
   palette: {
     background: { hex: "#1a0a06", alpha: 1 },
     midground: { hex: "#ffd8b0", alpha: 1 },

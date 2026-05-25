@@ -3858,7 +3858,7 @@ _BUILTIN_DASHBOARD_THEMES = [
     {"name": "default",       "label": "Forecast Teal",         "description": "Classic dark teal for the forecasting desk"},
     {"name": "default-large", "label": "Forecast Teal (Large)", "description": "Forecast Teal with bigger fonts and roomier spacing"},
     {"name": "midnight",      "label": "Midnight",            "description": "Deep blue-violet with cool accents"},
-    {"name": "ember",     "label": "Ember",          "description": "Warm crimson and bronze — forge vibes"},
+    {"name": "ember",     "label": "Ember",          "description": "Warm crimson and bronze for focused review"},
     {"name": "mono",      "label": "Mono",           "description": "Clean grayscale — minimal and focused"},
     {"name": "cyberpunk", "label": "Cyberpunk",      "description": "Neon green on black — matrix terminal"},
     {"name": "rose",      "label": "Rosé",           "description": "Soft pink and warm ivory — easy on the eyes"},

@@ -1,17 +1,21 @@
 ---
 sidebar_position: 9
-title: "Personality & SOUL.md"
-description: "Customize Superforecasting Agent's SOUL.md identity."
+title: "Forecast Style & SOUL.md"
+description: "Customize SOUL.md identity and forecast style overlays."
 ---
 
-# Personality & SOUL.md
+# Forecast Style & SOUL.md
 
-Superforecasting Agent's personality is customizable. `SOUL.md` is the **primary identity**: the first cached system-prompt layer that defines the agent's voice and standing behavior.
+Superforecasting Agent has two separate style layers. `SOUL.md` is the
+**primary identity**: the first cached system-prompt layer that defines the
+desk's default voice and standing behavior. `/style` is a temporary forecast
+mode overlay for the current session.
 
-- `SOUL.md` - a durable persona file that lives in the active runtime home and serves as the agent's identity (slot #1 in the system prompt)
-- built-in or custom `/personality` presets - session-level system-prompt overlays
+- `SOUL.md` - a durable identity file that lives in the active runtime home and serves as the agent's identity (slot #1 in the system prompt)
+- built-in or custom `/style` presets - session-level system-prompt overlays
+- `/personality` remains available as a legacy compatibility alias for `/style`
 
-If you want to change the default voice or standing behavior of the forecasting desk, edit `SOUL.md`. Forecast probabilities, evidence, lessons, and error records still belong in the forecast ledger, not in personality text.
+If you want to change the default voice or standing behavior of the forecasting desk, edit `SOUL.md`. Forecast probabilities, evidence, lessons, and error records still belong in the forecast ledger, not in style text.
 
 ## How SOUL.md works now
 
@@ -42,12 +46,12 @@ That makes `SOUL.md` a true per-user or per-instance identity, not just an addit
 
 ## Why this design
 
-This keeps personality predictable.
+This keeps the desk's standing identity predictable.
 
-If Superforecasting Agent loaded `SOUL.md` from whatever directory you happened to launch it in, the agent's identity could change unexpectedly between projects. By loading only from the active runtime home, the personality belongs to the forecast-desk instance itself.
+If Superforecasting Agent loaded `SOUL.md` from whatever directory you happened to launch it in, the desk identity could change unexpectedly between projects. By loading only from the active runtime home, the standing style belongs to the forecast-desk instance itself.
 
 That also makes it easier to teach users:
-- "Edit `~/.superforecasting-agent/SOUL.md` to change Superforecasting Agent's default personality."
+- "Edit `~/.superforecasting-agent/SOUL.md` to change Superforecasting Agent's default desk style."
 
 ## Where to edit it
 
@@ -65,7 +69,7 @@ $SUPERFORECASTING_AGENT_HOME/SOUL.md
 
 ## What should go in SOUL.md?
 
-Use it for durable voice and personality guidance, such as:
+Use it for durable voice and style guidance, such as:
 - tone
 - communication style
 - level of directness
@@ -130,7 +134,7 @@ If the file is empty, whitespace-only, or cannot be read, Superforecasting Agent
 
 `SOUL.md` is scanned like other context-bearing files for prompt injection patterns before inclusion.
 
-That means you should still keep it focused on persona/voice rather than trying to sneak in strange meta-instructions.
+That means you should still keep it focused on voice and standing style rather than trying to sneak in strange meta-instructions.
 
 ## SOUL.md vs AGENTS.md
 
@@ -142,7 +146,7 @@ Use for:
 - tone
 - style
 - communication defaults
-- personality-level behavior
+- voice-level behavior
 
 ### AGENTS.md
 Use for:
@@ -156,23 +160,23 @@ A useful rule:
 - if it should follow you everywhere, it belongs in `SOUL.md`
 - if it belongs to a project, it belongs in `AGENTS.md`
 
-## SOUL.md vs `/personality`
+## SOUL.md vs `/style`
 
-`SOUL.md` is your durable default personality.
+`SOUL.md` is your durable default desk identity.
 
-`/personality` is a session-level overlay that changes or supplements the current system prompt.
+`/style` is a session-level overlay that changes or supplements the current system prompt. The inherited `/personality` command is still accepted as a compatibility alias, but `/style` is the primary forecast-desk command.
 
 So:
 - `SOUL.md` = baseline voice
-- `/personality` = temporary mode switch
+- `/style` = temporary forecast mode switch
 
 Examples:
-- keep a pragmatic default SOUL, then use `/personality teacher` for a tutoring conversation
-- keep a concise SOUL, then use `/personality skeptical` for an assumption review
+- keep a pragmatic default SOUL, then use `/style teacher` for a tutoring conversation
+- keep a concise SOUL, then use `/style skeptical` for an assumption review
 
 ## Built-in Forecast Modes
 
-Superforecasting Agent ships with forecast-desk overlays you can switch to with `/personality`.
+Superforecasting Agent ships with forecast-desk overlays you can switch to with `/style`.
 
 | Name | Description |
 |------|-------------|
@@ -186,27 +190,29 @@ Superforecasting Agent ships with forecast-desk overlays you can switch to with 
 | **creative** | Non-obvious scenarios, mechanisms, and indicators |
 | **executive** | Decision-oriented summary of probabilities, deltas, and caveats |
 
-## Switching personalities with commands
+## Switching forecast styles with commands
 
 ### CLI
 
 ```text
-/personality
-/personality concise
-/personality skeptical
+/style
+/style concise
+/style skeptical
 ```
 
 ### Messaging platforms
 
 ```text
-/personality teacher
+/style teacher
 ```
 
-These are convenient overlays, but your global `SOUL.md` still gives Superforecasting Agent its persistent default personality unless the overlay meaningfully changes it.
+These are convenient overlays, but your global `SOUL.md` still gives Superforecasting Agent its persistent default voice unless the overlay meaningfully changes it.
 
-## Custom personalities in config
+The inherited `/personality` spelling remains accepted for older habits and integrations.
 
-You can also define named custom personalities in `~/.superforecasting-agent/config.yaml` under `agent.personalities`. Legacy `~/.hermes/config.yaml` remains readable during the fork transition.
+## Custom style overlays in config
+
+You can also define named custom style overlays in `~/.superforecasting-agent/config.yaml` under the inherited `agent.personalities` key. Legacy `~/.hermes/config.yaml` remains readable during the fork transition.
 
 ```yaml
 agent:
@@ -220,7 +226,7 @@ agent:
 Then switch to it with:
 
 ```text
-/personality energy-reviewer
+/style energy-reviewer
 ```
 
 ## Recommended workflow
@@ -229,14 +235,14 @@ A strong default setup is:
 
 1. Keep a thoughtful global `SOUL.md` in `~/.superforecasting-agent/SOUL.md`
 2. Put project instructions in `AGENTS.md`
-3. Use `/personality` only when you want a temporary mode shift
+3. Use `/style` only when you want a temporary forecast-mode shift
 
 That gives you:
 - a stable voice
 - project-specific behavior where it belongs
 - temporary control when needed
 
-## How personality interacts with the full prompt
+## How style overlays interact with the full prompt
 
 At a high level, the prompt stack includes:
 1. **SOUL.md** (agent identity — or built-in fallback if SOUL.md is unavailable)
@@ -246,7 +252,7 @@ At a high level, the prompt stack includes:
 5. context files (`AGENTS.md`, `.cursorrules`)
 6. timestamp
 7. platform-specific formatting hints
-8. optional system-prompt overlays such as `/personality`
+8. optional system-prompt overlays such as `/style`
 
 `SOUL.md` is the foundation — everything else builds on top of it.
 
@@ -257,11 +263,11 @@ At a high level, the prompt stack includes:
 - [Tips & Best Practices](/docs/guides/tips)
 - [SOUL.md Guide](/docs/guides/use-soul-with-superforecasting-agent)
 
-## CLI appearance vs conversational personality
+## CLI appearance vs conversational style
 
-Conversational personality and CLI appearance are separate:
+Conversational style and CLI appearance are separate:
 
-- `SOUL.md`, `agent.system_prompt`, and `/personality` affect how Superforecasting Agent speaks
+- `SOUL.md`, `agent.system_prompt`, and `/style` affect how Superforecasting Agent speaks
 - `display.skin` and `/skin` affect how Superforecasting Agent looks in the terminal
 
 For terminal appearance, see [Skins & Themes](./skins.md).

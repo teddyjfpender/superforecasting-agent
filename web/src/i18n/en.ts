@@ -243,7 +243,7 @@ export const en: Translations = {
     skills: "Forecast Skills",
     rename: "Rename",
     editSoul: "Edit SOUL.md",
-    soulSection: "SOUL.md (personality / system prompt)",
+    soulSection: "SOUL.md (style / system prompt)",
     soulPlaceholder: "# How this forecaster should work…",
     saveSoul: "Save SOUL",
     soulSaved: "SOUL.md saved",
