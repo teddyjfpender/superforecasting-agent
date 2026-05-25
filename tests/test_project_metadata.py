@@ -2251,6 +2251,25 @@ def test_gateway_setup_copy_is_forecast_native():
     assert 'signal-cli link -n "HermesAgent"' not in text
 
 
+def test_gateway_runtime_copy_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "gateway" / "run.py").read_text(encoding="utf-8")
+
+    assert "Telegram chat interface" in text
+    assert "Ask the gateway operator to run" in text
+    assert "`superforecasting-agent pairing approve" in text
+    assert "fresh forecast session with no prior context" in text
+    assert "compress the forecast transcript" in text
+    assert "one gateway, many parallel forecast chats" in text
+    assert "bot interface and send any message there" not in text
+    assert "Ask the bot owner to run" not in text
+    assert "`hermes pairing approve" not in text
+    assert "Hi~" not in text
+    assert "Too many pairing requests right now~" not in text
+    assert "compress the conversation" not in text
+    assert "fresh conversation with no prior context" not in text
+
+
 def test_codex_runtime_switch_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "hermes_cli" / "codex_runtime_switch.py").read_text(encoding="utf-8")

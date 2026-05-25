@@ -1463,7 +1463,7 @@ def _normalize_empty_agent_response(
         if is_context_failure:
             return (
                 "⚠️ Session too large for the model's context window.\n"
-                "Use /compact to compress the conversation, or "
+                "Use /compact to compress the forecast transcript, or "
                 "/reset to start fresh."
             )
         return (
@@ -2140,7 +2140,7 @@ class GatewayRunner:
         return (
             "This main chat is reserved for system commands.\n\n"
             "To start a new forecast research session, open the All Messages topic at the top "
-            "of this bot interface and send any message there. Telegram will "
+            "of this Telegram chat interface and send any message there. Telegram will "
             "create a new topic for that message; each topic works as an "
             "independent forecast research session."
         )
@@ -2148,7 +2148,7 @@ class GatewayRunner:
     def _telegram_topic_root_new_message(self) -> str:
         return (
             "To start a new parallel forecast research session, open the All Messages topic "
-            "at the top of this bot interface and send any message there. "
+            "at the top of this Telegram chat interface and send any message there. "
             "Telegram will create a new topic for it.\n\n"
             "Each topic is an independent forecast research session. Use /new inside an "
             "existing topic only if you want to replace that topic's current session."
@@ -6663,18 +6663,18 @@ class GatewayRunner:
                     if adapter:
                         await adapter.send(
                             source.chat_id,
-                            f"Hi~ I don't recognize you yet!\n\n"
+                            f"I do not recognize you yet.\n\n"
                             f"Here's your pairing code: `{code}`\n\n"
-                            f"Ask the bot owner to run:\n"
-                            f"`hermes pairing approve {platform_name} {code}`"
+                            f"Ask the gateway operator to run:\n"
+                            f"`superforecasting-agent pairing approve {platform_name} {code}`"
                         )
                 else:
                     adapter = self.adapters.get(source.platform)
                     if adapter:
                         await adapter.send(
                             source.chat_id,
-                            "Too many pairing requests right now~ "
-                            "Please try again later!"
+                            "Too many pairing requests right now. "
+                            "Please try again later."
                         )
                     # Record rate limit so subsequent messages are silently ignored
                     self.pairing_store._record_rate_limit(platform_name, source.user_id)
@@ -8078,15 +8078,15 @@ class GatewayRunner:
         context_prompt = build_session_context_prompt(context, redact_pii=_redact_pii)
         
         # If the previous session expired and was auto-reset, prepend a notice
-        # so the agent knows this is a fresh conversation (not an intentional /reset).
+        # so the agent knows this is a fresh forecast session (not an intentional /reset).
         if getattr(session_entry, 'was_auto_reset', False):
             reset_reason = getattr(session_entry, 'auto_reset_reason', None) or 'idle'
             if reset_reason == "suspended":
-                context_note = "[System note: The user's previous session was stopped and suspended. This is a fresh conversation with no prior context.]"
+                context_note = "[System note: The user's previous session was stopped and suspended. This is a fresh forecast session with no prior context.]"
             elif reset_reason == "daily":
-                context_note = "[System note: The user's session was automatically reset by the daily schedule. This is a fresh conversation with no prior context.]"
+                context_note = "[System note: The user's session was automatically reset by the daily schedule. This is a fresh forecast session with no prior context.]"
             else:
-                context_note = "[System note: The user's previous session expired due to inactivity. This is a fresh conversation with no prior context.]"
+                context_note = "[System note: The user's previous session expired due to inactivity. This is a fresh forecast session with no prior context.]"
             context_prompt = context_note + "\n\n" + context_prompt
 
             # Send a user-facing notification explaining the reset, unless:
@@ -8818,7 +8818,7 @@ class GatewayRunner:
                 if hasattr(self, "_pending_model_notes"):
                     self._pending_model_notes.pop(session_key, None)
                 response = (response or "") + (
-                    "\n\n🔄 Session auto-reset — the conversation exceeded the "
+                    "\n\n🔄 Session auto-reset — the forecast transcript exceeded the "
                     "maximum context size and could not be compressed further. "
                     "Your next message will start a fresh session."
                 )
@@ -9007,7 +9007,7 @@ class GatewayRunner:
                 if _hist_len > 50:
                     return (
                         "⚠️ Session too large for the model's context window.\n"
-                        "Use /compact to compress the conversation, or "
+                        "Use /compact to compress the forecast transcript, or "
                         "/reset to start fresh."
                     )
                 elif status_code == 400:
@@ -12410,7 +12410,7 @@ class GatewayRunner:
 
     def _telegram_topic_help_text(self) -> str:
         return (
-            "/topic — enable multi-session DM mode (one bot, many parallel chats)\n"
+            "/topic — enable multi-session DM mode (one gateway, many parallel forecast chats)\n"
             "\n"
             "Usage:\n"
             "  /topic             Enable topic mode, or show status if already on\n"
@@ -12421,7 +12421,7 @@ class GatewayRunner:
             "How it works:\n"
             "1. Run /topic once in this DM — Superforecasting Agent checks BotFather Threads\n"
             "   Settings are enabled and flips on multi-session mode.\n"
-            "2. Tap All Messages at the top of the bot and send any message.\n"
+            "2. Tap All Messages at the top of the Telegram chat and send any message.\n"
             "   Telegram creates a new topic for that message; each topic is\n"
             "   an independent forecast research session (fresh history, fresh context).\n"
             "3. The root DM becomes a system lobby — send /topic, /status,\n"
@@ -12560,7 +12560,7 @@ class GatewayRunner:
             "Telegram multi-session topics are enabled.",
             "",
             "To create a new forecast research session, open All Messages at the top of this "
-            "bot interface and send any message there. Telegram will create a "
+            "Telegram chat interface and send any message there. Telegram will create a "
             "new topic for it.",
             "",
         ]
