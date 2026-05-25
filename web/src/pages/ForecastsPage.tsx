@@ -297,6 +297,22 @@ function formatLessonScope(row: ForecastDashboardLesson): string {
   return `${row.scope_type || "global"}:${row.scope_ref || "*"}`;
 }
 
+function isLearnedErrorReviewReason(reason?: string): boolean {
+  return (reason ?? "").startsWith("domain_error_profile_applies:");
+}
+
+function hasLearnedErrorReview(row: ForecastDashboardReview): boolean {
+  return row.reasons.some(isLearnedErrorReviewReason);
+}
+
+function formatReviewReason(reason?: string): string {
+  return isLearnedErrorReviewReason(reason) ? "learned error profile" : reason || "review";
+}
+
+function formatReviewReasons(reasons: string[]): string {
+  return reasons.map(formatReviewReason).join(", ");
+}
+
 function focusedForecast(
   questions: ForecastDashboardQuestion[],
   reviewQueue: ForecastDashboardReview[],
@@ -939,13 +955,21 @@ function EvidenceStatusPanel({ evidenceStatus }: { evidenceStatus?: ForecastDash
 
 function ReviewQueueTable({ rows }: { rows: ForecastDashboardReview[] }) {
   if (rows.length === 0) return null;
+  const learnedErrorCount = rows.filter(hasLearnedErrorReview).length;
 
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-2">
-          <ListChecks className="h-5 w-5 text-muted-foreground" />
-          <CardTitle className="text-base">Review Queue</CardTitle>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
+            <ListChecks className="h-5 w-5 text-muted-foreground" />
+            <CardTitle className="text-base">Review Queue</CardTitle>
+          </div>
+          {learnedErrorCount > 0 && (
+            <Badge tone="secondary" className="text-[10px]">
+              {learnedErrorCount} learned-error
+            </Badge>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -989,9 +1013,16 @@ function ReviewQueueTable({ rows }: { rows: ForecastDashboardReview[] }) {
                     {formatDate(row.close_time)}
                   </td>
                   <td className="max-w-[18rem] px-4 py-2 text-muted-foreground">
-                    <span className="line-clamp-2">
-                      {row.reasons.join(", ")}
-                    </span>
+                    <div className="flex min-w-0 flex-col gap-1">
+                      {hasLearnedErrorReview(row) && (
+                        <Badge tone="secondary" className="w-fit text-[10px]">
+                          learned error
+                        </Badge>
+                      )}
+                      <span className="line-clamp-2">
+                        {formatReviewReasons(row.reasons)}
+                      </span>
+                    </div>
                   </td>
                   <td className="max-w-[24rem] py-2 pl-4 font-mono-ui text-xs text-muted-foreground">
                     <span className="line-clamp-2">{row.next_action}</span>

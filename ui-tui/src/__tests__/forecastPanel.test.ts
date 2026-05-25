@@ -81,6 +81,46 @@ describe('forecast desk panel helpers', () => {
     ])
   })
 
+  it('makes learned-error profile reviews visible in triage and review rows', () => {
+    const response: ForecastDashboardResponse = {
+      summary: {
+        active_count: 1,
+        calibration: { count: 1 },
+        open_alert_count: 0,
+        product: 'Superforecasting Agent',
+        questions: [],
+        review_queue: [
+          {
+            as_of: '2026-05-22T10:00:00Z',
+            close_time: '2026-06-01T00:00:00Z',
+            domain: 'macro',
+            id: 'fq_learned',
+            next_action: 'Review this active forecast against learned error patterns.',
+            priority: 4,
+            probability: 0.64,
+            reasons: ['domain_error_profile_applies:dep_macro'],
+            title: 'Will inflation stay above target?'
+          }
+        ],
+        review_queue_count: 1
+      }
+    }
+
+    const sections = forecastDeskRailSections(response)
+    const panelSections = forecastDashboardSections(response)
+    const triageSection = sections.find(section => section.title === 'Triage')
+    const reviewSection = panelSections.find(section => section.title === 'Review Queue')
+
+    expect(triageSection?.rows?.find(row => row[0] === '/review --stale')?.[1]).toContain(
+      'learned error-profile review'
+    )
+    expect(reviewSection?.rows?.[0]?.[1]).toContain('learned error profile')
+    expect(forecastDeskActionStripItems(sections)[0]).toEqual({
+      command: '/review --stale',
+      detail: '1 forecast queued by learned error-profile review'
+    })
+  })
+
   it('deduplicates triage and next-command actions while preserving priority order', () => {
     expect(
       forecastDeskActionStripItems([

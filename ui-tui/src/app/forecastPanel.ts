@@ -250,6 +250,8 @@ const triageRows = (response: ForecastDashboardResponse): [string, string][] => 
   const active = numberValue(summary.active_count) ?? (summary.questions ?? []).length
   const alerts = numberValue(summary.open_alert_count) ?? 0
   const reviews = numberValue(summary.review_queue_count) ?? (summary.review_queue ?? []).length
+  const learnedErrorReviews = learnedErrorReviewCount(summary.review_queue ?? [])
+  const otherReviews = Math.max(reviews - learnedErrorReviews, 0)
   const closing = numberValue(summary.closing_soon_count) ?? 0
   const calibrationCount = numberValue(summary.calibration?.count) ?? 0
   const learning = summary.learning
@@ -266,8 +268,15 @@ const triageRows = (response: ForecastDashboardResponse): [string, string][] => 
     rows.push(['/review --stale', `${plural(closing, 'forecast')} approaching or past close time`])
   }
 
-  if (reviews > 0) {
-    rows.push(['/review --stale', `${plural(reviews, 'forecast')} queued for stale/close/evidence review`])
+  if (learnedErrorReviews > 0) {
+    rows.push([
+      '/review --stale',
+      `${plural(learnedErrorReviews, 'forecast')} queued by learned error-profile review`
+    ])
+  }
+
+  if (otherReviews > 0) {
+    rows.push(['/review --stale', `${plural(otherReviews, 'forecast')} queued for stale/close/evidence review`])
   }
 
   if (assumptions.stale > 0) {
@@ -349,7 +358,7 @@ const focusedForecastContext = (row: FocusedForecastRow) => {
   ]
 
   if ('reasons' in row && row.reasons?.length) {
-    bits.push(`reasons ${truncate(row.reasons.slice(0, 2).join(','), 24)}`)
+    bits.push(`reasons ${truncate(row.reasons.slice(0, 2).map(formatReviewReason).join(','), 24)}`)
   }
 
   return bits.join('  ')
@@ -545,7 +554,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
   if (reviewQueue.length) {
     sections.push({
       rows: reviewQueue.slice(0, 6).map(row => {
-        const reasons = (row.reasons ?? []).slice(0, 3).join(', ') || 'review'
+        const reasons = (row.reasons ?? []).slice(0, 3).map(formatReviewReason).join(', ') || 'review'
         const key = `${shortId(row.id)}  priority ${row.priority ?? 9}`
         const details = [
           `P=${formatProbability(row.probability)}`,
@@ -765,6 +774,14 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
 
   return sections
 }
+
+const isLearnedErrorReviewReason = (reason?: string) => (reason ?? '').startsWith('domain_error_profile_applies:')
+
+const formatReviewReason = (reason?: string) =>
+  isLearnedErrorReviewReason(reason) ? 'learned error profile' : reason || 'review'
+
+const learnedErrorReviewCount = (rows: ForecastDashboardReview[]) =>
+  rows.filter(row => (row.reasons ?? []).some(isLearnedErrorReviewReason)).length
 
 export const forecastDeskRailSections = (response: ForecastDashboardResponse): PanelSection[] => {
   const summary = response.summary
