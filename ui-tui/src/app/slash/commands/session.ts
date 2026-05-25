@@ -127,8 +127,9 @@ export const sessionCommands: SlashCommand[] = [
   },
 
   {
-    help: 'switch personality for this session',
-    name: 'personality',
+    aliases: ['personality'],
+    help: 'switch forecast style for this session',
+    name: 'style',
     run: (arg, ctx) => {
       if (!arg) {
         return
@@ -140,7 +141,7 @@ export const sessionCommands: SlashCommand[] = [
             ctx.session.resetVisibleHistory(r.info ?? null)
           }
 
-          ctx.transcript.sys(`personality: ${r.value || 'default'}${r.history_reset ? ' · transcript cleared' : ''}`)
+          ctx.transcript.sys(`style: ${r.value || 'default'}${r.history_reset ? ' · transcript cleared' : ''}`)
           ctx.local.maybeWarn(r)
         })
       )

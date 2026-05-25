@@ -1,1 +1,1 @@
-export const LONG_RUN_CHARMS = ['still cooking…', 'polishing edges…', 'asking the void nicely…']
+export const LONG_RUN_NOTICES = ['checking evidence freshness…', 'waiting on source response…', 'keeping the ledger open…']

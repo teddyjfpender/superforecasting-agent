@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 
-import { LONG_RUN_CHARMS } from '../content/charms.js'
+import { LONG_RUN_NOTICES } from '../content/charms.js'
 import { pick, toolTrailLabel } from '../lib/text.js'
 
 import { turnController } from './turnController.js'
@@ -56,7 +56,7 @@ export function useLongRunToolCharms() {
 
         slots.current.set(tool.id, { count: slot.count + 1, lastAt: now })
         turnController.pushActivity(
-          `${pick(LONG_RUN_CHARMS)} (${toolTrailLabel(tool.name)} · ${Math.round((now - tool.startedAt) / 1000)}s)`
+          `${pick(LONG_RUN_NOTICES)} (${toolTrailLabel(tool.name)} · ${Math.round((now - tool.startedAt) / 1000)}s)`
         )
       }
     }

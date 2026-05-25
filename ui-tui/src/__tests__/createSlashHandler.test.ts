@@ -34,6 +34,18 @@ describe('createSlashHandler', () => {
     expect(ctx.transcript.sys).toHaveBeenCalledWith(expect.stringMatching(/^(P|CAL) /))
   })
 
+  it('handles /style locally while preserving the personality backend key', async () => {
+    patchUiState({ sid: 'sid-abc' })
+    const rpc = vi.fn(() => Promise.resolve({ value: 'quant' }))
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/style quant')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('config.set', { key: 'personality', session_id: 'sid-abc', value: 'quant' })
+    await vi.waitFor(() => {
+      expect(ctx.transcript.sys).toHaveBeenCalledWith('style: quant')
+    })
+  })
+
   it('exits locally for /quit', () => {
     const ctx = buildCtx()
 
