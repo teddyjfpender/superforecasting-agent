@@ -1386,6 +1386,7 @@ def test_runtime_operator_guidance_uses_forecast_native_commands():
         "agent/conversation_loop.py",
         "agent/auxiliary_client.py",
         "agent/azure_identity_adapter.py",
+        "agent/credential_pool.py",
         "agent/google_oauth.py",
         "tools/delegate_tool.py",
         "tools/approval.py",
@@ -1403,7 +1404,9 @@ def test_runtime_operator_guidance_uses_forecast_native_commands():
     assert "superforecasting-agent auth" in text
     assert "superforecasting-agent bundles create" in text
     assert "superforecasting-agent bundles list" in text
+    assert "superforecasting-agent login --provider nous" in text
     assert "superforecasting-agent login --provider google-gemini-cli" in text
+    assert "superforecasting-agent auth remove" in text
     assert "superforecasting-agent mcp login" in text
     assert "superforecasting-agent plugins enable" in text
     assert "superforecasting-agent skills" in text
@@ -1418,6 +1421,15 @@ def test_runtime_operator_guidance_uses_forecast_native_commands():
     assert "hermes bundles list" not in text
     assert "``hermes bundles`` CLI subcommand" not in text
     assert "Run `hermes login --provider google-gemini-cli`" not in text
+    assert "Re-authenticate: hermes login --provider nous" not in text
+    assert "``hermes model`` / ``hermes auth``" not in text
+    assert "`hermes model` / `hermes auth`" not in text
+    assert "`hermes auth remove" not in text
+    assert "via `hermes auth openai-codex`" not in text
+    assert "``hermes auth list``" not in text
+    assert "Hermes auth store" not in text
+    assert "Hermes owns its own Codex auth state" not in text
+    assert "authoritative source for Hermes credentials" not in text
     assert "Run `hermes mcp login" not in text
     assert "Re-enable with: hermes plugins enable" not in text
     assert "Enable it with `hermes skills`" not in text
