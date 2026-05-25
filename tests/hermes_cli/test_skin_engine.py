@@ -12,10 +12,10 @@ def reset_skin_state():
     """Reset skin engine state between tests."""
     from hermes_cli import skin_engine
     skin_engine._active_skin = None
-    skin_engine._active_skin_name = "default"
+    skin_engine._active_skin_name = skin_engine._RUNTIME_DEFAULT_SKIN
     yield
     skin_engine._active_skin = None
-    skin_engine._active_skin_name = "default"
+    skin_engine._active_skin_name = skin_engine._RUNTIME_DEFAULT_SKIN
 
 
 class TestSkinConfig:
@@ -128,10 +128,10 @@ class TestBuiltinSkins:
         assert skin.get_color("completion_menu_meta_current_bg") == "#5A260D"
         assert skin.get_color("selection_bg") == "#5A260D"
 
-    def test_unknown_skin_falls_back_to_default(self):
+    def test_unknown_skin_falls_back_to_runtime_default(self):
         from hermes_cli.skin_engine import load_skin
         skin = load_skin("nonexistent_skin_xyz")
-        assert skin.name == "default"
+        assert skin.name == "forecast"
 
     def test_all_builtin_skins_have_complete_colors(self):
         from hermes_cli.skin_engine import _BUILTIN_SKINS, _build_skin_config
@@ -151,10 +151,18 @@ class TestSkinManagement:
         assert get_active_skin_name() == "ares"
         assert get_active_skin().name == "ares"
 
-    def test_get_active_skin_defaults(self):
+    def test_get_active_skin_uses_runtime_default(self):
         from hermes_cli.skin_engine import get_active_skin
         skin = get_active_skin()
-        assert skin.name == "default"
+        assert skin.name == "forecast"
+
+    def test_set_unknown_skin_reports_loaded_runtime_default(self):
+        from hermes_cli.skin_engine import set_active_skin, get_active_skin_name
+
+        skin = set_active_skin("nonexistent_skin_xyz")
+
+        assert skin.name == "forecast"
+        assert get_active_skin_name() == "forecast"
 
     def test_list_skins_includes_builtins(self):
         from hermes_cli.skin_engine import list_skins
@@ -179,25 +187,25 @@ class TestSkinManagement:
     def test_init_skin_from_empty_config(self):
         from hermes_cli.skin_engine import init_skin_from_config, get_active_skin_name
         init_skin_from_config({})
-        assert get_active_skin_name() == "default"
+        assert get_active_skin_name() == "forecast"
 
     def test_init_skin_from_null_display(self):
-        """display: null should fall back to default, not crash."""
+        """display: null should fall back to the runtime default, not crash."""
         from hermes_cli.skin_engine import init_skin_from_config, get_active_skin_name
         init_skin_from_config({"display": None})
-        assert get_active_skin_name() == "default"
+        assert get_active_skin_name() == "forecast"
 
     def test_init_skin_from_non_dict_display(self):
-        """display: <non-dict> should fall back to default."""
+        """display: <non-dict> should fall back to the runtime default."""
         from hermes_cli.skin_engine import init_skin_from_config, get_active_skin_name
         init_skin_from_config({"display": "invalid"})
-        assert get_active_skin_name() == "default"
+        assert get_active_skin_name() == "forecast"
 
         init_skin_from_config({"display": 42})
-        assert get_active_skin_name() == "default"
+        assert get_active_skin_name() == "forecast"
 
         init_skin_from_config({"display": []})
-        assert get_active_skin_name() == "default"
+        assert get_active_skin_name() == "forecast"
 
 
 class TestUserSkins:
@@ -280,7 +288,7 @@ class TestUserSkins:
 class TestDisplayIntegration:
     def test_get_skin_tool_prefix_default(self):
         from agent.display import get_skin_tool_prefix
-        assert get_skin_tool_prefix() == "┊"
+        assert get_skin_tool_prefix() == "│"
 
     def test_get_skin_tool_prefix_custom(self):
         from hermes_cli.skin_engine import set_active_skin
@@ -299,14 +307,14 @@ class TestDisplayIntegration:
     def test_tool_message_default_prefix(self):
         from agent.display import get_tool_status_message
         msg = get_tool_status_message("terminal", {"command": "ls"}, 0.5)
-        assert msg.startswith("┊")
+        assert msg.startswith("│")
 
 
 class TestCliBrandingHelpers:
     def test_active_prompt_symbol_default(self):
         from hermes_cli.skin_engine import get_active_prompt_symbol
 
-        assert get_active_prompt_symbol() == "❯ "
+        assert get_active_prompt_symbol() == "› "
 
     def test_active_prompt_symbol_ares(self):
         from hermes_cli.skin_engine import set_active_skin, get_active_prompt_symbol

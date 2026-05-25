@@ -99,8 +99,8 @@ USAGE
 BUILT-IN SKINS
 ==============
 
-- ``default`` — Classic forecast gold (the current look)
-- ``forecast`` — Forecasting desk default with neutral research-terminal styling
+- ``default`` — Classic forecast gold compatibility skin
+- ``forecast`` — Forecasting desk runtime default with neutral research-terminal styling
 - ``ares``    — Crimson/bronze war-god theme with custom spinner wings
 - ``mono``    — Clean grayscale monochrome
 - ``slate``   — Cool blue developer-focused theme
@@ -701,8 +701,10 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
 # Skin loading and management
 # =============================================================================
 
+_RUNTIME_DEFAULT_SKIN = "forecast"
+
 _active_skin: Optional[SkinConfig] = None
-_active_skin_name: str = "default"
+_active_skin_name: str = _RUNTIME_DEFAULT_SKIN
 
 
 def _skins_dir() -> Path:
@@ -813,9 +815,10 @@ def load_skin(name: str) -> SkinConfig:
     if name in _BUILTIN_SKINS:
         return _build_skin_config(_BUILTIN_SKINS[name])
 
-    # Fallback to default
-    logger.warning("Skin '%s' not found, using default", name)
-    return _build_skin_config(_BUILTIN_SKINS["default"])
+    # Fallback to the forecast-native runtime default. The "default" skin
+    # remains available as a compatibility/base skin for inherited configs.
+    logger.warning("Skin '%s' not found, using %s", name, _RUNTIME_DEFAULT_SKIN)
+    return _build_skin_config(_BUILTIN_SKINS[_RUNTIME_DEFAULT_SKIN])
 
 
 def get_active_skin() -> SkinConfig:
@@ -829,8 +832,8 @@ def get_active_skin() -> SkinConfig:
 def set_active_skin(name: str) -> SkinConfig:
     """Switch the active skin. Returns the new SkinConfig."""
     global _active_skin, _active_skin_name
-    _active_skin_name = name
     _active_skin = load_skin(name)
+    _active_skin_name = _active_skin.name
     return _active_skin
 
 
@@ -847,11 +850,11 @@ def init_skin_from_config(config: dict) -> None:
     display = config.get("display") or {}
     if not isinstance(display, dict):
         display = {}
-    skin_name = display.get("skin", "default")
+    skin_name = display.get("skin", _RUNTIME_DEFAULT_SKIN)
     if isinstance(skin_name, str) and skin_name.strip():
         set_active_skin(skin_name.strip())
     else:
-        set_active_skin("default")
+        set_active_skin(_RUNTIME_DEFAULT_SKIN)
 
 
 # =============================================================================
