@@ -12,6 +12,7 @@ from forecasting.backtesting import (
 )
 from forecasting.branding import PRODUCT_NAME
 from forecasting.ledger import ForecastLedger
+from forecasting.models import LedgerNotFoundError
 
 
 def build_dashboard_summary(
@@ -88,6 +89,45 @@ def build_dashboard_summary(
                 "next_action": review_next_action(question.id, reasons),
             }
         )
+    review_rows_by_id = {str(row["id"]): row for row in review_queue if row.get("id")}
+    for alert in alerts:
+        if not alert_promotes_to_review(alert.reason):
+            continue
+        question_id = alert.scope_ref if alert.scope_type == "question" else None
+        if not question_id:
+            continue
+        existing = review_rows_by_id.get(question_id)
+        if existing is not None:
+            reasons = existing.setdefault("reasons", [])
+            if alert.reason not in reasons:
+                reasons.append(alert.reason)
+            existing["priority"] = min(
+                int(existing.get("priority") or 9),
+                alert_review_priority(alert.reason),
+            )
+            continue
+        try:
+            question = ledger.get_question(question_id)
+        except LedgerNotFoundError:
+            continue
+        if question.status != "active":
+            continue
+        snapshot = ledger.get_current_snapshot(question.id)
+        row = {
+            "id": question.id,
+            "title": question.title,
+            "domain": question.domain,
+            "close_time": question.close_time,
+            "resolution_time": question.resolution_time,
+            "probability": snapshot.probability_or_distribution if snapshot else None,
+            "as_of": snapshot.as_of if snapshot else None,
+            "priority": alert_review_priority(alert.reason),
+            "reasons": [alert.reason],
+            "next_action": alert.recommended_action or review_next_action(question.id, [alert.reason]),
+        }
+        review_queue.append(row)
+        review_rows_by_id[question.id] = row
+    review_queue.sort(key=lambda row: int(row.get("priority") or 9))
 
     closing_soon_count = sum(
         1
@@ -538,6 +578,8 @@ def format_claim_status(value: Any) -> str:
 def review_next_action(question_id: str, reasons: list[str]) -> str:
     if any(reason.startswith("new_evidence:") for reason in reasons):
         return f"forecast research {question_id}; forecast update {question_id} --preview ..."
+    if any(reason.startswith("domain_error_profile_applies:") for reason in reasons):
+        return f"forecast show {question_id}; forecast update {question_id} --preview ..."
     if "no_forecast_snapshot" in reasons:
         return f"forecast update {question_id} --preview ..."
     if any(
@@ -560,3 +602,13 @@ def is_close_review_reason(reason: str) -> bool:
         reason in {"resolution_check_due", "close_time_passed"}
         or reason.startswith("close_time_within_")
     )
+
+
+def alert_promotes_to_review(reason: str | None) -> bool:
+    return str(reason or "").startswith("domain_error_profile_applies:")
+
+
+def alert_review_priority(reason: str | None) -> int:
+    if str(reason or "").startswith("domain_error_profile_applies:"):
+        return 4
+    return 7

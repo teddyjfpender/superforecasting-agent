@@ -5084,6 +5084,11 @@ def test_self_check_applies_domain_error_profiles_to_active_forecasts(tmp_path):
         probability_or_distribution=0.65,
         rationale="Active standing forecast.",
     )
+    ledger.add_evidence(
+        question_id=active.id,
+        source_or_note="current macro dashboard",
+        claim="Recent evidence is available for the active macro forecast.",
+    )
     ledger.create_snapshot(
         question_id=ignored.id,
         probability_or_distribution=0.55,
@@ -5105,6 +5110,15 @@ def test_self_check_applies_domain_error_profiles_to_active_forecasts(tmp_path):
     assert [alert.scope_ref for alert in applies] == [active.id]
     assert "overconfidence" in applies[0].recommended_action
     assert ignored.id not in {alert.scope_ref for alert in alerts}
+
+    summary = build_dashboard_summary(ledger=ledger)
+    review_row = [row for row in summary["review_queue"] if row["id"] == active.id][0]
+    assert review_row["priority"] == 4
+    assert f"domain_error_profile_applies:{profile['id']}" in review_row["reasons"]
+    assert "learned error patterns" in review_row["next_action"]
+    dashboard_text = render_dashboard_text(summary)
+    assert active.id in dashboard_text
+    assert "domain_error_profile_applies:" in dashboard_text
 
 
 def test_domain_topic_schedule_can_auto_update_learning_records(tmp_path):
