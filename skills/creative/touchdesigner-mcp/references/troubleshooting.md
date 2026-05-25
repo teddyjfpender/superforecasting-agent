@@ -150,7 +150,7 @@ mcpServers:
 
 ### After config changes
 
-Restart the Hermes session for changes to take effect. The MCP connection is
+Restart the agent session for changes to take effect. The MCP connection is
 established at session startup.
 
 ### Verifying MCP tools are available

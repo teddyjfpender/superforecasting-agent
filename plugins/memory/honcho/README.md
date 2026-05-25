@@ -159,25 +159,25 @@ The Honcho session name determines which conversation bucket memory lands in. Re
 | 1 | Manual map (`sessions` config) | `"myproject-main"` |
 | 2 | `/title` command (mid-session rename) | `"refactor-auth"` |
 | 3 | Gateway session key (Telegram, Discord, etc.) | `"agent-main-telegram-dm-8439114563"` |
-| 4 | `per-session` strategy | Hermes session ID (`20260415_a3f2b1`) |
-| 5 | `per-repo` strategy | Git root directory name (`hermes-agent`) |
+| 4 | `per-session` strategy | Agent session ID (`20260415_a3f2b1`) |
+| 5 | `per-repo` strategy | Git root directory name (`superforecasting-agent`) |
 | 6 | `per-directory` strategy | Current directory basename (`src`) |
 | 7 | `global` strategy | Workspace name (`hermes`) |
 
 Gateway platforms always resolve via priority 3 (per-chat isolation) regardless of `sessionStrategy`. The strategy setting only affects CLI sessions.
 
-If `sessionPeerPrefix` is `true`, the peer name is prepended: `eri-hermes-agent`.
+If `sessionPeerPrefix` is `true`, the peer name is prepended: `eri-superforecasting-agent`.
 
 #### What each strategy produces
 
-- **`per-directory`** — basename of `$PWD`. Opening hermes in `~/code/myapp` and `~/code/other` gives two separate sessions. Same directory = same session across runs.
+- **`per-directory`** — basename of `$PWD`. Opening `superforecasting-agent` in `~/code/myapp` and `~/code/other` gives two separate sessions. Same directory = same session across runs.
 - **`per-repo`** — git root directory name. All subdirectories within a repo share one session. Falls back to `per-directory` if not inside a git repo.
-- **`per-session`** — Hermes session ID (timestamp + hex). Every `hermes` invocation starts a fresh Honcho session. Falls back to `per-directory` if no session ID is available.
+- **`per-session`** — agent session ID (timestamp + hex). Every `superforecasting-agent` invocation starts a fresh Honcho session. Falls back to `per-directory` if no session ID is available.
 - **`global`** — workspace name. One session for everything. Memory accumulates across all directories and runs.
 
 ### Multi-Profile Pattern
 
-Multiple Hermes profiles can share one workspace while maintaining separate AI identities. Config resolution is **host block > root > env var > default** — host blocks inherit from root, so shared settings only need to be declared once:
+Multiple agent profiles can share one workspace while maintaining separate AI identities. Config resolution is **host block > root > env var > default** — host blocks inherit from root, so shared settings only need to be declared once:
 
 ```json
 {

@@ -1036,6 +1036,7 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
         root / "gateway" / "run.py",
         root / "agent" / "models_dev.py",
         root / "agent" / "transports" / "codex_app_server_session.py",
+        root / "hermes",
         root / "plugins" / "__init__.py",
         root / "plugins" / "disk-cleanup" / "__init__.py",
         root / "plugins" / "disk-cleanup" / "plugin.yaml",
@@ -1045,6 +1046,8 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
         root / "plugins" / "platforms" / "irc" / "adapter.py",
         root / "plugins" / "platforms" / "google_chat" / "adapter.py",
         root / "plugins" / "platforms" / "simplex" / "adapter.py",
+        root / "plugins" / "memory" / "honcho" / "README.md",
+        root / "plugins" / "memory" / "honcho" / "client.py",
         root / "website" / "static" / "img" / "docs" / "session-recap.svg",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
@@ -1059,10 +1062,13 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
     assert "ephemeral agent session files" in text
     assert "Superforecasting Agent bot is in this call taking notes" in text
     assert "Forecast session recap panel" in text
+    assert "Legacy Hermes CLI compatibility launcher" in text
     assert "Superforecasting Agent plugins package" in text
     assert "agent plugin system" in text
+    assert "agent session ID" in text
     assert "independent Superforecasting Agent" in thread_ready_lines
     assert "Hermes session" not in text
+    assert "Hermes Agent CLI launcher" not in text
     assert "Hermes agent bot" not in text
     assert "ephemeral Hermes session" not in text
     assert "Hermes plugin system" not in text
@@ -1482,6 +1488,14 @@ def test_parallel_touchdesigner_and_creative_skill_docs_are_forecast_native():
             / "research-parallel-cli.md"
         ),
         root / "skills" / "creative" / "touchdesigner-mcp" / "SKILL.md",
+        (
+            root
+            / "skills"
+            / "creative"
+            / "touchdesigner-mcp"
+            / "references"
+            / "troubleshooting.md"
+        ),
         root / "skills" / "creative" / "touchdesigner-mcp" / "scripts" / "setup.sh",
         (
             root
