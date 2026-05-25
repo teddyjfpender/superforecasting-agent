@@ -11961,6 +11961,100 @@ def test_forecast_cli_watch_add_list_and_check(tmp_path, capsys):
     assert f"watched_source_changed:{watch_id}" in check_output
 
 
+def test_forecast_cli_watch_add_checks_domain_topic_and_portfolio_scopes(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    domain_source = tmp_path / "macro-source.txt"
+    portfolio_source = tmp_path / "portfolio-source.txt"
+    domain_source.write_text("initial domain evidence", encoding="utf-8")
+    portfolio_source.write_text("initial portfolio evidence", encoding="utf-8")
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            str(domain_source),
+            "--domain",
+            "macro",
+            "--topic",
+            "inflation",
+        ],
+    )
+    domain_output = capsys.readouterr().out
+    domain_watch_id = re.search(r"watched source (ws_[a-f0-9]+)", domain_output).group(1)
+    assert "scope: domain:macro/inflation" in domain_output
+    assert "source_type: file" in domain_output
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "list",
+            "--domain",
+            "macro",
+            "--topic",
+            "inflation",
+        ],
+    )
+    domain_list_output = capsys.readouterr().out
+    assert domain_watch_id in domain_list_output
+    assert "domain:macro/inflation" in domain_list_output
+
+    domain_source.write_text("changed domain evidence", encoding="utf-8")
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "check",
+            "--domain",
+            "macro",
+            "--topic",
+            "inflation",
+        ],
+    )
+    domain_check_output = capsys.readouterr().out
+    assert "created 1 alert(s)" in domain_check_output
+    assert f"watched_source_changed:{domain_watch_id}" in domain_check_output
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            str(portfolio_source),
+            "--portfolio",
+            "alpha",
+        ],
+    )
+    portfolio_output = capsys.readouterr().out
+    portfolio_watch_id = re.search(r"watched source (ws_[a-f0-9]+)", portfolio_output).group(1)
+    assert "scope: portfolio:alpha" in portfolio_output
+
+    _run(parser, ["forecast", "--db", db, "watch", "list", "--portfolio", "alpha"])
+    portfolio_list_output = capsys.readouterr().out
+    assert portfolio_watch_id in portfolio_list_output
+    assert "portfolio:alpha" in portfolio_list_output
+
+    portfolio_source.write_text("changed portfolio evidence", encoding="utf-8")
+    _run(parser, ["forecast", "--db", db, "watch", "check", "--portfolio", "alpha"])
+    portfolio_check_output = capsys.readouterr().out
+    assert "created 1 alert(s)" in portfolio_check_output
+    assert f"watched_source_changed:{portfolio_watch_id}" in portfolio_check_output
+
+
 def test_forecast_cli_watch_add_supports_rss_sources(tmp_path, capsys):
     parser = _parser()
     db = str(tmp_path / "forecasting.db")
