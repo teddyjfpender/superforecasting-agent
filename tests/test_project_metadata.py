@@ -1552,6 +1552,53 @@ def test_update_hangup_log_copy_prefers_forecast_native_command():
     assert "hermes update --check" not in text
 
 
+def test_cron_gateway_platform_runtime_guidance_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        root / "cron" / "scheduler.py",
+        root / "run_agent.py",
+        root / "tools" / "kanban_tools.py",
+        root / "plugins" / "platforms" / "google_chat" / "adapter.py",
+        root / "plugins" / "platforms" / "google_chat" / "oauth.py",
+        root / "plugins" / "platforms" / "simplex" / "adapter.py",
+        root / "plugins" / "platforms" / "irc" / "adapter.py",
+        root / "plugins" / "platforms" / "teams" / "adapter.py",
+        root / "plugins" / "platforms" / "teams" / "plugin.yaml",
+        root / "plugins" / "platforms" / "simplex" / "plugin.yaml",
+        root / "plugins" / "platforms" / "line" / "plugin.yaml",
+        root / "plugins" / "platforms" / "google_chat" / "plugin.yaml",
+        root / "plugins" / "platforms" / "irc" / "plugin.yaml",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in checked_paths)
+
+    assert "superforecasting-agent update" in text
+    assert "superforecasting-agent tools" in text
+    assert "superforecasting-agent config" in text
+    assert "superforecasting-agent cron" in text
+    assert "superforecasting-agent gateway" in text
+    assert "_CORR_PREFIX = \"forecast-\"" in text
+    assert "SUPERFORECASTING_AGENT_HOME" in text
+    assert ".superforecasting-agent" in text
+
+    assert "~/.hermes/cron/.tick.lock" not in text
+    assert "after `hermes update` reloads" not in text
+    assert "Per-platform ``hermes tools`` config" not in text
+    assert "partial ``hermes update``" not in text
+    assert "Hermes' minimum context" not in text
+    assert "``hermes chat -q``" not in text
+    assert "Humans running ``hermes chat``" not in text
+    assert "``hermes config`` UI" not in text
+    assert "ships as a Hermes platform plugin" not in text
+    assert "inside Hermes" not in text
+    assert "``hermes cron`` running as a" not in text
+    assert "separate process from ``hermes gateway``" not in text
+    assert "`hermes gateway status`" not in text
+    assert "Interactive `hermes gateway setup`" not in text
+    assert "${HERMES_HOME}/google_chat" not in text
+    assert "_CORR_PREFIX = \"hermes-\"" not in text
+    assert "Path.home() / \".hermes\"" not in text
+
+
 def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [

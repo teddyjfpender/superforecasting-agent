@@ -155,8 +155,8 @@ def adapter(tmp_path):
     """Build an adapter with its loop captured and Chat client mocked.
 
     Redirects the persistent thread-count store to a tmp file so tests
-    don't pollute (or read state from) the developer's real
-    ~/.hermes/google_chat_thread_counts.json.
+    don't pollute (or read state from) the developer's real agent-home
+    google_chat_thread_counts.json.
     """
     from plugins.platforms.google_chat.adapter import _ThreadCountStore
     a = GoogleChatAdapter(_base_config())
@@ -168,7 +168,7 @@ def adapter(tmp_path):
     a._subscription_path = "projects/test-project/subscriptions/test-sub"
     a._new_authed_http = MagicMock(return_value=MagicMock())
     a.handle_message = AsyncMock()
-    # Replace the production store (which would write to ~/.hermes/...)
+    # Replace the production store (which would write to the active agent home)
     # with a tmp-path one so tests can roundtrip without side effects.
     a._thread_count_store = _ThreadCountStore(
         tmp_path / "google_chat_thread_counts.json"
@@ -234,6 +234,23 @@ class TestPlatformRegistration:
     def test_requirements_check_returns_true_when_available(self):
         # The shim flag is True in this test module.
         assert check_google_chat_requirements() is True
+
+
+class TestGoogleChatHomePaths:
+    def test_adapter_state_paths_prefer_forecast_home_alias(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.delenv("HERMES_HOME", raising=False)
+        monkeypatch.delenv("FORECAST_HOME", raising=False)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path))
+
+        adapter = GoogleChatAdapter(_base_config())
+
+        assert (
+            adapter._thread_count_store._path
+            == tmp_path / "google_chat_thread_counts.json"
+        )
+        assert adapter._bot_id_cache_path() == tmp_path / "google_chat_bot_id.json"
 
 
 # ===========================================================================
@@ -1511,6 +1528,27 @@ class TestSetupFilesSlashCommand:
 
 
 class TestUserOAuthHelper:
+    def test_oauth_paths_prefer_forecast_home_alias(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("HERMES_HOME", raising=False)
+        monkeypatch.delenv("FORECAST_HOME", raising=False)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path))
+
+        from plugins.platforms.google_chat import oauth as helper
+
+        assert helper._legacy_token_path() == tmp_path / "google_chat_user_token.json"
+        assert (
+            helper._token_path("alice@example.com")
+            == tmp_path / "google_chat_user_tokens" / "alice@example.com.json"
+        )
+        assert (
+            helper._pending_auth_path("alice@example.com")
+            == tmp_path / "google_chat_user_oauth_pending" / "alice@example.com.json"
+        )
+        assert (
+            helper._client_secret_path()
+            == tmp_path / "google_chat_user_client_secret.json"
+        )
+
     def test_load_user_credentials_returns_none_when_no_token(self, tmp_path, monkeypatch):
         """Missing token file is the expected no-op case (user hasn't
         run /setup-files yet). Must NOT raise."""

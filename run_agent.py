@@ -26,9 +26,10 @@ try:
     import hermes_bootstrap  # noqa: F401
 except ModuleNotFoundError:
     # Graceful fallback when hermes_bootstrap isn't registered in the venv
-    # yet — happens during partial ``hermes update`` where git-reset landed
-    # new code but ``uv pip install -e .`` didn't finish.  Missing bootstrap
-    # means UTF-8 stdio setup is skipped on Windows; POSIX is unaffected.
+    # yet — happens during partial ``superforecasting-agent update`` where
+    # git-reset landed new code but ``uv pip install -e .`` didn't finish.
+    # Missing bootstrap means UTF-8 stdio setup is skipped on Windows; POSIX
+    # is unaffected.
     pass
 
 import asyncio
@@ -583,7 +584,7 @@ class AIAgent:
 
     def _ensure_lmstudio_runtime_loaded(self, config_context_length: Optional[int] = None) -> None:
         """
-        Preload the LM Studio model with at least Hermes' minimum context.
+        Preload the LM Studio model with at least the runtime's minimum context.
         """
         if (self.provider or "").strip().lower() != "lmstudio":
             return
@@ -652,9 +653,10 @@ class AIAgent:
         all non-forced output is suppressed.
 
         ``suppress_status_output`` is a stricter CLI automation mode used by
-        parseable single-query flows such as ``hermes chat -q``. In that mode,
-        all status/diagnostic prints routed through ``_vprint`` are suppressed
-        so stdout stays machine-readable.
+        parseable single-query flows such as
+        ``superforecasting-agent chat -q``. In that mode, all
+        status/diagnostic prints routed through ``_vprint`` are suppressed so
+        stdout stays machine-readable.
         """
         if getattr(self, "suppress_status_output", False):
             return

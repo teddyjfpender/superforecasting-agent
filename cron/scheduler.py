@@ -4,8 +4,8 @@ Cron job scheduler - executes due jobs.
 Provides tick() which checks for due jobs and runs them. The gateway
 calls this every 60 seconds from a background thread.
 
-Uses a file-based lock (~/.hermes/cron/.tick.lock) so only one tick
-runs at a time if multiple processes overlap.
+Uses a file-based lock under the active agent home's cron directory so only
+one tick runs at a time if multiple processes overlap.
 """
 
 import asyncio
@@ -32,8 +32,9 @@ from pathlib import Path
 from typing import List, Optional
 
 # Add parent directory to path for imports BEFORE repo-level imports.
-# Without this, standalone invocations (e.g. after `hermes update` reloads
-# the module) fail with ModuleNotFoundError for hermes_time et al.
+# Without this, standalone invocations (e.g. after
+# `superforecasting-agent update` reloads the module) fail with
+# ModuleNotFoundError for hermes_time et al.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from hermes_constants import get_hermes_home
@@ -65,7 +66,8 @@ def _resolve_cron_enabled_toolsets(job: dict, cfg: dict) -> list[str] | None:
     Precedence:
     1. Per-job ``enabled_toolsets`` (set via ``cronjob`` tool on create/update).
        Keeps the agent's job-scoped toolset override intact — #6130.
-    2. Per-platform ``hermes tools`` config for the ``cron`` platform.
+    2. Per-platform ``superforecasting-agent tools`` config for the
+       ``cron`` platform.
        Mirrors gateway behavior (``_get_platform_tools(cfg, platform_key)``)
        so users can gate cron toolsets globally without recreating every job.
     3. ``None`` on any lookup failure — AIAgent loads the full default set
@@ -861,10 +863,10 @@ def _get_cron_max_parallel() -> Optional[int]:
 def _run_job_script(script_path: str) -> tuple[bool, str]:
     """Execute a cron job's data-collection script and capture its output.
 
-    Scripts must reside within HERMES_HOME/scripts/.  Both relative and
-    absolute paths are resolved and validated against this directory to
-    prevent arbitrary script execution via path traversal or absolute
-    path injection.
+    Scripts must reside within the active agent home's ``scripts/``
+    directory. Both relative and absolute paths are resolved and validated
+    against this directory to prevent arbitrary script execution via path
+    traversal or absolute path injection.
 
     Supported interpreters (chosen by file extension):
 
@@ -877,9 +879,10 @@ def _run_job_script(script_path: str) -> tuple[bool, str]:
     (the `memory-watchdog.sh` pattern) without wrapping them in Python.
 
     Args:
-        script_path: Path to the script.  Relative paths are resolved
-            against HERMES_HOME/scripts/.  Absolute and ~-prefixed paths
-            are also validated to ensure they stay within the scripts dir.
+        script_path: Path to the script.  Relative paths are resolved against
+            the active agent home's ``scripts/`` directory. Absolute and
+            ~-prefixed paths are also validated to ensure they stay within the
+            scripts dir.
 
     Returns:
         (success, output) — on failure *output* contains the error message so the
@@ -896,7 +899,7 @@ def _run_job_script(script_path: str) -> tuple[bool, str]:
         path = (scripts_dir / raw).resolve()
 
     # Guard against path traversal, absolute path injection, and symlink
-    # escape — scripts MUST reside within HERMES_HOME/scripts/.
+    # escape — scripts MUST reside within the active agent home's scripts dir.
     try:
         path.relative_to(scripts_dir_resolved)
     except ValueError:
@@ -1637,8 +1640,9 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
             disabled_toolsets=["cronjob", "messaging", "clarify"],
             quiet_mode=True,
             # Cron jobs should always inherit the user's SOUL.md identity from
-            # HERMES_HOME. When a workdir is configured, also inject project
-            # context files (AGENTS.md / CLAUDE.md / .cursorrules) from there.
+            # the active agent home. When a workdir is configured, also inject
+            # project context files (AGENTS.md / CLAUDE.md / .cursorrules) from
+            # there.
             # Without a workdir, keep cwd context discovery disabled.
             skip_context_files=not bool(_job_workdir),
             load_soul_identity=True,

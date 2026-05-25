@@ -43,15 +43,15 @@ familiar with that flow can read this without surprises.
 Token storage layout
 --------------------
 - Per-user tokens (keyed by sender email):
-    ``${HERMES_HOME}/google_chat_user_tokens/<sanitized_email>.json``
+    ``<active-agent-home>/google_chat_user_tokens/<sanitized_email>.json``
 - Legacy single-user token (fallback, untouched for backward compat):
-    ``${HERMES_HOME}/google_chat_user_token.json``
+    ``<active-agent-home>/google_chat_user_token.json``
 - Per-user pending OAuth state during /setup-files start → exchange:
-    ``${HERMES_HOME}/google_chat_user_oauth_pending/<sanitized_email>.json``
+    ``<active-agent-home>/google_chat_user_oauth_pending/<sanitized_email>.json``
 - Legacy pending state:
-    ``${HERMES_HOME}/google_chat_user_oauth_pending.json``
+    ``<active-agent-home>/google_chat_user_oauth_pending.json``
 - Shared OAuth client (one per host):
-    ``${HERMES_HOME}/google_chat_user_client_secret.json``
+    ``<active-agent-home>/google_chat_user_client_secret.json``
 """
 
 from __future__ import annotations
@@ -70,8 +70,8 @@ from typing import Any, List, Optional, Tuple
 # after the in-tree → plugin migration. See adapter.py for context.
 logger = logging.getLogger("gateway.platforms.google_chat_user_oauth")
 
-# Use the project's HERMES_HOME helper so the token follows the user's
-# profile (e.g. tests can override via HERMES_HOME=/tmp/...).
+# Use the project's active-home helper so tokens follow the user's selected
+# profile and fork-native home aliases.
 try:
     from hermes_constants import display_hermes_home, get_hermes_home
 except (ModuleNotFoundError, ImportError):
@@ -79,8 +79,15 @@ except (ModuleNotFoundError, ImportError):
     # (mirrors the same fallback used by the google-workspace skill's
     # _hermes_home.py shim).
     def get_hermes_home() -> Path:
-        val = os.environ.get("HERMES_HOME", "").strip()
-        return Path(val) if val else Path.home() / ".hermes"
+        for env_name in (
+            "SUPERFORECASTING_AGENT_HOME",
+            "FORECAST_HOME",
+            "HERMES_HOME",
+        ):
+            value = os.environ.get(env_name, "").strip()
+            if value:
+                return Path(value)
+        return Path.home() / ".superforecasting-agent"
 
     def display_hermes_home() -> str:
         home = get_hermes_home()
@@ -91,19 +98,19 @@ except (ModuleNotFoundError, ImportError):
 
 
 def _hermes_home() -> Path:
-    """Resolve HERMES_HOME at call time (NOT module import).
+    """Resolve the active agent home at call time (NOT module import).
 
-    Tests and ``HERMES_HOME=...`` env overrides need this to be late-
-    binding. If we cached the path at import time, switching profiles
-    or tweaking env vars in tests would silently keep using the old
-    path."""
+    Tests, profile switches, and home env overrides need this to be
+    late-binding. If we cached the path at import time, switching profiles or
+    tweaking env vars in tests would silently keep using the old path.
+    """
     return get_hermes_home()
 
 
 # Filesystem-safe key: lowercase, allow ``[a-z0-9._-@]``, replace anything
 # else with ``_``. ``ramon.fernandez@nttdata.com`` stays human-readable
 # (``ramon.fernandez@nttdata.com.json``) which makes admin debugging by
-# ``ls ~/.hermes/google_chat_user_tokens/`` trivial.
+# ``ls <agent-home>/google_chat_user_tokens/`` trivial.
 _EMAIL_FS_RE = re.compile(r"[^a-z0-9._@-]+")
 
 
@@ -379,7 +386,7 @@ def check_auth(email: Optional[str] = None) -> bool:
 
 
 def store_client_secret(path: str) -> None:
-    """Validate and copy the user's OAuth client_secret.json into HERMES_HOME."""
+    """Validate and copy the user's OAuth client_secret.json into agent home."""
     src = Path(path).expanduser().resolve()
     if not src.exists():
         print(f"ERROR: File not found: {src}")

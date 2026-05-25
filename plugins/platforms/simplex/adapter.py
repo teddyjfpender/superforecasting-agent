@@ -4,7 +4,7 @@ Connects to a simplex-chat daemon running in WebSocket mode.
 Inbound messages arrive via a persistent WebSocket connection.
 Outbound messages use the same WebSocket with JSON commands.
 
-This adapter ships as a Hermes platform plugin under
+This adapter ships as a Superforecasting Agent platform plugin under
 ``plugins/platforms/simplex/``. The agent plugin loader scans the
 directory at startup, calls ``register(ctx)``, and the platform
 becomes available to ``gateway/run.py`` and ``tools/send_message_tool``
@@ -41,8 +41,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 # Lazy import: BasePlatformAdapter and friends live in the main repo.
-# Imported at module top because they're stdlib-only inside Hermes — no
-# external dependency that would block the plugin from loading.
+# Imported at module top because they're stdlib-only inside the inherited
+# runtime — no external dependency that would block the plugin from loading.
 from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (
     BasePlatformAdapter,
@@ -67,7 +67,7 @@ HEALTH_CHECK_INTERVAL = 30.0
 HEALTH_CHECK_STALE_THRESHOLD = 120.0
 
 # Correlation ID prefix for requests we send so we can ignore our own echoes.
-_CORR_PREFIX = "hermes-"
+_CORR_PREFIX = "forecast-"
 
 
 # ---------------------------------------------------------------------------
@@ -618,9 +618,10 @@ async def _standalone_send(
     """Open an ephemeral WebSocket to the daemon, send, and close.
 
     Used by ``tools/send_message_tool._send_via_adapter`` when the gateway
-    runner is not in this process (e.g. ``hermes cron`` running as a
-    separate process from ``hermes gateway``). Without this hook,
-    ``deliver=simplex`` cron jobs fail with "No live adapter for platform".
+    runner is not in this process (e.g. ``superforecasting-agent cron``
+    running separately from ``superforecasting-agent gateway``). Without this
+    hook, ``deliver=simplex`` cron jobs fail with "No live adapter for
+    platform".
 
     ``thread_id`` and ``force_document`` are accepted for signature parity
     with other plugins but are not meaningful here. ``media_files`` is
@@ -646,7 +647,7 @@ async def _standalone_send(
             cmd_str = f"@[{chat_id}] {message}"
 
         payload = {
-            "corrId": f"hermes-snd-{int(time.time() * 1000)}",
+            "corrId": f"forecast-snd-{int(time.time() * 1000)}",
             "cmd": cmd_str,
         }
 
@@ -714,8 +715,8 @@ def register(ctx) -> None:
         install_hint="pip install websockets   # SimpleX adapter requires the websockets package",
         setup_fn=interactive_setup,
         # Env-driven auto-configuration: seeds PlatformConfig.extra so
-        # env-only setups show up in `hermes gateway status` without
-        # instantiating the adapter.
+        # env-only setups show up in `superforecasting-agent gateway status`
+        # without instantiating the adapter.
         env_enablement_fn=_env_enablement,
         # Cron home-channel delivery support — `deliver=simplex` cron jobs
         # route to SIMPLEX_HOME_CHANNEL when set.

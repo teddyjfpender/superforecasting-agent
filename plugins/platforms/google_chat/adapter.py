@@ -49,8 +49,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 # Heavy google-cloud + googleapiclient imports are deferred to first
 # adapter use. Importing them eagerly here added ~110ms wall and ~33MB
 # RSS to *every* CLI invocation (the plugin loader imports this module at
-# ``model_tools`` import time, so ``hermes status``, ``hermes chat``, etc.
-# all paid the cost even though they never instantiate the adapter).
+# ``model_tools`` import time, so status and chat entrypoints all paid the
+# cost even though they never instantiate the adapter).
 #
 # All names below are module globals that ``_load_google_modules()``
 # rebinds on first call. The ``HttpError = Exception`` placeholder is
@@ -300,7 +300,7 @@ def _redact_sensitive(text: str) -> str:
 
 
 def _mime_for_message_type(mime: str) -> MessageType:
-    """Map a MIME string to a hermes MessageType.
+    """Map a MIME string to an agent MessageType.
 
     Anything not image/audio/video falls through to DOCUMENT so the agent
     still receives the file.
@@ -517,15 +517,14 @@ class GoogleChatAdapter(BasePlatformAdapter):
         # Inbound message count per (chat_id, thread_name). Drives the
         # DM main-flow vs side-thread heuristic in _build_message_event
         # and the outbound thread routing in _resolve_thread_id.
-        # Persisted to ${HERMES_HOME}/google_chat_thread_counts.json so
-        # active side-threads survive gateway restarts (the bug that
-        # made the in-memory version of this heuristic flaky for
-        # multi-restart sessions).
+        # Persisted under the active agent home so active side-threads
+        # survive gateway restarts (the bug that made the in-memory
+        # version of this heuristic flaky for multi-restart sessions).
         try:
             from hermes_constants import get_hermes_home as _get_hermes_home
             _hermes_home = _get_hermes_home()
         except (ModuleNotFoundError, ImportError):
-            _hermes_home = _Path.home() / ".hermes"
+            _hermes_home = _Path.home() / ".superforecasting-agent"
         self._thread_count_store = _ThreadCountStore(
             _hermes_home / "google_chat_thread_counts.json"
         )
@@ -689,7 +688,21 @@ class GoogleChatAdapter(BasePlatformAdapter):
     # ------------------------------------------------------------------
     def _bot_id_cache_path(self) -> _Path:
         """Location where the resolved bot user_id is cached across restarts."""
-        base = os.getenv("HERMES_HOME", str(_Path.home() / ".hermes"))
+        try:
+            from hermes_constants import get_hermes_home as _get_hermes_home
+            base = _get_hermes_home()
+        except (ModuleNotFoundError, ImportError):
+            for env_name in (
+                "SUPERFORECASTING_AGENT_HOME",
+                "FORECAST_HOME",
+                "HERMES_HOME",
+            ):
+                value = os.getenv(env_name, "").strip()
+                if value:
+                    base = _Path(value)
+                    break
+            else:
+                base = _Path.home() / ".superforecasting-agent"
         return _Path(base) / "google_chat_bot_id.json"
 
     def _load_cached_bot_id(self) -> Optional[str]:
@@ -1273,7 +1286,7 @@ class GoogleChatAdapter(BasePlatformAdapter):
             if text.startswith("/setup-files") and event.source is not None:
                 # The sender's email (user_id_alt) is the per-user OAuth
                 # key — the bot stores this user's token at
-                # ${HERMES_HOME}/google_chat_user_tokens/<sanitized>.json
+                # active-agent-home/google_chat_user_tokens/<sanitized>.json
                 # so when User B asks for a file later in B's DM, B's
                 # token gets used (not the first person who set up files).
                 sender_email = (
@@ -1521,7 +1534,7 @@ class GoogleChatAdapter(BasePlatformAdapter):
     async def _build_message_event(
         self, msg: Dict[str, Any], envelope: Dict[str, Any]
     ) -> Optional[MessageEvent]:
-        """Parse a Chat API message into a hermes MessageEvent."""
+        """Parse a Chat API message into an agent MessageEvent."""
         space = envelope.get("space") or msg.get("space") or {}
         space_name = space.get("name") or ""  # "spaces/XXX"
         space_type = (space.get("type") or space.get("spaceType") or "").upper()
@@ -3133,9 +3146,9 @@ async def _standalone_send(
     """POST a single Google Chat message via the REST API without the SDK.
 
     Used by ``tools/send_message_tool._send_via_adapter`` when the gateway
-    runner is not in this process (e.g. ``hermes cron`` running as a
-    separate process from ``hermes gateway``).  Without this hook,
-    ``deliver=google_chat`` cron jobs fail with ``No live adapter for
+    runner is not in this process (e.g. ``superforecasting-agent cron``
+    running separately from ``superforecasting-agent gateway``). Without this
+    hook, ``deliver=google_chat`` cron jobs fail with ``No live adapter for
     platform``.
 
     Configuration: requires service-account credentials via
