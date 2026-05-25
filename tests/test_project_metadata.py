@@ -172,6 +172,8 @@ def test_achievements_plugin_visible_copy_is_forecast_native():
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
     assert "Forecast Achievements" in text
+    assert '"hidden": true' in text
+    assert "hidden dashboard route at `/achievements`" in text
     assert "Runtime Infrastructure" in text
     assert "distinct agent tools used in one session" in text
     assert "$SUPERFORECASTING_AGENT_HOME/plugins/hermes-achievements" in text
@@ -187,6 +189,7 @@ def test_achievements_plugin_visible_copy_is_forecast_native():
     assert "Hermes is scanning" not in text
     assert "run Hermes more" not in text
     assert "Hermes sees" not in text
+    assert "auto-registers as a dashboard tab" not in text
     assert "Plugin Goblin" not in text
     assert "Agentic Gamerscore" not in text
     assert "hermes dashboard" not in text

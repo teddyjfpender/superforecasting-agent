@@ -2109,7 +2109,8 @@ class TestPluginAPIAuth:
         plugins — must require the session token. Hit a non-kanban plugin
         path to lock that in.
         """
-        # Real plugin path (hermes-achievements is loaded by default).
+        # Real bundled plugin path. The route remains mounted even though the
+        # achievements tab is hidden from default forecast-desk navigation.
         resp = self.client.get("/api/plugins/hermes-achievements/overview")
         assert resp.status_code == 401
         # Same for an arbitrary plugin namespace that doesn't even exist —
@@ -2258,6 +2259,17 @@ class TestDashboardPluginManifestExtensions:
             "cron:bottom",
             "chat:top",
         ]
+
+    def test_achievements_plugin_is_hidden_from_default_navigation(self, tmp_path, monkeypatch):
+        """The inherited achievements plugin stays routable but not sidebar-first."""
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        from hermes_cli import web_server
+
+        web_server._dashboard_plugins_cache = None
+        plugins = web_server._get_dashboard_plugins(force_rescan=True)
+        entry = next(p for p in plugins if p["name"] == "hermes-achievements")
+        assert entry["tab"]["path"] == "/achievements"
+        assert entry["tab"]["hidden"] is True
 
 
 # ---------------------------------------------------------------------------

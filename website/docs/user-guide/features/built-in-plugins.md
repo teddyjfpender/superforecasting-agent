@@ -68,7 +68,7 @@ The repo ships these bundled plugins under `plugins/`.
 | `image_gen/openai-codex` | image backend | Inherited media backend using Codex OAuth |
 | `image_gen/xai` | image backend | Inherited media backend using xAI |
 | `spotify` | backend tools | Inherited personal/media tooling; secondary unless a forecast workflow explicitly needs it |
-| `hermes-achievements` | dashboard tab | Inherited session-achievement dashboard; not calibration, scoring, or forecast performance |
+| `hermes-achievements` | hidden dashboard route | Inherited session-achievement dashboard; not calibration, scoring, or forecast performance |
 
 Memory providers (`plugins/memory/*`) and context engines (`plugins/context_engine/*`) are listed separately on [Memory Providers](./memory-providers). They are supporting recall/context systems, not durable forecast state.
 
@@ -264,7 +264,7 @@ Legacy `~/.hermes/state.db` remains readable when the active runtime home points
 | `POST /rescan` | Manual synchronous rescan |
 | `POST /reset-state` | Clear unlock history and cached snapshot |
 
-**Enable:** nothing to enable. It is dashboard-only and registers from `plugins/hermes-achievements/dashboard/manifest.json` when the dashboard loads.
+**Enable:** nothing to enable for compatibility. It registers from `plugins/hermes-achievements/dashboard/manifest.json` when the dashboard loads, but its tab is hidden from the default forecast-desk sidebar. Visit `/achievements` directly if you need the inherited badge view.
 
 **Opt out:** delete or rename `plugins/hermes-achievements/dashboard/manifest.json`, or override it with a user plugin of the same name under `~/.superforecasting-agent/plugins/hermes-achievements/`.
 

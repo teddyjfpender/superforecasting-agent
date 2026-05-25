@@ -2,9 +2,9 @@
 
 > **Bundled with Superforecasting Agent.** Originally authored by [@PCinkusz](https://github.com/PCinkusz) at https://github.com/PCinkusz/hermes-achievements — vendored into `plugins/hermes-achievements/` so it ships with the dashboard out-of-the-box and stays in lockstep with fork feature changes. Upstream repo remains the staging ground for new badges and UI iteration.
 >
-> When Superforecasting Agent is installed from the fork package or cloned from source, this plugin auto-registers as a dashboard tab on first `superforecasting-agent dashboard` launch. No separate install step. See [Built-in Plugins -> hermes-achievements](../../website/docs/user-guide/features/built-in-plugins.md) in the main docs.
+> When Superforecasting Agent is installed from the fork package or cloned from source, this plugin registers as a hidden dashboard route at `/achievements`. It stays available for compatibility, but it is not shown in the default forecast-desk navigation. See [Built-in Plugins -> hermes-achievements](../../website/docs/user-guide/features/built-in-plugins.md) in the main docs.
 
-Achievement system for the forecast dashboard: collectible, tiered badges generated from real local agent session history.
+Compatibility achievement system for the forecast dashboard: collectible, tiered badges generated from real local agent session history. It is separate from calibration, scoring, backtesting, and forecast learning memory.
 
 ![Forecast Achievements dashboard](docs/assets/achievements-dashboard-hd.png)
 
