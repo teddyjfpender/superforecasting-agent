@@ -438,15 +438,18 @@ def test_acp_adapter_copy_is_forecast_native():
 
 def test_acp_registry_docs_are_fork_native():
     root = Path(__file__).resolve().parents[1]
-    text = (root / "website" / "docs" / "user-guide" / "features" / "acp.md").read_text(
-        encoding="utf-8"
-    )
+    paths = [
+        root / "website" / "docs" / "user-guide" / "features" / "acp.md",
+        root / "website" / "docs" / "developer-guide" / "acp-internals.md",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
     assert "uvx --from 'superforecasting-agent[acp]==<version>' superforecasting-agent acp" in text
     assert "source registry manifest under `acp_registry/agent.json` is fork-native" in text
-    assert "hermes-agent[acp]==<version>" not in text
+    assert "fork-native registry identity" in text
     assert "the manifest is still the inherited registry entry" not in text
     assert "current compatibility registry entry" not in text
+    assert "pointed at the legacy `hermes-agent` PyPI release" not in text
 
 
 def test_user_stories_page_demotes_general_assistant_positioning():

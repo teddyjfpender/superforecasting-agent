@@ -31,7 +31,7 @@ superforecasting-agent acp / superforecasting-agent-acp / superforecast-acp / he
   -> acp.run_agent(agent, use_unstable_protocol=True)
 ```
 
-The Zed ACP Registry path for inherited releases launches the same adapter through `uvx --from 'hermes-agent[acp]==<version>' hermes-acp`, pointed at the legacy `hermes-agent` PyPI release. Fork-native packaging should prefer `superforecasting-agent acp` when available.
+The checked-in ACP Registry manifest launches the same adapter through `uvx --from 'superforecasting-agent[acp]==<version>' superforecasting-agent acp`. Older client-side registry entries may still use `uvx --from 'hermes-agent[acp]==<version>' hermes-acp`; that path is compatibility for migrated clients, not the fork-native registry identity.
 
 Stdout is reserved for ACP JSON-RPC transport. Human-readable logs go to stderr.
 
