@@ -563,12 +563,11 @@ from utils import (
 )
 _hermes_home = get_hermes_home()
 
-# Load environment variables from ~/.hermes/.env first.
+# Load environment variables from the active forecast home .env first.
 # User-managed env files should override stale shell exports on restart.
 from dotenv import load_dotenv  # backward-compat for tests that monkeypatch this symbol
-from hermes_cli.env_loader import load_hermes_dotenv
-_env_path = _hermes_home / '.env'
-load_hermes_dotenv(hermes_home=_hermes_home, project_env=Path(__file__).resolve().parents[1] / '.env')
+from hermes_cli.env_loader import load_forecast_dotenv
+load_forecast_dotenv(hermes_home=_hermes_home, project_env=Path(__file__).resolve().parents[1] / '.env')
 
 _REDACT_SECRETS_ENV_NAMES = (
     "SUPERFORECASTING_AGENT_REDACT_SECRETS",
@@ -695,12 +694,13 @@ def _gateway_busy_ack_enabled() -> bool:
 def _reload_runtime_env_preserving_config_authority() -> None:
     """Reload .env for fresh credentials without letting stale .env override config.
 
-    Gateway processes are long-lived, so per-turn code reloads ~/.hermes/.env to
-    pick up rotated API keys. config.yaml remains authoritative for agent budget
-    settings such as agent.max_turns; otherwise a stale max-iterations env var in
-    .env can replace the startup bridge on later turns.
+    Gateway processes are long-lived, so per-turn code reloads the active
+    forecast-home .env to pick up rotated API keys. config.yaml remains
+    authoritative for agent budget settings such as agent.max_turns; otherwise
+    a stale max-iterations env var in .env can replace the startup bridge on
+    later turns.
     """
-    load_hermes_dotenv(
+    load_forecast_dotenv(
         hermes_home=_hermes_home,
         project_env=Path(__file__).resolve().parents[1] / '.env',
     )
@@ -1307,7 +1307,7 @@ def _teams_pipeline_plugin_enabled() -> bool:
 
 
 def _load_gateway_config() -> dict:
-    """Load and parse ~/.hermes/config.yaml, returning {} on any error.
+    """Load and parse active agent-home config.yaml, returning {} on any error.
 
     Uses the module-level ``_hermes_home`` (so tests that monkeypatch it
     still see their fixture) and shares the mtime-keyed raw-yaml cache

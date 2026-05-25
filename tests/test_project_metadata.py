@@ -904,6 +904,46 @@ def test_operator_readiness_surfaces_use_forecast_home_guidance():
     assert "~/.hermes/cron" not in combined
 
 
+def test_gateway_platform_setup_guidance_prefers_active_forecast_home():
+    root = Path(__file__).resolve().parents[1]
+    checked_paths = [
+        "hermes_cli/gateway.py",
+        "gateway/config.py",
+        "gateway/channel_directory.py",
+        "gateway/platforms/feishu_comment_rules.py",
+        "gateway/run.py",
+        "plugins/platforms/line/adapter.py",
+        "plugins/platforms/simplex/adapter.py",
+    ]
+    text = "\n".join(
+        (root / rel_path).read_text(encoding="utf-8") for rel_path in checked_paths
+    )
+
+    assert "Set these env vars in {_dhh()}/.env" in text
+    assert "superforecasting-agent setup gateway" in text
+    assert "superforecasting-agent setup line" in text
+    assert "active agent-home ``.env``" in text
+    assert "Active agent-home config.yaml" in text
+    assert "Active agent-home gateway.json" in text
+    assert "active agent-home channel_directory.json" in text
+    assert "active agent-home feishu_comment_rules.json" in text
+    assert "active agent-home feishu_comment_pairing.json" in text
+    assert "active forecast home .env" in text
+    assert "load_forecast_dotenv" in text
+
+    assert "Set these env vars in ~/.hermes/.env" not in text
+    assert "hermes setup line" not in text
+    assert "hermes setup gateway" not in text
+    assert "Writes to ``~/.hermes/.env``" not in text
+    assert "~/.hermes/config.yaml (primary user-facing config)" not in text
+    assert "~/.hermes/gateway.json" not in text
+    assert "~/.hermes/channel_directory.json" not in text
+    assert "Config: ~/.hermes/feishu_comment_rules.json" not in text
+    assert "Pairing store: ~/.hermes/feishu_comment_pairing.json" not in text
+    assert "Load environment variables from ~/.hermes/.env first" not in text
+    assert "load_hermes_dotenv" not in text
+
+
 def test_skill_runtime_surfaces_use_active_home_guidance():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [

@@ -661,10 +661,10 @@ async def _standalone_send(
 
 
 def interactive_setup() -> None:
-    """Minimal stdin wizard for ``hermes setup gateway`` → SimpleX.
+    """Minimal stdin wizard for ``superforecasting-agent setup gateway`` → SimpleX.
 
     Prompts for the WebSocket URL and the optional allowlist / home channel.
-    Writes to ``~/.hermes/.env`` via ``hermes_cli.config``.
+    Writes to the active agent-home ``.env`` via ``hermes_cli.config``.
     """
     print()
     print("SimpleX Chat setup")
