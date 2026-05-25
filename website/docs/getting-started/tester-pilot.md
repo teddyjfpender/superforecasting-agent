@@ -212,7 +212,7 @@ When a question resolves:
 
 ```bash
 forecast --db "$FORECAST_DB" resolve <id> --outcome yes --source "<resolution source>"
-forecast --db "$FORECAST_DB" score <id>
+forecast --db "$FORECAST_DB" score <id> --baselines
 forecast --db "$FORECAST_DB" postmortem <id> \
   --what-happened "..." \
   --what-was-expected "..." \
@@ -223,6 +223,7 @@ forecast --db "$FORECAST_DB" update <id> \
   --probability 0.52 \
   --rationale "New forecast after reviewing active calibration lessons." \
   --use-active-lessons
+forecast --db "$FORECAST_DB" performance --live --json
 ```
 
 ## Tester Feedback

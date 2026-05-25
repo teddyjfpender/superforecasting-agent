@@ -84,6 +84,7 @@ forecast backtest --all-benchmarks --probability-source agent-protocol --agent-p
 forecast backtest path/to/cases.json --probability-source agent-protocol --agent-prompt-jsonl path/to/prompts.jsonl --prepare-agent-prompts
 forecast backtest path/to/cases.json --probability-source agent-protocol --agent-response-jsonl path/to/agent-responses.jsonl
 forecast backtest path/to/cases.json --probability-source agent-protocol --agent-output-jsonl path/to/captured-responses.jsonl
+forecast performance --live
 forecast performance --last 5
 forecast performance --last 5 --json
 forecast readiness
@@ -131,7 +132,7 @@ The forecast ledger is the product surface. Generic chat and messaging gateways 
 | Save a forecast update | `forecast update <id> --probability 0.63 --rationale "..."` |
 | Save a numeric forecast | `forecast update <id> --numeric-value 123.4 --rationale "..."` |
 | Review stale beliefs | `forecast review --stale` |
-| Resolve and score | `forecast resolve <id> --outcome yes && forecast score <id>` |
+| Resolve and score | `forecast resolve <id> --outcome yes && forecast score <id> --baselines` |
 | Diagnose errors | `forecast postmortem <id>`, `forecast errors`, and `forecast calibration --by-origin --all` |
 | Backtest | `forecast backtest builtin:heldout-120-binary` |
 | Run benchmark suite | `forecast backtest --all-benchmarks --probability-source forecast-engine` |
@@ -140,7 +141,7 @@ The forecast ledger is the product surface. Generic chat and messaging gateways 
 | Prepare agent-protocol prompts | `forecast backtest cases.json --probability-source agent-protocol --agent-prompt-jsonl prompts.jsonl --prepare-agent-prompts` |
 | Replay captured agent protocol | `forecast backtest cases.json --probability-source agent-protocol --agent-response-jsonl responses.jsonl` |
 | Capture agent protocol outputs | `forecast backtest cases.json --probability-source agent-protocol --agent-output-jsonl captured.jsonl` |
-| Review backtest performance | `forecast performance --last 5` or `forecast performance --last 5 --json` |
+| Review performance | `forecast performance --live`, `forecast performance --last 5`, or `forecast performance --last 5 --json` |
 | Check claim readiness | `forecast readiness`, `forecast readiness --json`, or `forecast readiness --require-evidence` |
 | Run operator doctor | `forecast doctor`, `forecast doctor --json`, or `forecast doctor --require-pilot-ready` combines status, pilot checks, scheduled run history, and readiness gaps |
 | Check tester pilot coverage | `forecast pilot-report` or `forecast pilot-report --json` checks schedules and scheduled self-check run history |

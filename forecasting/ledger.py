@@ -2598,6 +2598,55 @@ class ForecastLedger:
             result.append(data)
         return result
 
+    def score_baseline_comparisons(self, question_id: str, *, force: bool = False) -> list[dict[str, Any]]:
+        """Score imported baselines for a resolved live question without moving the current forecast."""
+
+        self.get_question(question_id)
+        if self.get_latest_resolution(question_id, confirmed_only=True) is None:
+            raise ValidationError(
+                "cannot score baseline comparisons until resolution is confirmed, criteria-satisfied, and scoreable"
+            )
+        scored: list[dict[str, Any]] = []
+        for baseline in self.list_baseline_comparisons(question_id):
+            if baseline.get("score_record_id") and not force:
+                scored.append({**baseline, "score": self.get_score(baseline["score_record_id"])})
+                continue
+            forecast_id = baseline.get("forecast_id")
+            if not forecast_id:
+                snapshot = self.create_snapshot(
+                    question_id=question_id,
+                    probability_or_distribution=baseline["probability_or_distribution"],
+                    rationale=f"Imported baseline from {baseline.get('source') or 'unknown source'}.",
+                    as_of=baseline.get("as_of"),
+                    method=str(baseline.get("baseline_type") or "imported"),
+                    forecast_origin="imported_baseline",
+                    calibration_eligible=False,
+                    calibration_weight=0.0,
+                    metadata={
+                        "baseline_comparison_id": baseline["id"],
+                        "baseline_source": baseline.get("source"),
+                    },
+                    set_current=False,
+                )
+                forecast_id = snapshot.forecast_id
+            score = self.score_snapshot(forecast_id, force=force)
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    UPDATE baseline_comparisons
+                    SET forecast_id = ?, score_record_id = ?
+                    WHERE id = ?
+                    """,
+                    (forecast_id, score.id, baseline["id"]),
+                )
+                conn.execute(
+                    "UPDATE score_records SET baseline_ref = ? WHERE id = ?",
+                    (baseline["id"], score.id),
+                )
+            updated = self.get_baseline_comparison(baseline["id"])
+            scored.append({**updated, "score": score})
+        return scored
+
     def import_benchmark_dataset(
         self,
         *,
@@ -2836,6 +2885,70 @@ class ForecastLedger:
             "baselines": baselines,
             "agent_by_domain": self._score_breakdown(agent_scores, lambda score: score.domain or "unknown"),
             "agent_by_horizon": self._score_breakdown(agent_scores, self._score_horizon_bucket),
+        }
+
+    def live_performance_report(self, *, domain: str | None = None) -> dict[str, Any]:
+        """Compare scored live forecasts against scored imported baselines."""
+
+        live_scores = self.list_scores(
+            domain=domain,
+            forecast_origin="live",
+            calibration_eligible=None,
+        )
+        baseline_scores: dict[tuple[str, str], list[ScoreRecord]] = defaultdict(list)
+        paired_scores: dict[tuple[str, str], list[tuple[ScoreRecord, ScoreRecord]]] = defaultdict(list)
+        for live_score in live_scores:
+            for baseline in self.list_baseline_comparisons(live_score.question_id):
+                if not baseline.get("score_record_id"):
+                    continue
+                baseline_score = self.get_score(baseline["score_record_id"])
+                key = (baseline["baseline_type"], baseline["source"])
+                baseline_scores[key].append(baseline_score)
+                paired_scores[key].append((live_score, baseline_score))
+
+        baselines = []
+        for key in sorted(baseline_scores):
+            baseline_type, source = key
+            pairs = paired_scores.get(key, [])
+            baselines.append(
+                {
+                    "baseline_type": baseline_type,
+                    "source": source,
+                    **self._score_summary(baseline_scores[key]),
+                    "paired_count": len(pairs),
+                    **self._paired_brier_summary(pairs),
+                    "mean_brier_improvement_vs_baseline": self._mean(
+                        [
+                            baseline.brier_score - agent.brier_score
+                            for agent, baseline in pairs
+                            if agent.brier_score is not None and baseline.brier_score is not None
+                        ]
+                    ),
+                    "mean_log_improvement_vs_baseline": self._mean(
+                        [
+                            baseline.log_score - agent.log_score
+                            for agent, baseline in pairs
+                            if agent.log_score is not None and baseline.log_score is not None
+                        ]
+                    ),
+                }
+            )
+        return {
+            "score_count": len(live_scores),
+            "agent": self._score_summary(live_scores),
+            "baselines": baselines,
+            "agent_by_domain": self._score_breakdown(live_scores, lambda score: score.domain or "unknown"),
+            "agent_by_horizon": self._score_breakdown(live_scores, self._score_horizon_bucket),
+            "claim_status": {
+                "verdict": "live_comparison_evidence" if baselines else "no_scored_live_baselines",
+                "can_claim_live_superforecasting": False,
+                "message": (
+                    "Resolved live forecasts have scored imported baselines for comparison; "
+                    "superforecasting claims still require enough prospective volume and coverage."
+                    if baselines
+                    else "No scored imported baselines are available for live comparison yet."
+                ),
+            },
         }
 
     def review_questions(

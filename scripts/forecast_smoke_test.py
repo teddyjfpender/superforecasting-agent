@@ -457,13 +457,37 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
     if "created forecast snapshot" not in update_output:
         raise SmokeError(f"forecast update did not create a snapshot:\n{update_output}")
 
+    market_path = db_path.with_name("forecast-smoke-market-baseline.csv")
+    market_path.write_text(
+        "\n".join(
+            [
+                "market,market_probability,updated_at,market_id",
+                "smoke-market,0.58,2026-05-22T00:00:00Z,smoke-market-1",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    market_output = _run_forecast(
+        ["import", "market", str(market_path), "--question", question_id],
+        db_path=db_path,
+        repo_root=repo_root,
+        verbose=verbose,
+    )
+    if "captured 1 market baseline comparison(s)" not in market_output:
+        raise SmokeError(f"market baseline import did not attach to the question:\n{market_output}")
+
     show_output = _run_forecast(
         ["show", question_id],
         db_path=db_path,
         repo_root=repo_root,
         verbose=verbose,
     )
-    if "current_forecast:" not in show_output or "evidence_count: 1" not in show_output:
+    if (
+        "current_forecast:" not in show_output
+        or "evidence_count: 1" not in show_output
+        or "baseline_comparisons:" not in show_output
+    ):
         raise SmokeError(f"forecast show did not include expected ledger state:\n{show_output}")
 
     _run_forecast(
@@ -482,12 +506,16 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
         verbose=verbose,
     )
     score_output = _run_forecast(
-        ["score", question_id],
+        ["score", question_id, "--baselines"],
         db_path=db_path,
         repo_root=repo_root,
         verbose=verbose,
     )
-    if "brier_score:" not in score_output or "origin: live" not in score_output:
+    if (
+        "brier_score:" not in score_output
+        or "origin: live" not in score_output
+        or "baseline_scores: 1" not in score_output
+    ):
         raise SmokeError(f"score output was missing live score fields:\n{score_output}")
 
     postmortem_output = _run_forecast(
@@ -772,6 +800,16 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
         _run_forecast(["performance", "--last", "3", "--json"], db_path=db_path, repo_root=repo_root, verbose=verbose),
         "performance",
     )
+    live_performance = _json_output(
+        _run_forecast(["performance", "--live", "--last", "3", "--json"], db_path=db_path, repo_root=repo_root, verbose=verbose),
+        "live performance",
+    )
+    live_report = live_performance.get("live") or {}
+    if live_report.get("score_count", 0) < 1 or not live_report.get("baselines"):
+        raise SmokeError(
+            "live performance did not include scored live baseline comparison:\n"
+            f"{json.dumps(live_performance, indent=2)}"
+        )
     readiness = _json_output(
         _run_forecast(["readiness", "--last", "3", "--json"], db_path=db_path, repo_root=repo_root, verbose=verbose),
         "readiness",
@@ -858,6 +896,7 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
     _print_step(f"performance_runs: {performance.get('run_count')}")
     _print_step(f"readiness_verdict: {evidence_status.get('verdict')}")
     _print_step(f"readiness_gaps: {len(gaps)}")
+    _print_step(f"live_baseline_comparisons: {len(live_report.get('baselines') or [])}")
     _print_step(f"doctor_status: {doctor.get('doctor_status')}")
     _print_step("pilot_bundle_export_included: true")
 

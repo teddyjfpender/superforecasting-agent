@@ -206,6 +206,61 @@ def test_forecast_cli_lifecycle(tmp_path, capsys):
     assert "low_sample" in calibration_output
 
 
+def test_forecast_cli_scores_live_baselines_and_reports_live_performance(tmp_path, capsys):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    ledger = ForecastLedger(db_path)
+    question = ledger.create_question(
+        title="Will CLI live baseline comparison work?",
+        resolution_criteria="Resolved yes if CLI baseline comparisons are scored.",
+        domain="markets",
+        close_time="2026-06-01T00:00:00Z",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.70,
+        rationale="Live forecast before resolution.",
+        as_of="2026-05-01T00:00:00Z",
+    )
+    ledger.add_baseline_comparison(
+        question_id=question.id,
+        source="example-market",
+        baseline_type="market",
+        probability_or_distribution=0.55,
+        as_of="2026-05-01T00:00:00Z",
+    )
+    ledger.resolve_question(
+        question_id=question.id,
+        outcome="yes",
+        resolution_source="https://example.com/resolution",
+    )
+
+    _run(parser, ["forecast", "--db", db, "score", question.id, "--baselines"])
+    score_output = capsys.readouterr().out
+
+    assert "score: sc_" in score_output
+    assert "brier_score: 0.090000" in score_output
+    assert "baseline_scores: 1" in score_output
+    assert "market:example-market" in score_output
+    assert "brier=0.202500" in score_output
+    assert ForecastLedger(db_path).get_current_snapshot(question.id).forecast_origin == "live"
+
+    _run(parser, ["forecast", "--db", db, "performance", "--live", "--json"])
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["live"]["score_count"] == 1
+    assert payload["live"]["agent"]["mean_brier"] == pytest.approx(0.09)
+    assert payload["live"]["baselines"][0]["source"] == "example-market"
+    assert payload["live"]["baselines"][0]["mean_brier_improvement_vs_baseline"] == pytest.approx(0.1125)
+    assert payload["live"]["claim_status"]["can_claim_live_superforecasting"] is False
+
+    _run(parser, ["forecast", "--db", db, "performance", "--live"])
+    output = capsys.readouterr().out
+    assert "Live Performance scores=1 agent_brier=0.090000 baselines=1" in output
+    assert "live baseline market:example-market brier=0.202500 paired=1 agent_edge=+0.112" in output
+    assert "live claim live_comparison_evidence" in output
+
+
 def test_forecast_cli_update_can_derive_weighted_ensemble_probability(tmp_path, capsys):
     parser = _parser()
     db = str(tmp_path / "forecasting.db")

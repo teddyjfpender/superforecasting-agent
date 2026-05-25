@@ -77,10 +77,11 @@ python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db readi
 - Verifies the forecast source-adapter catalog, including generic data, news, market/crowd, market-price, economic, energy, fiscal, research, weather, policy, security, health, regulatory, software, and public-indicator adapters.
 - Verifies the packaged benchmark catalog, including the mini, synthetic, held-out, and public Manifold replay corpora.
 - Adds timestamped evidence and stores source reliability and relevance ratings.
+- Imports a local market baseline and verifies live baseline scoring.
 - Adds a reference-class base rate.
 - Records a Bayesian update model run.
 - Appends a cited forecast snapshot.
-- Resolves, scores, and postmortems the forecast.
+- Resolves, scores, scores imported baselines, and postmortems the forecast.
 - Creates a calibration lesson from the postmortem.
 - Creates a second stale active forecast and verifies self-check alerts.
 - Adds and runs a scheduled self-check with learning flags enabled.
@@ -91,7 +92,7 @@ python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db readi
 - Exports the smoke ledger and verifies `forecast pilot-aggregate` counts the live score from the export packet.
 - Runs `builtin:mini-binary` through the local forecast engine.
 - Runs a local captured agent-protocol replay from JSONL responses without calling an LLM provider.
-- Prints readiness status, evidence gaps, and next actions without making a live superforecasting claim.
+- Prints live baseline comparison counts, readiness status, evidence gaps, and next actions without making a live superforecasting claim.
 - Fails if the smoke ledger incorrectly reports that live-superforecasting evidence is sufficient.
 
 ## Useful Options

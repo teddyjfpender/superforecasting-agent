@@ -38,13 +38,13 @@ For in-chat slash commands, see [Slash Commands Reference](./slash-commands.md).
 | `forecast alerts` | List and acknowledge forecast alerts. |
 | `forecast schedule` | Add, list, run, and audit scheduled self-checks by question, domain, topic, horizon, portfolio, confidence band, or large-delta threshold. Use `--stale-days` to tune stale evidence risk per schedule and `forecast schedule history --json` to export cron/self-check run history. |
 | `forecast resolve` | Resolve a question with explicit outcome, source, and confirmation state. |
-| `forecast score` | Score a resolved question. |
+| `forecast score` | Score a resolved question. Use `--baselines` to also score imported market/crowd/base-rate comparisons without changing the current forecast. |
 | `forecast postmortem` | Record miss diagnosis and calibration lessons. |
 | `forecast calibration` | Inspect calibration by bucket, domain, horizon, origin, question type, sharpness, probability movement before close, and ensemble component contribution. |
 | `forecast errors` | Inspect domain/topic error profiles and active learned-error reviews. |
 | `forecast lessons` | Inspect active, tentative, invalidated, and applied calibration lessons. |
 | `forecast backtest` | Replay resolved benchmark corpora with evidence cutoffs and baseline comparisons. |
-| `forecast performance` | Summarize recent benchmark performance, paired baseline edges, and evidence gaps for live-superiority claims. |
+| `forecast performance` | Summarize recent benchmark performance, paired baseline edges, optional `--live` baseline comparisons, and evidence gaps for live-superiority claims. |
 | `forecast readiness` | Show live/backtest/external-corpus/source-family evidence gaps before stronger performance claims. Use `--require-evidence` to fail when gaps remain. |
 | `forecast pilot-report` | Check whether a tester ledger has the questions, evidence, schedules, scheduled run history, scores, and postmortems needed for a small pilot. |
 | `forecast pilot-cohort` | Seed prospective live pilot questions from CSV/JSON manifests, optionally with initial probabilities, schedules, and watched sources. |
@@ -77,6 +77,12 @@ works with one dataset or with `--all-benchmarks` for a built-in-suite packet
 file. The packets include the strict response schema and the pre-cutoff case
 context that the agent is allowed to see. After an offline model run produces
 response JSONL, replay it with `--agent-response-jsonl`.
+
+For prospective pilots, run `forecast score <id> --baselines` after a question
+resolves if the ledger has imported market, crowd, or base-rate baselines.
+Then `forecast performance --live` reports the live forecast's paired edge
+against those scored baselines while still refusing to make a live superiority
+claim.
 
 ## Runtime Entrypoints
 

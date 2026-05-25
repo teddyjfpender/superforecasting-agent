@@ -170,7 +170,7 @@ forecast resolve <id> \
 ```
 
 ```bash
-forecast score <id>
+forecast score <id> --baselines
 ```
 
 ```bash
@@ -191,10 +191,15 @@ forecast calibration --by-origin --all
 forecast errors
 forecast backtest --benchmarks
 forecast backtest --all-benchmarks --probability-source forecast-engine
+forecast performance --live
 forecast performance --last 5 --json
 ```
 
-Backtests are time-aware. Evidence after the simulated forecast time is excluded unless it is part of the resolution step.
+`forecast score --baselines` scores imported market/crowd/base-rate baselines
+for the same resolved question without moving the current forecast. `forecast
+performance --live` compares resolved live forecasts against those scored
+baselines. Backtests are time-aware. Evidence after the simulated forecast time
+is excluded unless it is part of the resolution step.
 
 ## 10. Use The TUI
 

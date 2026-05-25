@@ -1465,6 +1465,51 @@ def test_backtest_dataset_excludes_post_cutoff_evidence_and_scores_case(tmp_path
     assert baseline_summary["mean_brier"] == pytest.approx(0.2025)
 
 
+def test_live_baseline_comparisons_can_be_scored_without_moving_current_forecast(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will live baseline comparison work?",
+        resolution_criteria="Resolved yes if live baselines can be scored.",
+        domain="markets",
+        close_time="2026-06-01T00:00:00Z",
+    )
+    snapshot = ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.70,
+        rationale="Live forecast before resolution.",
+        as_of="2026-05-01T00:00:00Z",
+    )
+    baseline = ledger.add_baseline_comparison(
+        question_id=question.id,
+        source="example-market",
+        baseline_type="market",
+        probability_or_distribution=0.55,
+        as_of="2026-05-01T00:00:00Z",
+    )
+    ledger.resolve_question(
+        question_id=question.id,
+        outcome="yes",
+        resolution_source="https://example.com/resolution",
+    )
+    live_score = ledger.score_question(question.id)
+
+    scored_baselines = ledger.score_baseline_comparisons(question.id)
+    report = ledger.live_performance_report()
+
+    assert ledger.get_current_snapshot(question.id).forecast_id == snapshot.forecast_id
+    assert scored_baselines[0]["id"] == baseline["id"]
+    assert scored_baselines[0]["forecast_id"] != snapshot.forecast_id
+    assert scored_baselines[0]["score"].forecast_origin == "imported_baseline"
+    assert ledger.get_score(scored_baselines[0]["score_record_id"]).baseline_ref == baseline["id"]
+    assert live_score.brier_score == pytest.approx(0.09)
+    assert report["score_count"] == 1
+    assert report["agent"]["mean_brier"] == pytest.approx(0.09)
+    assert report["baselines"][0]["mean_brier"] == pytest.approx(0.2025)
+    assert report["baselines"][0]["mean_brier_improvement_vs_baseline"] == pytest.approx(0.1125)
+    assert report["baselines"][0]["paired_agent_wins"] == 1
+    assert report["claim_status"]["can_claim_live_superforecasting"] is False
+
+
 def test_imported_benchmark_dataset_is_durable_and_replayable(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     dataset = ledger.import_benchmark_dataset(

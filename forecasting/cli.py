@@ -1334,6 +1334,11 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     score_parser = forecast_sub.add_parser("score", help="Score the current forecast snapshot")
     score_parser.add_argument("id")
     score_parser.add_argument("--force", action="store_true")
+    score_parser.add_argument(
+        "--baselines",
+        action="store_true",
+        help="Also score imported market/crowd/baseline comparisons without changing the current forecast",
+    )
     score_parser.set_defaults(_forecast_handler=_cmd_score)
 
     scores_parser = forecast_sub.add_parser("scores", help="List score records")
@@ -1613,6 +1618,11 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     )
     performance_parser.add_argument("--last", type=int, default=10, help="Number of recent backtest runs to show")
     performance_parser.add_argument("--dataset", help="Filter to runs whose dataset contains this text")
+    performance_parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Include resolved live forecast performance against scored imported baselines",
+    )
     performance_parser.add_argument("--json", action="store_true", help="Emit machine-readable performance JSON")
     performance_parser.set_defaults(_forecast_handler=_cmd_performance)
 
@@ -2092,6 +2102,7 @@ def _cmd_show(args: argparse.Namespace) -> None:
     question = ledger.get_question(args.id)
     snapshots = ledger.list_snapshots(args.id)
     evidence = ledger.list_evidence(args.id)
+    baselines = ledger.list_baseline_comparisons(args.id)
     resolution = ledger.get_latest_resolution(args.id)
     print(f"{question.title}")
     print(f"id: {question.id}")
@@ -2102,7 +2113,7 @@ def _cmd_show(args: argparse.Namespace) -> None:
     print(f"resolution_time: {question.resolution_time or '-'}")
     print(f"resolution_criteria: {question.resolution_criteria}")
     print()
-    current = snapshots[-1] if snapshots else None
+    current = ledger.get_current_snapshot(args.id)
     if current:
         print("current_forecast:")
         print(f"  id: {current.forecast_id}")
@@ -2121,6 +2132,7 @@ def _cmd_show(args: argparse.Namespace) -> None:
         print("  none")
     print()
     print(f"evidence_count: {len(evidence)}")
+    print(f"baseline_comparisons: {len(baselines)}")
     if resolution:
         print(f"resolution: {resolution.outcome} ({resolution.resolution_status})")
 
@@ -6061,7 +6073,8 @@ def _cmd_resolve(args: argparse.Namespace) -> None:
 
 
 def _cmd_score(args: argparse.Namespace) -> None:
-    score = _ledger(args).score_question(args.id, force=args.force)
+    ledger = _ledger(args)
+    score = ledger.score_question(args.id, force=args.force)
     print(f"score: {score.id}")
     print(f"brier_score: {score.brier_score:.6f}" if score.brier_score is not None else "brier_score: -")
     print(f"log_score: {score.log_score:.6f}" if score.log_score is not None else "log_score: -")
@@ -6069,6 +6082,21 @@ def _cmd_score(args: argparse.Namespace) -> None:
     print(f"score_rule: {score.score_rule or '-'}")
     print(f"bucket: {score.calibration_bucket or '-'}")
     print(f"origin: {score.forecast_origin}")
+    if args.baselines:
+        baselines = ledger.score_baseline_comparisons(args.id, force=args.force)
+        if not baselines:
+            print("baseline_scores: none")
+        else:
+            print(f"baseline_scores: {len(baselines)}")
+            for baseline in baselines:
+                baseline_score = baseline["score"]
+                name = f"{baseline['baseline_type']}:{baseline['source']}"
+                print(
+                    f"  {baseline['id']} {name} "
+                    f"brier={_format_metric(baseline_score.brier_score)} "
+                    f"log={_format_metric(baseline_score.log_score)} "
+                    f"origin={baseline_score.forecast_origin}"
+                )
 
 
 def _cmd_scores(args: argparse.Namespace) -> None:
@@ -6953,6 +6981,7 @@ def _cmd_performance(args: argparse.Namespace) -> None:
         dataset=getattr(args, "dataset", None),
     )
     evidence_status = build_forecasting_evidence_status(ledger, summaries)
+    live_report = ledger.live_performance_report() if args.live else None
 
     if args.json:
         print(
@@ -6960,6 +6989,7 @@ def _cmd_performance(args: argparse.Namespace) -> None:
                 {
                     "last": max(args.last, 0),
                     "dataset_filter": args.dataset,
+                    "live": live_report,
                     "run_count": len(summaries),
                     "evidence_status": evidence_status,
                     "runs": summaries,
@@ -6969,6 +6999,9 @@ def _cmd_performance(args: argparse.Namespace) -> None:
             )
         )
         return
+
+    if live_report is not None:
+        _print_live_performance_report(live_report)
 
     if not rows:
         print("No backtest runs found.")
@@ -7013,6 +7046,37 @@ def _cmd_performance(args: argparse.Namespace) -> None:
         if claim:
             print(f"  claim {claim.get('verdict')}: {claim.get('message')}")
     _print_evidence_status(evidence_status)
+
+
+def _print_live_performance_report(report: dict[str, Any]) -> None:
+    agent = report["agent"]
+    print(
+        "Live Performance "
+        f"scores={report['score_count']} "
+        f"agent_brier={_format_metric(agent.get('mean_brier'))} "
+        f"baselines={len(report['baselines'])}"
+    )
+    for baseline in report["baselines"]:
+        name = f"{baseline['baseline_type']}:{baseline['source']}"
+        print(
+            f"  live baseline {name} brier={_format_metric(baseline['mean_brier'])} "
+            f"paired={baseline['paired_count']} "
+            f"agent_edge={_format_delta(baseline['mean_brier_improvement_vs_baseline'])} "
+            f"paired_brier_agent={_format_metric(baseline.get('paired_agent_mean_brier'))} "
+            f"paired_brier_baseline={_format_metric(baseline.get('paired_baseline_mean_brier'))} "
+            f"paired_edge={_format_delta(baseline.get('paired_agent_edge_mean_brier'))} "
+            f"ci95={_format_ci95(baseline.get('paired_agent_edge_ci95_low'), baseline.get('paired_agent_edge_ci95_high'))} "
+            f"wins={baseline.get('paired_agent_wins', 0)}/"
+            f"{baseline.get('paired_baseline_wins', 0)}/"
+            f"{baseline.get('paired_ties', 0)}"
+        )
+    if report["agent_by_domain"]:
+        print(f"  live domains {_format_score_breakdown(report['agent_by_domain'])}")
+    if report["agent_by_horizon"]:
+        print(f"  live horizons {_format_score_breakdown(report['agent_by_horizon'])}")
+    claim = report.get("claim_status") or {}
+    if claim:
+        print(f"  live claim {claim.get('verdict')}: {claim.get('message')}")
 
 
 def _cmd_readiness(args: argparse.Namespace) -> None:
