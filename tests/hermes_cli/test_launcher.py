@@ -65,3 +65,28 @@ def test_launcher_missing_runtime_dependency_points_to_forecast_desk(monkeypatch
     assert "Use `./forecast ...`, `./superforecasting-agent status`" in captured.err
     assert 'uv pip install -e ".[all,dev]"' in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_launcher_late_missing_runtime_dependency_points_to_forecast_desk(
+    monkeypatch,
+    capsys,
+):
+    launcher_path = Path(__file__).resolve().parents[2] / "hermes"
+    fake_main_module = types.ModuleType("hermes_cli.main")
+
+    def fake_main():
+        raise ModuleNotFoundError("No module named 'rich'", name="rich")
+
+    fake_main_module.main = fake_main
+    monkeypatch.setitem(sys.modules, "hermes_cli.main", fake_main_module)
+    monkeypatch.setattr(sys, "argv", [str(launcher_path), "dashboard", "--no-open"])
+
+    with pytest.raises(SystemExit) as exc:
+        runpy.run_path(str(launcher_path), run_name="__main__")
+
+    assert exc.value.code == 1
+    captured = capsys.readouterr()
+    assert "legacy `hermes` compatibility launcher" in captured.err
+    assert "Use `./forecast ...`, `./superforecasting-agent status`" in captured.err
+    assert 'uv pip install -e ".[all,dev]"' in captured.err
+    assert "Traceback" not in captured.err

@@ -9,25 +9,32 @@ subcommands such as `gateway`, `cron`, and `doctor`.
 import sys
 
 
+def _exit_with_missing_runtime_dependency(exc: ModuleNotFoundError) -> None:
+    missing_name = exc.name or str(exc)
+    print(
+        "Error: the legacy `hermes` compatibility launcher needs optional "
+        f"runtime dependencies that are not installed ({missing_name}).",
+        file=sys.stderr,
+    )
+    print(
+        "Use `./forecast ...`, `./superforecasting-agent status`, or "
+        "`python -m superforecasting_agent status` for the forecast desk, "
+        "or run `uv pip install -e \".[all,dev]\"` before using inherited "
+        "runtime commands.",
+        file=sys.stderr,
+    )
+    raise SystemExit(1) from exc
+
+
 def _main() -> None:
     try:
         from hermes_cli.main import main
     except ModuleNotFoundError as exc:
-        missing_name = exc.name or str(exc)
-        print(
-            "Error: the legacy `hermes` compatibility launcher needs optional "
-            f"runtime dependencies that are not installed ({missing_name}).",
-            file=sys.stderr,
-        )
-        print(
-            "Use `./forecast ...`, `./superforecasting-agent status`, or "
-            "`python -m superforecasting_agent status` for the forecast desk, "
-            "or run `uv pip install -e \".[all,dev]\"` before using inherited "
-            "runtime commands.",
-            file=sys.stderr,
-        )
-        raise SystemExit(1) from exc
-    main()
+        _exit_with_missing_runtime_dependency(exc)
+    try:
+        main()
+    except ModuleNotFoundError as exc:
+        _exit_with_missing_runtime_dependency(exc)
 
 
 if __name__ == "__main__":

@@ -188,3 +188,26 @@ def test_runtime_command_missing_optional_dependency_gets_forecast_native_guidan
     assert "Use `forecast ...` or `superforecasting-agent status`" in captured.err
     assert 'uv pip install -e ".[all,dev]"' in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_late_runtime_command_missing_optional_dependency_gets_forecast_native_guidance(
+    capsys,
+    monkeypatch,
+):
+    fake_main_module = ModuleType("hermes_cli.main")
+
+    def fake_main():
+        raise ModuleNotFoundError("No module named 'rich'", name="rich")
+
+    fake_main_module.main = fake_main
+    monkeypatch.setitem(sys.modules, "hermes_cli.main", fake_main_module)
+
+    with pytest.raises(SystemExit) as exc:
+        forecast_cli.main(["dashboard", "--no-open"])
+
+    assert exc.value.code == 1
+    captured = capsys.readouterr()
+    assert "optional CLI runtime dependencies" in captured.err
+    assert "Use `forecast ...` or `superforecasting-agent status`" in captured.err
+    assert 'uv pip install -e ".[all,dev]"' in captured.err
+    assert "Traceback" not in captured.err

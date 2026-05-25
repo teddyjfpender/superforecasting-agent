@@ -123,29 +123,36 @@ def _apply_profile(profile_name: str | None) -> None:
         raise SystemExit(1) from exc
 
 
+def _exit_with_missing_runtime_dependency(exc: ModuleNotFoundError) -> None:
+    missing_name = exc.name or str(exc)
+    print(
+        "Error: this inherited runtime command needs optional CLI runtime "
+        f"dependencies that are not installed ({missing_name}).",
+        file=sys.stderr,
+    )
+    print(
+        "Use `forecast ...` or `superforecasting-agent status` for the "
+        "forecast desk, or run `uv pip install -e \".[all,dev]\"` from "
+        "the checkout before using chat, dashboard, setup, model, gateway, "
+        "or other compatibility runtime commands.",
+        file=sys.stderr,
+    )
+    raise SystemExit(1) from exc
+
+
 def _run_inherited_runtime(argv: Sequence[str]) -> None:
     try:
         from hermes_cli.main import main as inherited_main
     except ModuleNotFoundError as exc:
-        missing_name = exc.name or str(exc)
-        print(
-            "Error: this inherited runtime command needs optional CLI runtime "
-            f"dependencies that are not installed ({missing_name}).",
-            file=sys.stderr,
-        )
-        print(
-            "Use `forecast ...` or `superforecasting-agent status` for the "
-            "forecast desk, or run `uv pip install -e \".[all,dev]\"` from "
-            "the checkout before using chat, dashboard, setup, model, gateway, "
-            "or other compatibility runtime commands.",
-            file=sys.stderr,
-        )
-        raise SystemExit(1) from exc
+        _exit_with_missing_runtime_dependency(exc)
 
     previous_argv = sys.argv[:]
     try:
         sys.argv = ["superforecasting-agent", *argv]
-        inherited_main()
+        try:
+            inherited_main()
+        except ModuleNotFoundError as exc:
+            _exit_with_missing_runtime_dependency(exc)
     finally:
         sys.argv = previous_argv
 
