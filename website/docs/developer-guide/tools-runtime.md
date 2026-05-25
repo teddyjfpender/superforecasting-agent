@@ -171,7 +171,7 @@ Four tools are intercepted before registry dispatch because they need agent-leve
 
 These tools' schemas are still registered in the registry (for `get_tool_definitions`), but their handlers return a stub error if dispatch somehow reaches them directly.
 
-The forecast ledger is intentionally not treated as generic chat memory. `forecast_ledger` is a regular registered tool so forecast writes are explicit, JSON-shaped, and testable through the same dispatch path as other built-in tools.
+The forecast ledger is intentionally not treated as generic chat memory. `forecast_ledger` is a regular registered tool so forecast writes are explicit, JSON-shaped, and testable through the same dispatch path as other built-in tools. Forecast agents should use the `doctor_report` action before reporting tester-readiness or benchmark-readiness: it combines operational status, pilot checks, scheduled self-check run history, and evidence-readiness gaps while preserving the guard that live superforecasting superiority remains unproven until prospective evidence exists.
 
 ### Async bridging
 

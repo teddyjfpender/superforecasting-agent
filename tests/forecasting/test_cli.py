@@ -1260,6 +1260,31 @@ def test_forecast_cli_agent_dry_run_uses_protocol_prompt(tmp_path, capsys):
     assert "terminal" not in output.splitlines()[0]
 
 
+def test_forecast_cli_agent_self_check_prompt_uses_doctor_report_gate(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will self-check prompts inspect readiness gates?",
+            "--resolution-criteria",
+            "Resolved yes if self-check prompts use the ledger doctor gate.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(parser, ["forecast", "--db", db, "agent", question_id, "--stage", "self_check", "--dry-run"])
+    output = capsys.readouterr().out
+
+    assert "enabled_toolsets: forecasting, file, web" in output
+    assert "forecast_ledger doctor_report" in output
+    assert "claiming live superiority" in output
+
+
 def test_forecast_cli_assumption_and_reference_class_status(tmp_path, capsys):
     parser = _parser()
     db = str(tmp_path / "forecasting.db")
