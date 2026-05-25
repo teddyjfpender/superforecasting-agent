@@ -1800,11 +1800,11 @@ def _validate_personality(value: str, cfg: dict | None = None) -> tuple[str, str
     if name not in personalities:
         names = sorted(personalities)
         available = ", ".join(f"`{n}`" for n in names)
-        base = f"Unknown personality: `{raw}`."
+        base = f"Unknown forecast style: `{raw}`."
         if available:
             base += f"\n\nAvailable: `none`, {available}"
         else:
-            base += "\n\nNo personalities configured."
+            base += "\n\nNo forecast styles configured."
         raise ValueError(base)
 
     return name, _render_personality_prompt(personalities[name])
@@ -1845,7 +1845,7 @@ def _apply_personality_to_session(
             )
         else:
             marker = (
-                "[System: The user has cleared the personality overlay. "
+                "[System: The user has cleared the forecast style overlay. "
                 "From this point forward, keep the default forecasting-desk behavior.]"
             )
         with session["history_lock"]:

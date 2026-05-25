@@ -769,7 +769,11 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "new hermes started" not in relaunch
 
     assert "changed the forecast agent's style" in tui_gateway
+    assert "Unknown forecast style" in tui_gateway
+    assert "cleared the forecast style overlay" in tui_gateway
     assert "changed the assistant's personality" not in tui_gateway
+    assert "Unknown personality" not in tui_gateway
+    assert "cleared the personality overlay" not in tui_gateway
     assert "Hermes's prompt-injection scanner" not in install_ps1
 
 

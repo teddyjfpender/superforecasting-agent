@@ -2012,7 +2012,7 @@ def test_config_set_personality_rejects_unknown_name(monkeypatch):
     )
 
     assert "error" in resp
-    assert "Unknown personality" in resp["error"]["message"]
+    assert "Unknown forecast style" in resp["error"]["message"]
 
 
 def test_config_set_personality_preserves_history_and_returns_info(monkeypatch):
