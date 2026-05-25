@@ -916,11 +916,11 @@ describe('createGatewayEventHandler', () => {
               ],
               ['/forecast research fq_123456789abc', 'collect source notes and evidence without moving probability'],
               [
-                '/forecast update fq_123456789abc --probability <0-1>',
-                'append an explicit probability update with rationale'
+                '/forecast update fq_123456789abc --probability <0-1> --rationale <why>',
+                'append an explicit probability update'
               ],
               [
-                '/forecast base-rate fq_123456789abc --name <reference-class>',
+                '/forecast base-rate fq_123456789abc --name <reference-class> --inclusion-criteria <criteria> --base-rate <p>',
                 'add reference-class evidence before changing probability'
               ],
               [
@@ -928,7 +928,7 @@ describe('createGatewayEventHandler', () => {
                 'run a deterministic trend projection when time series matter'
               ],
               [
-                '/forecast resolve fq_123456789abc --outcome <value> --source <url>',
+                '/forecast resolve fq_123456789abc --outcome <value> --resolution-source <url>',
                 'record resolution when criteria are met'
               ]
             ],

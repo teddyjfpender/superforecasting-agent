@@ -122,9 +122,9 @@ export const coreCommands: SlashCommand[] = [
             ['/evidence [args]', 'add or inspect timestamped forecast evidence'],
             ['/research [args]', 'collect evidence without moving probability'],
             ['/base-rate [args]', 'add or inspect reference-class/base-rate work'],
-            ['/model-run [args]', 'record a quantitative forecast model run'],
+            ['/model-run [args]', 'inspect or record a quantitative forecast model run'],
             ['/trend-model [args]', 'record a deterministic trend projection'],
-            ['/update-forecast [args]', 'append a probability update'],
+            ['/update-forecast [args]', 'inspect or append a probability update'],
             ['/resolve [args]', 'record a forecast resolution'],
             ['/score [args]', 'score a resolved forecast'],
             ['/postmortem [args]', 'diagnose a resolved forecast'],
@@ -313,7 +313,7 @@ export const coreCommands: SlashCommand[] = [
 
   {
     aliases: ['forecast-model'],
-    help: 'record a quantitative forecast model run',
+    help: 'inspect or record a quantitative forecast model run',
     name: 'model-run',
     run: (arg, ctx) => runForecastCommand(ctx, `model ${arg.trim()}`.trim())
   },
@@ -330,7 +330,7 @@ export const coreCommands: SlashCommand[] = [
 
   {
     aliases: ['forecast-update'],
-    help: 'append a probability update',
+    help: 'inspect or append a probability update',
     name: 'update-forecast',
     run: (arg, ctx) => runForecastCommand(ctx, `update ${arg.trim()}`.trim())
   },

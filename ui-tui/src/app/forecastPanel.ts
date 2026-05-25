@@ -314,10 +314,13 @@ const focusedActionRows = (questions: ForecastDashboardQuestion[], reviewQueue: 
   return [
     [`/forecast show ${row.id}`, `${context}  load full ledger context for ${label}`],
     [`/forecast research ${row.id}`, 'collect source notes and evidence without moving probability'],
-    [`/forecast update ${row.id} --probability <0-1>`, 'append an explicit probability update with rationale'],
-    [`/forecast base-rate ${row.id} --name <reference-class>`, 'add reference-class evidence before changing probability'],
+    [`/forecast update ${row.id} --probability <0-1> --rationale <why>`, 'append an explicit probability update'],
+    [
+      `/forecast base-rate ${row.id} --name <reference-class> --inclusion-criteria <criteria> --base-rate <p>`,
+      'add reference-class evidence before changing probability'
+    ],
     [`/trend-model ${row.id} --series-json '[...]' --target-date <date>`, 'run a deterministic trend projection when time series matter'],
-    [`/forecast resolve ${row.id} --outcome <value> --source <url>`, 'record resolution when criteria are met']
+    [`/forecast resolve ${row.id} --outcome <value> --resolution-source <url>`, 'record resolution when criteria are met']
   ]
 }
 

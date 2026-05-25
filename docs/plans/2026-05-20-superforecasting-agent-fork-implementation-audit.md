@@ -1308,6 +1308,7 @@ Latest verified result:
 - Evidence source command-shape pass: `forecast evidence add <id>` now accepts either positional source/note text or `--source <value>`, matching support-surface examples that capture voice notes, meeting recalls, or plugin outputs without changing source URL/source-name semantics.
 - Evidence URL/stance alias pass: `forecast evidence add` now accepts `--source-url` as an alias for `--url`, and evidence/research `--stance` accepts human synonyms such as `supports`, `opposes`, and `neutral` while normalizing to the ledger's `increases`/`decreases`/`mixed`/`context` vocabulary.
 - Citation-policy inspection pass: `forecast update <id> --require-citations` now behaves as a read-only command-shape reminder, printing the current forecast and the cited save-command shape without writing a snapshot; saved updates still enforce citation refs before ledger writes.
+- TUI focused-action command-shape pass: Forecast Desk focused actions now show executable update/base-rate/resolve commands with required rationale, base-rate criteria/probability, and `--resolution-source`; slash help/docs describe model and update shortcuts as inspect-or-record workflows to match the CLI lifecycle.
 
 ## Prompt-To-Artifact Checklist
 

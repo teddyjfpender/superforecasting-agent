@@ -303,9 +303,9 @@ describe('forecast desk panel helpers', () => {
         'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
       ],
       ['/forecast research fq_review123456', 'collect source notes and evidence without moving probability'],
-      ['/forecast update fq_review123456 --probability <0-1>', 'append an explicit probability update with rationale'],
+      ['/forecast update fq_review123456 --probability <0-1> --rationale <why>', 'append an explicit probability update'],
       [
-        '/forecast base-rate fq_review123456 --name <reference-class>',
+        '/forecast base-rate fq_review123456 --name <reference-class> --inclusion-criteria <criteria> --base-rate <p>',
         'add reference-class evidence before changing probability'
       ],
       [
@@ -313,7 +313,7 @@ describe('forecast desk panel helpers', () => {
         'run a deterministic trend projection when time series matter'
       ],
       [
-        '/forecast resolve fq_review123456 --outcome <value> --source <url>',
+        '/forecast resolve fq_review123456 --outcome <value> --resolution-source <url>',
         'record resolution when criteria are met'
       ]
     ])
@@ -325,8 +325,8 @@ describe('forecast desk panel helpers', () => {
       },
       { command: '/forecast research fq_review123456', detail: 'collect source notes and evidence without moving probability' },
       {
-        command: '/forecast update fq_review123456 --probability <0-1>',
-        detail: 'append an explicit probability update with rationale'
+        command: '/forecast update fq_review123456 --probability <0-1> --rationale <why>',
+        detail: 'append an explicit probability update'
       }
     ])
     expect(review?.rows?.[0]?.[1]).toContain('close 2026-05-31')

@@ -26,9 +26,9 @@ The forecast desk is the primary product surface. Use these before reaching for 
 | `/evidence [args]` | TUI | Add or inspect timestamped evidence. Equivalent to `forecast evidence ...`. |
 | `/research [args]` | TUI | Collect evidence or source notes without moving probability. Equivalent to `forecast research ...`. |
 | `/base-rate [args]` | TUI | Add or inspect reference-class/base-rate work. |
-| `/model-run [args]` | TUI | Record a quantitative model run. Equivalent to `forecast model ...`. |
+| `/model-run [args]` | TUI | Inspect or record a quantitative model run. Equivalent to `forecast model ...`. |
 | `/trend-model [args]` | TUI | Record a deterministic trend projection model run. Equivalent to `forecast model ... --type trend_projection`. |
-| `/update-forecast [args]` | TUI | Append a probability update to a forecast. |
+| `/update-forecast [args]` | TUI | Inspect or append a probability update to a forecast. |
 | `/resolve [args]` | TUI | Record a forecast resolution. |
 | `/score [args]` | TUI | Score a resolved forecast. |
 | `/postmortem [args]` | TUI | Diagnose a resolved forecast and capture learning. |
