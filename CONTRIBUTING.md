@@ -150,7 +150,7 @@ superforecasting-agent/
 │   ├── prompt_builder.py         # System prompt assembly (identity, skills, context files, memory)
 │   ├── context_compressor.py     # Auto-summarization when approaching context limits
 │   ├── auxiliary_client.py       # Resolves auxiliary OpenAI clients (summarization, vision)
-│   ├── display.py                # KawaiiSpinner, tool progress formatting
+│   ├── display.py                # ForecastSpinner, tool progress formatting
 │   ├── model_metadata.py         # Model context lengths, token estimation
 │   └── trajectory.py             # Trajectory saving helpers
 │
