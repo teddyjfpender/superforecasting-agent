@@ -6,8 +6,9 @@
 
 <p align="center">
   <a href="docs/plans/2026-05-20-superforecasting-agent-fork-prd.md"><img src="https://img.shields.io/badge/Docs-forecasting%20PRD-FFD700?style=for-the-badge" alt="Documentation"></a>
-  <a href="https://discord.gg/NousResearch"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://github.com/teddyjfpender/superforecasting-agent/tree/superforecasting-agent-snapshot"><img src="https://img.shields.io/badge/GitHub-superforecasting--agent-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub repository"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
+  <a href="https://github.com/NousResearch/hermes-agent"><img src="https://img.shields.io/badge/Upstream-Hermes%20Agent-blueviolet?style=for-the-badge" alt="Upstream Hermes Agent"></a>
   <a href="README.md"><img src="https://img.shields.io/badge/Lang-English-lightgrey?style=for-the-badge" alt="English"></a>
 </p>
 
@@ -144,4 +145,4 @@ scripts/run_tests.sh tests/forecasting -q
 
 MIT — 详见 [LICENSE](LICENSE)。
 
-Built by [Nous Research](https://nousresearch.com).
+本 fork 基于 [Nous Research](https://nousresearch.com) 的上游 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 运行时；预测版本维护于 [teddyjfpender/superforecasting-agent](https://github.com/teddyjfpender/superforecasting-agent)。

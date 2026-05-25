@@ -3135,12 +3135,21 @@ def test_codex_migration_report_copy_is_forecast_native():
 def test_readme_primary_links_are_fork_native():
     root = Path(__file__).resolve().parents[1]
     readme = (root / "README.md").read_text(encoding="utf-8")
+    zh_readme = (root / "README.zh-CN.md").read_text(encoding="utf-8")
     before_legacy_docs = readme.split("## Legacy Hermes Documentation", 1)[0]
 
     assert "docs/plans/2026-05-20-superforecasting-agent-fork-prd.md" in before_legacy_docs
+    assert "github.com/teddyjfpender/superforecasting-agent/tree/superforecasting-agent-snapshot" in before_legacy_docs
+    assert "github.com/teddyjfpender/superforecasting-agent/issues" in readme
+    assert "Upstream-Hermes%20Agent" in before_legacy_docs
     assert '<a href="LICENSE">' in before_legacy_docs
     assert "github.com/NousResearch/hermes-agent/blob/main/LICENSE" not in before_legacy_docs
     assert "github.com/NousResearch/hermes-agent/issues" not in readme
+    assert 'href="https://discord.gg/NousResearch"><img' not in before_legacy_docs
+    assert "Built by [Nous Research]" not in readme
+    assert "Built by [Nous Research]" not in zh_readme
+    assert "github.com/teddyjfpender/superforecasting-agent/tree/superforecasting-agent-snapshot" in zh_readme
+    assert "Upstream-Hermes%20Agent" in zh_readme
     assert "[CONTRIBUTING.md](CONTRIBUTING.md)" in readme
     assert "upstream Hermes contributing guide" not in readme
 
