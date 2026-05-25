@@ -207,8 +207,12 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'evidence add fq_123 "new source"' })
     expect(handler('/research fq_123 https://example.com/source')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'research fq_123 https://example.com/source' })
-    expect(handler('/base-rate fq_123 --name similar events')).toBe(true)
-    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'base-rate fq_123 --name similar events' })
+    expect(
+      handler('/base-rate fq_123 --name similar-events --inclusion-criteria "similar events" --base-rate 0.42')
+    ).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', {
+      arg: 'base-rate fq_123 --name similar-events --inclusion-criteria "similar events" --base-rate 0.42'
+    })
     expect(handler('/model-run fq_123 --type bayesian_update')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'model fq_123 --type bayesian_update' })
     expect(handler('/forecast-model fq_123 --type time_series')).toBe(true)
