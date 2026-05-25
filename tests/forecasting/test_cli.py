@@ -171,7 +171,8 @@ def test_forecast_cli_lifecycle(tmp_path, capsys):
             question_id,
             "--outcome",
             "yes",
-            "--source",
+            "--confirmed",
+            "--resolution-source",
             "official result",
         ],
     )

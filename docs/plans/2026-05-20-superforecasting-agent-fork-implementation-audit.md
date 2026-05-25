@@ -1303,6 +1303,7 @@ Latest verified result:
 - Base-rate command-shape pass: bare `forecast base-rate <id>` now inspects existing reference-class work and prints the add command shape without mutating probability, while `--name`/`--inclusion-criteria`/`--base-rate` remain required only when writing a new base-rate record; CLI docs now use the implemented base-rate flags.
 - Model command-shape pass: bare `forecast model <id>` now inspects recent model runs and prints the add command shape without mutating probability, while `--type` remains required only when writing a new quantitative model run; CLI docs now use implemented Bayesian and trend-model flags instead of unsupported rationale flags on model runs.
 - Update command-shape pass: bare `forecast update <id>` now inspects the current forecast and prints the write command shape without mutating probability, while saved snapshots still require `--rationale`; `--preview` can show component probabilities and weights without requiring save-only rationale text.
+- Resolve command-shape pass: `forecast resolve` now accepts `--resolution-source` as an alias for `--source` and `--confirmed` as an alias for `--status confirmed`, matching the high-traffic quickstart/index examples without changing the stored resolution governance fields.
 
 ## Prompt-To-Artifact Checklist
 

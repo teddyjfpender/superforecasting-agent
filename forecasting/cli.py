@@ -1233,7 +1233,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     resolve_parser = forecast_sub.add_parser("resolve", help="Record a forecast resolution")
     resolve_parser.add_argument("id")
     resolve_parser.add_argument("--outcome", required=True)
-    resolve_parser.add_argument("--source", dest="resolution_source")
+    resolve_parser.add_argument("--source", "--resolution-source", dest="resolution_source")
     resolve_parser.add_argument("--source-snapshot-ref", dest="resolution_source_snapshot_ref")
     resolve_parser.add_argument(
         "--resolver-type",
@@ -1245,6 +1245,13 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         dest="resolution_status",
         choices=["proposed", "confirmed", "disputed", "corrected"],
         default="confirmed",
+    )
+    resolve_parser.add_argument(
+        "--confirmed",
+        dest="resolution_status",
+        action="store_const",
+        const="confirmed",
+        help="Alias for --status confirmed",
     )
     resolve_parser.add_argument(
         "--criteria-satisfied",
