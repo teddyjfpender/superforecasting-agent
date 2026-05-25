@@ -357,6 +357,7 @@ function ForecastTable({ rows }: { rows: ForecastDashboardQuestion[] }) {
                 <th className="px-4 py-2 text-left font-medium">Close</th>
                 <th className="px-4 py-2 text-right font-medium">Evidence</th>
                 <th className="px-4 py-2 text-right font-medium">Baselines</th>
+                <th className="px-4 py-2 text-right font-medium">Ref Classes</th>
                 <th className="px-4 py-2 text-right font-medium">Assumptions</th>
                 <th className="py-2 pl-4 text-right font-medium">Alerts</th>
               </tr>
@@ -398,6 +399,15 @@ function ForecastTable({ rows }: { rows: ForecastDashboardQuestion[] }) {
                   </td>
                   <td className="px-4 py-2 text-right text-muted-foreground">
                     {row.baseline_count}
+                  </td>
+                  <td className="px-4 py-2 text-right text-muted-foreground">
+                    {row.open_reference_class_count}
+                    {row.stale_reference_class_count > 0 && (
+                      <span className="text-amber-300">
+                        {" "}
+                        / {row.stale_reference_class_count}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-right text-muted-foreground">
                     {row.open_assumption_count}
@@ -1107,7 +1117,7 @@ export default function ForecastsPage() {
         </Card>
       )}
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Card>
           <CardContent className="flex items-center justify-between py-5">
             <div>
@@ -1158,6 +1168,21 @@ export default function ForecastsPage() {
               </div>
             </div>
             <BrainCircuit className="h-5 w-5 text-muted-foreground" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center justify-between py-5">
+            <div>
+              <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                Ref Classes
+              </div>
+              <div className="mt-1 font-mono-ui text-2xl text-foreground">
+                {data
+                  ? `${data.open_reference_class_count}/${data.stale_reference_class_count}`
+                  : "-"}
+              </div>
+            </div>
+            <Database className="h-5 w-5 text-muted-foreground" />
           </CardContent>
         </Card>
         <Card>

@@ -246,6 +246,20 @@ class TestWebServerEndpoints:
             confidence=0.7,
         )
         ledger.add_assumption(question_id=question.id, text="Dashboard assumption")
+        active_reference = ledger.add_reference_class(
+            question_id=question.id,
+            name="Dashboard reference class",
+            inclusion_criteria="Comparable dashboard API forecasts.",
+            base_rate=0.5,
+        )
+        stale_reference = ledger.add_reference_class(
+            question_id=question.id,
+            name="Stale dashboard reference class",
+            inclusion_criteria="Old dashboard API forecasts that need review.",
+            base_rate=0.4,
+        )
+        assert active_reference["status"] == "active"
+        ledger.update_reference_class(stale_reference["id"], status="stale")
         ledger.add_evidence(
             question_id=question.id,
             source_or_note="Dashboard evidence",
@@ -275,6 +289,8 @@ class TestWebServerEndpoints:
         assert data["open_alert_count"] == 1
         assert data["open_assumption_count"] == 1
         assert data["stale_assumption_count"] == 0
+        assert data["open_reference_class_count"] == 1
+        assert data["stale_reference_class_count"] == 1
         assert data["recent_backtests"] == []
         assert data["learning"]["total_lessons"] == 0
         assert data["learning"]["top_error_profiles"] == []
@@ -287,6 +303,8 @@ class TestWebServerEndpoints:
         assert row["evidence_count"] == 1
         assert row["baseline_count"] == 1
         assert row["open_assumption_count"] == 1
+        assert row["open_reference_class_count"] == 1
+        assert row["stale_reference_class_count"] == 1
         assert row["open_alert_count"] == 1
 
     def test_get_status_filters_unconfigured_gateway_platforms(self, monkeypatch):

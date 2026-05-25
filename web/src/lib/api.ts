@@ -706,7 +706,9 @@ export interface ForecastDashboardQuestion {
   baseline_count: number;
   evidence_count: number;
   open_assumption_count: number;
+  open_reference_class_count: number;
   stale_assumption_count: number;
+  stale_reference_class_count: number;
   open_alert_count: number;
 }
 
@@ -715,8 +717,10 @@ export interface ForecastDashboardResponse {
   active_count: number;
   open_alert_count: number;
   open_assumption_count: number;
+  open_reference_class_count: number;
   review_queue_count: number;
   stale_assumption_count: number;
+  stale_reference_class_count: number;
   alerts?: ForecastDashboardAlert[];
   calibration: ForecastDashboardCalibration;
   evidence_status?: ForecastDashboardEvidenceStatus;
