@@ -697,6 +697,7 @@ Concrete success means the fork behaves as a command-line forecasting desk cente
 
 Latest verified result:
 
+- Dashboard CLI help desk-label pass: top-level `superforecasting-agent dashboard --tui` help now exposes the in-browser `Forecast Desk` tab instead of the stale `Forecast Chat` label; project metadata guards the CLI help string.
 - Root embedded-desk guidance pass: `AGENTS.md` now tells contributors not to reimplement the primary `Forecast Desk` experience in React instead of using the stale `forecast-chat` label; project metadata guards the root-guide phrase.
 - Dashboard config-normalization docstring pass: `hermes_cli/web_server.py` now describes accepted `model` shapes as inherited runtime behavior instead of saying `Hermes supports` them; project metadata guards the stale phrase.
 - Root skill-tool guidance pass: `AGENTS.md` now tells skill authors to reference native Superforecasting Agent tools in `SKILL.md` prose instead of native Hermes tools; project metadata guards against reintroducing the old root-guide phrase.

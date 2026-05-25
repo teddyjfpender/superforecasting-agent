@@ -358,6 +358,7 @@ def test_embedded_tui_surface_is_forecast_desk():
         root / "web" / "src" / "index.css",
         root / "web" / "src" / "lib" / "dashboard-flags.ts",
         root / "web" / "src" / "lib" / "slashExec.ts",
+        root / "hermes_cli" / "main.py",
         root / "website" / "docs" / "index.md",
         root / "website" / "docs" / "getting-started" / "installation.md",
         root / "website" / "docs" / "getting-started" / "learning-path.md",
@@ -372,6 +373,8 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert "Forecast Desk" in text
     assert "Forecast Chat" not in text
     assert "Forecast-Chat" not in text
+    assert "Expose the in-browser Forecast Desk tab" in text
+    assert "Expose the in-browser Forecast Chat tab" not in text
     assert "Forecast Desk is only reachable from localhost." in text
     assert "Loading Forecast Desk" in text
 

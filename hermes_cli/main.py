@@ -13139,7 +13139,7 @@ Examples:
         "--tui",
         action="store_true",
         help=(
-            "Expose the in-browser Forecast Chat tab (embedded `superforecasting-agent --tui` via PTY/WebSocket). "
+            "Expose the in-browser Forecast Desk tab (embedded `superforecasting-agent --tui` via PTY/WebSocket). "
             "Alternatively set SUPERFORECASTING_AGENT_DASHBOARD_TUI=1, "
             "FORECAST_DASHBOARD_TUI=1, or HERMES_DASHBOARD_TUI=1."
         ),
