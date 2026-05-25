@@ -189,7 +189,7 @@ export const coreCommands: SlashCommand[] = [
 
   {
     aliases: ['new'],
-    help: 'start a new session',
+    help: 'start a new forecast session',
     name: 'clear',
     run: (arg, ctx, cmd) => {
       if (ctx.session.guardBusySessionSwitch('switch sessions')) {
@@ -201,7 +201,7 @@ export const coreCommands: SlashCommand[] = [
 
       const commit = () => {
         patchUiState({ status: 'forging session…' })
-        ctx.session.newSession(isNew ? 'new session started' : undefined, requestedTitle || undefined)
+        ctx.session.newSession(isNew ? 'new forecast session started' : undefined, requestedTitle || undefined)
       }
 
       if (NO_CONFIRM_DESTRUCTIVE) {
@@ -211,11 +211,11 @@ export const coreCommands: SlashCommand[] = [
       patchOverlayState({
         confirm: {
           cancelLabel: 'No, keep going',
-          confirmLabel: isNew ? 'Yes, start a new session' : 'Yes, clear the session',
+          confirmLabel: isNew ? 'Yes, start a new forecast session' : 'Yes, clear the session',
           danger: true,
           detail: 'This ends the current forecast desk exchange and clears the transcript.',
           onConfirm: commit,
-          title: isNew ? 'Start a new session?' : 'Clear the current session?'
+          title: isNew ? 'Start a new forecast session?' : 'Clear the current session?'
         }
       })
     }

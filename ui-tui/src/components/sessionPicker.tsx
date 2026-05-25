@@ -192,7 +192,7 @@ export function SessionPicker({ gw, onCancel, onSelect, t }: SessionPickerProps)
 
             <Box width={30}>
               <Text bold={selected} color={selected ? t.color.accent : t.color.muted} inverse={selected}>
-                ({s.message_count} msgs, {age(s.started_at)}, {s.source || 'tui'})
+                ({s.message_count} entries, {age(s.started_at)}, {s.source || 'tui'})
               </Text>
             </Box>
 

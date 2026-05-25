@@ -121,7 +121,7 @@ export function ClarifyPrompt({ cols = 80, onAnswer, onCancel, req, t }: Clarify
 
   const heading = (
     <Text bold>
-      <Text color={t.color.accent}>ask</Text>
+      <Text color={t.color.accent}>clarify</Text>
       <Text color={t.color.text}> {req.question}</Text>
     </Text>
   )

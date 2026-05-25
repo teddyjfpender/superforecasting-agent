@@ -122,7 +122,7 @@ describe('createSlashHandler', () => {
             rows: [
               [
                 'default0  P=0.210  Δ=-0.040',
-                'as-of 2026-08-01  close 2026-09-30  conf 0.61  ev 3  base 1  asm 1/0  active  Will company Y default?'
+                'as-of 2026-08-01  close 2026-09-30  conf 0.61  ev 3  base 1  refs 0/0  asm 1/0  active  Will company Y default?'
               ]
             ],
             title: 'Active Forecasts'
@@ -433,7 +433,7 @@ describe('createSlashHandler', () => {
     createSlashHandler(ctx)('/new sprint planning')
     getOverlayState().confirm?.onConfirm()
 
-    expect(ctx.session.newSession).toHaveBeenCalledWith('new session started', 'sprint planning')
+    expect(ctx.session.newSession).toHaveBeenCalledWith('new forecast session started', 'sprint planning')
     expect(ctx.gateway.rpc).not.toHaveBeenCalled()
   })
 

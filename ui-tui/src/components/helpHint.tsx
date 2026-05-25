@@ -5,9 +5,9 @@ import type { Theme } from '../theme.js'
 
 const COMMON_COMMANDS: [string, string][] = [
   ['/help', 'full list of commands + hotkeys'],
-  ['/clear', 'start a new session'],
-  ['/resume', 'resume a prior session'],
-  ['/details', 'control transcript detail level'],
+  ['/clear', 'start a new forecast session'],
+  ['/resume', 'resume prior research'],
+  ['/details', 'control forecast transcript detail'],
   ['/copy', 'copy selection or forecast desk response'],
   ['/quit', 'exit forecast desk']
 ]
