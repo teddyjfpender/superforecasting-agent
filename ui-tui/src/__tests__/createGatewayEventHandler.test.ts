@@ -776,7 +776,9 @@ describe('createGatewayEventHandler', () => {
           ['active', '1'],
           ['alerts', '1'],
           ['reviews', '1'],
+          ['closing', '0'],
           ['assumptions', '2/0'],
+          ['refs', '0/0'],
           ['scores', '3'],
           ['lessons', '1']
         ],
@@ -835,7 +837,9 @@ describe('createGatewayEventHandler', () => {
               ['active forecasts', '1'],
               ['open alerts', '1'],
               ['review queue', '1'],
+              ['closing soon', '0'],
               ['assumptions', '2/0'],
+              ['reference classes', '0/0'],
               ['calibration n', '3'],
               ['lessons', '1']
             ],
@@ -845,7 +849,7 @@ describe('createGatewayEventHandler', () => {
             rows: [
               [
                 '12345678  P=0.630  Δ=+0.080',
-                'as-of 2026-05-01  close 2026-11-03  conf 0.74  ev 4  base 2  asm 2/0  1 alert  Will X win the election?'
+                'as-of 2026-05-01  close 2026-11-03  conf 0.74  ev 4  base 2  refs 0/0  asm 2/0  1 alert  Will X win the election?'
               ]
             ],
             title: 'Active Forecasts'

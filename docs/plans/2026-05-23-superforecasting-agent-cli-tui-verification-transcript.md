@@ -308,8 +308,9 @@ readiness guard that blocks live-superforecasting claims.
 ## TUI Shortcut Verification
 
 The TUI route test verifies that forecast desk panels and gateway events render
-the forecast lifecycle shortcuts, evidence imports, alerts, readiness, and
-focused actions used by the CLI workflow above.
+the forecast lifecycle shortcuts, evidence imports, alerts, readiness,
+assumption/reference-class review signals, and focused actions used by the CLI
+workflow above.
 
 ```bash
 cd ui-tui
@@ -321,7 +322,7 @@ npm test -- src/__tests__/forecastPanel.test.ts src/__tests__/createGatewayEvent
 > vitest run src/__tests__/forecastPanel.test.ts src/__tests__/createGatewayEventHandler.test.ts
 
  Test Files  2 passed (2)
-      Tests  45 passed (45)
+      Tests  50 passed (50)
 ```
 
 ## Result
@@ -338,4 +339,5 @@ This run demonstrates a complete local CLI loop:
 - run a scheduled self-check without mutating probability
 - run time-aware benchmark replay with leakage status
 - keep benchmark/live-superiority claims gated by evidence readiness
-- verify the TUI forecast panel and gateway rendering path
+- verify the TUI forecast panel and gateway rendering path, including stale
+  assumption and reference-class desk signals
