@@ -147,7 +147,7 @@ superforecasting-agent gateway status --system         # Linux only: inspect the
 | `/reasoning [level\|show\|hide]` | Change reasoning effort or toggle reasoning display |
 | `/voice [on\|off\|tts\|join\|leave\|status]` | Control messaging voice replies and Discord voice-channel behavior |
 | `/rollback [number]` | List or restore filesystem checkpoints |
-| `/background <prompt>` | Run a prompt in a separate background session |
+| `/background <forecast note>` | Run a forecast-support note in a separate background session |
 | `/reload-mcp` | Reload MCP servers from config |
 | `/update` | Update Superforecasting Agent to the latest version |
 | `/help` | Show available commands |
@@ -305,7 +305,7 @@ When enabled, the bot sends status messages as it works:
 
 ## Background Sessions
 
-Run a prompt in a separate background session so the agent works on it independently while your main chat stays responsive:
+Run a forecast-support note in a separate background session so the agent works on it independently while your main chat stays responsive:
 
 ```
 /background Check all servers in the cluster and report any that are down

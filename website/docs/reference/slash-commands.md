@@ -78,8 +78,8 @@ Type `/` in the CLI to open the autocomplete menu. Built-in commands are case-in
 | `/rollback` | List or restore filesystem checkpoints (usage: /rollback [number]) |
 | `/snapshot [create\|restore <id>\|prune]` (alias: `/snap`) | Create or restore runtime config/state snapshots. `create [label]` saves a snapshot, `restore <id>` reverts to it, `prune [N]` removes old snapshots, or list all with no args. |
 | `/stop` | Kill all running background processes |
-| `/queue <prompt>` (alias: `/q`) | Queue a prompt for the next turn (doesn't interrupt the current agent response). |
-| `/steer <prompt>` | Inject a mid-run note that arrives at the agent **after the next tool call** — no interrupt, no new user turn. The text is appended to the last tool result's content once the current tool completes, giving the agent new context without breaking the current tool-calling loop. Use this to nudge direction mid-task (e.g. "focus on the auth module" while the agent is running tests). |
+| `/queue <forecast note>` (alias: `/q`) | Queue a forecast note for the next turn (doesn't interrupt the current agent response). |
+| `/steer <forecast note>` | Inject a mid-run note that arrives at the agent **after the next tool call** — no interrupt, no new user turn. The text is appended to the last tool result's content once the current tool completes, giving the agent new context without breaking the current tool-calling loop. Use this to nudge direction mid-task (e.g. "focus on the auth module" while the agent is running tests). |
 | `/goal <text>` | Set a standing goal the agent works toward across turns. After each turn an auxiliary judge model decides whether the goal is done; if not, the agent auto-continues. Subcommands: `/goal status`, `/goal pause`, `/goal resume`, `/goal clear`. Budget defaults to 20 turns (`goals.max_turns`); any real user message preempts the continuation loop, and state survives `/resume`. See [Persistent Goals](/docs/user-guide/features/goals) for the full walkthrough. |
 | `/subgoal <text>` | Append a user-supplied criterion to the active goal mid-loop. The continuation prompt surfaces all subgoals to the agent verbatim, and the judge factors them into its DONE/CONTINUE verdict — so the goal isn't marked done until the original goal **and** every subgoal are met. Subcommands: `/subgoal` (list), `/subgoal remove <N>`, `/subgoal clear`. Requires an active `/goal`. |
 | `/resume [name]` | Resume a previously-named session |
@@ -87,7 +87,7 @@ Type `/` in the CLI to open the autocomplete menu. Built-in commands are case-in
 | `/redraw` | Force a full UI repaint (recovers from terminal drift after tmux resize, mouse selection artifacts, etc.) |
 | `/status` | Show session info — model, provider, profile, session ID, working directory, title, created/updated timestamps, token totals, agent-running state — followed by a local **Session recap** block (recent user/forecaster turn counts, tool result count, top tools used, last few files touched, the latest user prompt, and the latest forecast response). The recap is computed locally from the in-memory transcript; no LLM call, no prompt-cache impact. |
 | `/agents` (alias: `/tasks`) | Show active agents and running tasks across the current session. |
-| `/background <prompt>` (alias: `/bg`, `/btw`) | Run a prompt in a separate background session. The agent processes your prompt independently — your current session stays free for other work. Results appear as a panel when the task finishes. See [CLI Background Sessions](/docs/user-guide/cli#background-sessions). |
+| `/background <forecast note>` (alias: `/bg`, `/btw`) | Run a forecast-support note in a separate background session. The agent processes it independently — your current session stays free for other work. Results appear as a panel when the task finishes. See [CLI Background Sessions](/docs/user-guide/cli#background-sessions). |
 | `/branch [name]` (alias: `/fork`) | Branch the current session (explore a different path) |
 | `/handoff <platform>` | **CLI only.** Hand the current session off to a messaging platform (Telegram, Discord, Slack, WhatsApp, Signal, Matrix). The gateway picks it up immediately, creates a fresh thread on platforms that support threads (Telegram topics, Discord text-channel threads, Slack message-anchored threads), re-binds the destination to your CLI session_id so the full role-aware transcript replays, and forges a synthetic user turn so the agent confirms it's working in the new place. Your CLI exits cleanly on success with a `/resume` hint; resume locally any time with `/resume <title>`. Refused mid-turn. Requires the gateway to be running and a home channel configured for the target platform (`/sethome` from the destination chat). See [Cross-Platform Handoff](/docs/user-guide/sessions#cross-platform-handoff). |
 
@@ -137,7 +137,7 @@ Type `/` in the CLI to open the autocomplete menu. Built-in commands are case-in
 | `/platform <list\|pause\|resume> [name]` | Operate a running gateway platform. `/platform list` lists every adapter and its state (running, paused-by-breaker, manually-paused); `/platform pause <name>` stops dispatching new messages to that adapter without unloading it; `/platform resume <name>` re-enables it. The gateway also auto-pauses an adapter when its circuit breaker trips on repeated retryable failures (network / rate-limit / 5xx) — use `/platform resume <name>` to clear the breaker once the upstream is healthy. Available wherever the gateway is reachable (CLI session, Telegram, Discord, …). |
 | `/paste` | Attach a clipboard image |
 | `/copy [number]` | Copy the last forecast response to clipboard (or the Nth-from-last with a number). CLI-only. |
-| `/image <path>` | Attach a local image file for your next prompt. |
+| `/image <path>` | Attach a local image file for your next forecast note. |
 | `/debug` | Upload debug report (system info + logs) and get shareable links. Also available in messaging. |
 | `/profile` | Show active profile name and home directory |
 | `/gquota` | Show Google Gemini Code Assist quota usage with progress bars (only available when the `google-gemini-cli` provider is active). |
@@ -244,9 +244,9 @@ The messaging gateway supports the following built-in commands inside Telegram, 
 | `/reasoning [level\|show\|hide]` | Change reasoning effort or toggle reasoning display. |
 | `/voice [on\|off\|tts\|join\|channel\|leave\|status]` | Control spoken replies in chat. `join`/`channel`/`leave` manage Discord voice-channel mode. |
 | `/rollback [number]` | List or restore filesystem checkpoints. |
-| `/background <prompt>` | Run a prompt in a separate background session. Results are delivered back to the same chat when the task finishes. See [Messaging Background Sessions](/docs/user-guide/messaging/#background-sessions). |
-| `/queue <prompt>` (alias: `/q`) | Queue a prompt for the next turn without interrupting the current one. |
-| `/steer <prompt>` | Inject a message after the next tool call without interrupting — the model picks it up on its next iteration rather than as a new turn. |
+| `/background <forecast note>` | Run a forecast-support note in a separate background session. Results are delivered back to the same chat when the task finishes. See [Messaging Background Sessions](/docs/user-guide/messaging/#background-sessions). |
+| `/queue <forecast note>` (alias: `/q`) | Queue a forecast note for the next turn without interrupting the current one. |
+| `/steer <forecast note>` | Inject a forecast note after the next tool call without interrupting — the model picks it up on its next iteration rather than as a new turn. |
 | `/goal <text>` | Set a standing goal the agent works toward across turns. A judge model checks after each turn; if not done, the agent auto-continues until it is, you pause/clear it, or the turn budget (default 20) is hit. Subcommands: `/goal status`, `/goal pause`, `/goal resume`, `/goal clear`. Safe to run mid-agent for status/pause/clear; setting a new goal requires `/stop` first. See [Persistent Goals](/docs/user-guide/features/goals). |
 | `/footer [on\|off\|status]` | Toggle the runtime-metadata footer on final replies (shows model, tool counts, timing). |
 | `/curator [status\|run\|pin\|archive]` | Background skill maintenance controls. |

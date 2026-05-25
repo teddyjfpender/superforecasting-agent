@@ -268,7 +268,7 @@ The inherited interactive runtime still supports model switching, tool configura
 | `/tools` | List available tools |
 | `/status` | Show forecast desk/session status |
 | `/sessions` | Resume prior sessions |
-| `/background <prompt>` | Run a bounded side task |
+| `/background <forecast note>` | Run a bounded side task |
 | `/busy queue` | Queue input while the agent is working |
 | `/busy interrupt` | Interrupt the current run with new input |
 
@@ -276,7 +276,7 @@ Use these as support tools for forecasting work. Durable forecast state belongs 
 
 ## Background Sessions
 
-The inherited `/background <prompt>` command still runs a bounded side task in a separate session. Use it for support work such as source triage, log inspection, or independent research threads, then write durable conclusions back into the forecast ledger with evidence, model, or update commands.
+The inherited `/background <forecast note>` command still runs a bounded side task in a separate session. Use it for support work such as source triage, log inspection, or independent research threads, then write durable conclusions back into the forecast ledger with evidence, model, or update commands.
 
 ## Keybindings
 
