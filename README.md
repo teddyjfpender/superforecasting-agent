@@ -67,7 +67,7 @@ hermes              # also opens the forecast desk during the fork transition
 ## Getting Started
 
 ```bash
-forecast status     # Show the forecasting desk state
+forecast status     # Show desk state, calibration, and live baseline comparisons
 forecast doctor     # One-shot pilot/readiness/operator gate
 python3 scripts/forecast_smoke_test.py  # Local tester-readiness smoke test
 forecast new "Will X happen?" --resolution-criteria "Resolved by ..."
@@ -141,7 +141,7 @@ The forecast ledger is the product surface. Generic chat and messaging gateways 
 | Prepare agent-protocol prompts | `forecast backtest cases.json --probability-source agent-protocol --agent-prompt-jsonl prompts.jsonl --prepare-agent-prompts` |
 | Replay captured agent protocol | `forecast backtest cases.json --probability-source agent-protocol --agent-response-jsonl responses.jsonl` |
 | Capture agent protocol outputs | `forecast backtest cases.json --probability-source agent-protocol --agent-output-jsonl captured.jsonl` |
-| Review performance | `forecast performance --live`, `forecast performance --last 5`, or `forecast performance --last 5 --json` |
+| Review performance | `forecast status`, `forecast performance --live`, `forecast performance --last 5`, or `forecast performance --last 5 --json` |
 | Check claim readiness | `forecast readiness`, `forecast readiness --json`, or `forecast readiness --require-evidence` |
 | Run operator doctor | `forecast doctor`, `forecast doctor --json`, or `forecast doctor --require-pilot-ready` combines status, pilot checks, scheduled run history, and readiness gaps |
 | Check tester pilot coverage | `forecast pilot-report` or `forecast pilot-report --json` checks schedules and scheduled self-check run history |

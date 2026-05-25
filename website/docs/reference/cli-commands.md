@@ -22,7 +22,7 @@ For in-chat slash commands, see [Slash Commands Reference](./slash-commands.md).
 | Command | Purpose |
 |---|---|
 | `forecast` | Open the forecast desk dashboard. |
-| `forecast status` | Show active forecasts, alerts, review queue, schedule, calibration, and benchmark state. |
+| `forecast status` | Show active forecasts, alerts, review queue, schedule, calibration, live baseline comparisons, and benchmark state. |
 | `forecast doctor` | Run the combined operator gate: status, pilot-exit checks, scheduled self-check run history, and readiness gaps. Use `--require-pilot-ready` or `--require-readiness` to fail release scripts. |
 | `forecast new` | Create a scoreable question with resolution criteria, outcome space, domain/topic, and review cadence. |
 | `forecast ingest` | Stage a URL or file as a forecast candidate before confirming it into the ledger. |

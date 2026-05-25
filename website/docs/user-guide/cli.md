@@ -12,7 +12,7 @@ The main product surface is the command-line forecast desk. Use it to maintain a
 
 ```bash
 forecast                         # Open the forecast desk dashboard
-forecast status                  # Operational summary
+forecast status                  # Operational summary with live baseline comparisons
 forecast list                    # Active and recent questions
 superforecasting-agent           # Fork-native runtime entrypoint
 superforecasting-agent --tui     # Ink TUI with forecast shortcuts

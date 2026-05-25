@@ -198,8 +198,10 @@ forecast performance --last 5 --json
 `forecast score --baselines` scores imported market/crowd/base-rate baselines
 for the same resolved question without moving the current forecast. `forecast
 performance --live` compares resolved live forecasts against those scored
-baselines. Backtests are time-aware. Evidence after the simulated forecast time
-is excluded unless it is part of the resolution step.
+baselines, and `forecast status` includes the same live score/baseline count,
+best-baseline edge, and claim status in the operational desk summary.
+Backtests are time-aware. Evidence after the simulated forecast time is
+excluded unless it is part of the resolution step.
 
 ## 10. Use The TUI
 
