@@ -116,11 +116,22 @@ class TestValidateProfileName:
         with pytest.raises(ValueError):
             validate_profile_name("")
 
-    @pytest.mark.parametrize("name", ["hermes", "test", "tmp", "root", "sudo"])
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "forecast",
+            "hermes",
+            "hermes-agent",
+            "superforecast",
+            "superforecasting-agent",
+            "test",
+            "tmp",
+            "root",
+            "sudo",
+        ],
+    )
     def test_reserved_names_rejected(self, name):
-        """Reserved names collide with the Hermes install itself or with
-        common system binaries — reject them at validate time so
-        create/install/rename all share one gate."""
+        """Reserved names collide with forecast CLIs or common binaries."""
         with pytest.raises(ValueError, match="reserved"):
             validate_profile_name(name)
 

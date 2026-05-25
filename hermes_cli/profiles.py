@@ -205,7 +205,16 @@ _DEFAULT_EXPORT_EXCLUDE_ROOT = frozenset({
 
 # Names that cannot be used as profile aliases
 _RESERVED_NAMES = frozenset({
-    "hermes", "default", "test", "tmp", "root", "sudo",
+    "forecast",
+    "hermes",
+    "hermes-agent",
+    "superforecast",
+    "superforecasting-agent",
+    "default",
+    "test",
+    "tmp",
+    "root",
+    "sudo",
 })
 
 # CLI subcommands that cannot be used as profile names/aliases
@@ -287,11 +296,11 @@ def validate_profile_name(name: str) -> None:
     honest about what the on-disk directory name must look like, while
     ingress-point normalization handles UX flexibility (see #18498).
 
-    Also rejects names in :data:`_RESERVED_NAMES` (``hermes``, ``test``,
-    ``tmp``, ``root``, ``sudo``) that would create confusing on-disk
-    collisions (a ``hermes`` profile inside ``~/.hermes/``) or get refused
-    at alias-creation time anyway. ``default`` is a special pass-through —
-    it's a valid alias for the built-in root profile.
+    Also rejects names in :data:`_RESERVED_NAMES` that would create confusing
+    on-disk collisions, clobber fork-native wrapper commands such as
+    ``forecast`` or ``superforecasting-agent``, or get refused at
+    alias-creation time anyway. ``default`` is a special pass-through — it's a
+    valid alias for the built-in root profile.
     """
     if name == "default":
         return  # special alias for the default runtime root
