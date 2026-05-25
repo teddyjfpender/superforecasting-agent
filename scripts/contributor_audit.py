@@ -11,6 +11,9 @@ Usage:
     # Audit with a custom endpoint
     python scripts/contributor_audit.py --since-tag v2026.4.8 --until v2026.4.13
 
+    # Audit a non-default repository
+    python scripts/contributor_audit.py --since-tag v2026.4.8 --repo owner/name
+
     # Compare against a release notes file
     python scripts/contributor_audit.py --since-tag v2026.4.8 --release-file RELEASE_v0.9.0.md
 """
@@ -33,6 +36,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from release import AUTHOR_MAP, resolve_author  # noqa: E402
 
 REPO_ROOT = SCRIPT_DIR.parent
+DEFAULT_GITHUB_REPO = "teddyjfpender/superforecasting-agent"
 
 # ---------------------------------------------------------------------------
 # AI assistants, bots, and machine accounts to exclude from contributor lists
@@ -86,7 +90,7 @@ def git(*args, cwd=None):
     return result.stdout.strip()
 
 
-def gh_pr_list():
+def gh_pr_list(repo=DEFAULT_GITHUB_REPO):
     """Fetch merged PRs from GitHub using the gh CLI.
 
     Returns a list of dicts with keys: number, title, body, author.
@@ -96,7 +100,7 @@ def gh_pr_list():
         result = subprocess.run(
             [
                 "gh", "pr", "list",
-                "--repo", "NousResearch/hermes-agent",
+                "--repo", repo,
                 "--state", "merged",
                 "--json", "number,title,body,author,mergedAt",
                 "--limit", "300",
@@ -222,7 +226,7 @@ def collect_co_authors(since_tag, until="HEAD"):
     return contributors, unknown_emails
 
 
-def collect_salvaged_contributors(since_tag, until="HEAD"):
+def collect_salvaged_contributors(since_tag, until="HEAD", repo=DEFAULT_GITHUB_REPO):
     """Scan merged PR bodies for salvage/cherry-pick/co-author attribution.
 
     Uses the gh CLI to fetch PRs, then filters to the date range defined
@@ -246,7 +250,7 @@ def collect_salvaged_contributors(since_tag, until="HEAD"):
         print(f"  [warn] Could not resolve date for {since_tag}", file=sys.stderr)
         return contributors, pr_refs
 
-    prs = gh_pr_list()
+    prs = gh_pr_list(repo)
     if not prs:
         return contributors, pr_refs
 
@@ -334,6 +338,14 @@ def main():
         help="Path to a release notes file to check for missing contributors",
     )
     parser.add_argument(
+        "--repo",
+        default=DEFAULT_GITHUB_REPO,
+        help=(
+            "GitHub owner/repo to scan for merged PR bodies "
+            f"(default: {DEFAULT_GITHUB_REPO}; pass NousResearch/hermes-agent for upstream legacy audits)"
+        ),
+    )
+    parser.add_argument(
         "--strict",
         action="store_true",
         help="Exit with code 1 if new unmapped emails are found (for CI)",
@@ -346,6 +358,7 @@ def main():
     args = parser.parse_args()
 
     print(f"=== Contributor Audit: {args.since_tag}..{args.until} ===")
+    print(f"GitHub PR source: {args.repo}")
     print()
 
     # ---- 1. Git commit authors ----
@@ -360,7 +373,11 @@ def main():
 
     # ---- 3. Salvaged PRs ----
     print("[3/3] Scanning salvaged/cherry-picked PR descriptions...")
-    salvage_contribs, salvage_pr_refs = collect_salvaged_contributors(args.since_tag, args.until)
+    salvage_contribs, salvage_pr_refs = collect_salvaged_contributors(
+        args.since_tag,
+        args.until,
+        args.repo,
+    )
     print(f"      Found {len(salvage_contribs)} contributor(s) from salvaged PRs.")
 
     # ---- Merge all contributors ----

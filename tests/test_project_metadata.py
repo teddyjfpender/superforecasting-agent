@@ -1700,6 +1700,9 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
 def test_contributor_and_skills_index_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     contributing = (root / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    contributor_audit = (root / "scripts" / "contributor_audit.py").read_text(
+        encoding="utf-8"
+    )
     skills_index = (root / "scripts" / "build_skills_index.py").read_text(
         encoding="utf-8"
     )
@@ -1709,13 +1712,16 @@ def test_contributor_and_skills_index_guidance_is_forecast_native():
     assert "https://github.com/teddyjfpender/superforecasting-agent.git" in contributing
     assert "superforecasting-agent skills install" in contributing
     assert "forecast status" in contributing
+    assert 'DEFAULT_GITHUB_REPO = "teddyjfpender/superforecasting-agent"' in contributor_audit
+    assert "GitHub PR source: {args.repo}" in contributor_audit
     assert "Building Superforecasting Agent Skills Index" in skills_index
     assert "centralized Superforecasting Agent index" in skills_hub
 
-    combined = "\n".join([contributing, skills_index, skills_hub])
+    combined = "\n".join([contributing, contributor_audit, skills_index, skills_hub])
     assert "# Contributing to Hermes Agent" not in combined
     assert "Thank you for contributing to Hermes Agent" not in combined
     assert "https://github.com/NousResearch/hermes-agent.git" not in combined
+    assert '"--repo", "NousResearch/hermes-agent"' not in combined
     assert "`hermes skills install`" not in combined
     assert "`hermes setup`" not in combined
     assert "Building Hermes Skills Index" not in combined
