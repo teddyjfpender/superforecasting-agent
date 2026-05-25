@@ -55,8 +55,12 @@ import React, { Fragment, useEffect, useState } from "react";
  *  - `env:bottom`       — bottom of /env (Keys) page
  *  - `docs:top`         — top of /docs page (above the docs iframe)
  *  - `docs:bottom`      — bottom of /docs page
- *  - `chat:top`         — top of /chat page (above the composer, when embedded chat is on)
- *  - `chat:bottom`      — bottom of /chat page
+ *  - `forecast-desk:top`    — top of the embedded Forecast Desk page
+ *  - `forecast-desk:bottom` — bottom of the embedded Forecast Desk page
+ *
+ *  Compatibility aliases still rendered by the shell:
+ *  - `chat:top`         — legacy alias for `forecast-desk:top`
+ *  - `chat:bottom`      — legacy alias for `forecast-desk:bottom`
  */
 export const KNOWN_SLOT_NAMES = [
   // Shell-wide
@@ -89,6 +93,8 @@ export const KNOWN_SLOT_NAMES = [
   "env:bottom",
   "docs:top",
   "docs:bottom",
+  "forecast-desk:top",
+  "forecast-desk:bottom",
   "chat:top",
   "chat:bottom",
 ] as const;

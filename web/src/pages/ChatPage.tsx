@@ -790,6 +790,8 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2 normal-case">
+      <PluginSlot name="forecast-desk:top" />
+      {/* Compatibility slot for older dashboard plugins. */}
       <PluginSlot name="chat:top" />
       {mobileModelToolsPortal}
 
@@ -853,6 +855,8 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
           </div>
         )}
       </div>
+      <PluginSlot name="forecast-desk:bottom" />
+      {/* Compatibility slot for older dashboard plugins. */}
       <PluginSlot name="chat:bottom" />
     </div>
   );

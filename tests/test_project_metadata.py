@@ -3228,6 +3228,17 @@ def test_dashboard_plugin_sdk_has_forecast_native_aliases():
         encoding="utf-8"
     )
     app = (root / "web" / "src" / "App.tsx").read_text(encoding="utf-8")
+    forecast_desk_page = (root / "web" / "src" / "pages" / "ChatPage.tsx").read_text(
+        encoding="utf-8"
+    )
+    dashboard_extension_docs = (
+        root
+        / "website"
+        / "docs"
+        / "user-guide"
+        / "features"
+        / "extending-the-dashboard.md"
+    ).read_text(encoding="utf-8")
 
     assert "__SUPERFORECASTING_AGENT_PLUGIN_SDK__" in registry
     assert "__FORECAST_PLUGIN_SDK__" in registry
@@ -3235,6 +3246,12 @@ def test_dashboard_plugin_sdk_has_forecast_native_aliases():
     assert "__FORECAST_PLUGINS__" in registry
     assert "Compatibility alias for older dashboard plugins" in registry
     assert "window.__SUPERFORECASTING_AGENT_PLUGINS__.registerSlot" in slots
+    assert '"forecast-desk:top"' in slots
+    assert '"forecast-desk:bottom"' in slots
+    assert '<PluginSlot name="forecast-desk:top" />' in forecast_desk_page
+    assert '<PluginSlot name="forecast-desk:bottom" />' in forecast_desk_page
+    assert "legacy alias for `forecast-desk:top`" in slots
+    assert "new forecast plugins should use `forecast-desk:top`" in dashboard_extension_docs
     assert "forecast-sidebar-plugin-nav-heading" in app
     assert "hermes-sidebar-plugin-nav-heading" not in app
 

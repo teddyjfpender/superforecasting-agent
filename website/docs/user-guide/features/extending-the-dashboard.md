@@ -193,9 +193,11 @@ Useful slot patterns for the forecast fork:
 | `cron:top` | Scheduled self-check status. |
 | `logs:top` | Importer or model-run failure notices. |
 | `analytics:top` | Calibration and score summary widgets. |
+| `forecast-desk:top` | Compact forecast-desk notices above the embedded terminal. |
+| `forecast-desk:bottom` | Audit, export, or handoff widgets below the embedded terminal. |
 | `plugins:top` | Plugin setup notices. |
 
-Slot names are runtime-defined. Check the dashboard registry if a slot does not render.
+Slot names are runtime-defined. Check the dashboard registry if a slot does not render. The inherited `chat:top` and `chat:bottom` names still render as compatibility aliases, but new forecast plugins should use `forecast-desk:top` and `forecast-desk:bottom`.
 
 ## Backend Routes
 
