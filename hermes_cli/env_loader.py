@@ -1,4 +1,4 @@
-"""Helpers for loading Hermes .env files consistently across entrypoints."""
+"""Helpers for loading Superforecasting Agent env files across entrypoints."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+from hermes_constants import get_hermes_home
 from utils import atomic_replace
 
 
@@ -17,8 +18,8 @@ from utils import atomic_replace
 _CREDENTIAL_SUFFIXES = ("_API_KEY", "_TOKEN", "_SECRET", "_KEY")
 
 # Names we've already warned about during this process, so repeated
-# load_hermes_dotenv() calls (user env + project env, gateway hot-reload,
-# tests) don't spam the same warning multiple times.
+# load_forecast_dotenv() calls (user env + project env, gateway hot-reload,
+# tests) do not spam the same warning multiple times.
 _WARNED_KEYS: set[str] = set()
 
 
@@ -102,9 +103,9 @@ def _sanitize_env_file_if_needed(path: Path) -> None:
     This produces mangled values — e.g. a bot token duplicated 8×
     (see #8908).
 
-    We delegate to ``hermes_cli.config._sanitize_env_lines`` which
-    already knows all valid Hermes env-var names and can split
-    concatenated lines correctly.
+    We delegate to ``hermes_cli.config._sanitize_env_lines`` which already
+    knows all valid Superforecasting Agent and compatibility env-var names and
+    can split concatenated lines correctly.
     """
     if not path.exists():
         return
@@ -139,22 +140,24 @@ def _sanitize_env_file_if_needed(path: Path) -> None:
         pass  # best-effort — don't block gateway startup
 
 
-def load_hermes_dotenv(
+def load_forecast_dotenv(
     *,
     hermes_home: str | os.PathLike | None = None,
     project_env: str | os.PathLike | None = None,
 ) -> list[Path]:
-    """Load Hermes environment files with user config taking precedence.
+    """Load Superforecasting Agent environment files with user config first.
 
     Behavior:
-    - `~/.hermes/.env` overrides stale shell-exported values when present.
+    - `~/.superforecasting-agent/.env` overrides stale shell-exported values
+      when present. Legacy `~/.hermes/.env` remains readable when the resolved
+      home points there.
     - project `.env` acts as a dev fallback and only fills missing values when
       the user env exists.
     - if no user env exists, the project `.env` also overrides stale shell vars.
     """
     loaded: list[Path] = []
 
-    home_path = Path(hermes_home or os.getenv("HERMES_HOME", Path.home() / ".hermes"))
+    home_path = Path(hermes_home) if hermes_home is not None else get_hermes_home()
     user_env = home_path / ".env"
     project_env_path = Path(project_env) if project_env else None
 
@@ -173,3 +176,13 @@ def load_hermes_dotenv(
         loaded.append(project_env_path)
 
     return loaded
+
+
+def load_hermes_dotenv(
+    *,
+    hermes_home: str | os.PathLike | None = None,
+    project_env: str | os.PathLike | None = None,
+) -> list[Path]:
+    """Compatibility wrapper for inherited imports."""
+
+    return load_forecast_dotenv(hermes_home=hermes_home, project_env=project_env)

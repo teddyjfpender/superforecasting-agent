@@ -12,7 +12,7 @@ import importlib.util
 from pathlib import Path
 
 from hermes_cli.config import get_project_root, get_hermes_home, get_env_path
-from hermes_cli.env_loader import load_hermes_dotenv
+from hermes_cli.env_loader import load_forecast_dotenv
 from hermes_constants import display_hermes_home
 
 PROJECT_ROOT = get_project_root()
@@ -20,9 +20,9 @@ HERMES_HOME = get_hermes_home()
 _DHH = display_hermes_home()  # user-facing display path (e.g. ~/.hermes or ~/.hermes/profiles/coder)
 _PRIMARY_CLI = "superforecasting-agent"
 
-# Load environment variables from ~/.hermes/.env so API key checks work
+# Load environment variables from the forecast home .env so API key checks work.
 _env_path = get_env_path()
-load_hermes_dotenv(hermes_home=_env_path.parent, project_env=PROJECT_ROOT / ".env")
+load_forecast_dotenv(hermes_home=_env_path.parent, project_env=PROJECT_ROOT / ".env")
 
 from hermes_cli.colors import Colors, color
 from hermes_cli.models import _HERMES_USER_AGENT

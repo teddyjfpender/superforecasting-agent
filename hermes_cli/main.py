@@ -250,12 +250,12 @@ def _apply_profile_override() -> None:
 
 _apply_profile_override()
 
-# Load .env from ~/.hermes/.env first, then project root as dev fallback.
+# Load the forecast home .env first, then project root as dev fallback.
 # User-managed env files should override stale shell exports on restart.
 from hermes_cli.config import get_hermes_home
-from hermes_cli.env_loader import load_hermes_dotenv
+from hermes_cli.env_loader import load_forecast_dotenv
 
-load_hermes_dotenv(project_env=PROJECT_ROOT / ".env")
+load_forecast_dotenv(project_env=PROJECT_ROOT / ".env")
 
 # Bridge security.redact_secrets from config.yaml → redaction env aliases
 # BEFORE hermes_logging imports agent.redact (which snapshots the flag at

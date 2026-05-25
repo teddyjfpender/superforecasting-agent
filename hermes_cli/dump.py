@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 from hermes_cli.config import get_hermes_home, get_env_path, get_project_root, load_config
-from hermes_cli.env_loader import load_hermes_dotenv
+from hermes_cli.env_loader import load_forecast_dotenv
 from hermes_constants import display_hermes_home
 
 
@@ -196,9 +196,9 @@ def run_dump(args):
     """Output a compact, copy-pasteable setup summary."""
     show_keys = getattr(args, "show_keys", False)
 
-    # Load env from .env file so key checks work
+    # Load env from the forecast home .env so key checks work.
     env_path = get_env_path()
-    load_hermes_dotenv(
+    load_forecast_dotenv(
         hermes_home=env_path.parent,
         project_env=get_project_root() / ".env",
     )
