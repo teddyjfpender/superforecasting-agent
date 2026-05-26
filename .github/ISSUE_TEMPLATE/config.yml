@@ -1,8 +1,11 @@
 blank_issues_enabled: true
 contact_links:
-  - name: Nous Research Discord
+  - name: Fork Discussions
+    url: https://github.com/teddyjfpender/superforecasting-agent/discussions
+    about: For product questions, forecasting workflow discussion, and tester coordination.
+  - name: Upstream Hermes Community
     url: https://discord.gg/NousResearch
-    about: For quick questions, showcasing projects, sharing workflows, and community chat.
+    about: For inherited runtime and broader Nous ecosystem discussion.
   - name: Documentation
     url: https://github.com/teddyjfpender/superforecasting-agent/blob/superforecasting-agent-snapshot/README.md
     about: Check the README and tester pilot runbook before opening an issue.

@@ -2779,7 +2779,11 @@ def test_github_issue_and_pr_templates_are_forecast_native():
     assert "forecast --db" in text
     assert "Forecasting Integrity" in text
     assert "https://github.com/teddyjfpender/superforecasting-agent" in text
+    assert "Fork Discussions" in text
+    assert "https://github.com/teddyjfpender/superforecasting-agent/discussions" in text
+    assert "For general questions, use fork discussions" in text
     assert "https://github.com/NousResearch/hermes-agent" not in text
+    assert "Nous Research Discord" not in text
     assert "`hermes debug share`" not in text
     assert "Hermes Version" not in text
     assert "Which part of Hermes" not in text
@@ -4203,6 +4207,8 @@ def test_readme_primary_links_are_fork_native():
     assert "docs/plans/2026-05-20-superforecasting-agent-fork-prd.md" in before_legacy_docs
     assert "github.com/teddyjfpender/superforecasting-agent/tree/superforecasting-agent-snapshot" in before_legacy_docs
     assert "github.com/teddyjfpender/superforecasting-agent/issues" in readme
+    assert "github.com/teddyjfpender/superforecasting-agent/discussions" in readme
+    assert "Inherited runtime community" in readme
     assert "Upstream-Hermes%20Agent" in before_legacy_docs
     assert '<a href="LICENSE">' in before_legacy_docs
     assert "github.com/NousResearch/hermes-agent/blob/main/LICENSE" not in before_legacy_docs

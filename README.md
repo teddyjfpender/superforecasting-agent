@@ -244,7 +244,8 @@ scripts/run_tests.sh
 ## Community
 
 - 🐛 Issues: [teddyjfpender/superforecasting-agent/issues](https://github.com/teddyjfpender/superforecasting-agent/issues)
-- 💬 Upstream community: [Nous Research Discord](https://discord.gg/NousResearch)
+- 💬 Discussions: [teddyjfpender/superforecasting-agent/discussions](https://github.com/teddyjfpender/superforecasting-agent/discussions)
+- 💬 Inherited runtime community: [Nous Research Discord](https://discord.gg/NousResearch) for upstream Hermes and Nous provider/runtime topics.
 - 📚 [Skills Hub](https://agentskills.io)
 - 🔌 [computer-use-linux](https://github.com/avifenesh/computer-use-linux) — Linux desktop-control MCP server for upstream Hermes and other MCP hosts, with AT-SPI accessibility trees, Wayland/X11 input, screenshots, and compositor window targeting.
 - 🔌 [HermesClaw](https://github.com/AaronWong1999/hermesclaw) — Legacy WeChat bridge from the upstream Hermes/OpenClaw ecosystem.
