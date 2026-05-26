@@ -23,8 +23,8 @@ python3 scripts/tester_handoff_check.py
 ```
 
 Use `--include-website-build` when you want the handoff gate to also render the
-docs site. The website build may still print inherited localized broken-link
-warnings, but the handoff gate fails if the build exits nonzero.
+docs site. Broken-link or broken-anchor warnings should be treated as docs
+regressions, and the handoff gate fails if the build exits nonzero.
 
 The expected output includes a source snapshot line and ends with the pass line:
 

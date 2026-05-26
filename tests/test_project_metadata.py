@@ -546,6 +546,12 @@ def test_embedded_tui_surface_is_forecast_desk():
 
 def test_website_internal_links_are_base_url_relative():
     root = Path(__file__).resolve().parents[1]
+    installation_doc = (
+        root / "website" / "docs" / "getting-started" / "installation.md"
+    ).read_text(encoding="utf-8")
+    smoke_doc = (
+        root / "website" / "docs" / "getting-started" / "forecast-smoke-test.md"
+    ).read_text(encoding="utf-8")
     checked_files = [
         *(
             path
@@ -567,6 +573,11 @@ def test_website_internal_links_are_base_url_relative():
             offenders.append(str(path.relative_to(root)))
 
     assert offenders == []
+    docs_gate_text = "\n".join([installation_doc, smoke_doc])
+    assert "broken-link or broken-anchor warnings" in docs_gate_text
+    assert "Treat any new docs-link warning as a regression" in docs_gate_text
+    assert "inherited localized broken-link warnings" not in docs_gate_text
+    assert "Website build warns about localized links" not in docs_gate_text
 
 
 def test_web_readme_is_forecast_native():

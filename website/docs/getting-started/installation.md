@@ -126,7 +126,8 @@ npm install
 npm run build
 ```
 
-The website currently still carries inherited localized documentation. A successful build can include warnings for pre-existing localized links and anchors.
+The website build should complete without broken-link or broken-anchor warnings.
+Treat any new docs-link warning as a regression to fix before handoff.
 
 ## Platform Notes
 
@@ -175,7 +176,7 @@ scripts/run_tests.sh tests/forecasting tests/test_project_metadata.py -q
 | Model/provider not configured | Run `superforecasting-agent model` or `superforecasting-agent setup`. |
 | State is under `~/.hermes` | Expected during compatibility. New installs prefer `~/.superforecasting-agent`; existing legacy homes are reused. |
 | Browser/dashboard deps missing | Install with `.[all,dev]` and run the relevant `npm install` in `web`, `ui-tui`, or `website`. |
-| Website build warns about localized links | The inherited docs tree still contains localized Hermes-era links. Warnings are not the same as a failed build. |
+| Website build reports broken links or anchors | Treat this as a docs regression; run `npm run build` in `website` and fix the reported link before handoff. |
 
 For deeper diagnostics:
 
