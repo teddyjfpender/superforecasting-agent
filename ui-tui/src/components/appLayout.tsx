@@ -9,7 +9,11 @@ import { $isBlocked, $overlayState, patchOverlayState } from '../app/overlayStor
 import { $uiState } from '../app/uiStore.js'
 import { INLINE_MODE, SHOW_FPS } from '../config/env.js'
 import { PLACEHOLDER } from '../content/placeholders.js'
-import { FORECAST_TUI_FIND_SHORTCUT, FORECAST_TUI_VIEW_SHORTCUTS } from '../lib/forecastShortcuts.js'
+import {
+  FORECAST_TUI_FIND_SHORTCUT,
+  FORECAST_TUI_VIEW_SHORTCUTS,
+  forecastShortcutDisplayHotkey
+} from '../lib/forecastShortcuts.js'
 import {
   COMPOSER_PROMPT_GAP_WIDTH,
   composerPromptWidth,
@@ -540,7 +544,7 @@ const ForecastDeskViewStrip = memo(function ForecastDeskViewStrip({
           >
             <Text wrap="truncate">
               <Text color={ui.theme.color.muted}>{index === 0 ? '' : '  |  '}</Text>
-              <Text color={ui.theme.color.muted}>{shortcut.hotkey}</Text>
+              <Text color={ui.theme.color.muted}>{forecastShortcutDisplayHotkey(shortcut)}</Text>
               <Text color={ui.theme.color.accent}> {shortcut.label}</Text>
             </Text>
           </Box>

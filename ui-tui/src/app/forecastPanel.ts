@@ -11,7 +11,11 @@ import type {
   ForecastQuestionPacket,
   ForecastQuestionPacketResponse
 } from '../gatewayTypes.js'
-import { FORECAST_TUI_FIND_SHORTCUT, FORECAST_TUI_VIEW_SHORTCUTS } from '../lib/forecastShortcuts.js'
+import {
+  FORECAST_TUI_FIND_SHORTCUT,
+  FORECAST_TUI_VIEW_SHORTCUTS,
+  forecastShortcutDisplayHotkey
+} from '../lib/forecastShortcuts.js'
 import type { PanelSection } from '../types.js'
 
 type ForecastPanelRow = NonNullable<PanelSection['rows']>[number]
@@ -972,7 +976,7 @@ const sectionTitlesByLedgerView: Record<string, string[]> = {
 const ledgerViewShortcuts = (activeView: string): PanelSection => ({
   rows: [
     ...FORECAST_TUI_VIEW_SHORTCUTS.map(shortcut => [
-      shortcut.hotkey,
+      forecastShortcutDisplayHotkey(shortcut),
       `${shortcut.label}${shortcut.id === activeView ? ' (active)' : ''}: ${shortcut.description}`,
       shortcut.command
     ] as [string, string, string]),

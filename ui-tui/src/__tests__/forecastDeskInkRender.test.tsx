@@ -5,12 +5,23 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AppLayoutProps } from '../app/interfaces.js'
 import type { ForecastDashboardResponse } from '../gatewayTypes.js'
+import { FORECAST_TUI_VIEW_SHORTCUTS, forecastShortcutDisplayHotkey } from '../lib/forecastShortcuts.js'
 import type { Msg } from '../types.js'
 
 const ESC = String.fromCharCode(27)
 const BEL = String.fromCharCode(7)
 const CSI_RE = new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]`, 'g')
 const OSC_RE = new RegExp(`${ESC}\\][\\s\\S]*?(?:${BEL}|${ESC}\\\\)`, 'g')
+
+const viewHotkey = (id: string) => {
+  const shortcut = FORECAST_TUI_VIEW_SHORTCUTS.find(item => item.id === id)
+
+  if (!shortcut) {
+    throw new Error(`missing forecast view shortcut: ${id}`)
+  }
+
+  return forecastShortcutDisplayHotkey(shortcut)
+}
 
 const forecastFixture = (): ForecastDashboardResponse => ({
   output: 'SUPERFORECASTING DESK\n\nACTIVE FORECASTS\nfq_review123456 0.63 needs update',
@@ -297,8 +308,8 @@ describe('forecast desk Ink render', () => {
     expect(output).not.toContain('Nous Research')
     expect(compact).toContain('ForecastDesk')
     expect(compact).toContain('next/questionsfq_review123456')
-    expect(compact).toContain('viewsAlt+1book')
-    expect(compact).toContain('Alt+4evidence')
+    expect(compact).toContain(`views${viewHotkey('book')}book`)
+    expect(compact).toContain(`${viewHotkey('evidence')}evidence`)
     expect(compact).toContain('Ctrl+Ffind')
     expect(compact).toContain('desk2active/1alert/1review/cal7/2lessons/asm3/1/refs2/1')
     expect(compact).toContain('Triage')
@@ -316,8 +327,8 @@ describe('forecast desk Ink render', () => {
 
     expect(compact).toContain('ForecastDesk')
     expect(compact).toContain('next/questionsfq_review123456')
-    expect(compact).toContain('viewsAlt+1book')
-    expect(compact).toContain('Alt+3alerts')
+    expect(compact).toContain(`views${viewHotkey('book')}book`)
+    expect(compact).toContain(`${viewHotkey('alerts')}alerts`)
     expect(compact).toContain('Ctrl+Ffind')
     expect(compact).toContain('deskbrief')
     expect(compact).toContain('book2active')

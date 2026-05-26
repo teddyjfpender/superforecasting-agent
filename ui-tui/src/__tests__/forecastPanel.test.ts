@@ -15,6 +15,7 @@ import {
   rankForecastQuestionMatches
 } from '../app/forecastPanel.js'
 import type { ForecastDashboardResponse } from '../gatewayTypes.js'
+import { FORECAST_TUI_VIEW_SHORTCUTS, forecastShortcutDisplayHotkey } from '../lib/forecastShortcuts.js'
 
 describe('forecast desk panel helpers', () => {
   it('renders a numbered forecast book with freshness and drill-down commands', () => {
@@ -973,9 +974,10 @@ describe('forecast desk panel helpers', () => {
     const evidenceSections = forecastLedgerViewSections(response, 'evidence')
 
     expect(evidenceSections[0]?.title).toBe('View Shortcuts')
+    const evidenceShortcut = FORECAST_TUI_VIEW_SHORTCUTS.find(shortcut => shortcut.id === 'evidence')
     expect(evidenceSections[0]?.rows).toEqual(
       expect.arrayContaining([
-        ['Alt+4', 'evidence (active): evidence readiness and source gaps', '/ledger evidence'],
+        [forecastShortcutDisplayHotkey(evidenceShortcut!), 'evidence (active): evidence readiness and source gaps', '/ledger evidence'],
         ['Ctrl+F', 'find: search forecasts by words, topics, rationale, or evidence', '/find <words>']
       ])
     )

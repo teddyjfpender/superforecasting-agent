@@ -100,6 +100,11 @@ export const FORECAST_TUI_FIND_SHORTCUT: ForecastTuiShortcut = {
   mode: 'prefill'
 }
 
+export const forecastShortcutDisplayHotkey = (
+  shortcut: ForecastTuiShortcut,
+  platform = process.platform
+): string => (platform === 'darwin' ? shortcut.hotkey.replace(/^Alt\+/, 'Opt+') : shortcut.hotkey)
+
 const cleanCtrl = (key: ForecastShortcutKeyEvent) =>
   key.ctrl === true && key.alt !== true && key.meta !== true && key.shift !== true && key.super !== true
 
