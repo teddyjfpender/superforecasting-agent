@@ -4173,6 +4173,31 @@ def test_google_oauth_guidance_is_forecast_native():
     assert "Set HERMES_GEMINI_PROJECT_ID" not in code_assist
 
 
+def test_runtime_credential_and_node_copy_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "tools" / "env_passthrough.py",
+        root / "tools" / "xai_http.py",
+        root / "agent" / "azure_identity_adapter.py",
+        root / "tools" / "browser_tool.py",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "agent-managed provider credential" in text
+    assert "agent-managed xAI OAuth credentials" in text
+    assert "active agent-home ``.env``" in text
+    assert "agent-managed Entra knobs" in text
+    assert "agent-managed Node" in text
+
+    assert "Hermes-managed provider credential" not in text
+    assert "Hermes-managed xAI OAuth credentials" not in text
+    assert "standard Hermes location" not in text
+    assert "Hermes-managed Entra knobs" not in text
+    assert "Hermes-managed Node" not in text
+    assert "Non-Hermes API keys" not in text
+    assert "_is_hermes_provider_credential" not in text
+
+
 def test_curator_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (root / "agent" / "curator.py").read_text(encoding="utf-8")
@@ -5094,6 +5119,7 @@ def test_superforecasting_fork_audit_maps_prd_requirements():
         "forecast backtest",
         "forecast schedule",
         "forecast self-check",
+        "forecast autopilot",
         "forecast pilot-cohort",
         "forecast pilot-bundle",
     ]

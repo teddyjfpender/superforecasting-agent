@@ -320,6 +320,10 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'schedule list' })
     expect(createSlashHandler(ctx)('/schedule run --auto-score')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'schedule run --auto-score' })
+    expect(createSlashHandler(ctx)('/autopilot enable fq_123 --source bls:CUUR0000SA0 --cadence 1d')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', {
+      arg: 'autopilot enable fq_123 --source bls:CUUR0000SA0 --cadence 1d'
+    })
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
   })
 

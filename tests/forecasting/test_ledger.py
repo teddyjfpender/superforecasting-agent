@@ -1929,6 +1929,129 @@ def test_watched_file_source_creates_alert_on_change(tmp_path):
     assert updated["last_seen_signature"] != watch["last_seen_signature"]
 
 
+def test_autopilot_enable_run_propose_and_approve(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will the automated maintenance loop create auditable proposals?",
+        resolution_criteria="Resolved yes if the maintenance loop creates an auditable update proposal.",
+        resolution_source="official fixture source",
+        domain="automation",
+    )
+    baseline = ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.40,
+        rationale="Initial baseline forecast before autopilot.",
+        as_of="2026-05-01T00:00:00Z",
+    )
+    source = tmp_path / "source.txt"
+    source.write_text("initial source payload", encoding="utf-8")
+
+    enabled = ledger.enable_autopilot(
+        question_id=question.id,
+        sources=[str(source)],
+        cadence="1d",
+        next_run_at="2026-05-02T09:00:00Z",
+        materiality_policy={"min_source_changes": 1},
+        guardrail_policy={"max_single_run_probability_delta": 0.20},
+        notification_policy={"quiet_if_unchanged": True},
+    )
+
+    assert enabled["policy"]["mode"] == "propose"
+    assert enabled["scheduled_review"]["trigger_reason"] == "autopilot"
+    assert enabled["watched_sources"][0]["metadata"]["autopilot_policy_id"] == enabled["policy"]["id"]
+    assert enabled["audit_alert"].reason == f"autopilot_enabled:{enabled['policy']['id']}"
+
+    unchanged = ledger.run_autopilot(question.id, now="2026-05-02T09:00:00Z")
+    assert unchanged["run"]["status"] == "skipped"
+    assert unchanged["run"]["sources_checked"] == 1
+    assert unchanged["run"]["sources_changed"] == 0
+    assert unchanged["proposal"] is None
+
+    source.write_text("changed source payload", encoding="utf-8")
+    changed = ledger.run_autopilot(
+        question.id,
+        now="2026-05-03T09:00:00Z",
+        proposed_probability_or_distribution=0.47,
+        rationale="Source moved enough to justify a proposed update.",
+    )
+
+    proposal = changed["proposal"]
+    assert changed["run"]["sources_changed"] == 1
+    assert changed["run"]["material_changes"] == 1
+    assert changed["model_run"]["model_type"] == "autopilot_refresh"
+    assert proposal["status"] == "pending"
+    assert proposal["prior_forecast_id"] == baseline.forecast_id
+    assert proposal["proposed_probability_or_distribution"] == 0.47
+    assert proposal["source_snapshot_refs"]
+    assert proposal["model_run_refs"] == [changed["model_run"]["id"]]
+    assert changed["alerts"][0].reason == f"autopilot_update_proposed:{proposal['id']}"
+
+    approved = ledger.approve_forecast_update_proposal(proposal["id"], reviewed_by="tester")
+    refreshed = ledger.get_forecast_update_proposal(proposal["id"])
+    assert approved.probability_or_distribution == 0.47
+    assert approved.parent_forecast_id == baseline.forecast_id
+    assert approved.source_snapshot_refs == proposal["source_snapshot_refs"]
+    assert refreshed["status"] == "approved"
+    assert refreshed["reviewed_by"] == "tester"
+    assert ledger.get_current_snapshot(question.id).forecast_id == approved.forecast_id
+
+
+def test_autopilot_readiness_requires_resolution_source_snapshot_and_pollable_source(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will readiness block incomplete autonomous maintenance?",
+        resolution_criteria="Resolved yes if the incomplete setup is blocked.",
+    )
+
+    readiness = ledger.autopilot_readiness(
+        question.id,
+        sources=["manual note"],
+    )
+
+    assert readiness["ready"] is False
+    assert "missing resolution source" in readiness["hard_blockers"]
+    assert "no baseline forecast snapshot" in readiness["hard_blockers"]
+    assert "no pollable source adapter available for 'manual note'" in readiness["hard_blockers"]
+
+
+def test_autopilot_auto_commit_respects_guardrails(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will auto-commit escalate unsafe probability jumps?",
+        resolution_criteria="Resolved yes if unsafe updates are escalated.",
+        resolution_source="fixture resolver",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.30,
+        rationale="Baseline.",
+    )
+    source = tmp_path / "market.txt"
+    source.write_text("initial", encoding="utf-8")
+    ledger.enable_autopilot(
+        question_id=question.id,
+        sources=[str(source)],
+        cadence="1d",
+        mode="auto_commit",
+        guardrail_policy={
+            "max_single_run_probability_delta": 0.05,
+            "require_no_critical_source_failures": True,
+        },
+    )
+    source.write_text("changed", encoding="utf-8")
+
+    result = ledger.run_autopilot(
+        question.id,
+        proposed_probability_or_distribution=0.50,
+        rationale="Large proposed market move.",
+    )
+
+    assert result["forecast_snapshot"] is None
+    assert result["proposal"]["status"] == "pending"
+    assert any(alert.reason.startswith("autopilot_guardrail_review:") for alert in result["alerts"])
+    assert "guardrail_violations" in result["run"]["diagnostics"]
+
+
 @pytest.mark.parametrize(
     ("scope_type", "scope_ref", "expected_self_check", "expected_followup"),
     [

@@ -113,6 +113,14 @@ forecast --db "$FORECAST_DB" schedule add --question <id> --cadence "every 1h" \
   --auto-score \
   --auto-postmortem
 forecast --db "$FORECAST_DB" schedule run --due --auto-score --auto-postmortem
+forecast --db "$FORECAST_DB" autopilot enable <id> \
+  --source "<adapter>:<source>" \
+  --cadence "1d" \
+  --mode propose \
+  --quiet-if-unchanged
+forecast --db "$FORECAST_DB" autopilot run <id>
+forecast --db "$FORECAST_DB" autopilot proposals <id>
+forecast --db "$FORECAST_DB" autopilot approve <proposal-id>
 forecast --db "$FORECAST_DB" resolve <id> --outcome yes --source "<resolution source>"
 forecast --db "$FORECAST_DB" score <id> --baselines
 forecast --db "$FORECAST_DB" postmortem <id> \
@@ -223,5 +231,9 @@ export or bundle path.
 - Scheduled checks create alerts, scores, postmortems, lessons, and error
   profiles where configured, but they do not silently change active forecast
   probabilities.
+- Autopilot is now available as an autonomous maintenance harness around
+  watched sources, scheduled reviews, materiality checks, proposals, and
+  guardrails. Use `--mode propose` for tester runs; `auto-commit` is guarded but
+  should not be treated as proven live forecasting skill.
 - Live superiority requires accumulated prospective forecasts, resolutions,
   baseline comparisons, and held-out replay evidence over time.

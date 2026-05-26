@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -1541,6 +1542,60 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     watch_check.add_argument("--now")
     watch_check.set_defaults(_forecast_handler=_cmd_watch_check)
 
+    autopilot_parser = forecast_sub.add_parser(
+        "autopilot",
+        help="Wire watched sources, schedules, materiality, and update proposals",
+    )
+    autopilot_sub = autopilot_parser.add_subparsers(dest="autopilot_command")
+    autopilot_enable = autopilot_sub.add_parser("enable", help="Enable autonomous forecast maintenance")
+    autopilot_enable.add_argument("id")
+    autopilot_enable.add_argument("--source", action="append", default=[])
+    autopilot_enable.add_argument("--sources", help="Comma-separated watched sources")
+    autopilot_enable.add_argument("--cadence", required=True)
+    autopilot_enable.add_argument("--next-run-at")
+    autopilot_enable.add_argument(
+        "--mode",
+        choices=["propose", "auto-commit", "alert-only"],
+        default="propose",
+    )
+    autopilot_enable.add_argument("--materiality-threshold", action="append", default=[])
+    autopilot_enable.add_argument("--max-auto-delta", type=float)
+    autopilot_enable.add_argument("--min-sources-for-auto-commit", type=int)
+    autopilot_enable.add_argument("--notify")
+    autopilot_enable.add_argument("--quiet-if-unchanged", action="store_true")
+    autopilot_enable.add_argument("--created-by")
+    autopilot_enable.add_argument("--allow-missing-resolution-source", action="store_true")
+    autopilot_enable.set_defaults(_forecast_handler=_cmd_autopilot_enable)
+    autopilot_disable = autopilot_sub.add_parser("disable", help="Disable active autopilot policy for a question")
+    autopilot_disable.add_argument("id")
+    autopilot_disable.set_defaults(_forecast_handler=_cmd_autopilot_disable)
+    autopilot_status = autopilot_sub.add_parser("status", help="Show autopilot policy state")
+    autopilot_status.add_argument("id")
+    autopilot_status.set_defaults(_forecast_handler=_cmd_autopilot_status)
+    autopilot_run = autopilot_sub.add_parser("run", help="Run autopilot source checks and proposal generation")
+    autopilot_run.add_argument("id")
+    autopilot_run.add_argument("--now")
+    autopilot_run.add_argument("--trigger-reason", default="manual")
+    autopilot_run.add_argument("--proposed-probability", type=float)
+    autopilot_run.add_argument("--rationale")
+    autopilot_run.set_defaults(_forecast_handler=_cmd_autopilot_run)
+    autopilot_history = autopilot_sub.add_parser("history", help="Show autopilot run history")
+    autopilot_history.add_argument("id")
+    autopilot_history.add_argument("--limit", type=int, default=20)
+    autopilot_history.set_defaults(_forecast_handler=_cmd_autopilot_history)
+    autopilot_proposals = autopilot_sub.add_parser("proposals", help="List forecast update proposals")
+    autopilot_proposals.add_argument("id", nargs="?")
+    autopilot_proposals.add_argument("--all", action="store_true")
+    autopilot_proposals.set_defaults(_forecast_handler=_cmd_autopilot_proposals)
+    autopilot_approve = autopilot_sub.add_parser("approve", help="Approve a pending forecast update proposal")
+    autopilot_approve.add_argument("proposal_id")
+    autopilot_approve.add_argument("--reviewed-by")
+    autopilot_approve.set_defaults(_forecast_handler=_cmd_autopilot_approve)
+    autopilot_reject = autopilot_sub.add_parser("reject", help="Reject a pending forecast update proposal")
+    autopilot_reject.add_argument("proposal_id")
+    autopilot_reject.add_argument("--reviewed-by")
+    autopilot_reject.set_defaults(_forecast_handler=_cmd_autopilot_reject)
+
     alerts_parser = forecast_sub.add_parser("alerts", help="List forecast alerts")
     alerts_parser.add_argument("--all", action="store_true")
     alerts_parser.add_argument("--ack", dest="ack_alert_id")
@@ -1849,6 +1904,9 @@ def _forecast_status_payload(ledger: ForecastLedger) -> dict[str, Any]:
     open_alerts = ledger.list_alerts(unresolved_only=True)
     schedules = ledger.list_scheduled_reviews()
     watches = ledger.list_watched_sources(status=None)
+    autopilot_policies = ledger.list_autopilot_policies(enabled_only=False)
+    autopilot_runs = ledger.list_autopilot_runs(limit=1000)
+    autopilot_proposals = ledger.list_forecast_update_proposals(status=None, limit=1000)
     benchmarks = list_builtin_benchmarks()
     imported_benchmarks = ledger.list_benchmark_datasets()
     lessons = ledger.list_calibration_lessons()
@@ -1879,6 +1937,12 @@ def _forecast_status_payload(ledger: ForecastLedger) -> dict[str, Any]:
         ),
         "watched_source_count": len(watches),
         "active_watched_source_count": sum(1 for row in watches if row.get("status") == "active"),
+        "autopilot_policy_count": len(autopilot_policies),
+        "active_autopilot_policy_count": sum(1 for row in autopilot_policies if row.get("enabled")),
+        "autopilot_run_count": len(autopilot_runs),
+        "pending_autopilot_proposal_count": sum(
+            1 for row in autopilot_proposals if row.get("status") == "pending"
+        ),
         "score_count": len(scores),
         "calibration_eligible_score_count": calibration["count"],
         "calibration_mean_brier": calibration["mean_brier"],
@@ -1936,6 +2000,11 @@ def _cmd_status(args: argparse.Namespace) -> None:
         f"schedules={payload['enabled_scheduled_review_count']}/{payload['scheduled_review_count']}  "
         f"learning_schedules={payload['learning_scheduled_review_count']}  "
         f"watches={payload['active_watched_source_count']}/{payload['watched_source_count']}"
+    )
+    print(
+        f"autopilot: policies={payload['active_autopilot_policy_count']}/"
+        f"{payload['autopilot_policy_count']}  runs={payload['autopilot_run_count']}  "
+        f"pending_proposals={payload['pending_autopilot_proposal_count']}"
     )
     print(
         f"scores: total={payload['score_count']}  "
@@ -2060,7 +2129,10 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
         f"reviews={status['review_queue_count']} "
         f"alerts={status['open_alert_count']} "
         f"schedules={status['enabled_scheduled_review_count']}/{status['scheduled_review_count']} "
-        f"schedule_runs={summary.get('scheduled_review_run_count', 0)}"
+        f"schedule_runs={summary.get('scheduled_review_run_count', 0)} "
+        f"autopilot={status['active_autopilot_policy_count']}/{status['autopilot_policy_count']} "
+        f"autopilot_runs={status['autopilot_run_count']} "
+        f"pending_proposals={status['pending_autopilot_proposal_count']}"
     )
     print(
         "learning: "
@@ -6793,6 +6865,147 @@ def _cmd_watch_check(args: argparse.Namespace) -> None:
         print(f"{alert.id}: {alert.scope_ref} {alert.reason}")
 
 
+def _cmd_autopilot_enable(args: argparse.Namespace) -> None:
+    sources = _autopilot_sources(args)
+    materiality_policy = _autopilot_materiality_policy(args.materiality_threshold)
+    guardrail_policy = _autopilot_guardrail_policy(args)
+    notification_policy = {
+        "destination": args.notify,
+        "quiet_if_unchanged": bool(args.quiet_if_unchanged),
+    }
+    result = _ledger(args).enable_autopilot(
+        question_id=args.id,
+        sources=sources,
+        cadence=args.cadence,
+        mode=args.mode,
+        materiality_policy=materiality_policy,
+        guardrail_policy=guardrail_policy,
+        notification_policy=notification_policy,
+        next_run_at=args.next_run_at,
+        created_by=args.created_by,
+        allow_missing_resolution_source=args.allow_missing_resolution_source,
+    )
+    policy = result["policy"]
+    print(f"Autopilot enabled for {args.id}")
+    print(f"Policy: {policy['id']}")
+    print(f"Sources: {len(result['watched_sources'])}")
+    print(f"Cadence: {policy['cadence']}")
+    print(f"Mode: {policy['mode'].replace('_', '-')}")
+    print(f"Next run: {result['scheduled_review']['next_run_at']}")
+    warnings = result["readiness"].get("warnings") or []
+    if warnings:
+        print("Warnings:")
+        for warning in warnings:
+            print(f"  - {warning}")
+
+
+def _cmd_autopilot_disable(args: argparse.Namespace) -> None:
+    policy = _ledger(args).disable_autopilot(args.id)
+    print(f"autopilot disabled for {args.id}")
+    print(f"policy: {policy['id']}")
+
+
+def _cmd_autopilot_status(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    policies = ledger.list_autopilot_policies(question_id=args.id, enabled_only=False)
+    if not policies:
+        print("No autopilot policy found.")
+        return
+    watches = ledger.list_watched_sources(scope_type="question", scope_ref=args.id, status=None)
+    proposals = ledger.list_forecast_update_proposals(question_id=args.id, status=None, limit=20)
+    runs = ledger.list_autopilot_runs(question_id=args.id, limit=5)
+    for policy in policies:
+        print(
+            f"{policy['id']} enabled={policy['enabled']} mode={policy['mode'].replace('_', '-')} "
+            f"cadence={policy['cadence']} schedule={policy['scheduled_review_id']}"
+        )
+    print(f"sources: {len(watches)}")
+    print(f"pending_proposals: {len([row for row in proposals if row['status'] == 'pending'])}")
+    if runs:
+        latest = runs[0]
+        print(
+            f"latest_run: {latest['id']} status={latest['status']} "
+            f"changed={latest['sources_changed']} material={latest['material_changes']}"
+        )
+
+
+def _cmd_autopilot_run(args: argparse.Namespace) -> None:
+    result = _ledger(args).run_autopilot(
+        args.id,
+        now=args.now,
+        trigger_reason=args.trigger_reason,
+        proposed_probability_or_distribution=args.proposed_probability,
+        rationale=args.rationale,
+    )
+    run = result["run"]
+    print(f"autopilot run {run['id']}")
+    print(f"status: {run['status']}")
+    print(f"checked: {run['sources_checked']}")
+    print(f"changed: {run['sources_changed']}")
+    print(f"material: {run['material_changes']}")
+    proposal = result.get("proposal")
+    if proposal:
+        print(f"proposal: {proposal['id']} status={proposal['status']}")
+        prior = proposal.get("prior_forecast_id") or ""
+        print(f"prior_forecast: {prior}")
+        print(f"proposed: {proposal['proposed_probability_or_distribution']}")
+        print(f"approve: forecast autopilot approve {proposal['id']}")
+    snapshot = result.get("forecast_snapshot")
+    if snapshot:
+        print(f"forecast_snapshot: {snapshot.forecast_id}")
+    if not proposal and run["material_changes"] == 0:
+        print("No material source changes detected.")
+
+
+def _cmd_autopilot_history(args: argparse.Namespace) -> None:
+    rows = _ledger(args).list_autopilot_runs(question_id=args.id, limit=args.limit)
+    if not rows:
+        print("No autopilot runs found.")
+        return
+    print("Run ID         Started at           Status    Checked  Changed  Material  Proposal")
+    for row in rows:
+        print(
+            f"{row['id']:<14} {row['started_at']:<20} {row['status']:<9} "
+            f"{row['sources_checked']:<8} {row['sources_changed']:<8} "
+            f"{row['material_changes']:<9} {row['proposal_id'] or ''}"
+        )
+
+
+def _cmd_autopilot_proposals(args: argparse.Namespace) -> None:
+    rows = _ledger(args).list_forecast_update_proposals(
+        question_id=args.id,
+        status=None if args.all else "pending",
+        limit=100,
+    )
+    if not rows:
+        print("No forecast update proposals found.")
+        return
+    print("Proposal ID    Question       Status          Created at           Proposed")
+    for row in rows:
+        print(
+            f"{row['id']:<14} {row['question_id']:<14} {row['status']:<15} "
+            f"{row['created_at']:<20} {row['proposed_probability_or_distribution']}"
+        )
+
+
+def _cmd_autopilot_approve(args: argparse.Namespace) -> None:
+    snapshot = _ledger(args).approve_forecast_update_proposal(
+        args.proposal_id,
+        reviewed_by=args.reviewed_by,
+    )
+    print(f"approved proposal {args.proposal_id}")
+    print(f"created forecast snapshot {snapshot.forecast_id}")
+
+
+def _cmd_autopilot_reject(args: argparse.Namespace) -> None:
+    proposal = _ledger(args).reject_forecast_update_proposal(
+        args.proposal_id,
+        reviewed_by=args.reviewed_by,
+    )
+    print(f"rejected proposal {proposal['id']}")
+    print(f"status: {proposal['status']}")
+
+
 def _cmd_alerts(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
     if args.ack_alert_id:
@@ -8181,6 +8394,45 @@ def _watch_scope(args: argparse.Namespace, *, required: bool) -> tuple[str | Non
     if required:
         raise SystemExit("watch add requires --question, --domain, --topic, or --portfolio")
     return None, None
+
+
+def _autopilot_sources(args: argparse.Namespace) -> list[str]:
+    sources = [item.strip() for item in (args.source or []) if item and item.strip()]
+    if args.sources:
+        for item in re.split(r"[,;]", args.sources):
+            item = item.strip()
+            if item:
+                sources.append(item)
+    if not sources:
+        raise SystemExit("autopilot enable requires --source or --sources")
+    return sources
+
+
+def _autopilot_materiality_policy(thresholds: list[str]) -> dict[str, Any]:
+    policy: dict[str, Any] = {"min_source_changes": 1}
+    raw_rules = [item.strip() for item in thresholds if item and item.strip()]
+    if raw_rules:
+        policy["rules"] = raw_rules
+    for rule in raw_rules:
+        match = re.search(r"(?:source_changes|min_source_changes)\s*(?:>=|=)\s*(\d+)", rule)
+        if match:
+            policy["min_source_changes"] = max(int(match.group(1)), 1)
+    return policy
+
+
+def _autopilot_guardrail_policy(args: argparse.Namespace) -> dict[str, Any]:
+    policy: dict[str, Any] = {
+        "require_no_critical_source_failures": True,
+        "require_model_parse_success": True,
+        "require_evidence_refs": True,
+        "require_prior_forecast": True,
+        "allow_resolution_auto_commit": False,
+    }
+    if args.max_auto_delta is not None:
+        policy["max_single_run_probability_delta"] = args.max_auto_delta
+    if args.min_sources_for_auto_commit is not None:
+        policy["min_independent_sources_for_auto_commit"] = args.min_sources_for_auto_commit
+    return policy
 
 
 def _format_schedule_scope(row: dict[str, Any]) -> str:

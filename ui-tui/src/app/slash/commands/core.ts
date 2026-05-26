@@ -447,6 +447,12 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
+    help: 'manage autonomous forecast maintenance policies',
+    name: 'autopilot',
+    run: (arg, ctx) => runForecastCommand(ctx, `autopilot ${arg.trim() || 'status'}`.trim())
+  },
+
+  {
     help: 'show domain and topic error profiles',
     name: 'errors',
     run: (arg, ctx) => runForecastCommand(ctx, `errors ${arg.trim()}`.trim())

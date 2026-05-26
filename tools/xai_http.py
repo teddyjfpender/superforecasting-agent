@@ -75,12 +75,12 @@ def hermes_xai_user_agent() -> str:
 def resolve_xai_http_credentials(*, force_refresh: bool = False) -> Dict[str, str]:
     """Resolve bearer credentials for direct xAI HTTP endpoints.
 
-    Prefers Hermes-managed xAI OAuth credentials when available, then falls back
+    Prefers agent-managed xAI OAuth credentials when available, then falls back
     to ``XAI_API_KEY`` resolved via ``hermes_cli.config.get_env_value`` so keys
-    stored in ``~/.hermes/.env`` (the standard Hermes location) are honored —
-    not just ones already exported into ``os.environ``. This keeps direct xAI
-    endpoints (images, TTS, STT, etc.) aligned with the main runtime auth model
-    and preserves the regression contract from PR #17140 / #17163.
+    stored in the active agent-home ``.env`` are honored - not just ones already
+    exported into ``os.environ``. This keeps direct xAI endpoints (images, TTS,
+    STT, etc.) aligned with the main runtime auth model and preserves the
+    regression contract from PR #17140 / #17163.
 
     Set ``force_refresh=True`` to bypass the resolver's JWT-exp shortcut and
     perform an unconditional OAuth refresh. Callers should use this only as a

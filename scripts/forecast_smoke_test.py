@@ -662,6 +662,81 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
         raise SmokeError(f"scheduled review history did not count alerts:\n{json.dumps(schedule_history, indent=2)}")
     _print_step(f"scheduled_self_check_question_id: {stale_question_id}")
 
+    autopilot_source = db_path.with_name("forecast-smoke-autopilot-source.txt")
+    autopilot_source.write_text("initial autopilot source", encoding="utf-8")
+    autopilot_question_output = _run_forecast(
+        [
+            "new",
+            "Will the local tester autopilot create a proposal?",
+            "--resolution-criteria",
+            "Resolved yes if the autopilot path creates a source-linked proposal.",
+            "--resolution-source",
+            "local smoke fixture",
+            "--domain",
+            "tester",
+            "--topic",
+            "autopilot",
+        ],
+        db_path=db_path,
+        repo_root=repo_root,
+        verbose=verbose,
+    )
+    autopilot_question_id = _extract(QUESTION_RE, autopilot_question_output, "autopilot question id")
+    _run_forecast(
+        [
+            "update",
+            autopilot_question_id,
+            "--probability",
+            "0.52",
+            "--rationale",
+            "Initial baseline for autonomous maintenance smoke path.",
+        ],
+        db_path=db_path,
+        repo_root=repo_root,
+        verbose=verbose,
+    )
+    autopilot_enable_output = _run_forecast(
+        [
+            "autopilot",
+            "enable",
+            autopilot_question_id,
+            "--source",
+            str(autopilot_source),
+            "--cadence",
+            "1d",
+            "--next-run-at",
+            "2026-05-25T09:00:00Z",
+            "--mode",
+            "propose",
+            "--quiet-if-unchanged",
+        ],
+        db_path=db_path,
+        repo_root=repo_root,
+        verbose=verbose,
+    )
+    if "Autopilot enabled" not in autopilot_enable_output:
+        raise SmokeError(f"autopilot did not enable:\n{autopilot_enable_output}")
+    autopilot_source.write_text("changed autopilot source", encoding="utf-8")
+    autopilot_run_output = _run_forecast(
+        [
+            "autopilot",
+            "run",
+            autopilot_question_id,
+            "--now",
+            "2026-05-25T09:00:00Z",
+            "--proposed-probability",
+            "0.56",
+            "--rationale",
+            "Changed source payload justifies a proposed smoke update.",
+        ],
+        db_path=db_path,
+        repo_root=repo_root,
+        verbose=verbose,
+    )
+    if "proposal: fup_" not in autopilot_run_output or "material: 1" not in autopilot_run_output:
+        raise SmokeError(f"autopilot did not create a material proposal:\n{autopilot_run_output}")
+    _print_step(f"autopilot_question_id: {autopilot_question_id}")
+
     _run_forecast(
         ["calibration", "--by-origin", "--all"],
         db_path=db_path,

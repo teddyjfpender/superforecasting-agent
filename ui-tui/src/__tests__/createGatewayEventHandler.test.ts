@@ -796,6 +796,20 @@ describe('createGatewayEventHandler', () => {
       {
         rows: [
           [
+            '/forecast show fq_123456789abc',
+            'P=0.630  as-of 2026-05-01  close -  reasons review_due,last_update_…  load full ledger context for Will X win the election?'
+          ],
+          ['/forecast research fq_123456789abc', 'collect source notes and evidence without moving probability'],
+          [
+            '/forecast update fq_123456789abc --probability <0-1> --rationale <why>',
+            'append an explicit probability update'
+          ]
+        ],
+        title: 'Focused Actions'
+      },
+      {
+        rows: [
+          [
             '12345678 P=0.630 Δ=+0.080',
             '1 alert  as-of 2026-05-01  close 2026-11-03  conf 0.74  Will X win the election?'
           ]
@@ -997,6 +1011,9 @@ describe('createGatewayEventHandler', () => {
               '/forecast calibration --by-origin',
               '/forecast lesson list',
               '/forecast errors',
+              '/forecast autopilot status <id>',
+              '/forecast autopilot enable <id> --source <adapter>:<source> --cadence 1d --mode propose',
+              '/forecast autopilot history <id>',
               '/forecast schedule run --due --auto-score --auto-postmortem',
               '/forecast schedule history --json',
               '/forecast performance --last 5',

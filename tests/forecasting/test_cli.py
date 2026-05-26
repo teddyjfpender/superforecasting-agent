@@ -9479,7 +9479,8 @@ def test_forecast_cli_status_summarizes_operational_desk(tmp_path, capsys):
     assert "schedules=1/1" in output
     assert "learning_schedules=0" in output
     assert "watches=1/1" in output
-    assert "benchmarks: builtin=4" in output
+    assert "autopilot: policies=0/0" in output
+    assert "benchmarks: builtin=" in output
 
     _run(parser, ["forecast", "--db", db, "status", "--json"])
     payload = json.loads(capsys.readouterr().out)
@@ -9496,6 +9497,10 @@ def test_forecast_cli_status_summarizes_operational_desk(tmp_path, capsys):
     assert payload["learning_scheduled_review_count"] == 0
     assert payload["active_watched_source_count"] == 1
     assert payload["watched_source_count"] == 1
+    assert payload["active_autopilot_policy_count"] == 0
+    assert payload["autopilot_policy_count"] == 0
+    assert payload["autopilot_run_count"] == 0
+    assert payload["pending_autopilot_proposal_count"] == 0
     assert payload["builtin_benchmark_count"] >= 4
 
 
@@ -12167,6 +12172,118 @@ def test_forecast_cli_watch_add_list_and_check(tmp_path, capsys):
 
     assert "created 1 alert(s)" in check_output
     assert f"watched_source_changed:{watch_id}" in check_output
+
+
+def test_forecast_cli_autopilot_enable_run_approve_and_status(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    source = tmp_path / "cpi-source.txt"
+    source.write_text("initial nowcast", encoding="utf-8")
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "What will the fixture CPI value be?",
+            "--resolution-criteria",
+            "Resolved by the fixture statistical release.",
+            "--resolution-source",
+            "fixture BLS release",
+            "--outcome-type",
+            "binary",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "update",
+            question_id,
+            "--probability",
+            "0.41",
+            "--rationale",
+            "Initial desk prior.",
+        ],
+    )
+    capsys.readouterr()
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "autopilot",
+            "enable",
+            question_id,
+            "--source",
+            str(source),
+            "--cadence",
+            "1d",
+            "--next-run-at",
+            "2026-05-02T09:00:00Z",
+            "--materiality-threshold",
+            "source_changes>=1",
+            "--mode",
+            "propose",
+            "--quiet-if-unchanged",
+        ],
+    )
+    enable_output = capsys.readouterr().out
+    assert f"Autopilot enabled for {question_id}" in enable_output
+    assert "Sources: 1" in enable_output
+    assert "Mode: propose" in enable_output
+
+    _run(parser, ["forecast", "--db", db, "autopilot", "run", question_id, "--now", "2026-05-02T09:00:00Z"])
+    unchanged_output = capsys.readouterr().out
+    assert "status: skipped" in unchanged_output
+    assert "No material source changes detected." in unchanged_output
+
+    source.write_text("changed nowcast", encoding="utf-8")
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "autopilot",
+            "run",
+            question_id,
+            "--now",
+            "2026-05-03T09:00:00Z",
+            "--proposed-probability",
+            "0.48",
+            "--rationale",
+            "Fixture nowcast moved enough for a proposed update.",
+        ],
+    )
+    run_output = capsys.readouterr().out
+    proposal_id = re.search(r"proposal: (fup_[a-f0-9]+)", run_output).group(1)
+    assert "changed: 1" in run_output
+    assert "material: 1" in run_output
+    assert f"approve: forecast autopilot approve {proposal_id}" in run_output
+
+    _run(parser, ["forecast", "--db", db, "autopilot", "proposals", question_id])
+    proposals_output = capsys.readouterr().out
+    assert proposal_id in proposals_output
+    assert "pending" in proposals_output
+
+    _run(parser, ["forecast", "--db", db, "autopilot", "approve", proposal_id, "--reviewed-by", "tester"])
+    approve_output = capsys.readouterr().out
+    assert f"approved proposal {proposal_id}" in approve_output
+    assert "created forecast snapshot" in approve_output
+
+    _run(parser, ["forecast", "--db", db, "autopilot", "status", question_id])
+    status_output = capsys.readouterr().out
+    assert "enabled=True" in status_output
+    assert "sources: 1" in status_output
+    assert "pending_proposals: 0" in status_output
 
 
 def test_forecast_cli_watch_add_checks_domain_topic_and_portfolio_scopes(tmp_path, capsys):

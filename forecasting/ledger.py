@@ -60,6 +60,8 @@ from forecasting.models import (
 FORECASTING_PROTOCOL_VERSION = "forecasting-ledger-v1"
 WATCH_SCOPE_TYPES = {"question", "domain", "topic", "domain_topic", "portfolio"}
 SCHEDULE_SCOPE_TYPES = {"question", "domain", "topic", "domain_topic", "portfolio", "horizon"}
+AUTOPILOT_MODES = {"propose", "auto_commit", "alert_only"}
+AUTOPILOT_PROPOSAL_STATUSES = {"pending", "approved", "rejected", "expired", "auto_committed"}
 WATCH_SOURCE_TYPES = {
     "file",
     "url",
@@ -222,8 +224,19 @@ _PACKET_JSON_FIELDS = {
         "recommended_adjustments",
     },
     "baseline_comparisons": {"probability_or_distribution", "metadata"},
+    "source_snapshots": {"parsed_values", "metadata"},
     "watched_sources": {"metadata"},
     "scheduled_review_runs": {"metadata"},
+    "autopilot_policies": {"materiality_policy", "guardrail_policy", "notification_policy"},
+    "autopilot_runs": {"diagnostics"},
+    "forecast_update_proposals": {
+        "proposed_probability_or_distribution",
+        "evidence_refs",
+        "source_snapshot_refs",
+        "model_run_refs",
+        "assumption_refs",
+        "reference_class_refs",
+    },
 }
 _PACKET_BOOL_FIELDS = {
     "evidence_items": {"admissible_for_backtests"},
@@ -231,6 +244,7 @@ _PACKET_BOOL_FIELDS = {
     "score_records": {"calibration_eligible"},
     "postmortems": {"calibration_eligible"},
     "scheduled_reviews": {"enabled", "auto_score", "auto_postmortem"},
+    "autopilot_policies": {"enabled"},
 }
 _PACKET_RECORD_LABELS = {
     "forecast_questions": "questions",
@@ -247,10 +261,14 @@ _PACKET_RECORD_LABELS = {
     "forecast_corrections": "corrections",
     "domain_error_profiles": "domain_error_profiles",
     "baseline_comparisons": "baseline_comparisons",
+    "source_snapshots": "source_snapshots",
     "watched_sources": "watched_sources",
     "scheduled_reviews": "scheduled_reviews",
     "scheduled_review_runs": "scheduled_review_runs",
     "alert_events": "alerts",
+    "autopilot_policies": "autopilot_policies",
+    "autopilot_runs": "autopilot_runs",
+    "forecast_update_proposals": "forecast_update_proposals",
 }
 
 
@@ -648,6 +666,25 @@ class ForecastLedger:
                 CREATE INDEX IF NOT EXISTS idx_watched_sources_scope
                     ON watched_sources(scope_type, scope_ref, status);
 
+                CREATE TABLE IF NOT EXISTS source_snapshots (
+                    id TEXT PRIMARY KEY,
+                    question_id TEXT REFERENCES forecast_questions(id) ON DELETE CASCADE,
+                    watched_source_id TEXT REFERENCES watched_sources(id) ON DELETE SET NULL,
+                    source_type TEXT NOT NULL,
+                    source_url TEXT,
+                    retrieved_at TEXT NOT NULL,
+                    raw_payload_path TEXT,
+                    raw_payload_sha256 TEXT,
+                    parsed_values TEXT NOT NULL DEFAULT '{}',
+                    adapter_version TEXT,
+                    status TEXT NOT NULL DEFAULT 'success',
+                    error_message TEXT,
+                    metadata TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_source_snapshots_question
+                    ON source_snapshots(question_id, retrieved_at DESC);
+
                 CREATE TABLE IF NOT EXISTS alert_events (
                     id TEXT PRIMARY KEY,
                     created_at TEXT NOT NULL,
@@ -658,6 +695,65 @@ class ForecastLedger:
                     recommended_action TEXT NOT NULL,
                     acknowledged_at TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS autopilot_policies (
+                    id TEXT PRIMARY KEY,
+                    question_id TEXT NOT NULL REFERENCES forecast_questions(id) ON DELETE CASCADE,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    mode TEXT NOT NULL DEFAULT 'propose',
+                    cadence TEXT NOT NULL,
+                    scheduled_review_id TEXT REFERENCES scheduled_reviews(id) ON DELETE SET NULL,
+                    materiality_policy TEXT NOT NULL DEFAULT '{}',
+                    guardrail_policy TEXT NOT NULL DEFAULT '{}',
+                    notification_policy TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    created_by TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_autopilot_policies_question
+                    ON autopilot_policies(question_id, enabled);
+
+                CREATE TABLE IF NOT EXISTS autopilot_runs (
+                    id TEXT PRIMARY KEY,
+                    policy_id TEXT NOT NULL REFERENCES autopilot_policies(id) ON DELETE CASCADE,
+                    question_id TEXT NOT NULL REFERENCES forecast_questions(id) ON DELETE CASCADE,
+                    started_at TEXT NOT NULL,
+                    finished_at TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    trigger_reason TEXT NOT NULL,
+                    sources_checked INTEGER NOT NULL DEFAULT 0,
+                    sources_changed INTEGER NOT NULL DEFAULT 0,
+                    material_changes INTEGER NOT NULL DEFAULT 0,
+                    proposal_id TEXT,
+                    forecast_snapshot_id TEXT,
+                    alerts_created INTEGER NOT NULL DEFAULT 0,
+                    diagnostics TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_autopilot_runs_policy
+                    ON autopilot_runs(policy_id, started_at DESC);
+
+                CREATE TABLE IF NOT EXISTS forecast_update_proposals (
+                    id TEXT PRIMARY KEY,
+                    question_id TEXT NOT NULL REFERENCES forecast_questions(id) ON DELETE CASCADE,
+                    run_id TEXT REFERENCES autopilot_runs(id) ON DELETE SET NULL,
+                    prior_forecast_id TEXT REFERENCES forecast_snapshots(forecast_id) ON DELETE SET NULL,
+                    proposed_probability_or_distribution TEXT NOT NULL,
+                    rationale TEXT NOT NULL,
+                    evidence_refs TEXT NOT NULL DEFAULT '[]',
+                    source_snapshot_refs TEXT NOT NULL DEFAULT '[]',
+                    model_run_refs TEXT NOT NULL DEFAULT '[]',
+                    assumption_refs TEXT NOT NULL DEFAULT '[]',
+                    reference_class_refs TEXT NOT NULL DEFAULT '[]',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at TEXT NOT NULL,
+                    reviewed_at TEXT,
+                    reviewed_by TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_forecast_update_proposals_question
+                    ON forecast_update_proposals(question_id, created_at DESC);
 
                 CREATE TABLE IF NOT EXISTS domain_error_profiles (
                     id TEXT PRIMARY KEY,
@@ -3346,6 +3442,612 @@ class ForecastLedger:
             ).fetchall()
         return [self._row_to_watched_source(row) for row in rows]
 
+    def list_source_snapshots(
+        self,
+        *,
+        question_id: str | None = None,
+        watched_source_id: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if question_id:
+            clauses.append("question_id = ?")
+            params.append(question_id)
+        if watched_source_id:
+            clauses.append("watched_source_id = ?")
+            params.append(watched_source_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(max(int(limit), 1))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM source_snapshots
+                {where}
+                ORDER BY retrieved_at DESC, id DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [self._row_to_source_snapshot(row) for row in rows]
+
+    def autopilot_readiness(
+        self,
+        question_id: str,
+        *,
+        sources: list[str] | None = None,
+        allow_missing_resolution_source: bool = False,
+    ) -> dict[str, Any]:
+        question = self.get_question(question_id)
+        hard_blockers: list[str] = []
+        warnings: list[str] = []
+        if question.status != "active":
+            hard_blockers.append("question is not active")
+        if not question.resolution_criteria.strip():
+            hard_blockers.append("missing resolution criteria")
+        if not question.resolution_source and not allow_missing_resolution_source:
+            hard_blockers.append("missing resolution source")
+        if question.outcome_space.type not in {"binary", "categorical", "numeric", "distribution"}:
+            hard_blockers.append(f"unsupported outcome type: {question.outcome_space.type}")
+        if self.get_current_snapshot(question_id) is None:
+            hard_blockers.append("no baseline forecast snapshot")
+        if sources is not None and not sources:
+            hard_blockers.append("at least one watched source is required")
+        for source in sources or []:
+            source_type = self._infer_watch_source_type(source.strip())
+            if source_type == "manual_note":
+                source_type = "manual"
+            if source_type not in WATCH_SOURCE_TYPES:
+                hard_blockers.append(f"no source adapter available for {source!r}")
+            elif source_type == "manual":
+                hard_blockers.append(f"no pollable source adapter available for {source!r}")
+        if not self.list_reference_classes(question_id):
+            warnings.append("no reference class recorded")
+        if not self.list_scores():
+            warnings.append("no calibration or scoring history")
+        stale_assumptions = [
+            row["id"]
+            for row in self.list_assumptions(question_id)
+            if row.get("status") in {"stale", "invalidated"}
+        ]
+        if stale_assumptions:
+            warnings.append("stale assumptions: " + ", ".join(stale_assumptions))
+        return {
+            "question_id": question_id,
+            "ready": not hard_blockers,
+            "hard_blockers": hard_blockers,
+            "warnings": warnings,
+        }
+
+    def enable_autopilot(
+        self,
+        *,
+        question_id: str,
+        sources: list[str],
+        cadence: str,
+        mode: str = "propose",
+        materiality_policy: dict[str, Any] | None = None,
+        guardrail_policy: dict[str, Any] | None = None,
+        notification_policy: dict[str, Any] | None = None,
+        next_run_at: str | None = None,
+        created_by: str | None = None,
+        allow_missing_resolution_source: bool = False,
+    ) -> dict[str, Any]:
+        mode = mode.replace("-", "_")
+        if mode not in AUTOPILOT_MODES:
+            raise ValidationError("autopilot mode must be propose, auto-commit, or alert-only")
+        sources = [source.strip() for source in sources if source.strip()]
+        readiness = self.autopilot_readiness(
+            question_id,
+            sources=sources,
+            allow_missing_resolution_source=allow_missing_resolution_source,
+        )
+        if readiness["hard_blockers"]:
+            raise ValidationError("autopilot readiness failed: " + "; ".join(readiness["hard_blockers"]))
+        if not cadence.strip():
+            raise ValidationError("autopilot cadence is required")
+
+        policy_id = f"ap_{uuid.uuid4().hex[:12]}"
+        now = utc_now_iso()
+        schedule = self.schedule_review(
+            scope_type="question",
+            scope_ref=question_id,
+            cadence=cadence,
+            next_run_at=next_run_at,
+            trigger_reason="autopilot",
+        )
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO autopilot_policies (
+                    id, question_id, enabled, mode, cadence, scheduled_review_id,
+                    materiality_policy, guardrail_policy, notification_policy,
+                    created_at, updated_at, created_by
+                )
+                VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    policy_id,
+                    question_id,
+                    mode,
+                    cadence,
+                    schedule["id"],
+                    json_dumps(materiality_policy or {}),
+                    json_dumps(guardrail_policy or {}),
+                    json_dumps(notification_policy or {}),
+                    now,
+                    now,
+                    created_by,
+                ),
+            )
+        watches = [
+            self.add_watched_source(
+                scope_type="question",
+                scope_ref=question_id,
+                source=source,
+                metadata={"autopilot_policy_id": policy_id},
+            )
+            for source in sources
+        ]
+        alert = self.create_alert(
+            severity="info",
+            scope_type="question",
+            scope_ref=question_id,
+            reason=f"autopilot_enabled:{policy_id}",
+            recommended_action=f"Run `forecast autopilot status {question_id}` to inspect the maintenance policy.",
+        )
+        return {
+            "policy": self.get_autopilot_policy(policy_id),
+            "scheduled_review": schedule,
+            "watched_sources": watches,
+            "readiness": readiness,
+            "audit_alert": alert,
+        }
+
+    def disable_autopilot(self, question_id: str) -> dict[str, Any]:
+        policy = self.get_active_autopilot_policy(question_id)
+        now = utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE autopilot_policies SET enabled = 0, updated_at = ? WHERE id = ?",
+                (now, policy["id"]),
+            )
+            if policy.get("scheduled_review_id"):
+                conn.execute(
+                    "UPDATE scheduled_reviews SET enabled = 0 WHERE id = ?",
+                    (policy["scheduled_review_id"],),
+                )
+        return self.get_autopilot_policy(policy["id"])
+
+    def get_autopilot_policy(self, policy_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM autopilot_policies WHERE id = ?", (policy_id,)).fetchone()
+        if row is None:
+            raise LedgerNotFoundError(f"autopilot policy not found: {policy_id}")
+        return self._row_to_autopilot_policy(row)
+
+    def get_active_autopilot_policy(self, question_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM autopilot_policies
+                WHERE question_id = ? AND enabled = 1
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                """,
+                (question_id,),
+            ).fetchone()
+        if row is None:
+            raise LedgerNotFoundError(f"active autopilot policy not found for {question_id}")
+        return self._row_to_autopilot_policy(row)
+
+    def list_autopilot_policies(
+        self,
+        *,
+        question_id: str | None = None,
+        enabled_only: bool = True,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if question_id:
+            clauses.append("question_id = ?")
+            params.append(question_id)
+        if enabled_only:
+            clauses.append("enabled = 1")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM autopilot_policies {where} ORDER BY created_at DESC, id DESC",
+                params,
+            ).fetchall()
+        return [self._row_to_autopilot_policy(row) for row in rows]
+
+    def list_autopilot_runs(
+        self,
+        *,
+        question_id: str | None = None,
+        policy_id: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if question_id:
+            clauses.append("question_id = ?")
+            params.append(question_id)
+        if policy_id:
+            clauses.append("policy_id = ?")
+            params.append(policy_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(max(int(limit), 1))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM autopilot_runs
+                {where}
+                ORDER BY started_at DESC, id DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [self._row_to_autopilot_run(row) for row in rows]
+
+    def list_forecast_update_proposals(
+        self,
+        *,
+        question_id: str | None = None,
+        status: str | None = "pending",
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if question_id:
+            clauses.append("question_id = ?")
+            params.append(question_id)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(max(int(limit), 1))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM forecast_update_proposals
+                {where}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [self._row_to_forecast_update_proposal(row) for row in rows]
+
+    def create_forecast_update_proposal(
+        self,
+        *,
+        question_id: str,
+        run_id: str | None,
+        prior_forecast_id: str | None,
+        proposed_probability_or_distribution: Any,
+        rationale: str,
+        evidence_refs: list[str] | None = None,
+        source_snapshot_refs: list[str] | None = None,
+        model_run_refs: list[str] | None = None,
+        assumption_refs: list[str] | None = None,
+        reference_class_refs: list[str] | None = None,
+        status: str = "pending",
+    ) -> dict[str, Any]:
+        question = self.get_question(question_id)
+        if status not in AUTOPILOT_PROPOSAL_STATUSES:
+            raise ValidationError("proposal status is invalid")
+        payload = self._validate_probability_payload(
+            proposed_probability_or_distribution,
+            question.outcome_space,
+        )
+        if not rationale.strip():
+            raise ValidationError("proposal rationale is required")
+        proposal_id = f"fup_{uuid.uuid4().hex[:12]}"
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO forecast_update_proposals (
+                    id, question_id, run_id, prior_forecast_id,
+                    proposed_probability_or_distribution, rationale, evidence_refs,
+                    source_snapshot_refs, model_run_refs, assumption_refs,
+                    reference_class_refs, status, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    proposal_id,
+                    question_id,
+                    run_id,
+                    prior_forecast_id,
+                    json_dumps(payload),
+                    rationale.strip(),
+                    json_dumps(evidence_refs or []),
+                    json_dumps(source_snapshot_refs or []),
+                    json_dumps(model_run_refs or []),
+                    json_dumps(assumption_refs or []),
+                    json_dumps(reference_class_refs or []),
+                    status,
+                    utc_now_iso(),
+                ),
+            )
+        return self.get_forecast_update_proposal(proposal_id)
+
+    def get_forecast_update_proposal(self, proposal_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM forecast_update_proposals WHERE id = ?",
+                (proposal_id,),
+            ).fetchone()
+        if row is None:
+            raise LedgerNotFoundError(f"forecast update proposal not found: {proposal_id}")
+        return self._row_to_forecast_update_proposal(row)
+
+    def approve_forecast_update_proposal(
+        self,
+        proposal_id: str,
+        *,
+        reviewed_by: str | None = None,
+        status: str = "approved",
+    ) -> ForecastSnapshot:
+        if status not in {"approved", "auto_committed"}:
+            raise ValidationError("approved proposal status must be approved or auto_committed")
+        proposal = self.get_forecast_update_proposal(proposal_id)
+        if proposal["status"] != "pending" and status != "auto_committed":
+            raise ValidationError("only pending proposals can be approved")
+        snapshot = self.create_snapshot(
+            question_id=proposal["question_id"],
+            probability_or_distribution=proposal["proposed_probability_or_distribution"],
+            rationale=proposal["rationale"],
+            method="autopilot",
+            evidence_refs=proposal["evidence_refs"],
+            source_snapshot_refs=proposal["source_snapshot_refs"],
+            model_run_refs=proposal["model_run_refs"],
+            assumption_refs=proposal["assumption_refs"],
+            reference_class_refs=proposal["reference_class_refs"],
+            require_citations=True,
+            metadata={"autopilot_proposal_id": proposal_id},
+        )
+        reviewed_at = utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE forecast_update_proposals
+                SET status = ?, reviewed_at = ?, reviewed_by = ?
+                WHERE id = ?
+                """,
+                (status, reviewed_at, reviewed_by, proposal_id),
+            )
+            if proposal.get("run_id"):
+                conn.execute(
+                    "UPDATE autopilot_runs SET forecast_snapshot_id = ? WHERE id = ?",
+                    (snapshot.forecast_id, proposal["run_id"]),
+                )
+        return snapshot
+
+    def reject_forecast_update_proposal(
+        self,
+        proposal_id: str,
+        *,
+        reviewed_by: str | None = None,
+    ) -> dict[str, Any]:
+        proposal = self.get_forecast_update_proposal(proposal_id)
+        if proposal["status"] != "pending":
+            raise ValidationError("only pending proposals can be rejected")
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE forecast_update_proposals
+                SET status = 'rejected', reviewed_at = ?, reviewed_by = ?
+                WHERE id = ?
+                """,
+                (utc_now_iso(), reviewed_by, proposal_id),
+            )
+        return self.get_forecast_update_proposal(proposal_id)
+
+    def run_autopilot(
+        self,
+        question_id: str,
+        *,
+        now: str | None = None,
+        trigger_reason: str = "manual",
+        proposed_probability_or_distribution: Any | None = None,
+        rationale: str | None = None,
+    ) -> dict[str, Any]:
+        policy = self.get_active_autopilot_policy(question_id)
+        current = self.get_current_snapshot(question_id)
+        if current is None:
+            raise ValidationError("autopilot requires a baseline forecast snapshot")
+        run_at = parse_timestamp(now, field_name="now") or utc_now_iso()
+        watches = self.list_watched_sources(scope_type="question", scope_ref=question_id, status="active")
+        source_snapshots: list[dict[str, Any]] = []
+        changed: list[dict[str, Any]] = []
+        alerts: list[AlertEvent] = []
+
+        for watch in watches:
+            previous_signature = watch.get("last_seen_signature")
+            current_signature = self._source_signature(watch["source"], watch["source_type"])
+            status = "success"
+            error_message = None
+            if current_signature is None or str(current_signature).startswith("missing:"):
+                status = "failed"
+                error_message = str(current_signature or "source unavailable")
+            did_change = (
+                status == "success"
+                and previous_signature is not None
+                and current_signature is not None
+                and current_signature != previous_signature
+            )
+            source_snapshot = self._record_source_snapshot(
+                question_id=question_id,
+                watch=watch,
+                retrieved_at=run_at,
+                signature=current_signature,
+                previous_signature=previous_signature,
+                changed=did_change,
+                status=status,
+                error_message=error_message,
+            )
+            source_snapshots.append(source_snapshot)
+            if did_change:
+                changed.append(source_snapshot)
+            if status == "failed":
+                alerts.append(
+                    self.create_alert(
+                        severity="warning",
+                        scope_type="question",
+                        scope_ref=question_id,
+                        reason=f"autopilot_source_failed:{watch['id']}",
+                        recommended_action=(
+                            "Inspect the watched source and rerun "
+                            f"`forecast autopilot run {question_id}` after the adapter recovers."
+                        ),
+                    )
+                )
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    UPDATE watched_sources
+                    SET last_checked_at = ?, last_seen_signature = ?
+                    WHERE id = ?
+                    """,
+                    (run_at, current_signature, watch["id"]),
+                )
+
+        material_changes = len(changed) if self._autopilot_material_change(policy, changed) else 0
+        proposal: dict[str, Any] | None = None
+        snapshot: ForecastSnapshot | None = None
+        model_run: dict[str, Any] | None = None
+        status = "skipped" if material_changes == 0 else "success"
+        diagnostics: dict[str, Any] = {
+            "mode": policy["mode"],
+            "source_snapshot_ids": [row["id"] for row in source_snapshots],
+            "changed_source_snapshot_ids": [row["id"] for row in changed],
+            "source_failures": [row["id"] for row in source_snapshots if row["status"] == "failed"],
+            "materiality_policy": policy["materiality_policy"],
+            "guardrail_policy": policy["guardrail_policy"],
+        }
+
+        if material_changes:
+            proposed_payload = (
+                proposed_probability_or_distribution
+                if proposed_probability_or_distribution is not None
+                else current.probability_or_distribution
+            )
+            proposal_rationale = rationale or self._default_autopilot_rationale(
+                changed=changed,
+                current=current,
+            )
+            model_run = self.record_model_run(
+                question_id=question_id,
+                model_type="autopilot_refresh",
+                inputs={
+                    "trigger_reason": trigger_reason,
+                    "prior_forecast_id": current.forecast_id,
+                    "source_snapshot_refs": [row["id"] for row in source_snapshots],
+                },
+                parameters={
+                    "materiality_policy": policy["materiality_policy"],
+                    "guardrail_policy": policy["guardrail_policy"],
+                },
+                output={
+                    "proposed_probability_or_distribution": proposed_payload,
+                    "rationale": proposal_rationale,
+                },
+                diagnostics=diagnostics,
+                model_version=FORECASTING_PROTOCOL_VERSION,
+                evidence_cutoff=run_at,
+            )
+            proposal = self.create_forecast_update_proposal(
+                question_id=question_id,
+                run_id=None,
+                prior_forecast_id=current.forecast_id,
+                proposed_probability_or_distribution=proposed_payload,
+                rationale=proposal_rationale,
+                source_snapshot_refs=[row["id"] for row in source_snapshots],
+                model_run_refs=[model_run["id"]],
+            )
+            if policy["mode"] == "alert_only":
+                alerts.append(
+                    self.create_alert(
+                        severity="warning",
+                        scope_type="question",
+                        scope_ref=question_id,
+                        reason=f"autopilot_material_change:{policy['id']}",
+                        recommended_action=f"Review proposal {proposal['id']} before updating the forecast.",
+                    )
+                )
+            elif policy["mode"] == "auto_commit":
+                violations = self._autopilot_guardrail_violations(
+                    policy=policy,
+                    prior_payload=current.probability_or_distribution,
+                    proposed_payload=proposed_payload,
+                    source_snapshots=source_snapshots,
+                )
+                diagnostics["guardrail_violations"] = violations
+                if violations:
+                    alerts.append(
+                        self.create_alert(
+                            severity="high",
+                            scope_type="question",
+                            scope_ref=question_id,
+                            reason=f"autopilot_guardrail_review:{policy['id']}",
+                            recommended_action=(
+                                "Autopilot update requires review: "
+                                + "; ".join(violations)
+                                + f". Approve manually with `forecast autopilot approve {proposal['id']}`."
+                            ),
+                        )
+                    )
+                else:
+                    snapshot = self.approve_forecast_update_proposal(
+                        proposal["id"],
+                        status="auto_committed",
+                    )
+            else:
+                alerts.append(
+                    self.create_alert(
+                        severity="info",
+                        scope_type="question",
+                        scope_ref=question_id,
+                        reason=f"autopilot_update_proposed:{proposal['id']}",
+                        recommended_action=f"Review with `forecast autopilot approve {proposal['id']}` or reject it.",
+                    )
+                )
+
+        run = self._record_autopilot_run(
+            policy_id=policy["id"],
+            question_id=question_id,
+            started_at=run_at,
+            finished_at=utc_now_iso(),
+            status=status,
+            trigger_reason=trigger_reason,
+            sources_checked=len(watches),
+            sources_changed=len(changed),
+            material_changes=material_changes,
+            proposal_id=proposal["id"] if proposal else None,
+            forecast_snapshot_id=snapshot.forecast_id if snapshot else None,
+            alerts_created=len(alerts),
+            diagnostics=diagnostics,
+        )
+        if proposal and proposal.get("run_id") is None:
+            with self._connect() as conn:
+                conn.execute(
+                    "UPDATE forecast_update_proposals SET run_id = ? WHERE id = ?",
+                    (run["id"], proposal["id"]),
+                )
+            proposal = self.get_forecast_update_proposal(proposal["id"])
+        return {
+            "policy": policy,
+            "run": run,
+            "source_snapshots": source_snapshots,
+            "proposal": proposal,
+            "forecast_snapshot": snapshot,
+            "model_run": model_run,
+            "alerts": alerts,
+        }
+
     def check_watched_sources(
         self,
         *,
@@ -3612,6 +4314,155 @@ class ForecastLedger:
                 ),
             )
         return self.list_scheduled_review_runs(scheduled_review_id=review["id"], limit=1)[0]
+
+    def _record_source_snapshot(
+        self,
+        *,
+        question_id: str,
+        watch: dict[str, Any],
+        retrieved_at: str,
+        signature: str | None,
+        previous_signature: str | None,
+        changed: bool,
+        status: str,
+        error_message: str | None,
+    ) -> dict[str, Any]:
+        snapshot_id = f"ss_{uuid.uuid4().hex[:12]}"
+        parsed_values = {
+            "signature": signature,
+            "previous_signature": previous_signature,
+            "changed": changed,
+        }
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO source_snapshots (
+                    id, question_id, watched_source_id, source_type, source_url,
+                    retrieved_at, raw_payload_sha256, parsed_values,
+                    adapter_version, status, error_message, metadata
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    snapshot_id,
+                    question_id,
+                    watch["id"],
+                    watch["source_type"],
+                    watch["source"],
+                    retrieved_at,
+                    signature,
+                    json_dumps(parsed_values),
+                    f"{watch['source_type']}-watch-v1",
+                    status,
+                    error_message,
+                    json_dumps({"autopilot_policy_id": watch.get("metadata", {}).get("autopilot_policy_id")}),
+                ),
+            )
+        return self.list_source_snapshots(watched_source_id=watch["id"], limit=1)[0]
+
+    def _record_autopilot_run(
+        self,
+        *,
+        policy_id: str,
+        question_id: str,
+        started_at: str,
+        finished_at: str,
+        status: str,
+        trigger_reason: str,
+        sources_checked: int,
+        sources_changed: int,
+        material_changes: int,
+        proposal_id: str | None,
+        forecast_snapshot_id: str | None,
+        alerts_created: int,
+        diagnostics: dict[str, Any],
+    ) -> dict[str, Any]:
+        run_id = f"apr_{uuid.uuid4().hex[:12]}"
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO autopilot_runs (
+                    id, policy_id, question_id, started_at, finished_at, status,
+                    trigger_reason, sources_checked, sources_changed,
+                    material_changes, proposal_id, forecast_snapshot_id,
+                    alerts_created, diagnostics
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    policy_id,
+                    question_id,
+                    started_at,
+                    finished_at,
+                    status,
+                    trigger_reason,
+                    sources_checked,
+                    sources_changed,
+                    material_changes,
+                    proposal_id,
+                    forecast_snapshot_id,
+                    alerts_created,
+                    json_dumps(diagnostics),
+                ),
+            )
+        return self.list_autopilot_runs(policy_id=policy_id, limit=1)[0]
+
+    @staticmethod
+    def _autopilot_material_change(policy: dict[str, Any], changed: list[dict[str, Any]]) -> bool:
+        minimum = int((policy.get("materiality_policy") or {}).get("min_source_changes") or 1)
+        return len(changed) >= max(minimum, 1)
+
+    @staticmethod
+    def _default_autopilot_rationale(
+        *,
+        changed: list[dict[str, Any]],
+        current: ForecastSnapshot,
+    ) -> str:
+        drivers = ", ".join(
+            f"{row['source_type']}:{row['watched_source_id']}"
+            for row in changed[:3]
+        )
+        return (
+            "Autopilot detected material watched-source changes "
+            f"({drivers or 'source change'}) after prior forecast {current.forecast_id}. "
+            "This proposal preserves the previous probability until an explicit model or operator "
+            "adjustment supplies a different distribution."
+        )
+
+    def _autopilot_guardrail_violations(
+        self,
+        *,
+        policy: dict[str, Any],
+        prior_payload: Any,
+        proposed_payload: Any,
+        source_snapshots: list[dict[str, Any]],
+    ) -> list[str]:
+        guardrails = policy.get("guardrail_policy") or {}
+        violations: list[str] = []
+        if guardrails.get("require_no_critical_source_failures", True):
+            failures = [row["id"] for row in source_snapshots if row.get("status") == "failed"]
+            if failures:
+                violations.append("critical source failures: " + ", ".join(failures))
+        required_sources = int(guardrails.get("min_independent_sources_for_auto_commit") or 0)
+        successful_sources = len([row for row in source_snapshots if row.get("status") == "success"])
+        if required_sources and successful_sources < required_sources:
+            violations.append(
+                f"successful sources {successful_sources} below required {required_sources}"
+            )
+        max_delta = guardrails.get("max_single_run_probability_delta")
+        if max_delta is None:
+            max_delta = guardrails.get("max_auto_delta")
+        if max_delta is not None:
+            prior_probability = self._numeric_probability(prior_payload)
+            proposed_probability = self._numeric_probability(proposed_payload)
+            if prior_probability is not None and proposed_probability is not None:
+                delta = abs(proposed_probability - prior_probability)
+                if delta > float(max_delta):
+                    violations.append(
+                        f"proposed probability delta {delta:.3f} exceeds max {float(max_delta):.3f}"
+                    )
+        return violations
 
     @staticmethod
     def _is_learning_alert_reason(reason: str | None) -> bool:
@@ -3949,6 +4800,9 @@ class ForecastLedger:
         schedules = self.list_scheduled_reviews()
         scheduled_review_runs = self.list_scheduled_review_runs(limit=1000)
         watched_sources = self.list_watched_sources(status=None)
+        autopilot_policies = self.list_autopilot_policies(enabled_only=False)
+        autopilot_runs = self.list_autopilot_runs(limit=1000)
+        forecast_update_proposals = self.list_forecast_update_proposals(status=None, limit=1000)
         alerts = self.list_alerts(unresolved_only=False)
         open_alert_count = sum(1 for alert in alerts if alert.acknowledged_at is None)
         open_learned_error_review_alerts = [
@@ -4085,6 +4939,14 @@ class ForecastLedger:
                 "enabled_scheduled_review_count": len([row for row in schedules if row.get("enabled")]),
                 "scheduled_review_run_count": len(scheduled_review_runs),
                 "watched_source_count": len(watched_sources),
+                "autopilot_policy_count": len(autopilot_policies),
+                "active_autopilot_policy_count": len(
+                    [row for row in autopilot_policies if row.get("enabled")]
+                ),
+                "autopilot_run_count": len(autopilot_runs),
+                "pending_autopilot_proposal_count": len(
+                    [row for row in forecast_update_proposals if row.get("status") == "pending"]
+                ),
                 "alert_count": len(alerts),
                 "open_alert_count": open_alert_count,
                 "open_learned_error_review_alert_count": len(open_learned_error_review_alerts),
@@ -4104,6 +4966,7 @@ class ForecastLedger:
         assumptions = self.list_assumptions(question_id)
         reference_classes = self.list_reference_classes(question_id)
         model_runs = self.list_model_runs(question_id)
+        source_snapshots = self.list_source_snapshots(question_id=question_id, limit=1000)
         watched_sources = self.list_watched_sources(scope_type="question", scope_ref=question_id, status=None)
         scheduled_reviews = [
             row
@@ -4115,6 +4978,9 @@ class ForecastLedger:
             for review in scheduled_reviews
             for run in self.list_scheduled_review_runs(scheduled_review_id=review["id"], limit=100)
         ]
+        autopilot_policies = self.list_autopilot_policies(question_id=question_id, enabled_only=False)
+        autopilot_runs = self.list_autopilot_runs(question_id=question_id, limit=100)
+        forecast_update_proposals = self.list_forecast_update_proposals(question_id=question_id, status=None, limit=100)
         postmortems = self.list_postmortems(question_id, include_invalidated=True)
         baselines = self.list_baseline_comparisons(question_id)
         resolution = self.get_latest_resolution(question_id)
@@ -4144,9 +5010,13 @@ class ForecastLedger:
                     "assumptions": assumptions,
                     "reference_classes": reference_classes,
                     "model_runs": model_runs,
+                    "source_snapshots": source_snapshots,
                     "watched_sources": watched_sources,
                     "scheduled_reviews": scheduled_reviews,
                     "scheduled_review_runs": scheduled_review_runs,
+                    "autopilot_policies": autopilot_policies,
+                    "autopilot_runs": autopilot_runs,
+                    "forecast_update_proposals": forecast_update_proposals,
                     "baseline_comparisons": baselines,
                     "resolution": self._resolution_to_dict(resolution) if resolution else None,
                     "scores": [self._score_to_dict(score) for score in scores],
@@ -4251,6 +5121,23 @@ class ForecastLedger:
                 )
         else:
             lines.append("- None")
+        lines.extend(["", "## Autopilot"])
+        if autopilot_policies:
+            for item in autopilot_policies:
+                lines.append(
+                    f"- {item['id']} mode={item['mode']} cadence={item['cadence']} "
+                    f"enabled={item['enabled']}"
+                )
+        else:
+            lines.append("- None")
+        if forecast_update_proposals:
+            lines.append("")
+            lines.append("### Update Proposals")
+            for item in forecast_update_proposals:
+                lines.append(
+                    f"- {item['id']} {item['status']}: prior={item['prior_forecast_id']} "
+                    f"run={item['run_id']}"
+                )
         lines.extend(["", "## Resolution"])
         if resolution:
             lines.append(
@@ -4303,9 +5190,13 @@ class ForecastLedger:
                         for question in questions
                     ],
                     "ingest_candidates": self.list_ingest_candidates(),
+                    "source_snapshots": self.list_source_snapshots(),
                     "watched_sources": self.list_watched_sources(status=None),
                     "scheduled_reviews": self.list_scheduled_reviews(),
                     "scheduled_review_runs": self.list_scheduled_review_runs(limit=1000),
+                    "autopilot_policies": self.list_autopilot_policies(enabled_only=False),
+                    "autopilot_runs": self.list_autopilot_runs(limit=1000),
+                    "forecast_update_proposals": self.list_forecast_update_proposals(status=None),
                     "domain_error_profiles": self.list_domain_error_profiles(),
                     "alerts": [alert.__dict__ for alert in self.list_alerts(unresolved_only=False)],
                 }
@@ -4339,8 +5230,12 @@ class ForecastLedger:
             for key in (
                 "ingest_candidates",
                 "watched_sources",
+                "source_snapshots",
                 "scheduled_reviews",
                 "scheduled_review_runs",
+                "autopilot_policies",
+                "autopilot_runs",
+                "forecast_update_proposals",
                 "domain_error_profiles",
                 "alerts",
             )
@@ -4381,6 +5276,14 @@ class ForecastLedger:
             )
             self._import_packet_rows(
                 conn,
+                "source_snapshots",
+                packet.get("source_snapshots"),
+                conflict=conflict,
+                summary=summary,
+                seen=seen,
+            )
+            self._import_packet_rows(
+                conn,
                 "scheduled_reviews",
                 packet.get("scheduled_reviews"),
                 conflict=conflict,
@@ -4391,6 +5294,30 @@ class ForecastLedger:
                 conn,
                 "scheduled_review_runs",
                 packet.get("scheduled_review_runs"),
+                conflict=conflict,
+                summary=summary,
+                seen=seen,
+            )
+            self._import_packet_rows(
+                conn,
+                "autopilot_policies",
+                packet.get("autopilot_policies"),
+                conflict=conflict,
+                summary=summary,
+                seen=seen,
+            )
+            self._import_packet_rows(
+                conn,
+                "autopilot_runs",
+                packet.get("autopilot_runs"),
+                conflict=conflict,
+                summary=summary,
+                seen=seen,
+            )
+            self._import_packet_rows(
+                conn,
+                "forecast_update_proposals",
+                packet.get("forecast_update_proposals"),
                 conflict=conflict,
                 summary=summary,
                 seen=seen,
@@ -4458,8 +5385,12 @@ class ForecastLedger:
             ("forecast_corrections", "corrections"),
             ("baseline_comparisons", "baseline_comparisons"),
             ("watched_sources", "watched_sources"),
+            ("source_snapshots", "source_snapshots"),
             ("scheduled_reviews", "scheduled_reviews"),
             ("scheduled_review_runs", "scheduled_review_runs"),
+            ("autopilot_policies", "autopilot_policies"),
+            ("autopilot_runs", "autopilot_runs"),
+            ("forecast_update_proposals", "forecast_update_proposals"),
             ("domain_error_profiles", "domain_error_profiles"),
         ):
             self._import_packet_rows(conn, table, packet.get(key), conflict=conflict, summary=summary, seen=seen)
@@ -6159,6 +7090,41 @@ class ForecastLedger:
     def _row_to_watched_source(self, row: sqlite3.Row) -> dict[str, Any]:
         data = dict(row)
         data["metadata"] = json_loads(data["metadata"], {})
+        return data
+
+    def _row_to_source_snapshot(self, row: sqlite3.Row) -> dict[str, Any]:
+        data = dict(row)
+        data["parsed_values"] = json_loads(data["parsed_values"], {})
+        data["metadata"] = json_loads(data["metadata"], {})
+        return data
+
+    def _row_to_autopilot_policy(self, row: sqlite3.Row) -> dict[str, Any]:
+        data = dict(row)
+        data["enabled"] = bool(data["enabled"])
+        data["materiality_policy"] = json_loads(data["materiality_policy"], {})
+        data["guardrail_policy"] = json_loads(data["guardrail_policy"], {})
+        data["notification_policy"] = json_loads(data["notification_policy"], {})
+        return data
+
+    def _row_to_autopilot_run(self, row: sqlite3.Row) -> dict[str, Any]:
+        data = dict(row)
+        data["diagnostics"] = json_loads(data["diagnostics"], {})
+        return data
+
+    def _row_to_forecast_update_proposal(self, row: sqlite3.Row) -> dict[str, Any]:
+        data = dict(row)
+        data["proposed_probability_or_distribution"] = json_loads(
+            data["proposed_probability_or_distribution"],
+            None,
+        )
+        for field in (
+            "evidence_refs",
+            "source_snapshot_refs",
+            "model_run_refs",
+            "assumption_refs",
+            "reference_class_refs",
+        ):
+            data[field] = json_loads(data[field], [])
         return data
 
     def _row_to_backtest_case(self, row: sqlite3.Row) -> dict[str, Any]:
