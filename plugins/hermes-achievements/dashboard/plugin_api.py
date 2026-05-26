@@ -17,8 +17,11 @@ try:
 except ImportError:
     import os as _os
     def get_hermes_home() -> Path:  # type: ignore[misc]
-        val = (_os.environ.get("HERMES_HOME") or "").strip()
-        return Path(val) if val else Path.home() / ".hermes"
+        for env_name in ("SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME"):
+            val = (_os.environ.get(env_name) or "").strip()
+            if val:
+                return Path(val)
+        return Path.home() / ".superforecasting-agent"
 
 try:
     from fastapi import APIRouter

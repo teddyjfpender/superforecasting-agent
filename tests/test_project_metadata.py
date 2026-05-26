@@ -177,6 +177,8 @@ def test_achievements_plugin_visible_copy_is_forecast_native():
     assert "Runtime Infrastructure" in text
     assert "distinct agent tools used in one session" in text
     assert "$SUPERFORECASTING_AGENT_HOME/plugins/hermes-achievements" in text
+    assert '("SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME")' in text
+    assert 'Path.home() / ".superforecasting-agent"' in text
     assert "superforecasting-agent dashboard" in text
     assert "Hermes Native" not in text
     assert "Hermes tools" not in text
