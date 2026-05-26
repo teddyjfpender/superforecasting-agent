@@ -32,7 +32,7 @@ python -m superforecasting_agent status
 For this handoff, the verified implementation snapshot is:
 
 ```text
-7d9263be3a64 Point public docs metadata at fork pages
+13c24975bd38 Use fork-native generated LLM docs metadata
 ```
 
 Before inviting a new cohort, record the exact commit testers will use:
@@ -141,7 +141,7 @@ common workflow checks.
 ## Smoke Evidence
 
 Latest consolidated tester handoff evidence ran with a temporary clean ledger on
-the implementation tree committed as `7d9263be3a64`.
+the implementation tree committed as `13c24975bd38`.
 
 It verified:
 
@@ -164,11 +164,14 @@ It verified:
   schedules, postmortems, calibration lessons, and domain/topic error profiles.
 - Dashboard forecast API and TUI forecast panel test coverage.
 - The consolidated `python3 scripts/tester_handoff_check.py` gate passed for the
-  `7d9263be3a64` implementation tree with 176 focused tests, the clean smoke
-  path, and `git diff --check`; the smoke output reported
+  `13c24975bd38` implementation tree with 177 focused tests, the clean smoke
+  path, and `git diff --check`; the smoke output reported 52 source adapters,
+  5 benchmark datasets, `pilot_report_checks: 9/9`,
+  `packet_import_questions: 2`, `pilot_aggregate_live_scores: 1`,
   `agent_protocol_prompt_packets: 465`,
   `agent_protocol_suite_scored_cases: 465`, `performance_runs: 6`,
-  `readiness_gaps: 1`, `readiness_agent_protocol_scores: 465`, and
+  `readiness_gaps: 1`, `readiness_agent_protocol_scores: 465`,
+  `live_baseline_comparisons: 1`, and
   `doctor_status: benchmark_evidence_ready_live_claim_unproven`.
 - The dashboard Forecast Desk route now uses forecast-native translation keys
   (`forecastDesk`, `resumeInDesk`) while preserving `/chat` as a compatibility
