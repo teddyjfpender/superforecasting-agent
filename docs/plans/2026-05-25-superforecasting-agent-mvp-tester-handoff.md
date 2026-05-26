@@ -29,11 +29,14 @@ superforecasting-agent
 python -m superforecasting_agent status
 ```
 
-For this handoff, the verified implementation snapshot is:
+For this handoff, the latest full tester gate was verified on:
 
 ```text
 13c24975bd38 Use fork-native generated LLM docs metadata
 ```
+
+The moving `superforecasting-agent-snapshot` branch may contain later focused
+cleanup commits; rerun the operator gate before pinning a newer cohort hash.
 
 Before inviting a new cohort, record the exact commit testers will use:
 
