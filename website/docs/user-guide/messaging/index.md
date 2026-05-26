@@ -124,21 +124,21 @@ superforecasting-agent gateway status       # Check default service status
 superforecasting-agent gateway status --system         # Linux only: inspect the system service explicitly
 ```
 
-## Chat Commands (Inside Messaging)
+## Forecast Session Commands (Inside Messaging)
 
 | Command | Description |
 |---------|-------------|
 | `/new` or `/reset` | Start a fresh forecast session |
 | `/model [provider:model]` | Show or change the model (supports `provider:model` syntax) |
-| `/personality [name]` | Set a personality |
-| `/retry` | Retry the last message |
-| `/undo` | Remove the last exchange |
+| `/style [name]` | Adjust forecast style; `/personality` remains a legacy alias |
+| `/retry` | Retry the last forecast note |
+| `/undo` | Remove the last forecast exchange |
 | `/status` | Show session info |
 | `/whoami` | Show your slash command access on this scope (admin / user / unrestricted) |
-| `/stop` | Stop the running agent |
+| `/stop` | Stop the running forecast task |
 | `/approve` | Approve a pending dangerous command |
 | `/deny` | Reject a pending dangerous command |
-| `/sethome` | Set this conversation as the home delivery channel |
+| `/sethome` | Set this conversation as the scheduled forecast-review delivery channel |
 | `/compress` | Manually compress research-session context |
 | `/title [name]` | Set or show the session title |
 | `/resume [name]` | Resume a previously named session |
@@ -151,7 +151,7 @@ superforecasting-agent gateway status --system         # Linux only: inspect the
 | `/reload-mcp` | Reload MCP servers from config |
 | `/update` | Update Superforecasting Agent to the latest version |
 | `/help` | Show available commands |
-| `/<skill-name>` | Invoke any installed skill |
+| `/<skill-name>` | Invoke any installed skill for forecast-support work |
 
 ## Session Management
 

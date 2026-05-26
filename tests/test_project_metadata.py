@@ -1039,6 +1039,7 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
         "website/docs/user-guide/features/personality.md",
+        "website/docs/user-guide/messaging/index.md",
         "website/docs/user-guide/tui.md",
         "website/docs/reference/slash-commands.md",
         "web/src/themes/presets.ts",
@@ -1052,6 +1053,8 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
     assert "Forecast Style & SOUL.md" in text
     assert "`/style` is a session-level overlay" in text
     assert "legacy compatibility alias for `/style`" in text
+    assert "| `/style [name]` | Adjust forecast style; `/personality` remains a legacy alias |" in text
+    assert "## Forecast Session Commands (Inside Messaging)" in text
     assert "Switching forecast styles with commands" in text
     assert "/style concise" in text
     assert "| `/style [name]` | Switch forecast style overlays" in text
@@ -1063,6 +1066,8 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
 
     assert "Personality & SOUL.md" not in text
     assert "Switching personalities with commands" not in text
+    assert "| `/personality [name]` | Set a personality |" not in text
+    assert "## Chat Commands (Inside Messaging)" not in text
     assert "/personality concise" not in text
     assert "/personality skeptical" not in text
     assert "/personality teacher" not in text
