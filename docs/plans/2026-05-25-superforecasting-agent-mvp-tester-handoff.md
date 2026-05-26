@@ -148,8 +148,9 @@ It verified:
 - Portfolio export/import packets, including forecast history, evidence,
   schedules, postmortems, calibration lessons, and domain/topic error profiles.
 - Dashboard forecast API and TUI forecast panel test coverage.
-- The consolidated `python3 scripts/tester_handoff_check.py` gate passed 167
-  focused tests, the clean smoke path, and `git diff --check`.
+- The consolidated `python3 scripts/tester_handoff_check.py` gate passed at
+  snapshot `819562a979d3` with 167 focused tests, the clean smoke path, and
+  `git diff --check`.
 
 This finalization pass also ran a manual clean-ledger source-tree smoke at
 `/private/tmp/sfa-smoke-20260526-0250.db` through `./forecast --db ...`:
