@@ -46,6 +46,11 @@ describe('shouldPassThroughToGlobalHandler', () => {
     expect(shouldPassThroughToGlobalHandler('f', key({ ctrl: true }), DEFAULT_VOICE_RECORD_KEY, 'inflation')).toBe(true)
     expect(shouldPassThroughToGlobalHandler('f', key({ ctrl: true }), DEFAULT_VOICE_RECORD_KEY, '/forecast review')).toBe(false)
     expect(shouldPassThroughToGlobalHandler('1', key({ meta: true }))).toBe(true)
+    expect(shouldPassThroughToGlobalHandler('', key({ meta: true }), DEFAULT_VOICE_RECORD_KEY, '', '\x1b1')).toBe(true)
+    expect(shouldPassThroughToGlobalHandler('¡', key({ meta: true }))).toBe(true)
     expect(shouldPassThroughToGlobalHandler('1', key({ meta: true }), DEFAULT_VOICE_RECORD_KEY, 'draft note')).toBe(false)
+    expect(shouldPassThroughToGlobalHandler('', key({ meta: true }), DEFAULT_VOICE_RECORD_KEY, 'draft note', '\x1b1')).toBe(
+      false
+    )
   })
 })

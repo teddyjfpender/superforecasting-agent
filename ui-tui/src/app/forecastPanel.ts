@@ -984,6 +984,11 @@ const ledgerViewShortcuts = (activeView: string): PanelSection => ({
       FORECAST_TUI_FIND_SHORTCUT.hotkey,
       `${FORECAST_TUI_FIND_SHORTCUT.label}: ${FORECAST_TUI_FIND_SHORTCUT.description}`,
       '/find <words>'
+    ],
+    [
+      '/1 … /9',
+      'portable view shortcuts for terminals that reserve Alt/Option',
+      '/1'
     ]
   ],
   title: 'View Shortcuts'

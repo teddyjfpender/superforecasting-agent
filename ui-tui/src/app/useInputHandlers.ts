@@ -253,7 +253,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       })
   }
 
-  useInput((ch, key) => {
+  useInput((ch, key, event) => {
     const live = getUiState()
 
     if (isBlocked) {
@@ -512,7 +512,9 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       return voiceRecordToggle()
     }
 
-    const forecastShortcut = cState.inputBuf.length ? null : forecastShortcutForKey(ch, key, cState.input)
+    const forecastShortcut = cState.inputBuf.length
+      ? null
+      : forecastShortcutForKey(ch, key, cState.input, event.keypress.raw)
     if (forecastShortcut) {
       cActions.setHistoryIdx(null)
       cActions.setQueueEdit(null)

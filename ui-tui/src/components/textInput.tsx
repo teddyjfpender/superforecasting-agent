@@ -833,7 +833,7 @@ export function TextInput({
       // actually get voice toggled instead of a paste (Copilot round-7
       // follow-up on #19835). The pass-through predicate is a no-op for
       // ordinary typing and plain paste when voice is unbound to 'v'.
-      if (shouldPassThroughToGlobalHandler(inp, k, voiceRecordKey, vRef.current)) {
+      if (shouldPassThroughToGlobalHandler(inp, k, voiceRecordKey, vRef.current, eventRaw)) {
         return
       }
 
@@ -1217,7 +1217,8 @@ export const shouldPassThroughToGlobalHandler = (
   input: string,
   key: Key,
   voiceRecordKey: ParsedVoiceRecordKey = DEFAULT_VOICE_RECORD_KEY,
-  currentValue = ''
+  currentValue = '',
+  raw?: string
 ): boolean =>
   (key.ctrl && input === 'c') ||
   (key.ctrl && input === 'x') ||
@@ -1227,7 +1228,7 @@ export const shouldPassThroughToGlobalHandler = (
   key.pageDown ||
   key.escape ||
   isVoiceToggleKey(key, input, voiceRecordKey) ||
-  Boolean(forecastShortcutForKey(input, key, currentValue))
+  Boolean(forecastShortcutForKey(input, key, currentValue, raw))
 
 export interface TextInputMouseApi {
   dragAt: (row: number, col: number) => void

@@ -117,6 +117,7 @@ const cleanAlt = (key: ForecastShortcutKeyEvent) =>
 const MAC_OPTION_DIGITS: Record<string, string> = {
   '¡': '1',
   '™': '2',
+  '€': '2',
   '£': '3',
   '¢': '4',
   '∞': '5',
@@ -126,19 +127,90 @@ const MAC_OPTION_DIGITS: Record<string, string> = {
   'ª': '9'
 }
 
-const cleanMacOptionDigit = (input: string, key: ForecastShortcutKeyEvent) =>
-  key.alt !== true &&
-  key.ctrl !== true &&
-  key.escape !== true &&
-  key.meta !== true &&
-  key.shift !== true &&
-  key.super !== true &&
-  MAC_OPTION_DIGITS[input]
+const MAC_OPTION_MODIFIED_DIGITS: Record<string, string> = {
+  '#': '3'
+}
+
+const digitFromCodepoint = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined
+  }
+
+  const codepoint = Number.parseInt(value, 10)
+  if (!Number.isFinite(codepoint)) {
+    return undefined
+  }
+
+  if (codepoint >= 49 && codepoint <= 57) {
+    return String.fromCharCode(codepoint)
+  }
+
+  return undefined
+}
+
+const hasAltModifier = (modifier: string | undefined): boolean => {
+  if (!modifier) {
+    return false
+  }
+
+  const value = Number.parseInt(modifier, 10)
+  return Number.isFinite(value) && ((value - 1) & 2) !== 0
+}
+
+const rawAltDigit = (raw: string | undefined): string | undefined => {
+  if (!raw) {
+    return undefined
+  }
+
+  const escape = '\x1b'
+  if (raw.length === 2 && raw[0] === escape && raw[1] && raw[1] >= '1' && raw[1] <= '9') {
+    return raw[1]
+  }
+
+  if (raw.length === 3 && raw.startsWith(escape + escape) && raw[2] && raw[2] >= '1' && raw[2] <= '9') {
+    return raw[2]
+  }
+
+  if (!raw.startsWith(`${escape}[`)) {
+    return undefined
+  }
+
+  const sequence = raw.slice(2)
+  const csiU = sequence.match(/^(\d+);(\d+)u$/)
+  if (csiU && hasAltModifier(csiU[2])) {
+    return digitFromCodepoint(csiU[1])
+  }
+
+  const modifyOtherKeys = sequence.match(/^27;(\d+);(\d+)~$/)
+  if (modifyOtherKeys && hasAltModifier(modifyOtherKeys[1])) {
+    return digitFromCodepoint(modifyOtherKeys[2])
+  }
+
+  return undefined
+}
+
+const macOptionDigit = (input: string, key: ForecastShortcutKeyEvent) => {
+  if (key.ctrl === true || key.shift === true || key.super === true) {
+    return undefined
+  }
+
+  const glyphDigit = MAC_OPTION_DIGITS[input]
+  if (glyphDigit) {
+    return glyphDigit
+  }
+
+  if (key.alt === true || key.escape === true || key.meta === true) {
+    return MAC_OPTION_MODIFIED_DIGITS[input]
+  }
+
+  return undefined
+}
 
 export const forecastShortcutForKey = (
   input: string,
   key: ForecastShortcutKeyEvent,
-  composerValue = ''
+  composerValue = '',
+  raw?: string
 ): ForecastTuiShortcut | null => {
   const ch = input.toLowerCase()
   const trimmedComposer = composerValue.trim()
@@ -153,7 +225,9 @@ export const forecastShortcutForKey = (
     return FORECAST_TUI_FIND_SHORTCUT
   }
 
-  const altDigit = cleanAlt(key) ? ch : cleanMacOptionDigit(input, key)
+  const rawDigit =
+    key.ctrl === true || key.shift === true || key.super === true ? undefined : rawAltDigit(raw)
+  const altDigit = macOptionDigit(input, key) ?? rawDigit ?? (cleanAlt(key) ? ch : undefined)
 
   if (!altDigit || trimmedComposer) {
     return null

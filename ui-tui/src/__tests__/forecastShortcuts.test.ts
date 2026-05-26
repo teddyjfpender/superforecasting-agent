@@ -18,14 +18,28 @@ describe('forecast TUI keyboard shortcuts', () => {
   it('maps macOS Option+number glyphs when Option is not configured as Meta', () => {
     expect(forecastShortcutForKey('¡', key())?.command).toBe('/questions')
     expect(forecastShortcutForKey('™', key())?.command).toBe('/ledger review')
+    expect(forecastShortcutForKey('€', key())?.command).toBe('/ledger review')
     expect(forecastShortcutForKey('¢', key())?.command).toBe('/ledger evidence')
     expect(forecastShortcutForKey('•', key())?.command).toBe('/ledger backtests')
     expect(forecastShortcutForKey('ª', key())?.command).toBe('/ledger all')
   })
 
+  it('maps macOS Option glyphs even when the terminal also marks Meta', () => {
+    expect(forecastShortcutForKey('¡', key({ meta: true }))?.command).toBe('/questions')
+    expect(forecastShortcutForKey('#', key({ meta: true }))?.command).toBe('/ledger alerts')
+  })
+
+  it('maps escape-prefixed and modified terminal encodings for Alt+number', () => {
+    expect(forecastShortcutForKey('', key({ meta: true }), '', '\x1b1')?.command).toBe('/questions')
+    expect(forecastShortcutForKey('', key({ escape: true }), '', '\x1b\x1b2')?.command).toBe('/ledger review')
+    expect(forecastShortcutForKey('', key({ meta: true }), '', '\x1b[52;3u')?.command).toBe('/ledger evidence')
+    expect(forecastShortcutForKey('', key({ meta: true }), '', '\x1b[27;3;57~')?.command).toBe('/ledger all')
+  })
+
   it('does not steal Alt+number chords while the user is drafting text', () => {
     expect(forecastShortcutForKey('1', key({ meta: true }), 'draft note')).toBeNull()
     expect(forecastShortcutForKey('¡', key(), 'draft note')).toBeNull()
+    expect(forecastShortcutForKey('', key({ meta: true }), 'draft note', '\x1b1')).toBeNull()
   })
 
   it('maps Ctrl+F to forecast search and can promote a typed phrase into /find', () => {

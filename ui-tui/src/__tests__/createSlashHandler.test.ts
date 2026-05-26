@@ -438,6 +438,35 @@ describe('createSlashHandler', () => {
     })
   })
 
+  it('routes numeric forecast view aliases as portable shortcut fallbacks', async () => {
+    const rpc = vi.fn(() =>
+      Promise.resolve({
+        summary: {
+          active_count: 1,
+          evidence_status: {
+            gaps: ['live_scored_forecasts'],
+            verdict: 'insufficient_live_evidence'
+          },
+          open_alert_count: 0,
+          product: 'Superforecasting Agent',
+          questions: [{ id: 'fq_cpi', probability: 0.61, title: 'Will the CPI release exceed consensus?' }],
+          review_queue: [],
+          review_queue_count: 0
+        }
+      })
+    )
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/4')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 20 })
+    await vi.waitFor(() => {
+      expect(ctx.transcript.panel).toHaveBeenCalledWith(
+        'Forecast Ledger',
+        expect.arrayContaining([expect.objectContaining({ title: 'Evidence Status' })])
+      )
+    })
+  })
+
   it('routes /forecast lifecycle subcommands to the forecast command RPC', async () => {
     const rpc = vi.fn((method: string) => {
       if (method === 'forecast.command') {

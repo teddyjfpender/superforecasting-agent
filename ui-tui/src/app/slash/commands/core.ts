@@ -17,6 +17,7 @@ import type {
   SessionUndoResponse
 } from '../../../gatewayTypes.js'
 import { writeClipboardText } from '../../../lib/clipboard.js'
+import { FORECAST_TUI_VIEW_SHORTCUTS, type ForecastTuiShortcut } from '../../../lib/forecastShortcuts.js'
 import { writeOsc52Clipboard } from '../../../lib/osc52.js'
 import { configureDetectedTerminalKeybindings, configureTerminalKeybindings } from '../../../lib/terminalSetup.js'
 import type { Msg, PanelSection } from '../../../types.js'
@@ -156,11 +157,43 @@ const runForecastQuestionDetail = (ctx: SlashRunCtx, id: string) => {
     .catch(ctx.guardedErr)
 }
 
+const LEDGER_VIEW_WORDS = new Set([
+  'alerts',
+  'all',
+  'backtests',
+  'book',
+  'calibration',
+  'dashboard',
+  'desk',
+  'evidence',
+  'learning',
+  'overview',
+  'questions',
+  'review',
+  'schedules',
+  'sources',
+  'state',
+  'store'
+])
+
+const searchNormalizeForLimit = (view: string) => {
+  const first = view.trim().toLowerCase().split(/\s+/)[0] || 'book'
+  return first === 'search' || !LEDGER_VIEW_WORDS.has(first)
+}
+
 const renderForecastLedgerView = (response: ForecastDashboardResponse, view: string, ctx: SlashRunCtx) => {
   if (response.summary) {
     updateForecastDeskState(response)
   }
   ctx.transcript.panel('Forecast Ledger', forecastLedgerViewSections(response, view))
+}
+
+const runForecastLedgerView = (view: string, ctx: SlashRunCtx) => {
+  const limit = searchNormalizeForLimit(view) ? 75 : 20
+  ctx.gateway
+    .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit })
+    .then(ctx.guarded<ForecastDashboardResponse>(r => renderForecastLedgerView(r, view, ctx)))
+    .catch(ctx.guardedErr)
 }
 
 const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
@@ -212,6 +245,28 @@ const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
     )
     .catch(ctx.guardedErr)
 }
+
+const runForecastViewShortcut = (shortcut: ForecastTuiShortcut, ctx: SlashRunCtx) => {
+  if (shortcut.command === '/questions') {
+    return runForecastBook('', ctx)
+  }
+
+  if (shortcut.command.startsWith('/ledger ')) {
+    return runForecastLedgerView(shortcut.command.slice('/ledger '.length), ctx)
+  }
+
+  ctx.transcript.sys(`forecast view shortcut unavailable: ${shortcut.label}`)
+}
+
+const forecastViewShortcutCommands: SlashCommand[] = FORECAST_TUI_VIEW_SHORTCUTS.map(shortcut => {
+  const digit = shortcut.hotkey.match(/([1-9])$/)?.[1] ?? shortcut.id
+
+  return {
+    help: `open forecast ${shortcut.label} view`,
+    name: digit,
+    run: (_arg, ctx) => runForecastViewShortcut(shortcut, ctx)
+  }
+})
 
 type ForecastRefResolution =
   | { id: string; response: ForecastDashboardResponse; status: 'resolved' }
@@ -302,31 +357,8 @@ const splitForecastRefAndRest = (arg: string): { ref: string; rest: string } => 
   }
 }
 
-const LEDGER_VIEW_WORDS = new Set([
-  'alerts',
-  'all',
-  'backtests',
-  'book',
-  'calibration',
-  'dashboard',
-  'desk',
-  'evidence',
-  'learning',
-  'overview',
-  'questions',
-  'review',
-  'schedules',
-  'sources',
-  'state',
-  'store'
-])
-
-const searchNormalizeForLimit = (view: string) => {
-  const first = view.trim().toLowerCase().split(/\s+/)[0] || 'book'
-  return first === 'search' || !LEDGER_VIEW_WORDS.has(first)
-}
-
 export const coreCommands: SlashCommand[] = [
+  ...forecastViewShortcutCommands,
   {
     help: 'list commands + hotkeys',
     name: 'help',
@@ -351,6 +383,7 @@ export const coreCommands: SlashCommand[] = [
             ['/heuristic [random|daily]', 'show a random or daily forecasting maxim'],
             ['/questions [row|list N|words]', 'show current forecast questions, search by words, or drill into a row'],
             ['/ledger [view|search words]', 'jump between forecast book, review, alerts, evidence, learning, schedules, or search'],
+            ['/1 … /9', 'portable forecast view shortcuts when Alt/Option is reserved by the terminal'],
             ['/find <words>', 'search active forecasts and review queue without needing a forecast id'],
             ['/open <row|id|words>', 'open one matching forecast ledger record'],
             ['/note <row|words> -- <evidence>', 'append evidence after resolving a row/search to an id'],
@@ -505,11 +538,7 @@ export const coreCommands: SlashCommand[] = [
     name: 'ledger',
     run: (arg, ctx) => {
       const view = arg.trim() || 'book'
-      const limit = searchNormalizeForLimit(view) ? 75 : 20
-      ctx.gateway
-        .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit })
-        .then(ctx.guarded<ForecastDashboardResponse>(r => renderForecastLedgerView(r, view, ctx)))
-        .catch(ctx.guardedErr)
+      runForecastLedgerView(view, ctx)
     }
   },
 
