@@ -29,7 +29,13 @@ superforecasting-agent
 python -m superforecasting_agent status
 ```
 
-Before inviting a cohort, record the exact commit testers will use:
+For this handoff, the verified implementation snapshot is:
+
+```text
+7aa1f1d168ef Use desk route for dashboard Forecast Desk
+```
+
+Before inviting a new cohort, record the exact commit testers will use:
 
 ```bash
 git rev-parse --short=12 HEAD
@@ -124,15 +130,18 @@ superforecasting-agent --tui
 superforecasting-agent dashboard --no-open
 ```
 
+In the dashboard, use `/desk` as the primary Forecast Desk route. `/chat`
+remains a compatibility alias for older links and plugins.
+
 In the TUI, `/forecast` opens the forecast desk panel and `/schedule`,
 `/backtest`, `/calibration`, `/alerts`, `/doctor`, and `/readiness` jump to
 common workflow checks.
 
 ## Smoke Evidence
 
-Latest consolidated tester handoff evidence ran with a temporary clean ledger at
-code snapshot `1363a6ef0fe9`. The final handoff commit may be a later docs-only
-commit that records this gate output.
+Latest consolidated tester handoff evidence ran with a temporary clean ledger on
+the implementation tree committed as `7aa1f1d168ef`. Later docs-only commits may
+record that gate output.
 
 It verified:
 
@@ -148,9 +157,9 @@ It verified:
 - Portfolio export/import packets, including forecast history, evidence,
   schedules, postmortems, calibration lessons, and domain/topic error profiles.
 - Dashboard forecast API and TUI forecast panel test coverage.
-- The consolidated `python3 scripts/tester_handoff_check.py` gate passed at
-  snapshot `819562a979d3` with 167 focused tests, the clean smoke path, and
-  `git diff --check`.
+- The consolidated `python3 scripts/tester_handoff_check.py` gate passed for the
+  `7aa1f1d168ef` implementation tree with 167 focused tests, the clean smoke
+  path, and `git diff --check`.
 
 This finalization pass also ran a manual clean-ledger source-tree smoke at
 `/private/tmp/sfa-smoke-20260526-0250.db` through `./forecast --db ...`:
