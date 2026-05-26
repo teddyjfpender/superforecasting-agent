@@ -255,8 +255,8 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 ```
 /new (/reset)        Fresh forecast session
 /clear               Clear screen + new session (CLI)
-/retry               Resend last message
-/undo                Remove last exchange
+/retry               Resend last forecast note
+/undo                Remove last forecast exchange
 /title [name]        Name the forecast session
 /compress            Manually compress context
 /stop                Kill background processes

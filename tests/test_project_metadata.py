@@ -941,6 +941,7 @@ def test_tui_visible_affordances_are_forecast_native():
     assert "forecast session usage" in text
     assert "style:" in text
     assert "postmortems are part of the model" in text
+    assert "undo last forecast exchange" in text
     assert "forging session…" not in text
     assert "return sys('session not ready yet')" not in text
     assert "no active session — nothing to save" not in text
@@ -958,6 +959,7 @@ def test_tui_visible_affordances_are_forecast_native():
     assert "switch personality for this session" not in text
     assert "personality:" not in text
     assert "local fortune" not in text
+    assert "undo last exchange" not in text
     assert "random or daily local fortune" not in text
     assert "name: 'fortune'" not in text
     assert "clean refactor" not in text
@@ -1013,13 +1015,19 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert 'CommandDef("style"' in commands
     assert 'aliases=("personality",)' in commands
     assert "Switch forecast style overlay" in commands
+    assert "Start a new forecast session (fresh session ID + history)" in commands
+    assert "Retry the last forecast note" in commands
     assert "Forecast style set to" in cli
     assert "Unknown forecast style" in cli
     assert "Unknown personality" not in cli
+    assert "Retry the last forecast note by removing the last exchange" in cli
     assert "destination forecast conversation" in cli
     assert "Forecast agent is busy" in cli
     assert "Set this conversation as the scheduled forecast-review delivery channel" in commands
     assert "Set this conversation as the home delivery channel" not in commands
+    assert "Start a new session (fresh session ID + history)" not in commands
+    assert "Retry the last message" not in commands
+    assert "Retry the last user message by removing the last exchange" not in cli
     assert "destination chat" not in cli
     assert "system prompt belongs to the core forecast protocol" in conversation_loop
     assert "system prompt is Hermes's territory" not in conversation_loop
@@ -1058,6 +1066,8 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
     assert "Forecast Style & SOUL.md" in text
     assert "`/style` is a session-level overlay" in text
     assert "legacy compatibility alias for `/style`" in text
+    assert "Start a new forecast session (fresh session ID + history)" in text
+    assert "| `/retry` | Retry the last forecast note |" in text
     assert "| `/style [name]` | Adjust forecast style; `/personality` remains a legacy alias |" in text
     assert "## Forecast Session Commands (Inside Messaging)" in text
     assert "Switching forecast styles with commands" in text
@@ -1070,6 +1080,8 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
     assert "Warm crimson and bronze for focused review" in text
 
     assert "Personality & SOUL.md" not in text
+    assert "Start a new session (fresh session ID + history)" not in text
+    assert "Retry the last message" not in text
     assert "Switching personalities with commands" not in text
     assert "| `/personality [name]` | Set a personality |" not in text
     assert "## Chat Commands (Inside Messaging)" not in text
@@ -2847,8 +2859,12 @@ def test_superforecasting_agent_skill_paths_are_fork_native():
     assert "`/personality` remains a legacy alias" in text
     assert "Summarize evidence and base rates for forecast fq_123" in text
     assert "Set current conversation as scheduled forecast-review delivery channel" in text
+    assert "Resend last forecast note" in text
+    assert "Remove last forecast exchange" in text
     assert "No subcommand opens the forecast desk" not in text
     assert "/personality [name]  Set personality" not in text
+    assert "Resend last message" not in text
+    assert "Remove last exchange" not in text
     assert "Build REST API for user management" not in text
     assert "Build React dashboard for user management" not in text
     assert "Set up CI/CD for ~/myapp" not in text

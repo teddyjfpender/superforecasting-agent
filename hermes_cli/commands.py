@@ -73,11 +73,11 @@ COMMAND_CATEGORY_ORDER: tuple[str, ...] = (
 
 COMMAND_REGISTRY: list[CommandDef] = [
     # Session
-    CommandDef("new", "Start a new session (fresh session ID + history)", "Session",
+    CommandDef("new", "Start a new forecast session (fresh session ID + history)", "Session",
                aliases=("reset",), args_hint="[name]"),
     CommandDef("topic", "Enable or inspect Telegram DM topic sessions", "Session",
                gateway_only=True, args_hint="[off|help|session-id]"),
-    CommandDef("clear", "Clear screen and start a new session", "Session",
+    CommandDef("clear", "Clear screen and start a new forecast session", "Session",
                cli_only=True),
     CommandDef("redraw", "Force a full UI repaint (recovers from terminal drift)", "Session",
                cli_only=True),
@@ -85,9 +85,9 @@ COMMAND_REGISTRY: list[CommandDef] = [
                cli_only=True),
     CommandDef("save", "Save the current forecast transcript", "Session",
                cli_only=True),
-    CommandDef("retry", "Retry the last message (resend to agent)", "Session"),
+    CommandDef("retry", "Retry the last forecast note", "Session"),
     CommandDef("undo", "Remove the last user/forecaster exchange", "Session"),
-    CommandDef("title", "Set a title for the current session", "Session",
+    CommandDef("title", "Set a title for the current forecast session", "Session",
                args_hint="[name]"),
     CommandDef("handoff", "Hand off this session to an optional messaging compatibility surface", "Compatibility",
                args_hint="<platform>", cli_only=True),

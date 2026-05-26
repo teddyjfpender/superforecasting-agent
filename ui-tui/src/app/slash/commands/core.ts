@@ -877,7 +877,7 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'undo last exchange',
+    help: 'undo last forecast exchange',
     name: 'undo',
     run: (_arg, ctx) => {
       if (!ctx.sid) {

@@ -6735,10 +6735,10 @@ class HermesCLI:
             print(f"Failed to save: {e}")
     
     def retry_last(self):
-        """Retry the last user message by removing the last exchange and re-sending.
+        """Retry the last forecast note by removing the last exchange and re-sending.
         
         Removes the last forecaster response (and any tool-call messages) and
-        the last user message, then re-sends that user message to the agent.
+        the last user message, then re-sends that forecast note to the agent.
         Returns the message to re-send, or None if there's nothing to retry.
         """
         if not self.conversation_history:

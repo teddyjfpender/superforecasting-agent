@@ -78,13 +78,13 @@ Type `/` in the CLI to open the autocomplete menu. Built-in commands are case-in
 
 | Command | Description |
 |---------|-------------|
-| `/new [name]` (alias: `/reset`) | Start a new session (fresh session ID + history). Optional `[name]` sets the initial session title — e.g. `/new my-experiment` opens a fresh session already titled `my-experiment` so it's easy to find later with `/resume` or `/sessions`. |
-| `/clear` | Clear screen and start a new session |
+| `/new [name]` (alias: `/reset`) | Start a new forecast session (fresh session ID + history). Optional `[name]` sets the initial session title — e.g. `/new policy-review` opens a fresh session already titled `policy-review` so it's easy to find later with `/resume` or `/sessions`. |
+| `/clear` | Clear screen and start a new forecast session |
 | `/history` | Show forecast transcript history |
 | `/save` | Save the current forecast transcript |
-| `/retry` | Retry the last message (resend to agent) |
+| `/retry` | Retry the last forecast note |
 | `/undo` | Remove the last user/forecaster exchange |
-| `/title` | Set a title for the current session (usage: /title My Session Name) |
+| `/title` | Set a title for the current forecast session (usage: /title Policy Review) |
 | `/compress [focus topic]` | Manually compress forecast transcript context (flush memories + summarize). Optional focus topic narrows what the summary preserves. |
 | `/rollback` | List or restore filesystem checkpoints (usage: /rollback [number]) |
 | `/snapshot [create\|restore <id>\|prune]` (alias: `/snap`) | Create or restore runtime config/state snapshots. `create [label]` saves a snapshot, `restore <id>` reverts to it, `prune [N]` removes old snapshots, or list all with no args. |
@@ -257,8 +257,8 @@ The messaging gateway supports the following built-in commands inside Telegram, 
 | `/style [name]` | Switch forecast style overlays for the session. |
 | `/personality [name]` | Adjust a compatibility persona overlay for the session; forecast protocol prompts remain authoritative. |
 | `/fast [normal\|fast\|status]` | Toggle fast mode — OpenAI Priority Processing / Anthropic Fast Mode. |
-| `/retry` | Retry the last message. |
-| `/undo` | Remove the last exchange. |
+| `/retry` | Retry the last forecast note. |
+| `/undo` | Remove the last forecast exchange. |
 | `/sethome` (alias: `/set-home`) | Mark the current conversation as the platform home channel for forecast review and cron deliveries. |
 | `/compress [focus topic]` | Manually compress research-session context. Optional focus topic narrows what the summary preserves. |
 | `/topic [off\|help\|session-id]` | **Telegram DM only.** Manage user-managed multi-session topic mode. `/topic` enables it or shows status; `/topic off` disables it and clears bindings; `/topic help` shows usage; `/topic <session-id>` inside a topic restores a previous session. See [Multi-session DM mode](/user-guide/messaging/telegram#multi-session-dm-mode-topic). |
