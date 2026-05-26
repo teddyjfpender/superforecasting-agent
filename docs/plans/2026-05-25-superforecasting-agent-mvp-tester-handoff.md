@@ -32,7 +32,7 @@ python -m superforecasting_agent status
 For this handoff, the verified implementation snapshot is:
 
 ```text
-1b876f7e46ab Use Forecast Desk translation keys
+52b9800486d2 Route legacy hermes entrypoint through forecast CLI
 ```
 
 Before inviting a new cohort, record the exact commit testers will use:
@@ -45,6 +45,7 @@ In a raw source checkout before installation, use the source-tree launchers:
 
 ```bash
 ./forecast status
+./superforecast status
 ./superforecasting-agent status
 python -m superforecasting_agent status
 ```
@@ -140,8 +141,7 @@ common workflow checks.
 ## Smoke Evidence
 
 Latest consolidated tester handoff evidence ran with a temporary clean ledger on
-the implementation tree committed as `1b876f7e46ab`. Later docs-only commits may
-record that gate output.
+the implementation tree committed as `52b9800486d2`.
 
 It verified:
 
@@ -151,18 +151,21 @@ It verified:
 - Backtest replay on `builtin:mini-binary` with leakage checks passing.
 - Scheduled self-check with `--cadence "every 1h"`, alert creation, learning
   review counts, and durable schedule history.
-- Source-tree `./forecast`, source-tree `./superforecasting-agent`,
-  `python -m superforecasting_agent`, and the package-defined `forecast`
-  command path.
+- Source-tree `./forecast`, source-tree `./superforecast`,
+  source-tree `./superforecasting-agent`, `python -m superforecasting_agent`,
+  and the package-defined `forecast` command path.
 - Portfolio export/import packets, including forecast history, evidence,
   schedules, postmortems, calibration lessons, and domain/topic error profiles.
 - Dashboard forecast API and TUI forecast panel test coverage.
 - The consolidated `python3 scripts/tester_handoff_check.py` gate passed for the
-  `1b876f7e46ab` implementation tree with 167 focused tests, the clean smoke
+  `52b9800486d2` implementation tree with 176 focused tests, the clean smoke
   path, and `git diff --check`.
 - The dashboard Forecast Desk route now uses forecast-native translation keys
   (`forecastDesk`, `resumeInDesk`) while preserving `/chat` as a compatibility
   route alias.
+- The legacy `./hermes --help` source-tree launcher now routes through the
+  forecast-first wrapper, prints a compatibility warning, and shows the forecast
+  lifecycle help without requiring inherited optional runtime dependencies.
 
 This finalization pass also ran a manual clean-ledger source-tree smoke at
 `/private/tmp/sfa-smoke-20260526-0250.db` through `./forecast --db ...`:
