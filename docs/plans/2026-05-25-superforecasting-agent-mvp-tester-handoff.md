@@ -177,7 +177,9 @@ latest evidence, while `/open <row|id|words>` opens one unambiguous match. For
 quick evidence and probability maintenance, testers can run `/note
 <row|words> -- <evidence>` or `/revise <row|words> -- --probability <p>
 --rationale <why>` without copying the forecast id; the longer
-`/evidence-for` and `/update-for` forms remain aliases. `/book` and `/qbook` remain
+`/evidence-for` and `/update-for` forms remain aliases. In the TUI, the
+forecast book/search/detail/focused-action panels also expose clickable
+quick-edit rows that prefill those drafts into the composer. `/book` and `/qbook` remain
 compatibility aliases. `/ledger` browses forecast-store views such as book,
 review, alerts, evidence, learning, schedules, calibration, backtests, all, and
 search; `/desk`, `/store`, and `/state` are aliases. `/forecast` opens the
@@ -296,9 +298,9 @@ It verified:
 - Forecast question shortcut coverage for `/questions`, `/questions <row>`,
   `/questions <words>`, `/ledger`, `/find`, `/open`, `/note`, `/revise`,
   `/evidence-for`, `/update-for`, `/book`, numbered TUI drill-down, semantic
-  search across rationale/latest evidence, row-based quick edits, classic CLI
-  drill-down/search/edit resolution, and dashboard row selection with a detail
-  panel.
+  search across rationale/latest evidence, row-based quick edits, composer
+  prefill for placeholder edit commands, classic CLI drill-down/search/edit
+  resolution, and dashboard row selection with a detail panel.
 - The consolidated `python3 scripts/tester_handoff_check.py` gate passed for the
   implementation tree with 181 focused tests, the clean smoke path, and
   `git diff --check`; the smoke output reported 52 source adapters,

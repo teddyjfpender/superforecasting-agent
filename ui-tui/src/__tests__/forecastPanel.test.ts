@@ -71,9 +71,14 @@ describe('forecast desk panel helpers', () => {
       'open full details for Will the CPI release exceed consensus?'
     ])
     expect(sections.find(section => section.title === 'Quick Edits')?.rows?.[0]).toEqual([
-      '1. inflatio',
-      '/note 1 -- <evidence>  |  /revise 1 -- --probability <p> --rationale <why>  |  Will the CPI release exceed consensus?',
-      '/questions 1'
+      '/note 1',
+      'draft evidence note for Will the CPI release exceed consensus?',
+      'draft:/note 1 -- '
+    ])
+    expect(sections.find(section => section.title === 'Quick Edits')?.rows?.[1]).toEqual([
+      '/revise 1',
+      'draft probability update for Will the CPI release exceed consensus?',
+      'draft:/revise 1 -- --probability '
     ])
   })
 
@@ -129,10 +134,15 @@ describe('forecast desk panel helpers', () => {
     expect(sections.find(section => section.title === 'Matches')?.rows?.[0]?.[2]).toBe('/questions fq_inflation001')
     expect(sections.find(section => section.title === 'Top Match Shortcuts')?.rows).toEqual([
       ['/questions fq_inflation001', 'open full ledger context for Will the CPI release exceed consensus?'],
-      ['/note fq_inflation001 -- <evidence>', 'append a timestamped evidence note without copying the id'],
+      [
+        '/note fq_inflation001 -- <evidence>',
+        'append a timestamped evidence note without copying the id',
+        'draft:/note fq_inflation001 -- '
+      ],
       [
         '/revise fq_inflation001 -- --probability <p> --rationale <why>',
-        'append an explicit probability update'
+        'append an explicit probability update',
+        'draft:/revise fq_inflation001 -- --probability '
       ],
       ['/sources --question fq_inflation001', 'plan source coverage for this question']
     ])
@@ -729,10 +739,15 @@ describe('forecast desk panel helpers', () => {
         '/questions fq_review123456',
         'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
       ],
-      ['/note fq_review123456 -- <evidence>', 'append timestamped evidence without moving probability'],
+      [
+        '/note fq_review123456 -- <evidence>',
+        'append timestamped evidence without moving probability',
+        'draft:/note fq_review123456 -- '
+      ],
       [
         '/revise fq_review123456 -- --probability <p> --rationale <why>',
-        'append a probability update after reviewing evidence'
+        'append a probability update after reviewing evidence',
+        'draft:/revise fq_review123456 -- --probability '
       ],
       ['/sources --question fq_review123456', 'plan official data, RSS/news, markets, and watched searches'],
       ['/forecast research fq_review123456', 'collect source notes and evidence without moving probability'],
@@ -755,10 +770,15 @@ describe('forecast desk panel helpers', () => {
         command: '/questions fq_review123456',
         detail: 'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
       },
-      { command: '/note fq_review123456 -- <evidence>', detail: 'append timestamped evidence without moving probability' },
+      {
+        command: '/note fq_review123456 -- <evidence>',
+        detail: 'append timestamped evidence without moving probability',
+        target: 'draft:/note fq_review123456 -- '
+      },
       {
         command: '/revise fq_review123456 -- --probability <p> --rationale <why>',
-        detail: 'append a probability update after reviewing evidence'
+        detail: 'append a probability update after reviewing evidence',
+        target: 'draft:/revise fq_review123456 -- --probability '
       }
     ])
     expect(railFocused?.rows?.[0]).toEqual([
@@ -886,11 +906,13 @@ describe('forecast desk panel helpers', () => {
     )
     expect(sections.find(section => section.title === 'Actions')?.rows?.[0]).toEqual([
       '/note fq_cpi -- <evidence>',
-      'append timestamped evidence; probability remains unchanged'
+      'append timestamped evidence; probability remains unchanged',
+      'draft:/note fq_cpi -- '
     ])
     expect(sections.find(section => section.title === 'Actions')?.rows?.[1]).toEqual([
       '/revise fq_cpi -- --probability <p> --rationale <why>',
-      'append an explicit probability update'
+      'append an explicit probability update',
+      'draft:/revise fq_cpi -- --probability '
     ])
   })
 

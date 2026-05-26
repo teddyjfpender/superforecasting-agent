@@ -2,16 +2,17 @@ import { Box, Text, useStdout } from '@hermes/ink'
 import { useEffect, useState } from 'react'
 import unicodeSpinners from 'unicode-animations'
 
-import { artWidth, forecastHero, FORECAST_HERO_WIDTH, logo, LOGO_WIDTH } from '../banner.js'
+import { artWidth, FORECAST_HERO_WIDTH, forecastHero, logo, LOGO_WIDTH } from '../banner.js'
 import { flat } from '../lib/text.js'
 import type { Theme } from '../theme.js'
 import type { PanelRow, PanelSection, SessionInfo } from '../types.js'
 
 const LOADER_TICK_MS = 120
 const PANEL_COMMAND_PLACEHOLDER_RE = /(?:<[^>]+>|\[[^\]]+\]|\.\.\.|;)/
+const PANEL_DRAFT_PREFIX = 'draft:'
 type PanelClickEvent = { cellIsBlank?: boolean; stopPropagation?: () => void }
 
-export function panelCommandTarget(candidate?: string): string | null {
+export function panelCommandTarget(candidate?: null | string): string | null {
   const command = (candidate ?? '').trim()
 
   if (!command.startsWith('/') || PANEL_COMMAND_PLACEHOLDER_RE.test(command)) {
@@ -21,7 +22,20 @@ export function panelCommandTarget(candidate?: string): string | null {
   return command
 }
 
-const rowCommandTarget = (row: PanelRow): string | null => panelCommandTarget(row[2] ?? row[0])
+export function panelDraftTarget(candidate?: null | string): string | null {
+  const value = candidate ?? ''
+  const draftStart = value.trimStart()
+
+  if (!draftStart.startsWith(PANEL_DRAFT_PREFIX)) {
+    return null
+  }
+
+  const draft = draftStart.slice(PANEL_DRAFT_PREFIX.length)
+
+  return draft.startsWith('/') ? draft : null
+}
+
+const rowTarget = (row: PanelRow): string => row[2] ?? row[0]
 
 const runPanelCommand = (
   command: string | null,
@@ -34,6 +48,19 @@ const runPanelCommand = (
 
   event?.stopPropagation?.()
   onCommandClick?.(command)
+}
+
+const runPanelDraft = (
+  draft: string | null,
+  onCommandDraft?: (command: string) => void,
+  event?: PanelClickEvent
+) => {
+  if (!draft || event?.cellIsBlank) {
+    return
+  }
+
+  event?.stopPropagation?.()
+  onCommandDraft?.(draft)
 }
 
 function InlineLoader({ label, t }: { label: string; t: Theme }) {
@@ -360,7 +387,7 @@ export function SessionPanel({ info, sid, t }: SessionPanelProps) {
   )
 }
 
-export function Panel({ onCommandClick, sections, t, title }: PanelProps) {
+export function Panel({ onCommandClick, onCommandDraft, sections, t, title }: PanelProps) {
   return (
     <Box borderColor={t.color.border} borderStyle="round" flexDirection="column" paddingX={2} paddingY={1}>
       <Box justifyContent="center" marginBottom={1}>
@@ -379,7 +406,10 @@ export function Panel({ onCommandClick, sections, t, title }: PanelProps) {
 
           {sec.rows?.map((row, ri) => {
             const [k, v] = row
-            const command = rowCommandTarget(row)
+            const target = rowTarget(row)
+            const command = panelCommandTarget(target)
+            const draft = panelDraftTarget(target)
+            const actionable = command || draft
 
             return (
               <Box
@@ -387,11 +417,13 @@ export function Panel({ onCommandClick, sections, t, title }: PanelProps) {
                 onClick={
                   command
                     ? (event: PanelClickEvent) => runPanelCommand(command, onCommandClick, event)
+                    : draft
+                      ? (event: PanelClickEvent) => runPanelDraft(draft, onCommandDraft, event)
                     : undefined
                 }
               >
                 <Text wrap="truncate">
-                  <Text color={command ? t.color.accent : t.color.muted}>{k.padEnd(20)}</Text>
+                  <Text color={actionable ? t.color.accent : t.color.muted}>{k.padEnd(20)}</Text>
                   <Text color={t.color.text}>{v}</Text>
                 </Text>
               </Box>
@@ -426,6 +458,7 @@ export function Panel({ onCommandClick, sections, t, title }: PanelProps) {
 
 interface PanelProps {
   onCommandClick?: (command: string) => void
+  onCommandDraft?: (command: string) => void
   sections: PanelSection[]
   t: Theme
   title: string

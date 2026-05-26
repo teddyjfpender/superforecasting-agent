@@ -996,6 +996,7 @@ Requirements:
 - [ ] TUI keyboard shortcuts expose those views without requiring users to type the full slash command.
 - [ ] `/open <row|id|words>` opens one matching forecast without copying an ID.
 - [ ] Evidence and update shortcuts such as `/note` and `/revise` can resolve a row/search phrase before calling the ledger workflow.
+- [ ] TUI quick-edit rows prefill incomplete `/note` and `/revise` drafts in the composer instead of submitting placeholder commands.
 - [ ] The dashboard or TUI supports direct row selection or an equivalent drill-down path.
 - [ ] The shortcut reuses the forecast ledger/dashboard summary rather than maintaining a separate question list.
 

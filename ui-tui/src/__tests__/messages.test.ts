@@ -1,9 +1,10 @@
+import { PassThrough } from 'stream'
+
 import { renderSync } from '@hermes/ink'
 import React from 'react'
-import { PassThrough } from 'stream'
 import { describe, expect, it } from 'vitest'
 
-import { panelCommandTarget } from '../components/branding.js'
+import { panelCommandTarget, panelDraftTarget } from '../components/branding.js'
 import { MessageLine } from '../components/messageLine.js'
 import { toTranscriptMessages } from '../domain/messages.js'
 import { upsert } from '../lib/messages.js'
@@ -79,6 +80,15 @@ describe('panelCommandTarget', () => {
     expect(panelCommandTarget('/questions [row|list N]')).toBeNull()
     expect(panelCommandTarget('/forecast update <id> --probability <0-1>')).toBeNull()
     expect(panelCommandTarget('1. P=0.610')).toBeNull()
+  })
+
+  it('accepts draft slash commands without submitting placeholder examples', () => {
+    expect(panelDraftTarget('draft:/note 1 -- ')).toBe('/note 1 -- ')
+    expect(panelDraftTarget('draft:/revise fq_123 -- --probability ')).toBe(
+      '/revise fq_123 -- --probability '
+    )
+    expect(panelCommandTarget('draft:/note 1 -- ')).toBeNull()
+    expect(panelDraftTarget('/note 1 -- ')).toBeNull()
   })
 })
 

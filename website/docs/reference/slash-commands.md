@@ -24,8 +24,8 @@ The forecast desk is the primary product surface. Use these before reaching for 
 | `/ledger [view\|search words]` | CLI, TUI | Browse forecast ledger views without remembering IDs. TUI views include `book`, `review`, `alerts`, `evidence`, `learning`, `schedules`, `calibration`, `backtests`, `all`, and `search <words>`. Aliases: `/desk`, `/store`, `/state`. |
 | `/find <words>` | CLI, TUI | Search active forecasts and review-queue items by title, topic, domain, latest rationale, or latest evidence. |
 | `/open <row\|id\|words>` | CLI, TUI | Open one matching forecast ledger record without copying a forecast ID. |
-| `/note <row\|words> -- <evidence>` | CLI, TUI | Resolve a row/search phrase to a forecast and append a timestamped evidence note. Alias: `/evidence-for`. |
-| `/revise <row\|words> -- <args>` | CLI, TUI | Resolve a row/search phrase to a forecast and append an explicit probability update. Alias: `/update-for`. |
+| `/note <row\|words> -- <evidence>` | CLI, TUI | Resolve a row/search phrase to a forecast and append a timestamped evidence note. In the TUI, quick-edit rows can prefill this draft into the composer. Alias: `/evidence-for`. |
+| `/revise <row\|words> -- <args>` | CLI, TUI | Resolve a row/search phrase to a forecast and append an explicit probability update. In the TUI, quick-edit rows can prefill this draft into the composer. Alias: `/update-for`. |
 | `/forecast [limit\|subcommand]` | CLI, TUI | Show the forecast dashboard or run `forecast <subcommand>` from the active session. Common subcommands include `new`, `sources`, `ingest`, `research`, `evidence`, `base-rate`, `reference-class`, `assumption`, `model`, `update`, `resolve`, `score`, `postmortem`, `calibration`, `lesson`, `review`, `watch`, `alerts`, `autopilot`, `schedule`, `self-check`, `backtest`, `performance`, `readiness`, `pilot-report`, `pilot-cohort`, `pilot-bundle`, `pilot-aggregate`, `export`, and `import packet`. |
 | `/new-forecast [args]` | TUI | Create a scoreable forecast question. Equivalent to `forecast new ...`. |
 | `/ingest [args]` | TUI | Stage a URL or file as a forecast candidate. Equivalent to `forecast ingest ...`. |
@@ -89,8 +89,8 @@ Type `/` in the CLI to open the autocomplete menu. Built-in commands are case-in
 | `/ledger [view\|search words]` (aliases: `/desk`, `/store`, `/state`) | Browse forecast ledger views and jump to book, review, alerts, evidence, learning, schedules, calibration, backtests, all, or search. |
 | `/find <words>` (aliases: `/search-forecasts`, `/lookup`) | Search active forecasts and review queue by title, topic, domain, latest rationale, or latest evidence. |
 | `/open <row\|id\|words>` (aliases: `/question`, `/show-forecast`) | Open a forecast by row number, id, short id, or search words. |
-| `/note <row\|words> -- <evidence>` (aliases: `/evidence-for`, `/note-for`) | Append an evidence note after resolving the forecast reference. |
-| `/revise <row\|words> -- <args>` (aliases: `/update-for`, `/updateq`) | Append a probability update after resolving the forecast reference. |
+| `/note <row\|words> -- <evidence>` (aliases: `/evidence-for`, `/note-for`) | Append an evidence note after resolving the forecast reference; TUI quick-edit rows can prefill the draft. |
+| `/revise <row\|words> -- <args>` (aliases: `/update-for`, `/updateq`) | Append a probability update after resolving the forecast reference; TUI quick-edit rows can prefill the draft. |
 | `/forecast [limit\|subcommand]` (alias: `/forecasts`) | Run forecast desk lifecycle commands from the active session. With no subcommand it shows the desk summary; autocomplete covers the primary lifecycle plus source, learning, schedule, pilot, and export flows: `status`, `new`, `sources`, `ingest`, `research`, `evidence`, `base-rate`, `reference-class`, `assumption`, `model`, `update`, `resolve`, `score`, `postmortem`, `calibration`, `lesson`, `review`, `watch`, `alerts`, `autopilot`, `schedule`, `self-check`, `backtest`, `performance`, `readiness`, `pilot-report`, `pilot-cohort`, `pilot-bundle`, `pilot-aggregate`, `export`, and `import packet`. |
 
 ### Session

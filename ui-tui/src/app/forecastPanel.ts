@@ -14,9 +14,12 @@ import type {
 import { FORECAST_TUI_FIND_SHORTCUT, FORECAST_TUI_VIEW_SHORTCUTS } from '../lib/forecastShortcuts.js'
 import type { PanelSection } from '../types.js'
 
+type ForecastPanelRow = NonNullable<PanelSection['rows']>[number]
+
 export interface ForecastDeskActionItem {
   command: string
   detail: string
+  target?: string
 }
 
 export interface ForecastDeskCompactItem {
@@ -32,6 +35,8 @@ export interface ForecastQuestionSearchMatch {
 }
 
 const truncate = (value: string, max: number) => (value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value)
+
+const draftTarget = (command: string) => `draft:${command}`
 
 const numberValue = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null
@@ -456,14 +461,15 @@ const addUniqueAction = (
   seen: Set<string>,
   command: string,
   detail: string,
-  max: number
+  max: number,
+  target?: string
 ) => {
   if (actions.length >= max || seen.has(command)) {
     return
   }
 
   seen.add(command)
-  actions.push({ command, detail })
+  actions.push(target ? { command, detail, target } : { command, detail })
 }
 
 type FocusedForecastRow = ForecastDashboardQuestion | ForecastDashboardReview
@@ -482,7 +488,7 @@ const focusedForecastContext = (row: FocusedForecastRow) => {
   return bits.join('  ')
 }
 
-const focusedActionRows = (questions: ForecastDashboardQuestion[], reviewQueue: ForecastDashboardReview[]): [string, string][] => {
+const focusedActionRows = (questions: ForecastDashboardQuestion[], reviewQueue: ForecastDashboardReview[]): ForecastPanelRow[] => {
   const row: FocusedForecastRow | undefined = reviewQueue.find(candidate => candidate.id) ?? questions.find(candidate => candidate.id)
   if (!row?.id) {
     return []
@@ -492,8 +498,16 @@ const focusedActionRows = (questions: ForecastDashboardQuestion[], reviewQueue: 
   const context = focusedForecastContext(row)
   return [
     [`/questions ${row.id}`, `${context}  load full ledger context for ${label}`],
-    [`/note ${row.id} -- <evidence>`, 'append timestamped evidence without moving probability'],
-    [`/revise ${row.id} -- --probability <p> --rationale <why>`, 'append a probability update after reviewing evidence'],
+    [
+      `/note ${row.id} -- <evidence>`,
+      'append timestamped evidence without moving probability',
+      draftTarget(`/note ${row.id} -- `)
+    ],
+    [
+      `/revise ${row.id} -- --probability <p> --rationale <why>`,
+      'append a probability update after reviewing evidence',
+      draftTarget(`/revise ${row.id} -- --probability `)
+    ],
     [`/sources --question ${row.id}`, 'plan official data, RSS/news, markets, and watched searches'],
     [`/forecast research ${row.id}`, 'collect source notes and evidence without moving probability'],
     [
@@ -709,8 +723,16 @@ export const forecastQuestionSearchSections = (
     sections.push({
       rows: [
         [`/questions ${top.id}`, `open full ledger context for ${title}`],
-        [`/note ${top.id} -- <evidence>`, 'append a timestamped evidence note without copying the id'],
-        [`/revise ${top.id} -- --probability <p> --rationale <why>`, 'append an explicit probability update'],
+        [
+          `/note ${top.id} -- <evidence>`,
+          'append a timestamped evidence note without copying the id',
+          draftTarget(`/note ${top.id} -- `)
+        ],
+        [
+          `/revise ${top.id} -- --probability <p> --rationale <why>`,
+          'append an explicit probability update',
+          draftTarget(`/revise ${top.id} -- --probability `)
+        ],
         [`/sources --question ${top.id}`, 'plan source coverage for this question']
       ],
       title: 'Top Match Shortcuts'
@@ -872,8 +894,16 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
 
   sections.push({
     rows: [
-      [`/note ${question.id} -- <evidence>`, 'append timestamped evidence; probability remains unchanged'],
-      [`/revise ${question.id} -- --probability <p> --rationale <why>`, 'append an explicit probability update'],
+      [
+        `/note ${question.id} -- <evidence>`,
+        'append timestamped evidence; probability remains unchanged',
+        draftTarget(`/note ${question.id} -- `)
+      ],
+      [
+        `/revise ${question.id} -- --probability <p> --rationale <why>`,
+        'append an explicit probability update',
+        draftTarget(`/revise ${question.id} -- --probability `)
+      ],
       [`/sources --question ${question.id}`, 'plan source coverage and watched streams'],
       [`/forecast research ${question.id}`, 'review evidence freshness and new items since current forecast'],
       [`/forecast resolve ${question.id} --outcome <value> --resolution-source <url>`, 'record the outcome when criteria are met']
@@ -958,10 +988,10 @@ export const forecastDeskActionStripItems = (sections: PanelSection[], max = 4):
   const sectionByTitle = new Map(sections.map(section => [section.title, section]))
   const addRows = (section: PanelSection | undefined, skip = 0, limit = Number.POSITIVE_INFINITY) => {
     let added = 0
-    for (const [command, detail] of (section?.rows ?? []).slice(skip)) {
+    for (const [command, detail, target] of (section?.rows ?? []).slice(skip)) {
       if (command.startsWith('/')) {
         const before = actions.length
-        addUniqueAction(actions, seen, command, detail, max)
+        addUniqueAction(actions, seen, command, detail, max, target)
         if (actions.length > before) {
           added += 1
           if (added >= limit) {
@@ -1442,7 +1472,7 @@ export const forecastBookSections = (
         ['reviews', formatCount(summary.review_queue_count)],
         ['freshness', 'Use /questions <number> to drill into a row without copying its id'],
         ['search', 'Use /find <words> or /questions <words> to locate forecasts by title, topic, or domain'],
-        ['edit', 'Use /note <row|words> -- <evidence> or /revise <row|words> -- <args>']
+        ['edit', 'Click Quick Edits or use /note <row|words> -- <evidence> and /revise <row|words> -- <args>']
       ],
       title: 'Book'
     }
@@ -1475,15 +1505,23 @@ export const forecastBookSections = (
   })
 
   sections.push({
-    rows: questions.slice(0, 8).map((row, index) => [
-      `${index + 1}. ${shortId(row.id)}`,
-      [
-        `/note ${index + 1} -- <evidence>`,
-        `/revise ${index + 1} -- --probability <p> --rationale <why>`,
-        truncate(row.title || row.id || `forecast ${index + 1}`, 58)
-      ].join('  |  '),
-      `/questions ${index + 1}`
-    ]),
+    rows: questions.slice(0, 8).flatMap((row, index) => {
+      const rowNumber = index + 1
+      const title = truncate(row.title || row.id || `forecast ${rowNumber}`, 58)
+
+      return [
+        [
+          `/note ${rowNumber}`,
+          `draft evidence note for ${title}`,
+          draftTarget(`/note ${rowNumber} -- `)
+        ],
+        [
+          `/revise ${rowNumber}`,
+          `draft probability update for ${title}`,
+          draftTarget(`/revise ${rowNumber} -- --probability `)
+        ]
+      ] as ForecastPanelRow[]
+    }),
     title: 'Quick Edits'
   })
 

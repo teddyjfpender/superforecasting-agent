@@ -1260,8 +1260,9 @@ def test_tui_visible_affordances_are_forecast_native():
     assert "forecasting maxim" in text
     assert "FORECAST_PULSE_RE" in text
     assert "ForecastPulse" in text
-    assert "panelCommandTarget(action.command)" in text
-    assert "panelCommandTarget(commandCandidate ?? key)" in text
+    assert "panelDraftTarget(target)" in text
+    assert "runTargetFromClick(action.target ?? action.command" in text
+    assert "runTargetFromClick(commandCandidate ?? key" in text
     assert "row.id ? `/questions ${row.id}`" in text
     assert "runCommand={actions.runCommand}" in text
     assert "LONG_RUN_NOTICES" in text

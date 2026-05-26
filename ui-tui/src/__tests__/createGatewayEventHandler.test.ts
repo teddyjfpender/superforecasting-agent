@@ -799,10 +799,15 @@ describe('createGatewayEventHandler', () => {
             '/questions fq_123456789abc',
             'P=0.630  as-of 2026-05-01  close -  reasons review_due,last_update_…  load full ledger context for Will X win the election?'
           ],
-          ['/note fq_123456789abc -- <evidence>', 'append timestamped evidence without moving probability'],
+          [
+            '/note fq_123456789abc -- <evidence>',
+            'append timestamped evidence without moving probability',
+            'draft:/note fq_123456789abc -- '
+          ],
           [
             '/revise fq_123456789abc -- --probability <p> --rationale <why>',
-            'append a probability update after reviewing evidence'
+            'append a probability update after reviewing evidence',
+            'draft:/revise fq_123456789abc -- --probability '
           ]
         ],
         title: 'Focused Actions'
@@ -936,10 +941,15 @@ describe('createGatewayEventHandler', () => {
                 '/questions fq_123456789abc',
                 'P=0.630  as-of 2026-05-01  close -  reasons review_due,last_update_…  load full ledger context for Will X win the election?'
               ],
-              ['/note fq_123456789abc -- <evidence>', 'append timestamped evidence without moving probability'],
+              [
+                '/note fq_123456789abc -- <evidence>',
+                'append timestamped evidence without moving probability',
+                'draft:/note fq_123456789abc -- '
+              ],
               [
                 '/revise fq_123456789abc -- --probability <p> --rationale <why>',
-                'append a probability update after reviewing evidence'
+                'append a probability update after reviewing evidence',
+                'draft:/revise fq_123456789abc -- --probability '
               ],
               ['/sources --question fq_123456789abc', 'plan official data, RSS/news, markets, and watched searches'],
               ['/forecast research fq_123456789abc', 'collect source notes and evidence without moving probability'],

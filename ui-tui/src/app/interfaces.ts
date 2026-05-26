@@ -310,6 +310,7 @@ export interface AppLayoutActions {
   answerSecret: (value: string) => void
   answerSudo: (pw: string) => void
   clearSelection: () => void
+  draftCommand: (command: string) => void
   onModelSelect: (value: string) => void
   resumeById: (id: string) => void
   runCommand: (command: string) => void

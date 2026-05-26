@@ -1,4 +1,4 @@
-import { useApp, useHasSelection, useSelection, useStdout, useTerminalTitle, type ScrollBoxHandle } from '@hermes/ink'
+import { type ScrollBoxHandle, useApp, useHasSelection, useSelection, useStdout, useTerminalTitle } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
@@ -728,6 +728,16 @@ export function useMainApp(gw: GatewayClient) {
     slashRef.current(`/model ${value}`)
   }, [])
 
+  const draftCommand = useCallback(
+    (command: string) => {
+      clearSelection()
+      composerActions.setHistoryIdx(null)
+      composerActions.setQueueEdit(null)
+      composerActions.setInput(command)
+    },
+    [clearSelection, composerActions]
+  )
+
   const hasReasoning = useTurnSelector(state => Boolean(state.reasoning.trim()))
 
   // Per-section overrides win over the global mode — when every section is
@@ -783,6 +793,7 @@ export function useMainApp(gw: GatewayClient) {
       answerSecret,
       answerSudo,
       clearSelection,
+      draftCommand,
       onModelSelect,
       resumeById: session.resumeById,
       runCommand: dispatchSubmission,
@@ -795,6 +806,7 @@ export function useMainApp(gw: GatewayClient) {
       answerSudo,
       clearSelection,
       dispatchSubmission,
+      draftCommand,
       onModelSelect,
       session.resumeById
     ]

@@ -71,8 +71,9 @@ rationale, and latest evidence. `/open <row|id|words>` opens one unambiguous
 match, `/note <row|words> -- <evidence>` appends evidence after resolving the
 forecast, and `/revise <row|words> -- --probability <p> --rationale <why>`
 appends an explicit probability update. The forecast book, search, detail, and
-focused-action panels expose those short row-based edits so testers can work
-from visible rows without copying forecast IDs. `/book` remains an alias.
+focused-action panels expose clickable quick-edit rows that prefill those
+commands into the composer, so testers can work from visible rows without
+copying forecast IDs. `/book` remains an alias.
 
 Use `/ledger` when you want to browse the forecast store by view instead of by
 ID. Supported views include `/ledger book`, `/ledger review`, `/ledger alerts`,
@@ -158,8 +159,8 @@ Common desk workflows have direct slash commands:
 | `/ledger` | Browse forecast ledger views, search, and jump to review/evidence/learning/schedule state |
 | `/find` | Search active forecasts and review queue by title, topic, or domain |
 | `/open` | Open a forecast by row number, id, short id, or search words |
-| `/note` | Append evidence after resolving a row/search phrase to a forecast |
-| `/revise` | Append a probability update after resolving a row/search phrase to a forecast |
+| `/note` | Append evidence after resolving a row/search phrase; quick-edit rows can prefill the draft |
+| `/revise` | Append a probability update after resolving a row/search phrase; quick-edit rows can prefill the draft |
 | `/new-forecast` | Create a scoreable question |
 | `/ingest` | Stage a URL or file as a forecast candidate |
 | `/evidence` | Add or inspect timestamped evidence |
