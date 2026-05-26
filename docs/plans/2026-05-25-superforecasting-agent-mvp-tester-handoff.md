@@ -32,11 +32,12 @@ python -m superforecasting_agent status
 For this handoff, the latest full tester gate was verified on:
 
 ```text
-85437d8ee329 Demote generic chat parser wording
+918b0348322c Use forecast-support turn wording in runtime docs
 ```
 
 The moving `superforecasting-agent-snapshot` branch may contain later focused
-cleanup commits; rerun the operator gate before pinning a newer cohort hash.
+cleanup or handoff-record commits; rerun the operator gate before pinning a
+newer cohort hash.
 
 Before inviting a new cohort, record the exact commit testers will use:
 
@@ -144,7 +145,7 @@ common workflow checks.
 ## Smoke Evidence
 
 Latest consolidated tester handoff evidence ran with a temporary clean ledger on
-the implementation tree committed as `85437d8ee329`.
+the implementation tree committed as `918b0348322c`.
 
 It verified:
 
@@ -167,7 +168,7 @@ It verified:
   schedules, postmortems, calibration lessons, and domain/topic error profiles.
 - Dashboard forecast API and TUI forecast panel test coverage.
 - The consolidated `python3 scripts/tester_handoff_check.py` gate passed for the
-  `85437d8ee329` implementation tree with 177 focused tests, the clean smoke
+  `918b0348322c` implementation tree with 178 focused tests, the clean smoke
   path, and `git diff --check`; the smoke output reported 52 source adapters,
   5 benchmark datasets, `pilot_report_checks: 9/9`,
   `packet_import_questions: 2`, `pilot_aggregate_live_scores: 1`,
