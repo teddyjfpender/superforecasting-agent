@@ -10,8 +10,9 @@ three virtual model IDs so the ``superforecasting-agent tools`` model picker and
     gpt-image-2-high    ~2min  slowest, highest fidelity
 
 All three hit the same underlying API model (``gpt-image-2``) with a
-different ``quality`` parameter. Output is base64 JSON → saved under
-``$HERMES_HOME/cache/images/``.
+different ``quality`` parameter. Output is base64 JSON and saved under the
+active Superforecasting Agent home cache (legacy ``HERMES_HOME`` is still
+accepted by the shared home resolver).
 
 Selection precedence (first hit wins):
 

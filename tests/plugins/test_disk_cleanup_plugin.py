@@ -22,16 +22,16 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _isolate_env(tmp_path, monkeypatch):
-    """Isolate HERMES_HOME for each test.
+    """Isolate the forecast-native agent home for each test.
 
     The global hermetic fixture already redirects HERMES_HOME to a tempdir,
-    but we want the plugin to work with a predictable subpath. We reset
-    HERMES_HOME here for clarity.
+    but the plugin should prefer the fork-native home aliases. We set
+    SUPERFORECASTING_AGENT_HOME here for clarity.
     """
-    hermes_home = tmp_path / ".hermes"
-    hermes_home.mkdir()
-    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    yield hermes_home
+    forecast_home = tmp_path / ".superforecasting-agent"
+    forecast_home.mkdir()
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(forecast_home))
+    yield forecast_home
 
 
 def _load_lib():
@@ -75,7 +75,7 @@ def _load_plugin_init():
 # ---------------------------------------------------------------------------
 
 class TestIsSafePath:
-    def test_accepts_path_under_hermes_home(self, _isolate_env):
+    def test_accepts_path_under_forecast_home_alias(self, _isolate_env):
         dg = _load_lib()
         p = _isolate_env / "subdir" / "file.txt"
         p.parent.mkdir()
@@ -86,8 +86,10 @@ class TestIsSafePath:
         dg = _load_lib()
         assert dg.is_safe_path(Path("/etc/passwd")) is False
 
-    def test_accepts_tmp_hermes_prefix(self, _isolate_env, tmp_path):
+    def test_accepts_tmp_forecast_prefixes_and_legacy_hermes_prefix(self, _isolate_env):
         dg = _load_lib()
+        assert dg.is_safe_path(Path("/tmp/superforecasting-agent-abc/x.log")) is True
+        assert dg.is_safe_path(Path("/tmp/forecast-abc/x.log")) is True
         assert dg.is_safe_path(Path("/tmp/hermes-abc/x.log")) is True
 
     def test_rejects_plain_tmp(self, _isolate_env):
@@ -321,6 +323,10 @@ class TestSlashCommand:
         out = pi._handle_slash("help")
         assert "disk-cleanup" in out
         assert "status" in out
+        assert "active agent home" in out
+        assert "/tmp/superforecasting-agent-*" in out
+        assert "/tmp/forecast-*" in out
+        assert "All operations are scoped to HERMES_HOME" not in out
 
     def test_status_empty(self, _isolate_env):
         pi = _load_plugin_init()

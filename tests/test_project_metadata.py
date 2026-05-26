@@ -1783,7 +1783,9 @@ def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
         "plugins/web/xai/provider.py",
         "plugins/web/xai/plugin.yaml",
         "plugins/image_gen/openai/__init__.py",
+        "plugins/image_gen/openai/plugin.yaml",
         "plugins/image_gen/openai-codex/__init__.py",
+        "plugins/image_gen/openai-codex/plugin.yaml",
         "plugins/image_gen/xai/__init__.py",
         "plugins/platforms/line/adapter.py",
         "plugins/platforms/simplex/adapter.py",
@@ -1817,6 +1819,7 @@ def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     assert "forecast-meet-node" in text
     assert "active agent-home .env" in text
     assert "active agent-home auth store" in text
+    assert "active Superforecasting Agent home cache" in text
 
     assert "Run: hermes config set memory.provider honcho" not in text
     assert "Running 'hermes memory setup'" not in text
@@ -1828,6 +1831,7 @@ def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     assert "`hermes setup`" not in text
     assert "hermes auth codex" not in text
     assert "`hermes model`" not in text
+    assert "$HERMES_HOME/cache/images" not in text
     assert "hermes plugins enable google_meet" not in text
     assert "hermes meet install" not in text
     assert "hermes meet setup" not in text
@@ -2214,7 +2218,9 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
         root / "hermes",
         root / "plugins" / "__init__.py",
         root / "plugins" / "disk-cleanup" / "__init__.py",
+        root / "plugins" / "disk-cleanup" / "disk_cleanup.py",
         root / "plugins" / "disk-cleanup" / "plugin.yaml",
+        root / "plugins" / "disk-cleanup" / "README.md",
         root / "plugins" / "google_meet" / "SKILL.md",
         root / "plugins" / "platforms" / "teams" / "adapter.py",
         root / "plugins" / "platforms" / "line" / "adapter.py",
@@ -2245,6 +2251,9 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
     assert "Superforecasting Agent plugins package" in text
     assert "agent plugin system" in text
     assert "agent session ID" in text
+    assert "/tmp/superforecasting-agent-*" in text
+    assert "/tmp/forecast-*" in text
+    assert "active Superforecasting Agent home" in text
     assert "independent Superforecasting Agent" in thread_ready_lines
     assert "Hermes session" not in text
     assert "Hermes:" not in text
@@ -2274,6 +2283,7 @@ def test_residual_gateway_session_plugin_copy_is_forecast_native():
     assert "Hermes plugin system" not in text
     assert "Hermes home directory" not in text
     assert "Hermes agent traffic" not in text
+    assert "All operations are scoped to HERMES_HOME" not in text
     assert "Hermes" not in thread_ready_lines
 
 
