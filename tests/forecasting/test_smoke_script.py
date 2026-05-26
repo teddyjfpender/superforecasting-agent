@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.forecast_smoke_test import EXPECTED_SOURCE_ADAPTERS
+from scripts.forecast_smoke_test import EXPECTED_AGENT_PROTOCOL_SUITE_CASES, EXPECTED_SOURCE_ADAPTERS
 
 
 def test_forecast_smoke_required_source_catalog_includes_fiscal_adapter():
@@ -50,21 +50,22 @@ def test_forecast_smoke_script_runs_local_lifecycle(tmp_path):
     assert result.returncode == 0, output
     assert "[forecast-smoke] snapshot:" in result.stdout
     assert "[forecast-smoke] source_adapters:" in result.stdout
-    assert "[forecast-smoke] benchmark_datasets: 4" in result.stdout
+    assert "[forecast-smoke] benchmark_datasets: 5" in result.stdout
     assert "[forecast-smoke] question_id: fq_" in result.stdout
     assert "[forecast-smoke] backtest_run_id: bt_" in result.stdout
     assert "[forecast-smoke] agent_protocol_backtest_run_id: bt_" in result.stdout
-    assert "[forecast-smoke] agent_protocol_prompt_packets: 345" in result.stdout
-    assert "[forecast-smoke] agent_protocol_suite_scored_cases: 345" in result.stdout
+    assert f"[forecast-smoke] agent_protocol_prompt_packets: {EXPECTED_AGENT_PROTOCOL_SUITE_CASES}" in result.stdout
+    assert f"[forecast-smoke] agent_protocol_suite_scored_cases: {EXPECTED_AGENT_PROTOCOL_SUITE_CASES}" in result.stdout
     assert "[forecast-smoke] pilot_report_checks: 9/9" in result.stdout
     assert "[forecast-smoke] pilot_cohort_dry_run_questions: 1" in result.stdout
     assert "[forecast-smoke] pilot_cohort_example_questions: 5" in result.stdout
     assert "[forecast-smoke] packet_import_questions:" in result.stdout
     assert "[forecast-smoke] pilot_aggregate_live_scores: 1" in result.stdout
     assert "[forecast-smoke] readiness_verdict:" in result.stdout
-    assert "[forecast-smoke] readiness_gaps: 2" in result.stdout
-    assert "[forecast-smoke] readiness_agent_protocol_scores: 345" in result.stdout
+    assert "[forecast-smoke] readiness_gaps: 1" in result.stdout
+    assert f"[forecast-smoke] readiness_agent_protocol_scores: {EXPECTED_AGENT_PROTOCOL_SUITE_CASES}" in result.stdout
     assert "[forecast-smoke] live_baseline_comparisons: 1" in result.stdout
+    assert "[forecast-smoke] doctor_status: benchmark_evidence_ready_live_claim_unproven" in result.stdout
     assert "[forecast-smoke] pilot_bundle_export_included: true" in result.stdout
     assert "[forecast-smoke] forecast smoke test passed" in result.stdout
     assert db_path.exists()

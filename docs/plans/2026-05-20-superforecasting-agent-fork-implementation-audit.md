@@ -24,17 +24,17 @@ Latest automated smoke evidence ran on the implementation tree committed as
 evidence/research, base-rate, model run, update, review, resolve/score,
 postmortem, calibration, backtest replay, scheduled self-checks, alert
 creation, schedule history, packet import, pilot aggregation, pilot bundle
-export, and readiness guards. It reported 52 source adapters, 4 benchmark
+export, and readiness guards. It reported 52 source adapters, 5 benchmark
 datasets, `pilot_report_checks: 9/9`, `packet_import_questions: 2`,
 `pilot_aggregate_live_scores: 1`, suite-scale agent-protocol replay with
-`agent_protocol_prompt_packets: 345`,
-`agent_protocol_suite_scored_cases: 345`,
-`readiness_agent_protocol_scores: 345`, `performance_runs: 5`,
-`readiness_verdict: insufficient_live_evidence`, `readiness_gaps: 2`,
-`doctor_status: tester_handoff_ready_live_claim_unproven`, and `forecast smoke
-test passed`. The remaining readiness gaps are live scored forecast volume and
-external source-family diversity, so the fork still cannot claim live
-superforecasting superiority.
+`agent_protocol_prompt_packets: 465`,
+`agent_protocol_suite_scored_cases: 465`,
+`readiness_agent_protocol_scores: 465`, two external source families
+(`kalshi`, `manifold`), `performance_runs: 6`,
+`readiness_verdict: insufficient_live_evidence`, `readiness_gaps: 1`,
+`doctor_status: benchmark_evidence_ready_live_claim_unproven`, and `forecast
+smoke test passed`. The remaining readiness gap is live scored forecast
+volume, so the fork still cannot claim live superforecasting superiority.
 
 The source-tree `./forecast`, `./superforecast`, `./superforecasting-agent`,
 and legacy `./hermes` launchers, `python -m superforecasting_agent`, the

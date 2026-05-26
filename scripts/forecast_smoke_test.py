@@ -79,7 +79,9 @@ EXPECTED_BENCHMARKS = {
     "builtin:synthetic-100-binary",
     "builtin:heldout-120-binary",
     "builtin:manifold-public-120-binary",
+    "builtin:kalshi-public-120-binary",
 }
+EXPECTED_AGENT_PROTOCOL_SUITE_CASES = 465
 
 
 class SmokeError(RuntimeError):
@@ -837,7 +839,9 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
             verbose=verbose,
             timeout=180,
         )
-        if "benchmark_suite: builtin (4 datasets)" not in agent_prompt_output or "cases: 345" not in agent_prompt_output:
+        expected_suite_label = f"benchmark_suite: builtin ({len(EXPECTED_BENCHMARKS)} datasets)"
+        expected_cases_label = f"cases: {EXPECTED_AGENT_PROTOCOL_SUITE_CASES}"
+        if expected_suite_label not in agent_prompt_output or expected_cases_label not in agent_prompt_output:
             raise SmokeError(f"agent-protocol prompt export was missing expected fields:\n{agent_prompt_output}")
         prompt_count = _write_agent_protocol_suite_responses(agent_prompts, agent_responses)
         if prompt_count < 100:
@@ -857,13 +861,18 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
             timeout=180,
         )
         agent_protocol_ids = BACKTEST_RE.findall(agent_protocol_output)
-        if "suite_summary: runs=4 cases=345 scored=345" not in agent_protocol_output:
+        expected_summary = (
+            f"suite_summary: runs={len(EXPECTED_BENCHMARKS)} "
+            f"cases={EXPECTED_AGENT_PROTOCOL_SUITE_CASES} "
+            f"scored={EXPECTED_AGENT_PROTOCOL_SUITE_CASES}"
+        )
+        if expected_summary not in agent_protocol_output:
             raise SmokeError(f"agent-protocol backtest output was missing expected fields:\n{agent_protocol_output}")
-        if len(agent_protocol_ids) != 4 or "leakage=False" in agent_protocol_output:
+        if len(agent_protocol_ids) != len(EXPECTED_BENCHMARKS) or "leakage=False" in agent_protocol_output:
             raise SmokeError(f"agent-protocol suite did not replay all benchmarks cleanly:\n{agent_protocol_output}")
         _print_step(f"agent_protocol_backtest_run_id: {agent_protocol_ids[-1]}")
         _print_step(f"agent_protocol_prompt_packets: {prompt_count}")
-        _print_step("agent_protocol_suite_scored_cases: 345")
+        _print_step(f"agent_protocol_suite_scored_cases: {EXPECTED_AGENT_PROTOCOL_SUITE_CASES}")
 
     performance = _json_output(
         _run_forecast(["performance", "--last", "6", "--json"], db_path=db_path, repo_root=repo_root, verbose=verbose),
@@ -931,7 +940,11 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
         ),
         "doctor",
     )
-    if doctor.get("doctor_status") != "tester_handoff_ready_live_claim_unproven":
+    expected_doctor_states = {
+        "tester_handoff_ready_live_claim_unproven",
+        "benchmark_evidence_ready_live_claim_unproven",
+    }
+    if doctor.get("doctor_status") not in expected_doctor_states:
         raise SmokeError(f"doctor did not report tester handoff state:\n{json.dumps(doctor, indent=2)}")
     if doctor.get("claim_live_superforecasting") is not False:
         raise SmokeError("doctor should not allow a live superforecasting claim")

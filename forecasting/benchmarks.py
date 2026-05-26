@@ -253,6 +253,76 @@ def _manifold_public_120_binary_cases() -> list[dict[str, Any]]:
 _MANIFOLD_PUBLIC_120_BINARY_CASES = _manifold_public_120_binary_cases()
 
 
+def _kalshi_public_120_binary_cases() -> list[dict[str, Any]]:
+    corpus_path = files("forecasting").joinpath("data", "kalshi_public_120_binary.csv")
+    rows = csv.DictReader(corpus_path.read_text(encoding="utf-8").splitlines())
+    cases: list[dict[str, Any]] = []
+    for row in rows:
+        case_number = int(row["case_number"])
+        probability = float(row["probability"])
+        title = row["title"]
+        url = row["url"]
+        as_of = row["as_of"]
+        cases.append(
+            {
+                "id": f"kalshi-public-120-{case_number:03d}",
+                "title": title,
+                "description": row.get("description") or "",
+                "resolution_criteria": "Resolved by the linked public Kalshi market settlement.",
+                "resolution_source": url,
+                "domain": "prediction_markets",
+                "topics": ["kalshi", "public_market"],
+                "as_of": as_of,
+                "simulated_forecast_time": as_of,
+                "evidence_cutoff": as_of,
+                "close_time": row["close_time"],
+                "resolution_time": row["resolution_time"],
+                "probability": probability,
+                "outcome": row["outcome"],
+                "evidence": [
+                    {
+                        "source": url,
+                        "source_name": "Kalshi",
+                        "source_type": "adapter:kalshi",
+                        "url": url,
+                        "claim": title,
+                        "summary": row.get("description") or title,
+                        "available_at": as_of,
+                        "claim_type": "estimate",
+                        "stance": "context",
+                    }
+                ],
+                "baselines": [
+                    {
+                        "source": "kalshi",
+                        "baseline_type": "market",
+                        "probability": probability,
+                        "as_of": as_of,
+                    },
+                    {
+                        "source": "auto",
+                        "baseline_type": "naive_0_5",
+                        "probability": 0.5,
+                        "as_of": as_of,
+                    },
+                ],
+                "notes": (
+                    "Frozen public Kalshi settled-market corpus captured for "
+                    "benchmark replay. Market probability is stored as both the "
+                    "replayed forecast and an external baseline."
+                ),
+                "metadata": {
+                    "source_dataset": "kalshi_public_120_binary",
+                    "external_id": row.get("external_id"),
+                },
+            }
+        )
+    return cases
+
+
+_KALSHI_PUBLIC_120_BINARY_CASES = _kalshi_public_120_binary_cases()
+
+
 BUILTIN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "mini-binary": {
         "name": "mini-binary",
@@ -277,6 +347,12 @@ BUILTIN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "description": "One hundred twenty frozen public Manifold resolved binary markets.",
         "case_count": len(_MANIFOLD_PUBLIC_120_BINARY_CASES),
         "cases": _MANIFOLD_PUBLIC_120_BINARY_CASES,
+    },
+    "kalshi-public-120-binary": {
+        "name": "kalshi-public-120-binary",
+        "description": "One hundred twenty frozen public Kalshi settled binary markets.",
+        "case_count": len(_KALSHI_PUBLIC_120_BINARY_CASES),
+        "cases": _KALSHI_PUBLIC_120_BINARY_CASES,
     }
 }
 

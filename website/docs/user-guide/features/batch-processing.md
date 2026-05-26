@@ -138,6 +138,7 @@ Packaged benchmark datasets are local and require no live API calls:
 | `builtin:synthetic-100-binary` | One hundred synthetic binary cases for replay scale tests. |
 | `builtin:heldout-120-binary` | Frozen packaged binary cases for held-out replay checks. |
 | `builtin:manifold-public-120-binary` | Frozen public Manifold resolved binary markets with market baselines. |
+| `builtin:kalshi-public-120-binary` | Frozen public Kalshi settled binary markets with market baselines. |
 
 Use `forecast backtest --benchmarks` to see the current list.
 

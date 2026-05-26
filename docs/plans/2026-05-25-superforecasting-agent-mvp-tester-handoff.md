@@ -149,9 +149,12 @@ It verified:
   Bayesian model run, and forecast update.
 - Review, resolve, score, postmortem, calibration, and performance reporting.
 - Backtest replay on `builtin:mini-binary` with leakage checks passing.
-- Suite-scale agent-protocol replay: 345 sanitized prompt packets exported
-  across all packaged benchmark corpora and 345 captured protocol responses
+- Suite-scale agent-protocol replay: 465 sanitized prompt packets exported
+  across all packaged benchmark corpora and 465 captured protocol responses
   replayed without external model calls.
+- External benchmark diversity: the packaged benchmark catalog now includes
+  both public Manifold and public Kalshi resolved-market corpora, so smoke
+  readiness observes two external source families.
 - Scheduled self-check with `--cadence "every 1h"`, alert creation, learning
   review counts, and durable schedule history.
 - Source-tree `./forecast`, source-tree `./superforecast`,
@@ -163,9 +166,10 @@ It verified:
 - The consolidated `python3 scripts/tester_handoff_check.py` gate passed for the
   `399933f9ecd3` implementation tree with 176 focused tests, the clean smoke
   path, and `git diff --check`; the smoke output reported
-  `agent_protocol_prompt_packets: 345`,
-  `agent_protocol_suite_scored_cases: 345`, `performance_runs: 5`,
-  `readiness_gaps: 2`, and `readiness_agent_protocol_scores: 345`.
+  `agent_protocol_prompt_packets: 465`,
+  `agent_protocol_suite_scored_cases: 465`, `performance_runs: 6`,
+  `readiness_gaps: 1`, `readiness_agent_protocol_scores: 465`, and
+  `doctor_status: benchmark_evidence_ready_live_claim_unproven`.
 - The dashboard Forecast Desk route now uses forecast-native translation keys
   (`forecastDesk`, `resumeInDesk`) while preserving `/chat` as a compatibility
   route alias.

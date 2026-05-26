@@ -43,6 +43,11 @@ BUILTIN_DATASET_PROFILES: dict[str, dict[str, Any]] = {
         "source_families": ["manifold"],
         "source_types": ["adapter:manifold", "public_market"],
     },
+    "kalshi-public-120-binary": {
+        "provenance": "public_external",
+        "source_families": ["kalshi"],
+        "source_types": ["adapter:kalshi", "public_market"],
+    },
 }
 
 

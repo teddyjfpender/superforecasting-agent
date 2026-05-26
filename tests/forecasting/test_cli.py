@@ -10387,9 +10387,11 @@ def test_forecast_cli_runs_builtin_benchmark_dataset(tmp_path, capsys):
     assert "builtin:synthetic-100-binary" in benchmarks_output
     assert "builtin:heldout-120-binary" in benchmarks_output
     assert "builtin:manifold-public-120-binary" in benchmarks_output
+    assert "builtin:kalshi-public-120-binary" in benchmarks_output
     assert "Source Families" in benchmarks_output
     assert "public_external" in benchmarks_output
     assert "manifold" in benchmarks_output
+    assert "kalshi" in benchmarks_output
 
     _run(parser, ["forecast", "--db", db, "backtest", "builtin:mini-binary"])
     run_output = capsys.readouterr().out
@@ -10412,6 +10414,11 @@ def test_forecast_cli_runs_builtin_benchmark_dataset(tmp_path, capsys):
     heldout_output = capsys.readouterr().out
     assert "cases: 120" in heldout_output
     assert "scored_cases: 120" in heldout_output
+
+    _run(parser, ["forecast", "--db", db, "backtest", "builtin:kalshi-public-120-binary"])
+    kalshi_output = capsys.readouterr().out
+    assert "cases: 120" in kalshi_output
+    assert "scored_cases: 120" in kalshi_output
 
 
 def test_forecast_cli_runs_builtin_benchmark_suite(tmp_path, capsys, monkeypatch):
@@ -10603,6 +10610,7 @@ def test_forecast_cli_can_replay_agent_protocol_jsonl_for_benchmark_suite(
     assert all(run["result_summary"]["probability_sources"] == ["agent-protocol"] for run in runs)
 
 
+@pytest.mark.timeout(120)
 def test_forecast_cli_runs_public_manifold_benchmark_dataset(tmp_path, capsys):
     parser = _parser()
     db = str(tmp_path / "forecasting.db")
@@ -10624,6 +10632,32 @@ def test_forecast_cli_runs_public_manifold_benchmark_dataset(tmp_path, capsys):
     benchmark_evidence = performance_payload["runs"][0]["benchmark_evidence"]
     assert benchmark_evidence["has_public_external_source"] is True
     assert benchmark_evidence["source_families"] == ["manifold"]
+    assert performance_payload["evidence_status"]["backtests"]["external_dataset_count"] == 1
+    assert performance_payload["evidence_status"]["backtests"]["external_source_family_count"] == 1
+
+
+@pytest.mark.timeout(120)
+def test_forecast_cli_runs_public_kalshi_benchmark_dataset(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+
+    _run(parser, ["forecast", "--db", db, "backtest", "builtin:kalshi-public-120-binary"])
+    kalshi_output = capsys.readouterr().out
+    assert "cases: 120" in kalshi_output
+    assert "scored_cases: 120" in kalshi_output
+    kalshi_run_id = re.search(r"backtest_run: (bt_[a-f0-9]+)", kalshi_output).group(1)
+
+    _run(parser, ["forecast", "--db", db, "backtest", "--show", kalshi_run_id])
+    kalshi_show_output = capsys.readouterr().out
+    assert "dataset: builtin:kalshi-public-120-binary" in kalshi_show_output
+    assert "market:kalshi" in kalshi_show_output
+    assert "naive_0_5:auto" in kalshi_show_output
+
+    _run(parser, ["forecast", "--db", db, "performance", "--last", "5", "--json"])
+    performance_payload = json.loads(capsys.readouterr().out)
+    benchmark_evidence = performance_payload["runs"][0]["benchmark_evidence"]
+    assert benchmark_evidence["has_public_external_source"] is True
+    assert benchmark_evidence["source_families"] == ["kalshi"]
     assert performance_payload["evidence_status"]["backtests"]["external_dataset_count"] == 1
     assert performance_payload["evidence_status"]["backtests"]["external_source_family_count"] == 1
 

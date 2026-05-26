@@ -40,10 +40,12 @@ ledger paths will differ.
 
 The smoke ledger should keep `readiness_verdict` at
 `insufficient_live_evidence`. Current smoke runs intentionally satisfy the
-suite-scale agent-protocol replay floor by exporting 345 sanitized prompt
-packets and replaying 345 captured responses without model calls. They still
-report two readiness gaps: live score volume and external source-family
-diversity. That is the expected non-claim state for a local acceptance test.
+suite-scale agent-protocol replay and external source-family floors by
+exporting 465 sanitized prompt packets across five packaged benchmarks,
+replaying 465 captured responses without model calls, and covering both
+Manifold and Kalshi public-market source families. They still report one
+readiness gap: live score volume. That is the expected non-claim state for a
+local acceptance test.
 
 ## Keep The Smoke Ledger
 
