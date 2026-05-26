@@ -482,6 +482,15 @@ Every serious forecast should follow this loop:
 The CLI should open into a forecasting dashboard, not a blank assistant prompt.
 The primary console entrypoint should be `forecast`, with forecast-first aliases such as `superforecast` or `superforecasting-agent`. Legacy `hermes` entrypoints can remain during the fork transition, but bare CLI invocation should route to the forecasting desk rather than generic chat.
 
+The interactive CLI/TUI should also provide a compact forecast-book shortcut
+for everyday monitoring. A user should be able to run a slash command such as
+`/questions` to see active questions as numbered rows with headline
+probability, probability delta, freshness/as-of date, close date, confidence,
+evidence count, alert/review status, and title. Row numbers should be usable
+for drill-down, such as `/questions 1`, so users can inspect full details
+without copying or remembering forecast IDs. Dashboard support can use direct
+row selection to reach the same detail view.
+
 Example:
 
 ```text
@@ -955,6 +964,18 @@ Requirements:
 - [ ] Resolution corrections create correction records instead of mutating historical scores silently.
 - [ ] Corrected resolutions trigger recomputation or invalidation of affected scores, postmortems, and calibration lessons.
 
+### US-016: Browse The Current Forecast Book Without IDs
+
+**Description:** As a forecaster, I want a slash-command shortcut that shows my active forecast questions and headline values so that I can track standing beliefs and drill into details without remembering forecast IDs.
+
+**Acceptance Criteria:**
+
+- [ ] `/questions` or an equivalent shortcut shows active forecasts as numbered rows.
+- [ ] Each row shows current probability, probability delta, freshness/as-of date, close date, confidence, evidence count, alert/review status, and title.
+- [ ] `/questions <row>` opens the full forecast details for that row without requiring an ID.
+- [ ] The dashboard or TUI supports direct row selection or an equivalent drill-down path.
+- [ ] The shortcut reuses the forecast ledger/dashboard summary rather than maintaining a separate question list.
+
 ## Functional Requirements
 
 - FR-1: The system must store forecast questions as durable, queryable records.
@@ -990,6 +1011,7 @@ Requirements:
 - FR-31: The system must link calibration adjustments to the calibration lessons that influenced them.
 - FR-32: The system must store correction records for non-mutating fixes to forecasts, evidence, assumptions, reference classes, resolutions, scores, postmortems, and calibration lessons.
 - FR-33: The system must audit trusted resolver plugins by scope, version, approval, and automatic confirmation event.
+- FR-34: The system must expose a compact current-forecast book view with numbered, drillable rows so active beliefs can be monitored without requiring forecast IDs.
 
 ## V1 Outcome And Scoring Scope
 

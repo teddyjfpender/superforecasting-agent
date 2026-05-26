@@ -1992,6 +1992,7 @@ fork objective still needs the remaining work listed below.
 | US-013 | Covered | Time-aware backtests store runs/cases, cutoffs, generated snapshots, baselines, scores, leakage flags, and performance summaries |
 | US-014 | Covered | Scoped schedules persist cadence, stale thresholds, horizon/domain/topic/portfolio filters, alerts, auto-score/postmortem options, and profile updates |
 | US-015 | Covered | Resolution governance blocks unconfirmed/disputed/criteria-incomplete scoring and records corrections that invalidate affected learning artifacts |
+| US-016 | Covered | `/questions` and `/book` render active forecasts as numbered headline rows with probability, delta, freshness/as-of, close date, confidence, evidence count, status, and title; `/questions <row>` opens full details without copying IDs; the web Forecasts table supports selectable rows with a detail panel |
 
 ### Functional Requirements
 
@@ -2030,6 +2031,7 @@ fork objective still needs the remaining work listed below.
 | FR-31 | Covered | Calibration adjustments link to influencing lesson refs |
 | FR-32 | Covered | Correction records cover forecasts, evidence, assumptions, reference classes, resolutions, scores, postmortems, and lessons |
 | FR-33 | Covered | Trusted resolver policies are scoped, versioned, approved, and audited on automatic confirmation |
+| FR-34 | Covered | The shared dashboard summary powers the classic CLI `/questions` forecast book, Ink TUI `/questions` rows, row-number drill-down, and dashboard row selection |
 
 ### Context And Milestone Checklist
 

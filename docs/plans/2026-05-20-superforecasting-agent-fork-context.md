@@ -156,6 +156,12 @@ Forecast snapshots should be append-only. Editing a past forecast should require
 The CLI should feel like a quantitative research terminal.
 
 The default view should show active questions, current probabilities, probability deltas, confidence, close dates, stale forecasts, unresolved assumptions, and new-evidence alerts.
+For everyday monitoring, the operator should also have a compact forecast-book
+shortcut that lists active questions as numbered rows. The row should carry the
+headline probability, delta, freshness/as-of date, close date, confidence,
+evidence count, and alert/review state. A row number or direct dashboard/TUI
+selection should open the full forecast details so IDs are not part of the
+normal browsing workflow.
 
 Example:
 
