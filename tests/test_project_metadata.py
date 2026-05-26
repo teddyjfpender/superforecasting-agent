@@ -1092,6 +1092,8 @@ def test_runtime_user_guidance_prefers_active_forecast_home():
     assert "tts.piper.voice <voice-name>" in tools_config
     assert "active " in main
     assert "agent home node/ directory" in main
+    assert "active agent-home .env can poison auxiliary" in main
+    assert "active agent-home ``logs/update.log``" in main
     assert "first-use consent allowlist in the " in main
     assert "active agent home." in main
     assert "active forecast home's skills/.bundled_manifest" in main
@@ -1105,6 +1107,8 @@ def test_runtime_user_guidance_prefers_active_forecast_home():
     assert "model in ~/.hermes/config.yaml" not in goals
     assert "tts.piper.voice in ~/.hermes/config.yaml" not in tools_config
     assert "into ~/.hermes/node/" not in main
+    assert "OPENAI_BASE_URL in ~/.hermes/.env" not in main
+    assert "~/.hermes/logs/update.log" not in main
     assert "declared in ~/.hermes/config.yaml" not in main
     assert "consent allowlist at ~/.hermes/shell-hooks-allowlist.json" not in main
     assert "~/.hermes/skills/.bundled_manifest" not in main
@@ -1936,8 +1940,13 @@ def test_dashboard_tui_comments_are_forecast_native():
 
     assert "superforecasting-agent --tui" in text
     assert "superforecasting-agent dashboard" in text
+    assert "active agent-home ``config.yaml``" in text
+    assert "active agent-home dashboard-themes/*.yaml" in text
+    assert "active agent-home `dashboard-themes/*.yaml`" in text
     assert "hermes --tui" not in text
     assert "hermes dashboard" not in text
+    assert "~/.hermes/config.yaml" not in text
+    assert "~/.hermes/dashboard-themes" not in text
 
 
 def test_provider_extension_docstrings_are_forecast_native():

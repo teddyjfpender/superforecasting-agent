@@ -1103,9 +1103,10 @@ def get_auxiliary_models():
 async def set_model_assignment(body: ModelAssignment):
     """Assign a model to the main slot or an auxiliary task slot.
 
-    Writes to ``~/.hermes/config.yaml`` — applies to **new** sessions only.
-    The currently running chat PTY (if any) is not affected; use the
-    ``/model`` slash command inside a chat to hot-swap that specific session.
+    Writes to active agent-home ``config.yaml`` — applies to **new** sessions
+    only. The currently running Forecast Chat PTY (if any) is not affected; use
+    the ``/model`` slash command inside Forecast Chat to hot-swap that specific
+    session.
     """
     scope = (body.scope or "").strip().lower()
     provider = (body.provider or "").strip()
@@ -4083,7 +4084,7 @@ def _normalise_theme_definition(data: Dict[str, Any]) -> Optional[Dict[str, Any]
 
 
 def _discover_user_themes() -> list:
-    """Scan ~/.hermes/dashboard-themes/*.yaml for user-created themes.
+    """Scan active agent-home dashboard-themes/*.yaml for user-created themes.
 
     Returns a list of fully-normalised theme definitions ready to ship
     to the frontend, so the client can apply them without a secondary
@@ -4110,7 +4111,7 @@ async def get_dashboard_themes():
 
     Built-in entries ship name/label/description only (the frontend owns
     their full definitions in `web/src/themes/presets.ts`).  User themes
-    from `~/.hermes/dashboard-themes/*.yaml` ship with their full
+    from active agent-home `dashboard-themes/*.yaml` ship with their full
     normalised definition under `definition`, so the client can apply
     them without a stub.
     """
