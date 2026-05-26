@@ -432,22 +432,105 @@ def test_web_locale_app_brand_is_forecast_native():
         "zh-hant.ts": "研究記錄",
         "zh.ts": "研究记录",
     }
+    forecast_session_summary_copy = {
+        "af.ts": (
+            'title: "Voorspellingsessies"',
+            'noMessages: "Geen transkripsie-inskrywings"',
+            'deleteSession: "Skrap voorspellingsessie"',
+        ),
+        "de.ts": (
+            'title: "Prognosesitzungen"',
+            'noMessages: "Keine Protokolleinträge"',
+            'deleteSession: "Prognosesitzung löschen"',
+        ),
+        "en.ts": (
+            'title: "Forecast Sessions"',
+            'noMessages: "No transcript entries"',
+            'deleteSession: "Delete forecast session"',
+        ),
+        "es.ts": (
+            'title: "Sesiones de previsión"',
+            'noMessages: "Sin entradas de transcripción"',
+            'deleteSession: "Eliminar sesión de previsión"',
+        ),
+        "fr.ts": (
+            'title: "Sessions de prévision"',
+            'noMessages: "Aucune entrée de transcription"',
+            'deleteSession: "Supprimer la session de prévision"',
+        ),
+        "ga.ts": (
+            'title: "Seisiúin réamhaisnéise"',
+            'noMessages: "Gan iontrálacha tras-scríbhinne"',
+            'deleteSession: "Scrios seisiún réamhaisnéise"',
+        ),
+        "hu.ts": (
+            'title: "Előrejelzési munkamenetek"',
+            'noMessages: "Nincsenek átiratbejegyzések"',
+            'deleteSession: "Előrejelzési munkamenet törlése"',
+        ),
+        "it.ts": (
+            'title: "Sessioni di previsione"',
+            'noMessages: "Nessuna voce di trascrizione"',
+            'deleteSession: "Elimina sessione di previsione"',
+        ),
+        "ja.ts": (
+            'title: "予測セッション"',
+            'noMessages: "記録エントリがありません"',
+            'deleteSession: "予測セッションを削除"',
+        ),
+        "ko.ts": (
+            'title: "예측 세션"',
+            'noMessages: "기록 항목이 없습니다"',
+            'deleteSession: "예측 세션 삭제"',
+        ),
+        "pt.ts": (
+            'title: "Sessões de previsão"',
+            'noMessages: "Sem entradas de transcrição"',
+            'deleteSession: "Eliminar sessão de previsão"',
+        ),
+        "ru.ts": (
+            'title: "Прогнозные сессии"',
+            'noMessages: "Нет записей протокола"',
+            'deleteSession: "Удалить прогнозную сессию"',
+        ),
+        "tr.ts": (
+            'title: "Tahmin oturumları"',
+            'noMessages: "Döküm kaydı yok"',
+            'deleteSession: "Tahmin oturumunu sil"',
+        ),
+        "uk.ts": (
+            'title: "Прогнозні сесії"',
+            'noMessages: "Немає записів протоколу"',
+            'deleteSession: "Видалити прогнозну сесію"',
+        ),
+        "zh-hant.ts": (
+            'title: "預測工作階段"',
+            'noMessages: "尚無記錄項目"',
+            'deleteSession: "刪除預測工作階段"',
+        ),
+        "zh.ts": (
+            'title: "预测会话"',
+            'noMessages: "暂无记录条目"',
+            'deleteSession: "删除预测会话"',
+        ),
+    }
     legacy_session_copy = {
-        "af.ts": ("Begin 'n gesprek", "verwyder die gesprek"),
-        "de.ts": ("Starte eine Unterhaltung", "entfernt die Unterhaltung"),
-        "es.ts": ("Inicia una conversación", "elimina permanentemente la conversación"),
-        "fr.ts": ("Démarrez une conversation", "supprime définitivement la conversation"),
-        "ga.ts": ("Tosaigh comhrá", "Baineann sé seo an comhrá"),
-        "hu.ts": ("Indítson egy beszélgetést", "eltávolítja a beszélgetést"),
-        "it.ts": ("Avvia una conversazione", "rimuove definitivamente la conversazione"),
-        "ja.ts": ("会話を開始", "会話とそのすべて"),
-        "ko.ts": ("대화를 시작", "대화와 모든 메시지"),
-        "pt.ts": ("Inicie uma conversa", "remove permanentemente a conversa"),
-        "ru.ts": ("Начните разговор", "удалит разговор"),
-        "tr.ts": ("konuşma başlatın", "konuşmayı ve tüm mesajlarını"),
-        "uk.ts": ("Почніть розмову", "видалить розмову"),
-        "zh-hant.ts": ("開始對話後", "移除對話及其所有訊息"),
-        "zh.ts": ("开始对话后", "删除对话及其所有消息"),
+        "af.ts": ("Begin 'n gesprek", "verwyder die gesprek", 'noMessages: "Geen boodskappe"'),
+        "de.ts": ("Starte eine Unterhaltung", "entfernt die Unterhaltung", 'noMessages: "Keine Nachrichten"'),
+        "en.ts": ('noMessages: "No messages"', 'deleteSession: "Delete session"', "all of its messages"),
+        "es.ts": ("Inicia una conversación", "elimina permanentemente la conversación", 'noMessages: "Sin mensajes"'),
+        "fr.ts": ("Démarrez une conversation", "supprime définitivement la conversation", 'noMessages: "Aucun message"'),
+        "ga.ts": ("Tosaigh comhrá", "Baineann sé seo an comhrá", 'noMessages: "Gan teachtaireachtaí"'),
+        "hu.ts": ("Indítson egy beszélgetést", "eltávolítja a beszélgetést", 'noMessages: "Nincsenek üzenetek"'),
+        "it.ts": ("Avvia una conversazione", "rimuove definitivamente la conversazione", 'noMessages: "Nessun messaggio"'),
+        "ja.ts": ("会話を開始", "会話とそのすべて", 'noMessages: "メッセージがありません"'),
+        "ko.ts": ("대화를 시작", "대화와 모든 메시지", 'noMessages: "메시지가 없습니다"'),
+        "pt.ts": ("Inicie uma conversa", "remove permanentemente a conversa", 'noMessages: "Sem mensagens"'),
+        "ru.ts": ("Начните разговор", "удалит разговор", 'noMessages: "Нет сообщений"'),
+        "tr.ts": ("konuşma başlatın", "konuşmayı ve tüm mesajlarını", 'noMessages: "Mesaj yok"'),
+        "uk.ts": ("Почніть розмову", "видалить розмову", 'noMessages: "Немає повідомлень"'),
+        "zh-hant.ts": ("開始對話後", "移除對話及其所有訊息", 'noMessages: "尚無訊息"'),
+        "zh.ts": ("开始对话后", "删除对话及其所有消息", 'noMessages: "暂无消息"'),
     }
     for path in locale_files:
         text = path.read_text(encoding="utf-8")
@@ -457,6 +540,8 @@ def test_web_locale_app_brand_is_forecast_native():
         expected_delete_copy = transcript_delete_copy.get(path.name)
         if expected_delete_copy:
             assert expected_delete_copy in text, path
+        for expected_summary_copy in forecast_session_summary_copy.get(path.name, ()):
+            assert expected_summary_copy in text, path
         for old_copy in legacy_session_copy.get(path.name, ()):
             assert old_copy not in text, path
 
