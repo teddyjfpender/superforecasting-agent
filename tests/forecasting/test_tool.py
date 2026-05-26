@@ -1234,6 +1234,126 @@ def test_forecast_ledger_tool_checks_watched_sources(tmp_path):
     assert checked["alerts"][0]["reason"] == f"watched_source_changed:{watch['watched_source']['id']}"
 
 
+def test_forecast_ledger_tool_manages_autopilot_update_proposals(tmp_path):
+    db = str(tmp_path / "forecasting.db")
+    source = tmp_path / "cpi-release.txt"
+    source.write_text("initial cpi release", encoding="utf-8")
+    actions = set(FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["action"]["enum"])
+    assert {
+        "enable_autopilot",
+        "autopilot_status",
+        "run_autopilot",
+        "list_forecast_update_proposals",
+        "approve_forecast_update_proposal",
+    } <= actions
+
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will the CPI release exceed consensus?",
+                "resolution_criteria": "Resolved yes if the release exceeds consensus.",
+                "resolution_source": str(source),
+                "domain": "macro",
+            }
+        )
+    )
+    question_id = created["question"]["id"]
+    baseline = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "update_forecast",
+                "question_id": question_id,
+                "probability": 0.55,
+                "rationale": "Baseline desk prior before automated source checks.",
+                "as_of": "2026-01-01T00:00:00Z",
+            }
+        )
+    )
+    enabled = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "enable_autopilot",
+                "question_id": question_id,
+                "sources": [str(source)],
+                "cadence": "1d",
+                "next_run_at": "2026-01-02T00:00:00Z",
+                "mode": "propose",
+                "created_by": "tool-test",
+            }
+        )
+    )
+    unchanged = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "run_autopilot",
+                "question_id": question_id,
+                "now": "2026-01-02T00:00:00Z",
+            }
+        )
+    )
+
+    source.write_text("revised cpi release", encoding="utf-8")
+    proposed = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "run_autopilot",
+                "question_id": question_id,
+                "now": "2026-01-03T00:00:00Z",
+                "proposed_probability": 0.61,
+                "rationale": "Source revision raises the probability.",
+            }
+        )
+    )
+    proposals = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "list_forecast_update_proposals",
+                "question_id": question_id,
+            }
+        )
+    )
+    approved = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "approve_forecast_update_proposal",
+                "proposal_id": proposed["proposal"]["id"],
+                "reviewed_by": "forecaster",
+            }
+        )
+    )
+    status = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "autopilot_status",
+                "question_id": question_id,
+            }
+        )
+    )
+
+    assert enabled["policy"]["question_id"] == question_id
+    assert enabled["watched_sources"][0]["source_type"] == "file"
+    assert unchanged["run"]["status"] == "skipped"
+    assert proposed["run"]["status"] == "success"
+    assert proposed["proposal"]["prior_forecast_id"] == baseline["forecast_snapshot"]["forecast_id"]
+    assert proposed["proposal"]["status"] == "pending"
+    assert proposed["source_snapshots"][0]["parsed_values"]["changed"] is True
+    assert proposals["forecast_update_proposals"][0]["id"] == proposed["proposal"]["id"]
+    assert approved["forecast_snapshot"]["probability_or_distribution"] == pytest.approx(0.61)
+    assert approved["forecast_update_proposal"]["status"] == "approved"
+    assert status["active_policy"]["id"] == enabled["policy"]["id"]
+    assert status["pending_proposal_count"] == 0
+    assert ForecastLedger(db).get_question(question_id).current_forecast_id == approved["forecast_snapshot"]["forecast_id"]
+
+
 def test_forecast_ledger_tool_can_save_ensemble_components(tmp_path):
     db = str(tmp_path / "forecasting.db")
     created = json.loads(

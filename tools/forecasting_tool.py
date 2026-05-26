@@ -78,7 +78,8 @@ FORECAST_LEDGER_SCHEMA = {
     "description": (
         "Operate on the forecast ledger: create questions, add evidence, append "
         "forecast snapshots, resolve, score, review, self-check, and render "
-        "forecast protocol context. Forecast snapshots are append-only."
+        "forecast protocol context. Forecast snapshots are append-only; autopilot "
+        "actions maintain watched-source update proposals through the ledger."
     ),
     "parameters": {
         "type": "object",
@@ -120,6 +121,16 @@ FORECAST_LEDGER_SCHEMA = {
                     "add_watched_source",
                     "list_watched_sources",
                     "check_watched_sources",
+                    "autopilot_readiness",
+                    "enable_autopilot",
+                    "disable_autopilot",
+                    "autopilot_status",
+                    "run_autopilot",
+                    "list_autopilot_policies",
+                    "list_autopilot_runs",
+                    "list_forecast_update_proposals",
+                    "approve_forecast_update_proposal",
+                    "reject_forecast_update_proposal",
                     "schedule_review",
                     "list_scheduled_reviews",
                     "run_scheduled_reviews",
@@ -229,6 +240,7 @@ FORECAST_LEDGER_SCHEMA = {
             "conflict": {"type": "string", "enum": ["error", "skip", "replace"]},
             "cases": {"type": "array", "items": {"type": "object"}},
             "run_id": {"type": "string"},
+            "policy_id": {"type": "string"},
             "forecast_id": {"type": "string"},
             "backtest_case_id": {"type": "string"},
             "score_record_id": {"type": "string"},
@@ -258,6 +270,8 @@ FORECAST_LEDGER_SCHEMA = {
             "metadata": {"type": "object"},
             "probability": {"type": "number"},
             "probability_or_distribution": {},
+            "proposed_probability": {"type": "number"},
+            "proposed_probability_or_distribution": {},
             "baseline_type": {"type": "string"},
             "components": {"type": "object"},
             "method": {"type": "string"},
@@ -277,8 +291,13 @@ FORECAST_LEDGER_SCHEMA = {
             "toolset_version": {"type": "string"},
             "source_or_note": {"type": "string"},
             "source": {"type": "string"},
+            "sources": {"type": "array", "items": {"type": "string"}},
             "source_url": {"type": "string"},
             "source_name": {"type": "string"},
+            "mode": {
+                "type": "string",
+                "enum": ["propose", "auto-commit", "auto_commit", "alert-only", "alert_only"],
+            },
             "sort": {"type": "string", "enum": ["latest", "top"]},
             "author": {"type": "string"},
             "lang": {"type": "string"},
@@ -408,6 +427,13 @@ FORECAST_LEDGER_SCHEMA = {
             "use_active_lessons": {"type": "boolean"},
             "alert_id": {"type": "string"},
             "acknowledged_at": {"type": "string"},
+            "proposal_id": {"type": "string"},
+            "proposal_status": {
+                "type": "string",
+                "enum": ["pending", "approved", "rejected", "expired", "auto_committed"],
+            },
+            "reviewed_by": {"type": "string"},
+            "include_reviewed": {"type": "boolean"},
             "stale_evidence_days": {"type": "integer"},
             "ack_stale_evidence": {"type": "boolean"},
             "require_citations": {"type": "boolean"},
@@ -447,9 +473,18 @@ FORECAST_LEDGER_SCHEMA = {
             "cadence": {"type": "string"},
             "next_run_at": {
                 "type": "string",
-                "description": "First run timestamp for schedule_review; defaults to now when omitted.",
+                "description": "First run timestamp for schedule_review or enable_autopilot; defaults to now when omitted.",
             },
             "trigger_reason": {"type": "string"},
+            "materiality_policy": {"type": "object"},
+            "guardrail_policy": {"type": "object"},
+            "notification_policy": {"type": "object"},
+            "min_source_changes": {"type": "integer"},
+            "max_auto_delta": {"type": "number"},
+            "min_sources_for_auto_commit": {"type": "integer"},
+            "notify": {"type": "string"},
+            "quiet_if_unchanged": {"type": "boolean"},
+            "allow_missing_resolution_source": {"type": "boolean"},
             "enabled": {"type": "boolean"},
             "now": {"type": "string"},
             "include_inactive": {"type": "boolean"},
@@ -961,6 +996,111 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             )
             return tool_result(success=True, alerts=[alert.__dict__ for alert in alerts])
 
+        if action == "autopilot_readiness":
+            question_id = _required(args, "question_id")
+            readiness = ledger.autopilot_readiness(
+                question_id,
+                sources=_tool_autopilot_sources(args, required=False),
+                allow_missing_resolution_source=bool(args.get("allow_missing_resolution_source", False)),
+            )
+            return tool_result(success=True, readiness=readiness)
+
+        if action == "enable_autopilot":
+            result = ledger.enable_autopilot(
+                question_id=_required(args, "question_id"),
+                sources=_tool_autopilot_sources(args, required=True) or [],
+                cadence=_required(args, "cadence"),
+                mode=args.get("mode") or "propose",
+                materiality_policy=_tool_autopilot_materiality_policy(args),
+                guardrail_policy=_tool_autopilot_guardrail_policy(args),
+                notification_policy=_tool_autopilot_notification_policy(args),
+                next_run_at=args.get("next_run_at"),
+                created_by=args.get("created_by"),
+                allow_missing_resolution_source=bool(args.get("allow_missing_resolution_source", False)),
+            )
+            return tool_result(success=True, **_plain(result))
+
+        if action == "disable_autopilot":
+            policy = ledger.disable_autopilot(_required(args, "question_id"))
+            return tool_result(success=True, autopilot_policy=policy)
+
+        if action == "autopilot_status":
+            question_id = _required(args, "question_id")
+            policies = ledger.list_autopilot_policies(question_id=question_id, enabled_only=False)
+            watches = ledger.list_watched_sources(scope_type="question", scope_ref=question_id, status=None)
+            runs = ledger.list_autopilot_runs(
+                question_id=question_id,
+                limit=int(args.get("limit") or 5),
+            )
+            proposals = ledger.list_forecast_update_proposals(
+                question_id=question_id,
+                status=None,
+                limit=int(args.get("limit") or 20),
+            )
+            return tool_result(
+                success=True,
+                question_id=question_id,
+                active_policy=next((row for row in policies if row.get("enabled")), None),
+                autopilot_policies=policies,
+                watched_sources=watches,
+                autopilot_runs=runs,
+                forecast_update_proposals=proposals,
+                pending_proposal_count=len([row for row in proposals if row.get("status") == "pending"]),
+            )
+
+        if action == "run_autopilot":
+            result = ledger.run_autopilot(
+                _required(args, "question_id"),
+                now=args.get("now"),
+                trigger_reason=args.get("trigger_reason") or "manual",
+                proposed_probability_or_distribution=_tool_proposed_probability(args),
+                rationale=args.get("rationale"),
+            )
+            return tool_result(success=True, **_plain(result))
+
+        if action == "list_autopilot_policies":
+            policies = ledger.list_autopilot_policies(
+                question_id=args.get("question_id"),
+                enabled_only=not bool(args.get("include_inactive", False)),
+            )
+            return tool_result(success=True, autopilot_policies=policies)
+
+        if action == "list_autopilot_runs":
+            runs = ledger.list_autopilot_runs(
+                question_id=args.get("question_id"),
+                policy_id=args.get("policy_id"),
+                limit=int(args.get("limit") or 20),
+            )
+            return tool_result(success=True, autopilot_runs=runs)
+
+        if action == "list_forecast_update_proposals":
+            proposal_status = args.get("proposal_status", args.get("status", "pending"))
+            proposals = ledger.list_forecast_update_proposals(
+                question_id=args.get("question_id"),
+                status=None if args.get("include_reviewed") else proposal_status,
+                limit=int(args.get("limit") or 20),
+            )
+            return tool_result(success=True, forecast_update_proposals=proposals)
+
+        if action == "approve_forecast_update_proposal":
+            proposal_id = _required(args, "proposal_id")
+            snapshot = ledger.approve_forecast_update_proposal(
+                proposal_id,
+                reviewed_by=args.get("reviewed_by"),
+            )
+            return tool_result(
+                success=True,
+                forecast_snapshot=snapshot.__dict__,
+                forecast_update_proposal=ledger.get_forecast_update_proposal(proposal_id),
+            )
+
+        if action == "reject_forecast_update_proposal":
+            proposal = ledger.reject_forecast_update_proposal(
+                _required(args, "proposal_id"),
+                reviewed_by=args.get("reviewed_by"),
+            )
+            return tool_result(success=True, forecast_update_proposal=proposal)
+
         if action == "schedule_review":
             schedule = ledger.schedule_review(
                 scope_type=args.get("scope_type") or _infer_schedule_scope_type(args),
@@ -1109,6 +1249,76 @@ def _required(args: dict[str, Any], key: str) -> str:
     value = str(args.get(key) or "").strip()
     if not value:
         raise ValueError(f"{key} is required")
+    return value
+
+
+def _tool_autopilot_sources(args: dict[str, Any], *, required: bool) -> list[str] | None:
+    sources: list[str] = []
+    single_source = args.get("source")
+    if isinstance(single_source, str) and single_source.strip():
+        sources.append(single_source.strip())
+    raw_sources = args.get("sources")
+    if isinstance(raw_sources, str):
+        sources.extend(item.strip() for item in raw_sources.replace(";", ",").split(",") if item.strip())
+    elif isinstance(raw_sources, list):
+        sources.extend(str(item).strip() for item in raw_sources if str(item).strip())
+    unique_sources = list(dict.fromkeys(sources))
+    if required and not unique_sources:
+        raise ValueError("sources or source is required")
+    return unique_sources if unique_sources else None
+
+
+def _tool_autopilot_materiality_policy(args: dict[str, Any]) -> dict[str, Any]:
+    policy = dict(args.get("materiality_policy") or {})
+    if args.get("min_source_changes") is not None:
+        policy["min_source_changes"] = max(int(args["min_source_changes"]), 1)
+    return policy
+
+
+def _tool_autopilot_guardrail_policy(args: dict[str, Any]) -> dict[str, Any]:
+    policy = {
+        "require_no_critical_source_failures": True,
+        "require_model_parse_success": True,
+        "require_evidence_refs": True,
+        "require_prior_forecast": True,
+        "allow_resolution_auto_commit": False,
+    }
+    policy.update(dict(args.get("guardrail_policy") or {}))
+    if args.get("max_auto_delta") is not None:
+        policy["max_single_run_probability_delta"] = args["max_auto_delta"]
+    if args.get("min_sources_for_auto_commit") is not None:
+        policy["min_independent_sources_for_auto_commit"] = int(args["min_sources_for_auto_commit"])
+    return policy
+
+
+def _tool_autopilot_notification_policy(args: dict[str, Any]) -> dict[str, Any]:
+    policy = dict(args.get("notification_policy") or {})
+    if args.get("notify"):
+        policy["destination"] = args["notify"]
+    if args.get("quiet_if_unchanged") is not None:
+        policy["quiet_if_unchanged"] = bool(args["quiet_if_unchanged"])
+    return policy
+
+
+def _tool_proposed_probability(args: dict[str, Any]) -> Any:
+    for key in (
+        "proposed_probability_or_distribution",
+        "probability_or_distribution",
+        "proposed_probability",
+        "probability",
+    ):
+        if key in args and args[key] is not None:
+            return args[key]
+    return None
+
+
+def _plain(value: Any) -> Any:
+    if is_dataclass(value):
+        return asdict(value)
+    if isinstance(value, dict):
+        return {key: _plain(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_plain(item) for item in value]
     return value
 
 
