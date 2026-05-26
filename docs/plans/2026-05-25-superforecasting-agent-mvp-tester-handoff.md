@@ -130,9 +130,9 @@ common workflow checks.
 
 ## Smoke Evidence
 
-Latest automated smoke evidence ran with a temporary clean ledger at code
-snapshot `86cb5089c1c1`. The follow-up snapshot commit only refreshed the audit
-document for that smoke run.
+Latest automated tester handoff evidence ran with a temporary clean ledger at
+code snapshot `ac42abf68eb4`. The final handoff commit may be a later docs-only
+commit that records this gate output.
 
 It verified:
 
@@ -148,6 +148,8 @@ It verified:
 - Portfolio export/import packets, including forecast history, evidence,
   schedules, postmortems, calibration lessons, and domain/topic error profiles.
 - Dashboard forecast API and TUI forecast panel test coverage.
+- The consolidated `python3 scripts/tester_handoff_check.py` gate passed 167
+  focused tests, the clean smoke path, and `git diff --check`.
 
 ## Feedback To Collect
 
