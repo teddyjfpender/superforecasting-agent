@@ -1473,6 +1473,7 @@ Latest verified result:
 - Packet export/import handoff surface pass: Ink now routes `/export-packet <id|all>` plus aliases `/packet-export` and `/export-forecast` to `forecast export`, and `/import-packet <export.json>` plus alias `/packet-import` to `forecast import packet`. The forecast desk next-command panel and web Pilot Handoff card include export and restore commands beside pilot bundle/aggregate actions, and README/tester/TUI/slash docs list the shortcuts for tester handoff workflows.
 - Gateway process-scan demotion pass: gateway status/start/stop/restart fallback PID discovery now recognizes fork-native `superforecasting-agent gateway`, `superforecast gateway`, and `python -m superforecasting_agent.cli gateway` invocations in addition to legacy compatibility commands, so forecast-native service runs are not missed by inherited Hermes-only process patterns. Focused PID-scan regression and the full gateway-service helper suite passed.
 - Profile alias reservation pass: profile creation/rename validation now reserves fork-native command names (`forecast`, `superforecast`, `superforecasting-agent`) plus legacy compatibility aliases so generated profile wrappers cannot clobber the primary forecast desk entry points in `~/.local/bin`.
+- Uninstall active-home wording pass: uninstall help/comments and Windows cleanup messages now describe the active Superforecasting Agent home and legacy compatibility artifacts instead of presenting `~/.hermes` or Hermes-owned PATH/env entries as the primary uninstall model.
 
 ## Prompt-To-Artifact Checklist
 
