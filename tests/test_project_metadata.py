@@ -396,6 +396,70 @@ def test_web_locale_app_brand_is_forecast_native():
             for generic in generic_pair:
                 assert generic not in text, path
 
+    forecast_session_empty_states = {
+        "af.ts": 'startConversation: "Begin \'n voorspellingsessie of CLI-loop om dit hier te sien"',
+        "de.ts": 'startConversation: "Starte eine Prognosesitzung oder einen CLI-Lauf, um sie hier zu sehen"',
+        "en.ts": 'startConversation: "Start a forecast session or CLI run to see it here"',
+        "es.ts": 'startConversation: "Inicia una sesión de previsión o una ejecución CLI para verla aquí"',
+        "fr.ts": 'startConversation: "Démarrez une session de prévision ou une exécution CLI pour la voir ici"',
+        "ga.ts": 'startConversation: "Tosaigh seisiún réamhaisnéise nó rith CLI chun é a fheiceáil anseo"',
+        "hu.ts": 'startConversation: "Indítson előrejelzési munkamenetet vagy CLI-futtatást, hogy itt megjelenjen"',
+        "it.ts": 'startConversation: "Avvia una sessione di previsione o un\'esecuzione CLI per vederla qui"',
+        "ja.ts": 'startConversation: "予測セッションまたは CLI 実行を開始するとここに表示されます"',
+        "ko.ts": 'startConversation: "예측 세션 또는 CLI 실행을 시작하면 여기에 표시됩니다"',
+        "pt.ts": 'startConversation: "Inicie uma sessão de previsão ou execução CLI para a ver aqui"',
+        "ru.ts": 'startConversation: "Начните прогнозную сессию или CLI-запуск, чтобы увидеть его здесь"',
+        "tr.ts": 'startConversation: "Burada görmek için bir tahmin oturumu veya CLI çalıştırması başlatın"',
+        "uk.ts": 'startConversation: "Почніть прогнозну сесію або запуск CLI, щоб побачити її тут"',
+        "zh-hant.ts": 'startConversation: "開始預測工作階段或 CLI 執行後將顯示於此"',
+        "zh.ts": 'startConversation: "开始预测会话或 CLI 运行后将显示在此处"',
+    }
+    transcript_delete_copy = {
+        "af.ts": "navorsingstranskripsie",
+        "de.ts": "Forschungsprotokoll",
+        "en.ts": "research transcript",
+        "es.ts": "transcripción de investigación",
+        "fr.ts": "transcription de recherche",
+        "ga.ts": "tras-scríbhinn taighde",
+        "hu.ts": "kutatási átirat",
+        "it.ts": "trascrizione di ricerca",
+        "ja.ts": "リサーチ記録",
+        "ko.ts": "리서치 기록",
+        "pt.ts": "transcrição de investigação",
+        "ru.ts": "исследовательский протокол",
+        "tr.ts": "araştırma dökümü",
+        "uk.ts": "дослідницький протокол",
+        "zh-hant.ts": "研究記錄",
+        "zh.ts": "研究记录",
+    }
+    legacy_session_copy = {
+        "af.ts": ("Begin 'n gesprek", "verwyder die gesprek"),
+        "de.ts": ("Starte eine Unterhaltung", "entfernt die Unterhaltung"),
+        "es.ts": ("Inicia una conversación", "elimina permanentemente la conversación"),
+        "fr.ts": ("Démarrez une conversation", "supprime définitivement la conversation"),
+        "ga.ts": ("Tosaigh comhrá", "Baineann sé seo an comhrá"),
+        "hu.ts": ("Indítson egy beszélgetést", "eltávolítja a beszélgetést"),
+        "it.ts": ("Avvia una conversazione", "rimuove definitivamente la conversazione"),
+        "ja.ts": ("会話を開始", "会話とそのすべて"),
+        "ko.ts": ("대화를 시작", "대화와 모든 메시지"),
+        "pt.ts": ("Inicie uma conversa", "remove permanentemente a conversa"),
+        "ru.ts": ("Начните разговор", "удалит разговор"),
+        "tr.ts": ("konuşma başlatın", "konuşmayı ve tüm mesajlarını"),
+        "uk.ts": ("Почніть розмову", "видалить розмову"),
+        "zh-hant.ts": ("開始對話後", "移除對話及其所有訊息"),
+        "zh.ts": ("开始对话后", "删除对话及其所有消息"),
+    }
+    for path in locale_files:
+        text = path.read_text(encoding="utf-8")
+        expected_empty_state = forecast_session_empty_states.get(path.name)
+        if expected_empty_state:
+            assert expected_empty_state in text, path
+        expected_delete_copy = transcript_delete_copy.get(path.name)
+        if expected_delete_copy:
+            assert expected_delete_copy in text, path
+        for old_copy in legacy_session_copy.get(path.name, ()):
+            assert old_copy not in text, path
+
 
 def test_web_update_action_names_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
