@@ -63,9 +63,9 @@ Examples:
     superforecasting-agent --toolsets forecast-desk
     superforecasting-agent chat --worktree        Start forecast support in an isolated git worktree
     superforecasting-agent gateway install        Install gateway background service
-    superforecasting-agent sessions list          List past sessions
-    superforecasting-agent sessions browse        Interactive session picker
-    superforecasting-agent sessions rename ID T   Rename/title a session
+    superforecasting-agent sessions list          List past forecast sessions
+    superforecasting-agent sessions browse        Interactive forecast-session picker
+    superforecasting-agent sessions rename ID T   Rename/title a forecast session
     superforecasting-agent logs                   View agent.log (last 50 lines)
     superforecasting-agent logs -f                Follow agent.log in real time
     superforecasting-agent logs errors            View errors.log

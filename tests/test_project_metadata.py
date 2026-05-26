@@ -426,6 +426,11 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert "Search prior Forecast Desk and CLI forecast sessions with FTS5" in text
     assert "Recent forecast sessions with metadata and previews" in text
     assert "Expose the in-browser Forecast Desk tab" in text
+    assert "Interactive forecast-session picker with search and resume" in text
+    assert "Export forecast sessions to JSONL" in text
+    assert "Delete old forecast sessions" in text
+    assert "Show forecast-session store statistics" in text
+    assert "Set or change a forecast session title" in text
     assert "Expose the in-browser Forecast Chat tab" not in text
     assert "Forecast Desk is only reachable from localhost." in text
     assert "Loading Forecast Desk" in text
@@ -438,6 +443,10 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert "Resume from Research Sessions" not in text
     assert "Search prior Forecast Desk and CLI research sessions with FTS5" not in text
     assert "Recent research sessions with metadata and previews" not in text
+    assert "Interactive session picker with search and resume" not in text
+    assert "Delete old sessions" not in text
+    assert "Show session-store statistics" not in text
+    assert "Set or change a session title" not in text
     assert "embedded chat is a supporting surface" not in text
     assert "caller's chat UI" not in text
     assert "inline in ChatPage" not in text
@@ -453,6 +462,20 @@ def test_embedded_tui_surface_is_forecast_desk():
     )
     assert "Forecast Session" in gateway_text
     assert "Forecast Chat" not in gateway_text
+
+    sessions_doc = (root / "website" / "docs" / "user-guide" / "sessions.md").read_text(
+        encoding="utf-8"
+    )
+    assert "List recent forecast sessions" in sessions_doc
+    assert "Forecast Session Statistics" in sessions_doc
+    assert "Forecast Session Search Tool" in sessions_doc
+    assert "full-text search across past forecast transcripts" in sessions_doc
+    assert "Returns recent forecast sessions chronologically" in sessions_doc
+    assert "List recent sessions" not in sessions_doc
+    assert "Research Session Statistics" not in sessions_doc
+    assert "Research Session Search Tool" not in sessions_doc
+    assert "full-text search across past research transcripts" not in sessions_doc
+    assert "Returns recent sessions chronologically" not in sessions_doc
 
 
 def test_website_internal_links_are_base_url_relative():
@@ -1002,6 +1025,8 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     )
     locale_en = (root / "locales" / "en.yaml").read_text(encoding="utf-8")
     install_ps1 = (root / "scripts" / "install.ps1").read_text(encoding="utf-8")
+    main_py = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
+    parser_py = (root / "hermes_cli" / "_parser.py").read_text(encoding="utf-8")
 
     assert "Persistent session goals for Superforecasting Agent" in goals
     assert "goal satisfied by the forecaster's last response" in goals
@@ -1061,6 +1086,11 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Forecast session title set:" in cli
     assert "current forecast session stays free" in tips
     assert "previously named forecast session" in tips
+    assert "Interactive forecast-session picker with search" in main_py
+    assert "Manage forecast-session history" in main_py
+    assert "List recent forecast sessions" in main_py
+    assert "Interactive forecast-session picker" in parser_py
+    assert "interactive forecast-session picker with search" in tips
     assert "Set this conversation as the scheduled forecast-review delivery channel" in commands
     assert "Set this conversation as the home delivery channel" not in commands
     assert "Start a new session (fresh session ID + history)" not in commands
@@ -1080,6 +1110,11 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Session title set:" not in cli
     assert "current session stays free" not in tips
     assert "previously named session" not in tips
+    assert "Interactive session picker with search" not in main_py
+    assert "Manage session history" not in main_py
+    assert "List recent sessions" not in main_py
+    assert "Interactive session picker" not in parser_py
+    assert "interactive session picker with search" not in tips
     assert "destination chat" not in cli
     assert "system prompt belongs to the core forecast protocol" in conversation_loop
     assert "system prompt is Hermes's territory" not in conversation_loop

@@ -41,7 +41,7 @@ Usage:
     superforecasting-agent update              Update to latest version
     superforecasting-agent uninstall           Uninstall Superforecasting Agent
     superforecasting-agent acp                 Run as an ACP server for editor integration
-    superforecasting-agent sessions browse     Interactive session picker with search
+    superforecasting-agent sessions browse     Interactive forecast-session picker with search
 
     superforecasting-agent claw migrate --dry-run  # Preview migration without changes
 """
@@ -12410,12 +12410,14 @@ Examples:
     # =========================================================================
     sessions_parser = subparsers.add_parser(
         "sessions",
-        help="Manage session history (list, rename, export, prune, delete)",
-        description="View and manage the SQLite session store",
+        help="Manage forecast-session history (list, rename, export, prune, delete)",
+        description="View and manage the SQLite forecast-session store",
     )
     sessions_subparsers = sessions_parser.add_subparsers(dest="sessions_action")
 
-    sessions_list = sessions_subparsers.add_parser("list", help="List recent sessions")
+    sessions_list = sessions_subparsers.add_parser(
+        "list", help="List recent forecast sessions"
+    )
     sessions_list.add_argument(
         "--source", help="Filter by source (cli, telegram, discord, etc.)"
     )
@@ -12424,7 +12426,7 @@ Examples:
     )
 
     sessions_export = sessions_subparsers.add_parser(
-        "export", help="Export sessions to a JSONL file"
+        "export", help="Export forecast sessions to a JSONL file"
     )
     sessions_export.add_argument(
         "output", help="Output JSONL file path (use - for stdout)"
@@ -12433,36 +12435,40 @@ Examples:
     sessions_export.add_argument("--session-id", help="Export a specific session")
 
     sessions_delete = sessions_subparsers.add_parser(
-        "delete", help="Delete a specific session"
+        "delete", help="Delete a specific forecast session"
     )
-    sessions_delete.add_argument("session_id", help="Session ID to delete")
+    sessions_delete.add_argument("session_id", help="Forecast session ID to delete")
     sessions_delete.add_argument(
         "--yes", "-y", action="store_true", help="Skip confirmation"
     )
 
-    sessions_prune = sessions_subparsers.add_parser("prune", help="Delete old sessions")
+    sessions_prune = sessions_subparsers.add_parser(
+        "prune", help="Delete old forecast sessions"
+    )
     sessions_prune.add_argument(
         "--older-than",
         type=int,
         default=90,
-        help="Delete sessions older than N days (default: 90)",
+        help="Delete forecast sessions older than N days (default: 90)",
     )
     sessions_prune.add_argument("--source", help="Only prune sessions from this source")
     sessions_prune.add_argument(
         "--yes", "-y", action="store_true", help="Skip confirmation"
     )
 
-    sessions_subparsers.add_parser("stats", help="Show session store statistics")
+    sessions_subparsers.add_parser("stats", help="Show forecast-session store statistics")
 
     sessions_rename = sessions_subparsers.add_parser(
-        "rename", help="Set or change a session's title"
+        "rename", help="Set or change a forecast session's title"
     )
-    sessions_rename.add_argument("session_id", help="Session ID to rename")
-    sessions_rename.add_argument("title", nargs="+", help="New title for the session")
+    sessions_rename.add_argument("session_id", help="Forecast session ID to rename")
+    sessions_rename.add_argument(
+        "title", nargs="+", help="New title for the forecast session"
+    )
 
     sessions_browse = sessions_subparsers.add_parser(
         "browse",
-        help="Interactive session picker — browse, search, and resume sessions",
+        help="Interactive forecast-session picker — browse, search, and resume forecast sessions",
     )
     sessions_browse.add_argument(
         "--source", help="Filter by source (cli, telegram, discord, etc.)"

@@ -279,13 +279,13 @@ Superforecasting Agent provides a full set of forecast-session management comman
 ### List Forecast Sessions
 
 ```bash
-# List recent sessions (default: last 20)
+# List recent forecast sessions (default: last 20)
 superforecasting-agent sessions list
 
 # Filter by platform
 superforecasting-agent sessions list --source telegram
 
-# Show more sessions
+# Show more forecast sessions
 superforecasting-agent sessions list --limit 50
 ```
 
@@ -365,7 +365,7 @@ superforecasting-agent sessions prune --older-than 30 --yes
 Pruning only deletes **ended** sessions (sessions that have been explicitly ended or auto-reset). Active sessions are never pruned.
 :::
 
-### Research Session Statistics
+### Forecast Session Statistics
 
 ```bash
 superforecasting-agent sessions stats
@@ -384,9 +384,9 @@ Database size: 12.4 MB
 
 For forecast performance analytics, use `superforecasting-agent forecast calibration`, `superforecasting-agent forecast performance`, and `superforecasting-agent forecast backtest`. For inherited runtime analytics such as token usage, cost estimates, tool breakdown, and activity patterns, use [`superforecasting-agent insights`](/reference/cli-commands#hermes-insights).
 
-## Research Session Search Tool
+## Forecast Session Search Tool
 
-The agent has a built-in `session_search` tool that performs full-text search across past research transcripts using SQLite's FTS5 engine and lets the agent scroll through any session it finds. No LLM calls, no summarization, no truncation. Every shape returns actual messages from the DB.
+The agent has a built-in `session_search` tool that performs full-text search across past forecast transcripts using SQLite's FTS5 engine and lets the agent scroll through any session it finds. No LLM calls, no summarization, no truncation. Every shape returns actual messages from the DB.
 
 For forecast work, session search is a recovery aid. If prior evidence, probabilities, or lessons matter, the agent should migrate them into the forecast ledger rather than treating transcript recall as durable belief state.
 
@@ -432,7 +432,7 @@ Typical wall time: 1–2ms per scroll call.
 session_search()
 ```
 
-Returns recent sessions chronologically (titles, previews, timestamps). Useful when the user asks "what was I working on" without naming a topic.
+Returns recent forecast sessions chronologically (titles, previews, timestamps). Useful when the user asks "what was I working on" without naming a topic.
 
 ### FTS5 query syntax
 
@@ -452,7 +452,7 @@ The keyword mode supports standard FTS5 query syntax:
 
 The agent is prompted to use session search automatically:
 
-> *"When the user references something from a past research thread or you suspect relevant prior context exists, use session_search to recall it before asking them to repeat themselves. For forecast work, prefer ledger reads for scoreable beliefs and use session search to recover transcript context."*
+> *"When the user references something from a past forecast thread or you suspect relevant prior context exists, use session_search to recall it before asking them to repeat themselves. For forecast work, prefer ledger reads for scoreable beliefs and use session search to recover transcript context."*
 
 Typical triggers: "we did this before", "remember when", "last time", "as I mentioned", "what probability did we discuss", or any reference to a project, domain, or question that is not in the current window.
 
@@ -550,10 +550,10 @@ Active sessions are never auto-pruned, regardless of age.
 ### Manual Cleanup
 
 ```bash
-# Prune sessions older than 90 days
+# Prune forecast sessions older than 90 days
 superforecasting-agent sessions prune
 
-# Delete a specific session
+# Delete a specific forecast session
 superforecasting-agent sessions delete <session_id>
 
 # Export before pruning (backup)
@@ -562,5 +562,5 @@ superforecasting-agent sessions prune --older-than 30 --yes
 ```
 
 :::tip
-The database grows slowly (typical: 10-15 MB for hundreds of sessions) and session history powers `session_search` recall across past research transcripts, so auto-prune ships disabled. Enable it if you're running a heavy gateway/cron workload where `state.db` is meaningfully affecting performance (observed failure mode: 384 MB state.db with about 1000 sessions slowing down FTS5 inserts and `/resume` listing). Use `superforecasting-agent sessions prune` for one-off cleanup without turning on the automatic sweep.
+The database grows slowly (typical: 10-15 MB for hundreds of sessions) and session history powers `session_search` recall across past forecast transcripts, so auto-prune ships disabled. Enable it if you're running a heavy gateway/cron workload where `state.db` is meaningfully affecting performance (observed failure mode: 384 MB state.db with about 1000 sessions slowing down FTS5 inserts and `/resume` listing). Use `superforecasting-agent sessions prune` for one-off cleanup without turning on the automatic sweep.
 :::

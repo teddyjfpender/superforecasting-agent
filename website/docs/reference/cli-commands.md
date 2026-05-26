@@ -1130,13 +1130,13 @@ Subcommands:
 
 | Subcommand | Description |
 |------------|-------------|
-| `list` | List recent sessions. |
-| `browse` | Interactive session picker with search and resume. |
-| `export <output> [--session-id ID]` | Export sessions to JSONL. |
-| `delete <session-id>` | Delete one session. |
-| `prune` | Delete old sessions. |
-| `stats` | Show session-store statistics. |
-| `rename <session-id> <title>` | Set or change a session title. |
+| `list` | List recent forecast sessions. |
+| `browse` | Interactive forecast-session picker with search and resume. |
+| `export <output> [--session-id ID]` | Export forecast sessions to JSONL. |
+| `delete <session-id>` | Delete one forecast session. |
+| `prune` | Delete old forecast sessions. |
+| `stats` | Show forecast-session store statistics. |
+| `rename <session-id> <title>` | Set or change a forecast session title. |
 
 ## `superforecasting-agent insights` {#hermes-insights}
 
