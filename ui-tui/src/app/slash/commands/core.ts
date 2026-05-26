@@ -135,12 +135,12 @@ const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
   }
 
   if (openIndex !== null && openIndex <= 0) {
-    return ctx.transcript.sys('usage: /book [list [limit]|row-number|forecast-id]')
+    return ctx.transcript.sys('usage: /questions [list [limit]|row-number|forecast-id]')
   }
 
   const listLimit = listMatch?.[1] ? Number.parseInt(listMatch[1], 10) : 20
   if (!Number.isFinite(listLimit) || listLimit <= 0) {
-    return ctx.transcript.sys('usage: /book [list [limit]|row-number|forecast-id]')
+    return ctx.transcript.sys('usage: /questions [list [limit]|row-number|forecast-id]')
   }
   const limit = Math.max(openIndex ?? listLimit, listLimit)
 
@@ -156,7 +156,7 @@ const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
         updateForecastDeskState(r)
         const row = r.summary.questions?.[openIndex - 1]
         if (!row?.id) {
-          ctx.transcript.sys(`no forecast row ${openIndex}; run /book list ${limit} to inspect the current book`)
+          ctx.transcript.sys(`no forecast row ${openIndex}; run /questions list ${limit} to inspect current forecast questions`)
           return
         }
 
@@ -189,7 +189,7 @@ export const coreCommands: SlashCommand[] = [
               'override one section (thinking/tools/subagents/activity)'
             ],
             ['/heuristic [random|daily]', 'show a random or daily forecasting maxim'],
-            ['/book [row|list N]', 'show current forecast questions and drill into a numbered row'],
+            ['/questions [row|list N]', 'show current forecast questions and drill into a numbered row'],
             ['/forecast [limit|subcommand]', 'show active forecasts or run forecast lifecycle commands'],
             ['/sources [--json]', 'list evidence source adapters and watch prefixes'],
             ['/new-forecast [args]', 'create a scoreable forecast question'],
@@ -300,9 +300,9 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    aliases: ['questions', 'qbook'],
-    help: 'show current forecast questions; /book <row> opens details',
-    name: 'book',
+    aliases: ['book', 'qbook'],
+    help: 'show current forecast questions; /questions <row> opens details',
+    name: 'questions',
     run: (arg, ctx) => runForecastBook(arg, ctx)
   },
 

@@ -10,7 +10,11 @@ import pytest
 
 from forecasting import ForecastLedger
 from forecasting.cron_runner import run_due_reviews
-from forecasting.dashboard import build_dashboard_summary, render_dashboard_text
+from forecasting.dashboard import (
+    build_dashboard_summary,
+    render_dashboard_text,
+    render_forecast_book_text,
+)
 from forecasting.ensembles import (
     bayesian_binary_update,
     linear_trend_projection,
@@ -335,6 +339,7 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
 
     summary = build_dashboard_summary(ledger=ledger)
     text = render_dashboard_text(summary)
+    book_text = render_forecast_book_text(summary, now="2026-05-26T00:00:00Z")
 
     assert summary["active_count"] == 1
     row = summary["questions"][0]
@@ -451,6 +456,12 @@ def test_shared_dashboard_summary_renders_active_forecast_book(tmp_path):
     assert "1/0/0" in text
     assert "+0.150" in text
     assert "replay only" in text
+    assert "FORECAST QUESTIONS" in book_text
+    assert "Row" in book_text
+    assert "P(now)" in book_text
+    assert "Freshness" in book_text
+    assert "24d old" in book_text
+    assert "Open details with /questions <row>" in book_text
 
 
 def test_dashboard_summary_counts_forecasts_near_close(tmp_path):

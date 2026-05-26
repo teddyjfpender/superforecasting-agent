@@ -74,10 +74,12 @@ class TestCommandRegistry:
 
     def test_forecast_category_is_first_class(self):
         forecast = next(cmd for cmd in COMMAND_REGISTRY if cmd.name == "forecast")
-        book = next(cmd for cmd in COMMAND_REGISTRY if cmd.name == "book")
+        questions = next(cmd for cmd in COMMAND_REGISTRY if cmd.name == "questions")
         assert forecast.category == "Forecast Desk"
-        assert book.category == "Forecast Desk"
+        assert questions.category == "Forecast Desk"
+        assert "book" in questions.aliases
         assert next(iter(COMMANDS_BY_CATEGORY)) == "Forecast Desk"
+        assert "/questions" in COMMANDS_BY_CATEGORY["Forecast Desk"]
         assert "/book" in COMMANDS_BY_CATEGORY["Forecast Desk"]
         assert "/forecast" in COMMANDS_BY_CATEGORY["Forecast Desk"]
 
@@ -137,6 +139,8 @@ class TestResolveCommand:
         assert resolve_command("reload_mcp").name == "reload-mcp"
         assert resolve_command("codex_runtime").name == "codex-runtime"
         assert resolve_command("tasks").name == "agents"
+        assert resolve_command("book").name == "questions"
+        assert resolve_command("qbook").name == "questions"
 
     def test_topic_is_gateway_command(self):
         topic = resolve_command("topic")

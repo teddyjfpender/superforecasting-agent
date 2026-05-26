@@ -61,7 +61,7 @@ describe('forecast desk panel helpers', () => {
       ]
     ])
     expect(sections.find(section => section.title === 'Drill Down')?.rows?.[0]).toEqual([
-      '/book 1',
+      '/questions 1',
       'open full details for Will the CPI release exceed consensus?'
     ])
   })

@@ -172,8 +172,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
 
     # Forecast desk
     CommandDef("sessions", "Browse and resume previous forecast sessions", "Session"),
-    CommandDef("book", "Show current forecast questions and headline probabilities", "Forecast Desk",
-               aliases=("questions", "qbook"), args_hint="[row|list N]", cli_only=True),
+    CommandDef("questions", "Show current forecast questions and headline probabilities", "Forecast Desk",
+               aliases=("book", "qbook"), args_hint="[row|list N]", cli_only=True),
     CommandDef("forecast", "Run forecast desk lifecycle commands", "Forecast Desk",
                aliases=("forecasts",), args_hint="[subcommand]", cli_only=True,
                subcommands=FORECAST_DESK_SUBCOMMANDS),

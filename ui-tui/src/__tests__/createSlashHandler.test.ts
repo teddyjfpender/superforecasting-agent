@@ -169,7 +169,7 @@ describe('createSlashHandler', () => {
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
   })
 
-  it('renders /book as a numbered forecast summary without requiring ids', async () => {
+  it('renders /questions as a numbered forecast summary without requiring ids', async () => {
     const rpc = vi.fn((method: string) => {
       if (method === 'forecast.dashboard') {
         return Promise.resolve({
@@ -199,7 +199,7 @@ describe('createSlashHandler', () => {
     })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
-    expect(createSlashHandler(ctx)('/book')).toBe(true)
+    expect(createSlashHandler(ctx)('/questions')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 20 })
     await vi.waitFor(() => {
       expect(ctx.transcript.panel).toHaveBeenCalledWith(
@@ -215,7 +215,7 @@ describe('createSlashHandler', () => {
             title: 'Forecast Questions'
           }),
           expect.objectContaining({
-            rows: [['/book 1', 'open full details for Will the CPI release exceed consensus?']],
+            rows: [['/questions 1', 'open full details for Will the CPI release exceed consensus?']],
             title: 'Drill Down'
           })
         ])
@@ -223,7 +223,7 @@ describe('createSlashHandler', () => {
     })
   })
 
-  it('opens a forecast from /book by numbered row', async () => {
+  it('opens a forecast from /questions by numbered row', async () => {
     const rpc = vi.fn((method: string, params: Record<string, unknown>) => {
       if (method === 'forecast.dashboard') {
         return Promise.resolve({
@@ -247,12 +247,30 @@ describe('createSlashHandler', () => {
     })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
-    expect(createSlashHandler(ctx)('/book 2')).toBe(true)
+    expect(createSlashHandler(ctx)('/questions 2')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 20 })
     await vi.waitFor(() => {
       expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'show fq_second' })
       expect(ctx.transcript.sys).toHaveBeenCalledWith('opened show fq_second')
     })
+  })
+
+  it('keeps /book as a forecast-question shortcut alias', async () => {
+    const rpc = vi.fn(() =>
+      Promise.resolve({
+        summary: {
+          active_count: 0,
+          open_alert_count: 0,
+          product: 'Superforecasting Agent',
+          questions: [],
+          review_queue_count: 0
+        }
+      })
+    )
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/book')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 20 })
   })
 
   it('routes /forecast lifecycle subcommands to the forecast command RPC', async () => {

@@ -977,7 +977,7 @@ export const forecastBookSections = (
         ['active', formatCount(summary.active_count ?? questions.length)],
         ['alerts', formatCount(summary.open_alert_count)],
         ['reviews', formatCount(summary.review_queue_count)],
-        ['freshness', 'Use /book <number> to drill into a row without copying its id']
+        ['freshness', 'Use /questions <number> to drill into a row without copying its id']
       ],
       title: 'Book'
     }
@@ -1011,7 +1011,7 @@ export const forecastBookSections = (
 
   sections.push({
     rows: questions.slice(0, 8).map((row, index) => [
-      `/book ${index + 1}`,
+      `/questions ${index + 1}`,
       `open full details for ${truncate(row.title || row.id || `forecast ${index + 1}`, 76)}`
     ]),
     title: 'Drill Down'

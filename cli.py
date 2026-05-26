@@ -6562,12 +6562,12 @@ class HermesCLI:
             _cprint(f"  forecast: {exc}")
 
     def _handle_forecast_book_command(self, cmd_original: str) -> None:
-        """Handle /book as a forecast-question summary and numbered drill-down."""
+        """Handle /questions as a forecast-question summary and numbered drill-down."""
         parts = cmd_original.split(None, 1)
         raw_arg = parts[1].strip() if len(parts) > 1 else ""
         try:
             from forecasting.cli import main as forecast_main
-            from forecasting.dashboard import build_dashboard_summary, render_dashboard_text
+            from forecasting.dashboard import build_dashboard_summary, render_forecast_book_text
         except Exception as exc:
             _cprint(f"  book: {exc}")
             return
@@ -6575,13 +6575,13 @@ class HermesCLI:
         if raw_arg and raw_arg.isdigit():
             index = int(raw_arg)
             if index <= 0:
-                _cprint("  Usage: /book [row|list N|forecast-id]")
+                _cprint("  Usage: /questions [row|list N|forecast-id]")
                 return
             try:
                 summary = build_dashboard_summary(limit=max(index, 20))
                 row = (summary.get("questions") or [])[index - 1]
             except IndexError:
-                _cprint(f"  No forecast row {index}. Run /book to inspect the current book.")
+                _cprint(f"  No forecast row {index}. Run /questions to inspect current forecast questions.")
                 return
             except Exception as exc:
                 _cprint(f"  book: {exc}")
@@ -6604,7 +6604,7 @@ class HermesCLI:
                 return
 
         try:
-            print(render_dashboard_text(build_dashboard_summary(limit=limit)))
+            print(render_forecast_book_text(build_dashboard_summary(limit=limit)))
         except Exception as exc:
             _cprint(f"  book: {exc}")
 
@@ -8203,7 +8203,7 @@ class HermesCLI:
             self._handle_resume_command(cmd_original)
         elif canonical == "sessions":
             self._handle_sessions_command(cmd_original)
-        elif canonical == "book":
+        elif canonical in {"questions", "book"}:
             self._handle_forecast_book_command(cmd_original)
         elif canonical == "forecast":
             self._handle_forecast_command(cmd_original)

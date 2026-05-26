@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 from forecasting.backtesting import (
@@ -724,6 +725,106 @@ def format_confidence(value: Any) -> str:
     if isinstance(value, (int, float)):
         return f"{float(value):.2f}"
     return "-"
+
+
+def format_freshness(value: str | None, *, now: datetime | str | None = None) -> str:
+    if not value:
+        return "no as-of"
+
+    timestamp = _parse_datetime(value)
+    if not timestamp:
+        return "as-of set"
+
+    now_dt = _parse_datetime(now) if isinstance(now, str) else now
+    now_dt = now_dt or datetime.now(timezone.utc)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    if now_dt.tzinfo is None:
+        now_dt = now_dt.replace(tzinfo=timezone.utc)
+
+    age_days = max(0, int((now_dt - timestamp).total_seconds() // 86400))
+    if age_days == 0:
+        return "fresh today"
+    if age_days == 1:
+        return "1d old"
+    if age_days < 31:
+        return f"{age_days}d old"
+    return f"{age_days // 30}mo old"
+
+
+def _parse_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def render_forecast_book_text(summary: dict[str, Any], *, now: datetime | str | None = None) -> str:
+    rows = list(summary.get("questions") or [])
+    lines = [
+        str(summary.get("product") or PRODUCT_NAME),
+        (
+            f"active: {summary.get('active_count', 0)}  "
+            f"open_alerts: {summary.get('open_alert_count', 0)}  "
+            f"review_queue: {summary.get('review_queue_count', 0)}"
+        ),
+        "",
+        "FORECAST QUESTIONS",
+    ]
+
+    if not rows:
+        lines.append("No active forecasts.")
+        return "\n".join(lines)
+
+    lines.append(
+        f"{'Row':<5} {'P(now)':<12} {'Delta':<8} {'Freshness':<12} {'AsOf':<12} "
+        f"{'Close':<12} {'Conf':<6} {'Ev':>3} {'Status':<12} Question"
+    )
+    for index, row in enumerate(rows, start=1):
+        status = question_status(row)
+        lines.append(
+            f"{index:<5} "
+            f"{format_probability(row.get('probability')):<12} "
+            f"{format_delta(row.get('delta')):<8} "
+            f"{format_freshness(row.get('as_of'), now=now):<12} "
+            f"{short_date(row.get('as_of')):<12} "
+            f"{short_date(row.get('close_time')):<12} "
+            f"{format_confidence(row.get('confidence')):<6} "
+            f"{int(row.get('evidence_count') or 0):>3} "
+            f"{status:<12} "
+            f"{row.get('title') or ''}"
+        )
+    lines.extend(
+        [
+            "",
+            (
+                "Open details with /questions <row> or /book <row>; "
+                "use /questions list 50 for more rows."
+            ),
+        ]
+    )
+    return "\n".join(lines)
+
+
+def short_date(value: str | None) -> str:
+    return str(value or "-")[:10]
+
+
+def question_status(row: dict[str, Any]) -> str:
+    alerts = int(row.get("open_alert_count") or 0)
+    stale_assumptions = int(row.get("stale_assumption_count") or 0)
+    stale_references = int(row.get("stale_reference_class_count") or 0)
+    if alerts > 0:
+        return f"{alerts} alert" if alerts == 1 else f"{alerts} alerts"
+    if stale_assumptions > 0:
+        return "stale asm"
+    if stale_references > 0:
+        return "stale ref" if stale_references == 1 else "stale refs"
+    if row.get("probability") is None:
+        return "needs p"
+    return str(row.get("status") or "active")
 
 
 def format_metric(value: Any) -> str:
