@@ -85,7 +85,7 @@ export function ArtLines({ lines }: { lines: [string, string][] }) {
   return (
     <>
       {lines.map(([c, text], i) => (
-        <Text color={c} key={i}>
+        <Text color={c} key={i} wrap="truncate">
           {text}
         </Text>
       ))}
@@ -153,7 +153,8 @@ const TOOLSETS_MAX = 8
 export function SessionPanel({ info, sid, t }: SessionPanelProps) {
   const cols = useStdout().stdout?.columns ?? 100
   const heroLines = forecastHero(t.color, t.bannerHero || undefined)
-  const leftW = Math.min((artWidth(heroLines) || FORECAST_HERO_WIDTH) + 4, Math.floor(cols * 0.4))
+  const heroW = artWidth(heroLines) || FORECAST_HERO_WIDTH
+  const leftW = heroW + 4
   const wide = cols >= 90 && leftW + 40 < cols
   const w = Math.max(20, wide ? cols - leftW - 14 : cols - 12)
   const lineBudget = Math.max(12, w - 2)

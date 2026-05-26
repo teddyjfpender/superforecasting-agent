@@ -82,11 +82,12 @@ calibration`, `/ledger backtests`, `/ledger all`, and `/ledger search <words>`.
 Aliases `/desk`, `/store`, and `/state` open the ledger browser.
 
 The TUI keeps those ledger views visible in a persistent `views` strip when
-space allows. `Alt+1` through `Alt+9` jump to book, review, alerts, evidence,
-learning, schedules, calibration, backtests, and all views. `Ctrl+F` starts
-forecast lookup; if you have typed a phrase such as `inflation energy`, it
-converts it into `/find inflation energy` so you can search the forecast book
-without remembering IDs.
+space allows. `Alt/Option+1` through `Alt/Option+9` jump to book, review,
+alerts, evidence, learning, schedules, calibration, backtests, and all views.
+On macOS, the shortcuts also work in terminals that send Option-number glyphs
+instead of Meta chords. `Ctrl+F` starts forecast lookup; if you have typed a
+phrase such as `inflation energy`, it converts it into `/find inflation energy`
+so you can search the forecast book without remembering IDs.
 
 On wide terminals, the TUI also keeps a compact forecast desk rail beside the
 transcript. The rail is refreshed from the same dashboard data and keeps the
@@ -96,7 +97,8 @@ watchlist rows keep each at-risk forecast's probability, delta, as-of date, clos
 date, confidence, status, and title visible; concrete watchlist rows can be
 selected in mouse-enabled terminals to open the full forecast details. When
 scored ensemble forecasts exist, the rail also shows the top contributing
-forecast components.
+forecast components. Concrete alert, doctor, and evidence next-action rows are
+also selectable when the row contains a safe forecast command.
 
 The composer also keeps a one-line `desk actions` strip derived from the same
 triage state. It stays visible on narrower terminals where the side rail cannot

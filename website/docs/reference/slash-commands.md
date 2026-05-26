@@ -56,11 +56,13 @@ The forecast desk is the primary product surface. Use these before reaching for 
 | `/import-packet <export.json>` | TUI | Restore an exported forecast packet. |
 | `/pilot-aggregate [files...]` | TUI | Aggregate tester export packets. |
 
-TUI keyboard shortcuts mirror the core ledger views: `Alt+1` opens the
-forecast book, `Alt+2` review, `Alt+3` alerts, `Alt+4` evidence, `Alt+5`
-learning, `Alt+6` schedules, `Alt+7` calibration, `Alt+8` backtests, and
-`Alt+9` all. `Ctrl+F` starts forecast lookup or converts a typed phrase into
-`/find <phrase>`.
+TUI keyboard shortcuts mirror the core ledger views: `Alt/Option+1` opens the
+forecast book, `Alt/Option+2` review, `Alt/Option+3` alerts,
+`Alt/Option+4` evidence, `Alt/Option+5` learning, `Alt/Option+6` schedules,
+`Alt/Option+7` calibration, `Alt/Option+8` backtests, and `Alt/Option+9` all.
+macOS terminals that send Option-number glyphs instead of Meta chords are
+handled as a fallback. `Ctrl+F` starts forecast lookup or converts a typed
+phrase into `/find <phrase>`.
 
 ## Permissions and admin/user split
 

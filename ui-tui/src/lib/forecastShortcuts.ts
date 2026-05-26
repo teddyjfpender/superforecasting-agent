@@ -1,6 +1,7 @@
 export interface ForecastShortcutKeyEvent {
   alt?: boolean
   ctrl?: boolean
+  escape?: boolean
   meta?: boolean
   shift?: boolean
   super?: boolean
@@ -103,7 +104,31 @@ const cleanCtrl = (key: ForecastShortcutKeyEvent) =>
   key.ctrl === true && key.alt !== true && key.meta !== true && key.shift !== true && key.super !== true
 
 const cleanAlt = (key: ForecastShortcutKeyEvent) =>
-  (key.alt === true || key.meta === true) && key.ctrl !== true && key.shift !== true && key.super !== true
+  (key.alt === true || key.meta === true || key.escape === true) &&
+  key.ctrl !== true &&
+  key.shift !== true &&
+  key.super !== true
+
+const MAC_OPTION_DIGITS: Record<string, string> = {
+  '¡': '1',
+  '™': '2',
+  '£': '3',
+  '¢': '4',
+  '∞': '5',
+  '§': '6',
+  '¶': '7',
+  '•': '8',
+  'ª': '9'
+}
+
+const cleanMacOptionDigit = (input: string, key: ForecastShortcutKeyEvent) =>
+  key.alt !== true &&
+  key.ctrl !== true &&
+  key.escape !== true &&
+  key.meta !== true &&
+  key.shift !== true &&
+  key.super !== true &&
+  MAC_OPTION_DIGITS[input]
 
 export const forecastShortcutForKey = (
   input: string,
@@ -123,11 +148,13 @@ export const forecastShortcutForKey = (
     return FORECAST_TUI_FIND_SHORTCUT
   }
 
-  if (!cleanAlt(key) || trimmedComposer) {
+  const altDigit = cleanAlt(key) ? ch : cleanMacOptionDigit(input, key)
+
+  if (!altDigit || trimmedComposer) {
     return null
   }
 
-  return FORECAST_TUI_VIEW_SHORTCUTS.find(shortcut => shortcut.hotkey.endsWith(ch)) ?? null
+  return FORECAST_TUI_VIEW_SHORTCUTS.find(shortcut => shortcut.hotkey.endsWith(altDigit)) ?? null
 }
 
 export const forecastFindDraft = (currentValue: string) => {

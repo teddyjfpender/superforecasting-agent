@@ -253,7 +253,7 @@ describe('forecast desk panel helpers', () => {
       expect.arrayContaining([
         expect.objectContaining({
           rows: expect.arrayContaining([
-            ['al_12345 warning', 'watched_source_changed  /forecast self-check --question fq_abc']
+            ['al_12345 warning', 'watched_source_changed  /forecast self-check --question fq_abc', '/forecast self-check --question fq_abc']
           ]),
           title: 'Alerts'
         })
@@ -326,7 +326,8 @@ describe('forecast desk panel helpers', () => {
         ['claim live superiority', 'no'],
         [
           'next scheduled self check runs',
-          'Run due schedule rows with `forecast schedule run --due`.'
+          'Run due schedule rows with `forecast schedule run --due`.',
+          '/forecast schedule run --due'
         ]
       ])
     )

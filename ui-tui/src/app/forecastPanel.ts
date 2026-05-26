@@ -38,6 +38,39 @@ const truncate = (value: string, max: number) => (value.length > max ? `${value.
 
 const draftTarget = (command: string) => `draft:${command}`
 
+const unsafeCommandExample = (value: string) => /(?:<[^>]+>|\[[^\]]+\]|\.\.\.|;)/.test(value)
+
+const forecastActionTarget = (value: null | string | undefined): string | undefined => {
+  const raw = (value ?? '').trim()
+  if (!raw) {
+    return undefined
+  }
+
+  const direct = raw.startsWith('/') ? raw.split(/\s+(?:and|then)\s+/i)[0]?.trim() ?? raw : ''
+  if (direct && !unsafeCommandExample(direct)) {
+    return direct
+  }
+
+  const quoted = raw.match(/`(\/?(?:forecast|superforecasting-agent\s+forecast)\s+[^`]+)`/i)?.[1]?.trim()
+  const command = quoted || raw.match(/\b(forecast\s+[A-Za-z0-9][^.;\n]*)/i)?.[1]?.trim()
+  if (!command || unsafeCommandExample(command)) {
+    return undefined
+  }
+
+  if (command.toLowerCase().startsWith('superforecasting-agent forecast ')) {
+    return `/forecast ${command.slice('superforecasting-agent forecast '.length).trim()}`
+  }
+
+  if (command.toLowerCase().startsWith('forecast ')) {
+    return `/forecast ${command.slice('forecast '.length).trim()}`
+  }
+
+  return command.startsWith('/') ? command : undefined
+}
+
+const rowWithTarget = (key: string, value: string, target?: string): ForecastPanelRow =>
+  target ? [key, value, target] : [key, value]
+
 const numberValue = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null
 
@@ -160,8 +193,8 @@ const formatDoctorStatus = (value: string | undefined) =>
 const plural = (count: number, singular: string, pluralForm = `${singular}s`) =>
   `${count} ${count === 1 ? singular : pluralForm}`
 
-const doctorRows = (doctor: ForecastDashboardDoctor): [string, string][] => {
-  const rows: [string, string][] = [
+const doctorRows = (doctor: ForecastDashboardDoctor): ForecastPanelRow[] => {
+  const rows: ForecastPanelRow[] = [
     ['status', formatDoctorStatus(doctor.doctor_status)],
     [
       'pilot',
@@ -178,10 +211,14 @@ const doctorRows = (doctor: ForecastDashboardDoctor): [string, string][] => {
   ]
 
   for (const item of (doctor.next_actions ?? []).slice(0, 3)) {
-    rows.push([
-      `next ${formatRequirement(item.requirement_id || item.source)}`,
-      truncate(item.action || '/forecast doctor --json', 88)
-    ])
+    const action = item.action || '/forecast doctor --json'
+    rows.push(
+      rowWithTarget(
+        `next ${formatRequirement(item.requirement_id || item.source)}`,
+        truncate(action, 88),
+        forecastActionTarget(action)
+      )
+    )
   }
 
   return rows
@@ -1204,7 +1241,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
           truncate(row.recommended_action || '/forecast alerts', 64)
         ].join('  ')
 
-        return [key, details] as [string, string]
+        return rowWithTarget(key, details, forecastActionTarget(row.recommended_action))
       }),
       title: 'Open Alerts'
     })
@@ -1277,7 +1314,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
     const scoreCounts = evidenceStatus.score_counts ?? {}
     const backtestCounts = evidenceStatus.backtests ?? {}
     const gaps = (evidenceStatus.gaps ?? []).slice(0, 4).map(gap => gap.replace(/_/g, ' ')).join(', ') || 'none'
-    const evidenceRows: [string, string][] = [
+    const evidenceRows: ForecastPanelRow[] = [
       ['verdict', formatVerdict(evidenceStatus.verdict)],
       [
         'scores',
@@ -1291,7 +1328,10 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
     ]
 
     for (const item of (evidenceStatus.next_actions ?? []).slice(0, 3)) {
-      evidenceRows.push([`next ${formatRequirement(item.requirement_id)}`, truncate(item.action || '/forecast readiness', 88)])
+      const action = item.action || '/forecast readiness'
+      evidenceRows.push(
+        rowWithTarget(`next ${formatRequirement(item.requirement_id)}`, truncate(action, 88), forecastActionTarget(action))
+      )
     }
 
     sections.push({
@@ -1646,10 +1686,13 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
 
   if (alertsList.length) {
     sections.push({
-      rows: alertsList.slice(0, 3).map(row => [
-        `${shortId(row.id)} ${row.severity || 'info'}`,
-        truncate(`${row.reason || 'alert'}  ${row.recommended_action || '/forecast alerts'}`, 64)
-      ]),
+      rows: alertsList.slice(0, 3).map(row =>
+        rowWithTarget(
+          `${shortId(row.id)} ${row.severity || 'info'}`,
+          truncate(`${row.reason || 'alert'}  ${row.recommended_action || '/forecast alerts'}`, 64),
+          forecastActionTarget(row.recommended_action)
+        )
+      ),
       title: 'Alerts'
     })
   }
@@ -1673,7 +1716,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
     const scoreCounts = evidenceStatus.score_counts ?? {}
     const backtestCounts = evidenceStatus.backtests ?? {}
     const gaps = (evidenceStatus.gaps ?? []).slice(0, 3).map(gap => gap.replace(/_/g, ' ')).join(', ') || 'none'
-    const evidenceRows: [string, string][] = [
+    const evidenceRows: ForecastPanelRow[] = [
       ['readiness', formatVerdict(evidenceStatus.verdict)],
       ['live/backtest', `${formatCount(scoreCounts.live)}/${formatCount(scoreCounts.backtest)}`],
       [
@@ -1684,7 +1727,14 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
     ]
     const nextAction = evidenceStatus.next_actions?.[0]
     if (nextAction) {
-      evidenceRows.push([`next ${formatRequirement(nextAction.requirement_id)}`, truncate(nextAction.action || '/forecast readiness', 58)])
+      const action = nextAction.action || '/forecast readiness'
+      evidenceRows.push(
+        rowWithTarget(
+          `next ${formatRequirement(nextAction.requirement_id)}`,
+          truncate(action, 58),
+          forecastActionTarget(action)
+        )
+      )
     }
 
     sections.push({

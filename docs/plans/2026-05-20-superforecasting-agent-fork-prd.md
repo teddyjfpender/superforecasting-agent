@@ -501,8 +501,9 @@ row or search phrase before adding evidence or appending an explicit probability
 update. A ledger browser shortcut such as `/ledger` should let operators jump
 between book, review, alerts, evidence, learning, schedules, calibration,
 backtests, all, and search views. The TUI should keep those view shortcuts
-visible in the working layout, with `Alt+1` through `Alt+9` for the main ledger
-views and `Ctrl+F` for forecast lookup or typed-phrase-to-`/find` conversion.
+visible in the working layout, with `Alt/Option+1` through `Alt/Option+9` for
+the main ledger views, including macOS Option-key fallback handling, and
+`Ctrl+F` for forecast lookup or typed-phrase-to-`/find` conversion.
 
 Example:
 

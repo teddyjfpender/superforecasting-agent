@@ -37,8 +37,9 @@ snapshot branch.
 
 The current moving `superforecasting-agent-snapshot` branch includes the
 forecast question shortcut pass, structured TUI forecast-detail drill-down,
-`/ledger` view switching, persistent TUI `views` shortcuts, `Alt+1` through
-`Alt+9` ledger navigation, `Ctrl+F` forecast lookup, the fork-native
+`/ledger` view switching, persistent TUI `views` shortcuts, `Alt/Option+1`
+through `Alt/Option+9` ledger navigation with macOS Option-key glyph fallback,
+`Ctrl+F` forecast lookup, the fork-native
 `superforecasting-agent desk` support-session alias, required-source autopilot
 guardrails, RSS/source breadth, and the tester-handoff documentation refresh.
 Rerun the operator gate before pinning a newer cohort hash.
@@ -182,10 +183,13 @@ forecast book/search/detail/focused-action panels also expose clickable
 quick-edit rows that prefill those drafts into the composer. `/book` and `/qbook` remain
 compatibility aliases. `/ledger` browses forecast-store views such as book,
 review, alerts, evidence, learning, schedules, calibration, backtests, all, and
-search; `/desk`, `/store`, and `/state` are aliases. `/forecast` opens the
+search; `/desk`, `/store`, and `/state` are aliases. On macOS, Option-number
+ledger shortcuts work even when the terminal sends Option glyphs instead of
+Meta chords. `/forecast` opens the
 broader forecast desk panel; active rows, wide-rail watchlist rows, the header
-primary action, and concrete `desk actions` entries are selectable in
-mouse-enabled terminals. Placeholder command examples remain display-only until
+primary action, concrete alert/doctor/evidence next-action rows, and concrete
+`desk actions` entries are selectable in mouse-enabled terminals. Placeholder
+command examples remain display-only until
 filled in. `/schedule`, `/backtest`, `/calibration`, `/alerts`, `/doctor`, and
 `/readiness` jump to common workflow checks.
 

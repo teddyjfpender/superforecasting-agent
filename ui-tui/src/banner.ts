@@ -70,7 +70,7 @@ const colorize = (art: string[], gradient: readonly number[], c: ThemeColors): L
 }
 
 export const LOGO_WIDTH = 88
-export const FORECAST_HERO_WIDTH = 43
+export const FORECAST_HERO_WIDTH = 45
 
 export const logo = (c: ThemeColors, customLogo?: string): Line[] =>
   customLogo ? parseRichMarkup(customLogo) : colorize(LOGO_ART, LOGO_GRADIENT, c)

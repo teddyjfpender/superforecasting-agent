@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-import { forecastHero, logo } from '../banner.js'
+import { artWidth, FORECAST_HERO_WIDTH, forecastHero, logo } from '../banner.js'
 import type { ThemeColors } from '../theme.js'
 
 const colors = {
@@ -27,5 +27,6 @@ describe('forecast desk banner art', () => {
     expect(text).toContain('probability')
     expect(text).toContain('ledger')
     expect(text).not.toContain('HERMES')
+    expect(artWidth(forecastHero(colors))).toBe(FORECAST_HERO_WIDTH)
   })
 })
