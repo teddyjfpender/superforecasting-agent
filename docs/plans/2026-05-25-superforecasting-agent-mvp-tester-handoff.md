@@ -30,25 +30,25 @@ superforecasting-agent desk
 python -m superforecasting_agent status
 ```
 
-For this handoff, the latest full tester gate was verified on the TUI
-ledger-navigation tree immediately before the final snapshot commit. Pin the
-exact cohort hash with `git rev-parse --short=12 HEAD` after pulling the
-snapshot branch.
+For this handoff, the latest full tester gate was verified on runtime snapshot
+`7eb97135020b`. Pin that hash for the current gated cohort, or rerun the gate
+and record `git rev-parse --short=12 HEAD` if pinning a newer docs-refresh
+commit from the moving snapshot branch.
 
 The current moving `superforecasting-agent-snapshot` branch includes the
 forecast question shortcut pass, structured TUI forecast-detail drill-down,
 `/ledger` view switching, persistent TUI `views` shortcuts, `Alt/Option+1`
-through `Alt/Option+9` ledger navigation with macOS Option-key glyph fallback,
-`Ctrl+F` forecast lookup, the fork-native
+through `Alt/Option+9` ledger navigation with macOS Option-key glyph fallback
+and platform-aware `Opt+` labels on macOS, `Ctrl+F` forecast lookup, the fork-native
 `superforecasting-agent desk` support-session alias, required-source autopilot
 guardrails, RSS/source breadth, and the tester-handoff documentation refresh.
 Rerun the operator gate before pinning a newer cohort hash.
 
-A post-cleanup lifecycle smoke passed on `ad3a3052c92f` using
-`python3 scripts/forecast_smoke_test.py`, including forecast creation,
-evidence, base-rate/model/update, review, scoring/postmortem, schedule/autopilot
-checks, packet import/export, backtest replay, and the expected
-`insufficient_live_evidence` readiness guard.
+The current consolidated gate passed on `7eb97135020b` using
+`python3 scripts/tester_handoff_check.py`, including Python compile checks, 181
+focused tests, forecast creation, evidence, base-rate/model/update, review,
+scoring/postmortem, schedule/autopilot checks, packet import/export, backtest
+replay, and the expected `insufficient_live_evidence` readiness guard.
 
 Before inviting a new cohort, record the exact commit testers will use:
 
@@ -270,7 +270,7 @@ Agent-driven flows can call the same maintenance loop through the
 ## Smoke Evidence
 
 Latest consolidated tester handoff evidence ran with a temporary clean ledger on
-the implementation tree committed as `4c58ac5ef10d`.
+the implementation tree committed as `7eb97135020b`.
 
 It verified:
 
