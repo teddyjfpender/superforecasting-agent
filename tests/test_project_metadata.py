@@ -4120,6 +4120,8 @@ def test_readme_primary_links_are_fork_native():
     assert "Upstream-Hermes%20Agent" in before_legacy_docs
     assert '<a href="LICENSE">' in before_legacy_docs
     assert "github.com/NousResearch/hermes-agent/blob/main/LICENSE" not in before_legacy_docs
+    assert "hermes              # also opens the forecast desk during the fork transition" not in readme
+    assert "new workflows should use `forecast` or `superforecasting-agent`" in readme
     assert "github.com/NousResearch/hermes-agent/issues" not in readme
     assert 'href="https://discord.gg/NousResearch"><img' not in before_legacy_docs
     assert "Built by [Nous Research]" not in readme

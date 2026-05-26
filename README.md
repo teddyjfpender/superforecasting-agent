@@ -58,9 +58,10 @@ After installation or editable setup:
 forecast            # open the forecast desk
 superforecasting-agent  # fork-native command; forecast workflows are shorthand
 python -m superforecasting_agent status
-# or:
-hermes              # also opens the forecast desk during the fork transition
 ```
+
+The legacy `hermes` command remains available where compatibility shims are
+installed, but new workflows should use `forecast` or `superforecasting-agent`.
 
 ---
 
