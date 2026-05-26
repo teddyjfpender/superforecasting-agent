@@ -294,6 +294,7 @@ describe('forecast desk Ink render', () => {
     expect(output).toContain('forecast-model · Superforecasting Agent')
     expect(output).not.toContain('Nous Research')
     expect(compact).toContain('ForecastDesk')
+    expect(compact).toContain('next/forecastshowfq_review123456')
     expect(compact).toContain('desk2active/1alert/1review/cal7/2lessons/asm3/1/refs2/1')
     expect(compact).toContain('Triage')
     expect(compact).toContain('/forecastreadiness')
@@ -309,6 +310,7 @@ describe('forecast desk Ink render', () => {
     const compact = output.replace(/\s+/g, '')
 
     expect(compact).toContain('ForecastDesk')
+    expect(compact).toContain('next/forecastshowfq_review123456')
     expect(compact).toContain('deskbrief')
     expect(compact).toContain('book2active')
     expect(compact).toContain('1alerts')

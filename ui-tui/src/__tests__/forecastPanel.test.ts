@@ -4,6 +4,7 @@ import {
   forecastDashboardSections,
   forecastDeskActionStripItems,
   forecastDeskCompactItems,
+  forecastDeskPrimaryActionItem,
   forecastDeskRailSections,
   forecastDeskStatusLabel
 } from '../app/forecastPanel.js'
@@ -526,7 +527,9 @@ describe('forecast desk panel helpers', () => {
     }
 
     const sections = forecastDashboardSections(response)
+    const railSections = forecastDeskRailSections(response)
     const focused = sections.find(section => section.title === 'Focused Actions')
+    const railFocused = railSections.find(section => section.title === 'Focused Actions')
     const review = sections.find(section => section.title === 'Review Queue')
 
     expect(focused?.rows).toEqual([
@@ -561,6 +564,14 @@ describe('forecast desk panel helpers', () => {
         detail: 'append an explicit probability update'
       }
     ])
+    expect(railFocused?.rows?.[0]).toEqual([
+      '/forecast show fq_review123456',
+      'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
+    ])
+    expect(forecastDeskPrimaryActionItem(railSections)).toEqual({
+      command: '/forecast show fq_review123456',
+      detail: 'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
+    })
     expect(review?.rows?.[0]?.[1]).toContain('close 2026-05-31')
   })
 

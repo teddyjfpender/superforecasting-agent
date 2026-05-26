@@ -2,7 +2,7 @@ import { AlternateScreen, Box, NoSelect, ScrollBox, Text } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
 import { Fragment, memo, useMemo, useRef } from 'react'
 
-import { forecastDeskActionStripItems, forecastDeskCompactItems } from '../app/forecastPanel.js'
+import { forecastDeskActionStripItems, forecastDeskCompactItems, forecastDeskPrimaryActionItem } from '../app/forecastPanel.js'
 import { useGateway } from '../app/gatewayContext.js'
 import type { AppLayoutProps } from '../app/interfaces.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../app/overlayStore.js'
@@ -457,6 +457,47 @@ const ForecastDeskCompactBrief = memo(function ForecastDeskCompactBrief({
   )
 })
 
+const ForecastDeskHeader = memo(function ForecastDeskHeader({ cols }: { cols: number }) {
+  const ui = useStore($uiState)
+  const primaryAction = useMemo(() => forecastDeskPrimaryActionItem(ui.forecastDeskRailSections), [
+    ui.forecastDeskRailSections
+  ])
+
+  if (!ui.forecastDeskRailSections.length || ui.compact) {
+    return null
+  }
+
+  const statusWidth = primaryAction ? Math.max(12, Math.floor(cols * 0.32)) : Math.max(18, cols - 18)
+  const actionWidth = Math.max(18, cols - statusWidth - 34)
+
+  return (
+    <NoSelect flexShrink={0} paddingX={1}>
+      <Text wrap="truncate">
+        <Text bold color={ui.theme.color.primary}>
+          Forecast Desk
+        </Text>
+
+        {ui.forecastDeskStatus ? (
+          <>
+            <Text color={ui.theme.color.muted}>  </Text>
+            <Text color={ui.theme.color.muted}>{truncateRail(ui.forecastDeskStatus, statusWidth)}</Text>
+          </>
+        ) : null}
+
+        {primaryAction ? (
+          <>
+            <Text color={ui.theme.color.muted}>  next </Text>
+            <Text color={ui.theme.color.accent}>{primaryAction.command}</Text>
+            {primaryAction.detail ? (
+              <Text color={ui.theme.color.muted}> {truncateRail(primaryAction.detail, actionWidth)}</Text>
+            ) : null}
+          </>
+        ) : null}
+      </Text>
+    </NoSelect>
+  )
+})
+
 const ForecastDeskRail = memo(function ForecastDeskRail({
   sections,
   status
@@ -546,6 +587,12 @@ export const AppLayout = memo(function AppLayout({
   return (
     <Shell {...shellProps}>
       <Box flexDirection="column" flexGrow={1}>
+        {!overlay.agents && (
+          <PerfPane id="forecast-header">
+            <ForecastDeskHeader cols={composer.cols} />
+          </PerfPane>
+        )}
+
         <Box flexDirection="row" flexGrow={1}>
           {overlay.agents ? (
             <PerfPane id="agents">

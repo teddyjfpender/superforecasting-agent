@@ -503,6 +503,15 @@ export const forecastDeskActionStripItems = (sections: PanelSection[], max = 4):
   return actions
 }
 
+export const forecastDeskPrimaryActionItem = (sections: PanelSection[]): ForecastDeskActionItem | undefined => {
+  const focused = sections.find(section => section.title === 'Focused Actions')?.rows?.find(row => row[0].startsWith('/'))
+  if (focused) {
+    return { command: focused[0], detail: focused[1] }
+  }
+
+  return forecastDeskActionStripItems(sections, 1)[0]
+}
+
 const findSection = (sections: PanelSection[], title: string) => sections.find(section => section.title === title)
 
 const addCompactItem = (
@@ -990,6 +999,14 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
     sections.push({
       rows: triage.slice(0, 3),
       title: 'Triage'
+    })
+  }
+
+  const focusedRows = focusedActionRows(questions, reviewQueue)
+  if (focusedRows.length) {
+    sections.push({
+      rows: focusedRows.slice(0, 3),
+      title: 'Focused Actions'
     })
   }
 
