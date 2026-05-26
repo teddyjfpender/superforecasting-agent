@@ -29,6 +29,12 @@ superforecasting-agent
 python -m superforecasting_agent status
 ```
 
+Before inviting a cohort, record the exact commit testers will use:
+
+```bash
+git rev-parse --short=12 HEAD
+```
+
 In a raw source checkout before installation, use the source-tree launchers:
 
 ```bash
@@ -124,11 +130,9 @@ common workflow checks.
 
 ## Smoke Evidence
 
-The manual MVP smoke used a clean ledger at:
-
-```text
-/private/tmp/sfa-mvp-smoke-985c1c565.db
-```
+Latest automated smoke evidence ran with a temporary clean ledger at code
+snapshot `86cb5089c1c1`. The follow-up snapshot commit only refreshed the audit
+document for that smoke run.
 
 It verified:
 
