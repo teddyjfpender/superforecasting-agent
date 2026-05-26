@@ -42,7 +42,7 @@ export const writeActiveSessionFile = (sessionId: null | string, file = activeSe
   try {
     writeFileSync(file, JSON.stringify({ session_id: sessionId }), { mode: 0o600 })
   } catch {
-    // Best-effort shell epilogue hint only; never break live session changes.
+    // Best-effort shell epilogue hint only; never break live forecast-session changes.
   }
 }
 
@@ -108,8 +108,8 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
     setLastUserMsg('')
     setStickyPrompt('')
     composerActions.setPasteSnips([])
-    // Half-prune: new session has new keys, but keep a warm pool in case
-    // the user resumes back to the prior session.
+    // Half-prune: new forecast sessions have new keys, but keep a warm pool
+    // in case the user resumes back to the prior forecast session.
     evictInkCaches('half')
   }, [composerActions, setHistoryItems, setLastUserMsg, setStickyPrompt, setVoiceProcessing, setVoiceRecording])
 
@@ -190,8 +190,8 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
             }
 
             const nextTitle = (result.title ?? requestedTitle).trim()
-            const suffix = result.pending ? ' (queued while session initializes)' : ''
-            sys(`session title set: ${nextTitle}${suffix}`)
+            const suffix = result.pending ? ' (queued while forecast session initializes)' : ''
+            sys(`forecast session title set: ${nextTitle}${suffix}`)
           })
           .catch((err: unknown) => {
             if (getUiState().sid !== r.session_id) {
@@ -199,7 +199,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
             }
 
             const message = err instanceof Error ? err.message : String(err)
-            sys(`warning: failed to set session title: ${message}`)
+            sys(`warning: failed to set forecast session title: ${message}`)
           })
       }
     },
@@ -257,7 +257,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
   )
 
   const guardBusySessionSwitch = useCallback(
-    (what = 'switch sessions') => {
+    (what = 'switch forecast sessions') => {
       if (!getUiState().busy) {
         return false
       }

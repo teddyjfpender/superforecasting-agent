@@ -56,7 +56,7 @@ export const setDiffPair = (pair: SpawnDiffPair) => $spawnDiff.set(pair)
  * non-empty snapshots — empty turns (no subagents) are dropped.
  *
  * Why in-memory?  The primary investigation loop is "I just ran a fan-out,
- * it misbehaved, let me look at what happened" — same-session debugging.
+ * it misbehaved, let me look at what happened" — same forecast-session debugging.
  * Disk persistence across process restarts is a natural extension but
  * adds RPC surface for a less-common path.
  */

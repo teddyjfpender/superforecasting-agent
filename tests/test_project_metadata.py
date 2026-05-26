@@ -909,8 +909,12 @@ def test_tui_visible_affordances_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [
         root / "ui-tui" / "src" / "app" / "slash" / "commands" / "core.ts",
+        root / "ui-tui" / "src" / "app" / "slash" / "commands" / "ops.ts",
         root / "ui-tui" / "src" / "app" / "slash" / "commands" / "session.ts",
+        root / "ui-tui" / "src" / "app" / "createGatewayEventHandler.ts",
         root / "ui-tui" / "src" / "app" / "useMainApp.ts",
+        root / "ui-tui" / "src" / "app" / "useSessionLifecycle.ts",
+        root / "ui-tui" / "src" / "app" / "useSubmission.ts",
         root / "ui-tui" / "src" / "app" / "useLongRunToolCharms.ts",
         root / "ui-tui" / "src" / "components" / "appChrome.tsx",
         root / "ui-tui" / "src" / "components" / "appLayout.tsx",
@@ -926,9 +930,26 @@ def test_tui_visible_affordances_are_forecast_native():
     assert "FORECAST_PULSE_RE" in text
     assert "ForecastPulse" in text
     assert "LONG_RUN_NOTICES" in text
-    assert "switch forecast style for this session" in text
+    assert "switch forecast style for this forecast session" in text
+    assert "starting forecast session…" in text
+    assert "forecast session not ready yet" in text
+    assert "no active forecast session" in text
+    assert "forecast session title set:" in text
+    assert "resume a prior forecast session" in text
+    assert "previous forecast sessions" in text
+    assert "branch the forecast session" in text
+    assert "forecast session usage" in text
     assert "style:" in text
     assert "postmortems are part of the model" in text
+    assert "forging session…" not in text
+    assert "return sys('session not ready yet')" not in text
+    assert "no active session — nothing to save" not in text
+    assert "no active session — nothing to rollback" not in text
+    assert "ctx.transcript.sys(`session title set:" not in text
+    assert "sys(`session title set:" not in text
+    assert "resume a prior session" not in text
+    assert "previous sessions" not in text
+    assert "branch the session" not in text
     assert "GoodVibes" not in text
     assert "goodVibes" not in text
     assert "still cooking" not in text

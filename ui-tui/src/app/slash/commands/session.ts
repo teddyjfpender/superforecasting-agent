@@ -98,10 +98,10 @@ export const sessionCommands: SlashCommand[] = [
   },
 
   {
-    help: 'browse and resume previous sessions',
+    help: 'browse and resume previous forecast sessions',
     name: 'sessions',
     run: (arg, ctx) => {
-      if (ctx.session.guardBusySessionSwitch('switch sessions')) {
+      if (ctx.session.guardBusySessionSwitch('switch forecast sessions')) {
         return
       }
       if (!arg.trim()) {
@@ -128,7 +128,7 @@ export const sessionCommands: SlashCommand[] = [
 
   {
     aliases: ['personality'],
-    help: 'switch forecast style for this session',
+    help: 'switch forecast style for this forecast session',
     name: 'style',
     run: (arg, ctx) => {
       if (!arg) {
@@ -204,7 +204,7 @@ export const sessionCommands: SlashCommand[] = [
 
   {
     aliases: ['fork'],
-    help: 'branch the session',
+    help: 'branch the forecast session',
     name: 'branch',
     run: (arg, ctx) => {
       const prevSid = ctx.sid
@@ -372,7 +372,7 @@ export const sessionCommands: SlashCommand[] = [
   },
 
   {
-    help: 'toggle yolo mode (per-session approvals)',
+    help: 'toggle yolo mode (per-forecast-session approvals)',
     name: 'yolo',
     run: (_arg, ctx) => {
       ctx.gateway
@@ -513,7 +513,7 @@ export const sessionCommands: SlashCommand[] = [
   },
 
   {
-    help: 'session usage (live counts — worker sees zeros)',
+    help: 'forecast session usage (live counts — worker sees zeros)',
     name: 'usage',
     run: (_arg, ctx) => {
       ctx.gateway.rpc<SessionUsageResponse>('session.usage', { session_id: ctx.sid }).then(r => {

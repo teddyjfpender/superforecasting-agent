@@ -118,7 +118,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       })
     } catch {
       // Persistence is best-effort; in-memory history is the authoritative
-      // same-session source.  A write failure doesn't block the turn.
+      // same forecast-session source.  A write failure doesn't block the turn.
     }
   }
 
@@ -186,7 +186,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       }
 
       if (!sid) {
-        return sys('startup query skipped: no active session')
+        return sys('startup query skipped: no active forecast session')
       }
 
       if (STARTUP_IMAGE) {
@@ -269,16 +269,16 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     }
 
     // Opt-in: when `display.tui_auto_resume_recent` is true, look up
-    // the most recent human-facing session and resume it instead of
-    // forging a brand-new one.  Mirrors classic CLI's
+    // the most recent human-facing forecast session and resume it instead of
+    // starting a brand-new one.  Mirrors classic CLI's
     // `superforecasting-agent -c` / `superforecasting-agent --tui` flow
-    // and addresses the audit's "session
+    // and addresses the audit's "forecast session
     // unrecoverable after disconnection" gap.  Default off so existing
     // users aren't surprised.
     rpc<ConfigFullResponse>('config.get', { key: 'full' })
       .then(cfg => {
         if (!cfg?.config?.display?.tui_auto_resume_recent) {
-          patchUiState({ status: 'forging session…' })
+          patchUiState({ status: 'starting forecast session…' })
           newSession()
           scheduleStartupPrompt()
 
@@ -296,13 +296,13 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
             return
           }
 
-          patchUiState({ status: 'forging session…' })
+          patchUiState({ status: 'starting forecast session…' })
           newSession()
           scheduleStartupPrompt()
         })
       })
       .catch(() => {
-        patchUiState({ status: 'forging session…' })
+        patchUiState({ status: 'starting forecast session…' })
         newSession()
         scheduleStartupPrompt()
       })

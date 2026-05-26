@@ -92,7 +92,7 @@ export function useSubmission(opts: UseSubmissionOptions) {
         const sid = getUiState().sid
 
         if (!sid) {
-          return sys('session not ready yet')
+          return sys('forecast session not ready yet')
         }
 
         turnController.clearStatusTimer()
@@ -123,7 +123,7 @@ export function useSubmission(opts: UseSubmissionOptions) {
       const sid = getUiState().sid
 
       if (!sid) {
-        return sys('session not ready yet')
+        return sys('forecast session not ready yet')
       }
 
       // Always ask the backend whether this looks like a file drop.

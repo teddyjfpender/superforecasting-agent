@@ -77,7 +77,7 @@ describe('createSlashHandler', () => {
     vi.useRealTimers()
   })
 
-  it('routes /status to live session.status instead of slash worker', async () => {
+  it('routes /status to live forecast session.status instead of slash worker', async () => {
     patchUiState({ sid: 'sid-abc' })
     const rpc = vi.fn(() => Promise.resolve({ output: 'Superforecasting Agent TUI Status' }))
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
@@ -950,7 +950,7 @@ describe('createSlashHandler', () => {
     createSlashHandler(ctx)('/save')
 
     expect(rpc).not.toHaveBeenCalled()
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('no active session — nothing to save')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('no active forecast session — nothing to save')
   })
 
   it('/rollback without an active session tells the user instead of hitting the RPC', () => {
@@ -960,7 +960,7 @@ describe('createSlashHandler', () => {
     createSlashHandler(ctx)('/rollback')
 
     expect(rpc).not.toHaveBeenCalled()
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('no active session — nothing to rollback')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('no active forecast session — nothing to rollback')
   })
 
   it('/title <name> uses session.title RPC and bypasses slash.exec', async () => {
@@ -973,7 +973,7 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('session.title', { session_id: 'sid-abc', title: 'my title' })
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
     await vi.waitFor(() => {
-      expect(ctx.transcript.sys).toHaveBeenCalledWith('session title set: my title')
+      expect(ctx.transcript.sys).toHaveBeenCalledWith('forecast session title set: my title')
     })
   })
 

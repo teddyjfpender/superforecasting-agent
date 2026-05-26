@@ -81,7 +81,7 @@ export const opsCommands: SlashCommand[] = [
 
   {
     aliases: ['reload_mcp'],
-    help: 'reload MCP servers in the live session (warns about prompt cache invalidation)',
+    help: 'reload MCP servers in the live forecast session (warns about prompt cache invalidation)',
     name: 'reload-mcp',
     run: (arg, ctx) => {
       // Parse arg: `now` / `always` skip the confirmation gate.
@@ -162,7 +162,7 @@ export const opsCommands: SlashCommand[] = [
         .rpc<BrowserManageResponse>('browser.manage', { action, session_id: sid, ...(url && { url }) })
         .then(
           ctx.guarded<BrowserManageResponse>(r => {
-            // Without a session we can't subscribe to streamed
+            // Without a forecast session we can't subscribe to streamed
             // browser.progress events, so flush the bundled list.
             if (!sid) {
               r.messages?.forEach(message => ctx.transcript.sys(message))
@@ -196,7 +196,7 @@ export const opsCommands: SlashCommand[] = [
     name: 'rollback',
     run: (arg, ctx) => {
       if (!ctx.sid) {
-        return ctx.transcript.sys('no active session — nothing to rollback')
+        return ctx.transcript.sys('no active forecast session — nothing to rollback')
       }
 
       const trimmed = arg.trim()
@@ -339,7 +339,7 @@ export const opsCommands: SlashCommand[] = [
               const entries = r.entries ?? []
 
               if (!entries.length) {
-                return ctx.transcript.sys('no archived spawn trees on disk for this session')
+                return ctx.transcript.sys('no archived spawn trees on disk for this forecast session')
               }
 
               const rows: [string, string][] = entries.map(e => {
@@ -384,9 +384,9 @@ export const opsCommands: SlashCommand[] = [
         return
       }
 
-      // ── In-memory nav (same-session) ─────────────────────────────
+      // ── In-memory nav (same forecast-session) ────────────────────
       if (!history.length) {
-        return ctx.transcript.sys('no completed spawn trees this session · try /replay list')
+        return ctx.transcript.sys('no completed spawn trees in this forecast session · try /replay list')
       }
 
       let index = 1
@@ -707,7 +707,7 @@ export const opsCommands: SlashCommand[] = [
             }
 
             if (r.reset) {
-              ctx.transcript.sys('session reset. new tool configuration is active.')
+              ctx.transcript.sys('forecast session reset. new tool configuration is active.')
             }
           })
         )

@@ -195,7 +195,7 @@ export const coreCommands: SlashCommand[] = [
     help: 'start a new forecast session',
     name: 'clear',
     run: (arg, ctx, cmd) => {
-      if (ctx.session.guardBusySessionSwitch('switch sessions')) {
+      if (ctx.session.guardBusySessionSwitch('switch forecast sessions')) {
         return
       }
 
@@ -203,7 +203,7 @@ export const coreCommands: SlashCommand[] = [
       const requestedTitle = isNew ? arg.trim() : ''
 
       const commit = () => {
-        patchUiState({ status: 'forging session…' })
+        patchUiState({ status: 'starting forecast session…' })
         ctx.session.newSession(isNew ? 'new forecast session started' : undefined, requestedTitle || undefined)
       }
 
@@ -214,11 +214,11 @@ export const coreCommands: SlashCommand[] = [
       patchOverlayState({
         confirm: {
           cancelLabel: 'No, keep going',
-          confirmLabel: isNew ? 'Yes, start a new forecast session' : 'Yes, clear the session',
+          confirmLabel: isNew ? 'Yes, start a new forecast session' : 'Yes, clear the forecast session',
           danger: true,
           detail: 'This ends the current forecast desk exchange and clears the transcript.',
           onConfirm: commit,
-          title: isNew ? 'Start a new forecast session?' : 'Clear the current session?'
+          title: isNew ? 'Start a new forecast session?' : 'Clear the current forecast session?'
         }
       })
     }
@@ -468,11 +468,11 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'show live session info',
+    help: 'show live forecast session info',
     name: 'status',
     run: (_arg, ctx) => {
       if (!ctx.sid) {
-        return ctx.transcript.sys('no active session')
+        return ctx.transcript.sys('no active forecast session')
       }
 
       ctx.gateway
@@ -483,10 +483,10 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'resume a prior session',
+    help: 'resume a prior forecast session',
     name: 'resume',
     run: (arg, ctx) => {
-      if (ctx.session.guardBusySessionSwitch('switch sessions')) {
+      if (ctx.session.guardBusySessionSwitch('switch forecast sessions')) {
         return
       }
 
@@ -495,11 +495,11 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'set or show current session title',
+    help: 'set or show current forecast session title',
     name: 'title',
     run: (arg, ctx) => {
       if (!ctx.sid) {
-        return ctx.transcript.sys('no active session')
+        return ctx.transcript.sys('no active forecast session')
       }
 
       const title = arg.trim()
@@ -519,7 +519,7 @@ export const coreCommands: SlashCommand[] = [
       }
 
       if (!title) {
-        return ctx.transcript.sys('usage: /title <your session title>')
+        return ctx.transcript.sys('usage: /title <your forecast session title>')
       }
 
       ctx.gateway
@@ -527,8 +527,8 @@ export const coreCommands: SlashCommand[] = [
         .then(
           ctx.guarded<SessionTitleResponse>(r => {
             const next = (r?.title ?? title).trim()
-            const suffix = r?.pending ? ' (queued while session initializes)' : ''
-            ctx.transcript.sys(`session title set: ${next}${suffix}`)
+            const suffix = r?.pending ? ' (queued while forecast session initializes)' : ''
+            ctx.transcript.sys(`forecast session title set: ${next}${suffix}`)
           })
         )
         .catch(ctx.guardedErr)
@@ -777,7 +777,7 @@ export const coreCommands: SlashCommand[] = [
       }
 
       if (!ctx.sid) {
-        return ctx.transcript.sys('no active session — nothing to save')
+        return ctx.transcript.sys('no active forecast session — nothing to save')
       }
 
       ctx.gateway
