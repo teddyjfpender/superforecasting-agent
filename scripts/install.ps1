@@ -1016,7 +1016,7 @@ function Install-Repository {
             } catch {
                 Write-Err "Could not remove $InstallDir : $_"
                 Write-Info "Close any programs that might be using files in $InstallDir (editors,"
-                Write-Info "terminals, running hermes processes) and try again."
+                Write-Info "terminals, running superforecasting-agent, forecast, or compatibility hermes processes) and try again."
                 throw
             }
         }
