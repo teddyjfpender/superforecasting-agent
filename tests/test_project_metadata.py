@@ -1097,6 +1097,12 @@ def test_runtime_user_guidance_prefers_active_forecast_home():
     assert "first-use consent allowlist in the " in main
     assert "active agent home." in main
     assert "active forecast home's skills/.bundled_manifest" in main
+    assert "active agent-home .install_method" in config
+    assert "hint_path = display_hermes_home()" in config
+    assert "active agent-home .env" in config
+    assert "active agent-home logs/" in config
+    assert "active agent-home state.db" in config
+    assert "superforecasting-agent curator status" in config
     assert "active forecast home's skills/ directory" in config
     assert "active agent home's ``plugins/`` directory" in plugins_cmd
     assert "active user-facing agent home path" in doctor
@@ -1111,6 +1117,9 @@ def test_runtime_user_guidance_prefers_active_forecast_home():
     assert "~/.hermes/logs/update.log" not in main
     assert "declared in ~/.hermes/config.yaml" not in main
     assert "consent allowlist at ~/.hermes/shell-hooks-allowlist.json" not in main
+    assert "~/.hermes" not in config
+    assert "hermes curator status" not in config
+    assert "hint_path = os.environ.get(\"HERMES_HOME\"" not in config
     assert "~/.hermes/skills/.bundled_manifest" not in main
     assert "always goes to ~/.hermes/skills/" not in config
     assert "``~/.hermes/plugins" not in plugins_cmd
