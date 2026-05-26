@@ -127,6 +127,105 @@ def test_forecast_ledger_tool_watch_source_type_schema_is_current():
     assert {"github", "githubrepo", "githubissues", "githubcommits", "githubactions", "coingecko", "pypi", "npm", "hackernews", "reddit", "bluesky", "mastodon", "reliefweb", "federalregister", "courtlistener", "nvd", "cisakev", "openmeteo", "airquality", "weatherhistory", "usgs", "eonet", "nws", "clinicaltrials", "openfda", "pubmed", "crossref", "owid", "whogho", "fema", "eia", "treasury", "imf", "census", "socrata", "ckan", "stooq", "yahoo", "secfacts", "fivethirtyeight", "wikipedia", "wikipediapageviews"} <= source_types
 
 
+def test_forecast_ledger_tool_exposes_source_planning_action():
+    actions = set(
+        FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["action"]["enum"]
+    )
+
+    assert "source_plan" in actions
+    assert "keywords" in FORECAST_LEDGER_SCHEMA["parameters"]["properties"]
+    assert "apply_watch" in FORECAST_LEDGER_SCHEMA["parameters"]["properties"]
+
+
+def test_forecast_ledger_tool_plans_and_applies_local_resolution_source(tmp_path):
+    db = str(tmp_path / "forecasting.db")
+    resolution_source = tmp_path / "resolution.txt"
+    resolution_source.write_text("pending\n", encoding="utf-8")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will local source planning work?",
+                "resolution_criteria": "Resolved from a local file.",
+                "resolution_source": str(resolution_source),
+            }
+        )
+    )
+    question_id = created["question"]["id"]
+
+    planned = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "source_plan",
+                "question_id": question_id,
+                "limit": 1,
+                "apply_watch": True,
+            }
+        )
+    )
+
+    assert planned["success"] is True
+    assert planned["source_plan"][0]["id"] == "resolution_source_file"
+    assert planned["source_plan"][0]["source_type"] == "file"
+    assert planned["applied_watched_sources"][0]["source"] == str(resolution_source)
+    assert planned["applied_watched_sources"][0]["metadata"]["source_plan_id"] == "resolution_source_file"
+    assert planned["no_silent_probability_mutation"] is True
+
+
+def test_forecast_ledger_tool_imports_filtered_rss_evidence_with_triage_metadata(tmp_path):
+    db = str(tmp_path / "forecasting.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will RSS triage import through the tool?",
+                "resolution_criteria": "Resolved yes if filtered RSS evidence is imported.",
+            }
+        )
+    )
+    question_id = created["question"]["id"]
+    feed = tmp_path / "feed.xml"
+    feed.write_text(
+        """<?xml version="1.0"?>
+<rss version="2.0"><channel><title>Energy News</title>
+<item><guid>ignore-1</guid><title>Sports update</title><pubDate>Fri, 01 May 2026 00:00:00 GMT</pubDate></item>
+<item><guid>gas-1</guid><title>Gasoline prices rise</title><description>Energy pressure for CPI.</description><pubDate>Sat, 02 May 2026 00:00:00 GMT</pubDate></item>
+<item><guid>gas-2</guid><title>Gasoline prices rise</title><link>https://example.test/gasoline?utm_source=rss</link><pubDate>Sat, 02 May 2026 01:00:00 GMT</pubDate></item>
+<item><guid>gas-3</guid><title>Gasoline prices rise</title><link>https://example.test/gasoline?utm_source=rss</link><pubDate>Sat, 02 May 2026 02:00:00 GMT</pubDate></item>
+</channel></rss>
+""",
+        encoding="utf-8",
+    )
+
+    imported = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "import_source_evidence",
+                "question_id": question_id,
+                "source_type": "rss",
+                "source": str(feed),
+                "keywords": ["gasoline"],
+                "materiality": "high",
+                "direction": "upward",
+                "affected_components": ["energy"],
+            }
+        )
+    )
+
+    assert imported["success"] is True
+    assert imported["imported_count"] == 2
+    metadata = imported["imported"][0]["evidence"]["metadata"]
+    assert metadata["relevance_filters"]["keywords"] == ["gasoline"]
+    assert metadata["forecast_impact"]["materiality"] == "high"
+    assert metadata["forecast_impact"]["direction"] == "upward"
+    assert metadata["forecast_impact"]["affected_components"] == ["energy"]
+    assert metadata["news_triage"]["no_silent_probability_mutation"] is True
+
+
 def test_forecast_ledger_tool_imports_imf_datamapper_observations(tmp_path, monkeypatch):
     db = str(tmp_path / "forecasting.db")
     created = json.loads(

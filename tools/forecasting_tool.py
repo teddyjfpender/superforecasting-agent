@@ -18,6 +18,7 @@ from forecasting.ensembles import linear_trend_projection, weighted_binary_proba
 from forecasting.learning import apply_active_lesson_adjustments
 from forecasting.models import ForecastingError, OutcomeSpace, utc_now_iso
 from forecasting.protocol import build_protocol_messages
+from forecasting.source_planner import SourceRecommendation, plan_sources_for_question
 from forecasting.source_adapters import (
     load_arxiv_papers,
     load_bluesky_posts,
@@ -90,6 +91,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "create_question",
                     "list_questions",
                     "show_question",
+                    "source_plan",
                     "add_evidence",
                     "import_source_evidence",
                     "add_baseline_comparison",
@@ -296,6 +298,13 @@ FORECAST_LEDGER_SCHEMA = {
             "required_sources": {"type": "array", "items": {"type": "string"}},
             "source_url": {"type": "string"},
             "source_name": {"type": "string"},
+            "apply_watch": {"type": "boolean"},
+            "keywords": {"type": "array", "items": {"type": "string"}},
+            "exclude_keywords": {"type": "array", "items": {"type": "string"}},
+            "dedupe": {"type": "boolean"},
+            "materiality": {"type": "string", "enum": ["low", "medium", "high"]},
+            "direction": {"type": "string", "enum": ["upward", "downward", "ambiguous"]},
+            "affected_components": {"type": "array", "items": {"type": "string"}},
             "mode": {
                 "type": "string",
                 "enum": ["propose", "auto-commit", "auto_commit", "alert-only", "alert_only"],
@@ -563,6 +572,32 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 baseline_comparisons=ledger.list_baseline_comparisons(question_id),
                 scores=scores,
                 postmortems=postmortems,
+            )
+
+        if action == "source_plan":
+            question_id = _required(args, "question_id")
+            question = ledger.get_question(question_id)
+            recommendations = plan_sources_for_question(
+                question,
+                limit=int(args["limit"]) if args.get("limit") is not None else None,
+            )
+            created: list[dict[str, Any]] = []
+            skipped: list[dict[str, Any]] = []
+            if args.get("apply_watch"):
+                created, skipped_recommendations = _apply_source_plan_watches(
+                    ledger,
+                    question_id,
+                    recommendations,
+                )
+                skipped = [item.to_dict() for item in skipped_recommendations]
+            return tool_result(
+                success=True,
+                question_id=question_id,
+                title=question.title,
+                source_plan=[item.to_dict() for item in recommendations],
+                applied_watched_sources=created,
+                skipped_source_plan=skipped,
+                no_silent_probability_mutation=True,
             )
 
         if action == "add_evidence":
@@ -979,7 +1014,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 scope_ref=args.get("scope_ref") or args.get("question_id"),
                 source=_required(args, "source"),
                 source_type=args.get("source_type"),
-                metadata=args.get("metadata") or {},
+                metadata=_tool_watch_metadata(args),
             )
             return tool_result(success=True, watched_source=watch)
 
@@ -1327,6 +1362,71 @@ def _tool_proposed_probability(args: dict[str, Any]) -> Any:
     return None
 
 
+def _tool_filter_terms(value: Any) -> list[str]:
+    if value is None:
+        return []
+    values = value if isinstance(value, list) else [value]
+    terms: list[str] = []
+    for item in values:
+        for chunk in str(item).split(","):
+            term = chunk.strip()
+            if term and term not in terms:
+                terms.append(term)
+    return terms
+
+
+def _tool_news_triage_metadata(args: dict[str, Any]) -> dict[str, Any]:
+    keywords = _tool_filter_terms(args.get("keywords"))
+    exclude_keywords = _tool_filter_terms(args.get("exclude_keywords"))
+    affected_components = _tool_filter_terms(args.get("affected_components"))
+    metadata: dict[str, Any] = {"dedupe": bool(args.get("dedupe", True))}
+    if keywords or exclude_keywords:
+        metadata["relevance_filters"] = {
+            "keywords": keywords,
+            "exclude_keywords": exclude_keywords,
+        }
+    impact: dict[str, Any] = {}
+    if args.get("direction"):
+        impact["direction"] = args["direction"]
+    if affected_components:
+        impact["affected_components"] = affected_components
+    if args.get("materiality"):
+        impact["materiality"] = args["materiality"]
+    if impact:
+        metadata["forecast_impact"] = impact
+    if keywords or exclude_keywords or impact:
+        metadata["news_triage"] = {
+            "state": "candidate_evidence",
+            "no_silent_probability_mutation": True,
+        }
+    return metadata
+
+
+def _tool_watch_metadata(args: dict[str, Any]) -> dict[str, Any]:
+    metadata = dict(args.get("metadata") or {})
+    if args.get("source_name"):
+        metadata["source_name"] = args["source_name"]
+    if args.get("cadence"):
+        metadata["cadence"] = args["cadence"]
+    keywords = _tool_filter_terms(args.get("keywords"))
+    exclude_keywords = _tool_filter_terms(args.get("exclude_keywords"))
+    affected_components = _tool_filter_terms(args.get("affected_components"))
+    if keywords or exclude_keywords:
+        metadata["relevance_filters"] = {
+            "keywords": keywords,
+            "exclude_keywords": exclude_keywords,
+        }
+    if keywords or exclude_keywords or args.get("materiality") or args.get("direction"):
+        metadata["news_triage"] = {
+            "state": "candidate_evidence",
+            "materiality": args.get("materiality") or "medium",
+            "direction": args.get("direction") or "ambiguous",
+            "affected_components": affected_components,
+            "no_silent_probability_mutation": True,
+        }
+    return metadata
+
+
 def _plain(value: Any) -> Any:
     if is_dataclass(value):
         return asdict(value)
@@ -1463,6 +1563,58 @@ def _question_dict(question) -> dict[str, Any]:
     return data
 
 
+def _apply_source_plan_watches(
+    ledger: ForecastLedger,
+    question_id: str,
+    recommendations: list[SourceRecommendation],
+) -> tuple[list[dict[str, Any]], list[SourceRecommendation]]:
+    existing_sources = {
+        row["source"]
+        for row in ledger.list_watched_sources(scope_type="question", scope_ref=question_id, status=None)
+    }
+    created: list[dict[str, Any]] = []
+    skipped: list[SourceRecommendation] = []
+    for item in recommendations:
+        if item.requires_user_source or not item.watch_source:
+            skipped.append(item)
+            continue
+        if item.watch_source in existing_sources:
+            skipped.append(item)
+            continue
+        row = ledger.add_watched_source(
+            scope_type="question",
+            scope_ref=question_id,
+            source=item.watch_source,
+            source_type=item.source_type,
+            metadata=_source_plan_watch_metadata(item),
+        )
+        existing_sources.add(item.watch_source)
+        created.append(row)
+    return created, skipped
+
+
+def _source_plan_watch_metadata(item: SourceRecommendation) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "source_plan_id": item.id,
+        "source_plan_label": item.label,
+        "role": item.role,
+        "priority": item.priority,
+        "materiality": item.materiality,
+    }
+    if item.keywords or item.exclude_keywords:
+        metadata["relevance_filters"] = {
+            "keywords": list(item.keywords),
+            "exclude_keywords": list(item.exclude_keywords),
+        }
+    if item.source_type in {"rss", "gdelt"}:
+        metadata["news_triage"] = {
+            "materiality": item.materiality,
+            "role": item.role,
+            "no_silent_probability_mutation": True,
+        }
+    return metadata
+
+
 def _review_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "question": _question_dict(row["question"]),
@@ -1485,7 +1637,14 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
     api_base_url = args.get("api_base_url")
 
     if adapter_name in {"rss", "news"}:
-        return load_news_feed_items(source, limit=limit, since=since)
+        return load_news_feed_items(
+            source,
+            limit=limit,
+            since=since,
+            keywords=_tool_filter_terms(args.get("keywords")),
+            exclude_keywords=_tool_filter_terms(args.get("exclude_keywords")),
+            dedupe=bool(args.get("dedupe", True)),
+        )
     if adapter_name == "gdelt":
         kwargs = {
             "limit": limit,
@@ -1885,6 +2044,8 @@ def _source_adapter_evidence_payload(
         "entry_id": data.get("entry_id"),
         "adapter_item": data,
     }
+    if adapter_name in {"rss", "news"}:
+        metadata.update(_tool_news_triage_metadata(args))
     metadata.update(args.get("metadata") or {})
     return {
         "source_or_note": source_url or claim or f"{adapter_name}:{source}",

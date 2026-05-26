@@ -25,11 +25,11 @@ For slash commands inside interactive forecast sessions, see
 | `forecast` | Open the forecast desk dashboard. |
 | `forecast status` | Show active forecasts, alerts, review queue, schedule, calibration, live baseline comparisons, and benchmark state. |
 | `forecast doctor` | Run the combined operator gate: status, pilot-exit checks, scheduled self-check run history, and readiness gaps. Use `--require-pilot-ready` or `--require-readiness` to fail release scripts. |
-| `forecast new` | Create a scoreable question with resolution criteria, outcome space, domain/topic, and review cadence. |
+| `forecast new` | Create a scoreable question with resolution criteria, outcome space, domain/topic, review cadence, and optional `--source-plan`. |
 | `forecast ingest` | Stage a URL or file as a forecast candidate before confirming it into the ledger. |
 | `forecast evidence add` | Add timestamped evidence or notes to a question. |
 | `forecast research` | Capture or inspect evidence without moving probability, including a summary of what changed since the current forecast. |
-| `forecast sources` | List built-in evidence/source adapters, import command shapes, and watched-source prefixes. |
+| `forecast sources` | List adapters or run `forecast sources --question <id>` to plan official data, RSS/news, market priors, and watched searches for a question. |
 | `forecast import <source>` | Import evidence, baselines, market/crowd priors, or benchmark data from supported adapters. |
 | `forecast base-rate` | Propose, add, or inspect reference-class/base-rate work. |
 | `forecast model` | Record a quantitative model run, including Bayesian updates and deterministic trend projections. |
@@ -56,7 +56,7 @@ For slash commands inside interactive forecast sessions, see
 | `forecast export` | Export auditable question or portfolio packets. |
 | `forecast about` | Show fork context and forecast-desk scope. |
 
-Common sources for `forecast import` include `data`, `rss`, `gdelt`, `fivethirtyeight`, `fred`, `eia`, `treasury`, `bls`, `worldbank`, `imf`, `census`, `socrata`, `ckan`, `stooq`, `yahoo`, `coingecko`, `sec`, `secfacts`, `arxiv`, `openalex`, `crossref`, `pubmed`, `wikipedia`, `wikipediapageviews`, `github`, `githubrepo`, `githubissues`, `githubcommits`, `githubactions`, `pypi`, `npm`, `hackernews`, `reddit`, `bluesky`, `mastodon`, `reliefweb`, `federalregister`, `courtlistener`, `nvd`, `cisakev`, `clinicaltrials`, `openfda`, `whogho`, `fema`, `openmeteo`, `airquality`, `weatherhistory`, `usgs`, `eonet`, `nws`, `owid`, `metaculus`, `manifold`, `polymarket`, `kalshi`, `benchmark`, and `tournament`. Run `forecast sources` or `forecast sources --json` for the current adapter list and watch-prefix guidance.
+Common sources for `forecast import` include `data`, `rss`, `gdelt`, `fivethirtyeight`, `fred`, `eia`, `treasury`, `bls`, `worldbank`, `imf`, `census`, `socrata`, `ckan`, `stooq`, `yahoo`, `coingecko`, `sec`, `secfacts`, `arxiv`, `openalex`, `crossref`, `pubmed`, `wikipedia`, `wikipediapageviews`, `github`, `githubrepo`, `githubissues`, `githubcommits`, `githubactions`, `pypi`, `npm`, `hackernews`, `reddit`, `bluesky`, `mastodon`, `reliefweb`, `federalregister`, `courtlistener`, `nvd`, `cisakev`, `clinicaltrials`, `openfda`, `whogho`, `fema`, `openmeteo`, `airquality`, `weatherhistory`, `usgs`, `eonet`, `nws`, `owid`, `metaculus`, `manifold`, `polymarket`, `kalshi`, `benchmark`, and `tournament`. RSS/news imports support `--keyword`, `--exclude-keyword`, `--materiality`, `--direction`, and `--affected-component` so feed items enter the ledger as filtered evidence candidates rather than automatic probability updates. Run `forecast sources --question <id>` for source planning or `forecast sources --json` for adapter guidance.
 
 Backtest probability sources include:
 

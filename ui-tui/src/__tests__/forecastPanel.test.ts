@@ -630,6 +630,7 @@ describe('forecast desk panel helpers', () => {
         '/forecast show fq_review123456',
         'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
       ],
+      ['/sources --question fq_review123456', 'plan official data, RSS/news, markets, and watched searches'],
       ['/forecast research fq_review123456', 'collect source notes and evidence without moving probability'],
       ['/forecast update fq_review123456 --probability <0-1> --rationale <why>', 'append an explicit probability update'],
       [
@@ -651,11 +652,8 @@ describe('forecast desk panel helpers', () => {
         command: '/forecast show fq_review123456',
         detail: 'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
       },
-      { command: '/forecast research fq_review123456', detail: 'collect source notes and evidence without moving probability' },
-      {
-        command: '/forecast update fq_review123456 --probability <0-1> --rationale <why>',
-        detail: 'append an explicit probability update'
-      }
+      { command: '/sources --question fq_review123456', detail: 'plan official data, RSS/news, markets, and watched searches' },
+      { command: '/forecast research fq_review123456', detail: 'collect source notes and evidence without moving probability' }
     ])
     expect(railFocused?.rows?.[0]).toEqual([
       '/forecast show fq_review123456',

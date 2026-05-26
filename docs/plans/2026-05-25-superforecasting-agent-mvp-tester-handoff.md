@@ -240,7 +240,8 @@ high-severity alert, marks the run failed, preserves source-snapshot diagnostics
 and blocks the refresh proposal instead of updating from partial evidence.
 
 Agent-driven flows can call the same maintenance loop through the
-`forecast_ledger` tool actions: `enable_autopilot`, `autopilot_status`,
+`forecast_ledger` tool actions: `source_plan`, `import_source_evidence`,
+`add_watched_source`, `enable_autopilot`, `autopilot_status`,
 `run_autopilot`, `list_forecast_update_proposals`,
 `approve_forecast_update_proposal`, and
 `reject_forecast_update_proposal`.

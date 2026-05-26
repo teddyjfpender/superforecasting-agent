@@ -482,6 +482,7 @@ const focusedActionRows = (questions: ForecastDashboardQuestion[], reviewQueue: 
   const context = focusedForecastContext(row)
   return [
     [`/forecast show ${row.id}`, `${context}  load full ledger context for ${label}`],
+    [`/sources --question ${row.id}`, 'plan official data, RSS/news, markets, and watched searches'],
     [`/forecast research ${row.id}`, 'collect source notes and evidence without moving probability'],
     [`/forecast update ${row.id} --probability <0-1> --rationale <why>`, 'append an explicit probability update'],
     [
@@ -882,6 +883,10 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
   sections.push({
     items: [
       '/sources',
+      '/sources --question <id>',
+      '/forecast new "<question>" --resolution-criteria "<criteria>" --source-plan',
+      '/forecast import news <rss-or-atom-url> --question <id> --keyword <term>',
+      '/forecast watch add --question <id> --source-type rss rss:<feed-url> --keyword <term>',
       '/forecast import gdelt "<query>" --question <id>',
       '/forecast import fivethirtyeight <dataset-or-url> --question <id>',
       '/forecast import owid <slug> --entity "<entity>" --question <id>',

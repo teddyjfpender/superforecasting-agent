@@ -421,6 +421,8 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'sources' })
     expect(createSlashHandler(ctx)('/sources --json')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'sources --json' })
+    expect(createSlashHandler(ctx)('/sources --question fq_123')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'sources --question fq_123' })
     expect(createSlashHandler(ctx)('/adapters')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'sources' })
     expect(createSlashHandler(ctx)('/schedule')).toBe(true)

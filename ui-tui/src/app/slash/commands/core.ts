@@ -191,7 +191,7 @@ export const coreCommands: SlashCommand[] = [
             ['/heuristic [random|daily]', 'show a random or daily forecasting maxim'],
             ['/questions [row|list N]', 'show current forecast questions and drill into a numbered row'],
             ['/forecast [limit|subcommand]', 'show active forecasts or run forecast lifecycle commands'],
-            ['/sources [--json]', 'list evidence source adapters and watch prefixes'],
+            ['/sources [--question <id>] [--json]', 'list adapters or plan sources for a forecast'],
             ['/new-forecast [args]', 'create a scoreable forecast question'],
             ['/ingest [args]', 'stage a URL or file as a forecast candidate'],
             ['/evidence [args]', 'add or inspect timestamped forecast evidence'],
@@ -338,7 +338,7 @@ export const coreCommands: SlashCommand[] = [
 
   {
     aliases: ['adapters', 'source-adapters'],
-    help: 'list forecast evidence source adapters',
+    help: 'list adapters or plan forecast evidence sources',
     name: 'sources',
     run: (arg, ctx) => runForecastCommand(ctx, `sources ${arg.trim()}`.trim())
   },

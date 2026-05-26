@@ -325,6 +325,21 @@ def _generic_recommendations(question: ForecastQuestion, keywords: list[str]) ->
                 watch_command=f"forecast watch add --question {qid} --source-type url {_shell_quote(question.resolution_source)}",
             ),
         )
+    elif question.resolution_source:
+        recommendations.insert(
+            0,
+            SourceRecommendation(
+                id="resolution_source_file",
+                label="Resolution source file",
+                source_type="file",
+                source=question.resolution_source,
+                role="resolution_monitor",
+                priority="very_high",
+                rationale="The stated local resolution source should be watched for official outcome or criteria updates.",
+                watch_source=question.resolution_source,
+                watch_command=f"forecast watch add --question {qid} --source-type file {_shell_quote(question.resolution_source)}",
+            ),
+        )
     return recommendations
 
 

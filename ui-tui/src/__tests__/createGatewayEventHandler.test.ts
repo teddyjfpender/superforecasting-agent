@@ -799,11 +799,8 @@ describe('createGatewayEventHandler', () => {
             '/forecast show fq_123456789abc',
             'P=0.630  as-of 2026-05-01  close -  reasons review_due,last_update_…  load full ledger context for Will X win the election?'
           ],
-          ['/forecast research fq_123456789abc', 'collect source notes and evidence without moving probability'],
-          [
-            '/forecast update fq_123456789abc --probability <0-1> --rationale <why>',
-            'append an explicit probability update'
-          ]
+          ['/sources --question fq_123456789abc', 'plan official data, RSS/news, markets, and watched searches'],
+          ['/forecast research fq_123456789abc', 'collect source notes and evidence without moving probability']
         ],
         title: 'Focused Actions'
       },
@@ -811,7 +808,8 @@ describe('createGatewayEventHandler', () => {
         rows: [
           [
             '12345678 P=0.630 Δ=+0.080',
-            '1 alert  as-of 2026-05-01  close 2026-11-03  conf 0.74  Will X win the election?'
+            '1 alert  as-of 2026-05-01  close 2026-11-03  conf 0.74  Will X win the election?',
+            '/forecast show fq_123456789abc'
           ]
         ],
         title: 'Watchlist'
@@ -864,7 +862,8 @@ describe('createGatewayEventHandler', () => {
             rows: [
               [
                 '12345678  P=0.630  Δ=+0.080',
-                'as-of 2026-05-01  close 2026-11-03  conf 0.74  ev 4  base 2  refs 0/0  asm 2/0  1 alert  Will X win the election?'
+                'as-of 2026-05-01  close 2026-11-03  conf 0.74  ev 4  base 2  refs 0/0  asm 2/0  1 alert  Will X win the election?',
+                '/forecast show fq_123456789abc'
               ]
             ],
             title: 'Active Forecasts'
@@ -933,6 +932,7 @@ describe('createGatewayEventHandler', () => {
                 '/forecast show fq_123456789abc',
                 'P=0.630  as-of 2026-05-01  close -  reasons review_due,last_update_…  load full ledger context for Will X win the election?'
               ],
+              ['/sources --question fq_123456789abc', 'plan official data, RSS/news, markets, and watched searches'],
               ['/forecast research fq_123456789abc', 'collect source notes and evidence without moving probability'],
               [
                 '/forecast update fq_123456789abc --probability <0-1> --rationale <why>',
@@ -956,6 +956,10 @@ describe('createGatewayEventHandler', () => {
           {
             items: [
               '/sources',
+              '/sources --question <id>',
+              '/forecast new "<question>" --resolution-criteria "<criteria>" --source-plan',
+              '/forecast import news <rss-or-atom-url> --question <id> --keyword <term>',
+              '/forecast watch add --question <id> --source-type rss rss:<feed-url> --keyword <term>',
               '/forecast import gdelt "<query>" --question <id>',
               '/forecast import fivethirtyeight <dataset-or-url> --question <id>',
               '/forecast import owid <slug> --entity "<entity>" --question <id>',
@@ -1012,7 +1016,7 @@ describe('createGatewayEventHandler', () => {
               '/forecast lesson list',
               '/forecast errors',
               '/forecast autopilot status <id>',
-              '/forecast autopilot enable <id> --source <adapter>:<source> --cadence 1d --mode propose',
+              '/forecast autopilot enable <id> --source <adapter>:<source> --required-source <critical-adapter>:<source> --cadence 1d --mode propose',
               '/forecast autopilot history <id>',
               '/forecast schedule run --due --auto-score --auto-postmortem',
               '/forecast schedule history --json',

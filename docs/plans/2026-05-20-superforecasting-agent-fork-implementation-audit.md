@@ -78,6 +78,18 @@ probabilities. The CPI source plan explicitly includes BLS CPI, FRED CPI, EIA
 gasoline/oil, BLS CPI RSS, GDELT CPI/energy/shelter search, and a market-prior
 placeholder.
 
+Post-source-planning tool/TUI pass: the agent-facing `forecast_ledger` tool now
+has a `source_plan` action and can apply concrete source-plan watches, so
+automated forecast workflows can request the same source map available from the
+CLI. The tool's RSS import path now honors keyword/exclusion filters, dedupe,
+materiality, direction, affected components, and candidate-evidence metadata.
+The TUI focused actions now expose `/sources --question <id>`, the evidence
+command surface includes RSS import/watch examples, and README/reference docs
+describe source planning as part of the operator and agent workflow. Focused
+tool tests passed 4, focused TUI tests passed 122, and
+`python3 scripts/forecast_smoke_test.py` still passed with the expected
+`insufficient_live_evidence` readiness verdict.
+
 ## Evidence Inspected
 
 - Forecasting package: `forecasting/`
@@ -89,6 +101,9 @@ placeholder.
 - Forecast source planning and RSS/news triage: `forecasting/source_planner.py`,
   `forecasting/source_adapters.py`, `forecasting/ledger.py`,
   `forecasting/cli.py`
+- Agent-facing source planning and RSS/news triage: `tools/forecasting_tool.py`,
+  `tests/forecasting/test_tool.py`, `ui-tui/src/app/forecastPanel.ts`,
+  `ui-tui/src/app/slash/commands/core.ts`
 - Fork README: `README.md`
 - Forecast-native English model/MCP/plugin guide pass: `website/docs/guides/local-ollama-setup.md`, `website/docs/guides/local-llm-on-mac.md`, `website/docs/guides/aws-bedrock.md`, `website/docs/guides/google-gemini.md`, `website/docs/guides/use-mcp-with-superforecasting-agent.md`, `website/docs/guides/build-a-superforecasting-agent-plugin.md`
 - Forecast-native English tips/personality/cron automation guides: `website/docs/guides/tips.md`, `website/docs/guides/use-soul-with-superforecasting-agent.md`, `website/docs/guides/automate-with-cron.md`

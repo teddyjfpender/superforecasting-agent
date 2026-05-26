@@ -87,7 +87,9 @@ Examples:
 ```text
 /forecast
 /forecast review --stale
-/forecast sources
+/sources --question <id>
+/forecast sources --question <id> --apply-watch
+/forecast import news <rss-or-atom-url> --question <id> --keyword <term>
 /forecast import fivethirtyeight president --state PA --question <id>
 /forecast import imf NGDP_RPCH/USA --question <id>
 /forecast import census "2023/acs/acs5?get=NAME,B01003_001E&for=state:*" --question <id>
@@ -135,7 +137,7 @@ Common desk workflows have direct slash commands:
 | `/postmortem` | Write structured error analysis |
 | `/review` | Inspect stale or active forecasts |
 | `/alerts` | List or acknowledge forecast alerts |
-| `/sources` | List evidence source adapters and watch prefixes |
+| `/sources` | List adapters or plan question-specific evidence sources with `--question <id>` |
 | `/calibration` | Show calibration summaries |
 | `/lessons` | Review calibration lessons |
 | `/errors` | Inspect domain/topic error profiles |
