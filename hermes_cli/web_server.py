@@ -110,7 +110,13 @@ _SESSION_HEADER_NAMES = (
 # In-browser Forecast Desk tab (/desk primary, /chat compatibility, /api/pty, ...). Off unless
 # ``superforecasting-agent dashboard --tui`` or a dashboard TUI env alias is
 # set. Set from :func:`start_server`.
+_DASHBOARD_FORECAST_DESK_ENABLED = False
+# Legacy test/plugin seam. New code should read `_dashboard_forecast_desk_enabled()`.
 _DASHBOARD_EMBEDDED_CHAT_ENABLED = False
+
+
+def _dashboard_forecast_desk_enabled() -> bool:
+    return _DASHBOARD_FORECAST_DESK_ENABLED or _DASHBOARD_EMBEDDED_CHAT_ENABLED
 
 # Simple rate limiter for the reveal endpoint
 _reveal_timestamps: List[float] = []
@@ -3506,7 +3512,7 @@ def _channel_or_close_code(ws: WebSocket) -> Optional[str]:
 
 @app.websocket("/api/pty")
 async def pty_ws(ws: WebSocket) -> None:
-    if not _DASHBOARD_EMBEDDED_CHAT_ENABLED:
+    if not _dashboard_forecast_desk_enabled():
         await ws.close(code=4403)
         return
 
@@ -3627,7 +3633,7 @@ async def pty_ws(ws: WebSocket) -> None:
 
 @app.websocket("/api/ws")
 async def gateway_ws(ws: WebSocket) -> None:
-    if not _DASHBOARD_EMBEDDED_CHAT_ENABLED:
+    if not _dashboard_forecast_desk_enabled():
         await ws.close(code=4403)
         return
 
@@ -3659,7 +3665,7 @@ async def gateway_ws(ws: WebSocket) -> None:
 
 @app.websocket("/api/pub")
 async def pub_ws(ws: WebSocket) -> None:
-    if not _DASHBOARD_EMBEDDED_CHAT_ENABLED:
+    if not _dashboard_forecast_desk_enabled():
         await ws.close(code=4403)
         return
 
@@ -3688,7 +3694,7 @@ async def pub_ws(ws: WebSocket) -> None:
 
 @app.websocket("/api/events")
 async def events_ws(ws: WebSocket) -> None:
-    if not _DASHBOARD_EMBEDDED_CHAT_ENABLED:
+    if not _dashboard_forecast_desk_enabled():
         await ws.close(code=4403)
         return
 
@@ -3785,14 +3791,16 @@ def mount_spa(application: FastAPI):
         or empty string when served at root.
         """
         html = _index_path.read_text()
-        chat_js = "true" if _DASHBOARD_EMBEDDED_CHAT_ENABLED else "false"
+        desk_js = "true" if _dashboard_forecast_desk_enabled() else "false"
         token_script = (
             f'<script>window.__SUPERFORECASTING_AGENT_SESSION_TOKEN__="{_SESSION_TOKEN}";'
             f'window.__FORECAST_SESSION_TOKEN__="{_SESSION_TOKEN}";'
             f'window.__HERMES_SESSION_TOKEN__="{_SESSION_TOKEN}";'
-            f"window.__SUPERFORECASTING_AGENT_DASHBOARD_EMBEDDED_CHAT__={chat_js};"
-            f"window.__FORECAST_DASHBOARD_EMBEDDED_CHAT__={chat_js};"
-            f"window.__HERMES_DASHBOARD_EMBEDDED_CHAT__={chat_js};"
+            f"window.__SUPERFORECASTING_AGENT_DASHBOARD_FORECAST_DESK__={desk_js};"
+            f"window.__FORECAST_DASHBOARD_FORECAST_DESK__={desk_js};"
+            f"window.__SUPERFORECASTING_AGENT_DASHBOARD_EMBEDDED_CHAT__={desk_js};"
+            f"window.__FORECAST_DASHBOARD_EMBEDDED_CHAT__={desk_js};"
+            f"window.__HERMES_DASHBOARD_EMBEDDED_CHAT__={desk_js};"
             f'window.__SUPERFORECASTING_AGENT_BASE_PATH__="{prefix}";'
             f'window.__FORECAST_BASE_PATH__="{prefix}";'
             f'window.__HERMES_BASE_PATH__="{prefix}";</script>'
@@ -4628,13 +4636,20 @@ def start_server(
     open_browser: bool = True,
     allow_public: bool = False,
     *,
-    embedded_chat: bool = False,
+    embedded_forecast_desk: Optional[bool] = None,
+    embedded_chat: Optional[bool] = None,
 ):
     """Start the web UI server."""
     import uvicorn
 
-    global _DASHBOARD_EMBEDDED_CHAT_ENABLED
-    _DASHBOARD_EMBEDDED_CHAT_ENABLED = embedded_chat
+    enabled = bool(
+        embedded_forecast_desk
+        if embedded_forecast_desk is not None
+        else embedded_chat
+    )
+    global _DASHBOARD_FORECAST_DESK_ENABLED, _DASHBOARD_EMBEDDED_CHAT_ENABLED
+    _DASHBOARD_FORECAST_DESK_ENABLED = enabled
+    _DASHBOARD_EMBEDDED_CHAT_ENABLED = enabled
 
     _LOCALHOST = ("127.0.0.1", "localhost", "::1")
     if host not in _LOCALHOST and not allow_public:

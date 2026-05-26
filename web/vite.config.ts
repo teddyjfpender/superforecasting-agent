@@ -26,6 +26,10 @@ function forecastDevToken(): Plugin {
     /window\.__FORECAST_SESSION_TOKEN__\s*=\s*"([^"]+)"/;
   const LEGACY_TOKEN_RE =
     /window\.__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"/;
+  const DESK_RE =
+    /window\.__SUPERFORECASTING_AGENT_DASHBOARD_FORECAST_DESK__\s*=\s*(true|false)/;
+  const FORECAST_DESK_RE =
+    /window\.__FORECAST_DASHBOARD_FORECAST_DESK__\s*=\s*(true|false)/;
   const EMBEDDED_RE =
     /window\.__SUPERFORECASTING_AGENT_DASHBOARD_EMBEDDED_CHAT__\s*=\s*(true|false)/;
   const FORECAST_EMBEDDED_RE =
@@ -54,6 +58,8 @@ function forecastDevToken(): Plugin {
           return;
         }
         const embeddedMatch =
+          html.match(DESK_RE) ??
+          html.match(FORECAST_DESK_RE) ??
           html.match(EMBEDDED_RE) ??
           html.match(FORECAST_EMBEDDED_RE) ??
           html.match(LEGACY_EMBEDDED_RE);
@@ -71,6 +77,8 @@ function forecastDevToken(): Plugin {
               `window.__SUPERFORECASTING_AGENT_SESSION_TOKEN__="${match[1]}";` +
               `window.__FORECAST_SESSION_TOKEN__="${match[1]}";` +
               `window.__HERMES_SESSION_TOKEN__="${match[1]}";` +
+              `window.__SUPERFORECASTING_AGENT_DASHBOARD_FORECAST_DESK__=${embeddedJs};` +
+              `window.__FORECAST_DASHBOARD_FORECAST_DESK__=${embeddedJs};` +
               `window.__SUPERFORECASTING_AGENT_DASHBOARD_EMBEDDED_CHAT__=${embeddedJs};` +
               `window.__FORECAST_DASHBOARD_EMBEDDED_CHAT__=${embeddedJs};` +
               `window.__HERMES_DASHBOARD_EMBEDDED_CHAT__=${embeddedJs};`,

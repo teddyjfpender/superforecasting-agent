@@ -48,7 +48,7 @@ import { useToast } from "@/hooks/useToast";
 import { useI18n } from "@/i18n";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { PluginSlot } from "@/plugins";
-import { isDashboardEmbeddedChatEnabled } from "@/lib/dashboard-flags";
+import { isDashboardForecastDeskEnabled } from "@/lib/dashboard-flags";
 
 const SOURCE_CONFIG: Record<string, { icon: typeof Terminal; color: string }> =
   {
@@ -261,7 +261,7 @@ function SessionRow({
   isExpanded,
   onToggle,
   onDelete,
-  resumeInChatEnabled,
+  resumeInDeskEnabled,
 }: {
   session: SessionInfo;
   snippet?: string;
@@ -269,7 +269,7 @@ function SessionRow({
   isExpanded: boolean;
   onToggle: () => void;
   onDelete: () => void;
-  resumeInChatEnabled: boolean;
+  resumeInDeskEnabled: boolean;
 }) {
   const [messages, setMessages] = useState<SessionMessage[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -353,7 +353,7 @@ function SessionRow({
             <Badge tone="outline" className="text-[10px]">
               {session.source ?? "local"}
             </Badge>
-            {resumeInChatEnabled && (
+            {resumeInDeskEnabled && (
               <Button
                 ghost
                 size="icon"
@@ -428,7 +428,7 @@ export default function SessionsPage() {
   const { t } = useI18n();
   const { setAfterTitle, setEnd } = usePageHeader();
   const { activeAction, actionStatus, dismissLog } = useSystemActions();
-  const resumeInChatEnabled = isDashboardEmbeddedChatEnabled();
+  const resumeInDeskEnabled = isDashboardForecastDeskEnabled();
 
   useLayoutEffect(() => {
     if (loading) {
@@ -806,7 +806,7 @@ export default function SessionsPage() {
                   setExpandedId((prev) => (prev === s.id ? null : s.id))
                 }
                 onDelete={() => sessionDelete.requestDelete(s.id)}
-                resumeInChatEnabled={resumeInChatEnabled}
+                resumeInDeskEnabled={resumeInDeskEnabled}
               />
             ))}
           </div>

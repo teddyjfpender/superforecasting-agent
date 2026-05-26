@@ -433,6 +433,8 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert "ForecastDeskPage" in text
     assert 'path: "/desk"' in text
     assert '"/desk": "chat"' in text
+    assert "isDashboardForecastDeskEnabled" in text
+    assert "__SUPERFORECASTING_AGENT_DASHBOARD_FORECAST_DESK__" in text
     assert "navigate(`/desk?resume=" in text
     assert "data-forecast-desk-active" in text
     assert "dashboard's /desk" in text
@@ -4289,6 +4291,8 @@ def test_dashboard_vite_dev_proxy_prefers_forecast_native_names():
     assert "process.env.FORECAST_DASHBOARD_URL" in config
     assert "window.__SUPERFORECASTING_AGENT_SESSION_TOKEN__" in config
     assert "window.__FORECAST_SESSION_TOKEN__" in config
+    assert "window.__SUPERFORECASTING_AGENT_DASHBOARD_FORECAST_DESK__" in config
+    assert "window.__FORECAST_DASHBOARD_FORECAST_DESK__" in config
     assert "window.__SUPERFORECASTING_AGENT_DASHBOARD_EMBEDDED_CHAT__" in config
     assert "window.__FORECAST_DASHBOARD_EMBEDDED_CHAT__" in config
     assert "forecast:dev-session-token" in config

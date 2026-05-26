@@ -2361,7 +2361,7 @@ class TestPtyWebSocket:
         assert env["FORECAST_TUI_SIDECAR_URL"] == env["SUPERFORECASTING_AGENT_TUI_SIDECAR_URL"]
         assert env["HERMES_TUI_SIDECAR_URL"] == env["SUPERFORECASTING_AGENT_TUI_SIDECAR_URL"]
 
-    def test_rejects_when_embedded_chat_disabled(self, monkeypatch):
+    def test_rejects_when_forecast_desk_disabled(self, monkeypatch):
         monkeypatch.setattr(self.ws_module, "_DASHBOARD_EMBEDDED_CHAT_ENABLED", False)
         from starlette.websockets import WebSocketDisconnect
 
