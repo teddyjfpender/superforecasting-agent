@@ -1,7 +1,7 @@
 ---
 sidebar_position: 7
 title: "Use SOUL.md with Superforecasting Agent"
-description: "Shape the forecast agent's durable voice and distinguish it from AGENTS.md and /personality."
+description: "Shape durable forecast-desk style and distinguish it from AGENTS.md and /style."
 ---
 
 # Use SOUL.md with Superforecasting Agent
@@ -182,16 +182,16 @@ What Superforecasting Agent should not do.
 How Superforecasting Agent should behave when ambiguity appears.
 ```
 
-## SOUL.md vs /personality
+## SOUL.md vs `/style`
 
 These are complementary.
 
 Use `SOUL.md` for your durable baseline.
-Use `/personality` for temporary mode switches.
+Use `/style` for temporary forecast-mode switches.
 
 Examples:
 - your default SOUL is pragmatic and direct
-- then for one session you use `/personality teacher`
+- then for one session you use `/style teacher`
 - later you switch back without changing your base voice file
 
 ## SOUL.md vs AGENTS.md
@@ -244,7 +244,7 @@ Check:
 - not some repo-local `SOUL.md`
 - the file is not empty
 - your session was restarted after the edit
-- a `/personality` overlay is not dominating the result
+- a `/style` overlay is not dominating the result
 
 ### Superforecasting Agent is ignoring parts of my SOUL.md
 
@@ -260,7 +260,7 @@ Move project instructions into `AGENTS.md` and keep `SOUL.md` focused on identit
 
 ## Related docs
 
-- [Personality & SOUL.md](/user-guide/features/personality)
+- [Forecast Style & SOUL.md](/user-guide/features/personality)
 - [Context Files](/user-guide/features/context-files)
 - [Configuration](/user-guide/configuration)
 - [Tips & Best Practices](/guides/tips)

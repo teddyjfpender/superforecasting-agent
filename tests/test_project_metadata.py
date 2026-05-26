@@ -1234,6 +1234,7 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
         "website/docs/user-guide/features/personality.md",
+        "website/docs/guides/use-soul-with-superforecasting-agent.md",
         "website/docs/user-guide/messaging/index.md",
         "website/docs/user-guide/tui.md",
         "website/docs/user-guide/features/batch-processing.md",
@@ -1254,6 +1255,7 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
 
     assert "Forecast Style & SOUL.md" in text
     assert "`/style` is a session-level overlay" in text
+    assert "Use `/style` for temporary forecast-mode switches." in text
     assert "legacy compatibility alias for `/style`" in text
     assert "Start a new forecast session (fresh session ID + history)" in text
     assert "| `/retry` | Retry the last forecast note |" in text
@@ -1277,6 +1279,8 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
     assert "Warm crimson and bronze for focused review" in text
 
     assert "Personality & SOUL.md" not in text
+    assert "SOUL.md vs /personality" not in text
+    assert "Use `/personality` for temporary mode switches." not in text
     assert "Start a new session (fresh session ID + history)" not in text
     assert "Retry the last message" not in text
     assert "| `/sessions` | Browse and resume previous sessions" not in text
