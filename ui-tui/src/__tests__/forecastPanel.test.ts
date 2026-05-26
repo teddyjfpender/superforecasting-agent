@@ -315,7 +315,7 @@ describe('forecast desk panel helpers', () => {
         '/forecast lesson list',
         '/forecast errors',
         '/forecast autopilot status <id>',
-        '/forecast autopilot enable <id> --source <adapter>:<source> --cadence 1d --mode propose',
+        '/forecast autopilot enable <id> --source <adapter>:<source> --required-source <critical-adapter>:<source> --cadence 1d --mode propose',
         '/forecast autopilot history <id>',
         '/forecast schedule run --due --auto-score --auto-postmortem',
         '/forecast schedule history --json',

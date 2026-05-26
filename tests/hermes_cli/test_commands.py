@@ -681,6 +681,7 @@ class TestSubcommands:
             "assumption",
             "watch",
             "alerts",
+            "autopilot",
             "schedule",
             "readiness",
             "pilot-report",

@@ -292,6 +292,8 @@ FORECAST_LEDGER_SCHEMA = {
             "source_or_note": {"type": "string"},
             "source": {"type": "string"},
             "sources": {"type": "array", "items": {"type": "string"}},
+            "required_source": {"type": "string"},
+            "required_sources": {"type": "array", "items": {"type": "string"}},
             "source_url": {"type": "string"},
             "source_name": {"type": "string"},
             "mode": {
@@ -1014,6 +1016,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 materiality_policy=_tool_autopilot_materiality_policy(args),
                 guardrail_policy=_tool_autopilot_guardrail_policy(args),
                 notification_policy=_tool_autopilot_notification_policy(args),
+                required_sources=_tool_autopilot_required_sources(args),
                 next_run_at=args.get("next_run_at"),
                 created_by=args.get("created_by"),
                 allow_missing_resolution_source=bool(args.get("allow_missing_resolution_source", False)),
@@ -1253,19 +1256,31 @@ def _required(args: dict[str, Any], key: str) -> str:
 
 
 def _tool_autopilot_sources(args: dict[str, Any], *, required: bool) -> list[str] | None:
+    sources = _tool_autopilot_source_values(args.get("source"), args.get("sources"))
+    for source in _tool_autopilot_required_sources(args):
+        if source not in sources:
+            sources.append(source)
+    unique_sources = list(dict.fromkeys(sources))
+    if required and not unique_sources:
+        raise ValueError("sources, source, required_sources, or required_source is required")
+    return unique_sources if unique_sources else None
+
+
+def _tool_autopilot_required_sources(args: dict[str, Any]) -> list[str]:
+    return _tool_autopilot_source_values(args.get("required_source"), args.get("required_sources"))
+
+
+def _tool_autopilot_source_values(single_source: Any, raw_sources: Any) -> list[str]:
     sources: list[str] = []
-    single_source = args.get("source")
     if isinstance(single_source, str) and single_source.strip():
         sources.append(single_source.strip())
-    raw_sources = args.get("sources")
+    elif isinstance(single_source, list):
+        sources.extend(str(item).strip() for item in single_source if str(item).strip())
     if isinstance(raw_sources, str):
         sources.extend(item.strip() for item in raw_sources.replace(";", ",").split(",") if item.strip())
     elif isinstance(raw_sources, list):
         sources.extend(str(item).strip() for item in raw_sources if str(item).strip())
-    unique_sources = list(dict.fromkeys(sources))
-    if required and not unique_sources:
-        raise ValueError("sources or source is required")
-    return unique_sources if unique_sources else None
+    return list(dict.fromkeys(sources))
 
 
 def _tool_autopilot_materiality_policy(args: dict[str, Any]) -> dict[str, Any]:

@@ -1551,6 +1551,8 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     autopilot_enable.add_argument("id")
     autopilot_enable.add_argument("--source", action="append", default=[])
     autopilot_enable.add_argument("--sources", help="Comma-separated watched sources")
+    autopilot_enable.add_argument("--required-source", action="append", default=[])
+    autopilot_enable.add_argument("--required-sources", help="Comma-separated watched sources that block refresh if unavailable")
     autopilot_enable.add_argument("--cadence", required=True)
     autopilot_enable.add_argument("--next-run-at")
     autopilot_enable.add_argument(
@@ -6867,6 +6869,7 @@ def _cmd_watch_check(args: argparse.Namespace) -> None:
 
 def _cmd_autopilot_enable(args: argparse.Namespace) -> None:
     sources = _autopilot_sources(args)
+    required_sources = _autopilot_required_sources(args)
     materiality_policy = _autopilot_materiality_policy(args.materiality_threshold)
     guardrail_policy = _autopilot_guardrail_policy(args)
     notification_policy = {
@@ -6881,6 +6884,7 @@ def _cmd_autopilot_enable(args: argparse.Namespace) -> None:
         materiality_policy=materiality_policy,
         guardrail_policy=guardrail_policy,
         notification_policy=notification_policy,
+        required_sources=required_sources,
         next_run_at=args.next_run_at,
         created_by=args.created_by,
         allow_missing_resolution_source=args.allow_missing_resolution_source,
@@ -6889,6 +6893,8 @@ def _cmd_autopilot_enable(args: argparse.Namespace) -> None:
     print(f"Autopilot enabled for {args.id}")
     print(f"Policy: {policy['id']}")
     print(f"Sources: {len(result['watched_sources'])}")
+    if required_sources:
+        print(f"Required sources: {len(required_sources)}")
     print(f"Cadence: {policy['cadence']}")
     print(f"Mode: {policy['mode'].replace('_', '-')}")
     print(f"Next run: {result['scheduled_review']['next_run_at']}")
@@ -6920,6 +6926,7 @@ def _cmd_autopilot_status(args: argparse.Namespace) -> None:
             f"cadence={policy['cadence']} schedule={policy['scheduled_review_id']}"
         )
     print(f"sources: {len(watches)}")
+    print(f"required_sources: {len([row for row in watches if row.get('metadata', {}).get('required')])}")
     print(f"pending_proposals: {len([row for row in proposals if row['status'] == 'pending'])}")
     if runs:
         latest = runs[0]
@@ -6943,6 +6950,9 @@ def _cmd_autopilot_run(args: argparse.Namespace) -> None:
     print(f"checked: {run['sources_checked']}")
     print(f"changed: {run['sources_changed']}")
     print(f"material: {run['material_changes']}")
+    required_failures = run.get("diagnostics", {}).get("required_source_failures") or []
+    if required_failures:
+        print(f"required_source_failures: {len(required_failures)}")
     proposal = result.get("proposal")
     if proposal:
         print(f"proposal: {proposal['id']} status={proposal['status']}")
@@ -8397,15 +8407,28 @@ def _watch_scope(args: argparse.Namespace, *, required: bool) -> tuple[str | Non
 
 
 def _autopilot_sources(args: argparse.Namespace) -> list[str]:
-    sources = [item.strip() for item in (args.source or []) if item and item.strip()]
-    if args.sources:
-        for item in re.split(r"[,;]", args.sources):
+    sources = _autopilot_source_values(args.source, args.sources)
+    required_sources = _autopilot_required_sources(args)
+    for source in required_sources:
+        if source not in sources:
+            sources.append(source)
+    if not sources:
+        raise SystemExit("autopilot enable requires --source, --sources, --required-source, or --required-sources")
+    return sources
+
+
+def _autopilot_required_sources(args: argparse.Namespace) -> list[str]:
+    return _autopilot_source_values(args.required_source, args.required_sources)
+
+
+def _autopilot_source_values(single_values: list[str], bulk_value: str | None) -> list[str]:
+    sources = [item.strip() for item in (single_values or []) if item and item.strip()]
+    if bulk_value:
+        for item in re.split(r"[,;]", bulk_value):
             item = item.strip()
             if item:
                 sources.append(item)
-    if not sources:
-        raise SystemExit("autopilot enable requires --source or --sources")
-    return sources
+    return list(dict.fromkeys(sources))
 
 
 def _autopilot_materiality_policy(thresholds: list[str]) -> dict[str, Any]:

@@ -106,6 +106,7 @@ FORECAST_DESK_SUBCOMMANDS: tuple[str, ...] = (
     "schedule",
     "watch",
     "alerts",
+    "autopilot",
     "self-check",
     "backtest",
     "performance",

@@ -217,7 +217,8 @@ export const coreCommands: SlashCommand[] = [
             ['/pilot-aggregate [files...]', 'aggregate tester export packets'],
             ['/lessons [args]', 'list calibration lessons'],
             ['/backtest [args]', 'run or inspect historical replay datasets'],
-            ['/schedule [args]', 'list or run scheduled self-checks']
+            ['/schedule [args]', 'list or run scheduled self-checks'],
+            ['/autopilot [args]', 'manage autonomous forecast maintenance policies and proposals']
           ],
           title: 'TUI'
         },

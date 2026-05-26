@@ -136,6 +136,7 @@ Common desk workflows have direct slash commands:
 | `/errors` | Inspect domain/topic error profiles |
 | `/backtest` | Run or inspect historical replay datasets |
 | `/schedule` | List or manage scheduled self-checks |
+| `/autopilot` | Manage autonomous forecast maintenance policies and proposals |
 | `/self-check` | Create review alerts for stale or changed forecasts |
 | `/performance` | Summarize recent backtest performance |
 | `/readiness` | Inspect claim-readiness gaps |
@@ -148,6 +149,11 @@ Common desk workflows have direct slash commands:
 
 These commands route to the forecast CLI and refresh desk counters when they
 complete.
+
+For autonomous maintenance, use `forecast autopilot enable <id>` or `/autopilot
+enable <id>` with `--source` for optional feeds and `--required-source` for
+critical feeds. If a required source fails, the run records a high-severity
+alert and blocks refresh proposals until the source recovers.
 
 ## Why Use The TUI
 

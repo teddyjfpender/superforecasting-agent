@@ -12243,7 +12243,7 @@ def test_forecast_cli_autopilot_enable_run_approve_and_status(tmp_path, capsys):
             "autopilot",
             "enable",
             question_id,
-            "--source",
+            "--required-source",
             str(source),
             "--cadence",
             "1d",
@@ -12259,6 +12259,7 @@ def test_forecast_cli_autopilot_enable_run_approve_and_status(tmp_path, capsys):
     enable_output = capsys.readouterr().out
     assert f"Autopilot enabled for {question_id}" in enable_output
     assert "Sources: 1" in enable_output
+    assert "Required sources: 1" in enable_output
     assert "Mode: propose" in enable_output
 
     _run(parser, ["forecast", "--db", db, "autopilot", "run", question_id, "--now", "2026-05-02T09:00:00Z"])
@@ -12304,6 +12305,7 @@ def test_forecast_cli_autopilot_enable_run_approve_and_status(tmp_path, capsys):
     status_output = capsys.readouterr().out
     assert "enabled=True" in status_output
     assert "sources: 1" in status_output
+    assert "required_sources: 1" in status_output
     assert "pending_proposals: 0" in status_output
 
 

@@ -3536,6 +3536,7 @@ class ForecastLedger:
         materiality_policy: dict[str, Any] | None = None,
         guardrail_policy: dict[str, Any] | None = None,
         notification_policy: dict[str, Any] | None = None,
+        required_sources: list[str] | None = None,
         next_run_at: str | None = None,
         created_by: str | None = None,
         allow_missing_resolution_source: bool = False,
@@ -3543,7 +3544,14 @@ class ForecastLedger:
         mode = mode.replace("-", "_")
         if mode not in AUTOPILOT_MODES:
             raise ValidationError("autopilot mode must be propose, auto-commit, or alert-only")
-        sources = [source.strip() for source in sources if source.strip()]
+        sources = list(dict.fromkeys(source.strip() for source in sources if source.strip()))
+        required_sources = list(
+            dict.fromkeys(source.strip() for source in (required_sources or []) if source.strip())
+        )
+        for source in required_sources:
+            if source not in sources:
+                sources.append(source)
+        required_source_set = set(required_sources)
         readiness = self.autopilot_readiness(
             question_id,
             sources=sources,
@@ -3592,7 +3600,10 @@ class ForecastLedger:
                 scope_type="question",
                 scope_ref=question_id,
                 source=source,
-                metadata={"autopilot_policy_id": policy_id},
+                metadata={
+                    "autopilot_policy_id": policy_id,
+                    "required": source in required_source_set,
+                },
             )
             for source in sources
         ]
@@ -3870,6 +3881,7 @@ class ForecastLedger:
         watches = self.list_watched_sources(scope_type="question", scope_ref=question_id, status="active")
         source_snapshots: list[dict[str, Any]] = []
         changed: list[dict[str, Any]] = []
+        required_source_failures: list[str] = []
         alerts: list[AlertEvent] = []
 
         for watch in watches:
@@ -3900,15 +3912,27 @@ class ForecastLedger:
             if did_change:
                 changed.append(source_snapshot)
             if status == "failed":
+                is_required = bool((watch.get("metadata") or {}).get("required"))
+                if is_required:
+                    required_source_failures.append(source_snapshot["id"])
                 alerts.append(
                     self.create_alert(
-                        severity="warning",
+                        severity="high" if is_required else "warning",
                         scope_type="question",
                         scope_ref=question_id,
-                        reason=f"autopilot_source_failed:{watch['id']}",
+                        reason=(
+                            f"autopilot_required_source_failed:{watch['id']}"
+                            if is_required
+                            else f"autopilot_source_failed:{watch['id']}"
+                        ),
                         recommended_action=(
-                            "Inspect the watched source and rerun "
-                            f"`forecast autopilot run {question_id}` after the adapter recovers."
+                            "Required autopilot source failed; forecast refresh is blocked until it recovers. "
+                            f"Inspect the source and rerun `forecast autopilot run {question_id}`."
+                            if is_required
+                            else (
+                                "Inspect the watched source and rerun "
+                                f"`forecast autopilot run {question_id}` after the adapter recovers."
+                            )
                         ),
                     )
                 )
@@ -3922,16 +3946,27 @@ class ForecastLedger:
                     (run_at, current_signature, watch["id"]),
                 )
 
-        material_changes = len(changed) if self._autopilot_material_change(policy, changed) else 0
+        blocked_by_required_source_failure = bool(required_source_failures)
+        material_changes = 0
+        if not blocked_by_required_source_failure and self._autopilot_material_change(policy, changed):
+            material_changes = len(changed)
         proposal: dict[str, Any] | None = None
         snapshot: ForecastSnapshot | None = None
         model_run: dict[str, Any] | None = None
-        status = "skipped" if material_changes == 0 else "success"
+        source_failures = [row["id"] for row in source_snapshots if row["status"] == "failed"]
+        if blocked_by_required_source_failure:
+            status = "failed"
+        elif source_failures:
+            status = "partial"
+        else:
+            status = "skipped" if material_changes == 0 else "success"
         diagnostics: dict[str, Any] = {
             "mode": policy["mode"],
             "source_snapshot_ids": [row["id"] for row in source_snapshots],
             "changed_source_snapshot_ids": [row["id"] for row in changed],
-            "source_failures": [row["id"] for row in source_snapshots if row["status"] == "failed"],
+            "source_failures": source_failures,
+            "required_source_failures": required_source_failures,
+            "forecast_refresh_blocked": blocked_by_required_source_failure,
             "materiality_policy": policy["materiality_policy"],
             "guardrail_policy": policy["guardrail_policy"],
         }
@@ -4362,7 +4397,12 @@ class ForecastLedger:
                     f"{watch['source_type']}-watch-v1",
                     status,
                     error_message,
-                    json_dumps({"autopilot_policy_id": watch.get("metadata", {}).get("autopilot_policy_id")}),
+                    json_dumps(
+                        {
+                            "autopilot_policy_id": watch.get("metadata", {}).get("autopilot_policy_id"),
+                            "required": bool((watch.get("metadata") or {}).get("required")),
+                        }
+                    ),
                 ),
             )
         return self.list_source_snapshots(watched_source_id=watch["id"], limit=1)[0]

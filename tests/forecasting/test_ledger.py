@@ -2063,6 +2063,57 @@ def test_autopilot_auto_commit_respects_guardrails(tmp_path):
     assert "guardrail_violations" in result["run"]["diagnostics"]
 
 
+def test_autopilot_required_source_failure_blocks_refresh_proposal(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    optional_source = tmp_path / "optional-source.txt"
+    required_source = tmp_path / "required-source.txt"
+    optional_source.write_text("initial optional source", encoding="utf-8")
+    required_source.write_text("initial required source", encoding="utf-8")
+    question = ledger.create_question(
+        title="Will required autopilot sources block unsafe refreshes?",
+        resolution_criteria="Resolved yes if required source failure blocks a proposal.",
+        resolution_source="fixture resolver",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.42,
+        rationale="Baseline before required-source run.",
+    )
+    ledger.enable_autopilot(
+        question_id=question.id,
+        sources=[str(optional_source)],
+        required_sources=[str(required_source)],
+        cadence="1d",
+        mode="propose",
+        materiality_policy={"min_source_changes": 1},
+    )
+
+    optional_source.write_text("changed optional source", encoding="utf-8")
+    required_source.unlink()
+    result = ledger.run_autopilot(
+        question.id,
+        now="2026-05-04T09:00:00Z",
+        proposed_probability_or_distribution=0.51,
+    )
+
+    assert result["run"]["status"] == "failed"
+    assert result["run"]["material_changes"] == 0
+    assert result["proposal"] is None
+    assert result["model_run"] is None
+    assert result["run"]["diagnostics"]["forecast_refresh_blocked"] is True
+    assert result["run"]["diagnostics"]["required_source_failures"]
+    required_snapshot = next(
+        row for row in result["source_snapshots"] if row["source_url"] == str(required_source)
+    )
+    assert required_snapshot["metadata"]["required"] is True
+    assert required_snapshot["status"] == "failed"
+    assert any(
+        alert.severity == "high"
+        and alert.reason.startswith("autopilot_required_source_failed:")
+        for alert in result["alerts"]
+    )
+
+
 @pytest.mark.parametrize(
     ("scope_type", "scope_ref", "expected_self_check", "expected_followup"),
     [

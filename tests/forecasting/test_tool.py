@@ -1278,7 +1278,7 @@ def test_forecast_ledger_tool_manages_autopilot_update_proposals(tmp_path):
                 "db": db,
                 "action": "enable_autopilot",
                 "question_id": question_id,
-                "sources": [str(source)],
+                "required_sources": [str(source)],
                 "cadence": "1d",
                 "next_run_at": "2026-01-02T00:00:00Z",
                 "mode": "propose",
@@ -1341,6 +1341,7 @@ def test_forecast_ledger_tool_manages_autopilot_update_proposals(tmp_path):
 
     assert enabled["policy"]["question_id"] == question_id
     assert enabled["watched_sources"][0]["source_type"] == "file"
+    assert enabled["watched_sources"][0]["metadata"]["required"] is True
     assert unchanged["run"]["status"] == "skipped"
     assert proposed["run"]["status"] == "success"
     assert proposed["proposal"]["prior_forecast_id"] == baseline["forecast_snapshot"]["forecast_id"]
