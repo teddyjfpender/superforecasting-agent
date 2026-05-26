@@ -63,7 +63,7 @@ let
         lib.mapAttrsToList (name: value:
           if builtins.isPath value || lib.isStorePath value
           then "cp ${value} $out/${name}"
-          else "cat > $out/${name} <<'HERMES_DOC_EOF'\n${value}\nHERMES_DOC_EOF"
+          else "cat > $out/${name} <<'FORECAST_DOC_EOF'\n${value}\nFORECAST_DOC_EOF"
         ) cfg.documents
       )
     );
@@ -71,6 +71,9 @@ let
     containerName = "superforecasting-agent";
     containerDataDir = "/data";     # stateDir mount point inside container
     containerHomeDir = "/home/superforecasting-agent";
+    forecastHomeDir = "${cfg.stateDir}/.superforecasting-agent";
+    legacyHomeDir = "${cfg.stateDir}/.hermes";
+    containerForecastHomeDir = "${containerDataDir}/.superforecasting-agent";
 
     # ── Container mode helpers ──────────────────────────────────────────
     containerBin = if cfg.container.backend == "docker"
@@ -123,13 +126,13 @@ let
       chown "$SUPERFORECASTING_AGENT_UID:$SUPERFORECASTING_AGENT_GID" "$TARGET_HOME"
       chmod 0750 "$TARGET_HOME"
 
-      # Ensure HERMES_HOME is owned by the target user.
+      # Ensure the active forecast home is owned by the target user.
       # Use find instead of chown -R: chown strips the setgid bit (kernel
       # behavior), destroying the 2770 permissions the NixOS activation
       # script sets for group access by hostUsers.  Only touch files with
       # wrong ownership so correctly-owned dirs keep their permission bits.
-      if [ -n "''${HERMES_HOME:-}" ] && [ -d "$HERMES_HOME" ]; then
-        find "$HERMES_HOME" \! -user "$SUPERFORECASTING_AGENT_UID" -exec chown "$SUPERFORECASTING_AGENT_UID:$SUPERFORECASTING_AGENT_GID" {} +
+      if [ -n "''${SUPERFORECASTING_AGENT_HOME:-}" ] && [ -d "$SUPERFORECASTING_AGENT_HOME" ]; then
+        find "$SUPERFORECASTING_AGENT_HOME" \! -user "$SUPERFORECASTING_AGENT_UID" -exec chown "$SUPERFORECASTING_AGENT_UID:$SUPERFORECASTING_AGENT_GID" {} +
       fi
 
       # ── Provision apt packages (first boot only, cached in writable layer) ──
@@ -190,7 +193,7 @@ let
 
     # Identity hash — only recreate container when structural config changes.
     # Package and entrypoint use stable symlinks (current-package, current-entrypoint)
-    # so they can update without recreation. Env vars go through $HERMES_HOME/.env.
+    # so they can update without recreation. Env vars go through the active forecast home .env.
     containerIdentity = builtins.hashString "sha256" (builtins.toJSON {
       schema = 4; # bump when identity inputs change (4: Node 18→22 via NodeSource)
       image = cfg.container.image;
@@ -245,7 +248,7 @@ let
       stateDir = mkOption {
         type = types.str;
         default = "/var/lib/superforecasting-agent";
-        description = "State directory. Contains .hermes/ subdir shared by SUPERFORECASTING_AGENT_HOME, FORECAST_HOME, and legacy HERMES_HOME.";
+        description = "State directory. Contains .superforecasting-agent/ as the active home; .hermes is kept as a compatibility symlink for legacy HERMES_HOME users.";
       };
 
       workingDirectory = mkOption {
@@ -599,8 +602,9 @@ let
           type = types.listOf types.str;
           default = [ ];
           description = ''
-            Interactive users who get a legacy ~/.hermes symlink to the service
-            stateDir. These users are automatically added to the Superforecasting Agent group.
+            Interactive users who get ~/.superforecasting-agent plus a legacy
+            ~/.hermes symlink to the service forecast home. These users are
+            automatically added to the Superforecasting Agent group.
           '';
           example = [ "sidbin" ];
         };
@@ -659,9 +663,9 @@ let
       # service instead of creating a separate user home.
       (lib.mkIf cfg.addToSystemPackages {
         environment.systemPackages = [ effectivePackage ];
-        environment.variables.HERMES_HOME = "${cfg.stateDir}/.hermes";
-        environment.variables.SUPERFORECASTING_AGENT_HOME = "${cfg.stateDir}/.hermes";
-        environment.variables.FORECAST_HOME = "${cfg.stateDir}/.hermes";
+        environment.variables.HERMES_HOME = forecastHomeDir;
+        environment.variables.SUPERFORECASTING_AGENT_HOME = forecastHomeDir;
+        environment.variables.FORECAST_HOME = forecastHomeDir;
       })
 
       # ── Host user group membership ─────────────────────────────────────
@@ -718,12 +722,12 @@ let
       {
         systemd.tmpfiles.rules = [
           "d ${cfg.stateDir}                2770 ${cfg.user} ${cfg.group} - -"
-          "d ${cfg.stateDir}/.hermes        2770 ${cfg.user} ${cfg.group} - -"
-          "d ${cfg.stateDir}/.hermes/cron   2770 ${cfg.user} ${cfg.group} - -"
-          "d ${cfg.stateDir}/.hermes/sessions 2770 ${cfg.user} ${cfg.group} - -"
-          "d ${cfg.stateDir}/.hermes/logs   2770 ${cfg.user} ${cfg.group} - -"
-          "d ${cfg.stateDir}/.hermes/memories 2770 ${cfg.user} ${cfg.group} - -"
-          "d ${cfg.stateDir}/.hermes/plugins 2770 ${cfg.user} ${cfg.group} - -"
+          "d ${forecastHomeDir}        2770 ${cfg.user} ${cfg.group} - -"
+          "d ${forecastHomeDir}/cron   2770 ${cfg.user} ${cfg.group} - -"
+          "d ${forecastHomeDir}/sessions 2770 ${cfg.user} ${cfg.group} - -"
+          "d ${forecastHomeDir}/logs   2770 ${cfg.user} ${cfg.group} - -"
+          "d ${forecastHomeDir}/memories 2770 ${cfg.user} ${cfg.group} - -"
+          "d ${forecastHomeDir}/plugins 2770 ${cfg.user} ${cfg.group} - -"
           "d ${cfg.stateDir}/home           0750 ${cfg.user} ${cfg.group} - -"
           "d ${cfg.workingDirectory}         2770 ${cfg.user} ${cfg.group} - -"
         ];
@@ -733,23 +737,39 @@ let
       {
         system.activationScripts."superforecasting-agent-setup" = lib.stringAfter ([ "users" ] ++ lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets") ''
           # Ensure directories exist (activation runs before tmpfiles)
-          mkdir -p ${cfg.stateDir}/.hermes
+          if [ ! -e ${forecastHomeDir} ] && [ -d ${legacyHomeDir} ] && [ ! -L ${legacyHomeDir} ]; then
+            mv ${legacyHomeDir} ${forecastHomeDir}
+            echo "superforecasting-agent: migrated ${legacyHomeDir} to ${forecastHomeDir}"
+          fi
+          mkdir -p ${forecastHomeDir}
           mkdir -p ${cfg.stateDir}/home
           mkdir -p ${cfg.workingDirectory}
-          chown ${cfg.user}:${cfg.group} ${cfg.stateDir} ${cfg.stateDir}/.hermes ${cfg.stateDir}/home ${cfg.workingDirectory}
-          chmod 2770 ${cfg.stateDir} ${cfg.stateDir}/.hermes ${cfg.workingDirectory}
+          chown ${cfg.user}:${cfg.group} ${cfg.stateDir} ${forecastHomeDir} ${cfg.stateDir}/home ${cfg.workingDirectory}
+          chmod 2770 ${cfg.stateDir} ${forecastHomeDir} ${cfg.workingDirectory}
           chmod 0750 ${cfg.stateDir}/home
+
+          if [ -L ${legacyHomeDir} ] && [ "$(readlink ${legacyHomeDir})" != "${forecastHomeDir}" ]; then
+            rm -f ${legacyHomeDir}
+          elif [ -d ${legacyHomeDir} ] && [ ! -L ${legacyHomeDir} ]; then
+            _backup="${legacyHomeDir}.bak.$(date +%s)"
+            mv ${legacyHomeDir} "$_backup"
+            echo "superforecasting-agent: backed up existing ${legacyHomeDir} to $_backup before creating compatibility symlink"
+          fi
+          if [ ! -e ${legacyHomeDir} ]; then
+            ln -sfn ${forecastHomeDir} ${legacyHomeDir}
+            chown -h ${cfg.user}:${cfg.group} ${legacyHomeDir}
+          fi
 
           # Create subdirs, set setgid + group-writable, migrate existing files.
           # Nix-managed files (config.yaml, .env, .managed) stay 0640/0644.
-          find ${cfg.stateDir}/.hermes -maxdepth 1 \
+          find ${forecastHomeDir} -maxdepth 1 \
             \( -name "*.db" -o -name "*.db-wal" -o -name "*.db-shm" -o -name "SOUL.md" \) \
             -exec chmod g+rw {} + 2>/dev/null || true
           for _subdir in cron sessions logs memories plugins; do
-            mkdir -p "${cfg.stateDir}/.hermes/$_subdir"
-            chown ${cfg.user}:${cfg.group} "${cfg.stateDir}/.hermes/$_subdir"
-            chmod 2770 "${cfg.stateDir}/.hermes/$_subdir"
-            find "${cfg.stateDir}/.hermes/$_subdir" -type f \
+            mkdir -p "${forecastHomeDir}/$_subdir"
+            chown ${cfg.user}:${cfg.group} "${forecastHomeDir}/$_subdir"
+            chmod 2770 "${forecastHomeDir}/$_subdir"
+            find "${forecastHomeDir}/$_subdir" -type f \
               -exec chmod g+rw {} + 2>/dev/null || true
           done
 
@@ -757,78 +777,82 @@ let
           # Preserves user-added keys (skills, streaming, etc.); Nix keys win.
           # If configFile is user-provided (not generated), overwrite instead of merge.
           ${if cfg.configFile != null then ''
-            install -o ${cfg.user} -g ${cfg.group} -m 0640 -D ${configFile} ${cfg.stateDir}/.hermes/config.yaml
+            install -o ${cfg.user} -g ${cfg.group} -m 0640 -D ${configFile} ${forecastHomeDir}/config.yaml
           '' else ''
-            ${configMergeScript} ${generatedConfigFile} ${cfg.stateDir}/.hermes/config.yaml
-            chown ${cfg.user}:${cfg.group} ${cfg.stateDir}/.hermes/config.yaml
-            chmod 0640 ${cfg.stateDir}/.hermes/config.yaml
+            ${configMergeScript} ${generatedConfigFile} ${forecastHomeDir}/config.yaml
+            chown ${cfg.user}:${cfg.group} ${forecastHomeDir}/config.yaml
+            chmod 0640 ${forecastHomeDir}/config.yaml
           ''}
 
           # Managed mode marker (so interactive shells also detect NixOS management)
-          touch ${cfg.stateDir}/.hermes/.managed
-          chown ${cfg.user}:${cfg.group} ${cfg.stateDir}/.hermes/.managed
-          chmod 0644 ${cfg.stateDir}/.hermes/.managed
+          touch ${forecastHomeDir}/.managed
+          chown ${cfg.user}:${cfg.group} ${forecastHomeDir}/.managed
+          chmod 0644 ${forecastHomeDir}/.managed
 
           # Container mode metadata — tells the host CLI to exec into the
           # container instead of running locally. Removed when container mode
           # is disabled so the host CLI falls back to native execution.
           ${if cfg.container.enable then ''
-            cat > ${cfg.stateDir}/.hermes/.container-mode <<'FORECAST_CONTAINER_MODE_EOF'
+            cat > ${forecastHomeDir}/.container-mode <<'FORECAST_CONTAINER_MODE_EOF'
     # Written by NixOS activation script. Do not edit manually.
     backend=${cfg.container.backend}
     container_name=${containerName}
     exec_user=${cfg.user}
     hermes_bin=${containerDataDir}/current-package/bin/superforecasting-agent
     FORECAST_CONTAINER_MODE_EOF
-            chown ${cfg.user}:${cfg.group} ${cfg.stateDir}/.hermes/.container-mode
-            chmod 0644 ${cfg.stateDir}/.hermes/.container-mode
+            chown ${cfg.user}:${cfg.group} ${forecastHomeDir}/.container-mode
+            chmod 0644 ${forecastHomeDir}/.container-mode
           '' else ''
-            rm -f ${cfg.stateDir}/.hermes/.container-mode
+            rm -f ${forecastHomeDir}/.container-mode
 
             # Remove symlink bridge for hostUsers
             ${lib.concatStringsSep "\n" (map (user:
               let
                 userHome = config.users.users.${user}.home;
-                symlinkPath = "${userHome}/.hermes";
+                nativeSymlinkPath = "${userHome}/.superforecasting-agent";
+                legacySymlinkPath = "${userHome}/.hermes";
               in ''
-                if [ -L "${symlinkPath}" ] && [ "$(readlink "${symlinkPath}")" = "${cfg.stateDir}/.hermes" ]; then
-                  rm -f "${symlinkPath}"
-                  echo "superforecasting-agent: removed symlink ${symlinkPath}"
-                fi
+                for _symlink in "${nativeSymlinkPath}" "${legacySymlinkPath}"; do
+                  if [ -L "$_symlink" ] && [ "$(readlink "$_symlink")" = "${forecastHomeDir}" ]; then
+                    rm -f "$_symlink"
+                    echo "superforecasting-agent: removed symlink $_symlink"
+                  fi
+                done
               '') cfg.container.hostUsers)}
           ''}
 
           # ── Symlink bridge for interactive users ───────────────────────
-          # Create ~/.hermes -> stateDir/.hermes for each hostUser so the
-          # host CLI shares state with the container service.
+          # Create ~/.superforecasting-agent plus a legacy ~/.hermes alias for
+          # each hostUser so the host CLI shares state with the container service.
           # Only runs when container mode is enabled.
           ${lib.optionalString cfg.container.enable
             (lib.concatStringsSep "\n" (map (user:
               let
                 userHome = config.users.users.${user}.home;
-                symlinkPath = "${userHome}/.hermes";
-                target = "${cfg.stateDir}/.hermes";
+                target = "${forecastHomeDir}";
               in ''
-                if [ -d "${symlinkPath}" ] && [ ! -L "${symlinkPath}" ]; then
-                  # Real directory — back it up, then create symlink.
-                  # (ln -sfn cannot atomically replace a directory.)
-                  _backup="${symlinkPath}.bak.$(date +%s)"
-                  echo "superforecasting-agent: backing up existing ${symlinkPath} to $_backup"
-                  mv "${symlinkPath}" "$_backup"
-                fi
-                # For everything else (existing symlink, doesn't exist, etc.)
-                # ln -sfn handles it: replaces symlinks, creates new ones.
-                ln -sfn "${target}" "${symlinkPath}"
-                chown -h ${user}:${cfg.group} "${symlinkPath}"
+                for _symlink in "${userHome}/.superforecasting-agent" "${userHome}/.hermes"; do
+                  if [ -d "$_symlink" ] && [ ! -L "$_symlink" ]; then
+                    # Real directory — back it up, then create symlink.
+                    # (ln -sfn cannot atomically replace a directory.)
+                    _backup="$_symlink.bak.$(date +%s)"
+                    echo "superforecasting-agent: backing up existing $_symlink to $_backup"
+                    mv "$_symlink" "$_backup"
+                  fi
+                  # For everything else (existing symlink, doesn't exist, etc.)
+                  # ln -sfn handles it: replaces symlinks, creates new ones.
+                  ln -sfn "${target}" "$_symlink"
+                  chown -h ${user}:${cfg.group} "$_symlink"
+                done
               '') cfg.container.hostUsers))}
 
           # Seed auth file if provided
           ${lib.optionalString (cfg.authFile != null) ''
             ${if cfg.authFileForceOverwrite then ''
-              install -o ${cfg.user} -g ${cfg.group} -m 0600 ${cfg.authFile} ${cfg.stateDir}/.hermes/auth.json
+              install -o ${cfg.user} -g ${cfg.group} -m 0600 ${cfg.authFile} ${forecastHomeDir}/auth.json
             '' else ''
-              if [ ! -f ${cfg.stateDir}/.hermes/auth.json ]; then
-                install -o ${cfg.user} -g ${cfg.group} -m 0600 ${cfg.authFile} ${cfg.stateDir}/.hermes/auth.json
+              if [ ! -f ${forecastHomeDir}/auth.json ]; then
+                install -o ${cfg.user} -g ${cfg.group} -m 0600 ${cfg.authFile} ${forecastHomeDir}/auth.json
               fi
             ''}
           ''}
@@ -837,11 +861,11 @@ let
           # The runtime reads the shared .env at startup via load_hermes_dotenv(),
           # so this is the single source of truth for both native and container mode.
           ${lib.optionalString (cfg.environment != {} || cfg.environmentFiles != []) ''
-            ENV_FILE="${cfg.stateDir}/.hermes/.env"
+            ENV_FILE="${forecastHomeDir}/.env"
             install -o ${cfg.user} -g ${cfg.group} -m 0640 /dev/null "$ENV_FILE"
-            cat > "$ENV_FILE" <<'HERMES_NIX_ENV_EOF'
+            cat > "$ENV_FILE" <<'FORECAST_NIX_ENV_EOF'
     ${envFileContent}
-    HERMES_NIX_ENV_EOF
+    FORECAST_NIX_ENV_EOF
             ${lib.concatStringsSep "\n" (map (f: ''
               if [ -f "${f}" ]; then
                 echo "" >> "$ENV_FILE"
@@ -857,7 +881,7 @@ let
 
         # ── Declarative plugins ─────────────────────────────────────────
         # Remove stale managed symlinks (plugins removed from config)
-        find ${cfg.stateDir}/.hermes/plugins -maxdepth 1 -type l -name 'nix-managed-*' -delete 2>/dev/null || true
+        find ${forecastHomeDir}/plugins -maxdepth 1 -type l -name 'nix-managed-*' -delete 2>/dev/null || true
 
         ${lib.concatStringsSep "\n" (map (plugin:
           let
@@ -867,8 +891,8 @@ let
               echo "ERROR: extraPlugins entry '${plugin}' has no plugin.yaml" >&2
               exit 1
             fi
-            ln -sfn ${plugin} ${cfg.stateDir}/.hermes/plugins/nix-managed-${name}
-            chown -h ${cfg.user}:${cfg.group} ${cfg.stateDir}/.hermes/plugins/nix-managed-${name}
+            ln -sfn ${plugin} ${forecastHomeDir}/plugins/nix-managed-${name}
+            chown -h ${cfg.user}:${cfg.group} ${forecastHomeDir}/plugins/nix-managed-${name}
           '') cfg.extraPlugins)}
         '';
       }
@@ -886,9 +910,9 @@ let
 
           environment = {
             HOME = cfg.stateDir;
-            HERMES_HOME = "${cfg.stateDir}/.hermes";
-            SUPERFORECASTING_AGENT_HOME = "${cfg.stateDir}/.hermes";
-            FORECAST_HOME = "${cfg.stateDir}/.hermes";
+            HERMES_HOME = forecastHomeDir;
+            SUPERFORECASTING_AGENT_HOME = forecastHomeDir;
+            FORECAST_HOME = forecastHomeDir;
             SUPERFORECASTING_AGENT_MANAGED = "true";
             FORECAST_MANAGED = "true";
             HERMES_MANAGED = "true";
@@ -991,9 +1015,9 @@ let
                 --env SUPERFORECASTING_AGENT_GID="$SUPERFORECASTING_AGENT_GID" \
                 --env FORECAST_GID="$SUPERFORECASTING_AGENT_GID" \
                 --env HERMES_GID="$SUPERFORECASTING_AGENT_GID" \
-                --env HERMES_HOME=${containerDataDir}/.hermes \
-                --env SUPERFORECASTING_AGENT_HOME=${containerDataDir}/.hermes \
-                --env FORECAST_HOME=${containerDataDir}/.hermes \
+                --env HERMES_HOME=${containerForecastHomeDir} \
+                --env SUPERFORECASTING_AGENT_HOME=${containerForecastHomeDir} \
+                --env FORECAST_HOME=${containerForecastHomeDir} \
                 --env SUPERFORECASTING_AGENT_MANAGED=true \
                 --env FORECAST_MANAGED=true \
                 --env HERMES_MANAGED=true \

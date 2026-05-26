@@ -5145,6 +5145,9 @@ def test_nix_package_aliases_are_forecast_native():
     assert '"superforecasting-agent" = superforecastingAgent' in nix_overlay
     assert '"hermes-agent" = superforecastingAgent' in nix_overlay
     assert 'containerName = "superforecasting-agent"' in nix_module
+    assert 'forecastHomeDir = "${cfg.stateDir}/.superforecasting-agent";' in nix_module
+    assert 'legacyHomeDir = "${cfg.stateDir}/.hermes";' in nix_module
+    assert 'containerForecastHomeDir = "${containerDataDir}/.superforecasting-agent";' in nix_module
     assert 'cfg = config.services.superforecasting-agent' in nix_module
     assert 'lib.mkAliasOptionModule [ "services" "hermes-agent" ] [ "services" "superforecasting-agent" ]' in nix_module
     assert "options.services.superforecasting-agent" in nix_module
@@ -5161,6 +5164,14 @@ def test_nix_package_aliases_are_forecast_native():
     assert '--env SUPERFORECASTING_AGENT_UID="$SUPERFORECASTING_AGENT_UID"' in nix_module
     assert '--env FORECAST_UID="$SUPERFORECASTING_AGENT_UID"' in nix_module
     assert '--env HERMES_UID="$SUPERFORECASTING_AGENT_UID"' in nix_module
+    assert "SUPERFORECASTING_AGENT_HOME = forecastHomeDir;" in nix_module
+    assert "FORECAST_HOME = forecastHomeDir;" in nix_module
+    assert "HERMES_HOME = forecastHomeDir;" in nix_module
+    assert "--env SUPERFORECASTING_AGENT_HOME=${containerForecastHomeDir}" in nix_module
+    assert "--env FORECAST_HOME=${containerForecastHomeDir}" in nix_module
+    assert "--env HERMES_HOME=${containerForecastHomeDir}" in nix_module
+    assert 'SUPERFORECASTING_AGENT_HOME = "${cfg.stateDir}/.hermes";' not in nix_module
+    assert "--env SUPERFORECASTING_AGENT_HOME=${containerDataDir}/.hermes" not in nix_module
     assert 'mkEnableOption "Superforecasting Agent gateway service"' in nix_module
     assert 'name = "superforecasting-agent-config-attrs"' in nix_module
     assert 'pkgs.writeText "superforecasting-agent-config.yaml"' in nix_module
@@ -5228,6 +5239,11 @@ def test_nix_package_aliases_are_forecast_native():
     assert "journalctl -u hermes-agent -f" not in nix_docs
     assert "systemctl restart hermes-agent" not in nix_docs
     assert '"/var/lib/superforecasting-agent"' in nix_docs
+    assert "${services.superforecasting-agent.stateDir}/.superforecasting-agent/SOUL.md" in nix_docs
+    assert "/var/lib/superforecasting-agent/.superforecasting-agent/.env" in nix_docs
+    assert "~/.superforecasting-agent -> /var/lib/superforecasting-agent/.superforecasting-agent" in nix_docs
+    assert "${services.superforecasting-agent.stateDir}/.hermes/SOUL.md" not in nix_docs
+    assert "/var/lib/superforecasting-agent/.hermes/.env" not in nix_docs
     assert '"/var/lib/hermes"' not in nix_docs
     assert "`/home/superforecasting-agent`" in nix_docs
     assert '"/home/hermes"' not in nix_docs

@@ -139,7 +139,10 @@ When `container.enable = true` and `addToSystemPackages = true`, **every** fork-
 - If the container isn't running, the CLI retries briefly (5s with a spinner for interactive use, 10s silently for scripts) then fails with a clear error — no silent fallback
 - For developers working on this fork, set `HERMES_DEV=1` to bypass container routing and run the local checkout directly
 
-Set `container.hostUsers` to create a legacy `~/.hermes` symlink to the service state directory, so the host CLI and the container share sessions, config, and runtime state. Fork-native home aliases point at the same state directory.
+Set `container.hostUsers` to create a fork-native `~/.superforecasting-agent`
+symlink plus a legacy `~/.hermes` compatibility symlink to the service forecast
+home, so the host CLI and the container share sessions, config, and runtime
+state.
 
 ```nix
 services.superforecasting-agent = {
@@ -149,7 +152,8 @@ services.superforecasting-agent = {
 };
 ```
 
-Users listed in `hostUsers` are automatically added to the `hermes` group for file permission access.
+Users listed in `hostUsers` are automatically added to the
+`superforecasting-agent` group for file permission access.
 
 **Podman users:** The NixOS service runs the container as root. Docker users get access via the `docker` group socket, but Podman's rootful containers require sudo. Grant passwordless sudo for your container runtime:
 
@@ -330,7 +334,7 @@ Quick reference for the most common things Nix users want to customize:
 | Change the LLM model | `settings.model.default` | `"anthropic/claude-sonnet-4"` |
 | Use a different provider endpoint | `settings.model.base_url` | `"https://openrouter.ai/api/v1"` |
 | Add API keys | `environmentFiles` | `[ config.sops.secrets."forecast-env".path ]` |
-| Give the forecast desk a standing role | `${services.superforecasting-agent.stateDir}/.hermes/SOUL.md` | manage the file directly |
+| Give the forecast desk a standing role | `${services.superforecasting-agent.stateDir}/.superforecasting-agent/SOUL.md` | manage the file directly |
 | Add MCP tool servers | `mcpServers.<name>` | See [MCP Servers](#mcp-servers) |
 | Mount host directories into container | `container.extraVolumes` | `[ "/data:/data:rw" ]` |
 | Pass GPU access to container | `container.extraOptions` | `[ "--gpus" "all" ]` |
@@ -339,7 +343,7 @@ Quick reference for the most common things Nix users want to customize:
 | Make extra tools available to the agent | `extraPackages` | `[ pkgs.pandoc pkgs.imagemagick ]` |
 | Use a custom base image | `container.image` | `"ubuntu:24.04"` |
 | Override the package | `package` | `inputs.superforecasting-agent.packages.${system}.default.override { ... }` |
-| Change state directory | `stateDir` | `"/opt/hermes"` |
+| Change state directory | `stateDir` | `"/opt/superforecasting-agent"` |
 | Set the agent's working directory | `workingDirectory` | `"/home/user/projects"` |
 
 ---
@@ -397,7 +401,7 @@ For platforms requiring OAuth (e.g., Discord), use `authFile` to seed credential
 ```nix
 {
   services.superforecasting-agent = {
-    authFile = config.sops.secrets."hermes/auth.json".path;
+    authFile = config.sops.secrets."forecast/auth.json".path;
     # authFileForceOverwrite = true;  # overwrite on every activation
   };
 }
@@ -414,7 +418,12 @@ The `documents` option installs files into the agent's working directory (the `w
 - **`USER.md`** — context about the user the agent is interacting with.
 - Any other files you place here are visible to the agent as workspace files.
 
-The forecast desk identity file is separate: Superforecasting Agent loads its primary `SOUL.md` from `$SUPERFORECASTING_AGENT_HOME/SOUL.md`, which in the current NixOS module is `${services.superforecasting-agent.stateDir}/.hermes/SOUL.md`. Putting `SOUL.md` in `documents` only creates a workspace file and will not replace the main persona file.
+The forecast desk identity file is separate: Superforecasting Agent loads its
+primary `SOUL.md` from `$SUPERFORECASTING_AGENT_HOME/SOUL.md`, which in the
+current NixOS module is
+`${services.superforecasting-agent.stateDir}/.superforecasting-agent/SOUL.md`.
+Putting `SOUL.md` in `documents` only creates a workspace file and will not
+replace the main persona file.
 
 ```nix
 {
@@ -494,7 +503,7 @@ docker exec -it superforecasting-agent \
   superforecasting-agent mcp add my-oauth-server --url https://mcp.example.com/mcp --auth oauth
 
 # Native mode
-sudo -u superforecasting-agent SUPERFORECASTING_AGENT_HOME=/var/lib/superforecasting-agent/.hermes \
+sudo -u superforecasting-agent SUPERFORECASTING_AGENT_HOME=/var/lib/superforecasting-agent/.superforecasting-agent \
   superforecasting-agent mcp add my-oauth-server --url https://mcp.example.com/mcp --auth oauth
 ```
 
@@ -505,7 +514,7 @@ The container uses `--network=host`, so the OAuth callback listener on `127.0.0.
 ```bash
 superforecasting-agent mcp add my-oauth-server --url https://mcp.example.com/mcp --auth oauth
 scp ~/.superforecasting-agent/mcp-tokens/my-oauth-server{,.client}.json \
-    server:/var/lib/superforecasting-agent/.hermes/mcp-tokens/
+    server:/var/lib/superforecasting-agent/.superforecasting-agent/mcp-tokens/
 # Ensure: chown superforecasting-agent:superforecasting-agent, chmod 0600
 ```
 
@@ -566,12 +575,13 @@ When container mode is enabled, Superforecasting Agent runs inside a persistent 
 Host                                    Container
 ────                                    ─────────
 /nix/store/...-superforecasting-agent-0.1.0  ──►  /nix/store/... (ro)
-~/.hermes -> /var/lib/superforecasting-agent/.hermes       (symlink bridge, per hostUsers)
+~/.superforecasting-agent -> /var/lib/superforecasting-agent/.superforecasting-agent (symlink bridge, per hostUsers)
+~/.hermes -> /var/lib/superforecasting-agent/.superforecasting-agent                 (legacy symlink bridge, per hostUsers)
 /var/lib/superforecasting-agent/     ──►  /data/          (rw)
   ├── current-package -> /nix/store/...    (symlink, updated each rebuild)
   ├── .gc-root -> /nix/store/...           (prevents nix-collect-garbage)
   ├── .container-identity                  (sha256 hash, triggers recreation)
-  ├── .hermes/                             (SUPERFORECASTING_AGENT_HOME / FORECAST_HOME / HERMES_HOME)
+  ├── .superforecasting-agent/             (SUPERFORECASTING_AGENT_HOME / FORECAST_HOME / HERMES_HOME)
   │   ├── .env                             (merged from environment + environmentFiles)
   │   ├── config.yaml                      (Nix-generated, deep-merged by activation)
   │   ├── .managed                         (marker file)
@@ -863,7 +873,7 @@ nix build .#checks.x86_64-linux.config-roundtrip    # merge script preserves use
 | `container.image` | `str` | `"ubuntu:24.04"` | Base image (pulled at runtime) |
 | `container.extraVolumes` | `listOf str` | `[]` | Extra volume mounts (`host:container:mode`) |
 | `container.extraOptions` | `listOf str` | `[]` | Extra args passed to `docker create` |
-| `container.hostUsers` | `listOf str` | `[]` | Interactive users who get a legacy `~/.hermes` symlink to the service stateDir and are auto-added to the Superforecasting Agent group |
+| `container.hostUsers` | `listOf str` | `[]` | Interactive users who get `~/.superforecasting-agent` plus a legacy `~/.hermes` symlink to the service forecast home and are auto-added to the Superforecasting Agent group |
 
 ---
 
@@ -873,7 +883,7 @@ nix build .#checks.x86_64-linux.config-roundtrip    # merge script preserves use
 
 ```
 /var/lib/superforecasting-agent/     # stateDir (owned by superforecasting-agent:superforecasting-agent, 0750)
-├── .hermes/                         # SUPERFORECASTING_AGENT_HOME / FORECAST_HOME / HERMES_HOME
+├── .superforecasting-agent/         # SUPERFORECASTING_AGENT_HOME / FORECAST_HOME / HERMES_HOME
 │   ├── config.yaml                  # Nix-generated (deep-merged each rebuild)
 │   ├── .managed                     # Marker: CLI config mutation blocked
 │   ├── .env                         # Merged from environment + environmentFiles
@@ -886,6 +896,7 @@ nix build .#checks.x86_64-linux.config-roundtrip    # merge script preserves use
 │   ├── skills/
 │   ├── cron/
 │   └── logs/
+├── .hermes -> .superforecasting-agent  # Legacy compatibility alias
 ├── home/                            # Agent HOME
 └── workspace/                       # MESSAGING_CWD
     ├── SOUL.md                      # From documents option
@@ -963,10 +974,10 @@ If the agent starts but can't authenticate with the LLM provider, check that the
 
 ```bash
 # Native mode
-sudo -u superforecasting-agent cat /var/lib/superforecasting-agent/.hermes/.env
+sudo -u superforecasting-agent cat /var/lib/superforecasting-agent/.superforecasting-agent/.env
 
 # Container mode
-docker exec superforecasting-agent cat /data/.hermes/.env
+docker exec superforecasting-agent cat /data/.superforecasting-agent/.env
 ```
 
 ### GC Root Verification
