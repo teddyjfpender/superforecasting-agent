@@ -11,7 +11,7 @@ from typing import Sequence
 from forecasting.cli import cmd_forecast, main as forecast_main, register_cli
 
 _PROFILE_FLAGS = {"-p", "--profile"}
-_LEGACY_ENTRYPOINTS = {"hermes-agent"}
+_LEGACY_ENTRYPOINTS = {"hermes", "hermes-agent"}
 _TUI_ENV_VARS = ("SUPERFORECASTING_AGENT_TUI", "FORECAST_TUI", "HERMES_TUI")
 _ENV_TRUE_VALUES = {"1", "true", "yes", "on"}
 _legacy_entrypoint_notice_shown = False

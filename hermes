@@ -2,39 +2,15 @@
 """
 Legacy Hermes CLI compatibility launcher for Superforecasting Agent.
 
-This wrapper should behave like the installed `hermes` command, including
-subcommands such as `gateway`, `cron`, and `doctor`.
+Bare invocation routes to the forecast desk. Explicit inherited runtime
+subcommands such as `gateway`, `cron`, and `model` are delegated by the
+fork-native wrapper.
 """
 
-import sys
-
-
-def _exit_with_missing_runtime_dependency(exc: ModuleNotFoundError) -> None:
-    missing_name = exc.name or str(exc)
-    print(
-        "Error: the legacy `hermes` compatibility launcher needs optional "
-        f"runtime dependencies that are not installed ({missing_name}).",
-        file=sys.stderr,
-    )
-    print(
-        "Use `./forecast ...`, `./superforecasting-agent status`, or "
-        "`python -m superforecasting_agent status` for the forecast desk, "
-        "or run `uv pip install -e \".[all,dev]\"` before using inherited "
-        "runtime commands.",
-        file=sys.stderr,
-    )
-    raise SystemExit(1) from exc
-
-
 def _main() -> None:
-    try:
-        from hermes_cli.main import main
-    except ModuleNotFoundError as exc:
-        _exit_with_missing_runtime_dependency(exc)
-    try:
-        main()
-    except ModuleNotFoundError as exc:
-        _exit_with_missing_runtime_dependency(exc)
+    from superforecasting_agent.cli import main
+
+    main()
 
 
 if __name__ == "__main__":

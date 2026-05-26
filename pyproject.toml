@@ -208,7 +208,7 @@ superforecast = "superforecasting_agent.cli:main"
 superforecasting-agent = "superforecasting_agent.cli:main"
 superforecasting-agent-acp = "acp_adapter.entry:main"
 superforecast-acp = "acp_adapter.entry:main"
-hermes = "hermes_cli.main:main"
+hermes = "superforecasting_agent.cli:main"
 hermes-agent = "superforecasting_agent.cli:main"
 hermes-acp = "acp_adapter.entry:main"
 

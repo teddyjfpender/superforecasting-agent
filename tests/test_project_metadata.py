@@ -206,6 +206,7 @@ def test_forecast_native_package_namespace_is_exposed():
     assert scripts["forecast"] == "superforecasting_agent.cli:main"
     assert scripts["superforecast"] == "superforecasting_agent.cli:main"
     assert scripts["superforecasting-agent"] == "superforecasting_agent.cli:main"
+    assert scripts["hermes"] == "superforecasting_agent.cli:main"
     assert scripts["hermes-agent"] == "superforecasting_agent.cli:main"
     assert "superforecasting_agent" in include
     assert "superforecasting_agent.*" in include
@@ -221,6 +222,7 @@ def test_forecast_native_package_namespace_is_exposed():
     assert "Source-tree launcher for the superforecast CLI alias" in superforecast_launcher
     assert "from superforecasting_agent.cli import main" in forecast_launcher
     assert "Source-tree launcher for the forecast CLI" in forecast_launcher
+    assert "from superforecasting_agent.cli import main" in legacy_launcher
     assert "Legacy Hermes CLI compatibility launcher" in legacy_launcher
 
 
