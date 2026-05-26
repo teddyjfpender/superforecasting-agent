@@ -290,7 +290,7 @@ export default function ForecastDeskPage({ isActive = true }: { isActive?: boole
       // Hold Option (Alt on Linux/Windows) to force native text selection
       // even when the embedded terminal UI has enabled xterm mouse-events
       // mode (CSI ?1000h family). Without this, click-and-drag in the
-      // chat canvas selects nothing and Cmd+C falls back to copying the
+      // forecast desk canvas selects nothing and Cmd+C falls back to copying the
       // entire visible buffer, which is rarely what the user wants.
       // See #25720.
       macOptionClickForcesSelection: true,

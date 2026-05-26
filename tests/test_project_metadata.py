@@ -267,8 +267,10 @@ def test_web_locale_app_brand_is_forecast_native():
     for path in locale_files:
         text = path.read_text(encoding="utf-8")
         assert 'brand: "Superforecasting Agent"' in text, path
+        assert 'org: "Superforecasting Agent"' in text, path
         assert "~/.superforecasting-agent" in text, path
         assert 'brand: "Hermes Agent"' not in text, path
+        assert 'org: "Nous Research"' not in text, path
         assert "Hermes Agent ☤" not in text, path
         assert "~/.hermes" not in text, path
 
@@ -428,6 +430,7 @@ def test_embedded_tui_surface_is_forecast_desk():
         root / "web" / "src" / "components" / "ChatSidebar.tsx",
         root / "web" / "src" / "components" / "ModelPickerDialog.tsx",
         root / "web" / "src" / "components" / "SlashPopover.tsx",
+        root / "web" / "src" / "components" / "SidebarFooter.tsx",
         root / "web" / "src" / "contexts" / "PageHeaderProvider.tsx",
         root / "web" / "src" / "index.css",
         root / "web" / "src" / "i18n" / "en.ts",
@@ -460,6 +463,7 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert "Forecast Desk" in text
     assert not (root / "web" / "src" / "pages" / "ChatPage.tsx").exists()
     assert "ForecastDeskPage" in text
+    assert "https://github.com/teddyjfpender/superforecasting-agent" in text
     assert 'path: "/desk"' in text
     assert '"/desk": "forecastDesk"' in text
     assert "isDashboardForecastDeskEnabled" in text
@@ -496,6 +500,8 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert "forecast-desk-side-panel" in text
     assert 'dashboard "Chat" tab' not in text
     assert "Browser-embedded chat" not in text
+    assert "chat canvas" not in text
+    assert "https://nousresearch.com" not in text
     assert "inspecting research sessions" not in text
     assert "Active and recent research sessions" not in text
     assert "Resume from Research Sessions" not in text
