@@ -312,6 +312,7 @@ export interface AppLayoutActions {
   clearSelection: () => void
   onModelSelect: (value: string) => void
   resumeById: (id: string) => void
+  runCommand: (command: string) => void
   setStickyPrompt: (value: string) => void
 }
 

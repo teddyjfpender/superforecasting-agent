@@ -32,7 +32,7 @@ macro-forecast-desk/
 
 The shared template can define:
 
-- Forecasting protocol and desk persona in `SOUL.md`.
+- Forecasting protocol and desk identity in `SOUL.md`.
 - Model/provider defaults in `config.yaml`.
 - Evidence, market-data, research, and backtesting skills in `skills/`.
 - Scheduled checks for stale questions, new evidence, and calibration review in `cron/`.

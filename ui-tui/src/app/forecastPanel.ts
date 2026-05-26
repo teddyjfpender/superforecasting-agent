@@ -556,7 +556,7 @@ const addCompactItem = (
 export const forecastDeskCompactItems = (sections: PanelSection[], max = 3): ForecastDeskCompactItem[] => {
   const items: ForecastDeskCompactItem[] = []
   const book = findSection(sections, 'Book')
-  const bookRows = new Map(book?.rows ?? [])
+  const bookRows = new Map((book?.rows ?? []).map(([key, value]) => [key, value] as [string, string]))
   const bookBits = [
     `${bookRows.get('active') ?? '0'} active`,
     `${bookRows.get('alerts') ?? '0'} alerts`,
@@ -1004,7 +1004,7 @@ export const forecastBookSections = (
         truncate(row.title || '(untitled forecast)', 76)
       ].join('  ')
 
-      return [key, details] as [string, string]
+      return [key, details, `/questions ${index + 1}`]
     }),
     title: 'Forecast Questions'
   })

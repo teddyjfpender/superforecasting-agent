@@ -125,7 +125,12 @@ const TranscriptPane = memo(function TranscriptPane({
                   {row.msg.info && <SessionPanel info={row.msg.info} sid={ui.sid} t={ui.theme} />}
                 </Box>
               ) : row.msg.kind === 'panel' && row.msg.panelData ? (
-                <Panel sections={row.msg.panelData.sections} t={ui.theme} title={row.msg.panelData.title} />
+                <Panel
+                  onCommandClick={actions.runCommand}
+                  sections={row.msg.panelData.sections}
+                  t={ui.theme}
+                  title={row.msg.panelData.title}
+                />
               ) : (
                 <MessageLine
                   cols={composer.cols}

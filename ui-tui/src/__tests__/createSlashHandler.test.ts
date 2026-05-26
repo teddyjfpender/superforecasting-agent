@@ -209,7 +209,8 @@ describe('createSlashHandler', () => {
             rows: expect.arrayContaining([
               [
                 '1. P=0.610 Δ=+0.080',
-                expect.stringContaining('Will the CPI release exceed consensus?')
+                expect.stringContaining('Will the CPI release exceed consensus?'),
+                '/questions 1'
               ]
             ]),
             title: 'Forecast Questions'

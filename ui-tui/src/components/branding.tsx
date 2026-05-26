@@ -5,9 +5,36 @@ import unicodeSpinners from 'unicode-animations'
 import { artWidth, forecastHero, FORECAST_HERO_WIDTH, logo, LOGO_WIDTH } from '../banner.js'
 import { flat } from '../lib/text.js'
 import type { Theme } from '../theme.js'
-import type { PanelSection, SessionInfo } from '../types.js'
+import type { PanelRow, PanelSection, SessionInfo } from '../types.js'
 
 const LOADER_TICK_MS = 120
+const PANEL_COMMAND_PLACEHOLDER_RE = /(?:<[^>]+>|\[[^\]]+\]|\.\.\.|;)/
+type PanelClickEvent = { cellIsBlank?: boolean; stopPropagation?: () => void }
+
+export function panelCommandTarget(candidate?: string): string | null {
+  const command = (candidate ?? '').trim()
+
+  if (!command.startsWith('/') || PANEL_COMMAND_PLACEHOLDER_RE.test(command)) {
+    return null
+  }
+
+  return command
+}
+
+const rowCommandTarget = (row: PanelRow): string | null => panelCommandTarget(row[2] ?? row[0])
+
+const runPanelCommand = (
+  command: string | null,
+  onCommandClick?: (command: string) => void,
+  event?: PanelClickEvent
+) => {
+  if (!command || event?.cellIsBlank) {
+    return
+  }
+
+  event?.stopPropagation?.()
+  onCommandClick?.(command)
+}
 
 function InlineLoader({ label, t }: { label: string; t: Theme }) {
   const [tick, setTick] = useState(0)
@@ -333,7 +360,7 @@ export function SessionPanel({ info, sid, t }: SessionPanelProps) {
   )
 }
 
-export function Panel({ sections, t, title }: PanelProps) {
+export function Panel({ onCommandClick, sections, t, title }: PanelProps) {
   return (
     <Box borderColor={t.color.border} borderStyle="round" flexDirection="column" paddingX={2} paddingY={1}>
       <Box justifyContent="center" marginBottom={1}>
@@ -350,18 +377,45 @@ export function Panel({ sections, t, title }: PanelProps) {
             </Text>
           )}
 
-          {sec.rows?.map(([k, v], ri) => (
-            <Text key={ri} wrap="truncate">
-              <Text color={t.color.muted}>{k.padEnd(20)}</Text>
-              <Text color={t.color.text}>{v}</Text>
-            </Text>
-          ))}
+          {sec.rows?.map((row, ri) => {
+            const [k, v] = row
+            const command = rowCommandTarget(row)
 
-          {sec.items?.map((item, ii) => (
-            <Text color={t.color.text} key={ii} wrap="truncate">
-              {item}
-            </Text>
-          ))}
+            return (
+              <Box
+                key={ri}
+                onClick={
+                  command
+                    ? (event: PanelClickEvent) => runPanelCommand(command, onCommandClick, event)
+                    : undefined
+                }
+              >
+                <Text wrap="truncate">
+                  <Text color={command ? t.color.accent : t.color.muted}>{k.padEnd(20)}</Text>
+                  <Text color={t.color.text}>{v}</Text>
+                </Text>
+              </Box>
+            )
+          })}
+
+          {sec.items?.map((item, ii) => {
+            const command = panelCommandTarget(item)
+
+            return (
+              <Box
+                key={ii}
+                onClick={
+                  command
+                    ? (event: PanelClickEvent) => runPanelCommand(command, onCommandClick, event)
+                    : undefined
+                }
+              >
+                <Text color={command ? t.color.accent : t.color.text} wrap="truncate">
+                  {item}
+                </Text>
+              </Box>
+            )
+          })}
 
           {sec.text && <Text color={t.color.muted}>{sec.text}</Text>}
         </Box>
@@ -371,6 +425,7 @@ export function Panel({ sections, t, title }: PanelProps) {
 }
 
 interface PanelProps {
+  onCommandClick?: (command: string) => void
   sections: PanelSection[]
   t: Theme
   title: string

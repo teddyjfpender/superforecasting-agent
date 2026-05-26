@@ -3,6 +3,7 @@ import React from 'react'
 import { PassThrough } from 'stream'
 import { describe, expect, it } from 'vitest'
 
+import { panelCommandTarget } from '../components/branding.js'
 import { MessageLine } from '../components/messageLine.js'
 import { toTranscriptMessages } from '../domain/messages.js'
 import { upsert } from '../lib/messages.js'
@@ -68,6 +69,16 @@ describe('MessageLine', () => {
       .find(line => line.includes('Okay'))
 
     expect(renderedLine).toContain('Ψ > Okay')
+  })
+})
+
+describe('panelCommandTarget', () => {
+  it('accepts runnable slash commands and rejects placeholder examples', () => {
+    expect(panelCommandTarget('/questions 1')).toBe('/questions 1')
+    expect(panelCommandTarget('/forecast self-check')).toBe('/forecast self-check')
+    expect(panelCommandTarget('/questions [row|list N]')).toBeNull()
+    expect(panelCommandTarget('/forecast update <id> --probability <0-1>')).toBeNull()
+    expect(panelCommandTarget('1. P=0.610')).toBeNull()
   })
 })
 

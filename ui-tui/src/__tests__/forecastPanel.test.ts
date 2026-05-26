@@ -53,11 +53,13 @@ describe('forecast desk panel helpers', () => {
     expect(sections.find(section => section.title === 'Forecast Questions')?.rows).toEqual([
       [
         '1. P=0.610 Δ=+0.080',
-        '2d old  as-of 2026-05-24  close 2026-06-30  conf 0.62  ev 4  active  Will the CPI release exceed consensus?'
+        '2d old  as-of 2026-05-24  close 2026-06-30  conf 0.62  ev 4  active  Will the CPI release exceed consensus?',
+        '/questions 1'
       ],
       [
         '2. P=0.210 Δ=-0.040',
-        '1mo old  as-of 2026-04-01  close 2026-09-30  conf 0.55  ev 2  1 alert  Will company Y default?'
+        '1mo old  as-of 2026-04-01  close 2026-09-30  conf 0.55  ev 2  1 alert  Will company Y default?',
+        '/questions 2'
       ]
     ])
     expect(sections.find(section => section.title === 'Drill Down')?.rows?.[0]).toEqual([

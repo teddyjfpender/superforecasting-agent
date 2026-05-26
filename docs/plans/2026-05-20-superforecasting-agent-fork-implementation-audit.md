@@ -1539,6 +1539,8 @@ Latest verified result:
 - NixOS active-home demotion pass: the NixOS module now uses `${stateDir}/.superforecasting-agent` as the active `SUPERFORECASTING_AGENT_HOME`/`FORECAST_HOME`/legacy `HERMES_HOME` for native and container services, migrates a pre-existing `${stateDir}/.hermes` directory when the native home does not exist, backs up conflicting legacy directories before creating compatibility symlinks, creates `${stateDir}/.hermes` plus host-user `~/.hermes` as compatibility symlinks, and documents the fork-native service-home layout. Focused project-metadata coverage pins the active-home paths and rejects the old `${stateDir}/.hermes` service default.
 - High-attention identity wording pass: README migration copy now describes `SOUL.md` as a forecast-desk identity/style file, doctor's SOUL check and repair template use forecast-desk identity wording instead of persona wording, Nix setup docs avoid persona-file phrasing, and runtime tips describe `superforecasting-agent chat` as forecast-support sessions rather than generic explicit chat sessions. Focused metadata and doctor checks passed, and a targeted scan found no removed persona/chat-session phrases in the affected user-facing files.
 - Dashboard plugin-slot alias demotion pass: the embedded Forecast Desk page now mounts only canonical `forecast-desk:top` and `forecast-desk:bottom` slots, while the plugin registry renders inherited `chat:top` and `chat:bottom` registrations through those canonical placements for compatibility. Dashboard extension docs now describe the old names as aliases rather than first-class page placements. Focused metadata coverage and the web production build passed, and a targeted scan found no direct `chat:*` slot mounts in the Forecast Desk page.
+- Forecast-style compatibility wording pass: high-traffic style docs, slash-command reference, context-files guide, profile-distribution guide, skins guide, prompt-assembly guide, and runtime tips now describe `/personality` as a compatibility style alias and `SOUL.md` as forecast-desk identity/style rather than persona; focused metadata coverage guards the edited surfaces.
+- TUI forecast-book row selection pass: `/questions` keeps ID-free headline rows for active forecast questions, each numbered row now carries a TUI click target for `/questions <row>`, and panel command rows/items ignore placeholder examples so direct selection only runs concrete slash commands. The slash-command reference, TUI guide, and tester handoff now document direct row selection alongside the classic `/questions <row>` path.
 
 ## Prompt-To-Artifact Checklist
 
@@ -1994,7 +1996,7 @@ fork objective still needs the remaining work listed below.
 | US-013 | Covered | Time-aware backtests store runs/cases, cutoffs, generated snapshots, baselines, scores, leakage flags, and performance summaries |
 | US-014 | Covered | Scoped schedules persist cadence, stale thresholds, horizon/domain/topic/portfolio filters, alerts, auto-score/postmortem options, and profile updates |
 | US-015 | Covered | Resolution governance blocks unconfirmed/disputed/criteria-incomplete scoring and records corrections that invalidate affected learning artifacts |
-| US-016 | Covered | `/questions` and `/book` render active forecasts as numbered headline rows with probability, delta, freshness/as-of, close date, confidence, evidence count, status, and title; `/questions <row>` opens full details without copying IDs; the web Forecasts table supports selectable rows with a detail panel |
+| US-016 | Covered | `/questions` and `/book` render active forecasts as numbered headline rows with probability, delta, freshness/as-of, close date, confidence, evidence count, status, and title; `/questions <row>` opens full details without copying IDs; TUI rows carry direct drill-down targets, and the web Forecasts table supports selectable rows with a detail panel |
 
 ### Functional Requirements
 
@@ -2033,7 +2035,7 @@ fork objective still needs the remaining work listed below.
 | FR-31 | Covered | Calibration adjustments link to influencing lesson refs |
 | FR-32 | Covered | Correction records cover forecasts, evidence, assumptions, reference classes, resolutions, scores, postmortems, and lessons |
 | FR-33 | Covered | Trusted resolver policies are scoped, versioned, approved, and audited on automatic confirmation |
-| FR-34 | Covered | The shared dashboard summary powers the classic CLI `/questions` forecast book, Ink TUI `/questions` rows, row-number drill-down, and dashboard row selection |
+| FR-34 | Covered | The shared dashboard summary powers the classic CLI `/questions` forecast book, Ink TUI `/questions` rows with direct selection targets, row-number drill-down, and dashboard row selection |
 
 ### Context And Milestone Checklist
 

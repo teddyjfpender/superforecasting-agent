@@ -124,7 +124,7 @@ TIPS = [
     "HERMES_TIMEZONE overrides the server timezone with any IANA timezone string.",
     "Environment variable substitution works in config.yaml: use ${VAR_NAME} syntax.",
     "Quick commands in config.yaml run shell commands instantly with zero token usage.",
-    "Custom personalities can be defined in config.yaml under agent.personalities.",
+    "Custom forecast-style overlays can be defined in config.yaml under the inherited agent.personalities key.",
     "provider_routing controls OpenRouter provider sorting, whitelisting, and blacklisting.",
 
     # --- Tools & Capabilities ---

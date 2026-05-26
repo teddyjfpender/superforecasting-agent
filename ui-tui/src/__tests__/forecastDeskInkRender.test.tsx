@@ -217,6 +217,7 @@ const renderForecastDesk = async (columns: number) => {
       clearSelection: noop,
       onModelSelect: noop,
       resumeById: noop,
+      runCommand: noop,
       setStickyPrompt: noop
     },
     composer: {

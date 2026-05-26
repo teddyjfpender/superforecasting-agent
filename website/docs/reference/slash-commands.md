@@ -20,7 +20,7 @@ The forecast desk is the primary product surface. Use these before reaching for 
 
 | Command | Surface | Description |
 |---------|---------|-------------|
-| `/questions [row\|list N]` | CLI, TUI | Show current forecast questions as numbered rows with headline probability, delta, as-of/freshness, close date, confidence, evidence count, and status. Run `/questions <row>` to open the full forecast details without copying a forecast ID. Alias: `/book`. |
+| `/questions [row\|list N]` | CLI, TUI | Show current forecast questions as numbered rows with headline probability, delta, as-of/freshness, close date, confidence, evidence count, and status. Run `/questions <row>` to open the full forecast details without copying a forecast ID; in the TUI, the numbered rows also carry the same drill-down target. Alias: `/book`. |
 | `/forecast [limit\|subcommand]` | CLI, TUI | Show the forecast dashboard or run `forecast <subcommand>` from the active session. Common subcommands include `new`, `sources`, `ingest`, `research`, `evidence`, `base-rate`, `reference-class`, `assumption`, `model`, `update`, `resolve`, `score`, `postmortem`, `calibration`, `lesson`, `review`, `watch`, `alerts`, `autopilot`, `schedule`, `self-check`, `backtest`, `performance`, `readiness`, `pilot-report`, `pilot-cohort`, `pilot-bundle`, `pilot-aggregate`, `export`, and `import packet`. |
 | `/new-forecast [args]` | TUI | Create a scoreable forecast question. Equivalent to `forecast new ...`. |
 | `/ingest [args]` | TUI | Stage a URL or file as a forecast candidate. Equivalent to `forecast ingest ...`. |
@@ -74,7 +74,7 @@ Type `/` in the CLI to open the autocomplete menu. Built-in commands are case-in
 
 | Command | Description |
 |---------|-------------|
-| `/questions [row\|list N]` (alias: `/book`, `/qbook`) | Show current forecast questions as numbered rows with headline probability, freshness, and summary values. Run `/questions <row>` to open full details without remembering the forecast ID. |
+| `/questions [row\|list N]` (alias: `/book`, `/qbook`) | Show current forecast questions as numbered rows with headline probability, freshness, and summary values. Run `/questions <row>` to open full details without remembering the forecast ID; TUI rows can be selected directly. |
 | `/forecast [limit\|subcommand]` (alias: `/forecasts`) | Run forecast desk lifecycle commands from the active session. With no subcommand it shows the desk summary; autocomplete covers the primary lifecycle plus source, learning, schedule, pilot, and export flows: `status`, `new`, `sources`, `ingest`, `research`, `evidence`, `base-rate`, `reference-class`, `assumption`, `model`, `update`, `resolve`, `score`, `postmortem`, `calibration`, `lesson`, `review`, `watch`, `alerts`, `autopilot`, `schedule`, `self-check`, `backtest`, `performance`, `readiness`, `pilot-report`, `pilot-cohort`, `pilot-bundle`, `pilot-aggregate`, `export`, and `import packet`. |
 
 ### Session
@@ -141,7 +141,7 @@ These commands remain available for inherited workflows, optional messaging surf
 
 | Command | Description |
 |---------|-------------|
-| `/personality` | Adjust a compatibility persona overlay; forecast protocol prompts remain authoritative. |
+| `/personality` | Adjust a compatibility style overlay; forecast protocol prompts remain authoritative. |
 | `/voice [on\|off\|tts\|status]` | Toggle optional CLI voice mode and spoken playback. Recording uses `voice.record_key` (default: `Ctrl+B`). |
 | `/skills` | Search, install, inspect, or manage optional skill playbooks from online registries. |
 | `/bundles` | List optional skill bundles, which create aliases such as `/<name>` for multiple skills. |
@@ -258,7 +258,7 @@ The messaging gateway supports the following built-in commands inside Telegram, 
 | `/model [provider:model]` | Show or change the model. Supports provider switches (`/model zai:glm-5`), custom endpoints (`/model custom:model`), named custom providers (`/model custom:local:qwen`), auto-detect (`/model custom`), and user-defined aliases (`/model fav`, `/model grok` — see [Custom model aliases](#custom-model-aliases)). Use `--global` to persist the change to config.yaml. **Note:** `/model` can only switch between already-configured providers. To add a new provider or set up API keys, use `superforecasting-agent model` from your terminal outside the active session. |
 | `/codex-runtime [auto\|codex_app_server\|on\|off]` | Toggle the optional [Codex app-server runtime](../user-guide/features/codex-app-server-runtime). Persists to `model.openai_runtime` in config.yaml and evicts the cached agent so the next message picks up the new runtime. Effective on next session. |
 | `/style [name]` | Switch forecast style overlays for the session. |
-| `/personality [name]` | Adjust a compatibility persona overlay for the session; forecast protocol prompts remain authoritative. |
+| `/personality [name]` | Adjust a compatibility style overlay for the session; forecast protocol prompts remain authoritative. |
 | `/fast [normal\|fast\|status]` | Toggle fast mode — OpenAI Priority Processing / Anthropic Fast Mode. |
 | `/retry` | Retry the last forecast note. |
 | `/undo` | Remove the last forecast exchange. |

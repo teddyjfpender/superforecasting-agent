@@ -52,4 +52,4 @@ Superforecasting Agent is organized around one durable object: the scoreable for
 
 - **[Plugins](plugins.md)** - Add forecast-specific tools, data connectors, source monitors, scoring helpers, or model adapters without modifying core code.
 - **[Skins & Themes](skins.md)** - Customize terminal visual presentation while keeping the forecast desk workflow intact.
-- **[Personality & SOUL.md](personality.md)** - New profiles default to a forecasting-desk role; custom identities should preserve evidence discipline, scoring, and calibration behavior.
+- **[Forecast Style & SOUL.md](personality.md)** - New profiles default to a forecasting-desk role; custom identities should preserve evidence discipline, scoring, and calibration behavior.

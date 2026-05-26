@@ -190,9 +190,11 @@ export interface PanelData {
   title: string
 }
 
+export type PanelRow = [string, string] | [string, string, string]
+
 export interface PanelSection {
   items?: string[]
-  rows?: [string, string][]
+  rows?: PanelRow[]
   text?: string
   title?: string
 }

@@ -42,7 +42,7 @@ Legacy `~/.hermes/config.yaml` remains readable during migration.
 | `sisyphus` | Austere persistence palette | Superforecasting Agent |
 | `charizard` | Ember and volcanic palette | Superforecasting Agent |
 
-Built-in skins are visual palette wrappers around the same forecast desk runtime. They keep the fork-native product identity and do not change the agent persona.
+Built-in skins are visual palette wrappers around the same forecast desk runtime. They keep the fork-native product identity and do not change the agent's forecast protocol or standing style.
 
 ## Configurable Keys
 

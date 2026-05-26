@@ -245,7 +245,7 @@ Most users should treat `agent/prompt_builder.py` and `forecasting/protocol.py` 
 
 ### Use these surfaces first
 
-- `~/.superforecasting-agent/SOUL.md` - replace the built-in default identity block with your own forecast-desk persona and standing behavior. Legacy `~/.hermes/SOUL.md` remains a compatibility path.
+- `~/.superforecasting-agent/SOUL.md` - replace the built-in default identity block with your own forecast-desk style and standing behavior. Legacy `~/.hermes/SOUL.md` remains a compatibility path.
 - `~/.superforecasting-agent/MEMORY.md` and `~/.superforecasting-agent/USER.md` - provide durable cross-session facts and user profile data that should be snapshotted into new sessions, not forecast probabilities or calibration records.
 - Project context files such as `.hermes.md`, `HERMES.md`, `AGENTS.md`, `CLAUDE.md`, or `.cursorrules` - inject repo-specific working rules.
 - Forecast ledger records - store scoreable forecasts, evidence, assumptions, reference classes, model runs, resolutions, scores, postmortems, and calibration lessons.

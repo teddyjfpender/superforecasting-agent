@@ -72,7 +72,7 @@ This repository maintains forecast source adapters and replay benchmarks.
 
 ## SOUL.md
 
-`SOUL.md` controls identity, tone, and standing behavior. It can describe a forecast-desk persona, but it should not store active probabilities, evidence, or lessons learned. Those belong in the ledger so they can be audited and scored.
+`SOUL.md` controls identity, tone, and standing behavior. It can describe a forecast-desk operating style, but it should not store active probabilities, evidence, or lessons learned. Those belong in the ledger so they can be audited and scored.
 
 Location:
 
@@ -88,7 +88,7 @@ Important details:
 - empty files are ignored
 - content is scanned and truncated before prompt injection
 
-See [Personality](/user-guide/features/personality) for profile identity guidance.
+See [Forecast Style & SOUL.md](/user-guide/features/personality) for profile identity guidance.
 
 ## Cursor Rules
 

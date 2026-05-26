@@ -158,9 +158,10 @@ remains a compatibility alias for older links and plugins.
 
 In the TUI, `/questions` is the fastest current-question view. It shows numbered
 forecast rows with headline probability, delta, close date, evidence count, and
-freshness; `/questions 1` opens the first row's full forecast details without
-requiring the tester to copy a forecast id. `/book` and `/qbook` remain
-compatibility aliases. `/forecast` opens the broader forecast desk panel, and
+freshness; selecting a numbered row or running `/questions 1` opens the first
+row's full forecast details without requiring the tester to copy a forecast id.
+`/book` and `/qbook` remain compatibility aliases. `/forecast` opens the broader
+forecast desk panel, and
 `/schedule`, `/backtest`, `/calibration`, `/alerts`, `/doctor`, and `/readiness`
 jump to common workflow checks.
 

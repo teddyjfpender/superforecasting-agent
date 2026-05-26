@@ -785,9 +785,19 @@ export function useMainApp(gw: GatewayClient) {
       clearSelection,
       onModelSelect,
       resumeById: session.resumeById,
+      runCommand: dispatchSubmission,
       setStickyPrompt
     }),
-    [answerApproval, answerClarify, answerSecret, answerSudo, clearSelection, onModelSelect, session.resumeById]
+    [
+      answerApproval,
+      answerClarify,
+      answerSecret,
+      answerSudo,
+      clearSelection,
+      dispatchSubmission,
+      onModelSelect,
+      session.resumeById
+    ]
   )
 
   const appComposer = useMemo(

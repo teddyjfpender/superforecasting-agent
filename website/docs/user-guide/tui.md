@@ -61,7 +61,8 @@ to run any forecast CLI command from inside the TUI.
 Use `/questions` for the fast forecast-book view: it renders numbered rows with
 each question's current probability, delta, as-of freshness, close date,
 confidence, evidence count, status, and title. Run `/questions <row>` to open
-the full forecast details without copying a forecast ID; `/book` remains an
+the full forecast details without copying a forecast ID; the numbered rows also
+carry that drill-down target in mouse-enabled TUI terminals. `/book` remains an
 alias.
 
 On wide terminals, the TUI also keeps a compact forecast desk rail beside the

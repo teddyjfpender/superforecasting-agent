@@ -1456,6 +1456,11 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
         "website/docs/user-guide/features/personality.md",
+        "website/docs/user-guide/features/overview.md",
+        "website/docs/user-guide/features/context-files.md",
+        "website/docs/user-guide/features/skins.md",
+        "website/docs/user-guide/profile-distributions.md",
+        "website/docs/developer-guide/prompt-assembly.md",
         "website/docs/guides/use-soul-with-superforecasting-agent.md",
         "website/docs/user-guide/messaging/index.md",
         "website/docs/user-guide/tui.md",
@@ -1469,6 +1474,7 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
         "website/docs/reference/slash-commands.md",
         "web/src/themes/presets.ts",
         "web/src/i18n/en.ts",
+        "hermes_cli/tips.py",
         "hermes_cli/web_server.py",
     ]
     text = "\n".join(
@@ -1499,8 +1505,18 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
     assert "long forecast sessions, scheduled self-checks" in text
     assert "theme's dashboard role" in text
     assert "Warm crimson and bronze for focused review" in text
+    assert "compatibility style overlay" in text
+    assert "forecast-desk operating style" in text
+    assert "Forecasting protocol and desk identity" in text
+    assert "forecast-desk style and standing behavior" in text
+    assert "Custom forecast-style overlays can be defined" in text
 
     assert "Personality & SOUL.md" not in text
+    assert "compatibility persona overlay" not in text
+    assert "forecast-desk persona" not in text
+    assert "desk persona" not in text
+    assert "agent persona" not in text
+    assert "Custom personalities can be defined" not in text
     assert "SOUL.md vs /personality" not in text
     assert "Use `/personality` for temporary mode switches." not in text
     assert "Start a new session (fresh session ID + history)" not in text
