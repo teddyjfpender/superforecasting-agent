@@ -53,7 +53,7 @@ export function Banner({ t }: { t: Theme }) {
         </Text>
       )}
 
-      <Text color={t.color.muted}>{t.brand.icon} Nous Research · forecast ledger online</Text>
+      <Text color={t.color.muted}>{t.brand.icon} Superforecasting Agent · forecast ledger online</Text>
     </Box>
   )
 }
@@ -224,7 +224,7 @@ export function SessionPanel({ info, sid, t }: SessionPanelProps) {
 
           <Text color={t.color.accent}>
             {info.model.split('/').pop()}
-            <Text color={t.color.muted}> · Nous Research</Text>
+            <Text color={t.color.muted}> · Superforecasting Agent</Text>
           </Text>
 
           <Text color={t.color.muted} wrap="truncate-end">

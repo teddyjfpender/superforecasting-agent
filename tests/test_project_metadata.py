@@ -1091,6 +1091,7 @@ def test_tui_visible_affordances_are_forecast_native():
         root / "ui-tui" / "src" / "app" / "useLongRunToolCharms.ts",
         root / "ui-tui" / "src" / "components" / "appChrome.tsx",
         root / "ui-tui" / "src" / "components" / "appLayout.tsx",
+        root / "ui-tui" / "src" / "components" / "branding.tsx",
         root / "ui-tui" / "src" / "components" / "sessionPicker.tsx",
         root / "ui-tui" / "src" / "content" / "charms.ts",
         root / "ui-tui" / "src" / "content" / "fortunes.ts",
@@ -1118,7 +1119,10 @@ def test_tui_visible_affordances_are_forecast_native():
     assert "forecast session usage" in text
     assert "style:" in text
     assert "postmortems are part of the model" in text
+    assert "Superforecasting Agent · forecast ledger online" in text
     assert "undo last forecast exchange" in text
+    assert "Nous Research · forecast ledger online" not in text
+    assert " · Nous Research" not in text
     assert "forging session…" not in text
     assert "return sys('session not ready yet')" not in text
     assert "no active session — nothing to save" not in text

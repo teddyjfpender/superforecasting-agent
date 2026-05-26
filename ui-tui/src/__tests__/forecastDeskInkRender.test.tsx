@@ -177,6 +177,20 @@ const renderForecastDesk = async (columns: number) => {
   const response = forecastFixture()
   const panelSections = forecastDashboardSections(response)
   const historyItems: Msg[] = [
+    {
+      info: {
+        cwd: '~/superforecasting-agent',
+        mcp_servers: [],
+        model: 'local/forecast-model',
+        skills: {},
+        system_prompt: 'Forecasting protocol loaded.',
+        tools: { forecast: ['forecast_ledger'] },
+        version: '0.1.0'
+      },
+      kind: 'intro',
+      role: 'system',
+      text: ''
+    },
     { kind: 'panel', panelData: { sections: panelSections, title: 'Forecast Desk' }, role: 'system', text: '' }
   ]
   const virtualRows = historyItems.map((msg, index) => ({ index, key: `row-${index}`, msg }))
@@ -239,7 +253,7 @@ const renderForecastDesk = async (columns: number) => {
         bottomSpacer: 0,
         end: virtualRows.length,
         measureRef: () => noop,
-        offsets: [0, 12],
+        offsets: [0, 16, 28],
         start: 0,
         topSpacer: 0
       },
@@ -276,6 +290,9 @@ describe('forecast desk Ink render', () => {
     const output = await renderForecastDesk(150)
     const compact = output.replace(/\s+/g, '')
 
+    expect(output).toContain('Superforecasting Agent · forecast ledger online')
+    expect(output).toContain('forecast-model · Superforecasting Agent')
+    expect(output).not.toContain('Nous Research')
     expect(compact).toContain('ForecastDesk')
     expect(compact).toContain('desk2active/1alert/1review/cal7/2lessons/asm3/1/refs2/1')
     expect(compact).toContain('Triage')
