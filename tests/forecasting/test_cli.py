@@ -9556,6 +9556,101 @@ def test_forecast_cli_sources_plans_cpi_news_and_energy_feeds(tmp_path, capsys):
     assert "gasoline" in rss_plan["keywords"]
 
 
+def test_forecast_cli_sources_searches_watched_rss_streams(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    feed = tmp_path / "cpi-feed.xml"
+    feed.write_text(
+        """<?xml version="1.0"?>
+<rss version="2.0"><channel><title>CPI Watch</title>
+<item><guid>sports-1</guid><title>Sports update</title><description>No macro content.</description><pubDate>Fri, 01 May 2026 00:00:00 GMT</pubDate></item>
+<item><guid>gas-1</guid><title>Gasoline shock raises inflation pressure</title><description>Energy prices may lift CPI components.</description><link>https://example.test/cpi-gasoline?utm_source=rss</link><pubDate>Sat, 02 May 2026 00:00:00 GMT</pubDate></item>
+</channel></rss>
+""",
+        encoding="utf-8",
+    )
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will CPI inflation exceed consensus next month?",
+            "--resolution-criteria",
+            "Resolved by the next BLS CPI release.",
+            "--domain",
+            "macro",
+            "--topic",
+            "inflation",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    from forecasting import ForecastLedger
+
+    ledger = ForecastLedger(db)
+    ledger.add_watched_source(
+        scope_type="question",
+        scope_ref=question_id,
+        source=f"rss:{feed}",
+        source_type="rss",
+        metadata={
+            "source_plan_label": "Local CPI RSS",
+            "relevance_filters": {"keywords": ["gasoline", "inflation"]},
+            "forecast_impact": {
+                "materiality": "high",
+                "direction": "upward",
+                "affected_components": ["energy"],
+            },
+        },
+    )
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "sources",
+            "--question",
+            question_id,
+            "--search-watched",
+            "--json",
+        ],
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["searched_sources"] == 1
+    assert payload["no_silent_probability_mutation"] is True
+    assert len(payload["candidates"]) == 1
+    assert payload["candidates"][0]["title"] == "Gasoline shock raises inflation pressure"
+    assert payload["candidates"][0]["materiality"] == "high"
+    assert payload["candidates"][0]["direction"] == "upward"
+    assert payload["candidates"][0]["affected_components"] == ["energy"]
+    assert "forecast import news" in payload["candidates"][0]["import_command"]
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "sources",
+            "--question",
+            question_id,
+            "--search-watched",
+            "--capture-candidates",
+            "--json",
+        ],
+    )
+    captured = json.loads(capsys.readouterr().out)
+    assert captured["captured_candidates"][0]["evidence"]["claim"] == "Gasoline shock raises inflation pressure"
+    evidence = ledger.list_evidence(question_id)
+    assert len(evidence) == 1
+    assert evidence[0].metadata["news_triage"]["candidate_evidence"] is True
+    assert evidence[0].metadata["news_triage"]["no_silent_probability_mutation"] is True
+
+
 def test_forecast_cli_about_exposes_fork_identity(capsys):
     parser = _parser()
 

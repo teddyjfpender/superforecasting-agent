@@ -90,6 +90,17 @@ tool tests passed 4, focused TUI tests passed 122, and
 `python3 scripts/forecast_smoke_test.py` still passed with the expected
 `insufficient_live_evidence` readiness verdict.
 
+Post-watched-text-source search pass: `forecast sources --question <id>
+--search-watched` now searches configured question/domain/topic/global RSS/Atom
+watches for question-relevant candidate evidence using watch relevance filters,
+dedupe, materiality, direction, and affected-component metadata. The optional
+`--capture-candidates` flag promotes matches into evidence while preserving the
+no-silent-probability-mutation rule. The agent-facing `forecast_ledger`
+`source_search` action exposes the same path for automated forecast research.
+Focused RSS/source-search regressions passed 7, the broader forecasting
+CLI/tool files passed 281, and the consolidated tester handoff gate passed with
+181 focused tests plus the clean smoke path.
+
 Post-TUI/CLI lookup/edit pass: beta feedback requested lower-friction forecast-desk
 navigation without remembering forecast ids. The Ink TUI now supports
 `/questions <words>` and `/find <words>` search over active forecasts and the
@@ -113,6 +124,7 @@ slash parity; focused classic CLI forecast shortcut tests passed 5.
 - Forecast learning adjustment helper and agent tool: `forecasting/learning.py`, `tools/forecasting_tool.py`
 - Forecast watched-source adapters and alerts: `forecasting/ledger.py`, `forecasting/source_adapters.py`, `forecasting/cli.py`, `tools/forecasting_tool.py`
 - Forecast source planning and RSS/news triage: `forecasting/source_planner.py`,
+  `forecasting/source_search.py`,
   `forecasting/source_adapters.py`, `forecasting/ledger.py`,
   `forecasting/cli.py`
 - Agent-facing source planning and RSS/news triage: `tools/forecasting_tool.py`,
@@ -2069,6 +2081,7 @@ fork objective still needs the remaining work listed below.
 | US-014 | Covered | Scoped schedules persist cadence, stale thresholds, horizon/domain/topic/portfolio filters, alerts, auto-score/postmortem options, and profile updates |
 | US-015 | Covered | Resolution governance blocks unconfirmed/disputed/criteria-incomplete scoring and records corrections that invalidate affected learning artifacts |
 | US-016 | Covered | `/questions` and `/book` render active forecasts as numbered headline rows with probability, delta, freshness/as-of, close date, confidence, evidence count, status, and title; `/questions <row>` opens full details without copying IDs; TUI rows carry direct drill-down targets, and the web Forecasts table supports selectable rows with a detail panel |
+| US-017 | Covered | `forecast sources --question`, `forecast new --source-plan`, `--apply-watch`, RSS/Atom filters/dedupe/triage metadata, filtered import commands, watched RSS/Atom stream search, optional evidence-candidate capture, and the `forecast_ledger` `source_plan`/`source_search` actions cover question-inception source planning and textual triage without mutating probabilities |
 
 ### Functional Requirements
 
@@ -2108,6 +2121,9 @@ fork objective still needs the remaining work listed below.
 | FR-32 | Covered | Correction records cover forecasts, evidence, assumptions, reference classes, resolutions, scores, postmortems, and lessons |
 | FR-33 | Covered | Trusted resolver policies are scoped, versioned, approved, and audited on automatic confirmation |
 | FR-34 | Covered | The shared dashboard summary powers the classic CLI `/questions` forecast book, Ink TUI `/questions` rows with direct selection targets, row-number drill-down, and dashboard row selection |
+| FR-35 | Covered | Question-specific source plans span official data, quantitative feeds, textual/RSS/news sources, and market priors where relevant |
+| FR-36 | Covered | RSS/Atom relevance filtering, dedupe, triage metadata, watched-source alerts, and candidate capture preserve explicit probability updates |
+| FR-37 | Covered | `forecast sources --question <id> --search-watched` and `forecast_ledger` `source_search` search configured watched textual streams for relevant candidate evidence |
 
 ### Context And Milestone Checklist
 

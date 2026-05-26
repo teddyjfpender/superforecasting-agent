@@ -123,7 +123,7 @@ The forecast ledger is the product surface. Generic chat and messaging gateways 
 | Create a question | `forecast new "Will X happen?" --resolution-criteria "Resolved by ..." --source-plan` |
 | Add evidence | `forecast evidence add <id> <url-or-note>` |
 | Research without moving probability | `forecast research <id> <source...>` |
-| Plan or discover sources | `forecast sources --question <id>`, `forecast sources --question <id> --apply-watch`, or `forecast sources --json` |
+| Plan or discover sources | `forecast sources --question <id>`, `forecast sources --question <id> --apply-watch`, `forecast sources --question <id> --search-watched [--capture-candidates]`, or `forecast sources --json` |
 | Import RSS/news context | `forecast import news <rss-or-atom-url> --question <id> --keyword <term> --materiality high` |
 | Import data rows as evidence | `forecast import data indicators.csv --question <id>` |
 | Import public-opinion polls | `forecast import fivethirtyeight president --state PA --question <id>` |

@@ -1011,8 +1011,12 @@ source breadth without manually bootstrapping every feed.
 - [ ] RSS/Atom watch checks apply relevance filters so irrelevant feed changes
   do not create alerts.
 - [ ] RSS/Atom alerts recommend a filtered `forecast import news ...` command.
+- [ ] The user or agent can search currently configured watched RSS/Atom streams
+  for question-relevant candidate evidence before deciding what to import.
 - [ ] `forecast import news` can filter, exclude, and deduplicate feed items
   before writing evidence.
+- [ ] Watched-stream search can optionally promote matched items into evidence
+  candidates without mutating the current forecast probability.
 - [ ] Imported news evidence stores triage metadata and never silently mutates
   active forecast probabilities.
 
@@ -1057,6 +1061,9 @@ source breadth without manually bootstrapping every feed.
   where relevant.
 - FR-36: The system must support RSS/Atom relevance filtering, deduplication,
   triage metadata, and alert-driven review without silent probability mutation.
+- FR-37: The system must let forecast workflows search configured watched
+  textual streams for relevant candidate evidence while keeping forecast
+  probability updates explicit.
 
 ## V1 Outcome And Scoring Scope
 

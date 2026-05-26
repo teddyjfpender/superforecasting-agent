@@ -133,8 +133,10 @@ def test_forecast_ledger_tool_exposes_source_planning_action():
     )
 
     assert "source_plan" in actions
+    assert "source_search" in actions
     assert "keywords" in FORECAST_LEDGER_SCHEMA["parameters"]["properties"]
     assert "apply_watch" in FORECAST_LEDGER_SCHEMA["parameters"]["properties"]
+    assert "capture_candidates" in FORECAST_LEDGER_SCHEMA["parameters"]["properties"]
 
 
 def test_forecast_ledger_tool_plans_and_applies_local_resolution_source(tmp_path):
@@ -224,6 +226,65 @@ def test_forecast_ledger_tool_imports_filtered_rss_evidence_with_triage_metadata
     assert metadata["forecast_impact"]["direction"] == "upward"
     assert metadata["forecast_impact"]["affected_components"] == ["energy"]
     assert metadata["news_triage"]["no_silent_probability_mutation"] is True
+
+
+def test_forecast_ledger_tool_searches_watched_rss_sources_and_captures_candidates(tmp_path):
+    db = str(tmp_path / "forecasting.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will CPI inflation exceed consensus?",
+                "resolution_criteria": "Resolved yes if CPI is above consensus.",
+                "domain": "macro",
+                "topics": ["inflation"],
+            }
+        )
+    )
+    question_id = created["question"]["id"]
+    feed = tmp_path / "watched-feed.xml"
+    feed.write_text(
+        """<?xml version="1.0"?>
+<rss version="2.0"><channel><title>CPI Watch</title>
+<item><guid>sports-1</guid><title>Sports update</title><pubDate>Fri, 01 May 2026 00:00:00 GMT</pubDate></item>
+<item><guid>gas-1</guid><title>Gasoline prices raise CPI risk</title><description>Energy pressure may lift inflation.</description><link>https://example.test/gasoline</link><pubDate>Sat, 02 May 2026 00:00:00 GMT</pubDate></item>
+</channel></rss>
+""",
+        encoding="utf-8",
+    )
+    forecast_ledger_tool(
+        {
+            "db": db,
+            "action": "add_watched_source",
+            "question_id": question_id,
+            "source": f"rss:{feed}",
+            "source_type": "rss",
+            "keywords": ["gasoline", "inflation"],
+            "materiality": "high",
+            "direction": "upward",
+            "affected_components": ["energy"],
+        }
+    )
+
+    searched = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "source_search",
+                "question_id": question_id,
+                "capture_candidates": True,
+            }
+        )
+    )
+
+    assert searched["success"] is True
+    assert searched["searched_sources"] == 1
+    assert searched["no_silent_probability_mutation"] is True
+    assert searched["candidates"][0]["title"] == "Gasoline prices raise CPI risk"
+    assert searched["candidates"][0]["materiality"] == "high"
+    assert searched["captured_candidates"][0]["evidence"]["claim"] == "Gasoline prices raise CPI risk"
+    assert searched["captured_candidates"][0]["evidence"]["metadata"]["news_triage"]["candidate_evidence"] is True
 
 
 def test_forecast_ledger_tool_imports_imf_datamapper_observations(tmp_path, monkeypatch):

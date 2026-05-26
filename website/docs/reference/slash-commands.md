@@ -39,7 +39,7 @@ The forecast desk is the primary product surface. Use these before reaching for 
 | `/postmortem [args]` | TUI | Diagnose a resolved forecast and capture learning. |
 | `/review [args]` | TUI | Run forecast review workflows for stale or due questions. |
 | `/alerts [args]` | TUI | Show watched-source and scheduled-review alerts. |
-| `/sources [--json]` | TUI | List built-in evidence/source adapters, import command shapes, and watched-source prefixes. |
+| `/sources [--question <id>] [--json]` | TUI | List built-in evidence/source adapters, plan question-specific source coverage, or pass `--search-watched` to scan configured RSS/Atom watches for candidate evidence. |
 | `/calibration [args]` | TUI | Show calibration analytics and error profiles. |
 | `/lessons [args]` | TUI | List active calibration lessons. |
 | `/backtest [args]` | TUI | Run or inspect historical replay datasets. |

@@ -193,6 +193,10 @@ items should be filtered, deduplicated, classified as candidate evidence, and
 promoted into review alerts only when relevant or material. A watch alert
 should point to a filtered `forecast import news ...` command and preserve the
 rule that active probabilities only change through explicit forecast updates.
+After a forecast has watched text streams, the user or agent should also be
+able to search those configured RSS/Atom streams for question-relevant candidate
+evidence and optionally capture the matches into the evidence ledger without
+moving the current probability.
 
 ## First Major Surgery
 

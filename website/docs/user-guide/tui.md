@@ -93,6 +93,8 @@ Examples:
 /forecast review --stale
 /sources --question <id>
 /forecast sources --question <id> --apply-watch
+/forecast sources --question <id> --search-watched
+/forecast sources --question <id> --search-watched --capture-candidates
 /forecast import news <rss-or-atom-url> --question <id> --keyword <term>
 /forecast import fivethirtyeight president --state PA --question <id>
 /forecast import imf NGDP_RPCH/USA --question <id>
@@ -121,6 +123,13 @@ Examples:
 /forecast schedule list
 ```
 
+Use `--apply-watch` only after reviewing the source plan. It adds concrete
+watched sources and skips placeholders that still need a feed, market,
+repository, or company identifier. Use `--search-watched` after watches exist to
+scan configured RSS/Atom streams for question-relevant candidate evidence;
+adding `--capture-candidates` promotes matches into evidence without changing
+the forecast probability.
+
 ## Forecast Shortcuts
 
 Common desk workflows have direct slash commands:
@@ -145,7 +154,7 @@ Common desk workflows have direct slash commands:
 | `/postmortem` | Write structured error analysis |
 | `/review` | Inspect stale or active forecasts |
 | `/alerts` | List or acknowledge forecast alerts |
-| `/sources` | List adapters or plan question-specific evidence sources with `--question <id>` |
+| `/sources` | List adapters, plan question-specific sources, or search watched RSS/Atom streams with `--search-watched` |
 | `/calibration` | Show calibration summaries |
 | `/lessons` | Review calibration lessons |
 | `/errors` | Inspect domain/topic error profiles |

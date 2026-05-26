@@ -206,6 +206,8 @@ forecast --db "$FORECAST_DB" watch add \
   --materiality high \
   --cadence "1h"
 forecast --db "$FORECAST_DB" watch check --question <id>
+forecast --db "$FORECAST_DB" sources --question <id> --search-watched
+forecast --db "$FORECAST_DB" sources --question <id> --search-watched --capture-candidates
 forecast --db "$FORECAST_DB" import news https://www.bls.gov/feed/news_release/cpi.rss \
   --question <id> \
   --keyword CPI \
@@ -215,8 +217,9 @@ forecast --db "$FORECAST_DB" import news https://www.bls.gov/feed/news_release/c
   --affected-component energy
 ```
 
-RSS/news imports are evidence-candidate inputs. They should not change a
-probability unless the tester runs an explicit `forecast update`.
+RSS/news imports and watched-stream captures are evidence-candidate inputs.
+They should not change a probability unless the tester runs an explicit
+`forecast update`.
 
 For a deterministic local autopilot check, use a file source rather than a live
 external adapter:
@@ -274,6 +277,8 @@ It verified:
   source snapshots, material-change detection, pending proposals, approval into
   append-only forecast snapshots, and the same actions exposed through the
   model-facing `forecast_ledger` tool.
+- RSS/source breadth with source planning, watched-stream search, optional
+  candidate capture, filtered imports, and no silent probability mutation.
 - Source-tree `./forecast`, source-tree `./superforecast`,
   source-tree `./superforecasting-agent`, `python -m superforecasting_agent`,
   and the package-defined `forecast` command path.
@@ -285,7 +290,7 @@ It verified:
   `/book`, numbered TUI drill-down, classic CLI drill-down/search/edit
   resolution, and dashboard row selection with a detail panel.
 - The consolidated `python3 scripts/tester_handoff_check.py` gate passed for the
-  implementation tree with 179 focused tests, the clean smoke path, and
+  implementation tree with 181 focused tests, the clean smoke path, and
   `git diff --check`; the smoke output reported 52 source adapters,
   5 benchmark datasets, `pilot_report_checks: 9/9`,
   `packet_import_questions: 3`, `pilot_aggregate_live_scores: 1`,

@@ -77,6 +77,10 @@ For CPI, textual sources can surface:
 - `forecast import news <rss-or-atom-url> --question <id>` supports keyword
   filters, exclusion filters, dedupe, materiality, direction, and affected
   component metadata.
+- `forecast sources --question <id> --search-watched` searches configured
+  watched RSS/Atom streams for question-relevant candidate evidence.
+- `forecast sources --question <id> --search-watched --capture-candidates`
+  promotes matched feed items into evidence without mutating probability.
 
 ## Triage Fields
 
@@ -168,4 +172,6 @@ This feedback maps to the source-planning and RSS triage slice:
 - Deduplicate RSS/Atom items before evidence capture.
 - Store RSS triage and forecast-impact metadata on evidence.
 - Make watched-source alerts point to filtered import commands.
+- Add a watched-text-source search path so agents can inspect current RSS/Atom
+  streams from the local ledger before deciding what evidence to capture.
 - Preserve the rule that RSS/news never silently mutates active probabilities.

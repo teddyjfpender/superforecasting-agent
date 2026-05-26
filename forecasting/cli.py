@@ -129,6 +129,11 @@ from forecasting.source_adapters import (
     load_yahoo_finance_prices,
 )
 from forecasting.source_planner import SourceRecommendation, plan_sources_for_question
+from forecasting.source_search import (
+    WatchedTextSourceSearchResult,
+    capture_watched_text_candidates,
+    search_watched_text_sources,
+)
 
 SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
     {
@@ -519,6 +524,18 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     sources_parser.add_argument("--question", dest="question_id", help="Plan sources for a forecast question")
     sources_parser.add_argument("--plan", action="store_true", help="Show forecast-aware source recommendations")
     sources_parser.add_argument("--apply-watch", action="store_true", help="Add concrete recommended watched sources")
+    sources_parser.add_argument(
+        "--search-watched",
+        action="store_true",
+        help="Search active watched RSS/Atom streams for question-relevant candidate evidence",
+    )
+    sources_parser.add_argument("--query", help="Extra source-search terms; defaults to question metadata and watch filters")
+    sources_parser.add_argument("--since", help="Only consider watched RSS/Atom items at or after this timestamp")
+    sources_parser.add_argument(
+        "--capture-candidates",
+        action="store_true",
+        help="Promote matching watched-source search results into evidence without updating probability",
+    )
     sources_parser.add_argument("--limit", type=int, default=12, help="Maximum source-plan rows to show")
     sources_parser.add_argument("--json", action="store_true", help="Emit machine-readable adapter guidance")
     sources_parser.set_defaults(_forecast_handler=_cmd_sources)
@@ -5868,9 +5885,33 @@ def _cmd_plugins(args: argparse.Namespace) -> None:
 def _cmd_sources(args: argparse.Namespace) -> None:
     if args.plan and not args.question_id:
         raise SystemExit("forecast sources --plan requires --question <id>")
+    if args.search_watched and not args.question_id:
+        raise SystemExit("forecast sources --search-watched requires --question <id>")
+    if args.search_watched and args.apply_watch:
+        raise SystemExit("forecast sources --search-watched uses existing watches; run --apply-watch first if needed")
     if args.question_id:
         ledger = _ledger(args)
         question = ledger.get_question(args.question_id)
+        if args.search_watched:
+            result = search_watched_text_sources(
+                ledger,
+                question.id,
+                query=args.query,
+                limit=args.limit,
+                since=args.since,
+            )
+            captured = (
+                capture_watched_text_candidates(ledger, question.id, result.candidates, limit=args.limit)
+                if args.capture_candidates
+                else []
+            )
+            if args.json:
+                payload = result.to_dict()
+                payload["captured_candidates"] = [item.to_dict() for item in captured]
+                print(json.dumps(payload, indent=2, sort_keys=True))
+                return
+            _print_watched_text_source_search(result, captured=[item.to_dict() for item in captured])
+            return
         recommendations = plan_sources_for_question(question, limit=args.limit)
         if args.json:
             print(
@@ -5903,6 +5944,65 @@ def _cmd_sources(args: argparse.Namespace) -> None:
     print("Watch prefixes")
     for source in SOURCE_ADAPTER_GUIDES:
         print(f"{source['name']:<17} {source['watch_prefix']}")
+
+
+def _print_watched_text_source_search(
+    result: WatchedTextSourceSearchResult,
+    *,
+    captured: list[dict[str, Any]] | None = None,
+) -> None:
+    captured = captured or []
+    print(f"Watched text source search for {result.question_id}")
+    print(f"query: {result.query or '-'}")
+    print(f"searched_sources: {result.searched_sources}")
+    print(f"candidates: {len(result.candidates)}")
+    print("probability_unchanged: true")
+    if result.errors:
+        print(f"source_errors: {len(result.errors)}")
+        for error in result.errors[:5]:
+            print(f"  {error.get('watched_source_id')}: {error.get('error')}")
+    if not result.candidates:
+        print("No matching watched RSS/Atom evidence candidates.")
+        print("Run `forecast sources --question <id> --apply-watch` to add concrete watched sources first.")
+        return
+
+    print("")
+    print("Rank  Score  Published    Materiality Direction  Source                         Title")
+    for index, candidate in enumerate(result.candidates, start=1):
+        source = candidate.source_label[:28]
+        title = candidate.title if len(candidate.title) <= 72 else f"{candidate.title[:69]}..."
+        print(
+            f"{index:<5} {candidate.relevance_score:<6} "
+            f"{_short_date(candidate.published_at):<12} "
+            f"{candidate.materiality:<11} {candidate.direction:<10} "
+            f"{source:<30} {title}"
+        )
+        if candidate.matched_terms:
+            print(f"  matched: {', '.join(candidate.matched_terms[:8])}")
+        if candidate.url:
+            print(f"  url: {candidate.url}")
+        print(f"  import: {candidate.import_command}")
+
+    if not captured:
+        print("")
+        print("Capture candidates with --capture-candidates; forecast probabilities only change via explicit updates.")
+        return
+
+    print("")
+    print(f"captured_candidates: {len([item for item in captured if item.get('evidence')])}")
+    skipped = [item for item in captured if item.get("skipped_reason")]
+    if skipped:
+        print(f"skipped_candidates: {len(skipped)}")
+    for item in captured:
+        evidence = item.get("evidence")
+        if evidence:
+            print(f"  {evidence['id']}: {item['candidate']['title']}")
+        elif item.get("skipped_reason"):
+            print(f"  skipped: {item['skipped_reason']}")
+
+
+def _short_date(value: str | None) -> str:
+    return str(value or "-")[:10]
 
 
 def _print_source_plan(

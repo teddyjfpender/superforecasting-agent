@@ -19,6 +19,7 @@ from forecasting.learning import apply_active_lesson_adjustments
 from forecasting.models import ForecastingError, OutcomeSpace, utc_now_iso
 from forecasting.protocol import build_protocol_messages
 from forecasting.source_planner import SourceRecommendation, plan_sources_for_question
+from forecasting.source_search import capture_watched_text_candidates, search_watched_text_sources
 from forecasting.source_adapters import (
     load_arxiv_papers,
     load_bluesky_posts,
@@ -79,8 +80,10 @@ FORECAST_LEDGER_SCHEMA = {
     "description": (
         "Operate on the forecast ledger: create questions, add evidence, append "
         "forecast snapshots, resolve, score, review, self-check, and render "
-        "forecast protocol context. Forecast snapshots are append-only; autopilot "
-        "actions maintain watched-source update proposals through the ledger."
+        "forecast protocol context. Forecast snapshots are append-only; source "
+        "actions can plan and search watched RSS/Atom evidence candidates without "
+        "moving probabilities; autopilot actions maintain watched-source update "
+        "proposals through the ledger."
     ),
     "parameters": {
         "type": "object",
@@ -92,6 +95,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "list_questions",
                     "show_question",
                     "source_plan",
+                    "source_search",
                     "add_evidence",
                     "import_source_evidence",
                     "add_baseline_comparison",
@@ -293,6 +297,7 @@ FORECAST_LEDGER_SCHEMA = {
             "toolset_version": {"type": "string"},
             "source_or_note": {"type": "string"},
             "source": {"type": "string"},
+            "query": {"type": "string"},
             "sources": {"type": "array", "items": {"type": "string"}},
             "required_source": {"type": "string"},
             "required_sources": {"type": "array", "items": {"type": "string"}},
@@ -302,6 +307,7 @@ FORECAST_LEDGER_SCHEMA = {
             "keywords": {"type": "array", "items": {"type": "string"}},
             "exclude_keywords": {"type": "array", "items": {"type": "string"}},
             "dedupe": {"type": "boolean"},
+            "capture_candidates": {"type": "boolean"},
             "materiality": {"type": "string", "enum": ["low", "medium", "high"]},
             "direction": {"type": "string", "enum": ["upward", "downward", "ambiguous"]},
             "affected_components": {"type": "array", "items": {"type": "string"}},
@@ -598,6 +604,32 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 applied_watched_sources=created,
                 skipped_source_plan=skipped,
                 no_silent_probability_mutation=True,
+            )
+
+        if action == "source_search":
+            question_id = _required(args, "question_id")
+            result = search_watched_text_sources(
+                ledger,
+                question_id,
+                query=args.get("query"),
+                limit=int(args["limit"]) if args.get("limit") is not None else 20,
+                since=args.get("since"),
+            )
+            captured = (
+                capture_watched_text_candidates(
+                    ledger,
+                    question_id,
+                    result.candidates,
+                    limit=int(args["limit"]) if args.get("limit") is not None else None,
+                )
+                if args.get("capture_candidates")
+                else []
+            )
+            payload = result.to_dict()
+            return tool_result(
+                success=True,
+                **payload,
+                captured_candidates=[item.to_dict() for item in captured],
             )
 
         if action == "add_evidence":
