@@ -4596,7 +4596,9 @@ def test_cli_command_reference_chat_examples_are_forecast_scoped():
     assert "hermes [global-options] <command> [subcommand/options]" not in cli_docs
     assert "Equivalent to `SUPERFORECASTING_AGENT_TUI=1` / `FORECAST_TUI=1`" in cli_docs
     assert "Fork-native shorthand for the Forecast Desk TUI" in cli_docs
+    assert "embedding the same TUI flow as `superforecasting-agent tui`" in cli_docs
     assert "Equivalent to `HERMES_TUI=1`" not in cli_docs
+    assert "by running `superforecasting-agent --tui` behind a PTY" not in cli_docs
     assert "For slash commands inside interactive forecast sessions" in cli_docs
     assert "For in-chat slash commands" not in cli_docs
     assert "superforecasting-agent-acp" in cli_docs
@@ -4612,6 +4614,49 @@ def test_cli_command_reference_chat_examples_are_forecast_scoped():
     assert "What's the capital of France?" not in cli_docs
     assert 'answer=$(superforecasting-agent -z "summarize this"' not in cli_docs
     assert "forecast-research,file,web" not in cli_docs
+
+
+def test_software_development_tui_debug_skill_docs_prefer_tui_shorthand():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "skills" / "software-development" / "debugging-hermes-tui-commands" / "SKILL.md",
+        root / "skills" / "software-development" / "python-debugpy" / "SKILL.md",
+        root / "skills" / "software-development" / "node-inspect-debugger" / "SKILL.md",
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "software-development"
+            / "software-development-debugging-hermes-tui-commands.md"
+        ),
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "software-development"
+            / "software-development-python-debugpy.md"
+        ),
+        (
+            root
+            / "website"
+            / "docs"
+            / "user-guide"
+            / "skills"
+            / "bundled"
+            / "software-development"
+            / "software-development-node-inspect-debugger.md"
+        ),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "superforecasting-agent tui" in text
+    assert "superforecasting-agent --tui" not in text
 
 
 def test_nous_runtime_env_aliases_are_forecast_native():

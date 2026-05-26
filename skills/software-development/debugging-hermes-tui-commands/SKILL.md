@@ -140,7 +140,7 @@ After fixing:
 
 2. Run the TUI and test the command:
    ```bash
-   superforecasting-agent --tui
+   superforecasting-agent tui
    ```
 
 3. Type `/` and verify the command appears in autocomplete suggestions with the expected description and args hint.
