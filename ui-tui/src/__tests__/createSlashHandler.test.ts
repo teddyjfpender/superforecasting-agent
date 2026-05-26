@@ -135,7 +135,8 @@ describe('createSlashHandler', () => {
             rows: expect.arrayContaining([
               [
                 'default0 P=0.210 Δ=-0.040',
-                'active  as-of 2026-08-01  close 2026-09-30  conf 0.61  Will company Y default?'
+                'active  as-of 2026-08-01  close 2026-09-30  conf 0.61  Will company Y default?',
+                '/forecast show fq_default001'
               ]
             ]),
             title: 'Watchlist'
@@ -150,7 +151,8 @@ describe('createSlashHandler', () => {
             rows: [
               [
                 'default0  P=0.210  Δ=-0.040',
-                'as-of 2026-08-01  close 2026-09-30  conf 0.61  ev 3  base 1  refs 0/0  asm 1/0  active  Will company Y default?'
+                'as-of 2026-08-01  close 2026-09-30  conf 0.61  ev 3  base 1  refs 0/0  asm 1/0  active  Will company Y default?',
+                '/forecast show fq_default001'
               ]
             ],
             title: 'Active Forecasts'
