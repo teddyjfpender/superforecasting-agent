@@ -512,12 +512,16 @@ def test_acp_adapter_copy_is_forecast_native():
     assert "Superforecasting Agent v{HERMES_VERSION}" in text
     assert "Configure Superforecasting Agent provider" in text
     assert "ACP-managed forecast agent" in text
+    assert "Show Superforecasting Agent version" in text
+    assert "active-home SessionDB" in text
     assert '["forecast-acp"]' in text
     assert "Hermes Agent via the Agent Client Protocol" not in text
     assert "Hermes Agent v{HERMES_VERSION}" not in text
     assert "Configure Hermes provider" not in text
     assert "Authenticate Hermes" not in text
     assert "Hermes' local kawaii" not in text
+    assert "Show Hermes version" not in text
+    assert "~/.hermes/state.db" not in text
 
 
 def test_acp_registry_docs_are_fork_native():

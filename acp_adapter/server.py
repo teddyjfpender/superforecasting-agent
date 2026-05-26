@@ -443,7 +443,7 @@ def _content_blocks_to_openai_user_content(
 
 
 class HermesACPAgent(acp.Agent):
-    """ACP Agent implementation wrapping Hermes AIAgent."""
+    """ACP Agent implementation wrapping the forecast agent runtime."""
 
     _SLASH_COMMANDS = {
         "help": "Show available commands",
@@ -454,7 +454,7 @@ class HermesACPAgent(acp.Agent):
         "compact": "Compress conversation context",
         "steer": "Inject guidance into the currently running agent turn",
         "queue": "Queue a prompt to run after the current turn finishes",
-        "version": "Show Hermes version",
+        "version": "Show Superforecasting Agent version",
     }
 
     _ADVERTISED_COMMANDS = (
@@ -495,7 +495,7 @@ class HermesACPAgent(acp.Agent):
         },
         {
             "name": "version",
-            "description": "Show Hermes version",
+            "description": "Show Superforecasting Agent version",
         },
     )
 
