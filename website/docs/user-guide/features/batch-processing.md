@@ -286,7 +286,7 @@ Use it for:
 - Prompt-protocol regression tests.
 - Tool availability and failure-rate checks.
 - Provider or model comparisons before using them in live forecasts.
-- Generating training trajectories when you need raw research-session transcripts.
+- Generating training trajectories when you need raw forecast-session transcripts.
 
 Do not treat raw batch output as forecast performance. It lacks resolution
 records, proper scoring, evidence cutoff checks, and baseline comparisons unless

@@ -6,7 +6,7 @@ description: "Spawn isolated child agents for parallel forecast-support workstre
 
 # Subagent Delegation
 
-The `delegate_task` tool spawns child AIAgent instances with isolated context, restricted toolsets, and their own terminal sessions. In Superforecasting Agent, use it for forecast-support work such as reference-class research, evidence review, model critique, and connector testing. Each child gets a fresh research-session transcript and works independently — only its final summary enters the parent's context, and no forecast-ledger write happens unless the parent explicitly records it.
+The `delegate_task` tool spawns child AIAgent instances with isolated context, restricted toolsets, and their own terminal sessions. In Superforecasting Agent, use it for forecast-support work such as reference-class research, evidence review, model critique, and connector testing. Each child gets a fresh forecast-session transcript and works independently — only its final summary enters the parent's context, and no forecast-ledger write happens unless the parent explicitly records it.
 
 ## Single Task
 
@@ -33,7 +33,7 @@ delegate_task(tasks=[
 ## How Subagent Context Works
 
 :::warning Critical: Subagents Know Nothing
-Subagents start with a **completely fresh research-session transcript**. They have zero knowledge of the parent's transcript, prior tool calls, or anything discussed before delegation. The subagent's only context comes from the `goal` and `context` fields the parent agent populates when it calls `delegate_task`.
+Subagents start with a **completely fresh forecast-session transcript**. They have zero knowledge of the parent's transcript, prior tool calls, or anything discussed before delegation. The subagent's only context comes from the `goal` and `context` fields the parent agent populates when it calls `delegate_task`.
 :::
 
 This means the parent agent must pass **everything** the subagent needs in the call:
@@ -248,7 +248,7 @@ For **durable long-running work** that must survive interrupts or outlive the cu
 | Factor | delegate_task | execute_code |
 |--------|--------------|-------------|
 | **Reasoning** | Full LLM reasoning loop | Just Python code execution |
-| **Context** | Fresh isolated research-session transcript | No research transcript, just script |
+| **Context** | Fresh isolated forecast-session transcript | No transcript, just script |
 | **Tool access** | All non-blocked tools with reasoning | 7 tools via RPC, no reasoning |
 | **Parallelism** | 3 concurrent subagents by default (configurable) | Single script |
 | **Best for** | Complex forecast-support tasks needing judgment | Mechanical multi-step source/data pipelines |

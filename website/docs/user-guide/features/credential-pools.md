@@ -27,7 +27,7 @@ request
        use fallback provider if configured
 ```
 
-For forecast work, pools are useful for long research sessions, scheduled self-checks, domain alert jobs, and batch backtests that need stable same-provider behavior without stopping at the first rate limit.
+For forecast work, pools are useful for long forecast sessions, scheduled self-checks, domain alert jobs, and batch backtests that need stable same-provider behavior without stopping at the first rate limit.
 
 ## Quick Start
 

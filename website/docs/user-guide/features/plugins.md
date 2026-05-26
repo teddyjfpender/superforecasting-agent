@@ -330,7 +330,7 @@ In a running session, `/plugins` shows which extensions are currently loaded.
 
 ## Injecting Messages
 
-Extensions can inject messages into the active research session using `ctx.inject_message()`:
+Extensions can inject messages into the active forecast session using `ctx.inject_message()`:
 
 ```python
 ctx.inject_message("New data arrived from the webhook", role="user")
@@ -345,7 +345,7 @@ How it works:
 - For non-`"user"` roles, the content is prefixed with `[role]` (e.g. `[system] ...`).
 - Returns `True` if the message was queued successfully, `False` if no CLI reference is available (e.g. in gateway mode).
 
-This enables extensions like remote control viewers, messaging bridges, webhook receivers, or forecast evidence watchers to feed messages into the research session from external sources.
+This enables extensions like remote control viewers, messaging bridges, webhook receivers, or forecast evidence watchers to feed messages into the forecast session from external sources.
 
 :::note
 `inject_message` is only available in CLI mode. In gateway mode, there is no CLI reference and the method returns `False`.

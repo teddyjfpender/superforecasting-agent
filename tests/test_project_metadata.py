@@ -1103,6 +1103,7 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "discard forecast-session state" in cli
     assert "current forecast session stays free" in tips
     assert "previously named forecast session" in tips
+    assert "specific TUI forecast session after a disconnect" in tips
     assert "Interactive forecast-session picker with search" in main_py
     assert "Manage forecast-session history" in main_py
     assert "List recent forecast sessions" in main_py
@@ -1134,6 +1135,7 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "discard research-session state" not in cli
     assert "current session stays free" not in tips
     assert "previously named session" not in tips
+    assert "specific TUI research session after a disconnect" not in tips
     assert "Interactive session picker with search" not in main_py
     assert "Manage session history" not in main_py
     assert "List recent sessions" not in main_py
@@ -1169,6 +1171,13 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
         "website/docs/user-guide/features/personality.md",
         "website/docs/user-guide/messaging/index.md",
         "website/docs/user-guide/tui.md",
+        "website/docs/user-guide/features/batch-processing.md",
+        "website/docs/user-guide/features/context-references.md",
+        "website/docs/user-guide/features/credential-pools.md",
+        "website/docs/user-guide/features/delegation.md",
+        "website/docs/user-guide/features/fallback-providers.md",
+        "website/docs/user-guide/features/memory-providers.md",
+        "website/docs/user-guide/features/plugins.md",
         "website/docs/reference/slash-commands.md",
         "web/src/themes/presets.ts",
         "web/src/i18n/en.ts",
@@ -1193,6 +1202,12 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
     assert "SOUL.md (style / system prompt)" in text
     assert "You are a precise forecasting analyst." in text
     assert "forecast-style overlays" in text
+    assert "raw forecast-session transcripts" in text
+    assert "active forecast session using `ctx.inject_message()`" in text
+    assert "forecast-session context and therefore in compression summaries" in text
+    assert "fresh forecast-session transcript" in text
+    assert "forecast-session turns after responses" in text
+    assert "long forecast sessions, scheduled self-checks" in text
     assert "theme's dashboard role" in text
     assert "Warm crimson and bronze for focused review" in text
 
@@ -1201,6 +1216,12 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
     assert "Retry the last message" not in text
     assert "| `/sessions` | Browse and resume previous sessions" not in text
     assert "| `/compress [focus topic]` | Manually compress research-session context" not in text
+    assert "raw research-session transcripts" not in text
+    assert "active research session using `ctx.inject_message()`" not in text
+    assert "research-session context and therefore in compression summaries" not in text
+    assert "fresh research-session transcript" not in text
+    assert "research-session turns after responses" not in text
+    assert "long research sessions, scheduled self-checks" not in text
     assert "Switching personalities with commands" not in text
     assert "| `/personality [name]` | Set a personality |" not in text
     assert "## Chat Commands (Inside Messaging)" not in text

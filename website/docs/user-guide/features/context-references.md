@@ -120,10 +120,10 @@ In messaging platforms such as Telegram and Discord, the `@` syntax is not expan
 
 ## Interaction With Context Compression
 
-Expanded reference content is included in research-session context and therefore in compression summaries. This means:
+Expanded reference content is included in forecast-session context and therefore in compression summaries. This means:
 
 - Large file contents count against context usage.
-- Compressed research sessions summarize referenced content rather than preserving it verbatim.
+- Compressed forecast sessions summarize referenced content rather than preserving it verbatim.
 - A compressed mention is not a durable evidence snapshot.
 
 For source material that must be audited later, import it into the forecast ledger with timestamp, source metadata, reliability, and relevance notes.

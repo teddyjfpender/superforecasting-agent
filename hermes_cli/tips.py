@@ -373,7 +373,7 @@ TIPS = [
     'provider_routing.require_parameters: true only routes to providers that support every param in your request.',
 
     # --- TUI & Dashboard ---
-    'SUPERFORECASTING_AGENT_TUI_RESUME=<session-id> re-attaches a specific TUI research session after a disconnect.',
+    'SUPERFORECASTING_AGENT_TUI_RESUME=<session-id> re-attaches a specific TUI forecast session after a disconnect.',
     "SUPERFORECASTING_AGENT_TUI_THEME=light|dark|<hex> forces the TUI theme on terminals that don't set COLORFGBG.",
     'Ctrl+G or Ctrl+X Ctrl+E in the TUI opens the input buffer in $EDITOR for long forecast notes.',
     'The TUI renders LaTeX inline — $E=mc^2$ becomes Unicode math instead of raw TeX.',

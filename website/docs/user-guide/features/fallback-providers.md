@@ -18,7 +18,7 @@ Fallback keeps research and review workflows moving, but it can also change outp
 
 ## Primary Model Fallback
 
-When the main provider fails, the runtime can switch to a configured backup provider/model for the current turn without losing research-session context.
+When the main provider fails, the runtime can switch to a configured backup provider/model for the current turn without losing forecast-session context.
 
 Configure interactively:
 
@@ -139,7 +139,7 @@ The provider registry also supports additional plugin-backed providers listed in
 | CLI sessions | Yes |
 | TUI sessions | Yes |
 | Messaging gateway sessions | Yes |
-| API server research sessions | Yes |
+| API server forecast sessions | Yes |
 | Subagent delegation | No; use delegation provider overrides |
 | Cron jobs | No; use per-job provider/model overrides |
 | Auxiliary tasks | No; use auxiliary fallback chains |
@@ -223,7 +223,7 @@ auxiliary:
 
 Older `compression.summary_model`, `compression.summary_provider`, and `compression.summary_base_url` keys are migrated to `auxiliary.compression.*` on config load.
 
-If no compression provider is available, the runtime drops middle research-session turns without generating a summary rather than failing the session. Forecast state remains in the ledger.
+If no compression provider is available, the runtime drops middle forecast-session turns without generating a summary rather than failing the session. Forecast state remains in the ledger.
 
 ## Delegation and Cron
 
