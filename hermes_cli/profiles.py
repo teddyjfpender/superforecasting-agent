@@ -237,9 +237,9 @@ def _get_profiles_root() -> Path:
     (which may itself be a profile). This ensures ``coder profile list`` can
     see all profiles.
 
-    In Docker/custom deployments where HERMES_HOME points outside
-    ``~/.hermes``, profiles live under ``HERMES_HOME/profiles/`` so
-    they persist on the mounted volume.
+    In Docker/custom deployments where HERMES_HOME points outside the
+    native or legacy default root, profiles live under
+    ``HERMES_HOME/profiles/`` so they persist on the mounted volume.
     """
     return _get_default_hermes_home() / "profiles"
 
@@ -247,9 +247,11 @@ def _get_profiles_root() -> Path:
 def _get_default_hermes_home() -> Path:
     """Return the default (pre-profile) HERMES_HOME path.
 
-    In standard deployments this is ``~/.hermes``.
-    In Docker/custom deployments where HERMES_HOME is outside ``~/.hermes``
-    (e.g. ``/opt/data``), returns HERMES_HOME directly.
+    In standard new deployments this is ``~/.superforecasting-agent``.
+    Existing legacy homes and profile-mode HERMES_HOME values still resolve
+    back to their default root for compatibility. In Docker/custom deployments
+    where HERMES_HOME is outside the default root (e.g. ``/opt/data``),
+    returns HERMES_HOME directly.
     """
     from hermes_constants import get_default_hermes_root
     return get_default_hermes_root()
@@ -1438,7 +1440,7 @@ def rename_profile(old_name: str, new_name: str) -> Path:
 def resolve_profile_env(profile_name: str) -> str:
     """Resolve a profile name to a HERMES_HOME path string.
 
-    Called early in the CLI entry point, before any hermes modules
+    Called early in the CLI entry point, before any runtime modules
     are imported, to set the HERMES_HOME environment variable.
     """
     canon = normalize_profile_name(profile_name)
