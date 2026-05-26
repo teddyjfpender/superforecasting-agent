@@ -197,7 +197,7 @@ Useful slot patterns for the forecast fork:
 | `forecast-desk:bottom` | Audit, export, or handoff widgets below the embedded terminal. |
 | `plugins:top` | Plugin setup notices. |
 
-Slot names are runtime-defined. Check the dashboard registry if a slot does not render. The inherited `chat:top` and `chat:bottom` names still render as compatibility aliases, but new forecast plugins should use `forecast-desk:top` and `forecast-desk:bottom`.
+Slot names are runtime-defined. Check the dashboard registry if a slot does not render. The inherited `chat:top` and `chat:bottom` names are still accepted as compatibility aliases and render through the canonical Forecast Desk placements, but new forecast plugins should use `forecast-desk:top` and `forecast-desk:bottom`.
 
 ## Backend Routes
 

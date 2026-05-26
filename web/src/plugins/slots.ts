@@ -11,7 +11,8 @@
  * The canonical slot names are documented in `KNOWN_SLOT_NAMES` below. The
  * registry accepts any string so plugin ecosystems can define their own
  * slots; the shell only renders `<PluginSlot name="..." />` for the slots
- * it knows about.
+ * it knows about. Some inherited slot names are compatibility aliases that
+ * render through canonical forecast-native slots.
  */
 
 import React, { Fragment, useEffect, useState } from "react";
@@ -58,9 +59,9 @@ import React, { Fragment, useEffect, useState } from "react";
  *  - `forecast-desk:top`    — top of the embedded Forecast Desk page
  *  - `forecast-desk:bottom` — bottom of the embedded Forecast Desk page
  *
- *  Compatibility aliases still rendered by the shell:
- *  - `chat:top`         — legacy alias for `forecast-desk:top`
- *  - `chat:bottom`      — legacy alias for `forecast-desk:bottom`
+ *  Compatibility aliases accepted by the registry:
+ *  - `chat:top`         — legacy alias rendered through `forecast-desk:top`
+ *  - `chat:bottom`      — legacy alias rendered through `forecast-desk:bottom`
  */
 export const KNOWN_SLOT_NAMES = [
   // Shell-wide
@@ -108,6 +109,11 @@ interface SlotEntry {
   component: React.ComponentType;
 }
 
+const SLOT_RENDER_ALIASES: Record<string, string[]> = {
+  "forecast-desk:top": ["chat:top"],
+  "forecast-desk:bottom": ["chat:bottom"],
+};
+
 /** Map<slotName, SlotEntry[]>. Entries are appended in registration order. */
 const _slotRegistry: Map<string, SlotEntry[]> = new Map();
 const _slotListeners: Set<SlotListener> = new Set();
@@ -146,6 +152,22 @@ export function getSlotEntries(slot: string): SlotEntry[] {
   return (_slotRegistry.get(slot) ?? []).slice();
 }
 
+function getRenderableSlotEntries(slot: string): SlotEntry[] {
+  const slotNames = [slot, ...(SLOT_RENDER_ALIASES[slot] ?? [])];
+  const seenPlugins = new Set<string>();
+  const entries: SlotEntry[] = [];
+
+  for (const slotName of slotNames) {
+    for (const entry of _slotRegistry.get(slotName) ?? []) {
+      if (seenPlugins.has(entry.plugin)) continue;
+      seenPlugins.add(entry.plugin);
+      entries.push(entry);
+    }
+  }
+
+  return entries;
+}
+
 /** Subscribe to registry changes. Returns an unsubscribe function. */
 export function onSlotRegistered(fn: SlotListener): () => void {
   _slotListeners.add(fn);
@@ -180,15 +202,18 @@ interface PluginSlotProps {
 /** Render all components registered for a given slot, stacked in order.
  *
  *  Component re-renders when the slot registry changes so plugins that
- *  arrive after initial mount show up without a manual refresh. */
+ *  arrive after initial mount show up without a manual refresh. Canonical
+ *  forecast-desk slots also render entries registered under legacy `chat:*`
+ *  aliases so old plugins keep working without the page mounting old slot
+ *  names directly. */
 export function PluginSlot({ name, fallback }: PluginSlotProps) {
-  const [entries, setEntries] = useState<SlotEntry[]>(() => getSlotEntries(name));
+  const [entries, setEntries] = useState<SlotEntry[]>(() => getRenderableSlotEntries(name));
 
   useEffect(() => {
     // Pick up anything registered between the initial `useState` call
     // and the first effect tick, then subscribe for future changes.
-    setEntries(getSlotEntries(name));
-    const unsub = onSlotRegistered(() => setEntries(getSlotEntries(name)));
+    setEntries(getRenderableSlotEntries(name));
+    const unsub = onSlotRegistered(() => setEntries(getRenderableSlotEntries(name)));
     return unsub;
   }, [name]);
 

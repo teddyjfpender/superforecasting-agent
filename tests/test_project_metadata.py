@@ -4750,10 +4750,15 @@ def test_dashboard_plugin_sdk_has_forecast_native_aliases():
     assert "window.__SUPERFORECASTING_AGENT_PLUGINS__.registerSlot" in slots
     assert '"forecast-desk:top"' in slots
     assert '"forecast-desk:bottom"' in slots
+    assert "SLOT_RENDER_ALIASES" in slots
     assert '<PluginSlot name="forecast-desk:top" />' in forecast_desk_page
     assert '<PluginSlot name="forecast-desk:bottom" />' in forecast_desk_page
-    assert "legacy alias for `forecast-desk:top`" in slots
+    assert '<PluginSlot name="chat:top" />' not in forecast_desk_page
+    assert '<PluginSlot name="chat:bottom" />' not in forecast_desk_page
+    assert "legacy alias rendered through `forecast-desk:top`" in slots
+    assert "legacy `chat:*`" in slots
     assert "new forecast plugins should use `forecast-desk:top`" in dashboard_extension_docs
+    assert "render through the canonical Forecast Desk placements" in dashboard_extension_docs
     assert "forecast-sidebar-plugin-nav-heading" in app
     assert "hermes-sidebar-plugin-nav-heading" not in app
 
