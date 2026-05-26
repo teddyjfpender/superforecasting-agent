@@ -3335,9 +3335,9 @@ async def get_models_analytics(days: int = 30):
 # ---------------------------------------------------------------------------
 # /api/pty — PTY-over-WebSocket bridge for the dashboard Forecast Desk tab.
 #
-# The endpoint spawns the same ``superforecasting-agent --tui`` binary the CLI
-# uses, behind a POSIX pseudo-terminal, and forwards bytes + resize escapes
-# across a WebSocket. The browser renders the ANSI through xterm.js (see
+# The endpoint spawns the same Forecast Desk TUI flow exposed by
+# ``superforecasting-agent tui``, behind a POSIX pseudo-terminal, and forwards
+# bytes + resize escapes across a WebSocket. The browser renders the ANSI through xterm.js (see
 # web/src/pages/ForecastDeskPage.tsx).
 #
 # Auth: ``?token=<session_token>`` query param (browsers can't set
@@ -3435,7 +3435,7 @@ def _resolve_chat_argv(
 ) -> tuple[list[str], Optional[str], Optional[dict]]:
     """Resolve the argv + cwd + env for the dashboard Forecast Desk PTY.
 
-    Default: whatever ``superforecasting-agent --tui`` would run. Tests
+    Default: whatever the ``superforecasting-agent tui`` operator path would run. Tests
     monkeypatch this function to inject a tiny fake command (``cat``,
     ``sh -c 'printf …'``) so nothing has to build Node or the TUI bundle.
 

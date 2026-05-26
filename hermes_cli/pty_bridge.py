@@ -1,4 +1,4 @@
-"""PTY bridge for the Superforecasting Agent dashboard chat tab.
+"""PTY bridge for the Superforecasting Agent dashboard Forecast Desk tab.
 
 Wraps a child process behind a pseudo-terminal so its ANSI output can be
 streamed to a browser-side terminal emulator (xterm.js) and typed
@@ -12,15 +12,14 @@ Design constraints:
   Windows ConPTY is a different API (Windows 10 build 17763+) and would
   need a separate Windows implementation (``pywinpty``) — that's tracked
   as a future enhancement.  On native Windows, importing this module
-  raises :class:`ImportError` and the dashboard's ``/chat`` tab shows a
+  raises :class:`ImportError` and the dashboard's Forecast Desk tab shows a
   WSL-recommended banner instead of crashing.  Every other feature in the
   dashboard (sessions, jobs, metrics, config editor) works natively.
 * **Zero Node dependency on the server side.**  We use :mod:`ptyprocess`,
   which is a pure-Python wrapper around the OS calls.  The browser talks
-  to the same ``superforecasting-agent --tui`` binary it would launch
-  from the CLI, so every TUI feature (slash popover, model picker, tool
-  rows, markdown, skin engine, clarify/sudo/approval prompts) ships
-  automatically.
+  to the same Forecast Desk TUI flow exposed by ``superforecasting-agent tui``,
+  so every TUI feature (slash popover, model picker, tool rows, markdown, skin
+  engine, clarify/sudo/approval prompts) ships automatically.
 * **Byte-safe I/O.**  Reads and writes go through the PTY master fd
   directly — we avoid :class:`ptyprocess.PtyProcessUnicode` because
   streaming ANSI is inherently byte-oriented and UTF-8 boundaries may land

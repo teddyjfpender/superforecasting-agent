@@ -89,7 +89,7 @@ Everything except the dashboard's embedded terminal pane runs natively on Window
 | Feature | Native Windows | WSL2 |
 |---|---|---|
 | CLI (`superforecasting-agent chat`, `superforecasting-agent setup`, `superforecasting-agent gateway`, …) | ✓ | ✓ |
-| Interactive TUI (`superforecasting-agent --tui`) | ✓ | ✓ |
+| Interactive TUI (`superforecasting-agent tui`) | ✓ | ✓ |
 | Messaging gateway (Telegram, Discord, Slack, WhatsApp, 15+ platforms) | ✓ | ✓ |
 | Cron scheduler | ✓ | ✓ |
 | Browser tool (Chromium via Node) | ✓ | ✓ |

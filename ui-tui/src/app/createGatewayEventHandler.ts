@@ -271,7 +271,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     // Opt-in: when `display.tui_auto_resume_recent` is true, look up
     // the most recent human-facing forecast session and resume it instead of
     // starting a brand-new one.  Mirrors classic CLI's
-    // `superforecasting-agent -c` / `superforecasting-agent --tui` flow
+    // `superforecasting-agent -c` / `superforecasting-agent tui` flow
     // and addresses the audit's "forecast session
     // unrecoverable after disconnection" gap.  Default off so existing
     // users aren't surprised.

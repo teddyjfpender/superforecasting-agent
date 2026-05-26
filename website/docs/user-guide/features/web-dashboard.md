@@ -28,7 +28,7 @@ This starts a local web server and opens `http://127.0.0.1:9119` in your browser
 | `--host` | `127.0.0.1` | Bind address. |
 | `--no-open` | off | Do not auto-open the browser. |
 | `--insecure` | off | Allow binding to non-localhost hosts. Use only behind trusted network controls. |
-| `--tui` | off | Expose the optional browser Forecast Desk tab by embedding `superforecasting-agent --tui` behind a PTY/WebSocket bridge. Alternatively set `SUPERFORECASTING_AGENT_DASHBOARD_TUI=1` or `FORECAST_DASHBOARD_TUI=1`; legacy `HERMES_DASHBOARD_TUI=1` is still accepted. |
+| `--tui` | off | Expose the optional browser Forecast Desk tab by embedding the same TUI flow as `superforecasting-agent tui` behind a PTY/WebSocket bridge. Alternatively set `SUPERFORECASTING_AGENT_DASHBOARD_TUI=1` or `FORECAST_DASHBOARD_TUI=1`; legacy `HERMES_DASHBOARD_TUI=1` is still accepted. |
 
 ```bash
 superforecasting-agent dashboard --port 8080
@@ -110,13 +110,13 @@ This page is operational telemetry. Forecast truth lives in the ledger, not in t
 When started with `--tui`, the dashboard exposes an optional Forecast Desk tab. It embeds the real terminal TUI through xterm.js. The transcript, composer, slash commands, model picker, approvals, clarify prompts, tool activity, and `/forecast` shortcuts are the same TUI flow you get from:
 
 ```bash
-superforecasting-agent --tui
+superforecasting-agent tui
 ```
 
 How it works:
 
 - `/api/pty` opens a WebSocket authenticated with the dashboard session token.
-- The server spawns `superforecasting-agent --tui` behind a POSIX pseudo-terminal.
+- The server spawns the Forecast Desk TUI behind a POSIX pseudo-terminal, matching the `superforecasting-agent tui` operator path.
 - Keystrokes travel to the PTY; ANSI output streams back to the browser.
 - Resizing the browser window resizes the TUI through xterm.js.
 

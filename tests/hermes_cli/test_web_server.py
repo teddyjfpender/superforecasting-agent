@@ -2278,7 +2278,7 @@ class TestDashboardPluginManifestExtensions:
 # /api/pty WebSocket — terminal bridge for the dashboard Forecast Desk tab.
 #
 # These tests drive the endpoint with a tiny fake command (typically ``cat``
-# or ``sh -c 'printf …'``) instead of the real ``superforecasting-agent --tui`` binary.  The
+# or ``sh -c 'printf …'``) instead of the real Forecast Desk TUI command.  The
 # endpoint resolves its argv through ``_resolve_chat_argv``, so tests
 # monkeypatch that hook.
 # ---------------------------------------------------------------------------

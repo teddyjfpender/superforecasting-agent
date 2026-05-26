@@ -2241,11 +2241,12 @@ def test_dashboard_tui_comments_are_forecast_native():
         (root / rel_path).read_text(encoding="utf-8") for rel_path in checked_paths
     )
 
-    assert "superforecasting-agent --tui" in text
+    assert "superforecasting-agent tui" in text
     assert "superforecasting-agent dashboard" in text
     assert "active agent-home ``config.yaml``" in text
     assert "active agent-home dashboard-themes/*.yaml" in text
     assert "active agent-home `dashboard-themes/*.yaml`" in text
+    assert "superforecasting-agent --tui" not in text
     assert "hermes --tui" not in text
     assert "hermes dashboard" not in text
     assert "~/.hermes/config.yaml" not in text
@@ -2692,7 +2693,7 @@ def test_root_agents_guidance_is_forecast_native():
     assert "`SUPERFORECASTING_AGENT_BACKGROUND_NOTIFICATIONS`" in text
     assert "native Superforecasting Agent tools" in text
     assert "### DO NOT hardcode agent-home paths" in text
-    assert "superforecasting-agent --tui" in text
+    assert "superforecasting-agent tui" in text
     assert "primary Forecast Desk experience" in text
     assert "# Hermes Agent - Development Guide" not in opening
     assert "Hermes Agent" not in text

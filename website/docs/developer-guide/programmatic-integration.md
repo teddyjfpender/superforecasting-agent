@@ -35,7 +35,7 @@ superforecasting-agent acp --bootstrap      # print install snippet for an ACP-c
 
 ## TUI Gateway JSON-RPC
 
-`tui_gateway/server.py` is the protocol the Ink TUI (`superforecasting-agent --tui`) and the embedded dashboard PTY bridge talk to. Any external host can speak the same protocol over stdio (or WebSocket via `tui_gateway/ws.py`).
+`tui_gateway/server.py` is the protocol the Ink TUI (`superforecasting-agent tui`) and the embedded dashboard PTY bridge talk to. Any external host can speak the same protocol over stdio (or WebSocket via `tui_gateway/ws.py`).
 
 ### Method catalog (selected)
 
