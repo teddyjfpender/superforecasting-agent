@@ -2399,10 +2399,10 @@ def _(rid, params: dict) -> dict:
     try:
         snapshot = list(_sessions.values())
     except Exception as e:
-        return _err(rid, 5036, f"could not enumerate active sessions: {e}")
+        return _err(rid, 5036, f"could not enumerate active forecast sessions: {e}")
     active = {s.get("session_key") for s in snapshot if s.get("session_key")}
     if target in active:
-        return _err(rid, 4023, "cannot delete an active session")
+        return _err(rid, 4023, "cannot delete an active forecast session")
     sessions_dir = get_hermes_home() / "sessions"
     try:
         deleted = db.delete_session(target, sessions_dir=sessions_dir)
@@ -4796,7 +4796,7 @@ def _(rid, params: dict) -> dict:
 
     if name == "retry":
         if not session:
-            return _err(rid, 4001, "no active session to retry")
+            return _err(rid, 4001, "no active forecast session to retry")
         if session.get("running"):
             return _err(
                 rid, 4009, "session busy — /interrupt the current turn before /retry"
@@ -4850,7 +4850,7 @@ def _(rid, params: dict) -> dict:
 
     if name == "goal":
         if not session:
-            return _err(rid, 4001, "no active session")
+            return _err(rid, 4001, "no active forecast session")
         try:
             from hermes_cli.goals import GoalManager
         except Exception as exc:

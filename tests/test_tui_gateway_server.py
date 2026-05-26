@@ -3503,7 +3503,7 @@ def test_session_delete_refuses_active_session(monkeypatch):
 
     assert "error" in resp
     assert resp["error"]["code"] == 4023
-    assert "active session" in resp["error"]["message"]
+    assert "active forecast session" in resp["error"]["message"]
     assert called == [], "delete_session must not be called for active sessions"
 
 
@@ -3530,7 +3530,7 @@ def test_session_delete_fails_closed_when_active_snapshot_raises(monkeypatch):
 
     assert "error" in resp
     assert resp["error"]["code"] == 5036
-    assert "enumerate active sessions" in resp["error"]["message"]
+    assert "enumerate active forecast sessions" in resp["error"]["message"]
 
 
 def test_session_delete_returns_4007_when_missing(monkeypatch):
