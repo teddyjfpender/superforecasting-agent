@@ -336,12 +336,14 @@ else
 fi
 
 # ============================================================================
-# PATH setup — symlink superforecasting-agent into a user-facing bin dir
+# PATH setup — symlink forecast-native commands into a user-facing bin dir
 # ============================================================================
 
-echo -e "${CYAN}→${NC} Setting up superforecasting-agent command..."
+echo -e "${CYAN}→${NC} Setting up forecast commands..."
 
 SUPERFORECAST_BIN="$SCRIPT_DIR/venv/bin/superforecasting-agent"
+FORECAST_BIN="$SCRIPT_DIR/venv/bin/forecast"
+SUPERFORECAST_ALIAS_BIN="$SCRIPT_DIR/venv/bin/superforecast"
 LEGACY_HERMES_BIN="$SCRIPT_DIR/venv/bin/hermes"
 COMMAND_LINK_DIR="$(get_command_link_dir)"
 COMMAND_LINK_DISPLAY_DIR="$(get_command_link_display_dir)"
@@ -352,6 +354,26 @@ else
     ln -sf "$LEGACY_HERMES_BIN" "$COMMAND_LINK_DIR/superforecasting-agent"
 fi
 echo -e "${GREEN}✓${NC} Symlinked superforecasting-agent → $COMMAND_LINK_DISPLAY_DIR/superforecasting-agent"
+
+if [ -x "$FORECAST_BIN" ]; then
+    ln -sf "$FORECAST_BIN" "$COMMAND_LINK_DIR/forecast"
+    echo -e "${GREEN}✓${NC} Symlinked forecast → $COMMAND_LINK_DISPLAY_DIR/forecast"
+elif [ -x "$SUPERFORECAST_BIN" ]; then
+    ln -sf "$SUPERFORECAST_BIN" "$COMMAND_LINK_DIR/forecast"
+    echo -e "${GREEN}✓${NC} Symlinked forecast → $COMMAND_LINK_DISPLAY_DIR/forecast"
+else
+    echo -e "${YELLOW}⚠${NC} forecast entry point not found in venv; reinstall package if needed"
+fi
+
+if [ -x "$SUPERFORECAST_ALIAS_BIN" ]; then
+    ln -sf "$SUPERFORECAST_ALIAS_BIN" "$COMMAND_LINK_DIR/superforecast"
+    echo -e "${GREEN}✓${NC} Symlinked superforecast → $COMMAND_LINK_DISPLAY_DIR/superforecast"
+elif [ -x "$SUPERFORECAST_BIN" ]; then
+    ln -sf "$SUPERFORECAST_BIN" "$COMMAND_LINK_DIR/superforecast"
+    echo -e "${GREEN}✓${NC} Symlinked superforecast → $COMMAND_LINK_DISPLAY_DIR/superforecast"
+else
+    echo -e "${YELLOW}⚠${NC} superforecast entry point not found in venv; reinstall package if needed"
+fi
 
 if [ -x "$LEGACY_HERMES_BIN" ]; then
     ln -sf "$LEGACY_HERMES_BIN" "$COMMAND_LINK_DIR/hermes"

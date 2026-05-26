@@ -1476,6 +1476,7 @@ Latest verified result:
 - Uninstall active-home wording pass: uninstall help/comments and Windows cleanup messages now describe the active Superforecasting Agent home and legacy compatibility artifacts instead of presenting `~/.hermes` or Hermes-owned PATH/env entries as the primary uninstall model.
 - ACP visible-copy pass: ACP session/server/tool/permission copy now describes forecast agent sessions, active-home SessionDB persistence, `superforecasting-agent acp` WSL launches, runtime-compatible approvals, and the Superforecasting Agent version command instead of Hermes AIAgent, `~/.hermes/state.db`, `Show Hermes version`, or Hermes-owned prompt/usage wording. Project metadata guards the surface.
 - TUI maxim command demotion pass: the forecast maxim command is now registered primarily as `/heuristic`, with `/fortune` retained only as a compatibility alias. TUI slash-handler tests and project metadata guard the primary command name.
+- Local setup entrypoint pass: `setup-superforecasting-agent.sh` now links the fork-native `forecast` and `superforecast` commands alongside `superforecasting-agent`, matching the main installer so local setup does not leave testers without the short forecast desk entry points.
 
 ## Prompt-To-Artifact Checklist
 

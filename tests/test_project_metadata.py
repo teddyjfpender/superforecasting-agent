@@ -809,8 +809,10 @@ def test_install_helpers_use_forecast_native_visible_copy():
     assert "Superforecasting Agent Setup" in setup_sh
     assert "./setup-superforecasting-agent.sh" in setup_sh
     assert "Superforecasting Agent — ensure ~/.local/bin is on PATH" in setup_sh
-    assert "Setting up superforecasting-agent command" in setup_sh
+    assert "Setting up forecast commands" in setup_sh
     assert "Symlinked superforecasting-agent" in setup_sh
+    assert "Symlinked forecast" in setup_sh
+    assert "Symlinked superforecast" in setup_sh
     assert "SUPERFORECASTING_AGENT_HOME" in setup_sh
     assert "superforecasting-agent setup" in setup_sh
     assert "superforecasting-agent doctor" in setup_sh
