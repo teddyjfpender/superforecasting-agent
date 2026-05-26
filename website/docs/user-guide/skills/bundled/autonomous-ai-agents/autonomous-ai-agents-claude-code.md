@@ -680,7 +680,7 @@ terminal(command="claude --bare -p 'Query database' --mcp-config mcp-servers.jso
 ```
 `--strict-mcp-config` ignores all MCP servers except those from `--mcp-config`.
 
-Reference MCP resources in chat: `@github:issue://123`
+Reference MCP resources in a forecast session: `@github:issue://123`
 
 ### MCP Limits & Tuning
 - **Tool descriptions:** 2KB cap per server for tool descriptions and server instructions

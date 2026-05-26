@@ -16,7 +16,7 @@ Installed skills are also exposed as dynamic slash commands on the classic CLI a
 
 ## Forecast desk commands
 
-The forecast desk is the primary product surface. Use these before reaching for general chat/session controls:
+The forecast desk is the primary product surface. Use these before reaching for general-purpose session controls:
 
 | Command | Surface | Description |
 |---------|---------|-------------|
@@ -229,7 +229,7 @@ superforecasting-agent config set model.aliases.fav anthropic/claude-opus-4.6
 superforecasting-agent config set model.aliases.grok x-ai/grok-4
 ```
 
-Then in chat:
+Then in the Forecast Desk or a messaging forecast session:
 
 ```
 /model fav            # session-only
@@ -267,22 +267,22 @@ The messaging gateway supports the following built-in commands inside Telegram, 
 | `/usage` | Show token usage, estimated cost breakdown (input/output), context window state, forecast session duration, and — when available from the active provider — an **Account limits** section with remaining quota / credits pulled live from the provider's API. |
 | `/insights [days]` | Show usage analytics. |
 | `/reasoning [level\|show\|hide]` | Change reasoning effort or toggle reasoning display. |
-| `/voice [on\|off\|tts\|join\|channel\|leave\|status]` | Control optional spoken replies in chat. `join`/`channel`/`leave` manage Discord voice-channel mode. |
+| `/voice [on\|off\|tts\|join\|channel\|leave\|status]` | Control optional spoken replies in messaging forecast sessions. `join`/`channel`/`leave` manage Discord voice-channel mode. |
 | `/rollback [number]` | List or restore filesystem checkpoints. |
-| `/background <forecast note>` | Run a forecast-support note in a separate background session. Results are delivered back to the same chat when the task finishes. See [Messaging Background Sessions](/user-guide/messaging/#background-sessions). |
+| `/background <forecast note>` | Run a forecast-support note in a separate background session. Results are delivered back to the same messaging forecast thread when the task finishes. See [Messaging Background Sessions](/user-guide/messaging/#background-sessions). |
 | `/queue <forecast note>` (alias: `/q`) | Queue a forecast note for the next turn without interrupting the current one. |
 | `/steer <forecast note>` | Inject a forecast note after the next tool call without interrupting — the model picks it up on its next iteration rather than as a new turn. |
 | `/goal <text>` | Set a standing goal the agent works toward across turns. A judge model checks after each turn; if not done, the agent auto-continues until it is, you pause/clear it, or the turn budget (default 20) is hit. Subcommands: `/goal status`, `/goal pause`, `/goal resume`, `/goal clear`. Safe to run mid-agent for status/pause/clear; setting a new goal requires `/stop` first. See [Persistent Goals](/user-guide/features/goals). |
 | `/footer [on\|off\|status]` | Toggle the runtime-metadata footer on final replies (shows model, tool counts, timing). |
 | `/curator [status\|run\|pin\|archive]` | Optional background skill maintenance controls. |
-| `/kanban <action>` | Drive the optional multi-profile, multi-project collaboration board from chat — identical argument surface to the CLI. Bypasses the running-agent guard, so `/kanban unblock t_abc`, `/kanban comment t_abc "…"`, `/kanban list --mine`, `/kanban boards switch <slug>`, etc. work mid-turn. `/kanban create …` auto-subscribes the originating chat to the new task's terminal events. See [Kanban slash command](/user-guide/features/kanban#kanban-slash-command). |
+| `/kanban <action>` | Drive the optional multi-profile, multi-project collaboration board from a messaging forecast session — identical argument surface to the CLI. Bypasses the running-agent guard, so `/kanban unblock t_abc`, `/kanban comment t_abc "…"`, `/kanban list --mine`, `/kanban boards switch <slug>`, etc. work mid-turn. `/kanban create …` auto-subscribes the originating messaging thread to the new task's terminal events. See [Kanban slash command](/user-guide/features/kanban#kanban-slash-command). |
 | `/reload-mcp` (alias: `/reload_mcp`) | Reload MCP servers from config. |
 | `/yolo` | Toggle YOLO mode — skip all dangerous command approval prompts. |
 | `/commands [page]` | Browse all commands and skills (paginated). |
 | `/approve [session\|always]` | Approve and execute a pending dangerous command. `session` approves for this session only; `always` adds to permanent allowlist. |
 | `/deny` | Reject a pending dangerous command. |
 | `/update` | Update Superforecasting Agent to the latest version. |
-| `/restart` | Gracefully restart the gateway after draining active runs. When the gateway comes back online, it sends a confirmation to the requester's chat/thread. |
+| `/restart` | Gracefully restart the gateway after draining active runs. When the gateway comes back online, it sends a confirmation to the requester's messaging thread. |
 | `/debug` | Upload debug report (system info + logs) and get shareable links. |
 | `/help` | Show messaging help. |
 | `/<skill-name>` | Invoke any installed skill by name. |

@@ -2657,7 +2657,16 @@ def test_high_attention_docs_navigation_is_forecast_native():
         root / "website" / "docs" / "user-guide" / "messaging" / "index.md",
         root / "website" / "docs" / "user-guide" / "messaging" / "yuanbao.md",
         root / "website" / "docs" / "reference" / "slash-commands.md",
+        root / "website" / "docs" / "guides" / "daily-forecast-brief.md",
         root / "website" / "docs" / "guides" / "team-telegram-forecast-desk.md",
+        root
+        / "website"
+        / "docs"
+        / "user-guide"
+        / "skills"
+        / "bundled"
+        / "autonomous-ai-agents"
+        / "autonomous-ai-agents-claude-code.md",
     ]
     docs_text = "\n".join(path.read_text(encoding="utf-8") for path in docs_paths)
 
@@ -2709,8 +2718,22 @@ def test_high_attention_docs_navigation_is_forecast_native():
     assert "scheduled forecast-review delivery channel" in docs_text
     assert "destination forecast conversation" in docs_text
     assert "Start a new forecast session." in docs_text
+    assert "Then in the Forecast Desk or a messaging forecast session:" in docs_text
+    assert "Control optional spoken replies in messaging forecast sessions." in docs_text
+    assert "same messaging forecast thread" in docs_text
+    assert "originating messaging thread" in docs_text
+    assert "through the Forecast Desk, a messaging forecast session, or CLI" in docs_text
+    assert "Reference MCP resources in a forecast session" in docs_text
     assert "treat it as the final forecaster response" in docs_text
     assert "not a forecast snapshot unless the ledger was explicitly updated" in docs_text
+    assert "Then in chat:" not in docs_text
+    assert "\nIn chat:" not in docs_text
+    assert "spoken replies in chat" not in docs_text
+    assert "same chat when" not in docs_text
+    assert "from chat —" not in docs_text
+    assert "originating chat" not in docs_text
+    assert "requester's chat/thread" not in docs_text
+    assert "Reference MCP resources in chat" not in docs_text
     sessions_doc = (
         root / "website" / "docs" / "user-guide" / "sessions.md"
     ).read_text(encoding="utf-8")
@@ -4606,7 +4629,9 @@ def test_dashboard_docs_url_points_to_fork_pages():
 
     expected_site = "https://teddyjfpender.github.io/superforecasting-agent"
     assert f'export const DOCS_URL = "{expected_site}/docs/";' in docs_page
-    assert f"url: '{expected_site}'" in docusaurus_config
+    assert "url: 'https://teddyjfpender.github.io'" in docusaurus_config
+    assert "baseUrl: '/superforecasting-agent/docs/'" in docusaurus_config
+    assert "url: 'https://teddyjfpender.github.io/superforecasting-agent'" not in docusaurus_config
     assert "superforecasting-agent.nousresearch.com" not in docs_page
     assert "superforecasting-agent.nousresearch.com" not in docusaurus_config
 

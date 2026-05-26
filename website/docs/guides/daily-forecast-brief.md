@@ -129,7 +129,7 @@ If the output mixes generic news with forecast actions, tighten the prompt aroun
 
 ## Step 3: Schedule the Brief
 
-You can schedule this through chat, slash command, or CLI.
+You can schedule this through the Forecast Desk, a messaging forecast session, or CLI.
 
 ### Option A: Natural Language
 
@@ -255,7 +255,7 @@ probability update recommendation.
 
 ### List Scheduled Jobs
 
-In chat:
+In the Forecast Desk or a messaging forecast session:
 
 ```text
 /cron list
