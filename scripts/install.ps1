@@ -95,7 +95,7 @@ function Write-Banner {
     Write-Host "+---------------------------------------------------------+" -ForegroundColor Magenta
     Write-Host "|          * Superforecasting Agent Installer             |" -ForegroundColor Magenta
     Write-Host "+---------------------------------------------------------+" -ForegroundColor Magenta
-    Write-Host "|  A command-line forecasting desk by Nous Research.      |" -ForegroundColor Magenta
+    Write-Host "|  A command-line forecasting desk maintained from fork.  |" -ForegroundColor Magenta
     Write-Host "+---------------------------------------------------------+" -ForegroundColor Magenta
     Write-Host ""
 }

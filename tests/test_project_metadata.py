@@ -910,6 +910,8 @@ def test_install_helpers_use_forecast_native_visible_copy():
     assert '[Alias("ForecastHome", "SuperforecastingAgentHome")]' in install_ps1
     assert "Superforecasting Agent Forecast Style" in install_ps1
     assert "Superforecasting Agent Forecast Style" in install_sh
+    assert "A CLI forecasting desk maintained from the fork." in install_sh
+    assert "A command-line forecasting desk maintained from fork." in install_ps1
     assert "You prioritize calibration, base rates, and error tracking over fluency." in installer_text
     assert "edit to customize forecast style" in installer_text
     assert "SUPERFORECASTING_AGENT_GIT_BASH_PATH" in install_ps1
@@ -924,6 +926,7 @@ def test_install_helpers_use_forecast_native_visible_copy():
     assert "`hermes dashboard` should now work" not in install_ps1
     assert "Hermes needs Git Bash" not in install_ps1
     assert "Hermes-managed" not in install_ps1
+    assert "forecasting desk by Nous Research" not in installer_text
     assert "Superforecasting Agent Persona" not in installer_text
     assert "warm, playful assistant" not in installer_text
     assert "happens to know everything" not in installer_text
@@ -4305,6 +4308,11 @@ def test_machine_readable_docs_metadata_points_to_forecast_snapshot():
     ) in text
     assert "teddyjfpender/superforecasting-agent fork" in text
     assert "Table of bundled skills available to Superforecasting Agent" in text
+    assert "Short index: https://teddyjfpender.github.io/superforecasting-agent/llms.txt" in generator
+    assert (
+        "Short index: https://teddyjfpender.github.io/superforecasting-agent/docs/llms.txt"
+        not in generator
+    )
     assert "built by Nous Research" not in text
     assert "bundled with Hermes" not in text
     assert "raw.githubusercontent.com/NousResearch/superforecasting-agent/main" not in text

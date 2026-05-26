@@ -169,7 +169,7 @@ print_banner() {
     echo "┌─────────────────────────────────────────────────────────┐"
     echo "│        Superforecasting Agent Installer                  │"
     echo "├─────────────────────────────────────────────────────────┤"
-    echo "│  A CLI forecasting desk by Nous Research.               │"
+    echo "│  A CLI forecasting desk maintained from the fork.       │"
     echo "└─────────────────────────────────────────────────────────┘"
     echo -e "${NC}"
 }

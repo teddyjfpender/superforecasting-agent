@@ -9,13 +9,12 @@ Outputs:
                                     comments separating files.
 
 Both publish at:
-  https://teddyjfpender.github.io/superforecasting-agent/docs/llms.txt
-  https://teddyjfpender.github.io/superforecasting-agent/docs/llms-full.txt
+  https://teddyjfpender.github.io/superforecasting-agent/llms.txt
+  https://teddyjfpender.github.io/superforecasting-agent/llms-full.txt
 
-The `/docs/` prefix is not a mistake — Docusaurus serves `website/static/`
-at the `docs/` base path. Clients and IDE plugins that probe the classic
-`/llms.txt` root will miss these. Document the canonical URLs in the docs
-index and in the repo README.
+The generated links point into `/docs/...` because they reference docs pages.
+The LLM index files themselves are exposed at the site root so clients and IDE
+plugins that probe the classic `/llms.txt` path can find them.
 
 Called from `website/scripts/prebuild.mjs` on every `npm run start` /
 `npm run build` so the output stays in sync with the docs tree.
@@ -278,7 +277,7 @@ def emit_llms_full() -> str:
             "Developer Guide, Reference, then everything else.\n"
         ),
         "Canonical site: https://teddyjfpender.github.io/superforecasting-agent/docs\n",
-        "Short index: https://teddyjfpender.github.io/superforecasting-agent/docs/llms.txt\n",
+        "Short index: https://teddyjfpender.github.io/superforecasting-agent/llms.txt\n",
         "\n---\n\n",
     ]
 

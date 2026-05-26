@@ -34,7 +34,7 @@ def test_agent_json_matches_official_registry_required_fields():
     assert data["description"]
     assert data["repository"] == "https://github.com/teddyjfpender/superforecasting-agent"
     assert data["website"].startswith("https://teddyjfpender.github.io/superforecasting-agent/")
-    assert data["authors"] == ["Nous Research"]
+    assert data["authors"] == ["Superforecasting Agent Contributors"]
     assert data["license"] == "MIT"
     assert set(data["distribution"]) <= ALLOWED_DISTRIBUTIONS
 

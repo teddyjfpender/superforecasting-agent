@@ -5,7 +5,7 @@
   "description": "Command-line forecasting desk with ACP editor integration, forecast ledger workflows, calibration, and rich tool support.",
   "repository": "https://github.com/teddyjfpender/superforecasting-agent",
   "website": "https://teddyjfpender.github.io/superforecasting-agent/docs/user-guide/features/acp",
-  "authors": ["Nous Research"],
+  "authors": ["Superforecasting Agent Contributors"],
   "license": "MIT",
   "distribution": {
     "uvx": {
