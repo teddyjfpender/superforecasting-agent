@@ -1750,6 +1750,11 @@ def test_runtime_command_guidance_is_forecast_native_where_not_compatibility():
     assert "superforecasting-agent update --gateway" in text
     assert "superforecasting-agent kanban show" in text
     assert "ExecStart=/usr/bin/env superforecasting-agent kanban daemon" in text
+    assert "Forecast Kanban — Dashboard Plugin" in text
+    assert "Forecast Kanban dispatcher" in text
+    assert "Open Forecast Kanban docs in a new tab" in text
+    assert "active agent-home config.yaml" in text
+    assert "active agent-home ``profiles/*``" in text
 
     assert "via `hermes model`" not in text
     assert "hermes kanban reassign" not in text
@@ -1776,6 +1781,10 @@ def test_runtime_command_guidance_is_forecast_native_where_not_compatibility():
     assert "break `hermes update`" not in text
     assert "Called from `hermes update`" not in text
     assert "detached ``hermes update --gateway``" not in text
+    assert "Hermes Kanban" not in text
+    assert "~/.hermes/kanban.db" not in text
+    assert "~/.hermes/config.yaml" not in text
+    assert "~/.hermes/profiles" not in text
     assert "``gateway/run.py``'s ``hermes update --gateway``" not in text
     assert "re-run `hermes model`" not in text
     assert "with `hermes model`)" not in text

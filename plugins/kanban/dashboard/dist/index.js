@@ -1,9 +1,9 @@
 /**
- * Hermes Kanban — Dashboard Plugin
+ * Forecast Kanban — Dashboard Plugin
  *
- * Board view for the multi-agent collaboration board backed by
- * ~/.hermes/kanban.db. Calls the plugin's backend at /api/plugins/kanban/
- * and tails task_events over a WebSocket for live updates.
+ * Board view for the forecast-work collaboration board backed by the active
+ * agent-home kanban database. Calls the plugin's backend at
+ * /api/plugins/kanban/ and tails task_events over a WebSocket for live updates.
  *
  * Plain IIFE, no build step. Uses window.__HERMES_PLUGIN_SDK__ for React +
  * shadcn primitives; HTML5 drag-and-drop for card movement on desktop and
@@ -1466,8 +1466,8 @@
       target: "_blank",
       rel: "noopener noreferrer",
       className: "hermes-kanban-docs-link",
-      title: "Open Hermes Kanban docs in a new tab",
-      "aria-label": "Hermes Kanban documentation",
+      title: "Open Forecast Kanban docs in a new tab",
+      "aria-label": "Forecast Kanban documentation",
     }, "?");
   }
 

@@ -14,7 +14,7 @@
 # dispatch_in_gateway=true is NOT supported.
 
 [Unit]
-Description=Hermes Kanban dispatcher (DEPRECATED standalone daemon — prefer gateway-embedded dispatch)
+Description=Forecast Kanban dispatcher (DEPRECATED standalone compatibility daemon - prefer gateway-embedded dispatch)
 Documentation=https://superforecasting-agent.nousresearch.com/docs/user-guide/features/kanban
 After=network.target
 

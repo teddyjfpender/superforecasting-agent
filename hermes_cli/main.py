@@ -186,11 +186,11 @@ def _apply_profile_override() -> None:
     # points to a specific profile directory.
     # only when it already points to a specific profile directory.  The
     # distinguishing heuristic: a profile path has "profiles" as its immediate
-    # parent directory name (e.g. ~/.hermes/profiles/coder or
-    # /opt/data/profiles/coder).  If HERMES_HOME points to the hermes root
+    # parent directory name (e.g. ~/.superforecasting-agent/profiles/coder or
+    # /opt/data/profiles/coder).  If HERMES_HOME points to a legacy root
     # instead (e.g. systemd hardcodes HERMES_HOME=/root/.hermes), we must
     # still read active_profile — the user may have switched profiles via
-    # `hermes profile use` and the gateway should honour that choice.
+    # `superforecasting-agent profile use` and the gateway should honour that choice.
     # See issue #22502.
     configured_home_env = (
         os.environ.get("SUPERFORECASTING_AGENT_HOME", "").strip()
