@@ -6268,8 +6268,8 @@ class HermesCLI:
         parts = cmd_original.split(maxsplit=1)
         if len(parts) < 2 or not parts[1].strip():
             _cprint("  Usage: /handoff <platform>")
-            _cprint("  Hands the current session off to that platform's home channel.")
-            _cprint("  The CLI session ends here; resume it later with /resume.")
+            _cprint("  Hands the current forecast session off to that platform's home channel.")
+            _cprint("  The CLI forecast session ends here; resume it later with /resume.")
             return True
 
         platform_name = parts[1].strip().lower()
@@ -6510,7 +6510,7 @@ class HermesCLI:
             _cprint(f"  ↻ Resumed session {target_id}{title_part} — no messages, starting fresh.")
 
     def _handle_sessions_command(self, cmd_original: str) -> None:
-        """Handle /sessions [list|<id_or_title>] — browse or resume previous sessions.
+        """Handle /sessions [list|<id_or_title>] — browse or resume previous forecast sessions.
 
         Without arguments, prints the same recent-sessions table that /resume
         shows when called without a target, and tells the user how to resume.
@@ -6535,7 +6535,7 @@ class HermesCLI:
                 _cprint(f"  {format_session_db_unavailable()}")
                 return
             if not self._show_recent_sessions(reason="sessions"):
-                _cprint("  No previous sessions yet.")
+                _cprint("  No previous forecast sessions yet.")
             return
 
         # /sessions <id_or_title> behaves the same as /resume <id_or_title>.
@@ -8017,8 +8017,8 @@ class HermesCLI:
         elif canonical == "clear":
             if self._confirm_destructive_slash(
                 "clear",
-                "This clears the screen and starts a new session.\n"
-                "The current research-session history will be discarded.",
+                "This clears the screen and starts a new forecast session.\n"
+                "The current forecast-session history will be discarded.",
             ) is None:
                 return
             self.new_session(silent=True)
@@ -8107,9 +8107,9 @@ class HermesCLI:
                             # Session exists in DB — set title directly
                             try:
                                 if self._session_db.set_session_title(self.session_id, new_title):
-                                    _cprint(f"  Session title set: {new_title}")
+                                    _cprint(f"  Forecast session title set: {new_title}")
                                 else:
-                                    _cprint("  Session not found in database.")
+                                    _cprint("  Forecast session not found in database.")
                             except ValueError as e:
                                 _cprint(f"  {e}")
                         else:
@@ -8120,12 +8120,12 @@ class HermesCLI:
                                 _cprint(f"  Title '{new_title}' is already in use by session {existing['id']}")
                             else:
                                 self._pending_title = new_title
-                                _cprint(f"  Session title queued: {new_title} (will be saved on first message)")
+                                _cprint(f"  Forecast session title queued: {new_title} (will be saved on first message)")
                     else:
                         from hermes_state import format_session_db_unavailable
                         _cprint(f"  {format_session_db_unavailable()}")
                 else:
-                    _cprint("  Usage: /title <your session title>")
+                    _cprint("  Usage: /title <your forecast session title>")
             # Show current title and session ID if no argument given
             elif self._session_db:
                 _cprint(f"  Session ID: {self.session_id}")
@@ -8135,7 +8135,7 @@ class HermesCLI:
                 elif self._pending_title:
                     _cprint(f"  Title (pending): {self._pending_title}")
                 else:
-                    _cprint("  No title set. Usage: /title <your session title>")
+                    _cprint("  No title set. Usage: /title <your forecast session title>")
             else:
                 from hermes_state import format_session_db_unavailable
                 _cprint(f"  {format_session_db_unavailable()}")
@@ -8147,8 +8147,8 @@ class HermesCLI:
             title = parts[1].strip() if len(parts) > 1 else None
             if self._confirm_destructive_slash(
                 "new",
-                "This starts a fresh session.\n"
-                "The current research-session history will be discarded.",
+                "This starts a fresh forecast session.\n"
+                "The current forecast-session history will be discarded.",
             ) is None:
                 return
             self.new_session(title=title)
@@ -8907,7 +8907,7 @@ class HermesCLI:
 
         mgr = self._get_goal_manager()
         if mgr is None:
-            _cprint(f"  {_DIM}Goals unavailable (no active session).{_RST}")
+            _cprint(f"  {_DIM}Goals unavailable (no active forecast session).{_RST}")
             return
 
         lower = arg.lower()
@@ -8986,7 +8986,7 @@ class HermesCLI:
 
         mgr = self._get_goal_manager()
         if mgr is None:
-            _cprint(f"  {_DIM}Goals unavailable (no active session).{_RST}")
+            _cprint(f"  {_DIM}Goals unavailable (no active forecast session).{_RST}")
             return
 
         if not mgr.has_goal():

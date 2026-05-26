@@ -1044,6 +1044,11 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Recent forecast sessions" in cli
     assert "No forecast session to branch" in cli
     assert "Resume this forecast session with:" in cli
+    assert "Hands the current forecast session off" in cli
+    assert "No previous forecast sessions yet." in cli
+    assert "Goals unavailable (no active forecast session)." in cli
+    assert "The current forecast-session history will be discarded." in cli
+    assert "Forecast session title set:" in cli
     assert "current forecast session stays free" in tips
     assert "previously named forecast session" in tips
     assert "Set this conversation as the scheduled forecast-review delivery channel" in commands
@@ -1058,6 +1063,11 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Recent research sessions" not in cli
     assert "No research session to branch" not in cli
     assert "Resume this research session with:" not in cli
+    assert "Hands the current session off" not in cli
+    assert "No previous sessions yet." not in cli
+    assert "Goals unavailable (no active session)." not in cli
+    assert "The current research-session history will be discarded." not in cli
+    assert "Session title set:" not in cli
     assert "current session stays free" not in tips
     assert "previously named session" not in tips
     assert "destination chat" not in cli

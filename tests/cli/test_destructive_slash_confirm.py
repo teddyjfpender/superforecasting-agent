@@ -191,8 +191,8 @@ def test_slash_confirm_display_fragments_include_choice_mapping():
 
     self_ = SimpleNamespace(
         _slash_confirm_state={
-            "title": "⚠️  /new — destroys research-session state",
-            "detail": "This starts a fresh session.",
+            "title": "⚠️  /new — destroys forecast-session state",
+            "detail": "This starts a fresh forecast session.",
             "choices": [
                 ("once", "Approve Once", "proceed once"),
                 ("always", "Always Approve", "persist opt-out"),
@@ -211,7 +211,7 @@ def test_slash_confirm_display_fragments_include_choice_mapping():
     assert "Type 1/2/3" in rendered
 
 
-def test_clear_confirmation_uses_research_session_copy():
+def test_clear_confirmation_uses_forecast_session_copy():
     from cli import HermesCLI
 
     cli_obj = HermesCLI.__new__(HermesCLI)
@@ -221,11 +221,12 @@ def test_clear_confirmation_uses_research_session_copy():
 
     confirm.assert_called_once()
     _command, detail = confirm.call_args.args
-    assert "research-session history" in detail
+    assert "forecast-session history" in detail
+    assert "research-session history" not in detail
     assert "conversation history" not in detail
 
 
-def test_new_confirmation_uses_research_session_copy():
+def test_new_confirmation_uses_forecast_session_copy():
     from cli import HermesCLI
 
     cli_obj = HermesCLI.__new__(HermesCLI)
@@ -235,5 +236,6 @@ def test_new_confirmation_uses_research_session_copy():
 
     confirm.assert_called_once()
     _command, detail = confirm.call_args.args
-    assert "research-session history" in detail
+    assert "forecast-session history" in detail
+    assert "research-session history" not in detail
     assert "conversation history" not in detail
