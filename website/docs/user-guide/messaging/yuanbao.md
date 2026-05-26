@@ -178,7 +178,7 @@ Forecast-focused slash commands work on Yuanbao when the gateway enables them:
 |---------|-------------|
 | `/new` | Start a fresh forecast session |
 | `/model [provider:model]` | Show or change the model |
-| `/sethome` | Set this conversation as the home delivery channel |
+| `/sethome` | Set this conversation as the scheduled forecast-review delivery channel |
 | `/status` | Show session info |
 | `/help` | Show available commands |
 

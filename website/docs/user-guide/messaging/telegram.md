@@ -43,8 +43,8 @@ For `/setcommands`, a useful starting set:
 
 ```
 help - Show help information
-new - Start a new research session
-sethome - Set this conversation as the home delivery channel
+new - Start a new forecast session
+sethome - Set this conversation as the scheduled forecast-review delivery channel
 ```
 :::
 
@@ -243,7 +243,7 @@ The proxy applies to both the main Telegram connection and the fallback IP trans
 
 ## Home Channel
 
-Use the `/sethome` command in any Telegram conversation (DM or group) to designate it as the **home delivery channel**. Scheduled forecast reviews and cron jobs deliver their results to this channel.
+Use the `/sethome` command in any Telegram conversation (DM or group) to designate it as the **scheduled forecast-review delivery channel**. Scheduled forecast reviews and cron jobs deliver their results to this channel.
 
 You can also set it manually in `~/.superforecasting-agent/.env`:
 

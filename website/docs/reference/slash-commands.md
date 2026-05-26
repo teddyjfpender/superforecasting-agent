@@ -145,7 +145,7 @@ These commands remain available for inherited workflows, optional messaging surf
 | `/curator` | Optional background skill maintenance — `status`, `run`, `pin`, `archive`. See [Curator](/user-guide/features/curator). |
 | `/kanban <action>` | Optional multi-profile collaboration board. Full `superforecasting-agent kanban` surface is available: `/kanban list`, `/kanban show t_abc`, `/kanban create "title" --assignee X`, `/kanban comment t_abc "text"`, `/kanban unblock t_abc`, `/kanban dispatch`, etc. See [Kanban slash command](/user-guide/features/kanban#kanban-slash-command). |
 | `/platforms` (alias: `/gateway`) | Show optional gateway/messaging platform status. |
-| `/handoff <platform>` | **CLI only.** Hand the current session off to a messaging platform (Telegram, Discord, Slack, WhatsApp, Signal, Matrix). Requires the gateway to be running and a home channel configured for the target platform (`/sethome` from the destination chat). See [Cross-Platform Handoff](/user-guide/sessions#cross-platform-handoff). |
+| `/handoff <platform>` | **CLI only.** Hand the current forecast session off to a messaging platform (Telegram, Discord, Slack, WhatsApp, Signal, Matrix). Requires the gateway to be running and a home channel configured for the target platform (`/sethome` from the destination forecast conversation). See [Cross-Platform Handoff](/user-guide/sessions#cross-platform-handoff). |
 
 ### Info
 
@@ -248,10 +248,10 @@ The messaging gateway supports the following built-in commands inside Telegram, 
 
 | Command | Description |
 |---------|-------------|
-| `/new` | Start a new research session. |
-| `/reset` | Reset research-session history. |
+| `/new` | Start a new forecast session. |
+| `/reset` | Reset forecast-session history. |
 | `/status` | Show session info, followed by a local **Session recap** block (recent turn counts, top tools used, files touched, latest prompt + reply). |
-| `/stop` | Kill all running background processes and interrupt the running agent. |
+| `/stop` | Kill running background processes and interrupt the active forecast task. |
 | `/model [provider:model]` | Show or change the model. Supports provider switches (`/model zai:glm-5`), custom endpoints (`/model custom:model`), named custom providers (`/model custom:local:qwen`), auto-detect (`/model custom`), and user-defined aliases (`/model fav`, `/model grok` — see [Custom model aliases](#custom-model-aliases)). Use `--global` to persist the change to config.yaml. **Note:** `/model` can only switch between already-configured providers. To add a new provider or set up API keys, use `superforecasting-agent model` from your terminal outside the active session. |
 | `/codex-runtime [auto\|codex_app_server\|on\|off]` | Toggle the optional [Codex app-server runtime](../user-guide/features/codex-app-server-runtime). Persists to `model.openai_runtime` in config.yaml and evicts the cached agent so the next message picks up the new runtime. Effective on next session. |
 | `/style [name]` | Switch forecast style overlays for the session. |

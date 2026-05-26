@@ -1016,6 +1016,11 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Forecast style set to" in cli
     assert "Unknown forecast style" in cli
     assert "Unknown personality" not in cli
+    assert "destination forecast conversation" in cli
+    assert "Forecast agent is busy" in cli
+    assert "Set this conversation as the scheduled forecast-review delivery channel" in commands
+    assert "Set this conversation as the home delivery channel" not in commands
+    assert "destination chat" not in cli
     assert "system prompt belongs to the core forecast protocol" in conversation_loop
     assert "system prompt is Hermes's territory" not in conversation_loop
     assert '@tree.command(name="style", description="Set forecast style")' in discord
@@ -2191,6 +2196,7 @@ def test_high_attention_docs_navigation_is_forecast_native():
         root / "website" / "docs" / "user-guide" / "messaging" / "telegram.md",
         root / "website" / "docs" / "user-guide" / "messaging" / "index.md",
         root / "website" / "docs" / "user-guide" / "messaging" / "yuanbao.md",
+        root / "website" / "docs" / "reference" / "slash-commands.md",
         root / "website" / "docs" / "guides" / "team-telegram-forecast-desk.md",
     ]
     docs_text = "\n".join(path.read_text(encoding="utf-8") for path in docs_paths)
@@ -2240,6 +2246,9 @@ def test_high_attention_docs_navigation_is_forecast_native():
     assert "gateway operator" in docs_text
     assert "Review stale public-health forecasts and summarize evidence gaps" in docs_text
     assert "Watched-source triage" in docs_text
+    assert "scheduled forecast-review delivery channel" in docs_text
+    assert "destination forecast conversation" in docs_text
+    assert "Start a new forecast session." in docs_text
     assert "treat it as the final forecaster response" in docs_text
     assert "not a forecast snapshot unless the ledger was explicitly updated" in docs_text
     sessions_doc = (
@@ -2258,6 +2267,9 @@ def test_high_attention_docs_navigation_is_forecast_native():
     assert "bot owner" not in docs_text
     assert "Check all servers in the cluster" not in docs_text
     assert "Server monitoring" not in docs_text
+    assert "home delivery channel" not in docs_text
+    assert "destination chat" not in docs_text
+    assert "Start a new research session" not in docs_text
     assert not (
         root / "website" / "docs" / "guides" / "build-a-hermes-plugin.md"
     ).exists()
@@ -2834,11 +2846,13 @@ def test_superforecasting_agent_skill_paths_are_fork_native():
     assert "Bare `superforecasting-agent` opens the forecast desk" in text
     assert "`/personality` remains a legacy alias" in text
     assert "Summarize evidence and base rates for forecast fq_123" in text
+    assert "Set current conversation as scheduled forecast-review delivery channel" in text
     assert "No subcommand opens the forecast desk" not in text
     assert "/personality [name]  Set personality" not in text
     assert "Build REST API for user management" not in text
     assert "Build React dashboard for user management" not in text
     assert "Set up CI/CD for ~/myapp" not in text
+    assert "Set current conversation as home delivery channel" not in text
 
 
 def test_airtable_and_neuroskill_skill_docs_are_forecast_native():
