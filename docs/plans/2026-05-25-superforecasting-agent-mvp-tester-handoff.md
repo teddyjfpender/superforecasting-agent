@@ -42,6 +42,12 @@ support-session alias, required-source autopilot guardrails, and the
 tester-handoff documentation refresh. Rerun the operator gate before pinning a
 newer cohort hash.
 
+A post-cleanup lifecycle smoke passed on `ad3a3052c92f` using
+`python3 scripts/forecast_smoke_test.py`, including forecast creation,
+evidence, base-rate/model/update, review, scoring/postmortem, schedule/autopilot
+checks, packet import/export, backtest replay, and the expected
+`insufficient_live_evidence` readiness guard.
+
 Before inviting a new cohort, record the exact commit testers will use:
 
 ```bash

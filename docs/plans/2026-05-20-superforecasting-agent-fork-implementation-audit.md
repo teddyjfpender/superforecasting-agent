@@ -58,6 +58,15 @@ fork-native explicit support-session alias, while `superforecasting-agent chat`
 remains a compatibility path. High-attention docs, tips, kanban worker spawning,
 profile guidance, parser help, and focused tests now prefer `desk`.
 
+Post-command-shape smoke: `python3 scripts/forecast_smoke_test.py` passed on
+`ad3a3052c92f` with a clean temporary ledger. It reported 52 source adapters, 5
+benchmark datasets, `pilot_report_checks: 9/9`, `packet_import_questions: 3`,
+`pilot_aggregate_live_scores: 1`, `agent_protocol_prompt_packets: 465`,
+`agent_protocol_suite_scored_cases: 465`, `readiness_agent_protocol_scores:
+465`, `live_baseline_comparisons: 1`, `performance_runs: 6`, `readiness_gaps:
+1`, `doctor_status: benchmark_evidence_ready_live_claim_unproven`, and the
+expected `insufficient_live_evidence` readiness verdict.
+
 ## Evidence Inspected
 
 - Forecasting package: `forecasting/`
