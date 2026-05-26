@@ -39,10 +39,11 @@ reference for the markers a tester should see; generated ids and temporary
 ledger paths will differ.
 
 The smoke ledger should keep `readiness_verdict` at
-`insufficient_live_evidence`. Current smoke runs intentionally report four
-readiness gaps: live score volume, agent-protocol replay volume, external
-resolved-question corpus coverage, and external source-family diversity. That
-is the expected non-claim state for a local acceptance test.
+`insufficient_live_evidence`. Current smoke runs intentionally satisfy the
+suite-scale agent-protocol replay floor by exporting 345 sanitized prompt
+packets and replaying 345 captured responses without model calls. They still
+report two readiness gaps: live score volume and external source-family
+diversity. That is the expected non-claim state for a local acceptance test.
 
 ## Keep The Smoke Ledger
 
@@ -67,7 +68,7 @@ python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db calib
 python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db doctor
 python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db pilot-report
 python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db pilot-bundle --include-export
-python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db performance --last 3
+python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db performance --last 6
 python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db readiness
 ```
 
@@ -92,7 +93,8 @@ python -m superforecasting_agent --db /tmp/superforecasting-agent-smoke.db readi
 - Exports the smoke ledger and verifies `forecast import packet` can restore the JSON packet into a clean ledger.
 - Exports the smoke ledger and verifies `forecast pilot-aggregate` counts the live score from the export packet.
 - Runs `builtin:mini-binary` through the local forecast engine.
-- Runs a local captured agent-protocol replay from JSONL responses without calling an LLM provider.
+- Exports sanitized agent-protocol prompt packets for all packaged benchmark corpora.
+- Runs a local captured agent-protocol replay across the packaged benchmark suite from JSONL responses without calling an LLM provider.
 - Prints live baseline comparison counts, readiness status, evidence gaps, and next actions without making a live superforecasting claim.
 - Fails if the smoke ledger incorrectly reports that live-superforecasting evidence is sufficient.
 

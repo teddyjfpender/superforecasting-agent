@@ -32,7 +32,7 @@ python -m superforecasting_agent status
 For this handoff, the verified implementation snapshot is:
 
 ```text
-52b9800486d2 Route legacy hermes entrypoint through forecast CLI
+399933f9ecd3 Gate suite-scale agent protocol smoke replay
 ```
 
 Before inviting a new cohort, record the exact commit testers will use:
@@ -141,7 +141,7 @@ common workflow checks.
 ## Smoke Evidence
 
 Latest consolidated tester handoff evidence ran with a temporary clean ledger on
-the implementation tree committed as `52b9800486d2`.
+the implementation tree committed as `399933f9ecd3`.
 
 It verified:
 
@@ -149,6 +149,9 @@ It verified:
   Bayesian model run, and forecast update.
 - Review, resolve, score, postmortem, calibration, and performance reporting.
 - Backtest replay on `builtin:mini-binary` with leakage checks passing.
+- Suite-scale agent-protocol replay: 345 sanitized prompt packets exported
+  across all packaged benchmark corpora and 345 captured protocol responses
+  replayed without external model calls.
 - Scheduled self-check with `--cadence "every 1h"`, alert creation, learning
   review counts, and durable schedule history.
 - Source-tree `./forecast`, source-tree `./superforecast`,
@@ -158,8 +161,11 @@ It verified:
   schedules, postmortems, calibration lessons, and domain/topic error profiles.
 - Dashboard forecast API and TUI forecast panel test coverage.
 - The consolidated `python3 scripts/tester_handoff_check.py` gate passed for the
-  `52b9800486d2` implementation tree with 176 focused tests, the clean smoke
-  path, and `git diff --check`.
+  `399933f9ecd3` implementation tree with 176 focused tests, the clean smoke
+  path, and `git diff --check`; the smoke output reported
+  `agent_protocol_prompt_packets: 345`,
+  `agent_protocol_suite_scored_cases: 345`, `performance_runs: 5`,
+  `readiness_gaps: 2`, and `readiness_agent_protocol_scores: 345`.
 - The dashboard Forecast Desk route now uses forecast-native translation keys
   (`forecastDesk`, `resumeInDesk`) while preserving `/chat` as a compatibility
   route alias.
