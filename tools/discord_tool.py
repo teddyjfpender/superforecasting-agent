@@ -79,7 +79,7 @@ def _discord_request(
         headers={
             "Authorization": f"Bot {token}",
             "Content-Type": "application/json",
-            "User-Agent": "Superforecasting-Agent (https://github.com/NousResearch/superforecasting-agent)",
+            "User-Agent": "Superforecasting-Agent (https://github.com/teddyjfpender/superforecasting-agent)",
         },
     )
 

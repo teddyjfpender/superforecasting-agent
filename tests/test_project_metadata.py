@@ -2884,12 +2884,14 @@ def test_website_public_repository_links_point_to_fork():
     root = Path(__file__).resolve().parents[1]
     paths = [
         root / "pyproject.toml",
+        root / "tools" / "discord_tool.py",
         root / "website" / "docusaurus.config.ts",
         root / "website" / "src" / "components" / "UserStoriesCollage" / "index.tsx",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
     assert 'authors = [{ name = "Superforecasting Agent Contributors" }]' in text
+    assert "Superforecasting-Agent (https://github.com/teddyjfpender/superforecasting-agent)" in text
     assert "organizationName: 'teddyjfpender'" in text
     assert "https://github.com/teddyjfpender/superforecasting-agent" in text
     assert "superforecasting-agent-snapshot/website/" in text
