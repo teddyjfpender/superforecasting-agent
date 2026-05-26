@@ -32,12 +32,13 @@ python -m superforecasting_agent status
 For this handoff, the latest full tester gate was verified on:
 
 ```text
-94938b6e61e8 Block autopilot on required source failures
+4c58ac5ef10d Refresh tester handoff for required autopilot sources
 ```
 
-The current moving `superforecasting-agent-snapshot` branch also includes the
-forecast question shortcut pass and the autopilot required-source pass. Rerun
-the operator gate before pinning a newer cohort hash.
+The current moving `superforecasting-agent-snapshot` branch includes the
+forecast question shortcut pass, required-source autopilot guardrails, and the
+tester-handoff documentation refresh. Rerun the operator gate before pinning a
+newer cohort hash.
 
 Before inviting a new cohort, record the exact commit testers will use:
 
@@ -202,7 +203,7 @@ Agent-driven flows can call the same maintenance loop through the
 ## Smoke Evidence
 
 Latest consolidated tester handoff evidence ran with a temporary clean ledger on
-the implementation tree committed as `94938b6e61e8`.
+the implementation tree committed as `4c58ac5ef10d`.
 
 It verified:
 
