@@ -292,7 +292,14 @@ class ForecastLedger:
                 f"{self.db_path.parent}: {exc}. Set FORECAST_LEDGER_DB or "
                 "pass --db with a writable path."
             ) from exc
-        self.initialize_schema()
+        try:
+            self.initialize_schema()
+        except sqlite3.Error as exc:
+            raise ForecastingError(
+                "could not initialize forecast ledger "
+                f"{self.db_path}: {exc}. Set FORECAST_LEDGER_DB or "
+                "pass --db with a writable path."
+            ) from exc
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sqlite3
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -126,6 +127,26 @@ def test_forecast_cli_reports_unwritable_ledger_directory(tmp_path, capsys):
     assert exc.value.code == 1
     captured = capsys.readouterr()
     assert "forecast: could not create forecast ledger directory" in captured.err
+    assert "pass --db with a writable path" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_forecast_cli_reports_ledger_initialization_errors(capsys, monkeypatch):
+    parser = _parser()
+
+    def fail_schema(_self):
+        raise sqlite3.OperationalError("attempt to write a readonly database")
+
+    monkeypatch.setattr(ForecastLedger, "initialize_schema", fail_schema)
+
+    with pytest.raises(SystemExit) as exc:
+        _run(parser, ["forecast", "status"])
+
+    assert exc.value.code == 1
+    captured = capsys.readouterr()
+    assert "forecast: could not initialize forecast ledger" in captured.err
+    assert "attempt to write a readonly database" in captured.err
+    assert "FORECAST_LEDGER_DB" in captured.err
     assert "pass --db with a writable path" in captured.err
     assert "Traceback" not in captured.err
 

@@ -54,6 +54,14 @@ In a raw source checkout before installation, use the source-tree launchers:
 python -m superforecasting_agent status
 ```
 
+If the default agent home is not writable in a restricted shell or sandbox, pass
+an explicit ledger path instead:
+
+```bash
+mkdir -p .pilot
+python -m superforecasting_agent --db "$PWD/.pilot/forecasting-smoke.db" status
+```
+
 ## Operator Gate
 
 Run this before inviting testers:

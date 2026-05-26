@@ -1526,6 +1526,7 @@ Latest verified result:
 - Forecast-support parser wording pass: explicit `superforecasting-agent chat` help and the CLI command reference now describe worktree and max-turn behavior as forecast-support session mechanics rather than generic parallel agents or conversation turns; focused parser/CLI metadata tests passed.
 - Forecast-support runtime-guide wording pass: rollback/checkpoint comments, checkpoint configuration copy, voice-mode durable-state guidance, and messaging restart-notification guidance now use forecast-support turn/channel language rather than generic conversation/chat wording; focused project-metadata tests passed.
 - High-attention skill/developer guide wording pass: the bundled Superforecasting Agent skill source, its generated docs page, and `AGENTS.md` now use forecast-support session/turn/loop wording for inherited chat/runtime mechanics, installed skill paths, memory/search descriptions, prompt-cache rules, and parallel worker examples; the skill-doc generator tests and focused project-metadata guards passed.
+- Restricted-home ledger initialization pass: default-ledger schema initialization errors are now wrapped into the same actionable `forecast:` error surface as unwritable ledger directories, with `FORECAST_LEDGER_DB`/`--db` guidance and no raw SQLite traceback; the tester handoff now documents using an explicit local `.pilot` ledger path in restricted shells.
 
 ## Prompt-To-Artifact Checklist
 
