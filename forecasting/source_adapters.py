@@ -1086,23 +1086,36 @@ def load_news_feed_items(
     *,
     limit: int = 10,
     since: str | None = None,
+    keywords: list[str] | None = None,
+    exclude_keywords: list[str] | None = None,
+    dedupe: bool = True,
 ) -> list[NewsFeedItem]:
     """Load RSS/Atom items from a URL or local XML file."""
 
     if limit <= 0:
         raise ValidationError("news import --limit must be positive")
     since_dt = timestamp_to_datetime(parse_timestamp(since, field_name="since")) if since else None
+    include_terms = _normalize_feed_filter_terms(keywords)
+    exclude_terms = _normalize_feed_filter_terms(exclude_keywords)
     try:
         root = ElementTree.fromstring(_read_feed_source(source))
     except ElementTree.ParseError as exc:
         raise ValidationError("news feed source is not valid XML") from exc
     items = _parse_rss_items(root) or _parse_atom_items(root)
     filtered: list[NewsFeedItem] = []
+    seen: set[str] = set()
     for item in items:
         if since_dt is not None:
             item_dt = timestamp_to_datetime(item.published_at)
             if item_dt is None or item_dt < since_dt:
                 continue
+        if not _feed_item_matches_filters(item, include_terms, exclude_terms):
+            continue
+        if dedupe:
+            dedupe_key = _feed_item_dedupe_key(item)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
         filtered.append(item)
         if len(filtered) >= limit:
             break
@@ -5478,6 +5491,66 @@ def _read_feed_source(source: str) -> bytes:
     if not path.is_file():
         raise ValidationError(f"news feed source not found: {source}")
     return path.read_bytes()
+
+
+def _normalize_feed_filter_terms(values: list[str] | None) -> list[str]:
+    terms: list[str] = []
+    for value in values or []:
+        for chunk in str(value).split(","):
+            term = chunk.strip().lower()
+            if term and term not in terms:
+                terms.append(term)
+    return terms
+
+
+def _feed_item_matches_filters(
+    item: NewsFeedItem,
+    include_terms: list[str],
+    exclude_terms: list[str],
+) -> bool:
+    haystack = " ".join(
+        value
+        for value in (
+            item.title,
+            item.summary,
+            item.url or "",
+            item.source_name or "",
+            item.entry_id or "",
+        )
+        if value
+    ).lower()
+    if include_terms and not any(term in haystack for term in include_terms):
+        return False
+    if exclude_terms and any(term in haystack for term in exclude_terms):
+        return False
+    return True
+
+
+def _feed_item_dedupe_key(item: NewsFeedItem) -> str:
+    if item.url:
+        return f"url:{_canonical_feed_url(item.url)}"
+    if item.entry_id:
+        return f"id:{item.entry_id.strip().lower()}"
+    title = re.sub(r"\s+", " ", item.title.strip().lower())
+    return f"title:{title}:{item.published_at or ''}"
+
+
+def _canonical_feed_url(value: str) -> str:
+    raw = value.strip()
+    parsed = urlparse(raw)
+    if not parsed.scheme or not parsed.netloc:
+        return raw.lower()
+    query_pairs = [
+        (key, val)
+        for key, val in parse_qsl(parsed.query, keep_blank_values=True)
+        if not key.lower().startswith("utm_")
+    ]
+    return parsed._replace(
+        scheme=parsed.scheme.lower(),
+        netloc=parsed.netloc.lower(),
+        query=urlencode(query_pairs, doseq=True),
+        fragment="",
+    ).geturl()
 
 
 def _read_json_endpoint(url: str, label: str) -> object:

@@ -2139,6 +2139,89 @@ def test_forecast_cli_news_import_captures_rss_items_as_evidence(tmp_path, capsy
     assert evidence[0].relevance_rating == 0.7
 
 
+def test_forecast_cli_news_import_filters_and_dedupes_rss_items(tmp_path, capsys):
+    parser = _parser()
+    db_path = tmp_path / "forecasting.db"
+    db = str(db_path)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will filtered RSS evidence import work?",
+            "--resolution-criteria",
+            "Resolved yes if filtered RSS evidence is imported.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+    feed = tmp_path / "feed.xml"
+    feed.write_text(
+        """<?xml version="1.0" encoding="UTF-8" ?>
+        <rss version="2.0">
+          <channel>
+            <title>Energy News</title>
+            <item>
+              <title>Sports headline</title>
+              <description>Irrelevant context.</description>
+              <link>https://example.test/sports</link>
+              <pubDate>Sat, 03 Jan 2026 10:00:00 GMT</pubDate>
+              <guid>ignored-1</guid>
+            </item>
+            <item>
+              <title>Gasoline prices rise after outage</title>
+              <description>Fresh energy evidence for the CPI model.</description>
+              <link>https://example.test/gasoline?utm_source=feed</link>
+              <pubDate>Sat, 03 Jan 2026 12:30:00 GMT</pubDate>
+              <guid>fresh-1</guid>
+            </item>
+            <item>
+              <title>Gasoline prices rise after outage</title>
+              <description>Duplicate headline.</description>
+              <link>https://example.test/gasoline?utm_source=feed</link>
+              <pubDate>Sat, 03 Jan 2026 12:35:00 GMT</pubDate>
+              <guid>fresh-duplicate</guid>
+            </item>
+          </channel>
+        </rss>
+        """,
+        encoding="utf-8",
+    )
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "import",
+            "news",
+            str(feed),
+            "--question",
+            question_id,
+            "--keyword",
+            "gasoline",
+            "--materiality",
+            "high",
+            "--direction",
+            "upward",
+            "--affected-component",
+            "energy",
+        ],
+    )
+    output = capsys.readouterr().out
+    evidence = ForecastLedger(db_path).list_evidence(question_id)
+
+    assert "captured 1 news evidence item(s)" in output
+    assert evidence[0].claim == "Gasoline prices rise after outage"
+    assert evidence[0].metadata["relevance_filters"]["keywords"] == ["gasoline"]
+    assert evidence[0].metadata["forecast_impact"]["direction"] == "upward"
+    assert evidence[0].metadata["forecast_impact"]["materiality"] == "high"
+    assert evidence[0].metadata["forecast_impact"]["affected_components"] == ["energy"]
+    assert evidence[0].metadata["news_triage"]["no_silent_probability_mutation"] is True
+
+
 def test_forecast_cli_data_import_adds_csv_rows_as_evidence(tmp_path, capsys):
     parser = _parser()
     db_path = tmp_path / "forecasting.db"
@@ -9433,6 +9516,46 @@ def test_forecast_cli_sources_json_lists_import_commands(capsys):
     assert any(source["watch_prefix"] == "courtlistener:<query>" for source in payload["sources"])
 
 
+def test_forecast_cli_sources_plans_cpi_news_and_energy_feeds(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will CPI inflation exceed consensus next month?",
+            "--resolution-criteria",
+            "Resolved by the next BLS CPI release.",
+            "--domain",
+            "macro",
+            "--topic",
+            "inflation",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(parser, ["forecast", "--db", db, "sources", "--question", question_id])
+    output = capsys.readouterr().out
+    assert "Source plan for" in output
+    assert "BLS CPI-U all items" in output
+    assert "https://www.bls.gov/feed/news_release/cpi.rss" in output
+    assert "EIA weekly gasoline prices" in output
+    assert "GDELT CPI energy shelter search" in output
+    assert "--keyword gasoline" in output
+    assert "update only" not in output
+
+    _run(parser, ["forecast", "--db", db, "sources", "--question", question_id, "--json"])
+    payload = json.loads(capsys.readouterr().out)
+    ids = {item["id"] for item in payload["source_plan"]}
+    assert {"bls_cpi_all_items", "bls_cpi_release_rss", "eia_gasoline_prices"} <= ids
+    rss_plan = next(item for item in payload["source_plan"] if item["id"] == "bls_cpi_release_rss")
+    assert rss_plan["source_type"] == "rss"
+    assert "gasoline" in rss_plan["keywords"]
+
+
 def test_forecast_cli_about_exposes_fork_identity(capsys):
     parser = _parser()
 
@@ -12461,6 +12584,100 @@ def test_forecast_cli_watch_add_supports_rss_sources(tmp_path, capsys):
 
     assert "created 1 alert(s)" in check_output
     assert f"watched_source_changed:{watch_id}" in check_output
+
+
+def test_forecast_cli_watch_add_filters_rss_alerts_and_actions(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    feed = tmp_path / "feed.xml"
+    feed.write_text(
+        """<?xml version="1.0"?>
+<rss version="2.0"><channel><title>Forecast Feed</title>
+<item><guid>item-1</guid><title>Initial sports item</title><pubDate>Fri, 01 May 2026 00:00:00 GMT</pubDate></item>
+</channel></rss>
+""",
+        encoding="utf-8",
+    )
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will filtered watched RSS change?",
+            "--resolution-criteria",
+            "Resolved yes if watched feed changes with relevant evidence.",
+        ],
+    )
+    question_id = re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "add",
+            str(feed),
+            "--question",
+            question_id,
+            "--source-type",
+            "rss",
+            "--keyword",
+            "gasoline",
+            "--materiality",
+            "high",
+            "--cadence",
+            "1h",
+        ],
+    )
+    add_output = capsys.readouterr().out
+    watch_id = re.search(r"watched source (ws_[a-f0-9]+)", add_output).group(1)
+    assert "source_type: rss" in add_output
+    assert "filters: keywords=gasoline" in add_output
+
+    feed.write_text(
+        """<?xml version="1.0"?>
+<rss version="2.0"><channel><title>Forecast Feed</title>
+<item><guid>item-2</guid><title>New sports item</title><pubDate>Sat, 02 May 2026 00:00:00 GMT</pubDate></item>
+</channel></rss>
+""",
+        encoding="utf-8",
+    )
+    _run(parser, ["forecast", "--db", db, "watch", "check", "--question", question_id])
+    assert "No watched source alerts created." in capsys.readouterr().out
+
+    feed.write_text(
+        """<?xml version="1.0"?>
+<rss version="2.0"><channel><title>Forecast Feed</title>
+<item><guid>item-3</guid><title>Gasoline prices rise</title><pubDate>Sun, 03 May 2026 00:00:00 GMT</pubDate></item>
+</channel></rss>
+""",
+        encoding="utf-8",
+    )
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "watch",
+            "check",
+            "--question",
+            question_id,
+            "--now",
+            "2026-05-03T00:00:00Z",
+        ],
+    )
+    check_output = capsys.readouterr().out
+    assert "created 1 alert(s)" in check_output
+    assert f"watched_source_changed:{watch_id}" in check_output
+    assert "forecast import news" in check_output
+    assert "--keyword gasoline" in check_output
+    assert "update only if the probability should move" in check_output
 
 
 def test_forecast_cli_watch_add_supports_gdelt_sources(tmp_path, capsys, monkeypatch):

@@ -179,6 +179,40 @@ In the dashboard Forecasts page, active forecast rows are selectable. Clicking
 or pressing Enter/Space on a row opens a detail panel with the same headline
 values, freshness, alert state, and copyable follow-up commands.
 
+To test source breadth and RSS/news triage, use a question that should have
+mixed quantitative and textual inputs:
+
+```bash
+forecast --db "$FORECAST_DB" new "Will CPI inflation exceed consensus next month?" \
+  --resolution-criteria "Resolved by the next BLS CPI release." \
+  --domain macro \
+  --topic inflation \
+  --source-plan
+forecast --db "$FORECAST_DB" sources --question <id>
+forecast --db "$FORECAST_DB" sources --question <id> --json
+forecast --db "$FORECAST_DB" watch add \
+  --question <id> \
+  --source-type rss \
+  rss:https://www.bls.gov/feed/news_release/cpi.rss \
+  --keyword CPI \
+  --keyword inflation \
+  --keyword gasoline \
+  --keyword shelter \
+  --materiality high \
+  --cadence "1h"
+forecast --db "$FORECAST_DB" watch check --question <id>
+forecast --db "$FORECAST_DB" import news https://www.bls.gov/feed/news_release/cpi.rss \
+  --question <id> \
+  --keyword CPI \
+  --keyword gasoline \
+  --materiality high \
+  --direction upward \
+  --affected-component energy
+```
+
+RSS/news imports are evidence-candidate inputs. They should not change a
+probability unless the tester runs an explicit `forecast update`.
+
 For a deterministic local autopilot check, use a file source rather than a live
 external adapter:
 

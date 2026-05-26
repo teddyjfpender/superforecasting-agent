@@ -462,20 +462,22 @@ Every serious forecast should follow this loop:
 2. Detect ambiguity and request clarification if the outcome is not scoreable.
 3. Define the outcome space.
 4. Identify relevant reference classes.
-5. Gather and timestamp evidence.
-6. Estimate base rates.
-7. Generate inside-view arguments.
-8. Run quantitative models when useful.
-9. Combine model outputs into an explicit ensemble.
-10. Produce a probability or distribution with rationale.
-11. Store the forecast snapshot in the ledger.
-12. Monitor for new evidence and stale assumptions.
-13. Update the probability when warranted.
-14. Resolve the question when the outcome is known.
-15. Score the forecast.
-16. Write a postmortem.
-17. Feed lessons into future calibration.
-18. Schedule or update self-checks for stale forecasts, watched domains, and recurring error patterns.
+5. Generate a question-specific source plan covering official data, leading
+   indicators, market priors, RSS/news, and broad textual search.
+6. Gather and timestamp evidence.
+7. Estimate base rates.
+8. Generate inside-view arguments.
+9. Run quantitative models when useful.
+10. Combine model outputs into an explicit ensemble.
+11. Produce a probability or distribution with rationale.
+12. Store the forecast snapshot in the ledger.
+13. Monitor for new evidence and stale assumptions.
+14. Update the probability when warranted.
+15. Resolve the question when the outcome is known.
+16. Score the forecast.
+17. Write a postmortem.
+18. Feed lessons into future calibration.
+19. Schedule or update self-checks for stale forecasts, watched domains, and recurring error patterns.
 
 ## CLI Product
 
@@ -515,6 +517,8 @@ forecast model <id>
 forecast update <id>
 forecast evidence add <id> <url-or-note>
 forecast evidence list <id>
+forecast sources --question <id>
+forecast sources --question <id> --apply-watch
 forecast resolve <id> --outcome <value>
 forecast score <id>
 forecast postmortem <id>
@@ -541,6 +545,7 @@ forecast schedule add --portfolio <name> --cadence <duration>
 forecast schedule list
 forecast schedule run [--auto-score] [--auto-postmortem]
 forecast watch add --question <id> <source>
+forecast watch add --question <id> --source-type rss <rss-or-atom-url> [--keyword <term> ...]
 forecast watch add --question <id> gdelt:<query>
 forecast watch add --question <id> fivethirtyeight:<dataset-or-url>
 forecast watch add --question <id> fred:<series-id>
@@ -565,6 +570,7 @@ Platform-specific importers are useful for extracting question metadata, crowd f
 ```bash
 forecast import metaculus <url>
 forecast import market <url-or-symbol>
+forecast import news <rss-or-atom-url> --question <id> [--keyword <term> ...]
 forecast import data <csv-or-json-url-or-file> --question <id>
 forecast import gdelt <query> --question <id>
 forecast import fivethirtyeight <dataset-or-url> --question <id>
@@ -976,6 +982,34 @@ Requirements:
 - [ ] The dashboard or TUI supports direct row selection or an equivalent drill-down path.
 - [ ] The shortcut reuses the forecast ledger/dashboard summary rather than maintaining a separate question list.
 
+### US-017: Plan And Triage Textual Sources From Question Inception
+
+**Description:** As a forecaster, I want the system to propose relevant data,
+RSS/news, and textual search sources for a new question so that the forecast has
+source breadth without manually bootstrapping every feed.
+
+**Acceptance Criteria:**
+
+- [ ] `forecast sources --question <id>` returns question-specific source
+  recommendations with role, priority, rationale, watch command, import
+  command, and relevance filters.
+- [ ] `forecast new --source-plan` can print the recommended source plan at
+  question creation time.
+- [ ] Source plans include official data, quantitative leading indicators,
+  market-prior placeholders when useful, RSS/news feeds, and broad textual
+  search when applicable.
+- [ ] `forecast sources --question <id> --apply-watch` adds concrete watched
+  sources while skipping placeholders that require user-supplied identifiers.
+- [ ] RSS/Atom watched sources can store source label, cadence metadata,
+  relevance filters, materiality, direction, and affected components.
+- [ ] RSS/Atom watch checks apply relevance filters so irrelevant feed changes
+  do not create alerts.
+- [ ] RSS/Atom alerts recommend a filtered `forecast import news ...` command.
+- [ ] `forecast import news` can filter, exclude, and deduplicate feed items
+  before writing evidence.
+- [ ] Imported news evidence stores triage metadata and never silently mutates
+  active forecast probabilities.
+
 ## Functional Requirements
 
 - FR-1: The system must store forecast questions as durable, queryable records.
@@ -1012,6 +1046,11 @@ Requirements:
 - FR-32: The system must store correction records for non-mutating fixes to forecasts, evidence, assumptions, reference classes, resolutions, scores, postmortems, and calibration lessons.
 - FR-33: The system must audit trusted resolver plugins by scope, version, approval, and automatic confirmation event.
 - FR-34: The system must expose a compact current-forecast book view with numbered, drillable rows so active beliefs can be monitored without requiring forecast IDs.
+- FR-35: The system must generate question-specific source plans spanning
+  official data, quantitative feeds, textual/RSS/news sources, and market priors
+  where relevant.
+- FR-36: The system must support RSS/Atom relevance filtering, deduplication,
+  triage metadata, and alert-driven review without silent probability mutation.
 
 ## V1 Outcome And Scoring Scope
 
@@ -1030,6 +1069,7 @@ forecasting/
   ledger.py
   evidence.py
   research.py
+  source_planner.py
   base_rates.py
   assumptions.py
   reference_classes.py

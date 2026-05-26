@@ -67,6 +67,17 @@ benchmark datasets, `pilot_report_checks: 9/9`, `packet_import_questions: 3`,
 1`, `doctor_status: benchmark_evidence_ready_live_claim_unproven`, and the
 expected `insufficient_live_evidence` readiness verdict.
 
+Post-feedback source-breadth pass: beta feedback requested RSS/feed
+integration and automatic source discovery from question inception. The current
+implementation now includes `forecast sources --question <id>` source planning,
+`forecast new --source-plan`, concrete watch application for non-placeholder
+recommendations, RSS/Atom keyword and exclusion filters, feed-item dedupe,
+triage metadata on imported news evidence, and RSS watch alerts that recommend
+filtered `forecast import news ...` commands instead of silently changing
+probabilities. The CPI source plan explicitly includes BLS CPI, FRED CPI, EIA
+gasoline/oil, BLS CPI RSS, GDELT CPI/energy/shelter search, and a market-prior
+placeholder.
+
 ## Evidence Inspected
 
 - Forecasting package: `forecasting/`
@@ -75,6 +86,9 @@ expected `insufficient_live_evidence` readiness verdict.
 - Fork-native forecast namespace wrapper: `superforecasting_agent/cli.py`, `tests/forecasting/test_package_identity.py`
 - Forecast learning adjustment helper and agent tool: `forecasting/learning.py`, `tools/forecasting_tool.py`
 - Forecast watched-source adapters and alerts: `forecasting/ledger.py`, `forecasting/source_adapters.py`, `forecasting/cli.py`, `tools/forecasting_tool.py`
+- Forecast source planning and RSS/news triage: `forecasting/source_planner.py`,
+  `forecasting/source_adapters.py`, `forecasting/ledger.py`,
+  `forecasting/cli.py`
 - Fork README: `README.md`
 - Forecast-native English model/MCP/plugin guide pass: `website/docs/guides/local-ollama-setup.md`, `website/docs/guides/local-llm-on-mac.md`, `website/docs/guides/aws-bedrock.md`, `website/docs/guides/google-gemini.md`, `website/docs/guides/use-mcp-with-superforecasting-agent.md`, `website/docs/guides/build-a-superforecasting-agent-plugin.md`
 - Forecast-native English tips/personality/cron automation guides: `website/docs/guides/tips.md`, `website/docs/guides/use-soul-with-superforecasting-agent.md`, `website/docs/guides/automate-with-cron.md`

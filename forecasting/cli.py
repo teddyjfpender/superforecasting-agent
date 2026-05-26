@@ -128,6 +128,7 @@ from forecasting.source_adapters import (
     load_worldbank_observations,
     load_yahoo_finance_prices,
 )
+from forecasting.source_planner import SourceRecommendation, plan_sources_for_question
 
 SOURCE_ADAPTER_GUIDES: list[dict[str, str]] = [
     {
@@ -515,6 +516,10 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     doctor_parser.set_defaults(_forecast_handler=_cmd_doctor)
 
     sources_parser = forecast_sub.add_parser("sources", help="List forecast evidence source adapters")
+    sources_parser.add_argument("--question", dest="question_id", help="Plan sources for a forecast question")
+    sources_parser.add_argument("--plan", action="store_true", help="Show forecast-aware source recommendations")
+    sources_parser.add_argument("--apply-watch", action="store_true", help="Add concrete recommended watched sources")
+    sources_parser.add_argument("--limit", type=int, default=12, help="Maximum source-plan rows to show")
     sources_parser.add_argument("--json", action="store_true", help="Emit machine-readable adapter guidance")
     sources_parser.set_defaults(_forecast_handler=_cmd_sources)
 
@@ -538,6 +543,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     new_parser.add_argument("--topic", dest="topics", action="append", default=[])
     new_parser.add_argument("--owner")
     new_parser.add_argument("--impact")
+    new_parser.add_argument("--source-plan", action="store_true", help="Print recommended sources after creating the question")
+    new_parser.add_argument(
+        "--apply-source-plan",
+        action="store_true",
+        help="Add concrete watched sources from the generated source plan",
+    )
     new_parser.add_argument("--review-cadence")
     new_parser.add_argument("--next-review-at")
     new_parser.set_defaults(_forecast_handler=_cmd_new)
@@ -799,6 +810,13 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             adapter.add_argument("--claim-type", choices=sorted(EVIDENCE_CLAIM_TYPES), default=default_claim_type)
             adapter.add_argument("--reliability", type=_parse_rating)
             adapter.add_argument("--relevance", type=_parse_rating)
+        if name == "news":
+            adapter.add_argument("--keyword", dest="keywords", action="append", default=[], help="Only import RSS/Atom items containing this term; repeatable or comma-separated")
+            adapter.add_argument("--exclude-keyword", dest="exclude_keywords", action="append", default=[], help="Skip RSS/Atom items containing this term; repeatable or comma-separated")
+            adapter.add_argument("--no-dedupe", dest="dedupe", action="store_false", default=True, help="Disable RSS/Atom item deduplication")
+            adapter.add_argument("--materiality", choices=["low", "medium", "high"], help="Expected materiality label to store with imported news metadata")
+            adapter.add_argument("--direction", choices=["upward", "downward", "ambiguous"], help="Expected directional impact label to store with imported news metadata")
+            adapter.add_argument("--affected-component", dest="affected_components", action="append", default=[], help="Forecast assumption or component affected by matching news; repeatable")
         if name == "gdelt":
             adapter.add_argument("--timespan", help="GDELT timespan such as 24h, 7d, or 1month")
             adapter.add_argument("--source-country", help="Limit to a GDELT sourcecountry query operator")
@@ -1525,6 +1543,13 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     watch_add.add_argument("--topic")
     watch_add.add_argument("--portfolio")
     watch_add.add_argument("--source-type", choices=sorted(WATCH_SOURCE_TYPES))
+    watch_add.add_argument("--source-name", help="Human label for the watched source")
+    watch_add.add_argument("--cadence", help="Expected check cadence for this watched source")
+    watch_add.add_argument("--keyword", dest="keywords", action="append", default=[], help="RSS/Atom relevance keyword; repeatable or comma-separated")
+    watch_add.add_argument("--exclude-keyword", dest="exclude_keywords", action="append", default=[], help="RSS/Atom exclusion keyword; repeatable or comma-separated")
+    watch_add.add_argument("--materiality", choices=["low", "medium", "high"], help="Expected materiality when matching RSS/Atom items change")
+    watch_add.add_argument("--direction", choices=["upward", "downward", "ambiguous"], help="Expected directional impact for matching RSS/Atom items")
+    watch_add.add_argument("--affected-component", dest="affected_components", action="append", default=[], help="Forecast assumption or component affected by matching RSS/Atom items")
     watch_add.add_argument("--metadata-json", default="{}")
     watch_add.set_defaults(_forecast_handler=_cmd_watch_add)
     watch_list = watch_sub.add_parser("list", help="List watched sources")
@@ -2184,7 +2209,8 @@ def _cmd_new(args: argparse.Namespace) -> None:
         units=args.units,
         bounds=bounds,
     )
-    question = _ledger(args).create_question(
+    ledger = _ledger(args)
+    question = ledger.create_question(
         title=args.title,
         description=args.description,
         resolution_criteria=args.resolution_criteria,
@@ -2203,6 +2229,9 @@ def _cmd_new(args: argparse.Namespace) -> None:
     print(f"created forecast question {question.id}")
     print(f"title: {question.title}")
     print(f"status: {question.status}")
+    if args.source_plan or args.apply_source_plan:
+        print("")
+        _print_source_plan(ledger, question, apply_watch=args.apply_source_plan, limit=12)
 
 
 def _cmd_list(args: argparse.Namespace) -> None:
@@ -2896,7 +2925,17 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
             print(f"market_probability: {_format_probability(baseline['probability_or_distribution'])}")
         return
     if args.import_kind == "news" and args.question_id:
-        items = load_news_feed_items(args.source, limit=args.limit, since=args.since)
+        keywords = _cli_filter_terms(args.keywords)
+        exclude_keywords = _cli_filter_terms(args.exclude_keywords)
+        items = load_news_feed_items(
+            args.source,
+            limit=args.limit,
+            since=args.since,
+            keywords=keywords,
+            exclude_keywords=exclude_keywords,
+            dedupe=args.dedupe,
+        )
+        triage_metadata = _news_triage_metadata(args)
         evidence_items = []
         for item in items:
             evidence_items.append(
@@ -2918,6 +2957,8 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                         "adapter": "news",
                         "feed_source": args.source,
                         "feed_entry_id": item.entry_id,
+                        "dedupe": bool(args.dedupe),
+                        **triage_metadata,
                     },
                 )
             )
@@ -5825,6 +5866,33 @@ def _cmd_plugins(args: argparse.Namespace) -> None:
 
 
 def _cmd_sources(args: argparse.Namespace) -> None:
+    if args.plan and not args.question_id:
+        raise SystemExit("forecast sources --plan requires --question <id>")
+    if args.question_id:
+        ledger = _ledger(args)
+        question = ledger.get_question(args.question_id)
+        recommendations = plan_sources_for_question(question, limit=args.limit)
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "question_id": question.id,
+                        "title": question.title,
+                        "source_plan": [item.to_dict() for item in recommendations],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return
+        _print_source_plan(
+            ledger,
+            question,
+            recommendations=recommendations,
+            apply_watch=args.apply_watch,
+            limit=args.limit,
+        )
+        return
     if args.json:
         print(json.dumps({"sources": SOURCE_ADAPTER_GUIDES}, indent=2, sort_keys=True))
         return
@@ -5835,6 +5903,102 @@ def _cmd_sources(args: argparse.Namespace) -> None:
     print("Watch prefixes")
     for source in SOURCE_ADAPTER_GUIDES:
         print(f"{source['name']:<17} {source['watch_prefix']}")
+
+
+def _print_source_plan(
+    ledger: ForecastLedger,
+    question,
+    *,
+    recommendations: list[SourceRecommendation] | None = None,
+    apply_watch: bool = False,
+    limit: int | None = None,
+) -> None:
+    plan = recommendations if recommendations is not None else plan_sources_for_question(question, limit=limit)
+    if limit is not None:
+        plan = plan[: max(int(limit), 0)]
+    print(f"Source plan for {question.id}: {question.title}")
+    if not plan:
+        print("No source recommendations found.")
+        return
+    print("ID                         Label                                  Priority    Role                    Type    Source")
+    for item in plan:
+        source = item.watch_source or item.source
+        source_display = source if len(source) <= 64 else f"{source[:61]}..."
+        label = item.label if len(item.label) <= 38 else f"{item.label[:35]}..."
+        print(
+            f"{item.id:<26} {label:<39} {item.priority:<11} "
+            f"{item.role:<23} {item.source_type:<7} {source_display}"
+        )
+        if item.keywords:
+            print(f"  filters: keywords={', '.join(item.keywords)}")
+        print(f"  why: {item.rationale}")
+        if item.import_command:
+            print(f"  import: {item.import_command}")
+        if item.watch_command:
+            print(f"  watch: {item.watch_command}")
+        elif item.requires_user_source:
+            print("  watch: add a concrete source before applying this recommendation")
+    if not apply_watch:
+        return
+    created, skipped = _apply_source_plan_watches(ledger, question.id, plan)
+    print(f"applied_watches: {len(created)}")
+    if skipped:
+        print(f"skipped_watches: {len(skipped)}")
+    for row in created:
+        print(f"  {row['id']}: {row['source_type']} {row['source']}")
+
+
+def _apply_source_plan_watches(
+    ledger: ForecastLedger,
+    question_id: str,
+    recommendations: list[SourceRecommendation],
+) -> tuple[list[dict[str, Any]], list[SourceRecommendation]]:
+    existing_sources = {
+        row["source"]
+        for row in ledger.list_watched_sources(scope_type="question", scope_ref=question_id, status=None)
+    }
+    created: list[dict[str, Any]] = []
+    skipped: list[SourceRecommendation] = []
+    for item in recommendations:
+        if item.requires_user_source or not item.watch_source or item.source_type not in WATCH_SOURCE_TYPES:
+            skipped.append(item)
+            continue
+        if item.watch_source in existing_sources:
+            skipped.append(item)
+            continue
+        metadata = _source_plan_watch_metadata(item)
+        row = ledger.add_watched_source(
+            scope_type="question",
+            scope_ref=question_id,
+            source=item.watch_source,
+            source_type=item.source_type,
+            metadata=metadata,
+        )
+        existing_sources.add(item.watch_source)
+        created.append(row)
+    return created, skipped
+
+
+def _source_plan_watch_metadata(item: SourceRecommendation) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "source_plan_id": item.id,
+        "source_plan_label": item.label,
+        "role": item.role,
+        "priority": item.priority,
+        "materiality": item.materiality,
+    }
+    if item.keywords or item.exclude_keywords:
+        metadata["relevance_filters"] = {
+            "keywords": list(item.keywords),
+            "exclude_keywords": list(item.exclude_keywords),
+        }
+    if item.source_type in {"rss", "gdelt"}:
+        metadata["news_triage"] = {
+            "materiality": item.materiality,
+            "role": item.role,
+            "no_silent_probability_mutation": True,
+        }
+    return metadata
 
 
 def _cmd_research(args: argparse.Namespace) -> None:
@@ -6826,12 +6990,15 @@ def _cmd_watch_add(args: argparse.Namespace) -> None:
         scope_ref=scope_ref,
         source=args.source,
         source_type=args.source_type,
-        metadata=_json_arg(args.metadata_json, "metadata-json"),
+        metadata=_watch_metadata_from_args(args),
     )
     print(f"watched source {row['id']}")
     print(f"scope: {_format_watch_scope(row)}")
     print(f"source_type: {row['source_type']}")
     print(f"status: {row['status']}")
+    filters = (row.get("metadata") or {}).get("relevance_filters") or {}
+    if filters:
+        print(f"filters: keywords={', '.join(filters.get('keywords') or [])}")
 
 
 def _cmd_watch_list(args: argparse.Namespace) -> None:
@@ -6865,6 +7032,8 @@ def _cmd_watch_check(args: argparse.Namespace) -> None:
     print(f"created {len(alerts)} alert(s)")
     for alert in alerts:
         print(f"{alert.id}: {alert.scope_ref} {alert.reason}")
+        if alert.recommended_action:
+            print(f"  action: {alert.recommended_action}")
 
 
 def _cmd_autopilot_enable(args: argparse.Namespace) -> None:
@@ -8168,6 +8337,68 @@ def _json_arg(raw: str, name: str) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise SystemExit(f"--{name} must be a JSON object")
     return parsed
+
+
+def _cli_filter_terms(values: list[str] | None) -> list[str]:
+    terms: list[str] = []
+    for value in values or []:
+        for chunk in str(value).split(","):
+            term = chunk.strip()
+            if term and term not in terms:
+                terms.append(term)
+    return terms
+
+
+def _news_triage_metadata(args: argparse.Namespace) -> dict[str, Any]:
+    keywords = _cli_filter_terms(getattr(args, "keywords", []))
+    exclude_keywords = _cli_filter_terms(getattr(args, "exclude_keywords", []))
+    affected_components = _cli_filter_terms(getattr(args, "affected_components", []))
+    metadata: dict[str, Any] = {}
+    if keywords or exclude_keywords:
+        metadata["relevance_filters"] = {
+            "keywords": keywords,
+            "exclude_keywords": exclude_keywords,
+        }
+    impact: dict[str, Any] = {}
+    if getattr(args, "direction", None):
+        impact["direction"] = args.direction
+    if affected_components:
+        impact["affected_components"] = affected_components
+    if getattr(args, "materiality", None):
+        impact["materiality"] = args.materiality
+    if impact:
+        metadata["forecast_impact"] = impact
+    if metadata:
+        metadata["news_triage"] = {
+            "state": "candidate_evidence",
+            "no_silent_probability_mutation": True,
+        }
+    return metadata
+
+
+def _watch_metadata_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    metadata = _json_arg(args.metadata_json, "metadata-json")
+    if getattr(args, "source_name", None):
+        metadata["source_name"] = args.source_name
+    if getattr(args, "cadence", None):
+        metadata["cadence"] = args.cadence
+    keywords = _cli_filter_terms(getattr(args, "keywords", []))
+    exclude_keywords = _cli_filter_terms(getattr(args, "exclude_keywords", []))
+    affected_components = _cli_filter_terms(getattr(args, "affected_components", []))
+    if keywords or exclude_keywords:
+        metadata["relevance_filters"] = {
+            "keywords": keywords,
+            "exclude_keywords": exclude_keywords,
+        }
+    if keywords or exclude_keywords or getattr(args, "materiality", None) or getattr(args, "direction", None):
+        metadata["news_triage"] = {
+            "state": "candidate_evidence",
+            "materiality": args.materiality or "medium",
+            "direction": args.direction or "ambiguous",
+            "affected_components": affected_components,
+            "no_silent_probability_mutation": True,
+        }
+    return metadata
 
 
 def _json_value_arg(raw: str, name: str) -> Any:

@@ -112,16 +112,18 @@ The core agent loop should be reshaped into a forecasting protocol:
 1. Parse the question and resolution criteria.
 2. Identify the outcome space and ambiguity.
 3. Build reference classes.
-4. Gather time-stamped evidence.
-5. Estimate base rates.
-6. Generate inside-view arguments.
-7. Run quantitative models where useful.
-8. Produce a probability distribution.
-9. Store the forecast and rationale.
-10. Revisit when new evidence arrives.
-11. Score itself after resolution.
-12. Update calibration priors and known biases.
-13. Schedule future reviews when the forecast is stale, high-impact, or close to resolution.
+4. Generate a source plan for official data, leading indicators, market priors,
+   RSS/news, and broad textual search.
+5. Gather time-stamped evidence.
+6. Estimate base rates.
+7. Generate inside-view arguments.
+8. Run quantitative models where useful.
+9. Produce a probability distribution.
+10. Store the forecast and rationale.
+11. Revisit when new evidence arrives.
+12. Score itself after resolution.
+13. Update calibration priors and known biases.
+14. Schedule future reviews when the forecast is stale, high-impact, or close to resolution.
 
 LLMs should generate hypotheses, decomposition, source summaries, and structured judgment. They should not be the only probability engine by default. The saved probability should come from an explicit ensemble when enough inputs exist:
 
@@ -176,6 +178,19 @@ ID     Question                         P(now)  Delta  Close       Status
 
 The useful product behavior is not "answer this forecasting question." It is "maintain my book of forecasts and tell me where my beliefs need work."
 
+## Source Breadth And RSS/Text Triage
+
+The desk should not rely on a user manually naming every source. From question
+inception it should propose a source plan that covers official resolution
+sources, measurable quantitative inputs, market priors when available, and
+textual early-warning sources such as RSS/Atom feeds and GDELT searches.
+
+RSS/news is qualitative context, not an automatic probability engine. Feed
+items should be filtered, deduplicated, classified as candidate evidence, and
+promoted into review alerts only when relevant or material. A watch alert
+should point to a filtered `forecast import news ...` command and preserve the
+rule that active probabilities only change through explicit forecast updates.
+
 ## First Major Surgery
 
 The first implementation pass should:
@@ -188,3 +203,5 @@ The first implementation pass should:
 6. Build historical backtesting against resolved questions.
 7. Make every probability auditable and every miss reviewable.
 8. Add scheduled self-checks that turn resolved outcomes and repeated errors into calibration memory.
+9. Add source planning plus RSS/textual triage so new questions start with a
+   broad, auditable evidence map instead of a manually curated feed list.

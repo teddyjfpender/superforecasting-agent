@@ -3391,7 +3391,7 @@ class ForecastLedger:
 
         watch_id = f"ws_{uuid.uuid4().hex[:12]}"
         created_at = utc_now_iso()
-        signature = self._source_signature(source, inferred_type)
+        signature = self._source_signature(source, inferred_type, metadata=metadata)
         with self._connect() as conn:
             conn.execute(
                 """
@@ -3886,7 +3886,11 @@ class ForecastLedger:
 
         for watch in watches:
             previous_signature = watch.get("last_seen_signature")
-            current_signature = self._source_signature(watch["source"], watch["source_type"])
+            current_signature = self._source_signature(
+                watch["source"],
+                watch["source_type"],
+                metadata=watch.get("metadata"),
+            )
             status = "success"
             error_message = None
             if current_signature is None or str(current_signature).startswith("missing:"):
@@ -4102,7 +4106,11 @@ class ForecastLedger:
         alerts: list[AlertEvent] = []
         for watch in watches:
             source_type = watch["source_type"]
-            current_signature = self._source_signature(watch["source"], source_type)
+            current_signature = self._source_signature(
+                watch["source"],
+                source_type,
+                metadata=watch.get("metadata"),
+            )
             previous_signature = watch.get("last_seen_signature")
             should_alert = (
                 source_type
@@ -7537,9 +7545,49 @@ class ForecastLedger:
         source_type = self._infer_ingest_source_type(source)
         return "manual" if source_type == "manual_note" else source_type
 
-    def _source_signature(self, source: str, source_type: str) -> str | None:
+    def _rss_relevance_filters(self, metadata: dict[str, Any]) -> dict[str, list[str]]:
+        raw_filters = metadata.get("relevance_filters") if isinstance(metadata, dict) else {}
+        if not isinstance(raw_filters, dict):
+            raw_filters = {}
+        return {
+            "keywords": self._rss_filter_terms(raw_filters.get("keywords")),
+            "exclude_keywords": self._rss_filter_terms(raw_filters.get("exclude_keywords")),
+        }
+
+    def _rss_filter_terms(self, value: Any) -> list[str]:
+        if value is None:
+            return []
+        values = value if isinstance(value, list) else [value]
+        terms: list[str] = []
+        for item in values:
+            for chunk in str(item).split(","):
+                term = chunk.strip()
+                if term and term not in terms:
+                    terms.append(term)
+        return terms
+
+    def _rss_filter_cli_args(self, filters: dict[str, list[str]]) -> str:
+        parts: list[str] = []
+        for term in filters.get("keywords") or []:
+            parts.append(f" --keyword {self._shell_arg(term)}")
+        for term in filters.get("exclude_keywords") or []:
+            parts.append(f" --exclude-keyword {self._shell_arg(term)}")
+        return "".join(parts)
+
+    def _shell_arg(self, value: str) -> str:
+        if re.fullmatch(r"[A-Za-z0-9_./:+=,@%-]+", value):
+            return value
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+    def _source_signature(
+        self,
+        source: str,
+        source_type: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> str | None:
         if source_type == "rss":
-            return self._rss_source_signature(source)
+            return self._rss_source_signature(source, metadata=metadata)
         if source_type == "gdelt":
             return self._gdelt_source_signature(source)
         if source_type == "fivethirtyeight":
@@ -7693,25 +7741,34 @@ class ForecastLedger:
         except (OSError, URLError, ValueError) as exc:
             return f"missing:url:{source}:{exc.__class__.__name__}"
 
-    def _rss_source_signature(self, source: str) -> str:
+    def _rss_source_signature(self, source: str, *, metadata: dict[str, Any] | None = None) -> str:
         feed_source = source.split(":", 1)[1] if source.startswith(("rss:", "atom:")) else source
+        filters = self._rss_relevance_filters(metadata or {})
         try:
             from forecasting.source_adapters import load_news_feed_items
 
-            items = load_news_feed_items(feed_source, limit=50)
+            items = load_news_feed_items(
+                feed_source,
+                limit=50,
+                keywords=filters["keywords"],
+                exclude_keywords=filters["exclude_keywords"],
+            )
         except Exception as exc:
             return f"missing:rss:{feed_source}:{exc.__class__.__name__}"
-        payload = [
-            {
-                "entry_id": item.entry_id,
-                "published_at": item.published_at,
-                "title": item.title,
-                "url": item.url,
-            }
-            for item in items
-        ]
+        payload = {
+            "filters": filters,
+            "items": [
+                {
+                    "entry_id": item.entry_id,
+                    "published_at": item.published_at,
+                    "title": item.title,
+                    "url": item.url,
+                }
+                for item in items
+            ],
+        }
         digest = hashlib.sha256(json_dumps(payload).encode("utf-8")).hexdigest()
-        return f"rss:{len(payload)}:{digest}"
+        return f"rss:{len(items)}:{digest}"
 
     def _gdelt_source_signature(self, source: str) -> str:
         query = source.split(":", 1)[1].strip() if source.startswith("gdelt:") else source.strip()
@@ -9132,6 +9189,16 @@ class ForecastLedger:
         source = watch["source"]
         scope_type = watch["scope_type"]
         scope_ref = watch["scope_ref"]
+        if watch["source_type"] == "rss" and scope_type == "question" and scope_ref:
+            feed_source = source.split(":", 1)[1] if source.startswith(("rss:", "atom:")) else source
+            filters = self._rss_relevance_filters(watch.get("metadata") or {})
+            filter_args = self._rss_filter_cli_args(filters)
+            since_arg = f" --since {watch['last_checked_at']}" if watch.get("last_checked_at") else ""
+            return (
+                f"Run `forecast import news {self._shell_arg(feed_source)} --question {scope_ref}"
+                f"{since_arg}{filter_args}` to capture filtered RSS evidence candidates, "
+                "then review the evidence and update only if the probability should move."
+            )
         if watch["source_type"] == "gdelt" and scope_type == "question" and scope_ref:
             query = source.split(":", 1)[1].strip() if source.startswith("gdelt:") else source
             return (
