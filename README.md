@@ -170,20 +170,20 @@ The fork documentation leads with forecasting workflows. Inherited runtime featu
 
 | Section | What's Covered |
 |---------|---------------|
-| [Quickstart](https://superforecasting-agent.nousresearch.com/docs/getting-started/quickstart) | Install and setup |
-| [Tester Smoke Test](https://superforecasting-agent.nousresearch.com/docs/getting-started/forecast-smoke-test) | Local lifecycle, self-check, backtest, and tester handoff gates |
-| [Tester Pilot Runbook](https://superforecasting-agent.nousresearch.com/docs/getting-started/tester-pilot) | One-week friendly-alpha workflow, evidence bundle, and exit criteria |
-| [CLI Usage](https://superforecasting-agent.nousresearch.com/docs/user-guide/cli) | Forecast desk commands and inherited keybindings |
-| [Configuration](https://superforecasting-agent.nousresearch.com/docs/user-guide/configuration) | Config file, providers, models, all options |
-| [Messaging Gateway](https://superforecasting-agent.nousresearch.com/docs/user-guide/messaging) | Optional alert and evidence-capture surface |
-| [Security](https://superforecasting-agent.nousresearch.com/docs/user-guide/security) | Command approval, DM pairing, container isolation |
-| [Tools & Toolsets](https://superforecasting-agent.nousresearch.com/docs/user-guide/features/tools) | Forecast-support tools, toolsets, terminal backends |
-| [Skills System](https://superforecasting-agent.nousresearch.com/docs/user-guide/features/skills) | Procedural forecasting playbooks |
-| [Memory](https://superforecasting-agent.nousresearch.com/docs/user-guide/features/memory) | Legacy memory systems; forecast learning lives in the ledger |
-| [MCP Integration](https://superforecasting-agent.nousresearch.com/docs/user-guide/features/mcp) | Connect MCP servers for extended source access |
-| [Cron Scheduling](https://superforecasting-agent.nousresearch.com/docs/user-guide/features/cron) | Runtime scheduler used by forecast self-checks |
-| [Architecture](https://superforecasting-agent.nousresearch.com/docs/developer-guide/architecture) | Forecast ledger, agent loop, key classes |
-| [Contributing](https://superforecasting-agent.nousresearch.com/docs/developer-guide/contributing) | Development setup, PR process, code style |
+| [Quickstart](https://teddyjfpender.github.io/superforecasting-agent/docs/getting-started/quickstart) | Install and setup |
+| [Tester Smoke Test](https://teddyjfpender.github.io/superforecasting-agent/docs/getting-started/forecast-smoke-test) | Local lifecycle, self-check, backtest, and tester handoff gates |
+| [Tester Pilot Runbook](https://teddyjfpender.github.io/superforecasting-agent/docs/getting-started/tester-pilot) | One-week friendly-alpha workflow, evidence bundle, and exit criteria |
+| [CLI Usage](https://teddyjfpender.github.io/superforecasting-agent/docs/user-guide/cli) | Forecast desk commands and inherited keybindings |
+| [Configuration](https://teddyjfpender.github.io/superforecasting-agent/docs/user-guide/configuration) | Config file, providers, models, all options |
+| [Messaging Gateway](https://teddyjfpender.github.io/superforecasting-agent/docs/user-guide/messaging) | Optional alert and evidence-capture surface |
+| [Security](https://teddyjfpender.github.io/superforecasting-agent/docs/user-guide/security) | Command approval, DM pairing, container isolation |
+| [Tools & Toolsets](https://teddyjfpender.github.io/superforecasting-agent/docs/user-guide/features/tools) | Forecast-support tools, toolsets, terminal backends |
+| [Skills System](https://teddyjfpender.github.io/superforecasting-agent/docs/user-guide/features/skills) | Procedural forecasting playbooks |
+| [Memory](https://teddyjfpender.github.io/superforecasting-agent/docs/user-guide/features/memory) | Legacy memory systems; forecast learning lives in the ledger |
+| [MCP Integration](https://teddyjfpender.github.io/superforecasting-agent/docs/user-guide/features/mcp) | Connect MCP servers for extended source access |
+| [Cron Scheduling](https://teddyjfpender.github.io/superforecasting-agent/docs/user-guide/features/cron) | Runtime scheduler used by forecast self-checks |
+| [Architecture](https://teddyjfpender.github.io/superforecasting-agent/docs/developer-guide/architecture) | Forecast ledger, agent loop, key classes |
+| [Contributing](https://teddyjfpender.github.io/superforecasting-agent/docs/developer-guide/contributing) | Development setup, PR process, code style |
 
 ---
 

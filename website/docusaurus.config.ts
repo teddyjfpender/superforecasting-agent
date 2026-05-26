@@ -7,7 +7,7 @@ const config: Config = {
   tagline: 'A CLI forecasting desk that compounds judgment over time',
   favicon: 'img/favicon.ico',
 
-  url: 'https://superforecasting-agent.nousresearch.com',
+  url: 'https://teddyjfpender.github.io/superforecasting-agent',
   baseUrl: '/docs/',
 
   organizationName: 'teddyjfpender',

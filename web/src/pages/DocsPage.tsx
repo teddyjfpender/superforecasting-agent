@@ -5,7 +5,7 @@ import { usePageHeader } from "@/contexts/usePageHeader";
 import { cn } from "@/lib/utils";
 import { PluginSlot } from "@/plugins";
 
-export const DOCS_URL = "https://superforecasting-agent.nousresearch.com/docs/";
+export const DOCS_URL = "https://teddyjfpender.github.io/superforecasting-agent/docs/";
 
 const DS_BUTTON_OUTLINED_LINK_CN = cn(
   "group relative inline-grid grid-cols-[auto_1fr_auto] items-center",

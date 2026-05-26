@@ -13,7 +13,7 @@ When the manifest is unreachable (offline, network blocked, hosting failure), th
 ## Live manifest URL
 
 ```
-https://superforecasting-agent.nousresearch.com/docs/api/model-catalog.json
+https://teddyjfpender.github.io/superforecasting-agent/docs/api/model-catalog.json
 ```
 
 Published on every merge to `main` via the existing `deploy-site.yml` GitHub Pages pipeline. The source of truth lives in the repo at `website/static/api/model-catalog.json`. During the fork transition, the hosted URL may keep the inherited Hermes domain; override `model_catalog.url` if your fork publishes the manifest elsewhere.
@@ -69,7 +69,7 @@ Cache location: `~/.superforecasting-agent/cache/model_catalog.json`. Existing l
 ```yaml
 model_catalog:
   enabled: true
-  url: https://superforecasting-agent.nousresearch.com/docs/api/model-catalog.json
+  url: https://teddyjfpender.github.io/superforecasting-agent/docs/api/model-catalog.json
   ttl_hours: 24
   providers: {}
 ```

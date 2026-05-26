@@ -2803,7 +2803,7 @@ def test_github_actions_metadata_is_forecast_native():
     assert "/tmp/superforecasting-agent-test" in text
     assert "name: superforecasting-agent" in text
     assert "https://pypi.org/p/superforecasting-agent" in text
-    assert "https://superforecasting-agent.nousresearch.com/llms.txt" in text
+    assert "https://teddyjfpender.github.io/superforecasting-agent/llms.txt" in text
     assert "Dependabot configuration for Superforecasting Agent" in text
     assert "Hermes smoke test" not in text
     assert "github.repository == 'NousResearch/hermes-agent'" not in text
@@ -4341,6 +4341,22 @@ def test_dashboard_oauth_user_agent_is_forecast_native():
 
     assert '"User-Agent": "superforecasting-agent-dashboard/1.0"' in web_server
     assert "hermes-dashboard/1.0" not in web_server
+
+
+def test_dashboard_docs_url_points_to_fork_pages():
+    root = Path(__file__).resolve().parents[1]
+    docs_page = (root / "web" / "src" / "pages" / "DocsPage.tsx").read_text(
+        encoding="utf-8"
+    )
+    docusaurus_config = (root / "website" / "docusaurus.config.ts").read_text(
+        encoding="utf-8"
+    )
+
+    expected_site = "https://teddyjfpender.github.io/superforecasting-agent"
+    assert f'export const DOCS_URL = "{expected_site}/docs/";' in docs_page
+    assert f"url: '{expected_site}'" in docusaurus_config
+    assert "superforecasting-agent.nousresearch.com" not in docs_page
+    assert "superforecasting-agent.nousresearch.com" not in docusaurus_config
 
 
 def test_dashboard_plugin_loader_has_forecast_native_markers():

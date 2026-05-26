@@ -31,7 +31,7 @@ class TestBuildOrHeaders:
         from agent.auxiliary_client import build_or_headers
 
         headers = build_or_headers(or_config={"response_cache": False})
-        assert headers["HTTP-Referer"] == "https://superforecasting-agent.nousresearch.com"
+        assert headers["HTTP-Referer"] == "https://teddyjfpender.github.io/superforecasting-agent"
         assert headers["X-Title"] == "Superforecasting Agent"
         assert headers["X-OpenRouter-Categories"] == "forecasting,research,cli-agent"
 
