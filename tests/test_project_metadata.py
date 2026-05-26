@@ -3168,17 +3168,37 @@ def test_superforecasting_agent_skill_paths_are_fork_native():
     assert "Bare `superforecasting-agent` opens the forecast desk" in text
     assert "`/personality` remains a legacy alias" in text
     assert "Summarize evidence and base rates for forecast fq_123" in text
-    assert "Set current conversation as scheduled forecast-review delivery channel" in text
+    assert "Set this session as scheduled forecast-review delivery channel" in text
     assert "Resend last forecast note" in text
     assert "Remove last forecast exchange" in text
     assert "List recent forecast sessions" in text
     assert "Clear screen + new forecast session" in text
     assert "Branch the current forecast session" in text
     assert "`/reset` starts a new forecast session with updated toolset" in text
+    assert "Forecast-Support Runtime" in text
+    assert "parallel forecast workers" in text
+    assert "Show forecast-support history" in text
+    assert "Save forecast-support transcript to file" in text
+    assert "Forecast-support recall memory" in text
+    assert "Search past forecast-support sessions" in text
+    assert "main forecast-support loop" in text
+    assert "core forecast-support loop" in text
     assert "No subcommand opens the forecast desk" not in text
     assert "/personality [name]  Set personality" not in text
+    assert "parallel agents" not in text
+    assert "### Chat" not in text
     assert "Resend last message" not in text
     assert "Remove last exchange" not in text
+    assert "Set current conversation as scheduled forecast-review delivery channel" not in text
+    assert "Show conversation history" not in text
+    assert "Save conversation to file" not in text
+    assert "$HERMES_HOME/skills/" not in text
+    assert "Persistent cross-session memory" not in text
+    assert "Search past conversations" not in text
+    assert "mid-conversation" not in text
+    assert "conversation context and logs" not in text
+    assert "main conversation loop" not in text
+    assert "core conversation loop" not in text
     assert "Clear screen + new session" not in text
     assert "Branch the current session" not in text
     assert "`/reset` starts a new session with updated toolset" not in text

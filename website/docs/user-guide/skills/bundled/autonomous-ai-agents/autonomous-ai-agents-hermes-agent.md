@@ -80,7 +80,7 @@ superforecasting-agent [flags] [command]
   --version, -V             Show version
   --resume, -r SESSION      Resume session by ID or title
   --continue, -c [NAME]     Resume by name, or most recent session
-  --worktree, -w            Isolated git worktree mode (parallel agents)
+  --worktree, -w            Isolated git worktree mode (parallel forecast workers)
   --skills, -s SKILL        Preload skills (comma-separate or repeat)
   --profile, -p NAME        Use a named profile
   --yolo                    Skip dangerous command approval
@@ -91,7 +91,7 @@ Bare `superforecasting-agent` opens the forecast desk during the fork transition
 Use `forecast ...` for ledger lifecycle commands and `superforecasting-agent chat`
 only when you explicitly want the inherited forecast-scoped chat runtime.
 
-### Chat
+### Forecast-Support Runtime
 
 ```
 superforecasting-agent chat [flags]
@@ -310,7 +310,7 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 /approve             Approve a pending command (gateway)
 /deny                Deny a pending command (gateway)
 /restart             Restart gateway (gateway)
-/sethome             Set current conversation as scheduled forecast-review delivery channel (gateway)
+/sethome             Set this session as scheduled forecast-review delivery channel (gateway)
 /update              Update Superforecasting Agent to latest (gateway)
 /topic [sub]         Enable or inspect Telegram DM topic sessions (gateway)
 /platforms (/gateway) Show platform connection status (gateway)
@@ -321,8 +321,8 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 /branch (/fork)      Branch the current forecast session
 /fast                Toggle priority/fast processing
 /browser             Open CDP browser connection
-/history             Show conversation history (CLI)
-/save                Save conversation to file (CLI)
+/history             Show forecast-support history (CLI)
+/save                Save forecast-support transcript to file (CLI)
 /copy [N]            Copy the last forecast response to clipboard (CLI)
 /paste               Attach clipboard image (CLI)
 /image               Attach local image file (CLI)
@@ -352,7 +352,7 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 ```
 ~/.superforecasting-agent/config.yaml       Main configuration
 ~/.superforecasting-agent/.env              API keys and secrets
-$HERMES_HOME/skills/        Installed skills
+~/.superforecasting-agent/skills/  Installed skills
 ~/.superforecasting-agent/sessions/         Session transcripts
 ~/.superforecasting-agent/logs/             Gateway and error logs
 ~/.superforecasting-agent/auth.json         OAuth tokens and credential pools
@@ -429,8 +429,8 @@ Enable/disable via `superforecasting-agent tools` (interactive) or `superforecas
 | `video` | Video analysis and generation |
 | `tts` | Text-to-speech |
 | `skills` | Skill browsing and management |
-| `memory` | Persistent cross-session memory |
-| `session_search` | Search past conversations |
+| `memory` | Forecast-support recall memory |
+| `session_search` | Search past forecast-support sessions |
 | `delegation` | Subagent task delegation |
 | `cronjob` | Scheduled task management |
 | `clarify` | Ask user clarifying questions |
@@ -451,7 +451,7 @@ Enable/disable via `superforecasting-agent tools` (interactive) or `superforecas
 
 Full enumeration lives in `toolsets.py` as the `TOOLSETS` dict; `_HERMES_CORE_TOOLS` is the default bundle most platforms inherit from.
 
-Tool changes take effect on `/reset` (new forecast session). They do NOT apply mid-conversation to preserve prompt caching.
+Tool changes take effect on `/reset` (new forecast session). They do NOT apply mid-turn to preserve prompt caching.
 
 ---
 
@@ -461,7 +461,7 @@ Common "why is Superforecasting Agent doing X to my output / tool calls / comman
 
 ### Secret redaction in tool output
 
-Secret redaction is **off by default** — tool output (terminal stdout, `read_file`, web content, subagent summaries, etc.) passes through unmodified. If the user wants Superforecasting Agent to auto-mask strings that look like API keys, tokens, and secrets before they enter the conversation context and logs:
+Secret redaction is **off by default** — tool output (terminal stdout, `read_file`, web content, subagent summaries, etc.) passes through unmodified. If the user wants Superforecasting Agent to auto-mask strings that look like API keys, tokens, and secrets before they enter the forecast-support context and logs:
 
 ```bash
 superforecasting-agent config set security.redact_secrets true       # enable globally
@@ -556,7 +556,7 @@ Run additional Superforecasting Agent processes as fully independent subprocesse
 
 | | `delegate_task` | Spawning `superforecasting-agent` process |
 |-|-----------------|--------------------------|
-| Isolation | Separate conversation, shared process | Fully independent process |
+| Isolation | Separate forecast-support session, shared process | Fully independent process |
 | Duration | Minutes (bounded by parent loop) | Hours/days |
 | Tool access | Subset of parent's tools | Full tool access |
 | Interactive | No | Yes (PTY mode) |
@@ -631,7 +631,7 @@ terminal(command="tmux new-session -d -s resumed 'superforecasting-agent --resum
 
 ## Durable & Background Systems
 
-Four systems run alongside the main conversation loop. Quick reference
+Four systems run alongside the main forecast-support loop. Quick reference
 here; full developer notes live in `AGENTS.md`, user-facing docs under
 `website/docs/user-guide/features/`.
 
@@ -898,7 +898,7 @@ For occasional contributors and PR authors. Full developer docs: /developer-guid
 <!-- ascii-guard-ignore -->
 ```
 superforecasting-agent/
-├── run_agent.py          # AIAgent — core conversation loop
+├── run_agent.py          # AIAgent — core forecast-support loop
 ├── model_tools.py        # Tool discovery and dispatch
 ├── toolsets.py           # Toolset definitions
 ├── cli.py                # Interactive forecast CLI (ForecastCLI)
@@ -977,7 +977,7 @@ python -m pytest tests/ -o 'addopts=' -q   # Full suite
 python -m pytest tests/tools/ -q            # Specific area
 ```
 
-- Tests auto-redirect `HERMES_HOME` to temp dirs — never touch real `~/.superforecasting-agent/`
+- Tests auto-redirect the Superforecasting Agent home aliases to temp dirs — never touch real `~/.superforecasting-agent/`
 - Run full suite before pushing any change
 - Use `-o 'addopts='` to clear any baked-in pytest flags
 
@@ -1031,7 +1031,7 @@ Types: `fix:`, `feat:`, `refactor:`, `docs:`, `chore:`
 
 ### Key Rules
 
-- **Never break prompt caching** — don't change context, tools, or system prompt mid-conversation
+- **Never break prompt caching** — don't change context, tools, or system prompt mid-turn
 - **Message role alternation** — never two assistant or two user messages in a row
 - Use `get_hermes_home()` from `hermes_constants` for all paths (profile-safe)
 - Config values go in `config.yaml`, secrets go in `.env`
