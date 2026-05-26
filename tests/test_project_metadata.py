@@ -975,6 +975,7 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     tui_gateway = (root / "tui_gateway" / "server.py").read_text(encoding="utf-8")
     callbacks = (root / "hermes_cli" / "callbacks.py").read_text(encoding="utf-8")
     cli = (root / "cli.py").read_text(encoding="utf-8")
+    tips = (root / "hermes_cli" / "tips.py").read_text(encoding="utf-8")
     conversation_loop = (root / "agent" / "conversation_loop.py").read_text(
         encoding="utf-8"
     )
@@ -1017,6 +1018,10 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Switch forecast style overlay" in commands
     assert "Start a new forecast session (fresh session ID + history)" in commands
     assert "Retry the last forecast note" in commands
+    assert "Hand off this forecast session to an optional messaging compatibility surface" in commands
+    assert "Branch the current forecast session" in commands
+    assert "Run a forecast note in the background" in commands
+    assert "Browse and resume previous forecast sessions" in commands
     assert "Forecast style set to" in cli
     assert "Unknown forecast style" in cli
     assert "Unknown personality" not in cli
@@ -1026,14 +1031,22 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Recent forecast sessions" in cli
     assert "No forecast session to branch" in cli
     assert "Resume this forecast session with:" in cli
+    assert "current forecast session stays free" in tips
+    assert "previously named forecast session" in tips
     assert "Set this conversation as the scheduled forecast-review delivery channel" in commands
     assert "Set this conversation as the home delivery channel" not in commands
     assert "Start a new session (fresh session ID + history)" not in commands
     assert "Retry the last message" not in commands
+    assert "Hand off this session to an optional messaging compatibility surface" not in commands
+    assert "Branch the current session" not in commands
+    assert "Run a prompt in the background" not in commands
+    assert "Browse and resume previous sessions" not in commands
     assert "Retry the last user message by removing the last exchange" not in cli
     assert "Recent research sessions" not in cli
     assert "No research session to branch" not in cli
     assert "Resume this research session with:" not in cli
+    assert "current session stays free" not in tips
+    assert "previously named session" not in tips
     assert "destination chat" not in cli
     assert "system prompt belongs to the core forecast protocol" in conversation_loop
     assert "system prompt is Hermes's territory" not in conversation_loop
@@ -1074,6 +1087,8 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
     assert "legacy compatibility alias for `/style`" in text
     assert "Start a new forecast session (fresh session ID + history)" in text
     assert "| `/retry` | Retry the last forecast note |" in text
+    assert "| `/sessions` | Browse and resume previous forecast sessions" in text
+    assert "| `/compress [focus topic]` | Manually compress forecast transcript context" in text
     assert "| `/style [name]` | Adjust forecast style; `/personality` remains a legacy alias |" in text
     assert "## Forecast Session Commands (Inside Messaging)" in text
     assert "Switching forecast styles with commands" in text
@@ -1088,6 +1103,8 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
     assert "Personality & SOUL.md" not in text
     assert "Start a new session (fresh session ID + history)" not in text
     assert "Retry the last message" not in text
+    assert "| `/sessions` | Browse and resume previous sessions" not in text
+    assert "| `/compress [focus topic]` | Manually compress research-session context" not in text
     assert "Switching personalities with commands" not in text
     assert "| `/personality [name]` | Set a personality |" not in text
     assert "## Chat Commands (Inside Messaging)" not in text
@@ -2867,10 +2884,17 @@ def test_superforecasting_agent_skill_paths_are_fork_native():
     assert "Set current conversation as scheduled forecast-review delivery channel" in text
     assert "Resend last forecast note" in text
     assert "Remove last forecast exchange" in text
+    assert "List recent forecast sessions" in text
+    assert "Clear screen + new forecast session" in text
+    assert "Branch the current forecast session" in text
+    assert "`/reset` starts a new forecast session with updated toolset" in text
     assert "No subcommand opens the forecast desk" not in text
     assert "/personality [name]  Set personality" not in text
     assert "Resend last message" not in text
     assert "Remove last exchange" not in text
+    assert "Clear screen + new session" not in text
+    assert "Branch the current session" not in text
+    assert "`/reset` starts a new session with updated toolset" not in text
     assert "Build REST API for user management" not in text
     assert "Build React dashboard for user management" not in text
     assert "Set up CI/CD for ~/myapp" not in text

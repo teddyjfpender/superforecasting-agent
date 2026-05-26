@@ -173,12 +173,12 @@ Platform docs: /user-guide/messaging/
 ### Sessions
 
 ```
-superforecasting-agent sessions list        List recent sessions
+superforecasting-agent sessions list        List recent forecast sessions
 superforecasting-agent sessions browse      Interactive picker
 superforecasting-agent sessions export OUT  Export to JSONL
-superforecasting-agent sessions rename ID T Rename a session
-superforecasting-agent sessions delete ID   Delete a session
-superforecasting-agent sessions prune       Clean up old sessions (--older-than N days)
+superforecasting-agent sessions rename ID T Rename a forecast session
+superforecasting-agent sessions delete ID   Delete a forecast session
+superforecasting-agent sessions prune       Clean up old forecast sessions (--older-than N days)
 superforecasting-agent sessions stats       Session store statistics
 ```
 
@@ -254,7 +254,7 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 ### Session Control
 ```
 /new (/reset)        Fresh forecast session
-/clear               Clear screen + new session (CLI)
+/clear               Clear screen + new forecast session (CLI)
 /retry               Resend last forecast note
 /undo                Remove last forecast exchange
 /title [name]        Name the forecast session
@@ -318,7 +318,7 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 
 ### Utility
 ```
-/branch (/fork)      Branch the current session
+/branch (/fork)      Branch the current forecast session
 /fast                Toggle priority/fast processing
 /browser             Open CDP browser connection
 /history             Show conversation history (CLI)
@@ -451,13 +451,13 @@ Enable/disable via `superforecasting-agent tools` (interactive) or `superforecas
 
 Full enumeration lives in `toolsets.py` as the `TOOLSETS` dict; `_HERMES_CORE_TOOLS` is the default bundle most platforms inherit from.
 
-Tool changes take effect on `/reset` (new session). They do NOT apply mid-conversation to preserve prompt caching.
+Tool changes take effect on `/reset` (new forecast session). They do NOT apply mid-conversation to preserve prompt caching.
 
 ---
 
 ## Security & Privacy Toggles
 
-Common "why is Superforecasting Agent doing X to my output / tool calls / commands?" toggles — and the exact commands to change them. Most of these need a fresh session (`/reset` in chat, or start a new `superforecasting-agent` invocation) because they're read once at startup.
+Common "why is Superforecasting Agent doing X to my output / tool calls / commands?" toggles — and the exact commands to change them. Most of these need a fresh forecast session (`/reset` in chat, or start a new `superforecasting-agent` invocation) because they're read once at startup.
 
 ### Secret redaction in tool output
 
@@ -467,7 +467,7 @@ Secret redaction is **off by default** — tool output (terminal stdout, `read_f
 superforecasting-agent config set security.redact_secrets true       # enable globally
 ```
 
-**Restart required.** `security.redact_secrets` is snapshotted at import time — toggling it mid-session (e.g. via `export HERMES_REDACT_SECRETS=true` from a tool call) will NOT take effect for the running process. Tell the user to run `superforecasting-agent config set security.redact_secrets true` in a terminal, then start a new session. This is deliberate — it prevents an LLM from flipping the toggle on itself mid-task.
+**Restart required.** `security.redact_secrets` is snapshotted at import time — toggling it mid-session (e.g. via `export HERMES_REDACT_SECRETS=true` from a tool call) will NOT take effect for the running process. Tell the user to run `superforecasting-agent config set security.redact_secrets true` in a terminal, then start a new forecast session. This is deliberate — it prevents an LLM from flipping the toggle on itself mid-task.
 
 Disable again with:
 ```bash
@@ -833,7 +833,7 @@ and logs — avoids shell-escaping backslashes in bash.
 4. **Copilot 403**: `gh auth login` tokens do NOT work for Copilot API. You must use the Copilot-specific OAuth device code flow via `superforecasting-agent model` → GitHub Copilot.
 
 ### Changes not taking effect
-- **Tools/skills:** `/reset` starts a new session with updated toolset
+- **Tools/skills:** `/reset` starts a new forecast session with updated toolset
 - **Config changes:** In gateway: `/restart`. In CLI: exit and relaunch.
 - **Code changes:** Restart the CLI or gateway process
 

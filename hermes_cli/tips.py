@@ -10,15 +10,15 @@ import random
 
 TIPS = [
     # --- Slash Commands ---
-    "/background <forecast note> (alias /bg or /btw) runs a side task while your current session stays free.",
-    "/branch forks the current session so you can explore a different direction without losing progress.",
+    "/background <forecast note> (alias /bg or /btw) runs a side task while your current forecast session stays free.",
+    "/branch forks the current forecast session so you can explore a different direction without losing progress.",
     "/compress manually compresses forecast transcript context when things get long.",
     "/rollback lists filesystem checkpoints — restore files the agent modified to any prior state.",
     "/rollback diff 2 previews what changed since checkpoint 2 without restoring anything.",
     "/rollback 2 src/file.py restores a single file from a specific checkpoint.",
-    "/title \"my project\" names your session — resume it later with /resume or superforecasting-agent -c.",
-    "/resume picks up where you left off in a previously named session.",
-    "/queue <forecast note> queues a note for the next turn without interrupting the current one.",
+    "/title \"inflation review\" names your forecast session — resume it later with /resume or superforecasting-agent -c.",
+    "/resume picks up where you left off in a previously named forecast session.",
+    "/queue <forecast note> queues a note for the next turn without interrupting the current forecast turn.",
     "/undo removes the last user/forecaster exchange from the transcript.",
     "/retry resends your last forecast note — useful when the previous response missed the mark.",
     "/verbose cycles tool progress display: off → new → all → verbose.",

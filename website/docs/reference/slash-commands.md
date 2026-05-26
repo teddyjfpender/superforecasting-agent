@@ -89,17 +89,17 @@ Type `/` in the CLI to open the autocomplete menu. Built-in commands are case-in
 | `/rollback` | List or restore filesystem checkpoints (usage: /rollback [number]) |
 | `/snapshot [create\|restore <id>\|prune]` (alias: `/snap`) | Create or restore runtime config/state snapshots. `create [label]` saves a snapshot, `restore <id>` reverts to it, `prune [N]` removes old snapshots, or list all with no args. |
 | `/stop` | Kill all running background processes |
-| `/queue <forecast note>` (alias: `/q`) | Queue a forecast note for the next turn (doesn't interrupt the current agent response). |
-| `/steer <forecast note>` | Inject a mid-run note that arrives at the agent **after the next tool call** — no interrupt, no new user turn. The text is appended to the last tool result's content once the current tool completes, giving the agent new context without breaking the current tool-calling loop. Use this to nudge direction mid-task (e.g. "focus on the auth module" while the agent is running tests). |
-| `/goal <text>` | Set a standing goal the agent works toward across turns. After each turn an auxiliary judge model decides whether the goal is done; if not, the agent auto-continues. Subcommands: `/goal status`, `/goal pause`, `/goal resume`, `/goal clear`. Budget defaults to 20 turns (`goals.max_turns`); any real user message preempts the continuation loop, and state survives `/resume`. See [Persistent Goals](/user-guide/features/goals) for the full walkthrough. |
+| `/queue <forecast note>` (alias: `/q`) | Queue a forecast note for the next turn (doesn't interrupt the current forecaster response). |
+| `/steer <forecast note>` | Inject a mid-run note that arrives at the forecaster **after the next tool call** — no interrupt, no new user turn. The text is appended to the last tool result's content once the current tool completes, giving the forecaster new context without breaking the current tool-calling loop. Use this to nudge direction mid-task (e.g. "focus on the reference-class search for Q-142" while the forecaster is running tools). |
+| `/goal <text>` | Set a standing goal the forecaster works toward across turns. After each turn an auxiliary judge model decides whether the goal is done; if not, the forecaster auto-continues. Subcommands: `/goal status`, `/goal pause`, `/goal resume`, `/goal clear`. Budget defaults to 20 turns (`goals.max_turns`); any real user message preempts the continuation loop, and state survives `/resume`. See [Persistent Goals](/user-guide/features/goals) for the full walkthrough. |
 | `/subgoal <text>` | Append a user-supplied criterion to the active goal mid-loop. The continuation prompt surfaces all subgoals to the agent verbatim, and the judge factors them into its DONE/CONTINUE verdict — so the goal isn't marked done until the original goal **and** every subgoal are met. Subcommands: `/subgoal` (list), `/subgoal remove <N>`, `/subgoal clear`. Requires an active `/goal`. |
-| `/resume [name]` | Resume a previously-named session |
-| `/sessions` | Browse and resume previous sessions in an interactive picker |
+| `/resume [name]` | Resume a previously-named forecast session |
+| `/sessions` | Browse and resume previous forecast sessions in an interactive picker |
 | `/redraw` | Force a full UI repaint (recovers from terminal drift after tmux resize, mouse selection artifacts, etc.) |
 | `/status` | Show session info — model, provider, profile, session ID, working directory, title, created/updated timestamps, token totals, agent-running state — followed by a local **Session recap** block (recent user/forecaster turn counts, tool result count, top tools used, last few files touched, the latest user prompt, and the latest forecast response). The recap is computed locally from the in-memory transcript; no LLM call, no prompt-cache impact. |
-| `/agents` (alias: `/tasks`) | Show active agents and running tasks across the current session. |
-| `/background <forecast note>` (alias: `/bg`, `/btw`) | Run a forecast-support note in a separate background session. The agent processes it independently — your current session stays free for other work. Results appear as a panel when the task finishes. See [CLI Background Sessions](/user-guide/cli#background-sessions). |
-| `/branch [name]` (alias: `/fork`) | Branch the current session (explore a different path) |
+| `/agents` (alias: `/tasks`) | Show active agents and running forecast tasks across the current forecast session. |
+| `/background <forecast note>` (alias: `/bg`, `/btw`) | Run a forecast-support note in a separate background forecast session. The forecaster processes it independently — your current forecast session stays free for other work. Results appear as a panel when the task finishes. See [CLI Background Sessions](/user-guide/cli#background-sessions). |
+| `/branch [name]` (alias: `/fork`) | Branch the current forecast session (explore a different path) |
 
 ### Configuration
 
@@ -259,12 +259,12 @@ The messaging gateway supports the following built-in commands inside Telegram, 
 | `/fast [normal\|fast\|status]` | Toggle fast mode — OpenAI Priority Processing / Anthropic Fast Mode. |
 | `/retry` | Retry the last forecast note. |
 | `/undo` | Remove the last forecast exchange. |
-| `/sethome` (alias: `/set-home`) | Mark the current conversation as the platform home channel for forecast review and cron deliveries. |
-| `/compress [focus topic]` | Manually compress research-session context. Optional focus topic narrows what the summary preserves. |
+| `/sethome` (alias: `/set-home`) | Mark the current conversation as the platform channel for scheduled forecast review and cron deliveries. |
+| `/compress [focus topic]` | Manually compress forecast transcript context. Optional focus topic narrows what the summary preserves. |
 | `/topic [off\|help\|session-id]` | **Telegram DM only.** Manage user-managed multi-session topic mode. `/topic` enables it or shows status; `/topic off` disables it and clears bindings; `/topic help` shows usage; `/topic <session-id>` inside a topic restores a previous session. See [Multi-session DM mode](/user-guide/messaging/telegram#multi-session-dm-mode-topic). |
-| `/title [name]` | Set or show the session title. |
-| `/resume [name]` | Resume a previously named session. |
-| `/usage` | Show token usage, estimated cost breakdown (input/output), context window state, session duration, and — when available from the active provider — an **Account limits** section with remaining quota / credits pulled live from the provider's API. |
+| `/title [name]` | Set or show the forecast session title. |
+| `/resume [name]` | Resume a previously named forecast session. |
+| `/usage` | Show token usage, estimated cost breakdown (input/output), context window state, forecast session duration, and — when available from the active provider — an **Account limits** section with remaining quota / credits pulled live from the provider's API. |
 | `/insights [days]` | Show usage analytics. |
 | `/reasoning [level\|show\|hide]` | Change reasoning effort or toggle reasoning display. |
 | `/voice [on\|off\|tts\|join\|channel\|leave\|status]` | Control optional spoken replies in chat. `join`/`channel`/`leave` manage Discord voice-channel mode. |
@@ -301,8 +301,8 @@ The CLI prompts before running slash commands that throw away unsaved session st
 
 | Command | What it destroys |
 |---------|------------------|
-| `/clear` | Clears the screen and starts a fresh session — current session ID and in-memory history are gone. |
-| `/new` / `/reset` | Starts a fresh session (new session ID + empty history). |
+| `/clear` | Clears the screen and starts a fresh forecast session — current session ID and in-memory history are gone. |
+| `/new` / `/reset` | Starts a fresh forecast session (new session ID + empty history). |
 | `/undo` | Removes the last user/forecaster exchange from history. |
 | `/exit --delete` / `/quit --delete` | Exits **and** permanently deletes the current session's SQLite history and on-disk transcripts. |
 

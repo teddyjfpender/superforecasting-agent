@@ -139,10 +139,10 @@ superforecasting-agent gateway status --system         # Linux only: inspect the
 | `/approve` | Approve a pending dangerous command |
 | `/deny` | Reject a pending dangerous command |
 | `/sethome` | Set this conversation as the scheduled forecast-review delivery channel |
-| `/compress` | Manually compress research-session context |
-| `/title [name]` | Set or show the session title |
-| `/resume [name]` | Resume a previously named session |
-| `/usage` | Show token usage for this session |
+| `/compress` | Manually compress forecast transcript context |
+| `/title [name]` | Set or show the forecast session title |
+| `/resume [name]` | Resume a previously named forecast session |
+| `/usage` | Show token usage for this forecast session |
 | `/insights [days]` | Show usage insights and analytics |
 | `/reasoning [level\|show\|hide]` | Change reasoning effort or toggle reasoning display |
 | `/voice [on\|off\|tts\|join\|leave\|status]` | Control messaging voice replies and Discord voice-channel behavior |
