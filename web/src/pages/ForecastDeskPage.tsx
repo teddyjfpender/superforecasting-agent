@@ -31,7 +31,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 
-import { ChatSidebar } from "@/components/ChatSidebar";
+import { ForecastSidePanel } from "@/components/ForecastSidePanel";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { useI18n } from "@/i18n";
 import { api } from "@/lib/api";
@@ -704,7 +704,7 @@ export default function ForecastDeskPage({ isActive = true }: { isActive?: boole
   //   floating copy button — bottom-right corner, transparent with a
   //     subtle border; stays out of the way until hovered.  Sends
   //     `/copy\n` to Ink, which emits OSC 52 → our clipboard handler.
-  //   sidebar — ChatSidebar opens its own JSON-RPC sidecar; renders
+  //   sidebar — ForecastSidePanel opens its own JSON-RPC sidecar; renders
   //     model badge, tool-call list, model picker. Best-effort: if the
   //     sidecar fails to connect the terminal pane keeps working.
   //
@@ -781,7 +781,7 @@ export default function ForecastDeskPage({ isActive = true }: { isActive?: boole
               "border-t border-current/10",
             )}
           >
-            <ChatSidebar channel={channel} />
+            <ForecastSidePanel channel={channel} />
           </div>
         </div>
       </>,
@@ -850,7 +850,7 @@ export default function ForecastDeskPage({ isActive = true }: { isActive?: boole
             className="flex min-h-0 shrink-0 flex-col overflow-hidden lg:h-full lg:w-80"
           >
             <div className="min-h-0 flex-1 overflow-hidden">
-              <ChatSidebar channel={channel} />
+              <ForecastSidePanel channel={channel} />
             </div>
           </div>
         )}

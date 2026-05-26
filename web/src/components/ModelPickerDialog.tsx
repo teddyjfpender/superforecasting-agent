@@ -18,7 +18,7 @@ import { createPortal } from "react-dom";
  *
  * Two invocation modes:
  *
- * 1. Forecast Desk mode (ChatSidebar) — pass `gw` + `sessionId`. The picker
+ * 1. Forecast Desk mode (ForecastSidePanel) — pass `gw` + `sessionId`. The picker
  *    loads options via `model.options` JSON-RPC and emits the result as a
  *    slash command string (`/model <model> --provider <slug> [--global]`)
  *    through `onSubmit`, which the Forecast Desk page pipes to `slashExec`.
@@ -46,7 +46,7 @@ interface ModelOptionsResponse {
 }
 
 interface Props {
-  /** Chat-mode: when present, picker emits a slash command via onSubmit. */
+  /** Forecast Desk mode: when present, picker emits a slash command via onSubmit. */
   gw?: GatewayClient;
   sessionId?: string;
   onSubmit?(slashCommand: string): void;

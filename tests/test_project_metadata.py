@@ -576,7 +576,7 @@ def test_embedded_tui_surface_is_forecast_desk():
     surface_paths = [
         root / "web" / "src" / "App.tsx",
         root / "web" / "src" / "pages" / "ForecastDeskPage.tsx",
-        root / "web" / "src" / "components" / "ChatSidebar.tsx",
+        root / "web" / "src" / "components" / "ForecastSidePanel.tsx",
         root / "web" / "src" / "components" / "ModelPickerDialog.tsx",
         root / "web" / "src" / "components" / "SlashPopover.tsx",
         root / "web" / "src" / "components" / "SidebarFooter.tsx",

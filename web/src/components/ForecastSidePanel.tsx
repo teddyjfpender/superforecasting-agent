@@ -1,5 +1,5 @@
 /**
- * ChatSidebar — structured-events panel that sits next to the xterm.js
+ * ForecastSidePanel — structured-events panel that sits next to the xterm.js
  * terminal in the dashboard Forecast Desk tab.
  *
  * Two WebSockets, one per concern:
@@ -68,12 +68,12 @@ const STATE_TONE: Record<
   error: "destructive",
 };
 
-interface ChatSidebarProps {
+interface ForecastSidePanelProps {
   channel: string;
   className?: string;
 }
 
-export function ChatSidebar({ channel, className }: ChatSidebarProps) {
+export function ForecastSidePanel({ channel, className }: ForecastSidePanelProps) {
   // `version` bumps on reconnect; gw is derived so we never call setState
   // for it inside an effect (React 19's set-state-in-effect rule). The
   // counter is the dependency on purpose — it's not read in the memo body,
