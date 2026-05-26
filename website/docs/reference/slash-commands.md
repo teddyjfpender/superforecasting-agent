@@ -20,7 +20,7 @@ The forecast desk is the primary product surface. Use these before reaching for 
 
 | Command | Surface | Description |
 |---------|---------|-------------|
-| `/forecast [limit\|subcommand]` | CLI, TUI | Show the forecast dashboard or run `forecast <subcommand>` from the active session. Common subcommands include `new`, `research`, `base-rate`, `model`, `update`, `resolve`, `score`, `calibration`, `review`, `self-check`, `backtest`, `export`, and `import packet`. |
+| `/forecast [limit\|subcommand]` | CLI, TUI | Show the forecast dashboard or run `forecast <subcommand>` from the active session. Common subcommands include `new`, `sources`, `ingest`, `research`, `evidence`, `base-rate`, `reference-class`, `assumption`, `model`, `update`, `resolve`, `score`, `postmortem`, `calibration`, `lesson`, `review`, `watch`, `alerts`, `schedule`, `self-check`, `backtest`, `performance`, `readiness`, `pilot-report`, `pilot-cohort`, `pilot-bundle`, `pilot-aggregate`, `export`, and `import packet`. |
 | `/new-forecast [args]` | TUI | Create a scoreable forecast question. Equivalent to `forecast new ...`. |
 | `/ingest [args]` | TUI | Stage a URL or file as a forecast candidate. Equivalent to `forecast ingest ...`. |
 | `/evidence [args]` | TUI | Add or inspect timestamped evidence. Equivalent to `forecast evidence ...`. |
@@ -72,7 +72,7 @@ Type `/` in the CLI to open the autocomplete menu. Built-in commands are case-in
 
 | Command | Description |
 |---------|-------------|
-| `/forecast [limit\|subcommand]` (alias: `/forecasts`) | Run forecast desk lifecycle commands from the active session. With no subcommand it shows the desk summary; common subcommands include `status`, `new`, `research`, `base-rate`, `model`, `update`, `resolve`, `score`, `calibration`, `review`, `self-check`, `backtest`, `export`, and `import packet`. |
+| `/forecast [limit\|subcommand]` (alias: `/forecasts`) | Run forecast desk lifecycle commands from the active session. With no subcommand it shows the desk summary; autocomplete covers the primary lifecycle plus source, learning, schedule, pilot, and export flows: `status`, `new`, `sources`, `ingest`, `research`, `evidence`, `base-rate`, `reference-class`, `assumption`, `model`, `update`, `resolve`, `score`, `postmortem`, `calibration`, `lesson`, `review`, `watch`, `alerts`, `schedule`, `self-check`, `backtest`, `performance`, `readiness`, `pilot-report`, `pilot-cohort`, `pilot-bundle`, `pilot-aggregate`, `export`, and `import packet`. |
 
 ### Session
 

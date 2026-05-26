@@ -662,6 +662,30 @@ class TestSubcommands:
         assert "list" in SUBCOMMANDS["/cron"]
         assert "add" in SUBCOMMANDS["/cron"]
 
+    def test_forecast_has_full_lifecycle_subcommands(self):
+        assert "/forecast" in SUBCOMMANDS
+        subs = SUBCOMMANDS["/forecast"]
+        expected = {
+            "sources",
+            "ingest",
+            "import",
+            "evidence",
+            "reference-class",
+            "assumption",
+            "watch",
+            "alerts",
+            "schedule",
+            "readiness",
+            "pilot-report",
+            "pilot-cohort",
+            "pilot-aggregate",
+            "pilot-bundle",
+            "performance",
+            "postmortem",
+            "lesson",
+        }
+        assert expected <= set(subs)
+
     def test_commands_without_subcommands_not_in_dict(self):
         """Plain commands should not appear in SUBCOMMANDS."""
         assert "/help" not in SUBCOMMANDS
