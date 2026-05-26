@@ -89,8 +89,10 @@ claim.
 
 ```bash
 superforecasting-agent [global-options] <command> [subcommand/options]
-hermes [global-options] <command> [subcommand/options]  # compatibility
 ```
+
+Compatibility shims may also accept `hermes ...` for migrated installs. Keep
+new scripts, docs, and runbooks on `superforecasting-agent`.
 
 ### Global options
 

@@ -4538,6 +4538,9 @@ def test_cli_command_reference_chat_examples_are_forecast_scoped():
         root / "website" / "docs" / "reference" / "cli-commands.md"
     ).read_text(encoding="utf-8")
 
+    assert "superforecasting-agent [global-options] <command> [subcommand/options]" in cli_docs
+    assert "new scripts, docs, and runbooks on `superforecasting-agent`" in cli_docs
+    assert "hermes [global-options] <command> [subcommand/options]" not in cli_docs
     assert 'chat -q "Summarize new evidence that could move forecast fq_123"' in cli_docs
     assert "superforecasting-agent chat --toolsets forecasting,file,web" in cli_docs
     assert "Extract forecast-relevant claims from this source note." in cli_docs
