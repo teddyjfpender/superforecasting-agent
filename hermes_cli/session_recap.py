@@ -7,7 +7,7 @@ so users juggling multiple sessions can re-orient quickly.
 Source: https://code.claude.com/docs/en/whats-new/2026-w17
 
 Differences from Claude Code:
-    - Pure local computation from the in-memory research-session transcript. No
+    - Pure local computation from the in-memory forecast-session transcript. No
       LLM call, no auxiliary model, no prompt-cache invalidation. A
       recap should be instant and free.
     - Works unchanged on CLI and every gateway platform (Telegram,
@@ -246,7 +246,7 @@ def build_recap(
     """Build a multi-line recap of recent activity.
 
     Inputs:
-        messages: the full research-session transcript as a list of
+        messages: the full forecast-session transcript as a list of
             chat-completion-style dicts (``role``, ``content``,
             ``tool_calls``, …).
         session_title: optional human title (from SessionDB).

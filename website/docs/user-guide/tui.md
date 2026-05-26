@@ -283,7 +283,7 @@ Relevant environment variables:
 
 Legacy `HERMES_TUI_*` names remain accepted for compatibility with the inherited runtime.
 
-## Research Sessions
+## Forecast Sessions
 
 TUI and classic CLI sessions share the same session store under the active
 agent home. You can start in one surface and resume in the other.
@@ -292,7 +292,7 @@ Forecast learning state is separate from interactive session transcripts. Questi
 evidence, reference classes, snapshots, scores, postmortems, backtests, alerts,
 and lessons live in the forecast ledger.
 
-See [Research Sessions](sessions.md) for session lifecycle, search, compression, and
+See [Forecast Sessions](sessions.md) for session lifecycle, search, compression, and
 export.
 
 ## Attaching To A Running Gateway

@@ -320,7 +320,7 @@ The inherited `/background <forecast note>` command still runs a bounded side ta
 | `Ctrl+G` | Open the input buffer in `$EDITOR` |
 | `Ctrl+Z` | Suspend to background on Unix; run `fg` to resume |
 
-## Research Sessions And State
+## Forecast Sessions And State
 
 Interactive session transcripts are stored in SQLite for resume and search. Forecast learning state is stored separately in the forecast ledger: questions, evidence, forecast snapshots, baselines, model runs, resolutions, scores, postmortems, corrections, alerts, schedules, and calibration lessons.
 

@@ -4966,7 +4966,7 @@ class HermesCLI:
         return True
 
     def _display_resumed_history(self):
-        """Render a compact recap of previous research-session messages.
+        """Render a compact recap of previous forecast-session messages.
 
         Uses Rich markup with dim/muted styling so the recap is visually
         distinct from the active conversation.  Caps the display at the
@@ -5116,7 +5116,7 @@ class HermesCLI:
 
         panel = Panel(
             lines,
-            title=f"[dim {_session_label_c}]Previous Research Session[/]",
+            title=f"[dim {_session_label_c}]Previous Forecast Session[/]",
             border_style=f"dim {_session_border_c}",
             padding=(0, 1),
             style=_history_text_c,
@@ -9829,7 +9829,7 @@ class HermesCLI:
         """Prompt the user to confirm a destructive session slash command.
 
         Used by ``/clear``, ``/new``/``/reset``, and ``/undo`` before they
-        discard research-session state.  Three-option prompt:
+        discard forecast-session state.  Three-option prompt:
 
           1. Approve Once — proceed this time only
           2. Always Approve — proceed and persist

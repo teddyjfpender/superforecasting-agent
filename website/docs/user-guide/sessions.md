@@ -109,9 +109,9 @@ Each session is tagged with its source platform:
 | `cron` | Scheduled cron jobs |
 | `batch` | Batch processing runs |
 
-## CLI Research Session Resume
+## CLI Forecast Session Resume
 
-Resume previous research threads from the CLI using `--continue` or `--resume`. Resume restores the transcript thread; use `forecast show`, `forecast review`, or `forecast status` to inspect durable ledger state.
+Resume previous forecast threads from the CLI using `--continue` or `--resume`. Resume restores the transcript thread; use `forecast show`, `forecast review`, or `forecast status` to inspect durable ledger state.
 
 ### Continue Last Session
 

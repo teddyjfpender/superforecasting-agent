@@ -135,7 +135,7 @@ Important caveat: the full `.[all]` extra is not currently available on Android 
 
 ### Is my data sent anywhere?
 
-API calls go **only to the LLM provider you configure** (for example OpenRouter, Anthropic, or your local Ollama instance). Superforecasting Agent does not collect telemetry, usage data, or analytics. Forecast ledgers, research-session transcripts, memory, and skills are stored locally under `~/.superforecasting-agent/` by default, with legacy `~/.hermes/` compatibility.
+API calls go **only to the LLM provider you configure** (for example OpenRouter, Anthropic, or your local Ollama instance). Superforecasting Agent does not collect telemetry, usage data, or analytics. Forecast ledgers, forecast-session transcripts, memory, and skills are stored locally under `~/.superforecasting-agent/` by default, with legacy `~/.hermes/` compatibility.
 
 ### Can I use it offline / with local models?
 
@@ -383,7 +383,7 @@ superforecasting-agent chat --model openrouter/meta-llama/llama-3.1-70b-instruct
 
 #### Context length exceeded
 
-**Cause:** The research-session transcript has grown too long for the model's context window, or Superforecasting Agent detected the wrong context length for your model.
+**Cause:** The forecast-session transcript has grown too long for the model's context window, or Superforecasting Agent detected the wrong context length for your model.
 
 **Solution:**
 ```bash
@@ -397,7 +397,7 @@ superforecasting-agent chat
 superforecasting-agent chat --model openrouter/google/gemini-3-flash-preview
 ```
 
-If this happens on the first long research session, Superforecasting Agent may have the wrong context length for your model. Check what it detected:
+If this happens on the first long forecast session, Superforecasting Agent may have the wrong context length for your model. Check what it detected:
 
 Look at the CLI startup line — it shows the detected context length (e.g., `📊 Context limit: 128000 tokens`). You can also check with `/usage` during a session.
 
@@ -593,11 +593,11 @@ You can verify the plist has the correct PATH:
 
 #### High token usage
 
-**Cause:** Long research sessions, verbose system prompts, or many tool calls accumulating context.
+**Cause:** Long forecast sessions, verbose system prompts, or many tool calls accumulating context.
 
 **Solution:**
 ```bash
-# Compress the research-session transcript to reduce tokens
+# Compress the forecast-session transcript to reduce tokens
 /compress
 
 # Check session token usage
@@ -605,12 +605,12 @@ You can verify the plist has the correct PATH:
 ```
 
 :::tip
-Use `/compress` regularly during long sessions. It summarizes the research-session transcript and reduces token usage significantly while preserving context.
+Use `/compress` regularly during long sessions. It summarizes the forecast-session transcript and reduces token usage significantly while preserving context.
 :::
 
 #### Session getting too long
 
-**Cause:** Extended research sessions accumulate messages and tool outputs, approaching context limits.
+**Cause:** Extended forecast sessions accumulate messages and tool outputs, approaching context limits.
 
 **Solution:**
 ```bash
@@ -731,7 +731,7 @@ delegation:
   provider: "openrouter"                    # provider for subagents
 ```
 
-Now when you tell Superforecasting Agent "delegate a counterargument review for Q-142" and it spawns a `delegate_task` subagent, that subagent runs on Gemini instead of your main model. Your primary research session stays on GPT-5.4.
+Now when you tell Superforecasting Agent "delegate a counterargument review for Q-142" and it spawns a `delegate_task` subagent, that subagent runs on Gemini instead of your main model. Your primary forecast session stays on GPT-5.4.
 
 You can also be explicit in your prompt: *"Delegate a task to review whether my 0.62 forecast is missing a strong base-rate objection. Use your subagent for the critique."* The agent will use `delegate_task`, which automatically picks up the delegation config.
 
@@ -809,19 +809,19 @@ After changing this, **restart the gateway** (`superforecasting-agent gateway re
 Skills with very long descriptions are truncated to 40 characters in the Telegram menu to stay within payload size limits. If skills aren't appearing, it may be a total payload size issue rather than the 100 command count limit — disabling unused skills helps with both.
 :::
 
-### Shared thread sessions (multiple users, one research session)
+### Shared thread sessions (multiple users, one forecast session)
 
-**Scenario:** You have a Telegram or Discord thread where multiple people mention the bot. You want all mentions in that thread to be part of one shared research session, not separate per-user sessions.
+**Scenario:** You have a Telegram or Discord thread where multiple people mention the bot. You want all mentions in that thread to be part of one shared forecast session, not separate per-user sessions.
 
-**Current behavior:** Superforecasting Agent creates sessions keyed by user ID on most platforms, so each person gets their own research-session context. This is by design for privacy and context isolation.
+**Current behavior:** Superforecasting Agent creates sessions keyed by user ID on most platforms, so each person gets their own forecast-session context. This is by design for privacy and context isolation.
 
 **Workarounds:**
 
-1. **Use Slack.** Slack sessions are keyed by thread, not by user. Multiple users in the same thread share one research session — exactly the behavior you're describing. This is the most natural fit.
+1. **Use Slack.** Slack sessions are keyed by thread, not by user. Multiple users in the same thread share one forecast session — exactly the behavior you're describing. This is the most natural fit.
 
 2. **Use a group chat with a single user.** If one person is the designated "operator" who relays questions, the session stays unified. Others can read along.
 
-3. **Use a Discord channel.** Discord sessions are keyed by channel, so all users in the same channel share context. Use a dedicated channel for the shared research session.
+3. **Use a Discord channel.** Discord sessions are keyed by channel, so all users in the same channel share context. Use a dedicated channel for the shared forecast session.
 
 ### Exporting Superforecasting Agent to another machine
 

@@ -1080,7 +1080,7 @@ DEFAULT_CONFIG = {
         "resume_display": "full",
         "busy_input_mode": "interrupt",  # interrupt | queue | steer
         # When true, the TUI auto-resumes the most recent human-facing
-        # research session on launch instead of forging a fresh one.
+        # forecast session on launch instead of forging a fresh one.
         # Mirrors `superforecasting-agent -c` muscle memory.  Default off
         # so existing users aren't surprised. TUI_RESUME env aliases win.
         "tui_auto_resume_recent": False,
@@ -1510,7 +1510,7 @@ DEFAULT_CONFIG = {
         # this key to false.
         "mcp_reload_confirm": True,
         # When true, destructive session slash commands (/clear, /new, /reset,
-        # /undo) ask the user to confirm before discarding research-session state.
+        # /undo) ask the user to confirm before discarding forecast-session state.
         # Three-option prompt (Approve Once / Always Approve / Cancel) routed
         # through tools.slash_confirm — native yes/no buttons on Telegram,
         # Discord, and Slack; text fallback elsewhere.  Users click "Always

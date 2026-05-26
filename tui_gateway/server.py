@@ -2244,7 +2244,7 @@ def _(rid, params: dict) -> dict:
     if db is None:
         return _db_unavailable_error(rid, code=5006)
     try:
-        # Resume picker should surface human research sessions from every
+        # Resume picker should surface human forecast sessions from every
         # user-facing surface — CLI, TUI, all gateway platforms (including new
         # ones not enumerated here), ACP adapter clients, webhook sessions,
         # custom `HERMES_SESSION_SOURCE` values, and older installs with

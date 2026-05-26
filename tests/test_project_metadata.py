@@ -409,6 +409,8 @@ def test_embedded_tui_surface_is_forecast_desk():
         root / "website" / "docs" / "getting-started" / "learning-path.md",
         root / "website" / "docs" / "reference" / "cli-commands.md",
         root / "website" / "docs" / "reference" / "environment-variables.md",
+        root / "website" / "docs" / "reference" / "faq.md",
+        root / "website" / "docs" / "user-guide" / "cli.md",
         root / "website" / "docs" / "user-guide" / "configuring-models.md",
         root / "website" / "docs" / "user-guide" / "features" / "skills.md",
         root / "website" / "docs" / "user-guide" / "features" / "web-dashboard.md",
@@ -431,6 +433,10 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert "Delete old forecast sessions" in text
     assert "Show forecast-session store statistics" in text
     assert "Set or change a forecast session title" in text
+    assert "Forecast Sessions And State" in text
+    assert "forecast-session transcripts" in text
+    assert "forecast-session transcript" in text
+    assert "one shared forecast session" in text
     assert "Expose the in-browser Forecast Chat tab" not in text
     assert "Forecast Desk is only reachable from localhost." in text
     assert "Loading Forecast Desk" in text
@@ -447,6 +453,10 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert "Delete old sessions" not in text
     assert "Show session-store statistics" not in text
     assert "Set or change a session title" not in text
+    assert "Research Sessions And State" not in text
+    assert "research-session transcripts" not in text
+    assert "research-session transcript" not in text
+    assert "one shared research session" not in text
     assert "embedded chat is a supporting surface" not in text
     assert "caller's chat UI" not in text
     assert "inline in ChatPage" not in text
@@ -467,11 +477,13 @@ def test_embedded_tui_surface_is_forecast_desk():
         encoding="utf-8"
     )
     assert "List recent forecast sessions" in sessions_doc
+    assert "CLI Forecast Session Resume" in sessions_doc
     assert "Forecast Session Statistics" in sessions_doc
     assert "Forecast Session Search Tool" in sessions_doc
     assert "full-text search across past forecast transcripts" in sessions_doc
     assert "Returns recent forecast sessions chronologically" in sessions_doc
     assert "List recent sessions" not in sessions_doc
+    assert "CLI Research Session Resume" not in sessions_doc
     assert "Research Session Statistics" not in sessions_doc
     assert "Research Session Search Tool" not in sessions_doc
     assert "full-text search across past research transcripts" not in sessions_doc
@@ -1027,6 +1039,8 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     install_ps1 = (root / "scripts" / "install.ps1").read_text(encoding="utf-8")
     main_py = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
     parser_py = (root / "hermes_cli" / "_parser.py").read_text(encoding="utf-8")
+    config_py = (root / "hermes_cli" / "config.py").read_text(encoding="utf-8")
+    setup_py = (root / "hermes_cli" / "setup.py").read_text(encoding="utf-8")
 
     assert "Persistent session goals for Superforecasting Agent" in goals
     assert "goal satisfied by the forecaster's last response" in goals
@@ -1084,6 +1098,9 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Goals unavailable (no active forecast session)." in cli
     assert "The current forecast-session history will be discarded." in cli
     assert "Forecast session title set:" in cli
+    assert "Previous Forecast Session" in cli
+    assert "previous forecast-session messages" in cli
+    assert "discard forecast-session state" in cli
     assert "current forecast session stays free" in tips
     assert "previously named forecast session" in tips
     assert "Interactive forecast-session picker with search" in main_py
@@ -1091,6 +1108,10 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "List recent forecast sessions" in main_py
     assert "Interactive forecast-session picker" in parser_py
     assert "interactive forecast-session picker with search" in tips
+    assert "forecast session on launch instead of forging a fresh one" in config_py
+    assert "discarding forecast-session state" in config_py
+    assert "Maximum tool-calling iterations per forecast-session turn." in setup_py
+    assert "forecast-session transcript, which means growing API costs" in setup_py
     assert "Set this conversation as the scheduled forecast-review delivery channel" in commands
     assert "Set this conversation as the home delivery channel" not in commands
     assert "Start a new session (fresh session ID + history)" not in commands
@@ -1108,6 +1129,9 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Goals unavailable (no active session)." not in cli
     assert "The current research-session history will be discarded." not in cli
     assert "Session title set:" not in cli
+    assert "Previous Research Session" not in cli
+    assert "previous research-session messages" not in cli
+    assert "discard research-session state" not in cli
     assert "current session stays free" not in tips
     assert "previously named session" not in tips
     assert "Interactive session picker with search" not in main_py
@@ -1115,6 +1139,10 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "List recent sessions" not in main_py
     assert "Interactive session picker" not in parser_py
     assert "interactive session picker with search" not in tips
+    assert "research session on launch instead of forging a fresh one" not in config_py
+    assert "discarding research-session state" not in config_py
+    assert "Maximum tool-calling iterations per research-session turn." not in setup_py
+    assert "research-session transcript, which means growing API costs" not in setup_py
     assert "destination chat" not in cli
     assert "system prompt belongs to the core forecast protocol" in conversation_loop
     assert "system prompt is Hermes's territory" not in conversation_loop
@@ -1407,7 +1435,11 @@ def test_plugin_and_session_recap_guidance_is_forecast_native():
     assert "shipped with hermes-agent" not in plugins
 
     assert "Tailored to Superforecasting Agent's inherited tool vocabulary" in recap
+    assert "in-memory forecast-session transcript" in recap
+    assert "full forecast-session transcript" in recap
     assert "Tailored to hermes-agent's tool vocabulary" not in recap
+    assert "in-memory research-session transcript" not in recap
+    assert "full research-session transcript" not in recap
 
 
 def test_command_registry_and_oneshot_docs_are_forecast_native():
