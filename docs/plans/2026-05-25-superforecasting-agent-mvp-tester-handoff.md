@@ -32,7 +32,7 @@ python -m superforecasting_agent status
 For this handoff, the verified implementation snapshot is:
 
 ```text
-de7007089b20 Add Kalshi public benchmark corpus
+dda4f6f6c0b4 Use forecast-native installer guidance
 ```
 
 Before inviting a new cohort, record the exact commit testers will use:
@@ -141,7 +141,7 @@ common workflow checks.
 ## Smoke Evidence
 
 Latest consolidated tester handoff evidence ran with a temporary clean ledger on
-the implementation tree committed as `de7007089b20`.
+the implementation tree committed as `dda4f6f6c0b4`.
 
 It verified:
 
@@ -164,7 +164,7 @@ It verified:
   schedules, postmortems, calibration lessons, and domain/topic error profiles.
 - Dashboard forecast API and TUI forecast panel test coverage.
 - The consolidated `python3 scripts/tester_handoff_check.py` gate passed for the
-  `de7007089b20` implementation tree with 176 focused tests, the clean smoke
+  `dda4f6f6c0b4` implementation tree with 176 focused tests, the clean smoke
   path, and `git diff --check`; the smoke output reported
   `agent_protocol_prompt_packets: 465`,
   `agent_protocol_suite_scored_cases: 465`, `performance_runs: 6`,
