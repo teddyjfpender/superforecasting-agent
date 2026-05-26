@@ -613,6 +613,91 @@ def test_ingest_candidate_extracts_question_metadata_from_json_file(tmp_path):
     assert ledger.list_evidence(question.id)[0].source_type == "file"
 
 
+def test_ingest_candidate_extracts_multiple_source_probabilities_from_json_file(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    source = tmp_path / "forecast.json"
+    source.write_text(
+        json.dumps(
+            {
+                "title": "Will multi-probability ingest work?",
+                "resolution_criteria": "Resolved yes if multiple source probabilities become baseline records.",
+                "crowd_probability": "64%",
+                "crowd_source": "example-crowd",
+                "market_probability": 0.58,
+                "market_source": "example-market",
+                "prior_probability": 0.45,
+                "posterior_probability": 0.67,
+                "as_of": "2026-05-01T00:00:00Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    candidate = ledger.create_ingest_candidate(source=str(source))
+    question = ledger.confirm_ingest_candidate(candidate["id"], domain="benchmarks")
+    baselines = ledger.list_baseline_comparisons(question.id)
+    by_type = {baseline["baseline_type"]: baseline for baseline in baselines}
+
+    assert set(by_type) == {"crowd", "market", "prior", "posterior"}
+    assert by_type["crowd"]["source"] == "example-crowd"
+    assert by_type["crowd"]["probability_or_distribution"] == pytest.approx(0.64)
+    assert by_type["market"]["source"] == "example-market"
+    assert by_type["market"]["probability_or_distribution"] == pytest.approx(0.58)
+    assert by_type["prior"]["probability_or_distribution"] == pytest.approx(0.45)
+    assert by_type["posterior"]["probability_or_distribution"] == pytest.approx(0.67)
+
+
+def test_ingest_candidate_normalizes_explicit_baseline_probability_strings(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    source = tmp_path / "forecast.json"
+    source.write_text(
+        json.dumps(
+            {
+                "title": "Will explicit baseline ingest normalize?",
+                "resolution_criteria": "Resolved yes if explicit baseline probabilities normalize.",
+                "baseline": {
+                    "source": "example-crowd",
+                    "baseline_type": "crowd",
+                    "probability": "64%",
+                    "as_of": "2026-05-01T00:00:00Z",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    candidate = ledger.create_ingest_candidate(source=str(source))
+    question = ledger.confirm_ingest_candidate(candidate["id"], domain="benchmarks")
+    baseline = ledger.list_baseline_comparisons(question.id)[0]
+
+    assert baseline["source"] == "example-crowd"
+    assert baseline["baseline_type"] == "crowd"
+    assert baseline["probability_or_distribution"] == pytest.approx(0.64)
+
+
+def test_ingest_candidate_rejects_invalid_extracted_baseline_before_active_question(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    source = tmp_path / "forecast.json"
+    source.write_text(
+        json.dumps(
+            {
+                "title": "Will invalid ingest stay staged?",
+                "resolution_criteria": "Resolved yes if invalid baseline ingest creates no active question.",
+                "baseline_probability": 1.2,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    candidate = ledger.create_ingest_candidate(source=str(source))
+
+    with pytest.raises(ValidationError, match="between 0 and 1"):
+        ledger.confirm_ingest_candidate(candidate["id"], domain="benchmarks")
+
+    assert ledger.list_questions() == []
+    assert ledger.get_ingest_candidate(candidate["id"])["status"] == "proposed"
+
+
 def test_ingest_candidate_extracts_question_metadata_from_csv_file(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     source = tmp_path / "market.csv"

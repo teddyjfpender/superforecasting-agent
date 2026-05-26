@@ -1235,12 +1235,16 @@ class ForecastLedger:
         final_criteria = resolution_criteria if resolution_criteria is not None else candidate["resolution_criteria"]
         if not final_criteria.strip():
             raise ValidationError("confirmation requires resolution criteria")
+        outcome_space = OutcomeSpace.from_dict(candidate["outcome_space"])
+        baseline_payloads = self._candidate_baseline_payloads(candidate["metadata"])
+        for baseline in baseline_payloads:
+            self._validate_probability_payload(self._baseline_probability_value(baseline), outcome_space)
         question = self.create_question(
             title=final_title,
             description=candidate["description"],
             resolution_criteria=final_criteria,
             resolution_source=candidate["resolution_source"],
-            outcome_space=OutcomeSpace.from_dict(candidate["outcome_space"]),
+            outcome_space=outcome_space,
             close_time=candidate["close_time"],
             resolution_time=candidate["resolution_time"],
             tags=tags or ["ingested"],
@@ -1255,18 +1259,12 @@ class ForecastLedger:
             source_type=candidate["source_type"],
             metadata={"ingest_candidate_id": candidate_id},
         )
-        baseline = candidate["metadata"].get("baseline")
-        if isinstance(baseline, dict) and (
-            "probability_or_distribution" in baseline or "probability" in baseline
-        ):
+        for baseline in baseline_payloads:
             self.add_baseline_comparison(
                 question_id=question.id,
                 source=str(baseline.get("source") or candidate["source_type"]),
                 baseline_type=str(baseline.get("baseline_type") or "imported"),
-                probability_or_distribution=baseline.get(
-                    "probability_or_distribution",
-                    baseline.get("probability"),
-                ),
+                probability_or_distribution=self._baseline_probability_value(baseline),
                 as_of=baseline.get("as_of"),
                 metadata={"ingest_candidate_id": candidate_id, "ingest_source": candidate["source"]},
             )
@@ -6246,22 +6244,52 @@ class ForecastLedger:
 
     def _metadata_from_ingest_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         metadata: dict[str, Any] = {}
+        baselines: list[dict[str, Any]] = []
+        raw_baselines = payload.get("baselines")
+        if isinstance(raw_baselines, list):
+            baselines.extend(self._normalize_ingest_baseline(item) for item in raw_baselines if isinstance(item, dict))
         baseline = payload.get("baseline")
-        if not isinstance(baseline, dict):
-            probability = payload.get("baseline_probability")
-            if probability is None:
-                probability = payload.get("crowd_probability")
-            if probability is None:
-                probability = payload.get("probability")
-            if probability is not None:
-                baseline = {
-                    "source": payload.get("baseline_source") or "ingest_file",
+        if isinstance(baseline, dict):
+            baselines.append(self._normalize_ingest_baseline(baseline))
+
+        explicit_probability_fields = (
+            ("baseline_probability", payload.get("baseline_type") or "imported", "baseline"),
+            ("crowd_probability", "crowd", "crowd"),
+            ("market_probability", "market", "market"),
+            ("prior_probability", "prior", "prior"),
+            ("posterior_probability", "posterior", "posterior"),
+            ("forecast_probability", "imported_forecast", "forecast"),
+        )
+        for field, baseline_type, prefix in explicit_probability_fields:
+            if payload.get(field) is None:
+                continue
+            baselines.append(
+                {
+                    "source": (
+                        payload.get(f"{prefix}_source")
+                        or payload.get("baseline_source")
+                        or payload.get("source_name")
+                        or payload.get("platform")
+                        or "ingest_file"
+                    ),
+                    "baseline_type": baseline_type,
+                    "probability_or_distribution": self._coerce_ingest_probability(payload[field]),
+                    "as_of": payload.get(f"{prefix}_as_of") or payload.get("baseline_as_of") or payload.get("as_of"),
+                }
+            )
+        if not baselines and payload.get("probability") is not None:
+            baselines.append(
+                {
+                    "source": payload.get("baseline_source") or payload.get("source_name") or "ingest_file",
                     "baseline_type": payload.get("baseline_type") or "imported",
-                    "probability_or_distribution": self._coerce_ingest_probability(probability),
+                    "probability_or_distribution": self._coerce_ingest_probability(payload["probability"]),
                     "as_of": payload.get("baseline_as_of") or payload.get("as_of"),
                 }
-        if isinstance(baseline, dict):
-            metadata["baseline"] = baseline
+            )
+        baselines = self._dedupe_ingest_baselines(baselines)
+        if baselines:
+            metadata["baselines"] = baselines
+            metadata["baseline"] = baselines[0]
         result = {
             "title": payload.get("title") or payload.get("question") or payload.get("question_title"),
             "description": payload.get("description") or payload.get("body") or "",
@@ -6279,11 +6307,61 @@ class ForecastLedger:
             raw = value.strip()
             if raw == "":
                 return value
+            if raw.endswith("%"):
+                try:
+                    return float(raw[:-1].strip()) / 100.0
+                except ValueError:
+                    return value
             try:
                 return float(raw)
             except ValueError:
                 return value
         return value
+
+    def _dedupe_ingest_baselines(self, baselines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        deduped: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for baseline in baselines:
+            if "probability_or_distribution" not in baseline and "probability" not in baseline:
+                continue
+            key = json_dumps(
+                {
+                    "source": baseline.get("source"),
+                    "baseline_type": baseline.get("baseline_type"),
+                    "as_of": baseline.get("as_of"),
+                    "probability": self._baseline_probability_value(baseline),
+                }
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(dict(baseline))
+        return deduped
+
+    def _candidate_baseline_payloads(self, metadata: dict[str, Any] | None) -> list[dict[str, Any]]:
+        if not isinstance(metadata, dict):
+            return []
+        baselines: list[dict[str, Any]] = []
+        raw_baselines = metadata.get("baselines")
+        if isinstance(raw_baselines, list):
+            baselines.extend(self._normalize_ingest_baseline(item) for item in raw_baselines if isinstance(item, dict))
+        baseline = metadata.get("baseline")
+        if isinstance(baseline, dict):
+            baselines.append(self._normalize_ingest_baseline(baseline))
+        return self._dedupe_ingest_baselines(baselines)
+
+    def _baseline_probability_value(self, baseline: dict[str, Any]) -> Any:
+        return baseline.get("probability_or_distribution", baseline.get("probability"))
+
+    def _normalize_ingest_baseline(self, baseline: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(baseline)
+        if "probability_or_distribution" in normalized:
+            normalized["probability_or_distribution"] = self._coerce_ingest_probability(
+                normalized["probability_or_distribution"]
+            )
+        if "probability" in normalized:
+            normalized["probability"] = self._coerce_ingest_probability(normalized["probability"])
+        return normalized
 
     def _metadata_from_text_source(self, text: str) -> dict[str, Any]:
         result: dict[str, Any] = {}
