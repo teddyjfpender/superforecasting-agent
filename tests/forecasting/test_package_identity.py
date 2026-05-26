@@ -152,6 +152,64 @@ def test_superforecasting_agent_cli_profiled_forecast_namespace_avoids_inherited
     assert '"slug": "superforecasting-agent"' in output
 
 
+def test_superforecasting_agent_no_arg_entrypoint_honors_tui_env(monkeypatch):
+    calls = []
+
+    def fake_inherited_runtime(argv):
+        calls.append(argv)
+
+    def fail_forecast_main(argv, prog=None):
+        raise AssertionError(f"unexpected forecast CLI dispatch: {argv} {prog}")
+
+    monkeypatch.setenv("FORECAST_TUI", "1")
+    monkeypatch.setattr(forecast_cli, "_run_inherited_runtime", fake_inherited_runtime)
+    monkeypatch.setattr(forecast_cli, "forecast_main", fail_forecast_main)
+
+    forecast_cli.main([])
+
+    assert calls == [["chat"]]
+
+
+def test_superforecasting_agent_profiled_no_arg_entrypoint_honors_tui_env(
+    monkeypatch,
+):
+    calls = []
+
+    def fake_inherited_runtime(argv):
+        calls.append(argv)
+
+    def fail_forecast_main(argv, prog=None):
+        raise AssertionError(f"unexpected forecast CLI dispatch: {argv} {prog}")
+
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_TUI", "true")
+    monkeypatch.setattr(forecast_cli, "_run_inherited_runtime", fake_inherited_runtime)
+    monkeypatch.setattr(forecast_cli, "forecast_main", fail_forecast_main)
+
+    forecast_cli.main(["--profile", "macro"])
+
+    assert calls == [["--profile", "macro", "chat"]]
+
+
+def test_superforecasting_agent_no_arg_entrypoint_ignores_false_tui_env(
+    monkeypatch,
+):
+    calls = []
+
+    def fake_forecast_main(argv, prog=None):
+        calls.append((argv, prog))
+
+    def fail_inherited_runtime(argv):
+        raise AssertionError(f"unexpected inherited runtime dispatch: {argv}")
+
+    monkeypatch.setenv("FORECAST_TUI", "0")
+    monkeypatch.setattr(forecast_cli, "forecast_main", fake_forecast_main)
+    monkeypatch.setattr(forecast_cli, "_run_inherited_runtime", fail_inherited_runtime)
+
+    forecast_cli.main([])
+
+    assert calls == [([], "superforecasting-agent")]
+
+
 def test_superforecasting_agent_cli_entrypoint_delegates_runtime_commands(monkeypatch):
     calls = []
     fake_main_module = ModuleType("hermes_cli.main")

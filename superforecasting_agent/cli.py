@@ -12,6 +12,8 @@ from forecasting.cli import cmd_forecast, main as forecast_main, register_cli
 
 _PROFILE_FLAGS = {"-p", "--profile"}
 _LEGACY_ENTRYPOINTS = {"hermes-agent"}
+_TUI_ENV_VARS = ("SUPERFORECASTING_AGENT_TUI", "FORECAST_TUI", "HERMES_TUI")
+_ENV_TRUE_VALUES = {"1", "true", "yes", "on"}
 _legacy_entrypoint_notice_shown = False
 
 
@@ -98,6 +100,14 @@ def _hoist_forecast_global_args(argv: Sequence[str]) -> list[str]:
         rest.append(arg)
         i += 1
     return [*global_args, *rest]
+
+
+def _tui_env_enabled() -> bool:
+    for name in _TUI_ENV_VARS:
+        value = os.environ.get(name, "").strip().lower()
+        if value:
+            return value in _ENV_TRUE_VALUES
+    return False
 
 
 def _apply_profile(profile_name: str | None) -> None:
@@ -188,6 +198,9 @@ def main(argv: list[str] | None = None) -> None:
     _warn_legacy_entrypoint_if_needed(argv is not None)
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     forecast_candidate_argv, profile_name = _strip_profile_args(raw_argv)
+    if not forecast_candidate_argv and _tui_env_enabled():
+        _run_inherited_runtime([*raw_argv, "chat"])
+        return
     normalized_forecast_argv = _forecast_argv(forecast_candidate_argv)
     if normalized_forecast_argv is not None:
         _apply_profile(profile_name)

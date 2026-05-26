@@ -1017,6 +1017,16 @@ def test_tui_readme_uses_forecast_native_product_copy():
     assert "Input history is stored in `~/.hermes" not in readme
 
 
+def test_tui_user_guide_env_launch_is_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    tui_guide = (root / "website" / "docs" / "user-guide" / "tui.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "export FORECAST_TUI=1\nsuperforecasting-agent" in tui_guide
+    assert "export FORECAST_TUI=1\nsuperforecasting-agent chat" not in tui_guide
+
+
 def test_tui_visible_affordances_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [

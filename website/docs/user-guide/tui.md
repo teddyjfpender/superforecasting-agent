@@ -36,7 +36,7 @@ You can also opt in with a forecast-native environment variable:
 
 ```bash
 export FORECAST_TUI=1
-superforecasting-agent chat
+superforecasting-agent
 ```
 
 Legacy `hermes --tui` remains accepted. New docs prefer
