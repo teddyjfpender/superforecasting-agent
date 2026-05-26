@@ -163,10 +163,16 @@ shortcut that lists active questions as numbered rows. The row should carry the
 headline probability, delta, freshness/as-of date, close date, confidence,
 evidence count, and alert/review state. A row number or direct dashboard/TUI
 selection should open the full forecast details so IDs are not part of the
-normal browsing workflow. The TUI should also support forecast lookup by
-ordinary words, topic, or domain, and should let the operator add evidence or
-append a probability update after resolving a row/search phrase to the matching
-ledger question.
+normal browsing workflow. In the TUI, that full-detail view should be a
+structured ledger panel rather than a raw text dump: current probability,
+rationale, recent evidence, forecast history, assumptions/reference classes,
+model runs, resolution state, and concrete follow-up actions should be visible
+at once. The TUI should also support forecast lookup by ordinary words, topic,
+domain, latest rationale, or latest evidence, and should let the operator add
+evidence or append a probability update after resolving a row/search phrase to
+the matching ledger question. A ledger browser shortcut should let the operator
+jump between book, review, alerts, evidence, learning, schedules, calibration,
+backtests, all, and search views.
 
 Example:
 

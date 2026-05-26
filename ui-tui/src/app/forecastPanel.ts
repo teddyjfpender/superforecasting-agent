@@ -7,7 +7,9 @@ import type {
   ForecastDashboardQuestion,
   ForecastDashboardResponse,
   ForecastDashboardReview,
-  ForecastDashboardScheduleRun
+  ForecastDashboardScheduleRun,
+  ForecastQuestionPacket,
+  ForecastQuestionPacketResponse
 } from '../gatewayTypes.js'
 import type { PanelSection } from '../types.js'
 
@@ -488,7 +490,7 @@ const focusedActionRows = (questions: ForecastDashboardQuestion[], reviewQueue: 
   const label = truncate(row.title || row.id, 64)
   const context = focusedForecastContext(row)
   return [
-    [`/forecast show ${row.id}`, `${context}  load full ledger context for ${label}`],
+    [`/questions ${row.id}`, `${context}  load full ledger context for ${label}`],
     [`/sources --question ${row.id}`, 'plan official data, RSS/news, markets, and watched searches'],
     [`/forecast research ${row.id}`, 'collect source notes and evidence without moving probability'],
     [`/forecast update ${row.id} --probability <0-1> --rationale <why>`, 'append an explicit probability update'],
@@ -550,7 +552,12 @@ const scoreForecastQuestionMatch = (
   const domain = row.domain || ''
   const topics = 'topics' in row && Array.isArray(row.topics) ? row.topics.join(' ') : ''
   const status = 'status' in row ? row.status || '' : ''
-  const text = searchNormalize([id, short, title, domain, topics, status].join(' '))
+  const latestRationale = 'latest_rationale' in row ? row.latest_rationale || '' : ''
+  const latestEvidence = [
+    'latest_evidence_claim' in row ? row.latest_evidence_claim || '' : '',
+    'latest_evidence_summary' in row ? row.latest_evidence_summary || '' : ''
+  ].join(' ')
+  const text = searchNormalize([id, short, title, domain, topics, status, latestRationale, latestEvidence].join(' '))
   const fullQuery = searchNormalize(query)
   const matched = new Set<string>()
   let score = 0
@@ -580,6 +587,16 @@ const scoreForecastQuestionMatch = (
   if (topics && searchNormalize(topics).includes(fullQuery)) {
     score += 8
     matched.add('topics')
+  }
+
+  if (latestRationale && searchNormalize(latestRationale).includes(fullQuery)) {
+    score += 6
+    matched.add('rationale')
+  }
+
+  if (latestEvidence && searchNormalize(latestEvidence).includes(fullQuery)) {
+    score += 6
+    matched.add('evidence')
   }
 
   for (const token of tokens) {
@@ -699,6 +716,235 @@ export const forecastQuestionSearchSections = (
   }
 
   return sections
+}
+
+const fieldString = (row: Record<string, unknown> | null | undefined, key: string) => {
+  const value = row?.[key]
+  if (value === null || value === undefined || value === '') {
+    return '-'
+  }
+  return String(value)
+}
+
+const packetCurrentSnapshot = (packet: ForecastQuestionPacket) => packet.forecast_history?.at(-1)
+
+const packetProbability = (value: unknown) =>
+  formatProbability(value as ForecastDashboardQuestion['probability'])
+
+const compactPacketSource = (item: { source_name?: null | string; source_type?: string; source_url?: null | string }) => {
+  const label = item.source_name || item.source_url || item.source_type || 'manual note'
+  return truncate(label, 42)
+}
+
+const packetQuestionTitle = (packet: ForecastQuestionPacket) =>
+  packet.question?.title || packet.question?.id || '(untitled forecast)'
+
+export const forecastQuestionDetailSections = (response: ForecastQuestionPacketResponse): PanelSection[] => {
+  const packet = response.packet
+  const question = packet?.question
+  if (!packet || !question?.id) {
+    return [{ text: '(forecast question not found)', title: 'Forecast Detail' }]
+  }
+
+  const current = packetCurrentSnapshot(packet)
+  const evidence = packet.evidence ?? []
+  const history = packet.forecast_history ?? []
+  const assumptions = packet.assumptions ?? []
+  const references = packet.reference_classes ?? []
+  const modelRuns = packet.model_runs ?? []
+  const watchedSources = packet.watched_sources ?? []
+  const title = packetQuestionTitle(packet)
+  const topicText = question.topics?.length ? question.topics.join(', ') : '-'
+  const sections: PanelSection[] = [
+    {
+      rows: [
+        ['id', question.id],
+        ['status', question.status || '-'],
+        ['domain', question.domain || '-'],
+        ['topics', truncate(topicText, 74)],
+        ['close', shortDate(question.close_time)],
+        ['resolution', shortDate(question.resolution_time)],
+        ['cadence', question.review_cadence || '-'],
+        ['next review', shortDate(question.next_review_at)]
+      ],
+      title: truncate(title, 78)
+    },
+    {
+      rows: [
+        ['P(now)', packetProbability(current?.probability_or_distribution)],
+        ['delta', history.length >= 2 ? formatDelta(probability_delta(history.at(-2)?.probability_or_distribution, current?.probability_or_distribution)) : '-'],
+        ['as-of', shortDate(current?.as_of)],
+        ['confidence', formatConfidence(current?.confidence)],
+        ['method', current?.method || '-'],
+        ['origin', current?.forecast_origin || '-'],
+        ['rationale', truncate(current?.rationale || 'No forecast snapshot recorded.', 118)]
+      ],
+      title: 'Current Forecast'
+    },
+    {
+      rows: [
+        ['evidence', formatCount(evidence.length)],
+        ['history', formatCount(history.length)],
+        ['assumptions', `${formatCount(assumptions.filter(item => item.status === 'active').length)}/${formatCount(assumptions.filter(item => item.status && item.status !== 'active').length)}`],
+        ['references', `${formatCount(references.filter(item => item.status === 'active').length)}/${formatCount(references.filter(item => item.status && item.status !== 'active').length)}`],
+        ['models', formatCount(modelRuns.length)],
+        ['watches', formatCount(watchedSources.length)]
+      ],
+      title: 'Ledger State'
+    }
+  ]
+
+  if (evidence.length) {
+    sections.push({
+      rows: evidence.slice(-6).reverse().map(item => [
+        `${shortId(item.id)} ${shortDate(item.available_at)}`,
+        truncate(
+          `${item.stance || '-'}  ${item.claim_type || '-'}  ${compactPacketSource(item)}  ${item.claim || item.summary || '-'}`,
+          116
+        )
+      ]),
+      title: 'Recent Evidence'
+    })
+  }
+
+  if (history.length) {
+    sections.push({
+      rows: history.slice(-6).reverse().map(item => [
+        `${shortId(item.forecast_id)} ${shortDate(item.as_of)}`,
+        truncate(
+          `P=${packetProbability(item.probability_or_distribution)}  conf ${formatConfidence(item.confidence)}  ${
+            item.method || '-'
+          }  ${item.rationale || '-'}`,
+          116
+        )
+      ]),
+      title: 'Forecast History'
+    })
+  }
+
+  if (assumptions.length || references.length) {
+    const rows: [string, string][] = []
+    for (const item of assumptions.slice(0, 3)) {
+      rows.push([`asm ${shortId(item.id)} ${item.status || '-'}`, truncate(item.text || '-', 96)])
+    }
+    for (const item of references.slice(0, 3)) {
+      rows.push([
+        `ref ${shortId(item.id)} ${item.status || '-'}`,
+        truncate(`${item.name || '-'}  base ${packetProbability(item.base_rate)}`, 96)
+      ])
+    }
+    sections.push({ rows, title: 'Assumptions And References' })
+  }
+
+  if (modelRuns.length) {
+    sections.push({
+      rows: modelRuns.slice(-4).reverse().map(row => {
+        const modelRun = row as Record<string, unknown>
+        return [
+          `${shortId(fieldString(modelRun, 'id'))} ${shortDate(fieldString(modelRun, 'created_at'))}`,
+          truncate(
+            `${fieldString(modelRun, 'model_type')}  p ${packetProbability(modelRun.probability_or_distribution)}  ${fieldString(
+              modelRun,
+              'summary'
+            )}`,
+            104
+          )
+        ] as [string, string]
+      }),
+      title: 'Model Runs'
+    })
+  }
+
+  if (packet.resolution) {
+    const resolution = packet.resolution as Record<string, unknown>
+    sections.push({
+      rows: [
+        ['outcome', fieldString(resolution, 'outcome')],
+        ['status', fieldString(resolution, 'resolution_status')],
+        ['resolved', shortDate(fieldString(resolution, 'resolved_at'))],
+        ['source', truncate(fieldString(resolution, 'resolution_source'), 96)]
+      ],
+      title: 'Resolution'
+    })
+  }
+
+  sections.push({
+    rows: [
+      [`/evidence-for ${question.id} -- <note>`, 'append timestamped evidence; probability remains unchanged'],
+      [`/update-for ${question.id} -- --probability <0-1> --rationale <why>`, 'append an explicit probability update'],
+      [`/sources --question ${question.id}`, 'plan source coverage and watched streams'],
+      [`/forecast research ${question.id}`, 'review evidence freshness and new items since current forecast'],
+      [`/forecast resolve ${question.id} --outcome <value> --resolution-source <url>`, 'record the outcome when criteria are met']
+    ],
+    title: 'Actions'
+  })
+
+  return sections
+}
+
+const probability_delta = (previous: unknown, current: unknown) => {
+  const previousNumber = numberValue(previous)
+  const currentNumber = numberValue(current)
+  return previousNumber === null || currentNumber === null ? null : currentNumber - previousNumber
+}
+
+const sectionTitlesByLedgerView: Record<string, string[]> = {
+  alerts: ['Desk', 'Open Alerts', 'Triage', 'Focused Actions'],
+  backtests: ['Evidence Status', 'Recent Backtests', 'Live Performance', 'Triage', 'Next Commands'],
+  book: ['Desk', 'Active Forecasts', 'Review Queue', 'Triage', 'Focused Actions'],
+  calibration: ['Calibration', 'Live Performance', 'Evidence Status', 'Learning Memory', 'Next Commands'],
+  evidence: ['Evidence Status', 'Focused Actions', 'Evidence Imports', 'Triage'],
+  learning: ['Learning Memory', 'Calibration', 'Triage', 'Next Commands'],
+  review: ['Review Queue', 'Triage', 'Focused Actions', 'Active Forecasts'],
+  schedules: ['Scheduled Self-Checks', 'Triage', 'Focused Actions', 'Next Commands'],
+  sources: ['Evidence Status', 'Focused Actions', 'Evidence Imports', 'Triage']
+}
+
+const ledgerViewShortcuts = (activeView: string): PanelSection => ({
+  rows: [
+    ['/ledger book', activeView === 'book' ? 'active forecast rows' : 'current active forecast rows'],
+    ['/ledger review', 'review queue, stale items, and focused actions'],
+    ['/ledger alerts', 'open alerts and recommended actions'],
+    ['/ledger evidence', 'evidence/readiness status and source import shortcuts'],
+    ['/ledger learning', 'calibration lessons and domain error profiles'],
+    ['/ledger schedules', 'scheduled self-check run state'],
+    ['/find <words>', 'semantic lookup across titles, topics, rationale, and latest evidence']
+  ],
+  title: 'View Shortcuts'
+})
+
+export const forecastLedgerViewSections = (
+  response: ForecastDashboardResponse,
+  view = 'book',
+  now = new Date()
+): PanelSection[] => {
+  const normalized = searchNormalize(view) || 'book'
+  const searchPrefix = 'search '
+  if (normalized.startsWith(searchPrefix)) {
+    return forecastQuestionSearchSections(response, view.trim().replace(/^search\s+/i, ''), now)
+  }
+
+  if (!response.summary) {
+    return [{ text: response.output || '(no forecasts)', title: 'Ledger' }]
+  }
+
+  if (normalized === 'questions' || normalized === 'book') {
+    return [ledgerViewShortcuts('book'), ...forecastBookSections(response, now)]
+  }
+
+  if (normalized === 'all' || normalized === 'overview' || normalized === 'dashboard') {
+    return [ledgerViewShortcuts('overview'), ...forecastDashboardSections(response)]
+  }
+
+  const alias = normalized === 'state' || normalized === 'store' || normalized === 'desk' ? 'book' : normalized
+  const titles = sectionTitlesByLedgerView[alias]
+  if (!titles) {
+    return forecastQuestionSearchSections(response, view, now)
+  }
+
+  const dashboardSections = forecastDashboardSections(response)
+  const selected = dashboardSections.filter(section => section.title && titles.includes(section.title))
+  return [ledgerViewShortcuts(alias), ...(selected.length ? selected : forecastDashboardSections(response))]
 }
 
 export const forecastDeskActionStripItems = (sections: PanelSection[], max = 4): ForecastDeskActionItem[] => {
@@ -882,7 +1128,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
           truncate(row.title || '(untitled forecast)', 72)
         ].join('  ')
 
-        return [key, details, row.id ? `/forecast show ${row.id}` : ''] as [string, string, string]
+        return [key, details, row.id ? `/questions ${row.id}` : ''] as [string, string, string]
       }),
       title: 'Active Forecasts'
     })
@@ -903,10 +1149,10 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
           `as-of ${shortDate(row.as_of)}`,
           `close ${shortDate(row.close_time)}`,
           truncate(reasons, 52),
-          truncate(row.next_action || `/forecast show ${row.id || ''}`, 64)
+          truncate(row.next_action || `/questions ${row.id || ''}`, 64)
         ].join('  ')
 
-        return [key, details] as [string, string]
+        return [key, details, row.id ? `/questions ${row.id}` : ''] as [string, string, string]
       }),
       title: 'Review Queue'
     })
@@ -1336,7 +1582,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
           88
         )
 
-        return [key, details, row.id ? `/forecast show ${row.id}` : ''] as [string, string, string]
+        return [key, details, row.id ? `/questions ${row.id}` : ''] as [string, string, string]
       }),
       title: 'Watchlist'
     })

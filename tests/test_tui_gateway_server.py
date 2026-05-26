@@ -89,6 +89,28 @@ def test_forecast_command_reports_parse_errors():
     assert resp["error"]["code"] == 4003
 
 
+def test_forecast_question_returns_exported_packet(monkeypatch):
+    class FakeLedger:
+        def export_question(self, question_id: str, *, fmt: str = "json") -> str:
+            assert question_id == "fq_cpi"
+            assert fmt == "json"
+            return json.dumps({"question": {"id": question_id, "title": "Will CPI surprise?"}})
+
+    import forecasting.ledger as ledger_module
+
+    monkeypatch.setattr(ledger_module, "ForecastLedger", FakeLedger)
+
+    resp = server.handle_request(
+        {
+            "id": "1",
+            "method": "forecast.question",
+            "params": {"id": "fq_cpi"},
+        }
+    )
+
+    assert resp["result"]["packet"]["question"]["title"] == "Will CPI surprise?"
+
+
 def test_dispatch_rejects_non_object_request():
     resp = server.dispatch([])
 

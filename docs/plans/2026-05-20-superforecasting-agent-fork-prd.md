@@ -490,11 +490,17 @@ for everyday monitoring. A user should be able to run a slash command such as
 probability, probability delta, freshness/as-of date, close date, confidence,
 evidence count, alert/review status, and title. Row numbers should be usable
 for drill-down, such as `/questions 1`, so users can inspect full details
-without copying or remembering forecast IDs. Dashboard support can use direct
-row selection to reach the same detail view. The same surface should support
-search by ordinary words, topic, or domain, such as `/questions inflation` or
-`/find energy prices`, plus shortcuts that resolve a row or search phrase before
-adding evidence or appending an explicit probability update.
+without copying or remembering forecast IDs. In the TUI, the drill-down should
+show a structured ledger-detail view with current probability, rationale,
+recent evidence, forecast history, assumptions/reference classes, model runs,
+resolution state, and follow-up actions. Dashboard support can use direct row
+selection to reach the same detail view. The same surface should support search
+by ordinary words, topic, domain, latest rationale, or latest evidence, such as
+`/questions inflation` or `/find energy prices`, plus shortcuts that resolve a
+row or search phrase before adding evidence or appending an explicit probability
+update. A ledger browser shortcut such as `/ledger` should let operators jump
+between book, review, alerts, evidence, learning, schedules, calibration,
+backtests, all, and search views.
 
 Example:
 
@@ -981,8 +987,10 @@ Requirements:
 
 - [ ] `/questions` or an equivalent shortcut shows active forecasts as numbered rows.
 - [ ] Each row shows current probability, probability delta, freshness/as-of date, close date, confidence, evidence count, alert/review status, and title.
-- [ ] `/questions <row>` opens the full forecast details for that row without requiring an ID.
-- [ ] `/questions <words>` or `/find <words>` searches forecasts by title, topic, or domain.
+- [ ] `/questions <row>` opens structured full forecast details for that row without requiring an ID.
+- [ ] Details include current probability, rationale, recent evidence, forecast history, assumptions/reference classes, model runs, resolution state, and action shortcuts.
+- [ ] `/questions <words>` or `/find <words>` searches forecasts by title, topic, domain, latest rationale, or latest evidence.
+- [ ] `/ledger` or an equivalent shortcut switches between book, review, alerts, evidence, learning, schedules, calibration, backtests, all, and search views.
 - [ ] `/open <row|id|words>` opens one matching forecast without copying an ID.
 - [ ] Evidence and update shortcuts can resolve a row/search phrase before calling the ledger workflow.
 - [ ] The dashboard or TUI supports direct row selection or an equivalent drill-down path.

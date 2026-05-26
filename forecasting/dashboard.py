@@ -34,6 +34,8 @@ def build_dashboard_summary(
         snapshots = ledger.list_snapshots(question.id)
         probability = current.probability_or_distribution if current else None
         previous = snapshots[-2].probability_or_distribution if len(snapshots) >= 2 else None
+        evidence_items = ledger.list_evidence(question.id)
+        latest_evidence = evidence_items[-1] if evidence_items else None
         assumptions = ledger.list_assumptions(question.id)
         stale_assumptions = [
             item for item in assumptions if item.get("status") in {"stale", "invalidated"}
@@ -57,7 +59,11 @@ def build_dashboard_summary(
                 "delta": probability_delta(previous, probability),
                 "confidence": current.confidence if current else None,
                 "as_of": current.as_of if current else None,
-                "evidence_count": len(ledger.list_evidence(question.id)),
+                "latest_rationale": current.rationale if current else None,
+                "latest_evidence_at": latest_evidence.available_at if latest_evidence else None,
+                "latest_evidence_claim": latest_evidence.claim if latest_evidence else None,
+                "latest_evidence_summary": latest_evidence.summary if latest_evidence else None,
+                "evidence_count": len(evidence_items),
                 "baseline_count": len(ledger.list_baseline_comparisons(question.id)),
                 "open_assumption_count": len(
                     [item for item in assumptions if item.get("status") == "active"]
@@ -76,6 +82,8 @@ def build_dashboard_summary(
         question = row["question"]
         snapshot = row["current_snapshot"]
         reasons = list(row.get("reasons") or [])
+        evidence_items = ledger.list_evidence(question.id)
+        latest_evidence = evidence_items[-1] if evidence_items else None
         review_queue.append(
             {
                 "id": question.id,
@@ -85,6 +93,10 @@ def build_dashboard_summary(
                 "resolution_time": question.resolution_time,
                 "probability": snapshot.probability_or_distribution if snapshot else None,
                 "as_of": snapshot.as_of if snapshot else None,
+                "latest_rationale": snapshot.rationale if snapshot else None,
+                "latest_evidence_at": latest_evidence.available_at if latest_evidence else None,
+                "latest_evidence_claim": latest_evidence.claim if latest_evidence else None,
+                "latest_evidence_summary": latest_evidence.summary if latest_evidence else None,
                 "priority": row.get("priority", 9),
                 "reasons": reasons,
                 "next_action": review_next_action(question.id, reasons),
@@ -114,6 +126,8 @@ def build_dashboard_summary(
         if question.status != "active":
             continue
         snapshot = ledger.get_current_snapshot(question.id)
+        evidence_items = ledger.list_evidence(question.id)
+        latest_evidence = evidence_items[-1] if evidence_items else None
         row = {
             "id": question.id,
             "title": question.title,
@@ -122,6 +136,10 @@ def build_dashboard_summary(
             "resolution_time": question.resolution_time,
             "probability": snapshot.probability_or_distribution if snapshot else None,
             "as_of": snapshot.as_of if snapshot else None,
+            "latest_rationale": snapshot.rationale if snapshot else None,
+            "latest_evidence_at": latest_evidence.available_at if latest_evidence else None,
+            "latest_evidence_claim": latest_evidence.claim if latest_evidence else None,
+            "latest_evidence_summary": latest_evidence.summary if latest_evidence else None,
             "priority": alert_review_priority(alert.reason),
             "reasons": [alert.reason],
             "next_action": alert.recommended_action or review_next_action(question.id, [alert.reason]),

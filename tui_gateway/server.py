@@ -2595,6 +2595,22 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
+@method("forecast.question")
+def _(rid, params: dict) -> dict:
+    question_id = params.get("id", "")
+    if not isinstance(question_id, str) or not question_id.strip():
+        return _err(rid, 4003, "id must be a non-empty string")
+
+    try:
+        from forecasting.ledger import ForecastLedger
+
+        ledger = ForecastLedger()
+        packet = json.loads(ledger.export_question(question_id.strip(), fmt="json"))
+        return _ok(rid, {"packet": packet})
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
 @method("session.history")
 def _(rid, params: dict) -> dict:
     session, err = _sess_nowait(params, rid)

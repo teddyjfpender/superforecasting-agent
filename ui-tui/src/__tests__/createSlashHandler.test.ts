@@ -136,7 +136,7 @@ describe('createSlashHandler', () => {
               [
                 'default0 P=0.210 Δ=-0.040',
                 'active  as-of 2026-08-01  close 2026-09-30  conf 0.61  Will company Y default?',
-                '/forecast show fq_default001'
+                '/questions fq_default001'
               ]
             ]),
             title: 'Watchlist'
@@ -152,7 +152,7 @@ describe('createSlashHandler', () => {
               [
                 'default0  P=0.210  Δ=-0.040',
                 'as-of 2026-08-01  close 2026-09-30  conf 0.61  ev 3  base 1  refs 0/0  asm 1/0  active  Will company Y default?',
-                '/forecast show fq_default001'
+                '/questions fq_default001'
               ]
             ],
             title: 'Active Forecasts'
@@ -226,7 +226,7 @@ describe('createSlashHandler', () => {
     })
   })
 
-  it('opens a forecast from /questions by numbered row', async () => {
+  it('opens a structured forecast detail panel from /questions by numbered row', async () => {
     const rpc = vi.fn((method: string, params: Record<string, unknown>) => {
       if (method === 'forecast.dashboard') {
         return Promise.resolve({
@@ -242,8 +242,22 @@ describe('createSlashHandler', () => {
           }
         })
       }
-      if (method === 'forecast.command') {
-        return Promise.resolve({ code: 0, output: `opened ${params.arg}` })
+      if (method === 'forecast.question') {
+        return Promise.resolve({
+          packet: {
+            forecast_history: [
+              {
+                as_of: '2026-05-24T00:00:00Z',
+                confidence: 0.6,
+                forecast_id: 'fc_second',
+                forecast_origin: 'live',
+                probability_or_distribution: 0.6,
+                rationale: 'Second forecast rationale.'
+              }
+            ],
+            question: { id: params.id, status: 'active', title: 'Second forecast' }
+          }
+        })
       }
 
       return Promise.resolve({})
@@ -253,8 +267,14 @@ describe('createSlashHandler', () => {
     expect(createSlashHandler(ctx)('/questions 2')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 20 })
     await vi.waitFor(() => {
-      expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'show fq_second' })
-      expect(ctx.transcript.sys).toHaveBeenCalledWith('opened show fq_second')
+      expect(rpc).toHaveBeenCalledWith('forecast.question', { id: 'fq_second' })
+      expect(ctx.transcript.panel).toHaveBeenCalledWith(
+        'Forecast Detail',
+        expect.arrayContaining([
+          expect.objectContaining({ title: 'Second forecast' }),
+          expect.objectContaining({ title: 'Current Forecast' })
+        ])
+      )
     })
   })
 
@@ -327,6 +347,21 @@ describe('createSlashHandler', () => {
       if (method === 'forecast.command') {
         return Promise.resolve({ code: 0, output: `ran ${params.arg}` })
       }
+      if (method === 'forecast.question') {
+        return Promise.resolve({
+          packet: {
+            forecast_history: [
+              {
+                as_of: '2026-05-24T00:00:00Z',
+                forecast_id: 'fc_cpi',
+                probability_or_distribution: 0.61,
+                rationale: 'Inflation rationale.'
+              }
+            ],
+            question: { id: params.id, status: 'active', title: 'Will the CPI release exceed consensus?' }
+          }
+        })
+      }
 
       return Promise.resolve({})
     })
@@ -335,7 +370,7 @@ describe('createSlashHandler', () => {
 
     expect(handler('/open inflation')).toBe(true)
     await vi.waitFor(() => {
-      expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'show fq_cpi' })
+      expect(rpc).toHaveBeenCalledWith('forecast.question', { id: 'fq_cpi' })
     })
 
     expect(handler('/evidence-for inflation -- BLS release mentioned gasoline pressure')).toBe(true)
@@ -369,6 +404,38 @@ describe('createSlashHandler', () => {
 
     expect(createSlashHandler(ctx)('/book')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 20 })
+  })
+
+  it('routes /ledger views to the native forecast ledger panel', async () => {
+    const rpc = vi.fn(() =>
+      Promise.resolve({
+        summary: {
+          active_count: 1,
+          evidence_status: {
+            gaps: ['live_scored_forecasts'],
+            verdict: 'insufficient_live_evidence'
+          },
+          open_alert_count: 0,
+          product: 'Superforecasting Agent',
+          questions: [{ id: 'fq_cpi', probability: 0.61, title: 'Will the CPI release exceed consensus?' }],
+          review_queue: [],
+          review_queue_count: 0
+        }
+      })
+    )
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/ledger evidence')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 20 })
+    await vi.waitFor(() => {
+      expect(ctx.transcript.panel).toHaveBeenCalledWith(
+        'Forecast Ledger',
+        expect.arrayContaining([
+          expect.objectContaining({ title: 'View Shortcuts' }),
+          expect.objectContaining({ title: 'Evidence Status' })
+        ])
+      )
+    })
   })
 
   it('routes /forecast lifecycle subcommands to the forecast command RPC', async () => {

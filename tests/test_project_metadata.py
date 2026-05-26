@@ -1262,7 +1262,7 @@ def test_tui_visible_affordances_are_forecast_native():
     assert "ForecastPulse" in text
     assert "panelCommandTarget(action.command)" in text
     assert "panelCommandTarget(commandCandidate ?? key)" in text
-    assert "row.id ? `/forecast show ${row.id}`" in text
+    assert "row.id ? `/questions ${row.id}`" in text
     assert "runCommand={actions.runCommand}" in text
     assert "LONG_RUN_NOTICES" in text
     assert "switch forecast style for this forecast session" in text

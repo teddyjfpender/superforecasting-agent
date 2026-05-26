@@ -6599,8 +6599,19 @@ class HermesCLI:
             raw_topics = row.get("topics") or []
             topics = raw_topics if isinstance(raw_topics, str) else " ".join(str(topic) for topic in raw_topics)
             status = str(row.get("status") or "")
-            text = cls._forecast_search_normalize(" ".join([row_id, short_id, title, domain, topics, status]))
+            rationale = str(row.get("latest_rationale") or "")
+            evidence = " ".join(
+                [
+                    str(row.get("latest_evidence_claim") or ""),
+                    str(row.get("latest_evidence_summary") or ""),
+                ]
+            )
+            text = cls._forecast_search_normalize(
+                " ".join([row_id, short_id, title, domain, topics, status, rationale, evidence])
+            )
             title_text = cls._forecast_search_normalize(title)
+            rationale_text = cls._forecast_search_normalize(rationale)
+            evidence_text = cls._forecast_search_normalize(evidence)
             score = 0
 
             if cls._forecast_search_normalize(row_id) == full_query or cls._forecast_search_normalize(short_id) == full_query:
@@ -6613,6 +6624,10 @@ class HermesCLI:
                 score += 8
             if topics and full_query in cls._forecast_search_normalize(topics):
                 score += 8
+            if rationale and full_query in rationale_text:
+                score += 6
+            if evidence and full_query in evidence_text:
+                score += 6
             for token in tokens:
                 if token not in text:
                     continue
@@ -6757,6 +6772,37 @@ class HermesCLI:
             print(render_forecast_book_text(build_dashboard_summary(limit=limit)))
         except Exception as exc:
             _cprint(f"  book: {exc}")
+
+    def _handle_forecast_ledger_command(self, cmd_original: str) -> None:
+        """Handle /ledger as a compact forecast-store navigation shortcut."""
+        parts = cmd_original.split(None, 1)
+        raw_arg = parts[1].strip() if len(parts) > 1 else "book"
+        view = raw_arg.lower().split(maxsplit=1)[0] if raw_arg else "book"
+        try:
+            from forecasting.dashboard import (
+                build_dashboard_summary,
+                render_dashboard_text,
+                render_forecast_book_text,
+            )
+
+            summary = build_dashboard_summary(limit=75 if view == "search" else 20)
+            if view in {"", "book", "questions", "desk", "state", "store"}:
+                print(render_forecast_book_text(summary))
+                return
+            if view in {"all", "overview", "dashboard"}:
+                print(render_dashboard_text(summary))
+                return
+            if view == "search":
+                query = raw_arg.split(maxsplit=1)[1] if len(raw_arg.split(maxsplit=1)) > 1 else ""
+                if not query:
+                    _cprint("  Usage: /ledger search <forecast words>")
+                    return
+                self._print_forecast_search(summary, query)
+                return
+
+            self._print_forecast_search(build_dashboard_summary(limit=75), raw_arg)
+        except Exception as exc:
+            _cprint(f"  ledger: {exc}")
 
     def _handle_forecast_find_command(self, cmd_original: str) -> None:
         parts = cmd_original.split(None, 1)
@@ -8420,6 +8466,8 @@ class HermesCLI:
             self._handle_sessions_command(cmd_original)
         elif canonical in {"questions", "book"}:
             self._handle_forecast_book_command(cmd_original)
+        elif canonical == "ledger":
+            self._handle_forecast_ledger_command(cmd_original)
         elif canonical == "find":
             self._handle_forecast_find_command(cmd_original)
         elif canonical == "open":

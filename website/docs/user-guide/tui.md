@@ -60,14 +60,23 @@ to run any forecast CLI command from inside the TUI.
 
 Use `/questions` for the fast forecast-book view: it renders numbered rows with
 each question's current probability, delta, as-of freshness, close date,
-confidence, evidence count, status, and title. Run `/questions <row>` to open
-the full forecast details without copying a forecast ID; the numbered rows also
-carry that drill-down target in mouse-enabled TUI terminals. `/questions
-<words>` and `/find <words>` search active forecasts and review-queue items by
-title, topic, or domain. `/open <row|id|words>` opens one unambiguous match,
-`/evidence-for <row|words> -- <note>` appends evidence after resolving the
-forecast, and `/update-for <row|words> -- --probability <p> --rationale <why>`
-appends an explicit probability update. `/book` remains an alias.
+confidence, evidence count, status, and title. Run `/questions <row>` to open a
+structured forecast-detail panel without copying a forecast ID. That panel shows
+the current probability, rationale, ledger counts, recent evidence, forecast
+history, assumptions/reference classes, model runs, resolution state, and
+follow-up actions. The numbered rows also carry that drill-down target in
+mouse-enabled TUI terminals. `/questions <words>` and `/find <words>` search
+active forecasts and review-queue items by title, topic, domain, latest
+rationale, and latest evidence. `/open <row|id|words>` opens one unambiguous
+match, `/evidence-for <row|words> -- <note>` appends evidence after resolving
+the forecast, and `/update-for <row|words> -- --probability <p> --rationale
+<why>` appends an explicit probability update. `/book` remains an alias.
+
+Use `/ledger` when you want to browse the forecast store by view instead of by
+ID. Supported views include `/ledger book`, `/ledger review`, `/ledger alerts`,
+`/ledger evidence`, `/ledger learning`, `/ledger schedules`, `/ledger
+calibration`, `/ledger backtests`, `/ledger all`, and `/ledger search <words>`.
+Aliases `/desk`, `/store`, and `/state` open the ledger browser.
 
 On wide terminals, the TUI also keeps a compact forecast desk rail beside the
 transcript. The rail is refreshed from the same dashboard data and keeps the
@@ -137,6 +146,7 @@ Common desk workflows have direct slash commands:
 | Command | Runs |
 |---------|------|
 | `/questions` | Show numbered current forecast questions, search with words, and drill into a row |
+| `/ledger` | Browse forecast ledger views, search, and jump to review/evidence/learning/schedule state |
 | `/find` | Search active forecasts and review queue by title, topic, or domain |
 | `/open` | Open a forecast by row number, id, short id, or search words |
 | `/evidence-for` | Append evidence after resolving a row/search phrase to a forecast |

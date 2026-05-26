@@ -9,6 +9,7 @@ import type {
   ConfigSetResponse,
   ForecastCommandResponse,
   ForecastDashboardResponse,
+  ForecastQuestionPacketResponse,
   SessionSaveResponse,
   SessionStatusResponse,
   SessionSteerResponse,
@@ -27,6 +28,8 @@ import {
   forecastDashboardSections,
   forecastDeskRailSections,
   forecastDeskStatusLabel,
+  forecastLedgerViewSections,
+  forecastQuestionDetailSections,
   forecastQuestionSearchSections,
   rankForecastQuestionMatches
 } from '../../forecastPanel.js'
@@ -142,6 +145,24 @@ const renderForecastSearch = (response: ForecastDashboardResponse, query: string
   ctx.transcript.panel('Forecast Search', forecastQuestionSearchSections(response, query))
 }
 
+const renderForecastQuestionDetail = (response: ForecastQuestionPacketResponse, ctx: SlashRunCtx) => {
+  ctx.transcript.panel('Forecast Detail', forecastQuestionDetailSections(response))
+}
+
+const runForecastQuestionDetail = (ctx: SlashRunCtx, id: string) => {
+  ctx.gateway
+    .rpc<ForecastQuestionPacketResponse>('forecast.question', { id })
+    .then(ctx.guarded<ForecastQuestionPacketResponse>(r => renderForecastQuestionDetail(r, ctx)))
+    .catch(ctx.guardedErr)
+}
+
+const renderForecastLedgerView = (response: ForecastDashboardResponse, view: string, ctx: SlashRunCtx) => {
+  if (response.summary) {
+    updateForecastDeskState(response)
+  }
+  ctx.transcript.panel('Forecast Ledger', forecastLedgerViewSections(response, view))
+}
+
 const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
   const trimmed = arg.trim()
   const listMatch = trimmed.match(/^list(?:\s+(\d+))?$/i)
@@ -149,7 +170,7 @@ const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
 
   if (trimmed && !listMatch && openIndex === null) {
     if (FORECAST_ID_ARG.test(trimmed)) {
-      runForecastCommand(ctx, `show ${trimmed}`)
+      runForecastQuestionDetail(ctx, trimmed)
       return
     }
 
@@ -186,7 +207,7 @@ const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
           return
         }
 
-        runForecastCommand(ctx, `show ${row.id}`)
+        runForecastQuestionDetail(ctx, row.id)
       })
     )
     .catch(ctx.guardedErr)
@@ -281,6 +302,30 @@ const splitForecastRefAndRest = (arg: string): { ref: string; rest: string } => 
   }
 }
 
+const LEDGER_VIEW_WORDS = new Set([
+  'alerts',
+  'all',
+  'backtests',
+  'book',
+  'calibration',
+  'dashboard',
+  'desk',
+  'evidence',
+  'learning',
+  'overview',
+  'questions',
+  'review',
+  'schedules',
+  'sources',
+  'state',
+  'store'
+])
+
+const searchNormalizeForLimit = (view: string) => {
+  const first = view.trim().toLowerCase().split(/\s+/)[0] || 'book'
+  return first === 'search' || !LEDGER_VIEW_WORDS.has(first)
+}
+
 export const coreCommands: SlashCommand[] = [
   {
     help: 'list commands + hotkeys',
@@ -305,6 +350,7 @@ export const coreCommands: SlashCommand[] = [
             ],
             ['/heuristic [random|daily]', 'show a random or daily forecasting maxim'],
             ['/questions [row|list N|words]', 'show current forecast questions, search by words, or drill into a row'],
+            ['/ledger [view|search words]', 'jump between forecast book, review, alerts, evidence, learning, schedules, or search'],
             ['/find <words>', 'search active forecasts and review queue without needing a forecast id'],
             ['/open <row|id|words>', 'open one matching forecast ledger record'],
             ['/evidence-for <row|words> -- <note>', 'append an evidence note after resolving a row/search to an id'],
@@ -448,9 +494,23 @@ export const coreCommands: SlashCommand[] = [
     help: 'open a forecast by row number, id, short id, or search words',
     name: 'open',
     run: (arg, ctx) =>
-      withForecastRef(ctx, arg, id => runForecastCommand(ctx, `show ${id}`), {
+      withForecastRef(ctx, arg, id => runForecastQuestionDetail(ctx, id), {
         missingUsage: 'usage: /open <row|id|forecast words>'
       })
+  },
+
+  {
+    aliases: ['desk', 'store', 'state'],
+    help: 'browse forecast ledger views without remembering forecast ids',
+    name: 'ledger',
+    run: (arg, ctx) => {
+      const view = arg.trim() || 'book'
+      const limit = searchNormalizeForLimit(view) ? 75 : 20
+      ctx.gateway
+        .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit })
+        .then(ctx.guarded<ForecastDashboardResponse>(r => renderForecastLedgerView(r, view, ctx)))
+        .catch(ctx.guardedErr)
+    }
   },
 
   {

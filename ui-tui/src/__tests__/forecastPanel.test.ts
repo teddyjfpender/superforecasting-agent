@@ -9,6 +9,8 @@ import {
   forecastDeskRailSections,
   forecastDeskStatusLabel,
   forecastFreshnessLabel,
+  forecastLedgerViewSections,
+  forecastQuestionDetailSections,
   forecastQuestionSearchSections,
   rankForecastQuestionMatches
 } from '../app/forecastPanel.js'
@@ -188,9 +190,9 @@ describe('forecast desk panel helpers', () => {
     const watchlistRow = forecastDeskRailSections(response).find(section => section.title === 'Watchlist')?.rows?.[0]
 
     expect(activeRow?.[0]).toContain('P=0.610')
-    expect(activeRow?.[2]).toBe('/forecast show fq_inflation001')
+    expect(activeRow?.[2]).toBe('/questions fq_inflation001')
     expect(watchlistRow?.[0]).toContain('inflatio P=0.610')
-    expect(watchlistRow?.[2]).toBe('/forecast show fq_inflation001')
+    expect(watchlistRow?.[2]).toBe('/questions fq_inflation001')
   })
 
   it('promotes readiness gaps into triage actions for the persistent action strip', () => {
@@ -719,7 +721,7 @@ describe('forecast desk panel helpers', () => {
 
     expect(focused?.rows).toEqual([
       [
-        '/forecast show fq_review123456',
+        '/questions fq_review123456',
         'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
       ],
       ['/sources --question fq_review123456', 'plan official data, RSS/news, markets, and watched searches'],
@@ -741,18 +743,18 @@ describe('forecast desk panel helpers', () => {
     expect(forecastDeskActionStripItems(sections, 4)).toEqual([
       { command: '/review --stale', detail: '1 forecast queued for stale/close/evidence review' },
       {
-        command: '/forecast show fq_review123456',
+        command: '/questions fq_review123456',
         detail: 'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
       },
       { command: '/sources --question fq_review123456', detail: 'plan official data, RSS/news, markets, and watched searches' },
       { command: '/forecast research fq_review123456', detail: 'collect source notes and evidence without moving probability' }
     ])
     expect(railFocused?.rows?.[0]).toEqual([
-      '/forecast show fq_review123456',
+      '/questions fq_review123456',
       'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
     ])
     expect(forecastDeskPrimaryActionItem(railSections)).toEqual({
-      command: '/forecast show fq_review123456',
+      command: '/questions fq_review123456',
       detail: 'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
     })
     expect(review?.rows?.[0]?.[1]).toContain('close 2026-05-31')
@@ -808,5 +810,132 @@ describe('forecast desk panel helpers', () => {
         label: 'watch'
       }
     ])
+  })
+
+  it('renders a structured forecast detail panel with state, evidence, history, and actions', () => {
+    const sections = forecastQuestionDetailSections({
+      packet: {
+        assumptions: [{ id: 'as_energy', status: 'active', text: 'Gasoline prices remain material.' }],
+        evidence: [
+          {
+            available_at: '2026-05-24T10:00:00Z',
+            claim: 'Retail gasoline prices rose week over week.',
+            claim_type: 'estimate',
+            id: 'ev_gasoline',
+            source_name: 'EIA',
+            source_type: 'rss',
+            stance: 'supports'
+          }
+        ],
+        forecast_history: [
+          {
+            as_of: '2026-05-20T00:00:00Z',
+            confidence: 0.52,
+            forecast_id: 'fc_prior',
+            forecast_origin: 'live',
+            method: 'base_rate',
+            probability_or_distribution: 0.55,
+            rationale: 'Consensus roughly balanced.'
+          },
+          {
+            as_of: '2026-05-24T00:00:00Z',
+            confidence: 0.62,
+            forecast_id: 'fc_current',
+            forecast_origin: 'live',
+            method: 'ensemble',
+            probability_or_distribution: 0.61,
+            rationale: 'Energy evidence moved the estimate higher.'
+          }
+        ],
+        question: {
+          close_time: '2026-06-30T00:00:00Z',
+          domain: 'macro',
+          id: 'fq_cpi',
+          resolution_criteria: 'Official CPI release exceeds consensus.',
+          status: 'active',
+          title: 'Will the CPI release exceed consensus?',
+          topics: ['inflation', 'energy']
+        },
+        reference_classes: [{ base_rate: 0.58, id: 'rc_cpi', name: 'Recent CPI surprises', status: 'active' }],
+        watched_sources: [{ id: 'ws_eia' }]
+      }
+    })
+
+    expect(sections.find(section => section.title === 'Current Forecast')?.rows).toContainEqual([
+      'P(now)',
+      '0.610'
+    ])
+    expect(sections.find(section => section.title === 'Current Forecast')?.rows).toContainEqual([
+      'delta',
+      '+0.060'
+    ])
+    expect(sections.find(section => section.title === 'Recent Evidence')?.rows?.[0]?.[1]).toContain(
+      'Retail gasoline prices rose'
+    )
+    expect(sections.find(section => section.title === 'Actions')?.rows?.[0]).toEqual([
+      '/evidence-for fq_cpi -- <note>',
+      'append timestamped evidence; probability remains unchanged'
+    ])
+  })
+
+  it('searches current forecasts across rationale and latest evidence context', () => {
+    const response: ForecastDashboardResponse = {
+      summary: {
+        active_count: 2,
+        open_alert_count: 0,
+        product: 'Superforecasting Agent',
+        questions: [
+          {
+            domain: 'macro',
+            id: 'fq_cpi',
+            latest_evidence_claim: 'Retail gasoline prices rose week over week.',
+            latest_rationale: 'Energy evidence moved the estimate higher.',
+            probability: 0.61,
+            title: 'Will the CPI release exceed consensus?',
+            topics: ['inflation']
+          },
+          {
+            domain: 'credit',
+            id: 'fq_default',
+            probability: 0.21,
+            title: 'Will company Y default?'
+          }
+        ],
+        review_queue_count: 0
+      }
+    }
+
+    expect(rankForecastQuestionMatches(response, 'gasoline').map(match => match.row.id)).toEqual(['fq_cpi'])
+    expect(rankForecastQuestionMatches(response, 'estimate higher').map(match => match.row.id)).toEqual(['fq_cpi'])
+  })
+
+  it('builds ledger view shortcuts and filtered state views', () => {
+    const response: ForecastDashboardResponse = {
+      summary: {
+        active_count: 1,
+        evidence_status: {
+          gaps: ['live_scored_forecasts'],
+          verdict: 'insufficient_live_evidence'
+        },
+        open_alert_count: 0,
+        product: 'Superforecasting Agent',
+        questions: [
+          {
+            id: 'fq_cpi',
+            probability: 0.61,
+            title: 'Will the CPI release exceed consensus?'
+          }
+        ],
+        review_queue: [],
+        review_queue_count: 0
+      }
+    }
+
+    const evidenceSections = forecastLedgerViewSections(response, 'evidence')
+
+    expect(evidenceSections[0]?.title).toBe('View Shortcuts')
+    expect(evidenceSections.map(section => section.title)).toEqual(
+      expect.arrayContaining(['View Shortcuts', 'Evidence Status', 'Evidence Imports', 'Triage'])
+    )
   })
 })

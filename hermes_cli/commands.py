@@ -175,6 +175,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("sessions", "Browse and resume previous forecast sessions", "Session"),
     CommandDef("questions", "Show current forecast questions and headline probabilities", "Forecast Desk",
                aliases=("book", "qbook"), args_hint="[row|list N|words]", cli_only=True),
+    CommandDef("ledger", "Browse forecast ledger views without remembering forecast ids", "Forecast Desk",
+               aliases=("desk", "store", "state"), args_hint="[view|search words]", cli_only=True),
     CommandDef("find", "Search forecast questions by title, topic, or domain", "Forecast Desk",
                aliases=("search-forecasts", "lookup"), args_hint="<words>", cli_only=True),
     CommandDef("open", "Open a forecast by row, id, short id, or words", "Forecast Desk",

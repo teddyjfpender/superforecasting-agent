@@ -30,17 +30,17 @@ superforecasting-agent desk
 python -m superforecasting_agent status
 ```
 
-For this handoff, the latest full tester gate was verified on:
-
-```text
-4c58ac5ef10d Refresh tester handoff for required autopilot sources
-```
+For this handoff, the latest full tester gate was verified on the TUI
+ledger-navigation tree immediately before the final snapshot commit. Pin the
+exact cohort hash with `git rev-parse --short=12 HEAD` after pulling the
+snapshot branch.
 
 The current moving `superforecasting-agent-snapshot` branch includes the
-forecast question shortcut pass, the fork-native `superforecasting-agent desk`
-support-session alias, required-source autopilot guardrails, and the
-tester-handoff documentation refresh. Rerun the operator gate before pinning a
-newer cohort hash.
+forecast question shortcut pass, structured TUI forecast-detail drill-down,
+`/ledger` view switching, the fork-native `superforecasting-agent desk`
+support-session alias, required-source autopilot guardrails, RSS/source breadth,
+and the tester-handoff documentation refresh. Rerun the operator gate before
+pinning a newer cohort hash.
 
 A post-cleanup lifecycle smoke passed on `ad3a3052c92f` using
 `python3 scripts/forecast_smoke_test.py`, including forecast creation,
@@ -166,19 +166,24 @@ remains a compatibility alias for older links and plugins.
 
 In the TUI, `/questions` is the fastest current-question view. It shows numbered
 forecast rows with headline probability, delta, close date, evidence count, and
-freshness; selecting a numbered row or running `/questions 1` opens the first
-row's full forecast details without requiring the tester to copy a forecast id.
-`/questions <words>` and `/find <words>` search active forecasts and
-review-queue items by title, topic, or domain, while `/open <row|id|words>`
-opens one unambiguous match. For quick evidence and probability maintenance,
-testers can run `/evidence-for <row|words> -- <note>` or
-`/update-for <row|words> -- --probability <p> --rationale <why>` without
-copying the forecast id. `/book` and `/qbook` remain compatibility aliases.
-`/forecast` opens the broader forecast desk panel; active rows, wide-rail
-watchlist rows, the header primary action, and concrete `desk actions` entries
-are selectable in mouse-enabled terminals. Placeholder command examples remain
-display-only until filled in. `/schedule`, `/backtest`, `/calibration`,
-`/alerts`, `/doctor`, and `/readiness` jump to common workflow checks.
+freshness; selecting a numbered row or running `/questions 1` opens a structured
+forecast-detail panel without requiring the tester to copy a forecast id. That
+panel shows current probability, rationale, ledger counts, recent evidence,
+forecast history, assumptions/reference classes, model runs, resolution state,
+and follow-up actions. `/questions <words>` and `/find <words>` search active
+forecasts and review-queue items by title, topic, domain, latest rationale, or
+latest evidence, while `/open <row|id|words>` opens one unambiguous match. For
+quick evidence and probability maintenance, testers can run `/evidence-for
+<row|words> -- <note>` or `/update-for <row|words> -- --probability <p>
+--rationale <why>` without copying the forecast id. `/book` and `/qbook` remain
+compatibility aliases. `/ledger` browses forecast-store views such as book,
+review, alerts, evidence, learning, schedules, calibration, backtests, all, and
+search; `/desk`, `/store`, and `/state` are aliases. `/forecast` opens the
+broader forecast desk panel; active rows, wide-rail watchlist rows, the header
+primary action, and concrete `desk actions` entries are selectable in
+mouse-enabled terminals. Placeholder command examples remain display-only until
+filled in. `/schedule`, `/backtest`, `/calibration`, `/alerts`, `/doctor`, and
+`/readiness` jump to common workflow checks.
 
 In the dashboard Forecasts page, active forecast rows are selectable. Clicking
 or pressing Enter/Space on a row opens a detail panel with the same headline
@@ -284,11 +289,13 @@ It verified:
   and the package-defined `forecast` command path.
 - Portfolio export/import packets, including forecast history, evidence,
   schedules, postmortems, calibration lessons, and domain/topic error profiles.
-- Dashboard forecast API and TUI forecast panel test coverage.
+- Dashboard forecast API and TUI forecast panel test coverage, including
+  structured forecast-detail panels and `/ledger` view switching.
 - Forecast question shortcut coverage for `/questions`, `/questions <row>`,
-  `/questions <words>`, `/find`, `/open`, `/evidence-for`, `/update-for`,
-  `/book`, numbered TUI drill-down, classic CLI drill-down/search/edit
-  resolution, and dashboard row selection with a detail panel.
+  `/questions <words>`, `/ledger`, `/find`, `/open`, `/evidence-for`,
+  `/update-for`, `/book`, numbered TUI drill-down, semantic search across
+  rationale/latest evidence, classic CLI drill-down/search/edit resolution, and
+  dashboard row selection with a detail panel.
 - The consolidated `python3 scripts/tester_handoff_check.py` gate passed for the
   implementation tree with 181 focused tests, the clean smoke path, and
   `git diff --check`; the smoke output reported 52 source adapters,

@@ -427,6 +427,10 @@ export interface ForecastDashboardQuestion {
   domain?: null | string
   evidence_count?: number
   id?: string
+  latest_evidence_at?: null | string
+  latest_evidence_claim?: null | string
+  latest_evidence_summary?: null | string
+  latest_rationale?: null | string
   open_alert_count?: number
   open_assumption_count?: number
   open_reference_class_count?: number
@@ -444,6 +448,10 @@ export interface ForecastDashboardReview {
   close_time?: null | string
   domain?: null | string
   id?: string
+  latest_evidence_at?: null | string
+  latest_evidence_claim?: null | string
+  latest_evidence_summary?: null | string
+  latest_rationale?: null | string
   next_action?: string
   priority?: number
   probability?: null | number | Record<string, unknown> | string
@@ -455,6 +463,88 @@ export interface ForecastDashboardReview {
 export interface ForecastCommandResponse {
   code?: number
   output?: string
+}
+
+export interface ForecastQuestionPacketResponse {
+  packet?: ForecastQuestionPacket
+}
+
+export interface ForecastQuestionPacket {
+  assumptions?: ForecastQuestionPacketAssumption[]
+  baseline_comparisons?: Record<string, unknown>[]
+  calibration_lessons?: ForecastDashboardLesson[]
+  corrections?: Record<string, unknown>[]
+  domain_error_profiles?: ForecastDashboardErrorProfile[]
+  evidence?: ForecastQuestionPacketEvidence[]
+  forecast_history?: ForecastQuestionPacketSnapshot[]
+  model_runs?: Record<string, unknown>[]
+  postmortems?: Record<string, unknown>[]
+  question?: ForecastQuestionPacketQuestion
+  reference_classes?: ForecastQuestionPacketReferenceClass[]
+  resolution?: Record<string, unknown> | null
+  scores?: Record<string, unknown>[]
+  watched_sources?: Record<string, unknown>[]
+}
+
+export interface ForecastQuestionPacketQuestion {
+  close_time?: null | string
+  created_at?: string
+  description?: string
+  domain?: null | string
+  id?: string
+  impact?: null | string
+  next_review_at?: null | string
+  outcome_space?: {
+    choices?: unknown[]
+    type?: string
+  }
+  resolution_criteria?: string
+  resolution_source?: null | string
+  resolution_time?: null | string
+  review_cadence?: null | string
+  status?: string
+  tags?: string[]
+  title?: string
+  topics?: string[]
+}
+
+export interface ForecastQuestionPacketSnapshot {
+  as_of?: string
+  confidence?: null | number
+  evidence_refs?: string[]
+  forecast_id?: string
+  forecast_origin?: string
+  method?: null | string
+  probability_or_distribution?: null | number | Record<string, unknown> | string
+  rationale?: string
+}
+
+export interface ForecastQuestionPacketEvidence {
+  available_at?: string
+  claim?: string
+  claim_type?: string
+  id?: string
+  published_at?: null | string
+  relevance_rating?: null | number
+  reliability_rating?: null | number
+  source_name?: null | string
+  source_type?: string
+  source_url?: null | string
+  stance?: string
+  summary?: string
+}
+
+export interface ForecastQuestionPacketAssumption {
+  id?: string
+  status?: string
+  text?: string
+}
+
+export interface ForecastQuestionPacketReferenceClass {
+  base_rate?: null | number
+  id?: string
+  name?: string
+  status?: string
 }
 
 export interface SessionCompressResponse {

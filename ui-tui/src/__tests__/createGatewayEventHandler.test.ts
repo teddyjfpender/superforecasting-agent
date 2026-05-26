@@ -796,7 +796,7 @@ describe('createGatewayEventHandler', () => {
       {
         rows: [
           [
-            '/forecast show fq_123456789abc',
+            '/questions fq_123456789abc',
             'P=0.630  as-of 2026-05-01  close -  reasons review_due,last_update_…  load full ledger context for Will X win the election?'
           ],
           ['/sources --question fq_123456789abc', 'plan official data, RSS/news, markets, and watched searches'],
@@ -809,7 +809,7 @@ describe('createGatewayEventHandler', () => {
           [
             '12345678 P=0.630 Δ=+0.080',
             '1 alert  as-of 2026-05-01  close 2026-11-03  conf 0.74  Will X win the election?',
-            '/forecast show fq_123456789abc'
+            '/questions fq_123456789abc'
           ]
         ],
         title: 'Watchlist'
@@ -863,7 +863,7 @@ describe('createGatewayEventHandler', () => {
               [
                 '12345678  P=0.630  Δ=+0.080',
                 'as-of 2026-05-01  close 2026-11-03  conf 0.74  ev 4  base 2  refs 0/0  asm 2/0  1 alert  Will X win the election?',
-                '/forecast show fq_123456789abc'
+                '/questions fq_123456789abc'
               ]
             ],
             title: 'Active Forecasts'
@@ -872,7 +872,8 @@ describe('createGatewayEventHandler', () => {
             rows: [
               [
                 '12345678  priority 4',
-                'P=0.630  as-of 2026-05-01  close -  review_due, last_update_7d_plus  forecast research fq_123456789abc; forecast update fq_123456789…'
+                'P=0.630  as-of 2026-05-01  close -  review_due, last_update_7d_plus  forecast research fq_123456789abc; forecast update fq_123456789…',
+                '/questions fq_123456789abc'
               ]
             ],
             title: 'Review Queue'
@@ -929,7 +930,7 @@ describe('createGatewayEventHandler', () => {
           {
             rows: [
               [
-                '/forecast show fq_123456789abc',
+                '/questions fq_123456789abc',
                 'P=0.630  as-of 2026-05-01  close -  reasons review_due,last_update_…  load full ledger context for Will X win the election?'
               ],
               ['/sources --question fq_123456789abc', 'plan official data, RSS/news, markets, and watched searches'],
