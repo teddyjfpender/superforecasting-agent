@@ -339,7 +339,9 @@ In `hybrid` and `context` modes, base context (user representation + card + sess
 
 ## Config Reference
 
-Config file: `$HERMES_HOME/honcho.json` (profile-local) or `~/.honcho/config.json` (global).
+Config file: `honcho.json` under the active Superforecasting Agent home
+(`$SUPERFORECASTING_AGENT_HOME` or `$FORECAST_HOME`; legacy `$HERMES_HOME`
+remains readable during migration), or `~/.honcho/config.json` (global).
 
 ### Key settings
 

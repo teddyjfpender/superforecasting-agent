@@ -129,7 +129,13 @@ These don't auto-reject but reduce the response score:
 ## Using in Python
 
 ```python
-exec(open(os.path.join(os.environ.get("HERMES_HOME", os.path.expanduser("~/.superforecasting-agent")), "skills/red-teaming/godmode/scripts/godmode_race.py")).read())
+AGENT_HOME = (
+    os.environ.get("SUPERFORECASTING_AGENT_HOME")
+    or os.environ.get("FORECAST_HOME")
+    or os.environ.get("HERMES_HOME")
+    or os.path.expanduser("~/.superforecasting-agent")
+)
+exec(open(os.path.join(AGENT_HOME, "skills/red-teaming/godmode/scripts/godmode_race.py")).read())
 
 # Check if a response is a refusal
 text = "I'm sorry, but I can't assist with that request."

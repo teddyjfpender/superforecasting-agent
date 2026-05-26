@@ -3,7 +3,13 @@ Loader for G0DM0D3 scripts. Handles the exec-scoping issues.
 
 Usage in execute_code:
     exec(open(os.path.expanduser(
-        os.path.join(os.environ.get("HERMES_HOME", os.path.expanduser("~/.hermes")), "skills/red-teaming/godmode/scripts/load_godmode.py")
+        os.path.join(
+            os.environ.get("SUPERFORECASTING_AGENT_HOME")
+            or os.environ.get("FORECAST_HOME")
+            or os.environ.get("HERMES_HOME")
+            or os.path.expanduser("~/.superforecasting-agent"),
+            "skills/red-teaming/godmode/scripts/load_godmode.py",
+        )
     )).read())
     
     # Now all functions are available:
@@ -17,7 +23,14 @@ Usage in execute_code:
 import os, sys
 from pathlib import Path
 
-_gm_scripts_dir = Path(os.getenv("HERMES_HOME", Path.home() / ".hermes")) / "skills" / "red-teaming" / "godmode" / "scripts"
+def _gm_agent_home() -> Path:
+    for _gm_env_name in ("SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME"):
+        _gm_value = os.environ.get(_gm_env_name, "").strip()
+        if _gm_value:
+            return Path(_gm_value).expanduser()
+    return Path.home() / ".superforecasting-agent"
+
+_gm_scripts_dir = _gm_agent_home() / "skills" / "red-teaming" / "godmode" / "scripts"
 
 _gm_old_argv = sys.argv
 sys.argv = ["_godmode_loader"]
@@ -40,6 +53,6 @@ for _gm_script in ["parseltongue.py", "godmode_race.py", "auto_jailbreak.py"]:
 sys.argv = _gm_old_argv
 
 # Cleanup loader vars
-for _gm_cleanup in ['_gm_scripts_dir', '_gm_old_argv', '_gm_load', '_gm_ns', '_gm_k',
+for _gm_cleanup in ['_gm_agent_home', '_gm_scripts_dir', '_gm_old_argv', '_gm_load', '_gm_ns', '_gm_k',
                      '_gm_v', '_gm_script', '_gm_path', '_gm_cleanup']:
     globals().pop(_gm_cleanup, None)

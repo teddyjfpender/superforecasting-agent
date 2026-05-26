@@ -133,11 +133,13 @@ n.cook(force=True)
 actual = str(n.width) + 'x' + str(n.height)
 ```
 
-## 5. Hermes Configuration
+## 5. Superforecasting Agent Configuration
 
 ### Config location
 
-`$HERMES_HOME/config.yaml` (defaults to `~/.superforecasting-agent/config.yaml` when `HERMES_HOME` is unset)
+Use `config.yaml` under the active Superforecasting Agent home. New installs
+should prefer `$SUPERFORECASTING_AGENT_HOME` or `$FORECAST_HOME`; legacy
+`$HERMES_HOME` remains readable during migration.
 
 ### MCP entry format
 

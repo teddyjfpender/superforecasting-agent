@@ -3101,6 +3101,98 @@ def test_remaining_product_facing_skill_examples_are_forecast_native():
     assert "Hermes installs package this" not in text
 
 
+def test_long_tail_skill_examples_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root
+        / "skills"
+        / "autonomous-ai-agents"
+        / "kanban-codex-lane"
+        / "templates"
+        / "pmb-codex-lane-prompt.md",
+        root / "skills" / "data-science" / "jupyter-live-kernel" / "SKILL.md",
+        root
+        / "website"
+        / "docs"
+        / "user-guide"
+        / "skills"
+        / "bundled"
+        / "data-science"
+        / "data-science-jupyter-live-kernel.md",
+        root / "skills" / "creative" / "touchdesigner-mcp" / "references" / "troubleshooting.md",
+        root / "skills" / "creative" / "ascii-art" / "SKILL.md",
+        root
+        / "website"
+        / "docs"
+        / "user-guide"
+        / "skills"
+        / "bundled"
+        / "creative"
+        / "creative-ascii-art.md",
+        root / "skills" / "creative" / "excalidraw" / "references" / "examples.md",
+        root
+        / "optional-skills"
+        / "security"
+        / "oss-forensics"
+        / "references"
+        / "github-archive-guide.md",
+        root / "skills" / "creative" / "baoyu-article-illustrator" / "references" / "usage.md",
+        root / "skills" / "creative" / "manim-video" / "references" / "troubleshooting.md",
+        root / "skills" / "creative" / "manim-video" / "references" / "visual-design.md",
+        root / "optional-skills" / "autonomous-ai-agents" / "honcho" / "SKILL.md",
+        root
+        / "website"
+        / "docs"
+        / "user-guide"
+        / "skills"
+        / "optional"
+        / "autonomous-ai-agents"
+        / "autonomous-ai-agents-honcho.md",
+        root / "skills" / "red-teaming" / "godmode" / "SKILL.md",
+        root / "skills" / "red-teaming" / "godmode" / "scripts" / "load_godmode.py",
+        root / "skills" / "red-teaming" / "godmode" / "scripts" / "auto_jailbreak.py",
+        root / "skills" / "red-teaming" / "godmode" / "references" / "refusal-detection.md",
+        root
+        / "website"
+        / "docs"
+        / "user-guide"
+        / "skills"
+        / "bundled"
+        / "red-teaming"
+        / "red-teaming-godmode.md",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "Superforecasting Agent worker" in text
+    assert "Verification Superforecasting Agent will rerun independently" in text
+    assert "agent tool access" in text
+    assert "Superforecasting Agent Configuration" in text
+    assert 'python3 -m pyfiglet "FORECAST"' in text
+    assert "text=FORECAST" in text
+    assert '"source": "superforecasting-agent"' in text
+    assert "Accessing via Superforecasting Agent" in text
+    assert "natural language in Superforecasting Agent" in text
+    assert 'Text("FORECAST"' in text
+    assert "SUPERFORECASTING_AGENT_HOME" in text
+    assert "FORECAST_HOME" in text
+    assert "active Superforecasting Agent home" in text
+
+    assert "Hermes worker" not in text
+    assert "Verification Hermes will rerun independently" not in text
+    assert "HERMES_COMMAND_" not in text
+    assert "hermes tool access" not in text
+    assert "Hermes Configuration" not in text
+    assert 'pyfiglet "HERMES"' not in text
+    assert "text=HERMES" not in text
+    assert '"source": "hermes-agent"' not in text
+    assert "Accessing via Hermes" not in text
+    assert "natural language in Hermes" not in text
+    assert 'Text("HERMES"' not in text
+    assert 'MarkupText(\'<span letter_spacing="6000">HERMES' not in text
+    assert "Config file: `$HERMES_HOME/honcho.json`" not in text
+    assert 'Path.home() / ".hermes"' not in text
+
+
 def test_kanban_video_orchestrator_skill_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     skill_root = root / "optional-skills" / "creative" / "kanban-video-orchestrator"

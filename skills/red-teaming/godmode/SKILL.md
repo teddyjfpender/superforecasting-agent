@@ -60,8 +60,14 @@ The fastest path — auto-detect the model, test strategies on approved probes, 
 ```python
 # In execute_code — use the loader to avoid exec-scoping issues:
 import os
+AGENT_HOME = (
+    os.environ.get("SUPERFORECASTING_AGENT_HOME")
+    or os.environ.get("FORECAST_HOME")
+    or os.environ.get("HERMES_HOME")
+    or os.path.expanduser("~/.superforecasting-agent")
+)
 exec(open(os.path.expanduser(
-    os.path.join(os.environ.get("HERMES_HOME", os.path.expanduser("~/.superforecasting-agent")), "skills/red-teaming/godmode/scripts/load_godmode.py")
+    os.path.join(AGENT_HOME, "skills/red-teaming/godmode/scripts/load_godmode.py")
 )).read())
 
 # Auto-detect model from config and run the compatibility-named evaluator
@@ -191,7 +197,13 @@ python3 scripts/parseltongue.py "Evaluate a harmless benchmark sentence." --tier
 Or use `execute_code` inline:
 ```python
 # Load the parseltongue module
-exec(open(os.path.join(os.environ.get("HERMES_HOME", os.path.expanduser("~/.superforecasting-agent")), "skills/red-teaming/godmode/scripts/parseltongue.py")).read())
+AGENT_HOME = (
+    os.environ.get("SUPERFORECASTING_AGENT_HOME")
+    or os.environ.get("FORECAST_HOME")
+    or os.environ.get("HERMES_HOME")
+    or os.path.expanduser("~/.superforecasting-agent")
+)
+exec(open(os.path.join(AGENT_HOME, "skills/red-teaming/godmode/scripts/parseltongue.py")).read())
 
 query = "Evaluate a harmless benchmark sentence."
 variants = generate_variants(query, tier="standard")
@@ -228,7 +240,13 @@ Race multiple models against the same approved benchmark prompt, score responses
 
 ```python
 # Via execute_code
-exec(open(os.path.join(os.environ.get("HERMES_HOME", os.path.expanduser("~/.superforecasting-agent")), "skills/red-teaming/godmode/scripts/godmode_race.py")).read())
+AGENT_HOME = (
+    os.environ.get("SUPERFORECASTING_AGENT_HOME")
+    or os.environ.get("FORECAST_HOME")
+    or os.environ.get("HERMES_HOME")
+    or os.path.expanduser("~/.superforecasting-agent")
+)
+exec(open(os.path.join(AGENT_HOME, "skills/red-teaming/godmode/scripts/godmode_race.py")).read())
 
 result = race_models(
     query="Summarize defensive SQL injection prevention guidance for a training lab.",

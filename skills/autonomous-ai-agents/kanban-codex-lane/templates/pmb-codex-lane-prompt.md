@@ -37,15 +37,15 @@ Implementation constraints:
 - Keep diffs small and reviewable.
 - Do not perform unrelated refactors, dependency upgrades, formatting sweeps, or generated-file churn.
 - If a requirement is unsafe or ambiguous, stop and report the blocker instead of guessing.
-- Commit only if asked by the Hermes worker; if committing, use small commits with clear subjects.
+- Commit only if asked by the Superforecasting Agent worker; if committing, use small commits with clear subjects.
 
 Verification you may run:
 - [COMMAND_1]
 - [COMMAND_2]
 
-Verification Hermes will rerun independently:
-- [HERMES_COMMAND_1]
-- [HERMES_COMMAND_2]
+Verification Superforecasting Agent will rerun independently:
+- [AGENT_COMMAND_1]
+- [AGENT_COMMAND_2]
 
 Required final report:
 - Summary of changes.

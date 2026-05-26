@@ -163,7 +163,7 @@ ORDER BY event_count DESC
 
 ---
 
-## Accessing via Hermes
+## Accessing via Superforecasting Agent
 
 **Option A: BigQuery CLI** (if `gcloud` is installed)
 ```bash
