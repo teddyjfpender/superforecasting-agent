@@ -2012,6 +2012,21 @@ def test_memory_provider_readmes_are_ledger_first_and_forecast_native():
     assert "active Hermes profile" not in combined
 
 
+def test_holographic_memory_runtime_paths_are_forecast_native():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "plugins" / "memory" / "holographic" / "__init__.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "active Superforecasting Agent home config.yaml" in text
+    assert "$SUPERFORECASTING_AGENT_HOME" in text
+    assert "$FORECAST_HOME" in text
+    assert "$HERMES_HOME remains for migration compatibility" in text
+    assert "_expand_agent_home_vars(db_path, _hermes_home)" in text
+    assert "Config in $HERMES_HOME/config.yaml" not in text
+    assert "db_path = db_path.replace(\"$HERMES_HOME\"" not in text
+
+
 def test_setup_model_toolpicker_docs_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [

@@ -5,10 +5,11 @@ with entity resolution, trust scoring, and HRR-based compositional retrieval.
 
 Original plugin by dusterbloom (PR #2351), adapted to the MemoryProvider ABC.
 
-Config in $HERMES_HOME/config.yaml (profile-scoped):
+Config in the active Superforecasting Agent home config.yaml (profile-scoped):
   plugins:
     hermes-memory-store:
-      db_path: $HERMES_HOME/memory_store.db   # omit to use the default
+      db_path: $SUPERFORECASTING_AGENT_HOME/memory_store.db   # omit to use the default
+      # $FORECAST_HOME is also accepted; $HERMES_HOME remains for migration compatibility.
       auto_extract: false
       default_trust: 0.5
       min_trust_threshold: 0.3
@@ -29,6 +30,15 @@ from .retrieval import FactRetriever
 from hermes_cli.config import cfg_get
 
 logger = logging.getLogger(__name__)
+
+_AGENT_HOME_PATH_TOKENS = (
+    "$SUPERFORECASTING_AGENT_HOME",
+    "${SUPERFORECASTING_AGENT_HOME}",
+    "$FORECAST_HOME",
+    "${FORECAST_HOME}",
+    "$HERMES_HOME",
+    "${HERMES_HOME}",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +118,12 @@ def _load_plugin_config() -> dict:
         return {}
 
 
+def _expand_agent_home_vars(path: str, active_home: str) -> str:
+    for token in _AGENT_HOME_PATH_TOKENS:
+        path = path.replace(token, active_home)
+    return path
+
+
 # ---------------------------------------------------------------------------
 # MemoryProvider implementation
 # ---------------------------------------------------------------------------
@@ -160,12 +176,10 @@ class HolographicMemoryProvider(MemoryProvider):
         _hermes_home = str(get_hermes_home())
         _default_db = _hermes_home + "/memory_store.db"
         db_path = self._config.get("db_path", _default_db)
-        # Expand $HERMES_HOME in user-supplied paths so config values like
-        # "$HERMES_HOME/memory_store.db" or "~/.hermes/memory_store.db" both
-        # resolve to the active profile's directory.
+        # Resolve fork-native and legacy home aliases against the active
+        # profile directory so copied configs stay portable across profiles.
         if isinstance(db_path, str):
-            db_path = db_path.replace("$HERMES_HOME", _hermes_home)
-            db_path = db_path.replace("${HERMES_HOME}", _hermes_home)
+            db_path = _expand_agent_home_vars(db_path, _hermes_home)
         default_trust = float(self._config.get("default_trust", 0.5))
         hrr_dim = int(self._config.get("hrr_dim", 1024))
         hrr_weight = float(self._config.get("hrr_weight", 0.3))
