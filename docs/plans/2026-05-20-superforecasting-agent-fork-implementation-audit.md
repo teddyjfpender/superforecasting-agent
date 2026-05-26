@@ -1475,6 +1475,7 @@ Latest verified result:
 - Profile alias/root guidance pass: profile creation/rename validation now reserves fork-native command names (`forecast`, `superforecast`, `superforecasting-agent`) plus legacy compatibility aliases so generated profile wrappers cannot clobber the primary forecast desk entry points in `~/.local/bin`, and profile-manager docstrings now describe `~/.superforecasting-agent` as the standard new root while scoping `~/.hermes` to compatibility.
 - Uninstall active-home wording pass: uninstall help/comments and Windows cleanup messages now describe the active Superforecasting Agent home and legacy compatibility artifacts instead of presenting `~/.hermes` or Hermes-owned PATH/env entries as the primary uninstall model.
 - ACP visible-copy pass: ACP session/server/tool/permission copy now describes forecast agent sessions, active-home SessionDB persistence, `superforecasting-agent acp` WSL launches, runtime-compatible approvals, and the Superforecasting Agent version command instead of Hermes AIAgent, `~/.hermes/state.db`, `Show Hermes version`, or Hermes-owned prompt/usage wording. Project metadata guards the surface.
+- TUI maxim command demotion pass: the forecast maxim command is now registered primarily as `/heuristic`, with `/fortune` retained only as a compatibility alias. TUI slash-handler tests and project metadata guard the primary command name.
 
 ## Prompt-To-Artifact Checklist
 

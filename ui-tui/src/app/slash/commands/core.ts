@@ -617,9 +617,9 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    aliases: ['heuristic'],
+    aliases: ['fortune'],
     help: 'forecasting maxim',
-    name: 'fortune',
+    name: 'heuristic',
     run: (arg, ctx) => {
       const key = arg.trim().toLowerCase()
 

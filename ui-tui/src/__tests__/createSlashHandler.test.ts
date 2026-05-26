@@ -26,10 +26,18 @@ describe('createSlashHandler', () => {
     expect(ctx.transcript.sys).toHaveBeenCalledWith('ui redrawn')
   })
 
-  it('handles /heuristic locally as a forecast-native compatibility alias', () => {
+  it('handles /heuristic locally as the forecast-native maxim command', () => {
     const ctx = buildCtx()
 
     expect(createSlashHandler(ctx)('/heuristic daily')).toBe(true)
+    expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
+    expect(ctx.transcript.sys).toHaveBeenCalledWith(expect.stringMatching(/^(P|CAL) /))
+  })
+
+  it('keeps /fortune as a compatibility alias for forecast maxims', () => {
+    const ctx = buildCtx()
+
+    expect(createSlashHandler(ctx)('/fortune daily')).toBe(true)
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
     expect(ctx.transcript.sys).toHaveBeenCalledWith(expect.stringMatching(/^(P|CAL) /))
   })

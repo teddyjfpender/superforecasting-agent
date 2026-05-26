@@ -913,6 +913,8 @@ def test_tui_visible_affordances_are_forecast_native():
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
     assert "/heuristic [random|daily]" in text
+    assert "name: 'heuristic'" in text
+    assert "aliases: ['fortune']" in text
     assert "forecasting maxim" in text
     assert "FORECAST_PULSE_RE" in text
     assert "ForecastPulse" in text
@@ -929,6 +931,7 @@ def test_tui_visible_affordances_are_forecast_native():
     assert "personality:" not in text
     assert "local fortune" not in text
     assert "random or daily local fortune" not in text
+    assert "name: 'fortune'" not in text
     assert "clean refactor" not in text
     assert "legendary drop" not in text
     assert "♥" not in text
