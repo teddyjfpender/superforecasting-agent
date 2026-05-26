@@ -500,7 +500,9 @@ by ordinary words, topic, domain, latest rationale, or latest evidence, such as
 row or search phrase before adding evidence or appending an explicit probability
 update. A ledger browser shortcut such as `/ledger` should let operators jump
 between book, review, alerts, evidence, learning, schedules, calibration,
-backtests, all, and search views.
+backtests, all, and search views. The TUI should keep those view shortcuts
+visible in the working layout, with `Alt+1` through `Alt+9` for the main ledger
+views and `Ctrl+F` for forecast lookup or typed-phrase-to-`/find` conversion.
 
 Example:
 
@@ -991,6 +993,7 @@ Requirements:
 - [ ] Details include current probability, rationale, recent evidence, forecast history, assumptions/reference classes, model runs, resolution state, and action shortcuts.
 - [ ] `/questions <words>` or `/find <words>` searches forecasts by title, topic, domain, latest rationale, or latest evidence.
 - [ ] `/ledger` or an equivalent shortcut switches between book, review, alerts, evidence, learning, schedules, calibration, backtests, all, and search views.
+- [ ] TUI keyboard shortcuts expose those views without requiring users to type the full slash command.
 - [ ] `/open <row|id|words>` opens one matching forecast without copying an ID.
 - [ ] Evidence and update shortcuts can resolve a row/search phrase before calling the ledger workflow.
 - [ ] The dashboard or TUI supports direct row selection or an equivalent drill-down path.

@@ -172,7 +172,11 @@ domain, latest rationale, or latest evidence, and should let the operator add
 evidence or append a probability update after resolving a row/search phrase to
 the matching ledger question. A ledger browser shortcut should let the operator
 jump between book, review, alerts, evidence, learning, schedules, calibration,
-backtests, all, and search views.
+backtests, all, and search views. In the TUI, those views should be visible as
+a persistent shortcut strip and reachable without typing full slash commands:
+`Alt+1` through `Alt+9` should jump across the main ledger views, while
+`Ctrl+F` should start forecast lookup or turn a typed phrase into a `/find`
+query.
 
 Example:
 

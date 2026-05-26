@@ -56,6 +56,12 @@ The forecast desk is the primary product surface. Use these before reaching for 
 | `/import-packet <export.json>` | TUI | Restore an exported forecast packet. |
 | `/pilot-aggregate [files...]` | TUI | Aggregate tester export packets. |
 
+TUI keyboard shortcuts mirror the core ledger views: `Alt+1` opens the
+forecast book, `Alt+2` review, `Alt+3` alerts, `Alt+4` evidence, `Alt+5`
+learning, `Alt+6` schedules, `Alt+7` calibration, `Alt+8` backtests, and
+`Alt+9` all. `Ctrl+F` starts forecast lookup or converts a typed phrase into
+`/find <phrase>`.
+
 ## Permissions and admin/user split
 
 Every messaging platform that supports a per-user allowlist (Telegram, Discord, Slack, Matrix, Mattermost, Signal, ...) also supports a two-tier slash command split: **admins** get every registered command, **regular users** only get the names you list in `user_allowed_commands` (plus the always-allowed floor `/help` and `/whoami`). Configure `allow_admin_from` and `user_allowed_commands` (and the per-group equivalents `group_allow_admin_from` / `group_user_allowed_commands`) inside the platform's `extra:` block in `~/.superforecasting-agent/gateway-config.yaml`. Legacy `~/.hermes/gateway-config.yaml` is still accepted during the compatibility transition.

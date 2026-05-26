@@ -9,6 +9,7 @@ import { $isBlocked, $overlayState, patchOverlayState } from '../app/overlayStor
 import { $uiState } from '../app/uiStore.js'
 import { INLINE_MODE, SHOW_FPS } from '../config/env.js'
 import { PLACEHOLDER } from '../content/placeholders.js'
+import { FORECAST_TUI_FIND_SHORTCUT, FORECAST_TUI_VIEW_SHORTCUTS } from '../lib/forecastShortcuts.js'
 import {
   COMPOSER_PROMPT_GAP_WIDTH,
   composerPromptWidth,
@@ -491,6 +492,54 @@ const ForecastDeskCompactBrief = memo(function ForecastDeskCompactBrief({
   )
 })
 
+const ForecastDeskViewStrip = memo(function ForecastDeskViewStrip({
+  cols,
+  runCommand
+}: {
+  cols: number
+  runCommand: (command: string) => void
+}) {
+  const ui = useStore($uiState)
+
+  if (!ui.forecastDeskRailSections.length || ui.compact || cols < 88) {
+    return null
+  }
+
+  const viewLimit = cols >= 170 ? 9 : cols >= 146 ? 7 : cols >= 120 ? 5 : 3
+  const views = FORECAST_TUI_VIEW_SHORTCUTS.slice(0, viewLimit)
+
+  return (
+    <NoSelect flexShrink={0} paddingX={1}>
+      <Box flexDirection="row" width={Math.max(1, cols - 2)}>
+        <Box flexShrink={0} width={7}>
+          <Text bold color={ui.theme.color.primary}>
+            views
+          </Text>
+        </Box>
+
+        {views.map((shortcut, index) => (
+          <Box
+            flexShrink={0}
+            key={shortcut.id}
+            onClick={(event: CommandClickEvent) =>
+              runCommandFromClick(panelCommandTarget(shortcut.command), runCommand, event)
+            }
+          >
+            <Text wrap="truncate">
+              <Text color={ui.theme.color.muted}>{index === 0 ? '' : '  |  '}</Text>
+              <Text color={ui.theme.color.muted}>{shortcut.hotkey}</Text>
+              <Text color={ui.theme.color.accent}> {shortcut.label}</Text>
+            </Text>
+          </Box>
+        ))}
+
+        <Text color={ui.theme.color.muted}>  |  {FORECAST_TUI_FIND_SHORTCUT.hotkey}</Text>
+        <Text color={ui.theme.color.accent}> {FORECAST_TUI_FIND_SHORTCUT.label}</Text>
+      </Box>
+    </NoSelect>
+  )
+})
+
 const ForecastDeskHeader = memo(function ForecastDeskHeader({
   cols,
   runCommand
@@ -649,6 +698,12 @@ export const AppLayout = memo(function AppLayout({
         {!overlay.agents && (
           <PerfPane id="forecast-header">
             <ForecastDeskHeader cols={composer.cols} runCommand={actions.runCommand} />
+          </PerfPane>
+        )}
+
+        {!overlay.agents && (
+          <PerfPane id="forecast-views">
+            <ForecastDeskViewStrip cols={composer.cols} runCommand={actions.runCommand} />
           </PerfPane>
         )}
 

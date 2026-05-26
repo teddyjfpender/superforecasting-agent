@@ -10,6 +10,7 @@ import type {
   SudoRespondResponse,
   VoiceRecordResponse
 } from '../gatewayTypes.js'
+import { forecastFindDraft, forecastShortcutForKey } from '../lib/forecastShortcuts.js'
 import { isAction, isCopyShortcut, isMac, isVoiceToggleKey } from '../lib/platform.js'
 import { computePrecisionWheelStep, initPrecisionWheel } from '../lib/precisionWheel.js'
 import { computeWheelStep, initWheelAccelForHost } from '../lib/wheelAccel.js'
@@ -509,6 +510,23 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
     if (isVoiceToggleKey(key, ch, voice.recordKey)) {
       return voiceRecordToggle()
+    }
+
+    const forecastShortcut = cState.inputBuf.length ? null : forecastShortcutForKey(ch, key, cState.input)
+    if (forecastShortcut) {
+      cActions.setHistoryIdx(null)
+      cActions.setQueueEdit(null)
+
+      if (forecastShortcut.mode === 'prefill') {
+        cActions.setInput(forecastFindDraft(cState.input))
+        return
+      }
+
+      if (cState.input.trim()) {
+        return
+      }
+
+      return actions.dispatchSubmission(forecastShortcut.command)
     }
 
     // Cmd/Ctrl+G, plus Alt+G fallback for VSCode/Cursor (they bind the

@@ -40,4 +40,12 @@ describe('shouldPassThroughToGlobalHandler', () => {
     expect(shouldPassThroughToGlobalHandler('', key({ pageUp: true }))).toBe(true)
     expect(shouldPassThroughToGlobalHandler('', key({ pageDown: true }))).toBe(true)
   })
+
+  it('passes through forecast navigation shortcuts only when appropriate', () => {
+    expect(shouldPassThroughToGlobalHandler('f', key({ ctrl: true }))).toBe(true)
+    expect(shouldPassThroughToGlobalHandler('f', key({ ctrl: true }), DEFAULT_VOICE_RECORD_KEY, 'inflation')).toBe(true)
+    expect(shouldPassThroughToGlobalHandler('f', key({ ctrl: true }), DEFAULT_VOICE_RECORD_KEY, '/forecast review')).toBe(false)
+    expect(shouldPassThroughToGlobalHandler('1', key({ meta: true }))).toBe(true)
+    expect(shouldPassThroughToGlobalHandler('1', key({ meta: true }), DEFAULT_VOICE_RECORD_KEY, 'draft note')).toBe(false)
+  })
 })

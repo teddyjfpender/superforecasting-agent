@@ -1,5 +1,6 @@
-import React from 'react'
 import { PassThrough } from 'stream'
+
+import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AppLayoutProps } from '../app/interfaces.js'
@@ -296,6 +297,9 @@ describe('forecast desk Ink render', () => {
     expect(output).not.toContain('Nous Research')
     expect(compact).toContain('ForecastDesk')
     expect(compact).toContain('next/questionsfq_review123456')
+    expect(compact).toContain('viewsAlt+1book')
+    expect(compact).toContain('Alt+4evidence')
+    expect(compact).toContain('Ctrl+Ffind')
     expect(compact).toContain('desk2active/1alert/1review/cal7/2lessons/asm3/1/refs2/1')
     expect(compact).toContain('Triage')
     expect(compact).toContain('/forecastreadiness')
@@ -312,6 +316,9 @@ describe('forecast desk Ink render', () => {
 
     expect(compact).toContain('ForecastDesk')
     expect(compact).toContain('next/questionsfq_review123456')
+    expect(compact).toContain('viewsAlt+1book')
+    expect(compact).toContain('Alt+3alerts')
+    expect(compact).toContain('Ctrl+Ffind')
     expect(compact).toContain('deskbrief')
     expect(compact).toContain('book2active')
     expect(compact).toContain('1alerts')

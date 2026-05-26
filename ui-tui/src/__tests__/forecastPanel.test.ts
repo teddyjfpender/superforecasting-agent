@@ -934,6 +934,12 @@ describe('forecast desk panel helpers', () => {
     const evidenceSections = forecastLedgerViewSections(response, 'evidence')
 
     expect(evidenceSections[0]?.title).toBe('View Shortcuts')
+    expect(evidenceSections[0]?.rows).toEqual(
+      expect.arrayContaining([
+        ['Alt+4', 'evidence (active): evidence readiness and source gaps', '/ledger evidence'],
+        ['Ctrl+F', 'find: search forecasts by words, topics, rationale, or evidence', '/find <words>']
+      ])
+    )
     expect(evidenceSections.map(section => section.title)).toEqual(
       expect.arrayContaining(['View Shortcuts', 'Evidence Status', 'Evidence Imports', 'Triage'])
     )

@@ -37,10 +37,11 @@ snapshot branch.
 
 The current moving `superforecasting-agent-snapshot` branch includes the
 forecast question shortcut pass, structured TUI forecast-detail drill-down,
-`/ledger` view switching, the fork-native `superforecasting-agent desk`
-support-session alias, required-source autopilot guardrails, RSS/source breadth,
-and the tester-handoff documentation refresh. Rerun the operator gate before
-pinning a newer cohort hash.
+`/ledger` view switching, persistent TUI `views` shortcuts, `Alt+1` through
+`Alt+9` ledger navigation, `Ctrl+F` forecast lookup, the fork-native
+`superforecasting-agent desk` support-session alias, required-source autopilot
+guardrails, RSS/source breadth, and the tester-handoff documentation refresh.
+Rerun the operator gate before pinning a newer cohort hash.
 
 A post-cleanup lifecycle smoke passed on `ad3a3052c92f` using
 `python3 scripts/forecast_smoke_test.py`, including forecast creation,

@@ -78,6 +78,13 @@ ID. Supported views include `/ledger book`, `/ledger review`, `/ledger alerts`,
 calibration`, `/ledger backtests`, `/ledger all`, and `/ledger search <words>`.
 Aliases `/desk`, `/store`, and `/state` open the ledger browser.
 
+The TUI keeps those ledger views visible in a persistent `views` strip when
+space allows. `Alt+1` through `Alt+9` jump to book, review, alerts, evidence,
+learning, schedules, calibration, backtests, and all views. `Ctrl+F` starts
+forecast lookup; if you have typed a phrase such as `inflation energy`, it
+converts it into `/find inflation energy` so you can search the forecast book
+without remembering IDs.
+
 On wide terminals, the TUI also keeps a compact forecast desk rail beside the
 transcript. The rail is refreshed from the same dashboard data and keeps the
 active book count, triage queue, at-risk forecasts, evidence-readiness gaps, and

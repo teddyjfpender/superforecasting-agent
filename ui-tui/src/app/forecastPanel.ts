@@ -11,6 +11,7 @@ import type {
   ForecastQuestionPacket,
   ForecastQuestionPacketResponse
 } from '../gatewayTypes.js'
+import { FORECAST_TUI_FIND_SHORTCUT, FORECAST_TUI_VIEW_SHORTCUTS } from '../lib/forecastShortcuts.js'
 import type { PanelSection } from '../types.js'
 
 export interface ForecastDeskActionItem {
@@ -902,13 +903,16 @@ const sectionTitlesByLedgerView: Record<string, string[]> = {
 
 const ledgerViewShortcuts = (activeView: string): PanelSection => ({
   rows: [
-    ['/ledger book', activeView === 'book' ? 'active forecast rows' : 'current active forecast rows'],
-    ['/ledger review', 'review queue, stale items, and focused actions'],
-    ['/ledger alerts', 'open alerts and recommended actions'],
-    ['/ledger evidence', 'evidence/readiness status and source import shortcuts'],
-    ['/ledger learning', 'calibration lessons and domain error profiles'],
-    ['/ledger schedules', 'scheduled self-check run state'],
-    ['/find <words>', 'semantic lookup across titles, topics, rationale, and latest evidence']
+    ...FORECAST_TUI_VIEW_SHORTCUTS.map(shortcut => [
+      shortcut.hotkey,
+      `${shortcut.label}${shortcut.id === activeView ? ' (active)' : ''}: ${shortcut.description}`,
+      shortcut.command
+    ] as [string, string, string]),
+    [
+      FORECAST_TUI_FIND_SHORTCUT.hotkey,
+      `${FORECAST_TUI_FIND_SHORTCUT.label}: ${FORECAST_TUI_FIND_SHORTCUT.description}`,
+      '/find <words>'
+    ]
   ],
   title: 'View Shortcuts'
 })
@@ -933,7 +937,7 @@ export const forecastLedgerViewSections = (
   }
 
   if (normalized === 'all' || normalized === 'overview' || normalized === 'dashboard') {
-    return [ledgerViewShortcuts('overview'), ...forecastDashboardSections(response)]
+    return [ledgerViewShortcuts(normalized === 'all' ? 'all' : 'overview'), ...forecastDashboardSections(response)]
   }
 
   const alias = normalized === 'state' || normalized === 'store' || normalized === 'desk' ? 'book' : normalized

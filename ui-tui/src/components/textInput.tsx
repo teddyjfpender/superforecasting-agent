@@ -4,6 +4,7 @@ import { type MutableRefObject, useEffect, useMemo, useRef, useState } from 'rea
 
 import { setInputSelection } from '../app/inputSelectionStore.js'
 import { readClipboardText, writeClipboardText } from '../lib/clipboard.js'
+import { forecastShortcutForKey } from '../lib/forecastShortcuts.js'
 import { cursorLayout, offsetFromPosition } from '../lib/inputMetrics.js'
 import {
   DEFAULT_VOICE_RECORD_KEY,
@@ -832,7 +833,7 @@ export function TextInput({
       // actually get voice toggled instead of a paste (Copilot round-7
       // follow-up on #19835). The pass-through predicate is a no-op for
       // ordinary typing and plain paste when voice is unbound to 'v'.
-      if (shouldPassThroughToGlobalHandler(inp, k, voiceRecordKey)) {
+      if (shouldPassThroughToGlobalHandler(inp, k, voiceRecordKey, vRef.current)) {
         return
       }
 
@@ -1215,7 +1216,8 @@ export function decideRightClickAction(
 export const shouldPassThroughToGlobalHandler = (
   input: string,
   key: Key,
-  voiceRecordKey: ParsedVoiceRecordKey = DEFAULT_VOICE_RECORD_KEY
+  voiceRecordKey: ParsedVoiceRecordKey = DEFAULT_VOICE_RECORD_KEY,
+  currentValue = ''
 ): boolean =>
   (key.ctrl && input === 'c') ||
   (key.ctrl && input === 'x') ||
@@ -1224,7 +1226,8 @@ export const shouldPassThroughToGlobalHandler = (
   key.pageUp ||
   key.pageDown ||
   key.escape ||
-  isVoiceToggleKey(key, input, voiceRecordKey)
+  isVoiceToggleKey(key, input, voiceRecordKey) ||
+  Boolean(forecastShortcutForKey(input, key, currentValue))
 
 export interface TextInputMouseApi {
   dragAt: (row: number, col: number) => void
