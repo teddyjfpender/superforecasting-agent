@@ -3,7 +3,7 @@
 React + Ink terminal UI for the forecast desk. TypeScript owns the screen. Python owns sessions, tools, model calls, and most command logic.
 
 ```bash
-superforecasting-agent --tui
+superforecasting-agent tui
 ```
 
 ## What runs
@@ -38,11 +38,13 @@ Malformed stdout lines are treated as protocol noise and surfaced as `gateway.pr
 From the repo root, the normal path is:
 
 ```bash
-superforecasting-agent --tui
+superforecasting-agent tui
 ```
 
 The CLI expects `ui-tui/dist/entry.js` to exist, or the whole source code available in which to run `npm install` and `npm run dev`.
-Legacy compatibility entrypoints may still route into the same client, but new usage and troubleshooting should use the forecast-native command.
+`superforecasting-agent --tui` and legacy compatibility entrypoints may still
+route into the same client, but new usage and troubleshooting should use the
+forecast-native `superforecasting-agent tui` command.
 
 ```bash
 cd ui-tui

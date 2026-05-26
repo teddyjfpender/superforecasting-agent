@@ -1001,6 +1001,8 @@ def test_tui_readme_uses_forecast_native_product_copy():
     root = Path(__file__).resolve().parents[1]
     readme = (root / "ui-tui" / "README.md").read_text(encoding="utf-8")
 
+    assert "superforecasting-agent tui" in readme
+    assert "forecast-native `superforecasting-agent tui` command" in readme
     assert "superforecasting-agent --tui" in readme
     assert "### Forecast composer" in readme
     assert "live forecaster response row" in readme
@@ -1015,6 +1017,18 @@ def test_tui_readme_uses_forecast_native_product_copy():
     assert "persistent ForecastCLI subprocess for slash commands" in readme
     assert "persistent HermesCLI subprocess for slash commands" not in readme
     assert "Input history is stored in `~/.hermes" not in readme
+
+
+def test_cli_user_guide_tui_launch_prefers_fork_native_command():
+    root = Path(__file__).resolve().parents[1]
+    cli_guide = (root / "website" / "docs" / "user-guide" / "cli.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "superforecasting-agent tui       # Ink TUI with forecast shortcuts" in cli_guide
+    assert "Launch:\n\n```bash\nsuperforecasting-agent tui" in cli_guide
+    assert "superforecasting-agent --tui     # Ink TUI with forecast shortcuts" not in cli_guide
+    assert "Launch:\n\n```bash\nsuperforecasting-agent --tui" not in cli_guide
 
 
 def test_tui_user_guide_env_launch_is_forecast_native():

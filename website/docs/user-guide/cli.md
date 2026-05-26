@@ -15,7 +15,7 @@ forecast                         # Open the forecast desk dashboard
 forecast status                  # Operational summary with live baseline comparisons
 forecast list                    # Active and recent questions
 superforecasting-agent           # Fork-native runtime entrypoint
-superforecasting-agent --tui     # Ink TUI with forecast shortcuts
+superforecasting-agent tui       # Ink TUI with forecast shortcuts
 ```
 
 Compatibility entrypoints such as `hermes` and `hermes chat` still exist for inherited runtime workflows. They are not the center of the fork.
@@ -260,7 +260,7 @@ Every due scheduled review also writes a `scheduled_review_runs` record with ale
 Launch:
 
 ```bash
-superforecasting-agent --tui
+superforecasting-agent tui
 ```
 
 Useful shortcuts:
