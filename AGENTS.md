@@ -50,7 +50,7 @@ entry points you'll actually edit.
 
 ```
 superforecasting-agent/
-├── run_agent.py          # AIAgent class — core conversation loop (~12k LOC)
+├── run_agent.py          # AIAgent class — core forecast-support loop (~12k LOC)
 ├── model_tools.py        # Tool orchestration, discover_builtin_tools(), handle_function_call()
 ├── toolsets.py           # Toolset definitions, _HERMES_CORE_TOOLS list
 ├── cli.py                # inherited classic CLI shell + forecast-desk entrypoint
@@ -864,7 +864,7 @@ Hardening invariants:
 
 Cron deliveries are **not** mirrored into the target gateway session —
 they land in their own cron session with a header/footer frame so the
-main conversation's message-role alternation stays intact.
+primary forecast-support session's message-role alternation stays intact.
 
 ---
 
@@ -913,10 +913,10 @@ Full user-facing docs: `website/docs/user-guide/features/kanban.md`.
 
 ### Prompt Caching Must Not Break
 
-Superforecasting Agent ensures caching remains valid throughout a conversation. **Do NOT implement changes that would:**
-- Alter past context mid-conversation
-- Change toolsets mid-conversation
-- Reload memories or rebuild system prompts mid-conversation
+Superforecasting Agent ensures caching remains valid throughout a forecast-support turn. **Do NOT implement changes that would:**
+- Alter past context mid-turn
+- Change toolsets mid-turn
+- Reload memories or rebuild system prompts mid-turn
 
 Cache-breaking forces dramatically higher costs. The ONLY time we alter context is during context compression.
 

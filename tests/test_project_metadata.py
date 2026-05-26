@@ -2744,8 +2744,15 @@ def test_root_agents_guidance_is_forecast_native():
     assert "### DO NOT hardcode agent-home paths" in text
     assert "superforecasting-agent tui" in text
     assert "primary Forecast Desk experience" in text
+    assert "core forecast-support loop" in text
+    assert "primary forecast-support session's message-role alternation" in text
+    assert "throughout a forecast-support turn" in text
     assert "# Hermes Agent - Development Guide" not in opening
     assert "Hermes Agent" not in text
+    assert "core conversation loop" not in text
+    assert "main conversation's message-role alternation" not in text
+    assert "throughout a conversation" not in text
+    assert "mid-conversation" not in text
     assert "animated faces during API calls" not in opening
     assert "primary chat experience" not in opening
     assert "primary forecast-chat experience" not in text
