@@ -69,7 +69,7 @@ Use explicit toolsets when a forecast genuinely needs them:
 superforecasting-agent
 
 # Add a specific connector or inherited capability for one session
-superforecasting-agent chat --toolsets "forecast-desk,mcp-myserver"
+superforecasting-agent desk --toolsets "forecast-desk,mcp-myserver"
 
 # Inspect and configure available tools interactively
 superforecasting-agent tools
@@ -132,7 +132,7 @@ superforecasting-agent tools list
 superforecasting-agent tools
 
 # Use a specific toolset mix for a one-off session
-superforecasting-agent chat --toolsets "forecast-desk,browser,mcp-market-data"
+superforecasting-agent desk --toolsets "forecast-desk,browser,mcp-market-data"
 ```
 
 Common inherited toolsets include `web`, `search`, `terminal`, `file`,

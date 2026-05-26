@@ -646,7 +646,7 @@ Advanced per-platform knobs for throttling the outbound message batcher. Most us
 | `SUPERFORECASTING_AGENT_UID` / `FORECAST_UID` / `HERMES_UID` | Docker entrypoint UID to assign to the unprivileged runtime user before dropping root. Use this when the mounted forecast home is owned by a host UID other than `10000`. |
 | `SUPERFORECASTING_AGENT_GID` / `FORECAST_GID` / `HERMES_GID` | Docker entrypoint GID to assign to the unprivileged runtime group before dropping root. |
 | `SUPERFORECASTING_AGENT_AUTH_JSON_BOOTSTRAP` / `FORECAST_AUTH_JSON_BOOTSTRAP` / `HERMES_AUTH_JSON_BOOTSTRAP` | One-shot Docker first-boot seed for `auth.json`. The entrypoint writes it only when no existing `auth.json` is present. Treat this as secret material. |
-| `SUPERFORECASTING_AGENT_INFERENCE_MODEL` / `FORECAST_INFERENCE_MODEL` / `HERMES_INFERENCE_MODEL` | Force the model for `superforecasting-agent -z` / `superforecasting-agent chat` without mutating `config.yaml`. Pairs with `SUPERFORECASTING_AGENT_INFERENCE_PROVIDER` / `FORECAST_INFERENCE_PROVIDER` / `HERMES_INFERENCE_PROVIDER`. Useful for scripted callers that need to override the default model per run. |
+| `SUPERFORECASTING_AGENT_INFERENCE_MODEL` / `FORECAST_INFERENCE_MODEL` / `HERMES_INFERENCE_MODEL` | Force the model for `superforecasting-agent -z` / `superforecasting-agent desk` without mutating `config.yaml`. Pairs with `SUPERFORECASTING_AGENT_INFERENCE_PROVIDER` / `FORECAST_INFERENCE_PROVIDER` / `HERMES_INFERENCE_PROVIDER`. Useful for scripted callers that need to override the default model per run. |
 
 ## Session Settings
 

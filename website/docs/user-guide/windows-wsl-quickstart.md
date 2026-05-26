@@ -191,7 +191,7 @@ dos2unix path/to/script.sh
 
 ### "Clone inside WSL or on `/mnt/c`?"
 
-Clone inside WSL. Always, unless you have a specific reason not to. A typical Superforecasting Agent workflow (`forecast`, `superforecasting-agent chat`, tool calls that `rg`/`ripgrep` the repo, file watchers, background gateway) will be dramatically faster and more reliable against `~/code/myrepo` than `/mnt/c/Users/you/myrepo`.
+Clone inside WSL. Always, unless you have a specific reason not to. A typical Superforecasting Agent workflow (`forecast`, `superforecasting-agent desk`, tool calls that `rg`/`ripgrep` the repo, file watchers, background gateway) will be dramatically faster and more reliable against `~/code/myrepo` than `/mnt/c/Users/you/myrepo`.
 
 One exception: **MCP bridges that launch Windows binaries.** If you're using `chrome-devtools-mcp` through `cmd.exe` (see [MCP guide: WSL to Windows Chrome](/guides/use-mcp-with-superforecasting-agent#wsl2-bridge-superforecasting-agent-in-wsl-to-windows-chrome)), Windows may complain with a `UNC` warning if the agent's current working directory is `~`. In that case, start Superforecasting Agent from somewhere under `/mnt/c/` so the Windows process has a drive-letter cwd.
 
@@ -299,7 +299,7 @@ If you're running a **Windows-native** local-model server (Ollama for Windows, L
 **"Connection refused" to my Windows-hosted Ollama / LM Studio.**
 See [WSL2 Networking](/integrations/providers#wsl2-networking-windows-users). Ninety percent of the time the server is bound to `127.0.0.1` and needs `0.0.0.0` (Ollama: `OLLAMA_HOST=0.0.0.0`), or you're missing a firewall rule.
 
-**Massive slowness on `git status` / `superforecasting-agent chat` in a repo.**
+**Massive slowness on `git status` / `superforecasting-agent desk` in a repo.**
 You're probably working under `/mnt/c/...`. Move the repo to `~/code/...` (Linux side). Order-of-magnitude faster.
 
 **`bad interpreter: /bin/bash^M` on scripts.**

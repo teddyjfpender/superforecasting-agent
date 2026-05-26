@@ -2747,8 +2747,8 @@ def test_default_spawn_auto_loads_kanban_worker_skill(kanban_home, monkeypatch):
         f"expected 'kanban-worker', got {cmd[idx + 1]!r}"
     )
     assert "--accept-hooks" in cmd, f"spawn argv missing --accept-hooks: {cmd}"
-    assert cmd.index("--accept-hooks") < cmd.index("chat"), (
-        f"--accept-hooks must come before 'chat' in argv: {cmd}"
+    assert cmd.index("--accept-hooks") < cmd.index("desk"), (
+        f"--accept-hooks must come before 'desk' in argv: {cmd}"
     )
     # Assignee + task env are still present
     assert "some-profile" in cmd
@@ -3022,14 +3022,14 @@ def test_default_spawn_appends_per_task_skills(kanban_home, monkeypatch):
     assert skill_names[0] == "kanban-worker", skill_names
     assert "translation" in skill_names
     assert "github-code-review" in skill_names
-    # --skills must appear BEFORE the `chat` subcommand so argparse
+    # --skills must appear BEFORE the `desk` subcommand so argparse
     # attaches them to the top-level parser, not the subcommand.
-    chat_idx = cmd.index("chat")
+    desk_idx = cmd.index("desk")
     last_skills_idx = max(
         i for i, tok in enumerate(cmd) if tok == "--skills"
     )
-    assert last_skills_idx < chat_idx, (
-        f"--skills must come before 'chat' in argv: {cmd}"
+    assert last_skills_idx < desk_idx, (
+        f"--skills must come before 'desk' in argv: {cmd}"
     )
 
 

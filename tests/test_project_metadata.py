@@ -1642,7 +1642,7 @@ def test_high_attention_identity_copy_is_forecast_desk_native():
     ).read_text(encoding="utf-8")
 
     assert "SOUL.md** — forecast-desk identity and style file" in readme
-    assert "Forecast-support `chat` sessions" in tips
+    assert "Forecast-support `desk` sessions" in tips
     assert "forecast-session titles" in tips
     assert "simple forecast-support queries" in tips
     assert "default forecast-desk identity" in tips
@@ -1847,11 +1847,11 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
     assert "configured for \"cli\" in `superforecasting-agent tools`" in oneshot
     assert "same as a normal forecast-support turn" in oneshot
     assert "normal CLI forecast-support turn" in oneshot
-    assert "Model / provider selection mirrors `superforecasting-agent chat`" in oneshot
+    assert "Model / provider selection mirrors `superforecasting-agent desk`" in oneshot
     assert "superforecasting-agent -z" in oneshot
     assert 'superforecasting-agent -z "Summarize evidence for fq_123"' in parser_help
     assert 'superforecasting-agent -z "Summarize evidence for fq_123"' in main_help
-    assert "superforecasting-agent chat --worktree" in parser_help
+    assert "superforecasting-agent desk --worktree" in parser_help
     assert "parallel forecast workers on the same repo" in parser_help
     assert "Maximum tool-calling iterations per forecast-support turn" in parser_help
     assert "superforecasting-agent --toolsets forecast-desk" in parser_help
@@ -1859,6 +1859,8 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
     assert "Use 'forecast-desk' for normal forecasting work" in classic_cli
     assert "only for inherited compatibility/debugging" in classic_cli
     assert 'superforecasting-agent chat -q "Hello"' not in parser_help
+    assert "Explicit forecast-scoped desk/support session" in parser_help
+    assert "desk" in parser_help
     assert 'superforecasting-agent -z "Hello"' not in parser_help
     assert "normal chat turn" not in oneshot
     assert "normal CLI chat turn" not in oneshot
@@ -2289,7 +2291,7 @@ def test_runtime_command_guidance_is_forecast_native_where_not_compatibility():
     assert "superforecasting-agent kanban reassign" in text
     assert "superforecasting-agent mcp add" in text
     assert "superforecasting-agent mcp remove" in text
-    assert "superforecasting-agent chat --model" in text
+    assert "superforecasting-agent desk --model" in text
     assert "superforecasting-agent skills install <url>" in text
     assert "superforecasting-agent auth spotify" in text
     assert "superforecasting-agent memory setup" in text
@@ -4334,7 +4336,7 @@ def test_cli_config_example_is_forecast_native():
     assert "forecast-telegram" in text
     assert "forecaster:" in text
     assert "calibrated forecasting analyst" in text
-    assert "superforecasting-agent chat --list-toolsets" in text
+    assert "superforecasting-agent desk --list-toolsets" in text
     assert "~/.superforecasting-agent/skills/" in text
     assert "Hermes Agent CLI Configuration" not in text
     assert "Captain Hermes" not in text
@@ -5013,10 +5015,10 @@ def test_cli_command_reference_chat_examples_are_forecast_scoped():
     assert "superforecast-acp" in cli_docs
     assert "The legacy `hermes-acp` entrypoint remains accepted" in cli_docs
     assert "superforecast-acp\nhermes-acp" not in cli_docs
-    assert 'chat -q "Summarize new evidence that could move forecast fq_123"' in cli_docs
+    assert 'desk -q "Summarize new evidence that could move forecast fq_123"' in cli_docs
     assert "forecast-support runtime sessions" in cli_docs
     assert "Maximum tool-calling iterations per forecast-support turn" in cli_docs
-    assert "superforecasting-agent chat --toolsets forecasting,file,web" in cli_docs
+    assert "superforecasting-agent desk --toolsets forecasting,file,web" in cli_docs
     assert "Extract forecast-relevant claims from this source note." in cli_docs
     assert "Same forecast-scoped runtime" in cli_docs
     assert "Summarize the latest PRs" not in cli_docs

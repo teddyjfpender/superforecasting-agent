@@ -52,9 +52,11 @@ class TestTipsCorpus:
         assert any('superforecasting-agent -z "query"' in tip for tip in TIPS)
         assert not any('superforecasting-agent chat -q "query"' in tip for tip in TIPS)
         assert not any("superforecasting-agent chat -Q" in tip for tip in TIPS)
+        assert not any("Forecast-support `chat` sessions" in tip for tip in TIPS)
 
     def test_worktree_tips_use_explicit_chat_support_command(self):
-        assert any("superforecasting-agent chat --worktree" in tip for tip in TIPS)
+        assert any("superforecasting-agent desk --worktree" in tip for tip in TIPS)
+        assert not any("superforecasting-agent chat --worktree" in tip for tip in TIPS)
         assert not any("superforecasting-agent -w" in tip for tip in TIPS)
 
 

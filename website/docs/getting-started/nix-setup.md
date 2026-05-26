@@ -134,7 +134,7 @@ Setting `addToSystemPackages = true` does two things: puts the `forecast`, `supe
 :::info
 When `container.enable = true` and `addToSystemPackages = true`, **every** fork-native and compatibility CLI command on the host automatically routes into the managed container. This means your interactive CLI session runs inside the same environment as the gateway service — with access to all container-installed packages and tools.
 
-- The routing is transparent: `superforecasting-agent chat`, `superforecasting-agent sessions list`, `superforecasting-agent version`, etc. all exec into the container under the hood
+- The routing is transparent: `superforecasting-agent desk`, `superforecasting-agent sessions list`, `superforecasting-agent version`, etc. all exec into the container under the hood
 - All CLI flags are forwarded as-is
 - If the container isn't running, the CLI retries briefly (5s with a spinner for interactive use, 10s silently for scripts) then fails with a clear error — no silent fallback
 - For developers working on this fork, set `HERMES_DEV=1` to bypass container routing and run the local checkout directly
@@ -167,7 +167,7 @@ security.sudo.extraRules = [{
 }];
 ```
 
-The CLI auto-detects when sudo is needed and uses it transparently. Without this, you'll need to run `sudo superforecasting-agent chat` manually.
+The CLI auto-detects when sudo is needed and uses it transparently. Without this, you'll need to run `sudo superforecasting-agent desk` manually.
 :::
 
 ### Verify It Works
@@ -752,7 +752,7 @@ nix develop
 #   - Stamp-file optimization: re-entry is near-instant if deps haven't changed
 
 superforecasting-agent setup
-superforecasting-agent chat
+superforecasting-agent desk
 ```
 
 ### direnv (Recommended)

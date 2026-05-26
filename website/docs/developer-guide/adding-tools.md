@@ -211,4 +211,4 @@ OPTIONAL_ENV_VARS = {
 - [ ] Handler returns JSON strings, errors returned as `{"error": "..."}`
 - [ ] Optional: API key added to `OPTIONAL_ENV_VARS` in `hermes_cli/config.py`
 - [ ] Optional: Added to `toolset_distributions.py` for batch processing
-- [ ] Tested with `superforecasting-agent chat --toolsets forecast-desk -q "Use the weather tool to update the relevant forecast evidence"`
+- [ ] Tested with `superforecasting-agent desk --toolsets forecast-desk -q "Use the weather tool to update the relevant forecast evidence"`

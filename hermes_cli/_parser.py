@@ -61,7 +61,7 @@ Examples:
     superforecasting-agent config set model gpt-4 Set a config value
     superforecasting-agent gateway                Run messaging gateway
     superforecasting-agent --toolsets forecast-desk
-    superforecasting-agent chat --worktree        Start forecast support in an isolated git worktree
+    superforecasting-agent desk --worktree        Start forecast support in an isolated git worktree
     superforecasting-agent gateway install        Install gateway background service
     superforecasting-agent sessions list          List past forecast sessions
     superforecasting-agent sessions browse        Interactive forecast-session picker
@@ -114,7 +114,7 @@ def build_top_level_parser():
     # --model / --provider are accepted at the top level so they can pair
     # with -z without needing the `chat` subcommand.  If neither -z nor a
     # subcommand consumes them, they fall through harmlessly as None.
-    # Mirrors `superforecasting-agent chat --model ... --provider ...` semantics.
+    # Mirrors `superforecasting-agent desk --model ... --provider ...` semantics.
     _inherited_flag(
         parser,
         "-m",
@@ -235,12 +235,18 @@ def build_top_level_parser():
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # =========================================================================
-    # Explicit forecast-support path.
+    # Explicit forecast-support path. ``chat`` remains the canonical parser name
+    # internally so inherited integrations keep working; ``desk`` is the
+    # fork-native top-level alias for new operator workflows.
     # =========================================================================
     chat_parser = subparsers.add_parser(
         "chat",
-        help="Explicit forecast-scoped support session",
-        description="Start an explicit support session scoped to forecasting work",
+        aliases=["desk"],
+        help="Explicit forecast-scoped desk/support session",
+        description=(
+            "Start an explicit forecast desk support session. "
+            "`desk` is the fork-native alias; `chat` remains accepted for compatibility."
+        ),
     )
     chat_parser.add_argument(
         "-q", "--query", help="Single query (non-interactive mode)"

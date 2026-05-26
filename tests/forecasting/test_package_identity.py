@@ -167,7 +167,7 @@ def test_superforecasting_agent_no_arg_entrypoint_honors_tui_env(monkeypatch):
 
     forecast_cli.main([])
 
-    assert calls == [["chat"]]
+    assert calls == [["desk"]]
 
 
 def test_superforecasting_agent_profiled_no_arg_entrypoint_honors_tui_env(
@@ -187,7 +187,7 @@ def test_superforecasting_agent_profiled_no_arg_entrypoint_honors_tui_env(
 
     forecast_cli.main(["--profile", "macro"])
 
-    assert calls == [["--profile", "macro", "chat"]]
+    assert calls == [["--profile", "macro", "desk"]]
 
 
 def test_superforecasting_agent_no_arg_entrypoint_ignores_false_tui_env(
@@ -261,9 +261,11 @@ def test_superforecasting_agent_cli_entrypoint_delegates_runtime_commands(monkey
     assert calls == [["superforecasting-agent", "dashboard", "--no-open"]]
 
 
+@pytest.mark.parametrize("runtime_command", ["desk", "chat"])
 def test_runtime_command_missing_optional_dependency_gets_forecast_native_guidance(
     capsys,
     monkeypatch,
+    runtime_command,
 ):
     def fail_import(name, *args, **kwargs):
         if name == "hermes_cli.main":
@@ -274,7 +276,7 @@ def test_runtime_command_missing_optional_dependency_gets_forecast_native_guidan
     monkeypatch.setattr("builtins.__import__", fail_import)
 
     with pytest.raises(SystemExit) as exc:
-        forecast_cli.main(["chat", "--help"])
+        forecast_cli.main([runtime_command, "--help"])
 
     assert exc.value.code == 1
     captured = capsys.readouterr()

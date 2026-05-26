@@ -5284,7 +5284,7 @@ def _default_spawn(
     *,
     board: Optional[str] = None,
 ) -> Optional[int]:
-    """Fire-and-forget ``hermes -p <profile> chat -q ...`` subprocess.
+    """Fire-and-forget ``superforecasting-agent -p <profile> desk -q ...`` subprocess.
 
     Returns the spawned child's PID so the dispatcher can detect crashes
     before the claim TTL expires. The child's completion is still observed
@@ -5405,7 +5405,7 @@ def _default_spawn(
     if task.model_override:
         cmd.extend(["-m", task.model_override])
     cmd.extend([
-        "chat",
+        "desk",
         "-q", prompt,
     ])
     # Redirect output to a per-task log under <board-root>/logs/.

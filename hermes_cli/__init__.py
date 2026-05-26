@@ -2,7 +2,7 @@
 Superforecasting Agent CLI - unified command-line interface.
 
 Provides subcommands for:
-- superforecasting-agent chat          - Forecast-scoped interactive chat
+- superforecasting-agent desk          - Forecast-scoped interactive desk
 - superforecasting-agent gateway       - Run gateway in foreground
 - superforecasting-agent gateway start - Start gateway service
 - superforecasting-agent gateway stop  - Stop gateway service

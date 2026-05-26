@@ -102,7 +102,7 @@ forecast export all --format json --output .pilot/tester-export.json
 forecast import packet .pilot/tester-export.json --conflict skip --json
 forecast pilot-aggregate .pilot/*-export.json --json
 # readiness shows live-score, replay, leakage, baseline-edge, and external-corpus gaps
-superforecasting-agent chat       # Forecast-scoped chat remains available explicitly
+superforecasting-agent desk       # Explicit forecast-scoped desk/support session
 superforecasting-agent dashboard  # Open the forecast-first dashboard
 superforecasting-agent model      # Choose your LLM provider and model
 superforecasting-agent tools      # Configure which tools are enabled for agent workflows

@@ -358,7 +358,7 @@ After tests, run a real smoke test.
 
 ```bash
 source venv/bin/activate
-python -m superforecasting_agent chat -q "Say hello" --provider your-provider --model your-model
+python -m superforecasting_agent desk -q "Say hello" --provider your-provider --model your-model
 ```
 
 Also test the interactive flows if you changed menus:

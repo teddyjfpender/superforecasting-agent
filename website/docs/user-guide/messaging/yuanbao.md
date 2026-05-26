@@ -332,7 +332,7 @@ Run long operations without blocking the conversation:
 Send a message from CLI to Yuanbao:
 
 ```bash
-superforecasting-agent chat -q "Send the forecast review digest to yuanbao:group:group_code"
+superforecasting-agent desk -q "Send the forecast review digest to yuanbao:group:group_code"
 ```
 
 ## Related Documentation

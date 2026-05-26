@@ -89,7 +89,7 @@ This resolver is the main reason Superforecasting Agent can share auth/runtime l
 
 - `forecast model`
 - `forecast update` when the agent is helping produce a probability
-- `superforecasting-agent chat`
+- `superforecasting-agent desk`
 - gateway message handling
 - scheduled self-checks and cron jobs running in fresh sessions
 - ACP editor sessions

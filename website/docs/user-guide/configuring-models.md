@@ -121,7 +121,7 @@ auxiliary:
 
 ## When does it take effect?
 
-- **Forecast desk** (`forecast`, `superforecasting-agent`, or `superforecasting-agent chat`): next new agent session. Existing sessions keep their model.
+- **Forecast desk** (`forecast`, `superforecasting-agent`, or `superforecasting-agent desk`): next new agent session. Existing sessions keep their model.
 - **Gateway** (Telegram, Discord, Slack, etc.): next *new* session. Existing sessions keep their model. Restart the gateway (`superforecasting-agent gateway restart`) if you want to force all sessions to pick up the change.
 - **Dashboard Forecast Desk tab** (`/desk`; `/chat` compatibility alias): next new PTY. The currently-open embedded TUI keeps its model; use `/model` inside it to hot-swap.
 
@@ -153,7 +153,7 @@ On OpenRouter (or any aggregator), bare model names resolve *within* the aggrega
 
 ### CLI slash command
 
-Inside any `superforecasting-agent chat` session:
+Inside any `superforecasting-agent desk` session:
 
 ```
 /model gpt-5.4 --provider openrouter             # session-only

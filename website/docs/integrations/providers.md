@@ -191,7 +191,7 @@ If you don't have Max + extra credits, use an `ANTHROPIC_API_KEY` instead — re
 ```bash
 # With an API key (pay-per-token)
 export ANTHROPIC_API_KEY=***
-superforecasting-agent chat --provider anthropic --model claude-sonnet-4-6
+superforecasting-agent desk --provider anthropic --model claude-sonnet-4-6
 
 # Preferred: authenticate through `superforecasting-agent model`
 # Superforecasting Agent will use Claude Code's credential store directly when available
@@ -199,10 +199,10 @@ superforecasting-agent model
 
 # Manual override with a setup-token (fallback / legacy)
 export ANTHROPIC_TOKEN=***  # setup-token or manual OAuth token
-superforecasting-agent chat --provider anthropic
+superforecasting-agent desk --provider anthropic
 
 # Auto-detect Claude Code credentials (if you already use Claude Code)
-superforecasting-agent chat --provider anthropic  # reads Claude Code credential files automatically
+superforecasting-agent desk --provider anthropic  # reads Claude Code credential files automatically
 ```
 
 When you choose Anthropic OAuth through `superforecasting-agent model`, Superforecasting Agent prefers Claude Code's own credential store over copying the token into `~/.superforecasting-agent/.env`. That keeps refreshable Claude credentials refreshable.
@@ -225,7 +225,7 @@ Superforecasting Agent supports GitHub Copilot as a first-class provider with tw
 **`copilot` — Direct Copilot API** (recommended). Uses your GitHub Copilot subscription to access GPT-5.x, Claude, Gemini, and other models through the Copilot API.
 
 ```bash
-superforecasting-agent chat --provider copilot --model gpt-5.4
+superforecasting-agent desk --provider copilot --model gpt-5.4
 ```
 
 **Authentication options** (checked in this order):
@@ -266,7 +266,7 @@ Some older community proxies use `api.github.com/copilot_internal/v2/token` exch
 **`copilot-acp` — Copilot ACP agent backend**. Spawns the local Copilot CLI as a subprocess:
 
 ```bash
-superforecasting-agent chat --provider copilot-acp --model copilot-acp
+superforecasting-agent desk --provider copilot-acp --model copilot-acp
 # Requires the GitHub Copilot CLI in PATH and an existing `copilot login` session
 ```
 
@@ -289,48 +289,48 @@ These providers have built-in support with dedicated provider IDs. Set the API k
 
 ```bash
 # NovitaAI Model API
-superforecasting-agent chat --provider novita --model moonshotai/kimi-k2.5
+superforecasting-agent desk --provider novita --model moonshotai/kimi-k2.5
 # Requires: NOVITA_API_KEY in ~/.superforecasting-agent/.env
 
 # z.ai / ZhipuAI GLM
-superforecasting-agent chat --provider zai --model glm-5
+superforecasting-agent desk --provider zai --model glm-5
 # Requires: GLM_API_KEY in ~/.superforecasting-agent/.env
 
 # Kimi / Moonshot AI (international: api.moonshot.ai)
-superforecasting-agent chat --provider kimi-coding --model kimi-for-coding
+superforecasting-agent desk --provider kimi-coding --model kimi-for-coding
 # Requires: KIMI_API_KEY in ~/.superforecasting-agent/.env
 
 # Kimi / Moonshot AI (China: api.moonshot.cn)
-superforecasting-agent chat --provider kimi-coding-cn --model kimi-k2.5
+superforecasting-agent desk --provider kimi-coding-cn --model kimi-k2.5
 # Requires: KIMI_CN_API_KEY in ~/.superforecasting-agent/.env
 
 # MiniMax (global endpoint)
-superforecasting-agent chat --provider minimax --model MiniMax-M2.7
+superforecasting-agent desk --provider minimax --model MiniMax-M2.7
 # Requires: MINIMAX_API_KEY in ~/.superforecasting-agent/.env
 
 # MiniMax (China endpoint)
-superforecasting-agent chat --provider minimax-cn --model MiniMax-M2.7
+superforecasting-agent desk --provider minimax-cn --model MiniMax-M2.7
 # Requires: MINIMAX_CN_API_KEY in ~/.superforecasting-agent/.env
 
 # Qwen Cloud / DashScope (Qwen models)
-superforecasting-agent chat --provider alibaba --model qwen3.5-plus
+superforecasting-agent desk --provider alibaba --model qwen3.5-plus
 # Requires: DASHSCOPE_API_KEY in ~/.superforecasting-agent/.env
 
 # Xiaomi MiMo
-superforecasting-agent chat --provider xiaomi --model mimo-v2-pro
+superforecasting-agent desk --provider xiaomi --model mimo-v2-pro
 # Requires: XIAOMI_API_KEY in ~/.superforecasting-agent/.env
 
 # Tencent TokenHub (Hy3 Preview)
-superforecasting-agent chat --provider tencent-tokenhub --model hy3-preview
+superforecasting-agent desk --provider tencent-tokenhub --model hy3-preview
 # Requires: TOKENHUB_API_KEY in ~/.superforecasting-agent/.env
 
 # Arcee AI (Trinity models)
-superforecasting-agent chat --provider arcee --model trinity-large-thinking
+superforecasting-agent desk --provider arcee --model trinity-large-thinking
 # Requires: ARCEEAI_API_KEY in ~/.superforecasting-agent/.env
 
 # GMI Cloud
 # Use the exact model ID returned by GMI's /v1/models endpoint.
-superforecasting-agent chat --provider gmi --model zai-org/GLM-5.1-FP8
+superforecasting-agent desk --provider gmi --model zai-org/GLM-5.1-FP8
 # Requires: GMI_API_KEY in ~/.superforecasting-agent/.env
 ```
 
@@ -365,11 +365,11 @@ xAI also ships a dedicated TTS endpoint (`/v1/tts`). Select **xAI TTS** in `supe
 
 ```bash
 # Use any available model
-superforecasting-agent chat --provider novita --model moonshotai/kimi-k2.5
+superforecasting-agent desk --provider novita --model moonshotai/kimi-k2.5
 # Requires: NOVITA_API_KEY in ~/.superforecasting-agent/.env
 
 # Short alias
-superforecasting-agent chat --provider novita-ai --model deepseek/deepseek-v3-0324
+superforecasting-agent desk --provider novita-ai --model deepseek/deepseek-v3-0324
 ```
 
 Or set it permanently in `config.yaml`:
@@ -412,10 +412,10 @@ Anthropic Claude, Amazon Nova, DeepSeek v3.2, Meta Llama 4, and other models via
 
 ```bash
 # Simplest — named profile in ~/.aws/credentials
-superforecasting-agent chat --provider bedrock --model us.anthropic.claude-sonnet-4-6
+superforecasting-agent desk --provider bedrock --model us.anthropic.claude-sonnet-4-6
 
 # Or with explicit env vars
-AWS_PROFILE=myprofile AWS_REGION=us-east-1 superforecasting-agent chat --provider bedrock --model us.anthropic.claude-sonnet-4-6
+AWS_PROFILE=myprofile AWS_REGION=us-east-1 superforecasting-agent desk --provider bedrock --model us.anthropic.claude-sonnet-4-6
 ```
 
 Or permanently in `config.yaml`:
@@ -448,7 +448,7 @@ superforecasting-agent model
 # → browser opens; sign in with your Alibaba account
 # → confirm — credentials are saved to ~/.superforecasting-agent/auth.json
 
-superforecasting-agent chat   # uses portal.qwen.ai/v1 endpoint
+superforecasting-agent desk   # uses portal.qwen.ai/v1 endpoint
 ```
 
 Or configure `config.yaml`:
@@ -477,7 +477,7 @@ model:
 Or from the CLI:
 
 ```bash
-superforecasting-agent chat --provider alibaba_coding --model qwen3-coder-plus
+superforecasting-agent desk --provider alibaba_coding --model qwen3-coder-plus
 ```
 
 `alibaba_coding` uses the same `DASHSCOPE_API_KEY` your `alibaba` entry already uses — no separate key needed, just a different routing target. Before this provider was registered, users who set `provider: alibaba_coding` in `config.yaml` silently fell through to OpenRouter routing.
@@ -492,7 +492,7 @@ superforecasting-agent model
 # → browser opens; sign in with your MiniMax account (global or CN region)
 # → confirm — credentials are saved to ~/.superforecasting-agent/auth.json
 
-superforecasting-agent chat   # uses api.minimax.io/anthropic endpoint
+superforecasting-agent desk   # uses api.minimax.io/anthropic endpoint
 ```
 
 Or configure `config.yaml`:
@@ -514,11 +514,11 @@ Nemotron and other open source models via [build.nvidia.com](https://build.nvidi
 
 ```bash
 # Cloud (build.nvidia.com)
-superforecasting-agent chat --provider nvidia --model nvidia/nemotron-3-super-120b-a12b
+superforecasting-agent desk --provider nvidia --model nvidia/nemotron-3-super-120b-a12b
 # Requires: NVIDIA_API_KEY in ~/.superforecasting-agent/.env
 
 # Local NIM endpoint — override base URL
-NVIDIA_BASE_URL=http://localhost:8000/v1 superforecasting-agent chat --provider nvidia --model nvidia/nemotron-3-super-120b-a12b
+NVIDIA_BASE_URL=http://localhost:8000/v1 superforecasting-agent desk --provider nvidia --model nvidia/nemotron-3-super-120b-a12b
 ```
 
 Or set it permanently in `config.yaml`:
@@ -540,7 +540,7 @@ Open and reasoning models via [GMI Cloud](https://www.gmicloud.ai/) — OpenAI-c
 
 ```bash
 # GMI Cloud
-superforecasting-agent chat --provider gmi --model deepseek-ai/DeepSeek-R1
+superforecasting-agent desk --provider gmi --model deepseek-ai/DeepSeek-R1
 # Requires: GMI_API_KEY in ~/.superforecasting-agent/.env
 ```
 
@@ -559,7 +559,7 @@ Step-series models via [StepFun](https://platform.stepfun.com) — OpenAI-compat
 
 ```bash
 # StepFun
-superforecasting-agent chat --provider stepfun --model step-3-mini
+superforecasting-agent desk --provider stepfun --model step-3-mini
 # Requires: STEPFUN_API_KEY in ~/.superforecasting-agent/.env
 ```
 
@@ -578,11 +578,11 @@ The base URL can be overridden with `STEPFUN_BASE_URL` (default: `https://api.st
 
 ```bash
 # Use any available model
-superforecasting-agent chat --provider huggingface --model Qwen/Qwen3-235B-A22B-Thinking-2507
+superforecasting-agent desk --provider huggingface --model Qwen/Qwen3-235B-A22B-Thinking-2507
 # Requires: HF_TOKEN in ~/.superforecasting-agent/.env
 
 # Short alias
-superforecasting-agent chat --provider hf --model deepseek-ai/DeepSeek-V3.2
+superforecasting-agent desk --provider hf --model deepseek-ai/DeepSeek-V3.2
 ```
 
 Or set it permanently in `config.yaml`:

@@ -253,7 +253,7 @@ By default, Codex reads `~/.codex/` regardless of the active forecast profile. T
 For profile-specific Codex state, set `CODEX_HOME` per profile. A fork-native path is preferred:
 
 ```bash
-CODEX_HOME=~/.superforecasting-agent/profiles/macro/codex superforecasting-agent chat
+CODEX_HOME=~/.superforecasting-agent/profiles/macro/codex superforecasting-agent desk
 ```
 
 Then run `codex login` once with that `CODEX_HOME`.

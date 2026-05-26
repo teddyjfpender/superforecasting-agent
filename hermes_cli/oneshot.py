@@ -9,7 +9,7 @@ Rules / memory / AGENTS.md / preloaded skills = same as a normal forecast-suppor
 Approvals = auto-bypassed (fork-native YOLO env aliases are set for the call).
 Working directory = the user's CWD (AGENTS.md etc. resolve from there as usual).
 
-Model / provider selection mirrors `superforecasting-agent chat`:
+Model / provider selection mirrors `superforecasting-agent desk`:
     - Both optional. If omitted, use the user's configured default.
     - If both given, pair them exactly as given.
     - If only --model given, auto-detect the provider that serves it.
@@ -316,7 +316,7 @@ def _run_agent(
     # Read fallback chain from profile config — supports both the new list
     # format (fallback_providers) and the legacy single-dict (fallback_model).
     # Mirrors the same normalization in cli.py so oneshot workers (e.g. kanban
-    # workers spawned via `superforecasting-agent -p <profile> chat -q ...`)
+    # workers spawned via `superforecasting-agent -p <profile> desk -q ...`)
     # honour the profile's fallback chain just like interactive sessions do.
     _fb = cfg.get("fallback_providers") or cfg.get("fallback_model") or []
     if isinstance(_fb, dict):

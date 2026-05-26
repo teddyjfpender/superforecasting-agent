@@ -64,15 +64,15 @@ TIPS = [
 
     # --- CLI Flags ---
     "superforecasting-agent -c resumes your most recent CLI session. superforecasting-agent -c \"project name\" resumes by title.",
-    "superforecasting-agent chat --worktree creates an isolated git worktree for parallel support/code sessions.",
+    "superforecasting-agent desk --worktree creates an isolated git worktree for parallel support/code sessions.",
     "superforecasting-agent -z \"Summarize the active forecast desk\" runs a clean one-shot and exits.",
     "superforecasting-agent -t forecast-desk,web -z \"research question 142\" narrows tools for one-shot work.",
-    "Forecast-support `chat` sessions can still preload skills: superforecasting-agent chat -s github-pr-workflow.",
+    "Forecast-support `desk` sessions can still preload skills: superforecasting-agent desk -s github-pr-workflow.",
     "superforecasting-agent -z \"query\" runs a single non-interactive query and prints only the final answer.",
-    "Forecast-support `chat` sessions can raise the turn budget: superforecasting-agent chat --max-turns 200.",
-    "Forecast-support `chat` sessions can enable checkpoints: superforecasting-agent chat --checkpoints.",
+    "Forecast-support `desk` sessions can raise the turn budget: superforecasting-agent desk --max-turns 200.",
+    "Forecast-support `desk` sessions can enable checkpoints: superforecasting-agent desk --checkpoints.",
     "superforecasting-agent --yolo bypasses all dangerous command approval prompts for the entire session.",
-    "Forecast-support `chat` sessions can set --source telegram for filtering in superforecasting-agent sessions list.",
+    "Forecast-support `desk` sessions can set --source telegram for filtering in superforecasting-agent sessions list.",
     "superforecasting-agent -p work forecast review runs forecast workflows under a named profile.",
 
     # --- CLI Subcommands ---
@@ -425,10 +425,10 @@ TIPS = [
 
     # --- CLI Subcommands & Flags ---
     'superforecasting-agent -z "<forecast note>" is the purest one-shot: final answer on stdout, nothing else.',
-    'Forecast-support `chat` sessions can use --pass-session-id when the model needs to cite its own session ID.',
-    'For image one-shots, superforecasting-agent chat -q "inspect" --image path/to/pic.png attaches a local image.',
+    'Forecast-support `desk` sessions can use --pass-session-id when the model needs to cite its own session ID.',
+    'For image one-shots, superforecasting-agent desk -q "inspect" --image path/to/pic.png attaches a local image.',
     'superforecasting-agent --ignore-user-config skips ~/.superforecasting-agent/config.yaml for reproducible runs.',
-    "Forecast-support `chat` sessions can use --source tool so support runs don't clutter superforecasting-agent sessions list.",
+    "Forecast-support `desk` sessions can use --source tool so support runs don't clutter superforecasting-agent sessions list.",
     'superforecasting-agent dump --show-keys includes redacted API key fingerprints for deeper support debugging.',
     'superforecasting-agent sessions rename <ID> "new title" renames any past session; superforecasting-agent sessions delete <ID> removes one.',
     'superforecasting-agent import restores a session export or profile archive produced by sessions export or profile export.',

@@ -219,7 +219,7 @@ The fallback system also covers auxiliary tasks independently — vision, compre
 After each turn:
 - Messages are saved to the session store (SQLite via `hermes_state.py`)
 - Memory changes are flushed to `MEMORY.md` / `USER.md`
-- The session can be resumed later via `/resume` or `superforecasting-agent chat --resume`
+- The session can be resumed later via `/resume` or `superforecasting-agent desk --resume`
 
 Session persistence is not the forecast ledger. If a model reaches a probability, evidence judgment, model result, or postmortem lesson, it must call the ledger tool or forecast CLI path before relying on session recall.
 

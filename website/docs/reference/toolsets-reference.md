@@ -46,10 +46,10 @@ available only as deliberate compatibility opt-ins.
 superforecasting-agent
 
 # Add a specific opt-in capability
-superforecasting-agent chat --toolsets forecast-desk,mcp-market-data
+superforecasting-agent desk --toolsets forecast-desk,mcp-market-data
 
 # Use the inherited full runtime preset only when you need it
-superforecasting-agent chat --toolsets forecast-cli
+superforecasting-agent desk --toolsets forecast-cli
 ```
 
 Avoid `all` for normal forecasting work. It exposes every registered built-in,

@@ -66,7 +66,7 @@ mcp_servers:
 Then start Superforecasting Agent:
 
 ```bash
-superforecasting-agent chat
+superforecasting-agent desk
 ```
 
 Now ask something concrete:

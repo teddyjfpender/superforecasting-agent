@@ -162,7 +162,7 @@ def _exit_with_missing_runtime_dependency(exc: ModuleNotFoundError) -> None:
     print(
         "Use `forecast ...` or `superforecasting-agent status` for the "
         "forecast desk, or run `uv pip install -e \".[all,dev]\"` from "
-        "the checkout before using chat, dashboard, setup, model, gateway, "
+        "the checkout before using desk/chat, dashboard, setup, model, gateway, "
         "or other compatibility runtime commands.",
         file=sys.stderr,
     )
@@ -222,7 +222,7 @@ def main(argv: list[str] | None = None) -> None:
         _run_inherited_runtime(tui_shorthand)
         return
     if not forecast_candidate_argv and _tui_env_enabled():
-        _run_inherited_runtime([*raw_argv, "chat"])
+        _run_inherited_runtime([*raw_argv, "desk"])
         return
     normalized_forecast_argv = _forecast_argv(forecast_candidate_argv)
     if normalized_forecast_argv is not None:

@@ -32,7 +32,7 @@ open.
 
 ```bash
 superforecasting-agent plugins list      # observability/langfuse should show "enabled"
-superforecasting-agent chat -q "hello"   # then check Langfuse for a forecast desk trace
+superforecasting-agent desk -q "hello"   # then check Langfuse for a forecast desk trace
 ```
 
 ## Optional tuning

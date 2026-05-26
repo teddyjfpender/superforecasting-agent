@@ -14,7 +14,7 @@ Checkpoints are opt-in because the shadow store can grow over time.
 Enable checkpoints for one session:
 
 ```bash
-superforecasting-agent chat --checkpoints
+superforecasting-agent desk --checkpoints
 ```
 
 Or enable them globally in `~/.superforecasting-agent/config.yaml`:

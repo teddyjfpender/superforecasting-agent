@@ -40,7 +40,7 @@ mcp_servers:
 Start the CLI:
 
 ```bash
-superforecasting-agent chat
+superforecasting-agent desk
 ```
 
 Then ask for a research action, not a silent probability update:

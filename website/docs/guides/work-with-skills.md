@@ -235,7 +235,7 @@ For API details, load the reference: `skill_view("my-forecast-skill", "reference
 Start a new session and try your skill:
 
 ```bash
-superforecasting-agent chat -q "/my-forecast-skill review question 142"
+superforecasting-agent desk -q "/my-forecast-skill review question 142"
 ```
 
 The skill appears automatically — no registration needed. Drop it in `~/.superforecasting-agent/skills/` and it's live.

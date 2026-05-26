@@ -40,8 +40,8 @@ The bundled `plan` skill is a good example. Running `/plan [request]` loads its 
 You can also inspect skills through the CLI:
 
 ```bash
-superforecasting-agent chat --toolsets skills -q "What skills do you have?"
-superforecasting-agent chat --toolsets skills -q "Show me the research-arxiv skill"
+superforecasting-agent desk --toolsets skills -q "What skills do you have?"
+superforecasting-agent desk --toolsets skills -q "Show me the research-arxiv skill"
 ```
 
 ## Forecasting Boundaries

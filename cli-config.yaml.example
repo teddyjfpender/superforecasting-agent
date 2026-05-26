@@ -704,8 +704,8 @@ platform_toolsets:
 # ─────────────────────────────────────────────────────────────────────────────
 # Available toolsets (use these names in platform_toolsets or the toolsets list)
 #
-# Run `superforecasting-agent chat --list-toolsets` to see all toolsets and their tools.
-# Run `superforecasting-agent chat --list-tools` to see every individual tool with descriptions.
+# Run `superforecasting-agent desk --list-toolsets` to see all toolsets and their tools.
+# Run `superforecasting-agent desk --list-tools` to see every individual tool with descriptions.
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # INDIVIDUAL TOOLSETS (compose your own):
@@ -759,7 +759,7 @@ platform_toolsets:
 # Tool configuration is managed per-platform via platform_toolsets above.
 # Use `superforecasting-agent tools` to configure interactively, or edit platform_toolsets directly.
 #
-# CLI override: superforecasting-agent chat --toolsets terminal,web,file
+# CLI override: superforecasting-agent desk --toolsets terminal,web,file
 
 # =============================================================================
 # MCP (Model Context Protocol) Servers

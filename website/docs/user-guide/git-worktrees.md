@@ -143,7 +143,7 @@ Superforecasting Agent keeps inherited automatic worktree support for explicit f
 
 ```bash
 cd /path/to/your/repo
-superforecasting-agent chat --worktree
+superforecasting-agent desk --worktree
 ```
 
 Superforecasting Agent will:
@@ -155,10 +155,10 @@ Superforecasting Agent will:
 This is the easiest way to get worktree isolation for inherited support/code sessions. You can also combine it with a single query:
 
 ```bash
-superforecasting-agent chat --worktree -q "Add a source-adapter regression test"
+superforecasting-agent desk --worktree -q "Add a source-adapter regression test"
 ```
 
-For parallel support/code sessions, open multiple terminals and run `superforecasting-agent chat --worktree` in each. Every invocation gets its own worktree and branch automatically.
+For parallel support/code sessions, open multiple terminals and run `superforecasting-agent desk --worktree` in each. Every invocation gets its own worktree and branch automatically.
 
 ## Putting It All Together
 

@@ -7,7 +7,7 @@ Usage:
     superforecasting-agent forecast            # Forecast desk dashboard
     superforecasting-agent forecast new        # Create a scoreable forecast question
     superforecasting-agent -z "Summarize evidence for fq_123"  # Forecast-scoped one-shot query
-    superforecasting-agent chat                # Explicit forecast-scoped support session
+    superforecasting-agent desk                # Explicit forecast-scoped desk/support session
     superforecasting-agent gateway             # Run gateway in foreground
     superforecasting-agent gateway start       # Start gateway as service
     superforecasting-agent gateway stop        # Stop gateway service
@@ -9592,6 +9592,7 @@ def _coalesce_session_name_args(argv: list) -> list:
     """
     _SUBCOMMANDS = {
         "chat",
+        "desk",
         "model",
         "gateway",
         "setup",
@@ -9819,7 +9820,7 @@ def cmd_profile(args):
                     print(
                         f"  Choose a custom alias:  superforecasting-agent profile alias {name} --name <custom>"
                     )
-                    print(f"  Or access via flag:     superforecasting-agent -p {name} chat")
+                    print(f"  Or access via flag:     superforecasting-agent -p {name} desk")
                 else:
                     wrapper_path = create_wrapper_script(name)
                     if wrapper_path:
@@ -9840,7 +9841,7 @@ def cmd_profile(args):
             # Next steps
             print(f"\nNext steps:")
             print(f"  {name} setup              Configure API keys and model")
-            print(f"  {name} chat               Start the forecast desk")
+            print(f"  {name} desk               Start the forecast desk")
             print(f"  {name} gateway start      Start the messaging gateway")
             if clone or clone_all:
                 print(f"\n  Edit {profile_dir_display}/.env for different API keys")
@@ -10129,7 +10130,7 @@ def cmd_profile(args):
                     "  Cron jobs were included but are NOT scheduled automatically.\n"
                     f"  Review them with:  superforecasting-agent -p {plan.manifest.name} cron list"
                 )
-            print(f"\n  Use with:      superforecasting-agent -p {plan.manifest.name} chat")
+            print(f"\n  Use with:      superforecasting-agent -p {plan.manifest.name} desk")
         except (DistributionError, ValueError) as e:
             print(f"Error: {e}")
             sys.exit(1)
@@ -10457,7 +10458,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "model", "pairing", "plugins", "postinstall", "profile", "proxy",
         "send", "sessions", "setup",
         "skills", "slack", "status", "tools", "uninstall", "update",
-        "version", "webhook", "whatsapp", "chat",
+        "version", "webhook", "whatsapp", "chat", "desk",
         # Help-ish invocations — plugin commands not being listed in
         # top-level --help is an acceptable trade-off for skipping an
         # expensive eager import of every bundled plugin module.
@@ -13320,7 +13321,7 @@ Examples:
     # trigger consent prompts for hooks the user is still inspecting.
     # Groups with mixed admin/CRUD vs. agent-running entries narrow via
     # the nested subcommand (dest varies by parser).
-    _AGENT_COMMANDS = {"chat", "acp", "rl"}
+    _AGENT_COMMANDS = {"chat", "desk", "acp", "rl"}
     _AGENT_SUBCOMMANDS = {
         "cron": ("cron_command", {"run", "tick"}),
         "gateway": ("gateway_command", {"run"}),

@@ -84,6 +84,7 @@ def _live_subcommand_names() -> set[str]:
         (["hermes", "--tui", "chat"], "chat"),
         (["hermes", "-w", "logs"], "logs"),
         (["hermes", "chat", "hello world"], "chat"),
+        (["hermes", "desk", "hello world"], "desk"),
         (["hermes", "gateway", "run"], "gateway"),
         # Top-level value-taking flags: the value should be skipped.
         (["hermes", "-m", "gpt5", "chat"], "chat"),
@@ -119,6 +120,7 @@ def test_first_positional_argv(argv, expected):
         ["hermes", "--tui"],
         ["hermes", "-w", "--tui"],
         ["hermes", "chat", "hi"],
+        ["hermes", "desk", "hi"],
         ["hermes", "help"],                  # accepted built-in-ish
         ["hermes", "-m", "gpt5", "chat"],    # flag-value-skipping
     ],

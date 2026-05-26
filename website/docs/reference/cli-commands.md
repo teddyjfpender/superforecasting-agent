@@ -118,7 +118,7 @@ These command families are still part of the runtime. Prefer the `superforecasti
 | Command | Purpose |
 |---------|---------|
 | `superforecasting-agent tui` | Fork-native shorthand for the Forecast Desk TUI. |
-| `superforecasting-agent chat` | Inherited interactive or one-shot chat. Use for support work, not durable forecast state. |
+| `superforecasting-agent desk` | Explicit forecast-scoped desk/support session. `chat` remains a compatibility alias. |
 | `superforecasting-agent model` | Configure providers, OAuth, API keys, and default model. |
 | `superforecasting-agent setup` | Interactive setup wizard. |
 | `superforecasting-agent tools` | Configure enabled tools per platform. |
@@ -143,11 +143,15 @@ These command families are still part of the runtime. Prefer the `superforecasti
 
 The sections below use `superforecasting-agent` as the primary command. Legacy `hermes` names, paths, and environment variables are called out only where the inherited runtime still accepts them during migration.
 
-## `superforecasting-agent chat`
+## `superforecasting-agent desk`
 
 ```bash
-superforecasting-agent chat [options]
+superforecasting-agent desk [options]
 ```
+
+`superforecasting-agent chat` is accepted as an inherited compatibility alias
+for the same forecast-scoped runtime. New docs and scripts should prefer
+`superforecasting-agent desk`.
 
 Common options:
 
@@ -175,12 +179,12 @@ Examples:
 
 ```bash
 superforecasting-agent
-superforecasting-agent chat -q "Summarize new evidence that could move forecast fq_123"
-superforecasting-agent chat --provider openrouter --model anthropic/claude-sonnet-4.6
-superforecasting-agent chat --toolsets forecasting,file,web
-superforecasting-agent chat --quiet -q "Return only JSON evidence candidates for this forecast"
-superforecasting-agent chat --worktree -q "Inspect this source adapter patch for forecast-ledger risks"
-superforecasting-agent chat --ignore-user-config --ignore-rules -q "Reproduce this forecast CLI bug without my personal setup"
+superforecasting-agent desk -q "Summarize new evidence that could move forecast fq_123"
+superforecasting-agent desk --provider openrouter --model anthropic/claude-sonnet-4.6
+superforecasting-agent desk --toolsets forecasting,file,web
+superforecasting-agent desk --quiet -q "Return only JSON evidence candidates for this forecast"
+superforecasting-agent desk --worktree -q "Inspect this source adapter patch for forecast-ledger risks"
+superforecasting-agent desk --ignore-user-config --ignore-rules -q "Reproduce this forecast CLI bug without my personal setup"
 ```
 
 ### `superforecasting-agent -z <prompt>` — scripted one-shot
@@ -208,7 +212,7 @@ superforecasting-agent -z "…" --provider openrouter --model openai/gpt-5.5
 SUPERFORECASTING_AGENT_INFERENCE_MODEL=anthropic/claude-sonnet-4.6 superforecasting-agent -z "…"
 ```
 
-Same forecast-scoped runtime, tools, and skills — just strips every interactive / cosmetic layer. If you need tool output in the transcript too, use `superforecasting-agent chat -q` instead; `-z` is explicitly for "I only want the final answer".
+Same forecast-scoped runtime, tools, and skills — just strips every interactive / cosmetic layer. If you need tool output in the transcript too, use `superforecasting-agent desk -q` instead; `-z` is explicitly for "I only want the final answer".
 
 ## `superforecasting-agent model`
 

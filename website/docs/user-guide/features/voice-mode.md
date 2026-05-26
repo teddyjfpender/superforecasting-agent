@@ -25,7 +25,7 @@ Before enabling voice, make sure:
 
 1. Superforecasting Agent is installed.
 2. A model provider is configured with `superforecasting-agent model`.
-3. Text mode works in `superforecasting-agent chat` or `superforecasting-agent tui`.
+3. Text mode works in `superforecasting-agent desk` or `superforecasting-agent tui`.
 4. The active profile home exists, normally `~/.superforecasting-agent/`.
 
 Legacy `~/.hermes/` homes remain readable during migration, but new forecast
@@ -110,7 +110,7 @@ keys. The first local run downloads the selected Whisper model.
 Voice mode is available in the classic CLI and the TUI:
 
 ```bash
-superforecasting-agent chat
+superforecasting-agent desk
 superforecasting-agent tui
 ```
 

@@ -26,6 +26,7 @@ After editable install, testers should have these commands:
 ```bash
 forecast
 superforecasting-agent
+superforecasting-agent desk
 python -m superforecasting_agent status
 ```
 
@@ -36,7 +37,8 @@ For this handoff, the latest full tester gate was verified on:
 ```
 
 The current moving `superforecasting-agent-snapshot` branch includes the
-forecast question shortcut pass, required-source autopilot guardrails, and the
+forecast question shortcut pass, the fork-native `superforecasting-agent desk`
+support-session alias, required-source autopilot guardrails, and the
 tester-handoff documentation refresh. Rerun the operator gate before pinning a
 newer cohort hash.
 

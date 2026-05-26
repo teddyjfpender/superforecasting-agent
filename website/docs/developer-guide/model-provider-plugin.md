@@ -239,7 +239,7 @@ register_provider(ProviderProfile(
 EOF
 
 export MY_API_KEY=your-test-key
-superforecasting-agent chat -q "hello" --provider my-provider -m some-model
+superforecasting-agent desk -q "hello" --provider my-provider -m some-model
 ```
 
 ## General PluginManager integration

@@ -22,7 +22,7 @@ forecast status
 superforecasting-agent
 ```
 
-The desk opens on active questions, stale forecasts, pending reviews, alerts, calibration health, and backtest performance. `superforecasting-agent chat` still exists for inherited runtime workflows, but routine product usage should start from `forecast` or the bare `superforecasting-agent` command.
+The desk opens on active questions, stale forecasts, pending reviews, alerts, calibration health, and backtest performance. `superforecasting-agent desk` is the explicit forecast-scoped support runtime; `superforecasting-agent chat` still exists as an inherited compatibility alias. Routine product usage should start from `forecast` or the bare `superforecasting-agent` command.
 
 ### Is this only for Metaculus-style questions?
 
@@ -369,7 +369,7 @@ superforecasting-agent model
 superforecasting-agent config set model.default anthropic/claude-opus-4.7
 
 # Or specify per-session
-superforecasting-agent chat --model openrouter/meta-llama/llama-3.1-70b-instruct
+superforecasting-agent desk --model openrouter/meta-llama/llama-3.1-70b-instruct
 ```
 
 #### Rate limiting (429 errors)
@@ -379,7 +379,7 @@ superforecasting-agent chat --model openrouter/meta-llama/llama-3.1-70b-instruct
 **Solution:** Wait a moment and retry. For sustained usage, consider:
 - Upgrading your provider plan
 - Switching to a different model or provider
-- Using `superforecasting-agent chat --provider <alternative>` to route to a different backend
+- Using `superforecasting-agent desk --provider <alternative>` to route to a different backend
 
 #### Context length exceeded
 
@@ -391,10 +391,10 @@ superforecasting-agent chat --model openrouter/meta-llama/llama-3.1-70b-instruct
 /compress
 
 # Or start a fresh session
-superforecasting-agent chat
+superforecasting-agent desk
 
 # Use a model with a larger context window
-superforecasting-agent chat --model openrouter/google/gemini-3-flash-preview
+superforecasting-agent desk --model openrouter/google/gemini-3-flash-preview
 ```
 
 If this happens on the first long forecast session, Superforecasting Agent may have the wrong context length for your model. Check what it detected:
@@ -446,7 +446,7 @@ This is working as intended — Superforecasting Agent never silently runs destr
 **Solution:**
 - Avoid `sudo` in messaging — ask the agent to find alternatives
 - If you must use `sudo`, configure passwordless sudo for specific commands in `/etc/sudoers`
-- Or switch to the terminal interface for administrative tasks: `superforecasting-agent chat`
+- Or switch to the terminal interface for administrative tasks: `superforecasting-agent desk`
 
 #### Docker backend not connecting
 
@@ -586,8 +586,8 @@ You can verify the plist has the correct PATH:
 **Cause:** Large model, distant API server, or heavy system prompt with many tools.
 
 **Solution:**
-- Try a faster/smaller model: `superforecasting-agent chat --model openrouter/meta-llama/llama-3.1-8b-instruct`
-- Reduce active toolsets: `superforecasting-agent chat -t "terminal"`
+- Try a faster/smaller model: `superforecasting-agent desk --model openrouter/meta-llama/llama-3.1-8b-instruct`
+- Reduce active toolsets: `superforecasting-agent desk -t "terminal"`
 - Check your network latency to the provider
 - For local models, ensure you have enough GPU VRAM
 
@@ -618,10 +618,10 @@ Use `/compress` regularly during long sessions. It summarizes the forecast-sessi
 /compress
 
 # Start a new session with a reference to the old one
-superforecasting-agent chat
+superforecasting-agent desk
 
 # Resume a specific session later if needed
-superforecasting-agent chat --continue
+superforecasting-agent desk --continue
 ```
 
 ---
@@ -669,7 +669,7 @@ mcp_servers:
 superforecasting-agent config show | grep -A 12 mcp_servers
 
 # Restart Superforecasting Agent or reload MCP after config changes
-superforecasting-agent chat
+superforecasting-agent desk
 ```
 
 See also:
@@ -930,7 +930,7 @@ superforecasting-agent config show | head -20
 superforecasting-agent model
 
 # Or test with a known-good model
-superforecasting-agent chat -q "hello" --model anthropic/claude-opus-4.7
+superforecasting-agent desk -q "hello" --model anthropic/claude-opus-4.7
 ```
 
 If using OpenRouter, make sure your API key has credits. A 400 from OpenRouter often means the model requires a paid plan or the model ID has a typo.

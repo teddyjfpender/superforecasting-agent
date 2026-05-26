@@ -86,7 +86,7 @@ Each session is tagged with its source platform:
 
 | Source | Description |
 |--------|-------------|
-| `cli` | Interactive CLI (`superforecasting-agent` or `superforecasting-agent chat`) |
+| `cli` | Interactive CLI (`superforecasting-agent` or `superforecasting-agent desk`) |
 | `telegram` | Telegram messenger |
 | `discord` | Discord server/DM |
 | `slack` | Slack workspace |
@@ -120,9 +120,9 @@ Resume previous forecast threads from the CLI using `--continue` or `--resume`. 
 superforecasting-agent --continue
 superforecasting-agent -c
 
-# Or with the chat subcommand
-superforecasting-agent chat --continue
-superforecasting-agent chat -c
+# Or with the explicit desk subcommand
+superforecasting-agent desk --continue
+superforecasting-agent desk -c
 ```
 
 This looks up the most recent `cli` session from the SQLite database and loads its full transcript history.
@@ -150,8 +150,8 @@ superforecasting-agent -r 20250305_091523_a1b2c3d4
 # Resume by title
 superforecasting-agent --resume "forecast-policy-bill"
 
-# Or with the chat subcommand
-superforecasting-agent chat --resume 20250305_091523_a1b2c3d4
+# Or with the explicit desk subcommand
+superforecasting-agent desk --resume 20250305_091523_a1b2c3d4
 ```
 
 Session IDs are shown when you exit a CLI session, and can be found with `superforecasting-agent sessions list`.

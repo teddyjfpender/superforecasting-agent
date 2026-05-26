@@ -323,7 +323,7 @@ Snippets run with the skill directory as their working directory, and output is 
 Run the skill and verify the agent follows the instructions correctly:
 
 ```bash
-superforecasting-agent chat --toolsets forecast-desk,skills -q "Use the X skill to research this forecast question"
+superforecasting-agent desk --toolsets forecast-desk,skills -q "Use the X skill to research this forecast question"
 ```
 
 ## Where Should the Skill Live?

@@ -15,10 +15,13 @@ forecast                         # Open the forecast desk dashboard
 forecast status                  # Operational summary with live baseline comparisons
 forecast list                    # Active and recent questions
 superforecasting-agent           # Fork-native runtime entrypoint
+superforecasting-agent desk      # Explicit forecast-scoped desk/support session
 superforecasting-agent tui       # Ink TUI with forecast shortcuts
 ```
 
-Compatibility entrypoints such as `hermes` and `hermes chat` still exist for inherited runtime workflows. They are not the center of the fork.
+Compatibility entrypoints such as `hermes`, `hermes chat`, and
+`superforecasting-agent chat` still exist for inherited runtime workflows. They
+are not the center of the fork.
 
 ## Forecast Lifecycle
 
@@ -267,6 +270,7 @@ Useful shortcuts:
 
 | Shortcut | Route |
 |---|---|
+| `/questions` | Show numbered current forecast questions and drill into a row |
 | `/forecast` | Forecast dashboard or raw forecast subcommand |
 | `/new-forecast` | Create a scoreable question |
 | `/base-rate` | Propose, add, or inspect reference-class work |

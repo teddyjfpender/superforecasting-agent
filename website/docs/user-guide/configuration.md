@@ -182,8 +182,8 @@ Use `superforecasting-agent tools` for the interactive tool UI and
 Examples:
 
 ```bash
-superforecasting-agent chat --toolsets forecast-desk,mcp-market-data
-superforecasting-agent chat --toolsets hermes-cli
+superforecasting-agent desk --toolsets forecast-desk,mcp-market-data
+superforecasting-agent desk --toolsets hermes-cli
 ```
 
 `hermes-cli` is the legacy full assistant preset. Use it only when the broad

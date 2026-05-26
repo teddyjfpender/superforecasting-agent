@@ -77,7 +77,7 @@ Allow the terminal, editor, or app that launches Superforecasting Agent.
 ### Start a session
 
 ```bash
-superforecasting-agent chat -t computer_use
+superforecasting-agent desk -t computer_use
 ```
 
 or add `computer_use` to the enabled toolsets in `~/.superforecasting-agent/config.yaml`.

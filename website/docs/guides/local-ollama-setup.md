@@ -128,7 +128,7 @@ That's it. You're now running the local forecasting desk. Try it out:
 forecast status
 forecast new "Will the next CPI print be above consensus?" \
   --resolution-criteria "Resolved by the official BLS CPI release"
-superforecasting-agent chat
+superforecasting-agent desk
 ```
 
 The forecast desk and chat agent will use the terminal, file, browser, and ledger tools through your local model, with no cloud model calls.

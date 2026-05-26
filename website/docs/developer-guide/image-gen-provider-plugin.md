@@ -260,7 +260,7 @@ echo "image_gen:" >> $SUPERFORECASTING_AGENT_HOME/config.yaml
 echo "  provider: my-backend" >> $SUPERFORECASTING_AGENT_HOME/config.yaml
 
 # Exercise it
-superforecasting-agent chat -q "Generate a chart-style visual brief for this forecast question"
+superforecasting-agent desk -q "Generate a chart-style visual brief for this forecast question"
 ```
 
 Or interactively: `superforecasting-agent tools` -> "Image Generation" -> select `my-backend` -> enter API key if prompted.

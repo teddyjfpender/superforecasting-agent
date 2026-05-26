@@ -33,10 +33,11 @@ Tasks whose assignee cannot be resolved stay on `ready` with a `skipped_nonspawn
 
 ### 2. Spawn Mechanism
 
-For profile lanes, the dispatcher spawns a quiet chat process for the assignee profile inside the task workspace. The fork-native command shape is:
+For profile lanes, the dispatcher spawns a quiet forecast-desk process for the
+assignee profile inside the task workspace. The fork-native command shape is:
 
 ```bash
-superforecasting-agent -p <assignee> chat -q <prompt>
+superforecasting-agent -p <assignee> desk -q <prompt>
 ```
 
 Migrated installs may still use `hermes -p <assignee> chat -q <prompt>` or the equivalent module form.

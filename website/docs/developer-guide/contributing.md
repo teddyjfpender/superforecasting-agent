@@ -82,7 +82,7 @@ ln -sf "$(pwd)/venv/bin/forecast" ~/.local/bin/forecast
 # Verify
 superforecasting-agent doctor
 forecast status
-superforecasting-agent chat -q "Summarize the active forecast desk state."
+superforecasting-agent desk -q "Summarize the active forecast desk state."
 ```
 
 ### Run Tests
