@@ -5,7 +5,7 @@ no stderr chatter.  Just the agent's final text to stdout.
 
 Toolsets = explicit --toolsets when provided, otherwise whatever the user has
 configured for "cli" in `superforecasting-agent tools`.
-Rules / memory / AGENTS.md / preloaded skills = same as a normal chat turn.
+Rules / memory / AGENTS.md / preloaded skills = same as a normal forecast-support turn.
 Approvals = auto-bypassed (fork-native YOLO env aliases are set for the call).
 Working directory = the user's CWD (AGENTS.md etc. resolve from there as usual).
 
@@ -234,7 +234,7 @@ def _run_agent(
     toolsets: object = None,
     use_config_toolsets: bool = True,
 ) -> str:
-    """Build an AIAgent exactly like a normal CLI chat turn would, then
+    """Build an AIAgent exactly like a normal CLI forecast-support turn, then
     run a single conversation.  Returns the final response string."""
     # Imports are local so they don't run when the CLI is invoked for other
     # commands (keeps top-level startup cheap).

@@ -442,6 +442,7 @@ def test_embedded_tui_surface_is_forecast_desk():
         root / "web" / "src" / "pages" / "ModelsPage.tsx",
         root / "hermes_cli" / "main.py",
         root / "hermes_cli" / "web_server.py",
+        root / "tui_gateway" / "entry.py",
         root / "website" / "docs" / "index.md",
         root / "website" / "docs" / "getting-started" / "installation.md",
         root / "website" / "docs" / "getting-started" / "learning-path.md",
@@ -498,8 +499,10 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert "Loading Forecast Desk" in text
     assert "forecast-desk-xterm-host" in text
     assert "forecast-desk-side-panel" in text
+    assert "Forecast Desk route passes" in text
     assert 'dashboard "Chat" tab' not in text
     assert "Browser-embedded chat" not in text
+    assert "chat tab passes" not in text
     assert "chat canvas" not in text
     assert "https://nousresearch.com" not in text
     assert "inspecting research sessions" not in text
@@ -1637,6 +1640,8 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
     assert "superforecasting-agent plugins enable <key>" in plugins_cmd
     assert "Entry point for `superforecasting-agent skills`" in skills_config
     assert "configured for \"cli\" in `superforecasting-agent tools`" in oneshot
+    assert "same as a normal forecast-support turn" in oneshot
+    assert "normal CLI forecast-support turn" in oneshot
     assert "Model / provider selection mirrors `superforecasting-agent chat`" in oneshot
     assert "superforecasting-agent -z" in oneshot
     assert 'superforecasting-agent -z "Summarize evidence for fq_123"' in parser_help
@@ -1650,6 +1655,8 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
     assert "only for inherited compatibility/debugging" in classic_cli
     assert 'superforecasting-agent chat -q "Hello"' not in parser_help
     assert 'superforecasting-agent -z "Hello"' not in parser_help
+    assert "normal chat turn" not in oneshot
+    assert "normal CLI chat turn" not in oneshot
     assert 'superforecasting-agent -z "query"' not in main_help
     assert "python cli.py --toolsets web,terminal" not in classic_cli
     assert "python cli.py --skills forecasting,research" not in classic_cli
@@ -2702,6 +2709,9 @@ def test_contributor_and_skills_index_guidance_is_forecast_native():
         encoding="utf-8"
     )
     skills_hub = (root / "tools" / "skills_hub.py").read_text(encoding="utf-8")
+    skills_hub_cli = (root / "hermes_cli" / "skills_hub.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "# Contributing to Superforecasting Agent" in contributing
     assert "https://github.com/teddyjfpender/superforecasting-agent.git" in contributing
@@ -2711,14 +2721,22 @@ def test_contributor_and_skills_index_guidance_is_forecast_native():
     assert "GitHub PR source: {args.repo}" in contributor_audit
     assert "Building Superforecasting Agent Skills Index" in skills_index
     assert "centralized Superforecasting Agent index" in skills_hub
+    assert "interactive forecast session" in skills_hub
+    assert "interactive forecast session" in skills_hub_cli
+    assert "/skills in forecast sessions" in skills_hub_cli
 
-    combined = "\n".join([contributing, contributor_audit, skills_index, skills_hub])
+    combined = "\n".join(
+        [contributing, contributor_audit, skills_index, skills_hub, skills_hub_cli]
+    )
     assert "# Contributing to Hermes Agent" not in combined
     assert "Thank you for contributing to Hermes Agent" not in combined
     assert "https://github.com/NousResearch/hermes-agent.git" not in combined
     assert '"--repo", "NousResearch/hermes-agent"' not in combined
     assert "`hermes skills install`" not in combined
     assert "`hermes setup`" not in combined
+    assert "interactive chat" not in combined
+    assert "chat interface" not in combined
+    assert "/skills in chat" not in combined
     assert "Building Hermes Skills Index" not in combined
     assert "Hermes Skills Index" not in combined
 

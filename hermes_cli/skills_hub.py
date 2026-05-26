@@ -4,7 +4,7 @@ Skills Hub CLI — Unified interface for the Superforecasting Agent Skills Hub.
 
 Powers both:
   - `superforecasting-agent skills <subcommand>` (CLI argparse entry point)
-  - `/skills <subcommand>` (slash command in the interactive chat)
+  - `/skills <subcommand>` (slash command in an interactive forecast session)
 
 All logic lives in shared do_* functions. The CLI entry point and slash command
 handler are thin wrappers that parse args and delegate.
@@ -1371,12 +1371,12 @@ def skills_command(args) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Slash command entry point (/skills in chat)
+# Slash command entry point (/skills in forecast sessions)
 # ---------------------------------------------------------------------------
 
 def handle_skills_slash(cmd: str, console: Optional[Console] = None) -> None:
     """
-    Parse and dispatch `/skills <subcommand> [args]` from the chat interface.
+    Parse and dispatch `/skills <subcommand> [args]` from the forecast session.
 
     Examples:
         /skills search kubernetes

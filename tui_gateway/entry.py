@@ -50,7 +50,8 @@ def _install_sidecar_publisher() -> None:
     """Mirror every dispatcher emit to the dashboard sidebar via WS.
 
     Activated by the TUI sidecar URL env aliases, set by the dashboard's
-    ``/api/pty`` endpoint when a chat tab passes a ``channel`` query param.
+    ``/api/pty`` endpoint when the Forecast Desk route passes a ``channel``
+    query param.
     Best-effort: connect failure or runtime drop falls back to stdio-only.
     """
     url = _tui_env("SIDECAR_URL")
