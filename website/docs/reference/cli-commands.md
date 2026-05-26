@@ -15,7 +15,8 @@ superforecasting-agent <command>
 
 The inherited `hermes` command remains available for compatibility with the original runtime, gateways, plugins, and scripts.
 
-For in-chat slash commands, see [Slash Commands Reference](./slash-commands.md).
+For slash commands inside interactive forecast sessions, see
+[Slash Commands Reference](./slash-commands.md).
 
 ## Forecast Desk Commands
 
@@ -1023,9 +1024,12 @@ Related entrypoints:
 ```bash
 superforecasting-agent-acp
 superforecast-acp
-hermes-acp
 python -m acp_adapter
 ```
+
+The legacy `hermes-acp` entrypoint remains accepted for migrated editor
+configurations. New editor setup should use `superforecasting-agent acp` or
+`superforecasting-agent-acp`.
 
 Install support first:
 

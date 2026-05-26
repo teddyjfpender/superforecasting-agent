@@ -331,7 +331,7 @@ ui-tui/
       text.ts            text helpers, ANSI detection, previews
 
     types/
-      hermes-ink.d.ts    type declarations for @hermes/ink
+      hermes-ink.d.ts    compatibility declarations for the inherited @hermes/ink package name
 
     __tests__/           vitest suite
 ```
@@ -343,5 +343,5 @@ tui_gateway/
   entry.py               stdio entrypoint
   server.py              RPC handlers and session logic
   render.py              optional rich/ANSI bridge
-  slash_worker.py        persistent HermesCLI subprocess for slash commands
+  slash_worker.py        persistent ForecastCLI subprocess for slash commands
 ```

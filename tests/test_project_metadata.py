@@ -1012,6 +1012,8 @@ def test_tui_readme_uses_forecast_native_product_copy():
     assert "Assistant output is rendered" not in readme
     assert "start assistant streaming" not in readme
     assert "hermes --tui" not in readme
+    assert "persistent ForecastCLI subprocess for slash commands" in readme
+    assert "persistent HermesCLI subprocess for slash commands" not in readme
     assert "Input history is stored in `~/.hermes" not in readme
 
 
@@ -4541,6 +4543,12 @@ def test_cli_command_reference_chat_examples_are_forecast_scoped():
     assert "superforecasting-agent [global-options] <command> [subcommand/options]" in cli_docs
     assert "new scripts, docs, and runbooks on `superforecasting-agent`" in cli_docs
     assert "hermes [global-options] <command> [subcommand/options]" not in cli_docs
+    assert "For slash commands inside interactive forecast sessions" in cli_docs
+    assert "For in-chat slash commands" not in cli_docs
+    assert "superforecasting-agent-acp" in cli_docs
+    assert "superforecast-acp" in cli_docs
+    assert "The legacy `hermes-acp` entrypoint remains accepted" in cli_docs
+    assert "superforecast-acp\nhermes-acp" not in cli_docs
     assert 'chat -q "Summarize new evidence that could move forecast fq_123"' in cli_docs
     assert "superforecasting-agent chat --toolsets forecasting,file,web" in cli_docs
     assert "Extract forecast-relevant claims from this source note." in cli_docs
