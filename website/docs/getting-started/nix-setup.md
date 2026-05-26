@@ -423,7 +423,7 @@ primary `SOUL.md` from `$SUPERFORECASTING_AGENT_HOME/SOUL.md`, which in the
 current NixOS module is
 `${services.superforecasting-agent.stateDir}/.superforecasting-agent/SOUL.md`.
 Putting `SOUL.md` in `documents` only creates a workspace file and will not
-replace the main persona file.
+replace the primary forecast-desk identity file.
 
 ```nix
 {

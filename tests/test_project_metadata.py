@@ -1605,6 +1605,35 @@ def test_runtime_user_guidance_prefers_active_forecast_home():
     assert "hermes doctor --ack" not in doctor
 
 
+def test_high_attention_identity_copy_is_forecast_desk_native():
+    root = Path(__file__).resolve().parents[1]
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    tips = (root / "hermes_cli" / "tips.py").read_text(encoding="utf-8")
+    doctor = (root / "hermes_cli" / "doctor.py").read_text(encoding="utf-8")
+    nix_setup = (
+        root / "website" / "docs" / "getting-started" / "nix-setup.md"
+    ).read_text(encoding="utf-8")
+
+    assert "SOUL.md** — forecast-desk identity and style file" in readme
+    assert "Forecast-support `chat` sessions" in tips
+    assert "forecast-session titles" in tips
+    assert "simple forecast-support queries" in tips
+    assert "default forecast-desk identity" in tips
+    assert "SOUL.md exists (forecast-desk identity configured)" in doctor
+    assert "# Superforecasting Agent Forecast Desk Identity" in doctor
+    assert "replace the primary forecast-desk identity file" in nix_setup
+
+    assert "SOUL.md** — persona file" not in readme
+    assert "Explicit chat sessions" not in tips
+    assert "default personality" not in tips
+    assert "The agent auto-generates session titles" not in tips
+    assert "Smart model routing can auto-route simple queries" not in tips
+    assert "SOUL.md persona file" not in doctor
+    assert "persona configured" not in doctor
+    assert "# Superforecasting Agent Persona" not in doctor
+    assert "replace the main persona file" not in nix_setup
+
+
 def test_operator_readiness_surfaces_use_forecast_home_guidance():
     root = Path(__file__).resolve().parents[1]
     cli = (root / "cli.py").read_text(encoding="utf-8")

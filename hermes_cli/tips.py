@@ -67,12 +67,12 @@ TIPS = [
     "superforecasting-agent chat --worktree creates an isolated git worktree for parallel support/code sessions.",
     "superforecasting-agent -z \"Summarize the active forecast desk\" runs a clean one-shot and exits.",
     "superforecasting-agent -t forecast-desk,web -z \"research question 142\" narrows tools for one-shot work.",
-    "Explicit chat sessions can still preload skills: superforecasting-agent chat -s github-pr-workflow.",
+    "Forecast-support `chat` sessions can still preload skills: superforecasting-agent chat -s github-pr-workflow.",
     "superforecasting-agent -z \"query\" runs a single non-interactive query and prints only the final answer.",
-    "Explicit chat sessions can raise the turn budget: superforecasting-agent chat --max-turns 200.",
-    "Explicit chat sessions can enable checkpoints: superforecasting-agent chat --checkpoints.",
+    "Forecast-support `chat` sessions can raise the turn budget: superforecasting-agent chat --max-turns 200.",
+    "Forecast-support `chat` sessions can enable checkpoints: superforecasting-agent chat --checkpoints.",
     "superforecasting-agent --yolo bypasses all dangerous command approval prompts for the entire session.",
-    "Explicit chat sessions can set --source telegram for filtering in superforecasting-agent sessions list.",
+    "Forecast-support `chat` sessions can set --source telegram for filtering in superforecasting-agent sessions list.",
     "superforecasting-agent -p work forecast review runs forecast workflows under a named profile.",
 
     # --- CLI Subcommands ---
@@ -251,8 +251,8 @@ TIPS = [
 
     # --- Miscellaneous ---
     "Prompt caching (Anthropic) reduces costs by reusing cached system prompt prefixes.",
-    "The agent auto-generates session titles in a background thread — zero latency impact.",
-    "Smart model routing can auto-route simple queries to a cheaper model.",
+    "The agent auto-generates forecast-session titles in a background thread — zero latency impact.",
+    "Smart model routing can auto-route simple forecast-support queries to a cheaper model.",
     "Slash commands support prefix matching: /h resolves to /help, /mod to /model.",
     "Dragging a file path into the terminal auto-attaches images or sends as context.",
     ".worktreeinclude in your repo root lists gitignored files to copy into worktrees.",
@@ -270,7 +270,7 @@ TIPS = [
     "Cron scripts live in ~/.superforecasting-agent/scripts/ and run before the agent — perfect for data collection pipelines.",
     "prefill_messages_file in config.yaml injects few-shot examples into every API call, never saved to history.",
     "SOUL.md completely replaces the agent's default identity — rewrite it to make Superforecasting Agent your own.",
-    "SOUL.md is auto-seeded with a default personality on first run. Edit ~/.superforecasting-agent/SOUL.md to customize.",
+    "SOUL.md is auto-seeded with a default forecast-desk identity on first run. Edit ~/.superforecasting-agent/SOUL.md to customize.",
     "/compress <focus topic> allocates 60-70% of the summary budget to your topic and aggressively trims the rest.",
     "On second+ compression, the compressor updates the previous summary instead of starting from scratch.",
     "Before a gateway session reset, Superforecasting Agent auto-flushes important facts to memory in the background.",
@@ -425,10 +425,10 @@ TIPS = [
 
     # --- CLI Subcommands & Flags ---
     'superforecasting-agent -z "<forecast note>" is the purest one-shot: final answer on stdout, nothing else.',
-    'Explicit chat sessions can use --pass-session-id when the model needs to cite its own session ID.',
+    'Forecast-support `chat` sessions can use --pass-session-id when the model needs to cite its own session ID.',
     'For image one-shots, superforecasting-agent chat -q "inspect" --image path/to/pic.png attaches a local image.',
     'superforecasting-agent --ignore-user-config skips ~/.superforecasting-agent/config.yaml for reproducible runs.',
-    "Explicit chat sessions can use --source tool so support runs don't clutter superforecasting-agent sessions list.",
+    "Forecast-support `chat` sessions can use --source tool so support runs don't clutter superforecasting-agent sessions list.",
     'superforecasting-agent dump --show-keys includes redacted API key fingerprints for deeper support debugging.',
     'superforecasting-agent sessions rename <ID> "new title" renames any past session; superforecasting-agent sessions delete <ID> removes one.',
     'superforecasting-agent import restores a session export or profile archive produced by sessions export or profile export.',

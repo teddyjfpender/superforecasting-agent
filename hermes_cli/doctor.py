@@ -879,14 +879,14 @@ def run_doctor(args):
         else:
             check_warn(f"{_DHH}/{subdir_name}/ not found", "(will be created on first use)")
     
-    # Check for SOUL.md persona file
+    # Check for SOUL.md forecast-desk identity file
     soul_path = hermes_home / "SOUL.md"
     if soul_path.exists():
         content = soul_path.read_text(encoding="utf-8").strip()
         # Check if it's just the template comments (no real content)
         lines = [l for l in content.splitlines() if l.strip() and not l.strip().startswith(("<!--", "-->", "#"))]
         if lines:
-            check_ok(f"{_DHH}/SOUL.md exists (persona configured)")
+            check_ok(f"{_DHH}/SOUL.md exists (forecast-desk identity configured)")
         else:
             check_info(f"{_DHH}/SOUL.md exists but is empty — edit it to customize forecast style")
     else:
@@ -894,8 +894,8 @@ def run_doctor(args):
         if should_fix:
             soul_path.parent.mkdir(parents=True, exist_ok=True)
             soul_path.write_text(
-                "# Superforecasting Agent Persona\n\n"
-                "<!-- Edit this file to customize how Superforecasting Agent communicates. -->\n\n"
+                "# Superforecasting Agent Forecast Desk Identity\n\n"
+                "<!-- Edit this file to customize forecast-desk communication and standing behavior. -->\n\n"
                 "You are Superforecasting Agent, a forecasting desk operator focused on evidence, probabilities, calibration, and error tracking.\n",
                 encoding="utf-8",
             )

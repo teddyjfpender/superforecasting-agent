@@ -204,7 +204,7 @@ superforecasting-agent claw migrate --overwrite  # Overwrite existing conflicts
 ```
 
 What gets imported:
-- **SOUL.md** — persona file
+- **SOUL.md** — forecast-desk identity and style file
 - **Memories** — MEMORY.md and USER.md entries
 - **Skills** — user-created skills → `~/.superforecasting-agent/skills/openclaw-imports/`
 - **Command allowlist** — approval patterns
