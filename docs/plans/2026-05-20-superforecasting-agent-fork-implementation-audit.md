@@ -18,7 +18,7 @@ The 2026-05-25 tester handoff is tracked in
 operator path is the moving `superforecasting-agent-snapshot` branch; pin the
 verified commit hash in each tester brief after the final push.
 
-Latest automated smoke evidence ran on snapshot `86cb5089c1c1` with a clean
+Latest automated smoke evidence ran on snapshot `1363a6ef0fe9` with a clean
 temporary ledger and exercised `forecast new`, evidence/research, base-rate,
 model run, update, review, resolve/score, postmortem, calibration, backtest
 replay, scheduled self-checks, alert creation, schedule history, packet import,
@@ -32,7 +32,9 @@ and `forecast smoke test passed`.
 The source-tree `./superforecasting-agent` and `./forecast` launchers,
 `python -m superforecasting_agent`, the package-defined `forecast`
 console-script target, dashboard forecast API, and TUI forecast panel tests
-have all been checked for the MVP handoff.
+have all been checked for the MVP handoff. A manual source-tree smoke also ran
+against `/private/tmp/sfa-smoke-20260526-0250.db` through the full local
+lifecycle and schedule/alert summary path.
 
 ## Evidence Inspected
 

@@ -130,8 +130,8 @@ common workflow checks.
 
 ## Smoke Evidence
 
-Latest automated tester handoff evidence ran with a temporary clean ledger at
-code snapshot `ac42abf68eb4`. The final handoff commit may be a later docs-only
+Latest consolidated tester handoff evidence ran with a temporary clean ledger at
+code snapshot `1363a6ef0fe9`. The final handoff commit may be a later docs-only
 commit that records this gate output.
 
 It verified:
@@ -150,6 +150,14 @@ It verified:
 - Dashboard forecast API and TUI forecast panel test coverage.
 - The consolidated `python3 scripts/tester_handoff_check.py` gate passed 167
   focused tests, the clean smoke path, and `git diff --check`.
+
+This finalization pass also ran a manual clean-ledger source-tree smoke at
+`/private/tmp/sfa-smoke-20260526-0250.db` through `./forecast --db ...`:
+`new`, `evidence add`, `research`, `base-rate`, `model`, `update`, `review`,
+`resolve`, `score`, `postmortem`, `calibration --by-origin`, `backtest
+builtin:mini-binary --probability-source forecast-engine`, `performance
+--live`, `schedule add`, `schedule run --due --auto-score --auto-postmortem`,
+`alerts`, and `status`.
 
 ## Feedback To Collect
 
@@ -175,6 +183,10 @@ export or bundle path.
 - `forecast` exists on `PATH` after package installation; raw source checkouts
   can use `./forecast`, `./superforecasting-agent`, or
   `python -m superforecasting_agent`.
+- Raw source checkouts can run the forecast desk without installing every
+  compatibility extra. Inherited runtime commands such as `tools`, `dashboard`,
+  `setup`, `model`, `gateway`, and chat/TUI should be tested after the editable
+  install command above.
 - Scheduled checks create alerts, scores, postmortems, lessons, and error
   profiles where configured, but they do not silently change active forecast
   probabilities.
