@@ -4263,11 +4263,16 @@ def test_dashboard_plugin_loader_has_forecast_native_markers():
     loader = (root / "web" / "src" / "plugins" / "usePlugins.ts").read_text(
         encoding="utf-8"
     )
+    plugins_page = (root / "web" / "src" / "pages" / "PluginsPage.tsx").read_text(
+        encoding="utf-8"
+    )
 
     assert "forecast_dv" in loader
     assert "data-superforecasting-agent-plugin" in loader
     assert "data-forecast-plugin" in loader
     assert "hermes_dv" not in loader
+    assert "__forecast_memory_builtin__" in plugins_page
+    assert "__hermes_memory_builtin__" not in plugins_page
 
 
 def test_dashboard_plugin_sdk_has_forecast_native_aliases():
