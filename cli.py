@@ -6045,10 +6045,10 @@ class HermesCLI:
         if reason == "history":
             print(
                 "No forecast transcript messages yet — here are recent "
-                "research sessions you can resume:"
+                "forecast sessions you can resume:"
             )
         else:
-            print("  Recent research sessions:")
+            print("  Recent forecast sessions:")
         print()
         print(f"  {'Title':<32} {'Preview':<40} {'Last Active':<13} {'ID'}")
         print(f"  {'─' * 32} {'─' * 40} {'─' * 13} {'─' * 24}")
@@ -6564,13 +6564,13 @@ class HermesCLI:
     def _handle_branch_command(self, cmd_original: str) -> None:
         """Handle /branch [name] — fork the current session into a new independent copy.
 
-        Copies the full research-session transcript to a new session so the
+        Copies the full forecast-session transcript to a new session so the
         user can explore a different approach without losing the original
         session state.
         Inspired by Claude Code's /branch command.
         """
         if not self.conversation_history:
-            _cprint("  No research session to branch — send a message first.")
+            _cprint("  No forecast session to branch — send a message first.")
             return
 
         if not self._session_db:
@@ -9863,10 +9863,10 @@ class HermesCLI:
         choices = [
             ("once", "Approve Once", "proceed this time only"),
             ("always", "Always Approve", "proceed and silence this prompt permanently"),
-            ("cancel", "Cancel", "keep current research session"),
+            ("cancel", "Cancel", "keep current forecast session"),
         ]
         raw = self._prompt_text_input_modal(
-            title=f"⚠️  /{command} — destroys research-session state",
+            title=f"⚠️  /{command} — destroys forecast-session state",
             detail=detail,
             choices=choices,
         )
@@ -11762,7 +11762,7 @@ class HermesCLI:
                 except Exception:
                     pass
 
-            print("Resume this research session with:")
+            print("Resume this forecast session with:")
             print(f"  superforecasting-agent --resume {self.session_id}")
             if session_title:
                 print(f"  superforecasting-agent -c \"{session_title}\"")

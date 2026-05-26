@@ -1023,11 +1023,17 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Retry the last forecast note by removing the last exchange" in cli
     assert "destination forecast conversation" in cli
     assert "Forecast agent is busy" in cli
+    assert "Recent forecast sessions" in cli
+    assert "No forecast session to branch" in cli
+    assert "Resume this forecast session with:" in cli
     assert "Set this conversation as the scheduled forecast-review delivery channel" in commands
     assert "Set this conversation as the home delivery channel" not in commands
     assert "Start a new session (fresh session ID + history)" not in commands
     assert "Retry the last message" not in commands
     assert "Retry the last user message by removing the last exchange" not in cli
+    assert "Recent research sessions" not in cli
+    assert "No research session to branch" not in cli
+    assert "Resume this research session with:" not in cli
     assert "destination chat" not in cli
     assert "system prompt belongs to the core forecast protocol" in conversation_loop
     assert "system prompt is Hermes's territory" not in conversation_loop
