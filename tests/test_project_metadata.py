@@ -504,6 +504,7 @@ def test_acp_adapter_copy_is_forecast_native():
         root / "acp_adapter" / "session.py",
         root / "acp_adapter" / "auth.py",
         root / "acp_adapter" / "events.py",
+        root / "acp_adapter" / "permissions.py",
         root / "acp_adapter" / "tools.py",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
@@ -522,6 +523,9 @@ def test_acp_adapter_copy_is_forecast_native():
     assert "Hermes' local kawaii" not in text
     assert "Show Hermes version" not in text
     assert "~/.hermes/state.db" not in text
+    assert "Run Hermes on the user's prompt" not in text
+    assert "Hermes estimates ``used``" not in text
+    assert "Hermes approval semantics" not in text
 
 
 def test_acp_registry_docs_are_fork_native():

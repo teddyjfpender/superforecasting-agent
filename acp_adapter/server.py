@@ -151,7 +151,7 @@ def _path_from_file_uri(uri: str) -> Path | None:
 
     Zed may send POSIX file URIs from Linux/WSL workspaces or Windows-ish paths
     when launched through wsl.exe. Translate the common Windows drive form to
-    /mnt/<drive>/... so Hermes running in WSL can read it.
+    /mnt/<drive>/... so the agent running in WSL can read it.
     """
     raw = (uri or "").strip()
     if not raw:
@@ -531,8 +531,8 @@ class HermesACPAgent(acp.Agent):
 
         Zed renders ``config_options`` in the prominent selector slot where the
         model picker was visible. Claude/Codex expose policy-like controls as ACP
-        modes, which coexist with the model picker, so Hermes maps edit approval
-        policy onto modes instead of advertising config options.
+        modes, which coexist with the model picker, so the agent maps edit
+        approval policy onto modes instead of advertising config options.
         """
 
         current = str(getattr(state, "mode", "") or self._MODE_DEFAULT)
@@ -662,9 +662,9 @@ class HermesACPAgent(acp.Agent):
 
         Zed's circular context indicator is driven by ACP ``usage_update``
         session updates: ``size`` is the model context window and ``used`` is
-        the current request pressure.  Hermes estimates ``used`` from the same
-        buckets it sends to providers: system prompt, conversation history, and
-        tool schemas.
+        the current request pressure.  The agent estimates ``used`` from the
+        same buckets it sends to providers: system prompt, conversation
+        history, and tool schemas.
         """
         agent = state.agent
         compressor = getattr(agent, "context_compressor", None)
@@ -710,7 +710,7 @@ class HermesACPAgent(acp.Agent):
             )
 
     async def _send_session_info_update(self, session_id: str) -> None:
-        """Send ACP native session metadata after Hermes changes it."""
+        """Send ACP native session metadata after the agent changes it."""
         if not self._conn:
             return
         try:
@@ -865,7 +865,7 @@ class HermesACPAgent(acp.Agent):
         provider = detect_provider()
 
         if normalized_method == TERMINAL_SETUP_AUTH_METHOD_ID:
-            # Terminal auth launches Hermes setup/model selection out-of-band.
+            # Terminal auth launches setup/model selection out-of-band.
             # Only report success once that flow has produced usable runtime
             # credentials for the normal ACP session.
             return AuthenticateResponse() if provider else None
@@ -1252,7 +1252,7 @@ class HermesACPAgent(acp.Agent):
         session_id: str,
         **kwargs: Any,
     ) -> PromptResponse:
-        """Run Hermes on the user's prompt and stream events back to the editor."""
+        """Run the agent on the user's prompt and stream events back to the editor."""
         state = self.session_manager.get_session(session_id)
         if state is None:
             logger.error("prompt: session %s not found", session_id)
@@ -1928,7 +1928,7 @@ class HermesACPAgent(acp.Agent):
     async def set_config_option(
         self, config_id: str, session_id: str, value: str, **kwargs: Any
     ) -> SetSessionConfigOptionResponse | None:
-        """Accept ACP config option updates even when Hermes has no typed ACP config surface yet."""
+        """Accept ACP config option updates without a typed config surface."""
         state = self.session_manager.get_session(session_id)
         if state is None:
             logger.warning("Session %s: config update requested for missing session", session_id)

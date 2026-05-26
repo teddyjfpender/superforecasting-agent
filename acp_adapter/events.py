@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 def _json_loads_maybe_prefix(value: str) -> Any:
-    """Parse a JSON object even when Hermes appended a human hint after it."""
+    """Parse a JSON object even when the runtime appended a human hint after it."""
     text = value.strip()
     try:
         return json.loads(text)
