@@ -87,7 +87,9 @@ superforecasting-agent [flags] [command]
   --pass-session-id         Include session ID in system prompt
 ```
 
-No subcommand opens the forecast desk. Use `superforecasting-agent chat` for explicit forecast-scoped chat.
+Bare `superforecasting-agent` opens the forecast desk during the fork transition.
+Use `forecast ...` for ledger lifecycle commands and `superforecasting-agent chat`
+only when you explicitly want the inherited forecast-scoped chat runtime.
 
 ### Chat
 
@@ -251,11 +253,11 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 
 ### Session Control
 ```
-/new (/reset)        Fresh session
+/new (/reset)        Fresh forecast session
 /clear               Clear screen + new session (CLI)
 /retry               Resend last message
 /undo                Remove last exchange
-/title [name]        Name the session
+/title [name]        Name the forecast session
 /compress            Manually compress context
 /stop                Kill background processes
 /rollback [N]        Restore filesystem checkpoint
@@ -264,7 +266,7 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 /queue <prompt>      Queue for next turn
 /steer <prompt>      Inject a message after the next tool call without interrupting
 /agents (/tasks)     Show active agents and running tasks
-/resume [name]       Resume a named session
+/resume [name]       Resume a named forecast session
 /goal [text|sub]     Set a standing goal Superforecasting Agent works on across turns until achieved
                      (subcommands: status, pause, resume, clear)
 /redraw              Force a full UI repaint (CLI)
@@ -274,7 +276,7 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 ```
 /config              Show config (CLI)
 /model [name]        Show or change model
-/personality [name]  Set personality
+/style [name]        Set forecast style (`/personality` remains a legacy alias)
 /reasoning [level]   Set reasoning (none|minimal|low|medium|high|xhigh|show|hide)
 /verbose             Cycle: off → new → all → verbose
 /voice [on|off|tts]  Voice mode
@@ -563,10 +565,10 @@ Run additional Superforecasting Agent processes as fully independent subprocesse
 ### One-Shot Mode
 
 ```
-terminal(command="superforecasting-agent chat -q 'Research GRPO papers and write summary to ~/research/grpo.md'", timeout=300)
+terminal(command="superforecasting-agent chat -q 'Summarize evidence and base rates for forecast fq_123'", timeout=300)
 
 # Background for long tasks:
-terminal(command="superforecasting-agent chat -q 'Set up CI/CD for ~/myapp'", background=true)
+terminal(command="superforecasting-agent chat -q 'Research new evidence for the active macro forecast book'", background=true)
 ```
 
 ### Interactive PTY Mode (via tmux)
@@ -578,13 +580,13 @@ Superforecasting Agent uses prompt_toolkit, which requires a real terminal. Use 
 terminal(command="tmux new-session -d -s agent1 -x 120 -y 40 'superforecasting-agent'", timeout=10)
 
 # Wait for startup, then send a message
-terminal(command="sleep 8 && tmux send-keys -t agent1 'Build a FastAPI auth service' Enter", timeout=15)
+terminal(command="sleep 8 && tmux send-keys -t agent1 'Review stale forecasts and propose cited updates' Enter", timeout=15)
 
 # Read output
 terminal(command="sleep 20 && tmux capture-pane -t agent1 -p", timeout=5)
 
 # Send follow-up
-terminal(command="tmux send-keys -t agent1 'Add rate limiting middleware' Enter", timeout=5)
+terminal(command="tmux send-keys -t agent1 'Export the highest-priority forecast packet' Enter", timeout=5)
 
 # Exit
 terminal(command="tmux send-keys -t agent1 '/exit' Enter && sleep 2 && tmux kill-session -t agent1", timeout=10)
@@ -593,17 +595,17 @@ terminal(command="tmux send-keys -t agent1 '/exit' Enter && sleep 2 && tmux kill
 ### Multi-Agent Coordination
 
 ```
-# Agent A: backend
+# Agent A: policy desk
 terminal(command="tmux new-session -d -s backend -x 120 -y 40 'superforecasting-agent -w'", timeout=10)
-terminal(command="sleep 8 && tmux send-keys -t backend 'Build REST API for user management' Enter", timeout=15)
+terminal(command="sleep 8 && tmux send-keys -t backend 'Research policy forecasts closing this month' Enter", timeout=15)
 
-# Agent B: frontend
+# Agent B: market desk
 terminal(command="tmux new-session -d -s frontend -x 120 -y 40 'superforecasting-agent -w'", timeout=10)
-terminal(command="sleep 8 && tmux send-keys -t frontend 'Build React dashboard for user management' Enter", timeout=15)
+terminal(command="sleep 8 && tmux send-keys -t frontend 'Check market-implied baselines for active forecasts' Enter", timeout=15)
 
 # Check progress, relay context between them
 terminal(command="tmux capture-pane -t backend -p | tail -30", timeout=5)
-terminal(command="tmux send-keys -t frontend 'Here is the API schema from the backend agent: ...' Enter", timeout=5)
+terminal(command="tmux send-keys -t frontend 'Here are policy-desk evidence refs to compare with market baselines: ...' Enter", timeout=5)
 ```
 
 ### Session Resume
@@ -621,7 +623,7 @@ terminal(command="tmux new-session -d -s resumed 'superforecasting-agent --resum
 - **Prefer `delegate_task` for quick subtasks** — less overhead than spawning a full process
 - **Use `-w` (worktree mode)** when spawning agents that edit code — prevents git conflicts
 - **Set timeouts** for one-shot mode — complex tasks can take 5-10 minutes
-- **Use `superforecasting-agent chat -q` for fire-and-forget** — no PTY needed
+- **Use `forecast ...` for durable ledger writes** and `superforecasting-agent chat -q` only for ephemeral forecast-scoped analysis — no PTY needed
 - **Use tmux for interactive sessions** — raw PTY mode has `\r` vs `\n` issues with prompt_toolkit
 - **For scheduled tasks**, use the `cronjob` tool instead of spawning — handles delivery and retry
 

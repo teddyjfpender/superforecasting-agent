@@ -2826,6 +2826,14 @@ def test_superforecasting_agent_skill_paths_are_fork_native():
     assert "~/.superforecasting-agent/hermes-agent/     Source code" not in text
     assert "| Source code | `~/.superforecasting-agent/hermes-agent/` |" not in text
     assert "\nhermes-agent/\n├── run_agent.py" not in text
+    assert "Bare `superforecasting-agent` opens the forecast desk" in text
+    assert "`/personality` remains a legacy alias" in text
+    assert "Summarize evidence and base rates for forecast fq_123" in text
+    assert "No subcommand opens the forecast desk" not in text
+    assert "/personality [name]  Set personality" not in text
+    assert "Build REST API for user management" not in text
+    assert "Build React dashboard for user management" not in text
+    assert "Set up CI/CD for ~/myapp" not in text
 
 
 def test_airtable_and_neuroskill_skill_docs_are_forecast_native():
