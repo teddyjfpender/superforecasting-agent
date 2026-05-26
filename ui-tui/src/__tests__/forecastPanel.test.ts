@@ -68,6 +68,39 @@ describe('forecast desk panel helpers', () => {
     ])
   })
 
+  it('attaches drill-down commands to active forecast rows and rail watchlist rows', () => {
+    const response: ForecastDashboardResponse = {
+      summary: {
+        active_count: 1,
+        open_alert_count: 1,
+        product: 'Superforecasting Agent',
+        questions: [
+          {
+            as_of: '2026-05-24T00:00:00Z',
+            close_time: '2026-06-30T00:00:00Z',
+            confidence: 0.62,
+            delta: 0.08,
+            evidence_count: 4,
+            id: 'fq_inflation001',
+            open_alert_count: 1,
+            probability: 0.61,
+            title: 'Will the CPI release exceed consensus?'
+          }
+        ],
+        review_queue: [],
+        review_queue_count: 0
+      }
+    }
+
+    const activeRow = forecastDashboardSections(response).find(section => section.title === 'Active Forecasts')?.rows?.[0]
+    const watchlistRow = forecastDeskRailSections(response).find(section => section.title === 'Watchlist')?.rows?.[0]
+
+    expect(activeRow?.[0]).toContain('P=0.610')
+    expect(activeRow?.[2]).toBe('/forecast show fq_inflation001')
+    expect(watchlistRow?.[0]).toContain('inflatio P=0.610')
+    expect(watchlistRow?.[2]).toBe('/forecast show fq_inflation001')
+  })
+
   it('promotes readiness gaps into triage actions for the persistent action strip', () => {
     const response: ForecastDashboardResponse = {
       summary: {

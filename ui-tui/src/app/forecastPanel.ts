@@ -674,7 +674,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
           truncate(row.title || '(untitled forecast)', 72)
         ].join('  ')
 
-        return [key, details] as [string, string]
+        return [key, details, row.id ? `/forecast show ${row.id}` : ''] as [string, string, string]
       }),
       title: 'Active Forecasts'
     })
@@ -1113,15 +1113,17 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
 
   if (atRisk.length) {
     sections.push({
-      rows: atRisk.map(row => [
-        `${shortId(row.id)} P=${formatProbability(row.probability)} Δ=${formatDelta(row.delta)}`,
-        truncate(
+      rows: atRisk.map(row => {
+        const key = `${shortId(row.id)} P=${formatProbability(row.probability)} Δ=${formatDelta(row.delta)}`
+        const details = truncate(
           `${forecastStatus(row)}  as-of ${shortDate(row.as_of)}  close ${shortDate(row.close_time)}  conf ${formatConfidence(
             row.confidence
           )}  ${row.title || '(untitled forecast)'}`,
           88
         )
-      ]),
+
+        return [key, details, row.id ? `/forecast show ${row.id}` : ''] as [string, string, string]
+      }),
       title: 'Watchlist'
     })
   }

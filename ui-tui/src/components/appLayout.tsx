@@ -22,7 +22,7 @@ import type { PanelSection } from '../types.js'
 import { AgentsOverlay } from './agentsOverlay.js'
 import { ForecastPulse, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
-import { Banner, Panel, SessionPanel } from './branding.js'
+import { Banner, Panel, panelCommandTarget, SessionPanel } from './branding.js'
 import { FpsOverlay } from './fpsOverlay.js'
 import { HelpHint } from './helpHint.js'
 import { MessageLine } from './messageLine.js'
@@ -32,9 +32,26 @@ import { TextInput, type TextInputMouseApi } from './textInput.js'
 
 const FORECAST_RAIL_MIN_COLS = 132
 const FORECAST_RAIL_WIDTH = 44
+type CommandClickEvent = {
+  cellIsBlank?: boolean
+  stopPropagation?: () => void
+}
 
 const truncateRail = (value: string, max: number) =>
   value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value
+
+const runCommandFromClick = (
+  command: string | null,
+  runCommand: (command: string) => void,
+  event?: CommandClickEvent
+) => {
+  if (!command || event?.cellIsBlank) {
+    return
+  }
+
+  event?.stopPropagation?.()
+  runCommand(command)
+}
 
 const PromptPrefix = memo(function PromptPrefix({
   bold = false,
@@ -386,10 +403,12 @@ const StatusRulePane = memo(function StatusRulePane({
 
 const ForecastDeskActionStrip = memo(function ForecastDeskActionStrip({
   cols,
-  railVisible
+  railVisible,
+  runCommand
 }: {
   cols: number
   railVisible: boolean
+  runCommand: (command: string) => void
 }) {
   const ui = useStore($uiState)
   const actions = useMemo(
@@ -405,21 +424,31 @@ const ForecastDeskActionStrip = memo(function ForecastDeskActionStrip({
 
   return (
     <NoSelect flexDirection="column" flexShrink={0} paddingX={1}>
-      <Text wrap="truncate">
-        <Text bold color={ui.theme.color.primary}>
-          desk actions
-        </Text>
+      <Box flexDirection="row" width={Math.max(1, cols - 2)}>
+        <Box flexShrink={0} width={13}>
+          <Text bold color={ui.theme.color.primary}>
+            desk actions
+          </Text>
+        </Box>
 
         {actions.map((action, index) => (
-          <Fragment key={action.command}>
-            <Text color={ui.theme.color.muted}>{index === 0 ? '  ' : '  |  '}</Text>
-            <Text color={ui.theme.color.accent}>{action.command}</Text>
-            {action.detail ? (
-              <Text color={ui.theme.color.muted}> {truncateRail(action.detail, maxDetail)}</Text>
-            ) : null}
-          </Fragment>
+          <Box
+            flexShrink={0}
+            key={action.command}
+            onClick={(event: CommandClickEvent) =>
+              runCommandFromClick(panelCommandTarget(action.command), runCommand, event)
+            }
+          >
+            <Text wrap="truncate">
+              <Text color={ui.theme.color.muted}>{index === 0 ? '  ' : '  |  '}</Text>
+              <Text color={ui.theme.color.accent}>{action.command}</Text>
+              {action.detail ? (
+                <Text color={ui.theme.color.muted}> {truncateRail(action.detail, maxDetail)}</Text>
+              ) : null}
+            </Text>
+          </Box>
         ))}
-      </Text>
+      </Box>
     </NoSelect>
   )
 })
@@ -462,11 +491,18 @@ const ForecastDeskCompactBrief = memo(function ForecastDeskCompactBrief({
   )
 })
 
-const ForecastDeskHeader = memo(function ForecastDeskHeader({ cols }: { cols: number }) {
+const ForecastDeskHeader = memo(function ForecastDeskHeader({
+  cols,
+  runCommand
+}: {
+  cols: number
+  runCommand: (command: string) => void
+}) {
   const ui = useStore($uiState)
   const primaryAction = useMemo(() => forecastDeskPrimaryActionItem(ui.forecastDeskRailSections), [
     ui.forecastDeskRailSections
   ])
+  const primaryCommand = panelCommandTarget(primaryAction?.command)
 
   if (!ui.forecastDeskRailSections.length || ui.compact) {
     return null
@@ -477,7 +513,7 @@ const ForecastDeskHeader = memo(function ForecastDeskHeader({ cols }: { cols: nu
 
   return (
     <NoSelect flexShrink={0} paddingX={1}>
-      <Text wrap="truncate">
+      <Box flexDirection="row" width={Math.max(1, cols - 2)}>
         <Text bold color={ui.theme.color.primary}>
           Forecast Desk
         </Text>
@@ -490,23 +526,29 @@ const ForecastDeskHeader = memo(function ForecastDeskHeader({ cols }: { cols: nu
         ) : null}
 
         {primaryAction ? (
-          <>
-            <Text color={ui.theme.color.muted}>  next </Text>
-            <Text color={ui.theme.color.accent}>{primaryAction.command}</Text>
-            {primaryAction.detail ? (
-              <Text color={ui.theme.color.muted}> {truncateRail(primaryAction.detail, actionWidth)}</Text>
-            ) : null}
-          </>
+          <Box
+            onClick={(event: CommandClickEvent) => runCommandFromClick(primaryCommand, runCommand, event)}
+          >
+            <Text wrap="truncate">
+              <Text color={ui.theme.color.muted}>  next </Text>
+              <Text color={ui.theme.color.accent}>{primaryAction.command}</Text>
+              {primaryAction.detail ? (
+                <Text color={ui.theme.color.muted}> {truncateRail(primaryAction.detail, actionWidth)}</Text>
+              ) : null}
+            </Text>
+          </Box>
         ) : null}
-      </Text>
+      </Box>
     </NoSelect>
   )
 })
 
 const ForecastDeskRail = memo(function ForecastDeskRail({
+  runCommand,
   sections,
   status
 }: {
+  runCommand: (command: string) => void
   sections: PanelSection[]
   status: string
 }) {
@@ -546,17 +588,29 @@ const ForecastDeskRail = memo(function ForecastDeskRail({
             </Text>
           )}
 
-          {sec.rows?.slice(0, 4).map(([key, value], rowIndex) => (
-            <Text key={rowIndex} wrap="truncate">
-              <Text color={ui.theme.color.muted}>{truncateRail(key, 13).padEnd(13)}</Text>
-              <Text color={ui.theme.color.text}>{truncateRail(value, FORECAST_RAIL_WIDTH - 19)}</Text>
-            </Text>
-          ))}
+          {sec.rows?.slice(0, 4).map((row, rowIndex) => {
+            const [key, value, commandCandidate] = row
+            const command = panelCommandTarget(commandCandidate ?? key)
+            return (
+              <Box
+                key={rowIndex}
+                onClick={(event: CommandClickEvent) => runCommandFromClick(command, runCommand, event)}
+              >
+                <Text color={ui.theme.color.muted}>{truncateRail(key, 13).padEnd(13)}</Text>
+                <Text color={ui.theme.color.text}>{truncateRail(value, FORECAST_RAIL_WIDTH - 19)}</Text>
+              </Box>
+            )
+          })}
 
           {sec.items?.slice(0, 4).map((item, itemIndex) => (
-            <Text color={ui.theme.color.text} key={itemIndex} wrap="truncate">
-              {truncateRail(item, FORECAST_RAIL_WIDTH - 4)}
-            </Text>
+            <Box
+              key={itemIndex}
+              onClick={(event: CommandClickEvent) => runCommandFromClick(panelCommandTarget(item), runCommand, event)}
+            >
+              <Text color={ui.theme.color.text} wrap="truncate">
+                {truncateRail(item, FORECAST_RAIL_WIDTH - 4)}
+              </Text>
+            </Box>
           ))}
 
           {sec.text && (
@@ -594,7 +648,7 @@ export const AppLayout = memo(function AppLayout({
       <Box flexDirection="column" flexGrow={1}>
         {!overlay.agents && (
           <PerfPane id="forecast-header">
-            <ForecastDeskHeader cols={composer.cols} />
+            <ForecastDeskHeader cols={composer.cols} runCommand={actions.runCommand} />
           </PerfPane>
         )}
 
@@ -612,7 +666,11 @@ export const AppLayout = memo(function AppLayout({
               {showForecastRail && (
                 <NoSelect flexShrink={0} marginLeft={1}>
                   <PerfPane id="forecast-rail">
-                    <ForecastDeskRail sections={ui.forecastDeskRailSections} status={ui.forecastDeskStatus} />
+                    <ForecastDeskRail
+                      runCommand={actions.runCommand}
+                      sections={ui.forecastDeskRailSections}
+                      status={ui.forecastDeskStatus}
+                    />
                   </PerfPane>
                 </NoSelect>
               )}
@@ -637,7 +695,11 @@ export const AppLayout = memo(function AppLayout({
             </PerfPane>
 
             <PerfPane id="forecast-actions">
-              <ForecastDeskActionStrip cols={composer.cols} railVisible={showForecastRail} />
+              <ForecastDeskActionStrip
+                cols={composer.cols}
+                railVisible={showForecastRail}
+                runCommand={actions.runCommand}
+              />
             </PerfPane>
 
             <PerfPane id="composer">

@@ -161,7 +161,9 @@ forecast rows with headline probability, delta, close date, evidence count, and
 freshness; selecting a numbered row or running `/questions 1` opens the first
 row's full forecast details without requiring the tester to copy a forecast id.
 `/book` and `/qbook` remain compatibility aliases. `/forecast` opens the broader
-forecast desk panel, and
+forecast desk panel; active rows, wide-rail watchlist rows, the header primary
+action, and concrete `desk actions` entries are selectable in mouse-enabled
+terminals. Placeholder command examples remain display-only until filled in.
 `/schedule`, `/backtest`, `/calibration`, `/alerts`, `/doctor`, and `/readiness`
 jump to common workflow checks.
 

@@ -1240,6 +1240,7 @@ def test_tui_visible_affordances_are_forecast_native():
         root / "ui-tui" / "src" / "app" / "slash" / "commands" / "ops.ts",
         root / "ui-tui" / "src" / "app" / "slash" / "commands" / "session.ts",
         root / "ui-tui" / "src" / "app" / "createGatewayEventHandler.ts",
+        root / "ui-tui" / "src" / "app" / "forecastPanel.ts",
         root / "ui-tui" / "src" / "app" / "useMainApp.ts",
         root / "ui-tui" / "src" / "app" / "useSessionLifecycle.ts",
         root / "ui-tui" / "src" / "app" / "useSubmission.ts",
@@ -1259,6 +1260,10 @@ def test_tui_visible_affordances_are_forecast_native():
     assert "forecasting maxim" in text
     assert "FORECAST_PULSE_RE" in text
     assert "ForecastPulse" in text
+    assert "panelCommandTarget(action.command)" in text
+    assert "panelCommandTarget(commandCandidate ?? key)" in text
+    assert "row.id ? `/forecast show ${row.id}`" in text
+    assert "runCommand={actions.runCommand}" in text
     assert "LONG_RUN_NOTICES" in text
     assert "switch forecast style for this forecast session" in text
     assert "starting forecast session…" in text

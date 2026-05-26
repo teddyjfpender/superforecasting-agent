@@ -46,6 +46,13 @@ forecast panel tests have all been checked for the MVP handoff. A manual
 source-tree smoke also ran against `/private/tmp/sfa-smoke-20260526-0250.db`
 through the full local lifecycle and schedule/alert summary path.
 
+Post-handoff focused UX pass: `/questions` and `/book` remain the fast
+headline forecast-book shortcuts, and the Ink Forecast Desk now also attaches
+direct drill-down command targets to the main active-forecast rows, wide-rail
+watchlist rows, persistent header primary action, and persistent `desk actions`
+strip. Concrete rows/commands dispatch in mouse-enabled terminals, while
+placeholder examples stay display-only until filled in.
+
 ## Evidence Inspected
 
 - Forecasting package: `forecasting/`

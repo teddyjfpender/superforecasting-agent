@@ -70,13 +70,17 @@ transcript. The rail is refreshed from the same dashboard data and keeps the
 active book count, triage queue, at-risk forecasts, evidence-readiness gaps, and
 recent backtest provenance visible while you research or update a question. The
 watchlist rows keep each at-risk forecast's probability, delta, as-of date, close
-date, confidence, status, and title visible. When scored ensemble forecasts
-exist, the rail also shows the top contributing forecast components.
+date, confidence, status, and title visible; concrete watchlist rows can be
+selected in mouse-enabled terminals to open the full forecast details. When
+scored ensemble forecasts exist, the rail also shows the top contributing
+forecast components.
 
 The composer also keeps a one-line `desk actions` strip derived from the same
 triage state. It stays visible on narrower terminals where the side rail cannot
 fit, and prioritizes alert review, stale-forecast review, benchmark-readiness
-gaps, lesson review, self-checks, and backtest commands.
+gaps, lesson review, self-checks, and backtest commands. Concrete commands in
+the header, side rail, and action strip are selectable; placeholder examples
+remain display-only until filled in.
 
 Examples:
 
