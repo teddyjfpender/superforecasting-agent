@@ -3,7 +3,7 @@ import { forceRedraw } from '@hermes/ink'
 import { NO_CONFIRM_DESTRUCTIVE } from '../../../config/env.js'
 import { dailyFortune, randomFortune } from '../../../content/fortunes.js'
 import { HOTKEYS } from '../../../content/hotkeys.js'
-import { SECTION_NAMES, isSectionName, nextDetailsMode, parseDetailsMode } from '../../../domain/details.js'
+import { isSectionName, nextDetailsMode, parseDetailsMode, SECTION_NAMES } from '../../../domain/details.js'
 import type {
   ConfigGetValueResponse,
   ConfigSetResponse,
@@ -20,9 +20,6 @@ import { writeClipboardText } from '../../../lib/clipboard.js'
 import { writeOsc52Clipboard } from '../../../lib/osc52.js'
 import { configureDetectedTerminalKeybindings, configureTerminalKeybindings } from '../../../lib/terminalSetup.js'
 import type { Msg, PanelSection } from '../../../types.js'
-import type { StatusBarMode } from '../../interfaces.js'
-import { patchOverlayState } from '../../overlayStore.js'
-import { patchUiState } from '../../uiStore.js'
 import {
   forecastBookSections,
   forecastDashboardSections,
@@ -33,6 +30,9 @@ import {
   forecastQuestionSearchSections,
   rankForecastQuestionMatches
 } from '../../forecastPanel.js'
+import type { StatusBarMode } from '../../interfaces.js'
+import { patchOverlayState } from '../../overlayStore.js'
+import { patchUiState } from '../../uiStore.js'
 import type { SlashCommand, SlashRunCtx } from '../types.js'
 
 const flagFromArg = (arg: string, current: boolean): boolean | null => {
@@ -353,8 +353,8 @@ export const coreCommands: SlashCommand[] = [
             ['/ledger [view|search words]', 'jump between forecast book, review, alerts, evidence, learning, schedules, or search'],
             ['/find <words>', 'search active forecasts and review queue without needing a forecast id'],
             ['/open <row|id|words>', 'open one matching forecast ledger record'],
-            ['/evidence-for <row|words> -- <note>', 'append an evidence note after resolving a row/search to an id'],
-            ['/update-for <row|words> -- <args>', 'append a probability update after resolving a row/search to an id'],
+            ['/note <row|words> -- <evidence>', 'append evidence after resolving a row/search to an id'],
+            ['/revise <row|words> -- <args>', 'append a probability update after resolving a row/search to an id'],
             ['/forecast [limit|subcommand]', 'show active forecasts or run forecast lifecycle commands'],
             ['/sources [--question <id>] [--json]', 'list adapters or plan sources for a forecast'],
             ['/new-forecast [args]', 'create a scoreable forecast question'],
@@ -514,35 +514,35 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    aliases: ['note', 'note-for'],
+    aliases: ['evidence-for', 'note-for'],
     help: 'append an evidence note to a forecast resolved by row or search words',
-    name: 'evidence-for',
+    name: 'note',
     run: (arg, ctx) => {
       const { ref, rest } = splitForecastRefAndRest(arg)
       if (!ref || !rest) {
-        return ctx.transcript.sys('usage: /evidence-for <row|id|forecast words> -- <evidence note>')
+        return ctx.transcript.sys('usage: /note <row|id|forecast words> -- <evidence note>')
       }
 
       withForecastRef(ctx, ref, id => runForecastCommand(ctx, `research ${id} ${shellQuote(rest)}`), {
-        missingUsage: 'usage: /evidence-for <row|id|forecast words> -- <evidence note>'
+        missingUsage: 'usage: /note <row|id|forecast words> -- <evidence note>'
       })
     }
   },
 
   {
-    aliases: ['updateq', 'revise'],
+    aliases: ['update-for', 'updateq'],
     help: 'append a probability update to a forecast resolved by row or search words',
-    name: 'update-for',
+    name: 'revise',
     run: (arg, ctx) => {
       const { ref, rest } = splitForecastRefAndRest(arg)
       if (!ref || !rest) {
         return ctx.transcript.sys(
-          'usage: /update-for <row|id|forecast words> -- --probability <0-1> --rationale <why>'
+          'usage: /revise <row|id|forecast words> -- --probability <0-1> --rationale <why>'
         )
       }
 
       withForecastRef(ctx, ref, id => runForecastCommand(ctx, `update ${id} ${rest}`), {
-        missingUsage: 'usage: /update-for <row|id|forecast words> -- --probability <0-1> --rationale <why>'
+        missingUsage: 'usage: /revise <row|id|forecast words> -- --probability <0-1> --rationale <why>'
       })
     }
   },

@@ -137,7 +137,7 @@ def test_forecast_lookup_shortcuts_resolve_words_before_ledger_actions(tmp_path,
 
     HermesCLI._handle_forecast_evidence_for_command(
         cli,
-        "/evidence-for inflation -- BLS release mentioned gasoline pressure",
+        "/note inflation -- BLS release mentioned gasoline pressure",
     )
     evidence = ledger.list_evidence(question.id)
     assert len(evidence) == 1
@@ -145,7 +145,7 @@ def test_forecast_lookup_shortcuts_resolve_words_before_ledger_actions(tmp_path,
 
     HermesCLI._handle_forecast_update_for_command(
         cli,
-        '/update-for inflation -- --probability 0.64 --rationale "energy evidence moved up"',
+        '/revise inflation -- --probability 0.64 --rationale "energy evidence moved up"',
     )
     snapshot = ledger.get_current_snapshot(question.id)
     assert snapshot is not None

@@ -174,9 +174,10 @@ forecast history, assumptions/reference classes, model runs, resolution state,
 and follow-up actions. `/questions <words>` and `/find <words>` search active
 forecasts and review-queue items by title, topic, domain, latest rationale, or
 latest evidence, while `/open <row|id|words>` opens one unambiguous match. For
-quick evidence and probability maintenance, testers can run `/evidence-for
-<row|words> -- <note>` or `/update-for <row|words> -- --probability <p>
---rationale <why>` without copying the forecast id. `/book` and `/qbook` remain
+quick evidence and probability maintenance, testers can run `/note
+<row|words> -- <evidence>` or `/revise <row|words> -- --probability <p>
+--rationale <why>` without copying the forecast id; the longer
+`/evidence-for` and `/update-for` forms remain aliases. `/book` and `/qbook` remain
 compatibility aliases. `/ledger` browses forecast-store views such as book,
 review, alerts, evidence, learning, schedules, calibration, backtests, all, and
 search; `/desk`, `/store`, and `/state` are aliases. `/forecast` opens the
@@ -293,10 +294,11 @@ It verified:
 - Dashboard forecast API and TUI forecast panel test coverage, including
   structured forecast-detail panels and `/ledger` view switching.
 - Forecast question shortcut coverage for `/questions`, `/questions <row>`,
-  `/questions <words>`, `/ledger`, `/find`, `/open`, `/evidence-for`,
-  `/update-for`, `/book`, numbered TUI drill-down, semantic search across
-  rationale/latest evidence, classic CLI drill-down/search/edit resolution, and
-  dashboard row selection with a detail panel.
+  `/questions <words>`, `/ledger`, `/find`, `/open`, `/note`, `/revise`,
+  `/evidence-for`, `/update-for`, `/book`, numbered TUI drill-down, semantic
+  search across rationale/latest evidence, row-based quick edits, classic CLI
+  drill-down/search/edit resolution, and dashboard row selection with a detail
+  panel.
 - The consolidated `python3 scripts/tester_handoff_check.py` gate passed for the
   implementation tree with 181 focused tests, the clean smoke path, and
   `git diff --check`; the smoke output reported 52 source adapters,

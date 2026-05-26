@@ -6681,8 +6681,8 @@ class HermesCLI:
             )
         print("")
         print("Open one match with /open <row|id|words>.")
-        print("Append evidence with /evidence-for <row|words> -- <note>.")
-        print("Append an update with /update-for <row|words> -- --probability <p> --rationale <why>.")
+        print("Append evidence with /note <row|words> -- <evidence>.")
+        print("Append an update with /revise <row|words> -- --probability <p> --rationale <why>.")
 
     @classmethod
     def _resolve_forecast_ref(cls, ref: str, *, limit: int = 75) -> str | None:
@@ -6842,7 +6842,7 @@ class HermesCLI:
         raw_arg = parts[1].strip() if len(parts) > 1 else ""
         ref, note = self._split_forecast_ref_and_rest(raw_arg)
         if not ref or not note:
-            _cprint("  Usage: /evidence-for <row|id|forecast words> -- <evidence note>")
+            _cprint("  Usage: /note <row|id|forecast words> -- <evidence note>")
             return
         question_id = self._resolve_forecast_ref(ref)
         if question_id:
@@ -6855,7 +6855,7 @@ class HermesCLI:
         raw_arg = parts[1].strip() if len(parts) > 1 else ""
         ref, rest = self._split_forecast_ref_and_rest(raw_arg)
         if not ref or not rest:
-            _cprint("  Usage: /update-for <row|id|forecast words> -- --probability <0-1> --rationale <why>")
+            _cprint("  Usage: /revise <row|id|forecast words> -- --probability <0-1> --rationale <why>")
             return
         question_id = self._resolve_forecast_ref(ref)
         if not question_id:
@@ -6863,7 +6863,7 @@ class HermesCLI:
         try:
             argv = shlex.split(rest)
         except ValueError as exc:
-            _cprint(f"  update-for: {exc}")
+            _cprint(f"  revise: {exc}")
             return
         from forecasting.cli import main as forecast_main
 
@@ -8472,9 +8472,9 @@ class HermesCLI:
             self._handle_forecast_find_command(cmd_original)
         elif canonical == "open":
             self._handle_forecast_open_command(cmd_original)
-        elif canonical == "evidence-for":
+        elif canonical == "note":
             self._handle_forecast_evidence_for_command(cmd_original)
-        elif canonical == "update-for":
+        elif canonical == "revise":
             self._handle_forecast_update_for_command(cmd_original)
         elif canonical == "forecast":
             self._handle_forecast_command(cmd_original)

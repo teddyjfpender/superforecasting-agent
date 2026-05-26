@@ -70,6 +70,11 @@ describe('forecast desk panel helpers', () => {
       '/questions 1',
       'open full details for Will the CPI release exceed consensus?'
     ])
+    expect(sections.find(section => section.title === 'Quick Edits')?.rows?.[0]).toEqual([
+      '1. inflatio',
+      '/note 1 -- <evidence>  |  /revise 1 -- --probability <p> --rationale <why>  |  Will the CPI release exceed consensus?',
+      '/questions 1'
+    ])
   })
 
   it('searches forecast questions by topic-like words and offers id-free edit shortcuts', () => {
@@ -124,9 +129,9 @@ describe('forecast desk panel helpers', () => {
     expect(sections.find(section => section.title === 'Matches')?.rows?.[0]?.[2]).toBe('/questions fq_inflation001')
     expect(sections.find(section => section.title === 'Top Match Shortcuts')?.rows).toEqual([
       ['/questions fq_inflation001', 'open full ledger context for Will the CPI release exceed consensus?'],
-      ['/evidence-for fq_inflation001 -- <note>', 'append a timestamped evidence note without copying the id'],
+      ['/note fq_inflation001 -- <evidence>', 'append a timestamped evidence note without copying the id'],
       [
-        '/update-for fq_inflation001 -- --probability <0-1> --rationale <why>',
+        '/revise fq_inflation001 -- --probability <p> --rationale <why>',
         'append an explicit probability update'
       ],
       ['/sources --question fq_inflation001', 'plan source coverage for this question']
@@ -724,9 +729,13 @@ describe('forecast desk panel helpers', () => {
         '/questions fq_review123456',
         'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
       ],
+      ['/note fq_review123456 -- <evidence>', 'append timestamped evidence without moving probability'],
+      [
+        '/revise fq_review123456 -- --probability <p> --rationale <why>',
+        'append a probability update after reviewing evidence'
+      ],
       ['/sources --question fq_review123456', 'plan official data, RSS/news, markets, and watched searches'],
       ['/forecast research fq_review123456', 'collect source notes and evidence without moving probability'],
-      ['/forecast update fq_review123456 --probability <0-1> --rationale <why>', 'append an explicit probability update'],
       [
         '/forecast base-rate fq_review123456 --name <reference-class> --inclusion-criteria <criteria> --base-rate <p>',
         'add reference-class evidence before changing probability'
@@ -746,8 +755,11 @@ describe('forecast desk panel helpers', () => {
         command: '/questions fq_review123456',
         detail: 'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
       },
-      { command: '/sources --question fq_review123456', detail: 'plan official data, RSS/news, markets, and watched searches' },
-      { command: '/forecast research fq_review123456', detail: 'collect source notes and evidence without moving probability' }
+      { command: '/note fq_review123456 -- <evidence>', detail: 'append timestamped evidence without moving probability' },
+      {
+        command: '/revise fq_review123456 -- --probability <p> --rationale <why>',
+        detail: 'append a probability update after reviewing evidence'
+      }
     ])
     expect(railFocused?.rows?.[0]).toEqual([
       '/questions fq_review123456',
@@ -873,8 +885,12 @@ describe('forecast desk panel helpers', () => {
       'Retail gasoline prices rose'
     )
     expect(sections.find(section => section.title === 'Actions')?.rows?.[0]).toEqual([
-      '/evidence-for fq_cpi -- <note>',
+      '/note fq_cpi -- <evidence>',
       'append timestamped evidence; probability remains unchanged'
+    ])
+    expect(sections.find(section => section.title === 'Actions')?.rows?.[1]).toEqual([
+      '/revise fq_cpi -- --probability <p> --rationale <why>',
+      'append an explicit probability update'
     ])
   })
 

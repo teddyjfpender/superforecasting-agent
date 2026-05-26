@@ -81,6 +81,8 @@ class TestCommandRegistry:
         assert next(iter(COMMANDS_BY_CATEGORY)) == "Forecast Desk"
         assert "/questions" in COMMANDS_BY_CATEGORY["Forecast Desk"]
         assert "/book" in COMMANDS_BY_CATEGORY["Forecast Desk"]
+        assert "/note" in COMMANDS_BY_CATEGORY["Forecast Desk"]
+        assert "/revise" in COMMANDS_BY_CATEGORY["Forecast Desk"]
         assert "/forecast" in COMMANDS_BY_CATEGORY["Forecast Desk"]
 
     def test_inherited_broad_surfaces_are_compatibility_category(self):
@@ -141,6 +143,9 @@ class TestResolveCommand:
         assert resolve_command("tasks").name == "agents"
         assert resolve_command("book").name == "questions"
         assert resolve_command("qbook").name == "questions"
+        assert resolve_command("evidence-for").name == "note"
+        assert resolve_command("update-for").name == "revise"
+        assert resolve_command("updateq").name == "revise"
 
     def test_topic_is_gateway_command(self):
         topic = resolve_command("topic")

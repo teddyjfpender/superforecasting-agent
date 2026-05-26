@@ -995,7 +995,7 @@ Requirements:
 - [ ] `/ledger` or an equivalent shortcut switches between book, review, alerts, evidence, learning, schedules, calibration, backtests, all, and search views.
 - [ ] TUI keyboard shortcuts expose those views without requiring users to type the full slash command.
 - [ ] `/open <row|id|words>` opens one matching forecast without copying an ID.
-- [ ] Evidence and update shortcuts can resolve a row/search phrase before calling the ledger workflow.
+- [ ] Evidence and update shortcuts such as `/note` and `/revise` can resolve a row/search phrase before calling the ledger workflow.
 - [ ] The dashboard or TUI supports direct row selection or an equivalent drill-down path.
 - [ ] The shortcut reuses the forecast ledger/dashboard summary rather than maintaining a separate question list.
 

@@ -68,9 +68,11 @@ follow-up actions. The numbered rows also carry that drill-down target in
 mouse-enabled TUI terminals. `/questions <words>` and `/find <words>` search
 active forecasts and review-queue items by title, topic, domain, latest
 rationale, and latest evidence. `/open <row|id|words>` opens one unambiguous
-match, `/evidence-for <row|words> -- <note>` appends evidence after resolving
-the forecast, and `/update-for <row|words> -- --probability <p> --rationale
-<why>` appends an explicit probability update. `/book` remains an alias.
+match, `/note <row|words> -- <evidence>` appends evidence after resolving the
+forecast, and `/revise <row|words> -- --probability <p> --rationale <why>`
+appends an explicit probability update. The forecast book, search, detail, and
+focused-action panels expose those short row-based edits so testers can work
+from visible rows without copying forecast IDs. `/book` remains an alias.
 
 Use `/ledger` when you want to browse the forecast store by view instead of by
 ID. Supported views include `/ledger book`, `/ledger review`, `/ledger alerts`,
@@ -156,8 +158,8 @@ Common desk workflows have direct slash commands:
 | `/ledger` | Browse forecast ledger views, search, and jump to review/evidence/learning/schedule state |
 | `/find` | Search active forecasts and review queue by title, topic, or domain |
 | `/open` | Open a forecast by row number, id, short id, or search words |
-| `/evidence-for` | Append evidence after resolving a row/search phrase to a forecast |
-| `/update-for` | Append a probability update after resolving a row/search phrase to a forecast |
+| `/note` | Append evidence after resolving a row/search phrase to a forecast |
+| `/revise` | Append a probability update after resolving a row/search phrase to a forecast |
 | `/new-forecast` | Create a scoreable question |
 | `/ingest` | Stage a URL or file as a forecast candidate |
 | `/evidence` | Add or inspect timestamped evidence |

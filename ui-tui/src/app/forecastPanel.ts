@@ -492,9 +492,10 @@ const focusedActionRows = (questions: ForecastDashboardQuestion[], reviewQueue: 
   const context = focusedForecastContext(row)
   return [
     [`/questions ${row.id}`, `${context}  load full ledger context for ${label}`],
+    [`/note ${row.id} -- <evidence>`, 'append timestamped evidence without moving probability'],
+    [`/revise ${row.id} -- --probability <p> --rationale <why>`, 'append a probability update after reviewing evidence'],
     [`/sources --question ${row.id}`, 'plan official data, RSS/news, markets, and watched searches'],
     [`/forecast research ${row.id}`, 'collect source notes and evidence without moving probability'],
-    [`/forecast update ${row.id} --probability <0-1> --rationale <why>`, 'append an explicit probability update'],
     [
       `/forecast base-rate ${row.id} --name <reference-class> --inclusion-criteria <criteria> --base-rate <p>`,
       'add reference-class evidence before changing probability'
@@ -708,8 +709,8 @@ export const forecastQuestionSearchSections = (
     sections.push({
       rows: [
         [`/questions ${top.id}`, `open full ledger context for ${title}`],
-        [`/evidence-for ${top.id} -- <note>`, 'append a timestamped evidence note without copying the id'],
-        [`/update-for ${top.id} -- --probability <0-1> --rationale <why>`, 'append an explicit probability update'],
+        [`/note ${top.id} -- <evidence>`, 'append a timestamped evidence note without copying the id'],
+        [`/revise ${top.id} -- --probability <p> --rationale <why>`, 'append an explicit probability update'],
         [`/sources --question ${top.id}`, 'plan source coverage for this question']
       ],
       title: 'Top Match Shortcuts'
@@ -871,8 +872,8 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
 
   sections.push({
     rows: [
-      [`/evidence-for ${question.id} -- <note>`, 'append timestamped evidence; probability remains unchanged'],
-      [`/update-for ${question.id} -- --probability <0-1> --rationale <why>`, 'append an explicit probability update'],
+      [`/note ${question.id} -- <evidence>`, 'append timestamped evidence; probability remains unchanged'],
+      [`/revise ${question.id} -- --probability <p> --rationale <why>`, 'append an explicit probability update'],
       [`/sources --question ${question.id}`, 'plan source coverage and watched streams'],
       [`/forecast research ${question.id}`, 'review evidence freshness and new items since current forecast'],
       [`/forecast resolve ${question.id} --outcome <value> --resolution-source <url>`, 'record the outcome when criteria are met']
@@ -1441,7 +1442,7 @@ export const forecastBookSections = (
         ['reviews', formatCount(summary.review_queue_count)],
         ['freshness', 'Use /questions <number> to drill into a row without copying its id'],
         ['search', 'Use /find <words> or /questions <words> to locate forecasts by title, topic, or domain'],
-        ['edit', 'Use /evidence-for <row|words> -- <note> or /update-for <row|words> -- <args>']
+        ['edit', 'Use /note <row|words> -- <evidence> or /revise <row|words> -- <args>']
       ],
       title: 'Book'
     }
@@ -1471,6 +1472,19 @@ export const forecastBookSections = (
       return [key, details, `/questions ${index + 1}`]
     }),
     title: 'Forecast Questions'
+  })
+
+  sections.push({
+    rows: questions.slice(0, 8).map((row, index) => [
+      `${index + 1}. ${shortId(row.id)}`,
+      [
+        `/note ${index + 1} -- <evidence>`,
+        `/revise ${index + 1} -- --probability <p> --rationale <why>`,
+        truncate(row.title || row.id || `forecast ${index + 1}`, 58)
+      ].join('  |  '),
+      `/questions ${index + 1}`
+    ]),
+    title: 'Quick Edits'
   })
 
   sections.push({
