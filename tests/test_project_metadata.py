@@ -1616,6 +1616,7 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
         encoding="utf-8"
     )
     main_help = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
+    config_py = (root / "hermes_cli" / "config.py").read_text(encoding="utf-8")
     classic_cli = (root / "cli.py").read_text(encoding="utf-8")
 
     combined = "\n".join(
@@ -1626,6 +1627,7 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
             oneshot,
             parser_help,
             main_help,
+            config_py,
             classic_cli,
         ]
     )
@@ -1656,6 +1658,8 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
     assert "superforecasting-agent -w                     Start in isolated git worktree" not in parser_help
     assert "parallel agents on the same repo" not in parser_help
     assert "Maximum tool-calling iterations per conversation turn" not in parser_help
+    assert "per forecast-support turn" in config_py
+    assert "per conversation turn" not in config_py
 
     assert "``hermes skills list``" not in combined
     assert "``hermes skills\n    config``" not in combined
@@ -4671,6 +4675,25 @@ def test_cli_command_reference_chat_examples_are_forecast_scoped():
     assert "chat/runtime sessions" not in cli_docs
     assert "Maximum tool-calling iterations per conversation turn" not in cli_docs
     assert "forecast-research,file,web" not in cli_docs
+
+
+def test_user_runtime_guides_use_forecast_support_turn_language():
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "cli.py",
+        root / "hermes_cli" / "config.py",
+        root / "website" / "docs" / "user-guide" / "checkpoints-and-rollback.md",
+        root / "website" / "docs" / "user-guide" / "features" / "voice-mode.md",
+        root / "website" / "docs" / "user-guide" / "messaging" / "index.md",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "forecast-support turn" in text
+    assert "primary forecast channel" in text
+    assert "last conversation turn" not in text
+    assert "per conversation turn" not in text
+    assert "conversation turns. To modify durable state" not in text
+    assert "primary chat. The notification" not in text
 
 
 def test_software_development_tui_debug_skill_docs_prefer_tui_shorthand():

@@ -780,7 +780,7 @@ DEFAULT_CONFIG = {
 
     # Filesystem checkpoints — automatic snapshots before destructive file ops.
     # When enabled, the agent takes a snapshot of the working directory once
-    # per conversation turn (on first write_file/patch call).  Use /rollback
+    # per forecast-support turn (on first write_file/patch call).  Use /rollback
     # to restore.
     #
     # Defaults changed in v2 (single shared shadow store, real pruning):

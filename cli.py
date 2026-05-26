@@ -5247,7 +5247,7 @@ class HermesCLI:
                 print(f"  ✅ Restored to checkpoint {result['restored_to']}: {result['reason']}")
             print("  A pre-rollback snapshot was saved automatically.")
 
-            # Also undo the last conversation turn so the agent's context
+                    # Also undo the last forecast-support turn so the agent's context
             # matches the restored filesystem state
             if self.conversation_history:
                 self.undo_last()

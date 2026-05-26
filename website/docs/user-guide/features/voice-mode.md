@@ -516,8 +516,8 @@ Legacy profiles may still write logs under `~/.hermes/logs/`.
 
 ### Forecast State Did Not Change
 
-Voice commands are still conversation turns. To modify durable state, confirm or
-run the relevant ledger command:
+Voice commands are still forecast-support turns. To modify durable state,
+confirm or run the relevant ledger command:
 
 ```bash
 forecast evidence add <id> --source "<source>" --claim "<claim>"

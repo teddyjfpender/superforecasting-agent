@@ -167,7 +167,7 @@ Restore a full checkpoint:
 /rollback 1
 ```
 
-The runtime verifies the target commit, saves a pre-rollback snapshot, restores tracked files, and undoes the last conversation turn so the active context matches the restored filesystem state.
+The runtime verifies the target commit, saves a pre-rollback snapshot, restores tracked files, and undoes the last forecast-support turn so the active context matches the restored filesystem state.
 
 Restore one file:
 

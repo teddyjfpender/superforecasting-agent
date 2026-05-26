@@ -473,7 +473,7 @@ gateway:
       # gateway_restart_notification omitted → defaults to true
 ```
 
-Disable it on noisy or low-priority platforms while leaving it on for your primary chat. The notification is sent once per restart, regardless of how many sessions were in flight.
+Disable it on noisy or low-priority platforms while leaving it on for your primary forecast channel. The notification is sent once per restart, regardless of how many sessions were in flight.
 
 ### Session resume across gateway restarts
 
