@@ -142,7 +142,7 @@ export function SessionPicker({ gw, onCancel, onSelect, t }: SessionPickerProps)
   })
 
   if (loading) {
-    return <Text color={t.color.muted}>loading sessions…</Text>
+    return <Text color={t.color.muted}>loading forecast sessions…</Text>
   }
 
   if (err && !items.length) {
@@ -157,7 +157,7 @@ export function SessionPicker({ gw, onCancel, onSelect, t }: SessionPickerProps)
   if (!items.length) {
     return (
       <Box flexDirection="column">
-        <Text color={t.color.muted}>no previous sessions</Text>
+        <Text color={t.color.muted}>no previous forecast sessions</Text>
         <OverlayHint t={t}>Esc/q cancel</OverlayHint>
       </Box>
     )
@@ -168,7 +168,7 @@ export function SessionPicker({ gw, onCancel, onSelect, t }: SessionPickerProps)
   return (
     <Box flexDirection="column" width={width}>
       <Text bold color={t.color.accent}>
-        Resume Session
+        Resume Forecast Session
       </Text>
 
       {offset > 0 && <Text color={t.color.muted}>  ↑ {offset} more</Text>}

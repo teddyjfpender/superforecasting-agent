@@ -918,6 +918,7 @@ def test_tui_visible_affordances_are_forecast_native():
         root / "ui-tui" / "src" / "app" / "useLongRunToolCharms.ts",
         root / "ui-tui" / "src" / "components" / "appChrome.tsx",
         root / "ui-tui" / "src" / "components" / "appLayout.tsx",
+        root / "ui-tui" / "src" / "components" / "sessionPicker.tsx",
         root / "ui-tui" / "src" / "content" / "charms.ts",
         root / "ui-tui" / "src" / "content" / "fortunes.ts",
     ]
@@ -937,6 +938,9 @@ def test_tui_visible_affordances_are_forecast_native():
     assert "forecast session title set:" in text
     assert "resume a prior forecast session" in text
     assert "previous forecast sessions" in text
+    assert "loading forecast sessions…" in text
+    assert "no previous forecast sessions" in text
+    assert "Resume Forecast Session" in text
     assert "branch the forecast session" in text
     assert "forecast session usage" in text
     assert "style:" in text
@@ -950,6 +954,9 @@ def test_tui_visible_affordances_are_forecast_native():
     assert "sys(`session title set:" not in text
     assert "resume a prior session" not in text
     assert "previous sessions" not in text
+    assert "loading sessions…" not in text
+    assert "no previous sessions" not in text
+    assert "Resume Session" not in text
     assert "branch the session" not in text
     assert "GoodVibes" not in text
     assert "goodVibes" not in text
