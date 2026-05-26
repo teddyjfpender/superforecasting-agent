@@ -32,7 +32,7 @@ python -m superforecasting_agent status
 For this handoff, the verified implementation snapshot is:
 
 ```text
-dda4f6f6c0b4 Use forecast-native installer guidance
+0fcdfa382f94 Use fork-native TUI banner identity
 ```
 
 Before inviting a new cohort, record the exact commit testers will use:
@@ -141,7 +141,7 @@ common workflow checks.
 ## Smoke Evidence
 
 Latest consolidated tester handoff evidence ran with a temporary clean ledger on
-the implementation tree committed as `dda4f6f6c0b4`.
+the implementation tree committed as `0fcdfa382f94`.
 
 It verified:
 
@@ -164,7 +164,7 @@ It verified:
   schedules, postmortems, calibration lessons, and domain/topic error profiles.
 - Dashboard forecast API and TUI forecast panel test coverage.
 - The consolidated `python3 scripts/tester_handoff_check.py` gate passed for the
-  `dda4f6f6c0b4` implementation tree with 176 focused tests, the clean smoke
+  `0fcdfa382f94` implementation tree with 176 focused tests, the clean smoke
   path, and `git diff --check`; the smoke output reported
   `agent_protocol_prompt_packets: 465`,
   `agent_protocol_suite_scored_cases: 465`, `performance_runs: 6`,
