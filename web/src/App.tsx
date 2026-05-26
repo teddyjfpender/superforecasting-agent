@@ -139,7 +139,7 @@ const BUILTIN_NAV_REST: NavItem[] = [
   {
     path: "/sessions",
     labelKey: "sessions",
-    label: "Research Sessions",
+    label: "Forecast Sessions",
     icon: MessageSquare,
   },
   {

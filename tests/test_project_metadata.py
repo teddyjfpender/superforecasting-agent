@@ -400,8 +400,11 @@ def test_embedded_tui_surface_is_forecast_desk():
         root / "web" / "src" / "components" / "ModelPickerDialog.tsx",
         root / "web" / "src" / "components" / "SlashPopover.tsx",
         root / "web" / "src" / "index.css",
+        root / "web" / "src" / "i18n" / "en.ts",
         root / "web" / "src" / "lib" / "dashboard-flags.ts",
         root / "web" / "src" / "lib" / "slashExec.ts",
+        root / "web" / "src" / "pages" / "AnalyticsPage.tsx",
+        root / "web" / "src" / "pages" / "ModelsPage.tsx",
         root / "hermes_cli" / "main.py",
         root / "hermes_cli" / "web_server.py",
         root / "website" / "docs" / "index.md",
@@ -437,6 +440,11 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert "forecast-session transcripts" in text
     assert "forecast-session transcript" in text
     assert "one shared forecast session" in text
+    assert "Active Forecast Sessions" in text
+    assert "Recent Forecast Sessions" in text
+    assert "Forecast Session Search" in text
+    assert "forecast session search" in text
+    assert "Start a forecast session to see analytics here" in text
     assert "Expose the in-browser Forecast Chat tab" not in text
     assert "Forecast Desk is only reachable from localhost." in text
     assert "Loading Forecast Desk" in text
@@ -457,6 +465,11 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert "research-session transcripts" not in text
     assert "research-session transcript" not in text
     assert "one shared research session" not in text
+    assert "Active Research Sessions" not in text
+    assert "Recent Research Sessions" not in text
+    assert "Research Session Search" not in text
+    assert "research session search" not in text
+    assert "Start a research session to see analytics here" not in text
     assert "embedded chat is a supporting surface" not in text
     assert "caller's chat UI" not in text
     assert "inline in ChatPage" not in text
