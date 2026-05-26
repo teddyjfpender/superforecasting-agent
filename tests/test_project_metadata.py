@@ -736,6 +736,8 @@ def test_voice_install_guidance_is_forecast_native():
 
     assert 'pip install "superforecasting-agent[voice]"' in text
     assert "install `superforecasting-agent[voice]`" in text
+    assert "superforecasting-agent tui" in text
+    assert "superforecasting-agent --tui" not in text
     assert "pip install hermes-agent[voice]" not in text
     assert 'pip install "hermes-agent[voice]"' not in text
 
@@ -1029,6 +1031,27 @@ def test_cli_user_guide_tui_launch_prefers_fork_native_command():
     assert "Launch:\n\n```bash\nsuperforecasting-agent tui" in cli_guide
     assert "superforecasting-agent --tui     # Ink TUI with forecast shortcuts" not in cli_guide
     assert "Launch:\n\n```bash\nsuperforecasting-agent --tui" not in cli_guide
+
+
+def test_high_traffic_tui_launch_docs_prefer_fork_native_command():
+    root = Path(__file__).resolve().parents[1]
+    installation = (
+        root / "website" / "docs" / "getting-started" / "installation.md"
+    ).read_text(encoding="utf-8")
+    quickstart = (
+        root / "website" / "docs" / "getting-started" / "quickstart.md"
+    ).read_text(encoding="utf-8")
+    env_reference = (
+        root / "website" / "docs" / "reference" / "environment-variables.md"
+    ).read_text(encoding="utf-8")
+
+    launch_docs = "\n".join([installation, quickstart])
+    assert "superforecasting-agent tui" in launch_docs
+    assert "superforecasting-agent --tui" not in launch_docs
+    assert "Equivalent to running `superforecasting-agent tui`" in env_reference
+    assert "When set, `superforecasting-agent tui` skips creating a fresh session" in env_reference
+    assert "Equivalent to passing `--tui`" not in env_reference
+    assert "When set, `superforecasting-agent --tui` skips creating a fresh session" not in env_reference
 
 
 def test_tui_user_guide_env_launch_is_forecast_native():

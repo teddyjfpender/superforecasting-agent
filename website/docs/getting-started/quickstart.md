@@ -206,7 +206,7 @@ excluded unless it is part of the resolution step.
 ## 10. Use The TUI
 
 ```bash
-superforecasting-agent --tui
+superforecasting-agent tui
 ```
 
 Useful TUI shortcuts:

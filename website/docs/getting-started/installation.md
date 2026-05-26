@@ -80,7 +80,7 @@ For a full lifecycle example, continue to the [Quickstart](./quickstart.md). For
 ## TUI
 
 ```bash
-superforecasting-agent --tui
+superforecasting-agent tui
 ```
 
 Useful shortcuts:
