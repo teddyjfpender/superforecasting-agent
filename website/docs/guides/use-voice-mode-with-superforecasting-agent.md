@@ -25,7 +25,7 @@ There are really three different voice experiences in Superforecasting Agent.
 | Mode | Best for | Platform |
 |---|---|---|
 | Interactive microphone loop | Personal hands-free use while researching or reviewing forecasts | CLI |
-| Voice replies in chat | Spoken responses alongside normal messaging | Telegram, Discord |
+| Voice replies in messaging forecast sessions | Spoken responses alongside normal messaging | Telegram, Discord |
 | Live voice channel bot | Group or personal live conversation in a VC | Discord voice channels |
 
 A good path is:

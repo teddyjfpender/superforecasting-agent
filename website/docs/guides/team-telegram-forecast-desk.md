@@ -12,7 +12,7 @@ This tutorial walks through setting up a Telegram bot for a team that uses Super
 
 A Telegram bot that:
 
-- Lets authorized team members ask forecast-scoped questions from chat.
+- Lets authorized team members ask forecast-scoped questions from Telegram forecast threads.
 - Delivers scheduled review, watched-source, score, and postmortem alerts.
 - Keeps each user in a separate session while sharing the same forecast ledger.
 - Uses strict allowlists or pairing so only approved users can interact.
@@ -241,7 +241,7 @@ Use context files for stable team conventions, not live forecast state.
 - Use `superforecasting-agent review --stale` before daily standup.
 - Probability updates must include evidence refs or source snapshots.
 - Resolutions require a cited resolution source and a postmortem if scoreable.
-- Do not treat Telegram chat history as forecast memory.
+- Do not treat Telegram message history as forecast memory.
 ```
 
 ## Step 6: Add Forecast Workflows

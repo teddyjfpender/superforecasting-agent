@@ -115,7 +115,7 @@ Installed skills take effect in new sessions. If you want it available in the cu
 # Check it's there
 superforecasting-agent skills list | grep arxiv
 
-# Or in chat
+# Or in a forecast session
 /skills search arxiv
 ```
 

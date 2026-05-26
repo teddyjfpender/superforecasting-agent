@@ -15,7 +15,7 @@ Cron jobs run in fresh agent sessions with no memory of your current chat. Promp
 :::
 
 :::tip Don't need the LLM? You have two zero-token options.
-- **Recurring watchdog** where the script already produces the exact message (source alerts, disk alerts, heartbeats): use [script-only cron jobs](/guides/cron-script-only). Same scheduler, no LLM. You can ask Superforecasting Agent to set one up in chat — the `cronjob` tool knows when to pick `no_agent=True` and writes the script for you.
+- **Recurring watchdog** where the script already produces the exact message (source alerts, disk alerts, heartbeats): use [script-only cron jobs](/guides/cron-script-only). Same scheduler, no LLM. You can ask Superforecasting Agent to set one up from the Forecast Desk or a messaging forecast session — the `cronjob` tool knows when to pick `no_agent=True` and writes the script for you.
 - **One-shot from a script that's already running** (CI step, post-commit hook, deploy script, externally-scheduled monitor): use [`superforecasting-agent send`](/guides/pipe-script-output) to pipe stdout or a file straight to Telegram / Discord / Slack / etc. without setting up a cron entry.
 :::
 

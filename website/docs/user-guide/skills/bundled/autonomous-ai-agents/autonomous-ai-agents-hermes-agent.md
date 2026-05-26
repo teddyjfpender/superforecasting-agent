@@ -457,7 +457,7 @@ Tool changes take effect on `/reset` (new forecast session). They do NOT apply m
 
 ## Security & Privacy Toggles
 
-Common "why is Superforecasting Agent doing X to my output / tool calls / commands?" toggles — and the exact commands to change them. Most of these need a fresh forecast session (`/reset` in chat, or start a new `superforecasting-agent` invocation) because they're read once at startup.
+Common "why is Superforecasting Agent doing X to my output / tool calls / commands?" toggles — and the exact commands to change them. Most of these need a fresh forecast session (`/reset` in a messaging forecast session, or start a new `superforecasting-agent` invocation) because they're read once at startup.
 
 ### Secret redaction in tool output
 

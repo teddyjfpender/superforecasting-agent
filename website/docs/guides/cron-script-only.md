@@ -92,7 +92,7 @@ From that point on, the scheduler runs the script and pipes stdout to the delive
 
 For requests like "alert me when source X changes" or "every N minutes check Y and tell me if Z", the `cronjob` tool should choose `no_agent=True` when the script can fully determine the message. It should use the normal LLM-driven path when interpretation is needed.
 
-### Managing watchdogs from chat
+### Managing watchdogs from forecast sessions
 
 The agent can pause, resume, edit, and remove jobs the same way it creates them:
 

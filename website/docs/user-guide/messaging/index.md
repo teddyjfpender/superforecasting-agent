@@ -305,7 +305,7 @@ When enabled, the bot sends status messages as it works:
 
 ## Background Sessions
 
-Run a forecast-support note in a separate background session so the agent works on it independently while your main chat stays responsive:
+Run a forecast-support note in a separate background session so the agent works on it independently while your main messaging forecast session stays responsive:
 
 ```
 /background Review stale public-health forecasts and summarize evidence gaps
@@ -324,8 +324,8 @@ Each `/background` prompt spawns a **separate agent instance** that runs asynchr
 
 - **Isolated session** — the background agent has its own session with its own conversation history. It has no knowledge of your current chat context and receives only the prompt you provide.
 - **Same configuration** — inherits your model, provider, toolsets, reasoning settings, and provider routing from the current gateway setup.
-- **Non-blocking** — your main chat stays fully interactive. Send messages, run other commands, or start more background tasks while it works.
-- **Result delivery** — when the task finishes, the result is sent back to the **same chat or channel** where you issued the command, prefixed with "✅ Background task complete". If it fails, you'll see "❌ Background task failed" with the error.
+- **Non-blocking** — your main messaging forecast session stays fully interactive. Send messages, run other commands, or start more background tasks while it works.
+- **Result delivery** — when the task finishes, the result is sent back to the **same messaging thread or channel** where you issued the command, prefixed with "✅ Background task complete". If it fails, you'll see "❌ Background task failed" with the error.
 
 ### Background Process Notifications
 
@@ -357,7 +357,7 @@ SUPERFORECASTING_AGENT_BACKGROUND_NOTIFICATIONS=result
 - **Evidence organization** — "/background Extract dated claims from this source packet and suggest ledger evidence entries"
 
 :::tip
-Background tasks on messaging platforms are fire-and-forget — you don't need to wait or check on them. Results arrive in the same chat automatically when the task finishes.
+Background tasks on messaging platforms are fire-and-forget — you don't need to wait or check on them. Results arrive in the same messaging thread automatically when the task finishes.
 :::
 
 ## Service Management

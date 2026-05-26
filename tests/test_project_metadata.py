@@ -2652,7 +2652,13 @@ def test_high_attention_docs_navigation_is_forecast_native():
         root / "website" / "docs" / "developer-guide" / "adding-tools.md",
         root / "website" / "docs" / "developer-guide" / "contributing.md",
         root / "website" / "docs" / "developer-guide" / "model-provider-plugin.md",
+        root / "website" / "docs" / "integrations" / "providers.md",
+        root / "website" / "docs" / "user-guide" / "configuring-models.md",
         root / "website" / "docs" / "user-guide" / "features" / "hooks.md",
+        root / "website" / "docs" / "guides" / "automate-with-cron.md",
+        root / "website" / "docs" / "guides" / "cron-script-only.md",
+        root / "website" / "docs" / "guides" / "use-voice-mode-with-superforecasting-agent.md",
+        root / "website" / "docs" / "guides" / "work-with-skills.md",
         root / "website" / "docs" / "user-guide" / "messaging" / "telegram.md",
         root / "website" / "docs" / "user-guide" / "messaging" / "index.md",
         root / "website" / "docs" / "user-guide" / "messaging" / "yuanbao.md",
@@ -2667,6 +2673,15 @@ def test_high_attention_docs_navigation_is_forecast_native():
         / "bundled"
         / "autonomous-ai-agents"
         / "autonomous-ai-agents-claude-code.md",
+        root
+        / "website"
+        / "docs"
+        / "user-guide"
+        / "skills"
+        / "bundled"
+        / "autonomous-ai-agents"
+        / "autonomous-ai-agents-hermes-agent.md",
+        root / "skills" / "autonomous-ai-agents" / "hermes-agent" / "SKILL.md",
     ]
     docs_text = "\n".join(path.read_text(encoding="utf-8") for path in docs_paths)
 
@@ -2721,8 +2736,20 @@ def test_high_attention_docs_navigation_is_forecast_native():
     assert "Then in the Forecast Desk or a messaging forecast session:" in docs_text
     assert "Control optional spoken replies in messaging forecast sessions." in docs_text
     assert "same messaging forecast thread" in docs_text
+    assert "same messaging thread or channel" in docs_text
     assert "originating messaging thread" in docs_text
     assert "through the Forecast Desk, a messaging forecast session, or CLI" in docs_text
+    assert "main forecast model" in docs_text
+    assert "Then run `/model fav` or `/model grok` in the Forecast Desk or a messaging forecast session" in docs_text
+    assert "Managing watchdogs from forecast sessions" in docs_text
+    assert "# Or in a forecast session" in docs_text
+    assert "Telegram forecast threads" in docs_text
+    assert "Telegram message history" in docs_text
+    assert "Voice replies in messaging forecast sessions" in docs_text
+    assert "main messaging forecast session stays responsive" in docs_text
+    assert "same messaging thread automatically" in docs_text
+    assert "set one up from the Forecast Desk or a messaging forecast session" in docs_text
+    assert "/reset` in a messaging forecast session" in docs_text
     assert "Reference MCP resources in a forecast session" in docs_text
     assert "treat it as the final forecaster response" in docs_text
     assert "not a forecast snapshot unless the ledger was explicitly updated" in docs_text
@@ -2734,6 +2761,18 @@ def test_high_attention_docs_navigation_is_forecast_native():
     assert "originating chat" not in docs_text
     assert "requester's chat/thread" not in docs_text
     assert "Reference MCP resources in chat" not in docs_text
+    assert "main chat model" not in docs_text
+    assert "Then `/model fav` or `/model grok` in chat" not in docs_text
+    assert "Managing watchdogs from chat" not in docs_text
+    assert "# Or in chat" not in docs_text
+    assert "ask forecast-scoped questions from chat" not in docs_text
+    assert "Telegram chat history" not in docs_text
+    assert "Voice replies in chat" not in docs_text
+    assert "main chat stays responsive" not in docs_text
+    assert "same chat or channel" not in docs_text
+    assert "same chat automatically" not in docs_text
+    assert "set one up in chat" not in docs_text
+    assert "/reset` in chat" not in docs_text
     sessions_doc = (
         root / "website" / "docs" / "user-guide" / "sessions.md"
     ).read_text(encoding="utf-8")

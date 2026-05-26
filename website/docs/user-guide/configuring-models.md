@@ -184,7 +184,7 @@ superforecasting-agent config set model.aliases.fav anthropic/claude-opus-4.6
 superforecasting-agent config set model.aliases.grok x-ai/grok-4
 ```
 
-Then `/model fav` or `/model grok` in chat. User aliases shadow built-in short names (`sonnet`, `kimi`, `opus`, etc.). See [Custom model aliases](/reference/slash-commands#custom-model-aliases) for the full reference.
+Then run `/model fav` or `/model grok` in the Forecast Desk or a messaging forecast session. User aliases shadow built-in short names (`sonnet`, `kimi`, `opus`, etc.). See [Custom model aliases](/reference/slash-commands#custom-model-aliases) for the full reference.
 
 ### `superforecasting-agent model` subcommand
 
