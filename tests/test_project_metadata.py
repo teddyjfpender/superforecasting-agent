@@ -815,6 +815,9 @@ def test_install_helpers_use_forecast_native_visible_copy():
     assert "Symlinked superforecast" in setup_sh
     assert "SUPERFORECASTING_AGENT_HOME" in setup_sh
     assert "superforecasting-agent setup" in setup_sh
+    assert "     forecast" in setup_sh
+    assert "forecast status" in setup_sh
+    assert "forecast new" in setup_sh
     assert "superforecasting-agent doctor" in setup_sh
     assert "Open the forecast desk" in setup_sh
     assert "Compatibility wrapper" in setup_legacy_sh

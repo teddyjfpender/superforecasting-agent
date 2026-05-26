@@ -455,7 +455,8 @@ if is_termux; then
     echo "     superforecasting-agent setup"
     echo ""
     echo "  2. Open the forecast desk:"
-    echo "     superforecasting-agent"
+    echo "     forecast"
+    echo "     # or: superforecasting-agent"
     echo ""
 else
     echo "  1. Reload your shell:"
@@ -465,11 +466,14 @@ else
     echo "     superforecasting-agent setup"
     echo ""
     echo "  3. Open the forecast desk:"
-    echo "     superforecasting-agent"
+    echo "     forecast"
+    echo "     # or: superforecasting-agent"
     echo ""
 fi
 echo "Other commands:"
-echo "  superforecasting-agent status        # Check configuration"
+echo "  forecast status                      # Check forecast ledger status"
+echo "  forecast new                         # Create a scoreable forecast"
+echo "  superforecasting-agent status        # Check full runtime configuration"
 if is_termux; then
     echo "  superforecasting-agent gateway       # Run gateway in foreground"
 else

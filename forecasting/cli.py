@@ -1774,10 +1774,10 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
 
 def cmd_forecast(args: argparse.Namespace) -> None:
     handler = getattr(args, "_forecast_handler", None)
-    if handler is None:
-        _cmd_dashboard(args)
-        return
     try:
+        if handler is None:
+            _cmd_dashboard(args)
+            return
         handler(args)
     except ForecastingError as exc:
         print(f"forecast: {exc}", file=sys.stderr)

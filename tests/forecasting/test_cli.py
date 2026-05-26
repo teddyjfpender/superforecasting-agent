@@ -115,6 +115,21 @@ def _run(parser: argparse.ArgumentParser, argv: list[str]) -> None:
     args.func(args)
 
 
+def test_forecast_cli_reports_unwritable_ledger_directory(tmp_path, capsys):
+    parser = _parser()
+    blocked_parent = tmp_path / "not-a-directory"
+    blocked_parent.write_text("occupied", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc:
+        _run(parser, ["forecast", "--db", str(blocked_parent / "forecasting.db"), "status"])
+
+    assert exc.value.code == 1
+    captured = capsys.readouterr()
+    assert "forecast: could not create forecast ledger directory" in captured.err
+    assert "pass --db with a writable path" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_forecast_cli_lifecycle(tmp_path, capsys):
     parser = _parser()
     db = str(tmp_path / "forecasting.db")

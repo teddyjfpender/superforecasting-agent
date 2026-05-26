@@ -266,7 +266,14 @@ class ForecastLedger:
             if configured_db
             else get_hermes_home() / "forecasting" / "forecasting.db"
         )
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ForecastingError(
+                "could not create forecast ledger directory "
+                f"{self.db_path.parent}: {exc}. Set FORECAST_LEDGER_DB or "
+                "pass --db with a writable path."
+            ) from exc
         self.initialize_schema()
 
     def _connect(self) -> sqlite3.Connection:
