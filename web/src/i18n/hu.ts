@@ -68,7 +68,7 @@ export const hu: Translations = {
     },
     nav: {
       analytics: "Analitika",
-      chat: "Forecast Desk",
+      forecastDesk: "Forecast Desk",
       config: "Beállítások",
       cron: "Cron",
       documentation: "Dokumentáció",
@@ -139,7 +139,7 @@ export const hu: Translations = {
       "Ez véglegesen eltávolítja a beszélgetést és minden üzenetét. A művelet nem vonható vissza.",
     sessionDeleted: "Munkamenet törölve",
     failedToDelete: "Nem sikerült törölni a munkamenetet",
-    resumeInChat: "Resume in Forecast Desk",
+    resumeInDesk: "Resume in Forecast Desk",
     previousPage: "Előző oldal",
     nextPage: "Következő oldal",
     roles: {

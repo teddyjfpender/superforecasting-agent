@@ -68,7 +68,7 @@ export const zhHant: Translations = {
     },
     nav: {
       analytics: "分析",
-      chat: "Forecast Desk",
+      forecastDesk: "Forecast Desk",
       config: "設定",
       cron: "排程任務",
       documentation: "文件",
@@ -139,7 +139,7 @@ export const zhHant: Translations = {
       "此操作將永久移除對話及其所有訊息，無法復原。",
     sessionDeleted: "工作階段已刪除",
     failedToDelete: "刪除工作階段失敗",
-    resumeInChat: "Resume in Forecast Desk",
+    resumeInDesk: "Resume in Forecast Desk",
     previousPage: "上一頁",
     nextPage: "下一頁",
     roles: {

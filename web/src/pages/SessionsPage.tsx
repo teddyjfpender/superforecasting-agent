@@ -358,8 +358,8 @@ function SessionRow({
                 ghost
                 size="icon"
                 className="text-muted-foreground hover:text-success"
-                aria-label={t.sessions.resumeInChat}
-                title={t.sessions.resumeInChat}
+                aria-label={t.sessions.resumeInDesk}
+                title={t.sessions.resumeInDesk}
                 onClick={(e) => {
                   e.stopPropagation();
                   navigate(`/desk?resume=${encodeURIComponent(session.id)}`);

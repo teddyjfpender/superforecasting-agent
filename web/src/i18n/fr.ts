@@ -68,7 +68,7 @@ export const fr: Translations = {
     },
     nav: {
       analytics: "Analyses",
-      chat: "Forecast Desk",
+      forecastDesk: "Forecast Desk",
       config: "Configuration",
       cron: "Cron",
       documentation: "Documentation",
@@ -139,7 +139,7 @@ export const fr: Translations = {
       "Cela supprime définitivement la conversation et tous ses messages. Cette action est irréversible.",
     sessionDeleted: "Session supprimée",
     failedToDelete: "Échec de la suppression de la session",
-    resumeInChat: "Resume in Forecast Desk",
+    resumeInDesk: "Resume in Forecast Desk",
     previousPage: "Page précédente",
     nextPage: "Page suivante",
     roles: {

@@ -67,7 +67,7 @@ export const zh: Translations = {
     },
     nav: {
       analytics: "分析",
-      chat: "Forecast Desk",
+      forecastDesk: "Forecast Desk",
       config: "配置",
       cron: "定时任务",
       documentation: "文档",
@@ -137,7 +137,7 @@ export const zh: Translations = {
     confirmDeleteMessage: "此操作将永久删除对话及其所有消息，无法恢复。",
     sessionDeleted: "会话已删除",
     failedToDelete: "删除会话失败",
-    resumeInChat: "Resume in Forecast Desk",
+    resumeInDesk: "Resume in Forecast Desk",
     previousPage: "上一页",
     nextPage: "下一页",
     roles: {

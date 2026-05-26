@@ -68,7 +68,7 @@ export const uk: Translations = {
     },
     nav: {
       analytics: "Аналітика",
-      chat: "Forecast Desk",
+      forecastDesk: "Forecast Desk",
       config: "Конфігурація",
       cron: "Cron",
       documentation: "Документація",
@@ -139,7 +139,7 @@ export const uk: Translations = {
       "Це назавжди видалить розмову та всі її повідомлення. Цю дію не можна скасувати.",
     sessionDeleted: "Сесію видалено",
     failedToDelete: "Не вдалося видалити сесію",
-    resumeInChat: "Resume in Forecast Desk",
+    resumeInDesk: "Resume in Forecast Desk",
     previousPage: "Попередня сторінка",
     nextPage: "Наступна сторінка",
     roles: {

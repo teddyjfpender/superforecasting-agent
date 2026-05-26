@@ -92,7 +92,7 @@ function UnknownRouteFallback({ pluginsLoading }: { pluginsLoading: boolean }) {
 
 const FORECAST_DESK_NAV_ITEM: NavItem = {
   path: "/desk",
-  labelKey: "chat",
+  labelKey: "forecastDesk",
   label: "Forecast Desk",
   icon: Terminal,
 };

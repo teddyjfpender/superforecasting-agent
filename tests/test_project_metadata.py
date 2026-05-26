@@ -312,43 +312,67 @@ def test_web_locale_app_brand_is_forecast_native():
             assert legacy not in text, path
 
     forecast_desk_labels = {
-        path.name: ('chat: "Forecast Desk"', 'resumeInChat: "Resume in Forecast Desk"')
+        path.name: ('forecastDesk: "Forecast Desk"', 'resumeInDesk: "Resume in Forecast Desk"')
         for path in locale_files
     }
     forecast_chat_labels = {
-        "af.ts": ('chat: "Voorspellingsklets"', 'resumeInChat: "Hervat in Voorspellingsklets"'),
-        "de.ts": ('chat: "Forecast-Chat"', 'resumeInChat: "Im Forecast-Chat fortsetzen"'),
-        "en.ts": ('chat: "Forecast Chat"', 'resumeInChat: "Resume in Forecast Chat"'),
-        "es.ts": ('chat: "Chat de pronóstico"', 'resumeInChat: "Reanudar en el chat de pronóstico"'),
-        "fr.ts": ('chat: "Chat de prévision"', 'resumeInChat: "Reprendre dans le chat de prévision"'),
-        "ga.ts": ('chat: "Comhrá Réamhaisnéise"', 'resumeInChat: "Lean ar aghaidh sa chomhrá réamhaisnéise"'),
-        "hu.ts": ('chat: "Előrejelzési csevegés"', 'resumeInChat: "Folytatás az előrejelzési csevegésben"'),
-        "it.ts": ('chat: "Chat di previsione"', 'resumeInChat: "Riprendi nella chat di previsione"'),
-        "ja.ts": ('chat: "予測チャット"', 'resumeInChat: "予測チャットで再開"'),
-        "ko.ts": ('chat: "예측 채팅"', 'resumeInChat: "예측 채팅에서 다시 시작"'),
-        "pt.ts": ('chat: "Chat de previsão"', 'resumeInChat: "Retomar no Chat de previsão"'),
-        "ru.ts": ('chat: "Прогнозный чат"', 'resumeInChat: "Продолжить в прогнозном чате"'),
-        "tr.ts": ('chat: "Tahmin Sohbeti"', 'resumeInChat: "Tahmin Sohbetinde Devam Et"'),
-        "uk.ts": ('chat: "Прогнозний чат"', 'resumeInChat: "Продовжити в прогнозному чаті"'),
-        "zh-hant.ts": ('chat: "預測對話"', 'resumeInChat: "在預測對話中繼續"'),
-        "zh.ts": ('chat: "预测对话"', 'resumeInChat: "在预测对话中继续"'),
+        "af.ts": (
+            'forecastDesk: "Voorspellingsklets"',
+            'resumeInDesk: "Hervat in Voorspellingsklets"',
+        ),
+        "de.ts": ('forecastDesk: "Forecast-Chat"', 'resumeInDesk: "Im Forecast-Chat fortsetzen"'),
+        "en.ts": ('forecastDesk: "Forecast Chat"', 'resumeInDesk: "Resume in Forecast Chat"'),
+        "es.ts": (
+            'forecastDesk: "Chat de pronóstico"',
+            'resumeInDesk: "Reanudar en el chat de pronóstico"',
+        ),
+        "fr.ts": (
+            'forecastDesk: "Chat de prévision"',
+            'resumeInDesk: "Reprendre dans le chat de prévision"',
+        ),
+        "ga.ts": (
+            'forecastDesk: "Comhrá Réamhaisnéise"',
+            'resumeInDesk: "Lean ar aghaidh sa chomhrá réamhaisnéise"',
+        ),
+        "hu.ts": (
+            'forecastDesk: "Előrejelzési csevegés"',
+            'resumeInDesk: "Folytatás az előrejelzési csevegésben"',
+        ),
+        "it.ts": (
+            'forecastDesk: "Chat di previsione"',
+            'resumeInDesk: "Riprendi nella chat di previsione"',
+        ),
+        "ja.ts": ('forecastDesk: "予測チャット"', 'resumeInDesk: "予測チャットで再開"'),
+        "ko.ts": ('forecastDesk: "예측 채팅"', 'resumeInDesk: "예측 채팅에서 다시 시작"'),
+        "pt.ts": ('forecastDesk: "Chat de previsão"', 'resumeInDesk: "Retomar no Chat de previsão"'),
+        "ru.ts": (
+            'forecastDesk: "Прогнозный чат"',
+            'resumeInDesk: "Продолжить в прогнозном чате"',
+        ),
+        "tr.ts": ('forecastDesk: "Tahmin Sohbeti"', 'resumeInDesk: "Tahmin Sohbetinde Devam Et"'),
+        "uk.ts": (
+            'forecastDesk: "Прогнозний чат"',
+            'resumeInDesk: "Продовжити в прогнозному чаті"',
+        ),
+        "zh-hant.ts": ('forecastDesk: "預測對話"', 'resumeInDesk: "在預測對話中繼續"'),
+        "zh.ts": ('forecastDesk: "预测对话"', 'resumeInDesk: "在预测对话中继续"'),
     }
     generic_chat_labels = {
-        "af.ts": ('chat: "Klets"', 'resumeInChat: "Hervat in Klets"'),
-        "de.ts": ('chat: "Chat"', 'resumeInChat: "Im Chat fortsetzen"'),
-        "es.ts": ('chat: "Chat"', 'resumeInChat: "Reanudar en el chat"'),
-        "fr.ts": ('chat: "Chat"', 'resumeInChat: "Reprendre dans le chat"'),
-        "ga.ts": ('chat: "Comhrá"', 'resumeInChat: "Lean ar aghaidh sa chomhrá"'),
-        "hu.ts": ('chat: "Csevegés"', 'resumeInChat: "Folytatás a csevegésben"'),
-        "it.ts": ('chat: "Chat"', 'resumeInChat: "Riprendi nella chat"'),
-        "ja.ts": ('chat: "チャット"', 'resumeInChat: "チャットで再開"'),
-        "ko.ts": ('chat: "채팅"', 'resumeInChat: "채팅에서 다시 시작"'),
-        "pt.ts": ('chat: "Chat"', 'resumeInChat: "Retomar no Chat"'),
-        "ru.ts": ('chat: "Чат"', 'resumeInChat: "Продолжить в чате"'),
-        "tr.ts": ('chat: "Sohbet"', 'resumeInChat: "Sohbette Devam Et"'),
-        "uk.ts": ('chat: "Чат"', 'resumeInChat: "Продовжити в чаті"'),
-        "zh-hant.ts": ('chat: "對話"', 'resumeInChat: "在對話中繼續"'),
-        "zh.ts": ('chat: "对话"', 'resumeInChat: "在对话中继续"'),
+        "af.ts": ('forecastDesk: "Klets"', 'resumeInDesk: "Hervat in Klets"'),
+        "de.ts": ('forecastDesk: "Chat"', 'resumeInDesk: "Im Chat fortsetzen"'),
+        "es.ts": ('forecastDesk: "Chat"', 'resumeInDesk: "Reanudar en el chat"'),
+        "fr.ts": ('forecastDesk: "Chat"', 'resumeInDesk: "Reprendre dans le chat"'),
+        "ga.ts": ('forecastDesk: "Comhrá"', 'resumeInDesk: "Lean ar aghaidh sa chomhrá"'),
+        "hu.ts": ('forecastDesk: "Csevegés"', 'resumeInDesk: "Folytatás a csevegésben"'),
+        "it.ts": ('forecastDesk: "Chat"', 'resumeInDesk: "Riprendi nella chat"'),
+        "ja.ts": ('forecastDesk: "チャット"', 'resumeInDesk: "チャットで再開"'),
+        "ko.ts": ('forecastDesk: "채팅"', 'resumeInDesk: "채팅에서 다시 시작"'),
+        "pt.ts": ('forecastDesk: "Chat"', 'resumeInDesk: "Retomar no Chat"'),
+        "ru.ts": ('forecastDesk: "Чат"', 'resumeInDesk: "Продолжить в чате"'),
+        "tr.ts": ('forecastDesk: "Sohbet"', 'resumeInDesk: "Sohbette Devam Et"'),
+        "uk.ts": ('forecastDesk: "Чат"', 'resumeInDesk: "Продовжити в чаті"'),
+        "zh-hant.ts": ('forecastDesk: "對話"', 'resumeInDesk: "在對話中繼續"'),
+        "zh.ts": ('forecastDesk: "对话"', 'resumeInDesk: "在对话中继续"'),
     }
     for path in locale_files:
         text = path.read_text(encoding="utf-8")
@@ -432,7 +456,7 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert not (root / "web" / "src" / "pages" / "ChatPage.tsx").exists()
     assert "ForecastDeskPage" in text
     assert 'path: "/desk"' in text
-    assert '"/desk": "chat"' in text
+    assert '"/desk": "forecastDesk"' in text
     assert "isDashboardForecastDeskEnabled" in text
     assert "__SUPERFORECASTING_AGENT_DASHBOARD_FORECAST_DESK__" in text
     assert "navigate(`/desk?resume=" in text
