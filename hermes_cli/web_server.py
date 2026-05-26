@@ -1104,8 +1104,8 @@ async def set_model_assignment(body: ModelAssignment):
     """Assign a model to the main slot or an auxiliary task slot.
 
     Writes to active agent-home ``config.yaml`` — applies to **new** sessions
-    only. The currently running Forecast Chat PTY (if any) is not affected; use
-    the ``/model`` slash command inside Forecast Chat to hot-swap that specific
+    only. The currently running Forecast Desk PTY (if any) is not affected; use
+    the ``/model`` slash command inside Forecast Desk to hot-swap that specific
     session.
     """
     scope = (body.scope or "").strip().lower()
