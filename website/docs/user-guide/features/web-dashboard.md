@@ -1,12 +1,12 @@
 ---
 sidebar_position: 15
 title: "Web Dashboard"
-description: "Browser dashboard for forecast review, configuration, logs, research sessions, cron jobs, and forecast skills."
+description: "Browser dashboard for forecast review, configuration, logs, forecast sessions, cron jobs, and forecast skills."
 ---
 
 # Web Dashboard
 
-The web dashboard is a local browser UI for inspecting the Superforecasting Agent runtime. It is secondary to the CLI, but useful for reviewing the forecast book, checking configuration, managing credentials, inspecting research sessions, and watching logs without editing YAML by hand.
+The web dashboard is a local browser UI for inspecting the Superforecasting Agent runtime. It is secondary to the CLI, but useful for reviewing the forecast book, checking configuration, managing credentials, inspecting forecast sessions, and watching logs without editing YAML by hand.
 
 The fork-native landing page is **Forecasts**. It shows active questions, review queue, focused action commands, calibration health, learning memory, domain/topic error profiles, alerts, and recent backtests. The embedded Forecast Desk pane is optional and exists to support forecast work, not to replace the CLI forecast workflow.
 
@@ -100,7 +100,7 @@ Status shows the runtime state around the forecasting desk:
 - Superforecasting Agent version.
 - Active profile and home path.
 - Gateway status and connected platforms.
-- Active and recent research sessions.
+- Active and recent forecast sessions.
 - Model/provider status.
 
 This page is operational telemetry. Forecast truth lives in the ledger, not in the session list.
@@ -120,7 +120,7 @@ How it works:
 - Keystrokes travel to the PTY; ANSI output streams back to the browser.
 - Resizing the browser window resizes the TUI through xterm.js.
 
-Resume from Research Sessions by opening a session and launching the Forecast Desk pane with that session id. Close the browser tab to reap the PTY process on the server.
+Resume from Forecast Sessions by opening a session and launching the Forecast Desk pane with that session id. Close the browser tab to reap the PTY process on the server.
 
 ### Config
 
@@ -150,13 +150,13 @@ Each key shows whether it is set, a redacted preview, a description, a provider 
 
 Secrets stay in `.env`. Non-secret settings should usually live in `config.yaml`.
 
-### Research Sessions
+### Forecast Sessions
 
-Research sessions are conversation continuity and operational history. They are not the forecast ledger.
+Forecast sessions are conversation continuity and operational history. They are not the forecast ledger.
 
 Use this page to:
 
-- Search prior Forecast Desk and CLI research sessions with FTS5.
+- Search prior Forecast Desk and CLI forecast sessions with FTS5.
 - Inspect message history and tool calls.
 - Resume a prior terminal/TUI session.
 - Delete obsolete research transcripts.
@@ -240,9 +240,9 @@ Runtime endpoints:
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/status` | Version, active profile, gateway status, platform states, and active-session count. |
-| `GET /api/sessions` | Recent research sessions with metadata and previews. |
-| `GET /api/sessions/{session_id}` | Metadata for one research session. |
-| `GET /api/sessions/{session_id}/messages` | Full message history for one research session. |
+| `GET /api/sessions` | Recent forecast sessions with metadata and previews. |
+| `GET /api/sessions/{session_id}` | Metadata for one forecast session. |
+| `GET /api/sessions/{session_id}/messages` | Full message history for one forecast session. |
 | `GET /api/sessions/search?q=...` | Full-text search across message content. |
 | `DELETE /api/sessions/{session_id}` | Delete a session. |
 | `GET /api/config` | Current `config.yaml` as JSON. |

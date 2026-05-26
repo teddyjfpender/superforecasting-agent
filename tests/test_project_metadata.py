@@ -420,6 +420,11 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert "Forecast Desk" in text
     assert "Forecast Chat" not in text
     assert "Forecast-Chat" not in text
+    assert "inspecting forecast sessions" in text
+    assert "Active and recent forecast sessions" in text
+    assert "Resume from Forecast Sessions" in text
+    assert "Search prior Forecast Desk and CLI forecast sessions with FTS5" in text
+    assert "Recent forecast sessions with metadata and previews" in text
     assert "Expose the in-browser Forecast Desk tab" in text
     assert "Expose the in-browser Forecast Chat tab" not in text
     assert "Forecast Desk is only reachable from localhost." in text
@@ -428,6 +433,11 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert "forecast-desk-side-panel" in text
     assert 'dashboard "Chat" tab' not in text
     assert "Browser-embedded chat" not in text
+    assert "inspecting research sessions" not in text
+    assert "Active and recent research sessions" not in text
+    assert "Resume from Research Sessions" not in text
+    assert "Search prior Forecast Desk and CLI research sessions with FTS5" not in text
+    assert "Recent research sessions with metadata and previews" not in text
     assert "embedded chat is a supporting surface" not in text
     assert "caller's chat UI" not in text
     assert "inline in ChatPage" not in text
@@ -2312,7 +2322,21 @@ def test_high_attention_docs_navigation_is_forecast_native():
     sessions_doc = (
         root / "website" / "docs" / "user-guide" / "sessions.md"
     ).read_text(encoding="utf-8")
+    assert "# Forecast Sessions" in sessions_doc
+    assert "automatically saves interactive work as forecast sessions" in sessions_doc
+    assert "Forecast Sessions vs Ledger" in sessions_doc
+    assert "Forecast Session Naming" in sessions_doc
+    assert "Forecast Session Management Commands" in sessions_doc
+    assert "When forecast sessions have titles" in sessions_doc
+    assert "Export Forecast Sessions" in sessions_doc
     assert "/new public-health-forecast-review" in sessions_doc
+    assert "# Research Sessions" not in sessions_doc
+    assert "automatically saves interactive work as research sessions" not in sessions_doc
+    assert "Research Sessions vs Ledger" not in sessions_doc
+    assert "Research Session Naming" not in sessions_doc
+    assert "Research Session Management Commands" not in sessions_doc
+    assert "When research sessions have titles" not in sessions_doc
+    assert "Export Research Sessions" not in sessions_doc
     assert "/new payments-refactor" not in sessions_doc
     assert "Build a Hermes Plugin" not in docs_text
     assert "Building a Hermes Plugin" not in docs_text

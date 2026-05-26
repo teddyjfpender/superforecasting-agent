@@ -1,21 +1,21 @@
 ---
 sidebar_position: 7
-title: "Research Sessions"
-description: "Research transcripts, resume, search, and the boundary with the forecast ledger"
+title: "Forecast Sessions"
+description: "Forecast transcripts, resume, search, and the boundary with the forecast ledger"
 ---
 
-# Research Sessions
+# Forecast Sessions
 
-Superforecasting Agent automatically saves interactive work as research sessions. Sessions are for continuity around forecast work: resume, handoff, search, and transcript management.
+Superforecasting Agent automatically saves interactive work as forecast sessions. Sessions are for continuity around forecast work: resume, handoff, search, and transcript management.
 
 Forecasts themselves live in the forecast ledger, not ordinary session memory. The ledger is the scoreable store for questions, evidence, forecast snapshots, assumptions, model runs, resolutions, scores, postmortems, and calibration lessons. A session can discuss a forecast, but a forecast only becomes durable and learnable when the agent writes to the ledger.
 
-## How Research Sessions Work
+## How Forecast Sessions Work
 
-Every research thread — whether from the CLI, TUI, Telegram, Discord, Slack, WhatsApp, Signal, Matrix, Teams, or another messaging platform — is stored as a session with full message history. Sessions are tracked in two complementary systems:
+Every forecast thread — whether from the CLI, TUI, Telegram, Discord, Slack, WhatsApp, Signal, Matrix, Teams, or another messaging platform — is stored as a session with full message history. Sessions are tracked in two complementary systems:
 
 1. **SQLite database** (`~/.superforecasting-agent/state.db`) — structured session metadata with FTS5 full-text search
-2. **JSONL transcripts** (`~/.superforecasting-agent/sessions/`) — raw research transcripts including tool calls for gateway sessions
+2. **JSONL transcripts** (`~/.superforecasting-agent/sessions/`) — raw forecast transcripts including tool calls for gateway sessions
 
 Existing Hermes-compatible installs may still use `~/.hermes/`; new installs default to `~/.superforecasting-agent/`.
 
@@ -29,9 +29,9 @@ The SQLite database stores:
 - Timestamps (started_at, ended_at)
 - Parent session ID (for compression-triggered session splitting)
 
-### Research Sessions vs Ledger
+### Forecast Sessions vs Ledger
 
-Research sessions are useful for remembering how a forecast discussion unfolded. They are not the product's learning loop.
+Forecast sessions are useful for remembering how a forecast discussion unfolded. They are not the product's learning loop.
 
 Use the forecast ledger when the work should be auditable or scored:
 
@@ -129,7 +129,7 @@ This looks up the most recent `cli` session from the SQLite database and loads i
 
 ### Resume by Name
 
-If you've given a session a title (see [Research Session Naming](#research-session-naming) below), you can resume it by name:
+If you've given a session a title (see [Forecast Session Naming](#forecast-session-naming) below), you can resume it by name:
 
 ```bash
 # Resume a named session
@@ -222,7 +222,7 @@ What happens:
 
 **Limitation worth knowing:** for non-thread-capable platforms with multi-user group home channels, the synthetic turn keys as a DM-style session. This works for self-DM home channels (the typical setup) but isn't ideal for genuinely shared group chats. Threading covers Telegram / Discord / Slack — by far the common case — so most setups never hit this.
 
-## Research Session Naming
+## Forecast Session Naming
 
 Give sessions human-readable titles so you can find and resume them easily.
 
@@ -272,11 +272,11 @@ The `/title` command works in all gateway platforms (Telegram, Discord, Slack, W
 - `/title My Research` — set the session title
 - `/title` — show the current title
 
-## Research Session Management Commands
+## Forecast Session Management Commands
 
-Superforecasting Agent provides a full set of research-session management commands via `superforecasting-agent sessions`:
+Superforecasting Agent provides a full set of forecast-session management commands via `superforecasting-agent sessions`:
 
-### List Research Sessions
+### List Forecast Sessions
 
 ```bash
 # List recent sessions (default: last 20)
@@ -289,7 +289,7 @@ superforecasting-agent sessions list --source telegram
 superforecasting-agent sessions list --limit 50
 ```
 
-When research sessions have titles, the output shows titles, previews, and relative timestamps:
+When forecast sessions have titles, the output shows titles, previews, and relative timestamps:
 
 ```
 Title                  Preview                                  Last Active   ID
@@ -299,7 +299,7 @@ inflation path #3      Check the new CPI evidence                yesterday     2
 —                      Review my calibration misses              3d ago        20250303_101500_f
 ```
 
-When no research sessions have titles, a simpler format is used:
+When no forecast sessions have titles, a simpler format is used:
 
 ```
 Preview                                            Last Active   Src    ID
@@ -308,13 +308,13 @@ Update the committee-pass forecast                  2h ago        cli    2025030
 Review my calibration misses                        3d ago        tele   20250303_101500_f
 ```
 
-### Export Research Sessions
+### Export Forecast Sessions
 
 ```bash
-# Export all research sessions to a JSONL file
+# Export all forecast sessions to a JSONL file
 superforecasting-agent sessions export backup.jsonl
 
-# Export research sessions from a specific platform
+# Export forecast sessions from a specific platform
 superforecasting-agent sessions export telegram-history.jsonl --source telegram
 
 # Export a single session
@@ -345,7 +345,7 @@ superforecasting-agent sessions rename 20250305_091523_a1b2c3d4 inflation update
 
 If the title is already in use by another session, an error is shown.
 
-### Prune Old Research Sessions
+### Prune Old Forecast Sessions
 
 ```bash
 # Delete ended sessions older than 90 days (default)
