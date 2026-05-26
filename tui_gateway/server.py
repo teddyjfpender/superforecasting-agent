@@ -8,7 +8,6 @@ import json
 import logging
 import os
 import queue
-import shlex
 import subprocess
 import sys
 import threading
@@ -2567,10 +2566,18 @@ def _(rid, params: dict) -> dict:
     if not isinstance(raw_arg, str):
         return _err(rid, 4003, "arg must be a string")
 
-    try:
-        argv = shlex.split(raw_arg)
-    except ValueError as exc:
-        return _err(rid, 4003, f"forecast command parse failed: {exc}")
+    argv_param = params.get("argv")
+    if argv_param is not None:
+        if not isinstance(argv_param, list) or not all(isinstance(item, str) for item in argv_param):
+            return _err(rid, 4003, "argv must be a list of strings")
+        argv = list(argv_param)
+    else:
+        try:
+            from forecasting.argv import split_forecast_cli_args
+
+            argv = split_forecast_cli_args(raw_arg)
+        except ValueError as exc:
+            return _err(rid, 4003, f"forecast command parse failed: {exc}")
 
     try:
         from forecasting.cli import main as forecast_main

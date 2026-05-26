@@ -18,6 +18,7 @@ from forecasting.ensembles import linear_trend_projection, weighted_binary_proba
 from forecasting.learning import apply_active_lesson_adjustments
 from forecasting.models import ForecastingError, OutcomeSpace, utc_now_iso
 from forecasting.protocol import build_protocol_messages
+from forecasting.search import match_to_dict, search_forecasts
 from forecasting.source_planner import SourceRecommendation, plan_sources_for_question
 from forecasting.source_search import capture_watched_text_candidates, search_watched_text_sources
 from forecasting.source_adapters import (
@@ -80,10 +81,11 @@ FORECAST_LEDGER_SCHEMA = {
     "description": (
         "Operate on the forecast ledger: create questions, add evidence, append "
         "forecast snapshots, resolve, score, review, self-check, and render "
-        "forecast protocol context. Forecast snapshots are append-only; source "
-        "actions can plan and search watched RSS/Atom evidence candidates without "
-        "moving probabilities; autopilot actions maintain watched-source update "
-        "proposals through the ledger."
+        "forecast protocol context. Search actions can locate questions by title, "
+        "topic, rationale, and evidence without requiring IDs. Forecast snapshots "
+        "are append-only; source actions can plan and search watched RSS/Atom "
+        "evidence candidates without moving probabilities; autopilot actions "
+        "maintain watched-source update proposals through the ledger."
     ),
     "parameters": {
         "type": "object",
@@ -93,6 +95,7 @@ FORECAST_LEDGER_SCHEMA = {
                 "enum": [
                     "create_question",
                     "list_questions",
+                    "search_questions",
                     "show_question",
                     "source_plan",
                     "source_search",
@@ -555,6 +558,21 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
         if action == "list_questions":
             questions = ledger.list_questions(status=args.get("status"), domain=args.get("domain"))
             return tool_result(success=True, questions=[_question_dict(q) for q in questions])
+
+        if action == "search_questions":
+            matches = search_forecasts(
+                ledger,
+                _required(args, "query"),
+                status=args.get("status") or "active",
+                domain=args.get("domain"),
+                topic=args.get("topic"),
+                limit=int(args["limit"]) if args.get("limit") is not None else 20,
+            )
+            return tool_result(
+                success=True,
+                query=args.get("query"),
+                matches=[match_to_dict(match) for match in matches],
+            )
 
         if action == "show_question":
             question_id = _required(args, "question_id")

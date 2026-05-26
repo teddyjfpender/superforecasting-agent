@@ -6546,7 +6546,9 @@ class HermesCLI:
         parts = cmd_original.split(None, 1)
         raw_arg = parts[1].strip() if len(parts) > 1 else ""
         try:
-            argv = shlex.split(raw_arg)
+            from forecasting.argv import split_forecast_cli_args
+
+            argv = split_forecast_cli_args(raw_arg)
         except ValueError as exc:
             _cprint(f"  forecast: {exc}")
             return
@@ -6861,7 +6863,9 @@ class HermesCLI:
         if not question_id:
             return
         try:
-            argv = shlex.split(rest)
+            from forecasting.argv import split_forecast_cli_args
+
+            argv = split_forecast_cli_args(rest)
         except ValueError as exc:
             _cprint(f"  revise: {exc}")
             return
@@ -8542,6 +8546,10 @@ class HermesCLI:
         elif canonical == "debug":
             self._handle_debug_command()
         elif canonical == "update":
+            parts = cmd_original.split(None, 1)
+            if len(parts) > 1 and parts[1].strip():
+                self._handle_forecast_command(f"/forecast update {parts[1].strip()}")
+                return True
             if self._handle_update_command():
                 return False
         elif canonical == "paste":

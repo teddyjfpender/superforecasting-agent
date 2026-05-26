@@ -132,11 +132,64 @@ def test_forecast_ledger_tool_exposes_source_planning_action():
         FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["action"]["enum"]
     )
 
+    assert "search_questions" in actions
     assert "source_plan" in actions
     assert "source_search" in actions
     assert "keywords" in FORECAST_LEDGER_SCHEMA["parameters"]["properties"]
     assert "apply_watch" in FORECAST_LEDGER_SCHEMA["parameters"]["properties"]
     assert "capture_candidates" in FORECAST_LEDGER_SCHEMA["parameters"]["properties"]
+
+
+def test_forecast_ledger_tool_searches_questions_by_ledger_context(tmp_path):
+    db = str(tmp_path / "forecasting.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will CPI inflation exceed consensus?",
+                "resolution_criteria": "Resolved by the next CPI release.",
+                "domain": "macro",
+                "topics": ["inflation", "energy"],
+            }
+        )
+    )
+    question_id = created["question"]["id"]
+    forecast_ledger_tool(
+        {
+            "db": db,
+            "action": "update_forecast",
+            "question_id": question_id,
+            "probability": 0.62,
+            "rationale": "Gasoline prices and shelter nowcasts support a hotter print.",
+            "as_of": "2026-05-01T00:00:00Z",
+        }
+    )
+    forecast_ledger_tool(
+        {
+            "db": db,
+            "action": "add_evidence",
+            "question_id": question_id,
+            "source_or_note": "EIA gasoline price update.",
+            "claim": "Gasoline prices rose before the CPI cutoff.",
+            "source_type": "eia",
+        }
+    )
+
+    result = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "search_questions",
+                "query": "gasoline",
+            }
+        )
+    )
+
+    assert result["success"] is True
+    assert result["matches"][0]["question"]["id"] == question_id
+    matched_fields = result["matches"][0]["matched_fields"]
+    assert "current_rationale" in matched_fields or "evidence_claim" in matched_fields
 
 
 def test_forecast_ledger_tool_plans_and_applies_local_resolution_source(tmp_path):

@@ -10,7 +10,7 @@ Superforecasting Agent has three slash-command surfaces:
 
 - **Classic interactive CLI slash commands** — dispatched by `cli.py`, with autocomplete from the central `COMMAND_REGISTRY` in `hermes_cli/commands.py`
 - **Messaging slash commands** — dispatched by `gateway/run.py`, with help text and platform menus generated from the registry
-- **TUI forecast shortcuts** — local Ink handlers for forecast-desk workflows such as `/questions`, `/ledger`, `/find`, `/open`, `/note`, `/revise`, `/evidence-for`, `/update-for`, `/forecast`, `/sources`, `/new-forecast`, `/ingest`, `/evidence`, `/research`, `/base-rate`, `/model-run`, `/trend-model`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/review`, `/alerts`, `/calibration`, `/lessons`, `/backtest`, `/schedule`, `/autopilot`, `/performance`, `/readiness`, `/doctor`, `/pilot-report`, `/pilot-cohort`, `/export-packet`, `/import-packet`, and `/pilot-aggregate`
+- **TUI forecast shortcuts** — local Ink handlers for forecast-desk workflows such as `/questions`, `/ledger`, `/find`, `/open`, `/note`, `/revise`, `/update`, `/evidence-for`, `/update-for`, `/forecast`, `/sources`, `/new-forecast`, `/ingest`, `/evidence`, `/research`, `/base-rate`, `/model-run`, `/trend-model`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/review`, `/alerts`, `/calibration`, `/lessons`, `/backtest`, `/schedule`, `/autopilot`, `/performance`, `/readiness`, `/doctor`, `/pilot-report`, `/pilot-cohort`, `/export-packet`, `/import-packet`, and `/pilot-aggregate`
 
 Installed skills are also exposed as dynamic slash commands on the classic CLI and messaging surfaces. That includes bundled skills like `/plan`, which opens plan mode and saves markdown plans under the workspace-local compatibility plans directory.
 
@@ -26,6 +26,7 @@ The forecast desk is the primary product surface. Use these before reaching for 
 | `/open <row\|id\|words>` | CLI, TUI | Open one matching forecast ledger record without copying a forecast ID. |
 | `/note <row\|words> -- <evidence>` | CLI, TUI | Resolve a row/search phrase to a forecast and append a timestamped evidence note. In the TUI, quick-edit rows can prefill this draft into the composer. Alias: `/evidence-for`. |
 | `/revise <row\|words> -- <args>` | CLI, TUI | Resolve a row/search phrase to a forecast and append an explicit probability update. In the TUI, quick-edit rows can prefill this draft into the composer. Alias: `/update-for`. |
+| `/update <row\|id\|words> -- <args>` | CLI, TUI | With arguments, resolve a forecast reference and append or inspect a forecast update. Without arguments, `/update` still runs the app updater. |
 | `/forecast [limit\|subcommand]` | CLI, TUI | Show the forecast dashboard or run `forecast <subcommand>` from the active session. Common subcommands include `new`, `sources`, `ingest`, `research`, `evidence`, `base-rate`, `reference-class`, `assumption`, `model`, `update`, `resolve`, `score`, `postmortem`, `calibration`, `lesson`, `review`, `watch`, `alerts`, `autopilot`, `schedule`, `self-check`, `backtest`, `performance`, `readiness`, `pilot-report`, `pilot-cohort`, `pilot-bundle`, `pilot-aggregate`, `export`, and `import packet`. |
 | `/new-forecast [args]` | TUI | Create a scoreable forecast question. Equivalent to `forecast new ...`. |
 | `/ingest [args]` | TUI | Stage a URL or file as a forecast candidate. Equivalent to `forecast ingest ...`. |
@@ -34,7 +35,7 @@ The forecast desk is the primary product surface. Use these before reaching for 
 | `/base-rate [args]` | TUI | Propose, add, or inspect reference-class/base-rate work. |
 | `/model-run [args]` | TUI | Inspect or record a quantitative model run. Equivalent to `forecast model ...`. |
 | `/trend-model [args]` | TUI | Record a deterministic trend projection model run. Equivalent to `forecast model ... --type trend_projection`. |
-| `/update-forecast [args]` | TUI | Inspect or append a probability update to a forecast. |
+| `/update-forecast [row\|id\|words] [-- <args>]` | TUI | Inspect or append a probability update to a forecast; row/search references are resolved before the update command runs. |
 | `/resolve [args]` | TUI | Record a forecast resolution. |
 | `/score [args]` | TUI | Score a resolved forecast. |
 | `/postmortem [args]` | TUI | Diagnose a resolved forecast and capture learning. |
@@ -61,8 +62,9 @@ forecast book, `Alt/Option+2` review, `Alt/Option+3` alerts,
 `Alt/Option+4` evidence, `Alt/Option+5` learning, `Alt/Option+6` schedules,
 `Alt/Option+7` calibration, `Alt/Option+8` backtests, and `Alt/Option+9` all.
 macOS terminals that send Option-number glyphs instead of Meta chords are
-handled as a fallback. `Ctrl+F` starts forecast lookup or converts a typed
-phrase into `/find <phrase>`.
+handled as a fallback. Portable `/1` through `/9` aliases open the same views
+when a terminal reserves Alt/Option. `Ctrl+F` starts forecast lookup or converts
+a typed phrase into `/find <phrase>`.
 
 ## Permissions and admin/user split
 
@@ -302,7 +304,7 @@ The messaging gateway supports the following built-in commands inside Telegram, 
 | `/commands [page]` | Browse all commands and skills (paginated). |
 | `/approve [session\|always]` | Approve and execute a pending dangerous command. `session` approves for this session only; `always` adds to permanent allowlist. |
 | `/deny` | Reject a pending dangerous command. |
-| `/update` | Update Superforecasting Agent to the latest version. |
+| `/update` | Update Superforecasting Agent to the latest version. In CLI/TUI forecast sessions, `/update <row\|id\|words> -- <args>` is treated as a forecast update shortcut instead. |
 | `/restart` | Gracefully restart the gateway after draining active runs. When the gateway comes back online, it sends a confirmation to the requester's messaging thread. |
 | `/debug` | Upload debug report (system info + logs) and get shareable links. |
 | `/help` | Show messaging help. |
@@ -312,7 +314,7 @@ The messaging gateway supports the following built-in commands inside Telegram, 
 
 - `/skin`, `/snapshot`, `/gquota`, `/reload`, `/tools`, `/toolsets`, `/browser`, `/config`, `/cron`, `/skills`, `/platforms`, `/paste`, `/image`, `/statusbar`, `/plugins`, `/busy`, `/indicator`, `/redraw`, `/clear`, `/history`, `/save`, `/copy`, `/handoff`, and `/quit` are **CLI-only** commands.
 - `/verbose` is **CLI-only by default**, but can be enabled for messaging platforms by setting `display.tool_progress_command: true` in `config.yaml`. When enabled, it cycles the `display.tool_progress` mode and saves to config.
-- `/sethome`, `/update`, `/restart`, `/approve`, `/deny`, `/topic`, and `/commands` are **messaging-only** commands.
+- `/sethome`, `/restart`, `/approve`, `/deny`, `/topic`, and `/commands` are **messaging-only** commands.
 - `/status`, `/background`, `/queue`, `/steer`, `/voice`, `/reload-mcp`, `/reload-skills`, `/rollback`, `/debug`, `/fast`, `/footer`, `/curator`, `/kanban`, `/sessions`, and `/yolo` work in **both** the CLI and the messaging gateway.
 - `/voice join`, `/voice channel`, and `/voice leave` are only meaningful on Discord.
 

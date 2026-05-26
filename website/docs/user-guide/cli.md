@@ -14,6 +14,7 @@ The main product surface is the command-line forecast desk. Use it to maintain a
 forecast                         # Open the forecast desk dashboard
 forecast status                  # Operational summary with live baseline comparisons
 forecast list                    # Active and recent questions
+forecast search "gasoline CPI"   # Locate a question without the forecast ID
 superforecasting-agent           # Fork-native runtime entrypoint
 superforecasting-agent desk      # Explicit forecast-scoped desk/support session
 superforecasting-agent tui       # Ink TUI with forecast shortcuts
@@ -274,6 +275,7 @@ Useful shortcuts:
 | `/forecast` | Forecast dashboard or raw forecast subcommand |
 | `/new-forecast` | Create a scoreable question |
 | `/base-rate` | Propose, add, or inspect reference-class work |
+| `/update` | With arguments, save a forecast update by row, id, or search phrase; without arguments, update the app |
 | `/update-forecast` | Inspect or save a probability update |
 | `/resolve` | Resolve a question |
 | `/score` | Score a resolved question |

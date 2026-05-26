@@ -104,12 +104,11 @@ const runForecastCommand = (ctx: SlashRunCtx, arg: string) => {
     .catch(ctx.guardedErr)
 }
 
-const shellQuote = (value: string) => {
-  if (/^[A-Za-z0-9_./:+=,@%-]+$/.test(value)) {
-    return value
-  }
-
-  return `'${value.replace(/'/g, "'\\''")}'`
+const runForecastCommandArgv = (ctx: SlashRunCtx, argv: string[]) => {
+  ctx.gateway
+    .rpc<ForecastCommandResponse>('forecast.command', { argv })
+    .then(ctx.guarded<ForecastCommandResponse>(r => renderForecastCommandOutput(r, ctx)))
+    .catch(ctx.guardedErr)
 }
 
 const updateForecastDeskState = (response: ForecastDashboardResponse) => {
@@ -357,6 +356,30 @@ const splitForecastRefAndRest = (arg: string): { ref: string; rest: string } => 
   }
 }
 
+const runForecastUpdateShortcut = (arg: string, ctx: SlashRunCtx, missingUsage: string) => {
+  const trimmed = arg.trim()
+  if (!trimmed) {
+    return ctx.transcript.sys(missingUsage)
+  }
+
+  if (trimmed.startsWith('-')) {
+    return runForecastCommand(ctx, `update ${trimmed}`)
+  }
+
+  const { ref, rest } = splitForecastRefAndRest(trimmed)
+  if (!rest) {
+    return runForecastCommand(ctx, `update ${trimmed}`)
+  }
+
+  if (FORECAST_ID_ARG.test(ref)) {
+    return runForecastCommand(ctx, `update ${ref} ${rest}`)
+  }
+
+  return withForecastRef(ctx, ref, id => runForecastCommand(ctx, `update ${id} ${rest}`), {
+    missingUsage
+  })
+}
+
 export const coreCommands: SlashCommand[] = [
   ...forecastViewShortcutCommands,
   {
@@ -397,6 +420,7 @@ export const coreCommands: SlashCommand[] = [
             ['/base-rate [args]', 'add or inspect reference-class/base-rate work'],
             ['/model-run [args]', 'inspect or record a quantitative forecast model run'],
             ['/trend-model [args]', 'record a deterministic trend projection'],
+            ['/update <row|id|words> -- <args>', 'append a probability update; no-arg /update updates the app'],
             ['/update-forecast [args]', 'inspect or append a probability update'],
             ['/resolve [args]', 'record a forecast resolution'],
             ['/score [args]', 'score a resolved forecast'],
@@ -435,9 +459,17 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'update Superforecasting Agent to the latest version (exits TUI)',
+    help: 'update Superforecasting Agent; with args, append a forecast update',
     name: 'update',
-    run: (_arg, ctx) => {
+    run: (arg, ctx) => {
+      if (arg.trim()) {
+        return runForecastUpdateShortcut(
+          arg,
+          ctx,
+          'usage: /update <row|id|forecast words> -- --probability <0-1> --rationale <why>'
+        )
+      }
+
       ctx.transcript.sys('exiting TUI to run update...')
       // Exit code 42 signals the Python wrapper to exec the update command.
       // Use dieWithCode for proper cleanup (gateway kill + Ink unmount).
@@ -552,7 +584,7 @@ export const coreCommands: SlashCommand[] = [
         return ctx.transcript.sys('usage: /note <row|id|forecast words> -- <evidence note>')
       }
 
-      withForecastRef(ctx, ref, id => runForecastCommand(ctx, `research ${id} ${shellQuote(rest)}`), {
+      withForecastRef(ctx, ref, id => runForecastCommandArgv(ctx, ['research', id, rest]), {
         missingUsage: 'usage: /note <row|id|forecast words> -- <evidence note>'
       })
     }
@@ -570,9 +602,11 @@ export const coreCommands: SlashCommand[] = [
         )
       }
 
-      withForecastRef(ctx, ref, id => runForecastCommand(ctx, `update ${id} ${rest}`), {
-        missingUsage: 'usage: /revise <row|id|forecast words> -- --probability <0-1> --rationale <why>'
-      })
+      runForecastUpdateShortcut(
+        arg,
+        ctx,
+        'usage: /revise <row|id|forecast words> -- --probability <0-1> --rationale <why>'
+      )
     }
   },
 
@@ -674,7 +708,8 @@ export const coreCommands: SlashCommand[] = [
     aliases: ['forecast-update'],
     help: 'inspect or append a probability update',
     name: 'update-forecast',
-    run: (arg, ctx) => runForecastCommand(ctx, `update ${arg.trim()}`.trim())
+    run: (arg, ctx) =>
+      runForecastUpdateShortcut(arg, ctx, 'usage: /update-forecast <row|id|forecast words> [-- <args>]')
   },
 
   {

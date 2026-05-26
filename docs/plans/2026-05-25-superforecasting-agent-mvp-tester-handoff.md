@@ -39,9 +39,12 @@ The current moving `superforecasting-agent-snapshot` branch includes the
 forecast question shortcut pass, structured TUI forecast-detail drill-down,
 `/ledger` view switching, persistent TUI `views` shortcuts, `Alt/Option+1`
 through `Alt/Option+9` ledger navigation with macOS Option-key glyph fallback
-and platform-aware `Opt+` labels on macOS, `Ctrl+F` forecast lookup, the fork-native
-`superforecasting-agent desk` support-session alias, required-source autopilot
-guardrails, RSS/source breadth, and the tester-handoff documentation refresh.
+and platform-aware `Opt+` labels on macOS, portable `/1` through `/9` view
+aliases, `Ctrl+F` forecast lookup, native `forecast search`, tolerant
+slash `/update <row|id|words> -- <args>` forecast updates, source-friendly
+RSS/feed request headers, the fork-native `superforecasting-agent desk`
+support-session alias, required-source autopilot guardrails, RSS/source
+breadth, and the tester-handoff documentation refresh.
 Rerun the operator gate before pinning a newer cohort hash.
 
 The current consolidated gate passed on `7eb97135020b` using
@@ -177,8 +180,10 @@ forecasts and review-queue items by title, topic, domain, latest rationale, or
 latest evidence, while `/open <row|id|words>` opens one unambiguous match. For
 quick evidence and probability maintenance, testers can run `/note
 <row|words> -- <evidence>` or `/revise <row|words> -- --probability <p>
---rationale <why>` without copying the forecast id; the longer
-`/evidence-for` and `/update-for` forms remain aliases. In the TUI, the
+--rationale <why>` without copying the forecast id; `/update <row|id|words>
+-- --probability <p> --rationale <why>` also works when arguments are present,
+while no-arg `/update` remains the app updater. The longer `/evidence-for` and
+`/update-for` forms remain aliases. In the TUI, the
 forecast book/search/detail/focused-action panels also expose clickable
 quick-edit rows that prefill those drafts into the composer. `/book` and `/qbook` remain
 compatibility aliases. `/ledger` browses forecast-store views such as book,
@@ -208,6 +213,7 @@ forecast --db "$FORECAST_DB" new "Will CPI inflation exceed consensus next month
   --source-plan
 forecast --db "$FORECAST_DB" sources --question <id>
 forecast --db "$FORECAST_DB" sources --question <id> --json
+forecast --db "$FORECAST_DB" search "gasoline CPI"
 forecast --db "$FORECAST_DB" watch add \
   --question <id> \
   --source-type rss \
@@ -232,7 +238,11 @@ forecast --db "$FORECAST_DB" import news https://www.bls.gov/feed/news_release/c
 
 RSS/news imports and watched-stream captures are evidence-candidate inputs.
 They should not change a probability unless the tester runs an explicit
-`forecast update`.
+`forecast update`. Live feeds are fetched with browser-compatible
+Superforecasting Agent headers and a BLS referer for `bls.gov`; if a feed still
+returns HTTP 403 from a tester's runtime, treat that as a source-access failure
+and fall back to structured adapters such as `forecast import bls <series-id>`
+or another allowed network rather than moving probability from stale feed data.
 
 For a deterministic local autopilot check, use a file source rather than a live
 external adapter:
@@ -299,10 +309,11 @@ It verified:
   schedules, postmortems, calibration lessons, and domain/topic error profiles.
 - Dashboard forecast API and TUI forecast panel test coverage, including
   structured forecast-detail panels and `/ledger` view switching.
-- Forecast question shortcut coverage for `/questions`, `/questions <row>`,
+- Forecast question shortcut coverage for `forecast search`, `/questions`, `/questions <row>`,
   `/questions <words>`, `/ledger`, `/find`, `/open`, `/note`, `/revise`,
-  `/evidence-for`, `/update-for`, `/book`, numbered TUI drill-down, semantic
-  search across rationale/latest evidence, row-based quick edits, composer
+  `/update <row|id|words> -- <args>`, `/evidence-for`, `/update-for`, `/book`,
+  numbered TUI drill-down, semantic search across rationale/latest evidence,
+  row-based quick edits, composer
   prefill for placeholder edit commands, classic CLI drill-down/search/edit
   resolution, and dashboard row selection with a detail panel.
 - The consolidated `python3 scripts/tester_handoff_check.py` gate passed for the

@@ -163,6 +163,7 @@ Common desk workflows have direct slash commands:
 | `/open` | Open a forecast by row number, id, short id, or search words |
 | `/note` | Append evidence after resolving a row/search phrase; quick-edit rows can prefill the draft |
 | `/revise` | Append a probability update after resolving a row/search phrase; quick-edit rows can prefill the draft |
+| `/update` | With arguments, append a forecast update by row, id, or search phrase; without arguments, update the app |
 | `/new-forecast` | Create a scoreable question |
 | `/ingest` | Stage a URL or file as a forecast candidate |
 | `/evidence` | Add or inspect timestamped evidence |
@@ -170,7 +171,7 @@ Common desk workflows have direct slash commands:
 | `/base-rate` | Propose, add, or inspect reference-class work |
 | `/model-run` | Inspect or record a quantitative forecast model run |
 | `/trend-model` | Record a deterministic trend projection model run |
-| `/update-forecast` | Inspect or append a probability snapshot |
+| `/update-forecast` | Inspect or append a probability snapshot; accepts row/search references |
 | `/resolve` | Record a resolution |
 | `/score` | Score a resolved question |
 | `/postmortem` | Write structured error analysis |

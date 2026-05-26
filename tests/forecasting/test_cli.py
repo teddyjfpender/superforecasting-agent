@@ -8,6 +8,7 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -240,6 +241,61 @@ def test_forecast_cli_lifecycle(tmp_path, capsys):
     assert "binary: n=1 brier_n=1" in calibration_output
     assert "empty" in calibration_output
     assert "low_sample" in calibration_output
+
+
+def test_forecast_cli_searches_ledger_without_ids(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    ledger = ForecastLedger(db)
+    cpi = ledger.create_question(
+        title="Will the CPI release exceed consensus?",
+        resolution_criteria="Resolved by the next BLS CPI release.",
+        domain="macro",
+        topics=["inflation", "energy"],
+    )
+    jobs = ledger.create_question(
+        title="Will payroll growth exceed expectations?",
+        resolution_criteria="Resolved by the next jobs report.",
+        domain="macro",
+        topics=["labor"],
+    )
+    ledger.create_snapshot(
+        question_id=cpi.id,
+        probability_or_distribution=0.61,
+        rationale="Gasoline and shelter nowcasts point to a hotter CPI print.",
+        as_of="2026-05-01T00:00:00Z",
+        confidence=0.58,
+        method="weighted_ensemble",
+    )
+    ledger.add_evidence(
+        question_id=cpi.id,
+        source_or_note="EIA gasoline prices rose again this week.",
+        claim="Gasoline prices increased before CPI cutoff.",
+        summary="Energy component pressure is relevant to CPI.",
+        source_name="EIA",
+        source_type="eia",
+        stance="increases",
+        claim_type="fact",
+    )
+    ledger.add_evidence(
+        question_id=jobs.id,
+        source_or_note="Payroll survey revisions are mixed.",
+        claim="Payroll revision context.",
+        source_type="manual",
+    )
+
+    _run(parser, ["forecast", "--db", db, "search", "gasoline"])
+    output = capsys.readouterr().out
+    assert "FORECAST SEARCH" in output
+    assert cpi.id in output
+    assert "current_rationale" in output or "evidence_claim" in output
+    assert "forecast show" in output
+    assert jobs.id not in output
+
+    _run(parser, ["forecast", "--db", db, "search", "shelter", "--json"])
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["matches"][0]["question"]["id"] == cpi.id
+    assert "current_rationale" in payload["matches"][0]["matched_fields"]
 
 
 def test_forecast_cli_scores_live_baselines_and_reports_live_performance(tmp_path, capsys):
@@ -2137,6 +2193,59 @@ def test_forecast_cli_news_import_captures_rss_items_as_evidence(tmp_path, capsy
     assert evidence[0].metadata["feed_entry_id"] == "fresh-1"
     assert evidence[0].reliability_rating == 0.8
     assert evidence[0].relevance_rating == 0.7
+
+
+def test_news_feed_http_request_uses_source_friendly_headers(monkeypatch):
+    captured = {}
+    body = (
+        b'<rss version="2.0"><channel><title>BLS</title>'
+        b"<item><title>CPI release</title><guid>cpi-1</guid></item>"
+        b"</channel></rss>"
+    )
+
+    class _Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self, _limit):
+            return body
+
+    def fake_urlopen(request, timeout):  # noqa: ARG001
+        captured["user_agent"] = request.get_header("User-agent") or request.get_header("User-Agent")
+        captured["accept"] = request.get_header("Accept")
+        captured["referer"] = request.get_header("Referer")
+        return _Response()
+
+    monkeypatch.setattr(source_adapters, "urlopen", fake_urlopen)
+
+    items = source_adapters.load_news_feed_items(
+        "https://www.bls.gov/feed/news_release/cpi.rss",
+        limit=1,
+    )
+
+    assert items[0].title == "CPI release"
+    assert "Mozilla/5.0" in captured["user_agent"]
+    assert "SuperforecastingAgent/1.0" in captured["user_agent"]
+    assert "application/rss+xml" in captured["accept"]
+    assert captured["referer"] == "https://www.bls.gov/"
+
+
+def test_news_feed_http_403_reports_actionable_fallback(monkeypatch):
+    def fake_urlopen(request, timeout):  # noqa: ARG001
+        raise HTTPError(request.full_url, 403, "Forbidden", hdrs=None, fp=None)
+
+    monkeypatch.setattr(source_adapters, "urlopen", fake_urlopen)
+
+    with pytest.raises(Exception) as excinfo:
+        source_adapters.load_news_feed_items("https://www.bls.gov/feed/news_release/cpi.rss")
+
+    message = str(excinfo.value)
+    assert "HTTP 403" in message
+    assert "browser-compatible request" in message
+    assert "official structured adapter" in message
 
 
 def test_forecast_cli_news_import_filters_and_dedupes_rss_items(tmp_path, capsys):

@@ -11,11 +11,21 @@ import re
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urlparse
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
 from forecasting.models import OutcomeSpace, ValidationError, parse_timestamp, timestamp_to_datetime
+
+
+_SOURCE_ADAPTER_USER_AGENT = (
+    "Mozilla/5.0 (compatible; SuperforecastingAgent/1.0; "
+    "+https://github.com/teddyjfpender/superforecasting-agent)"
+)
+_FEED_ACCEPT_HEADER = "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5"
+_JSON_ACCEPT_HEADER = "application/json, text/json;q=0.9, */*;q=0.5"
+_TEXT_ACCEPT_HEADER = "text/plain, text/csv, text/html;q=0.8, */*;q=0.5"
 
 
 @dataclass(frozen=True)
@@ -5484,9 +5494,14 @@ def _read_feed_source(source: str) -> bytes:
         parsed = urlparse(source)
         if not parsed.netloc:
             raise ValidationError("news feed URL is invalid")
-        request = Request(source, headers={"User-Agent": "superforecasting-agent/news-feed"})
-        with urlopen(request, timeout=10) as response:
-            return response.read(2 * 1024 * 1024)
+        request = Request(source, headers=_source_request_headers(source, accept=_FEED_ACCEPT_HEADER))
+        try:
+            with urlopen(request, timeout=10) as response:
+                return response.read(2 * 1024 * 1024)
+        except HTTPError as exc:
+            raise ValidationError(_http_fetch_error("news feed", source, exc)) from exc
+        except OSError as exc:
+            raise ValidationError(f"news feed fetch failed for {source}: {exc}") from exc
     path = Path(source).expanduser()
     if not path.is_file():
         raise ValidationError(f"news feed source not found: {source}")
@@ -5553,11 +5568,40 @@ def _canonical_feed_url(value: str) -> str:
     ).geturl()
 
 
+def _source_request_headers(url: str, *, accept: str) -> dict[str, str]:
+    headers = {
+        "User-Agent": _SOURCE_ADAPTER_USER_AGENT,
+        "Accept": accept,
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+    }
+    parsed = urlparse(url)
+    if parsed.netloc.lower().endswith("bls.gov"):
+        headers["Referer"] = "https://www.bls.gov/"
+    return headers
+
+
+def _http_fetch_error(label: str, url: str, exc: HTTPError) -> str:
+    status = getattr(exc, "code", None)
+    parsed = urlparse(url)
+    host = parsed.netloc or url
+    message = f"{label} fetch failed for {host}: HTTP {status or exc}"
+    if status == 403:
+        message += (
+            "; the source denied this runtime after a browser-compatible request. "
+            "Keep the forecast probability unchanged, try the official structured adapter if available, "
+            "or rerun from a network allowed by the source."
+        )
+    return message
+
+
 def _read_json_endpoint(url: str, label: str) -> object:
     try:
-        request = Request(url, headers={"User-Agent": "superforecasting-agent/source-adapter"})
+        request = Request(url, headers=_source_request_headers(url, accept=_JSON_ACCEPT_HEADER))
         with urlopen(request, timeout=10) as response:
             data = response.read(2 * 1024 * 1024)
+    except HTTPError as exc:
+        raise ValidationError(_http_fetch_error(label, url, exc)) from exc
     except OSError as exc:
         raise ValidationError(f"{label} fetch failed: {exc}") from exc
     try:
@@ -5568,9 +5612,11 @@ def _read_json_endpoint(url: str, label: str) -> object:
 
 def _read_text_endpoint(url: str, label: str) -> str:
     try:
-        request = Request(url, headers={"User-Agent": "superforecasting-agent/source-adapter"})
+        request = Request(url, headers=_source_request_headers(url, accept=_TEXT_ACCEPT_HEADER))
         with urlopen(request, timeout=10) as response:
             data = response.read(2 * 1024 * 1024)
+    except HTTPError as exc:
+        raise ValidationError(_http_fetch_error(label, url, exc)) from exc
     except OSError as exc:
         raise ValidationError(f"{label} fetch failed: {exc}") from exc
     try:

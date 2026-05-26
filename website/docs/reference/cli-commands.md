@@ -26,6 +26,7 @@ For slash commands inside interactive forecast sessions, see
 | `forecast status` | Show active forecasts, alerts, review queue, schedule, calibration, live baseline comparisons, and benchmark state. |
 | `forecast doctor` | Run the combined operator gate: status, pilot-exit checks, scheduled self-check run history, and readiness gaps. Use `--require-pilot-ready` or `--require-readiness` to fail release scripts. |
 | `forecast new` | Create a scoreable question with resolution criteria, outcome space, domain/topic, review cadence, and optional `--source-plan`. |
+| `forecast search <words>` | Search forecast questions by title, domain, topic, current rationale, recent evidence, assumptions, reference classes, and model-run context without remembering IDs. |
 | `forecast ingest` | Stage a URL or file as a forecast candidate before confirming it into the ledger. |
 | `forecast evidence add` | Add timestamped evidence or notes to a question. |
 | `forecast research` | Capture or inspect evidence without moving probability, including a summary of what changed since the current forecast. |

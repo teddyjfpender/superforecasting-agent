@@ -76,6 +76,68 @@ def test_forecast_command_runs_forecast_cli_with_raw_args(tmp_path):
     assert payload["ledger_path"] == str(db_path)
 
 
+def test_forecast_command_accepts_argv_without_shell_splitting(tmp_path):
+    from forecasting.ledger import ForecastLedger
+
+    db_path = tmp_path / "forecast.sqlite"
+    question = ForecastLedger(db_path).create_question(
+        title="Will CPI exceed consensus?",
+        resolution_criteria="Resolved by the official release.",
+    )
+    resp = server.handle_request(
+        {
+            "id": "1",
+            "method": "forecast.command",
+            "params": {
+                "argv": [
+                    "--db",
+                    str(db_path),
+                    "update",
+                    question.id,
+                    "--probability",
+                    "0.66",
+                    "--rationale",
+                    "May CPI (all-items) and BLS's release shifted higher",
+                ]
+            },
+        }
+    )
+
+    assert "result" in resp, resp
+    assert resp["result"]["code"] == 0
+    snapshot = ForecastLedger(db_path).get_current_snapshot(question.id)
+    assert snapshot is not None
+    assert snapshot.rationale == "May CPI (all-items) and BLS's release shifted higher"
+
+
+def test_forecast_command_tolerates_raw_update_rationale_tail(tmp_path):
+    from forecasting.ledger import ForecastLedger
+
+    db_path = tmp_path / "forecast.sqlite"
+    question = ForecastLedger(db_path).create_question(
+        title="Will CPI exceed consensus?",
+        resolution_criteria="Resolved by the official release.",
+    )
+    resp = server.handle_request(
+        {
+            "id": "1",
+            "method": "forecast.command",
+            "params": {
+                "arg": (
+                    f"--db {db_path} update {question.id} --probability 0.67 "
+                    "--rationale May CPI (all-items) and BLS's release shifted higher"
+                )
+            },
+        }
+    )
+
+    assert "result" in resp, resp
+    assert resp["result"]["code"] == 0
+    snapshot = ForecastLedger(db_path).get_current_snapshot(question.id)
+    assert snapshot is not None
+    assert snapshot.rationale == "May CPI (all-items) and BLS's release shifted higher"
+
+
 def test_forecast_command_reports_parse_errors():
     resp = server.handle_request(
         {

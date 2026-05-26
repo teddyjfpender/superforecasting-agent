@@ -376,7 +376,7 @@ describe('createSlashHandler', () => {
     expect(handler('/note inflation -- BLS release mentioned gasoline pressure')).toBe(true)
     await vi.waitFor(() => {
       expect(rpc).toHaveBeenCalledWith('forecast.command', {
-        arg: "research fq_cpi 'BLS release mentioned gasoline pressure'"
+        argv: ['research', 'fq_cpi', 'BLS release mentioned gasoline pressure']
       })
     })
 
@@ -384,6 +384,15 @@ describe('createSlashHandler', () => {
     await vi.waitFor(() => {
       expect(rpc).toHaveBeenCalledWith('forecast.command', {
         arg: 'update fq_cpi --probability 0.64 --rationale "energy evidence moved up"'
+      })
+    })
+
+    expect(
+      handler("/update inflation -- --probability 0.66 --rationale May CPI (all-items) and BLS's release shifted higher")
+    ).toBe(true)
+    await vi.waitFor(() => {
+      expect(rpc).toHaveBeenCalledWith('forecast.command', {
+        arg: "update fq_cpi --probability 0.66 --rationale May CPI (all-items) and BLS's release shifted higher"
       })
     })
   })

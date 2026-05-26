@@ -151,3 +151,13 @@ def test_forecast_lookup_shortcuts_resolve_words_before_ledger_actions(tmp_path,
     assert snapshot is not None
     assert snapshot.probability_or_distribution == 0.64
     assert snapshot.rationale == "energy evidence moved up"
+
+    HermesCLI._handle_forecast_update_for_command(
+        cli,
+        "/update-for inflation -- --probability 0.66 "
+        "--rationale May CPI (all-items) and BLS's release shifted higher",
+    )
+    snapshot = ledger.get_current_snapshot(question.id)
+    assert snapshot is not None
+    assert snapshot.probability_or_distribution == 0.66
+    assert snapshot.rationale == "May CPI (all-items) and BLS's release shifted higher"

@@ -129,6 +129,7 @@ from forecasting.source_adapters import (
     load_yahoo_finance_prices,
 )
 from forecasting.source_planner import SourceRecommendation, plan_sources_for_question
+from forecasting.search import match_to_dict, search_forecasts
 from forecasting.source_search import (
     WatchedTextSourceSearchResult,
     capture_watched_text_candidates,
@@ -576,6 +577,23 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     list_parser.add_argument("--limit", type=int)
     list_parser.set_defaults(_forecast_handler=_cmd_list)
 
+    search_parser = forecast_sub.add_parser(
+        "search",
+        help="Search forecast questions without remembering IDs",
+    )
+    search_parser.add_argument("query", nargs="+")
+    search_parser.add_argument(
+        "--status",
+        choices=["active", "closed", "resolved", "archived", "all"],
+        default="active",
+        help="Question status to search; default: active",
+    )
+    search_parser.add_argument("--domain")
+    search_parser.add_argument("--topic")
+    search_parser.add_argument("--limit", type=int, default=20)
+    search_parser.add_argument("--json", action="store_true", help="Emit machine-readable search results")
+    search_parser.set_defaults(_forecast_handler=_cmd_search)
+
     show_parser = forecast_sub.add_parser("show", help="Show a forecast question")
     show_parser.add_argument("id")
     show_parser.set_defaults(_forecast_handler=_cmd_show)
@@ -588,7 +606,11 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "--distribution-json",
         help="JSON object mapping categorical outcomes to probabilities or distribution parameters such as mean/std",
     )
-    update_parser.add_argument("--rationale")
+    update_parser.add_argument(
+        "--rationale",
+        nargs="+",
+        help="Forecast rationale; quotes are optional when it is the last update field",
+    )
     update_parser.add_argument("--as-of")
     update_parser.add_argument("--confidence", type=float)
     update_parser.add_argument("--method")
@@ -2271,6 +2293,57 @@ def _cmd_list(args: argparse.Namespace) -> None:
         )
 
 
+def _cmd_search(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    query = " ".join(args.query).strip()
+    matches = search_forecasts(
+        ledger,
+        query,
+        status=args.status,
+        domain=args.domain,
+        topic=args.topic,
+        limit=args.limit,
+    )
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "query": query,
+                    "status": args.status,
+                    "domain": args.domain,
+                    "topic": args.topic,
+                    "matches": [match_to_dict(match) for match in matches],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+    if not matches:
+        print("No matching forecast questions found.")
+        return
+    print("FORECAST SEARCH")
+    print(f"query: {query}")
+    print("ID             Status     P(now)    AsOf                 Delta    Close                Domain     Score  Fields        Title")
+    for match in matches:
+        question = match.question
+        snapshot = match.current_snapshot
+        probability = _format_probability(snapshot.probability_or_distribution) if snapshot else "-"
+        as_of = snapshot.as_of if snapshot else "-"
+        delta = _format_delta(_question_delta(ledger, question.id))
+        close = question.close_time or "-"
+        domain = question.domain or "-"
+        fields = ",".join(match.matched_fields[:3]) or "-"
+        print(
+            f"{question.id:<14} {question.status:<10} {probability:<9} {as_of:<20} "
+            f"{delta:<8} {close:<20} {domain:<10} {match.score:<6} "
+            f"{_truncate(fields, 13):<13} {question.title}"
+        )
+        for field, snippet in list(match.snippets.items())[:2]:
+            print(f"  {field}: {snippet}")
+        print(f"  open: forecast show {question.id}")
+
+
 def _cmd_show(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
     question = ledger.get_question(args.id)
@@ -2315,12 +2388,13 @@ def _cmd_update(args: argparse.Namespace) -> None:
     components = _json_arg(args.component_json, "component-json")
     ledger = _ledger(args)
     question = ledger.get_question(args.id)
+    rationale = _joined_arg(args.rationale)
     has_payload = any(
         value is not None
         for value in (args.probability, args.numeric_value, args.distribution_json)
     ) or bool(components)
     non_citation_update_fields = [
-        args.rationale is not None,
+        rationale is not None,
         args.as_of is not None,
         args.confidence is not None,
         args.method is not None,
@@ -2389,12 +2463,12 @@ def _cmd_update(args: argparse.Namespace) -> None:
             calibration_adjustment,
         )
         return
-    if not args.rationale:
+    if not rationale:
         raise SystemExit("forecast update requires --rationale when saving a snapshot")
     snapshot = ledger.create_snapshot(
         question_id=args.id,
         probability_or_distribution=payload,
-        rationale=args.rationale,
+        rationale=rationale,
         as_of=args.as_of,
         confidence=args.confidence,
         method=args.method,
@@ -8608,6 +8682,22 @@ def _toolsets_for_stage(stage: str) -> list[str]:
 
 def _format_delta(delta: float | None) -> str:
     return "-" if delta is None else f"{delta:+.3f}"
+
+
+def _truncate(value: str, limit: int) -> str:
+    if limit <= 0 or len(value) <= limit:
+        return value
+    if limit <= 3:
+        return value[:limit]
+    return value[: max(limit - 3, 0)] + "..."
+
+
+def _joined_arg(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return " ".join(str(item) for item in value).strip()
+    return str(value).strip()
 
 
 def _format_ci95(low: float | None, high: float | None) -> str:

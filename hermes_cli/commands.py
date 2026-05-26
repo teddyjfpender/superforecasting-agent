@@ -284,7 +284,12 @@ COMMAND_REGISTRY: list[CommandDef] = [
                cli_only=True),
     CommandDef("image", "Attach a local image file for your next prompt", "Info",
                cli_only=True, args_hint="<path>"),
-    CommandDef("update", "Update Superforecasting Agent to the latest version", "Info"),
+    CommandDef(
+        "update",
+        "Update the app; with args, append a forecast update",
+        "Info",
+        args_hint="[row|id|words -- --probability <p> --rationale <why>]",
+    ),
     CommandDef("debug", "Upload debug report (system info + logs) and get shareable links", "Info"),
 
     # Exit
