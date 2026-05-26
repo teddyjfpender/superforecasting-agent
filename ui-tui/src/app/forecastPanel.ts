@@ -62,6 +62,32 @@ const shortDate = (value: null | string | undefined) => (value ? value.slice(0, 
 
 const shortId = (value: string | undefined) => (value ? value.replace(/^fq_/, '').slice(0, 8) : '-')
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
+export const forecastFreshnessLabel = (value: null | string | undefined, now = new Date()) => {
+  if (!value) {
+    return 'no as-of'
+  }
+
+  const timestamp = Date.parse(value)
+  if (!Number.isFinite(timestamp)) {
+    return 'as-of set'
+  }
+
+  const ageDays = Math.max(0, Math.floor((now.getTime() - timestamp) / DAY_MS))
+  if (ageDays === 0) {
+    return 'fresh today'
+  }
+  if (ageDays === 1) {
+    return '1d old'
+  }
+  if (ageDays < 31) {
+    return `${ageDays}d old`
+  }
+  const ageMonths = Math.floor(ageDays / 30)
+  return `${ageMonths}mo old`
+}
+
 const formatMetric = (value: null | number | undefined) => {
   const number = numberValue(value)
   return number === null ? '-' : number.toFixed(6)
@@ -929,6 +955,66 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
       '/forecast backtest --benchmarks'
     ],
     title: 'Next Commands'
+  })
+
+  return sections
+}
+
+export const forecastBookSections = (
+  response: ForecastDashboardResponse,
+  now = new Date()
+): PanelSection[] => {
+  const summary = response.summary
+  const questions = summary?.questions ?? []
+
+  if (!summary) {
+    return [{ text: response.output || '(no forecasts)' }]
+  }
+
+  const sections: PanelSection[] = [
+    {
+      rows: [
+        ['active', formatCount(summary.active_count ?? questions.length)],
+        ['alerts', formatCount(summary.open_alert_count)],
+        ['reviews', formatCount(summary.review_queue_count)],
+        ['freshness', 'Use /book <number> to drill into a row without copying its id']
+      ],
+      title: 'Book'
+    }
+  ]
+
+  if (!questions.length) {
+    sections.push({
+      text: 'No active forecasts. Create one with /forecast new "Will X happen?" --resolution-criteria "...".',
+      title: 'Forecast Questions'
+    })
+    return sections
+  }
+
+  sections.push({
+    rows: questions.slice(0, 20).map((row, index) => {
+      const key = `${index + 1}. P=${formatProbability(row.probability)} Δ=${formatDelta(row.delta)}`
+      const details = [
+        forecastFreshnessLabel(row.as_of, now),
+        `as-of ${shortDate(row.as_of)}`,
+        `close ${shortDate(row.close_time)}`,
+        `conf ${formatConfidence(row.confidence)}`,
+        `ev ${formatCount(row.evidence_count)}`,
+        forecastStatus(row),
+        truncate(row.title || '(untitled forecast)', 76)
+      ].join('  ')
+
+      return [key, details] as [string, string]
+    }),
+    title: 'Forecast Questions'
+  })
+
+  sections.push({
+    rows: questions.slice(0, 8).map((row, index) => [
+      `/book ${index + 1}`,
+      `open full details for ${truncate(row.title || row.id || `forecast ${index + 1}`, 76)}`
+    ]),
+    title: 'Drill Down'
   })
 
   return sections

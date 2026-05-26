@@ -22,7 +22,12 @@ import type { Msg, PanelSection } from '../../../types.js'
 import type { StatusBarMode } from '../../interfaces.js'
 import { patchOverlayState } from '../../overlayStore.js'
 import { patchUiState } from '../../uiStore.js'
-import { forecastDashboardSections, forecastDeskRailSections, forecastDeskStatusLabel } from '../../forecastPanel.js'
+import {
+  forecastBookSections,
+  forecastDashboardSections,
+  forecastDeskRailSections,
+  forecastDeskStatusLabel
+} from '../../forecastPanel.js'
 import type { SlashCommand, SlashRunCtx } from '../types.js'
 
 const flagFromArg = (arg: string, current: boolean): boolean | null => {
@@ -92,6 +97,75 @@ const runForecastCommand = (ctx: SlashRunCtx, arg: string) => {
     .catch(ctx.guardedErr)
 }
 
+const updateForecastDeskState = (response: ForecastDashboardResponse) => {
+  patchUiState({
+    forecastDeskRailSections: forecastDeskRailSections(response),
+    forecastDeskStatus: forecastDeskStatusLabel(response)
+  })
+}
+
+const renderForecastDashboard = (response: ForecastDashboardResponse, ctx: SlashRunCtx) => {
+  if (response.summary) {
+    updateForecastDeskState(response)
+    ctx.transcript.panel('Forecast Desk', forecastDashboardSections(response))
+    return
+  }
+
+  ctx.transcript.page(response.output || '(no forecasts)', 'Forecasts')
+}
+
+const renderForecastBook = (response: ForecastDashboardResponse, ctx: SlashRunCtx) => {
+  if (response.summary) {
+    updateForecastDeskState(response)
+    ctx.transcript.panel('Forecast Book', forecastBookSections(response))
+    return
+  }
+
+  ctx.transcript.page(response.output || '(no forecasts)', 'Forecast Book')
+}
+
+const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
+  const trimmed = arg.trim()
+  const listMatch = trimmed.match(/^list(?:\s+(\d+))?$/i)
+  const openIndex = INTEGER_ARG.test(trimmed) ? Number.parseInt(trimmed, 10) : null
+
+  if (trimmed && !listMatch && openIndex === null) {
+    runForecastCommand(ctx, `show ${trimmed}`)
+    return
+  }
+
+  if (openIndex !== null && openIndex <= 0) {
+    return ctx.transcript.sys('usage: /book [list [limit]|row-number|forecast-id]')
+  }
+
+  const listLimit = listMatch?.[1] ? Number.parseInt(listMatch[1], 10) : 20
+  if (!Number.isFinite(listLimit) || listLimit <= 0) {
+    return ctx.transcript.sys('usage: /book [list [limit]|row-number|forecast-id]')
+  }
+  const limit = Math.max(openIndex ?? listLimit, listLimit)
+
+  ctx.gateway
+    .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit })
+    .then(
+      ctx.guarded<ForecastDashboardResponse>(r => {
+        if (!r.summary || openIndex === null || listMatch) {
+          renderForecastBook(r, ctx)
+          return
+        }
+
+        updateForecastDeskState(r)
+        const row = r.summary.questions?.[openIndex - 1]
+        if (!row?.id) {
+          ctx.transcript.sys(`no forecast row ${openIndex}; run /book list ${limit} to inspect the current book`)
+          return
+        }
+
+        runForecastCommand(ctx, `show ${row.id}`)
+      })
+    )
+    .catch(ctx.guardedErr)
+}
+
 export const coreCommands: SlashCommand[] = [
   {
     help: 'list commands + hotkeys',
@@ -115,6 +189,7 @@ export const coreCommands: SlashCommand[] = [
               'override one section (thinking/tools/subagents/activity)'
             ],
             ['/heuristic [random|daily]', 'show a random or daily forecasting maxim'],
+            ['/book [row|list N]', 'show current forecast questions and drill into a numbered row'],
             ['/forecast [limit|subcommand]', 'show active forecasts or run forecast lifecycle commands'],
             ['/sources [--json]', 'list evidence source adapters and watch prefixes'],
             ['/new-forecast [args]', 'create a scoreable forecast question'],
@@ -225,6 +300,13 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
+    aliases: ['questions', 'qbook'],
+    help: 'show current forecast questions; /book <row> opens details',
+    name: 'book',
+    run: (arg, ctx) => runForecastBook(arg, ctx)
+  },
+
+  {
     aliases: ['forecasts'],
     help: 'show active forecast dashboard or run forecast lifecycle commands',
     name: 'forecast',
@@ -248,20 +330,7 @@ export const coreCommands: SlashCommand[] = [
 
       ctx.gateway
         .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit })
-        .then(
-          ctx.guarded<ForecastDashboardResponse>(r => {
-            if (r.summary) {
-              patchUiState({
-                forecastDeskRailSections: forecastDeskRailSections(r),
-                forecastDeskStatus: forecastDeskStatusLabel(r)
-              })
-              ctx.transcript.panel('Forecast Desk', forecastDashboardSections(r))
-              return
-            }
-
-            ctx.transcript.page(r.output || '(no forecasts)', 'Forecasts')
-          })
-        )
+        .then(ctx.guarded<ForecastDashboardResponse>(r => renderForecastDashboard(r, ctx)))
         .catch(ctx.guardedErr)
     }
   },

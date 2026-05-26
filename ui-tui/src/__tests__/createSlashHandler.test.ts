@@ -169,6 +169,92 @@ describe('createSlashHandler', () => {
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
   })
 
+  it('renders /book as a numbered forecast summary without requiring ids', async () => {
+    const rpc = vi.fn((method: string) => {
+      if (method === 'forecast.dashboard') {
+        return Promise.resolve({
+          summary: {
+            active_count: 1,
+            open_alert_count: 0,
+            product: 'Superforecasting Agent',
+            questions: [
+              {
+                as_of: '2026-05-24T00:00:00Z',
+                close_time: '2026-06-30T00:00:00Z',
+                confidence: 0.62,
+                delta: 0.08,
+                evidence_count: 4,
+                id: 'fq_inflation001',
+                open_alert_count: 0,
+                probability: 0.61,
+                title: 'Will the CPI release exceed consensus?'
+              }
+            ],
+            review_queue_count: 0
+          }
+        })
+      }
+
+      return Promise.resolve({})
+    })
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/book')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 20 })
+    await vi.waitFor(() => {
+      expect(ctx.transcript.panel).toHaveBeenCalledWith(
+        'Forecast Book',
+        expect.arrayContaining([
+          expect.objectContaining({
+            rows: expect.arrayContaining([
+              [
+                '1. P=0.610 Δ=+0.080',
+                expect.stringContaining('Will the CPI release exceed consensus?')
+              ]
+            ]),
+            title: 'Forecast Questions'
+          }),
+          expect.objectContaining({
+            rows: [['/book 1', 'open full details for Will the CPI release exceed consensus?']],
+            title: 'Drill Down'
+          })
+        ])
+      )
+    })
+  })
+
+  it('opens a forecast from /book by numbered row', async () => {
+    const rpc = vi.fn((method: string, params: Record<string, unknown>) => {
+      if (method === 'forecast.dashboard') {
+        return Promise.resolve({
+          summary: {
+            active_count: 2,
+            open_alert_count: 0,
+            product: 'Superforecasting Agent',
+            questions: [
+              { id: 'fq_first', probability: 0.4, title: 'First forecast' },
+              { id: 'fq_second', probability: 0.6, title: 'Second forecast' }
+            ],
+            review_queue_count: 0
+          }
+        })
+      }
+      if (method === 'forecast.command') {
+        return Promise.resolve({ code: 0, output: `opened ${params.arg}` })
+      }
+
+      return Promise.resolve({})
+    })
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/book 2')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 20 })
+    await vi.waitFor(() => {
+      expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'show fq_second' })
+      expect(ctx.transcript.sys).toHaveBeenCalledWith('opened show fq_second')
+    })
+  })
+
   it('routes /forecast lifecycle subcommands to the forecast command RPC', async () => {
     const rpc = vi.fn((method: string) => {
       if (method === 'forecast.command') {

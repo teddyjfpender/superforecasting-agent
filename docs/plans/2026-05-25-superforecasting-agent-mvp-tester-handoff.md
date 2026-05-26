@@ -32,11 +32,11 @@ python -m superforecasting_agent status
 For this handoff, the latest full tester gate was verified on:
 
 ```text
-918b0348322c Use forecast-support turn wording in runtime docs
+85cef9e9f6ae Expose forecast autopilot through ledger tool
 ```
 
-The moving `superforecasting-agent-snapshot` branch may contain later focused
-cleanup or handoff-record commits; rerun the operator gate before pinning a
+The current moving `superforecasting-agent-snapshot` branch also includes the
+focused forecast-book shortcut pass. Rerun the operator gate before pinning a
 newer cohort hash.
 
 Before inviting a new cohort, record the exact commit testers will use:
@@ -146,14 +146,46 @@ superforecasting-agent dashboard --no-open
 In the dashboard, use `/desk` as the primary Forecast Desk route. `/chat`
 remains a compatibility alias for older links and plugins.
 
-In the TUI, `/forecast` opens the forecast desk panel and `/schedule`,
+In the TUI, `/book` is the fastest current-question view. It shows numbered
+forecast rows with headline probability, delta, close date, evidence count, and
+freshness; `/book 1` opens the first row's full forecast details without
+requiring the tester to copy a forecast id. `/questions` and `/qbook` are
+aliases. `/forecast` opens the broader forecast desk panel, and `/schedule`,
 `/backtest`, `/calibration`, `/alerts`, `/doctor`, and `/readiness` jump to
 common workflow checks.
+
+In the dashboard Forecasts page, active forecast rows are selectable. Clicking
+or pressing Enter/Space on a row opens a detail panel with the same headline
+values, freshness, alert state, and copyable follow-up commands.
+
+For a deterministic local autopilot check, use a file source rather than a live
+external adapter:
+
+```bash
+mkdir -p .pilot
+printf "initial release\n" > .pilot/source.txt
+forecast --db "$FORECAST_DB" autopilot enable <id> \
+  --source "$PWD/.pilot/source.txt" \
+  --cadence "1d" \
+  --mode propose
+forecast --db "$FORECAST_DB" autopilot run <id>
+printf "revised release\n" > .pilot/source.txt
+forecast --db "$FORECAST_DB" autopilot run <id> \
+  --proposed-probability 0.61 \
+  --rationale "Source revision changes the forecast."
+forecast --db "$FORECAST_DB" autopilot proposals <id>
+```
+
+Agent-driven flows can call the same maintenance loop through the
+`forecast_ledger` tool actions: `enable_autopilot`, `autopilot_status`,
+`run_autopilot`, `list_forecast_update_proposals`,
+`approve_forecast_update_proposal`, and
+`reject_forecast_update_proposal`.
 
 ## Smoke Evidence
 
 Latest consolidated tester handoff evidence ran with a temporary clean ledger on
-the implementation tree committed as `918b0348322c`.
+the implementation tree committed as `85cef9e9f6ae`.
 
 It verified:
 
@@ -169,17 +201,24 @@ It verified:
   readiness observes two external source families.
 - Scheduled self-check with `--cadence "every 1h"`, alert creation, learning
   review counts, and durable schedule history.
+- Autopilot maintenance with watched file sources, source snapshots,
+  material-change detection, pending proposals, approval into append-only
+  forecast snapshots, and the same actions exposed through the model-facing
+  `forecast_ledger` tool.
 - Source-tree `./forecast`, source-tree `./superforecast`,
   source-tree `./superforecasting-agent`, `python -m superforecasting_agent`,
   and the package-defined `forecast` command path.
 - Portfolio export/import packets, including forecast history, evidence,
   schedules, postmortems, calibration lessons, and domain/topic error profiles.
 - Dashboard forecast API and TUI forecast panel test coverage.
+- Forecast book shortcut coverage for `/book`, `/book <row>`, `/questions`,
+  numbered TUI drill-down, classic CLI drill-down, and dashboard row selection
+  with a detail panel.
 - The consolidated `python3 scripts/tester_handoff_check.py` gate passed for the
-  `918b0348322c` implementation tree with 178 focused tests, the clean smoke
-  path, and `git diff --check`; the smoke output reported 52 source adapters,
+  implementation tree with 179 focused tests, the clean smoke path, and
+  `git diff --check`; the smoke output reported 52 source adapters,
   5 benchmark datasets, `pilot_report_checks: 9/9`,
-  `packet_import_questions: 2`, `pilot_aggregate_live_scores: 1`,
+  `packet_import_questions: 3`, `pilot_aggregate_live_scores: 1`,
   `agent_protocol_prompt_packets: 465`,
   `agent_protocol_suite_scored_cases: 465`, `performance_runs: 6`,
   `readiness_gaps: 1`, `readiness_agent_protocol_scores: 465`,

@@ -280,6 +280,19 @@ function formatDate(value?: string | null): string {
   }
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function formatFreshness(value?: string | null): string {
+  if (!value) return "no as-of";
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "as-of set";
+  const ageDays = Math.max(0, Math.floor((Date.now() - timestamp) / DAY_MS));
+  if (ageDays === 0) return "fresh today";
+  if (ageDays === 1) return "1d old";
+  if (ageDays < 31) return `${ageDays}d old`;
+  return `${Math.floor(ageDays / 30)}mo old`;
+}
+
 function formatMetric(value?: number | null): string {
   if (value === null || value === undefined) return "-";
   return value.toFixed(6);
@@ -374,7 +387,15 @@ function focusedForecastCommands(row: FocusedForecastRow) {
   ];
 }
 
-function ForecastTable({ rows }: { rows: ForecastDashboardQuestion[] }) {
+function ForecastTable({
+  rows,
+  selectedQuestionId,
+  onSelect,
+}: {
+  rows: ForecastDashboardQuestion[];
+  selectedQuestionId?: string | null;
+  onSelect: (id: string) => void;
+}) {
   if (rows.length === 0) {
     return (
       <Card>
@@ -401,6 +422,7 @@ function ForecastTable({ rows }: { rows: ForecastDashboardQuestion[] }) {
                 <th className="py-2 pr-4 text-left font-medium">Question</th>
                 <th className="px-4 py-2 text-right font-medium">P(now)</th>
                 <th className="px-4 py-2 text-left font-medium">As of</th>
+                <th className="px-4 py-2 text-left font-medium">Freshness</th>
                 <th className="px-4 py-2 text-right font-medium">Delta</th>
                 <th className="px-4 py-2 text-right font-medium">Confidence</th>
                 <th className="px-4 py-2 text-left font-medium">Close</th>
@@ -415,7 +437,19 @@ function ForecastTable({ rows }: { rows: ForecastDashboardQuestion[] }) {
               {rows.map((row) => (
                 <tr
                   key={row.id}
-                  className="border-b border-border/50 transition-colors hover:bg-secondary/20"
+                  role="button"
+                  tabIndex={0}
+                  aria-selected={selectedQuestionId === row.id}
+                  onClick={() => onSelect(row.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelect(row.id);
+                    }
+                  }}
+                  className={`cursor-pointer border-b border-border/50 transition-colors hover:bg-secondary/20 focus:outline-none focus:ring-1 focus:ring-primary/60 ${
+                    selectedQuestionId === row.id ? "bg-secondary/25" : ""
+                  }`}
                 >
                   <td className="max-w-[28rem] py-2 pr-4">
                     <div className="flex min-w-0 flex-col gap-1">
@@ -423,8 +457,7 @@ function ForecastTable({ rows }: { rows: ForecastDashboardQuestion[] }) {
                         {row.title}
                       </span>
                       <span className="font-mono-ui text-[11px] text-muted-foreground">
-                        {row.id}
-                        {row.domain ? ` · ${row.domain}` : ""}
+                        {row.domain || row.topics?.slice(0, 2).join(", ") || "Forecast question"} · click for details
                       </span>
                     </div>
                   </td>
@@ -433,6 +466,9 @@ function ForecastTable({ rows }: { rows: ForecastDashboardQuestion[] }) {
                   </td>
                   <td className="px-4 py-2 text-muted-foreground">
                     {formatDate(row.as_of)}
+                  </td>
+                  <td className="px-4 py-2 text-muted-foreground">
+                    {formatFreshness(row.as_of)}
                   </td>
                   <td className="px-4 py-2 text-right font-mono-ui text-muted-foreground">
                     {formatDelta(row.delta)}
@@ -483,6 +519,70 @@ function ForecastTable({ rows }: { rows: ForecastDashboardQuestion[] }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function ForecastDetailsPanel({ row }: { row?: ForecastDashboardQuestion }) {
+  if (!row) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="truncate text-base">{row.title}</CardTitle>
+            <div className="mt-1 font-mono-ui text-[11px] text-muted-foreground">
+              {row.id}
+              {row.domain ? ` · ${row.domain}` : ""}
+            </div>
+          </div>
+          <Badge tone={row.open_alert_count > 0 ? "warning" : "secondary"} className="shrink-0 text-[10px]">
+            {row.open_alert_count > 0 ? `${row.open_alert_count} alerts` : "selected"}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <Metric label="P(now)" value={formatProbability(row.probability)} />
+          <Metric label="Delta" value={formatDelta(row.delta)} />
+          <Metric label="As of" value={`${formatDate(row.as_of)} · ${formatFreshness(row.as_of)}`} />
+          <Metric label="Close" value={formatDate(row.close_time)} />
+          <Metric label="Confidence" value={row.confidence == null ? "-" : row.confidence.toFixed(2)} />
+          <Metric label="Evidence" value={String(row.evidence_count)} />
+          <Metric label="Baselines" value={String(row.baseline_count)} />
+          <Metric
+            label="Assumptions"
+            value={`${row.open_assumption_count}/${row.stale_assumption_count}`}
+          />
+        </div>
+        <div className="mt-5 grid gap-3 lg:grid-cols-2">
+          {focusedForecastCommands(row).map((item) => (
+            <div
+              key={item.label}
+              className="flex min-w-0 items-start gap-3 border-t border-border/50 pt-3 text-sm first:border-t-0 first:pt-0 lg:border-t-0 lg:pt-0"
+            >
+              <Badge tone="secondary" className="mt-0.5 shrink-0 text-[10px]">
+                {item.label}
+              </Badge>
+              <code className="min-w-0 break-all font-mono-ui text-xs text-muted-foreground">
+                {item.command}
+              </code>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border border-border/50 bg-muted/15 px-3 py-2">
+      <div className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-1 font-mono-ui text-sm text-foreground">{value}</div>
+    </div>
   );
 }
 
@@ -1403,7 +1503,11 @@ export default function ForecastsPage() {
   const [data, setData] = useState<ForecastDashboardResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const { setAfterTitle, setEnd } = usePageHeader();
+  const questions = data?.questions ?? [];
+  const selectedQuestion =
+    questions.find((row) => row.id === selectedQuestionId) ?? questions[0];
 
   const load = useCallback(() => {
     setLoading(true);
@@ -1446,6 +1550,16 @@ export default function ForecastsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (questions.length === 0) {
+      if (selectedQuestionId !== null) setSelectedQuestionId(null);
+      return;
+    }
+    if (!selectedQuestionId || !questions.some((row) => row.id === selectedQuestionId)) {
+      setSelectedQuestionId(questions[0].id);
+    }
+  }, [questions, selectedQuestionId]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -1541,10 +1655,15 @@ export default function ForecastsPage() {
         </Card>
       </div>
 
-      <ForecastTable rows={data?.questions ?? []} />
+      <ForecastTable
+        rows={questions}
+        selectedQuestionId={selectedQuestion?.id ?? null}
+        onSelect={setSelectedQuestionId}
+      />
+      <ForecastDetailsPanel row={selectedQuestion} />
       <ReviewQueueTable rows={data?.review_queue ?? []} />
       <FocusedActionsPanel
-        questions={data?.questions ?? []}
+        questions={questions}
         reviewQueue={data?.review_queue ?? []}
       />
       <CalibrationPanel calibration={data?.calibration} />

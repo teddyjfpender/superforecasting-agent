@@ -1,16 +1,71 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  forecastBookSections,
   forecastDashboardSections,
   forecastDeskActionStripItems,
   forecastDeskCompactItems,
   forecastDeskPrimaryActionItem,
   forecastDeskRailSections,
-  forecastDeskStatusLabel
+  forecastDeskStatusLabel,
+  forecastFreshnessLabel
 } from '../app/forecastPanel.js'
 import type { ForecastDashboardResponse } from '../gatewayTypes.js'
 
 describe('forecast desk panel helpers', () => {
+  it('renders a numbered forecast book with freshness and drill-down commands', () => {
+    const response: ForecastDashboardResponse = {
+      summary: {
+        active_count: 2,
+        open_alert_count: 1,
+        product: 'Superforecasting Agent',
+        questions: [
+          {
+            as_of: '2026-05-24T00:00:00Z',
+            close_time: '2026-06-30T00:00:00Z',
+            confidence: 0.62,
+            delta: 0.08,
+            evidence_count: 4,
+            id: 'fq_inflation001',
+            open_alert_count: 0,
+            probability: 0.61,
+            title: 'Will the CPI release exceed consensus?'
+          },
+          {
+            as_of: '2026-04-01T00:00:00Z',
+            close_time: '2026-09-30T00:00:00Z',
+            confidence: 0.55,
+            delta: -0.04,
+            evidence_count: 2,
+            id: 'fq_default001',
+            open_alert_count: 1,
+            probability: 0.21,
+            title: 'Will company Y default?'
+          }
+        ],
+        review_queue_count: 0
+      }
+    }
+
+    const sections = forecastBookSections(response, new Date('2026-05-26T00:00:00Z'))
+
+    expect(forecastFreshnessLabel('2026-05-26T00:00:00Z', new Date('2026-05-26T12:00:00Z'))).toBe('fresh today')
+    expect(sections.find(section => section.title === 'Forecast Questions')?.rows).toEqual([
+      [
+        '1. P=0.610 Δ=+0.080',
+        '2d old  as-of 2026-05-24  close 2026-06-30  conf 0.62  ev 4  active  Will the CPI release exceed consensus?'
+      ],
+      [
+        '2. P=0.210 Δ=-0.040',
+        '1mo old  as-of 2026-04-01  close 2026-09-30  conf 0.55  ev 2  1 alert  Will company Y default?'
+      ]
+    ])
+    expect(sections.find(section => section.title === 'Drill Down')?.rows?.[0]).toEqual([
+      '/book 1',
+      'open full details for Will the CPI release exceed consensus?'
+    ])
+  })
+
   it('promotes readiness gaps into triage actions for the persistent action strip', () => {
     const response: ForecastDashboardResponse = {
       summary: {

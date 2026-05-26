@@ -74,8 +74,11 @@ class TestCommandRegistry:
 
     def test_forecast_category_is_first_class(self):
         forecast = next(cmd for cmd in COMMAND_REGISTRY if cmd.name == "forecast")
+        book = next(cmd for cmd in COMMAND_REGISTRY if cmd.name == "book")
         assert forecast.category == "Forecast Desk"
+        assert book.category == "Forecast Desk"
         assert next(iter(COMMANDS_BY_CATEGORY)) == "Forecast Desk"
+        assert "/book" in COMMANDS_BY_CATEGORY["Forecast Desk"]
         assert "/forecast" in COMMANDS_BY_CATEGORY["Forecast Desk"]
 
     def test_inherited_broad_surfaces_are_compatibility_category(self):
