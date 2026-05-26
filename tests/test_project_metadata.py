@@ -2737,8 +2737,10 @@ def test_root_agents_guidance_is_forecast_native():
     assert "`forecast` — Neutral forecast desk default" in text
     assert "`superforecasting-agent tools`" in text
     assert "`superforecasting-agent setup`" in text
+    assert "`superforecasting-agent skills install official/<category>/<skill>`" in text
     assert "`superforecasting-agent cron <verb>`" in text
     assert "`superforecasting-agent kanban`" in text
+    assert "`superforecasting-agent-skill-authoring`" in text
     assert "`SUPERFORECASTING_AGENT_BACKGROUND_NOTIFICATIONS`" in text
     assert "native Superforecasting Agent tools" in text
     assert "### DO NOT hardcode agent-home paths" in text
@@ -2763,9 +2765,12 @@ def test_root_agents_guidance_is_forecast_native():
     assert "Hermes supports **profiles**" not in text
     assert "Hermes-Agent ensures caching" not in text
     assert "native Hermes tools" not in text
+    assert "`hermes skills install" not in text
     assert "`hermes tools`" not in text
     assert "`hermes setup`" not in text
     assert "`hermes kanban` with verbs" not in text
+    assert "`hermes-agent-dev`" not in text
+    assert "references/new-skill-pr-salvage.md" not in text
     assert "in config.yaml (or `HERMES_BACKGROUND_NOTIFICATIONS` env var)" not in text
 
 

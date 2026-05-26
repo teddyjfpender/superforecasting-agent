@@ -643,8 +643,8 @@ Two parallel surfaces:
   Organized by category directories (e.g. `skills/github/`, `skills/mlops/`).
 - **`optional-skills/`** — heavier or niche skills shipped with the repo but
   NOT active by default. Installed explicitly via
-  `hermes skills install official/<category>/<skill>`. Adapter lives in
-  `tools/skills_hub.py` (`OptionalSkillSource`). Categories include
+  `superforecasting-agent skills install official/<category>/<skill>`.
+  Adapter lives in `tools/skills_hub.py` (`OptionalSkillSource`). Categories include
   `autonomous-ai-agents`, `blockchain`, `communication`, `creative`,
   `devops`, `email`, `health`, `mcp`, `migration`, `mlops`, `productivity`,
   `research`, `security`, `web-development`.
@@ -739,10 +739,10 @@ violate them.
    `.env.example` versions are usually stale and edits outside the
    skill's own block must be dropped during salvage.
 
-The full salvage / modernization checklist for external skill PRs
-lives in the `hermes-agent-dev` skill at
-`references/new-skill-pr-salvage.md` — load it before polishing
-contributor skill PRs.
+The in-repo skill-authoring reference lives in the
+`superforecasting-agent-skill-authoring` skill at
+`skills/software-development/hermes-agent-skill-authoring/SKILL.md` — load it
+before polishing contributor skill PRs.
 
 ---
 
