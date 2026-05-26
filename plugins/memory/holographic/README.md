@@ -25,7 +25,7 @@ Config in `config.yaml` under the inherited `plugins.hermes-memory-store` namesp
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `db_path` | `$HERMES_HOME/memory_store.db` | SQLite database path |
+| `db_path` | active agent-home `memory_store.db` | SQLite database path. `$SUPERFORECASTING_AGENT_HOME` and `$FORECAST_HOME` are preferred; legacy `$HERMES_HOME` remains readable during migration. |
 | `auto_extract` | `false` | Auto-extract facts at session end |
 | `default_trust` | `0.5` | Default trust score for new facts |
 | `hrr_dim` | `1024` | HRR vector dimensions |

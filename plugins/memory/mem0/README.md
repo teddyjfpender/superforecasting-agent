@@ -23,7 +23,9 @@ echo "MEM0_API_KEY=your-key" >> ~/.superforecasting-agent/.env
 
 ## Config
 
-Config file: `$HERMES_HOME/mem0.json`
+Config file: `mem0.json` under the active Superforecasting Agent home
+(`$SUPERFORECASTING_AGENT_HOME` or `$FORECAST_HOME`; legacy `$HERMES_HOME`
+remains readable during migration).
 
 | Key | Default | Description |
 |-----|---------|-------------|

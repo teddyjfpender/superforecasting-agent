@@ -1996,9 +1996,14 @@ def test_memory_provider_readmes_are_ledger_first_and_forecast_native():
 
     assert "superforecasting-agent config set memory.provider" in combined
     assert "~/.superforecasting-agent/.env" in combined
+    assert "$SUPERFORECASTING_AGENT_HOME" in combined
+    assert "$FORECAST_HOME" in combined
 
     assert "hermes memory setup" not in combined
     assert "hermes config set memory.provider" not in combined
+    assert "Config file: `$HERMES_HOME/" not in combined
+    assert "Working directory: `$HERMES_HOME/" not in combined
+    assert "| `db_path` | `$HERMES_HOME/" not in combined
     assert "~/.hermes/.env" not in combined
     assert "When enabled, Hermes can" not in combined
     assert "per Hermes profile" not in combined

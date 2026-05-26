@@ -32,7 +32,9 @@ echo "BRV_API_KEY=your-key" >> ~/.superforecasting-agent/.env
 |---------|----------|-------------|
 | `BRV_API_KEY` | No | Cloud sync key (optional, local-first by default) |
 
-Working directory: `$HERMES_HOME/byterover/` (profile-scoped).
+Working directory: `byterover/` under the active Superforecasting Agent home
+(`$SUPERFORECASTING_AGENT_HOME` or `$FORECAST_HOME`; legacy `$HERMES_HOME`
+remains readable during migration).
 
 ## Tools
 
