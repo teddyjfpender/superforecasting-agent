@@ -32,12 +32,12 @@ python -m superforecasting_agent status
 For this handoff, the latest full tester gate was verified on:
 
 ```text
-85cef9e9f6ae Expose forecast autopilot through ledger tool
+94938b6e61e8 Block autopilot on required source failures
 ```
 
 The current moving `superforecasting-agent-snapshot` branch also includes the
-focused forecast-book shortcut pass. Rerun the operator gate before pinning a
-newer cohort hash.
+forecast question shortcut pass and the autopilot required-source pass. Rerun
+the operator gate before pinning a newer cohort hash.
 
 Before inviting a new cohort, record the exact commit testers will use:
 
@@ -123,6 +123,7 @@ forecast --db "$FORECAST_DB" schedule add --question <id> --cadence "every 1h" \
 forecast --db "$FORECAST_DB" schedule run --due --auto-score --auto-postmortem
 forecast --db "$FORECAST_DB" autopilot enable <id> \
   --source "<adapter>:<source>" \
+  --required-source "<critical-adapter>:<source>" \
   --cadence "1d" \
   --mode propose \
   --quiet-if-unchanged
@@ -154,13 +155,13 @@ superforecasting-agent dashboard --no-open
 In the dashboard, use `/desk` as the primary Forecast Desk route. `/chat`
 remains a compatibility alias for older links and plugins.
 
-In the TUI, `/book` is the fastest current-question view. It shows numbered
+In the TUI, `/questions` is the fastest current-question view. It shows numbered
 forecast rows with headline probability, delta, close date, evidence count, and
-freshness; `/book 1` opens the first row's full forecast details without
-requiring the tester to copy a forecast id. `/questions` and `/qbook` are
-aliases. `/forecast` opens the broader forecast desk panel, and `/schedule`,
-`/backtest`, `/calibration`, `/alerts`, `/doctor`, and `/readiness` jump to
-common workflow checks.
+freshness; `/questions 1` opens the first row's full forecast details without
+requiring the tester to copy a forecast id. `/book` and `/qbook` remain
+compatibility aliases. `/forecast` opens the broader forecast desk panel, and
+`/schedule`, `/backtest`, `/calibration`, `/alerts`, `/doctor`, and `/readiness`
+jump to common workflow checks.
 
 In the dashboard Forecasts page, active forecast rows are selectable. Clicking
 or pressing Enter/Space on a row opens a detail panel with the same headline
@@ -172,17 +173,25 @@ external adapter:
 ```bash
 mkdir -p .pilot
 printf "initial release\n" > .pilot/source.txt
+printf "initial critical release\n" > .pilot/critical-source.txt
 forecast --db "$FORECAST_DB" autopilot enable <id> \
   --source "$PWD/.pilot/source.txt" \
+  --required-source "$PWD/.pilot/critical-source.txt" \
   --cadence "1d" \
   --mode propose
 forecast --db "$FORECAST_DB" autopilot run <id>
 printf "revised release\n" > .pilot/source.txt
+printf "revised critical release\n" > .pilot/critical-source.txt
 forecast --db "$FORECAST_DB" autopilot run <id> \
   --proposed-probability 0.61 \
   --rationale "Source revision changes the forecast."
 forecast --db "$FORECAST_DB" autopilot proposals <id>
 ```
+
+Use `--required-source` for feeds that must be fresh before the agent proposes
+a probability update. If a required source fails, autopilot records a
+high-severity alert, marks the run failed, preserves source-snapshot diagnostics,
+and blocks the refresh proposal instead of updating from partial evidence.
 
 Agent-driven flows can call the same maintenance loop through the
 `forecast_ledger` tool actions: `enable_autopilot`, `autopilot_status`,
@@ -193,7 +202,7 @@ Agent-driven flows can call the same maintenance loop through the
 ## Smoke Evidence
 
 Latest consolidated tester handoff evidence ran with a temporary clean ledger on
-the implementation tree committed as `85cef9e9f6ae`.
+the implementation tree committed as `94938b6e61e8`.
 
 It verified:
 
@@ -209,19 +218,19 @@ It verified:
   readiness observes two external source families.
 - Scheduled self-check with `--cadence "every 1h"`, alert creation, learning
   review counts, and durable schedule history.
-- Autopilot maintenance with watched file sources, source snapshots,
-  material-change detection, pending proposals, approval into append-only
-  forecast snapshots, and the same actions exposed through the model-facing
-  `forecast_ledger` tool.
+- Autopilot maintenance with watched file sources, required-source guardrails,
+  source snapshots, material-change detection, pending proposals, approval into
+  append-only forecast snapshots, and the same actions exposed through the
+  model-facing `forecast_ledger` tool.
 - Source-tree `./forecast`, source-tree `./superforecast`,
   source-tree `./superforecasting-agent`, `python -m superforecasting_agent`,
   and the package-defined `forecast` command path.
 - Portfolio export/import packets, including forecast history, evidence,
   schedules, postmortems, calibration lessons, and domain/topic error profiles.
 - Dashboard forecast API and TUI forecast panel test coverage.
-- Forecast book shortcut coverage for `/book`, `/book <row>`, `/questions`,
-  numbered TUI drill-down, classic CLI drill-down, and dashboard row selection
-  with a detail panel.
+- Forecast question shortcut coverage for `/questions`, `/questions <row>`,
+  `/book`, numbered TUI drill-down, classic CLI drill-down, and dashboard row
+  selection with a detail panel.
 - The consolidated `python3 scripts/tester_handoff_check.py` gate passed for the
   implementation tree with 179 focused tests, the clean smoke path, and
   `git diff --check`; the smoke output reported 52 source adapters,
@@ -240,12 +249,15 @@ It verified:
   lifecycle help without requiring inherited optional runtime dependencies.
 
 This finalization pass also ran a manual clean-ledger source-tree smoke at
-`/private/tmp/sfa-smoke-20260526-0250.db` through `./forecast --db ...`:
-`new`, `evidence add`, `research`, `base-rate`, `model`, `update`, `review`,
-`resolve`, `score`, `postmortem`, `calibration --by-origin`, `backtest
-builtin:mini-binary --probability-source forecast-engine`, `performance
---live`, `schedule add`, `schedule run --due --auto-score --auto-postmortem`,
-`alerts`, and `status`.
+`/private/tmp/sfa-mvp-smoke.db` through `python -m superforecasting_agent --db
+...` and `./forecast --db ...`: `new`, `research`, `base-rate`, `model`,
+`update`, `review`, `list`, `autopilot enable` with `--required-source`,
+`autopilot run`, `autopilot approve`, `schedule add`, `schedule run --due`,
+`resolve`, `score`, `postmortem`, `calibration --all`, `backtest --benchmarks`,
+`backtest builtin:mini-binary --probability-source naive`, `alerts`, and
+`status`. The smoke emitted one live score with `mean_brier: 0.129600`, one
+approved autopilot proposal, two watched sources with one required source, and
+five scored benchmark replay cases with leakage checks passing.
 
 ## Feedback To Collect
 
@@ -258,7 +270,7 @@ Ask testers for:
 - forecast updates that could not cite the right evidence/model/assumption
 - noisy, stale, or missing self-check alerts
 - whether postmortems and calibration lessons changed their next forecast
-- dashboard/TUI issues that slow down reviewing the book
+- dashboard/TUI issues that slow down reviewing the question book
 
 Each report should include the tested commit, commands run, forecast id, domain
 and topic, `forecast pilot-report --json`, `forecast readiness --json`, and any
