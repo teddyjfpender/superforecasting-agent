@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from scripts.forecast_smoke_test import EXPECTED_SOURCE_ADAPTERS
 
 
@@ -26,6 +28,7 @@ def test_forecast_smoke_required_source_catalog_includes_fiscal_adapter():
     assert "fema" in EXPECTED_SOURCE_ADAPTERS
 
 
+@pytest.mark.timeout(300)
 def test_forecast_smoke_script_runs_local_lifecycle(tmp_path):
     repo_root = Path(__file__).resolve().parents[2]
     db_path = tmp_path / "forecast-smoke.db"
@@ -40,7 +43,7 @@ def test_forecast_smoke_script_runs_local_lifecycle(tmp_path):
         cwd=repo_root,
         capture_output=True,
         text=True,
-        timeout=90,
+        timeout=240,
     )
 
     output = result.stdout + result.stderr
@@ -51,13 +54,16 @@ def test_forecast_smoke_script_runs_local_lifecycle(tmp_path):
     assert "[forecast-smoke] question_id: fq_" in result.stdout
     assert "[forecast-smoke] backtest_run_id: bt_" in result.stdout
     assert "[forecast-smoke] agent_protocol_backtest_run_id: bt_" in result.stdout
+    assert "[forecast-smoke] agent_protocol_prompt_packets: 345" in result.stdout
+    assert "[forecast-smoke] agent_protocol_suite_scored_cases: 345" in result.stdout
     assert "[forecast-smoke] pilot_report_checks: 9/9" in result.stdout
     assert "[forecast-smoke] pilot_cohort_dry_run_questions: 1" in result.stdout
     assert "[forecast-smoke] pilot_cohort_example_questions: 5" in result.stdout
     assert "[forecast-smoke] packet_import_questions:" in result.stdout
     assert "[forecast-smoke] pilot_aggregate_live_scores: 1" in result.stdout
     assert "[forecast-smoke] readiness_verdict:" in result.stdout
-    assert "[forecast-smoke] readiness_gaps: 4" in result.stdout
+    assert "[forecast-smoke] readiness_gaps: 2" in result.stdout
+    assert "[forecast-smoke] readiness_agent_protocol_scores: 345" in result.stdout
     assert "[forecast-smoke] live_baseline_comparisons: 1" in result.stdout
     assert "[forecast-smoke] pilot_bundle_export_included: true" in result.stdout
     assert "[forecast-smoke] forecast smoke test passed" in result.stdout

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import shlex
@@ -18,7 +19,7 @@ QUESTION_RE = re.compile(r"created forecast question (fq_[a-f0-9]+)")
 EVIDENCE_RE = re.compile(r"added evidence (ev_[a-f0-9]+)")
 REFERENCE_CLASS_RE = re.compile(r"reference_class: (rc_[a-f0-9]+)")
 MODEL_RUN_RE = re.compile(r"model_run: (mr_[a-f0-9]+)")
-BACKTEST_RE = re.compile(r"backtest_run: (bt_[a-f0-9]+)")
+BACKTEST_RE = re.compile(r"backtest_run[:=]\s*(bt_[a-f0-9]+)")
 EXPECTED_SOURCE_ADAPTERS = {
     "news",
     "gdelt",
@@ -155,6 +156,7 @@ def _run_forecast(
     db_path: Path,
     repo_root: Path,
     verbose: bool,
+    timeout: int = 60,
 ) -> str:
     command = [
         sys.executable,
@@ -172,7 +174,7 @@ def _run_forecast(
         env=env,
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=timeout,
     )
     if verbose or result.returncode != 0:
         print(f"$ {shlex.join(command)}")
@@ -227,91 +229,107 @@ def _verify_benchmark_catalog(repo_root: Path, db_path: Path, *, verbose: bool) 
     _print_step(f"benchmark_datasets: {len(EXPECTED_BENCHMARKS)}")
 
 
-def _write_agent_protocol_fixture(db_path: Path) -> tuple[Path, Path]:
-    dataset_path = db_path.with_name("forecast-smoke-agent-protocol-cases.json")
-    responses_path = db_path.with_name("forecast-smoke-agent-protocol-responses.jsonl")
-    cases = {
-        "cases": [
-            {
-                "id": "smoke-agent-protocol-yes",
-                "title": "Will the captured smoke agent-protocol yes case resolve yes?",
-                "resolution_criteria": "Resolved yes for the local smoke fixture.",
-                "as_of": "2026-01-10T00:00:00Z",
-                "close_time": "2026-01-20T00:00:00Z",
-                "domain": "tester",
-                "probability": 0.99,
-                "outcome": "yes",
-                "baselines": [
-                    {
-                        "source": "fixture-market",
-                        "baseline_type": "market",
-                        "probability": 0.55,
-                        "as_of": "2026-01-09T00:00:00Z",
-                    }
-                ],
-                "evidence": [
-                    {
-                        "note": "Pre-cutoff smoke evidence supports yes.",
-                        "available_at": "2026-01-09T00:00:00Z",
-                        "stance": "increases",
-                    }
-                ],
-            },
-            {
-                "id": "smoke-agent-protocol-no",
-                "title": "Will the captured smoke agent-protocol no case resolve yes?",
-                "resolution_criteria": "Resolved no for the local smoke fixture.",
-                "as_of": "2026-01-10T00:00:00Z",
-                "close_time": "2026-01-20T00:00:00Z",
-                "domain": "tester",
-                "probability": 0.01,
-                "outcome": "no",
-                "baselines": [
-                    {
-                        "source": "fixture-market",
-                        "baseline_type": "market",
-                        "probability": 0.45,
-                        "as_of": "2026-01-09T00:00:00Z",
-                    }
-                ],
-                "evidence": [
-                    {
-                        "note": "Pre-cutoff smoke evidence supports no.",
-                        "available_at": "2026-01-09T00:00:00Z",
-                        "stance": "decreases",
-                    }
-                ],
-            },
-        ]
-    }
-    responses = [
-        {
-            "case_id": "smoke-agent-protocol-yes",
-            "response": {
-                "probability": 0.8,
-                "confidence": 0.75,
-                "rationale": "Captured smoke protocol forecast from visible pre-cutoff evidence.",
-                "components": {"market": {"probability": 0.55, "weight": 0.4}},
-                "agent_model": "smoke-captured-agent",
-            },
-        },
-        {
-            "case_id": "smoke-agent-protocol-no",
-            "response": {
-                "probability": 0.2,
-                "confidence": 0.75,
-                "rationale": "Captured smoke protocol forecast from visible pre-cutoff evidence.",
-                "components": {"market": {"probability": 0.45, "weight": 0.4}},
-                "agent_model": "smoke-captured-agent",
-            },
-        },
-    ]
-    dataset_path.write_text(json.dumps(cases, indent=2, sort_keys=True), encoding="utf-8")
-    responses_path.write_text(
-        "".join(json.dumps(row, sort_keys=True) + "\n" for row in responses),
-        encoding="utf-8",
-    )
-    return dataset_path, responses_path
+def _coerce_probability(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        probability = float(value)
+    elif isinstance(value, str):
+        try:
+            probability = float(value)
+        except ValueError:
+            return None
+    else:
+        return None
+    if not math.isfinite(probability):
+        return None
+    return min(0.97, max(0.03, probability))
+
+
+def _evidence_stance_delta(public_case: dict[str, object]) -> float:
+    delta = 0.0
+    for item in public_case.get("evidence") or []:
+        if not isinstance(item, dict):
+            continue
+        stance = str(item.get("stance") or item.get("direction") or "").strip().lower()
+        note = str(item.get("note") or item.get("summary") or "").lower()
+        if stance in {"increases", "increase", "supports_yes", "yes", "positive"}:
+            delta += 0.025
+        elif stance in {"decreases", "decrease", "supports_no", "no", "negative"}:
+            delta -= 0.025
+        elif "supports yes" in note or "more likely" in note:
+            delta += 0.015
+        elif "supports no" in note or "less likely" in note:
+            delta -= 0.015
+    return min(0.12, max(-0.12, delta))
+
+
+def _visible_agent_protocol_probability(public_case: dict[str, object]) -> tuple[float, dict[str, object]]:
+    weighted_total = 0.0
+    total_weight = 0.0
+    components: dict[str, object] = {}
+    base_rate = _coerce_probability(public_case.get("base_rate"))
+    if base_rate is not None:
+        weight = 0.45
+        weighted_total += base_rate * weight
+        total_weight += weight
+        components["base_rate"] = {"probability": base_rate, "weight": weight}
+
+    visible_baselines = []
+    for baseline in public_case.get("baselines") or []:
+        if not isinstance(baseline, dict):
+            continue
+        probability = _coerce_probability(baseline.get("probability"))
+        if probability is not None:
+            visible_baselines.append((baseline, probability))
+    for index, (baseline, probability) in enumerate(visible_baselines[:3], start=1):
+        weight = 0.35 / min(3, len(visible_baselines))
+        weighted_total += probability * weight
+        total_weight += weight
+        source = str(baseline.get("source") or f"baseline_{index}")
+        components[f"baseline_{index}"] = {
+            "source": source,
+            "probability": probability,
+            "weight": weight,
+        }
+
+    probability = (weighted_total / total_weight) if total_weight else 0.5
+    stance_delta = _evidence_stance_delta(public_case)
+    probability = min(0.97, max(0.03, probability + stance_delta))
+    components["evidence_stance_delta"] = stance_delta
+    return round(probability, 6), components
+
+
+def _write_agent_protocol_suite_responses(prompts_path: Path, responses_path: Path) -> int:
+    count = 0
+    with prompts_path.open("r", encoding="utf-8") as source, responses_path.open("w", encoding="utf-8") as target:
+        for line_number, line in enumerate(source, start=1):
+            raw = line.strip()
+            if not raw:
+                continue
+            packet = json.loads(raw)
+            public_case = packet.get("public_case")
+            if not isinstance(public_case, dict):
+                raise SmokeError(f"agent prompt packet {line_number} is missing public_case")
+            probability, components = _visible_agent_protocol_probability(public_case)
+            row = {
+                "case_id": packet.get("case_id"),
+                "index": packet.get("index"),
+                "dataset": packet.get("dataset"),
+                "response": {
+                    "probability": probability,
+                    "confidence": 0.55,
+                    "rationale": (
+                        "Deterministic captured response from visible pre-cutoff "
+                        "base rates, baselines, and evidence stance only."
+                    ),
+                    "components": components,
+                    "agent_model": "deterministic-visible-fields-v0",
+                },
+            }
+            target.write(json.dumps(row, sort_keys=True) + "\n")
+            count += 1
+    return count
 
 
 def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, verbose: bool) -> None:
@@ -795,17 +813,39 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
             db_path=db_path,
             repo_root=repo_root,
             verbose=verbose,
+            timeout=180,
         )
         backtest_id = _extract(BACKTEST_RE, backtest_output, "backtest run id")
         if "scored_cases: 5" not in backtest_output or "leakage_checks_passed: True" not in backtest_output:
             raise SmokeError(f"backtest output was missing expected fields:\n{backtest_output}")
         _print_step(f"backtest_run_id: {backtest_id}")
 
-        agent_dataset, agent_responses = _write_agent_protocol_fixture(db_path)
+        agent_prompts = db_path.with_name("forecast-smoke-agent-protocol-suite-prompts.jsonl")
+        agent_responses = db_path.with_name("forecast-smoke-agent-protocol-suite-responses.jsonl")
+        agent_prompt_output = _run_forecast(
+            [
+                "backtest",
+                "--all-benchmarks",
+                "--probability-source",
+                "agent-protocol",
+                "--agent-prompt-jsonl",
+                str(agent_prompts),
+                "--prepare-agent-prompts",
+            ],
+            db_path=db_path,
+            repo_root=repo_root,
+            verbose=verbose,
+            timeout=180,
+        )
+        if "benchmark_suite: builtin (4 datasets)" not in agent_prompt_output or "cases: 345" not in agent_prompt_output:
+            raise SmokeError(f"agent-protocol prompt export was missing expected fields:\n{agent_prompt_output}")
+        prompt_count = _write_agent_protocol_suite_responses(agent_prompts, agent_responses)
+        if prompt_count < 100:
+            raise SmokeError(f"agent-protocol prompt export produced too few cases: {prompt_count}")
         agent_protocol_output = _run_forecast(
             [
                 "backtest",
-                str(agent_dataset),
+                "--all-benchmarks",
                 "--probability-source",
                 "agent-protocol",
                 "--agent-response-jsonl",
@@ -814,14 +854,19 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
             db_path=db_path,
             repo_root=repo_root,
             verbose=verbose,
+            timeout=180,
         )
-        agent_protocol_id = _extract(BACKTEST_RE, agent_protocol_output, "agent-protocol backtest run id")
-        if "scored_cases: 2" not in agent_protocol_output or "leakage_checks_passed: True" not in agent_protocol_output:
+        agent_protocol_ids = BACKTEST_RE.findall(agent_protocol_output)
+        if "suite_summary: runs=4 cases=345 scored=345" not in agent_protocol_output:
             raise SmokeError(f"agent-protocol backtest output was missing expected fields:\n{agent_protocol_output}")
-        _print_step(f"agent_protocol_backtest_run_id: {agent_protocol_id}")
+        if len(agent_protocol_ids) != 4 or "leakage=False" in agent_protocol_output:
+            raise SmokeError(f"agent-protocol suite did not replay all benchmarks cleanly:\n{agent_protocol_output}")
+        _print_step(f"agent_protocol_backtest_run_id: {agent_protocol_ids[-1]}")
+        _print_step(f"agent_protocol_prompt_packets: {prompt_count}")
+        _print_step("agent_protocol_suite_scored_cases: 345")
 
     performance = _json_output(
-        _run_forecast(["performance", "--last", "3", "--json"], db_path=db_path, repo_root=repo_root, verbose=verbose),
+        _run_forecast(["performance", "--last", "6", "--json"], db_path=db_path, repo_root=repo_root, verbose=verbose),
         "performance",
     )
     live_performance = _json_output(
@@ -835,7 +880,7 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
             f"{json.dumps(live_performance, indent=2)}"
         )
     readiness = _json_output(
-        _run_forecast(["readiness", "--last", "3", "--json"], db_path=db_path, repo_root=repo_root, verbose=verbose),
+        _run_forecast(["readiness", "--last", "6", "--json"], db_path=db_path, repo_root=repo_root, verbose=verbose),
         "readiness",
     )
     evidence_status = readiness.get("evidence_status") or {}
@@ -844,6 +889,19 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
     gaps = evidence_status.get("gaps") or []
     if not gaps:
         raise SmokeError("smoke readiness should still list evidence gaps for tester handoff")
+    backtest_status = evidence_status.get("backtests") or {}
+    agent_protocol_scored_count = int(backtest_status.get("agent_protocol_scored_count") or 0)
+    if agent_protocol_scored_count < 100:
+        raise SmokeError(
+            "smoke readiness did not count suite-scale agent-protocol replay:\n"
+            f"{json.dumps(readiness, indent=2)}"
+        )
+    gap_ids = {str(gap.get("id")) for gap in gaps if isinstance(gap, dict)}
+    if "agent_protocol_scored_cases" in gap_ids:
+        raise SmokeError(
+            "smoke readiness should not list agent_protocol_scored_cases after suite replay:\n"
+            f"{json.dumps(readiness, indent=2)}"
+        )
     doctor = _json_output(
         _run_forecast(
             [
@@ -863,7 +921,7 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
                 "--min-live-scores",
                 "1",
                 "--min-agent-protocol-cases",
-                "0",
+                "100",
                 "--require-pilot-ready",
                 "--json",
             ],
@@ -898,7 +956,7 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
                 "--min-live-scores",
                 "1",
                 "--min-agent-protocol-cases",
-                "0",
+                "100",
                 "--include-export",
             ],
             db_path=db_path,
@@ -920,6 +978,7 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
     _print_step(f"performance_runs: {performance.get('run_count')}")
     _print_step(f"readiness_verdict: {evidence_status.get('verdict')}")
     _print_step(f"readiness_gaps: {len(gaps)}")
+    _print_step(f"readiness_agent_protocol_scores: {agent_protocol_scored_count}")
     _print_step(f"live_baseline_comparisons: {len(live_report.get('baselines') or [])}")
     _print_step(f"doctor_status: {doctor.get('doctor_status')}")
     _print_step("pilot_bundle_export_included: true")
