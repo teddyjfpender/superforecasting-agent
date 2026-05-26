@@ -1508,10 +1508,16 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
     assert "compatibility style overlay" in text
     assert "forecast-desk operating style" in text
     assert "Forecasting protocol and desk identity" in text
+    assert "Forecast Desk Identity" in text
+    assert "forecast-desk identity position" in text
     assert "forecast-desk style and standing behavior" in text
+    assert "different forecast-desk identity or standing style" in text
     assert "Custom forecast-style overlays can be defined" in text
 
     assert "Personality & SOUL.md" not in text
+    assert "Agent Identity" not in text
+    assert "agent identity" not in text
+    assert "different assistant identity" not in text
     assert "compatibility persona overlay" not in text
     assert "forecast-desk persona" not in text
     assert "desk persona" not in text

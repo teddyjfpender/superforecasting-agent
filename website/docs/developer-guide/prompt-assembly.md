@@ -31,7 +31,7 @@ Primary files:
 
 The cached system prompt is assembled in roughly this order:
 
-1. agent identity - `SOUL.md` from the active runtime home when available, otherwise falls back to `DEFAULT_AGENT_IDENTITY` in `prompt_builder.py`
+1. forecast-desk identity - `SOUL.md` from the active runtime home when available, otherwise falls back to `DEFAULT_AGENT_IDENTITY` in `prompt_builder.py`
 2. tool-aware behavior guidance
 3. Honcho static block (when active)
 4. optional system message
@@ -49,7 +49,7 @@ When `skip_context_files` is set (e.g., subagent delegation), SOUL.md is not loa
 Here is a simplified view of what the final system prompt looks like when all layers are present (comments show the source of each section):
 
 ```
-# Layer 1: Agent Identity (from ~/.superforecasting-agent/SOUL.md)
+# Layer 1: Forecast Desk Identity (from ~/.superforecasting-agent/SOUL.md)
 You are Superforecasting Agent, a command-line forecasting desk.
 You turn uncertain questions into scoreable forecasts with clear
 resolution criteria, timestamped evidence, base rates, explicit
@@ -259,7 +259,7 @@ Edit `agent/prompt_builder.py` or `forecasting/protocol.py` only if you are inte
 
 In other words:
 
-- if you want a different assistant identity, edit `SOUL.md`
+- if you want a different forecast-desk identity or standing style, edit `SOUL.md`
 - if you want different repo rules, edit project context files
 - if you want reusable operating procedures, add or modify skills
 - if you want to change how Superforecasting Agent assembles forecast prompts for everyone, change Python and treat it as a code contribution

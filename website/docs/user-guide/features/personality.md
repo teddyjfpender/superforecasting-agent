@@ -123,7 +123,7 @@ You optimize for calibrated probability estimates, source quality, and explicit 
 
 ## What Superforecasting Agent injects into the prompt
 
-`SOUL.md` content goes directly into slot #1 of the system prompt — the agent identity position. No wrapper language is added around it.
+`SOUL.md` content goes directly into slot #1 of the system prompt — the forecast-desk identity position. No wrapper language is added around it.
 
 The content goes through:
 - prompt-injection scanning
@@ -246,7 +246,7 @@ That gives you:
 ## How style overlays interact with the full prompt
 
 At a high level, the prompt stack includes:
-1. **SOUL.md** (agent identity — or built-in fallback if SOUL.md is unavailable)
+1. **SOUL.md** (forecast-desk identity — or built-in fallback if SOUL.md is unavailable)
 2. tool-aware behavior guidance
 3. memory/user context
 4. skills guidance
