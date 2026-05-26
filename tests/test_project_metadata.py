@@ -4303,6 +4303,10 @@ def test_machine_readable_docs_metadata_points_to_forecast_snapshot():
         "https://github.com/teddyjfpender/superforecasting-agent/"
         "tree/superforecasting-agent-snapshot"
     ) in text
+    assert "teddyjfpender/superforecasting-agent fork" in text
+    assert "Table of bundled skills available to Superforecasting Agent" in text
+    assert "built by Nous Research" not in text
+    assert "bundled with Hermes" not in text
     assert "raw.githubusercontent.com/NousResearch/superforecasting-agent/main" not in text
     assert "github.com/NousResearch/superforecasting-agent" not in text
 

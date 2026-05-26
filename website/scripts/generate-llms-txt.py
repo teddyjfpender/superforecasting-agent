@@ -177,7 +177,11 @@ SECTIONS: list[tuple[str, list[tuple[str, str, str | None]]]] = [
         ("reference/toolsets-reference", "Toolsets Reference", None),
         ("reference/mcp-config-reference", "MCP Config Reference", None),
         ("reference/model-catalog", "Model Catalog", None),
-        ("reference/skills-catalog", "Bundled Skills Catalog", "Table of all ~90 skills bundled with Hermes"),
+        (
+            "reference/skills-catalog",
+            "Bundled Skills Catalog",
+            "Table of bundled skills available to Superforecasting Agent",
+        ),
         ("reference/optional-skills-catalog", "Optional Skills Catalog", "Table of ~60 additional installable skills"),
         ("reference/faq", "FAQ & Troubleshooting", None),
     ]),
@@ -226,11 +230,12 @@ def emit_llms_index() -> str:
     lines.append("# Superforecasting Agent")
     lines.append("")
     lines.append(
-        "> A CLI-first forecasting desk built by Nous Research around scoreable "
-        "forecasts, timestamped evidence, baseline comparisons, backtests, "
-        "postmortems, calibration lessons, and scheduled self-checks. It keeps "
-        "inherited terminal, gateway, tool, skill, and provider runtime surfaces "
-        "as support infrastructure around the forecast ledger."
+        "> A CLI-first forecasting desk maintained from the "
+        "teddyjfpender/superforecasting-agent fork around scoreable forecasts, "
+        "timestamped evidence, baseline comparisons, backtests, postmortems, "
+        "calibration lessons, and scheduled self-checks. It keeps inherited "
+        "terminal, gateway, tool, skill, and provider runtime surfaces as "
+        "support infrastructure around the forecast ledger."
     )
     lines.append("")
     lines.append(
