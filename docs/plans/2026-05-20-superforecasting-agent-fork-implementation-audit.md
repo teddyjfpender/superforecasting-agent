@@ -16,7 +16,7 @@ Concrete success means the fork behaves as a command-line forecasting desk cente
 The 2026-05-25 tester handoff is tracked in
 `docs/plans/2026-05-25-superforecasting-agent-mvp-tester-handoff.md`. The
 operator path is the moving `superforecasting-agent-snapshot` branch. The
-latest pushed snapshot is `f51fb5bc5`; the latest full tester handoff gate was
+latest pushed snapshot is `767ae8c85`; the latest full tester handoff gate was
 verified on `13c24975bd38`. Pin `13c24975bd38` for a fully gated cohort, or pin
 a later hash after rerunning `python3 scripts/tester_handoff_check.py`.
 
