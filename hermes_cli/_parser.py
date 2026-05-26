@@ -26,7 +26,7 @@ PRE_ARGPARSE_INHERITED_FLAGS: list[tuple[str, bool]] = [
 def _inherited_flag(parser, *args, **kwargs):
     """Register a flag that ``hermes_cli.relaunch`` should carry over when
     the CLI re-execs itself (e.g. after ``sessions browse`` picks a session,
-    or after the setup wizard launches chat).
+    or after the setup wizard launches a forecast support session).
 
     Equivalent to ``parser.add_argument(...)`` plus tagging the resulting
     Action with ``inherit_on_relaunch = True`` so the relaunch table builder
@@ -304,7 +304,7 @@ def build_top_level_parser():
         "-w",
         action="store_true",
         default=argparse.SUPPRESS,
-        help="Run in an isolated git worktree (for parallel agents on the same repo)",
+        help="Run in an isolated git worktree (for parallel forecast workers on the same repo)",
     )
     _inherited_flag(
         chat_parser,
@@ -328,7 +328,7 @@ def build_top_level_parser():
         type=int,
         default=None,
         metavar="N",
-        help="Maximum tool-calling iterations per conversation turn (default: 90, or agent.max_turns in config)",
+        help="Maximum tool-calling iterations per forecast-support turn (default: 90, or agent.max_turns in config)",
     )
     _inherited_flag(
         chat_parser,

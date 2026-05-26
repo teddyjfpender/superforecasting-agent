@@ -1640,6 +1640,8 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
     assert 'superforecasting-agent -z "Summarize evidence for fq_123"' in parser_help
     assert 'superforecasting-agent -z "Summarize evidence for fq_123"' in main_help
     assert "superforecasting-agent chat --worktree" in parser_help
+    assert "parallel forecast workers on the same repo" in parser_help
+    assert "Maximum tool-calling iterations per forecast-support turn" in parser_help
     assert "superforecasting-agent --toolsets forecast-desk" in parser_help
     assert "python cli.py --toolsets forecast-desk" in classic_cli
     assert "Use 'forecast-desk' for normal forecasting work" in classic_cli
@@ -1652,6 +1654,8 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
     assert "superforecasting-agent -s forecasting,research" not in parser_help
     assert "Tip: Use 'all' or '*' to enable all toolsets" not in classic_cli
     assert "superforecasting-agent -w                     Start in isolated git worktree" not in parser_help
+    assert "parallel agents on the same repo" not in parser_help
+    assert "Maximum tool-calling iterations per conversation turn" not in parser_help
 
     assert "``hermes skills list``" not in combined
     assert "``hermes skills\n    config``" not in combined
@@ -4655,6 +4659,8 @@ def test_cli_command_reference_chat_examples_are_forecast_scoped():
     assert "The legacy `hermes-acp` entrypoint remains accepted" in cli_docs
     assert "superforecast-acp\nhermes-acp" not in cli_docs
     assert 'chat -q "Summarize new evidence that could move forecast fq_123"' in cli_docs
+    assert "forecast-support runtime sessions" in cli_docs
+    assert "Maximum tool-calling iterations per forecast-support turn" in cli_docs
     assert "superforecasting-agent chat --toolsets forecasting,file,web" in cli_docs
     assert "Extract forecast-relevant claims from this source note." in cli_docs
     assert "Same forecast-scoped runtime" in cli_docs
@@ -4662,6 +4668,8 @@ def test_cli_command_reference_chat_examples_are_forecast_scoped():
     assert "Review this repo and open a PR" not in cli_docs
     assert "What's the capital of France?" not in cli_docs
     assert 'answer=$(superforecasting-agent -z "summarize this"' not in cli_docs
+    assert "chat/runtime sessions" not in cli_docs
+    assert "Maximum tool-calling iterations per conversation turn" not in cli_docs
     assert "forecast-research,file,web" not in cli_docs
 
 
