@@ -3764,6 +3764,8 @@ def test_support_error_copy_is_forecast_native():
 
     assert "requires Hermes" not in profile_distribution
     assert "Hermes distribution" not in profile_distribution
+    assert "root profile (~/.hermes)" not in profile_distribution
+    assert "display_hermes_home()" in profile_distribution
     assert "Hermes relaunch failed" not in relaunch
     assert "re-run hermes" not in relaunch
     assert "Hermes wire shape" not in hooks

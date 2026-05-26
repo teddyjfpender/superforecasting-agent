@@ -478,6 +478,7 @@ def plan_install(
         validate_profile_name,
     )
     from hermes_cli import __version__ as hermes_version
+    from hermes_constants import display_hermes_home
 
     staged, provenance = _stage_source(source, workdir)
     manifest = read_manifest(staged)
@@ -497,8 +498,8 @@ def plan_install(
     if canon == "default":
         raise DistributionError(
             "Cannot install a distribution as 'default' — that is the built-in "
-            "root profile (~/.hermes).  Pass --name <name> to install under a "
-            "new profile."
+            f"root profile ({display_hermes_home()}).  Pass --name <name> to "
+            "install under a new profile."
         )
     manifest.name = canon
     manifest.source = provenance

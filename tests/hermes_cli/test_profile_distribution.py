@@ -43,9 +43,11 @@ from hermes_cli.profile_distribution import (
 @pytest.fixture()
 def profile_env(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    default_home = tmp_path / ".hermes"
+    default_home = tmp_path / ".superforecasting-agent"
     default_home.mkdir(exist_ok=True)
-    monkeypatch.setenv("HERMES_HOME", str(default_home))
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(default_home))
+    monkeypatch.delenv("FORECAST_HOME", raising=False)
+    monkeypatch.delenv("HERMES_HOME", raising=False)
     return tmp_path
 
 
@@ -302,8 +304,11 @@ class TestInstall:
 
     def test_install_rejects_default_name(self, profile_env):
         staged = _make_staging_dir(profile_env, "src")
-        with pytest.raises(DistributionError, match="Cannot install"):
+        with pytest.raises(DistributionError, match="Cannot install") as excinfo:
             install_distribution(str(staged), name="default")
+        message = str(excinfo.value)
+        assert "~/.superforecasting-agent" in message
+        assert "~/.hermes" not in message
 
     def test_install_rejects_non_distribution_directory(self, profile_env, tmp_path):
         bogus = tmp_path / "bogus_dir"
