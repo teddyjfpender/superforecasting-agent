@@ -108,7 +108,7 @@ new scripts, docs, and runbooks on `superforecasting-agent`.
 | `--pass-session-id` | Include the session ID in the agent's system prompt. |
 | `--ignore-user-config` | Ignore user config and fall back to built-in defaults. Credentials in `.env` are still loaded. |
 | `--ignore-rules` | Skip auto-injection of `AGENTS.md`, `SOUL.md`, `.cursorrules`, memory, and preloaded skills. |
-| `--tui` | Launch the [TUI](../user-guide/tui.md) instead of the classic CLI. Equivalent to `HERMES_TUI=1`. |
+| `--tui` | Launch the [TUI](../user-guide/tui.md) instead of the classic CLI. Equivalent to `SUPERFORECASTING_AGENT_TUI=1` / `FORECAST_TUI=1`; `HERMES_TUI=1` remains accepted for compatibility. |
 | `--dev` | With `--tui`: run the TypeScript sources directly via `tsx` instead of the prebuilt bundle (for TUI contributors). |
 
 ## Inherited Runtime Commands
@@ -117,6 +117,7 @@ These command families are still part of the runtime. Prefer the `superforecasti
 
 | Command | Purpose |
 |---------|---------|
+| `superforecasting-agent tui` | Fork-native shorthand for the Forecast Desk TUI. |
 | `superforecasting-agent chat` | Inherited interactive or one-shot chat. Use for support work, not durable forecast state. |
 | `superforecasting-agent model` | Configure providers, OAuth, API keys, and default model. |
 | `superforecasting-agent setup` | Interactive setup wizard. |

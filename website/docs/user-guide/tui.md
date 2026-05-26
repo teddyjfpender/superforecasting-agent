@@ -18,18 +18,18 @@ updating, resolving, scoring, and reviewing questions.
 
 ```bash
 # Launch the TUI
-superforecasting-agent --tui
+superforecasting-agent tui
 
 # Resume the latest TUI session
-superforecasting-agent --tui -c
-superforecasting-agent --tui --continue
+superforecasting-agent tui -c
+superforecasting-agent tui --continue
 
 # Resume a specific session by ID or title
-superforecasting-agent --tui -r 20260409_000000_aa11bb
-superforecasting-agent --tui --resume "macro desk"
+superforecasting-agent tui -r 20260409_000000_aa11bb
+superforecasting-agent tui --resume "macro desk"
 
 # Run source directly for TUI development
-superforecasting-agent --tui --dev
+superforecasting-agent tui --dev
 ```
 
 You can also opt in with a forecast-native environment variable:
@@ -39,8 +39,8 @@ export FORECAST_TUI=1
 superforecasting-agent
 ```
 
-Legacy `hermes --tui` remains accepted. New docs prefer
-`superforecasting-agent --tui`.
+`superforecasting-agent --tui` and legacy `hermes --tui` remain accepted. New
+docs prefer `superforecasting-agent tui`.
 
 ## Forecast Desk Panel
 
@@ -171,7 +171,7 @@ installs may ship a prebuilt bundle.
 
 ```bash
 export FORECAST_TUI_DIR=/path/to/prebuilt/ui-tui
-superforecasting-agent --tui
+superforecasting-agent tui
 ```
 
 The directory must contain `dist/entry.js`.
@@ -302,7 +302,7 @@ existing gateway:
 
 ```bash
 export FORECAST_TUI_GATEWAY_URL="ws://localhost:8765/api/ws?token=<auth-token>"
-superforecasting-agent --tui
+superforecasting-agent tui
 ```
 
 When set, the TUI becomes a client of that gateway. This is the same channel the

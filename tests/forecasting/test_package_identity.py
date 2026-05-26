@@ -210,6 +210,42 @@ def test_superforecasting_agent_no_arg_entrypoint_ignores_false_tui_env(
     assert calls == [([], "superforecasting-agent")]
 
 
+def test_superforecasting_agent_tui_shorthand_routes_to_tui_flag(monkeypatch):
+    calls = []
+
+    def fake_inherited_runtime(argv):
+        calls.append(argv)
+
+    def fail_forecast_main(argv, prog=None):
+        raise AssertionError(f"unexpected forecast CLI dispatch: {argv} {prog}")
+
+    monkeypatch.setattr(forecast_cli, "_run_inherited_runtime", fake_inherited_runtime)
+    monkeypatch.setattr(forecast_cli, "forecast_main", fail_forecast_main)
+
+    forecast_cli.main(["tui", "--continue"])
+
+    assert calls == [["--tui", "--continue"]]
+
+
+def test_superforecasting_agent_profiled_tui_shorthand_preserves_profile(
+    monkeypatch,
+):
+    calls = []
+
+    def fake_inherited_runtime(argv):
+        calls.append(argv)
+
+    def fail_forecast_main(argv, prog=None):
+        raise AssertionError(f"unexpected forecast CLI dispatch: {argv} {prog}")
+
+    monkeypatch.setattr(forecast_cli, "_run_inherited_runtime", fake_inherited_runtime)
+    monkeypatch.setattr(forecast_cli, "forecast_main", fail_forecast_main)
+
+    forecast_cli.main(["--profile", "macro", "tui", "--resume", "macro desk"])
+
+    assert calls == [["--profile", "macro", "--tui", "--resume", "macro desk"]]
+
+
 def test_superforecasting_agent_cli_entrypoint_delegates_runtime_commands(monkeypatch):
     calls = []
     fake_main_module = ModuleType("hermes_cli.main")

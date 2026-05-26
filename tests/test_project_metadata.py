@@ -1023,6 +1023,9 @@ def test_tui_user_guide_env_launch_is_forecast_native():
         encoding="utf-8"
     )
 
+    assert "superforecasting-agent tui" in tui_guide
+    assert "docs prefer `superforecasting-agent tui`" in tui_guide
+    assert "New docs prefer\n`superforecasting-agent --tui`" not in tui_guide
     assert "export FORECAST_TUI=1\nsuperforecasting-agent" in tui_guide
     assert "export FORECAST_TUI=1\nsuperforecasting-agent chat" not in tui_guide
 
@@ -4553,6 +4556,9 @@ def test_cli_command_reference_chat_examples_are_forecast_scoped():
     assert "superforecasting-agent [global-options] <command> [subcommand/options]" in cli_docs
     assert "new scripts, docs, and runbooks on `superforecasting-agent`" in cli_docs
     assert "hermes [global-options] <command> [subcommand/options]" not in cli_docs
+    assert "Equivalent to `SUPERFORECASTING_AGENT_TUI=1` / `FORECAST_TUI=1`" in cli_docs
+    assert "Fork-native shorthand for the Forecast Desk TUI" in cli_docs
+    assert "Equivalent to `HERMES_TUI=1`" not in cli_docs
     assert "For slash commands inside interactive forecast sessions" in cli_docs
     assert "For in-chat slash commands" not in cli_docs
     assert "superforecasting-agent-acp" in cli_docs

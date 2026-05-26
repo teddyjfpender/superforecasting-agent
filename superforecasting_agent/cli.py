@@ -110,6 +110,25 @@ def _tui_env_enabled() -> bool:
     return False
 
 
+def _tui_shorthand_argv(argv: Sequence[str]) -> list[str] | None:
+    """Map ``superforecasting-agent tui`` to the inherited TUI flag path."""
+
+    args = list(argv)
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in _PROFILE_FLAGS and i + 1 < len(args):
+            i += 2
+            continue
+        if arg.startswith("--profile="):
+            i += 1
+            continue
+        if arg == "tui":
+            return [*args[:i], "--tui", *args[i + 1 :]]
+        return None
+    return None
+
+
 def _apply_profile(profile_name: str | None) -> None:
     if not profile_name:
         configured_home = (
@@ -198,6 +217,10 @@ def main(argv: list[str] | None = None) -> None:
     _warn_legacy_entrypoint_if_needed(argv is not None)
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     forecast_candidate_argv, profile_name = _strip_profile_args(raw_argv)
+    tui_shorthand = _tui_shorthand_argv(raw_argv)
+    if tui_shorthand is not None:
+        _run_inherited_runtime(tui_shorthand)
+        return
     if not forecast_candidate_argv and _tui_env_enabled():
         _run_inherited_runtime([*raw_argv, "chat"])
         return
