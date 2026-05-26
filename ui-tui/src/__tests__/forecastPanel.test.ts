@@ -8,7 +8,9 @@ import {
   forecastDeskPrimaryActionItem,
   forecastDeskRailSections,
   forecastDeskStatusLabel,
-  forecastFreshnessLabel
+  forecastFreshnessLabel,
+  forecastQuestionSearchSections,
+  rankForecastQuestionMatches
 } from '../app/forecastPanel.js'
 import type { ForecastDashboardResponse } from '../gatewayTypes.js'
 
@@ -66,6 +68,96 @@ describe('forecast desk panel helpers', () => {
       '/questions 1',
       'open full details for Will the CPI release exceed consensus?'
     ])
+  })
+
+  it('searches forecast questions by topic-like words and offers id-free edit shortcuts', () => {
+    const response: ForecastDashboardResponse = {
+      summary: {
+        active_count: 2,
+        open_alert_count: 0,
+        product: 'Superforecasting Agent',
+        questions: [
+          {
+            as_of: '2026-05-24T00:00:00Z',
+            close_time: '2026-06-30T00:00:00Z',
+            confidence: 0.62,
+            delta: 0.08,
+            domain: 'macro',
+            evidence_count: 4,
+            id: 'fq_inflation001',
+            probability: 0.61,
+            title: 'Will the CPI release exceed consensus?',
+            topics: ['inflation', 'energy']
+          },
+          {
+            as_of: '2026-04-01T00:00:00Z',
+            close_time: '2026-09-30T00:00:00Z',
+            domain: 'credit',
+            id: 'fq_default001',
+            probability: 0.21,
+            title: 'Will company Y default?'
+          }
+        ],
+        review_queue: [
+          {
+            close_time: '2026-07-01T00:00:00Z',
+            domain: 'macro',
+            id: 'fq_review_energy',
+            probability: 0.48,
+            title: 'Will energy prices move inflation forecasts?'
+          }
+        ],
+        review_queue_count: 1
+      }
+    }
+
+    const matches = rankForecastQuestionMatches(response, 'inflation energy')
+    const sections = forecastQuestionSearchSections(response, 'inflation energy', new Date('2026-05-26T00:00:00Z'))
+
+    expect(matches.map(match => match.row.id)).toEqual(['fq_inflation001', 'fq_review_energy'])
+    expect(sections.find(section => section.title === 'Matches')?.rows?.[0]?.[0]).toBe('1. inflatio  P=0.610  Δ=+0.080')
+    expect(sections.find(section => section.title === 'Matches')?.rows?.[0]?.[1]).toContain(
+      '2d old  close 2026-06-30  conf 0.62  ev 4  active  Will the CPI release exceed consensus?'
+    )
+    expect(sections.find(section => section.title === 'Matches')?.rows?.[0]?.[2]).toBe('/questions fq_inflation001')
+    expect(sections.find(section => section.title === 'Top Match Shortcuts')?.rows).toEqual([
+      ['/questions fq_inflation001', 'open full ledger context for Will the CPI release exceed consensus?'],
+      ['/evidence-for fq_inflation001 -- <note>', 'append a timestamped evidence note without copying the id'],
+      [
+        '/update-for fq_inflation001 -- --probability <0-1> --rationale <why>',
+        'append an explicit probability update'
+      ],
+      ['/sources --question fq_inflation001', 'plan source coverage for this question']
+    ])
+  })
+
+  it('treats zero probability as a real forecast value', () => {
+    const sections = forecastBookSections(
+      {
+        summary: {
+          active_count: 1,
+          open_alert_count: 0,
+          product: 'Superforecasting Agent',
+          questions: [
+            {
+              as_of: '2026-05-26T00:00:00Z',
+              close_time: '2026-06-30T00:00:00Z',
+              id: 'fq_zero_case',
+              probability: 0,
+              status: 'active',
+              title: 'Will the impossible event happen?'
+            }
+          ],
+          review_queue_count: 0
+        }
+      },
+      new Date('2026-05-26T00:00:00Z')
+    )
+
+    expect(sections.find(section => section.title === 'Forecast Questions')?.rows?.[0]?.[0]).toBe('1. P=0.000 Δ=-')
+    expect(sections.find(section => section.title === 'Forecast Questions')?.rows?.[0]?.[1]).toContain(
+      'active  Will the impossible event happen?'
+    )
   })
 
   it('attaches drill-down commands to active forecast rows and rail watchlist rows', () => {

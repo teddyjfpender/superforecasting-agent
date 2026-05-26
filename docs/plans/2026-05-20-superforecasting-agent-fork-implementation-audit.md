@@ -90,6 +90,20 @@ tool tests passed 4, focused TUI tests passed 122, and
 `python3 scripts/forecast_smoke_test.py` still passed with the expected
 `insufficient_live_evidence` readiness verdict.
 
+Post-TUI/CLI lookup/edit pass: beta feedback requested lower-friction forecast-desk
+navigation without remembering forecast ids. The Ink TUI now supports
+`/questions <words>` and `/find <words>` search over active forecasts and the
+review queue, `/open <row|id|words>` for id-free drill-down, and
+`/evidence-for <row|words> -- <note>` / `/update-for <row|words> -- <args>` for
+evidence and probability maintenance after resolving a forecast reference.
+The forecast book now advertises these shortcuts, search results include
+headline values and direct row commands, and the central Python slash-command
+registry exposes the same names for autocomplete/help. The classic CLI now
+implements the same search, open, evidence, and update resolution path so
+registered commands do not become TUI-only dead entries. Focused TUI tests
+passed 128 for forecast panel helpers, slash handlers, event handling, and
+slash parity; focused classic CLI forecast shortcut tests passed 5.
+
 ## Evidence Inspected
 
 - Forecasting package: `forecasting/`
@@ -104,6 +118,13 @@ tool tests passed 4, focused TUI tests passed 122, and
 - Agent-facing source planning and RSS/news triage: `tools/forecasting_tool.py`,
   `tests/forecasting/test_tool.py`, `ui-tui/src/app/forecastPanel.ts`,
   `ui-tui/src/app/slash/commands/core.ts`
+- Id-free forecast lookup and maintenance shortcuts:
+  `ui-tui/src/app/forecastPanel.ts`,
+  `ui-tui/src/app/slash/commands/core.ts`, `cli.py`,
+  `hermes_cli/commands.py`,
+  `ui-tui/src/__tests__/forecastPanel.test.ts`,
+  `ui-tui/src/__tests__/createSlashHandler.test.ts`,
+  `tests/cli/test_forecast_command.py`
 - Fork README: `README.md`
 - Forecast-native English model/MCP/plugin guide pass: `website/docs/guides/local-ollama-setup.md`, `website/docs/guides/local-llm-on-mac.md`, `website/docs/guides/aws-bedrock.md`, `website/docs/guides/google-gemini.md`, `website/docs/guides/use-mcp-with-superforecasting-agent.md`, `website/docs/guides/build-a-superforecasting-agent-plugin.md`
 - Forecast-native English tips/personality/cron automation guides: `website/docs/guides/tips.md`, `website/docs/guides/use-soul-with-superforecasting-agent.md`, `website/docs/guides/automate-with-cron.md`

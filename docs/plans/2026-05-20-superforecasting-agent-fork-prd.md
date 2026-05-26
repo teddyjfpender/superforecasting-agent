@@ -491,7 +491,10 @@ probability, probability delta, freshness/as-of date, close date, confidence,
 evidence count, alert/review status, and title. Row numbers should be usable
 for drill-down, such as `/questions 1`, so users can inspect full details
 without copying or remembering forecast IDs. Dashboard support can use direct
-row selection to reach the same detail view.
+row selection to reach the same detail view. The same surface should support
+search by ordinary words, topic, or domain, such as `/questions inflation` or
+`/find energy prices`, plus shortcuts that resolve a row or search phrase before
+adding evidence or appending an explicit probability update.
 
 Example:
 
@@ -979,6 +982,9 @@ Requirements:
 - [ ] `/questions` or an equivalent shortcut shows active forecasts as numbered rows.
 - [ ] Each row shows current probability, probability delta, freshness/as-of date, close date, confidence, evidence count, alert/review status, and title.
 - [ ] `/questions <row>` opens the full forecast details for that row without requiring an ID.
+- [ ] `/questions <words>` or `/find <words>` searches forecasts by title, topic, or domain.
+- [ ] `/open <row|id|words>` opens one matching forecast without copying an ID.
+- [ ] Evidence and update shortcuts can resolve a row/search phrase before calling the ledger workflow.
 - [ ] The dashboard or TUI supports direct row selection or an equivalent drill-down path.
 - [ ] The shortcut reuses the forecast ledger/dashboard summary rather than maintaining a separate question list.
 

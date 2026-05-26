@@ -258,6 +258,101 @@ describe('createSlashHandler', () => {
     })
   })
 
+  it('searches forecasts from /questions without requiring a forecast id', async () => {
+    const rpc = vi.fn((method: string) => {
+      if (method === 'forecast.dashboard') {
+        return Promise.resolve({
+          summary: {
+            active_count: 2,
+            open_alert_count: 0,
+            product: 'Superforecasting Agent',
+            questions: [
+              {
+                domain: 'macro',
+                id: 'fq_cpi',
+                probability: 0.61,
+                title: 'Will the CPI release exceed consensus?',
+                topics: ['inflation', 'energy']
+              },
+              { domain: 'credit', id: 'fq_default', probability: 0.21, title: 'Will company Y default?' }
+            ],
+            review_queue_count: 0
+          }
+        })
+      }
+
+      return Promise.resolve({})
+    })
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/questions inflation energy')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 50 })
+    await vi.waitFor(() => {
+      expect(ctx.transcript.panel).toHaveBeenCalledWith(
+        'Forecast Search',
+        expect.arrayContaining([
+          expect.objectContaining({ title: 'Forecast Search' }),
+          expect.objectContaining({
+            rows: expect.arrayContaining([
+              expect.arrayContaining(['/questions fq_cpi'])
+            ]),
+            title: 'Matches'
+          })
+        ])
+      )
+    })
+  })
+
+  it('opens and edits forecasts by search terms through id-free shortcuts', async () => {
+    const rpc = vi.fn((method: string, params: Record<string, unknown>) => {
+      if (method === 'forecast.dashboard') {
+        return Promise.resolve({
+          summary: {
+            active_count: 1,
+            open_alert_count: 0,
+            product: 'Superforecasting Agent',
+            questions: [
+              {
+                domain: 'macro',
+                id: 'fq_cpi',
+                probability: 0.61,
+                title: 'Will the CPI release exceed consensus?',
+                topics: ['inflation']
+              }
+            ],
+            review_queue_count: 0
+          }
+        })
+      }
+      if (method === 'forecast.command') {
+        return Promise.resolve({ code: 0, output: `ran ${params.arg}` })
+      }
+
+      return Promise.resolve({})
+    })
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+    const handler = createSlashHandler(ctx)
+
+    expect(handler('/open inflation')).toBe(true)
+    await vi.waitFor(() => {
+      expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'show fq_cpi' })
+    })
+
+    expect(handler('/evidence-for inflation -- BLS release mentioned gasoline pressure')).toBe(true)
+    await vi.waitFor(() => {
+      expect(rpc).toHaveBeenCalledWith('forecast.command', {
+        arg: "research fq_cpi 'BLS release mentioned gasoline pressure'"
+      })
+    })
+
+    expect(handler('/update-for inflation -- --probability 0.64 --rationale "energy evidence moved up"')).toBe(true)
+    await vi.waitFor(() => {
+      expect(rpc).toHaveBeenCalledWith('forecast.command', {
+        arg: 'update fq_cpi --probability 0.64 --rationale "energy evidence moved up"'
+      })
+    })
+  })
+
   it('keeps /book as a forecast-question shortcut alias', async () => {
     const rpc = vi.fn(() =>
       Promise.resolve({

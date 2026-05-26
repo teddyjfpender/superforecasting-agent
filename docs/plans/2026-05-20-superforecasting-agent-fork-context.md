@@ -163,7 +163,10 @@ shortcut that lists active questions as numbered rows. The row should carry the
 headline probability, delta, freshness/as-of date, close date, confidence,
 evidence count, and alert/review state. A row number or direct dashboard/TUI
 selection should open the full forecast details so IDs are not part of the
-normal browsing workflow.
+normal browsing workflow. The TUI should also support forecast lookup by
+ordinary words, topic, or domain, and should let the operator add evidence or
+append a probability update after resolving a row/search phrase to the matching
+ledger question.
 
 Example:
 

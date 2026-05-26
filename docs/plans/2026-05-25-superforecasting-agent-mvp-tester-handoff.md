@@ -168,12 +168,17 @@ In the TUI, `/questions` is the fastest current-question view. It shows numbered
 forecast rows with headline probability, delta, close date, evidence count, and
 freshness; selecting a numbered row or running `/questions 1` opens the first
 row's full forecast details without requiring the tester to copy a forecast id.
-`/book` and `/qbook` remain compatibility aliases. `/forecast` opens the broader
-forecast desk panel; active rows, wide-rail watchlist rows, the header primary
-action, and concrete `desk actions` entries are selectable in mouse-enabled
-terminals. Placeholder command examples remain display-only until filled in.
-`/schedule`, `/backtest`, `/calibration`, `/alerts`, `/doctor`, and `/readiness`
-jump to common workflow checks.
+`/questions <words>` and `/find <words>` search active forecasts and
+review-queue items by title, topic, or domain, while `/open <row|id|words>`
+opens one unambiguous match. For quick evidence and probability maintenance,
+testers can run `/evidence-for <row|words> -- <note>` or
+`/update-for <row|words> -- --probability <p> --rationale <why>` without
+copying the forecast id. `/book` and `/qbook` remain compatibility aliases.
+`/forecast` opens the broader forecast desk panel; active rows, wide-rail
+watchlist rows, the header primary action, and concrete `desk actions` entries
+are selectable in mouse-enabled terminals. Placeholder command examples remain
+display-only until filled in. `/schedule`, `/backtest`, `/calibration`,
+`/alerts`, `/doctor`, and `/readiness` jump to common workflow checks.
 
 In the dashboard Forecasts page, active forecast rows are selectable. Clicking
 or pressing Enter/Space on a row opens a detail panel with the same headline
@@ -276,8 +281,9 @@ It verified:
   schedules, postmortems, calibration lessons, and domain/topic error profiles.
 - Dashboard forecast API and TUI forecast panel test coverage.
 - Forecast question shortcut coverage for `/questions`, `/questions <row>`,
-  `/book`, numbered TUI drill-down, classic CLI drill-down, and dashboard row
-  selection with a detail panel.
+  `/questions <words>`, `/find`, `/open`, `/evidence-for`, `/update-for`,
+  `/book`, numbered TUI drill-down, classic CLI drill-down/search/edit
+  resolution, and dashboard row selection with a detail panel.
 - The consolidated `python3 scripts/tester_handoff_check.py` gate passed for the
   implementation tree with 179 focused tests, the clean smoke path, and
   `git diff --check`; the smoke output reported 52 source adapters,

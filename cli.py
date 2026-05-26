@@ -6561,6 +6561,159 @@ class HermesCLI:
         except Exception as exc:
             _cprint(f"  forecast: {exc}")
 
+    @staticmethod
+    def _forecast_search_normalize(value: object) -> str:
+        return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9_ -]+", " ", str(value or "").lower())).strip()
+
+    @classmethod
+    def _forecast_dashboard_rows(cls, summary: dict) -> list[tuple[int, dict]]:
+        rows: list[tuple[int, dict]] = []
+        seen: set[str] = set()
+        for index, row in enumerate(summary.get("questions") or [], start=1):
+            row_id = str(row.get("id") or "")
+            if not row_id or row_id in seen:
+                continue
+            seen.add(row_id)
+            rows.append((index, row))
+        for row in summary.get("review_queue") or []:
+            row_id = str(row.get("id") or "")
+            if not row_id or row_id in seen:
+                continue
+            seen.add(row_id)
+            rows.append((len(rows) + 1, row))
+        return rows
+
+    @classmethod
+    def _forecast_search_matches(cls, summary: dict, query: str, *, limit: int = 12) -> list[dict]:
+        full_query = cls._forecast_search_normalize(query)
+        tokens = [token for token in full_query.split() if len(token) >= 2]
+        if not full_query:
+            return []
+
+        matches: list[dict] = []
+        for index, row in cls._forecast_dashboard_rows(summary):
+            row_id = str(row.get("id") or "")
+            short_id = re.sub(r"^fq_", "", row_id)[:8]
+            title = str(row.get("title") or "")
+            domain = str(row.get("domain") or "")
+            raw_topics = row.get("topics") or []
+            topics = raw_topics if isinstance(raw_topics, str) else " ".join(str(topic) for topic in raw_topics)
+            status = str(row.get("status") or "")
+            text = cls._forecast_search_normalize(" ".join([row_id, short_id, title, domain, topics, status]))
+            title_text = cls._forecast_search_normalize(title)
+            score = 0
+
+            if cls._forecast_search_normalize(row_id) == full_query or cls._forecast_search_normalize(short_id) == full_query:
+                score += 40
+            elif full_query in cls._forecast_search_normalize(row_id) or full_query in cls._forecast_search_normalize(short_id):
+                score += 24
+            if full_query in title_text:
+                score += 14
+            if domain and full_query in cls._forecast_search_normalize(domain):
+                score += 8
+            if topics and full_query in cls._forecast_search_normalize(topics):
+                score += 8
+            for token in tokens:
+                if token not in text:
+                    continue
+                score += 4 if token in title_text else 2
+            if tokens and all(token in text for token in tokens):
+                score += 6
+
+            if score > 0:
+                matches.append({"index": index, "row": row, "score": score})
+
+        matches.sort(key=lambda item: (-int(item["score"]), int(item["index"])))
+        return matches[: max(limit, 0)]
+
+    @classmethod
+    def _print_forecast_search(cls, summary: dict, query: str) -> None:
+        from forecasting.dashboard import (
+            format_confidence,
+            format_delta,
+            format_freshness,
+            format_probability,
+            question_status,
+            short_date,
+        )
+
+        matches = cls._forecast_search_matches(summary, query, limit=12)
+        print("FORECAST SEARCH")
+        print(f"query: {query}")
+        print(f"matches: {len(matches)}")
+        if not matches:
+            print("No matching active forecasts or review-queue items. Try fewer words, a topic, or a domain.")
+            return
+
+        print(
+            f"{'Rank':<5} {'ID':<14} {'P(now)':<12} {'Delta':<8} {'Freshness':<12} "
+            f"{'Close':<12} {'Conf':<6} {'Ev':>3} {'Status':<12} Question"
+        )
+        for rank, match in enumerate(matches, start=1):
+            row = match["row"]
+            row_id = str(row.get("id") or "")
+            print(
+                f"{rank:<5} "
+                f"{row_id:<14.14} "
+                f"{format_probability(row.get('probability')):<12} "
+                f"{format_delta(row.get('delta')):<8} "
+                f"{format_freshness(row.get('as_of')):<12} "
+                f"{short_date(row.get('close_time')):<12} "
+                f"{format_confidence(row.get('confidence')):<6} "
+                f"{int(row.get('evidence_count') or 0):>3} "
+                f"{question_status(row):<12} "
+                f"{row.get('title') or ''}"
+            )
+        print("")
+        print("Open one match with /open <row|id|words>.")
+        print("Append evidence with /evidence-for <row|words> -- <note>.")
+        print("Append an update with /update-for <row|words> -- --probability <p> --rationale <why>.")
+
+    @classmethod
+    def _resolve_forecast_ref(cls, ref: str, *, limit: int = 75) -> str | None:
+        from forecasting.dashboard import build_dashboard_summary
+
+        trimmed = ref.strip()
+        if not trimmed:
+            return None
+
+        try:
+            summary = build_dashboard_summary(limit=limit)
+        except Exception as exc:
+            _cprint(f"  forecast lookup: {exc}")
+            return None
+
+        questions = list(summary.get("questions") or [])
+        review_queue = list(summary.get("review_queue") or [])
+        if trimmed.isdigit():
+            index = int(trimmed)
+            if index <= 0:
+                _cprint("  Forecast row numbers start at 1.")
+                return None
+            try:
+                return str(questions[index - 1]["id"])
+            except (IndexError, KeyError, TypeError):
+                _cprint(f"  No forecast row {index}. Run /questions to inspect current forecast questions.")
+                return None
+
+        lowered = trimmed.lower()
+        for row in [*questions, *review_queue]:
+            row_id = str(row.get("id") or "")
+            if row_id.lower() == lowered or re.sub(r"^fq_", "", row_id).lower().startswith(lowered):
+                return row_id
+
+        matches = cls._forecast_search_matches(summary, trimmed, limit=8)
+        top = matches[0] if matches else None
+        next_match = matches[1] if len(matches) > 1 else None
+        if top and top["row"].get("id") and (not next_match or int(top["score"]) >= int(next_match["score"]) + 10):
+            return str(top["row"]["id"])
+
+        if matches:
+            cls._print_forecast_search(summary, trimmed)
+        else:
+            _cprint(f'  No forecast matched "{trimmed}". Try /find {trimmed}')
+        return None
+
     def _handle_forecast_book_command(self, cmd_original: str) -> None:
         """Handle /questions as a forecast-question summary and numbered drill-down."""
         parts = cmd_original.split(None, 1)
@@ -6572,25 +6725,22 @@ class HermesCLI:
             _cprint(f"  book: {exc}")
             return
 
+        forecast_id_arg = re.match(r"^fq_[a-z0-9][a-z0-9_:-]*$", raw_arg, flags=re.IGNORECASE)
         if raw_arg and raw_arg.isdigit():
-            index = int(raw_arg)
-            if index <= 0:
-                _cprint("  Usage: /questions [row|list N|forecast-id]")
-                return
-            try:
-                summary = build_dashboard_summary(limit=max(index, 20))
-                row = (summary.get("questions") or [])[index - 1]
-            except IndexError:
-                _cprint(f"  No forecast row {index}. Run /questions to inspect current forecast questions.")
-                return
-            except Exception as exc:
-                _cprint(f"  book: {exc}")
-                return
-            forecast_main(["show", row["id"]])
+            question_id = self._resolve_forecast_ref(raw_arg, limit=max(int(raw_arg), 20))
+            if question_id:
+                forecast_main(["show", question_id])
+            return
+
+        if raw_arg and forecast_id_arg:
+            forecast_main(["show", raw_arg])
             return
 
         if raw_arg and not raw_arg.lower().startswith("list"):
-            forecast_main(["show", raw_arg])
+            try:
+                self._print_forecast_search(build_dashboard_summary(limit=75), raw_arg)
+            except Exception as exc:
+                _cprint(f"  book: {exc}")
             return
 
         limit = 20
@@ -6607,6 +6757,71 @@ class HermesCLI:
             print(render_forecast_book_text(build_dashboard_summary(limit=limit)))
         except Exception as exc:
             _cprint(f"  book: {exc}")
+
+    def _handle_forecast_find_command(self, cmd_original: str) -> None:
+        parts = cmd_original.split(None, 1)
+        query = parts[1].strip() if len(parts) > 1 else ""
+        if not query:
+            _cprint("  Usage: /find <forecast words>")
+            return
+        try:
+            from forecasting.dashboard import build_dashboard_summary
+
+            self._print_forecast_search(build_dashboard_summary(limit=75), query)
+        except Exception as exc:
+            _cprint(f"  find: {exc}")
+
+    def _handle_forecast_open_command(self, cmd_original: str) -> None:
+        parts = cmd_original.split(None, 1)
+        ref = parts[1].strip() if len(parts) > 1 else ""
+        if not ref:
+            _cprint("  Usage: /open <row|id|forecast words>")
+            return
+        question_id = self._resolve_forecast_ref(ref)
+        if question_id:
+            from forecasting.cli import main as forecast_main
+
+            forecast_main(["show", question_id])
+
+    @staticmethod
+    def _split_forecast_ref_and_rest(raw_arg: str) -> tuple[str, str]:
+        separator = raw_arg.find(" -- ")
+        if separator >= 0:
+            return raw_arg[:separator].strip(), raw_arg[separator + 4:].strip()
+        parts = raw_arg.split(maxsplit=1)
+        return (parts[0].strip(), parts[1].strip()) if len(parts) > 1 else (raw_arg.strip(), "")
+
+    def _handle_forecast_evidence_for_command(self, cmd_original: str) -> None:
+        parts = cmd_original.split(None, 1)
+        raw_arg = parts[1].strip() if len(parts) > 1 else ""
+        ref, note = self._split_forecast_ref_and_rest(raw_arg)
+        if not ref or not note:
+            _cprint("  Usage: /evidence-for <row|id|forecast words> -- <evidence note>")
+            return
+        question_id = self._resolve_forecast_ref(ref)
+        if question_id:
+            from forecasting.cli import main as forecast_main
+
+            forecast_main(["research", question_id, note])
+
+    def _handle_forecast_update_for_command(self, cmd_original: str) -> None:
+        parts = cmd_original.split(None, 1)
+        raw_arg = parts[1].strip() if len(parts) > 1 else ""
+        ref, rest = self._split_forecast_ref_and_rest(raw_arg)
+        if not ref or not rest:
+            _cprint("  Usage: /update-for <row|id|forecast words> -- --probability <0-1> --rationale <why>")
+            return
+        question_id = self._resolve_forecast_ref(ref)
+        if not question_id:
+            return
+        try:
+            argv = shlex.split(rest)
+        except ValueError as exc:
+            _cprint(f"  update-for: {exc}")
+            return
+        from forecasting.cli import main as forecast_main
+
+        forecast_main(["update", question_id, *argv])
 
     def _handle_branch_command(self, cmd_original: str) -> None:
         """Handle /branch [name] — fork the current session into a new independent copy.
@@ -8205,6 +8420,14 @@ class HermesCLI:
             self._handle_sessions_command(cmd_original)
         elif canonical in {"questions", "book"}:
             self._handle_forecast_book_command(cmd_original)
+        elif canonical == "find":
+            self._handle_forecast_find_command(cmd_original)
+        elif canonical == "open":
+            self._handle_forecast_open_command(cmd_original)
+        elif canonical == "evidence-for":
+            self._handle_forecast_evidence_for_command(cmd_original)
+        elif canonical == "update-for":
+            self._handle_forecast_update_for_command(cmd_original)
         elif canonical == "forecast":
             self._handle_forecast_command(cmd_original)
         elif canonical == "model":

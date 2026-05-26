@@ -801,6 +801,7 @@ def render_forecast_book_text(summary: dict[str, Any], *, now: datetime | str | 
             "",
             (
                 "Open details with /questions <row> or /book <row>; "
+                "use /questions <words> or /find <words> to search; "
                 "use /questions list 50 for more rows."
             ),
         ]

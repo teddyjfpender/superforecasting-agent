@@ -62,8 +62,12 @@ Use `/questions` for the fast forecast-book view: it renders numbered rows with
 each question's current probability, delta, as-of freshness, close date,
 confidence, evidence count, status, and title. Run `/questions <row>` to open
 the full forecast details without copying a forecast ID; the numbered rows also
-carry that drill-down target in mouse-enabled TUI terminals. `/book` remains an
-alias.
+carry that drill-down target in mouse-enabled TUI terminals. `/questions
+<words>` and `/find <words>` search active forecasts and review-queue items by
+title, topic, or domain. `/open <row|id|words>` opens one unambiguous match,
+`/evidence-for <row|words> -- <note>` appends evidence after resolving the
+forecast, and `/update-for <row|words> -- --probability <p> --rationale <why>`
+appends an explicit probability update. `/book` remains an alias.
 
 On wide terminals, the TUI also keeps a compact forecast desk rail beside the
 transcript. The rail is refreshed from the same dashboard data and keeps the
@@ -123,7 +127,11 @@ Common desk workflows have direct slash commands:
 
 | Command | Runs |
 |---------|------|
-| `/questions` | Show numbered current forecast questions and drill into a row |
+| `/questions` | Show numbered current forecast questions, search with words, and drill into a row |
+| `/find` | Search active forecasts and review queue by title, topic, or domain |
+| `/open` | Open a forecast by row number, id, short id, or search words |
+| `/evidence-for` | Append evidence after resolving a row/search phrase to a forecast |
+| `/update-for` | Append a probability update after resolving a row/search phrase to a forecast |
 | `/new-forecast` | Create a scoreable question |
 | `/ingest` | Stage a URL or file as a forecast candidate |
 | `/evidence` | Add or inspect timestamped evidence |

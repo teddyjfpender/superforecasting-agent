@@ -26,7 +26,9 @@ import {
   forecastBookSections,
   forecastDashboardSections,
   forecastDeskRailSections,
-  forecastDeskStatusLabel
+  forecastDeskStatusLabel,
+  forecastQuestionSearchSections,
+  rankForecastQuestionMatches
 } from '../../forecastPanel.js'
 import type { SlashCommand, SlashRunCtx } from '../types.js'
 
@@ -60,6 +62,7 @@ const DETAILS_USAGE =
 
 const DETAILS_SECTION_USAGE = 'usage: /details <section> [hidden|collapsed|expanded|reset]'
 const INTEGER_ARG = /^-?\d+$/
+const FORECAST_ID_ARG = /^fq_[a-z0-9][a-z0-9_:-]*$/i
 
 const refreshForecastDeskStatus = (ctx: SlashRunCtx) => {
   ctx.gateway
@@ -97,6 +100,14 @@ const runForecastCommand = (ctx: SlashRunCtx, arg: string) => {
     .catch(ctx.guardedErr)
 }
 
+const shellQuote = (value: string) => {
+  if (/^[A-Za-z0-9_./:+=,@%-]+$/.test(value)) {
+    return value
+  }
+
+  return `'${value.replace(/'/g, "'\\''")}'`
+}
+
 const updateForecastDeskState = (response: ForecastDashboardResponse) => {
   patchUiState({
     forecastDeskRailSections: forecastDeskRailSections(response),
@@ -124,13 +135,28 @@ const renderForecastBook = (response: ForecastDashboardResponse, ctx: SlashRunCt
   ctx.transcript.page(response.output || '(no forecasts)', 'Forecast Book')
 }
 
+const renderForecastSearch = (response: ForecastDashboardResponse, query: string, ctx: SlashRunCtx) => {
+  if (response.summary) {
+    updateForecastDeskState(response)
+  }
+  ctx.transcript.panel('Forecast Search', forecastQuestionSearchSections(response, query))
+}
+
 const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
   const trimmed = arg.trim()
   const listMatch = trimmed.match(/^list(?:\s+(\d+))?$/i)
   const openIndex = INTEGER_ARG.test(trimmed) ? Number.parseInt(trimmed, 10) : null
 
   if (trimmed && !listMatch && openIndex === null) {
-    runForecastCommand(ctx, `show ${trimmed}`)
+    if (FORECAST_ID_ARG.test(trimmed)) {
+      runForecastCommand(ctx, `show ${trimmed}`)
+      return
+    }
+
+    ctx.gateway
+      .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit: 50 })
+      .then(ctx.guarded<ForecastDashboardResponse>(r => renderForecastSearch(r, trimmed, ctx)))
+      .catch(ctx.guardedErr)
     return
   }
 
@@ -166,6 +192,95 @@ const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
     .catch(ctx.guardedErr)
 }
 
+type ForecastRefResolution =
+  | { id: string; response: ForecastDashboardResponse; status: 'resolved' }
+  | { matches: ReturnType<typeof rankForecastQuestionMatches>; response: ForecastDashboardResponse; status: 'ambiguous' }
+  | { response: ForecastDashboardResponse; status: 'missing' }
+
+const resolveForecastRef = (response: ForecastDashboardResponse, ref: string): ForecastRefResolution => {
+  const trimmed = ref.trim()
+  const summary = response.summary
+  if (!summary || !trimmed) {
+    return { response, status: 'missing' }
+  }
+
+  const questions = summary.questions ?? []
+  const reviewQueue = summary.review_queue ?? []
+
+  if (INTEGER_ARG.test(trimmed)) {
+    const index = Number.parseInt(trimmed, 10) - 1
+    const row = questions[index]
+    return row?.id ? { id: row.id, response, status: 'resolved' } : { response, status: 'missing' }
+  }
+
+  const lower = trimmed.toLowerCase()
+  const exact = [...questions, ...reviewQueue].find(row => {
+    const id = row.id || ''
+    return id.toLowerCase() === lower || id.replace(/^fq_/, '').toLowerCase().startsWith(lower)
+  })
+  if (exact?.id) {
+    return { id: exact.id, response, status: 'resolved' }
+  }
+
+  const matches = rankForecastQuestionMatches(response, trimmed, 8)
+  const top = matches[0]
+  const next = matches[1]
+  if (top?.row.id && (!next || top.score >= next.score + 10)) {
+    return { id: top.row.id, response, status: 'resolved' }
+  }
+
+  return matches.length ? { matches, response, status: 'ambiguous' } : { response, status: 'missing' }
+}
+
+const withForecastRef = (
+  ctx: SlashRunCtx,
+  ref: string,
+  onResolved: (id: string) => void,
+  options: { ambiguousTitle?: string; missingUsage: string } = { missingUsage: 'usage: /open <row|id|words>' }
+) => {
+  const trimmed = ref.trim()
+  if (!trimmed) {
+    return ctx.transcript.sys(options.missingUsage)
+  }
+
+  ctx.gateway
+    .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit: 75 })
+    .then(
+      ctx.guarded<ForecastDashboardResponse>(response => {
+        const resolved = resolveForecastRef(response, trimmed)
+        if (resolved.status === 'resolved') {
+          onResolved(resolved.id)
+          return
+        }
+
+        if (resolved.status === 'ambiguous') {
+          renderForecastSearch(resolved.response, trimmed, ctx)
+          return
+        }
+
+        ctx.transcript.sys(`no forecast matched "${trimmed}"; try /find ${trimmed}`)
+      })
+    )
+    .catch(ctx.guardedErr)
+}
+
+const splitForecastRefAndRest = (arg: string): { ref: string; rest: string } => {
+  const trimmed = arg.trim()
+  const separator = trimmed.indexOf(' -- ')
+  if (separator >= 0) {
+    return {
+      ref: trimmed.slice(0, separator).trim(),
+      rest: trimmed.slice(separator + 4).trim()
+    }
+  }
+
+  const parts = trimmed.split(/\s+/)
+  return {
+    ref: parts[0] || '',
+    rest: parts.slice(1).join(' ').trim()
+  }
+}
+
 export const coreCommands: SlashCommand[] = [
   {
     help: 'list commands + hotkeys',
@@ -189,7 +304,11 @@ export const coreCommands: SlashCommand[] = [
               'override one section (thinking/tools/subagents/activity)'
             ],
             ['/heuristic [random|daily]', 'show a random or daily forecasting maxim'],
-            ['/questions [row|list N]', 'show current forecast questions and drill into a numbered row'],
+            ['/questions [row|list N|words]', 'show current forecast questions, search by words, or drill into a row'],
+            ['/find <words>', 'search active forecasts and review queue without needing a forecast id'],
+            ['/open <row|id|words>', 'open one matching forecast ledger record'],
+            ['/evidence-for <row|words> -- <note>', 'append an evidence note after resolving a row/search to an id'],
+            ['/update-for <row|words> -- <args>', 'append a probability update after resolving a row/search to an id'],
             ['/forecast [limit|subcommand]', 'show active forecasts or run forecast lifecycle commands'],
             ['/sources [--question <id>] [--json]', 'list adapters or plan sources for a forecast'],
             ['/new-forecast [args]', 'create a scoreable forecast question'],
@@ -302,9 +421,70 @@ export const coreCommands: SlashCommand[] = [
 
   {
     aliases: ['book', 'qbook'],
-    help: 'show current forecast questions; /questions <row> opens details',
+    help: 'show or search forecast questions; /questions <row> opens details',
     name: 'questions',
     run: (arg, ctx) => runForecastBook(arg, ctx)
+  },
+
+  {
+    aliases: ['search-forecasts', 'lookup'],
+    help: 'search active forecasts and review queue by title, topic, or domain',
+    name: 'find',
+    run: (arg, ctx) => {
+      const query = arg.trim()
+      if (!query) {
+        return ctx.transcript.sys('usage: /find <forecast words>')
+      }
+
+      ctx.gateway
+        .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit: 75 })
+        .then(ctx.guarded<ForecastDashboardResponse>(r => renderForecastSearch(r, query, ctx)))
+        .catch(ctx.guardedErr)
+    }
+  },
+
+  {
+    aliases: ['question', 'show-forecast'],
+    help: 'open a forecast by row number, id, short id, or search words',
+    name: 'open',
+    run: (arg, ctx) =>
+      withForecastRef(ctx, arg, id => runForecastCommand(ctx, `show ${id}`), {
+        missingUsage: 'usage: /open <row|id|forecast words>'
+      })
+  },
+
+  {
+    aliases: ['note', 'note-for'],
+    help: 'append an evidence note to a forecast resolved by row or search words',
+    name: 'evidence-for',
+    run: (arg, ctx) => {
+      const { ref, rest } = splitForecastRefAndRest(arg)
+      if (!ref || !rest) {
+        return ctx.transcript.sys('usage: /evidence-for <row|id|forecast words> -- <evidence note>')
+      }
+
+      withForecastRef(ctx, ref, id => runForecastCommand(ctx, `research ${id} ${shellQuote(rest)}`), {
+        missingUsage: 'usage: /evidence-for <row|id|forecast words> -- <evidence note>'
+      })
+    }
+  },
+
+  {
+    aliases: ['updateq', 'revise'],
+    help: 'append a probability update to a forecast resolved by row or search words',
+    name: 'update-for',
+    run: (arg, ctx) => {
+      const { ref, rest } = splitForecastRefAndRest(arg)
+      if (!ref || !rest) {
+        return ctx.transcript.sys(
+          'usage: /update-for <row|id|forecast words> -- --probability <0-1> --rationale <why>'
+        )
+      }
+
+      withForecastRef(ctx, ref, id => runForecastCommand(ctx, `update ${id} ${rest}`), {
+        missingUsage: 'usage: /update-for <row|id|forecast words> -- --probability <0-1> --rationale <why>'
+      })
+    }
   },
 
   {

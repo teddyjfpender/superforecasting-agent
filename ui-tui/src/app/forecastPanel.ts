@@ -21,6 +21,13 @@ export interface ForecastDeskCompactItem {
   detail: string
 }
 
+export interface ForecastQuestionSearchMatch {
+  index: number
+  matched: string[]
+  row: ForecastDashboardQuestion | ForecastDashboardReview
+  score: number
+}
+
 const truncate = (value: string, max: number) => (value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value)
 
 const numberValue = (value: unknown): number | null =>
@@ -323,7 +330,7 @@ const forecastStatus = (row: ForecastDashboardQuestion) => {
     return `${staleReferenceClasses} stale ref${staleReferenceClasses === 1 ? '' : 's'}`
   }
 
-  if (!row.probability) {
+  if (row.probability === null || row.probability === undefined || row.probability === '') {
     return 'needs forecast'
   }
 
@@ -492,6 +499,206 @@ const focusedActionRows = (questions: ForecastDashboardQuestion[], reviewQueue: 
     [`/trend-model ${row.id} --series-json '[...]' --target-date <date>`, 'run a deterministic trend projection when time series matter'],
     [`/forecast resolve ${row.id} --outcome <value> --resolution-source <url>`, 'record resolution when criteria are met']
   ]
+}
+
+const searchNormalize = (value: unknown) =>
+  String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_ -]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+const searchTokens = (query: string) =>
+  searchNormalize(query)
+    .split(/\s+/)
+    .filter(token => token.length >= 2)
+
+const uniqueForecastRows = (
+  questions: ForecastDashboardQuestion[],
+  reviewQueue: ForecastDashboardReview[]
+): Array<{ index: number; row: ForecastDashboardQuestion | ForecastDashboardReview }> => {
+  const rows: Array<{ index: number; row: ForecastDashboardQuestion | ForecastDashboardReview }> = []
+  const seen = new Set<string>()
+
+  questions.forEach((row, index) => {
+    if (!row.id || seen.has(row.id)) {
+      return
+    }
+    seen.add(row.id)
+    rows.push({ index, row })
+  })
+
+  reviewQueue.forEach(row => {
+    if (!row.id || seen.has(row.id)) {
+      return
+    }
+    seen.add(row.id)
+    rows.push({ index: rows.length, row })
+  })
+
+  return rows
+}
+
+const scoreForecastQuestionMatch = (
+  row: ForecastDashboardQuestion | ForecastDashboardReview,
+  query: string,
+  tokens: string[]
+): ForecastQuestionSearchMatch | null => {
+  const id = row.id || ''
+  const short = shortId(id)
+  const title = row.title || ''
+  const domain = row.domain || ''
+  const topics = 'topics' in row && Array.isArray(row.topics) ? row.topics.join(' ') : ''
+  const status = 'status' in row ? row.status || '' : ''
+  const text = searchNormalize([id, short, title, domain, topics, status].join(' '))
+  const fullQuery = searchNormalize(query)
+  const matched = new Set<string>()
+  let score = 0
+
+  if (!fullQuery) {
+    return null
+  }
+
+  if (searchNormalize(id) === fullQuery || searchNormalize(short) === fullQuery) {
+    score += 40
+    matched.add('id')
+  } else if (searchNormalize(id).includes(fullQuery) || searchNormalize(short).includes(fullQuery)) {
+    score += 24
+    matched.add('id')
+  }
+
+  if (searchNormalize(title).includes(fullQuery)) {
+    score += 14
+    matched.add('title')
+  }
+
+  if (domain && searchNormalize(domain).includes(fullQuery)) {
+    score += 8
+    matched.add('domain')
+  }
+
+  if (topics && searchNormalize(topics).includes(fullQuery)) {
+    score += 8
+    matched.add('topics')
+  }
+
+  for (const token of tokens) {
+    if (!text.includes(token)) {
+      continue
+    }
+    score += searchNormalize(title).includes(token) ? 4 : 2
+    if (searchNormalize(title).includes(token)) {
+      matched.add(token)
+    }
+  }
+
+  if (tokens.length && tokens.every(token => text.includes(token))) {
+    score += 6
+  }
+
+  return score > 0 ? { index: 0, matched: Array.from(matched), row, score } : null
+}
+
+export const rankForecastQuestionMatches = (
+  response: ForecastDashboardResponse,
+  query: string,
+  limit = 12
+): ForecastQuestionSearchMatch[] => {
+  const summary = response.summary
+  if (!summary) {
+    return []
+  }
+
+  const tokens = searchTokens(query)
+  return uniqueForecastRows(summary.questions ?? [], summary.review_queue ?? [])
+    .map(({ index, row }) => {
+      const match = scoreForecastQuestionMatch(row, query, tokens)
+      return match ? { ...match, index } : null
+    })
+    .filter((match): match is ForecastQuestionSearchMatch => Boolean(match))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, Math.max(limit, 0))
+}
+
+const searchRowDelta = (row: ForecastDashboardQuestion | ForecastDashboardReview) =>
+  'delta' in row ? formatDelta(row.delta) : '-'
+
+const searchRowConfidence = (row: ForecastDashboardQuestion | ForecastDashboardReview) =>
+  'confidence' in row ? formatConfidence(row.confidence) : '-'
+
+const searchRowEvidenceCount = (row: ForecastDashboardQuestion | ForecastDashboardReview) =>
+  'evidence_count' in row ? formatCount(row.evidence_count) : '-'
+
+export const forecastQuestionSearchSections = (
+  response: ForecastDashboardResponse,
+  query: string,
+  now = new Date()
+): PanelSection[] => {
+  const summary = response.summary
+  const trimmed = query.trim()
+
+  if (!summary) {
+    return [{ text: response.output || '(no forecasts)' }]
+  }
+
+  if (!trimmed) {
+    return forecastBookSections(response, now)
+  }
+
+  const matches = rankForecastQuestionMatches(response, trimmed, 12)
+  const sections: PanelSection[] = [
+    {
+      rows: [
+        ['query', trimmed],
+        ['matches', formatCount(matches.length)],
+        ['open', '/open <words> opens one unambiguous match; click a row to inspect the full ledger record']
+      ],
+      title: 'Forecast Search'
+    }
+  ]
+
+  if (!matches.length) {
+    sections.push({
+      text: 'No matching active forecasts or review-queue items. Try fewer words, a topic, a domain, or /questions list 50.',
+      title: 'Matches'
+    })
+    return sections
+  }
+
+  sections.push({
+    rows: matches.map(match => {
+      const row = match.row
+      const key = `${match.index + 1}. ${shortId(row.id)}  P=${formatProbability(row.probability)}  Δ=${searchRowDelta(row)}`
+      const details = [
+        `score ${match.score}`,
+        forecastFreshnessLabel(row.as_of, now),
+        `close ${shortDate(row.close_time)}`,
+        `conf ${searchRowConfidence(row)}`,
+        `ev ${searchRowEvidenceCount(row)}`,
+        forecastStatus(row as ForecastDashboardQuestion),
+        truncate(row.title || '(untitled forecast)', 72)
+      ].join('  ')
+
+      return [key, details, row.id ? `/questions ${row.id}` : ''] as [string, string, string]
+    }),
+    title: 'Matches'
+  })
+
+  const top = matches[0]?.row
+  if (top?.id) {
+    const title = truncate(top.title || top.id, 68)
+    sections.push({
+      rows: [
+        [`/questions ${top.id}`, `open full ledger context for ${title}`],
+        [`/evidence-for ${top.id} -- <note>`, 'append a timestamped evidence note without copying the id'],
+        [`/update-for ${top.id} -- --probability <0-1> --rationale <why>`, 'append an explicit probability update'],
+        [`/sources --question ${top.id}`, 'plan source coverage for this question']
+      ],
+      title: 'Top Match Shortcuts'
+    })
+  }
+
+  return sections
 }
 
 export const forecastDeskActionStripItems = (sections: PanelSection[], max = 4): ForecastDeskActionItem[] => {
@@ -982,7 +1189,9 @@ export const forecastBookSections = (
         ['active', formatCount(summary.active_count ?? questions.length)],
         ['alerts', formatCount(summary.open_alert_count)],
         ['reviews', formatCount(summary.review_queue_count)],
-        ['freshness', 'Use /questions <number> to drill into a row without copying its id']
+        ['freshness', 'Use /questions <number> to drill into a row without copying its id'],
+        ['search', 'Use /find <words> or /questions <words> to locate forecasts by title, topic, or domain'],
+        ['edit', 'Use /evidence-for <row|words> -- <note> or /update-for <row|words> -- <args>']
       ],
       title: 'Book'
     }

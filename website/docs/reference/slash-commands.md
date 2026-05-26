@@ -10,7 +10,7 @@ Superforecasting Agent has three slash-command surfaces:
 
 - **Classic interactive CLI slash commands** — dispatched by `cli.py`, with autocomplete from the central `COMMAND_REGISTRY` in `hermes_cli/commands.py`
 - **Messaging slash commands** — dispatched by `gateway/run.py`, with help text and platform menus generated from the registry
-- **TUI forecast shortcuts** — local Ink handlers for forecast-desk workflows such as `/questions`, `/forecast`, `/sources`, `/new-forecast`, `/ingest`, `/evidence`, `/research`, `/base-rate`, `/model-run`, `/trend-model`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/review`, `/alerts`, `/calibration`, `/lessons`, `/backtest`, `/schedule`, `/autopilot`, `/performance`, `/readiness`, `/doctor`, `/pilot-report`, `/pilot-cohort`, `/export-packet`, `/import-packet`, and `/pilot-aggregate`
+- **TUI forecast shortcuts** — local Ink handlers for forecast-desk workflows such as `/questions`, `/find`, `/open`, `/evidence-for`, `/update-for`, `/forecast`, `/sources`, `/new-forecast`, `/ingest`, `/evidence`, `/research`, `/base-rate`, `/model-run`, `/trend-model`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/review`, `/alerts`, `/calibration`, `/lessons`, `/backtest`, `/schedule`, `/autopilot`, `/performance`, `/readiness`, `/doctor`, `/pilot-report`, `/pilot-cohort`, `/export-packet`, `/import-packet`, and `/pilot-aggregate`
 
 Installed skills are also exposed as dynamic slash commands on the classic CLI and messaging surfaces. That includes bundled skills like `/plan`, which opens plan mode and saves markdown plans under the workspace-local compatibility plans directory.
 
@@ -20,7 +20,11 @@ The forecast desk is the primary product surface. Use these before reaching for 
 
 | Command | Surface | Description |
 |---------|---------|-------------|
-| `/questions [row\|list N]` | CLI, TUI | Show current forecast questions as numbered rows with headline probability, delta, as-of/freshness, close date, confidence, evidence count, and status. Run `/questions <row>` to open the full forecast details without copying a forecast ID; in the TUI, the numbered rows also carry the same drill-down target. Alias: `/book`. |
+| `/questions [row\|list N\|words]` | CLI, TUI | Show current forecast questions as numbered rows with headline probability, delta, as-of/freshness, close date, confidence, evidence count, and status. Run `/questions <row>` to open the full forecast details without copying a forecast ID; in the TUI, `/questions <words>` searches by title, topic, or domain. Alias: `/book`. |
+| `/find <words>` | CLI, TUI | Search active forecasts and review-queue items by title, topic, or domain. |
+| `/open <row\|id\|words>` | CLI, TUI | Open one matching forecast ledger record without copying a forecast ID. |
+| `/evidence-for <row\|words> -- <note>` | CLI, TUI | Resolve a row/search phrase to a forecast and append a timestamped evidence note. |
+| `/update-for <row\|words> -- <args>` | CLI, TUI | Resolve a row/search phrase to a forecast and append an explicit probability update. |
 | `/forecast [limit\|subcommand]` | CLI, TUI | Show the forecast dashboard or run `forecast <subcommand>` from the active session. Common subcommands include `new`, `sources`, `ingest`, `research`, `evidence`, `base-rate`, `reference-class`, `assumption`, `model`, `update`, `resolve`, `score`, `postmortem`, `calibration`, `lesson`, `review`, `watch`, `alerts`, `autopilot`, `schedule`, `self-check`, `backtest`, `performance`, `readiness`, `pilot-report`, `pilot-cohort`, `pilot-bundle`, `pilot-aggregate`, `export`, and `import packet`. |
 | `/new-forecast [args]` | TUI | Create a scoreable forecast question. Equivalent to `forecast new ...`. |
 | `/ingest [args]` | TUI | Stage a URL or file as a forecast candidate. Equivalent to `forecast ingest ...`. |
@@ -74,7 +78,11 @@ Type `/` in the CLI to open the autocomplete menu. Built-in commands are case-in
 
 | Command | Description |
 |---------|-------------|
-| `/questions [row\|list N]` (alias: `/book`, `/qbook`) | Show current forecast questions as numbered rows with headline probability, freshness, and summary values. Run `/questions <row>` to open full details without remembering the forecast ID; TUI rows can be selected directly. |
+| `/questions [row\|list N\|words]` (alias: `/book`, `/qbook`) | Show current forecast questions as numbered rows with headline probability, freshness, and summary values. Run `/questions <row>` to open full details without remembering the forecast ID; in the TUI, `/questions <words>` searches by title, topic, or domain and rows can be selected directly. |
+| `/find <words>` (aliases: `/search-forecasts`, `/lookup`) | Search active forecasts and review queue by title, topic, or domain. |
+| `/open <row\|id\|words>` (aliases: `/question`, `/show-forecast`) | Open a forecast by row number, id, short id, or search words. |
+| `/evidence-for <row\|words> -- <note>` (aliases: `/note`, `/note-for`) | Append an evidence note after resolving the forecast reference. |
+| `/update-for <row\|words> -- <args>` (aliases: `/updateq`, `/revise`) | Append a probability update after resolving the forecast reference. |
 | `/forecast [limit\|subcommand]` (alias: `/forecasts`) | Run forecast desk lifecycle commands from the active session. With no subcommand it shows the desk summary; autocomplete covers the primary lifecycle plus source, learning, schedule, pilot, and export flows: `status`, `new`, `sources`, `ingest`, `research`, `evidence`, `base-rate`, `reference-class`, `assumption`, `model`, `update`, `resolve`, `score`, `postmortem`, `calibration`, `lesson`, `review`, `watch`, `alerts`, `autopilot`, `schedule`, `self-check`, `backtest`, `performance`, `readiness`, `pilot-report`, `pilot-cohort`, `pilot-bundle`, `pilot-aggregate`, `export`, and `import packet`. |
 
 ### Session
