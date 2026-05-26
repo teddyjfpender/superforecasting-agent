@@ -17,22 +17,22 @@ python3 scripts/forecast_smoke_test.py
 ## Observed Output
 
 ```text
-[forecast-smoke] snapshot: 549dafbac632 (main, dirty)
-[forecast-smoke] ledger: /var/folders/5x/7hym3yzn05z0k_z3g1m17brc0000gn/T/superforecasting-agent-smoke-ul2p9rxr/forecasting-smoke.db
+[forecast-smoke] snapshot: 3b9006319c2f (main)
+[forecast-smoke] ledger: /var/folders/5x/7hym3yzn05z0k_z3g1m17brc0000gn/T/superforecasting-agent-smoke-ekie3_bp/forecasting-smoke.db
 [forecast-smoke] source_adapters: 52
 [forecast-smoke] benchmark_datasets: 4
-[forecast-smoke] question_id: fq_e1781331a341
-[forecast-smoke] evidence_id: ev_571419b245f6
-[forecast-smoke] reference_class_id: rc_9913bd297e85
-[forecast-smoke] model_run_id: mr_871159a35f5e
-[forecast-smoke] scheduled_self_check_question_id: fq_64f44926de47
+[forecast-smoke] question_id: fq_88cf7555cd35
+[forecast-smoke] evidence_id: ev_e0549b8752d0
+[forecast-smoke] reference_class_id: rc_fe05a081792d
+[forecast-smoke] model_run_id: mr_7fc9de8ef8fe
+[forecast-smoke] scheduled_self_check_question_id: fq_b83562457cc6
 [forecast-smoke] pilot_cohort_dry_run_questions: 1
 [forecast-smoke] pilot_cohort_example_questions: 5
 [forecast-smoke] pilot_report_checks: 9/9
 [forecast-smoke] packet_import_questions: 2
 [forecast-smoke] pilot_aggregate_live_scores: 1
-[forecast-smoke] backtest_run_id: bt_f276f97f925c
-[forecast-smoke] agent_protocol_backtest_run_id: bt_2ae420a693d5
+[forecast-smoke] backtest_run_id: bt_e2eefdf00b62
+[forecast-smoke] agent_protocol_backtest_run_id: bt_8635c95c60ae
 [forecast-smoke] performance_runs: 2
 [forecast-smoke] readiness_verdict: insufficient_live_evidence
 [forecast-smoke] readiness_gaps: 4
