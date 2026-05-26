@@ -395,26 +395,32 @@ def test_embedded_tui_surface_is_forecast_desk():
     root = Path(__file__).resolve().parents[1]
     surface_paths = [
         root / "web" / "src" / "App.tsx",
-        root / "web" / "src" / "pages" / "ChatPage.tsx",
+        root / "web" / "src" / "pages" / "ForecastDeskPage.tsx",
         root / "web" / "src" / "components" / "ChatSidebar.tsx",
         root / "web" / "src" / "components" / "ModelPickerDialog.tsx",
         root / "web" / "src" / "components" / "SlashPopover.tsx",
+        root / "web" / "src" / "contexts" / "PageHeaderProvider.tsx",
         root / "web" / "src" / "index.css",
         root / "web" / "src" / "i18n" / "en.ts",
         root / "web" / "src" / "lib" / "dashboard-flags.ts",
+        root / "web" / "src" / "lib" / "resolve-page-title.ts",
         root / "web" / "src" / "lib" / "slashExec.ts",
         root / "web" / "src" / "pages" / "AnalyticsPage.tsx",
+        root / "web" / "src" / "pages" / "SessionsPage.tsx",
         root / "web" / "src" / "pages" / "ModelsPage.tsx",
         root / "hermes_cli" / "main.py",
         root / "hermes_cli" / "web_server.py",
         root / "website" / "docs" / "index.md",
         root / "website" / "docs" / "getting-started" / "installation.md",
         root / "website" / "docs" / "getting-started" / "learning-path.md",
+        root / "website" / "docs" / "developer-guide" / "contributing.md",
         root / "website" / "docs" / "reference" / "cli-commands.md",
         root / "website" / "docs" / "reference" / "environment-variables.md",
         root / "website" / "docs" / "reference" / "faq.md",
         root / "website" / "docs" / "user-guide" / "cli.md",
         root / "website" / "docs" / "user-guide" / "configuring-models.md",
+        root / "website" / "docs" / "user-guide" / "windows-native.md",
+        root / "website" / "docs" / "user-guide" / "windows-wsl-quickstart.md",
         root / "website" / "docs" / "user-guide" / "features" / "skills.md",
         root / "website" / "docs" / "user-guide" / "features" / "web-dashboard.md",
         root / "website" / "docs" / "user-guide" / "features" / "overview.md",
@@ -423,6 +429,13 @@ def test_embedded_tui_surface_is_forecast_desk():
     text = "\n".join(path.read_text(encoding="utf-8") for path in surface_paths)
 
     assert "Forecast Desk" in text
+    assert not (root / "web" / "src" / "pages" / "ChatPage.tsx").exists()
+    assert "ForecastDeskPage" in text
+    assert 'path: "/desk"' in text
+    assert '"/desk": "chat"' in text
+    assert "navigate(`/desk?resume=" in text
+    assert "data-forecast-desk-active" in text
+    assert "dashboard's /desk" in text
     assert "Forecast Chat" not in text
     assert "Forecast-Chat" not in text
     assert "inspecting forecast sessions" in text
@@ -473,6 +486,8 @@ def test_embedded_tui_surface_is_forecast_desk():
     assert "embedded chat is a supporting surface" not in text
     assert "caller's chat UI" not in text
     assert "inline in ChatPage" not in text
+    assert "web/src/pages/ChatPage.tsx" not in text
+    assert "data-chat-active" not in text
     assert "hermes-chat-xterm-host" not in text
     assert "chat-side-panel" not in text
     assert "built-in chat UI" not in text
@@ -4238,9 +4253,9 @@ def test_dashboard_plugin_sdk_has_forecast_native_aliases():
         encoding="utf-8"
     )
     app = (root / "web" / "src" / "App.tsx").read_text(encoding="utf-8")
-    forecast_desk_page = (root / "web" / "src" / "pages" / "ChatPage.tsx").read_text(
-        encoding="utf-8"
-    )
+    forecast_desk_page = (
+        root / "web" / "src" / "pages" / "ForecastDeskPage.tsx"
+    ).read_text(encoding="utf-8")
     dashboard_extension_docs = (
         root
         / "website"

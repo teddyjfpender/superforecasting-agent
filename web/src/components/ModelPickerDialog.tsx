@@ -27,7 +27,7 @@ import { createPortal } from "react-dom";
  *    `onApply`. The picker fetches options via the REST endpoint and calls
  *    `onApply(provider, model, persistGlobal)` instead of emitting a slash
  *    command.  This lets the Models page reuse the same UI without
- *    requiring an open chat PTY.
+ *    requiring an open Forecast Desk PTY.
  */
 
 interface ModelOptionProvider {

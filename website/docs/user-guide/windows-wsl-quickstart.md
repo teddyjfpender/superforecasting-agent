@@ -10,7 +10,7 @@ sidebar_position: 2
 Superforecasting Agent supports **both** native Windows and WSL2. This page covers the WSL2 path; for the native PowerShell install see the dedicated **[Windows (Native) Guide](./windows-native.md)**.
 
 **When to pick WSL2 over native:**
-- You want to use the dashboard's embedded terminal (`/chat` tab) — that pane requires a POSIX PTY and is WSL2-only.
+- You want to use the dashboard's embedded terminal (`/desk` tab; `/chat` remains a compatibility alias) — that pane requires a POSIX PTY and is WSL2-only.
 - You're doing POSIX-heavy development or research work and want your forecast desk sessions to share the same filesystem and paths as your dev tools.
 - You already have a WSL2 environment and don't want to maintain a second install.
 

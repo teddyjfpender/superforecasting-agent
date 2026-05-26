@@ -136,7 +136,7 @@ Use the fork checkout install above. WSL2 remains the safest Windows path for th
 
 ### Native Windows
 
-Native Windows support is inherited and still early beta. Most CLI, gateway, cron, browser, and MCP paths work, but the dashboard `/chat` terminal pane depends on POSIX PTYs and is WSL2-only. Prefer WSL2 for forecast-desk development.
+Native Windows support is inherited and still early beta. Most CLI, gateway, cron, browser, and MCP paths work, but the dashboard `/desk` terminal pane depends on POSIX PTYs and is WSL2-only (`/chat` remains a compatibility alias). Prefer WSL2 for forecast-desk development.
 
 ## Windows (native, PowerShell) — Early Beta
 

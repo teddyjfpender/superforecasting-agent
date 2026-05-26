@@ -107,7 +107,7 @@ _SESSION_HEADER_NAMES = (
     "X-Hermes-Session-Token",
 )
 
-# In-browser Chat tab (/chat, /api/pty, ...). Off unless
+# In-browser Forecast Desk tab (/desk primary, /chat compatibility, /api/pty, ...). Off unless
 # ``superforecasting-agent dashboard --tui`` or a dashboard TUI env alias is
 # set. Set from :func:`start_server`.
 _DASHBOARD_EMBEDDED_CHAT_ENABLED = False
@@ -1019,7 +1019,7 @@ def get_model_info():
 # ---------------------------------------------------------------------------
 # Model assignment — pick provider+model for main slot or auxiliary slots.
 # Mirrors the model.options JSON-RPC from tui_gateway but uses REST so the
-# Models page (which has no chat PTY open) can drive it.
+# Models page (which has no Forecast Desk PTY open) can drive it.
 # ---------------------------------------------------------------------------
 
 # Canonical auxiliary task slots. Keep in sync with DEFAULT_CONFIG["auxiliary"]
@@ -1042,7 +1042,7 @@ def get_model_options():
     """Return authenticated providers + their curated model lists.
 
     REST equivalent of the ``model.options`` JSON-RPC on tui_gateway, so the
-    dashboard Models page can render the picker without a live chat session.
+    dashboard Models page can render the picker without a live Forecast Desk session.
     The response shape matches ``model.options`` 1:1 so ``ModelPickerDialog``
     can share the same types.
     """
@@ -3120,7 +3120,7 @@ async def get_toolsets():
 async def get_forecast_dashboard(limit: int = 50):
     """Forecast-native dashboard summary for the web UI.
 
-    This complements the embedded TUI instead of replacing the chat surface:
+    This complements the embedded TUI instead of replacing the Forecast Desk surface:
     it exposes the standing forecast book, current probabilities, deltas,
     confidence, assumptions, and open alerts as structured data.
     """
@@ -3332,7 +3332,7 @@ async def get_models_analytics(days: int = 30):
 # The endpoint spawns the same ``superforecasting-agent --tui`` binary the CLI
 # uses, behind a POSIX pseudo-terminal, and forwards bytes + resize escapes
 # across a WebSocket. The browser renders the ANSI through xterm.js (see
-# web/src/pages/ChatPage.tsx, retained as the compatibility route host).
+# web/src/pages/ForecastDeskPage.tsx).
 #
 # Auth: ``?token=<session_token>`` query param (browsers can't set
 # Authorization on the WS upgrade).  Same ephemeral ``_SESSION_TOKEN`` as
@@ -3386,8 +3386,8 @@ def _ws_client_is_allowed(ws: "WebSocket") -> bool:
 
 # Per-channel subscriber registry used by /api/pub (PTY-side gateway → dashboard)
 # and /api/events (dashboard → browser sidebar).  Keyed by an opaque channel id
-# the chat tab generates on mount; entries auto-evict when the last subscriber
-# drops AND the publisher has disconnected.
+# the Forecast Desk generates on mount; entries auto-evict when the last
+# subscriber drops AND the publisher has disconnected.
 _event_channels: dict[str, set] = {}
 _event_lock = asyncio.Lock()
 
@@ -3427,7 +3427,7 @@ def _resolve_chat_argv(
     resume: Optional[str] = None,
     sidecar_url: Optional[str] = None,
 ) -> tuple[list[str], Optional[str], Optional[dict]]:
-    """Resolve the argv + cwd + env for the chat PTY.
+    """Resolve the argv + cwd + env for the dashboard Forecast Desk PTY.
 
     Default: whatever ``superforecasting-agent --tui`` would run. Tests
     monkeypatch this function to inject a tiny fake command (``cat``,
@@ -3527,10 +3527,10 @@ async def pty_ws(ws: WebSocket) -> None:
     # client and close cleanly rather than pretending the feature works.
     if not _PTY_BRIDGE_AVAILABLE:
         await ws.send_text(
-            "\r\n\x1b[31mChat unavailable: the embedded terminal requires a "
+            "\r\n\x1b[31mForecast Desk unavailable: the embedded terminal requires a "
             "POSIX PTY, which native Windows Python doesn't provide.\x1b[0m\r\n"
-            "\x1b[33mInstall Superforecasting Agent inside WSL2 to use the dashboard's /chat "
-            "tab — the rest of the dashboard works here.\x1b[0m\r\n"
+            "\x1b[33mInstall Superforecasting Agent inside WSL2 to use the dashboard's /desk "
+            "tab (/chat remains a compatibility alias) — the rest of the dashboard works here.\x1b[0m\r\n"
         )
         await ws.close(code=1011)
         return
@@ -3544,7 +3544,7 @@ async def pty_ws(ws: WebSocket) -> None:
         argv, cwd, env = _resolve_chat_argv(resume=resume, sidecar_url=sidecar_url)
     except SystemExit as exc:
         # _make_tui_argv calls sys.exit(1) when node/npm is missing.
-        await ws.send_text(f"\r\n\x1b[31mChat unavailable: {exc}\x1b[0m\r\n")
+        await ws.send_text(f"\r\n\x1b[31mForecast Desk unavailable: {exc}\x1b[0m\r\n")
         await ws.close(code=1011)
         return
 
@@ -3552,11 +3552,11 @@ async def pty_ws(ws: WebSocket) -> None:
     try:
         bridge = PtyBridge.spawn(argv, cwd=cwd, env=env)
     except PtyUnavailableError as exc:
-        await ws.send_text(f"\r\n\x1b[31mChat unavailable: {exc}\x1b[0m\r\n")
+        await ws.send_text(f"\r\n\x1b[31mForecast Desk unavailable: {exc}\x1b[0m\r\n")
         await ws.close(code=1011)
         return
     except (FileNotFoundError, OSError) as exc:
-        await ws.send_text(f"\r\n\x1b[31mChat failed to start: {exc}\x1b[0m\r\n")
+        await ws.send_text(f"\r\n\x1b[31mForecast Desk failed to start: {exc}\x1b[0m\r\n")
         await ws.close(code=1011)
         return
 
@@ -3646,7 +3646,7 @@ async def gateway_ws(ws: WebSocket) -> None:
 
 
 # ---------------------------------------------------------------------------
-# /api/pub + /api/events — chat-tab event broadcast.
+# /api/pub + /api/events — Forecast Desk event broadcast.
 #
 # The PTY-side ``tui_gateway.entry`` opens /api/pub at startup (driven by
 # the TUI sidecar URL env aliases set in /api/pty's PTY env) and writes

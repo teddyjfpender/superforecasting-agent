@@ -2275,10 +2275,10 @@ class TestDashboardPluginManifestExtensions:
 
 
 # ---------------------------------------------------------------------------
-# /api/pty WebSocket — terminal bridge for the dashboard "Chat" tab.
+# /api/pty WebSocket — terminal bridge for the dashboard Forecast Desk tab.
 #
 # These tests drive the endpoint with a tiny fake command (typically ``cat``
-# or ``sh -c 'printf …'``) instead of the real ``hermes --tui`` binary.  The
+# or ``sh -c 'printf …'``) instead of the real ``superforecasting-agent --tui`` binary.  The
 # endpoint resolves its argv through ``_resolve_chat_argv``, so tests
 # monkeypatch that hook.
 # ---------------------------------------------------------------------------
@@ -2316,7 +2316,7 @@ class TestPtyWebSocket:
         return f"/api/pty?{urlencode(q)}"
 
     def test_resolve_chat_argv_uses_dashboard_scroll_env(self, monkeypatch):
-        """Dashboard chat runs the TUI in browser-scrollback mode."""
+        """Dashboard Forecast Desk runs the TUI in browser-scrollback mode."""
         import hermes_cli.main as main_mod
 
         monkeypatch.setattr(
@@ -2335,7 +2335,7 @@ class TestPtyWebSocket:
         assert env["HERMES_TUI_DISABLE_MOUSE"] == "1"
 
     def test_resolve_chat_argv_exports_resume_and_sidecar_aliases(self, monkeypatch):
-        """Dashboard chat forwards fork-native TUI env aliases to the PTY child."""
+        """Dashboard Forecast Desk forwards fork-native TUI env aliases to the PTY child."""
         import hermes_cli.main as main_mod
 
         monkeypatch.setattr(
@@ -2523,8 +2523,8 @@ class TestPtyWebSocket:
 
     def test_channel_param_propagates_sidecar_url(self, monkeypatch):
         """When /api/pty is opened with ?channel=, the PTY child gets a
-        HERMES_TUI_SIDECAR_URL env var pointing back at /api/pub on the
-        same channel — which is how tool events reach the dashboard sidebar."""
+        fork-native sidecar URL env alias pointing back at /api/pub on the
+        same channel, which is how tool events reach the dashboard sidebar."""
         captured: dict = {}
 
         def fake_resolve(resume=None, sidecar_url=None):

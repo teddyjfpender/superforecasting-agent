@@ -104,7 +104,7 @@ function terminalLineHeightForWidth(layoutWidthPx: number): number {
   return layoutWidthPx < 1024 ? 1.02 : 1.15;
 }
 
-export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
+export default function ForecastDeskPage({ isActive = true }: { isActive?: boolean }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -128,7 +128,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // what side-effects (body-scroll lock, keydown listener, portal render)
   // key on — that way switching to another tab triggers the effect's
   // cleanup, releasing the scroll-lock on /sessions etc.  Returning to
-  // /chat re-runs the effect (derived flips back to true) and re-locks.
+  // /desk re-runs the effect (derived flips back to true) and re-locks.
   // Keying on the raw state would leak the body.overflow="hidden" across
   // tabs because the dep wouldn't change on tab switch.
   const [mobilePanelOpenRaw, setMobilePanelOpenRaw] = useState(false);
@@ -150,9 +150,9 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   );
 
   // The dashboard keeps the Forecast Desk host mounted persistently so the PTY
-  // survives tab switches. That is great for ordinary /chat navigation, but it means query
+  // survives tab switches. That is great for ordinary /desk navigation, but it means query
   // param changes do NOT remount the component. Resume-in-Forecast-Desk from the
-  // Sessions page relies on `/chat?resume=<id>` changing at runtime, so we must
+  // Sessions page relies on `/desk?resume=<id>` changing at runtime, so we must
   // treat the current resume target as part of the PTY identity and rebuild the
   // terminal session when it changes.
   const resumeParam = searchParams.get("resume");

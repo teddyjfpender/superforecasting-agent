@@ -67,7 +67,7 @@ import CronPage from "@/pages/CronPage";
 import ProfilesPage from "@/pages/ProfilesPage";
 import SkillsPage from "@/pages/SkillsPage";
 import PluginsPage from "@/pages/PluginsPage";
-import ChatPage from "@/pages/ChatPage";
+import ForecastDeskPage from "@/pages/ForecastDeskPage";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { useI18n } from "@/i18n";
@@ -90,21 +90,21 @@ function UnknownRouteFallback({ pluginsLoading }: { pluginsLoading: boolean }) {
   return <Navigate to="/forecasts" replace />;
 }
 
-const CHAT_NAV_ITEM: NavItem = {
-  path: "/chat",
+const FORECAST_DESK_NAV_ITEM: NavItem = {
+  path: "/desk",
   labelKey: "chat",
   label: "Forecast Desk",
   icon: Terminal,
 };
 
 /**
- * Built-in routes except /chat.  Chat is rendered persistently (outside
- * <Routes>) when embedded — see the persistent chat host block rendered
+ * Built-in routes except /desk. Forecast Desk is rendered persistently (outside
+ * <Routes>) when embedded — see the persistent desk host block rendered
  * inline near the bottom of this file — so the PTY child, WebSocket,
  * and xterm instance survive when the user visits another tab and comes
  * back.  A `display:none` toggle hides the terminal without unmounting.
- * Routing still owns the URL so /chat deep-links, browser back/forward,
- * and nav highlight keep working.
+ * Routing still owns the URL so /desk deep-links, browser back/forward,
+ * and nav highlight keep working. /chat remains a compatibility alias.
  */
 const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/": RootRedirect,
@@ -122,10 +122,10 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/docs": DocsPage,
 };
 
-// Route placeholder for /chat.  The persistent Forecast Desk host (rendered
+// Route placeholder for /desk and compatibility /chat. The persistent Forecast Desk host (rendered
 // outside <Routes> when embedded Forecast Desk is on) paints on top; this empty
 // element just claims the path so the `*` catch-all redirect doesn't
-// fire when the user navigates to /chat.
+// fire when the user navigates to the desk route.
 function ForecastDeskRouteSink() {
   return null;
 }
@@ -321,8 +321,8 @@ export default function App() {
   const closeMobile = useCallback(() => setMobileOpen(false), []);
   const isDocsRoute = pathname === "/docs" || pathname === "/docs/";
   const normalizedPath = pathname.replace(/\/$/, "") || "/";
-  const isChatRoute = normalizedPath === "/chat";
-  const embeddedChat = isDashboardEmbeddedChatEnabled();
+  const isForecastDeskRoute = normalizedPath === "/desk" || normalizedPath === "/chat";
+  const embeddedDesk = isDashboardEmbeddedChatEnabled();
 
   // `dashboard.show_token_analytics` gates the Analytics nav item.  The
   // page itself remains reachable by URL (it renders an explanation when
@@ -339,42 +339,45 @@ export default function App() {
       .catch(() => setShowTokenAnalytics(false));
   }, []);
 
-  // A plugin can replace the built-in Forecast Desk page via `tab.override: "/chat"`
+  // A plugin can replace the built-in Forecast Desk page via `tab.override: "/desk"`
   // in its manifest.  When one does, `buildRoutes` already swaps the route
   // element for <PluginPage /> — but we also have to suppress the
   // persistent Forecast Desk host below, or the plugin's page and the built-in
   // terminal would paint on top of each other.  The override is niche
-  // (nothing ships overriding /chat today) but it's an advertised
+  // (nothing ships overriding /desk today) but it's an advertised
   // extension point, so preserve the pre-persistence contract: when a
-  // plugin owns /chat, the built-in Forecast Desk UI is entirely absent.
+  // plugin owns /desk, the built-in Forecast Desk UI is entirely absent.
+  // Compatibility plugins that still override /chat get the same treatment.
   //
   // Waiting on `pluginsLoading` is load-bearing: manifests arrive
   // asynchronously from /api/dashboard/plugins, so on initial render
-  // `chatOverriddenByPlugin` is always false.  Without the loading
+  // `deskOverriddenByPlugin` is always false.  Without the loading
   // gate, the persistent host would mount, spawn a PTY, and THEN get
   // yanked out from under the user when the plugin's manifest resolves
   // — killing the session mid-paint.  Delaying host mount by the
   // plugin-load window (typically <50ms, worst case 2s safety timeout)
   // is the cheaper trade-off.
-  const chatOverriddenByPlugin = useMemo(
-    () => manifests.some((m) => m.tab.override === "/chat"),
+  const deskOverriddenByPlugin = useMemo(
+    () => manifests.some((m) => m.tab.override === "/desk" || m.tab.override === "/chat"),
     [manifests],
   );
 
   const builtinRoutes = useMemo(
     () => ({
       ...BUILTIN_ROUTES_CORE,
-      ...(embeddedChat ? { "/chat": ForecastDeskRouteSink } : {}),
+      ...(embeddedDesk
+        ? { "/desk": ForecastDeskRouteSink, "/chat": ForecastDeskRouteSink }
+        : {}),
     }),
-    [embeddedChat],
+    [embeddedDesk],
   );
 
   const builtinNav = useMemo(() => {
-    const base = embeddedChat
-      ? [BUILTIN_NAV_REST[0], CHAT_NAV_ITEM, ...BUILTIN_NAV_REST.slice(1)]
+    const base = embeddedDesk
+      ? [BUILTIN_NAV_REST[0], FORECAST_DESK_NAV_ITEM, ...BUILTIN_NAV_REST.slice(1)]
       : BUILTIN_NAV_REST;
     return showTokenAnalytics ? base : base.filter((n) => n.path !== "/analytics");
-  }, [embeddedChat, showTokenAnalytics]);
+  }, [embeddedDesk, showTokenAnalytics]);
 
   const sidebarNav = useMemo(
     () => partitionSidebarNav(builtinNav, manifests),
@@ -594,7 +597,7 @@ export default function App() {
               className={cn(
                 "relative z-2 flex min-w-0 min-h-0 flex-1 flex-col",
                 "px-3 sm:px-6",
-                isChatRoute
+                isForecastDeskRoute
                   ? "pb-0 pt-1 sm:pt-2 lg:pt-4"
                   : "pt-2 sm:pt-4 lg:pt-6",
                 isDocsRoute && "min-h-0 flex-1",
@@ -604,9 +607,9 @@ export default function App() {
               <div
                 className={cn(
                   "w-full min-w-0",
-                  !isChatRoute &&
+                  !isForecastDeskRoute &&
                     "pb-[calc(2rem+env(safe-area-inset-bottom,0px))] lg:pb-8",
-                  (isDocsRoute || isChatRoute) &&
+                  (isDocsRoute || isForecastDeskRoute) &&
                     "min-h-0 flex flex-1 flex-col",
                 )}
               >
@@ -622,10 +625,10 @@ export default function App() {
                   />
                 </Routes>
 
-                {embeddedChat &&
-                  !chatOverriddenByPlugin &&
+                {embeddedDesk &&
+                  !deskOverriddenByPlugin &&
                   (pluginsLoading ? (
-                    isChatRoute ? (
+                    isForecastDeskRoute ? (
                       <div
                         className="flex min-h-0 min-w-0 flex-1 items-center justify-center"
                         aria-busy="true"
@@ -639,14 +642,14 @@ export default function App() {
                     ) : null
                   ) : (
                     <div
-                      data-chat-active={isChatRoute ? "true" : "false"}
+                      data-forecast-desk-active={isForecastDeskRoute ? "true" : "false"}
                       className={cn(
                         "min-h-0 min-w-0",
-                        isChatRoute ? "flex flex-1 flex-col" : "hidden",
+                        isForecastDeskRoute ? "flex flex-1 flex-col" : "hidden",
                       )}
-                      aria-hidden={!isChatRoute}
+                      aria-hidden={!isForecastDeskRoute}
                     >
-                      <ChatPage isActive={isChatRoute} />
+                      <ForecastDeskPage isActive={isForecastDeskRoute} />
                     </div>
                   ))}
               </div>

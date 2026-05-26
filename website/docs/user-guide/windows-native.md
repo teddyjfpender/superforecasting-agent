@@ -96,10 +96,10 @@ Everything except the dashboard's embedded terminal pane runs natively on Window
 | MCP servers (stdio and HTTP) | ✓ | ✓ |
 | Local Ollama / LM Studio / llama-server | ✓ | ✓ (via WSL networking) |
 | Web dashboard (sessions, jobs, metrics, config) | ✓ | ✓ |
-| Dashboard `/chat` embedded terminal pane | ✗ (needs POSIX PTY) | ✓ |
+| Dashboard `/desk` embedded terminal pane (`/chat` compatibility alias) | ✗ (needs POSIX PTY) | ✓ |
 | Auto-start at login | ✓ (schtasks) | ✓ (systemd) |
 
-The dashboard's `/chat` tab embeds a real terminal via a POSIX PTY (`ptyprocess`). Native Windows has no equivalent primitive; Python's `pywinpty` / Windows ConPTY would work but is a separate implementation — treat as future work. **The rest of the dashboard works natively** — only that one tab shows a "use WSL2 for this" banner.
+The dashboard's `/desk` tab embeds a real terminal via a POSIX PTY (`ptyprocess`). Native Windows has no equivalent primitive; Python's `pywinpty` / Windows ConPTY would work but is a separate implementation — treat as future work. **The rest of the dashboard works natively** — only that one tab shows a "use WSL2 for this" banner. `/chat` remains accepted as a compatibility alias during the fork transition.
 
 ## How Superforecasting Agent runs shell commands on Windows
 
