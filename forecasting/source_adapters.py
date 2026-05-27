@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urlparse
 from urllib.request import Request, urlopen
+from typing import Any
 from xml.etree import ElementTree
 
 from forecasting.models import OutcomeSpace, ValidationError, parse_timestamp, timestamp_to_datetime
@@ -1369,34 +1370,96 @@ def load_fivethirtyeight_polls(
     return observations[-limit:]
 
 
-def load_fred_observations(
-    series_id: str,
-    *,
-    limit: int = 10,
-    since: str | None = None,
-    api_base_url: str = "https://fred.stlouisfed.org/graph/fredgraph.csv",
-) -> list[FredObservation]:
-    """Load recent FRED CSV observations as timestamped evidence rows."""
+def _fred_fetch_timeout() -> float:
+    """Per-attempt timeout (seconds) for FRED fetches.
 
-    normalized_series = series_id.strip()
-    if not normalized_series:
-        raise ValidationError("fred import series id is required")
-    if limit <= 0:
-        raise ValidationError("fred import --limit must be positive")
-    since_date = _fred_date(since, field_name="since") if since else None
+    Tighter than the general source timeout so a flaky FRED endpoint fails fast
+    and the fallback chain (API → CSV → HTML) stays bounded instead of hanging
+    for tens of seconds per series.
+    """
+
+    for name in ("SUPERFORECASTING_AGENT_FRED_TIMEOUT", "FORECAST_FRED_TIMEOUT", "HERMES_FRED_TIMEOUT"):
+        raw = os.environ.get(name)
+        if raw and raw.strip():
+            try:
+                value = float(raw.strip())
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                return value
+    return 12.0
+
+
+def _fred_make_observation(
+    series_id: str, observation_date, value, *, raw: dict
+) -> FredObservation:
+    observation_iso = _fred_date_to_iso(observation_date)
+    numeric = _optional_float(str(value)) if value is not None else None
+    return FredObservation(
+        series_id=series_id,
+        observation_date=observation_date.isoformat(),
+        value=numeric if numeric is not None else value,
+        published_at=observation_iso,
+        source_url=f"https://fred.stlouisfed.org/series/{quote(series_id)}",
+        source_name="FRED",
+        entry_id=f"{series_id}:{observation_date.isoformat()}",
+        raw=raw,
+    )
+
+
+def _load_fred_from_api(
+    series_id: str, *, api_key: str, limit: int, since_date, timeout: float
+) -> list[FredObservation]:
+    """Official FRED API path — reliable JSON, used when FRED_API_KEY is set."""
+
+    params = {
+        "series_id": series_id,
+        "api_key": api_key,
+        "file_type": "json",
+        "sort_order": "desc",
+        "limit": str(max(limit, 1)),
+    }
+    if since_date is not None:
+        params["observation_start"] = since_date.isoformat()
+    endpoint = f"https://api.stlouisfed.org/fred/series/observations?{urlencode(params)}"
+    payload = _read_json_endpoint(endpoint, "fred observations (api)", timeout=timeout)
+    rows = payload.get("observations") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        raise ValidationError("fred api response did not include observations")
+    observations: list[FredObservation] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        observation_date = _fred_date(str(row.get("date") or "").strip(), field_name="fred observation date")
+        if observation_date is None:
+            continue
+        if since_date is not None and observation_date < since_date:
+            continue
+        raw_value = str(row.get("value") or "").strip()
+        if raw_value in {"", "."}:
+            continue
+        observations.append(_fred_make_observation(series_id, observation_date, raw_value, raw=dict(row)))
+    observations.sort(key=lambda item: item.observation_date)
+    return observations[-limit:]
+
+
+def _load_fred_from_csv(
+    series_id: str, *, api_base_url: str, limit: int, since_date, timeout: float
+) -> list[FredObservation]:
+    """Public fredgraph.csv path (no key). Bounded by ``timeout``."""
+
     endpoint_base = api_base_url.rstrip("?&")
     separator = "&" if "?" in endpoint_base else "?"
-    endpoint = f"{endpoint_base}{separator}{urlencode({'id': normalized_series})}"
-    text = _read_text_endpoint(endpoint, "fred observations")
+    endpoint = f"{endpoint_base}{separator}{urlencode({'id': series_id})}"
+    text = _read_text_endpoint(endpoint, "fred observations", timeout=timeout)
     reader = csv.DictReader(text.splitlines())
     if not reader.fieldnames:
         raise ValidationError("fred observations CSV has no header row")
     date_key = _fred_date_column(reader.fieldnames)
-    value_key = _fred_value_column(reader.fieldnames, normalized_series, date_key)
+    value_key = _fred_value_column(reader.fieldnames, series_id, date_key)
     observations: list[FredObservation] = []
     for index, row in enumerate(reader):
-        raw_date = str(row.get(date_key) or "").strip()
-        observation_date = _fred_date(raw_date, field_name="fred observation date")
+        observation_date = _fred_date(str(row.get(date_key) or "").strip(), field_name="fred observation date")
         if observation_date is None:
             continue
         if since_date is not None and observation_date < since_date:
@@ -1404,21 +1467,105 @@ def load_fred_observations(
         raw_value = str(row.get(value_key) or "").strip()
         if raw_value in {"", "."}:
             continue
-        value = _optional_float(raw_value)
-        observation_iso = _fred_date_to_iso(observation_date)
         observations.append(
-            FredObservation(
-                series_id=normalized_series,
-                observation_date=observation_date.isoformat(),
-                value=value if value is not None else raw_value,
-                published_at=observation_iso,
-                source_url=f"https://fred.stlouisfed.org/series/{quote(normalized_series)}",
-                source_name="FRED",
-                entry_id=f"{normalized_series}:{observation_date.isoformat()}",
-                raw={"row_index": index, **dict(row)},
-            )
+            _fred_make_observation(series_id, observation_date, raw_value, raw={"row_index": index, **dict(row)})
         )
     return observations[-limit:]
+
+
+def _parse_fred_series_page(series_id: str, html: str, *, limit: int, since_date) -> list[FredObservation]:
+    """Best-effort extraction of the latest observation from a FRED series page.
+
+    FRED renders the latest value/date in ``series-meta-observation-value`` /
+    ``series-meta-observation-date`` markup. Tolerant: returns [] if the markup
+    is not recognised, so the caller can surface a clean error rather than crash.
+    """
+
+    value_match = re.search(
+        r'series-meta-observation-value[^>]*>\s*([-+]?[0-9][0-9,]*\.?[0-9]*)', html
+    )
+    date_match = re.search(
+        r'series-meta-observation-date[^>]*>\s*([A-Za-z0-9 ,:-]+?)\s*<', html
+    )
+    if not value_match or not date_match:
+        return []
+    observation_date = _fred_date(date_match.group(1).strip(), field_name="fred observation date")
+    if observation_date is None:
+        return []
+    if since_date is not None and observation_date < since_date:
+        return []
+    value = value_match.group(1).replace(",", "")
+    observation = _fred_make_observation(
+        series_id,
+        observation_date,
+        value,
+        raw={"source": "series_page_html", "observation_date": date_match.group(1).strip()},
+    )
+    return [observation][-limit:]
+
+
+def _load_fred_from_series_page(
+    series_id: str, *, limit: int, since_date, timeout: float
+) -> list[FredObservation]:
+    endpoint = f"https://fred.stlouisfed.org/series/{quote(series_id)}"
+    html = _read_text_endpoint(endpoint, "fred series page", timeout=timeout)
+    return _parse_fred_series_page(series_id, html, limit=limit, since_date=since_date)
+
+
+def load_fred_observations(
+    series_id: str,
+    *,
+    limit: int = 10,
+    since: str | None = None,
+    api_base_url: str = "https://fred.stlouisfed.org/graph/fredgraph.csv",
+    api_key: str | None = None,
+) -> list[FredObservation]:
+    """Load recent FRED observations as timestamped evidence rows.
+
+    FRED endpoints are flaky from some networks — the ``fredgraph.csv`` graph
+    endpoint can hang or return HTTP/2 stream errors while the official API or
+    the series HTML page work, and vice-versa. To stay fast and reliable this
+    tries a bounded fallback chain and never blocks for more than a few seconds
+    per attempt:
+
+    1. Official FRED API (``api.stlouisfed.org``) when ``FRED_API_KEY`` is set —
+       the reliable path; get a free key at https://fred.stlouisfed.org/docs/api/api_key.html
+    2. Public ``fredgraph.csv`` (no key).
+    3. Series-page HTML latest-observation extraction (best effort).
+    """
+
+    normalized_series = series_id.strip()
+    if not normalized_series:
+        raise ValidationError("fred import series id is required")
+    if limit <= 0:
+        raise ValidationError("fred import --limit must be positive")
+    since_date = _fred_date(since, field_name="since") if since else None
+    timeout = _fred_fetch_timeout()
+    key = (api_key or os.environ.get("FRED_API_KEY") or "").strip()
+
+    attempts: list[tuple[str, Any]] = []
+    if key:
+        attempts.append(("api", lambda: _load_fred_from_api(
+            normalized_series, api_key=key, limit=limit, since_date=since_date, timeout=timeout)))
+    attempts.append(("csv", lambda: _load_fred_from_csv(
+        normalized_series, api_base_url=api_base_url, limit=limit, since_date=since_date, timeout=timeout)))
+    attempts.append(("series-page", lambda: _load_fred_from_series_page(
+        normalized_series, limit=limit, since_date=since_date, timeout=timeout)))
+
+    errors: list[str] = []
+    for label, attempt in attempts:
+        try:
+            observations = attempt()
+        except ValidationError as exc:
+            errors.append(f"{label}: {exc}")
+            continue
+        if observations:
+            return observations
+        errors.append(f"{label}: no observations returned")
+
+    detail = "; ".join(errors)
+    hint = "" if key else " Set FRED_API_KEY for the reliable official FRED API (free key)."
+    raise ValidationError(f"fred observations unavailable for {normalized_series} ({detail}).{hint}")
 
 
 def load_eia_observations(
@@ -5632,10 +5779,10 @@ def _http_fetch_error(label: str, url: str, exc: HTTPError) -> str:
     return message
 
 
-def _read_json_endpoint(url: str, label: str) -> object:
+def _read_json_endpoint(url: str, label: str, *, timeout: float | None = None) -> object:
     try:
         request = Request(url, headers=_source_request_headers(url, accept=_JSON_ACCEPT_HEADER))
-        with urlopen(request, timeout=_source_fetch_timeout()) as response:
+        with urlopen(request, timeout=timeout or _source_fetch_timeout()) as response:
             data = response.read(2 * 1024 * 1024)
     except HTTPError as exc:
         raise ValidationError(_http_fetch_error(label, url, exc)) from exc
@@ -5647,10 +5794,10 @@ def _read_json_endpoint(url: str, label: str) -> object:
         raise ValidationError(f"{label} response is not valid JSON") from exc
 
 
-def _read_text_endpoint(url: str, label: str) -> str:
+def _read_text_endpoint(url: str, label: str, *, timeout: float | None = None) -> str:
     try:
         request = Request(url, headers=_source_request_headers(url, accept=_TEXT_ACCEPT_HEADER))
-        with urlopen(request, timeout=_source_fetch_timeout()) as response:
+        with urlopen(request, timeout=timeout or _source_fetch_timeout()) as response:
             data = response.read(2 * 1024 * 1024)
     except HTTPError as exc:
         raise ValidationError(_http_fetch_error(label, url, exc)) from exc

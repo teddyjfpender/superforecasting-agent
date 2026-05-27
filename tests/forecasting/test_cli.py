@@ -2546,7 +2546,7 @@ def test_fivethirtyeight_adapter_loads_and_filters_poll_csv(monkeypatch):
         ]
     )
 
-    def fake_read_text_endpoint(endpoint: str, label: str):
+    def fake_read_text_endpoint(endpoint: str, label: str, *, timeout: float | None = None):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return csv_text
@@ -6985,7 +6985,7 @@ def test_forecast_cli_fema_import_captures_declarations_as_evidence(
 def test_fred_adapter_loads_recent_csv_observations(monkeypatch):
     captured = {}
 
-    def fake_read_text_endpoint(endpoint: str, label: str):
+    def fake_read_text_endpoint(endpoint: str, label: str, *, timeout: float | None = None):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return "\n".join(
