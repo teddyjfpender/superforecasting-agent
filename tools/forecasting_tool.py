@@ -703,7 +703,16 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             imported = []
             for item in _load_source_adapter_items(adapter, source, args):
                 evidence_payload = _source_adapter_evidence_payload(adapter, source, item, args)
-                evidence = ledger.add_evidence(question_id=question_id, **evidence_payload)
+                # Structured adapters already capture the observation (the raw
+                # series value lives in metadata); fetching the source's HTML
+                # page to archive a snapshot adds ~5s/row of latency and no data
+                # value, which surfaced to the agent as "FRED refresh timed out".
+                # Skip the per-row URL snapshot on this batch import path.
+                evidence = ledger.add_evidence(
+                    question_id=question_id,
+                    archive_url_snapshot=False,
+                    **evidence_payload,
+                )
                 imported.append(
                     {
                         "evidence": evidence.__dict__,

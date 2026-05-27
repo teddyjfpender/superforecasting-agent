@@ -6086,3 +6086,53 @@ def test_confirmed_resolution_updates_trusted_policy_last_used(tmp_path):
     assert resolution.trusted_policy_id == policy["id"]
     assert ledger.get_resolution(resolution.id).trusted_policy_id == policy["id"]
     assert ledger.get_trusted_resolver_policy(policy["id"])["last_used_at"] is not None
+
+
+def test_adapter_evidence_skips_url_snapshot_archival(tmp_path, monkeypatch):
+    """Structured-adapter evidence must not fetch the source HTML page to archive
+    a snapshot — that added ~5s/row of latency on batch imports (e.g. FRED) and
+    surfaced to the agent as "FRED refresh timed out". The authoritative
+    observation is already captured in metadata.
+    """
+    ledger = ForecastLedger(str(tmp_path / "archival.db"))
+    question = ledger.create_question(
+        title="Will CPI YoY exceed consensus next release?",
+        resolution_criteria="Resolves yes if the next BLS CPI YoY print exceeds consensus; otherwise no.",
+    )
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        ledger,
+        "_archive_url_evidence_snapshot",
+        lambda **kw: calls.append(kw["source_url"]) or None,
+    )
+
+    # Adapter-sourced evidence with a source URL: archival must be skipped.
+    ledger.add_evidence(
+        question_id=question.id,
+        source_or_note="FRED GASREGW was 4.5 on 2026-05-11",
+        source_url="https://fred.stlouisfed.org/series/GASREGW",
+        source_name="FRED",
+        source_type="adapter:fred",
+        claim="FRED GASREGW was 4.5 on 2026-05-11",
+    )
+    assert calls == []
+
+    # Explicit opt-out also skips archival.
+    ledger.add_evidence(
+        question_id=question.id,
+        source_or_note="https://example.com/manual",
+        source_url="https://example.com/manual",
+        source_type="url",
+        claim="manual note",
+        archive_url_snapshot=False,
+    )
+    assert calls == []
+
+    # A plain manual URL still archives (snapshot has provenance value there).
+    ledger.add_evidence(
+        question_id=question.id,
+        source_or_note="https://example.com/article",
+        claim="manual url evidence",
+    )
+    assert calls == ["https://example.com/article"]

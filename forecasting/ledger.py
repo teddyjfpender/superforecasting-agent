@@ -1110,6 +1110,7 @@ class ForecastLedger:
         snapshot_path: str | None = None,
         admissible_for_backtests: bool = True,
         metadata: dict[str, Any] | None = None,
+        archive_url_snapshot: bool = True,
     ) -> EvidenceItem:
         self.get_question(question_id)
         source_or_note = source_or_note.strip()
@@ -1154,7 +1155,17 @@ class ForecastLedger:
                 source_file_path=source_file_path,
             )
             evidence_metadata.setdefault("source_file_path", str(source_file_path))
-        elif inferred_url and snapshot_path is None:
+        elif (
+            inferred_url
+            and snapshot_path is None
+            and archive_url_snapshot
+            # Structured source adapters (source_type="adapter:fred", etc.) already
+            # capture the authoritative observation in metadata; fetching the
+            # source's HTML page to archive a snapshot adds ~5s/row of latency and
+            # no data value (and on batch imports surfaced as "FRED refresh timed
+            # out"). Skip archival for adapter-sourced evidence.
+            and not str(inferred_type or "").startswith("adapter:")
+        ):
             archived_url_snapshot = self._archive_url_evidence_snapshot(
                 question_id=question_id,
                 evidence_id=evidence_id,
