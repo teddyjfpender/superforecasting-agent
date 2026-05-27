@@ -43,10 +43,13 @@ export function parseRichMarkup(markup: string): Line[] {
   return lines
 }
 
+// All four lines are exactly LOGO_WIDTH (88) columns so the right ┃ border
+// lines up with the ┓/┛ corners. The text rows were previously 84/85 wide,
+// leaving the right border floating a few columns inside the box.
 const LOGO_ART = [
   '┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓',
-  '┃ SUPERFORECASTING AGENT                                                           ┃',
-  '┃ CLI forecasting desk · ledger · calibration · backtests · alerts                  ┃',
+  '┃ SUPERFORECASTING AGENT                                                               ┃',
+  '┃ CLI forecasting desk · ledger · calibration · backtests · alerts                     ┃',
   '┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛'
 ]
 

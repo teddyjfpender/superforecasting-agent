@@ -156,7 +156,10 @@ export function SessionPanel({ info, sid, t }: SessionPanelProps) {
   const heroW = artWidth(heroLines) || FORECAST_HERO_WIDTH
   const leftW = heroW + 4
   const wide = cols >= 90 && leftW + 40 < cols
-  const w = Math.max(20, wide ? cols - leftW - 14 : cols - 12)
+  // Reserve the round border (2), paddingX (4), the hero column's marginRight
+  // (3) and a little breathing room so the right panel can never be sized into
+  // the hero column.
+  const w = Math.max(20, wide ? cols - leftW - 15 : cols - 12)
   const lineBudget = Math.max(12, w - 2)
   const strip = (s: string) => (s.endsWith('_tools') ? s.slice(0, -6) : s)
 
@@ -273,7 +276,12 @@ export function SessionPanel({ info, sid, t }: SessionPanelProps) {
   return (
     <Box borderColor={t.color.border} borderStyle="round" marginBottom={1} paddingX={2} paddingY={1}>
       {wide && (
-        <Box flexDirection="column" marginRight={2} width={leftW}>
+        // flexShrink={0} pins the hero column at its full width. Without it, a
+        // re-render triggered by toggling a collapsible (Available Tools/Skills)
+        // let Yoga shrink this column, so the right panel slid left and painted
+        // over the hero table. The right panel absorbs any width pressure
+        // instead (flexShrink + overflow=hidden below).
+        <Box flexDirection="column" flexShrink={0} marginRight={3} width={leftW}>
           <ArtLines lines={heroLines} />
           <Text />
 
@@ -295,7 +303,7 @@ export function SessionPanel({ info, sid, t }: SessionPanelProps) {
         </Box>
       )}
 
-      <Box flexDirection="column" width={w}>
+      <Box flexDirection="column" flexShrink={1} minWidth={0} overflow="hidden" width={w}>
         <Box justifyContent="center" marginBottom={1}>
           <Text bold color={t.color.primary}>
             {t.brand.name}

@@ -90,6 +90,10 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     "provider.azure_identity": ("azure-identity==1.25.3",),
 
     # ─── Web search backends ───────────────────────────────────────────────
+    # ddgs (DuckDuckGo) is the free, keyless default web-search backend for the
+    # forecasting desk — it self-installs on first use so a fresh agent can
+    # browse/search the web without an API key (see plugins/web/ddgs/provider).
+    "search.ddgs": ("ddgs==9.14.4",),
     "search.exa": ("exa-py==2.10.2",),
     "search.firecrawl": ("firecrawl-py==4.17.0",),
     "search.parallel": ("parallel-web==0.4.2",),

@@ -310,8 +310,26 @@ terminal:
 #   tirith_fail_open: true      # Allow commands if tirith unavailable
 
 # =============================================================================
+# Web Search Configuration
+# =============================================================================
+# The forecasting desk needs the web to gather evidence (markets, news,
+# release feeds). `ddgs` is the free, keyless DuckDuckGo backend and is the
+# recommended default — it self-installs on first use (no API key required).
+# Set a paid backend here only if you have keys (exa / firecrawl / tavily /
+# parallel) and want page-content extraction in addition to search.
+web:
+  backend: "ddgs"          # free, no API key; auto-installs on first search
+  # extract_backend: "firecrawl"  # optional: page-content scraping (needs FIRECRAWL_API_KEY)
+
+# =============================================================================
 # Browser Tool Configuration
 # =============================================================================
+# Browser tools (browser_navigate, browser_snapshot, …) ship in the default
+# `forecast-desk` toolset so the agent can fetch data from sites without a
+# structured adapter. They require a browser engine on the host; the setup
+# script provisions one (Chromium via Playwright/agent-browser). If browsing
+# fails or "times out", install an engine with:
+#   npx playwright install --with-deps chromium
 browser:
   # Inactivity timeout in seconds - browser sessions are automatically closed
   # after this period of no activity between agent loops (default: 120 = 2 minutes)

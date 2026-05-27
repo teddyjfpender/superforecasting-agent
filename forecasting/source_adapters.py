@@ -28,6 +28,31 @@ _JSON_ACCEPT_HEADER = "application/json, text/json;q=0.9, */*;q=0.5"
 _TEXT_ACCEPT_HEADER = "text/plain, text/csv, text/html;q=0.8, */*;q=0.5"
 
 
+def _source_fetch_timeout(default: float = 30.0) -> float:
+    """Per-request timeout for source-adapter HTTP fetches (seconds).
+
+    The previous fixed 10s was too tight for slow government endpoints (FRED,
+    BLS, EIA, Treasury), which surfaced to the agent as spurious "FRED refresh
+    timed out" messages and discouraged it from refreshing evidence. Default to
+    a more forgiving 30s and let operators tune it via env var.
+    """
+    for name in (
+        "SUPERFORECASTING_AGENT_SOURCE_TIMEOUT",
+        "FORECAST_SOURCE_TIMEOUT",
+        "HERMES_SOURCE_TIMEOUT",
+    ):
+        raw = os.environ.get(name)
+        if raw is None or not raw.strip():
+            continue
+        try:
+            value = float(raw.strip())
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            return value
+    return default
+
+
 @dataclass(frozen=True)
 class NewsFeedItem:
     title: str
@@ -1402,14 +1427,26 @@ def load_eia_observations(
     limit: int = 10,
     since: str | None = None,
     api_base_url: str = "https://api.eia.gov/series/",
+    api_key: str | None = None,
 ) -> list[EiaObservation]:
-    """Load EIA energy time-series observations as timestamped evidence rows."""
+    """Load EIA energy time-series observations as timestamped evidence rows.
+
+    The EIA series API requires an ``api_key`` query parameter. We read it from
+    the ``api_key`` argument or the ``EIA_API_KEY`` env var and inject it when
+    the caller's endpoint does not already carry one; without a key EIA returns
+    HTTP 403, so prefer FRED for energy series (GASREGW, DCOILWTICO) which need
+    no key.
+    """
 
     series_id, endpoint = _eia_endpoint(source, api_base_url=api_base_url)
     if not series_id:
         raise ValidationError("eia import series id or API URL is required")
     if limit <= 0:
         raise ValidationError("eia import --limit must be positive")
+    resolved_key = (api_key or os.environ.get("EIA_API_KEY") or "").strip()
+    if resolved_key and "api_key=" not in endpoint:
+        separator = "&" if "?" in endpoint else "?"
+        endpoint = f"{endpoint}{separator}{urlencode({'api_key': resolved_key})}"
     since_ts = parse_timestamp(since, field_name="since") if since else None
     since_dt = timestamp_to_datetime(since_ts) if since_ts else None
     payload = _read_json_endpoint(endpoint, "eia observations")
@@ -5496,7 +5533,7 @@ def _read_feed_source(source: str) -> bytes:
             raise ValidationError("news feed URL is invalid")
         request = Request(source, headers=_source_request_headers(source, accept=_FEED_ACCEPT_HEADER))
         try:
-            with urlopen(request, timeout=10) as response:
+            with urlopen(request, timeout=_source_fetch_timeout()) as response:
                 return response.read(2 * 1024 * 1024)
         except HTTPError as exc:
             raise ValidationError(_http_fetch_error("news feed", source, exc)) from exc
@@ -5598,7 +5635,7 @@ def _http_fetch_error(label: str, url: str, exc: HTTPError) -> str:
 def _read_json_endpoint(url: str, label: str) -> object:
     try:
         request = Request(url, headers=_source_request_headers(url, accept=_JSON_ACCEPT_HEADER))
-        with urlopen(request, timeout=10) as response:
+        with urlopen(request, timeout=_source_fetch_timeout()) as response:
             data = response.read(2 * 1024 * 1024)
     except HTTPError as exc:
         raise ValidationError(_http_fetch_error(label, url, exc)) from exc
@@ -5613,7 +5650,7 @@ def _read_json_endpoint(url: str, label: str) -> object:
 def _read_text_endpoint(url: str, label: str) -> str:
     try:
         request = Request(url, headers=_source_request_headers(url, accept=_TEXT_ACCEPT_HEADER))
-        with urlopen(request, timeout=10) as response:
+        with urlopen(request, timeout=_source_fetch_timeout()) as response:
             data = response.read(2 * 1024 * 1024)
     except HTTPError as exc:
         raise ValidationError(_http_fetch_error(label, url, exc)) from exc

@@ -71,3 +71,42 @@ def test_builtin_forecast_extensions_are_registered():
     assert "bayesian-update" in names
     assert "weighted-ensemble" in names
     assert "prediction-market" in names
+
+
+def test_source_fetch_timeout_default_and_env(monkeypatch):
+    from forecasting import source_adapters
+
+    for name in (
+        "SUPERFORECASTING_AGENT_SOURCE_TIMEOUT",
+        "FORECAST_SOURCE_TIMEOUT",
+        "HERMES_SOURCE_TIMEOUT",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    # Default is the forgiving 30s (was a too-tight 10s that produced spurious
+    # "FRED refresh timed out" reports on slow government endpoints).
+    assert source_adapters._source_fetch_timeout() == 30.0
+
+    monkeypatch.setenv("FORECAST_SOURCE_TIMEOUT", "45")
+    assert source_adapters._source_fetch_timeout() == 45.0
+
+    # Non-numeric / non-positive values fall back to the default.
+    monkeypatch.setenv("FORECAST_SOURCE_TIMEOUT", "bogus")
+    assert source_adapters._source_fetch_timeout() == 30.0
+    monkeypatch.setenv("FORECAST_SOURCE_TIMEOUT", "0")
+    assert source_adapters._source_fetch_timeout() == 30.0
+
+
+def test_eia_endpoint_injects_api_key(monkeypatch):
+    """load_eia_observations must add the required api_key from EIA_API_KEY."""
+    from forecasting import source_adapters
+
+    captured = {}
+
+    def _fake_read_json(url, label):
+        captured["url"] = url
+        return {"series": []}
+
+    monkeypatch.setenv("EIA_API_KEY", "test-eia-key")
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", _fake_read_json)
+    source_adapters.load_eia_observations("eia:PET.EMM_EPM0_PTE_NUS_DPG.W", limit=5)
+    assert "api_key=test-eia-key" in captured["url"]

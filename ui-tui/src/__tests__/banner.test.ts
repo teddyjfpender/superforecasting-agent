@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-import { artWidth, FORECAST_HERO_WIDTH, forecastHero, logo } from '../banner.js'
+import { artWidth, FORECAST_HERO_WIDTH, forecastHero, logo, LOGO_WIDTH } from '../banner.js'
 import type { ThemeColors } from '../theme.js'
 
 const colors = {
@@ -19,6 +19,17 @@ describe('forecast desk banner art', () => {
     expect(text).toContain('SUPERFORECASTING AGENT')
     expect(text).toContain('CLI forecasting desk')
     expect(text).not.toContain('HERMES')
+  })
+
+  test('logo lines are equal width so the right border aligns', () => {
+    const lines = logo(colors).map(([, text]) => text)
+    expect(lines.length).toBe(4)
+    const widths = new Set(lines.map(line => line.length))
+    expect(widths).toEqual(new Set([LOGO_WIDTH]))
+    // The right border glyph sits in the final column on every line.
+    for (const line of lines) {
+      expect(['┓', '┃', '┛']).toContain(line[line.length - 1])
+    }
   })
 
   test('default hero is a forecast desk mark', () => {

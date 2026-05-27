@@ -323,6 +323,50 @@ else
 fi
 
 # ============================================================================
+# Web search & browsing (default-on for the forecasting desk)
+# ============================================================================
+# The agent needs the web to gather evidence (markets, news, release feeds).
+# Provision the free, keyless DuckDuckGo search backend and a browser engine
+# so a fresh agent can search/browse from inception — no API key required.
+
+VENV_PY="$SCRIPT_DIR/venv/bin/python"
+
+echo -e "${CYAN}→${NC} Enabling web search (free, no API key)..."
+if [ -x "$VENV_PY" ]; then
+    if "$VENV_PY" -c "import ddgs" 2>/dev/null; then
+        echo -e "${GREEN}✓${NC} web search backend (ddgs) already installed"
+    elif "$VENV_PY" -m pip install --quiet "ddgs==9.14.4" 2>/dev/null; then
+        echo -e "${GREEN}✓${NC} web search backend (ddgs) installed — DuckDuckGo search works with no key"
+    else
+        echo -e "${YELLOW}⚠${NC} Could not install ddgs now; the agent will auto-install it on first web search."
+    fi
+else
+    echo -e "${YELLOW}⚠${NC} venv python not found; skipping ddgs install (auto-installs on first use)."
+fi
+
+echo -e "${CYAN}→${NC} Setting up a browser engine for web fetching..."
+if is_termux; then
+    echo -e "${YELLOW}⚠${NC} Browser automation is not supported on Termux; structured data adapters still work."
+else
+    BROWSER_READY=false
+    # Playwright keeps Chromium under ~/.cache (Linux) or ~/Library/Caches (macOS).
+    if "$VENV_PY" -m playwright install chromium 2>/dev/null; then
+        BROWSER_READY=true
+    elif command -v npx &> /dev/null && npx --yes playwright install chromium 2>/dev/null; then
+        BROWSER_READY=true
+    fi
+
+    if [ "$BROWSER_READY" = true ]; then
+        echo -e "${GREEN}✓${NC} Browser engine ready — browser_* tools can fetch from sites without a structured adapter"
+    else
+        echo -e "${YELLOW}⚠${NC} No browser engine installed yet. Web browsing tools will be unavailable until you run:"
+        echo "    npx playwright install --with-deps chromium"
+        echo "    (or: python -m playwright install chromium)"
+        echo "  Structured data adapters (FRED, BLS, EIA, markets) and web search still work without it."
+    fi
+fi
+
+# ============================================================================
 # Environment file
 # ============================================================================
 

@@ -58,6 +58,20 @@ class DDGSWebSearchProvider(WebSearchProvider):
 
     def search(self, query: str, limit: int = 5) -> Dict[str, Any]:
         """Execute a DuckDuckGo search and return normalized results."""
+        # Self-provision the free, keyless backend on first use so the
+        # forecasting desk can search the web out of the box (e.g. when
+        # ``web.backend: ddgs`` is configured, which selects this provider
+        # regardless of import availability). Mirrors the lazy-install other
+        # search backends use; a no-op once installed.
+        try:
+            from tools.lazy_deps import ensure as _lazy_ensure
+
+            _lazy_ensure("search.ddgs", prompt=False)
+        except ImportError:
+            pass
+        except Exception as exc:  # noqa: BLE001 — lazy_deps surfaces install hints
+            logger.debug("ddgs lazy-install skipped: %s", exc)
+
         try:
             from ddgs import DDGS  # type: ignore
         except ImportError:
