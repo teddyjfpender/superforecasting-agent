@@ -83,6 +83,29 @@ const formatCount = (value: unknown) => {
   return number === null ? '0' : String(number)
 }
 
+// A distribution arrives as a label→number map (categorical outcomes like
+// {yes:0.6,no:0.4}, or numeric stats/quantiles like {p50:2.0,mean:2.1}).
+// Rendering the raw JSON in a desk row was unreadable, so surface the value of
+// interest: the most-likely outcome for probabilities, or the leading stats.
+const formatDistribution = (value: Record<string, unknown>): string => {
+  const entries = Object.entries(value)
+    .map(([key, raw]) => [key, numberValue(raw)] as [string, number | null])
+    .filter((entry): entry is [string, number] => entry[1] !== null)
+
+  if (!entries.length) {
+    return '-'
+  }
+
+  const looksProbabilistic = entries.every(([, n]) => n >= 0 && n <= 1)
+  if (looksProbabilistic) {
+    const [topKey, topValue] = [...entries].sort((a, b) => b[1] - a[1])[0]!
+    const more = entries.length > 1 ? ` (+${entries.length - 1})` : ''
+    return truncate(`${topKey} ${topValue.toFixed(2)}${more}`, 24)
+  }
+
+  return truncate(entries.slice(0, 2).map(([key, n]) => `${key} ${n}`).join('  '), 24)
+}
+
 const formatProbability = (value: ForecastDashboardQuestion['probability']) => {
   const number = numberValue(value)
   if (number !== null) {
@@ -90,7 +113,7 @@ const formatProbability = (value: ForecastDashboardQuestion['probability']) => {
   }
 
   if (value && typeof value === 'object') {
-    return truncate(JSON.stringify(value), 24)
+    return formatDistribution(value as Record<string, unknown>)
   }
 
   return value ? String(value) : '-'

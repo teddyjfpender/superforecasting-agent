@@ -509,6 +509,50 @@ describe('createSlashHandler', () => {
     })
   })
 
+  it('routes a natural-language /forecast new to the agent instead of the argparse CLI', () => {
+    const rpc = vi.fn(() => Promise.resolve({}))
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/forecast new will inflation exceed 3% by year end?')).toBe(true)
+
+    // Must NOT hit the deterministic forecast.command CLI (which would exit 2).
+    expect(rpc).not.toHaveBeenCalledWith('forecast.command', expect.anything())
+    expect(ctx.transcript.send).toHaveBeenCalledTimes(1)
+    const sent = (ctx.transcript.send as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
+    expect(sent).toContain('will inflation exceed 3% by year end?')
+    expect(sent).toContain('create_question')
+  })
+
+  it('routes /new-forecast natural language to the agent', () => {
+    const ctx = buildCtx()
+
+    expect(createSlashHandler(ctx)('/new-forecast Will SpaceX reach orbit by Q3?')).toBe(true)
+    expect(ctx.transcript.send).toHaveBeenCalledTimes(1)
+    const sent = (ctx.transcript.send as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
+    expect(sent).toContain('Will SpaceX reach orbit by Q3?')
+  })
+
+  it('keeps /forecast new on the deterministic CLI when --resolution-criteria is supplied', () => {
+    const rpc = vi.fn(() => Promise.resolve({ code: 0, output: 'created forecast question fq_z' }))
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/forecast new "Will X?" --resolution-criteria "Resolved by source"')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', {
+      arg: 'new "Will X?" --resolution-criteria "Resolved by source"'
+    })
+    expect(ctx.transcript.send).not.toHaveBeenCalled()
+  })
+
+  it('shows usage when /forecast new has no question text', () => {
+    const ctx = buildCtx()
+
+    expect(createSlashHandler(ctx)('/forecast new')).toBe(true)
+    expect(ctx.transcript.send).not.toHaveBeenCalled()
+    expect(ctx.transcript.sys).toHaveBeenCalledWith(
+      expect.stringContaining('usage: /forecast new')
+    )
+  })
+
   it('routes forecast-native review shortcuts to the forecast command RPC', async () => {
     const rpc = vi.fn((method: string) => {
       if (method === 'forecast.command') {

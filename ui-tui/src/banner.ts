@@ -50,13 +50,17 @@ const LOGO_ART = [
   '┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛'
 ]
 
+// Every box line is exactly FORECAST_HERO_WIDTH (45) columns with matching
+// cell widths (21 | 18) so the ┌┬┐ / │…│…│ / └┴┘ separators line up cleanly.
+// Earlier art mixed 20/18 borders with 21/17 row cells, so the column rule and
+// right edge drifted by a column and some terminals truncated the box.
 const FORECAST_HERO_ART = [
-  '        as-of timeline          probability',
-  '   ┌────────────────────┬──────────────────┐',
-  '   │ evidence freshness  │ 0.10 ▁▂▃▅▇ 0.90 │',
+  '     as-of timeline         probability',
+  '   ┌─────────────────────┬──────────────────┐',
+  '   │ evidence freshness  │ 0.10 ▁▂▃▅▇ 0.90  │',
   '   │ reference classes   │ base rate + view │',
-  '   │ model runs          │ ensemble update │',
-  '   └────────────────────┴──────────────────┘',
+  '   │ model runs          │ ensemble update  │',
+  '   └─────────────────────┴──────────────────┘',
   '      ledger · score · postmortem · learn'
 ]
 

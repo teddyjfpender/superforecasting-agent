@@ -1729,3 +1729,106 @@ class TestCodexFallbackErrorEvent:
             )
 
         assert "did not emit a terminal response" in str(excinfo.value)
+
+
+class TestCodexStreamNoneOutputFallback:
+    """The chatgpt.com ``/backend-api/codex`` backend can stream a
+    ``response.completed`` whose ``response.output`` is ``None`` (content is
+    delivered via ``response.output_item.done`` / text-delta events).  The
+    OpenAI SDK's typed ``.stream()`` accumulator then calls
+    ``parse_response()`` which does ``for output in response.output`` and
+    raises ``TypeError: 'NoneType' object is not iterable`` mid-stream.
+
+    Before the fix that surfaced to the user as a bogus non-retryable client
+    error ("Error: 'NoneType' object is not iterable") and aborted the whole
+    turn.  ``run_codex_stream`` must catch the ``TypeError`` and route to the
+    raw ``create(stream=True)`` fallback, which iterates the SSE events
+    itself, recovers the streamed output, and normalizes a ``None`` output
+    list so downstream handling never trips over it.
+    """
+
+    def _make_agent(self):
+        from run_agent import AIAgent
+        agent = AIAgent(
+            api_key="test-key",
+            base_url="https://chatgpt.com/backend-api/codex",
+            provider="openai-codex",
+            model="gpt-5.5",
+            quiet_mode=True,
+            skip_context_files=True,
+            skip_memory=True,
+        )
+        agent.api_mode = "codex_responses"
+        agent._touch_activity = lambda desc: None
+        return agent
+
+    def test_typeerror_from_sdk_parser_routes_to_fallback_and_backfills(self):
+        agent = self._make_agent()
+
+        # The typed .stream() accumulator raises TypeError mid-iteration,
+        # exactly as parse_response() does over a None output list.
+        class _ExplodingStream:
+            def __enter__(self_inner):
+                return self_inner
+            def __exit__(self_inner, *exc):
+                return False
+            def __iter__(self_inner):
+                raise TypeError("'NoneType' object is not iterable")
+
+        # The raw create(stream=True) fallback delivers the real content via
+        # an output_item.done event, then a completed response with no output.
+        done_item = SimpleNamespace(
+            type="message",
+            role="assistant",
+            status="completed",
+            content=[SimpleNamespace(type="output_text", text="CPI forecast updated")],
+        )
+        events = [
+            SimpleNamespace(type="response.output_item.done", item=done_item),
+            SimpleNamespace(type="response.completed", response=SimpleNamespace(output=None)),
+        ]
+
+        class _RawStream:
+            def __iter__(self_inner):
+                return iter(events)
+            def close(self_inner):
+                return None
+
+        mock_client = MagicMock()
+        mock_client.responses.stream.return_value = _ExplodingStream()
+        mock_client.responses.create.return_value = _RawStream()
+
+        response = agent._run_codex_stream(
+            {"model": "gpt-5.5", "instructions": "hi", "input": []},
+            client=mock_client,
+        )
+
+        # Routed to the fallback (create called) and recovered the streamed item.
+        assert mock_client.responses.create.called
+        assert response.output == [done_item]
+
+    def test_fallback_normalizes_none_output_to_empty_list(self):
+        """A completed response with output=None and no streamed content is
+        normalized to an empty list so downstream response handling, which
+        iterates ``response.output``, does not crash."""
+        agent = self._make_agent()
+
+        events = [
+            SimpleNamespace(type="response.completed", response=SimpleNamespace(output=None)),
+        ]
+
+        class _RawStream:
+            def __iter__(self_inner):
+                return iter(events)
+            def close(self_inner):
+                return None
+
+        mock_client = MagicMock()
+        mock_client.responses.create.return_value = _RawStream()
+
+        response = agent._run_codex_create_stream_fallback(
+            {"model": "gpt-5.5", "instructions": "hi", "input": []},
+            client=mock_client,
+        )
+
+        assert response.output == []

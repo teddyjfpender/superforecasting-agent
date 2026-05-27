@@ -329,6 +329,29 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
                 )
                 return agent._run_codex_create_stream_fallback(api_kwargs, client=active_client)
             raise
+        except TypeError as exc:
+            # The OpenAI SDK's typed Responses stream accumulator calls
+            # ``parse_response()`` on ``response.completed``, which does
+            # ``for output in response.output``.  The chatgpt.com
+            # ``/backend-api/codex`` backend can emit a completed response
+            # with ``output=None`` (the assistant content is delivered via
+            # streamed ``response.output_item.done`` / text-delta events
+            # instead), so the SDK raises ``TypeError: 'NoneType' object is
+            # not iterable`` mid-stream.  That surfaced to the user as a
+            # bogus non-retryable client error and aborted the whole turn.
+            #
+            # The raw ``create(stream=True)`` fallback iterates the SSE
+            # events itself and never calls ``parse_response``, so it
+            # recovers the streamed output (and normalizes a ``None`` output
+            # list).  Route there instead of failing the turn.
+            logger.debug(
+                "Responses stream raised TypeError (likely parse_response over a "
+                "None output list from a non-conformant backend); falling back to "
+                "create(stream=True). %s err=%s",
+                agent._client_log_context(),
+                exc,
+            )
+            return agent._run_codex_create_stream_fallback(api_kwargs, client=active_client)
 
 
 
@@ -406,9 +429,15 @@ def run_codex_create_stream_fallback(agent, api_kwargs: dict, client: Any = None
             if terminal_response is None and isinstance(event, dict):
                 terminal_response = event.get("response")
             if terminal_response is not None:
-                # Backfill empty output from collected stream events
+                # Backfill missing/empty output from collected stream events.
+                # The chatgpt.com /backend-api/codex backend can send a
+                # completed response with ``output=None`` (not just ``[]``),
+                # so treat a ``None`` output the same as an empty list:
+                # backfill from streamed items/deltas, and as a last resort
+                # normalize to ``[]`` so downstream response handling — which
+                # iterates ``response.output`` — never trips over ``None``.
                 _out = getattr(terminal_response, "output", None)
-                if isinstance(_out, list) and not _out:
+                if _out is None or (isinstance(_out, list) and not _out):
                     if collected_output_items:
                         terminal_response.output = list(collected_output_items)
                         logger.debug(
@@ -425,6 +454,12 @@ def run_codex_create_stream_fallback(agent, api_kwargs: dict, client: Any = None
                         logger.debug(
                             "Codex fallback stream: synthesized from %d deltas (%d chars)",
                             len(collected_text_deltas), len(assembled),
+                        )
+                    elif _out is None:
+                        terminal_response.output = []
+                        logger.debug(
+                            "Codex fallback stream: normalized None output to [] "
+                            "(backend sent completed with no output and no streamed content)",
                         )
                 return terminal_response
     finally:

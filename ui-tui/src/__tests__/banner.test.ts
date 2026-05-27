@@ -29,4 +29,24 @@ describe('forecast desk banner art', () => {
     expect(text).not.toContain('HERMES')
     expect(artWidth(forecastHero(colors))).toBe(FORECAST_HERO_WIDTH)
   })
+
+  test('hero box rows are equal width with aligned column separators', () => {
+    const lines = textOf(forecastHero(colors)).split('\n')
+    // The box-drawing rows: top border, three cells, bottom border.
+    const boxLines = lines.filter(line => /[┌│└]/.test(line))
+    expect(boxLines.length).toBe(5)
+
+    // Every box line is the same display width so the right edge is flush.
+    const widths = new Set(boxLines.map(line => line.length))
+    expect(widths.size).toBe(1)
+
+    // The interior column rule lines up: ┬ / │ / ┴ sit at the same index on
+    // every row (this is exactly what drifted before and broke the borders).
+    const columnIndex = (line: string) => {
+      const idx = [...line].findIndex((ch, i) => i > line.indexOf('│') && /[┬│┴]/.test(ch))
+      return idx
+    }
+    const separatorColumns = new Set(boxLines.map(columnIndex))
+    expect(separatorColumns.size).toBe(1)
+  })
 })

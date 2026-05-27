@@ -87,7 +87,15 @@ const refreshForecastDeskStatus = (ctx: SlashRunCtx) => {
 const renderForecastCommandOutput = (response: ForecastCommandResponse, ctx: SlashRunCtx) => {
   const output = response.output || '(no output)'
   const code = response.code ?? 0
-  const text = code === 0 ? output : `forecast exited with code ${code}\n${output}`
+  // Exit code 2 is an argparse usage error — usually a natural-language request
+  // sent to the deterministic CLI. Point the user at the agentic path instead of
+  // a raw "exited with code 2" so the desk feels conversational, not brittle.
+  const text =
+    code === 0
+      ? output
+      : code === 2
+        ? `forecast needs more detail to run that as a command (exit ${code}).\n${output}\n\nTip: describe it in plain language instead — e.g. "run the CPI forecast update" or /forecast new <question> — and the agent will fill in the details and execute.`
+        : `forecast exited with code ${code}\n${output}`
   const long = text.length > 180 || text.split('\n').filter(Boolean).length > 2
 
   long ? ctx.transcript.page(text, 'Forecast') : ctx.transcript.sys(text)
@@ -109,6 +117,35 @@ const runForecastCommandArgv = (ctx: SlashRunCtx, argv: string[]) => {
     .rpc<ForecastCommandResponse>('forecast.command', { argv })
     .then(ctx.guarded<ForecastCommandResponse>(r => renderForecastCommandOutput(r, ctx)))
     .catch(ctx.guardedErr)
+}
+
+// A bare `forecast new <question>` invocation would hit the deterministic CLI
+// argparser, which requires a quoted title plus --resolution-criteria and exits
+// with code 2 on a natural-language question. Creating a well-formed forecast
+// (resolution criteria, outcome type, close time, domain/topic, sources) is an
+// agentic task, so route natural-language creation to the agent and let it use
+// the forecast_ledger create_question action. Power users who pass explicit
+// --resolution-criteria still get the deterministic CLI path (see callers).
+const FORECAST_NEW_CLI_FLAG = /--resolution-criteria\b/
+
+const runForecastNewViaAgent = (request: string, ctx: SlashRunCtx) => {
+  const question = request.trim()
+
+  if (!question) {
+    return ctx.transcript.sys(
+      'usage: /forecast new <question> — the agent drafts resolution criteria, close time, and sources'
+    )
+  }
+
+  ctx.transcript.send(
+    [
+      `Create and execute a new forecast for this request: "${question}".`,
+      'Use the forecast_ledger tool (create_question) to register a scoreable question.',
+      'Infer clear, checkable resolution criteria, the outcome type, a close/resolution time, and a domain/topic from the request;',
+      'if a critical detail is genuinely ambiguous, ask one concise clarifying question before creating.',
+      'After creating, report the new forecast id and the resolution criteria you set, then plan the initial sources to gather.'
+    ].join(' ')
+  )
 }
 
 const updateForecastDeskState = (response: ForecastDashboardResponse) => {
@@ -618,6 +655,11 @@ export const coreCommands: SlashCommand[] = [
       const trimmed = arg.trim()
 
       if (trimmed && !INTEGER_ARG.test(trimmed)) {
+        const newMatch = trimmed.match(/^new\b\s*([\s\S]*)$/i)
+        if (newMatch && !FORECAST_NEW_CLI_FLAG.test(trimmed)) {
+          return runForecastNewViaAgent(newMatch[1] ?? '', ctx)
+        }
+
         ctx.gateway
           .rpc<ForecastCommandResponse>('forecast.command', { arg: trimmed })
           .then(ctx.guarded<ForecastCommandResponse>(r => renderForecastCommandOutput(r, ctx)))
@@ -676,9 +718,15 @@ export const coreCommands: SlashCommand[] = [
 
   {
     aliases: ['new-question', 'newq'],
-    help: 'create a scoreable forecast question',
+    help: 'create a scoreable forecast question (the agent drafts the details)',
     name: 'new-forecast',
-    run: (arg, ctx) => runForecastCommand(ctx, `new ${arg.trim()}`.trim())
+    run: (arg, ctx) => {
+      const trimmed = arg.trim()
+      if (trimmed && FORECAST_NEW_CLI_FLAG.test(trimmed)) {
+        return runForecastCommand(ctx, `new ${trimmed}`.trim())
+      }
+      return runForecastNewViaAgent(trimmed, ctx)
+    }
   },
 
   {
