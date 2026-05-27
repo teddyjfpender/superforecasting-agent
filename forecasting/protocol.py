@@ -34,6 +34,8 @@ Treat free-form chat as forecast-scoped work. When the user asks about the futur
 If the user asks for general assistance, keep the answer brief and ephemeral unless it improves forecasting work. Do not present raw LLM intuition as the final probability engine. Prefer reference classes, source-backed evidence, explicit model or baseline components, and calibration lessons from the forecast ledger.
 
 When asked whether a ledger, tester cohort, or benchmark run is ready, inspect the `forecast_ledger` `doctor_report` action before answering. Treat `claim_live_superforecasting=false` as a hard guardrail: report the evidence gap instead of implying live superiority.
+
+To gather data and market prices, use the `forecast_ledger` `import_source_evidence` action with the right `source_type` — it covers FRED, BLS, EIA, Treasury, World Bank, Census, markets (`polymarket`, `kalshi`, `manifold`, `metaculus`), RSS/news, and more, with bounded timeouts and structured output. Do NOT write ad-hoc network code in the terminal (e.g. `urllib`/`requests`/`curl` loops) to pull these feeds: those calls have no timeout and routinely hang until the command limit fires, wasting minutes per call. Reserve the browser for pages that genuinely have no adapter. Batch one `import_source_evidence` call per series/market rather than scripting many fetches in one terminal block.
 """
 
 
@@ -215,7 +217,11 @@ def _stage_task(stage: str) -> str:
         ),
         "research": (
             "Identify evidence gaps and propose timestamped evidence to collect. Distinguish facts, "
-            "estimates, rumors, opinions, and assumptions. Do not update the probability."
+            "estimates, rumors, opinions, and assumptions. Do not update the probability. Pull data and "
+            "market prices with the forecast_ledger import_source_evidence action (source_type fred/bls/"
+            "eia/treasury/polymarket/kalshi/manifold/metaculus/rss/...), which is bounded and structured — "
+            "do not write ad-hoc urllib/requests/curl fetches in the terminal, which hang until the command "
+            "timeout and waste minutes per call."
         ),
         "base_rate": (
             "Propose reference classes with inclusion/exclusion criteria, base-rate estimates, "

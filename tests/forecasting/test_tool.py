@@ -4391,3 +4391,53 @@ def test_forecast_ledger_tool_records_reference_classes_and_model_runs(tmp_path)
     assert reference["model_run"]["model_type"] == "base_rate"
     assert model["model_run"]["output"]["posterior"] == 0.55
     assert len(ledger.list_model_runs(question_id)) == 2
+
+
+def test_forecast_ledger_imports_market_evidence_via_adapter(tmp_path, monkeypatch):
+    """polymarket/kalshi/manifold/metaculus are in the tool schema; the import
+    dispatcher must actually handle them (they previously fell through to
+    "not a supported import adapter", forcing the agent into ad-hoc terminal
+    fetches that hang to the command timeout)."""
+    from types import SimpleNamespace
+    import tools.forecasting_tool as ft
+
+    db = str(tmp_path / "markets.db")
+    question = json.loads(forecast_ledger_tool({
+        "action": "create_question", "db": db,
+        "title": "Will CPI YoY exceed consensus next release?",
+        "resolution_criteria": "Resolves yes if the next BLS CPI YoY print exceeds consensus; otherwise no.",
+        "domain": "macro",
+    }))["question"]
+    qid = question["id"]
+
+    fake = SimpleNamespace(
+        market_id="0xabc", slug="cpi-above-3", question="Will CPI be above 3%?",
+        description="Polymarket CPI market.", url="https://polymarket.com/event/cpi-above-3",
+        probability=0.62, distribution=None, as_of="2026-05-26T00:00:00Z", raw={"id": "0xabc"},
+    )
+    monkeypatch.setattr(ft, "load_polymarket_market", lambda source, **kw: fake)
+
+    out = json.loads(forecast_ledger_tool({
+        "action": "import_source_evidence", "db": db, "question_id": qid,
+        "source_type": "polymarket", "source": "https://polymarket.com/event/cpi-above-3",
+    }))
+    assert out["success"] is True, out
+    assert out["imported_count"] == 1
+    evidence = out["imported"][0]["evidence"]
+    assert evidence["source_type"] == "adapter:polymarket"
+    assert "0.620" in evidence["claim"]  # market-implied probability surfaced
+    assert evidence["source_url"] == "https://polymarket.com/event/cpi-above-3"
+
+
+def test_market_adapters_no_longer_unsupported(tmp_path, monkeypatch):
+    """Each market source_type must dispatch to its loader, not raise the
+    'not a supported import adapter' error."""
+    import tools.forecasting_tool as ft
+
+    sentinel = RuntimeError("loader reached")
+    for fn in ("load_polymarket_market", "load_kalshi_market", "load_manifold_market", "load_metaculus_question"):
+        monkeypatch.setattr(ft, fn, lambda *a, **k: (_ for _ in ()).throw(sentinel))
+
+    for source_type in ("polymarket", "kalshi", "manifold", "metaculus"):
+        with pytest.raises(RuntimeError, match="loader reached"):
+            ft._load_source_adapter_items(source_type, "some-market", {})

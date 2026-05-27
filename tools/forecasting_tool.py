@@ -45,6 +45,9 @@ from forecasting.source_adapters import (
     load_github_issues,
     load_github_releases,
     load_imf_datamapper_observations,
+    load_kalshi_market,
+    load_manifold_market,
+    load_metaculus_question,
     load_news_feed_items,
     load_mastodon_statuses,
     load_npm_package_versions,
@@ -57,6 +60,7 @@ from forecasting.source_adapters import (
     load_openmeteo_daily_forecasts,
     load_openmeteo_historical_weather,
     load_owid_observations,
+    load_polymarket_market,
     load_pubmed_articles,
     load_pypi_releases,
     load_reddit_posts,
@@ -2101,6 +2105,23 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_fema_disaster_declarations(source, **kwargs)
+    # Prediction-market / forecasting-platform adapters. Each takes a specific
+    # market identifier (URL, slug, id, or ticker) and returns one market
+    # import. Wiring these here means the agent imports a Polymarket/Kalshi/
+    # Manifold/Metaculus price through the bounded adapter instead of writing
+    # ad-hoc urllib/curl in the terminal (which hangs to the command timeout).
+    if adapter_name == "polymarket":
+        kwargs = {"api_base_url": api_base_url} if api_base_url else {}
+        return [load_polymarket_market(source, **kwargs)]
+    if adapter_name == "kalshi":
+        kwargs = {"api_base_url": api_base_url} if api_base_url else {}
+        return [load_kalshi_market(source, **kwargs)]
+    if adapter_name == "manifold":
+        kwargs = {"api_base_url": api_base_url} if api_base_url else {}
+        return [load_manifold_market(source, **kwargs)]
+    if adapter_name == "metaculus":
+        kwargs = {"api_base_url": api_base_url} if api_base_url else {}
+        return [load_metaculus_question(source, **kwargs)]
     raise ValueError(f"source_type is not a supported import adapter: {adapter}")
 
 
@@ -2350,6 +2371,19 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
         area = f" {data.get('designated_area')}" if data.get("designated_area") else ""
         number = f" {data.get('disaster_number')}" if data.get("disaster_number") is not None else ""
         return f"FEMA{number}{geography}{area}: {data.get('incident_type') or data.get('title')}"
+    if adapter in {"polymarket", "kalshi", "manifold", "metaculus"}:
+        label = {"polymarket": "Polymarket", "kalshi": "Kalshi", "manifold": "Manifold", "metaculus": "Metaculus"}[adapter]
+        question = data.get("question") or data.get("title") or "market"
+        probability = data.get("probability")
+        if isinstance(probability, (int, float)) and not isinstance(probability, bool):
+            return f"{label} market-implied probability {float(probability):.3f}: {question}"
+        distribution = data.get("distribution")
+        if isinstance(distribution, dict) and distribution:
+            numeric = {k: v for k, v in distribution.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+            if numeric:
+                top_outcome, top_value = max(numeric.items(), key=lambda kv: kv[1])
+                return f"{label} top outcome {top_outcome} at {float(top_value):.3f}: {question}"
+        return f"{label}: {question}"
     return str(
         _first_adapter_value(
             data,
