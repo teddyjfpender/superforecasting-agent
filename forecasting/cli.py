@@ -613,8 +613,27 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     )
     update_parser.add_argument("--as-of")
     update_parser.add_argument("--confidence", type=float)
-    update_parser.add_argument("--method")
+    update_parser.add_argument(
+        "--method",
+        help=(
+            "Ensemble method recorded with the snapshot. With --component-json and no "
+            "explicit --probability, 'log_odds_pool' (or 'log_pool') pools components "
+            "through the Bayesian toolkit (geometric pooling of odds, respects confident "
+            "minorities); 'weighted_ensemble'/'linear' keeps the weighted average."
+        ),
+    )
     update_parser.add_argument("--component-json", default="{}")
+    update_parser.add_argument(
+        "--extremize",
+        type=float,
+        default=None,
+        help="Extremization factor (>1 sharpens) applied when pooling components via a Bayesian method",
+    )
+    update_parser.add_argument(
+        "--correlation",
+        default=None,
+        help="Correlation handling for Bayesian pooling: 'estimate' or a JSON NxN matrix; downweights double-counted sources",
+    )
     update_parser.add_argument("--assumption", dest="key_assumptions", action="append", default=[])
     update_parser.add_argument("--assumption-ref", dest="assumption_refs", action="append", default=[])
     update_parser.add_argument("--reference-class-ref", dest="reference_class_refs", action="append", default=[])
@@ -1283,6 +1302,34 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     model_parser.add_argument("--data-version")
     model_parser.add_argument("--evidence-cutoff")
     model_parser.set_defaults(_forecast_handler=_cmd_model)
+
+    bayes_parser = forecast_sub.add_parser(
+        "bayes",
+        help="Bayesian scratchpad: LR updates, log-odds pooling, polls→prob, de-vig, sensitivity, forecast-diff",
+    )
+    bayes_parser.add_argument(
+        "bayes_action",
+        nargs="?",
+        help=(
+            "Toolkit routine: lr_update, decompose_update, combine, evidence_weight, "
+            "evidence_cluster, blend_base_rates, poll_to_prob, polls, devig, "
+            "normalize_market, combine_markets, sensitivity, forecast_diff "
+            "(omit to list available actions)"
+        ),
+    )
+    bayes_parser.add_argument(
+        "--input", "-i", dest="bayes_input", default=None,
+        help="JSON object payload for the chosen action",
+    )
+    bayes_parser.add_argument(
+        "--input-file", dest="bayes_input_file", default=None,
+        help="Path to a JSON payload file (alternative to --input)",
+    )
+    bayes_parser.add_argument(
+        "--json", dest="bayes_json", action="store_true",
+        help="Emit machine-readable JSON (default prints a human rationale)",
+    )
+    bayes_parser.set_defaults(_forecast_handler=_cmd_bayes)
 
     protocol_parser = forecast_sub.add_parser("protocol", help="Render a forecast-stage agent protocol prompt")
     protocol_parser.add_argument("id")
@@ -6294,6 +6341,45 @@ def _cmd_base_rate(args: argparse.Namespace) -> None:
     print(f"model_run: {model_run['id']}")
 
 
+def _cmd_bayes(args: argparse.Namespace) -> None:
+    from forecasting.bayes_toolkit import (
+        BAYES_ACTIONS,
+        ensure_industry_backends,
+        run_bayes_action,
+    )
+
+    action = (args.bayes_action or "").strip()
+    if not action:
+        print("Bayesian scratchpad actions:")
+        for name in sorted(BAYES_ACTIONS):
+            print(f"  {name}: {BAYES_ACTIONS[name]}")
+        print("\nusage: forecast bayes <action> --input '<json payload>' [--json]")
+        print("example: forecast bayes lr_update --input '{\"prior_p\":0.62,\"lrs\":[0.85,0.7,1.25]}'")
+        return
+
+    if args.bayes_input_file:
+        payload_text = Path(args.bayes_input_file).expanduser().read_text(encoding="utf-8")
+    else:
+        payload_text = args.bayes_input or "{}"
+    try:
+        payload = json.loads(payload_text)
+    except json.JSONDecodeError as exc:
+        print(f"forecast bayes: invalid JSON payload: {exc}", file=sys.stderr)
+        raise SystemExit(2)
+    if not isinstance(payload, dict):
+        print("forecast bayes: payload must be a JSON object", file=sys.stderr)
+        raise SystemExit(2)
+
+    # Provision NumPy/SciPy on first use; the toolkit falls back to stdlib math
+    # offline so this never blocks the command.
+    ensure_industry_backends()
+    outcome = run_bayes_action(action, payload)
+    if args.bayes_json:
+        print(json.dumps({"action": outcome["action"], "result": outcome["result"]}, indent=2, sort_keys=True))
+    else:
+        print(outcome["rationale"])
+
+
 def _cmd_model(args: argparse.Namespace) -> None:
     if not args.model_type:
         write_fields = [
@@ -8476,6 +8562,65 @@ def _cmd_export(args: argparse.Namespace) -> None:
     print(text, end="")
 
 
+_BAYES_POOL_METHODS = {
+    "log_odds_pool": "log_odds_pool",
+    "log_odds": "log_odds_pool",
+    "logit": "log_odds_pool",
+    "logit_pool": "log_odds_pool",
+    "geometric": "log_odds_pool",
+    "geometric_pool": "log_odds_pool",
+    "geometric_pool_odds": "log_odds_pool",
+    "log_pool": "log_pool",
+    "log_linear": "log_pool",
+    "log_linear_pool": "log_pool",
+}
+
+
+def _pool_components_probability(args: argparse.Namespace, components: dict[str, Any]) -> float | None:
+    """Combine ensemble components into a probability.
+
+    Routes through the Bayesian toolkit (log-odds / log-linear pooling with
+    optional extremization and correlation discounting) when the chosen method
+    is a Bayesian pooling method; otherwise keeps the historic weighted-average
+    behaviour so existing ``weighted_ensemble`` workflows are unchanged.
+    """
+
+    method = str(getattr(args, "method", None) or "").strip().lower()
+    extremize = getattr(args, "extremize", None)
+    correlation = getattr(args, "correlation", None)
+    pooled_method = _BAYES_POOL_METHODS.get(method)
+    if pooled_method is None and extremize is None and correlation is None:
+        return weighted_binary_probability(components)
+
+    rows = _component_rows(components)
+    if not rows:
+        return weighted_binary_probability(components)
+
+    # Default to log-odds pooling when extremize/correlation requested without a method.
+    pooled_method = pooled_method or "log_odds_pool"
+    correlation_matrix: Any = None
+    if correlation is not None:
+        text = str(correlation).strip()
+        if text.lower() in {"estimate", "auto"}:
+            correlation_matrix = "estimate"
+        elif text:
+            try:
+                correlation_matrix = json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise SystemExit(f"--correlation must be 'estimate' or a JSON matrix: {exc}")
+
+    from forecasting.bayes_toolkit import combine_forecasts, ensure_industry_backends
+
+    ensure_industry_backends()
+    result = combine_forecasts(
+        rows,
+        method=pooled_method,
+        extremize=float(extremize) if extremize is not None else 1.0,
+        correlation_matrix=correlation_matrix,
+    )
+    return result.probability
+
+
 def _probability_payload(args: argparse.Namespace, components: dict[str, Any] | None = None) -> Any:
     supplied = sum(
         1
@@ -8492,7 +8637,7 @@ def _probability_payload(args: argparse.Namespace, components: dict[str, Any] | 
             raise SystemExit("--distribution-json must be a JSON object")
         return payload
     if args.probability is None and components:
-        probability = weighted_binary_probability(components)
+        probability = _pool_components_probability(args, components)
         if probability is not None:
             return probability
     if args.probability is None:

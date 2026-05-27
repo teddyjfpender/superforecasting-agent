@@ -219,15 +219,30 @@ def _stage_task(stage: str) -> str:
         ),
         "base_rate": (
             "Propose reference classes with inclusion/exclusion criteria, base-rate estimates, "
-            "uncertainty, and source requirements."
+            "uncertainty, and source requirements. When several reference classes compete, blend "
+            "them by applicability with the forecast_ledger bayes action "
+            "(bayes_action='blend_base_rates') instead of eyeballing a single class."
         ),
         "model": (
             "Suggest quantitative models or Bayesian updates that would improve the forecast. "
-            "Specify inputs, parameters, diagnostics, and evidence cutoff requirements."
+            "Specify inputs, parameters, diagnostics, and evidence cutoff requirements. Use the "
+            "forecast_ledger bayes action for the auditable building blocks: 'evidence_weight' to "
+            "turn a source into a likelihood ratio (separating reliability from relevance and "
+            "discounting correlated/biased signal), 'poll_to_prob'/'polls' for poll→probability, "
+            "'devig'/'combine_markets' to de-vig prediction markets, and 'evidence_cluster' to "
+            "avoid double-counting sources that trace back to one signal."
         ),
         "update": (
             "Prepare a forecast update preview. Show previous probability, proposed probability, "
-            "delta, component weights, key evidence, assumptions, calibration lessons used, and an as-of timestamp."
+            "delta, component weights, key evidence, assumptions, calibration lessons used, and an "
+            "as-of timestamp. Combine disagreeing sources with the Bayesian toolkit rather than a "
+            "naive average: pool in log-odds space (forecast_ledger bayes_action='combine', "
+            "method='log_odds_pool', with correlation_matrix='estimate' when sources overlap), or "
+            "apply likelihood ratios to the prior (bayes_action='lr_update'). The same pooling is "
+            "available natively via `forecast update --method log_odds_pool --extremize <f> "
+            "--correlation estimate`. After moving the probability, decompose the change with "
+            "bayes_action='forecast_diff' and stress-test it with bayes_action='sensitivity' so the "
+            "update is auditable, not ad hoc."
         ),
         "resolve": (
             "Check whether the resolution criteria are satisfied. Propose resolution status, source snapshot needs, "

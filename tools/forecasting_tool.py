@@ -85,7 +85,13 @@ FORECAST_LEDGER_SCHEMA = {
         "topic, rationale, and evidence without requiring IDs. Forecast snapshots "
         "are append-only; source actions can plan and search watched RSS/Atom "
         "evidence candidates without moving probabilities; autopilot actions "
-        "maintain watched-source update proposals through the ledger."
+        "maintain watched-source update proposals through the ledger. The "
+        "action='bayes' family runs an auditable Bayesian scratchpad "
+        "(likelihood-ratio updates, log-odds pooling of disagreeing sources, "
+        "evidence weighting that discounts correlated/biased signals, "
+        "reference-class base-rate blending, poll→probability conversion, "
+        "market de-vigging, sensitivity/tornado analysis, and forecast-diff "
+        "decomposition) so probability moves are transparent rather than ad hoc."
     ),
     "parameters": {
         "type": "object",
@@ -155,6 +161,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "export_all",
                     "import_packet",
                     "protocol",
+                    "bayes",
                 ],
             },
             "question_id": {"type": "string"},
@@ -517,6 +524,24 @@ FORECAST_LEDGER_SCHEMA = {
             },
             "lesson": {"type": "string"},
             "db": {"type": "string"},
+            "bayes_action": {
+                "type": "string",
+                "description": (
+                    "For action='bayes': which Bayesian toolkit routine to run — "
+                    "lr_update, decompose_update, combine, evidence_weight, "
+                    "evidence_cluster, blend_base_rates, poll_to_prob, polls, "
+                    "devig, normalize_market, combine_markets, sensitivity, forecast_diff."
+                ),
+            },
+            "bayes_payload": {
+                "type": "object",
+                "description": (
+                    "For action='bayes': the inputs for the chosen bayes_action "
+                    "(e.g. {prior_p, lrs} for lr_update; {components, method, "
+                    "extremize, correlation_matrix} for combine; {previous, current, "
+                    "components} for forecast_diff)."
+                ),
+            },
         },
         "required": ["action"],
     },
@@ -1325,6 +1350,34 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 stage=args.get("stage") or "update",
             )
             return tool_result(success=True, messages=[message.__dict__ for message in messages])
+
+        if action == "bayes":
+            from forecasting.bayes_toolkit import (
+                BAYES_ACTIONS,
+                ensure_industry_backends,
+                run_bayes_action,
+            )
+
+            bayes_action = str(args.get("bayes_action") or "").strip()
+            if not bayes_action:
+                return tool_error(
+                    "bayes_action is required (one of: "
+                    + ", ".join(sorted(BAYES_ACTIONS))
+                    + ")",
+                    success=False,
+                )
+            # Provision NumPy/SciPy on first use; falls back to stdlib offline.
+            ensure_industry_backends()
+            payload = args.get("bayes_payload") or {}
+            if not isinstance(payload, dict):
+                return tool_error("bayes_payload must be an object", success=False)
+            outcome = run_bayes_action(bayes_action, payload)
+            return tool_result(
+                success=True,
+                bayes_action=outcome["action"],
+                result=outcome["result"],
+                rationale=outcome["rationale"],
+            )
 
         return tool_error(f"unknown forecast_ledger action: {action}", success=False)
     except ForecastingError as exc:

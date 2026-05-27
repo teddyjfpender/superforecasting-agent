@@ -89,6 +89,13 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     # users never pay this import.
     "provider.azure_identity": ("azure-identity==1.25.3",),
 
+    # ─── Bayesian forecasting toolkit ───────────────────────────────────────
+    # NumPy + SciPy power forecasting/bayes_toolkit.py (log-odds pooling,
+    # correlation-adjusted weights, normal-CDF poll→probability). The toolkit
+    # degrades to exact stdlib math if these are absent, but provisions them on
+    # first use so the agent gets the industry-standard numerics.
+    "forecast.bayes": ("numpy==2.4.3", "scipy==1.16.2"),
+
     # ─── Web search backends ───────────────────────────────────────────────
     # ddgs (DuckDuckGo) is the free, keyless default web-search backend for the
     # forecasting desk — it self-installs on first use so a fresh agent can
