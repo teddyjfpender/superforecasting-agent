@@ -257,6 +257,17 @@ _PACKET_JSON_FIELDS = {
         "recurring_errors",
         "recommended_adjustments",
     },
+    "panel_runs": {
+        "perspectives",
+        "spread_summary",
+        "notes",
+    },
+    "panel_estimates": {
+        "reasons_up",
+        "reasons_down",
+        "change_my_mind",
+        "metadata",
+    },
     "baseline_comparisons": {"probability_or_distribution", "metadata"},
     "source_snapshots": {"parsed_values", "metadata"},
     "watched_sources": {"metadata"},
@@ -795,6 +806,46 @@ class ForecastLedger:
 
                 CREATE INDEX IF NOT EXISTS idx_forecast_update_proposals_question
                     ON forecast_update_proposals(question_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS panel_runs (
+                    id TEXT PRIMARY KEY,
+                    question_id TEXT NOT NULL REFERENCES forecast_questions(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    snapshot_id TEXT REFERENCES forecast_snapshots(forecast_id) ON DELETE SET NULL,
+                    aggregation_method TEXT NOT NULL DEFAULT 'trimmed_geomean_odds',
+                    trim INTEGER NOT NULL DEFAULT 0,
+                    aggregate_probability REAL NOT NULL,
+                    perspectives TEXT NOT NULL DEFAULT '[]',
+                    spread_summary TEXT NOT NULL DEFAULT '{}',
+                    notes TEXT NOT NULL DEFAULT '[]',
+                    triggered_by TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_panel_runs_question
+                    ON panel_runs(question_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS panel_estimates (
+                    id TEXT PRIMARY KEY,
+                    panel_run_id TEXT NOT NULL REFERENCES panel_runs(id) ON DELETE CASCADE,
+                    question_id TEXT NOT NULL REFERENCES forecast_questions(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    perspective TEXT NOT NULL,
+                    probability REAL NOT NULL,
+                    weight REAL NOT NULL DEFAULT 1.0,
+                    trimmed INTEGER NOT NULL DEFAULT 0,
+                    confidence_low REAL,
+                    confidence_high REAL,
+                    rationale TEXT NOT NULL DEFAULT '',
+                    reasons_up TEXT NOT NULL DEFAULT '[]',
+                    reasons_down TEXT NOT NULL DEFAULT '[]',
+                    change_my_mind TEXT NOT NULL DEFAULT '[]',
+                    crux TEXT,
+                    agent_model TEXT,
+                    metadata TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_panel_estimates_run
+                    ON panel_estimates(panel_run_id);
 
                 CREATE TABLE IF NOT EXISTS domain_error_profiles (
                     id TEXT PRIMARY KEY,
@@ -2312,6 +2363,183 @@ class ForecastLedger:
             data.setdefault("failure_class", None)
             result.append(data)
         return result
+
+    # ── Forecast panel ─────────────────────────────────────────────────────
+
+    def record_panel_run(
+        self,
+        *,
+        question_id: str,
+        estimates: list[dict[str, Any]],
+        aggregation_method: str = "trimmed_geomean_odds",
+        trim: int = 1,
+        snapshot_id: str | None = None,
+        triggered_by: str | None = None,
+        perspectives: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Aggregate a panel of perspective estimates and persist the artifact.
+
+        Returns the panel-run record dict (including aggregate_probability,
+        spread_summary, trimmed flags, and per-estimate ids). The caller
+        typically passes the resulting ``aggregate_probability`` into
+        :meth:`create_snapshot` and the panel run id into the snapshot's
+        ``ensemble_components`` or ``metadata``.
+        """
+
+        from forecasting.panel import aggregate_panel_estimates  # local import to avoid cycle
+
+        self.get_question(question_id)
+        if snapshot_id is not None:
+            self.get_snapshot(snapshot_id)
+        aggregation = aggregate_panel_estimates(
+            estimates,
+            method=aggregation_method,
+            trim=trim,
+        )
+        now = utc_now_iso()
+        run_id = f"pr_{uuid.uuid4().hex[:12]}"
+        requested = perspectives if perspectives is not None else [
+            row["perspective"] for row in aggregation.estimates
+        ]
+        estimate_records: list[dict[str, Any]] = []
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO panel_runs (
+                    id, question_id, created_at, snapshot_id,
+                    aggregation_method, trim, aggregate_probability,
+                    perspectives, spread_summary, notes, triggered_by
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    question_id,
+                    now,
+                    snapshot_id,
+                    aggregation.method,
+                    aggregation.trim,
+                    float(aggregation.aggregate_probability),
+                    json_dumps(list(requested)),
+                    json_dumps(aggregation.spread),
+                    json_dumps(aggregation.notes),
+                    triggered_by,
+                ),
+            )
+            for row in aggregation.estimates:
+                estimate_id = f"pe_{uuid.uuid4().hex[:12]}"
+                conn.execute(
+                    """
+                    INSERT INTO panel_estimates (
+                        id, panel_run_id, question_id, created_at, perspective,
+                        probability, weight, trimmed, confidence_low, confidence_high,
+                        rationale, reasons_up, reasons_down, change_my_mind, crux,
+                        agent_model, metadata
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        estimate_id,
+                        run_id,
+                        question_id,
+                        now,
+                        row["perspective"],
+                        float(row["probability"]),
+                        float(row["weight"]),
+                        1 if row.get("trimmed") else 0,
+                        row.get("confidence_low"),
+                        row.get("confidence_high"),
+                        row.get("rationale") or "",
+                        json_dumps(row.get("reasons_up") or []),
+                        json_dumps(row.get("reasons_down") or []),
+                        json_dumps(row.get("change_my_mind") or []),
+                        row.get("crux"),
+                        row.get("agent_model"),
+                        json_dumps(row.get("metadata") or {}),
+                    ),
+                )
+                estimate_records.append({"id": estimate_id, **row})
+        return self.get_panel_run(run_id)
+
+    def get_panel_run(self, run_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM panel_runs WHERE id = ?",
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                raise LedgerNotFoundError(f"panel run not found: {run_id}")
+            estimates = conn.execute(
+                """
+                SELECT * FROM panel_estimates
+                WHERE panel_run_id = ?
+                ORDER BY perspective ASC
+                """,
+                (run_id,),
+            ).fetchall()
+        return self._panel_run_dict(row, estimates)
+
+    def list_panel_runs(
+        self,
+        question_id: str | None = None,
+        *,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if question_id:
+            clauses.append("question_id = ?")
+            params.append(question_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        sql = f"SELECT * FROM panel_runs {where} ORDER BY created_at DESC"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(int(limit))
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+            results: list[dict[str, Any]] = []
+            for row in rows:
+                estimates = conn.execute(
+                    """
+                    SELECT * FROM panel_estimates
+                    WHERE panel_run_id = ?
+                    ORDER BY perspective ASC
+                    """,
+                    (row["id"],),
+                ).fetchall()
+                results.append(self._panel_run_dict(row, estimates))
+        return results
+
+    def attach_panel_to_snapshot(self, panel_run_id: str, snapshot_id: str) -> dict[str, Any]:
+        self.get_panel_run(panel_run_id)
+        self.get_snapshot(snapshot_id)
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE panel_runs SET snapshot_id = ? WHERE id = ?",
+                (snapshot_id, panel_run_id),
+            )
+        return self.get_panel_run(panel_run_id)
+
+    def _panel_run_dict(
+        self,
+        row: sqlite3.Row,
+        estimates_rows: list[sqlite3.Row],
+    ) -> dict[str, Any]:
+        data = dict(row)
+        data["perspectives"] = json_loads(data["perspectives"], [])
+        data["spread_summary"] = json_loads(data["spread_summary"], {})
+        data["notes"] = json_loads(data["notes"], [])
+        data["estimates"] = [self._panel_estimate_dict(e) for e in estimates_rows]
+        return data
+
+    def _panel_estimate_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        data = dict(row)
+        data["trimmed"] = bool(data["trimmed"])
+        data["reasons_up"] = json_loads(data["reasons_up"], [])
+        data["reasons_down"] = json_loads(data["reasons_down"], [])
+        data["change_my_mind"] = json_loads(data["change_my_mind"], [])
+        data["metadata"] = json_loads(data["metadata"], {})
+        return data
 
     def create_calibration_lesson(
         self,

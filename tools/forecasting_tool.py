@@ -170,6 +170,11 @@ FORECAST_LEDGER_SCHEMA = {
                     "bayes",
                     "workflow_report",
                     "import_source_evidence_batch",
+                    "record_panel",
+                    "aggregate_panel",
+                    "show_panel",
+                    "list_panel",
+                    "panel_perspectives",
                 ],
             },
             "question_id": {"type": "string"},
@@ -297,6 +302,50 @@ FORECAST_LEDGER_SCHEMA = {
                 "enum": sorted(["base_rate", "inside_view", "definition", "timing", "aggregation", "motivated_reasoning", "tail", "noise", "other"]),
                 "description": "Dominant failure mode assigned in a postmortem.",
             },
+            "panel_run_id": {"type": "string"},
+            "snapshot_id": {"type": "string"},
+            "perspectives": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Panel perspectives to use, e.g. outside, inside, market, red_team, sanity."
+                ),
+            },
+            "estimates": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "perspective": {"type": "string"},
+                        "probability": {"type": "number"},
+                        "weight": {"type": "number"},
+                        "confidence_low": {"type": "number"},
+                        "confidence_high": {"type": "number"},
+                        "rationale": {"type": "string"},
+                        "reasons_up": {"type": "array", "items": {"type": "string"}},
+                        "reasons_down": {"type": "array", "items": {"type": "string"}},
+                        "change_my_mind": {"type": "array", "items": {"type": "string"}},
+                        "crux": {"type": "string"},
+                        "agent_model": {"type": "string"},
+                        "metadata": {"type": "object"},
+                    },
+                    "required": ["perspective", "probability"],
+                },
+                "description": "Per-perspective panel estimates.",
+            },
+            "trim": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Drop N highest + N lowest panel estimates before pooling.",
+            },
+            "method": {
+                "type": "string",
+                "enum": sorted(["trimmed_geomean_odds", "log_odds_pool", "median"]),
+                "description": "Panel aggregation method.",
+            },
+            "triggered_by": {"type": "string"},
+            "question_title": {"type": "string"},
+            "context": {"type": "string"},
             "name": {"type": "string"},
             "dataset": {"type": "string"},
             "limit": {"type": "integer"},
@@ -1568,6 +1617,77 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 result=outcome["result"],
                 rationale=outcome["rationale"],
             )
+
+        if action == "panel_perspectives":
+            from forecasting.panel import (
+                DEFAULT_PANEL_PERSPECTIVES,
+                PANEL_PERSPECTIVES,
+                build_perspective_prompts,
+            )
+            from forecasting.protocol import build_context_packet
+
+            perspectives = args.get("perspectives") or list(DEFAULT_PANEL_PERSPECTIVES)
+            if args.get("question_id"):
+                question = ledger.get_question(args["question_id"])
+                snapshot = ledger.get_current_snapshot(question.id)
+                context = build_context_packet(ledger, question, snapshot)
+                prompts = build_perspective_prompts(
+                    question_title=question.title,
+                    resolution_criteria=question.resolution_criteria,
+                    context_packet=context,
+                    perspectives=perspectives,
+                )
+            else:
+                prompts = build_perspective_prompts(
+                    question_title=str(args.get("question_title") or "<question>"),
+                    resolution_criteria=str(args.get("resolution_criteria") or "<criteria>"),
+                    context_packet=str(args.get("context") or ""),
+                    perspectives=perspectives,
+                )
+            return tool_result(
+                success=True,
+                perspectives=prompts,
+                catalog={k: v["label"] for k, v in PANEL_PERSPECTIVES.items()},
+            )
+
+        if action == "aggregate_panel":
+            from forecasting.panel import aggregate_panel_estimates
+
+            estimates = args.get("estimates")
+            if not estimates:
+                return tool_error("aggregate_panel requires 'estimates'", success=False)
+            aggregation = aggregate_panel_estimates(
+                estimates,
+                method=str(args.get("method") or "trimmed_geomean_odds"),
+                trim=int(args.get("trim", 1)),
+            )
+            return tool_result(success=True, **aggregation.to_dict())
+
+        if action == "record_panel":
+            estimates = args.get("estimates")
+            if not estimates:
+                return tool_error("record_panel requires 'estimates'", success=False)
+            record = ledger.record_panel_run(
+                question_id=_required(args, "question_id"),
+                estimates=estimates,
+                aggregation_method=str(args.get("method") or "trimmed_geomean_odds"),
+                trim=int(args.get("trim", 1)),
+                snapshot_id=args.get("snapshot_id"),
+                triggered_by=args.get("triggered_by"),
+                perspectives=args.get("perspectives"),
+            )
+            return tool_result(success=True, panel_run=record)
+
+        if action == "show_panel":
+            record = ledger.get_panel_run(_required(args, "panel_run_id"))
+            return tool_result(success=True, panel_run=record)
+
+        if action == "list_panel":
+            rows = ledger.list_panel_runs(
+                question_id=args.get("question_id"),
+                limit=int(args["limit"]) if args.get("limit") is not None else 20,
+            )
+            return tool_result(success=True, panel_runs=rows)
 
         return tool_error(f"unknown forecast_ledger action: {action}", success=False)
     except ForecastingError as exc:

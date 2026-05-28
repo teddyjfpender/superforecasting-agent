@@ -739,6 +739,39 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "action_threshold, and at least one update_trigger"
         ),
     )
+    update_parser.add_argument(
+        "--panel-estimates-json",
+        dest="panel_estimates_json",
+        default=None,
+        help=(
+            "JSON array of panel estimates (one per perspective). When supplied, "
+            "the panel is aggregated to derive the snapshot probability and a "
+            "panel_run record is attached to the snapshot."
+        ),
+    )
+    update_parser.add_argument(
+        "--panel-estimates-file",
+        dest="panel_estimates_file",
+        default=None,
+        help="Path to a JSON file containing panel estimates",
+    )
+    update_parser.add_argument(
+        "--panel-method",
+        dest="panel_method",
+        choices=sorted(["trimmed_geomean_odds", "log_odds_pool", "median"]),
+        default="trimmed_geomean_odds",
+    )
+    update_parser.add_argument(
+        "--panel-trim",
+        dest="panel_trim",
+        type=int,
+        default=1,
+    )
+    update_parser.add_argument(
+        "--panel-triggered-by",
+        dest="panel_triggered_by",
+        default="manual",
+    )
     update_parser.add_argument("--evidence-cutoff")
     update_parser.add_argument("--backtest-run-id")
     update_parser.add_argument("--calibration-ineligible", action="store_true")
@@ -1412,6 +1445,103 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         help="Emit machine-readable JSON (default prints a human rationale)",
     )
     bayes_parser.set_defaults(_forecast_handler=_cmd_bayes)
+
+    panel_parser = forecast_sub.add_parser(
+        "panel",
+        help=(
+            "Run / aggregate / inspect a multi-perspective forecast panel "
+            "(outside, inside, market, red-team, sanity)"
+        ),
+    )
+    panel_sub = panel_parser.add_subparsers(dest="panel_command")
+
+    panel_perspectives_parser = panel_sub.add_parser(
+        "perspectives",
+        help="Print the system+user prompt for each panel perspective",
+    )
+    panel_perspectives_parser.add_argument("question_id", nargs="?")
+    panel_perspectives_parser.add_argument(
+        "--perspective",
+        dest="perspectives",
+        action="append",
+        default=[],
+        help=(
+            "Subset of perspectives to print (repeatable). Defaults to all five: "
+            "outside, inside, market, red_team, sanity."
+        ),
+    )
+    panel_perspectives_parser.add_argument("--json", action="store_true")
+    panel_perspectives_parser.set_defaults(_forecast_handler=_cmd_panel_perspectives)
+
+    panel_aggregate_parser = panel_sub.add_parser(
+        "aggregate",
+        help="Aggregate a JSON array of perspective estimates without saving",
+    )
+    panel_aggregate_parser.add_argument(
+        "--input",
+        "-i",
+        dest="panel_input",
+        default=None,
+        help="JSON array of estimate objects",
+    )
+    panel_aggregate_parser.add_argument(
+        "--input-file",
+        dest="panel_input_file",
+        default=None,
+    )
+    panel_aggregate_parser.add_argument(
+        "--method",
+        choices=sorted(["trimmed_geomean_odds", "log_odds_pool", "median"]),
+        default="trimmed_geomean_odds",
+    )
+    panel_aggregate_parser.add_argument(
+        "--trim",
+        type=int,
+        default=1,
+        help="Drop this many highest + lowest estimates before pooling (default 1)",
+    )
+    panel_aggregate_parser.add_argument("--json", action="store_true")
+    panel_aggregate_parser.set_defaults(_forecast_handler=_cmd_panel_aggregate)
+
+    panel_record_parser = panel_sub.add_parser(
+        "record",
+        help="Aggregate panel estimates AND save the panel_run for a question",
+    )
+    panel_record_parser.add_argument("question_id")
+    panel_record_parser.add_argument(
+        "--input", "-i", dest="panel_input", default=None,
+        help="JSON array of estimate objects",
+    )
+    panel_record_parser.add_argument("--input-file", dest="panel_input_file", default=None)
+    panel_record_parser.add_argument(
+        "--method",
+        choices=sorted(["trimmed_geomean_odds", "log_odds_pool", "median"]),
+        default="trimmed_geomean_odds",
+    )
+    panel_record_parser.add_argument("--trim", type=int, default=1)
+    panel_record_parser.add_argument(
+        "--triggered-by",
+        choices=["manual", "first_forecast", "impact_high", "force"],
+        default="manual",
+    )
+    panel_record_parser.add_argument("--snapshot-id")
+    panel_record_parser.set_defaults(_forecast_handler=_cmd_panel_record)
+
+    panel_show_parser = panel_sub.add_parser(
+        "show",
+        help="Render a stored panel_run",
+    )
+    panel_show_parser.add_argument("panel_run_id")
+    panel_show_parser.add_argument("--json", action="store_true")
+    panel_show_parser.set_defaults(_forecast_handler=_cmd_panel_show)
+
+    panel_list_parser = panel_sub.add_parser(
+        "list",
+        help="List panel_runs (optionally scoped to a question)",
+    )
+    panel_list_parser.add_argument("question_id", nargs="?")
+    panel_list_parser.add_argument("--limit", type=int, default=20)
+    panel_list_parser.set_defaults(_forecast_handler=_cmd_panel_list)
 
     apikey_parser = forecast_sub.add_parser(
         "api-key",
@@ -2663,10 +2793,17 @@ def _cmd_update(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
     question = ledger.get_question(args.id)
     rationale = _joined_arg(args.rationale)
-    has_payload = any(
-        value is not None
-        for value in (args.probability, args.numeric_value, args.distribution_json)
-    ) or bool(components)
+    panel_estimates = _load_panel_estimates(args)
+    panel_run_record: dict[str, Any] | None = None
+    has_panel = panel_estimates is not None
+    has_payload = (
+        any(
+            value is not None
+            for value in (args.probability, args.numeric_value, args.distribution_json)
+        )
+        or bool(components)
+        or has_panel
+    )
     non_citation_update_fields = [
         rationale is not None,
         args.as_of is not None,
@@ -2719,6 +2856,31 @@ def _cmd_update(args: argparse.Namespace) -> None:
             print(f"add: forecast update {args.id} --probability <p> --rationale <why>")
         print("probability unchanged")
         return
+    if has_panel:
+        panel_run_record = ledger.record_panel_run(
+            question_id=args.id,
+            estimates=panel_estimates,
+            aggregation_method=getattr(args, "panel_method", "trimmed_geomean_odds"),
+            trim=getattr(args, "panel_trim", 1),
+            triggered_by=getattr(args, "panel_triggered_by", "manual"),
+        )
+        if args.probability is None and args.numeric_value is None and args.distribution_json is None:
+            args.probability = panel_run_record["aggregate_probability"]
+        if not components:
+            components = {
+                "components": [
+                    {
+                        "name": estimate["perspective"],
+                        "probability": estimate["probability"],
+                        "weight": estimate["weight"],
+                        "source": f"panel:{estimate['perspective']}",
+                    }
+                    for estimate in panel_run_record["estimates"]
+                    if not estimate.get("trimmed")
+                ]
+            }
+        if args.method is None:
+            args.method = panel_run_record["aggregation_method"]
     payload = _probability_payload(args, components)
     calibration_adjustment = _json_arg(args.calibration_adjustment_json, "calibration-adjustment-json")
     calibration_lesson_refs = list(args.calibration_lesson_refs)
@@ -2778,6 +2940,8 @@ def _cmd_update(args: argparse.Namespace) -> None:
         require_structured_reasoning=getattr(args, "require_structured_reasoning", False),
         require_decision_readiness=getattr(args, "require_decision_readiness", False),
     )
+    if panel_run_record is not None:
+        ledger.attach_panel_to_snapshot(panel_run_record["id"], snapshot.forecast_id)
     print(f"created forecast snapshot {snapshot.forecast_id}")
     print(f"question: {snapshot.question_id}")
     print(f"as_of: {snapshot.as_of}")
@@ -2787,6 +2951,8 @@ def _cmd_update(args: argparse.Namespace) -> None:
         if delta is not None:
             print(f"previous_probability: {_format_probability(previous.probability_or_distribution)}")
             print(f"delta: {delta:+.3f}")
+    if panel_run_record is not None:
+        _print_panel_summary(panel_run_record)
     if components:
         _print_component_drivers(components, snapshot.probability_or_distribution)
     _print_calibration_adjustment_summary(calibration_lesson_refs, calibration_adjustment)
@@ -7035,6 +7201,205 @@ def _cmd_scores(args: argparse.Namespace) -> None:
             f"{score.id:<14} {brier:<9} {log_score:<9} {proper:<9} {score.score_rule or '-':<28} {score.calibration_bucket or '-':<8} "
             f"{horizon:<8} {score.forecast_origin:<18} {score.domain or '-':<9} "
             f"{score.invalidated_by_correction_id or '-'}"
+        )
+
+
+def _load_panel_estimates(args: argparse.Namespace) -> list[dict[str, Any]] | None:
+    """Resolve panel-estimate JSON from --panel-estimates-json or --panel-estimates-file."""
+
+    raw = getattr(args, "panel_estimates_json", None)
+    if raw is None:
+        path = getattr(args, "panel_estimates_file", None)
+        if path:
+            try:
+                raw = Path(path).expanduser().read_text(encoding="utf-8")
+            except OSError as exc:
+                raise SystemExit(f"forecast update: cannot read --panel-estimates-file: {exc}") from exc
+    if raw is None:
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"forecast update: invalid --panel-estimates-json: {exc.msg}") from exc
+    if isinstance(data, dict) and "estimates" in data:
+        data = data["estimates"]
+    if not isinstance(data, list) or not data:
+        raise SystemExit(
+            "forecast update: --panel-estimates-json must be a non-empty JSON array of estimate objects"
+        )
+    return data
+
+
+def _print_panel_summary(panel_run: dict[str, Any]) -> None:
+    spread = panel_run.get("spread_summary") or {}
+    print(f"panel_run: {panel_run['id']}")
+    print(f"  method: {panel_run['aggregation_method']} (trim={panel_run['trim']})")
+    print(f"  aggregate: {panel_run['aggregate_probability']:.3f}")
+    if spread:
+        print(
+            f"  spread: min={spread.get('min', 0):.2f} median={spread.get('median', 0):.2f} "
+            f"max={spread.get('max', 0):.2f} iqr={spread.get('iqr', 0):.2f}"
+        )
+    print(f"  perspectives: {len(panel_run.get('estimates', []))}")
+    for estimate in panel_run.get("estimates", []):
+        marker = "× " if estimate.get("trimmed") else "  "
+        ci = ""
+        if estimate.get("confidence_low") is not None and estimate.get("confidence_high") is not None:
+            ci = f" [{estimate['confidence_low']:.2f}–{estimate['confidence_high']:.2f}]"
+        print(
+            f"  {marker}{estimate['perspective']:<10} p={estimate['probability']:.3f}{ci} "
+            f"crux={estimate.get('crux') or '-'}"
+        )
+    for note in panel_run.get("notes") or []:
+        print(f"  note: {note}")
+
+
+def _cmd_panel_perspectives(args: argparse.Namespace) -> None:
+    from forecasting.panel import (
+        DEFAULT_PANEL_PERSPECTIVES,
+        PANEL_PERSPECTIVES,
+        build_perspective_prompts,
+    )
+    from forecasting.protocol import build_context_packet
+
+    perspectives = args.perspectives or list(DEFAULT_PANEL_PERSPECTIVES)
+    if args.question_id:
+        ledger = _ledger(args)
+        question = ledger.get_question(args.question_id)
+        snapshot = ledger.get_current_snapshot(question.id)
+        context = build_context_packet(ledger, question, snapshot)
+        prompts = build_perspective_prompts(
+            question_title=question.title,
+            resolution_criteria=question.resolution_criteria,
+            context_packet=context,
+            perspectives=perspectives,
+        )
+    else:
+        prompts = build_perspective_prompts(
+            question_title="<question title>",
+            resolution_criteria="<resolution criteria>",
+            context_packet="<ledger context packet>",
+            perspectives=perspectives,
+        )
+    if args.json:
+        print(json.dumps(prompts, indent=2, sort_keys=True))
+        return
+    for name, prompt in prompts.items():
+        label = PANEL_PERSPECTIVES.get(name, {}).get("label", name)
+        print(f"=== {name} — {label} ===")
+        print("[system]")
+        print(prompt["system"])
+        print()
+        print("[user]")
+        print(prompt["user"])
+        print()
+
+
+def _cmd_panel_aggregate(args: argparse.Namespace) -> None:
+    from forecasting.panel import aggregate_panel_estimates
+
+    raw = args.panel_input
+    if raw is None and args.panel_input_file:
+        try:
+            raw = Path(args.panel_input_file).expanduser().read_text(encoding="utf-8")
+        except OSError as exc:
+            raise SystemExit(f"forecast panel aggregate: cannot read --input-file: {exc}") from exc
+    if not raw or not raw.strip():
+        raise SystemExit("forecast panel aggregate: --input or --input-file required")
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"forecast panel aggregate: invalid JSON: {exc.msg}") from exc
+    if isinstance(data, dict) and "estimates" in data:
+        data = data["estimates"]
+    aggregation = aggregate_panel_estimates(
+        data,
+        method=args.method,
+        trim=args.trim,
+    )
+    if args.json:
+        print(json.dumps(aggregation.to_dict(), indent=2, sort_keys=True))
+        return
+    print(f"method: {aggregation.method} (trim={aggregation.trim})")
+    print(f"aggregate: {aggregation.aggregate_probability:.4f}")
+    print("spread:")
+    for key in ("min", "p25", "median", "p75", "max", "iqr", "range", "count"):
+        if key in aggregation.spread:
+            print(f"  {key}: {aggregation.spread[key]:.4f}")
+    print(f"estimates ({len(aggregation.estimates)}):")
+    for estimate in aggregation.estimates:
+        marker = "× " if estimate.get("trimmed") else "  "
+        print(f"  {marker}{estimate['perspective']:<12} p={estimate['probability']:.3f}")
+    for note in aggregation.notes:
+        print(f"note: {note}")
+
+
+def _cmd_panel_record(args: argparse.Namespace) -> None:
+    raw = args.panel_input
+    if raw is None and args.panel_input_file:
+        try:
+            raw = Path(args.panel_input_file).expanduser().read_text(encoding="utf-8")
+        except OSError as exc:
+            raise SystemExit(f"forecast panel record: cannot read --input-file: {exc}") from exc
+    if not raw or not raw.strip():
+        raise SystemExit("forecast panel record: --input or --input-file required")
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"forecast panel record: invalid JSON: {exc.msg}") from exc
+    if isinstance(data, dict) and "estimates" in data:
+        data = data["estimates"]
+    ledger = _ledger(args)
+    record = ledger.record_panel_run(
+        question_id=args.question_id,
+        estimates=data,
+        aggregation_method=args.method,
+        trim=args.trim,
+        snapshot_id=args.snapshot_id,
+        triggered_by=args.triggered_by,
+    )
+    _print_panel_summary(record)
+
+
+def _cmd_panel_show(args: argparse.Namespace) -> None:
+    record = _ledger(args).get_panel_run(args.panel_run_id)
+    if args.json:
+        print(json.dumps(record, indent=2, sort_keys=True))
+        return
+    _print_panel_summary(record)
+    for estimate in record.get("estimates", []):
+        print()
+        print(f"[{estimate['perspective']}] {'(trimmed)' if estimate.get('trimmed') else ''}")
+        if estimate.get("rationale"):
+            print(f"  rationale: {estimate['rationale']}")
+        for label in ("reasons_up", "reasons_down", "change_my_mind"):
+            items = estimate.get(label) or []
+            if items:
+                print(f"  {label}:")
+                for item in items:
+                    print(f"    - {item}")
+
+
+def _cmd_panel_list(args: argparse.Namespace) -> None:
+    rows = _ledger(args).list_panel_runs(question_id=args.question_id, limit=args.limit)
+    if not rows:
+        print("No panel runs found.")
+        return
+    print("ID             Created              Question        Method                  Trim  Aggregate  Spread")
+    for row in rows:
+        spread = row.get("spread_summary") or {}
+        spread_text = (
+            f"{spread.get('min', 0):.2f}-{spread.get('max', 0):.2f}"
+            if spread
+            else "-"
+        )
+        print(
+            f"{row['id']:<14} {row['created_at']:<20} {row['question_id']:<15} "
+            f"{row['aggregation_method']:<24} {row['trim']:<5} "
+            f"{row['aggregate_probability']:.3f}     {spread_text}"
         )
 
 

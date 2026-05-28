@@ -284,7 +284,14 @@ def _stage_task(stage: str) -> str:
             "These prevent narrative collapse — pass them as repeated --reason-up / --reason-down / "
             "--change-my-mind flags, or as `reasons_up`/`reasons_down`/`change_my_mind` arrays in "
             "the agent tool. On the CLI, `--require-structured-reasoning` enforces this; on "
-            "`update_forecast`, the boolean `require_structured_reasoning` has the same effect."
+            "`update_forecast`, the boolean `require_structured_reasoning` has the same effect. "
+            "For high-impact questions or the first forecast on a question, run a forecast PANEL: "
+            "use the forecast_ledger `panel_perspectives` action to fetch the 5 constrained "
+            "framings (outside, inside, market, red_team, sanity), produce one estimate per "
+            "perspective silently, then call `record_panel` to aggregate via trimmed geomean of "
+            "odds (default trim=1) and attach the panel artifact to the snapshot. The CLI "
+            "equivalent is `forecast update <id> --panel-estimates-json '[...]' "
+            "--panel-trim 1`."
         ),
         "resolve": (
             "Check whether the resolution criteria are satisfied. Propose resolution status, source snapshot needs, "
