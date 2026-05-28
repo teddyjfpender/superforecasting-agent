@@ -6136,3 +6136,65 @@ def test_adapter_evidence_skips_url_snapshot_archival(tmp_path, monkeypatch):
         claim="manual url evidence",
     )
     assert calls == ["https://example.com/article"]
+
+
+def test_blocked_url_evidence_is_tagged(tmp_path, monkeypatch):
+    """When archival fetches a Cloudflare / cookie-wall / JS-required page,
+    the evidence row must surface `blocked=True` (+ reason/signal) at the top
+    level of metadata so list_evidence / show_question can see it without
+    opening the snapshot file. Network-free: we monkeypatch urlopen with a
+    canned Cloudflare interstitial body."""
+    from io import BytesIO
+    import forecasting.ledger as ledger_mod
+
+    cf_html = (
+        b"<!DOCTYPE html><html><head><title>Just a moment...</title></head>"
+        b"<body><div class=\"cf-browser-verification\">Checking your browser before accessing example.com."
+        b"<br>Cloudflare Ray ID: 12abcd34</div></body></html>"
+    )
+
+    class _FakeResponse:
+        status = 200
+        headers = {"Content-Type": "text/html; charset=utf-8"}
+
+        def __init__(self, body: bytes):
+            self._body = BytesIO(body)
+
+        def read(self, n: int = -1) -> bytes:
+            return self._body.read(n)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(ledger_mod, "urlopen", lambda req, timeout=5: _FakeResponse(cf_html))
+
+    ledger = ForecastLedger(str(tmp_path / "blocked.db"))
+    question = ledger.create_question(
+        title="Will the measure pass?",
+        resolution_criteria="Resolves yes if the measure is certified as passed; otherwise no.",
+    )
+
+    item = ledger.add_evidence(
+        question_id=question.id,
+        source_or_note="https://blocked.example.com/article",
+        claim="article claim",
+    )
+    meta = item.metadata or {}
+    assert meta.get("blocked") is True
+    assert meta.get("block_reason") == "cloudflare_challenge"
+    assert "just a moment" in (meta.get("block_signal") or "").lower()
+    snapshot = meta.get("source_snapshot") or {}
+    assert snapshot.get("blocked") is True
+
+    # And a legit page should NOT be flagged.
+    legit = b"<html><body>Genuine article about inflation and CPI.</body></html>"
+    monkeypatch.setattr(ledger_mod, "urlopen", lambda req, timeout=5: _FakeResponse(legit))
+    legit_item = ledger.add_evidence(
+        question_id=question.id,
+        source_or_note="https://ok.example.com/article",
+        claim="ok",
+    )
+    assert (legit_item.metadata or {}).get("blocked") is None

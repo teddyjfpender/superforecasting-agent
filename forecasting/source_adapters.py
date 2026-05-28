@@ -29,6 +29,58 @@ _JSON_ACCEPT_HEADER = "application/json, text/json;q=0.9, */*;q=0.5"
 _TEXT_ACCEPT_HEADER = "text/plain, text/csv, text/html;q=0.8, */*;q=0.5"
 
 
+# Bot-block / interstitial signatures. Detection runs over the first ~8 KB of a
+# response body (case-folded) so we recognise a Cloudflare / DataDome / cookie
+# / JS-required block page disguised as HTTP 200, instead of silently treating
+# the block markup as evidence content. Patterns are short, very-low-FP, drawn
+# from each vendor's standard interstitial text/markup.
+_BLOCK_PAGE_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("cloudflare_challenge", (
+        "just a moment...",
+        "cf-browser-verification",
+        "_cf_chl_",
+        "challenge-platform",
+        "cloudflare ray id",
+        "attention required! | cloudflare",
+        "checking your browser before accessing",
+    )),
+    ("akamai_bot_manager", ("pardon our interruption",)),
+    ("datadome", ("datadome",)),
+    ("perimeterx", ("perimeterx", "px-captcha")),
+    ("imperva_incapsula", ("incapsula", "_incap_ses")),
+    ("cookie_wall", ("please enable cookies", "enable cookies to continue")),
+    ("js_required", (
+        "please enable javascript",
+        "javascript is required",
+        "enable javascript to continue",
+        "this site requires javascript",
+    )),
+    ("captcha", ("complete the captcha", "verify you are human")),
+)
+
+
+def detect_block_page(text: str, *, status: int | None = None) -> dict | None:
+    """Return ``{reason, signal}`` when ``text`` looks like a bot-block / interstitial.
+
+    Recognises Cloudflare challenges, DataDome / PerimeterX / Imperva walls,
+    cookie / JavaScript-required pages, and generic CAPTCHAs disguised as HTTP
+    200. Returns ``None`` for genuine content. Intentionally conservative — the
+    matched ``signal`` is exposed so callers can audit a false positive.
+    """
+
+    if not text:
+        return None
+    snippet = text[:8192].lower()
+    # Block pages are usually small; if the body is large and HTML-heavy, lower
+    # confidence somewhat by requiring a stronger match. For now, the patterns
+    # are specific enough (e.g. "cloudflare ray id") that any hit is reliable.
+    for reason, keywords in _BLOCK_PAGE_PATTERNS:
+        for keyword in keywords:
+            if keyword in snippet:
+                return {"reason": reason, "signal": keyword, "status": status}
+    return None
+
+
 def _source_fetch_timeout(default: float = 30.0) -> float:
     """Per-request timeout for source-adapter HTTP fetches (seconds).
 

@@ -1174,6 +1174,17 @@ class ForecastLedger:
             if archived_url_snapshot is not None:
                 snapshot_path = archived_url_snapshot["snapshot_path"]
                 evidence_metadata.setdefault("source_snapshot", archived_url_snapshot)
+                if archived_url_snapshot.get("blocked"):
+                    # Surface at top-level so list_evidence / show_question can
+                    # see "blocked" without opening the snapshot file. The
+                    # nested source_snapshot keeps the full diagnostic.
+                    evidence_metadata.setdefault("blocked", True)
+                    evidence_metadata.setdefault(
+                        "block_reason", archived_url_snapshot.get("block_reason")
+                    )
+                    evidence_metadata.setdefault(
+                        "block_signal", archived_url_snapshot.get("block_signal")
+                    )
         with self._connect() as conn:
             conn.execute(
                 """
@@ -6312,6 +6323,24 @@ class ForecastLedger:
         except (OSError, URLError, TimeoutError):
             return None
         snapshot_path.write_bytes(content)
+        # Detect bot-block / interstitial pages disguised as HTTP 200
+        # (Cloudflare challenge, DataDome, cookie wall, JS-required, …) so
+        # downstream consumers don't treat the block markup as evidence.
+        block_info = None
+        try:
+            from forecasting.source_adapters import detect_block_page
+
+            decoded: str
+            if isinstance(content_type, str) and ("text" in content_type.lower() or "html" in content_type.lower() or "json" in content_type.lower()):
+                decoded = content.decode("utf-8", errors="replace")
+            elif content_type is None:
+                decoded = content[:8192].decode("utf-8", errors="replace")
+            else:
+                decoded = ""
+            if decoded:
+                block_info = detect_block_page(decoded, status=status)
+        except Exception:
+            block_info = None
         metadata = {
             "url": source_url,
             "captured_at": utc_now_iso(),
@@ -6321,6 +6350,10 @@ class ForecastLedger:
             "sha256": hashlib.sha256(content).hexdigest(),
             "bytes": len(content),
         }
+        if block_info is not None:
+            metadata["blocked"] = True
+            metadata["block_reason"] = block_info["reason"]
+            metadata["block_signal"] = block_info["signal"]
         metadata_path.write_text(json_dumps(metadata), encoding="utf-8")
         metadata["metadata_path"] = str(metadata_path)
         return metadata

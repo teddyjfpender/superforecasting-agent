@@ -4441,3 +4441,230 @@ def test_market_adapters_no_longer_unsupported(tmp_path, monkeypatch):
     for source_type in ("polymarket", "kalshi", "manifold", "metaculus"):
         with pytest.raises(RuntimeError, match="loader reached"):
             ft._load_source_adapter_items(source_type, "some-market", {})
+
+
+# ── auto_watch on import_source_evidence (#21) ───────────────────────────────
+
+
+def test_auto_watch_attaches_and_dedupes(tmp_path, monkeypatch):
+    """auto_watch=true must attach a watched source after a successful import
+    and be a no-op on repeat for the same (source_type, source) tuple."""
+    from types import SimpleNamespace
+    import tools.forecasting_tool as ft
+
+    db = str(tmp_path / "watch.db")
+    qid = json.loads(forecast_ledger_tool({
+        "action": "create_question", "db": db,
+        "title": "Will CPI YoY exceed consensus?",
+        "resolution_criteria": "Resolves yes if next CPI YoY exceeds consensus; otherwise no.",
+    }))["question"]["id"]
+
+    fake = SimpleNamespace(
+        market_id="0xabc", slug="cpi-above-3", question="Will CPI be above 3%?",
+        description="Polymarket CPI market.", url="https://polymarket.com/event/cpi-above-3",
+        probability=0.62, distribution=None, as_of="2026-05-28T00:00:00Z", raw={"id": "0xabc"},
+    )
+    monkeypatch.setattr(ft, "load_polymarket_market", lambda source, **kw: fake)
+
+    first = json.loads(forecast_ledger_tool({
+        "action": "import_source_evidence", "db": db, "question_id": qid,
+        "source_type": "polymarket", "source": "cpi-above-3", "auto_watch": True,
+    }))
+    assert first["success"] is True
+    watch_id = first["watched_source"]["id"]
+    assert first["auto_watch_note"] == "attached"
+    assert first["watched_source"]["source_type"] == "polymarket"
+
+    # Repeat the import with the SAME source — should be a dedup no-op.
+    second = json.loads(forecast_ledger_tool({
+        "action": "import_source_evidence", "db": db, "question_id": qid,
+        "source_type": "polymarket", "source": "cpi-above-3", "auto_watch": True,
+    }))
+    assert second["watched_source"]["id"] == watch_id
+    assert second["auto_watch_note"] == "already watched (no-op)"
+
+    watches = json.loads(forecast_ledger_tool({
+        "action": "list_watched_sources", "db": db, "question_id": qid,
+    }))["watched_sources"]
+    assert sum(1 for w in watches if w["source"] == "cpi-above-3") == 1
+
+
+def test_auto_watch_default_off_is_unchanged(tmp_path, monkeypatch):
+    """Without auto_watch, import_source_evidence must not create any watched source."""
+    from types import SimpleNamespace
+    import tools.forecasting_tool as ft
+
+    db = str(tmp_path / "no_watch.db")
+    qid = json.loads(forecast_ledger_tool({
+        "action": "create_question", "db": db,
+        "title": "test", "resolution_criteria": "Resolves yes if event happens; otherwise no.",
+    }))["question"]["id"]
+    fake = SimpleNamespace(market_id="x", slug="x", question="q", description="",
+                           url="https://example.com/m", probability=0.5, distribution=None,
+                           as_of="2026-05-28T00:00:00Z", raw={})
+    monkeypatch.setattr(ft, "load_polymarket_market", lambda source, **kw: fake)
+    out = json.loads(forecast_ledger_tool({
+        "action": "import_source_evidence", "db": db, "question_id": qid,
+        "source_type": "polymarket", "source": "x",
+    }))
+    assert out["watched_source"] is None
+    assert out.get("auto_watch_note") is None
+
+
+# ── workflow_report (#22) ────────────────────────────────────────────────────
+
+
+def test_workflow_report_aggregates_question_activity(tmp_path):
+    db = str(tmp_path / "wf.db")
+    qid = json.loads(forecast_ledger_tool({
+        "action": "create_question", "db": db,
+        "title": "CPI test", "domain": "macro",
+        "resolution_criteria": "Resolves yes if next CPI YoY exceeds consensus; otherwise no.",
+    }))["question"]["id"]
+    for i in range(3):
+        forecast_ledger_tool({"action": "add_evidence", "db": db, "question_id": qid,
+                              "source_or_note": f"note {i}", "claim": f"c{i}"})
+    forecast_ledger_tool({"action": "update_forecast", "db": db, "question_id": qid,
+                          "probability": 0.55, "rationale": "first"})
+    forecast_ledger_tool({"action": "update_forecast", "db": db, "question_id": qid,
+                          "probability": 0.6, "rationale": "second"})
+
+    out = json.loads(forecast_ledger_tool({"action": "workflow_report", "db": db, "question_id": qid}))
+    assert out["success"] is True
+    assert out["question"]["title"] == "CPI test"
+    assert out["evidence"]["count"] == 3
+    assert out["evidence"]["blocked"]["count"] == 0
+    assert out["forecast_snapshots"]["count"] == 2
+    deltas = out["forecast_snapshots"]["deltas"]
+    assert len(deltas) == 1
+    assert deltas[0]["delta_pts"] == 5.0  # 0.55 → 0.60
+    assert out["forecast_snapshots"]["latest_probability"] == 0.6
+    # Timeline must include both evidence and snapshots, chronologically capped.
+    kinds = {ev["kind"] for ev in out["timeline"]}
+    assert "evidence" in kinds and "snapshot" in kinds
+
+
+def test_workflow_report_flags_blocked_and_suggests_action(tmp_path, monkeypatch):
+    """Blocked evidence must show up in the report's `blocked` block and the
+    `suggestions` list must include the actionable adapter-improvement hint."""
+    from io import BytesIO
+    import forecasting.ledger as ledger_mod
+
+    cf_html = (
+        b'<html><title>Just a moment...</title>'
+        b'<body><div class="cf-browser-verification">Cloudflare Ray ID: 11aa</div></body></html>'
+    )
+
+    class _R:
+        status = 200; headers = {"Content-Type": "text/html"}
+        def __init__(self, b): self._b = BytesIO(b)
+        def read(self, n=-1): return self._b.read(n)
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+
+    monkeypatch.setattr(ledger_mod, "urlopen", lambda req, timeout=5: _R(cf_html))
+
+    db = str(tmp_path / "wf-blocked.db")
+    qid = json.loads(forecast_ledger_tool({
+        "action": "create_question", "db": db,
+        "title": "Texas Senate?",
+        "resolution_criteria": "Resolves yes if Republican is certified the winner; otherwise no.",
+    }))["question"]["id"]
+    forecast_ledger_tool({"action": "add_evidence", "db": db, "question_id": qid,
+                          "source_or_note": "https://www.cookpolitical.com/ratings/senate",
+                          "claim": "Cook"})
+
+    out = json.loads(forecast_ledger_tool({"action": "workflow_report", "db": db, "question_id": qid}))
+    assert out["evidence"]["blocked"]["count"] == 1
+    assert "cloudflare_challenge" in out["evidence"]["blocked"]["reasons"]
+    assert any("blocked" in s.lower() for s in out["suggestions"])
+
+
+# ── import_source_evidence_batch (#24) ───────────────────────────────────────
+
+
+def test_batch_import_runs_in_parallel(tmp_path, monkeypatch):
+    """Four slow mocked fetches at concurrency=4 must complete in roughly the
+    time of the longest single fetch, not the sum."""
+    import time
+    from types import SimpleNamespace
+    import tools.forecasting_tool as ft
+
+    def _slow_load(source_type, source, args):
+        time.sleep(0.5)
+        return [SimpleNamespace(
+            entry_id=f"{source}:row", series_id=source, observation_date="2026-05-28",
+            value=1.0, published_at="2026-05-28T00:00:00Z",
+            source_url=f"https://example.com/{source}", source_name="ex",
+            raw={"id": source},
+        )]
+
+    monkeypatch.setattr(ft, "_load_source_adapter_items", _slow_load)
+
+    db = str(tmp_path / "batch.db")
+    qid = json.loads(forecast_ledger_tool({
+        "action": "create_question", "db": db, "title": "t",
+        "resolution_criteria": "Resolves yes if event; otherwise no.",
+    }))["question"]["id"]
+
+    sources = [{"source_type": "fred", "source": s} for s in ("A", "B", "C", "D")]
+    t0 = time.time()
+    out = json.loads(forecast_ledger_tool({
+        "action": "import_source_evidence_batch", "db": db, "question_id": qid,
+        "sources": sources, "concurrency": 4,
+    }))
+    elapsed = time.time() - t0
+    assert out["success"] is True
+    assert out["imported_count"] == 4
+    assert len(out["results"]) == 4
+    # If serial: ~2.0s; in parallel with 4 workers: well under 1.5s.
+    assert elapsed < 1.5, f"batch was not parallel (took {elapsed:.2f}s for 4×0.5s sleeps)"
+
+
+def test_batch_import_isolates_per_source_failures(tmp_path, monkeypatch):
+    """One source failing must not abort the batch — other sources still import,
+    and the failing entry reports success=false with the error."""
+    from types import SimpleNamespace
+    import tools.forecasting_tool as ft
+
+    def _load(source_type, source, args):
+        if source == "BAD":
+            raise RuntimeError("simulated upstream 503")
+        return [SimpleNamespace(
+            entry_id=f"{source}:row", series_id=source, observation_date="2026-05-28",
+            value=2.0, published_at="2026-05-28T00:00:00Z",
+            source_url=f"https://example.com/{source}", source_name="ex",
+            raw={"id": source},
+        )]
+
+    monkeypatch.setattr(ft, "_load_source_adapter_items", _load)
+
+    db = str(tmp_path / "batch-mixed.db")
+    qid = json.loads(forecast_ledger_tool({
+        "action": "create_question", "db": db, "title": "t",
+        "resolution_criteria": "Resolves yes if event; otherwise no.",
+    }))["question"]["id"]
+
+    out = json.loads(forecast_ledger_tool({
+        "action": "import_source_evidence_batch", "db": db, "question_id": qid,
+        "sources": [{"source_type": "fred", "source": "OK"}, {"source_type": "fred", "source": "BAD"}],
+    }))
+    assert out["success"] is True
+    assert out["imported_count"] == 1
+    by_source = {r.get("source"): r for r in out["results"]}
+    assert by_source["OK"]["success"] is True
+    assert by_source["BAD"]["success"] is False
+    assert "503" in by_source["BAD"]["error"]
+
+
+def test_batch_import_rejects_empty_sources(tmp_path):
+    db = str(tmp_path / "empty.db")
+    qid = json.loads(forecast_ledger_tool({
+        "action": "create_question", "db": db, "title": "t",
+        "resolution_criteria": "Resolves yes if event; otherwise no.",
+    }))["question"]["id"]
+    out = json.loads(forecast_ledger_tool({
+        "action": "import_source_evidence_batch", "db": db, "question_id": qid, "sources": [],
+    }))
+    assert out["success"] is False
+    assert "sources" in out["error"]

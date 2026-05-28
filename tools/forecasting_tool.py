@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
 import json
+import os
 from typing import Any
 
 from forecasting import ForecastLedger, PRODUCT_NAME, PRODUCT_SLUG
@@ -166,6 +167,8 @@ FORECAST_LEDGER_SCHEMA = {
                     "import_packet",
                     "protocol",
                     "bayes",
+                    "workflow_report",
+                    "import_source_evidence_batch",
                 ],
             },
             "question_id": {"type": "string"},
@@ -226,6 +229,13 @@ FORECAST_LEDGER_SCHEMA = {
             "dataset": {"type": "string"},
             "limit": {"type": "integer"},
             "since": {"type": "string"},
+            "limit_timeline": {"type": "integer", "description": "workflow_report: cap the chronological events list to the most recent N (default 25)."},
+            "sources": {
+                "type": "array",
+                "description": "import_source_evidence_batch: array of per-source specs, each like {source_type, source, [limit, since, auto_watch, api_base_url, …]}. Fetched in parallel under `concurrency`.",
+                "items": {"type": "object"},
+            },
+            "concurrency": {"type": "integer", "description": "import_source_evidence_batch: max parallel fetch workers (default 4, capped at 8)."},
             "api_base_url": {"type": "string"},
             "appname": {"type": "string"},
             "range_value": {"type": "string"},
@@ -515,6 +525,10 @@ FORECAST_LEDGER_SCHEMA = {
             "min_sources_for_auto_commit": {"type": "integer"},
             "notify": {"type": "string"},
             "quiet_if_unchanged": {"type": "boolean"},
+            "auto_watch": {
+                "type": "boolean",
+                "description": "For import_source_evidence: after a successful import, also attach the (source_type, source) tuple as a watched source on the question so future reruns start from the known identifier instead of broad search. Deduped — a no-op if an identical watch already exists.",
+            },
             "allow_missing_resolution_source": {"type": "boolean"},
             "enabled": {"type": "boolean"},
             "now": {"type": "string"},
@@ -718,12 +732,49 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                         "adapter_item": _adapter_item_dict(item),
                     }
                 )
+            watch: dict[str, Any] | None = None
+            watch_note: str | None = None
+            if imported and bool(args.get("auto_watch")):
+                watch_type = adapter.removeprefix("adapter:").strip().lower()
+                try:
+                    existing = ledger.list_watched_sources(
+                        scope_type="question", scope_ref=question_id, status="active"
+                    )
+                except Exception:
+                    existing = []
+                duplicate = next(
+                    (
+                        w
+                        for w in existing
+                        if w.get("source") == source and (w.get("source_type") or "").lower() == watch_type
+                    ),
+                    None,
+                )
+                if duplicate:
+                    watch = duplicate
+                    watch_note = "already watched (no-op)"
+                else:
+                    try:
+                        watch = ledger.add_watched_source(
+                            scope_type="question",
+                            scope_ref=question_id,
+                            source=source,
+                            source_type=watch_type,
+                            metadata={"auto_watch": True, "from_action": "import_source_evidence"},
+                        )
+                        watch_note = "attached"
+                    except Exception as exc:
+                        # Don't fail the import if watching has constraints we can't meet
+                        # (e.g. source_type outside WATCH_SOURCE_TYPES); surface a note.
+                        watch_note = f"auto_watch skipped: {exc}"
             return tool_result(
                 success=True,
                 source_type=adapter,
                 source=source,
                 imported_count=len(imported),
                 imported=imported,
+                watched_source=watch,
+                auto_watch_note=watch_note,
             )
 
         if action == "add_baseline_comparison":
@@ -1383,6 +1434,12 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             )
             return tool_result(success=True, messages=[message.__dict__ for message in messages])
 
+        if action == "workflow_report":
+            return _workflow_report_payload(ledger, args)
+
+        if action == "import_source_evidence_batch":
+            return _import_source_evidence_batch_payload(ledger, args)
+
         if action == "bayes":
             from forecasting.bayes_toolkit import (
                 BAYES_ACTIONS,
@@ -1790,6 +1847,328 @@ def _show_question_payload(ledger: "ForecastLedger", args: dict[str, Any]) -> st
         payload["postmortems"] = postmortems
 
     return tool_result(success=True, **payload)
+
+
+def _import_source_evidence_batch_payload(ledger: "ForecastLedger", args: dict[str, Any]) -> str:
+    """Parallel-fetch + sequential-write batch importer.
+
+    Fetches every entry in ``sources`` concurrently (the slow, network-bound
+    part) under a bounded ``concurrency`` cap, then writes evidence rows to the
+    ledger sequentially in the main thread to keep SQLite single-writer.
+    Per-source failures are captured in ``results`` without aborting the batch
+    — exactly the lever the agent was missing when one slow FRED endpoint
+    stalled a whole sequential terminal loop.
+    """
+
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    question_id = _required(args, "question_id")
+    sources = args.get("sources")
+    if not isinstance(sources, list) or not sources:
+        return tool_error("import_source_evidence_batch requires `sources`: a non-empty array", success=False)
+    try:
+        concurrency = max(1, min(8, int(args.get("concurrency", 4))))
+    except (TypeError, ValueError):
+        concurrency = 4
+
+    # Per-source args inherit batch-level defaults the agent set once.
+    inherited_keys = ("limit", "since", "api_base_url", "claim", "summary", "stance", "claim_type",
+                      "source_name", "reliability_rating", "relevance_rating", "auto_watch")
+    inherited = {k: args[k] for k in inherited_keys if k in args}
+
+    def _fetch_one(index: int, spec: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(spec, dict):
+            return {"index": index, "success": False, "error": "each source spec must be an object"}
+        merged: dict[str, Any] = {**inherited, **spec}
+        source_type = str(merged.get("source_type") or "").strip()
+        source = str(merged.get("source") or "").strip()
+        if not source_type or not source:
+            return {"index": index, "success": False, "error": "source_type and source are required",
+                    "source_type": source_type or None, "source": source or None}
+        started = time.time()
+        try:
+            items = _load_source_adapter_items(source_type, source, merged)
+            payloads = [_source_adapter_evidence_payload(source_type, source, item, merged) for item in items]
+            return {
+                "index": index, "success": True, "source_type": source_type, "source": source,
+                "items": items, "payloads": payloads, "merged_args": merged,
+                "elapsed_s": round(time.time() - started, 3),
+            }
+        except Exception as exc:
+            return {
+                "index": index, "success": False, "source_type": source_type, "source": source,
+                "error": str(exc), "elapsed_s": round(time.time() - started, 3),
+            }
+
+    # Bounded-parallel fetch.
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        fetched = list(pool.map(lambda pair: _fetch_one(*pair), enumerate(sources)))
+
+    # Sequential ledger writes (keeps SQLite single-writer; cheap once the
+    # network fetches are done).
+    results: list[dict[str, Any]] = []
+    total_imported = 0
+    for fetch in fetched:
+        if not fetch.get("success"):
+            results.append({k: fetch[k] for k in ("index", "source_type", "source", "error", "elapsed_s") if k in fetch} | {"success": False, "imported_count": 0})
+            continue
+        evidence_rows: list[dict[str, Any]] = []
+        for payload in fetch["payloads"]:
+            ev = ledger.add_evidence(question_id=question_id, archive_url_snapshot=False, **payload)
+            evidence_rows.append({"id": ev.id, "source_url": ev.source_url, "claim": ev.claim})
+        # Optional auto_watch (same dedup as the single-source path).
+        watch_note = None
+        watch_record: dict[str, Any] | None = None
+        if evidence_rows and bool(fetch["merged_args"].get("auto_watch")):
+            watch_type = fetch["source_type"].removeprefix("adapter:").strip().lower()
+            try:
+                existing = ledger.list_watched_sources(scope_type="question", scope_ref=question_id, status="active")
+            except Exception:
+                existing = []
+            duplicate = next((w for w in existing if w.get("source") == fetch["source"]
+                              and (w.get("source_type") or "").lower() == watch_type), None)
+            if duplicate:
+                watch_record = duplicate
+                watch_note = "already watched (no-op)"
+            else:
+                try:
+                    watch_record = ledger.add_watched_source(
+                        scope_type="question", scope_ref=question_id,
+                        source=fetch["source"], source_type=watch_type,
+                        metadata={"auto_watch": True, "from_action": "import_source_evidence_batch"},
+                    )
+                    watch_note = "attached"
+                except Exception as exc:
+                    watch_note = f"auto_watch skipped: {exc}"
+        total_imported += len(evidence_rows)
+        results.append({
+            "index": fetch["index"], "success": True,
+            "source_type": fetch["source_type"], "source": fetch["source"],
+            "imported_count": len(evidence_rows), "evidence": evidence_rows,
+            "watched_source": watch_record, "auto_watch_note": watch_note,
+            "elapsed_s": fetch["elapsed_s"],
+        })
+
+    return tool_result(
+        success=True,
+        question_id=question_id,
+        imported_count=total_imported,
+        results=results,
+        concurrency=concurrency,
+    )
+
+
+def _workflow_report_payload(ledger: "ForecastLedger", args: dict[str, Any]) -> str:
+    """Aggregate per-question ledger activity into a compact workflow report.
+
+    Pulls evidence / snapshots / model runs / watched sources / alerts /
+    postmortems for one question, groups them by source-type and status,
+    extracts blocked-source diagnostics tagged at evidence-add time, builds a
+    chronological timeline, and emits a few heuristic adapter-improvement
+    suggestions. Useful for postmortems and to spot what slowed a session.
+    """
+
+    from datetime import datetime, timezone
+    from collections import Counter
+    from urllib.parse import urlparse
+
+    def _ts(value: Any) -> str | None:
+        if not value:
+            return None
+        text = str(value)
+        return text
+
+    def _parse(value: Any) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+    def _short(text: Any, n: int = 80) -> str:
+        if not text:
+            return ""
+        s = str(text).strip().replace("\n", " ")
+        return s if len(s) <= n else s[: n - 1] + "…"
+
+    def _opt_float(value: Any) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    question_id = _required(args, "question_id")
+    question = ledger.get_question(question_id)
+    since_dt = _parse(args.get("since"))
+    limit_timeline = args.get("limit_timeline")
+    try:
+        timeline_cap = int(limit_timeline) if limit_timeline is not None else 25
+    except (TypeError, ValueError):
+        timeline_cap = 25
+
+    def _in_window(value: Any) -> bool:
+        if since_dt is None:
+            return True
+        ts = _parse(value)
+        return ts is None or ts >= since_dt
+
+    evidence = [e for e in ledger.list_evidence(question_id) if _in_window(e.captured_at)]
+    snapshots = [s for s in ledger.list_snapshots(question_id) if _in_window(s.as_of)]
+    model_runs = [m for m in ledger.list_model_runs(question_id) if _in_window(m.get("created_at") if isinstance(m, dict) else getattr(m, "created_at", None))]
+    watched = ledger.list_watched_sources(scope_type="question", scope_ref=question_id, status=None)
+    alerts_all = ledger.list_alerts() if hasattr(ledger, "list_alerts") else []
+    alerts = [
+        a for a in alerts_all
+        if (getattr(a, "scope_type", None) == "question" and getattr(a, "scope_ref", None) == question_id)
+        and _in_window(getattr(a, "created_at", None))
+    ]
+    postmortems = [p for p in ledger.list_postmortems(question_id, include_invalidated=True) if _in_window(p.get("created_at") if isinstance(p, dict) else None)]
+
+    # ── Evidence breakdown ──────────────────────────────────────────────────
+    source_type_counts = Counter((e.source_type or "(unknown)") for e in evidence)
+    blocked_items: list[dict[str, Any]] = []
+    domain_counts: Counter[str] = Counter()
+    for item in evidence:
+        meta = item.metadata or {}
+        blocked_flag = bool(meta.get("blocked") or (meta.get("source_snapshot") or {}).get("blocked"))
+        if blocked_flag:
+            snap = meta.get("source_snapshot") or {}
+            blocked_items.append({
+                "evidence_id": item.id,
+                "source_url": item.source_url,
+                "source_type": item.source_type,
+                "reason": meta.get("block_reason") or snap.get("block_reason"),
+                "signal": meta.get("block_signal") or snap.get("block_signal"),
+                "captured_at": item.captured_at,
+            })
+        if item.source_url:
+            try:
+                host = urlparse(item.source_url).netloc.lower()
+                if host:
+                    domain_counts[host] += 1
+            except Exception:
+                pass
+    blocked_reasons = Counter(b["reason"] for b in blocked_items if b.get("reason"))
+
+    # ── Snapshot deltas ─────────────────────────────────────────────────────
+    snapshot_deltas: list[dict[str, Any]] = []
+    sorted_snaps = sorted(snapshots, key=lambda s: s.as_of or "")
+    for prev, curr in zip(sorted_snaps, sorted_snaps[1:]):
+        prev_p = _opt_float(prev.probability_or_distribution)
+        curr_p = _opt_float(curr.probability_or_distribution)
+        if prev_p is None or curr_p is None:
+            continue
+        snapshot_deltas.append({
+            "from": prev.forecast_id, "to": curr.forecast_id,
+            "from_p": round(prev_p, 4), "to_p": round(curr_p, 4),
+            "delta_pts": round((curr_p - prev_p) * 100, 2),
+            "as_of": curr.as_of,
+        })
+
+    # ── Watched / alerts / model-runs by group ──────────────────────────────
+    watched_by_type = Counter((w.get("source_type") or "(unknown)") for w in watched)
+    alert_by_severity = Counter(getattr(a, "severity", "info") for a in alerts)
+    open_alerts = sum(1 for a in alerts if getattr(a, "status", "open") == "open")
+    def _mr_field(m: Any, key: str) -> Any:
+        return m.get(key) if isinstance(m, dict) else getattr(m, key, None)
+    model_by_type = Counter((_mr_field(m, "model_type") or "(unknown)") for m in model_runs)
+
+    # ── Timeline (chronological, capped) ────────────────────────────────────
+    events: list[tuple[str, str, str, str]] = []
+    for e in evidence:
+        summary = _short(e.claim or e.summary or e.source_url, 100)
+        kind = "blocked" if (e.metadata or {}).get("blocked") else "evidence"
+        events.append((e.captured_at or "", kind, e.id, summary))
+    for s in snapshots:
+        prob = _opt_float(s.probability_or_distribution)
+        prob_text = f"p={prob:.3f}" if prob is not None else "p=?"
+        events.append((s.as_of or "", "snapshot", s.forecast_id, f"{prob_text}  {_short(s.rationale, 80)}"))
+    for m in model_runs:
+        kind = _mr_field(m, "model_type") or "?"
+        events.append((_mr_field(m, "created_at") or "", "model_run", _mr_field(m, "id") or "?", f"type={kind}"))
+    for a in alerts:
+        events.append((getattr(a, "created_at", "") or "", "alert", getattr(a, "id", "?"), f"{getattr(a, 'severity', 'info')}: {_short(getattr(a, 'reason', ''), 80)}"))
+    events.sort(key=lambda row: row[0])
+    timeline = [
+        {"at": at, "kind": kind, "ref": ref, "summary": summary}
+        for at, kind, ref, summary in events[-timeline_cap:]
+    ]
+
+    # ── Heuristic suggestions ───────────────────────────────────────────────
+    suggestions: list[str] = []
+    if blocked_items:
+        breakdown = ", ".join(f"{c} {r}" for r, c in blocked_reasons.most_common())
+        suggestions.append(
+            f"{len(blocked_items)} blocked evidence row(s) detected ({breakdown}). "
+            "Prefer the structured adapter (e.g. import_source_evidence source_type=fred|polymarket|kalshi) "
+            "or an authenticated path (FRED_API_KEY) over scraping a blocked HTML page."
+        )
+    repeated_domains = {host: n for host, n in domain_counts.items() if n >= 2}
+    unwatched = {
+        host for host in repeated_domains
+        if not any(host in (w.get("source") or "") for w in watched)
+    }
+    if unwatched:
+        listing = ", ".join(f"{h} (×{repeated_domains[h]})" for h in sorted(unwatched))
+        suggestions.append(
+            f"Multiple evidence rows reference unwatched domain(s): {listing}. "
+            "Pass auto_watch=true on the next import_source_evidence call for these sources "
+            "so reruns start from the known identifier."
+        )
+    fred_evidence = [e for e in evidence if (e.source_type or "").lower() == "adapter:fred"]
+    fred_blocked_or_failed = [b for b in blocked_items if "fred" in (b.get("source_url") or "").lower()]
+    if (fred_evidence or fred_blocked_or_failed) and not os.environ.get("FRED_API_KEY"):
+        suggestions.append(
+            "FRED is in use but FRED_API_KEY is not set. The public CSV endpoint is flaky from some networks; "
+            "set the key (free) for the reliable official API: `forecast api-key set fred <key>`."
+        )
+    if not watched and len(evidence) >= 3:
+        suggestions.append(
+            "No watched sources attached to this question. Pass auto_watch=true on key market/feed imports "
+            "to seed the watchlist so future reruns avoid broad search."
+        )
+
+    return tool_result(
+        success=True,
+        question={
+            "id": question.id,
+            "title": question.title,
+            "status": question.status,
+            "domain": question.domain,
+        },
+        window={
+            "since": args.get("since"),
+            "now": datetime.now(timezone.utc).isoformat(),
+        },
+        forecast_snapshots={
+            "count": len(snapshots),
+            "latest_id": sorted_snaps[-1].forecast_id if sorted_snaps else None,
+            "latest_probability": (_opt_float(sorted_snaps[-1].probability_or_distribution) if sorted_snaps else None),
+            "deltas": snapshot_deltas[-10:],
+        },
+        evidence={
+            "count": len(evidence),
+            "by_source_type": dict(source_type_counts.most_common()),
+            "blocked": {
+                "count": len(blocked_items),
+                "reasons": dict(blocked_reasons.most_common()),
+                "items": blocked_items[:10],
+            },
+            "by_domain": dict(domain_counts.most_common(10)),
+        },
+        model_runs={"count": len(model_runs), "by_type": dict(model_by_type.most_common())},
+        watched_sources={"count": len(watched), "by_type": dict(watched_by_type.most_common())},
+        alerts={
+            "count": len(alerts),
+            "open": open_alerts,
+            "by_severity": dict(alert_by_severity.most_common()),
+        },
+        postmortems={"count": len(postmortems)},
+        timeline=timeline,
+        suggestions=suggestions,
+    )
 
 
 def _question_dict(question) -> dict[str, Any]:

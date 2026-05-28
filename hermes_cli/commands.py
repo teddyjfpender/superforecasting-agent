@@ -87,6 +87,8 @@ FORECAST_DESK_SUBCOMMANDS: tuple[str, ...] = (
     "research",
     "base-rate",
     "model",
+    "api-key",
+    "bayes",
     "protocol",
     "agent",
     "assumption",
@@ -188,6 +190,10 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("forecast", "Run forecast desk lifecycle commands", "Forecast Desk",
                aliases=("forecasts",), args_hint="[subcommand]", cli_only=True,
                subcommands=FORECAST_DESK_SUBCOMMANDS),
+    CommandDef("api-key", "Manage data-provider API keys (FRED, EIA, web search, …)", "Forecast Desk",
+               aliases=("apikey", "api-keys", "keys"),
+               args_hint="[list|show|set|unset] [provider] [value]", cli_only=True,
+               subcommands=("list", "show", "set", "unset")),
 
     # Configuration
     CommandDef("config", "Show current configuration", "Configuration",
