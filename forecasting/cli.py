@@ -59,6 +59,7 @@ from forecasting.models import (
     ASSUMPTION_STATUSES,
     CALIBRATION_LESSON_STATUSES,
     EVIDENCE_CLAIM_TYPES,
+    FAILURE_CLASSES,
     REFERENCE_CLASS_STATUSES,
     ForecastingError,
     OutcomeSpace,
@@ -569,6 +570,28 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     )
     new_parser.add_argument("--review-cadence")
     new_parser.add_argument("--next-review-at")
+    new_parser.add_argument(
+        "--decision-owner",
+        help="Who owns the decision this forecast informs (e.g. 'ops lead', 'trading desk')",
+    )
+    new_parser.add_argument(
+        "--decision-deadline",
+        help="ISO-8601 timestamp by which the decision must be made",
+    )
+    new_parser.add_argument(
+        "--action-threshold",
+        help="Probability/threshold that triggers an action (e.g. 'evacuate if P > 0.05')",
+    )
+    new_parser.add_argument(
+        "--update-trigger",
+        dest="update_triggers",
+        action="append",
+        default=[],
+        help=(
+            "Repeatable. Each value is either a free-form trigger ('PCE release within 24h') "
+            "or a JSON object with mechanism/threshold/action keys"
+        ),
+    )
     new_parser.set_defaults(_forecast_handler=_cmd_new)
 
     list_parser = forecast_sub.add_parser("list", help="List forecast questions")
@@ -597,6 +620,31 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     show_parser = forecast_sub.add_parser("show", help="Show a forecast question")
     show_parser.add_argument("id")
     show_parser.set_defaults(_forecast_handler=_cmd_show)
+
+    set_decision_parser = forecast_sub.add_parser(
+        "set-decision",
+        help="Set or revise decision_owner / decision_deadline / action_threshold / update_triggers",
+    )
+    set_decision_parser.add_argument("id")
+    set_decision_parser.add_argument("--decision-owner")
+    set_decision_parser.add_argument("--decision-deadline")
+    set_decision_parser.add_argument("--action-threshold")
+    set_decision_parser.add_argument(
+        "--update-trigger",
+        dest="update_triggers",
+        action="append",
+        default=None,
+        help=(
+            "Repeatable. Replaces existing triggers with the given set. Pass an empty value "
+            "with --clear-triggers to remove all."
+        ),
+    )
+    set_decision_parser.add_argument(
+        "--clear-triggers",
+        action="store_true",
+        help="Remove all existing update triggers",
+    )
+    set_decision_parser.set_defaults(_forecast_handler=_cmd_set_decision)
 
     update_parser = forecast_sub.add_parser("update", help="Append a forecast snapshot")
     update_parser.add_argument("id")
@@ -657,6 +705,40 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     update_parser.add_argument("--protocol-version")
     update_parser.add_argument("--toolset-version")
     update_parser.add_argument("--source-snapshot-ref", dest="source_snapshot_refs", action="append", default=[])
+    update_parser.add_argument(
+        "--reason-up",
+        dest="reasons_up",
+        action="append",
+        default=[],
+        help="Repeatable. One concrete reason the probability should be higher.",
+    )
+    update_parser.add_argument(
+        "--reason-down",
+        dest="reasons_down",
+        action="append",
+        default=[],
+        help="Repeatable. One concrete reason the probability should be lower.",
+    )
+    update_parser.add_argument(
+        "--change-my-mind",
+        dest="change_my_mind",
+        action="append",
+        default=[],
+        help="Repeatable. One observation that would force a material update.",
+    )
+    update_parser.add_argument(
+        "--require-structured-reasoning",
+        action="store_true",
+        help="Refuse to save the snapshot unless --reason-up, --reason-down, and --change-my-mind are all set",
+    )
+    update_parser.add_argument(
+        "--require-decision-readiness",
+        action="store_true",
+        help=(
+            "Refuse to save the snapshot unless the question has decision_owner, "
+            "action_threshold, and at least one update_trigger"
+        ),
+    )
     update_parser.add_argument("--evidence-cutoff")
     update_parser.add_argument("--backtest-run-id")
     update_parser.add_argument("--calibration-ineligible", action="store_true")
@@ -1497,6 +1579,14 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     postmortem_parser.add_argument("--resolution-error", default="")
     postmortem_parser.add_argument("--lesson", default="")
     postmortem_parser.add_argument("--calibration-adjustment-json", default="{}")
+    postmortem_parser.add_argument(
+        "--failure-class",
+        choices=sorted(FAILURE_CLASSES),
+        help=(
+            "Dominant failure mode. 'noise' means the miss was within expected error of a "
+            "calibrated forecast; the others mark reusable lessons for domain error profiles."
+        ),
+    )
     postmortem_parser.set_defaults(_forecast_handler=_cmd_postmortem)
 
     lesson_parser = forecast_sub.add_parser("lesson", help="Review and promote calibration lessons")
@@ -2331,6 +2421,7 @@ def _cmd_new(args: argparse.Namespace) -> None:
         bounds=bounds,
     )
     ledger = _ledger(args)
+    triggers = _parse_update_trigger_args(getattr(args, "update_triggers", None) or [])
     question = ledger.create_question(
         title=args.title,
         description=args.description,
@@ -2346,13 +2437,53 @@ def _cmd_new(args: argparse.Namespace) -> None:
         impact=args.impact,
         review_cadence=args.review_cadence,
         next_review_at=args.next_review_at,
+        decision_owner=getattr(args, "decision_owner", None),
+        decision_deadline=getattr(args, "decision_deadline", None),
+        action_threshold=getattr(args, "action_threshold", None),
+        update_triggers=triggers,
     )
     print(f"created forecast question {question.id}")
     print(f"title: {question.title}")
     print(f"status: {question.status}")
+    if question.decision_owner or question.action_threshold or question.update_triggers:
+        print(f"decision_owner: {question.decision_owner or '-'}")
+        print(f"action_threshold: {question.action_threshold or '-'}")
+        if question.update_triggers:
+            print(f"update_triggers: {len(question.update_triggers)}")
+    else:
+        issues = ledger.decision_readiness_issues(question)
+        if issues:
+            print(f"decision_readiness: {', '.join(issues)}")
+            print(
+                f"  add: forecast set-decision {question.id} --decision-owner ... "
+                "--action-threshold ... --update-trigger ..."
+            )
     if args.source_plan or args.apply_source_plan:
         print("")
         _print_source_plan(ledger, question, apply_watch=args.apply_source_plan, limit=12)
+
+
+def _parse_update_trigger_args(values: list[str]) -> list[Any]:
+    """Parse repeated ``--update-trigger`` values into trigger payloads.
+
+    Each value is JSON-decoded if it looks like an object; otherwise treated
+    as a free-form mechanism string. Normalization happens downstream in the
+    ledger.
+    """
+
+    parsed: list[Any] = []
+    for raw in values:
+        text = (raw or "").strip()
+        if not text:
+            continue
+        if text.startswith("{"):
+            try:
+                parsed.append(json.loads(text))
+                continue
+            except json.JSONDecodeError as exc:
+                raise SystemExit(f"--update-trigger JSON is invalid: {exc.msg}") from exc
+        parsed.append(text)
+    return parsed
 
 
 def _cmd_list(args: argparse.Namespace) -> None:
@@ -2426,6 +2557,32 @@ def _cmd_search(args: argparse.Namespace) -> None:
         print(f"  open: forecast show {question.id}")
 
 
+def _cmd_set_decision(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    triggers: Any = None
+    if args.clear_triggers:
+        triggers = []
+    elif args.update_triggers is not None:
+        triggers = _parse_update_trigger_args(args.update_triggers)
+    question = ledger.update_question_decision(
+        args.id,
+        decision_owner=args.decision_owner,
+        decision_deadline=args.decision_deadline,
+        action_threshold=args.action_threshold,
+        update_triggers=triggers,
+    )
+    print(f"question: {question.id}")
+    print(f"decision_owner: {question.decision_owner or '-'}")
+    print(f"decision_deadline: {question.decision_deadline or '-'}")
+    print(f"action_threshold: {question.action_threshold or '-'}")
+    print(f"update_triggers: {len(question.update_triggers)}")
+    issues = ledger.decision_readiness_issues(question)
+    if issues:
+        print(f"decision_readiness: {', '.join(issues)}")
+    else:
+        print("decision_readiness: ready")
+
+
 def _cmd_show(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
     question = ledger.get_question(args.id)
@@ -2441,6 +2598,29 @@ def _cmd_show(args: argparse.Namespace) -> None:
     print(f"close_time: {question.close_time or '-'}")
     print(f"resolution_time: {question.resolution_time or '-'}")
     print(f"resolution_criteria: {question.resolution_criteria}")
+    if (
+        question.decision_owner
+        or question.decision_deadline
+        or question.action_threshold
+        or question.update_triggers
+    ):
+        print()
+        print("decision_card:")
+        print(f"  owner: {question.decision_owner or '-'}")
+        print(f"  deadline: {question.decision_deadline or '-'}")
+        print(f"  action_threshold: {question.action_threshold or '-'}")
+        if question.update_triggers:
+            print(f"  update_triggers: {len(question.update_triggers)}")
+            for trigger in question.update_triggers[:5]:
+                line = trigger.get("mechanism", "-")
+                if trigger.get("threshold"):
+                    line += f" [{trigger['threshold']}]"
+                if trigger.get("action"):
+                    line += f" -> {trigger['action']}"
+                print(f"    - {line}")
+        readiness = ledger.decision_readiness_issues(question)
+        if readiness:
+            print(f"  decision_readiness: {', '.join(readiness)}")
     print()
     current = ledger.get_current_snapshot(args.id)
     if current:
@@ -2451,6 +2631,18 @@ def _cmd_show(args: argparse.Namespace) -> None:
         print(f"  confidence: {current.confidence if current.confidence is not None else '-'}")
         print(f"  origin: {current.forecast_origin}")
         print(f"  rationale: {current.rationale}")
+        if current.reasons_up:
+            print("  reasons_up:")
+            for reason in current.reasons_up:
+                print(f"    - {reason}")
+        if current.reasons_down:
+            print("  reasons_down:")
+            for reason in current.reasons_down:
+                print(f"    - {reason}")
+        if current.change_my_mind:
+            print("  change_my_mind:")
+            for reason in current.change_my_mind:
+                print(f"    - {reason}")
     else:
         print("current_forecast: none")
     print()
@@ -2493,6 +2685,11 @@ def _cmd_update(args: argparse.Namespace) -> None:
         args.protocol_version is not None,
         args.toolset_version is not None,
         bool(args.source_snapshot_refs),
+        bool(getattr(args, "reasons_up", None)),
+        bool(getattr(args, "reasons_down", None)),
+        bool(getattr(args, "change_my_mind", None)),
+        getattr(args, "require_structured_reasoning", False),
+        getattr(args, "require_decision_readiness", False),
         args.evidence_cutoff is not None,
         args.backtest_run_id is not None,
         args.calibration_ineligible,
@@ -2575,6 +2772,11 @@ def _cmd_update(args: argparse.Namespace) -> None:
         calibration_weight=args.calibration_weight,
         calibration_lesson_refs=calibration_lesson_refs,
         calibration_adjustment=calibration_adjustment,
+        reasons_up=getattr(args, "reasons_up", None) or None,
+        reasons_down=getattr(args, "reasons_down", None) or None,
+        change_my_mind=getattr(args, "change_my_mind", None) or None,
+        require_structured_reasoning=getattr(args, "require_structured_reasoning", False),
+        require_decision_readiness=getattr(args, "require_decision_readiness", False),
     )
     print(f"created forecast snapshot {snapshot.forecast_id}")
     print(f"question: {snapshot.question_id}")
@@ -6849,9 +7051,12 @@ def _cmd_postmortem(args: argparse.Namespace) -> None:
         resolution_error=args.resolution_error,
         lesson=args.lesson,
         calibration_adjustment=_json_arg(args.calibration_adjustment_json, "calibration-adjustment-json"),
+        failure_class=getattr(args, "failure_class", None),
     )
     print(f"postmortem: {postmortem['id']}")
     print(f"score_record: {postmortem['score_record_id']}")
+    if postmortem.get("failure_class"):
+        print(f"failure_class: {postmortem['failure_class']}")
     if args.lesson:
         print("calibration_lesson: created")
 

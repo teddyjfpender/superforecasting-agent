@@ -105,6 +105,7 @@ FORECAST_LEDGER_SCHEMA = {
                 "type": "string",
                 "enum": [
                     "create_question",
+                    "set_decision",
                     "list_questions",
                     "search_questions",
                     "show_question",
@@ -225,6 +226,77 @@ FORECAST_LEDGER_SCHEMA = {
             "impact": {"type": "string"},
             "review_cadence": {"type": "string"},
             "next_review_at": {"type": "string"},
+            "decision_owner": {
+                "type": "string",
+                "description": "Who owns the decision this forecast informs (e.g. 'ops lead').",
+            },
+            "decision_deadline": {
+                "type": "string",
+                "description": "ISO-8601 timestamp by which the decision must be made.",
+            },
+            "action_threshold": {
+                "type": "string",
+                "description": "Probability/threshold that triggers an action (e.g. 'evacuate if P > 0.05').",
+            },
+            "update_triggers": {
+                "type": "array",
+                "description": (
+                    "List of mechanism/threshold triggers that should prompt a review. "
+                    "Each entry is either a free-form mechanism string or an object with "
+                    "mechanism, threshold, action, window, source_ref, or notes keys."
+                ),
+                "items": {
+                    "oneOf": [
+                        {"type": "string"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "mechanism": {"type": "string"},
+                                "threshold": {"type": "string"},
+                                "action": {"type": "string"},
+                                "window": {"type": "string"},
+                                "source_ref": {"type": "string"},
+                                "notes": {"type": "string"},
+                            },
+                            "required": ["mechanism"],
+                        },
+                    ]
+                },
+            },
+            "reasons_up": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Concrete reasons the probability should be HIGHER.",
+            },
+            "reasons_down": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Concrete reasons the probability should be LOWER.",
+            },
+            "change_my_mind": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Specific observations that would force a material update.",
+            },
+            "require_structured_reasoning": {
+                "type": "boolean",
+                "description": (
+                    "Refuse to save the snapshot unless reasons_up, reasons_down, and "
+                    "change_my_mind are all populated."
+                ),
+            },
+            "require_decision_readiness": {
+                "type": "boolean",
+                "description": (
+                    "Refuse to save the snapshot unless the question has decision_owner, "
+                    "action_threshold, and at least one update_trigger."
+                ),
+            },
+            "failure_class": {
+                "type": "string",
+                "enum": sorted(["base_rate", "inside_view", "definition", "timing", "aggregation", "motivated_reasoning", "tail", "noise", "other"]),
+                "description": "Dominant failure mode assigned in a postmortem.",
+            },
             "name": {"type": "string"},
             "dataset": {"type": "string"},
             "limit": {"type": "integer"},
@@ -611,8 +683,31 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 impact=args.get("impact"),
                 review_cadence=args.get("review_cadence"),
                 next_review_at=args.get("next_review_at"),
+                decision_owner=args.get("decision_owner"),
+                decision_deadline=args.get("decision_deadline"),
+                action_threshold=args.get("action_threshold"),
+                update_triggers=args.get("update_triggers"),
             )
-            return tool_result(success=True, question=_question_dict(question))
+            return tool_result(
+                success=True,
+                question=_question_dict(question),
+                decision_readiness_issues=ledger.decision_readiness_issues(question),
+            )
+
+        if action == "set_decision":
+            question_id = _required(args, "question_id")
+            question = ledger.update_question_decision(
+                question_id,
+                decision_owner=args.get("decision_owner"),
+                decision_deadline=args.get("decision_deadline"),
+                action_threshold=args.get("action_threshold"),
+                update_triggers=args.get("update_triggers"),
+            )
+            return tool_result(
+                success=True,
+                question=_question_dict(question),
+                decision_readiness_issues=ledger.decision_readiness_issues(question),
+            )
 
         if action == "list_questions":
             questions = ledger.list_questions(status=args.get("status"), domain=args.get("domain"))
@@ -981,6 +1076,11 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 calibration_lesson_refs=calibration_lesson_refs,
                 calibration_adjustment=calibration_adjustment,
                 metadata=args.get("metadata") or {},
+                reasons_up=args.get("reasons_up"),
+                reasons_down=args.get("reasons_down"),
+                change_my_mind=args.get("change_my_mind"),
+                require_structured_reasoning=bool(args.get("require_structured_reasoning", False)),
+                require_decision_readiness=bool(args.get("require_decision_readiness", False)),
             )
             return tool_result(success=True, forecast_snapshot=snapshot.__dict__)
 
@@ -1354,6 +1454,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 resolution_error=args.get("resolution_error") or "",
                 lesson=args.get("lesson") or "",
                 calibration_adjustment=args.get("calibration_adjustment") or {},
+                failure_class=args.get("failure_class"),
             )
             return tool_result(success=True, postmortem=postmortem)
 

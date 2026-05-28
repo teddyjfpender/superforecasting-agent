@@ -4668,3 +4668,273 @@ def test_batch_import_rejects_empty_sources(tmp_path):
     }))
     assert out["success"] is False
     assert "sources" in out["error"]
+
+
+# ---------- decision card + structured reasoning via the tool ----------
+
+
+def test_forecast_ledger_tool_create_question_persists_decision_card(tmp_path):
+    db = str(tmp_path / "decision.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will CPI YoY exceed 3.0% in July 2026?",
+                "resolution_criteria": "BLS CPI-U YoY for the July 2026 release.",
+                "decision_owner": "Trading desk lead",
+                "decision_deadline": "2026-08-15T00:00:00Z",
+                "action_threshold": "If P(YES) > 0.6, reduce duration exposure by 10%.",
+                "update_triggers": [
+                    "PCE release within 24h",
+                    {"mechanism": "fred:CPIAUCSL", "threshold": "MoM > 0.3%"},
+                ],
+            }
+        )
+    )
+    assert created["success"] is True
+    q = created["question"]
+    assert q["decision_owner"] == "Trading desk lead"
+    assert q["action_threshold"].startswith("If P(YES) > 0.6")
+    assert q["update_triggers"][1]["mechanism"] == "fred:CPIAUCSL"
+    assert created["decision_readiness_issues"] == []
+
+
+def test_forecast_ledger_tool_create_question_flags_readiness(tmp_path):
+    db = str(tmp_path / "decision.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will the team ship the new dashboard before Friday?",
+                "resolution_criteria": "Dashboard merged and deployed to prod by 2026-06-05 23:59 UTC.",
+            }
+        )
+    )
+    assert created["success"] is True
+    assert "missing decision_owner" in created["decision_readiness_issues"]
+
+
+def test_forecast_ledger_tool_set_decision_patches_fields(tmp_path):
+    db = str(tmp_path / "decision.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will it rain in Paris on 2026-06-20?",
+                "resolution_criteria": "Meteo France official observation for 2026-06-20 in Paris.",
+            }
+        )
+    )
+    qid = created["question"]["id"]
+    patched = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "set_decision",
+                "question_id": qid,
+                "decision_owner": "Picnic planner",
+                "action_threshold": "If P(YES) > 0.3, postpone picnic.",
+                "update_triggers": [{"mechanism": "Meteo France 24h forecast"}],
+            }
+        )
+    )
+    assert patched["success"] is True
+    assert patched["question"]["decision_owner"] == "Picnic planner"
+    assert patched["decision_readiness_issues"] == []
+
+
+def test_forecast_ledger_tool_update_forecast_persists_reasons(tmp_path):
+    db = str(tmp_path / "decision.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will CPI YoY exceed 3.0% in July 2026?",
+                "resolution_criteria": "BLS CPI-U YoY for the July 2026 release.",
+            }
+        )
+    )
+    qid = created["question"]["id"]
+    updated = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "update_forecast",
+                "question_id": qid,
+                "probability": 0.41,
+                "rationale": "base rate plus inside view",
+                "reasons_up": ["shelter reaccelerating", "core services sticky"],
+                "reasons_down": ["energy disinflation"],
+                "change_my_mind": ["core CPI MoM > 0.4% three months running"],
+            }
+        )
+    )
+    snap = updated["forecast_snapshot"]
+    assert snap["reasons_up"] == ["shelter reaccelerating", "core services sticky"]
+    assert snap["change_my_mind"] == ["core CPI MoM > 0.4% three months running"]
+
+
+def test_forecast_ledger_tool_update_forecast_enforces_structured_reasoning(tmp_path):
+    db = str(tmp_path / "decision.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will the index close above 5000 on 2026-06-30?",
+                "resolution_criteria": "Official close from the exchange on 2026-06-30.",
+            }
+        )
+    )
+    qid = created["question"]["id"]
+    result = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "update_forecast",
+                "question_id": qid,
+                "probability": 0.55,
+                "rationale": "rough call",
+                "require_structured_reasoning": True,
+            }
+        )
+    )
+    assert result["success"] is False
+    assert "reasons_up" in result["error"]
+
+
+def test_forecast_ledger_tool_update_forecast_enforces_decision_readiness(tmp_path):
+    db = str(tmp_path / "decision.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will the bill pass the Senate in 2026?",
+                "resolution_criteria": "Vote tally from the official Senate record.",
+            }
+        )
+    )
+    qid = created["question"]["id"]
+    result = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "update_forecast",
+                "question_id": qid,
+                "probability": 0.3,
+                "rationale": "polling consensus",
+                "require_decision_readiness": True,
+            }
+        )
+    )
+    assert result["success"] is False
+    assert "decision_owner" in result["error"]
+
+
+def test_forecast_ledger_tool_postmortem_persists_failure_class(tmp_path):
+    db = str(tmp_path / "decision.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will the policy rate change at the next meeting?",
+                "resolution_criteria": "Decision announcement at the next official meeting.",
+            }
+        )
+    )
+    qid = created["question"]["id"]
+    forecast_ledger_tool(
+        {
+            "db": db,
+            "action": "update_forecast",
+            "question_id": qid,
+            "probability": 0.7,
+            "rationale": "consensus expectation",
+        }
+    )
+    forecast_ledger_tool(
+        {
+            "db": db,
+            "action": "resolve",
+            "question_id": qid,
+            "outcome": "no",
+        }
+    )
+    pm = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "postmortem",
+                "question_id": qid,
+                "summary": "consensus was wrong",
+                "failure_class": "inside_view",
+                "lesson": "downweight consensus when dissent is rising",
+            }
+        )
+    )
+    assert pm["success"] is True
+    assert pm["postmortem"]["failure_class"] == "inside_view"
+
+
+def test_forecast_ledger_tool_postmortem_rejects_unknown_failure_class(tmp_path):
+    db = str(tmp_path / "decision.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will any major US storm make landfall in week 30?",
+                "resolution_criteria": "NHC storm landfall record in calendar week 30, 2026.",
+            }
+        )
+    )
+    qid = created["question"]["id"]
+    forecast_ledger_tool(
+        {
+            "db": db,
+            "action": "update_forecast",
+            "question_id": qid,
+            "probability": 0.1,
+            "rationale": "base rate",
+        }
+    )
+    forecast_ledger_tool(
+        {"db": db, "action": "resolve", "question_id": qid, "outcome": "no"}
+    )
+    pm = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "postmortem",
+                "question_id": qid,
+                "summary": "x",
+                "failure_class": "not-a-class",
+            }
+        )
+    )
+    assert pm["success"] is False
+
+
+def test_forecast_ledger_tool_schema_advertises_decision_card_properties():
+    props = FORECAST_LEDGER_SCHEMA["parameters"]["properties"]
+    for field in (
+        "decision_owner",
+        "decision_deadline",
+        "action_threshold",
+        "update_triggers",
+        "reasons_up",
+        "reasons_down",
+        "change_my_mind",
+        "require_structured_reasoning",
+        "require_decision_readiness",
+        "failure_class",
+    ):
+        assert field in props, f"missing tool schema field: {field}"
+    actions = props["action"]["enum"]
+    assert "set_decision" in actions

@@ -35,6 +35,7 @@ from forecasting.models import (
     ASSUMPTION_STATUSES,
     CALIBRATION_LESSON_STATUSES,
     EVIDENCE_CLAIM_TYPES,
+    FAILURE_CLASSES,
     FORECAST_ORIGINS,
     QUESTION_STATUSES,
     REFERENCE_CLASS_STATUSES,
@@ -51,13 +52,43 @@ from forecasting.models import (
     ValidationError,
     json_dumps,
     json_loads,
+    normalize_update_triggers,
     parse_timestamp,
+    question_decision_readiness_issues,
     timestamp_to_datetime,
     utc_now_iso,
 )
 
 
 FORECASTING_PROTOCOL_VERSION = "forecasting-ledger-v1"
+
+
+def _normalize_reason_list(raw: Any, *, field: str) -> list[str]:
+    """Coerce a reasons_up / reasons_down / change_my_mind payload to ``list[str]``.
+
+    ``None`` is treated as empty. Strings are split on newlines when they
+    contain them, allowing the CLI to pass either repeated ``--reason-up`` flags
+    or a single multi-line block. Whitespace-only entries are dropped.
+    """
+
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        items: list[str] = raw.splitlines() if "\n" in raw else [raw]
+    elif isinstance(raw, (list, tuple)):
+        items = list(raw)
+    else:
+        raise ValidationError(f"{field} must be a string or list of strings")
+    cleaned: list[str] = []
+    for entry in items:
+        if entry is None:
+            continue
+        if not isinstance(entry, str):
+            raise ValidationError(f"{field} entries must be strings")
+        stripped = entry.strip()
+        if stripped:
+            cleaned.append(stripped)
+    return cleaned
 WATCH_SCOPE_TYPES = {"question", "domain", "topic", "domain_topic", "portfolio"}
 SCHEDULE_SCOPE_TYPES = {"question", "domain", "topic", "domain_topic", "portfolio", "horizon"}
 AUTOPILOT_MODES = {"propose", "auto_commit", "alert_only"}
@@ -183,7 +214,7 @@ _PACKET_PRIMARY_KEYS = {
     "forecast_snapshots": "forecast_id",
 }
 _PACKET_JSON_FIELDS = {
-    "forecast_questions": {"outcome_space", "tags", "topics", "metadata"},
+    "forecast_questions": {"outcome_space", "tags", "topics", "metadata", "update_triggers"},
     "forecast_snapshots": {
         "probability_or_distribution",
         "ensemble_components",
@@ -196,6 +227,9 @@ _PACKET_JSON_FIELDS = {
         "calibration_lesson_refs",
         "calibration_adjustment",
         "metadata",
+        "reasons_up",
+        "reasons_down",
+        "change_my_mind",
     },
     "evidence_items": {"metadata"},
     "ingest_candidates": {"outcome_space", "metadata"},
@@ -792,6 +826,14 @@ class ForecastLedger:
             self._ensure_column(conn, "scheduled_reviews", "confidence_below", "REAL")
             self._ensure_column(conn, "scheduled_reviews", "confidence_above", "REAL")
             self._ensure_column(conn, "scheduled_reviews", "large_delta_threshold", "REAL")
+            self._ensure_column(conn, "forecast_questions", "decision_owner", "TEXT")
+            self._ensure_column(conn, "forecast_questions", "decision_deadline", "TEXT")
+            self._ensure_column(conn, "forecast_questions", "action_threshold", "TEXT")
+            self._ensure_column(conn, "forecast_questions", "update_triggers", "TEXT NOT NULL DEFAULT '[]'")
+            self._ensure_column(conn, "forecast_snapshots", "reasons_up", "TEXT NOT NULL DEFAULT '[]'")
+            self._ensure_column(conn, "forecast_snapshots", "reasons_down", "TEXT NOT NULL DEFAULT '[]'")
+            self._ensure_column(conn, "forecast_snapshots", "change_my_mind", "TEXT NOT NULL DEFAULT '[]'")
+            self._ensure_column(conn, "postmortems", "failure_class", "TEXT")
 
     def _ensure_column(
         self,
@@ -822,6 +864,10 @@ class ForecastLedger:
         review_cadence: str | None = None,
         next_review_at: str | None = None,
         metadata: dict[str, Any] | None = None,
+        decision_owner: str | None = None,
+        decision_deadline: str | None = None,
+        action_threshold: str | None = None,
+        update_triggers: Any = None,
     ) -> ForecastQuestion:
         title = title.strip()
         resolution_criteria = resolution_criteria.strip()
@@ -840,6 +886,10 @@ class ForecastLedger:
         created_at = utc_now_iso()
         question_id = f"fq_{uuid.uuid4().hex[:12]}"
         parsed_next_review_at = parse_timestamp(next_review_at, field_name="next_review_at")
+        parsed_decision_deadline = parse_timestamp(decision_deadline, field_name="decision_deadline")
+        normalized_decision_owner = (decision_owner or "").strip() or None
+        normalized_action_threshold = (action_threshold or "").strip() or None
+        normalized_triggers = normalize_update_triggers(update_triggers)
         with self._connect() as conn:
             conn.execute(
                 """
@@ -847,9 +897,10 @@ class ForecastLedger:
                     id, title, description, resolution_criteria, resolution_source,
                     created_at, close_time, resolution_time, outcome_space, status,
                     tags, domain, topics, owner, impact, review_cadence,
-                    next_review_at, metadata
+                    next_review_at, metadata,
+                    decision_owner, decision_deadline, action_threshold, update_triggers
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     question_id,
@@ -869,6 +920,10 @@ class ForecastLedger:
                     review_cadence,
                     parsed_next_review_at,
                     json_dumps(metadata or {}),
+                    normalized_decision_owner,
+                    parsed_decision_deadline,
+                    normalized_action_threshold,
+                    json_dumps(normalized_triggers),
                 ),
             )
         if review_cadence and parsed_next_review_at:
@@ -913,6 +968,58 @@ class ForecastLedger:
             raise LedgerNotFoundError(f"forecast question not found: {question_id}")
         return self._row_to_question(row)
 
+    def update_question_decision(
+        self,
+        question_id: str,
+        *,
+        decision_owner: str | None = None,
+        decision_deadline: str | None = None,
+        action_threshold: str | None = None,
+        update_triggers: Any = None,
+    ) -> ForecastQuestion:
+        """Patch decision-card fields on an existing question.
+
+        Pass ``None`` to leave a field untouched, an empty string to clear it.
+        ``update_triggers`` is normalized through :func:`normalize_update_triggers`;
+        pass ``[]`` to clear the list.
+        """
+
+        existing = self.get_question(question_id)
+        sets: list[str] = []
+        params: list[Any] = []
+        if decision_owner is not None:
+            value = decision_owner.strip() or None
+            sets.append("decision_owner = ?")
+            params.append(value)
+        if decision_deadline is not None:
+            value = parse_timestamp(decision_deadline, field_name="decision_deadline") if decision_deadline else None
+            sets.append("decision_deadline = ?")
+            params.append(value)
+        if action_threshold is not None:
+            value = action_threshold.strip() or None
+            sets.append("action_threshold = ?")
+            params.append(value)
+        if update_triggers is not None:
+            normalized = normalize_update_triggers(update_triggers)
+            sets.append("update_triggers = ?")
+            params.append(json_dumps(normalized))
+        if not sets:
+            return existing
+        params.append(question_id)
+        with self._connect() as conn:
+            conn.execute(
+                f"UPDATE forecast_questions SET {', '.join(sets)} WHERE id = ?",
+                params,
+            )
+        return self.get_question(question_id)
+
+    def decision_readiness_issues(self, question: ForecastQuestion | str) -> list[str]:
+        """Return decision-card gaps for ``question`` (id or object)."""
+
+        if isinstance(question, str):
+            question = self.get_question(question)
+        return question_decision_readiness_issues(question)
+
     def create_snapshot(
         self,
         *,
@@ -945,6 +1052,11 @@ class ForecastLedger:
         require_citations: bool = False,
         metadata: dict[str, Any] | None = None,
         set_current: bool = True,
+        reasons_up: list[str] | None = None,
+        reasons_down: list[str] | None = None,
+        change_my_mind: list[str] | None = None,
+        require_decision_readiness: bool = False,
+        require_structured_reasoning: bool = False,
     ) -> ForecastSnapshot:
         question = self.get_question(question_id)
         if forecast_origin not in FORECAST_ORIGINS:
@@ -956,6 +1068,31 @@ class ForecastLedger:
             raise ValidationError("confidence must be between 0 and 1")
         if calibration_weight < 0:
             raise ValidationError("calibration_weight must be non-negative")
+        reasons_up_list = _normalize_reason_list(reasons_up, field="reasons_up")
+        reasons_down_list = _normalize_reason_list(reasons_down, field="reasons_down")
+        change_my_mind_list = _normalize_reason_list(change_my_mind, field="change_my_mind")
+        if require_structured_reasoning and forecast_origin == "live":
+            missing_reasoning = []
+            if not reasons_up_list:
+                missing_reasoning.append("reasons_up")
+            if not reasons_down_list:
+                missing_reasoning.append("reasons_down")
+            if not change_my_mind_list:
+                missing_reasoning.append("change_my_mind")
+            if missing_reasoning:
+                raise ValidationError(
+                    "forecast update requires structured reasoning fields: "
+                    + ", ".join(missing_reasoning)
+                )
+        if require_decision_readiness and forecast_origin == "live":
+            readiness_issues = question_decision_readiness_issues(question)
+            if readiness_issues:
+                raise ValidationError(
+                    "forecast update blocked by missing decision context: "
+                    + "; ".join(readiness_issues)
+                    + ". Set decision_owner, action_threshold, and update_triggers "
+                    "on the question, or rerun without require_decision_readiness."
+                )
 
         now = utc_now_iso()
         as_of_ts = parse_timestamp(as_of, field_name="as_of") or now
@@ -1023,9 +1160,9 @@ class ForecastLedger:
                     forecasting_protocol_version, toolset_version, source_snapshot_refs,
                     evidence_cutoff, backtest_run_id, calibration_eligible,
                     calibration_weight, calibration_lesson_refs, calibration_adjustment,
-                    metadata
+                    metadata, reasons_up, reasons_down, change_my_mind
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     forecast_id,
@@ -1057,6 +1194,9 @@ class ForecastLedger:
                     json_dumps(calibration_lesson_refs or []),
                     json_dumps(calibration_adjustment or {}),
                     json_dumps(snapshot_metadata),
+                    json_dumps(reasons_up_list),
+                    json_dumps(reasons_down_list),
+                    json_dumps(change_my_mind_list),
                 ),
             )
             if set_current:
@@ -2072,8 +2212,15 @@ class ForecastLedger:
         resolution_error: str = "",
         lesson: str = "",
         calibration_adjustment: dict[str, Any] | None = None,
+        failure_class: str | None = None,
     ) -> dict[str, Any]:
         question = self.get_question(question_id)
+        if failure_class is not None:
+            failure_class = failure_class.strip().lower() or None
+            if failure_class and failure_class not in FAILURE_CLASSES:
+                raise ValidationError(
+                    f"failure_class must be one of {', '.join(sorted(FAILURE_CLASSES))}"
+                )
         score = self.score_question(question_id)
         snapshot = self.get_snapshot(score.forecast_id)
         resolution = self.get_resolution(score.resolution_id)
@@ -2086,9 +2233,9 @@ class ForecastLedger:
                     forecast_origin, calibration_eligible, created_at, summary,
                     what_happened, what_was_expected, missed_evidence,
                     overweighted_evidence, base_rate_error, inside_view_error,
-                    resolution_error, lesson, calibration_adjustment
+                    resolution_error, lesson, calibration_adjustment, failure_class
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     postmortem_id,
@@ -2109,6 +2256,7 @@ class ForecastLedger:
                     resolution_error,
                     lesson,
                     json_dumps(calibration_adjustment or {}),
+                    failure_class,
                 ),
             )
         postmortem = self.get_postmortem(postmortem_id)
@@ -2134,6 +2282,7 @@ class ForecastLedger:
         data = dict(row)
         data["calibration_eligible"] = bool(data["calibration_eligible"])
         data["calibration_adjustment"] = json_loads(data["calibration_adjustment"], {})
+        data.setdefault("failure_class", None)
         return data
 
     def list_postmortems(
@@ -2160,6 +2309,7 @@ class ForecastLedger:
             data = dict(row)
             data["calibration_eligible"] = bool(data["calibration_eligible"])
             data["calibration_adjustment"] = json_loads(data["calibration_adjustment"], {})
+            data.setdefault("failure_class", None)
             result.append(data)
         return result
 
@@ -7022,6 +7172,7 @@ class ForecastLedger:
         return timedelta(days=1)
 
     def _row_to_question(self, row: sqlite3.Row) -> ForecastQuestion:
+        row_keys = row.keys()
         return ForecastQuestion(
             id=row["id"],
             title=row["title"],
@@ -7042,9 +7193,16 @@ class ForecastLedger:
             next_review_at=row["next_review_at"],
             current_forecast_id=row["current_forecast_id"],
             metadata=json_loads(row["metadata"], {}),
+            decision_owner=row["decision_owner"] if "decision_owner" in row_keys else None,
+            decision_deadline=row["decision_deadline"] if "decision_deadline" in row_keys else None,
+            action_threshold=row["action_threshold"] if "action_threshold" in row_keys else None,
+            update_triggers=(
+                json_loads(row["update_triggers"], []) if "update_triggers" in row_keys else []
+            ),
         )
 
     def _row_to_snapshot(self, row: sqlite3.Row) -> ForecastSnapshot:
+        row_keys = row.keys()
         return ForecastSnapshot(
             forecast_id=row["forecast_id"],
             question_id=row["question_id"],
@@ -7075,6 +7233,11 @@ class ForecastLedger:
             calibration_lesson_refs=json_loads(row["calibration_lesson_refs"], []),
             calibration_adjustment=json_loads(row["calibration_adjustment"], {}),
             metadata=json_loads(row["metadata"], {}),
+            reasons_up=json_loads(row["reasons_up"], []) if "reasons_up" in row_keys else [],
+            reasons_down=json_loads(row["reasons_down"], []) if "reasons_down" in row_keys else [],
+            change_my_mind=(
+                json_loads(row["change_my_mind"], []) if "change_my_mind" in row_keys else []
+            ),
         )
 
     def _row_to_evidence(self, row: sqlite3.Row) -> EvidenceItem:

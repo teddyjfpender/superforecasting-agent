@@ -104,6 +104,16 @@ def build_context_packet(
     )
     error_profiles = ledger.list_domain_error_profiles(domain=question.domain) if question.domain else []
 
+    readiness_issues = ledger.decision_readiness_issues(question)
+    triggers_render = (
+        "; ".join(
+            t.get("mechanism", "")
+            + (f" [{t.get('threshold')}]" if t.get("threshold") else "")
+            for t in question.update_triggers
+        )
+        if question.update_triggers
+        else "-"
+    )
     lines = [
         "## Forecast Context",
         f"id: {question.id}",
@@ -115,6 +125,13 @@ def build_context_packet(
         f"resolution_time: {question.resolution_time or '-'}",
         f"resolution_criteria: {question.resolution_criteria}",
         f"outcome_space: {question.outcome_space.to_dict()}",
+        "",
+        "## Decision Card",
+        f"decision_owner: {question.decision_owner or '-'}",
+        f"decision_deadline: {question.decision_deadline or '-'}",
+        f"action_threshold: {question.action_threshold or '-'}",
+        f"update_triggers: {triggers_render}",
+        f"decision_readiness_issues: {', '.join(readiness_issues) if readiness_issues else 'none'}",
         "",
         "## Current Forecast",
     ]
@@ -128,6 +145,9 @@ def build_context_packet(
                 f"forecast_origin: {snapshot.forecast_origin}",
                 f"calibration_eligible: {snapshot.calibration_eligible}",
                 f"rationale: {snapshot.rationale}",
+                f"reasons_up: {'; '.join(snapshot.reasons_up) if snapshot.reasons_up else '-'}",
+                f"reasons_down: {'; '.join(snapshot.reasons_down) if snapshot.reasons_down else '-'}",
+                f"change_my_mind: {'; '.join(snapshot.change_my_mind) if snapshot.change_my_mind else '-'}",
             ]
         )
     else:
@@ -212,8 +232,13 @@ def _render_rows(rows: list[dict[str, Any]], primary: str, status: str) -> list[
 def _stage_task(stage: str) -> str:
     tasks = {
         "parse": (
-            "Audit whether the question is scoreable. Identify ambiguities, outcome-space issues, "
-            "and missing resolution criteria. Return required clarifications before any forecast update."
+            "Audit whether the question is scoreable AND decision-relevant. Identify "
+            "ambiguities, outcome-space issues, and missing resolution criteria. Then audit "
+            "the decision card shown above: list any missing decision_owner, decision_deadline, "
+            "action_threshold, or update_triggers. A forecast that does not inform a concrete "
+            "decision is entertainment, not work — refuse to advance without a decision owner "
+            "and at least one action threshold tied to the probability. Return required "
+            "clarifications before any forecast update."
         ),
         "research": (
             "Identify evidence gaps and propose timestamped evidence to collect. Distinguish facts, "
@@ -248,15 +273,28 @@ def _stage_task(stage: str) -> str:
             "available natively via `forecast update --method log_odds_pool --extremize <f> "
             "--correlation estimate`. After moving the probability, decompose the change with "
             "bayes_action='forecast_diff' and stress-test it with bayes_action='sensitivity' so the "
-            "update is auditable, not ad hoc."
+            "update is auditable, not ad hoc. Every saved snapshot MUST include three structured "
+            "reasoning fields: `reasons_up` (3 concrete reasons the probability should be HIGHER), "
+            "`reasons_down` (3 concrete reasons the probability should be LOWER), and "
+            "`change_my_mind` (the specific observations/data that would force a material update). "
+            "These prevent narrative collapse — pass them as repeated --reason-up / --reason-down / "
+            "--change-my-mind flags, or as `reasons_up`/`reasons_down`/`change_my_mind` arrays in "
+            "the agent tool. On the CLI, `--require-structured-reasoning` enforces this; on "
+            "`update_forecast`, the boolean `require_structured_reasoning` has the same effect."
         ),
         "resolve": (
             "Check whether the resolution criteria are satisfied. Propose resolution status, source snapshot needs, "
             "and whether the outcome is scoreable. Do not score disputed or unconfirmed resolutions."
         ),
         "postmortem": (
-            "Diagnose the resolved forecast. Compare expected vs actual outcome, missed or overweighted evidence, "
-            "base-rate error, inside-view error, resolution error, and reusable calibration lesson."
+            "Diagnose the resolved forecast. Compare expected vs actual outcome, missed or "
+            "overweighted evidence, base-rate error, inside-view error, resolution error, and "
+            "reusable calibration lesson. Assign a `failure_class` so the domain error profile "
+            "can aggregate the failure mode: one of base_rate, inside_view, definition, timing, "
+            "aggregation, motivated_reasoning, tail, noise, other. 'Noise' means the miss was "
+            "within expected error of a well-calibrated forecast; everything else is a reusable "
+            "lesson. Pass `--failure-class <name>` to the CLI or `failure_class` to the "
+            "forecast_ledger postmortem action."
         ),
         "self_check": (
             "Inspect stale beliefs, upcoming close/resolution dates, invalidated assumptions, and domain error patterns. "

@@ -15209,3 +15209,277 @@ def test_forecast_cli_installs_no_agent_cron_bridge(tmp_path, capsys, monkeypatc
     assert jobs[0]["name"] == "Forecast checks"
     assert jobs[0]["script"] == "forecast_self_check.py"
     assert jobs[0]["no_agent"] is True
+
+
+# ---------- decision card + structured reasoning CLI flags ----------
+
+
+def _question_id_from(output: str) -> str:
+    return re.search(r"created forecast question (fq_[a-f0-9]+)", output).group(1)
+
+
+def test_forecast_cli_new_persists_decision_card_flags(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "decision.db")
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will CPI YoY exceed 3.0% in July 2026?",
+            "--resolution-criteria",
+            "BLS CPI-U YoY for the July 2026 release.",
+            "--decision-owner",
+            "Trading desk lead",
+            "--decision-deadline",
+            "2026-08-15T00:00:00Z",
+            "--action-threshold",
+            "If P(YES) > 0.6, cut duration by 10%",
+            "--update-trigger",
+            "PCE release within 24h",
+            "--update-trigger",
+            '{"mechanism": "fred:CPIAUCSL", "threshold": "MoM > 0.3%"}',
+        ],
+    )
+    out = capsys.readouterr().out
+    qid = _question_id_from(out)
+    assert "decision_owner: Trading desk lead" in out
+    assert "action_threshold: If P(YES) > 0.6" in out
+    assert "update_triggers: 2" in out
+
+    ledger = ForecastLedger(db_path=db)
+    q = ledger.get_question(qid)
+    assert q.decision_owner == "Trading desk lead"
+    assert q.update_triggers[1]["mechanism"] == "fred:CPIAUCSL"
+
+
+def test_forecast_cli_new_flags_missing_decision_readiness(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "decision.db")
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will the bill pass the Senate in 2026?",
+            "--resolution-criteria",
+            "Official Senate vote tally on or before 2026-12-31.",
+        ],
+    )
+    out = capsys.readouterr().out
+    assert "decision_readiness: missing decision_owner" in out
+    assert "forecast set-decision" in out
+
+
+def test_forecast_cli_set_decision_patches_fields(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "decision.db")
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will the dashboard ship by Friday?",
+            "--resolution-criteria",
+            "Dashboard merged and deployed to prod by 2026-06-05 23:59 UTC.",
+        ],
+    )
+    qid = _question_id_from(capsys.readouterr().out)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "set-decision",
+            qid,
+            "--decision-owner",
+            "Eng lead",
+            "--action-threshold",
+            "P > 0.5 -> ship",
+            "--update-trigger",
+            "PR merge event",
+        ],
+    )
+    out = capsys.readouterr().out
+    assert "decision_owner: Eng lead" in out
+    assert "decision_readiness: ready" in out
+
+
+def test_forecast_cli_update_persists_reasons_and_show_lists_them(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "decision.db")
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will CPI YoY exceed 3.0% in July 2026?",
+            "--resolution-criteria",
+            "BLS CPI-U YoY for the July 2026 release.",
+        ],
+    )
+    qid = _question_id_from(capsys.readouterr().out)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "update",
+            qid,
+            "--probability",
+            "0.41",
+            "--rationale",
+            "base rate + inside view",
+            "--reason-up",
+            "shelter reaccelerating",
+            "--reason-down",
+            "energy disinflation",
+            "--change-my-mind",
+            "core CPI MoM > 0.4% for three months",
+        ],
+    )
+    capsys.readouterr()
+    _run(parser, ["forecast", "--db", db, "show", qid])
+    out = capsys.readouterr().out
+    assert "reasons_up:" in out
+    assert "    - shelter reaccelerating" in out
+    assert "reasons_down:" in out
+    assert "change_my_mind:" in out
+    assert "core CPI MoM > 0.4% for three months" in out
+
+
+def test_forecast_cli_update_require_structured_reasoning_blocks_save(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "decision.db")
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will the index close above 5000 on 2026-06-30?",
+            "--resolution-criteria",
+            "Official exchange close on 2026-06-30.",
+        ],
+    )
+    qid = _question_id_from(capsys.readouterr().out)
+    with pytest.raises(SystemExit):
+        _run(
+            parser,
+            [
+                "forecast",
+                "--db",
+                db,
+                "update",
+                qid,
+                "--probability",
+                "0.55",
+                "--rationale",
+                "rough call",
+                "--require-structured-reasoning",
+            ],
+        )
+    assert "reasons_up" in capsys.readouterr().err
+
+
+def test_forecast_cli_update_require_decision_readiness_blocks_save(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "decision.db")
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will the policy rate change at the next meeting?",
+            "--resolution-criteria",
+            "Decision announcement at the next official meeting.",
+        ],
+    )
+    qid = _question_id_from(capsys.readouterr().out)
+    with pytest.raises(SystemExit):
+        _run(
+            parser,
+            [
+                "forecast",
+                "--db",
+                db,
+                "update",
+                qid,
+                "--probability",
+                "0.7",
+                "--rationale",
+                "consensus expectation",
+                "--require-decision-readiness",
+            ],
+        )
+    assert "decision_owner" in capsys.readouterr().err
+
+
+def test_forecast_cli_postmortem_records_failure_class(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "decision.db")
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "new",
+            "Will the meeting end with a rate change?",
+            "--resolution-criteria",
+            "Decision announcement at the next official meeting.",
+        ],
+    )
+    qid = _question_id_from(capsys.readouterr().out)
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "update",
+            qid,
+            "--probability",
+            "0.7",
+            "--rationale",
+            "consensus expectation",
+        ],
+    )
+    capsys.readouterr()
+    _run(parser, ["forecast", "--db", db, "resolve", qid, "--outcome", "no"])
+    capsys.readouterr()
+    _run(
+        parser,
+        [
+            "forecast",
+            "--db",
+            db,
+            "postmortem",
+            qid,
+            "--summary",
+            "consensus was wrong",
+            "--failure-class",
+            "inside_view",
+            "--lesson",
+            "downweight consensus when dissent is rising",
+        ],
+    )
+    out = capsys.readouterr().out
+    assert "failure_class: inside_view" in out
+
+    ledger = ForecastLedger(db_path=db)
+    pms = ledger.list_postmortems(question_id=qid)
+    assert pms[0]["failure_class"] == "inside_view"

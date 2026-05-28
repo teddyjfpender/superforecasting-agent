@@ -16,6 +16,17 @@ ASSUMPTION_STATUSES = {"active", "stale", "invalidated", "resolved"}
 REFERENCE_CLASS_STATUSES = {"active", "stale", "invalidated", "superseded"}
 EVIDENCE_CLAIM_TYPES = {"fact", "estimate", "rumor", "opinion", "assumption"}
 CALIBRATION_LESSON_STATUSES = {"tentative", "active", "superseded", "rejected"}
+FAILURE_CLASSES = {
+    "base_rate",
+    "inside_view",
+    "definition",
+    "timing",
+    "aggregation",
+    "motivated_reasoning",
+    "tail",
+    "noise",
+    "other",
+}
 
 
 class ForecastingError(Exception):
@@ -158,6 +169,10 @@ class ForecastQuestion:
     next_review_at: str | None
     current_forecast_id: str | None
     metadata: dict[str, Any] = field(default_factory=dict)
+    decision_owner: str | None = None
+    decision_deadline: str | None = None
+    action_threshold: str | None = None
+    update_triggers: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -191,6 +206,9 @@ class ForecastSnapshot:
     calibration_lesson_refs: list[str]
     calibration_adjustment: dict[str, Any]
     metadata: dict[str, Any] = field(default_factory=dict)
+    reasons_up: list[str] = field(default_factory=list)
+    reasons_down: list[str] = field(default_factory=list)
+    change_my_mind: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -255,6 +273,66 @@ class ScoreRecord:
     baseline_ref: str | None
     invalidated_by_correction_id: str | None
     notes: str | None
+
+
+def normalize_update_triggers(raw: Any) -> list[dict[str, Any]]:
+    """Coerce ``update_triggers`` payload into a validated list of dicts.
+
+    Each trigger requires a non-empty ``mechanism`` (free-form text or a source
+    identifier such as ``fred:CPIAUCSL``). ``threshold``, ``action``, and
+    ``window`` are optional. Strings are treated as ``{"mechanism": value}``.
+    """
+
+    if raw is None:
+        return []
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, list):
+        raise ValidationError("update_triggers must be a list of objects")
+    out: list[dict[str, Any]] = []
+    for index, entry in enumerate(raw):
+        if isinstance(entry, str):
+            entry = {"mechanism": entry.strip()}
+        if not isinstance(entry, dict):
+            raise ValidationError(
+                f"update_triggers[{index}] must be a string or object"
+            )
+        mechanism = str(entry.get("mechanism") or "").strip()
+        if not mechanism:
+            raise ValidationError(
+                f"update_triggers[{index}] requires a non-empty mechanism"
+            )
+        normalized: dict[str, Any] = {"mechanism": mechanism}
+        for key in ("threshold", "action", "window", "source_ref", "notes"):
+            value = entry.get(key)
+            if value is None:
+                continue
+            if isinstance(value, str):
+                value = value.strip()
+                if not value:
+                    continue
+            normalized[key] = value
+        out.append(normalized)
+    return out
+
+
+def question_decision_readiness_issues(question: "ForecastQuestion") -> list[str]:
+    """Return missing-decision-context issues, in priority order.
+
+    Returns an empty list when the question carries a decision owner, an
+    action threshold, and at least one update trigger. Suitable for both the
+    parse stage's audit and the update stage's optional refuse-to-snapshot
+    gate.
+    """
+
+    issues: list[str] = []
+    if not (question.decision_owner or "").strip():
+        issues.append("missing decision_owner")
+    if not (question.action_threshold or "").strip():
+        issues.append("missing action_threshold")
+    if not question.update_triggers:
+        issues.append("missing update_triggers")
+    return issues
 
 
 @dataclass(frozen=True)
