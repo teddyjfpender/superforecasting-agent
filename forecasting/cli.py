@@ -1395,8 +1395,8 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         help=(
             "Toolkit routine: lr_update, decompose_update, combine, evidence_weight, "
             "evidence_cluster, blend_base_rates, poll_to_prob, polls, devig, "
-            "normalize_market, combine_markets, sensitivity, forecast_diff "
-            "(omit to list available actions)"
+            "normalize_market, combine_markets, sensitivity, forecast_diff, "
+            "conditional_chain (omit to list available actions)"
         ),
     )
     bayes_parser.add_argument(

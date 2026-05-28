@@ -1,6 +1,6 @@
 ---
 name: bayes-forecast-scratchpad
-description: "Auditable Bayesian forecasting scratchpad: likelihood-ratio updating, log-odds pooling, evidence weighting, reference-class blending, poll→probability, market de-vig, double-counting checks, sensitivity, and forecast-diff. Use whenever you move or combine a forecast probability."
+description: "Auditable Bayesian forecasting scratchpad: likelihood-ratio updating, log-odds pooling, evidence weighting, reference-class blending, poll→probability, market de-vig, double-counting checks, sensitivity, forecast-diff, and conditional-chain decomposition with mandatory unconditional sanity-check. Use whenever you move or combine a forecast probability."
 version: 1.0.0
 author: Superforecasting Agent
 license: MIT
@@ -137,6 +137,32 @@ forecast bayes forecast_diff --input '{"previous":0.621,"current":0.593,"compone
   {"name":"markets","delta_pts":0.008},
   {"name":"ratings","delta_pts":0.004}]}'
 ```
+
+### 10. Conditional-chain decomposition (`conditional_chain`)
+Decompose a rare event into causal links — `P(A) · P(B|A) · P(C|A,B) · …` —
+and compare the chain product to a directly-elicited unconditional
+"gut/outside-view" estimate. The unconditional sanity-check is **required**:
+the routine refuses to run without it, because the failure mode it exists to
+catch is a plausible-looking chain that quietly disagrees with the outside
+view. The result is `flagged: true` when the chain and unconditional diverge
+by more than `tolerance` (default 2× — a 0.5–2.0 ratio band).
+
+```
+forecast bayes conditional_chain --input '{
+  "target_name": "London hit by nuclear strike in 30 days",
+  "links": [
+    {"name":"A","condition":"Russia uses tactical nuke","probability":0.05},
+    {"name":"B|A","condition":"Conflict expands beyond Ukraine","probability":0.4},
+    {"name":"C|A,B","condition":"London is targeted","probability":0.1}
+  ],
+  "unconditional_estimate": 0.002,
+  "tolerance": 2.0
+}'
+```
+
+When `flagged: true`, DO NOT ship the forecast without reconciling. Either a
+conditional probability is mis-elicited (usually the middle link) or the gut
+estimate is wrong — re-examine before moving the snapshot.
 
 ## Recommended workflow
 

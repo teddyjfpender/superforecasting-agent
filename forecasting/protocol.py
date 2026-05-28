@@ -252,7 +252,11 @@ def _stage_task(stage: str) -> str:
             "Propose reference classes with inclusion/exclusion criteria, base-rate estimates, "
             "uncertainty, and source requirements. When several reference classes compete, blend "
             "them by applicability with the forecast_ledger bayes action "
-            "(bayes_action='blend_base_rates') instead of eyeballing a single class."
+            "(bayes_action='blend_base_rates') instead of eyeballing a single class. For rare or "
+            "high-stakes events, decompose the target into a causal chain "
+            "P(A) · P(B|A) · P(C|A,B) and run bayes_action='conditional_chain' — it MUST be "
+            "called with an `unconditional_estimate` (a separately-elicited gut/outside-view "
+            "probability) so the chain product is sanity-checked instead of accepted on faith."
         ),
         "model": (
             "Suggest quantitative models or Bayesian updates that would improve the forecast. "

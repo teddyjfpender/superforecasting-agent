@@ -1337,6 +1337,191 @@ def forecast_diff(
     )
 
 
+@dataclass
+class ConditionalChain:
+    """Result of multiplying a conditional-probability chain.
+
+    A conditional chain decomposes a rare event P(C) into causal links
+    ``P(A) · P(B|A) · P(C|A,B)``. The structured form prevents narrative
+    collapse: each link is elicited separately, the chain product is
+    compared to a directly-elicited unconditional estimate, and the two
+    are flagged when they diverge beyond ``tolerance``.
+    """
+
+    target_name: str
+    links: list[dict[str, Any]]
+    chain_product: float
+    unconditional_estimate: float
+    divergence_abs: float
+    divergence_ratio: float | None
+    divergence_log: float | None
+    tolerance: float
+    flagged: bool
+    flag_reason: str | None
+    notes: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "target_name": self.target_name,
+            "links": self.links,
+            "chain_product": _round(self.chain_product, 6),
+            "log_chain_product": _round(math.log(max(self.chain_product, _EPS)), 4),
+            "unconditional_estimate": _round(self.unconditional_estimate, 6),
+            "divergence_abs": _round(self.divergence_abs, 6),
+            "divergence_ratio": (
+                None if self.divergence_ratio is None else _round(self.divergence_ratio, 4)
+            ),
+            "divergence_log": (
+                None if self.divergence_log is None else _round(self.divergence_log, 4)
+            ),
+            "tolerance": _round(self.tolerance, 4),
+            "flagged": self.flagged,
+            "flag_reason": self.flag_reason,
+            "notes": self.notes,
+        }
+
+    def to_text(self) -> str:
+        lines = [f"Target: {self.target_name or 'P(C)'}"]
+        for link in self.links:
+            cond = link.get("condition") or link.get("name") or "link"
+            lines.append(f"  {cond}: {float(link['probability']):.4f}")
+        lines.append(f"Chain product: {self.chain_product:.4f}")
+        lines.append(f"Unconditional sanity-check: {self.unconditional_estimate:.4f}")
+        if self.divergence_ratio is not None:
+            lines.append(
+                f"Divergence: |Δ|={self.divergence_abs:.4f} "
+                f"ratio={self.divergence_ratio:.2f}x"
+            )
+        if self.flagged:
+            lines.append(f"⚠ FLAGGED: {self.flag_reason}")
+        else:
+            lines.append("Within tolerance — sanity check passes.")
+        for note in self.notes:
+            lines.append(f"  note: {note}")
+        return "\n".join(lines)
+
+
+def conditional_chain(
+    links: Sequence[Mapping[str, Any]],
+    *,
+    unconditional_estimate: float,
+    target_name: str = "",
+    tolerance: float = 2.0,
+    absolute_floor: float = 1e-4,
+) -> ConditionalChain:
+    """Multiply a conditional-probability chain and compare to an unconditional estimate.
+
+    ``links`` is a list of ``{"name"|"condition", "probability"}`` items
+    representing ``P(A), P(B|A), P(C|A,B), ...``. The unconditional sanity-check
+    is **required** — that's the design enforcement: a conditional chain without
+    a directly-elicited gut estimate is the failure mode this routine catches.
+
+    The result is flagged when:
+
+    * either probability is < ``absolute_floor`` and they disagree by more than
+      ``absolute_floor``, or
+    * the ratio of the two (chain ÷ unconditional or its reciprocal, whichever
+      is larger) exceeds ``tolerance`` (default 2× — i.e. a 0.5-to-2.0 band).
+
+    ``tolerance`` matches Samotsvety-style discipline: small ratio gaps are
+    "model says X, gut says ~X, the chain is plausible"; large ones are "the
+    decomposition disagrees with the outside view — go re-examine your
+    conditional probabilities."
+    """
+
+    if not links:
+        raise ValidationError("conditional_chain requires at least one link")
+    if tolerance <= 1.0:
+        raise ValidationError("tolerance must be > 1.0")
+
+    if unconditional_estimate is None:  # pragma: no cover - normalized upstream
+        raise ValidationError(
+            "conditional_chain requires unconditional_estimate (the gut/outside-view check)"
+        )
+    unconditional = _clamp_prob(unconditional_estimate, "unconditional_estimate")
+
+    cleaned_links: list[dict[str, Any]] = []
+    chain = 1.0
+    for index, raw in enumerate(links):
+        if not isinstance(raw, Mapping):
+            raise ValidationError(
+                f"conditional_chain links[{index}] must be an object with a probability"
+            )
+        probability = raw.get("probability")
+        if probability is None:
+            for alt in ("p", "prob", "value"):
+                if raw.get(alt) is not None:
+                    probability = raw[alt]
+                    break
+        if probability is None:
+            raise ValidationError(
+                f"conditional_chain links[{index}] requires 'probability'"
+            )
+        probability = _clamp_prob(probability, f"links[{index}].probability")
+        name = str(raw.get("name") or f"link_{index + 1}").strip() or f"link_{index + 1}"
+        condition = str(raw.get("condition") or "").strip() or None
+        entry: dict[str, Any] = {"name": name, "probability": _round(probability, 6)}
+        if condition:
+            entry["condition"] = condition
+        if raw.get("rationale"):
+            entry["rationale"] = str(raw["rationale"]).strip()
+        cleaned_links.append(entry)
+        chain *= probability
+
+    divergence_abs = abs(chain - unconditional)
+    if chain <= _EPS or unconditional <= _EPS:
+        divergence_ratio: float | None = None
+        divergence_log: float | None = None
+    else:
+        ratio = chain / unconditional
+        # Normalize so >1 always means "chain bigger than unconditional"
+        divergence_ratio = ratio
+        divergence_log = math.log(ratio)
+
+    flag_reason: str | None = None
+    flagged = False
+    if (chain < absolute_floor or unconditional < absolute_floor) and divergence_abs > absolute_floor:
+        flagged = True
+        flag_reason = (
+            f"near-zero divergence: chain={chain:.2e}, unconditional={unconditional:.2e}, "
+            f"|Δ|={divergence_abs:.2e}"
+        )
+    elif divergence_ratio is not None:
+        signed = max(divergence_ratio, 1.0 / divergence_ratio)
+        # Small epsilon avoids FP-noise flips right at the boundary (e.g.
+        # 0.05·0.4·0.1 returns 0.002000000…001 not 0.002).
+        if signed > tolerance * (1.0 + 1e-6):
+            flagged = True
+            direction = "above" if divergence_ratio > 1 else "below"
+            flag_reason = (
+                f"chain is {signed:.2f}x {direction} the unconditional estimate "
+                f"(tolerance {tolerance:g}x). Re-examine the conditional probabilities or "
+                f"the unconditional gut estimate."
+            )
+
+    notes = [
+        f"product of {len(cleaned_links)} conditional probabilities",
+        (
+            "chain and unconditional agree" if not flagged
+            else "chain disagrees with the outside view — DO NOT ship the forecast without reconciling"
+        ),
+    ]
+
+    return ConditionalChain(
+        target_name=target_name.strip(),
+        links=cleaned_links,
+        chain_product=chain,
+        unconditional_estimate=unconditional,
+        divergence_abs=divergence_abs,
+        divergence_ratio=divergence_ratio,
+        divergence_log=divergence_log,
+        tolerance=tolerance,
+        flagged=flagged,
+        flag_reason=flag_reason,
+        notes=notes,
+    )
+
+
 # ── Unified dispatch (shared by the CLI and the agent tool) ─────────────────
 
 # Action name → set of accepted payload keys, documented for the agent tool.
@@ -1354,6 +1539,11 @@ BAYES_ACTIONS: dict[str, str] = {
     "combine_markets": "De-vig + liquidity-weight multiple markets. payload: markets[].",
     "sensitivity": "One-way / tornado sensitivity. payload: components[], parameter_ranges{}, method, extremize.",
     "forecast_diff": "Decompose a probability move into drivers. payload: previous, current, components[].",
+    "conditional_chain": (
+        "Multiply a causal chain P(A)·P(B|A)·P(C|A,B)... and compare to a "
+        "directly-elicited unconditional sanity-check. payload: links[], "
+        "unconditional_estimate (required), target_name, tolerance."
+    ),
 }
 
 
@@ -1482,6 +1672,26 @@ def run_bayes_action(action: str, payload: Mapping[str, Any] | None = None) -> d
             payload["previous"], payload["current"], payload.get("components"),
         ))
 
+    if action in {"conditional_chain", "chain"}:
+        unconditional = payload.get("unconditional_estimate")
+        if unconditional is None:
+            for alt in ("unconditional", "unconditional_p", "sanity_check"):
+                if payload.get(alt) is not None:
+                    unconditional = payload[alt]
+                    break
+        if unconditional is None:
+            raise ValidationError(
+                "conditional_chain requires 'unconditional_estimate' — a separately "
+                "elicited gut/outside-view probability to compare against the chain product"
+            )
+        return _packaged(conditional_chain(
+            payload["links"],
+            unconditional_estimate=unconditional,
+            target_name=str(payload.get("target_name") or ""),
+            tolerance=float(payload.get("tolerance", 2.0)),
+            absolute_floor=float(payload.get("absolute_floor", 1e-4)),
+        ))
+
     raise ValidationError(
         f"unknown bayes action '{action}'. Available: {', '.join(sorted(BAYES_ACTIONS))}"
     )
@@ -1511,4 +1721,5 @@ __all__ = [
     "devig_binary_market", "normalize_categorical_market", "combine_markets", "MarketModel",
     "sensitivity_grid", "SensitivityResult",
     "forecast_diff", "ForecastDiff",
+    "conditional_chain", "ConditionalChain",
 ]

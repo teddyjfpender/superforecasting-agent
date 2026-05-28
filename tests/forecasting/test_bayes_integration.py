@@ -197,3 +197,78 @@ def test_protocol_update_stage_recommends_bayes(tmp_path):
     text = "\n".join(m.content for m in messages)
     assert "log_odds_pool" in text
     assert "forecast_diff" in text
+
+
+def test_cli_bayes_lists_conditional_chain(capsys):
+    _run(_parser(), ["forecast", "bayes"])
+    out = capsys.readouterr().out
+    assert "conditional_chain" in out
+
+
+def test_cli_bayes_conditional_chain_passes(capsys):
+    payload = json.dumps({
+        "target_name": "London hit by nuclear strike",
+        "links": [
+            {"name": "A", "condition": "Russia uses tac nuke", "probability": 0.05},
+            {"name": "B|A", "probability": 0.4},
+            {"name": "C|A,B", "probability": 0.1},
+        ],
+        "unconditional_estimate": 0.002,
+        "tolerance": 2.0,
+    })
+    _run(_parser(), ["forecast", "bayes", "conditional_chain", "--input", payload])
+    out = capsys.readouterr().out
+    assert "Chain product" in out
+    assert "Unconditional sanity-check" in out
+    assert "passes" in out
+
+
+def test_cli_bayes_conditional_chain_flags_divergence(capsys):
+    payload = json.dumps({
+        "links": [{"probability": 0.4}, {"probability": 0.5}],
+        "unconditional_estimate": 0.02,
+    })
+    _run(_parser(), ["forecast", "bayes", "conditional_chain", "--input", payload])
+    out = capsys.readouterr().out
+    assert "FLAGGED" in out
+    assert "above" in out
+
+
+def test_cli_bayes_conditional_chain_json_output(capsys):
+    payload = json.dumps({
+        "links": [{"probability": 0.5}],
+        "unconditional_estimate": 0.5,
+    })
+    _run(_parser(), ["forecast", "bayes", "conditional_chain", "--input", payload, "--json"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["action"] == "conditional_chain"
+    assert data["result"]["flagged"] is False
+    assert data["result"]["chain_product"] == pytest.approx(0.5, rel=1e-9)
+
+
+def test_tool_bayes_conditional_chain():
+    out = json.loads(forecast_ledger_tool({
+        "action": "bayes",
+        "bayes_action": "conditional_chain",
+        "bayes_payload": {
+            "target_name": "Rare event X",
+            "links": [{"probability": 0.5}, {"probability": 0.4}],
+            "unconditional_estimate": 0.18,
+        },
+    }))
+    assert out["success"] is True
+    assert out["bayes_action"] == "conditional_chain"
+    assert out["result"]["chain_product"] == pytest.approx(0.2, rel=1e-3)
+    assert out["result"]["flagged"] is False
+    assert "Chain product" in out["rationale"]
+
+
+def test_tool_bayes_conditional_chain_requires_unconditional():
+    out = json.loads(forecast_ledger_tool({
+        "action": "bayes",
+        "bayes_action": "conditional_chain",
+        "bayes_payload": {"links": [{"probability": 0.5}]},
+    }))
+    assert out["success"] is False
+    assert "unconditional_estimate" in out["error"]
