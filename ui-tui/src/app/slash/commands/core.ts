@@ -809,6 +809,24 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
+    // Manage data-provider API keys (FRED, EIA, Firecrawl, Exa, …). Writes the
+    // key to ~/.superforecasting-agent/.env and activates it for subsequent
+    // forecast invocations — so the next agent run picks up e.g. FRED_API_KEY
+    // and stops falling back to the flaky public CSV endpoint. Pasting the key
+    // into the composer puts it in this session's transcript; for a fully
+    // private add use `forecast api-key set <provider> --from-stdin` in a
+    // terminal outside the TUI.
+    aliases: ['apikey', 'api-keys', 'keys'],
+    help: 'list / set / unset data-provider API keys (FRED, EIA, web search, …)',
+    name: 'api-key',
+    run: (arg, ctx) => {
+      const trimmed = arg.trim()
+      // Default to listing so `/api-key` alone shows what's set vs not.
+      runForecastCommand(ctx, `api-key ${trimmed || 'list'}`.trim())
+    }
+  },
+
+  {
     aliases: ['pilot'],
     help: 'check tester pilot artifact coverage',
     name: 'pilot-report',

@@ -1331,6 +1331,31 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     )
     bayes_parser.set_defaults(_forecast_handler=_cmd_bayes)
 
+    apikey_parser = forecast_sub.add_parser(
+        "api-key",
+        help="Manage data-provider API keys (FRED, EIA, Firecrawl, Exa, …). Writes to the user .env and activates immediately.",
+    )
+    apikey_sub = apikey_parser.add_subparsers(dest="apikey_command")
+    apikey_list = apikey_sub.add_parser("list", help="List known providers and whether a key is currently set (redacted).")
+    apikey_list.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    apikey_list.set_defaults(_forecast_handler=_cmd_apikey_list)
+    apikey_show = apikey_sub.add_parser("show", help="Show one provider's status (redacted).")
+    apikey_show.add_argument("provider")
+    apikey_show.add_argument("--json", action="store_true")
+    apikey_show.set_defaults(_forecast_handler=_cmd_apikey_show)
+    apikey_set = apikey_sub.add_parser("set", help="Persist a key to the user .env and activate it (`forecast api-key set fred <key>`).")
+    apikey_set.add_argument("provider")
+    apikey_set.add_argument("value", nargs="?")
+    apikey_set.add_argument(
+        "--from-stdin", action="store_true",
+        help="Read the key value from stdin (recommended in shared terminals — keeps the key out of shell history).",
+    )
+    apikey_set.set_defaults(_forecast_handler=_cmd_apikey_set)
+    apikey_unset = apikey_sub.add_parser("unset", help="Remove a provider's key from .env and the current process.")
+    apikey_unset.add_argument("provider")
+    apikey_unset.set_defaults(_forecast_handler=_cmd_apikey_unset)
+    apikey_parser.set_defaults(_forecast_handler=_cmd_apikey_default)
+
     protocol_parser = forecast_sub.add_parser("protocol", help="Render a forecast-stage agent protocol prompt")
     protocol_parser.add_argument("id")
     protocol_parser.add_argument("--stage", choices=sorted(PROTOCOL_STAGES), default="update")
@@ -1958,6 +1983,16 @@ def main(argv: list[str] | None = None, *, prog: str = CLI_SURFACE) -> None:
     The forecast fork can keep `hermes forecast ...` during transition while
     also exposing `forecast ...` as the primary product command.
     """
+
+    # Load the user dotenv so persisted API keys (`forecast api-key set ...`)
+    # are active for subsequent invocations. Best-effort: a missing dotenv
+    # dependency or unreadable file must not block the CLI.
+    try:
+        from hermes_cli.env_loader import load_hermes_dotenv
+
+        load_hermes_dotenv()
+    except Exception:  # pragma: no cover — defensive
+        pass
 
     parser = argparse.ArgumentParser(prog=prog)
     subparsers = parser.add_subparsers(dest="_forecast_root")
@@ -6378,6 +6413,96 @@ def _cmd_bayes(args: argparse.Namespace) -> None:
         print(json.dumps({"action": outcome["action"], "result": outcome["result"]}, indent=2, sort_keys=True))
     else:
         print(outcome["rationale"])
+
+
+def _cmd_apikey_default(args: argparse.Namespace) -> None:
+    """`forecast api-key` with no subcommand → show usage + list."""
+
+    print("usage: forecast api-key {list|show|set|unset} ...")
+    print("       forecast api-key list                    # show all known providers (redacted)")
+    print("       forecast api-key set fred <key>          # persist + activate a key")
+    print("       forecast api-key set fred --from-stdin   # read the value from stdin")
+    print("       forecast api-key unset fred              # remove a key\n")
+    _print_apikey_list(json_output=False)
+
+
+def _print_apikey_list(*, json_output: bool) -> None:
+    from forecasting.api_keys import list_api_keys
+
+    rows = list_api_keys()
+    if json_output:
+        print(json.dumps(rows, indent=2, sort_keys=True))
+        return
+    print(f"{'PROVIDER':16} {'ENV VAR':22} {'SET':5} VALUE / DESCRIPTION")
+    for row in rows:
+        flag = "yes" if row["set"] else "no"
+        print(f"{row['name']:16} {row['env_var']:22} {flag:5} {row['redacted']}")
+        print(f"{'':16} {'':22} {'':5}   {row['description']}")
+        if row.get("signup_url") and not row["set"]:
+            print(f"{'':16} {'':22} {'':5}   get: {row['signup_url']}")
+
+
+def _cmd_apikey_list(args: argparse.Namespace) -> None:
+    _print_apikey_list(json_output=bool(getattr(args, "json", False)))
+
+
+def _cmd_apikey_show(args: argparse.Namespace) -> None:
+    from forecasting.api_keys import get_api_key, lookup_provider, redact
+
+    try:
+        provider = lookup_provider(args.provider)
+    except ForecastingError as exc:
+        print(f"forecast api-key: {exc}", file=sys.stderr)
+        raise SystemExit(2)
+    value = get_api_key(args.provider)
+    row = {
+        "name": provider.name,
+        "env_var": provider.env_var,
+        "set": bool(value),
+        "redacted": redact(value),
+        "description": provider.description,
+        "signup_url": provider.signup_url,
+    }
+    if getattr(args, "json", False):
+        print(json.dumps(row, indent=2, sort_keys=True))
+        return
+    print(f"provider: {row['name']}  ({row['env_var']})")
+    print(f"set:      {'yes' if row['set'] else 'no'}")
+    print(f"value:    {row['redacted']}")
+    print(f"about:    {row['description']}")
+    if row.get("signup_url") and not row["set"]:
+        print(f"get key:  {row['signup_url']}")
+
+
+def _cmd_apikey_set(args: argparse.Namespace) -> None:
+    from forecasting.api_keys import set_api_key
+
+    value = args.value
+    if args.from_stdin:
+        value = sys.stdin.read().strip()
+    if not value:
+        print("forecast api-key set: provide a value or pipe it via --from-stdin", file=sys.stderr)
+        raise SystemExit(2)
+    try:
+        provider = set_api_key(args.provider, value)
+    except ForecastingError as exc:
+        print(f"forecast api-key: {exc}", file=sys.stderr)
+        raise SystemExit(2)
+    from forecasting.api_keys import default_env_path, redact
+
+    print(f"set {provider.env_var} ({redact(value)}) in {default_env_path()}")
+    print("activated for this process; new agent runs will pick it up from .env")
+
+
+def _cmd_apikey_unset(args: argparse.Namespace) -> None:
+    from forecasting.api_keys import default_env_path, unset_api_key
+
+    try:
+        provider = unset_api_key(args.provider)
+    except ForecastingError as exc:
+        print(f"forecast api-key: {exc}", file=sys.stderr)
+        raise SystemExit(2)
+    print(f"unset {provider.env_var} in {default_env_path()}")
 
 
 def _cmd_model(args: argparse.Namespace) -> None:

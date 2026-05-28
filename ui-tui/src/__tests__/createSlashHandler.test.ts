@@ -553,6 +553,24 @@ describe('createSlashHandler', () => {
     )
   })
 
+  it('routes /api-key (bare, list, set, unset) to the api-key CLI subcommand', () => {
+    const rpc = vi.fn(() => Promise.resolve({ code: 0, output: 'PROVIDER ...' }))
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+    const handle = createSlashHandler(ctx)
+    // Bare /api-key defaults to `list` so the user always sees what's set.
+    expect(handle('/api-key')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'api-key list' })
+    handle('/api-key list')
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'api-key list' })
+    handle('/api-key set fred sk-test-1234')
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'api-key set fred sk-test-1234' })
+    handle('/api-key unset fred')
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'api-key unset fred' })
+    // /apikey alias works too.
+    handle('/apikey list')
+    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'api-key list' })
+  })
+
   it('routes forecast-native review shortcuts to the forecast command RPC', async () => {
     const rpc = vi.fn((method: string) => {
       if (method === 'forecast.command') {

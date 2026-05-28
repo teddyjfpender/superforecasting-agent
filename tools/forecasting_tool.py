@@ -528,6 +528,22 @@ FORECAST_LEDGER_SCHEMA = {
             },
             "lesson": {"type": "string"},
             "db": {"type": "string"},
+            "view": {
+                "type": "string",
+                "enum": ["full", "summary"],
+                "description": "show_question preset: 'summary' returns just question essentials + current forecast + counts (no arrays); 'full' (default) returns everything.",
+            },
+            "last_evidence": {"type": "integer", "description": "show_question: cap evidence to the most recent N items."},
+            "last_history": {"type": "integer", "description": "show_question: cap forecast_history to the most recent N snapshots."},
+            "last_model_runs": {"type": "integer", "description": "show_question: cap model_runs to the most recent N items."},
+            "include_history": {"type": "boolean", "description": "show_question: include the forecast_history array (default true)."},
+            "include_evidence": {"type": "boolean", "description": "show_question: include the evidence array (default true)."},
+            "include_model_runs": {"type": "boolean", "description": "show_question: include the model_runs array (default true)."},
+            "include_assumptions": {"type": "boolean", "description": "show_question: include the assumptions array (default true)."},
+            "include_reference_classes": {"type": "boolean", "description": "show_question: include the reference_classes array (default true)."},
+            "include_baselines": {"type": "boolean", "description": "show_question: include the baseline_comparisons array (default true)."},
+            "include_scores": {"type": "boolean", "description": "show_question: include the scores array (default true)."},
+            "include_postmortems": {"type": "boolean", "description": "show_question: include the postmortems array (default true)."},
             "bayes_action": {
                 "type": "string",
                 "description": (
@@ -604,28 +620,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             )
 
         if action == "show_question":
-            question_id = _required(args, "question_id")
-            question = ledger.get_question(question_id)
-            current = ledger.get_current_snapshot(question_id)
-            postmortems = ledger.list_postmortems(question_id, include_invalidated=True)
-            scores = [
-                score.__dict__
-                for score in ledger.list_scores(include_invalidated=True)
-                if score.question_id == question_id
-            ]
-            return tool_result(
-                success=True,
-                question=_question_dict(question),
-                current_forecast=current.__dict__ if current else None,
-                forecast_history=[snapshot.__dict__ for snapshot in ledger.list_snapshots(question_id)],
-                evidence=[item.__dict__ for item in ledger.list_evidence(question_id)],
-                assumptions=ledger.list_assumptions(question_id),
-                reference_classes=ledger.list_reference_classes(question_id),
-                model_runs=ledger.list_model_runs(question_id),
-                baseline_comparisons=ledger.list_baseline_comparisons(question_id),
-                scores=scores,
-                postmortems=postmortems,
-            )
+            return _show_question_payload(ledger, args)
 
         if action == "source_plan":
             question_id = _required(args, "question_id")
@@ -869,9 +864,33 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
         if action == "update_forecast":
             question_id = _required(args, "question_id")
             components = args.get("components") or {}
-            probability = args.get("probability")
+            # Accept the schema-advertised aliases so an agent can pass
+            # probability_or_distribution / proposed_probability_or_distribution
+            # interchangeably with probability (these were documented but only
+            # `probability` was honoured — the agent had to guess by trial and
+            # error which one the tool actually wanted).
+            probability = next(
+                (
+                    args[name]
+                    for name in (
+                        "probability",
+                        "probability_or_distribution",
+                        "proposed_probability",
+                        "proposed_probability_or_distribution",
+                    )
+                    if args.get(name) is not None
+                ),
+                None,
+            )
             if probability is None and components:
                 probability = weighted_binary_probability(components)
+            if probability is None:
+                return tool_error(
+                    "update_forecast requires a probability (use 'probability', "
+                    "'probability_or_distribution', 'proposed_probability', "
+                    "'proposed_probability_or_distribution', or 'components')",
+                    success=False,
+                )
             calibration_lesson_refs = args.get("calibration_lesson_refs") or []
             calibration_adjustment = args.get("calibration_adjustment") or {}
             if args.get("use_active_lessons"):
@@ -1671,6 +1690,106 @@ def _infer_schedule_scope_ref(args: dict[str, Any]) -> str:
     if args.get("horizon"):
         return str(args["horizon"])
     raise ValueError("schedule scope requires scope_type/scope_ref or question_id/domain/topic/portfolio/horizon")
+
+
+def _show_question_payload(ledger: "ForecastLedger", args: dict[str, Any]) -> str:
+    """Build the show_question response with compact / capped views.
+
+    Controls (all optional, default to the full historic payload):
+
+    - ``view`` = "summary" → return question essentials + current forecast +
+      counts of every related collection (no arrays). Cuts the response by
+      orders of magnitude when the agent only wants to verify state.
+    - ``last_evidence`` / ``last_history`` / ``last_model_runs`` (ints) → cap
+      the corresponding list to its most recent N items.
+    - ``include_history`` / ``include_evidence`` / ``include_model_runs`` /
+      ``include_assumptions`` / ``include_reference_classes`` /
+      ``include_baselines`` / ``include_scores`` / ``include_postmortems``
+      (booleans) → drop those collections entirely.
+    """
+
+    def _flag(name: str, default: bool = True) -> bool:
+        value = args.get(name)
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        return str(value).lower() in {"1", "true", "yes", "on"}
+
+    def _cap(name: str) -> int | None:
+        value = args.get(name)
+        if value is None:
+            return None
+        try:
+            limit = int(value)
+        except (TypeError, ValueError):
+            return None
+        return max(limit, 0) if limit >= 0 else None
+
+    question_id = _required(args, "question_id")
+    question = ledger.get_question(question_id)
+    current = ledger.get_current_snapshot(question_id)
+    view = str(args.get("view") or "full").strip().lower()
+
+    history = ledger.list_snapshots(question_id)
+    evidence = ledger.list_evidence(question_id)
+    assumptions = ledger.list_assumptions(question_id)
+    reference_classes = ledger.list_reference_classes(question_id)
+    model_runs = ledger.list_model_runs(question_id)
+    baselines = ledger.list_baseline_comparisons(question_id)
+    postmortems = ledger.list_postmortems(question_id, include_invalidated=True)
+    scores = [s.__dict__ for s in ledger.list_scores(include_invalidated=True) if s.question_id == question_id]
+
+    counts = {
+        "history": len(history),
+        "evidence": len(evidence),
+        "assumptions": len(assumptions),
+        "reference_classes": len(reference_classes),
+        "model_runs": len(model_runs),
+        "baseline_comparisons": len(baselines),
+        "scores": len(scores),
+        "postmortems": len(postmortems),
+    }
+
+    if view == "summary":
+        return tool_result(
+            success=True,
+            view="summary",
+            question=_question_dict(question),
+            current_forecast=current.__dict__ if current else None,
+            counts=counts,
+        )
+
+    last_evidence = _cap("last_evidence")
+    last_history = _cap("last_history")
+    last_model_runs = _cap("last_model_runs")
+
+    payload: dict[str, Any] = {
+        "question": _question_dict(question),
+        "current_forecast": current.__dict__ if current else None,
+        "counts": counts,
+    }
+    if _flag("include_history"):
+        rows = [s.__dict__ for s in history]
+        payload["forecast_history"] = rows[-last_history:] if last_history is not None else rows
+    if _flag("include_evidence"):
+        rows = [e.__dict__ for e in evidence]
+        payload["evidence"] = rows[-last_evidence:] if last_evidence is not None else rows
+    if _flag("include_assumptions"):
+        payload["assumptions"] = assumptions
+    if _flag("include_reference_classes"):
+        payload["reference_classes"] = reference_classes
+    if _flag("include_model_runs"):
+        rows = model_runs
+        payload["model_runs"] = rows[-last_model_runs:] if last_model_runs is not None else rows
+    if _flag("include_baselines"):
+        payload["baseline_comparisons"] = baselines
+    if _flag("include_scores"):
+        payload["scores"] = scores
+    if _flag("include_postmortems"):
+        payload["postmortems"] = postmortems
+
+    return tool_result(success=True, **payload)
 
 
 def _question_dict(question) -> dict[str, Any]:
