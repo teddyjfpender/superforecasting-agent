@@ -74,10 +74,23 @@ class TestCodeGeneration:
             store = PairingStore()
             code = store.generate_code("telegram", "user1", "Alice")
             pending = store.list_pending("telegram")
+            # Plaintext code is NOT persisted — only a salted hash.
+            raw = store._load_json(store._pending_path("telegram"))
+            assert code not in raw
+            assert all("hash" in e and "salt" in e for e in raw.values())
+            assert all(code not in (e.get("hash", "") + e.get("salt", "")) for e in raw.values())
         assert len(pending) == 1
-        assert pending[0]["code"] == code
+        # list_pending surfaces the hash prefix, not the plaintext code.
+        assert pending[0]["code"] != code
         assert pending[0]["user_id"] == "user1"
         assert pending[0]["user_name"] == "Alice"
+
+    def test_hashed_code_still_approves(self, tmp_path):
+        with patch("gateway.pairing.PAIRING_DIR", tmp_path):
+            store = PairingStore()
+            code = store.generate_code("telegram", "user1", "Alice")
+            result = store.approve_code("telegram", code)
+        assert result == {"user_id": "user1", "user_name": "Alice"}
 
 
 # ---------------------------------------------------------------------------
@@ -300,9 +313,10 @@ class TestCodeExpiry:
             store = PairingStore()
             code = store.generate_code("telegram", "user1")
 
-            # Manually expire the code
+            # Manually expire the single pending entry (now keyed by entry-id).
             pending = store._load_json(store._pending_path("telegram"))
-            pending[code]["created_at"] = time.time() - CODE_TTL_SECONDS - 1
+            for entry in pending.values():
+                entry["created_at"] = time.time() - CODE_TTL_SECONDS - 1
             store._save_json(store._pending_path("telegram"), pending)
 
             # Cleanup happens on next operation
@@ -316,7 +330,8 @@ class TestCodeExpiry:
 
             # Expire it
             pending = store._load_json(store._pending_path("telegram"))
-            pending[code]["created_at"] = time.time() - CODE_TTL_SECONDS - 1
+            for entry in pending.values():
+                entry["created_at"] = time.time() - CODE_TTL_SECONDS - 1
             store._save_json(store._pending_path("telegram"), pending)
 
             result = store.approve_code("telegram", code)

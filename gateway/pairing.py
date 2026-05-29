@@ -19,6 +19,7 @@ Storage: ~/.superforecasting-agent/platforms/pairing/ for new installs;
 legacy ~/.hermes/pairing/ remains readable during migration.
 """
 
+import hashlib
 import json
 import os
 import secrets
@@ -149,6 +150,11 @@ class PairingStore:
 
     # ----- Pending codes -----
 
+    @staticmethod
+    def _hash_code(code: str, salt: bytes) -> str:
+        """Hash a pairing code with the given salt using SHA-256."""
+        return hashlib.sha256(salt + code.encode("utf-8")).hexdigest()
+
     def generate_code(
         self, platform: str, user_id: str, user_name: str = ""
     ) -> Optional[str]:
@@ -159,6 +165,9 @@ class PairingStore:
           - User is rate-limited (too recent request)
           - Max pending codes reached for this platform
           - User/platform is in lockout due to failed attempts
+
+        The code is NOT stored in plaintext. Only a salted SHA-256 hash is
+        persisted, so reading the pending file does not reveal codes.
         """
         with self._lock:
             self._cleanup_expired(platform)
@@ -179,8 +188,14 @@ class PairingStore:
             # Generate cryptographically random code
             code = "".join(secrets.choice(ALPHABET) for _ in range(CODE_LENGTH))
 
-            # Store pending request
-            pending[code] = {
+            # Hash the code with a random salt before storing; key the entry by
+            # a random id (never the code itself) so the pending file never
+            # contains the plaintext code.
+            salt = os.urandom(16)
+            entry_id = secrets.token_hex(8)
+            pending[entry_id] = {
+                "hash": self._hash_code(code, salt),
+                "salt": salt.hex(),
                 "user_id": user_id,
                 "user_name": user_name,
                 "created_at": time.time(),
@@ -214,33 +229,54 @@ class PairingStore:
                 return None
 
             pending = self._load_json(self._pending_path(platform))
-            if code not in pending:
+
+            # Codes are stored hashed; find the entry whose salted hash matches
+            # the provided code using constant-time comparison.
+            matched_key = None
+            matched_entry = None
+            for entry_id, entry in pending.items():
+                try:
+                    salt = bytes.fromhex(entry["salt"])
+                except (KeyError, ValueError):
+                    continue
+                candidate = self._hash_code(code, salt)
+                if secrets.compare_digest(candidate, entry.get("hash", "")):
+                    matched_key = entry_id
+                    matched_entry = entry
+                    break
+
+            if matched_key is None:
                 self._record_failed_attempt(platform)
                 return None
 
-            entry = pending.pop(code)
+            del pending[matched_key]
             self._save_json(self._pending_path(platform), pending)
 
             # Add to approved list
-            self._approve_user(platform, entry["user_id"], entry.get("user_name", ""))
+            self._approve_user(platform, matched_entry["user_id"], matched_entry.get("user_name", ""))
 
             return {
-                "user_id": entry["user_id"],
-                "user_name": entry.get("user_name", ""),
+                "user_id": matched_entry["user_id"],
+                "user_name": matched_entry.get("user_name", ""),
             }
 
     def list_pending(self, platform: str = None) -> list:
-        """List pending pairing requests, optionally filtered by platform."""
+        """List pending pairing requests, optionally filtered by platform.
+
+        Codes are stored hashed — the ``code`` field is the first 8 hex chars
+        of the hash so admins can distinguish entries without revealing the
+        original code.
+        """
         results = []
         platforms = [platform] if platform else self._all_platforms("pending")
         for p in platforms:
             self._cleanup_expired(p)
             pending = self._load_json(self._pending_path(p))
-            for code, info in pending.items():
+            for entry_id, info in pending.items():
                 age_min = int((time.time() - info["created_at"]) / 60)
                 results.append({
                     "platform": p,
-                    "code": code,
+                    "code": (info.get("hash") or entry_id)[:8],
                     "user_id": info["user_id"],
                     "user_name": info.get("user_name", ""),
                     "age_minutes": age_min,
