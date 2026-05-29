@@ -473,9 +473,13 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
                 ),
             })
 
-        # ── Hermes internal path guard ────────────────────────────────
-        # Prevent prompt injection via catalog or hub metadata files.
-        block_error = get_read_block_error(path)
+        # ── Internal/credential path guard ────────────────────────────
+        # Prevent prompt injection via catalog/hub metadata and block
+        # credential/secret stores. Pass the TERMINAL_CWD-resolved path:
+        # get_read_block_error() resolves against the *process* cwd, so a
+        # relative path like "auth.json" under TERMINAL_CWD would otherwise
+        # bypass the deny.
+        block_error = get_read_block_error(str(_resolved))
         if block_error:
             return json.dumps({"error": block_error})
 
