@@ -64,44 +64,17 @@ ENTRY_DELIMITER = "\n§\n"
 # in content that gets injected into the system prompt.
 # ---------------------------------------------------------------------------
 
-_MEMORY_THREAT_PATTERNS = [
-    # Prompt injection
-    (r'ignore\s+(previous|all|above|prior)\s+instructions', "prompt_injection"),
-    (r'you\s+are\s+now\s+', "role_hijack"),
-    (r'do\s+not\s+tell\s+the\s+user', "deception_hide"),
-    (r'system\s+prompt\s+override', "sys_prompt_override"),
-    (r'disregard\s+(your|all|any)\s+(instructions|rules|guidelines)', "disregard_rules"),
-    (r'act\s+as\s+(if|though)\s+you\s+(have\s+no|don\'t\s+have)\s+(restrictions|limits|rules)', "bypass_restrictions"),
-    # Exfiltration via curl/wget with secrets
-    (r'curl\s+[^\n]*\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)', "exfil_curl"),
-    (r'wget\s+[^\n]*\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)', "exfil_wget"),
-    (r'cat\s+[^\n]*(\.env|credentials|\.netrc|\.pgpass|\.npmrc|\.pypirc)', "read_secrets"),
-    # Persistence via shell rc
-    (r'authorized_keys', "ssh_backdoor"),
-    (r'\$HOME/\.ssh|\~/\.ssh', "ssh_access"),
-    (r'\$HOME/\.hermes/\.env|\~/\.hermes/\.env', "hermes_env"),
-]
-
-# Subset of invisible chars for injection detection
-_INVISIBLE_CHARS = {
-    '\u200b', '\u200c', '\u200d', '\u2060', '\ufeff',
-    '\u202a', '\u202b', '\u202c', '\u202d', '\u202e',
-}
+# Patterns live in ``tools/threat_patterns.py`` \u2014 the single source of truth
+# shared with the context-file scanner and the tool-result delimiter system.
+# Memory uses the "strict" scope (broadest pattern set) because memory entries
+# are user-curated AND enter the system prompt as a FROZEN snapshot, so a
+# poisoned entry persists for the whole session until explicitly removed.
+from tools.threat_patterns import first_threat_message as _first_threat_message
 
 
 def _scan_memory_content(content: str) -> Optional[str]:
     """Scan memory content for injection/exfil patterns. Returns error string if blocked."""
-    # Check invisible unicode
-    for char in _INVISIBLE_CHARS:
-        if char in content:
-            return f"Blocked: content contains invisible unicode character U+{ord(char):04X} (possible injection)."
-
-    # Check threat patterns
-    for pattern, pid in _MEMORY_THREAT_PATTERNS:
-        if re.search(pattern, content, re.IGNORECASE):
-            return f"Blocked: content matches threat pattern '{pid}'. Memory entries are injected into the system prompt and must not contain injection or exfiltration payloads."
-
-    return None
+    return _first_threat_message(content, scope="strict")
 
 
 class MemoryStore:
@@ -124,7 +97,18 @@ class MemoryStore:
         self._system_prompt_snapshot: Dict[str, str] = {"memory": "", "user": ""}
 
     def load_from_disk(self):
-        """Load entries from MEMORY.md and USER.md, capture system prompt snapshot."""
+        """Load entries from MEMORY.md and USER.md, capture system prompt snapshot.
+
+        The frozen snapshot is what enters the system prompt. Each entry is
+        scanned for injection/promptware patterns at snapshot-build time — any
+        hit replaces the entry text in the snapshot with a ``[BLOCKED: …]``
+        placeholder, so a poisoned-on-disk memory file (supply chain,
+        compromised tool, sister-session write) cannot inject the system
+        prompt. Live ``memory_entries``/``user_entries`` keep the original so
+        the user can still see and remove poisoned entries via the memory tool.
+        Scanning is deterministic from disk bytes, so the snapshot stays stable
+        for the session (prefix-cache invariant holds).
+        """
         mem_dir = get_memory_dir()
         mem_dir.mkdir(parents=True, exist_ok=True)
 
@@ -135,11 +119,48 @@ class MemoryStore:
         self.memory_entries = list(dict.fromkeys(self.memory_entries))
         self.user_entries = list(dict.fromkeys(self.user_entries))
 
+        # Sanitize entries for the snapshot only; live state keeps raw text.
+        sanitized_memory = self._sanitize_entries_for_snapshot(self.memory_entries, "MEMORY.md")
+        sanitized_user = self._sanitize_entries_for_snapshot(self.user_entries, "USER.md")
+
         # Capture frozen snapshot for system prompt injection
         self._system_prompt_snapshot = {
-            "memory": self._render_block("memory", self.memory_entries),
-            "user": self._render_block("user", self.user_entries),
+            "memory": self._render_block("memory", sanitized_memory),
+            "user": self._render_block("user", sanitized_user),
         }
+
+    @staticmethod
+    def _sanitize_entries_for_snapshot(entries: List[str], filename: str) -> List[str]:
+        """Return ``entries`` with any threat-matching entry replaced by a placeholder.
+
+        Each entry is scanned with the shared threat-pattern library at the
+        ``"strict"`` scope (same as memory writes). On match the entry is
+        replaced in the returned list with a ``[BLOCKED: …]`` placeholder for
+        the snapshot; the original stays in live state for the user to inspect
+        and delete. Empty or already-blocked entries pass through unchanged.
+        """
+        from tools.threat_patterns import scan_for_threats
+
+        sanitized: List[str] = []
+        for entry in entries:
+            if not entry or entry.startswith("[BLOCKED:"):
+                sanitized.append(entry)
+                continue
+            findings = scan_for_threats(entry, scope="strict")
+            if findings:
+                logger.warning(
+                    "Memory entry from %s blocked at load time: %s",
+                    filename, ", ".join(findings),
+                )
+                sanitized.append(
+                    f"[BLOCKED: {filename} entry contained threat pattern(s): "
+                    f"{', '.join(findings)}. Removed from system prompt; use "
+                    f"memory(action=read) to inspect and memory(action=remove) "
+                    f"to delete the original.]"
+                )
+            else:
+                sanitized.append(entry)
+        return sanitized
 
     @staticmethod
     @contextmanager
