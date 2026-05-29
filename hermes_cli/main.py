@@ -5945,6 +5945,17 @@ def cmd_doctor(args):
     run_doctor(args)
 
 
+def cmd_security(args):
+    """Dispatch `security <subcmd>` (currently just `audit`)."""
+    sub = getattr(args, "security_command", None)
+    if sub in ("audit", None):
+        from hermes_cli.security_audit import cmd_security_audit
+
+        sys.exit(int(cmd_security_audit(args) or 0))
+    print(f"unknown security subcommand: {sub}", file=sys.stderr)
+    sys.exit(2)
+
+
 def cmd_dump(args):
     """Dump setup summary for support/debugging."""
     from hermes_cli.dump import run_dump
@@ -9618,6 +9629,7 @@ def _coalesce_session_name_args(argv: list) -> list:
         "honcho",
         "claw",
         "plugins",
+        "security",
         "acp",
         "webhook",
         "memory",
@@ -10458,7 +10470,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "model", "pairing", "plugins", "postinstall", "profile", "proxy",
         "send", "sessions", "setup",
         "skills", "slack", "status", "tools", "uninstall", "update",
-        "version", "webhook", "whatsapp", "chat", "desk",
+        "version", "webhook", "whatsapp", "chat", "desk", "security",
         # Help-ish invocations — plugin commands not being listed in
         # top-level --help is an acceptable trade-off for skipping an
         # expensive eager import of every bundled plugin module.
@@ -11513,6 +11525,40 @@ def main():
         ),
     )
     doctor_parser.set_defaults(func=cmd_doctor)
+
+    # =========================================================================
+    # security command — on-demand supply-chain audit (OSV.dev)
+    # =========================================================================
+    security_parser = subparsers.add_parser(
+        "security",
+        help="Supply-chain audit (OSV.dev) for venv, plugins, and MCP servers",
+        description=(
+            "On-demand vulnerability scan against OSV.dev. Covers the agent "
+            "venv (installed PyPI dists), Python deps declared by plugins under "
+            "~/.superforecasting-agent/plugins/, and pinned npx/uvx MCP servers "
+            "in config.yaml. Does NOT scan globally-installed packages or "
+            "editor/browser extensions."
+        ),
+    )
+    security_subparsers = security_parser.add_subparsers(
+        dest="security_command",
+        metavar="<subcommand>",
+    )
+    audit_parser = security_subparsers.add_parser(
+        "audit",
+        help="Run a one-shot supply-chain audit",
+        description="Query OSV.dev for known vulnerabilities in installed components.",
+    )
+    audit_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    audit_parser.add_argument(
+        "--fail-on", default="critical", choices=["low", "moderate", "high", "critical"],
+        help="Exit non-zero when any finding meets this severity (default: critical)",
+    )
+    audit_parser.add_argument("--skip-venv", action="store_true", help="Skip scanning the agent Python venv")
+    audit_parser.add_argument("--skip-plugins", action="store_true", help="Skip scanning plugin requirements files")
+    audit_parser.add_argument("--skip-mcp", action="store_true", help="Skip scanning pinned MCP servers in config.yaml")
+    audit_parser.set_defaults(func=cmd_security)
+    security_parser.set_defaults(func=cmd_security)
 
     # =========================================================================
     # dump command
