@@ -420,10 +420,14 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
         <Text bold color={t.color.primary}>
           FORECASTS
         </Text>
+        <Text color={t.color.muted}>{'   '}</Text>
+        <Text color={t.color.text}>{desk.active}</Text>
+        <Text color={t.color.muted}> active · </Text>
+        <Text color={desk.closing > 0 ? t.color.warn : t.color.label}>{desk.closing}</Text>
+        <Text color={t.color.muted}> closing soon · </Text>
+        <Text color={desk.alerts > 0 ? t.color.statusBad : t.color.label}>{desk.alerts}</Text>
         <Text color={t.color.muted}>
-          {'   '}
-          {desk.active} active · {desk.closing} closing soon · {desk.alerts} open alert
-          {desk.alerts === 1 ? '' : 's'}
+          {` open alert${desk.alerts === 1 ? '' : 's'}`}
           {desk.generatedAt ? ` · as of ${shortDate(desk.generatedAt)}` : ''}
         </Text>
       </Text>
@@ -629,7 +633,7 @@ function SectionTitle({ children, t }: { children: string; t: Theme }) {
 function KV({ k, t, v }: { k: string; t: Theme; v: string }) {
   return (
     <Text wrap="truncate-end">
-      <Text color={t.color.muted}>{k.padEnd(13)}</Text>
+      <Text color={t.color.label}>{k.padEnd(13)}</Text>
       <Text color={t.color.text}>{v}</Text>
     </Text>
   )
@@ -667,43 +671,73 @@ export function ForecastDetail({ item, t, width }: { item: ForecastWorkspaceItem
       <Text bold color={t.color.primary} wrap="truncate-end">
         {item.title ?? item.id}
       </Text>
-      <Text color={t.color.muted} wrap="truncate-end">
-        {[item.domain || null, item.impact ? `impact ${item.impact}` : null, item.status || null, topics || null]
-          .filter(Boolean)
-          .join(' · ') || item.id}
+      <Text wrap="truncate-end">
+        {item.domain ? <Text color={t.color.label}>{item.domain}</Text> : null}
+        {item.impact ? (
+          <Text color={t.color.muted}>
+            {item.domain ? ' · ' : ''}impact <Text color={t.color.warn}>{item.impact}</Text>
+          </Text>
+        ) : null}
+        {item.status ? (
+          <Text color={item.status === 'active' ? t.color.ok : t.color.label}> · {item.status}</Text>
+        ) : null}
+        {topics ? <Text color={t.color.muted}> · {topics}</Text> : null}
       </Text>
 
       <Box marginTop={1}>
         <Text wrap="truncate-end">
-          <Text bold color={t.color.text}>
+          <Text bold color={t.color.primary}>
             {isDistribution ? '' : 'P '}
             {headlineLabel(item)}
           </Text>
-          <Text color={t.color.muted}>{`  conf ${finite(item.confidence) ? item.confidence.toFixed(2) : '—'}  `}</Text>
-          <Text color={deltaColor}>{deltaLabel(item)}</Text>
-          <Text color={t.color.muted}>{`  as-of ${shortDate(item.as_of)}${item.freshness ? ` (${item.freshness})` : ''}`}</Text>
+          <Text color={t.color.muted}>{'  conf '}</Text>
+          <Text color={t.color.label}>{finite(item.confidence) ? item.confidence.toFixed(2) : '—'}</Text>
+          <Text color={t.color.muted}>{'  '}</Text>
+          <Text bold color={deltaColor}>
+            {deltaLabel(item)}
+          </Text>
+          <Text color={t.color.muted}>{'  as-of '}</Text>
+          <Text color={t.color.label}>{`${shortDate(item.as_of)}${item.freshness ? ` (${item.freshness})` : ''}`}</Text>
         </Text>
       </Box>
       {isDistribution && dist && (finite(dist.median) || dist.ci90) ? (
-        <Text color={t.color.muted} wrap="truncate-end">
-          {[
-            finite(dist.median) ? `median ${trimNum(dist.median)}${unit}` : null,
-            dist.ci50 ? `50% [${trimNum(dist.ci50[0]!)}, ${trimNum(dist.ci50[1]!)}]` : null,
-            dist.ci90 ? `90% [${trimNum(dist.ci90[0]!)}, ${trimNum(dist.ci90[1]!)}]` : null
-          ]
-            .filter(Boolean)
-            .join(' · ')}
+        <Text wrap="truncate-end">
+          {finite(dist.median) ? (
+            <Text>
+              <Text color={t.color.muted}>median </Text>
+              <Text color={t.color.text}>
+                {trimNum(dist.median)}
+                {unit}
+              </Text>
+            </Text>
+          ) : null}
+          {dist.ci50 ? (
+            <Text>
+              <Text color={t.color.muted}>{'  ·  50% '}</Text>
+              <Text color={t.color.text}>{`[${trimNum(dist.ci50[0]!)}, ${trimNum(dist.ci50[1]!)}]`}</Text>
+            </Text>
+          ) : null}
+          {dist.ci90 ? (
+            <Text>
+              <Text color={t.color.muted}>{'  ·  90% '}</Text>
+              <Text color={t.color.text}>{`[${trimNum(dist.ci90[0]!)}, ${trimNum(dist.ci90[1]!)}]`}</Text>
+            </Text>
+          ) : null}
         </Text>
       ) : null}
-      <Text color={t.color.muted} wrap="truncate-end">
-        {`close ${shortDate(item.close_time)} · ev ${item.evidence_count ?? 0} · ${item.snapshot_count ?? 0} update${
-          (item.snapshot_count ?? 0) === 1 ? '' : 's'
-        }${item.method ? ` · ${item.method}` : ''}`}
+      <Text wrap="truncate-end">
+        <Text color={t.color.muted}>close </Text>
+        <Text color={t.color.label}>{shortDate(item.close_time)}</Text>
+        <Text color={t.color.muted}>{'  ·  ev '}</Text>
+        <Text color={t.color.label}>{item.evidence_count ?? 0}</Text>
+        <Text color={t.color.muted}>{'  ·  '}</Text>
+        <Text color={t.color.label}>{`${item.snapshot_count ?? 0} update${(item.snapshot_count ?? 0) === 1 ? '' : 's'}`}</Text>
+        {item.method ? <Text color={t.color.muted}>{`  ·  ${item.method}`}</Text> : null}
       </Text>
 
       {item.resolution_criteria ? (
         <Box marginTop={1}>
-          <Text color={t.color.muted} wrap="wrap">
+          <Text color={t.color.text} wrap="wrap">
             {truncate(item.resolution_criteria, 220)}
           </Text>
         </Box>
@@ -717,7 +751,7 @@ export function ForecastDetail({ item, t, width }: { item: ForecastWorkspaceItem
               {row}
             </Text>
           ))}
-          <Text color={t.color.muted} wrap="truncate-end">
+          <Text color={t.color.label} wrap="truncate-end">
             {`  ${shortDate(item.history?.[0]?.as_of)} → ${shortDate(item.as_of)}  ${
               isDistribution ? '● mean  ░ 90% interval' : panel ? '● forecast  ░ panel spread / confidence band' : '● forecast  ░ confidence band'
             }`}
@@ -783,8 +817,8 @@ export function ForecastDetail({ item, t, width }: { item: ForecastWorkspaceItem
                     : t.color.muted
               return (
                 <Text key={evidence.id ?? i} wrap="truncate-end">
-                  <Text color={t.color.muted}>{shortDate(evidence.available_at)} </Text>
-                  <Text color={stanceColor}>{(evidence.stance ?? 'context').slice(0, 3)} </Text>
+                  <Text color={t.color.label}>{shortDate(evidence.available_at)} </Text>
+                  <Text bold color={stanceColor}>{(evidence.stance ?? 'context').slice(0, 3)} </Text>
                   <Text color={t.color.text}>{truncate(evidence.claim || evidence.summary || evidence.source || '—', 64)}</Text>
                 </Text>
               )
@@ -825,26 +859,27 @@ function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePanel; t: T
     <>
       <SectionTitle t={t}>{`panel (${panel.estimates?.length ?? 0} perspectives)`}</SectionTitle>
       <Text wrap="truncate-end">
-        <Text bold color={t.color.text}>
-          aggregate {pct(panel.aggregate_probability)}
+        <Text color={t.color.muted}>aggregate </Text>
+        <Text bold color={t.color.primary}>
+          {pct(panel.aggregate_probability)}
         </Text>
         <Text color={t.color.muted}>{`  ${panel.aggregation_method ?? 'pool'} · trim ${panel.trim ?? 0}`}</Text>
       </Text>
       {whisker ? (
         <Text wrap="truncate-end">
-          <Text color={t.color.muted}>{`${pct(panel.spread?.min)} `}</Text>
+          <Text color={t.color.label}>{`${pct(panel.spread?.min)} `}</Text>
           <Text color={t.color.accent}>{whisker}</Text>
-          <Text color={t.color.muted}>{` ${pct(panel.spread?.max)}`}</Text>
+          <Text color={t.color.label}>{` ${pct(panel.spread?.max)}`}</Text>
         </Text>
       ) : null}
       {(panel.estimates ?? []).map((estimate, i) => (
         <Text key={estimate.perspective ?? i} wrap="truncate-end">
-          <Text color={estimate.trimmed ? t.color.muted : t.color.label}>
+          <Text bold={!estimate.trimmed} color={estimate.trimmed ? t.color.muted : t.color.label}>
             {estimate.trimmed ? '× ' : '  '}
             {(estimate.perspective ?? '—').padEnd(10)}
           </Text>
           <Text color={t.color.text}>{pct(estimate.probability).padStart(5)}</Text>
-          {estimate.crux ? <Text color={t.color.muted}>{`  ${truncate(estimate.crux, 40)}`}</Text> : null}
+          {estimate.crux ? <Text color={t.color.label}>{`  ${truncate(estimate.crux, 40)}`}</Text> : null}
         </Text>
       ))}
     </>
@@ -865,9 +900,9 @@ function DecisionCard({ item, t }: { item: ForecastWorkspaceItem; t: Theme }) {
       <KV k="action" t={t} v={item.action_threshold || '—'} />
       {(item.update_triggers ?? []).slice(0, 4).map((trigger, i) => (
         <Text color={t.color.text} key={i} wrap="truncate-end">
-          <Text color={t.color.muted}>{i === 0 ? 'triggers'.padEnd(13) : ''.padEnd(13)}</Text>
+          <Text color={t.color.label}>{(i === 0 ? 'triggers' : '').padEnd(13)}</Text>
           {trigger.mechanism ?? '—'}
-          {trigger.threshold ? <Text color={t.color.muted}>{` [${trigger.threshold}]`}</Text> : null}
+          {trigger.threshold ? <Text color={t.color.label}>{` [${trigger.threshold}]`}</Text> : null}
         </Text>
       ))}
       {issues.length ? (
