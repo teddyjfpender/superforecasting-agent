@@ -561,10 +561,12 @@ export interface ForecastWorkspaceItem {
   decision_owner?: null | string
   decision_readiness_issues?: string[]
   delta?: null | number
+  distribution?: ForecastWorkspaceDistribution | null
   domain?: null | string
   evidence?: ForecastWorkspaceEvidence[]
   evidence_count?: number
   freshness?: string
+  headline_kind?: 'distribution' | 'probability'
   headline_probability?: null | number
   history?: ForecastWorkspaceHistoryPoint[]
   id?: string
@@ -591,8 +593,19 @@ export interface ForecastWorkspaceItem {
   update_triggers?: ForecastWorkspaceTrigger[]
 }
 
+export interface ForecastWorkspaceDistribution {
+  ci50?: number[] | null
+  ci90?: number[] | null
+  mean?: null | number
+  median?: null | number
+  pmf?: Array<{ label: string; probability: number }> | null
+  sd?: null | number
+}
+
 export interface ForecastWorkspaceHistoryPoint {
   as_of?: string
+  band_high?: null | number
+  band_low?: null | number
   confidence?: null | number
   created_at?: string
   forecast_id?: string

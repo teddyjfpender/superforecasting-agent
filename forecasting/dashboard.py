@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -324,6 +325,12 @@ def build_workspace_payload(
         if closing:
             closing_soon += 1
 
+        outcome_type = question.outcome_space.type
+        distribution = _distribution_view(probability) if current else None
+        # A distribution forecast tracks a continuous central tendency (a mean
+        # in the outcome's units); binary/categorical track a probability.
+        headline_kind = "distribution" if (outcome_type == "distribution" and distribution) else "probability"
+
         forecasts.append(
             {
                 "id": question.id,
@@ -335,15 +342,19 @@ def build_workspace_payload(
                 "close_time": question.close_time,
                 "resolution_time": question.resolution_time,
                 "resolution_criteria": question.resolution_criteria,
-                "outcome_type": question.outcome_space.type,
+                "outcome_type": outcome_type,
                 "outcome_choices": list(question.outcome_space.choices or []),
                 "units": question.outcome_space.units,
+                "headline_kind": headline_kind,
                 "probability": probability,
                 "probability_display": format_probability(probability) if current else "-",
                 "headline_probability": _headline_numeric(probability) if current else None,
-                "delta": probability_delta(
+                "distribution": distribution,
+                # Movement of the headline value (probability for binary/categorical,
+                # mean for distribution) since the previous snapshot, in headline units.
+                "delta": _headline_delta(
                     previous.probability_or_distribution if previous else None,
-                    probability,
+                    probability if current else None,
                 ),
                 "confidence": current.confidence if current else None,
                 "as_of": current.as_of if current else None,
@@ -362,7 +373,10 @@ def build_workspace_payload(
                 "snapshot_count": len(snapshots),
                 "freshness": format_freshness(current.as_of if current else None, now=now),
                 "closing_soon": closing,
-                "history": [_workspace_history_point(item) for item in snapshots[-history_limit:]],
+                "history": [
+                    _workspace_history_point(item, is_distribution=headline_kind == "distribution")
+                    for item in snapshots[-history_limit:]
+                ],
                 "evidence": [_workspace_evidence(item) for item in evidence_items[-evidence_limit:]],
                 "panel": _workspace_panel(panel_runs[0]) if panel_runs else None,
                 "scores": _workspace_scores(question_scores) if question_scores else None,
@@ -378,6 +392,16 @@ def build_workspace_payload(
         "closing_soon_count": closing_soon,
         "forecasts": forecasts,
     }
+
+
+def _headline_delta(previous: Any, current: Any) -> float | None:
+    """Change in the headline value (probability or mean) between two snapshots."""
+
+    prev = _headline_numeric(previous)
+    curr = _headline_numeric(current)
+    if prev is None or curr is None:
+        return None
+    return curr - prev
 
 
 def _finite_number(value: Any) -> float | None:
@@ -423,20 +447,147 @@ def _headline_numeric(payload: Any) -> float | None:
     return None
 
 
-def _workspace_history_point(snapshot: Any) -> dict[str, Any]:
+_MOMENT_MEAN_KEYS = ("mean", "mu", "expected")
+_MOMENT_SD_KEYS = ("sd", "sigma", "std", "stdev")
+_NON_PMF_KEYS = {
+    "mean",
+    "mu",
+    "expected",
+    "median",
+    "mode",
+    "sd",
+    "sigma",
+    "std",
+    "stdev",
+    "variance",
+    "var",
+    "skew",
+    "skewness",
+    "kurtosis",
+    "value",
+}
+_Z90 = 1.6449  # standard-normal quantile for a 90% central interval
+_Z50 = 0.6745  # ...and 50%
+
+
+def _distribution_view(payload: Any) -> dict[str, Any] | None:
+    """Split a distribution payload into moments / intervals / bucket PMF.
+
+    A distribution forecast (e.g. CPI YoY) stores a continuous summary
+    (``mean``/``median``/``sd``, ``interval_50_*``/``interval_90_*``,
+    ``equivalent_normal_*``) *and* a discrete bucket PMF
+    (``bucket_le_4_0``…``bucket_ge_4_4``) in one dict, mixing probability and
+    outcome-unit values. This separates them so the TUI can chart the mean in
+    its units, draw the PMF as its own histogram, and show the moments as a
+    stat block — instead of plotting everything on one nonsensical scale.
+
+    Returns ``None`` for scalars / non-dict payloads (binary forecasts) or
+    dicts with no recoverable mean (plain categorical PMFs are handled
+    elsewhere).
+    """
+
+    if not isinstance(payload, dict):
+        return None
+
+    moments: dict[str, float] = {}
+    intervals: dict[str, list[float | None]] = {}
+    equivalent: dict[str, float] = {}
+    pmf: dict[str, float] = {}
+
+    for raw_key, raw_value in payload.items():
+        value = _finite_number(raw_value)
+        if value is None:
+            continue
+        key = str(raw_key).lower()
+
+        interval = re.match(r"^(?:interval|ci|hdi|pi)[_-]?(\d{1,2})[_-]?(low|lo|l|high|hi|h)$", key)
+        if interval:
+            pctile = interval.group(1)
+            side = 0 if interval.group(2) in ("low", "lo", "l") else 1
+            intervals.setdefault(pctile, [None, None])[side] = value
+            continue
+        if key.startswith("equivalent_normal_"):
+            equivalent[key[len("equivalent_normal_") :]] = value
+            continue
+        if key in _MOMENT_MEAN_KEYS:
+            moments.setdefault("mean", value)
+            continue
+        if key == "median":
+            moments["median"] = value
+            continue
+        if key in _MOMENT_SD_KEYS:
+            moments.setdefault("sd", value)
+            continue
+        if key in _NON_PMF_KEYS:
+            continue
+        # Remaining numeric entries that look like probability mass.
+        if 0.0 <= value <= 1.0:
+            pmf[str(raw_key)] = value
+
+    mean = moments.get("mean")
+    if mean is None:
+        mean = equivalent.get("mean")
+    sd = moments.get("sd")
+    if sd is None:
+        sd = equivalent.get("sd")
+    median = moments.get("median")
+
+    pmf_rows: list[dict[str, Any]] | None = None
+    if len(pmf) >= 2:
+        total = sum(pmf.values())
+        if 0.8 <= total <= 1.2:  # a genuine probability mass, not stray fields
+            pmf_rows = [
+                {"label": label, "probability": value}
+                for label, value in sorted(pmf.items(), key=lambda kv: kv[1], reverse=True)
+            ]
+
+    if mean is None and pmf_rows is None:
+        return None
+
+    def _interval(pctile: str, z: float) -> list[float] | None:
+        existing = intervals.get(pctile)
+        if existing and existing[0] is not None and existing[1] is not None:
+            return [existing[0], existing[1]]
+        if mean is not None and sd is not None:
+            return [mean - z * sd, mean + z * sd]
+        return None
+
     return {
+        "mean": mean,
+        "median": median,
+        "sd": sd,
+        "ci50": _interval("50", _Z50),
+        "ci90": _interval("90", _Z90),
+        "pmf": pmf_rows,
+    }
+
+
+def _workspace_history_point(snapshot: Any, *, is_distribution: bool = False) -> dict[str, Any]:
+    payload = snapshot.probability_or_distribution
+    point: dict[str, Any] = {
         "forecast_id": snapshot.forecast_id,
         "as_of": snapshot.as_of,
         "created_at": snapshot.created_at,
-        "probability": snapshot.probability_or_distribution,
-        "headline_probability": _headline_numeric(snapshot.probability_or_distribution),
+        "probability": payload,
+        "headline_probability": _headline_numeric(payload),
         "confidence": snapshot.confidence,
         "method": snapshot.method,
         "forecast_origin": snapshot.forecast_origin,
         "rationale": truncate(snapshot.rationale or "", 160),
         "reasons_up_count": len(snapshot.reasons_up or []),
         "reasons_down_count": len(snapshot.reasons_down or []),
+        "band_low": None,
+        "band_high": None,
     }
+    if is_distribution:
+        view = _distribution_view(payload)
+        # Band tracks the snapshot's OWN 90% interval (in outcome units) — never
+        # a panel probability spread, which lives on a different scale.
+        if view and view.get("ci90"):
+            point["band_low"], point["band_high"] = view["ci90"]
+        if view and view.get("mean") is not None:
+            point["headline_probability"] = view["mean"]
+    return point
 
 
 def _workspace_evidence(item: Any) -> dict[str, Any]:

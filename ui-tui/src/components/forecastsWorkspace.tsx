@@ -44,12 +44,35 @@ interface ForecastsWorkspaceProps {
 
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 
+const trimNum = (value: number): string => {
+  const fixed = value.toFixed(2)
+  return fixed.replace(/\.?0+$/, '') || '0'
+}
+
+const unitSuffix = (units: null | string | undefined): string => {
+  const u = (units ?? '').toLowerCase()
+  if (u.includes('percent') || u.includes('%')) {
+    return '%'
+  }
+  return ''
+}
+
 /**
- * Headline label for a forecast. Probabilities ([0,1]) render as a percent;
- * numeric/distribution outcomes (a mean like 3.1) keep their raw display so we
- * never show a misleading "310%".
+ * Headline label for a forecast.
+ *   probability/categorical → a percent ("59%")
+ *   distribution            → a continuous summary ("μ 4.23% · σ 0.10")
+ * so a CPI mean never renders as a misleading "310%" or a raw JSON dump.
  */
 export const headlineLabel = (item: ForecastWorkspaceItem): string => {
+  const dist = item.distribution
+  if (item.headline_kind === 'distribution' && dist && finite(dist.mean)) {
+    const suffix = unitSuffix(item.units)
+    const parts = [`μ ${trimNum(dist.mean)}${suffix}`]
+    if (finite(dist.sd)) {
+      parts.push(`σ ${trimNum(dist.sd)}`)
+    }
+    return parts.join(' · ')
+  }
   const headline = item.headline_probability
   if (finite(headline) && headline >= 0 && headline <= 1) {
     return pct(headline)
@@ -58,6 +81,30 @@ export const headlineLabel = (item: ForecastWorkspaceItem): string => {
     return item.probability_display ?? String(headline)
   }
   return item.probability_display ?? '—'
+}
+
+/** Compact one-token headline for the master list (e.g. "59%" or "μ4.23%"). */
+const headlineCompact = (item: ForecastWorkspaceItem): string => {
+  if (item.headline_kind === 'distribution' && item.distribution && finite(item.distribution.mean)) {
+    return `μ${trimNum(item.distribution.mean)}${unitSuffix(item.units)}`
+  }
+  const headline = item.headline_probability
+  if (finite(headline) && headline >= 0 && headline <= 1) {
+    return pct(headline)
+  }
+  return finite(headline) ? String(headline) : '—'
+}
+
+/** Delta in headline units: percent-points for probabilities, outcome units (Δμ) for distributions. */
+const deltaLabel = (item: ForecastWorkspaceItem): string => {
+  const d = item.delta
+  if (!finite(d) || Math.abs(d) < (item.headline_kind === 'distribution' ? 1e-6 : 0.005)) {
+    return '· flat'
+  }
+  if (item.headline_kind === 'distribution') {
+    return `${deltaGlyph(d)} Δμ ${d > 0 ? '+' : ''}${trimNum(d)}${unitSuffix(item.units)}`
+  }
+  return pctDelta(d)
 }
 
 const truncate = (value: string, max: number): string =>
@@ -110,13 +157,24 @@ const bandForPoint = (
 
 export const historyToBandPoints = (item: ForecastWorkspaceItem): BandPoint[] => {
   const history = item.history ?? []
+  const isDistribution = item.headline_kind === 'distribution'
   return history.map((point, index) => {
     const y = point.headline_probability
     if (!finite(y)) {
       return { y: null }
     }
+    // Distribution snapshots carry their own 90% interval (in outcome units);
+    // use it directly and never the panel's probability spread.
+    if (finite(point.band_low) && finite(point.band_high)) {
+      return { hi: point.band_high, lo: point.band_low, y }
+    }
     const isLatest = index === history.length - 1
-    const band = bandForPoint(y, point.confidence ?? item.confidence, isLatest, item.panel)
+    const band = bandForPoint(
+      y,
+      point.confidence ?? item.confidence,
+      !isDistribution && isLatest,
+      isDistribution ? null : item.panel
+    )
     return { hi: band.hi ?? null, lo: band.lo ?? null, y }
   })
 }
@@ -522,10 +580,20 @@ function ForecastListRow({
   const delta = item.delta
   const glyph = deltaGlyph(delta)
   const deltaColor = !finite(delta) || Math.abs(delta) < 0.005 ? t.color.muted : delta > 0 ? t.color.ok : t.color.error
-  const spark = levelSparkline((item.history ?? []).slice(-8).map(point => point.headline_probability ?? null))
-  const probText = headlineLabel(item)
-  // Reserve: marker(2) prob(5) gap(1) glyph(1) gap(1) spark(8) → ~18; rest for title.
-  const titleW = Math.max(10, width - 20)
+  const sparkValues = (item.history ?? []).slice(-8).map(point => point.headline_probability ?? null)
+  // Probabilities use the fixed 0..1 scale; distribution means (e.g. ~4.2%)
+  // are scaled to their own data range so the trend is visible, not clamped flat.
+  const sparkOpts =
+    item.headline_kind === 'distribution'
+      ? (() => {
+          const finiteVals = sparkValues.filter((v): v is number => finite(v))
+          return finiteVals.length ? { yMax: Math.max(...finiteVals), yMin: Math.min(...finiteVals) } : {}
+        })()
+      : {}
+  const spark = levelSparkline(sparkValues, sparkOpts)
+  const probText = headlineCompact(item)
+  // Reserve: marker(2) prob(6) gap(1) glyph(1) gap(1) spark(8) → ~20; rest for title.
+  const titleW = Math.max(10, width - 21)
   const title = truncate(item.title ?? item.id ?? 'untitled', titleW).padEnd(titleW)
   const alertBadge = (item.open_alert_count ?? 0) > 0 ? `!${item.open_alert_count}` : ''
   return (
@@ -537,7 +605,7 @@ function ForecastListRow({
         <Text bold={active} color={active ? t.color.text : t.color.label}>
           {title}
         </Text>
-        <Text color={t.color.text}> {probText.padStart(5)}</Text>
+        <Text color={t.color.text}> {probText.padStart(6)}</Text>
         <Text color={deltaColor}> {glyph}</Text>
         <Text color={t.color.border}> {spark}</Text>
         {alertBadge ? <Text color={t.color.statusBad}> {alertBadge}</Text> : null}
@@ -579,7 +647,18 @@ export function ForecastDetail({ item, t, width }: { item: ForecastWorkspaceItem
     () => (hasSeries ? bandChart(bandPoints, { height: 9, width: Math.min(56, Math.max(1, width - 1)), ...scale }) : null),
     [bandPoints, hasSeries, scale, width]
   )
-  const bars = useMemo(() => distributionBars(item.probability), [item.probability])
+  // Prefer the server-classified PMF (buckets only, moments/intervals stripped);
+  // fall back to the raw dict for plain categorical forecasts.
+  const bars = useMemo(() => {
+    const pmf = item.distribution?.pmf
+    if (pmf && pmf.length) {
+      return pmf.map(row => ({ label: row.label, value: row.probability }))
+    }
+    return distributionBars(item.probability)
+  }, [item.distribution, item.probability])
+  const dist = item.distribution
+  const isDistribution = item.headline_kind === 'distribution'
+  const unit = unitSuffix(item.units)
   const panel = item.panel ?? null
   const topics = (item.topics ?? []).join(', ')
 
@@ -597,13 +676,25 @@ export function ForecastDetail({ item, t, width }: { item: ForecastWorkspaceItem
       <Box marginTop={1}>
         <Text wrap="truncate-end">
           <Text bold color={t.color.text}>
-            P {headlineLabel(item)}
+            {isDistribution ? '' : 'P '}
+            {headlineLabel(item)}
           </Text>
           <Text color={t.color.muted}>{`  conf ${finite(item.confidence) ? item.confidence.toFixed(2) : '—'}  `}</Text>
-          <Text color={deltaColor}>{pctDelta(delta)}</Text>
+          <Text color={deltaColor}>{deltaLabel(item)}</Text>
           <Text color={t.color.muted}>{`  as-of ${shortDate(item.as_of)}${item.freshness ? ` (${item.freshness})` : ''}`}</Text>
         </Text>
       </Box>
+      {isDistribution && dist && (finite(dist.median) || dist.ci90) ? (
+        <Text color={t.color.muted} wrap="truncate-end">
+          {[
+            finite(dist.median) ? `median ${trimNum(dist.median)}${unit}` : null,
+            dist.ci50 ? `50% [${trimNum(dist.ci50[0]!)}, ${trimNum(dist.ci50[1]!)}]` : null,
+            dist.ci90 ? `90% [${trimNum(dist.ci90[0]!)}, ${trimNum(dist.ci90[1]!)}]` : null
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </Text>
+      ) : null}
       <Text color={t.color.muted} wrap="truncate-end">
         {`close ${shortDate(item.close_time)} · ev ${item.evidence_count ?? 0} · ${item.snapshot_count ?? 0} update${
           (item.snapshot_count ?? 0) === 1 ? '' : 's'
@@ -620,15 +711,15 @@ export function ForecastDetail({ item, t, width }: { item: ForecastWorkspaceItem
 
       {chart ? (
         <>
-          <SectionTitle t={t}>probability over time</SectionTitle>
+          <SectionTitle t={t}>{isDistribution ? `mean over time${unit ? ` (${unit})` : ''}` : 'probability over time'}</SectionTitle>
           {chart.rows.map((row, i) => (
             <Text color={t.color.accent} key={i}>
               {row}
             </Text>
           ))}
           <Text color={t.color.muted} wrap="truncate-end">
-            {`  ${shortDate(item.history?.[0]?.as_of)} → ${shortDate(item.as_of)}  ● forecast  ░ ${
-              panel ? 'panel spread / confidence band' : 'confidence band'
+            {`  ${shortDate(item.history?.[0]?.as_of)} → ${shortDate(item.as_of)}  ${
+              isDistribution ? '● mean  ░ 90% interval' : panel ? '● forecast  ░ panel spread / confidence band' : '● forecast  ░ confidence band'
             }`}
           </Text>
         </>
@@ -636,7 +727,7 @@ export function ForecastDetail({ item, t, width }: { item: ForecastWorkspaceItem
 
       {bars ? (
         <>
-          <SectionTitle t={t}>outcome distribution</SectionTitle>
+          <SectionTitle t={t}>{isDistribution ? 'outcome buckets (PMF)' : 'outcome distribution'}</SectionTitle>
           {histogram(bars, {
             // Adapt label + bar widths to the pane so a narrow detail column
             // never forces the bars off-screen.

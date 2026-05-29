@@ -6,8 +6,9 @@ import json
 
 import pytest
 
-from forecasting.dashboard import _headline_numeric, build_workspace_payload
+from forecasting.dashboard import _distribution_view, _headline_numeric, build_workspace_payload
 from forecasting.ledger import ForecastLedger
+from forecasting.models import OutcomeSpace
 
 
 def _ledger(tmp_path) -> ForecastLedger:
@@ -111,6 +112,121 @@ def test_headline_numeric_keeps_finite_out_of_range_numeric():
     assert _headline_numeric(3.1) == 3.1
     assert _headline_numeric({"mean": 3.1, "sd": 0.4}) == 3.1
     assert _headline_numeric(-2.0) == -2.0
+
+
+# ── _distribution_view (CPI-style payloads) ──────────────────────────────────
+
+CPI_PAYLOAD = {
+    "bucket_4_1": 0.1735,
+    "bucket_4_2": 0.3789,
+    "bucket_4_3": 0.2984,
+    "bucket_ge_4_4": 0.1197,
+    "bucket_le_4_0": 0.0296,
+    "equivalent_normal_mean": 4.23195,
+    "equivalent_normal_sd": 0.09819,
+    "interval_50_high": 4.297,
+    "interval_50_low": 4.166,
+    "interval_90_high": 4.398,
+    "interval_90_low": 4.071,
+    "mean": 4.23195,
+    "median": 4.231,
+    "sd": 0.09819,
+}
+
+
+def test_distribution_view_splits_moments_intervals_and_pmf():
+    view = _distribution_view(CPI_PAYLOAD)
+    assert view is not None
+    assert view["mean"] == pytest.approx(4.23195)
+    assert view["median"] == pytest.approx(4.231)
+    assert view["sd"] == pytest.approx(0.09819)
+    assert view["ci50"] == [pytest.approx(4.166), pytest.approx(4.297)]
+    assert view["ci90"] == [pytest.approx(4.071), pytest.approx(4.398)]
+    # PMF contains ONLY the bucket mass, sorted descending, no moments/intervals
+    labels = [row["label"] for row in view["pmf"]]
+    assert labels[0] == "bucket_4_2"
+    assert set(labels) == {"bucket_le_4_0", "bucket_4_1", "bucket_4_2", "bucket_4_3", "bucket_ge_4_4"}
+    assert "mean" not in labels and "interval_90_high" not in labels
+    assert sum(row["probability"] for row in view["pmf"]) == pytest.approx(1.0, abs=0.01)
+
+
+def test_distribution_view_derives_intervals_from_sd_when_absent():
+    view = _distribution_view({"mean": 4.0, "sd": 0.1})
+    assert view is not None
+    # 90% ~ mean ± 1.6449 sd ; 50% ~ mean ± 0.6745 sd
+    assert view["ci90"][0] == pytest.approx(4.0 - 1.6449 * 0.1, abs=1e-3)
+    assert view["ci90"][1] == pytest.approx(4.0 + 1.6449 * 0.1, abs=1e-3)
+    assert view["pmf"] is None
+
+
+def test_distribution_view_uses_equivalent_normal_as_mean_sd_fallback():
+    view = _distribution_view({"equivalent_normal_mean": 4.2, "equivalent_normal_sd": 0.1, "bucket_a": 0.4, "bucket_b": 0.6})
+    assert view["mean"] == pytest.approx(4.2)
+    assert view["sd"] == pytest.approx(0.1)
+    assert view["pmf"] is not None and len(view["pmf"]) == 2
+
+
+def test_distribution_view_categorical_pmf_has_no_mean():
+    view = _distribution_view({"Republican": 0.59, "Democratic": 0.4, "Other": 0.01})
+    assert view is not None
+    assert view["mean"] is None
+    assert [row["label"] for row in view["pmf"]][0] == "Republican"
+
+
+def test_distribution_view_returns_none_for_scalar():
+    assert _distribution_view(0.52) is None
+    assert _distribution_view(None) is None
+
+
+def test_distribution_view_ignores_stray_non_pmf_numbers():
+    # values that don't sum to ~1 are not treated as a PMF
+    view = _distribution_view({"mean": 4.0, "sd": 0.1, "stray": 0.2})
+    assert view["pmf"] is None
+
+
+def test_workspace_payload_marks_distribution_kind_and_band(tmp_path):
+    ledger = _ledger(tmp_path)
+    q = ledger.create_question(
+        title="May 2026 CPI-U YoY",
+        resolution_criteria="BLS first-published May 2026 CPI-U all-items 12-month percent change.",
+        outcome_space=OutcomeSpace(type="distribution", units="percent year-over-year", bounds=[-5, 15]),
+    )
+    ledger.create_snapshot(
+        question_id=q.id,
+        probability_or_distribution=CPI_PAYLOAD,
+        rationale="bucket mixture",
+        as_of="2026-05-28T00:00:00Z",
+        confidence=0.84,
+    )
+    forecast = build_workspace_payload(ledger=ledger)["forecasts"][0]
+    assert forecast["headline_kind"] == "distribution"
+    assert forecast["headline_probability"] == pytest.approx(4.23195)
+    assert forecast["distribution"]["pmf"] is not None
+    # the history band must be the distribution's own 90% interval, NOT a probability
+    last = forecast["history"][-1]
+    assert last["band_low"] == pytest.approx(4.071)
+    assert last["band_high"] == pytest.approx(4.398)
+    assert last["headline_probability"] == pytest.approx(4.23195)
+
+
+def test_workspace_payload_categorical_stays_probability_kind(tmp_path):
+    ledger = _ledger(tmp_path)
+    q = ledger.create_question(
+        title="Texas Senate winner",
+        resolution_criteria="Certified 2026 Texas US Senate winner by party.",
+        outcome_space=OutcomeSpace(type="categorical", choices=["Republican", "Democratic", "Other"]),
+    )
+    ledger.create_snapshot(
+        question_id=q.id,
+        probability_or_distribution={"Republican": 0.59, "Democratic": 0.4, "Other": 0.01},
+        rationale="polls",
+        as_of="2026-05-28T00:00:00Z",
+    )
+    forecast = build_workspace_payload(ledger=ledger)["forecasts"][0]
+    assert forecast["headline_kind"] == "probability"
+    assert forecast["headline_probability"] == pytest.approx(0.59)
+    # categorical history has no distribution band (falls back to confidence/panel in the UI)
+    assert forecast["history"][-1]["band_low"] is None
 
 
 # ── build_workspace_payload ──────────────────────────────────────────────────

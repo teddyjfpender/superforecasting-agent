@@ -30,13 +30,26 @@ const texasItem = (): ForecastWorkspaceItem => ({
       stance: 'increases'
     }
   ],
+  distribution: {
+    ci50: null,
+    ci90: null,
+    mean: null,
+    median: null,
+    pmf: [
+      { label: 'Republican candidate', probability: 0.52 },
+      { label: 'Democratic candidate', probability: 0.47 },
+      { label: 'Other', probability: 0.01 }
+    ],
+    sd: null
+  },
   evidence_count: 1,
   freshness: 'fresh today',
+  headline_kind: 'probability',
   headline_probability: 0.52,
   history: [
-    { as_of: '2026-05-01T00:00:00Z', confidence: 0.6, headline_probability: 0.55 },
-    { as_of: '2026-05-15T00:00:00Z', confidence: 0.62, headline_probability: 0.5 },
-    { as_of: '2026-05-29T00:00:00Z', confidence: 0.65, headline_probability: 0.52 }
+    { as_of: '2026-05-01T00:00:00Z', band_low: null, confidence: 0.6, headline_probability: 0.55 },
+    { as_of: '2026-05-15T00:00:00Z', band_low: null, confidence: 0.62, headline_probability: 0.5 },
+    { as_of: '2026-05-29T00:00:00Z', band_low: null, confidence: 0.65, headline_probability: 0.52 }
   ],
   id: 'fq_texas',
   impact: 'high',
@@ -69,15 +82,44 @@ const texasItem = (): ForecastWorkspaceItem => ({
 const cpiItem = (): ForecastWorkspaceItem => ({
   as_of: '2026-05-28T00:00:00Z',
   decision_readiness_issues: ['missing decision_owner'],
-  headline_probability: 0.45,
-  history: [{ as_of: '2026-05-28T00:00:00Z', headline_probability: 0.45 }],
+  delta: 0.006,
+  distribution: {
+    ci50: [4.166, 4.297],
+    ci90: [4.071, 4.398],
+    mean: 4.232,
+    median: 4.231,
+    pmf: [
+      { label: 'bucket_4_2', probability: 0.3789 },
+      { label: 'bucket_4_3', probability: 0.2984 },
+      { label: 'bucket_4_1', probability: 0.1735 },
+      { label: 'bucket_ge_4_4', probability: 0.1197 },
+      { label: 'bucket_le_4_0', probability: 0.0296 }
+    ],
+    sd: 0.098
+  },
+  headline_kind: 'distribution',
+  headline_probability: 4.232,
+  history: [
+    { as_of: '2026-05-26T00:00:00Z', band_high: 4.6, band_low: 3.5, headline_probability: 4.05 },
+    { as_of: '2026-05-27T00:00:00Z', band_high: 4.5, band_low: 3.9, headline_probability: 4.2 },
+    { as_of: '2026-05-28T00:00:00Z', band_high: 4.398, band_low: 4.071, headline_probability: 4.232 }
+  ],
   id: 'fq_cpi',
-  outcome_type: 'categorical',
-  probability: { '3_0_3_2': 0.45, gt_3_2: 0.3, lt_3_0: 0.25 },
-  probability_display: '3_0_3_2 0.45 (+2)',
-  snapshot_count: 1,
+  outcome_type: 'distribution',
+  probability: {
+    bucket_4_1: 0.1735,
+    bucket_4_2: 0.3789,
+    bucket_4_3: 0.2984,
+    bucket_ge_4_4: 0.1197,
+    bucket_le_4_0: 0.0296,
+    mean: 4.232,
+    sd: 0.098
+  },
+  probability_display: '{"mean": 4.232, ...}',
+  snapshot_count: 10,
   status: 'active',
-  title: 'May 2026 CPI-U YoY bucket'
+  title: 'May 2026 CPI-U YoY',
+  units: 'percent year-over-year'
 })
 
 const fixture = (): ForecastWorkspaceResponse => ({
@@ -240,18 +282,34 @@ describe('ForecastsWorkspace pure transforms', () => {
     expect(chartScale([])).toEqual({ yMax: 1, yMin: 0 })
   })
 
-  it('headlineLabel renders percent for probabilities and raw for numeric outcomes', async () => {
+  it('headlineLabel renders percent for probabilities and μ/σ for distributions', async () => {
     const { headlineLabel } = await import('../components/forecastsWorkspace.js')
-    expect(headlineLabel({ headline_probability: 0.52 } as ForecastWorkspaceItem)).toBe('52%')
-    // numeric/distribution outcome (e.g. CPI mean) must NOT render as "310%"
-    expect(headlineLabel({ headline_probability: 3.1, probability_display: 'μ 3.10' } as ForecastWorkspaceItem)).toBe('μ 3.10')
+    expect(headlineLabel({ headline_kind: 'probability', headline_probability: 0.52 } as ForecastWorkspaceItem)).toBe('52%')
+    // distribution outcome (e.g. CPI mean) must NOT render as "423%" or raw JSON
+    expect(
+      headlineLabel({
+        headline_kind: 'distribution',
+        distribution: { mean: 4.232, sd: 0.098 },
+        units: 'percent year-over-year'
+      } as ForecastWorkspaceItem)
+    ).toBe('μ 4.23% · σ 0.1')
     expect(headlineLabel({ probability_display: '0.520' } as ForecastWorkspaceItem)).toBe('0.520')
     expect(headlineLabel({} as ForecastWorkspaceItem)).toBe('—')
+  })
+
+  it('historyToBandPoints uses the distribution band, not the panel spread', async () => {
+    const { historyToBandPoints } = await import('../components/forecastsWorkspace.js')
+    const points = historyToBandPoints(cpiItem())
+    // last point band is the snapshot's own 90% interval (CPI percent units)
+    expect(points[2]!.y).toBeCloseTo(4.232, 3)
+    expect(points[2]!.lo).toBeCloseTo(4.071, 3)
+    expect(points[2]!.hi).toBeCloseTo(4.398, 3)
   })
 
   it('historyToBandPoints marks non-numeric points as null y', async () => {
     const { historyToBandPoints } = await import('../components/forecastsWorkspace.js')
     const points = historyToBandPoints({
+      headline_kind: 'probability',
       history: [{ headline_probability: null }, { headline_probability: 0.5, confidence: 0.5 }]
     } as ForecastWorkspaceItem)
     expect(points[0]!.y).toBeNull()
@@ -290,13 +348,29 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('recent evidence')
   })
 
-  it('renders an outcome-distribution histogram for categorical forecasts', async () => {
+  it('renders a distribution forecast as μ/σ, mean-over-time, PMF buckets, and CI — not raw JSON', async () => {
     const text = await renderDetail(cpiItem())
-    expect(text).toContain('outcome distribution')
-    expect(text).toContain('3_0_3_2')
-    expect(text).toContain('█') // histogram bar fill
-    // categorical forecast with no decision owner surfaces the readiness gap
+    // headline is the distribution summary, NOT a "423%" or a JSON dump
+    expect(text).toContain('μ 4.23%')
+    expect(text).toContain('σ 0.1')
+    expect(text).not.toContain('{"mean"')
+    expect(text).not.toContain('423%')
+    // continuous summary line with intervals
+    expect(text).toContain('90% [4.07, 4.4]')
+    // time-series is labelled as the mean, with a 90% interval band
+    expect(text).toContain('mean over time')
+    expect(text).toContain('90% interval')
+    // PMF section shows only the buckets (no mean/interval rows mixed in)
+    expect(text).toContain('outcome buckets (PMF)')
+    expect(text).toContain('bucket_4_2')
+    expect(text).not.toContain('interval_90_high')
+    expect(text).toContain('█')
     expect(text).toContain('missing decision_owner')
+  })
+
+  it('master list shows a compact μ label for distribution forecasts', async () => {
+    const text = await renderWorkspace(120, fixture())
+    expect(text).toContain('μ4.23%')
   })
 
   it('shows an empty state when there are no active forecasts', async () => {
