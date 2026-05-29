@@ -148,6 +148,43 @@ def test_symlink_to_auth_json_blocked(fake_home, tmp_path):
     assert err is not None and "credential store" in err
 
 
+@pytest.mark.parametrize(
+    "name", [".env", ".env.local", ".env.development", ".env.production", ".env.test", ".env.staging", ".envrc"]
+)
+def test_project_local_env_blocked_anywhere(tmp_path, name):
+    """Secret-bearing .env variants are blocked anywhere on disk, not just under home."""
+    from agent.file_safety import get_read_block_error
+
+    project = tmp_path / "some-project"
+    project.mkdir()
+    f = project / name
+    f.write_text("API_KEY=secret", encoding="utf-8")
+    err = get_read_block_error(str(f))
+    assert err is not None
+    assert "environment file" in err
+
+
+def test_env_example_remains_readable(tmp_path):
+    from agent.file_safety import get_read_block_error
+
+    project = tmp_path / "p"
+    project.mkdir()
+    f = project / ".env.example"
+    f.write_text("API_KEY=", encoding="utf-8")
+    assert get_read_block_error(str(f)) is None
+
+
+def test_lookalike_env_name_not_blocked(tmp_path):
+    """A file merely containing 'env' in its name is not a secret store."""
+    from agent.file_safety import get_read_block_error
+
+    project = tmp_path / "p"
+    project.mkdir()
+    f = project / "environment.md"
+    f.write_text("docs", encoding="utf-8")
+    assert get_read_block_error(str(f)) is None
+
+
 def test_read_file_tool_blocks_relative_path_under_terminal_cwd(fake_home, tmp_path, monkeypatch):
     """A relative path like "auth.json" resolved by read_file_tool against
     TERMINAL_CWD == home must still be blocked, even though the Python process

@@ -114,10 +114,24 @@ def is_write_denied(path: str) -> bool:
     return False
 
 
+# Common secret-bearing project-local environment file basenames. Blocked
+# because .env files routinely hold API keys, DB passwords, and other
+# credentials for the user's own projects. ``.env.example`` stays readable.
+_BLOCKED_PROJECT_ENV_BASENAMES: set[str] = {
+    ".env",
+    ".env.local",
+    ".env.development",
+    ".env.production",
+    ".env.test",
+    ".env.staging",
+    ".envrc",
+}
+
+
 def get_read_block_error(path: str) -> Optional[str]:
     """Return an error message when a read targets a denied agent path.
 
-    Two categories are blocked:
+    Three categories are blocked:
 
       * Internal cache files under ``<home>/skills/.hub`` — readable metadata
         that an attacker could use as a prompt-injection carrier.
@@ -127,6 +141,10 @@ def get_read_block_error(path: str) -> Optional[str]:
         ``mcp-tokens/``. These hold plaintext provider keys, OAuth tokens,
         and HMAC secrets the agent never needs to read directly — provider
         tools / gateway adapters consume them through internal channels.
+      * Project-local environment files anywhere on disk (``.env``,
+        ``.env.local``, ``.env.production``, ``.envrc``, …). These routinely
+        hold the user's own project credentials; ``.env.example`` is the
+        documented-shape substitute.
 
     **This is NOT a security boundary.** The terminal tool runs as the same
     OS user with shell access; the agent can still ``cat`` the file. The
@@ -210,6 +228,16 @@ def get_read_block_error(path: str) -> Optional[str]:
             f"Access denied: {path} is an agent MCP token file and cannot be "
             "read directly. (Defense-in-depth — not a security boundary; the "
             "terminal tool can still bypass.)"
+        )
+
+    # Project-local secret-bearing .env files anywhere on disk. The agent
+    # rarely needs raw .env contents; .env.example is the substitute.
+    if resolved.name in _BLOCKED_PROJECT_ENV_BASENAMES:
+        return (
+            f"Access denied: {path} is a secret-bearing environment file and "
+            "cannot be read to prevent credential leakage. If you need the "
+            "file structure, read .env.example instead. (Defense-in-depth — "
+            "not a security boundary; the terminal tool can still bypass.)"
         )
 
     return None
