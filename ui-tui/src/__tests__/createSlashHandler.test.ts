@@ -90,85 +90,53 @@ describe('createSlashHandler', () => {
     })
   })
 
-  it('routes bare /forecast to the native forecast dashboard RPC', async () => {
-    const rpc = vi.fn((method: string) => {
-      if (method === 'forecast.dashboard') {
-        return Promise.resolve({
-          output: 'ACTIVE FORECASTS',
-          summary: {
-            active_count: 1,
-            open_alert_count: 0,
-            product: 'Superforecasting Agent',
-            questions: [
-              {
-                close_time: '2026-09-30T00:00:00Z',
-                baseline_count: 1,
-                confidence: 0.61,
-                delta: -0.04,
-                evidence_count: 3,
-                id: 'fq_default001',
-                open_alert_count: 0,
-                open_assumption_count: 1,
-                probability: 0.21,
-                as_of: '2026-08-01T00:00:00Z',
-                stale_assumption_count: 0,
-                title: 'Will company Y default?'
-              }
-            ]
-          }
-        })
-      }
-
-      return Promise.resolve({})
-    })
+  it('opens the interactive forecasts workspace for bare /forecast', () => {
+    const rpc = vi.fn(() => Promise.resolve({}))
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/forecast')).toBe(true)
-    expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 20 })
-    expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
-    await vi.waitFor(() => {
-      expect(getUiState().forecastDeskStatus).toBe('desk 1 active / asm 1/0')
-      expect(getUiState().forecastDeskRailSections).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ title: 'Book' }),
-          expect.objectContaining({
-            rows: expect.arrayContaining([
-              [
-                'default0 P=0.210 Δ=-0.040',
-                'active  as-of 2026-08-01  close 2026-09-30  conf 0.61  Will company Y default?',
-                '/questions fq_default001'
-              ]
-            ]),
-            title: 'Watchlist'
-          })
-        ])
-      )
-      expect(ctx.transcript.panel).toHaveBeenCalledWith(
-        'Forecast Desk',
-        expect.arrayContaining([
-          expect.objectContaining({ title: 'Desk' }),
-          expect.objectContaining({
-            rows: [
-              [
-                'default0  P=0.210  Δ=-0.040',
-                'as-of 2026-08-01  close 2026-09-30  conf 0.61  ev 3  base 1  refs 0/0  asm 1/0  active  Will company Y default?',
-                '/questions fq_default001'
-              ]
-            ],
-            title: 'Active Forecasts'
-          })
-        ])
-      )
-    })
+    expect(getOverlayState().forecasts).toBe(true)
+    expect(getOverlayState().forecastsInitialId).toBeNull()
+    // Opening the workspace must NOT fire the legacy dashboard dump.
+    expect(rpc).not.toHaveBeenCalledWith('forecast.dashboard', expect.anything())
   })
 
-  it('routes numeric /forecast args to the dashboard limit', async () => {
-    const rpc = vi.fn(() => Promise.resolve({ output: 'ACTIVE FORECASTS' }))
+  it('opens the workspace for the /forecasts and /desk aliases', () => {
+    const ctx1 = buildCtx()
+    expect(createSlashHandler(ctx1)('/forecasts')).toBe(true)
+    expect(getOverlayState().forecasts).toBe(true)
+
+    resetOverlayState()
+
+    const ctx2 = buildCtx()
+    expect(createSlashHandler(ctx2)('/desk')).toBe(true)
+    expect(getOverlayState().forecasts).toBe(true)
+  })
+
+  it('opens the workspace for a numeric /forecast arg', () => {
+    const rpc = vi.fn(() => Promise.resolve({}))
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/forecast 5')).toBe(true)
-    expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 5 })
-    expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
+    expect(getOverlayState().forecasts).toBe(true)
+    expect(rpc).not.toHaveBeenCalledWith('forecast.dashboard', expect.anything())
+  })
+
+  it('opens the workspace focused on a forecast id', () => {
+    const ctx = buildCtx()
+
+    expect(createSlashHandler(ctx)('/forecast fq_default001')).toBe(true)
+    expect(getOverlayState().forecasts).toBe(true)
+    expect(getOverlayState().forecastsInitialId).toBe('fq_default001')
+  })
+
+  it('routes /forecast status to the legacy dashboard dump', () => {
+    const rpc = vi.fn(() => Promise.resolve({ output: 'ACTIVE FORECASTS' }))
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/forecast status')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 20 })
+    expect(getOverlayState().forecasts).toBe(false)
   })
 
   it('renders /questions as a numbered forecast summary without requiring ids', async () => {

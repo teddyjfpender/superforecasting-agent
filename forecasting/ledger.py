@@ -5479,6 +5479,7 @@ class ForecastLedger:
                     "calibration_lessons": calibration_lessons,
                     "domain_error_profiles": domain_error_profiles,
                     "corrections": corrections,
+                    "panel_runs": self.list_panel_runs(question_id, limit=20),
                 }
             )
         if fmt != "markdown":

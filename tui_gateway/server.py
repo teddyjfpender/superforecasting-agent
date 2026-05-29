@@ -206,6 +206,7 @@ _LONG_HANDLERS = frozenset(
         "browser.manage",
         "cli.exec",
         "forecast.command",
+        "forecast.workspace",
         "session.branch",
         "session.compress",
         "session.resume",
@@ -2556,6 +2557,18 @@ def _(rid, params: dict) -> dict:
         limit = int(params.get("limit") or 20)
         summary = build_dashboard_summary(limit=limit)
         return _ok(rid, {"summary": summary, "output": render_dashboard_text(summary)})
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("forecast.workspace")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.dashboard import build_workspace_payload
+
+        limit = int(params.get("limit") or 50)
+        payload = build_workspace_payload(limit=limit)
+        return _ok(rid, payload)
     except Exception as e:
         return _err(rid, 5008, str(e))
 

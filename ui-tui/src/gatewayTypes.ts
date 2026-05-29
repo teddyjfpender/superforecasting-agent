@@ -540,6 +540,129 @@ export interface ForecastQuestionPacketAssumption {
   text?: string
 }
 
+export interface ForecastWorkspaceResponse {
+  active_count?: number
+  closing_soon_count?: number
+  forecasts?: ForecastWorkspaceItem[]
+  generated_at?: string
+  open_alert_count?: number
+  output?: string
+  product?: string
+}
+
+export interface ForecastWorkspaceItem {
+  action_threshold?: null | string
+  as_of?: null | string
+  change_my_mind?: string[]
+  close_time?: null | string
+  closing_soon?: boolean
+  confidence?: null | number
+  decision_deadline?: null | string
+  decision_owner?: null | string
+  decision_readiness_issues?: string[]
+  delta?: null | number
+  domain?: null | string
+  evidence?: ForecastWorkspaceEvidence[]
+  evidence_count?: number
+  freshness?: string
+  headline_probability?: null | number
+  history?: ForecastWorkspaceHistoryPoint[]
+  id?: string
+  impact?: null | string
+  method?: null | string
+  open_alert_count?: number
+  outcome_choices?: unknown[]
+  outcome_type?: string
+  panel?: ForecastWorkspacePanel | null
+  probability?: null | number | Record<string, unknown> | string
+  probability_display?: string
+  rationale?: null | string
+  reasons_down?: string[]
+  reasons_up?: string[]
+  resolution?: ForecastWorkspaceResolution | null
+  resolution_criteria?: string
+  resolution_time?: null | string
+  scores?: ForecastWorkspaceScores | null
+  snapshot_count?: number
+  status?: string
+  title?: string
+  topics?: string[]
+  units?: null | string
+  update_triggers?: ForecastWorkspaceTrigger[]
+}
+
+export interface ForecastWorkspaceHistoryPoint {
+  as_of?: string
+  confidence?: null | number
+  created_at?: string
+  forecast_id?: string
+  forecast_origin?: string
+  headline_probability?: null | number
+  method?: null | string
+  probability?: null | number | Record<string, unknown> | string
+  rationale?: string
+  reasons_down_count?: number
+  reasons_up_count?: number
+}
+
+export interface ForecastWorkspaceEvidence {
+  available_at?: string
+  claim?: string
+  claim_type?: string
+  id?: string
+  published_at?: null | string
+  relevance_rating?: null | number
+  reliability_rating?: null | number
+  source?: string
+  source_type?: string
+  stance?: string
+  summary?: string
+}
+
+export interface ForecastWorkspacePanel {
+  aggregate_probability?: null | number
+  aggregation_method?: string
+  created_at?: string
+  estimates?: ForecastWorkspacePanelEstimate[]
+  id?: string
+  spread?: Record<string, number>
+  trim?: number
+}
+
+export interface ForecastWorkspacePanelEstimate {
+  confidence_high?: null | number
+  confidence_low?: null | number
+  crux?: null | string
+  perspective?: string
+  probability?: null | number
+  trimmed?: boolean
+  weight?: null | number
+}
+
+export interface ForecastWorkspaceScores {
+  count?: number
+  last_bucket?: null | string
+  last_scored_at?: null | string
+  mean_brier?: null | number
+  mean_log_score?: null | number
+}
+
+export interface ForecastWorkspaceResolution {
+  outcome?: unknown
+  resolution_status?: string
+  resolved_at?: string
+  scoreable?: boolean
+}
+
+export interface ForecastWorkspaceTrigger {
+  action?: string
+  mechanism?: string
+  notes?: string
+  source_ref?: string
+  threshold?: string
+  window?: string
+}
+
 export interface ForecastQuestionPacketReferenceClass {
   base_rate?: null | number
   id?: string

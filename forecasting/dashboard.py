@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timezone
 from typing import Any
 
@@ -13,7 +14,7 @@ from forecasting.backtesting import (
 )
 from forecasting.branding import PRODUCT_NAME
 from forecasting.ledger import ForecastLedger
-from forecasting.models import LedgerNotFoundError
+from forecasting.models import LedgerNotFoundError, utc_now_iso
 
 
 def build_dashboard_summary(
@@ -268,6 +269,235 @@ def build_dashboard_summary(
         "review_queue": review_queue,
         "alerts": alert_rows,
         "recent_backtests": recent_backtests,
+    }
+
+
+def build_workspace_payload(
+    *,
+    ledger: ForecastLedger | None = None,
+    limit: int = 50,
+    history_limit: int = 80,
+    evidence_limit: int = 12,
+    now: str | None = None,
+) -> dict[str, Any]:
+    """Assemble the navigable forecasts-workspace payload in one round trip.
+
+    Returns the list of active forecasts, each bundled with the data the
+    detail pane needs — probability time-series (for charting), recent
+    evidence, latest multi-perspective panel run, score summary, decision
+    card, and structured reasoning — so the TUI can move the highlight with
+    arrow keys and render detail instantly without a per-row refetch.
+    """
+
+    ledger = ledger or ForecastLedger()
+    questions = ledger.list_questions(status="active", limit=limit)
+
+    alerts = ledger.list_alerts(unresolved_only=True)
+    alert_counts: dict[str, int] = {}
+    for alert in alerts:
+        if alert.scope_type == "question" and alert.scope_ref:
+            alert_counts[alert.scope_ref] = alert_counts.get(alert.scope_ref, 0) + 1
+
+    scores_by_question: dict[str, list[Any]] = {}
+    for score in ledger.list_scores():
+        scores_by_question.setdefault(score.question_id, []).append(score)
+
+    closing_ids = {
+        row["question"].id
+        for row in ledger.review_questions(stale=False, now=now)
+        if any(is_close_review_reason(reason) for reason in (row.get("reasons") or []))
+    }
+
+    closing_soon = 0
+    forecasts: list[dict[str, Any]] = []
+    for question in questions:
+        snapshots = ledger.list_snapshots(question.id)
+        current = snapshots[-1] if snapshots else None
+        previous = snapshots[-2] if len(snapshots) >= 2 else None
+        evidence_items = ledger.list_evidence(question.id)
+        panel_runs = ledger.list_panel_runs(question.id, limit=1)
+        resolution = ledger.get_latest_resolution(question.id)
+        question_scores = scores_by_question.get(question.id, [])
+
+        probability = current.probability_or_distribution if current else None
+        closing = question.id in closing_ids
+        if closing:
+            closing_soon += 1
+
+        forecasts.append(
+            {
+                "id": question.id,
+                "title": question.title,
+                "status": question.status,
+                "domain": question.domain,
+                "topics": list(question.topics or []),
+                "impact": question.impact,
+                "close_time": question.close_time,
+                "resolution_time": question.resolution_time,
+                "resolution_criteria": question.resolution_criteria,
+                "outcome_type": question.outcome_space.type,
+                "outcome_choices": list(question.outcome_space.choices or []),
+                "units": question.outcome_space.units,
+                "probability": probability,
+                "probability_display": format_probability(probability) if current else "-",
+                "headline_probability": _headline_numeric(probability) if current else None,
+                "delta": probability_delta(
+                    previous.probability_or_distribution if previous else None,
+                    probability,
+                ),
+                "confidence": current.confidence if current else None,
+                "as_of": current.as_of if current else None,
+                "method": current.method if current else None,
+                "rationale": current.rationale if current else None,
+                "reasons_up": list(current.reasons_up) if current else [],
+                "reasons_down": list(current.reasons_down) if current else [],
+                "change_my_mind": list(current.change_my_mind) if current else [],
+                "decision_owner": question.decision_owner,
+                "decision_deadline": question.decision_deadline,
+                "action_threshold": question.action_threshold,
+                "update_triggers": list(question.update_triggers or []),
+                "decision_readiness_issues": ledger.decision_readiness_issues(question),
+                "evidence_count": len(evidence_items),
+                "open_alert_count": alert_counts.get(question.id, 0),
+                "snapshot_count": len(snapshots),
+                "freshness": format_freshness(current.as_of if current else None, now=now),
+                "closing_soon": closing,
+                "history": [_workspace_history_point(item) for item in snapshots[-history_limit:]],
+                "evidence": [_workspace_evidence(item) for item in evidence_items[-evidence_limit:]],
+                "panel": _workspace_panel(panel_runs[0]) if panel_runs else None,
+                "scores": _workspace_scores(question_scores) if question_scores else None,
+                "resolution": _workspace_resolution(resolution) if resolution else None,
+            }
+        )
+
+    return {
+        "product": PRODUCT_NAME,
+        "generated_at": utc_now_iso(),
+        "active_count": len(questions),
+        "open_alert_count": len(alerts),
+        "closing_soon_count": closing_soon,
+        "forecasts": forecasts,
+    }
+
+
+def _finite_number(value: Any) -> float | None:
+    """Return ``value`` as a finite float, or ``None`` for bool/NaN/Inf/non-numeric.
+
+    Non-finite values (NaN, ±Inf) are rejected because they corrupt the
+    time-series chart. Finite values outside [0, 1] are kept on purpose:
+    numeric / distribution outcomes (e.g. a CPI mean of 3.1) legitimately
+    exceed the probability range.
+    """
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def _headline_numeric(payload: Any) -> float | None:
+    """Pick one finite numeric value per forecast for time-series charting.
+
+    Binary/numeric forecasts are a bare float. Probability dicts collapse to
+    the max outcome probability; ``{mean: ...}`` distributions to the mean.
+    Returns ``None`` when nothing finite can be extracted.
+    """
+
+    scalar = _finite_number(payload)
+    if scalar is not None:
+        return scalar
+    if isinstance(payload, dict):
+        for key in ("mean", "mu", "expected", "value"):
+            candidate = _finite_number(payload.get(key))
+            if candidate is not None:
+                return candidate
+        numeric = [
+            number
+            for value in payload.values()
+            if (number := _finite_number(value)) is not None
+        ]
+        if numeric and all(0.0 <= value <= 1.0 for value in numeric):
+            return max(numeric)
+        if numeric:
+            return numeric[0]
+    return None
+
+
+def _workspace_history_point(snapshot: Any) -> dict[str, Any]:
+    return {
+        "forecast_id": snapshot.forecast_id,
+        "as_of": snapshot.as_of,
+        "created_at": snapshot.created_at,
+        "probability": snapshot.probability_or_distribution,
+        "headline_probability": _headline_numeric(snapshot.probability_or_distribution),
+        "confidence": snapshot.confidence,
+        "method": snapshot.method,
+        "forecast_origin": snapshot.forecast_origin,
+        "rationale": truncate(snapshot.rationale or "", 160),
+        "reasons_up_count": len(snapshot.reasons_up or []),
+        "reasons_down_count": len(snapshot.reasons_down or []),
+    }
+
+
+def _workspace_evidence(item: Any) -> dict[str, Any]:
+    return {
+        "id": item.id,
+        "available_at": item.available_at,
+        "published_at": item.published_at,
+        "source": item.source_url or item.source_name or item.source_type,
+        "source_type": item.source_type,
+        "claim": item.claim,
+        "summary": item.summary,
+        "stance": item.stance,
+        "claim_type": item.claim_type,
+        "reliability_rating": item.reliability_rating,
+        "relevance_rating": item.relevance_rating,
+    }
+
+
+def _workspace_panel(run: dict[str, Any]) -> dict[str, Any]:
+    estimates = [
+        {
+            "perspective": row.get("perspective"),
+            "probability": row.get("probability"),
+            "weight": row.get("weight"),
+            "trimmed": bool(row.get("trimmed")),
+            "crux": row.get("crux"),
+            "confidence_low": row.get("confidence_low"),
+            "confidence_high": row.get("confidence_high"),
+        }
+        for row in (run.get("estimates") or [])
+    ]
+    return {
+        "id": run.get("id"),
+        "created_at": run.get("created_at"),
+        "aggregation_method": run.get("aggregation_method"),
+        "trim": run.get("trim"),
+        "aggregate_probability": run.get("aggregate_probability"),
+        "spread": run.get("spread_summary") or {},
+        "estimates": estimates,
+    }
+
+
+def _workspace_scores(scores: list[Any]) -> dict[str, Any]:
+    briers = [s.brier_score for s in scores if isinstance(s.brier_score, (int, float))]
+    logs = [s.log_score for s in scores if isinstance(s.log_score, (int, float))]
+    latest = scores[0] if scores else None
+    return {
+        "count": len(scores),
+        "mean_brier": (sum(briers) / len(briers)) if briers else None,
+        "mean_log_score": (sum(logs) / len(logs)) if logs else None,
+        "last_bucket": latest.calibration_bucket if latest else None,
+        "last_scored_at": latest.scored_at if latest else None,
+    }
+
+
+def _workspace_resolution(resolution: Any) -> dict[str, Any]:
+    return {
+        "outcome": resolution.outcome,
+        "resolution_status": resolution.resolution_status,
+        "resolved_at": resolution.resolved_at,
+        "scoreable": resolution.scoreable,
     }
 
 

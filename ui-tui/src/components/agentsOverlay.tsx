@@ -140,7 +140,7 @@ const diffMetricLine = (name: string, a: number, b: number, fmt: (n: number) => 
 // ── Sub-components ───────────────────────────────────────────────────
 
 /** Polled on parent `tick` so accordions can resize the thumb without a scroll event. */
-function OverlayScrollbar({
+export function OverlayScrollbar({
   scrollRef,
   t,
   tick

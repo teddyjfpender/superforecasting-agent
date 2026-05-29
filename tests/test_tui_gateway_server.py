@@ -173,6 +173,37 @@ def test_forecast_question_returns_exported_packet(monkeypatch):
     assert resp["result"]["packet"]["question"]["title"] == "Will CPI surprise?"
 
 
+def test_forecast_workspace_returns_payload(monkeypatch):
+    import forecasting.dashboard as dashboard_module
+
+    def fake_build_workspace_payload(*, limit: int = 50):
+        assert limit == 25
+        return {
+            "product": "Superforecasting Agent",
+            "active_count": 1,
+            "open_alert_count": 0,
+            "closing_soon_count": 0,
+            "forecasts": [{"id": "fq_x", "title": "Will it?", "history": []}],
+        }
+
+    monkeypatch.setattr(dashboard_module, "build_workspace_payload", fake_build_workspace_payload)
+
+    resp = server.handle_request(
+        {
+            "id": "1",
+            "method": "forecast.workspace",
+            "params": {"limit": 25},
+        }
+    )
+
+    assert resp["result"]["active_count"] == 1
+    assert resp["result"]["forecasts"][0]["id"] == "fq_x"
+
+
+def test_forecast_workspace_is_routed_to_thread_pool():
+    assert "forecast.workspace" in server._LONG_HANDLERS
+
+
 def test_dispatch_rejects_non_object_request():
     resp = server.dispatch([])
 

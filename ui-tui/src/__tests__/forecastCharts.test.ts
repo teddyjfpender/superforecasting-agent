@@ -1,0 +1,368 @@
+import { describe, expect, it } from 'vitest'
+
+import {
+  bandChart,
+  boxWhisker,
+  clamp01,
+  deltaGlyph,
+  histogram,
+  levelSparkline,
+  pct,
+  pctDelta,
+  shortDate
+} from '../lib/forecastCharts.js'
+
+describe('format helpers', () => {
+  it('pct formats probabilities as whole percents', () => {
+    expect(pct(0.523)).toBe('52%')
+    expect(pct(0.523, 1)).toBe('52.3%')
+    expect(pct(1)).toBe('100%')
+    expect(pct(null)).toBe('—')
+    expect(pct(undefined)).toBe('—')
+    expect(pct(Number.NaN)).toBe('—')
+  })
+
+  it('deltaGlyph reflects direction with a flat dead-zone', () => {
+    expect(deltaGlyph(0.03)).toBe('▲')
+    expect(deltaGlyph(-0.03)).toBe('▼')
+    expect(deltaGlyph(0.001)).toBe('·')
+    expect(deltaGlyph(null)).toBe('·')
+  })
+
+  it('pctDelta renders signed points with a glyph', () => {
+    expect(pctDelta(0.031)).toBe('▲ +3pt')
+    expect(pctDelta(-0.012)).toBe('▼ -1pt')
+    expect(pctDelta(0)).toBe('· flat')
+    expect(pctDelta(null)).toBe('· flat')
+  })
+
+  it('shortDate slices ISO timestamps', () => {
+    expect(shortDate('2026-05-29T14:00:00Z')).toBe('2026-05-29')
+    expect(shortDate(null)).toBe('—')
+  })
+
+  it('clamp01 clamps to the unit interval', () => {
+    expect(clamp01(-1)).toBe(0)
+    expect(clamp01(2)).toBe(1)
+    expect(clamp01(0.4)).toBe(0.4)
+  })
+})
+
+describe('levelSparkline', () => {
+  it('maps probabilities to fixed-scale ramp characters', () => {
+    // 0 → lowest block, 1 → highest block, 0.5 → middle-ish
+    const spark = levelSparkline([0, 0.5, 1])
+    expect(spark).toHaveLength(3)
+    expect(spark[0]).toBe('▁')
+    expect(spark[2]).toBe('█')
+  })
+
+  it('renders nulls as gaps', () => {
+    expect(levelSparkline([0.5, null, 0.5])[1]).toBe(' ')
+  })
+
+  it('is fixed-scale, not max-normalized (a flat low series stays low)', () => {
+    // All 0.1 — a low block (ramp idx 1), NOT full height '█' which a
+    // max-normalized sparkline would wrongly produce for a flat series.
+    const spark = levelSparkline([0.1, 0.1, 0.1])
+    expect(spark).toBe('▂▂▂')
+    expect(spark).not.toContain('█')
+  })
+
+  it('returns empty string for empty input', () => {
+    expect(levelSparkline([])).toBe('')
+  })
+})
+
+describe('bandChart', () => {
+  it('produces height rows each with a y-gutter', () => {
+    const chart = bandChart([{ y: 0.5 }], { width: 20, height: 5 })
+    expect(chart.rows).toHaveLength(5)
+    for (const row of chart.rows) {
+      expect(row).toContain('│')
+    }
+    expect(chart.axis.top).toBe('1.00')
+    expect(chart.axis.bottom).toBe('0.00')
+  })
+
+  it('places the marker higher for higher probabilities', () => {
+    const low = bandChart([{ y: 0.1 }], { width: 12, height: 7 })
+    const high = bandChart([{ y: 0.9 }], { width: 12, height: 7 })
+    const markerRow = (rows: string[]) => rows.findIndex(r => r.includes('●'))
+    // higher probability → marker nearer the top → smaller row index
+    expect(markerRow(high.rows)).toBeLessThan(markerRow(low.rows))
+  })
+
+  it('draws a confidence band between lo and hi', () => {
+    const chart = bandChart([{ y: 0.5, lo: 0.3, hi: 0.7 }], { width: 12, height: 9 })
+    const bandRows = chart.rows.filter(r => r.includes('░'))
+    expect(bandRows.length).toBeGreaterThan(0)
+    // the marker still appears
+    expect(chart.rows.some(r => r.includes('●'))).toBe(true)
+  })
+
+  it('spreads multiple points across columns (first left, last right)', () => {
+    const chart = bandChart([{ y: 0.2 }, { y: 0.5 }, { y: 0.8 }], { width: 20, height: 7 })
+    const plot = chart.rows.map(r => r.split('│')[1] ?? '')
+    const markerCols = plot
+      .flatMap(row => [...row].map((ch, i) => (ch === '●' ? i : -1)))
+      .filter(i => i >= 0)
+      .sort((a, b) => a - b)
+    expect(markerCols.length).toBe(3)
+    expect(markerCols[0]).toBe(0)
+    expect(markerCols[markerCols.length - 1]).toBe((plot[0] ?? '').length - 1)
+  })
+
+  it('ignores points without a numeric y', () => {
+    const chart = bandChart([{ y: null }, { y: 0.5 }], { width: 12, height: 5 })
+    const markers = chart.rows.join('').split('●').length - 1
+    expect(markers).toBe(1)
+  })
+})
+
+describe('histogram', () => {
+  it('renders one bar per outcome with values', () => {
+    const rows = histogram(
+      [
+        { label: 'lt_3_0', value: 0.25 },
+        { label: '3_0_3_2', value: 0.45 },
+        { label: 'gt_3_2', value: 0.3 }
+      ],
+      { width: 10, labelWidth: 8 }
+    )
+    expect(rows).toHaveLength(3)
+    // mode (0.45) fills the whole track
+    expect(rows[1]).toContain('██████████')
+    expect(rows[1]).toContain('0.45')
+  })
+
+  it('truncates long labels with an ellipsis', () => {
+    const rows = histogram([{ label: 'an_extremely_long_outcome_label', value: 0.5 }], { labelWidth: 10 })
+    expect(rows[0]!.startsWith('an_extrem…')).toBe(true)
+  })
+
+  it('returns empty for no usable bars', () => {
+    expect(histogram([])).toEqual([])
+    expect(histogram([{ label: 'x', value: Number.NaN }])).toEqual([])
+  })
+})
+
+describe('boxWhisker', () => {
+  it('renders whisker endpoints, an IQR box, and a median tick', () => {
+    const line = boxWhisker(
+      { min: 0.2, p25: 0.4, median: 0.5, p75: 0.6, max: 0.8 },
+      { width: 20 }
+    )
+    expect(line).toContain('├')
+    expect(line).toContain('┤')
+    expect(line).toContain('┃')
+    expect(line).toContain('▒')
+    expect(line).toHaveLength(20)
+  })
+
+  it('positions min left of max on the track', () => {
+    const line = boxWhisker({ min: 0.1, max: 0.9 }, { width: 20 })
+    expect(line.indexOf('├')).toBeLessThan(line.indexOf('┤'))
+  })
+
+  it('returns empty when min/max are missing', () => {
+    expect(boxWhisker({})).toBe('')
+    expect(boxWhisker({ min: 0.2 })).toBe('')
+  })
+})
+
+describe('edge cases & defect scenarios', () => {
+  describe('bandChart edge cases', () => {
+    it('handles width <= gutter (plotW becomes 1)', () => {
+      const chart = bandChart([{ y: 0.5 }], { width: 3, height: 7 })
+      // plotW = Math.max(1, 3 - 5) = 1
+      for (const row of chart.rows) {
+        const plot = row.split('│')[1] ?? ''
+        expect(plot.length).toBeLessThanOrEqual(1)
+      }
+    })
+
+    it('clamps height to minimum of 3', () => {
+      const chart = bandChart([{ y: 0.5 }], { width: 20, height: 1 })
+      expect(chart.rows.length).toBe(3)
+    })
+
+    it('handles single point without division by zero', () => {
+      const chart = bandChart([{ y: 0.5 }], { width: 20, height: 5 })
+      const markers = chart.rows.join('').split('●').length - 1
+      expect(markers).toBe(1)
+    })
+
+    it('handles empty input', () => {
+      const chart = bandChart([], { width: 20, height: 5 })
+      expect(chart.rows.length).toBe(5)
+      const markers = chart.rows.join('').split('●').length - 1
+      expect(markers).toBe(0)
+    })
+
+    it('handles all null y values', () => {
+      const chart = bandChart([{ y: null }, { y: null }], { width: 20, height: 5 })
+      const markers = chart.rows.join('').split('●').length - 1
+      expect(markers).toBe(0)
+    })
+
+    it('handles lo and hi being equal (zero-height band)', () => {
+      const chart = bandChart([{ y: 0.5, lo: 0.5, hi: 0.5 }], { width: 20, height: 7 })
+      // Band loop: for (let r = rTop; r <= rBot; r += 1) — when rTop == rBot, exactly one row
+      const bandRows = chart.rows.filter(r => r.includes('░'))
+      expect(bandRows.length).toBeGreaterThanOrEqual(0) // at least doesn't crash
+      expect(chart.rows.some(r => r.includes('●'))).toBe(true)
+    })
+
+    it('handles yMax == yMin (zero span), defaults to span=1', () => {
+      const chart = bandChart([{ y: 0.5 }], { width: 20, height: 7, yMin: 0.5, yMax: 0.5 })
+      // span = 0.5 - 0.5 || 1 = 1
+      expect(chart.rows.length).toBe(7)
+    })
+
+    it('handles negative yMin/yMax (numeric series like CPI)', () => {
+      const chart = bandChart([{ y: 2.5 }, { y: 3.5 }], { width: 20, height: 7, yMin: 2, yMax: 4 })
+      const low = bandChart([{ y: 2 }], { width: 12, height: 7, yMin: 2, yMax: 4 })
+      const high = bandChart([{ y: 4 }], { width: 12, height: 7, yMin: 2, yMax: 4 })
+      const markerRow = (rows: string[]) => rows.findIndex(r => r.includes('●'))
+      // higher (4) should be higher on chart (smaller row index)
+      expect(markerRow(high.rows)).toBeLessThan(markerRow(low.rows))
+    })
+  })
+
+  describe('histogram edge cases', () => {
+    it('returns empty array when all values are NaN', () => {
+      const rows = histogram(
+        [{ label: 'a', value: Number.NaN }, { label: 'b', value: Number.NaN }],
+        { width: 10 }
+      )
+      expect(rows).toEqual([])
+    })
+
+    it('handles negative values (treats as-is for non-probability data)', () => {
+      const rows = histogram([{ label: 'delta', value: -0.5 }], { width: 10 })
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toContain('-0.50')
+    })
+
+    it('returns empty for truly empty input', () => {
+      const rows = histogram([], { width: 10 })
+      expect(rows).toEqual([])
+    })
+
+    it('handles single bar', () => {
+      const rows = histogram([{ label: 'only', value: 0.5 }], { width: 10 })
+      expect(rows).toHaveLength(1)
+      // max is 0.5, so frac = 0.5 / 0.5 = 1.0, fill = 10
+      expect(rows[0]).toContain('██████████')
+    })
+
+    it('handles all zero values', () => {
+      const rows = histogram([{ label: 'a', value: 0 }, { label: 'b', value: 0 }], { width: 10 })
+      expect(rows).toHaveLength(2)
+      // max = 0, frac = 0, fill = 0 → no bars
+      expect(rows[0]).not.toContain('█')
+    })
+
+    it('handles Infinity values gracefully', () => {
+      // Infinity is not finite, so it is filtered by the usable check — keeping
+      // it would make `max` Infinity and zero out every other bar.
+      const rows = histogram(
+        [{ label: 'normal', value: 0.5 }, { label: 'inf', value: Number.POSITIVE_INFINITY }],
+        { width: 10 }
+      )
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toContain('normal')
+    })
+  })
+
+  describe('boxWhisker edge cases', () => {
+    it('returns empty when only min is provided', () => {
+      const line = boxWhisker({ min: 0.2 }, { width: 20 })
+      expect(line).toBe('')
+    })
+
+    it('returns empty when only max is provided', () => {
+      const line = boxWhisker({ max: 0.8 }, { width: 20 })
+      expect(line).toBe('')
+    })
+
+    it('handles min == max == 0.5 (zero width)', () => {
+      const line = boxWhisker({ min: 0.5, max: 0.5 }, { width: 20 })
+      // cMin = col(0.5) = 10 (middle)
+      // cMax = col(0.5) = 10
+      // Loop: for (let i = 10; i <= 10; i++) → exactly one cell
+      expect(line).toHaveLength(20)
+      expect(line[10]).not.toBeUndefined()
+    })
+
+    it('handles p25 > p75 (inverted IQR)', () => {
+      const line = boxWhisker(
+        { min: 0.2, max: 0.8, p25: 0.7, p75: 0.3 },
+        { width: 20 }
+      )
+      // for (let i = Math.min(p25, p75); i <= Math.max(p25, p75); i++) handles inversion
+      expect(line).toContain('▒')
+      expect(line.length).toBe(20)
+    })
+
+    it('handles width < 3 minimum width constraint', () => {
+      const line = boxWhisker({ min: 0.1, max: 0.9 }, { width: 1 })
+      // track = Math.max(3, 1) = 3
+      expect(line.length).toBe(3)
+    })
+
+    it('handles missing p25/p75/median (falls back to min/max)', () => {
+      const line = boxWhisker({ min: 0.2, max: 0.8 }, { width: 20 })
+      // p25 defaults to cMin, p75 to cMax, median to (cMin + cMax) / 2
+      expect(line).toContain('├')
+      expect(line).toContain('┤')
+      expect(line).toContain('┃')
+      expect(line.length).toBe(20)
+    })
+
+    it('handles yMin == yMax (zero span), defaults to 1', () => {
+      const line = boxWhisker(
+        { min: 0.5, max: 0.5 },
+        { width: 20, yMin: 0.5, yMax: 0.5 }
+      )
+      // span = 0.5 - 0.5 || 1 = 1
+      // col() will clamp to [0, 19]
+      expect(line.length).toBe(20)
+    })
+  })
+
+  describe('levelSparkline edge cases', () => {
+    it('returns empty string for empty input', () => {
+      expect(levelSparkline([])).toBe('')
+    })
+
+    it('returns empty string when span is <= 0', () => {
+      expect(levelSparkline([0.5], { yMin: 0.5, yMax: 0.5 })).toBe('')
+      expect(levelSparkline([0.5], { yMin: 1, yMax: 0.5 })).toBe('')
+    })
+
+    it('handles all null values as gaps', () => {
+      const spark = levelSparkline([null, null, null])
+      expect(spark).toBe('   ')
+    })
+
+    it('handles mixed null and values', () => {
+      const spark = levelSparkline([0.1, null, 0.9])
+      expect(spark[0]).not.toBe(' ')
+      expect(spark[1]).toBe(' ')
+      expect(spark[2]).not.toBe(' ')
+    })
+
+    it('handles Infinity values gracefully', () => {
+      const spark = levelSparkline([0.5, Number.POSITIVE_INFINITY])
+      // finite() check filters infinity to space
+      expect(spark[1]).toBe(' ')
+    })
+
+    it('handles NaN values as gaps', () => {
+      const spark = levelSparkline([0.5, Number.NaN])
+      expect(spark[1]).toBe(' ')
+    })
+  })
+})

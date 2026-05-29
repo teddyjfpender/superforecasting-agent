@@ -602,7 +602,7 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    aliases: ['desk', 'store', 'state'],
+    aliases: ['store', 'state'],
     help: 'browse forecast ledger views without remembering forecast ids',
     name: 'ledger',
     run: (arg, ctx) => {
@@ -648,16 +648,32 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    aliases: ['forecasts'],
-    help: 'show active forecast dashboard or run forecast lifecycle commands',
+    aliases: ['forecasts', 'desk'],
+    help: 'open the interactive forecasts workspace (or run forecast lifecycle commands)',
     name: 'forecast',
     run: (arg, ctx) => {
       const trimmed = arg.trim()
+
+      // `/forecast status` (and synonyms) keeps the classic full-text desk
+      // report — doctor gate, calibration, evidence status, the lot.
+      if (/^(status|dashboard|report|overview)$/i.test(trimmed)) {
+        ctx.gateway
+          .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit: 20 })
+          .then(ctx.guarded<ForecastDashboardResponse>(r => renderForecastDashboard(r, ctx)))
+          .catch(ctx.guardedErr)
+        return
+      }
 
       if (trimmed && !INTEGER_ARG.test(trimmed)) {
         const newMatch = trimmed.match(/^new\b\s*([\s\S]*)$/i)
         if (newMatch && !FORECAST_NEW_CLI_FLAG.test(trimmed)) {
           return runForecastNewViaAgent(newMatch[1] ?? '', ctx)
+        }
+
+        // A forecast id opens the workspace focused on that forecast.
+        if (FORECAST_ID_ARG.test(trimmed)) {
+          patchOverlayState({ forecasts: true, forecastsInitialId: trimmed })
+          return
         }
 
         ctx.gateway
@@ -668,16 +684,8 @@ export const coreCommands: SlashCommand[] = [
         return
       }
 
-      const limit = trimmed ? Number.parseInt(trimmed, 10) : 20
-
-      if (!Number.isFinite(limit) || limit <= 0) {
-        return ctx.transcript.sys('usage: /forecast [limit|subcommand]')
-      }
-
-      ctx.gateway
-        .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit })
-        .then(ctx.guarded<ForecastDashboardResponse>(r => renderForecastDashboard(r, ctx)))
-        .catch(ctx.guardedErr)
+      // Empty or integer arg → open the navigable workspace.
+      patchOverlayState({ forecasts: true, forecastsInitialId: null })
     }
   },
 

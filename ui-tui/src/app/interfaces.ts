@@ -78,6 +78,8 @@ export interface OverlayState {
   approval: ApprovalReq | null
   clarify: ClarifyReq | null
   confirm: ConfirmReq | null
+  forecasts: boolean
+  forecastsInitialId: null | string
   modelPicker: boolean
   pager: null | PagerState
   picker: boolean

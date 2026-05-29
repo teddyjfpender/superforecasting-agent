@@ -26,6 +26,7 @@ import type { PanelSection } from '../types.js'
 
 import { AgentsOverlay } from './agentsOverlay.js'
 import { ForecastPulse, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
+import { ForecastsWorkspace } from './forecastsWorkspace.js'
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { Banner, Panel, panelCommandTarget, panelDraftTarget, SessionPanel } from './branding.js'
 import { FpsOverlay } from './fpsOverlay.js'
@@ -380,6 +381,21 @@ const AgentsOverlayPane = memo(function AgentsOverlayPane() {
   )
 })
 
+const ForecastsWorkspacePane = memo(function ForecastsWorkspacePane() {
+  const { gw } = useGateway()
+  const ui = useStore($uiState)
+  const overlay = useStore($overlayState)
+
+  return (
+    <ForecastsWorkspace
+      gw={gw}
+      initialId={overlay.forecastsInitialId}
+      onClose={() => patchOverlayState({ forecasts: false, forecastsInitialId: null })}
+      t={ui.theme}
+    />
+  )
+})
+
 const StatusRulePane = memo(function StatusRulePane({
   at,
   composer,
@@ -706,8 +722,11 @@ export const AppLayout = memo(function AppLayout({
 }: AppLayoutProps) {
   const overlay = useStore($overlayState)
   const ui = useStore($uiState)
+  // A full-screen overlay (spawn tree or forecasts workspace) takes over the
+  // viewport — hide the desk chrome and transcript while one is open.
+  const fullscreen = overlay.agents || overlay.forecasts
   const showForecastRail =
-    !overlay.agents && !ui.compact && composer.cols >= FORECAST_RAIL_MIN_COLS && ui.forecastDeskRailSections.length > 0
+    !fullscreen && !ui.compact && composer.cols >= FORECAST_RAIL_MIN_COLS && ui.forecastDeskRailSections.length > 0
 
   // Inline mode skips AlternateScreen so the host terminal's native
   // scrollback captures rows scrolled off the top; composer + progress
@@ -718,7 +737,7 @@ export const AppLayout = memo(function AppLayout({
   return (
     <Shell {...shellProps}>
       <Box flexDirection="column" flexGrow={1}>
-        {!overlay.agents && (
+        {!fullscreen && (
           <PerfPane id="forecast-header">
             <ForecastDeskHeader
               cols={composer.cols}
@@ -728,7 +747,7 @@ export const AppLayout = memo(function AppLayout({
           </PerfPane>
         )}
 
-        {!overlay.agents && (
+        {!fullscreen && (
           <PerfPane id="forecast-views">
             <ForecastDeskViewStrip
               cols={composer.cols}
@@ -739,7 +758,11 @@ export const AppLayout = memo(function AppLayout({
         )}
 
         <Box flexDirection="row" flexGrow={1}>
-          {overlay.agents ? (
+          {overlay.forecasts ? (
+            <PerfPane id="forecasts">
+              <ForecastsWorkspacePane />
+            </PerfPane>
+          ) : overlay.agents ? (
             <PerfPane id="agents">
               <AgentsOverlayPane />
             </PerfPane>
@@ -765,7 +788,7 @@ export const AppLayout = memo(function AppLayout({
           )}
         </Box>
 
-        {!overlay.agents && (
+        {!fullscreen && (
           <>
             <PerfPane id="prompt">
               <PromptZone
