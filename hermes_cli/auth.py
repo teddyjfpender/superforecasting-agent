@@ -53,6 +53,7 @@ from hermes_cli.nous_env import nous_inference_base_url, nous_portal_base_url
 
 _PRIMARY_CLI = "superforecasting-agent"
 from hermes_constants import OPENROUTER_BASE_URL
+from agent.credential_persistence import sanitize_borrowed_credential_payload
 from utils import atomic_replace, atomic_yaml_write, env_var_alias_enabled, is_truthy_value
 
 logger = logging.getLogger(__name__)
@@ -1183,14 +1184,23 @@ def read_credential_pool(provider_id: Optional[str] = None) -> Dict[str, Any]:
 
 
 def write_credential_pool(provider_id: str, entries: List[Dict[str, Any]]) -> Path:
-    """Persist one provider's credential pool under auth.json."""
+    """Persist one provider's credential pool under auth.json.
+
+    This is the final disk-boundary guard for borrowed/reference-only
+    credentials. Callers may pass raw dictionaries, so sanitize here even when
+    ``PooledCredential.to_dict()`` already did the same work upstream.
+    """
     with _auth_store_lock():
         auth_store = _load_auth_store()
         pool = auth_store.get("credential_pool")
         if not isinstance(pool, dict):
             pool = {}
             auth_store["credential_pool"] = pool
-        pool[provider_id] = list(entries)
+        pool[provider_id] = [
+            sanitize_borrowed_credential_payload(entry, provider_id)
+            if isinstance(entry, dict) else entry
+            for entry in entries
+        ]
         return _save_auth_store(auth_store)
 
 

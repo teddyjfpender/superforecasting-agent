@@ -23,6 +23,28 @@ _CREDENTIAL_SUFFIXES = ("_API_KEY", "_TOKEN", "_SECRET", "_KEY")
 _WARNED_KEYS: set[str] = set()
 
 
+# Maps env-var name -> origin label (for example "bitwarden") for keys that
+# were injected by an external secret source during load_forecast_dotenv().
+# Used by setup / `superforecasting-agent model` flows to label detected
+# credentials so users understand WHERE a key came from when their .env
+# doesn't contain it directly.  This fork does not currently wire an external
+# secret manager, so the map stays empty unless a future loader populates it;
+# credential-pool persistence reads it only as origin metadata and must never
+# treat it as authorization to persist the raw value.
+_SECRET_SOURCES: dict[str, str] = {}
+
+
+def get_secret_source(env_var: str) -> str | None:
+    """Return the label of the secret source that supplied ``env_var``, if any.
+
+    Returns ``None`` for keys that came from ``.env``, the shell environment,
+    or aren't tracked.  The returned label is metadata only: credential-pool
+    persistence may store it to explain the origin of a borrowed secret, but
+    must never treat it as authorization to persist the raw value.
+    """
+    return _SECRET_SOURCES.get(env_var)
+
+
 def _format_offending_chars(value: str, limit: int = 3) -> str:
     """Return a compact 'U+XXXX ('c'), ...' summary of non-ASCII codepoints."""
     seen: list[str] = []
