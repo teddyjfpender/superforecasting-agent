@@ -331,7 +331,6 @@ def interruptible_api_call(agent, api_kwargs: dict):
         # Reset before the worker starts so a marker left over from a previous
         # call on this agent can't be misread as first-byte for this one.
         agent._codex_stream_last_event_ts = None
-        agent._codex_stream_last_progress_ts = None
 
     _call_start = time.time()
     agent._touch_activity("waiting for non-streaming API response")

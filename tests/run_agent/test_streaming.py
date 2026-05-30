@@ -846,6 +846,51 @@ class TestCodexStreamCallbacks:
 
         assert touch_calls.count("receiving stream response") == 3
 
+    def test_codex_stream_sets_last_event_ts_marker(self):
+        """run_codex_stream must set agent._codex_stream_last_event_ts on each
+        event — this is the contract the TTFB/idle watchdogs in
+        interruptible_api_call depend on. The watchdog tests set the marker
+        manually, so this drives the REAL path to guard against a regression
+        where the marker stops being set (which would make the TTFB watchdog
+        false-kill every codex request)."""
+        from run_agent import AIAgent
+
+        agent = AIAgent(
+            api_key="test-key",
+            base_url="https://chatgpt.com/backend-api/codex",
+            model="gpt-5.5",
+            quiet_mode=True,
+            skip_context_files=True,
+            skip_memory=True,
+        )
+        agent.api_mode = "codex_responses"
+        agent._interrupt_requested = False
+        agent._codex_stream_last_event_ts = None  # reset as interruptible_api_call does
+
+        events = [
+            SimpleNamespace(type="response.created"),
+            SimpleNamespace(type="response.output_text.delta", delta="hi"),
+            SimpleNamespace(
+                type="response.completed",
+                response=SimpleNamespace(status="completed", id="r1", usage=None),
+            ),
+        ]
+
+        class _FakeCreateStream:
+            def __iter__(self_inner):
+                return iter(events)
+            def close(self_inner):
+                return None
+
+        mock_client = MagicMock()
+        mock_client.responses.create.return_value = _FakeCreateStream()
+
+        agent._run_codex_stream({}, client=mock_client)
+
+        # Marker advanced from None to a real timestamp once events flowed.
+        assert isinstance(agent._codex_stream_last_event_ts, float)
+        assert agent._codex_stream_last_event_ts > 0
+
     def test_codex_remote_protocol_error_retries_then_raises(self):
         """Transport errors from ``responses.create`` retry once then re-raise.
 
