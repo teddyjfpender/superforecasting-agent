@@ -73,6 +73,8 @@ last one instead of a from-scratch re-read.
 | #2e509422 | Hash gateway pairing codes (salted SHA-256 + constant-time compare) | `b76baf43` |
 | #7ab16773 | `security audit` — on-demand OSV.dev supply-chain scan (venv + plugins + MCP) | `e4f3181f` |
 | #28660 | Gate `OPENAI_API_KEY`/`OPENROUTER_API_KEY` to authoritative hosts (was leaking to any custom endpoint) — found via the c6a992e3 investigation | `1b844400` |
+| #32273 | Patch reliability: indentation preservation (`fuzzy_match.py` re-indent), CRLF preservation (`file_operations.py` detect + normalize), per-file failure escalation after 3 retries (`file_tools.py`) | `a1b834aa` |
+| #33733 | Region-gated `\t`/`\r` unescape on `new_string` across all match strategies (complements, not replaces, our `\'`/`\"` escape-drift guard) | `80bd20b7` |
 
 ### Already-have (subsumed; do not port)
 
@@ -88,7 +90,6 @@ last one instead of a from-scratch re-read.
 |---|---|
 | #33042 | 613-line rewrite of `codex_runtime.py` (drops `responses.stream()`, consumes events directly) + 5 test files. Retires our hand-patch and the now-dead #43a3f119 fallback. The codex companions (#8601c4d4 TTFB watchdog, #283bb810 prefill, #2d422720 timeouts) sit on this same new event-consumption architecture, so they can't be cleanly applied onto our old `responses.stream()` path — they come *with* the rewrite. Our hand-patch works, so deferring is safe. **Do as its own wave.** |
 | #33883 / #30259 / #33816 | Error-recovery + status UX: content-policy immediate fallback (`error_classifier`), list-type tool-content recovery, buffered retry status (scattered `_emit_status` in `conversation_loop`). 334–490 lines into diverged files. |
-| #32273 → #33733 | Patch-tool reliability: indentation + CRLF preservation + per-file failure escalation (824 lines), then the `\t`/`\r` unescape widening (depends on it). `tools/fuzzy_match.py`. |
 | c6a992e3 | Host-derived `<VENDOR>_API_KEY` fallback. Now unblocked for the `_resolve_openrouter_runtime` path by #28660; but its full value also needs the `_resolve_named_custom_runtime` chains gated (still ungated — separate upstream PRs). |
 
 ### Skip (off-target for a forecasting CLI/TUI fork)
