@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import secrets
+import stat
 import subprocess
 import sys
 import threading
@@ -1747,7 +1748,41 @@ def _save_anthropic_oauth_creds(access_token: str, refresh_token: str, expires_a
         "expiresAt": expires_at_ms,
     }
     oauth_file.parent.mkdir(parents=True, exist_ok=True)
-    oauth_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    # Write via temp file + atomic replace + owner-only perms so the dashboard
+    # OAuth credential file gets the same file-safety guarantees as the other
+    # auth writers (hermes_cli/auth.py). A bare write_text() relied on the
+    # process umask, leaving .anthropic_oauth.json world-readable to other
+    # local users / sidecar containers sharing the host. Mirrors the
+    # O_EXCL + 0o600 + atomic_replace + fsync idiom used in auth.py.
+    from utils import atomic_replace
+    tmp_path = oauth_file.with_name(
+        f"{oauth_file.name}.tmp.{os.getpid()}.{secrets.token_hex(8)}"
+    )
+    try:
+        # Create with 0o600 atomically via os.open(O_EXCL) to close the TOCTOU
+        # window where the default umask would briefly expose the tokens.
+        fd = os.open(
+            str(tmp_path),
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            stat.S_IRUSR | stat.S_IWUSR,
+        )
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, indent=2))
+            handle.flush()
+            os.fsync(handle.fileno())
+        atomic_replace(tmp_path, oauth_file)
+        # Re-assert owner-only perms on the final file (atomic_replace resolves
+        # symlinks and the pre-existing target may have had looser perms).
+        try:
+            oauth_file.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        except OSError:
+            pass
+    finally:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
     # Best-effort credential-pool insert. Failure here doesn't invalidate
     # the file write — pool registration only matters for the rotation
     # strategy, not for runtime credential resolution.
