@@ -96,6 +96,88 @@ def _warn_config_parse_failure(config_path: Path, exc: Exception) -> None:
 
 _IS_WINDOWS = platform.system() == "Windows"
 _ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+# Env var names that influence how the next subprocess executes —
+# never writable through ``save_env_value`` (and therefore not through
+# ``save_env_value_secure``, which routes through it). Anything that
+# controls the loader, interpreter, shell, or replacement editor counts:
+#
+# * ``LD_PRELOAD`` / ``LD_LIBRARY_PATH`` / ``LD_AUDIT`` — Linux dynamic
+#   loader. ``DYLD_*`` — macOS equivalent. Planting a path here means
+#   the next ``subprocess.run([...])`` the agent makes loads attacker
+#   code before main().
+# * ``PYTHONPATH`` / ``PYTHONHOME`` / ``PYTHONSTARTUP`` /
+#   ``PYTHONUSERBASE`` — Python interpreter init. The agent itself
+#   starts from one of these on every restart.
+# * ``NODE_OPTIONS`` / ``NODE_PATH`` — Node interpreter; affects npm,
+#   updates, the TUI build.
+# * ``PATH`` — too broad to allow. The dashboard never needs to rewrite
+#   the operator's PATH; if a tool can't be found, the fix is to add an
+#   absolute path in the integration config, not to mutate PATH globally.
+# * ``GIT_SSH_COMMAND`` / ``GIT_EXEC_PATH`` — git rewrites that fire
+#   on every plugin install / update.
+# * ``BROWSER`` / ``EDITOR`` / ``VISUAL`` / ``PAGER`` — commands the
+#   shell or CLI invokes implicitly. Wrong values here = RCE on next
+#   ``$EDITOR``.
+# * ``SHELL`` — what subprocess uses with ``shell=True`` (we try to
+#   avoid that, but defense in depth).
+# * ``SUPERFORECASTING_AGENT_HOME`` / ``_PROFILE`` / ``_CONFIG`` /
+#   ``_ENV`` (and the ``FORECAST_*`` / ``HERMES_*`` aliases) — agent
+#   runtime location flags. Writing these into ``.env`` would relocate
+#   state in ways the user did not request from the dashboard.
+#   ``config.yaml`` is the supported surface for these.
+#
+# IMPORTANT: ``SUPERFORECASTING_AGENT_*`` / ``FORECAST_*`` / ``HERMES_*``
+# overall is NOT blocked. Many legitimate integration credentials follow
+# those prefixes (HERMES_GEMINI_CLIENT_ID, HERMES_LANGFUSE_PUBLIC_KEY,
+# HERMES_SPOTIFY_CLIENT_ID, HERMES_QWEN_BASE_URL, ...). The denylist is
+# name-by-name on purpose so the gate stays narrow and doesn't
+# accidentally break provider setup wizards.
+#
+# This is enforced on *write* only — values already in ``.env`` (set by
+# the operator out-of-band, or pre-existing) keep working. The point is
+# that the dashboard's writable surface cannot escalate by planting them.
+_ENV_VAR_NAME_DENYLIST: frozenset[str] = frozenset({
+    # Loader / linker
+    "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "LD_DEBUG",
+    "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH",
+    "DYLD_FALLBACK_LIBRARY_PATH", "DYLD_FALLBACK_FRAMEWORK_PATH",
+    # Python
+    "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONUSERBASE",
+    "PYTHONEXECUTABLE", "PYTHONNOUSERSITE",
+    # Node
+    "NODE_OPTIONS", "NODE_PATH",
+    # General
+    "PATH", "SHELL", "BROWSER", "EDITOR", "VISUAL", "PAGER",
+    # Git
+    "GIT_SSH_COMMAND", "GIT_EXEC_PATH", "GIT_SHELL",
+    # Agent runtime location — never via dashboard env writer.
+    # NOT a SUPERFORECASTING_AGENT_*/FORECAST_*/HERMES_* blanket:
+    # integration credentials (HERMES_GEMINI_*, HERMES_LANGFUSE_*,
+    # HERMES_SPOTIFY_*, ...) ARE allowed. Only these runtime-location
+    # names are blocked, and we block all three alias prefixes.
+    "SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME",
+    "SUPERFORECASTING_AGENT_PROFILE", "FORECAST_PROFILE", "HERMES_PROFILE",
+    "SUPERFORECASTING_AGENT_CONFIG", "FORECAST_CONFIG", "HERMES_CONFIG",
+    "SUPERFORECASTING_AGENT_ENV", "FORECAST_ENV", "HERMES_ENV",
+})
+
+
+def _reject_denylisted_env_var(key: str) -> None:
+    """Raise if ``key`` is in :data:`_ENV_VAR_NAME_DENYLIST`.
+
+    Centralised so both the regular and "secure" env writers share the
+    same gate, and so the message is consistent for callers.
+    """
+    if key in _ENV_VAR_NAME_DENYLIST:
+        raise ValueError(
+            f"Environment variable {key!r} is on the writer denylist. "
+            "Names that influence subprocess execution (LD_PRELOAD, "
+            "PYTHONPATH, PATH, EDITOR, ...) or agent runtime location "
+            "(SUPERFORECASTING_AGENT_HOME, HERMES_PROFILE, ...) cannot be "
+            "persisted via the env writer. If you really need this, edit "
+            "~/.superforecasting-agent/.env directly."
+        )
 _LAST_EXPANDED_CONFIG_BY_PATH: Dict[str, Any] = {}
 # (path, mtime_ns, size) -> cached expanded config dict.
 # load_config() returns a deepcopy of the cached value when the file
@@ -4885,6 +4967,7 @@ def save_env_value(key: str, value: str):
         return
     if not _ENV_VAR_NAME_RE.match(key):
         raise ValueError(f"Invalid environment variable name: {key!r}")
+    _reject_denylisted_env_var(key)
     value = value.replace("\n", "").replace("\r", "")
     # API keys / tokens must be ASCII — strip non-ASCII with a warning.
     value = _check_non_ascii_credential(key, value)
