@@ -131,11 +131,21 @@ _(none currently — c6a992e3 host-derived fallback was ported with the
 
 ### Next-audit candidates worth a look (not yet assessed in depth)
 
-- **~13 other in-range `fix(security)` commits** flagged during the 2026-05-30
-  scout but not yet triaged: `/proc/*/environ` + `.env` read-guards, `.env` 0600
-  perms, OAuth-store write restrictions, write-denylist additions. Likely
-  port-on-sight **if** our file-safety/read-guard surface matches — needs a
-  dedicated triage pass.
+- **~16 other in-range `fix(security)` commits — TRIAGED 2026-05-30** (5 bring,
+  8 adapt, 3 skip; verdicts spot-checked against the actual files). Not yet
+  ported. **Port-now first batch** (high value, trivial/small, confirmed
+  present + unpatched): `b7b8bec80` block `/proc/*/{environ,cmdline,maps}` from
+  read_file (leaks the agent's own provider keys); `dcc163ee2` redact creds
+  before session-log persistence; `95b5b7240`+`6bebab476` block AWS bedrock
+  bearer token from subprocess env (port the narrowed end-state); `4694524de`
+  write-deny `.anthropic_oauth.json`. Also bring/adapt: `1a9ef8314`
+  API_SERVER_KEY-required bind, `30928f945` dashboard asset/env denylist,
+  `d7c5d5dee` don't-persist-borrowed-creds (LARGE — reconcile provider-source
+  table first), `2e181602a` pool isolation on fallback, `ec4d6f182`→`9c77a0c3c`
+  masked secret prompts, `43abc51f6` msgraph CIDR, `243ebc7a6` atomic OAuth
+  writes, `79fc92e9c` .env 0600. Skip: `4126da65a` (BWS absent), `44df52005`
+  (dashboard/docker crash), `782681f90` (google_chat plugin). Details in the
+  `security-triage-2026-05-30` memory.
 - `transcript-tail across resizes` (TUI) — flagged earlier, never SHA-pinned.
 - Rebrand-drift cleanup (pre-existing, not upstream ports): `test_model_catalog`
   docs URL (`build_catalog()` emits `nousresearch.com`, committed json uses
