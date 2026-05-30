@@ -41,6 +41,29 @@ class TestWriteDenyExactPaths:
         path = str(get_hermes_home() / ".env")
         assert _is_write_denied(path) is True
 
+    def test_anthropic_oauth_json_denied(self):
+        # The Anthropic PKCE credential store under the active home must be
+        # write-denied so a session can't clobber its OAuth tokens. Mirrors
+        # the read-deny in agent.file_safety.get_read_block_error.
+        from hermes_constants import get_hermes_home
+        path = str(get_hermes_home() / ".anthropic_oauth.json")
+        assert _is_write_denied(path) is True
+
+    def test_anthropic_oauth_json_denied_at_root_under_profile(self, monkeypatch):
+        # Under a profile (home = <root>/profiles/<name>), the root-level
+        # <root>/.anthropic_oauth.json must ALSO be write-denied — the same
+        # root-pass gap #15981 closed for .env. build_write_denied_paths
+        # resolves the OAuth store against both _hermes_home_path() and
+        # _hermes_root_path(), so point them at distinct dirs and assert the
+        # root copy is blocked.
+        import agent.file_safety as fs
+
+        root = Path.home() / ".superforecasting-agent-test-root"
+        home = root / "profiles" / "default"
+        monkeypatch.setattr(fs, "_hermes_home_path", lambda: home)
+        monkeypatch.setattr(fs, "_hermes_root_path", lambda: root)
+        assert _is_write_denied(str(root / ".anthropic_oauth.json")) is True
+
     def test_shell_profiles(self):
         home = str(Path.home())
         for name in [".bashrc", ".zshrc", ".profile", ".bash_profile", ".zprofile"]:

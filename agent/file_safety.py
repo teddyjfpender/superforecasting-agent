@@ -39,6 +39,7 @@ def _hermes_root_path() -> Path:
 def build_write_denied_paths(home: str) -> set[str]:
     """Return exact sensitive paths that must never be written."""
     hermes_home = _hermes_home_path()
+    hermes_root = _hermes_root_path()
     return {
         os.path.realpath(p)
         for p in [
@@ -47,6 +48,15 @@ def build_write_denied_paths(home: str) -> set[str]:
             os.path.join(home, ".ssh", "id_ed25519"),
             os.path.join(home, ".ssh", "config"),
             str(hermes_home / ".env"),
+            # Active-profile Anthropic PKCE credential store. Overwriting it
+            # would let a session clobber the OAuth tokens the provider tools
+            # read through internal channels. Resolved against BOTH the active
+            # home and the global root (mirrors the get_read_block_error
+            # agent_dirs loop) so a profile-mode run can't overwrite
+            # <root>/.anthropic_oauth.json that default/non-profile sessions
+            # still consume.
+            str(hermes_home / ".anthropic_oauth.json"),
+            str(hermes_root / ".anthropic_oauth.json"),
             os.path.join(home, ".bashrc"),
             os.path.join(home, ".zshrc"),
             os.path.join(home, ".profile"),
