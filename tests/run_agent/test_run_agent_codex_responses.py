@@ -156,26 +156,6 @@ def _codex_ack_message_response(text: str):
     )
 
 
-class _FakeResponsesStream:
-    def __init__(self, *, final_response=None, final_error=None):
-        self._final_response = final_response
-        self._final_error = final_error
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-    def __iter__(self):
-        return iter(())
-
-    def get_final_response(self):
-        if self._final_error is not None:
-            raise self._final_error
-        return self._final_response
-
-
 class _FakeCreateStream:
     def __init__(self, events):
         self._events = list(events)
@@ -398,60 +378,75 @@ def test_build_api_kwargs_copilot_responses_omits_reasoning_for_non_reasoning_mo
     assert "prompt_cache_key" not in kwargs
 
 
-def test_run_codex_stream_retries_when_completed_event_missing(monkeypatch):
+def test_run_codex_stream_returns_collected_items_when_stream_ends_without_terminal(monkeypatch):
+    """The event-driven path tolerates streams that end without a terminal frame.
+
+    Previously the SDK's ``responses.stream(...)`` helper raised
+    ``RuntimeError("Didn't receive a `response.completed` event.")`` which the
+    primary path caught and retried/fell back through. The new
+    ``responses.create(stream=True)`` path consumes events directly and just
+    returns whatever it collected — no retry, no separate fallback path.
+    """
     agent = _build_agent(monkeypatch)
-    calls = {"stream": 0}
-
-    def _fake_stream(**kwargs):
-        calls["stream"] += 1
-        if calls["stream"] == 1:
-            return _FakeResponsesStream(
-                final_error=RuntimeError("Didn't receive a `response.completed` event.")
-            )
-        return _FakeResponsesStream(final_response=_codex_message_response("stream ok"))
-
-    agent.client = SimpleNamespace(
-        responses=SimpleNamespace(
-            stream=_fake_stream,
-            create=lambda **kwargs: _codex_message_response("fallback"),
-        )
+    output_item = SimpleNamespace(
+        type="message",
+        status="completed",
+        content=[SimpleNamespace(type="output_text", text="no terminal frame")],
     )
-
-    response = agent._run_codex_stream(_codex_request_kwargs())
-    assert calls["stream"] == 2
-    assert response.output[0].content[0].text == "stream ok"
-
-
-def test_run_codex_stream_falls_back_to_create_after_stream_completion_error(monkeypatch):
-    agent = _build_agent(monkeypatch)
-    calls = {"stream": 0, "create": 0}
-
-    def _fake_stream(**kwargs):
-        calls["stream"] += 1
-        return _FakeResponsesStream(
-            final_error=RuntimeError("Didn't receive a `response.completed` event.")
-        )
+    calls = {"create": 0}
 
     def _fake_create(**kwargs):
         calls["create"] += 1
-        return _codex_message_response("create fallback ok")
+        assert kwargs.get("stream") is True
+        return _FakeCreateStream([
+            SimpleNamespace(type="response.created"),
+            SimpleNamespace(type="response.output_item.done", item=output_item),
+            # stream ends without a response.completed/incomplete/failed frame
+        ])
 
     agent.client = SimpleNamespace(
-        responses=SimpleNamespace(
-            stream=_fake_stream,
-            create=_fake_create,
-        )
+        responses=SimpleNamespace(create=_fake_create),
     )
 
     response = agent._run_codex_stream(_codex_request_kwargs())
-    assert calls["stream"] == 2
     assert calls["create"] == 1
-    assert response.output[0].content[0].text == "create fallback ok"
+    assert response.status == "completed"
+    assert response.output == [output_item]
 
 
-def test_run_codex_stream_fallback_parses_create_stream_events(monkeypatch):
+def test_run_codex_stream_surfaces_failed_status_in_final_response(monkeypatch):
+    """A ``response.failed`` terminal event is reflected on the returned object."""
     agent = _build_agent(monkeypatch)
-    calls = {"stream": 0, "create": 0}
+    error_payload = {"message": "model overloaded", "code": "overloaded"}
+    failed_event = SimpleNamespace(
+        type="response.failed",
+        response=SimpleNamespace(
+            status="failed",
+            error=error_payload,
+            id="resp_failed_1",
+            usage=None,
+        ),
+    )
+
+    def _fake_create(**kwargs):
+        return _FakeCreateStream([
+            SimpleNamespace(type="response.created"),
+            failed_event,
+        ])
+
+    agent.client = SimpleNamespace(
+        responses=SimpleNamespace(create=_fake_create),
+    )
+
+    response = agent._run_codex_stream(_codex_request_kwargs())
+    assert response.status == "failed"
+    assert response.error == error_payload
+
+
+def test_run_codex_stream_parses_create_stream_events(monkeypatch):
+    """The primary path consumes ``responses.create(stream=True)`` events directly."""
+    agent = _build_agent(monkeypatch)
+    calls = {"create": 0}
     create_stream = _FakeCreateStream(
         [
             SimpleNamespace(type="response.created"),
@@ -460,29 +455,21 @@ def test_run_codex_stream_fallback_parses_create_stream_events(monkeypatch):
         ]
     )
 
-    def _fake_stream(**kwargs):
-        calls["stream"] += 1
-        return _FakeResponsesStream(
-            final_error=RuntimeError("Didn't receive a `response.completed` event.")
-        )
-
     def _fake_create(**kwargs):
         calls["create"] += 1
         assert kwargs.get("stream") is True
         return create_stream
 
     agent.client = SimpleNamespace(
-        responses=SimpleNamespace(
-            stream=_fake_stream,
-            create=_fake_create,
-        )
+        responses=SimpleNamespace(create=_fake_create),
     )
 
     response = agent._run_codex_stream(_codex_request_kwargs())
-    assert calls["stream"] == 2
     assert calls["create"] == 1
     assert create_stream.closed is True
-    assert response.output[0].content[0].text == "streamed create ok"
+    # The event-driven path reconstructs from response.output_item.done events;
+    # this fixture emits none, so we assert the propagated terminal status.
+    assert response.status == "completed"
 
 
 def test_run_conversation_codex_plain_text(monkeypatch):
