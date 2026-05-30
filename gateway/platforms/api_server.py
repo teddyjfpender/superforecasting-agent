@@ -752,11 +752,11 @@ class APIServerAdapter(BasePlatformAdapter):
         Validate Bearer token from Authorization header.
 
         Returns None if auth is OK, or a 401 web.Response on failure.
-        If no API key is configured, all requests are allowed (only when API
-        server is local).
+        connect() refuses to start the API server without API_SERVER_KEY, so
+        the no-key branch only exists for tests or unsupported manual wiring.
         """
         if not self._api_key:
-            return None  # No key configured — allow all (local-only use)
+            return None
 
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
@@ -3456,11 +3456,13 @@ class APIServerAdapter(BasePlatformAdapter):
             if hasattr(sweep_task, "add_done_callback"):
                 sweep_task.add_done_callback(self._background_tasks.discard)
 
-            # Refuse to start network-accessible without authentication
-            if is_network_accessible(self._host) and not self._api_key:
+            # Refuse to start without authentication. The API server can
+            # dispatch terminal-capable agent work, so every deployment needs
+            # an explicit API_SERVER_KEY regardless of bind address.
+            if not self._api_key:
                 logger.error(
-                    "[%s] Refusing to start: binding to %s requires API_SERVER_KEY. "
-                    "Set API_SERVER_KEY or use the default 127.0.0.1.",
+                    "[%s] Refusing to start: API_SERVER_KEY is required for the API server, "
+                    "including loopback-only binds on %s.",
                     self.name, self._host,
                 )
                 return False
@@ -3498,14 +3500,6 @@ class APIServerAdapter(BasePlatformAdapter):
             await self._site.start()
 
             self._mark_connected()
-            if not self._api_key:
-                logger.warning(
-                    "[%s] ⚠️  No API key configured (API_SERVER_KEY / platforms.api_server.key). "
-                    "All requests will be accepted without authentication. "
-                    "Set an API key for production deployments to prevent "
-                    "unauthorized access to sessions, responses, and cron jobs.",
-                    self.name,
-                )
             logger.info(
                 "[%s] API server listening on http://%s:%d (model: %s)",
                 self.name, self._host, self._port, self._model_name,
