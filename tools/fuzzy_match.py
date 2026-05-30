@@ -108,13 +108,22 @@ def fuzzy_find_and_replace(content: str, old_string: str, new_string: str,
                 if drift_err:
                     return content, 0, None, drift_err
 
+            # Recover real tabs / carriage returns the model serialized as
+            # the two-character sequences \t / \r in its JSON tool args.
+            # Region-gated: only unescape when the matched file region
+            # actually contains that control byte, so a legitimate literal
+            # `\t` in source (e.g. `sep = "\t"`) is left untouched. Applied
+            # regardless of match strategy — see #33733. (\n is excluded;
+            # it serializes correctly and unescaping mangles source escapes.)
+            effective_new = _maybe_unescape_new_string(new_string, content, matches)
+
             # Perform replacement. When the matched strategy is NOT `exact`,
             # the file's indentation may differ from what the LLM sent in
             # old_string/new_string (e.g. zero-indent old/new for a method
             # body inside an 8-space class). Shift new_string by the indent
             # delta so the replacement matches the file's actual indent.
             new_content = _apply_replacements(
-                content, matches, new_string,
+                content, matches, effective_new,
                 old_string=old_string if strategy_name != "exact" else None,
             )
             return new_content, len(matches), strategy_name, None
@@ -161,6 +170,43 @@ def _detect_escape_drift(content: str, matches: List[Tuple[int, int]],
                 f"backslash-escaping {plain!r} characters."
             )
     return None
+
+
+def _maybe_unescape_new_string(new_string: str,
+                               content: str,
+                               matches: List[Tuple[int, int]]) -> str:
+    """Conditionally unescape ``\\t``/``\\r`` in new_string.
+
+    LLMs frequently send the two-character sequences ``\\t`` (backslash + t)
+    and ``\\r`` (backslash + r) inside JSON tool-call arguments where they
+    meant a real tab or carriage-return byte. Writing the string verbatim
+    corrupts tab-indented files with literal backslash-letter pairs.
+
+    The unescape is only applied per-sequence when the *matched region of
+    the file* actually contains the corresponding control character — that
+    is, we only convert ``\\t`` -> tab when the file region we're replacing
+    contains a real tab byte. That mirrors the region-based heuristic in
+    ``_detect_escape_drift`` and keeps legitimate writes of the literal
+    two-character string ``"\\t"`` (e.g. a Python source line that defines
+    ``sep = "\\t"``) untouched — those files have a backslash+t in the
+    matched region, not a real tab, so new_string passes through verbatim.
+
+    ``\\n`` is intentionally excluded: newlines serialize correctly through
+    JSON and rewriting backslash-n would corrupt escape sequences in
+    string literals far more often than it would help.
+    """
+    # Cheap pre-check — bail out unless new_string actually contains one of
+    # the suspect sequences. Keeps the common case free.
+    if "\\t" not in new_string and "\\r" not in new_string:
+        return new_string
+
+    matched_regions = "".join(content[start:end] for start, end in matches)
+    out = new_string
+    if "\\t" in out and "\t" in matched_regions:
+        out = out.replace("\\t", "\t")
+    if "\\r" in out and "\r" in matched_regions:
+        out = out.replace("\\r", "\r")
+    return out
 
 
 def _leading_whitespace(line: str) -> str:
