@@ -73,6 +73,50 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+
+# Mouse-tracking residue suppression — runs BEFORE every other import on the
+# TUI hot path so the terminal stops emitting SGR/X10 mouse reports while the
+# Python launcher is still doing imports (≈100–300ms in cooked + echo mode,
+# before the Node TUI takes stdin into raw mode). During that window any
+# incoming bytes are echoed straight back to the user's shell scrollback as
+# ``^[[<…M`` text. The TUI itself runs `resetTerminalModes()` again in
+# `entry.tsx`; this is just the earlier cousin. ``*_TUI_NO_EARLY_DISABLE``
+# escapes the behaviour for diagnostics.
+def _suppress_mouse_residue_early() -> None:
+    # The _tui_env() alias helpers are defined far below (after the heavy
+    # imports), so the SUPERFORECASTING_AGENT_/FORECAST_/HERMES_ alias triple
+    # is inlined here — this function must run before those imports.
+    def _tui_alias(suffix: str) -> str:
+        for prefix in ("SUPERFORECASTING_AGENT_TUI", "FORECAST_TUI", "HERMES_TUI"):
+            val = os.environ.get(prefix + suffix, "")
+            if val:
+                return val
+        return ""
+
+    if _tui_alias("_NO_EARLY_DISABLE").strip().lower() in {"1", "true", "yes", "on"}:
+        return
+    _tui_on = _tui_alias("").strip().lower() in {"1", "true", "yes", "on"}
+    if not (_tui_on or "--tui" in sys.argv[1:]):
+        return
+    try:
+        # Skip when stdout is redirected (`<cli> --tui … >log`, CI capture):
+        # the bytes can't reach the terminal anyway and would just pollute
+        # the log with raw CSI.
+        if not os.isatty(1):
+            return
+        # Disable every mouse-tracking variant we know about. Idempotent and
+        # safe to send even when no tracking is currently asserted.
+        os.write(
+            1,
+            b"\x1b[?1003l\x1b[?1002l\x1b[?1001l\x1b[?1000l\x1b[?9l"
+            b"\x1b[?1006l\x1b[?1005l\x1b[?1015l\x1b[?1016l\x1b[?2029l",
+        )
+    except OSError:
+        pass
+
+
+_suppress_mouse_residue_early()
+
 _DASHBOARD_WEB_DIST_ENV_VARS = (
     "SUPERFORECASTING_AGENT_WEB_DIST",
     "FORECAST_WEB_DIST",
