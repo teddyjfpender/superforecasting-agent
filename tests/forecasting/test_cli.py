@@ -113,6 +113,25 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _run(parser: argparse.ArgumentParser, argv: list[str]) -> None:
+    # `forecast update` now requires structured reasoning by default for live
+    # forecasts. These legacy fixtures predate that formality and exercise other
+    # behaviors, so opt them out at the harness level (the agent supplies reasons
+    # in production; the default-on enforcement + exploratory exemption have
+    # dedicated tests below). Only auto-applied to live update commands that
+    # carry a probability payload and don't already set reason flags.
+    _update_payload_flags = (
+        "--probability", "--numeric-value", "--distribution-json",
+        "--panel-estimates-json", "--component", "--component-json", "--method",
+    )
+    if (
+        "update" in argv
+        and any(f in argv for f in _update_payload_flags)
+        and "--reason-up" not in argv
+        and "--require-structured-reasoning" not in argv  # explicit enforcement tests opt in
+        and "--no-require-structured-reasoning" not in argv
+        and "exploratory" not in argv
+    ):
+        argv = [*argv, "--no-require-structured-reasoning"]
     args = parser.parse_args(argv)
     args.func(args)
 
@@ -850,7 +869,7 @@ def test_forecast_cli_update_can_require_citations(tmp_path, capsys):
         )
 
     assert exc.value.code == 1
-    assert "forecast update requires citations" in capsys.readouterr().err
+    assert "requires citations" in capsys.readouterr().err
 
     ledger = ForecastLedger(db_path)
     evidence = ledger.add_evidence(

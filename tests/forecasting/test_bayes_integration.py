@@ -23,6 +23,22 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _run(parser: argparse.ArgumentParser, argv: list[str]) -> None:
+    # Legacy fixtures predate the default-on structured-reasoning formality for
+    # live forecasts; opt live update commands carrying a payload out at the
+    # harness so they keep testing their actual concern.
+    _payload = (
+        "--probability", "--numeric-value", "--distribution-json",
+        "--panel-estimates-json", "--component", "--component-json", "--method",
+    )
+    if (
+        "update" in argv
+        and any(f in argv for f in _payload)
+        and "--reason-up" not in argv
+        and "--require-structured-reasoning" not in argv
+        and "--no-require-structured-reasoning" not in argv
+        and "exploratory" not in argv
+    ):
+        argv = [*argv, "--no-require-structured-reasoning"]
     args = parser.parse_args(argv)
     args.func(args)
 

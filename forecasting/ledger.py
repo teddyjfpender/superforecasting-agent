@@ -1112,6 +1112,12 @@ class ForecastLedger:
         question = self.get_question(question_id)
         if forecast_origin not in FORECAST_ORIGINS:
             raise ValidationError(f"forecast_origin must be one of {', '.join(sorted(FORECAST_ORIGINS))}")
+        # Exploratory forecasts are scratchpad thinking — never scored, and
+        # exempt from the commit-time formalities below (the gates all key on
+        # forecast_origin == "live"). Commit a live forecast to put it on the
+        # record.
+        if forecast_origin == "exploratory":
+            calibration_eligible = False
         payload = self._validate_probability_payload(probability_or_distribution, question.outcome_space)
         if not rationale.strip():
             raise ValidationError("forecast rationale is required")
@@ -1132,8 +1138,11 @@ class ForecastLedger:
                 missing_reasoning.append("change_my_mind")
             if missing_reasoning:
                 raise ValidationError(
-                    "forecast update requires structured reasoning fields: "
+                    "live forecast requires structured reasoning fields: "
                     + ", ".join(missing_reasoning)
+                    + ". Provide reasons_up/reasons_down/change_my_mind, rerun with "
+                    "require_structured_reasoning=false, or record it as "
+                    "forecast_origin='exploratory'."
                 )
         if require_decision_readiness and forecast_origin == "live":
             readiness_issues = question_decision_readiness_issues(question)
@@ -1151,7 +1160,7 @@ class ForecastLedger:
         effective_cutoff = cutoff_ts or as_of_ts
         self._validate_evidence_refs(question_id, evidence_refs or [], effective_cutoff)
         snapshot_metadata = dict(metadata or {})
-        if require_citations:
+        if require_citations and forecast_origin == "live":
             citation_refs = [
                 *(evidence_refs or []),
                 *(model_run_refs or []),
@@ -1162,8 +1171,8 @@ class ForecastLedger:
             ]
             if not citation_refs:
                 raise ValidationError(
-                    "forecast update requires citations: add evidence/model/reference/source refs "
-                    "or rerun without strict citation policy"
+                    "live forecast requires citations: add evidence/model/reference/source refs, "
+                    "rerun with require_citations=false, or record it as forecast_origin='exploratory'"
                 )
             snapshot_metadata["citation_policy"] = "required"
         if stale_evidence_days is not None and evidence_refs:

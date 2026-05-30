@@ -691,14 +691,18 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     update_parser.add_argument(
         "--require-citations",
         action="store_true",
-        help="Require at least one evidence, model, reference-class, source-snapshot, assumption, or lesson ref",
+        help="Require a live forecast to cite at least one evidence/model/reference-class/"
+        "source-snapshot/assumption/lesson ref. Opt-in (the soul/protocol nudges citing "
+        "evidence); pass it when committing an evidence-backed forecast.",
     )
     update_parser.add_argument("--model-run-ref", dest="model_run_refs", action="append", default=[])
     update_parser.add_argument(
         "--origin",
         dest="forecast_origin",
-        choices=["live", "backtest", "imported_baseline"],
+        choices=["live", "exploratory", "backtest", "imported_baseline"],
         default="live",
+        help="'live' commits a scored forecast (formalities enforced); 'exploratory' is a "
+        "scratchpad forecast — free of commit-time formalities and not calibration-scored.",
     )
     update_parser.add_argument("--agent-model")
     update_parser.add_argument("--prompt-version")
@@ -728,8 +732,11 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     )
     update_parser.add_argument(
         "--require-structured-reasoning",
-        action="store_true",
-        help="Refuse to save the snapshot unless --reason-up, --reason-down, and --change-my-mind are all set",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Refuse to save a live snapshot unless --reason-up, --reason-down, and "
+        "--change-my-mind are all set. On by default; use --no-require-structured-reasoning "
+        "(or --origin exploratory) to skip.",
     )
     update_parser.add_argument(
         "--require-decision-readiness",
@@ -2825,7 +2832,10 @@ def _cmd_update(args: argparse.Namespace) -> None:
         bool(getattr(args, "reasons_up", None)),
         bool(getattr(args, "reasons_down", None)),
         bool(getattr(args, "change_my_mind", None)),
-        getattr(args, "require_structured_reasoning", False),
+        # NOTE: require_structured_reasoning / require_citations are now policies
+        # that default ON for live forecasts (BooleanOptionalAction), so they no
+        # longer signal "the user wants to save" — they're deliberately excluded
+        # from update-intent detection. require_decision_readiness stays opt-in.
         getattr(args, "require_decision_readiness", False),
         args.evidence_cutoff is not None,
         args.backtest_run_id is not None,
@@ -2836,9 +2846,11 @@ def _cmd_update(args: argparse.Namespace) -> None:
         args.use_active_lessons,
         args.preview,
     ]
-    update_fields = [has_payload, args.require_citations, *non_citation_update_fields]
-    citation_policy_inspection = args.require_citations and not has_payload and not any(non_citation_update_fields)
-    if not any(update_fields) or citation_policy_inspection:
+    # require_citations now defaults ON for live forecasts, so it is no longer a
+    # save-intent signal either; intent is a probability payload or a real content
+    # change. A bare `forecast update <id>` stays a no-op inspection.
+    update_fields = [has_payload, *non_citation_update_fields]
+    if not any(update_fields):
         previous = ledger.get_current_snapshot(args.id)
         print(f"question: {question.id}")
         print(f"title: {question.title}")

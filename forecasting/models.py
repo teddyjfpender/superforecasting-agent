@@ -10,7 +10,11 @@ from typing import Any
 
 OUTCOME_TYPES = {"binary", "categorical", "numeric", "distribution"}
 QUESTION_STATUSES = {"active", "closed", "resolved", "archived"}
-FORECAST_ORIGINS = {"live", "backtest", "imported_baseline"}
+# "exploratory" is the scratchpad origin: a forecast the agent is thinking
+# out loud with, NOT committing. It is exempt from the commit-time formalities
+# (structured reasoning, citations, decision readiness) and is never
+# calibration-scored. Commit a "live" forecast to put it on the record.
+FORECAST_ORIGINS = {"live", "exploratory", "backtest", "imported_baseline"}
 RESOLUTION_STATUSES = {"proposed", "confirmed", "disputed", "corrected"}
 ASSUMPTION_STATUSES = {"active", "stale", "invalidated", "resolved"}
 REFERENCE_CLASS_STATUSES = {"active", "stale", "invalidated", "superseded"}

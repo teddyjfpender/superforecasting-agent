@@ -159,6 +159,9 @@ def test_forecast_ledger_tool_searches_questions_by_ledger_context(tmp_path):
         {
             "db": db,
             "action": "update_forecast",
+            "reasons_up": ["base rate and recent signal point higher"],
+            "reasons_down": ["small sample; reversion risk"],
+            "change_my_mind": ["a confirmed contradicting data release"],
             "question_id": question_id,
             "probability": 0.62,
             "rationale": "Gasoline prices and shelter nowcasts support a hotter print.",
@@ -875,6 +878,9 @@ def test_forecast_ledger_tool_lifecycle(tmp_path):
             {
                 "db": db,
                 "action": "update_forecast",
+                "reasons_up": ["base rate and recent signal point higher"],
+                "reasons_down": ["small sample; reversion risk"],
+                "change_my_mind": ["a confirmed contradicting data release"],
                 "question_id": question_id,
                 "probability": 0.7,
                 "rationale": "Evidence supports yes.",
@@ -924,6 +930,9 @@ def test_forecast_ledger_tool_can_require_update_citations(tmp_path):
             {
                 "db": db,
                 "action": "update_forecast",
+                "reasons_up": ["base rate and recent signal point higher"],
+                "reasons_down": ["small sample; reversion risk"],
+                "change_my_mind": ["a confirmed contradicting data release"],
                 "question_id": question_id,
                 "probability": 0.5,
                 "rationale": "Uncited factual claim.",
@@ -947,6 +956,9 @@ def test_forecast_ledger_tool_can_require_update_citations(tmp_path):
             {
                 "db": db,
                 "action": "update_forecast",
+                "reasons_up": ["base rate and recent signal point higher"],
+                "reasons_down": ["small sample; reversion risk"],
+                "change_my_mind": ["a confirmed contradicting data release"],
                 "question_id": question_id,
                 "probability": 0.55,
                 "rationale": "Tool-cited evidence supports the update.",
@@ -1030,6 +1042,9 @@ def test_forecast_ledger_tool_records_structured_postmortem_learning(tmp_path):
         {
             "db": db,
             "action": "update_forecast",
+            "reasons_up": ["base rate and recent signal point higher"],
+            "reasons_down": ["small sample; reversion risk"],
+            "change_my_mind": ["a confirmed contradicting data release"],
             "question_id": question_id,
             "probability": 0.82,
             "rationale": "Inside-view signal looked strong.",
@@ -1189,6 +1204,9 @@ def test_forecast_ledger_tool_show_question_returns_research_context(tmp_path):
         {
             "db": db,
             "action": "update_forecast",
+            "reasons_up": ["base rate and recent signal point higher"],
+            "reasons_down": ["small sample; reversion risk"],
+            "change_my_mind": ["a confirmed contradicting data release"],
             "question_id": question_id,
             "probability": 0.57,
             "rationale": "Context update.",
@@ -1478,6 +1496,9 @@ def test_forecast_ledger_tool_manages_autopilot_update_proposals(tmp_path):
             {
                 "db": db,
                 "action": "update_forecast",
+                "reasons_up": ["base rate and recent signal point higher"],
+                "reasons_down": ["small sample; reversion risk"],
+                "change_my_mind": ["a confirmed contradicting data release"],
                 "question_id": question_id,
                 "probability": 0.55,
                 "rationale": "Baseline desk prior before automated source checks.",
@@ -1587,6 +1608,9 @@ def test_forecast_ledger_tool_can_save_ensemble_components(tmp_path):
             {
                 "db": db,
                 "action": "update_forecast",
+                "reasons_up": ["base rate and recent signal point higher"],
+                "reasons_down": ["small sample; reversion risk"],
+                "change_my_mind": ["a confirmed contradicting data release"],
                 "question_id": question_id,
                 "components": {
                     "base_rate": {"probability": 0.4, "weight": 2},
@@ -1713,6 +1737,9 @@ def test_forecast_ledger_tool_lists_model_runs_and_postmortems(tmp_path):
         {
             "db": db,
             "action": "update_forecast",
+            "reasons_up": ["base rate and recent signal point higher"],
+            "reasons_down": ["small sample; reversion risk"],
+            "change_my_mind": ["a confirmed contradicting data release"],
             "question_id": question_id,
             "probability": 0.7,
             "rationale": "Model run pushed probability higher.",
@@ -1786,6 +1813,9 @@ def test_forecast_ledger_tool_exports_audit_packets(tmp_path):
         {
             "db": db,
             "action": "update_forecast",
+            "reasons_up": ["base rate and recent signal point higher"],
+            "reasons_down": ["small sample; reversion risk"],
+            "change_my_mind": ["a confirmed contradicting data release"],
             "question_id": question_id,
             "probability": 0.61,
             "rationale": "Evidence nudged the forecast.",
@@ -1881,6 +1911,9 @@ def test_forecast_ledger_tool_returns_pilot_report(tmp_path):
         {
             "db": db,
             "action": "update_forecast",
+            "reasons_up": ["base rate and recent signal point higher"],
+            "reasons_down": ["small sample; reversion risk"],
+            "change_my_mind": ["a confirmed contradicting data release"],
             "question_id": question_id,
             "probability": 0.55,
             "rationale": "Structured evidence is enough for the pilot report.",
@@ -1954,6 +1987,9 @@ def test_forecast_ledger_tool_returns_doctor_report(tmp_path):
         {
             "db": db,
             "action": "update_forecast",
+            "reasons_up": ["base rate and recent signal point higher"],
+            "reasons_down": ["small sample; reversion risk"],
+            "change_my_mind": ["a confirmed contradicting data release"],
             "question_id": question_id,
             "probability": 0.55,
             "rationale": "Structured evidence is enough for the tester handoff gate.",
@@ -2023,6 +2059,9 @@ def test_forecast_ledger_tool_records_corrections_and_invalidates_learning(tmp_p
         {
             "db": db,
             "action": "update_forecast",
+            "reasons_up": ["base rate and recent signal point higher"],
+            "reasons_down": ["small sample; reversion risk"],
+            "change_my_mind": ["a confirmed contradicting data release"],
             "question_id": question_id,
             "probability": 0.8,
             "rationale": "Wrong source was trusted.",
@@ -2107,6 +2146,9 @@ def test_forecast_ledger_tool_lists_scores_for_calibration_review(tmp_path):
         {
             "db": db,
             "action": "update_forecast",
+            "reasons_up": ["base rate and recent signal point higher"],
+            "reasons_down": ["small sample; reversion risk"],
+            "change_my_mind": ["a confirmed contradicting data release"],
             "question_id": question_id,
             "probability": 0.72,
             "rationale": "Macro forecast for score listing.",
@@ -2273,6 +2315,9 @@ def test_forecast_ledger_tool_stores_snapshot_audit_metadata(tmp_path):
             {
                 "db": db,
                 "action": "update_forecast",
+                "reasons_up": ["base rate and recent signal point higher"],
+                "reasons_down": ["small sample; reversion risk"],
+                "change_my_mind": ["a confirmed contradicting data release"],
                 "question_id": question_id,
                 "probability": 0.62,
                 "rationale": "Store tool audit metadata.",
@@ -2336,6 +2381,9 @@ def test_forecast_ledger_tool_can_apply_active_calibration_lessons(tmp_path):
             {
                 "db": db,
                 "action": "update_forecast",
+                "reasons_up": ["base rate and recent signal point higher"],
+                "reasons_down": ["small sample; reversion risk"],
+                "change_my_mind": ["a confirmed contradicting data release"],
                 "question_id": question_id,
                 "probability": 0.7,
                 "rationale": "Tool applies active lesson.",
@@ -2697,6 +2745,9 @@ def test_forecast_ledger_tool_reviews_focused_books(tmp_path):
         {
             "db": db,
             "action": "update_forecast",
+            "reasons_up": ["base rate and recent signal point higher"],
+            "reasons_down": ["small sample; reversion risk"],
+            "change_my_mind": ["a confirmed contradicting data release"],
             "question_id": low_confidence["id"],
             "probability": 0.55,
             "confidence": 0.3,
@@ -2707,6 +2758,9 @@ def test_forecast_ledger_tool_reviews_focused_books(tmp_path):
         {
             "db": db,
             "action": "update_forecast",
+            "reasons_up": ["base rate and recent signal point higher"],
+            "reasons_down": ["small sample; reversion risk"],
+            "change_my_mind": ["a confirmed contradicting data release"],
             "question_id": high_confidence["id"],
             "probability": 0.65,
             "confidence": 0.8,
@@ -2748,6 +2802,9 @@ def test_forecast_ledger_tool_reads_calibration_and_error_memory(tmp_path):
         {
             "db": db,
             "action": "update_forecast",
+            "reasons_up": ["base rate and recent signal point higher"],
+            "reasons_down": ["small sample; reversion risk"],
+            "change_my_mind": ["a confirmed contradicting data release"],
             "question_id": question_id,
             "probability": 0.9,
             "rationale": "Overconfident macro forecast.",
@@ -4524,10 +4581,11 @@ def test_workflow_report_aggregates_question_activity(tmp_path):
     for i in range(3):
         forecast_ledger_tool({"action": "add_evidence", "db": db, "question_id": qid,
                               "source_or_note": f"note {i}", "claim": f"c{i}"})
+    _reasons = {"reasons_up": ["up"], "reasons_down": ["down"], "change_my_mind": ["new data"]}
     forecast_ledger_tool({"action": "update_forecast", "db": db, "question_id": qid,
-                          "probability": 0.55, "rationale": "first"})
+                          "probability": 0.55, "rationale": "first", **_reasons})
     forecast_ledger_tool({"action": "update_forecast", "db": db, "question_id": qid,
-                          "probability": 0.6, "rationale": "second"})
+                          "probability": 0.6, "rationale": "second", **_reasons})
 
     out = json.loads(forecast_ledger_tool({"action": "workflow_report", "db": db, "question_id": qid}))
     assert out["success"] is True
@@ -4807,6 +4865,54 @@ def test_forecast_ledger_tool_update_forecast_enforces_structured_reasoning(tmp_
     assert "reasons_up" in result["error"]
 
 
+def test_forecast_ledger_tool_structured_reasoning_enforced_by_default_for_live(tmp_path):
+    """A live forecast missing structured reasoning is rejected even without the
+    explicit flag — the formality defaults ON for committed forecasts."""
+    db = str(tmp_path / "ledger.db")
+    qid = json.loads(forecast_ledger_tool({
+        "db": db, "action": "create_question",
+        "title": "Will the index close above 5000 on 2026-06-30?",
+        "resolution_criteria": "Official close from the exchange on 2026-06-30.",
+    }))["question"]["id"]
+
+    # No reasons, no require flag, origin defaults to live -> rejected by default.
+    rejected = json.loads(forecast_ledger_tool({
+        "db": db, "action": "update_forecast", "question_id": qid,
+        "probability": 0.55, "rationale": "rough call",
+    }))
+    assert rejected["success"] is False
+    assert "reasons_up" in rejected["error"]
+
+    # Explicit opt-out lets a bare live forecast through (judgment retained).
+    allowed = json.loads(forecast_ledger_tool({
+        "db": db, "action": "update_forecast", "question_id": qid,
+        "probability": 0.55, "rationale": "rough call",
+        "require_structured_reasoning": False,
+    }))
+    assert allowed["success"] is True
+
+
+def test_forecast_ledger_tool_exploratory_origin_is_exempt(tmp_path):
+    """Exploratory (scratchpad) forecasts are exempt from the commit-time
+    formalities and are not calibration-eligible."""
+    db = str(tmp_path / "ledger.db")
+    qid = json.loads(forecast_ledger_tool({
+        "db": db, "action": "create_question",
+        "title": "Will the index close above 5000 on 2026-06-30?",
+        "resolution_criteria": "Official close from the exchange on 2026-06-30.",
+    }))["question"]["id"]
+
+    out = json.loads(forecast_ledger_tool({
+        "db": db, "action": "update_forecast", "question_id": qid,
+        "probability": 0.55, "rationale": "thinking out loud",
+        "forecast_origin": "exploratory",
+    }))
+    assert out["success"] is True
+    snap = out["forecast_snapshot"]
+    assert snap["forecast_origin"] == "exploratory"
+    assert snap["calibration_eligible"] is False
+
+
 def test_forecast_ledger_tool_update_forecast_enforces_decision_readiness(tmp_path):
     db = str(tmp_path / "decision.db")
     created = json.loads(
@@ -4825,6 +4931,9 @@ def test_forecast_ledger_tool_update_forecast_enforces_decision_readiness(tmp_pa
             {
                 "db": db,
                 "action": "update_forecast",
+                "reasons_up": ["base rate and recent signal point higher"],
+                "reasons_down": ["small sample; reversion risk"],
+                "change_my_mind": ["a confirmed contradicting data release"],
                 "question_id": qid,
                 "probability": 0.3,
                 "rationale": "polling consensus",
@@ -4853,6 +4962,9 @@ def test_forecast_ledger_tool_postmortem_persists_failure_class(tmp_path):
         {
             "db": db,
             "action": "update_forecast",
+            "reasons_up": ["base rate and recent signal point higher"],
+            "reasons_down": ["small sample; reversion risk"],
+            "change_my_mind": ["a confirmed contradicting data release"],
             "question_id": qid,
             "probability": 0.7,
             "rationale": "consensus expectation",
@@ -4899,6 +5011,9 @@ def test_forecast_ledger_tool_postmortem_rejects_unknown_failure_class(tmp_path)
         {
             "db": db,
             "action": "update_forecast",
+            "reasons_up": ["base rate and recent signal point higher"],
+            "reasons_down": ["small sample; reversion risk"],
+            "change_my_mind": ["a confirmed contradicting data release"],
             "question_id": qid,
             "probability": 0.1,
             "rationale": "base rate",

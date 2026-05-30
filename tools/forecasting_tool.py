@@ -208,7 +208,10 @@ FORECAST_LEDGER_SCHEMA = {
             "patch": {"type": "object"},
             "forecast_origin": {
                 "type": "string",
-                "enum": ["live", "backtest", "imported_baseline"],
+                "enum": ["live", "exploratory", "backtest", "imported_baseline"],
+                "description": "'live' commits a scored forecast with commit-time formalities "
+                "enforced; 'exploratory' is a scratchpad forecast — exempt from those "
+                "formalities and never calibration-scored.",
             },
             "horizon": {"type": "string"},
             "bucket": {"type": "string"},
@@ -1128,7 +1131,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 reasons_up=args.get("reasons_up"),
                 reasons_down=args.get("reasons_down"),
                 change_my_mind=args.get("change_my_mind"),
-                require_structured_reasoning=bool(args.get("require_structured_reasoning", False)),
+                require_structured_reasoning=bool(args.get("require_structured_reasoning", True)),
                 require_decision_readiness=bool(args.get("require_decision_readiness", False)),
             )
             return tool_result(success=True, forecast_snapshot=snapshot.__dict__)
