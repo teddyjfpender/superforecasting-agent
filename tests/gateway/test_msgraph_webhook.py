@@ -11,6 +11,7 @@ from gateway.platforms.msgraph_webhook import MSGraphWebhookAdapter
 
 def _make_adapter(**extra_overrides) -> MSGraphWebhookAdapter:
     extra = {
+        "host": "127.0.0.1",
         "client_state": "expected-client-state",
         "accepted_resources": ["communications/onlineMeetings"],
     }
@@ -355,9 +356,9 @@ class TestMSGraphNotifications:
 
 class TestMSGraphSourceIPAllowlist:
     @pytest.mark.anyio
-    async def test_disabled_by_default_allows_all(self):
-        """Empty allowlist preserves pre-existing behavior (dev tunnels, localhost)."""
-        adapter = _make_adapter()  # no allowed_source_cidrs set
+    async def test_loopback_bind_without_allowlist_still_accepts_local_requests(self):
+        """Loopback-only listeners may rely on local proxying/tunnels instead of CIDRs."""
+        adapter = _make_adapter()  # host defaults to 127.0.0.1; no allowed_source_cidrs
         payload = {
             "value": [
                 {
@@ -416,7 +417,33 @@ class TestMSGraphSourceIPAllowlist:
         assert resp.status == 403
 
     @pytest.mark.anyio
-    async def test_invalid_cidr_entries_are_ignored_at_init(self):
+    @pytest.mark.anyio
+    async def test_public_bind_without_allowlist_fails_closed(self):
+        """Public binds must not accept requests until a source allowlist is configured."""
+        adapter = _make_adapter(host="0.0.0.0", allowed_source_cidrs=[])
+        payload = {
+            "value": [
+                {
+                    "id": "notif-ip-public",
+                    "resource": "communications/onlineMeetings/m",
+                    "clientState": "expected-client-state",
+                }
+            ]
+        }
+        resp = await adapter._handle_notification(
+            _FakeRequest(json_payload=payload, remote="203.0.113.99")
+        )
+        assert resp.status == 403
+
+    @pytest.mark.anyio
+    async def test_health_endpoint_also_respects_allowlist(self):
+        """The readiness endpoint should not leak counters to arbitrary sources."""
+        adapter = _make_adapter(allowed_source_cidrs=["10.0.0.0/8"])
+        resp = await adapter._handle_health(_FakeRequest(remote="203.0.113.99"))
+        assert resp.status == 403
+
+
+    def test_invalid_cidr_entries_are_ignored_at_init(self):
         """Malformed CIDR strings should log a warning and be ignored, not crash."""
         adapter = _make_adapter(
             allowed_source_cidrs=["10.0.0.0/8", "not-a-cidr", "", "203.0.113.0/24"]
@@ -428,3 +455,28 @@ class TestMSGraphSourceIPAllowlist:
         """Env-var-style 'cidr1, cidr2' strings parse as a list."""
         adapter = _make_adapter(allowed_source_cidrs="10.0.0.0/8, 203.0.113.0/24")
         assert len(adapter._allowed_source_networks) == 2
+
+    @pytest.mark.anyio
+    async def test_connect_requires_source_allowlist_on_public_bind(self):
+        from gateway.platforms.msgraph_webhook import AIOHTTP_AVAILABLE
+
+        if not AIOHTTP_AVAILABLE:
+            pytest.skip("aiohttp not installed")
+        adapter = _make_adapter(host="0.0.0.0", port=0, allowed_source_cidrs=[])
+        connected = await adapter.connect()
+        assert connected is False
+        assert adapter.is_connected is False
+
+    @pytest.mark.anyio
+    async def test_connect_allows_loopback_without_source_allowlist(self):
+        from gateway.platforms.msgraph_webhook import AIOHTTP_AVAILABLE
+
+        if not AIOHTTP_AVAILABLE:
+            pytest.skip("aiohttp not installed")
+        adapter = _make_adapter(host="127.0.0.1", port=0, allowed_source_cidrs=[])
+        try:
+            connected = await adapter.connect()
+            assert connected is True
+            assert adapter.is_connected is True
+        finally:
+            await adapter.disconnect()
