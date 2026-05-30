@@ -620,6 +620,10 @@ FORECAST_LEDGER_SCHEMA = {
             "correction_ref": {"type": "string"},
             "trusted_policy_id": {"type": "string"},
             "scoreable": {"type": "boolean"},
+            "auto_score": {
+                "type": "boolean",
+                "description": "On a confirmed, criteria-satisfied resolution, automatically score the current live snapshot (Brier/log score). Defaults true; set false to resolve without scoring yet.",
+            },
             "stale": {"type": "boolean"},
             "last_days": {"type": "integer"},
             "stale_days": {"type": "integer"},
@@ -1151,6 +1155,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 correction_ref=args.get("correction_ref"),
                 trusted_policy_id=args.get("trusted_policy_id"),
                 scoreable=bool(args.get("scoreable", True)),
+                auto_score=bool(args.get("auto_score", True)),
             )
             return tool_result(success=True, resolution=resolution.__dict__)
 

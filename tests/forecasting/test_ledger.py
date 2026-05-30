@@ -5521,6 +5521,67 @@ def test_self_check_flags_evidence_newer_than_current_forecast(tmp_path):
     assert f"new_evidence:{evidence.id}" in {alert.reason for alert in alerts}
 
 
+def test_resolve_question_auto_scores_live_snapshot(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will resolving auto-score the committed forecast?",
+        resolution_criteria="Resolved yes if a confirmed resolution records a score with no extra step.",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.7,
+        rationale="Committed live forecast.",
+    )
+    resolution = ledger.resolve_question(question_id=question.id, outcome="yes")
+
+    # The score exists immediately — no separate score/self_check call needed.
+    score = ledger.get_current_score(question.id)
+    assert score is not None
+    assert score.question_id == question.id
+    assert score.resolution_id == resolution.id
+    assert score.forecast_origin == "live"
+    assert [s.question_id for s in ledger.list_scores()] == [question.id]
+
+
+def test_resolve_question_auto_score_can_be_deferred(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will deferring auto-score leave the forecast unscored?",
+        resolution_criteria="Resolved yes if --no-auto-score skips scoring at resolution.",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.7,
+        rationale="Committed live forecast.",
+    )
+    ledger.resolve_question(question_id=question.id, outcome="yes", auto_score=False)
+
+    assert ledger.get_current_score(question.id) is None
+    assert ledger.list_scores() == []
+    # The score is still available on demand — deferral, not refusal.
+    ledger.score_question(question.id)
+    assert ledger.get_current_score(question.id) is not None
+
+
+def test_resolve_question_does_not_auto_score_exploratory_snapshot(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will an exploratory scratchpad forecast stay unscored?",
+        resolution_criteria="Resolved yes if exploratory snapshots are exempt from calibration scoring.",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.7,
+        rationale="Exploratory scratchpad estimate, not a committed forecast.",
+        forecast_origin="exploratory",
+    )
+    ledger.resolve_question(question_id=question.id, outcome="yes")
+
+    # Exploratory scratchpad work is never auto-scored into the calibration record.
+    assert ledger.get_current_score(question.id) is None
+    assert ledger.list_scores() == []
+
+
 def test_self_check_flags_resolved_forecasts_needing_score_and_postmortem(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     question = ledger.create_question(
@@ -5532,7 +5593,8 @@ def test_self_check_flags_resolved_forecasts_needing_score_and_postmortem(tmp_pa
         probability_or_distribution=0.7,
         rationale="Initial forecast.",
     )
-    ledger.resolve_question(question_id=question.id, outcome="yes")
+    # Defer scoring so the self-check backstop is the thing that detects the gap.
+    ledger.resolve_question(question_id=question.id, outcome="yes", auto_score=False)
 
     score_alerts = ledger.self_check(question_id=question.id)
     ledger.score_question(question.id)
@@ -5554,7 +5616,8 @@ def test_self_check_prioritizes_high_impact_resolution_learning(tmp_path):
         probability_or_distribution=0.7,
         rationale="Initial high-impact forecast.",
     )
-    ledger.resolve_question(question_id=question.id, outcome="yes")
+    # Defer scoring so the self-check backstop is the thing that detects the gap.
+    ledger.resolve_question(question_id=question.id, outcome="yes", auto_score=False)
 
     score_alerts = ledger.self_check(question_id=question.id)
     ledger.score_question(question.id)
@@ -5577,7 +5640,8 @@ def test_self_check_auto_scores_confirmed_resolved_forecasts(tmp_path):
         probability_or_distribution=0.7,
         rationale="Initial forecast.",
     )
-    ledger.resolve_question(question_id=question.id, outcome="yes")
+    # Defer scoring at resolution so self_check's own auto-scorer is exercised.
+    ledger.resolve_question(question_id=question.id, outcome="yes", auto_score=False)
 
     alerts = ledger.self_check(question_id=question.id, auto_score=True)
     reasons = {alert.reason for alert in alerts}
@@ -5600,7 +5664,8 @@ def test_self_check_auto_postmortem_updates_learning_records(tmp_path):
         probability_or_distribution=0.9,
         rationale="High-confidence forecast that should miss.",
     )
-    ledger.resolve_question(question_id=question.id, outcome="no")
+    # Defer scoring at resolution so self_check's own auto-scorer is exercised.
+    ledger.resolve_question(question_id=question.id, outcome="no", auto_score=False)
 
     alerts = ledger.self_check(question_id=question.id, auto_score=True, auto_postmortem=True)
     reasons = {alert.reason for alert in alerts}
@@ -5704,7 +5769,8 @@ def test_domain_topic_schedule_can_auto_update_learning_records(tmp_path):
             probability_or_distribution=0.9,
             rationale="High-confidence forecast that should miss.",
         )
-        ledger.resolve_question(question_id=question.id, outcome="no")
+        # Defer scoring so only the scoped scheduled review scores `matching`.
+        ledger.resolve_question(question_id=question.id, outcome="no", auto_score=False)
 
     ledger.schedule_review(
         scope_type="domain_topic",
@@ -5807,7 +5873,8 @@ def test_cron_runner_uses_schedule_auto_learning_flags(tmp_path):
         probability_or_distribution=0.9,
         rationale="High-confidence forecast that should miss.",
     )
-    ledger.resolve_question(question_id=question.id, outcome="no")
+    # Defer scoring so the scheduled cron review is what records the score.
+    ledger.resolve_question(question_id=question.id, outcome="no", auto_score=False)
     active_question = ledger.create_question(
         title="Will cron flag active forecast error patterns?",
         resolution_criteria="Resolved yes if active forecasts receive learned-error alerts.",
@@ -5855,7 +5922,8 @@ def test_scheduled_auto_learning_does_not_create_forecast_updates(tmp_path):
         rationale="High-confidence forecast before resolution.",
         as_of="2026-01-01T00:00:00Z",
     )
-    ledger.resolve_question(question_id=question.id, outcome="no")
+    # Defer scoring so the scheduled review is what records the score.
+    ledger.resolve_question(question_id=question.id, outcome="no", auto_score=False)
     ledger.schedule_review(
         scope_type="question",
         scope_ref=question.id,

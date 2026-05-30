@@ -14975,7 +14975,8 @@ def test_forecast_cli_schedule_add_can_enable_scoped_learning(tmp_path, capsys):
         ],
     )
     capsys.readouterr()
-    _run(parser, ["forecast", "--db", db, "resolve", question_id, "--outcome", "no"])
+    # Defer scoring so the scoped scheduled run is what records the score.
+    _run(parser, ["forecast", "--db", db, "resolve", question_id, "--outcome", "no", "--no-auto-score"])
     capsys.readouterr()
     _run(
         parser,
@@ -15111,7 +15112,8 @@ def test_forecast_cli_self_check_auto_scores_and_postmortems_resolved_question(t
         ],
     )
     capsys.readouterr()
-    _run(parser, ["forecast", "--db", db, "resolve", question_id, "--outcome", "yes"])
+    # Defer scoring so the self-check backstop is what records the score here.
+    _run(parser, ["forecast", "--db", db, "resolve", question_id, "--outcome", "yes", "--no-auto-score"])
     capsys.readouterr()
 
     _run(

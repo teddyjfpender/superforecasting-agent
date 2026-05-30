@@ -1683,6 +1683,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     resolve_parser.add_argument("--correction-ref")
     resolve_parser.add_argument("--trusted-policy")
     resolve_parser.add_argument("--not-scoreable", action="store_true")
+    resolve_parser.add_argument(
+        "--auto-score",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Automatically score the current live snapshot on a confirmed, criteria-satisfied resolution (default on; --no-auto-score to defer).",
+    )
     resolve_parser.set_defaults(_forecast_handler=_cmd_resolve)
 
     score_parser = forecast_sub.add_parser("score", help="Score the current forecast snapshot")
@@ -7158,10 +7164,25 @@ def _cmd_resolve(args: argparse.Namespace) -> None:
         correction_ref=args.correction_ref,
         trusted_policy_id=args.trusted_policy,
         scoreable=not args.not_scoreable,
+        auto_score=args.auto_score,
     )
     print(f"recorded resolution {resolution.id}")
     print(f"status: {resolution.resolution_status}")
     print(f"criteria_satisfied: {resolution.criteria_satisfied}")
+    if (
+        args.auto_score
+        and resolution.resolution_status == "confirmed"
+        and resolution.criteria_satisfied
+        and not args.not_scoreable
+    ):
+        score = _ledger(args).get_current_score(args.id)
+        if score is not None:
+            print(
+                "auto_score: "
+                f"brier={_format_metric(score.brier_score)} "
+                f"log={_format_metric(score.log_score)} "
+                f"origin={score.forecast_origin}"
+            )
 
 
 def _cmd_score(args: argparse.Namespace) -> None:

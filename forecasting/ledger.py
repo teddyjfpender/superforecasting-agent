@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import csv
 import json
+import logging
 import math
 import os
 import re
@@ -59,6 +60,8 @@ from forecasting.models import (
     utc_now_iso,
 )
 
+
+logger = logging.getLogger(__name__)
 
 FORECASTING_PROTOCOL_VERSION = "forecasting-ledger-v1"
 
@@ -1894,6 +1897,7 @@ class ForecastLedger:
         correction_ref: str | None = None,
         trusted_policy_id: str | None = None,
         scoreable: bool = True,
+        auto_score: bool = True,
     ) -> Resolution:
         self.get_question(question_id)
         if resolution_status not in RESOLUTION_STATUSES:
@@ -1967,6 +1971,22 @@ class ForecastLedger:
                     "UPDATE trusted_resolver_policies SET last_used_at = ? WHERE id = ?",
                     (now, trusted_policy_id),
                 )
+
+        # Auto-score on a confirmed, criteria-satisfied, scoreable resolution so
+        # a forecast cannot resolve without a Brier/log score — closing the
+        # feedback loop (calibration, postmortems, lessons) automatically. Only
+        # scores a committed forecast (origin != "exploratory"); exploratory
+        # scratchpad snapshots are never scored. Best-effort: a scoring hiccup
+        # must never break the resolution itself, and score_snapshot is
+        # idempotent so a later explicit `score` is a no-op.
+        if auto_score and resolution_status == "confirmed" and criteria_satisfied and scoreable:
+            try:
+                snapshot = self.get_current_snapshot(question_id)
+                if snapshot is not None and snapshot.forecast_origin != "exploratory":
+                    self.score_snapshot(snapshot.forecast_id)
+            except Exception:
+                logger.debug("auto-score on resolution failed for %s", question_id, exc_info=True)
+
         return self.get_resolution(resolution_id)
 
     def get_resolution(self, resolution_id: str) -> Resolution:
@@ -2003,6 +2023,18 @@ class ForecastLedger:
         if snapshot is None:
             raise ValidationError("cannot score a question with no forecast snapshot")
         return self.score_snapshot(snapshot.forecast_id, force=force)
+
+    def get_current_score(self, question_id: str) -> ScoreRecord | None:
+        """Return the score for the current snapshot against the confirmed
+        resolution, if one has already been recorded; else None. Read-only —
+        does not trigger scoring."""
+        snapshot = self.get_current_snapshot(question_id)
+        if snapshot is None:
+            return None
+        resolution = self.get_latest_resolution(question_id, confirmed_only=True)
+        if resolution is None:
+            return None
+        return self._existing_score(snapshot.forecast_id, resolution.id)
 
     def score_snapshot(self, forecast_id: str, *, force: bool = False) -> ScoreRecord:
         snapshot = self.get_snapshot(forecast_id)
