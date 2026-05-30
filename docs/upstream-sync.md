@@ -87,20 +87,25 @@ last one instead of a from-scratch re-read.
 | #33883 | Classify provider content-policy/safety blocks as non-retryable `content_policy_blocked` → fall back immediately instead of burning retries; provider-safety guidance + clear `final_response` | `89593786` |
 | #33816 | Buffer retry/fallback/compression status chatter; surface only on terminal failure (silent on transient recovery). 4 buffer helpers + ~43 call-site conversions across loop/chat/stream | `cb9af80d` |
 | #33816 (fix-beyond-upstream) | Close a status-buffer leak **upstream still has**: the lone clear sat only on the final-text success path, so a hiccup recovered via a tool-call iteration (intra-turn) or a non-flushing break exit (cross-turn, long-lived session) leaked stale chatter onto a later unrelated terminal flush. Added a turn-start backstop clear + a tool-call-success clear; regression guards in `test_status_buffer_clear_invariants.py`. Found by an adversarial buffering-invariant audit. | _this wave_ |
+| #33042 | **Codex rewrite (Wave 2 centerpiece).** Drop the SDK `responses.stream()` helper; consume `responses.create(stream=True)` events directly via a shared `_consume_codex_event_stream` — structurally immune to chatgpt.com `output=null` backend drift. Retires our `except TypeError` hand-patch + the prelude/postlude fallbacks; collapses `run_codex_create_stream_fallback` to a thin alias; subsumes #43a3f119. A behavior-preservation audit confirmed 0 lost behaviors. codex_runtime ported verbatim (2 comment rebrands) + auxiliary_client + 4 test files migrated | `dfe7b1ce` |
+| #2d422720 | Payload-shape-aware context estimator (`estimate_request_context_tokens`) so Codex turns trip the stale tiers; forward `request_timeout_seconds` through the Codex path (transport + adapter); lower non-stream stale defaults (base 300→90, tiers 600→240/450→150) | `c55e2c0b` |
+| #8601c4d4 / #283bb810 | TTFB + stream-idle watchdogs for stalled Codex streams in `interruptible_api_call` (kill+reconnect on no-first-byte / first-byte-then-silence); large-request prefill tolerance (disable-above-tokens, cap, scaled idle floors). All knobs via `*_CODEX_*` aliases | `6705d2a9` |
+| #fc47b7285 | Omit `tools` key from Codex Responses kwargs when no tools registered (was sending `tools=None` → SDK `_make_tools` `TypeError` before any HTTP request) | `716bd485` |
 
 ### Already-have (subsumed; do not port)
 
 - **#00bd24e2** (expand memory threat patterns) — ancestor of #32269, which
   consolidated every pattern + all 17 invisible chars into `threat_patterns.py`.
-- **#43a3f119** (recover codex streams with null output) — our hand-patch in
-  `agent/codex_runtime.py` (`except TypeError` fallback) already handles this; it
-  is *superseded* by #33042's rewrite (see deferred).
+- **#43a3f119** (recover codex streams with null output) — now *subsumed* by the
+  ported #33042 rewrite (`dfe7b1ce`): the event-driven consumer never reads the
+  terminal frame's `output`, so null-output recovery is structural. Our old
+  `except TypeError` hand-patch was retired with the rewrite. Do not port
+  separately.
 
 ### Deferred (valuable; needs a focused pass or a prerequisite)
 
 | Upstream | Why deferred |
 |---|---|
-| #33042 | 613-line rewrite of `codex_runtime.py` (drops `responses.stream()`, consumes events directly) + 5 test files. Retires our hand-patch and the now-dead #43a3f119 fallback. The codex companions (#8601c4d4 TTFB watchdog, #283bb810 prefill, #2d422720 timeouts) sit on this same new event-consumption architecture, so they can't be cleanly applied onto our old `responses.stream()` path — they come *with* the rewrite. Our hand-patch works, so deferring is safe. **Do as its own wave.** |
 | c6a992e3 | Host-derived `<VENDOR>_API_KEY` fallback. Now unblocked for the `_resolve_openrouter_runtime` path by #28660; but its full value also needs the `_resolve_named_custom_runtime` chains gated (still ungated — separate upstream PRs). |
 
 ### Skip (off-target for a forecasting CLI/TUI fork)
