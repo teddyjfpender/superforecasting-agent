@@ -64,6 +64,7 @@ from utils import (
     base_url_hostname,
     env_var_alias_float,
     env_var_alias_int,
+    env_var_alias_value,
 )
 
 logger = logging.getLogger(__name__)
@@ -87,6 +88,32 @@ STREAM_STALE_TIMEOUT_ENV_NAMES = (
     "SUPERFORECASTING_AGENT_STREAM_STALE_TIMEOUT",
     "FORECAST_STREAM_STALE_TIMEOUT",
     "HERMES_STREAM_STALE_TIMEOUT",
+)
+
+CODEX_TTFB_TIMEOUT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_CODEX_TTFB_TIMEOUT_SECONDS",
+    "FORECAST_CODEX_TTFB_TIMEOUT_SECONDS",
+    "HERMES_CODEX_TTFB_TIMEOUT_SECONDS",
+)
+CODEX_TTFB_DISABLE_ABOVE_TOKENS_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_CODEX_TTFB_DISABLE_ABOVE_TOKENS",
+    "FORECAST_CODEX_TTFB_DISABLE_ABOVE_TOKENS",
+    "HERMES_CODEX_TTFB_DISABLE_ABOVE_TOKENS",
+)
+CODEX_TTFB_MAX_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_CODEX_TTFB_MAX_SECONDS",
+    "FORECAST_CODEX_TTFB_MAX_SECONDS",
+    "HERMES_CODEX_TTFB_MAX_SECONDS",
+)
+CODEX_TTFB_STRICT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_CODEX_TTFB_STRICT",
+    "FORECAST_CODEX_TTFB_STRICT",
+    "HERMES_CODEX_TTFB_STRICT",
+)
+CODEX_EVENT_STALE_TIMEOUT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_CODEX_EVENT_STALE_TIMEOUT_SECONDS",
+    "FORECAST_CODEX_EVENT_STALE_TIMEOUT_SECONDS",
+    "HERMES_CODEX_EVENT_STALE_TIMEOUT_SECONDS",
 )
 
 
@@ -153,6 +180,19 @@ def estimate_request_context_tokens(api_payload: Any) -> int:
         return sum(_chars(value) for value in api_payload.values()) // 4
 
     return _chars(api_payload) // 4
+
+
+def _is_openai_codex_backend(agent) -> bool:
+    """True when this request targets the openai-codex / chatgpt.com codex backend."""
+    base_url_lower = str(getattr(agent, "_base_url_lower", "") or "")
+    base_url_hostname = str(getattr(agent, "_base_url_hostname", "") or "")
+    return (
+        getattr(agent, "provider", None) == "openai-codex"
+        or (
+            base_url_hostname == "chatgpt.com"
+            and "/backend-api/codex" in base_url_lower
+        )
+    )
 
 
 def interruptible_api_call(agent, api_kwargs: dict):
@@ -230,6 +270,69 @@ def interruptible_api_call(agent, api_kwargs: dict):
     # apply richer recovery (credential rotation, provider fallback).
     _stale_timeout = agent._compute_non_stream_stale_timeout(api_kwargs)
 
+    # ── Codex Responses stream watchdogs ───────────────────────
+    # chatgpt.com/backend-api/codex can accept the connection but never emit a
+    # stream event (socket hangs). While no event has arrived we apply a short
+    # TTFB cutoff so the retry loop reconnects promptly. Large subscription-
+    # backed requests can legitimately spend tens of seconds in admission /
+    # prefill before the first SSE event, so the no-byte TTFB watchdog is
+    # disabled for large openai-codex requests. A second failure mode emits an
+    # opening SSE frame then stalls forever; for that we watch the gap since
+    # the last Codex stream event. The marker advances on *any* event (set in
+    # codex_runtime). Tunable via CODEX_TTFB_* / CODEX_EVENT_STALE_* env
+    # aliases (0 disables).
+    _codex_watchdog_enabled = agent.api_mode == "codex_responses"
+    _openai_codex_backend = _is_openai_codex_backend(agent)
+    _est_tokens_for_codex_watchdog = estimate_request_context_tokens(api_kwargs)
+    if _codex_watchdog_enabled and _openai_codex_backend:
+        if _est_tokens_for_codex_watchdog > 100_000:
+            _stale_timeout = max(_stale_timeout, 1200.0)
+        elif _est_tokens_for_codex_watchdog > 50_000:
+            _stale_timeout = max(_stale_timeout, 900.0)
+        elif _est_tokens_for_codex_watchdog > 25_000:
+            _stale_timeout = max(_stale_timeout, 600.0)
+    if _est_tokens_for_codex_watchdog > 100_000:
+        _codex_idle_timeout_default = 180.0
+    elif _est_tokens_for_codex_watchdog > 50_000:
+        _codex_idle_timeout_default = 120.0
+    elif _est_tokens_for_codex_watchdog > 10_000:
+        _codex_idle_timeout_default = 60.0
+    else:
+        _codex_idle_timeout_default = 12.0
+    _ttfb_enabled = _codex_watchdog_enabled
+    _ttfb_timeout = env_var_alias_float(CODEX_TTFB_TIMEOUT_ENV_NAMES, 12.0)
+    if _ttfb_timeout <= 0:
+        _ttfb_enabled = False
+    elif _openai_codex_backend:
+        _ttfb_disable_above = env_var_alias_float(CODEX_TTFB_DISABLE_ABOVE_TOKENS_ENV_NAMES, 25_000.0)
+        _ttfb_strict = (env_var_alias_value(CODEX_TTFB_STRICT_ENV_NAMES, "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        if (not _ttfb_strict and _ttfb_disable_above > 0 and _est_tokens_for_codex_watchdog >= _ttfb_disable_above):
+            _ttfb_enabled = False
+            logger.info(
+                "Disabling openai-codex no-byte TTFB watchdog for large request "
+                "(context=~%s tokens >= %.0f). Set CODEX_TTFB_STRICT=1 to force "
+                "early reconnects.",
+                f"{_est_tokens_for_codex_watchdog:,}", _ttfb_disable_above,
+            )
+        else:
+            _ttfb_cap = env_var_alias_float(CODEX_TTFB_MAX_ENV_NAMES, 20.0)
+            if _ttfb_cap > 0 and _ttfb_timeout > _ttfb_cap:
+                logger.info(
+                    "Capping openai-codex no-byte TTFB timeout from %.0fs to "
+                    "%.0fs (context=~%s tokens).",
+                    _ttfb_timeout, _ttfb_cap, f"{_est_tokens_for_codex_watchdog:,}",
+                )
+                _ttfb_timeout = _ttfb_cap
+    _codex_idle_enabled = _codex_watchdog_enabled
+    _codex_idle_timeout = env_var_alias_float(CODEX_EVENT_STALE_TIMEOUT_ENV_NAMES, _codex_idle_timeout_default)
+    if _codex_idle_timeout <= 0:
+        _codex_idle_enabled = False
+    if _codex_watchdog_enabled:
+        # Reset before the worker starts so a marker left over from a previous
+        # call on this agent can't be misread as first-byte for this one.
+        agent._codex_stream_last_event_ts = None
+        agent._codex_stream_last_progress_ts = None
+
     _call_start = time.time()
     agent._touch_activity("waiting for non-streaming API response")
 
@@ -248,9 +351,83 @@ def interruptible_api_call(agent, api_kwargs: dict):
                 f"waiting for non-streaming response ({int(_elapsed)}s elapsed)"
             )
 
+        _elapsed = time.time() - _call_start   # hoisted; shared by all detectors
+
+        # TTFB detector (#8601c4d4): no event at all past the first-byte cutoff
+        if (
+            _ttfb_enabled
+            and _elapsed > _ttfb_timeout
+            and getattr(agent, "_codex_stream_last_event_ts", None) is None
+        ):
+            logger.warning(
+                "Codex stream produced no bytes within TTFB cutoff "
+                "(%.0fs > %.0fs, model=%s). Backend accepted the connection "
+                "but sent no stream events. Killing connection so the retry "
+                "loop can reconnect.",
+                _elapsed, _ttfb_timeout, api_kwargs.get("model", "unknown"),
+            )
+            agent._emit_status(
+                f"⚠️ No first byte from provider in {int(_elapsed)}s "
+                f"(codex stream, model: {api_kwargs.get('model', 'unknown')}). "
+                f"Reconnecting."
+            )
+            try:
+                rc = request_client_holder.get("client")
+                if rc is not None:
+                    agent._close_request_openai_client(rc, reason="codex_ttfb_kill")
+            except Exception:
+                pass
+            agent._touch_activity(
+                f"codex stream killed after {int(_elapsed)}s with no first byte"
+            )
+            t.join(timeout=2.0)
+            if result["error"] is None and result["response"] is None:
+                result["error"] = TimeoutError(
+                    f"Codex stream produced no bytes within {int(_elapsed)}s "
+                    f"(TTFB threshold: {int(_ttfb_timeout)}s)"
+                )
+            break
+
+        # Stream-idle detector (#283bb810): first SSE frame arrived, then silence
+        _last_codex_event_ts = getattr(agent, "_codex_stream_last_event_ts", None)
+        if (
+            _codex_idle_enabled
+            and _last_codex_event_ts is not None
+            and (time.time() - _last_codex_event_ts) > _codex_idle_timeout
+        ):
+            _event_stale_elapsed = time.time() - _last_codex_event_ts
+            logger.warning(
+                "Codex stream produced no SSE events for %.0fs after first byte "
+                "(threshold %.0fs, model=%s, context=~%s tokens). Killing "
+                "connection so the retry loop can reconnect.",
+                _event_stale_elapsed, _codex_idle_timeout,
+                api_kwargs.get("model", "unknown"),
+                f"{_est_tokens_for_codex_watchdog:,}",
+            )
+            agent._emit_status(
+                f"⚠️ Codex stream sent no events for {int(_event_stale_elapsed)}s "
+                f"after first byte (model: {api_kwargs.get('model', 'unknown')}). "
+                f"Reconnecting."
+            )
+            try:
+                rc = request_client_holder.get("client")
+                if rc is not None:
+                    agent._close_request_openai_client(rc, reason="codex_stream_idle_kill")
+            except Exception:
+                pass
+            agent._touch_activity(
+                f"codex stream killed after {int(_event_stale_elapsed)}s with no SSE events"
+            )
+            t.join(timeout=2.0)
+            if result["error"] is None and result["response"] is None:
+                result["error"] = TimeoutError(
+                    f"Codex stream produced no SSE events for {int(_event_stale_elapsed)}s "
+                    f"after first byte (threshold: {int(_codex_idle_timeout)}s)"
+                )
+            break
+
         # Stale-call detector: kill the connection if no response
         # arrives within the configured timeout.
-        _elapsed = time.time() - _call_start
         if _elapsed > _stale_timeout:
             _est_ctx = estimate_request_context_tokens(api_kwargs)
             logger.warning(
