@@ -91,6 +91,11 @@ last one instead of a from-scratch re-read.
 | #2d422720 | Payload-shape-aware context estimator (`estimate_request_context_tokens`) so Codex turns trip the stale tiers; forward `request_timeout_seconds` through the Codex path (transport + adapter); lower non-stream stale defaults (base 300→90, tiers 600→240/450→150) | `c55e2c0b` |
 | #8601c4d4 / #283bb810 | TTFB + stream-idle watchdogs for stalled Codex streams in `interruptible_api_call` (kill+reconnect on no-first-byte / first-byte-then-silence); large-request prefill tolerance (disable-above-tokens, cap, scaled idle floors). All knobs via `*_CODEX_*` aliases | `6705d2a9` |
 | #fc47b7285 | Omit `tools` key from Codex Responses kwargs when no tools registered (was sending `tools=None` → SDK `_make_tools` `TypeError` before any HTTP request) | `716bd485` |
+| #9514ddbee + c6a992e3 | **Closed a LIVE credential leak** — `_resolve_named_custom_runtime` forwarded OPENAI/OPENROUTER keys to ANY custom host (e.g. DeepSeek) ungated in both candidate lists; gated to authoritative hosts + added lookalike-resistant `_host_derived_api_key` vendor fallback. Found via scouting. | `098b45c1` |
+| #aa283d1e4 + #40fcb9658 | Credential isolation: re-key model picker custom-provider grouping by (api_url, credential_identity, api_mode) so same-host env-keyed providers don't collapse/misroute; `set_runtime_main` records base_url/api_key/api_mode for aux routing | `4926dda6` |
+| #912e6e227 | TUI: suppress mouse-residue scrollback leaks during launcher startup (env-guard honors `*_TUI`/`*_TUI_NO_EARLY_DISABLE` alias triples) | `72cfcacf` |
+| #c42edd805 | TUI: fix linux/wayland clipboard copy (`resolveOnExit` in `execFileNoThrow` so daemonizing wl-copy/xclip/xsel settle on child exit, not stdio drain); kept our rebranded debug branches; `StdioOptions` annotation for newer node types | `cc4fee8e` |
+| #3a9bc9d88 | Model picker: unify /model + CLI lists, add credential-fingerprinted disk cache (cache path auto-rebrands via `get_hermes_home`; only the digest is persisted) + `--refresh` | `e98c91e0` |
 
 ### Already-have (subsumed; do not port)
 
@@ -104,9 +109,8 @@ last one instead of a from-scratch re-read.
 
 ### Deferred (valuable; needs a focused pass or a prerequisite)
 
-| Upstream | Why deferred |
-|---|---|
-| c6a992e3 | Host-derived `<VENDOR>_API_KEY` fallback. Now unblocked for the `_resolve_openrouter_runtime` path by #28660; but its full value also needs the `_resolve_named_custom_runtime` chains gated (still ungated — separate upstream PRs). |
+_(none currently — c6a992e3 host-derived fallback was ported with the
+`_resolve_named_custom_runtime` gating in `098b45c1`.)_
 
 ### Skip (off-target for a forecasting CLI/TUI fork)
 
@@ -127,8 +131,13 @@ last one instead of a from-scratch re-read.
 
 ### Next-audit candidates worth a look (not yet assessed in depth)
 
-- The `_resolve_named_custom_runtime` host-gating PRs (close the remaining
-  credential-leak chains, pairs with #28660 / c6a992e3).
-- TUI fixes verified net-new earlier: mouse-residue suppression (#912e6e22),
-  wayland clipboard (#c42edd80), transcript-tail across resizes, unified model
-  picker + disk cache (#3a9bc9d8 — rebrand cache path).
+- **~13 other in-range `fix(security)` commits** flagged during the 2026-05-30
+  scout but not yet triaged: `/proc/*/environ` + `.env` read-guards, `.env` 0600
+  perms, OAuth-store write restrictions, write-denylist additions. Likely
+  port-on-sight **if** our file-safety/read-guard surface matches — needs a
+  dedicated triage pass.
+- `transcript-tail across resizes` (TUI) — flagged earlier, never SHA-pinned.
+- Rebrand-drift cleanup (pre-existing, not upstream ports): `test_model_catalog`
+  docs URL (`build_catalog()` emits `nousresearch.com`, committed json uses
+  `teddyjfpender.github.io`); `test_auxiliary_client_azure_foundry` expects
+  `"hermes doctor"` vs the emitted `"superforecasting-agent doctor"`.
