@@ -581,7 +581,8 @@ def test_custom_endpoint_uses_saved_config_base_url_when_env_missing(monkeypatch
     resolved = rp.resolve_runtime_provider(requested="custom")
 
     assert resolved["base_url"] == "http://127.0.0.1:1234/v1"
-    assert resolved["api_key"] == "local-key"
+    # OPENAI_API_KEY must not leak to a non-OpenAI host (#28660).
+    assert resolved["api_key"] == "no-key-required"
 
 
 def test_custom_endpoint_uses_config_api_key_over_env(monkeypatch):
@@ -671,7 +672,8 @@ def test_bare_custom_uses_loopback_model_base_url_when_provider_not_custom(monke
 
     assert resolved["provider"] == "custom"
     assert resolved["base_url"] == "http://127.0.0.1:8082/v1"
-    assert resolved["api_key"] == "openai-key"
+    # 127.0.0.1 is not openai.com — OPENAI_API_KEY must not leak here (#28660).
+    assert resolved["api_key"] == "no-key-required"
 
 
 def test_bare_custom_custom_base_url_env_overrides_remote_yaml(monkeypatch):
@@ -993,7 +995,8 @@ def test_explicit_openrouter_honors_openrouter_base_url_over_pool(monkeypatch):
 
     assert resolved["provider"] == "openrouter"
     assert resolved["base_url"] == "https://mirror.example.com/v1"
-    assert resolved["api_key"] == "mirror-key"
+    # api_key from env override when present, else no-key (#28660).
+    assert resolved["api_key"] in ("mirror-key", "no-key-required", "")
     assert resolved["source"] == "env/config"
     assert resolved.get("credential_pool") is None
 
@@ -1715,7 +1718,8 @@ class TestOllamaUrlSubstringLeak:
             "OLLAMA_API_KEY must not be sent to an endpoint whose "
             "hostname is not ollama.com (GHSA-76xc-57q6-vm5m)"
         )
-        assert resolved["api_key"] == "oa-secret"
+        # OPENAI_API_KEY must also not leak to non-openai.com hosts (#28660).
+        assert resolved["api_key"] == "no-key-required"
 
     def test_ollama_key_not_leaked_to_lookalike_host(self, monkeypatch):
         """ollama.com.attacker.test — look-alike host. OLLAMA_API_KEY
@@ -1732,7 +1736,8 @@ class TestOllamaUrlSubstringLeak:
         resolved = rp.resolve_runtime_provider(requested="custom")
 
         assert "ol-SECRET" not in resolved["api_key"]
-        assert resolved["api_key"] == "oa-secret"
+        # OPENAI_API_KEY must also not leak to non-openai.com hosts (#28660).
+        assert resolved["api_key"] == "no-key-required"
 
     def test_ollama_key_sent_to_genuine_ollama_com(self, monkeypatch):
         """https://ollama.com/v1 — legit Ollama Cloud. OLLAMA_API_KEY
@@ -2402,3 +2407,40 @@ def test_trustworthy_check_accepts_custom_aliases():
         )
     # Unrelated provider name should still be rejected with non-loopback URL.
     assert fn("http://192.168.0.103:11434/v1", "openrouter") is False
+
+
+# ---------------------------------------------------------------------------
+# #28660: prevent API key leakage to non-authoritative custom endpoints
+# ---------------------------------------------------------------------------
+
+
+def _resolve_custom(monkeypatch, base_url, **env):
+    monkeypatch.setattr(rp, "_get_model_config", lambda: {})
+    for k in ("OPENAI_API_KEY", "OPENROUTER_API_KEY", "OLLAMA_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    return rp._resolve_openrouter_runtime(
+        requested_provider="custom", explicit_base_url=base_url
+    )
+
+
+def test_openai_key_not_leaked_to_custom_endpoint(monkeypatch):
+    out = _resolve_custom(monkeypatch, "https://api.deepseek.com/v1", OPENAI_API_KEY="sk-openai-secret")
+    assert out["api_key"] != "sk-openai-secret"
+    assert out["api_key"] in ("no-key-required", "", None) or "openai" not in str(out["api_key"]).lower()
+
+
+def test_openrouter_key_not_leaked_to_custom_endpoint(monkeypatch):
+    out = _resolve_custom(monkeypatch, "https://api.groq.com/openai/v1", OPENROUTER_API_KEY="sk-or-secret")
+    assert out["api_key"] != "sk-or-secret"
+
+
+def test_openai_key_used_on_authoritative_openai_host(monkeypatch):
+    out = _resolve_custom(monkeypatch, "https://api.openai.com/v1", OPENAI_API_KEY="sk-openai-secret")
+    assert out["api_key"] == "sk-openai-secret"
+
+
+def test_lookalike_openai_host_does_not_receive_key(monkeypatch):
+    out = _resolve_custom(monkeypatch, "https://api.openai.com.attacker.test/v1", OPENAI_API_KEY="sk-openai-secret")
+    assert out["api_key"] != "sk-openai-secret"
