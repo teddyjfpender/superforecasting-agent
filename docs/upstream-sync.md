@@ -86,6 +86,7 @@ last one instead of a from-scratch re-read.
 | #30259 | Recover from providers rejecting list-type tool content: `multimodal_tool_content_unsupported` failover reason + strip-image-parts retry + per-session no-list cache | `9e3897ac` |
 | #33883 | Classify provider content-policy/safety blocks as non-retryable `content_policy_blocked` → fall back immediately instead of burning retries; provider-safety guidance + clear `final_response` | `89593786` |
 | #33816 | Buffer retry/fallback/compression status chatter; surface only on terminal failure (silent on transient recovery). 4 buffer helpers + ~43 call-site conversions across loop/chat/stream | `cb9af80d` |
+| #33816 (fix-beyond-upstream) | Close a status-buffer leak **upstream still has**: the lone clear sat only on the final-text success path, so a hiccup recovered via a tool-call iteration (intra-turn) or a non-flushing break exit (cross-turn, long-lived session) leaked stale chatter onto a later unrelated terminal flush. Added a turn-start backstop clear + a tool-call-success clear; regression guards in `test_status_buffer_clear_invariants.py`. Found by an adversarial buffering-invariant audit. | _this wave_ |
 
 ### Already-have (subsumed; do not port)
 

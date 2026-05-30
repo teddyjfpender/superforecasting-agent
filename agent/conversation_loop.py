@@ -280,6 +280,13 @@ def run_conversation(
     agent._incomplete_scratchpad_retries = 0
     agent._codex_incomplete_retries = 0
     agent._thinking_prefill_retries = 0
+    # Start each turn with an empty retry/fallback status buffer.  The
+    # in-loop clear fires only on the final-text success path, so a prior
+    # turn that recovered via a tool-call iteration (or exited through a
+    # non-flushing break) could otherwise leave residue that flushes onto
+    # this turn's first terminal failure.  Guaranteed-reachable once per
+    # turn; a no-op when already empty.
+    agent._clear_status_buffer()
     agent._post_tool_empty_retried = False
     agent._last_content_with_tools = None
     agent._last_content_tools_all_housekeeping = False
@@ -3432,6 +3439,13 @@ def run_conversation(
                         agent.stream_delta_callback(None)
                     except Exception:
                         pass
+
+                # Valid, executable tool calls (names + JSON args both passed)
+                # are genuine forward progress — the tool-call analogue of the
+                # final-text success clear below.  Drop any retry/fallback
+                # chatter buffered by an earlier hiccup this turn so it can't
+                # later flush onto an unrelated terminal failure.
+                agent._clear_status_buffer()
 
                 agent._execute_tool_calls(assistant_message, messages, effective_task_id, api_call_count)
 
