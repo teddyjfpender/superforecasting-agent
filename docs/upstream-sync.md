@@ -96,6 +96,21 @@ last one instead of a from-scratch re-read.
 | #912e6e227 | TUI: suppress mouse-residue scrollback leaks during launcher startup (env-guard honors `*_TUI`/`*_TUI_NO_EARLY_DISABLE` alias triples) | `72cfcacf` |
 | #c42edd805 | TUI: fix linux/wayland clipboard copy (`resolveOnExit` in `execFileNoThrow` so daemonizing wl-copy/xclip/xsel settle on child exit, not stdio drain); kept our rebranded debug branches; `StdioOptions` annotation for newer node types | `cc4fee8e` |
 | #3a9bc9d88 | Model picker: unify /model + CLI lists, add credential-fingerprinted disk cache (cache path auto-rebrands via `get_hermes_home`; only the digest is persisted) + `--refresh` | `e98c91e0` |
+| **Security batch (14 commits, triaged 2026-05-30 → ported)** | | |
+| #b7b8bec80 | Block `/proc/*/{environ,cmdline,maps}` from `read_file` (was leaking the agent's own provider keys) | `76c50c84` |
+| #4694524de | Write-deny `.anthropic_oauth.json` (home+root) — read-deny already had it; closes the write-clobber half | `5c4849a5` |
+| #95b5b7240+#6bebab476 | Block AWS Bedrock bearer token from subprocess env (narrow end-state; general AWS chain stays inheritable) | `9494cf52` |
+| #dcc163ee2 | Redact credentials before session-log persistence (content, tool args, system_prompt; multimodal-aware) | `c7f890cb` |
+| #2e181602a | Isolate credential pool on provider fallback (no cross-provider corruption / base_url leak) | `55d9deb0` |
+| #d7c5d5dee | Don't persist borrowed credential secrets to auth.json (new `credential_persistence.py`; owned-source allowlist verified, `hermes_pkce` kept) | `671913da` |
+| #1a9ef8314 | Require `API_SERVER_KEY` for every API-server bind (incl. loopback) | `0497`…→`api_server` commit |
+| #43abc51f6 | Require source-CIDR allowlisting for public msgraph webhook binds; close fail-open | `267a01ef` |
+| #243ebc7a6 | Atomic private (0600) writes for dashboard OAuth credentials | (web_server commit) |
+| #30928f945 | Dashboard plugin-asset suffix allowlist + loader-hijack env denylist (alias-aware rebrand) | `0cd98da6` |
+| #44df52005 | Guard `Path.home()` PermissionError in `has_direct_modal_credentials` | `6c9b96ce` |
+| #79fc92e9c | `.env` 0600 perms at doctor/profiles/setup creation sites | `0497e401` |
+| #ec4d6f182+#9c77a0c3c | Masked typing feedback for CLI + plugin secret prompts (`secret_prompt.py`) | `d2337199` |
+| #782681f90 | Atomic private (0600) writes for google_chat OAuth credentials | `302500df` |
 
 ### Already-have (subsumed; do not port)
 
@@ -131,9 +146,13 @@ _(none currently — c6a992e3 host-derived fallback was ported with the
 
 ### Next-audit candidates worth a look (not yet assessed in depth)
 
-- **~16 other in-range `fix(security)` commits — TRIAGED 2026-05-30** (5 bring,
-  8 adapt, 3 skip; verdicts spot-checked against the actual files). Not yet
-  ported. **Port-now first batch** (high value, trivial/small, confirmed
+- **~16 other in-range `fix(security)` commits — TRIAGED + PORTED 2026-05-30.**
+  14 ported (see the security-batch rows in Ported above). Only one skipped:
+  **#4126da65a** (bws_cache.json read-deny) — the Bitwarden Secrets-Manager
+  cache file is never written in our fork, so the deny entry would guard a
+  nonexistent file. The two originally-"skip" dashboard/chat items (#44df52005
+  Path.home guard, #782681f90 google_chat) were ported at the user's request.
+  Historical triage detail (now ported): **Port-now first batch** (high value, trivial/small, confirmed
   present + unpatched): `b7b8bec80` block `/proc/*/{environ,cmdline,maps}` from
   read_file (leaks the agent's own provider keys); `dcc163ee2` redact creds
   before session-log persistence; `95b5b7240`+`6bebab476` block AWS bedrock
