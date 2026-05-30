@@ -295,7 +295,11 @@ def _stage_task(stage: str) -> str:
             "perspective silently, then call `record_panel` to aggregate via trimmed geomean of "
             "odds (default trim=1) and attach the panel artifact to the snapshot. The CLI "
             "equivalent is `forecast update <id> --panel-estimates-json '[...]' "
-            "--panel-trim 1`."
+            "--panel-trim 1`. For a HIGH-IMPACT live forecast this panel is REQUIRED: the "
+            "update is refused unless you link a panel (inline --panel-estimates-json, or "
+            "--panel-run-ref / `panel_run_ref` to an existing run) or record why you skipped "
+            "it (--panel-skipped-reason / `panel_skipped_reason`). Lower-impact first forecasts "
+            "are only nudged, and exploratory snapshots are exempt."
         ),
         "resolve": (
             "Check whether the resolution criteria are satisfied. Propose resolution status, source snapshot needs, "

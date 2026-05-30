@@ -300,6 +300,28 @@ FORECAST_LEDGER_SCHEMA = {
                     "action_threshold, and at least one update_trigger."
                 ),
             },
+            "require_panel": {
+                "type": "boolean",
+                "description": (
+                    "For a high-impact live forecast, refuse to save unless a deliberative "
+                    "panel run is linked (panel_run_ref) or panel_skipped_reason is recorded. "
+                    "Defaults true; lower-impact first forecasts are only nudged, not blocked."
+                ),
+            },
+            "panel_run_ref": {
+                "type": "string",
+                "description": (
+                    "ID of a panel run to link to this snapshot as the deliberative-panel "
+                    "evidence for the forecast (satisfies the high-impact panel formality)."
+                ),
+            },
+            "panel_skipped_reason": {
+                "type": "string",
+                "description": (
+                    "Recorded reason for committing a panel-indicated forecast without a panel "
+                    "(the escape valve for the panel formality). Stored on the snapshot."
+                ),
+            },
             "failure_class": {
                 "type": "string",
                 "enum": sorted(["base_rate", "inside_view", "definition", "timing", "aggregation", "motivated_reasoning", "tail", "noise", "other"]),
@@ -1137,6 +1159,9 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 change_my_mind=args.get("change_my_mind"),
                 require_structured_reasoning=bool(args.get("require_structured_reasoning", True)),
                 require_decision_readiness=bool(args.get("require_decision_readiness", False)),
+                require_panel=bool(args.get("require_panel", True)),
+                panel_run_ref=args.get("panel_run_ref"),
+                panel_skipped_reason=args.get("panel_skipped_reason"),
             )
             return tool_result(success=True, forecast_snapshot=snapshot.__dict__)
 

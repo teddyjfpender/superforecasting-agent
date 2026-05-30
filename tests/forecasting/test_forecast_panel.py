@@ -328,6 +328,128 @@ def test_list_panel_runs_filters_by_question(tmp_path):
     assert rows[0]["question_id"] == q1.id
 
 
+# ── Panel formality (should_run_panel gate on create_snapshot) ─────────────
+
+
+def test_panel_formality_blocks_high_impact_live_without_panel(tmp_path):
+    ledger = _ledger(tmp_path)
+    q = _question(ledger, impact="high")
+    with pytest.raises(ValidationError) as exc:
+        ledger.create_snapshot(
+            question_id=q.id,
+            probability_or_distribution=0.6,
+            rationale="single-model call on a high-impact question",
+            require_panel=True,
+        )
+    message = str(exc.value).lower()
+    assert "panel" in message
+    # The error names every escape so the agent is never stuck.
+    assert "panel_run_ref" in message
+    assert "panel_skipped_reason" in message
+    assert "exploratory" in message
+
+
+def test_panel_formality_satisfied_by_linked_panel_run(tmp_path):
+    ledger = _ledger(tmp_path)
+    q = _question(ledger, impact="high")
+    panel = ledger.record_panel_run(question_id=q.id, estimates=_five_estimates())
+    snap = ledger.create_snapshot(
+        question_id=q.id,
+        probability_or_distribution=panel["aggregate_probability"],
+        rationale="Panel-aggregated high-impact forecast",
+        require_panel=True,
+        panel_run_ref=panel["id"],
+    )
+    # The panel run is linked to the snapshot it backs.
+    assert ledger.get_panel_run(panel["id"])["snapshot_id"] == snap.forecast_id
+
+
+def test_panel_formality_satisfied_by_skip_reason(tmp_path):
+    ledger = _ledger(tmp_path)
+    q = _question(ledger, impact="high")
+    snap = ledger.create_snapshot(
+        question_id=q.id,
+        probability_or_distribution=0.6,
+        rationale="single-model call",
+        require_panel=True,
+        panel_skipped_reason="time-boxed; single-model baseline, panel to follow",
+    )
+    assert snap.metadata["panel_skipped_reason"].startswith("time-boxed")
+
+
+def test_panel_formality_escape_via_require_panel_false(tmp_path):
+    ledger = _ledger(tmp_path)
+    q = _question(ledger, impact="high")
+    snap = ledger.create_snapshot(
+        question_id=q.id,
+        probability_or_distribution=0.6,
+        rationale="explicitly opting out of the panel formality",
+        require_panel=False,
+    )
+    assert snap.forecast_id
+
+
+def test_panel_formality_exempts_exploratory_scratchpad(tmp_path):
+    ledger = _ledger(tmp_path)
+    q = _question(ledger, impact="high")
+    snap = ledger.create_snapshot(
+        question_id=q.id,
+        probability_or_distribution=0.6,
+        rationale="exploratory scratchpad estimate",
+        require_panel=True,
+        forecast_origin="exploratory",
+    )
+    assert snap.forecast_origin == "exploratory"
+    assert "panel_recommended" not in snap.metadata
+
+
+def test_panel_recommended_note_on_first_low_impact_forecast(tmp_path):
+    ledger = _ledger(tmp_path)
+    q = _question(ledger)  # default (non-high) impact
+    snap = ledger.create_snapshot(
+        question_id=q.id,
+        probability_or_distribution=0.6,
+        rationale="first forecast on a routine question",
+        require_panel=True,
+    )
+    # First forecasts are the cheapest moment for a panel — recommended, not forced.
+    assert snap.metadata.get("panel_recommended") is True
+
+
+def test_panel_not_indicated_on_routine_follow_up_update(tmp_path):
+    ledger = _ledger(tmp_path)
+    q = _question(ledger)  # non-high impact
+    ledger.create_snapshot(
+        question_id=q.id,
+        probability_or_distribution=0.6,
+        rationale="first forecast",
+        require_panel=True,
+    )
+    follow_up = ledger.create_snapshot(
+        question_id=q.id,
+        probability_or_distribution=0.62,
+        rationale="routine revision; no panel indicated",
+        require_panel=True,
+    )
+    assert "panel_recommended" not in follow_up.metadata
+
+
+def test_panel_run_ref_must_match_question(tmp_path):
+    ledger = _ledger(tmp_path)
+    q1 = _question(ledger, title="High-impact Q1?", impact="high")
+    q2 = _question(ledger, title="Q2?")
+    other_panel = ledger.record_panel_run(question_id=q2.id, estimates=_five_estimates())
+    with pytest.raises(ValidationError) as exc:
+        ledger.create_snapshot(
+            question_id=q1.id,
+            probability_or_distribution=0.6,
+            rationale="trying to borrow another question's panel",
+            require_panel=True,
+            panel_run_ref=other_panel["id"],
+        )
+    assert "different question" in str(exc.value)
+
+
 # ── CLI: forecast panel aggregate / show / record / perspectives ───────────
 
 
@@ -482,6 +604,74 @@ def test_cli_update_with_panel_estimates_aggregates_and_attaches(tmp_path, capsy
     assert snap.probability_or_distribution == pytest.approx(expected, abs=1e-3)
     runs = ledger.list_panel_runs(question_id=qid)
     assert runs[0]["snapshot_id"] == snap.forecast_id
+
+
+def _new_high_impact_question(parser, db, capsys) -> str:
+    import re
+
+    _run(
+        parser,
+        [
+            "forecast", "--db", db, "new",
+            "Will a high-impact event occur by 2026-07?",
+            "--resolution-criteria", "Resolved per the official source.",
+            "--impact", "high",
+        ],
+    )
+    return re.search(r"created forecast question (fq_[a-f0-9]+)", capsys.readouterr().out).group(1)
+
+
+def test_cli_update_high_impact_requires_panel_or_reason(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "panel.db")
+    qid = _new_high_impact_question(parser, db, capsys)
+    with pytest.raises(SystemExit):
+        _run(
+            parser,
+            [
+                "forecast", "--db", db, "update", qid,
+                "--probability", "0.6",
+                "--rationale", "single-model call on a high-impact question",
+            ],
+        )
+    assert "panel" in capsys.readouterr().err
+
+
+def test_cli_update_high_impact_panel_skipped_reason_saves(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "panel.db")
+    qid = _new_high_impact_question(parser, db, capsys)
+    _run(
+        parser,
+        [
+            "forecast", "--db", db, "update", qid,
+            "--probability", "0.6",
+            "--rationale", "single-model baseline; panel deferred",
+            "--panel-skipped-reason", "time-boxed; panel to follow next cycle",
+        ],
+    )
+    assert "created forecast snapshot" in capsys.readouterr().out
+    snap = ForecastLedger(db_path=db).get_current_snapshot(qid)
+    assert snap.metadata["panel_skipped_reason"].startswith("time-boxed")
+
+
+def test_cli_update_high_impact_inline_panel_satisfies_gate(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "panel.db")
+    qid = _new_high_impact_question(parser, db, capsys)
+    # An inline panel IS the deliberative panel, so no skip reason is needed.
+    _run(
+        parser,
+        [
+            "forecast", "--db", db, "update", qid,
+            "--rationale", "Aggregated panel of five perspectives",
+            "--panel-estimates-json", json.dumps(_five_estimates()),
+        ],
+    )
+    assert "created forecast snapshot" in capsys.readouterr().out
+    ledger = ForecastLedger(db_path=db)
+    snap = ledger.get_current_snapshot(qid)
+    assert ledger.list_panel_runs(question_id=qid)[0]["snapshot_id"] == snap.forecast_id
 
 
 # ── agent tool ──────────────────────────────────────────────────────────────

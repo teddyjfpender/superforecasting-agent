@@ -779,6 +779,29 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         dest="panel_triggered_by",
         default="manual",
     )
+    update_parser.add_argument(
+        "--require-panel",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="For a high-impact live forecast, refuse to save unless a panel run is "
+        "linked (--panel-run-ref / --panel-estimates-json) or --panel-skipped-reason is "
+        "given. On by default; lower-impact first forecasts are only nudged. Use "
+        "--no-require-panel (or --origin exploratory) to skip.",
+    )
+    update_parser.add_argument(
+        "--panel-run-ref",
+        dest="panel_run_ref",
+        default=None,
+        help="ID of an already-recorded panel run to link to this snapshot as its "
+        "deliberative-panel evidence.",
+    )
+    update_parser.add_argument(
+        "--panel-skipped-reason",
+        dest="panel_skipped_reason",
+        default=None,
+        help="Recorded reason for committing a panel-indicated forecast without a panel "
+        "(escape valve for the panel formality).",
+    )
     update_parser.add_argument("--evidence-cutoff")
     update_parser.add_argument("--backtest-run-id")
     update_parser.add_argument("--calibration-ineligible", action="store_true")
@@ -2924,6 +2947,13 @@ def _cmd_update(args: argparse.Namespace) -> None:
         return
     if not rationale:
         raise SystemExit("forecast update requires --rationale when saving a snapshot")
+    # An inline panel (--panel-estimates-json) IS the deliberative panel, so it
+    # satisfies the panel formality; otherwise honor an explicit --panel-run-ref.
+    panel_run_ref = (
+        panel_run_record["id"]
+        if panel_run_record is not None
+        else getattr(args, "panel_run_ref", None)
+    )
     snapshot = ledger.create_snapshot(
         question_id=args.id,
         probability_or_distribution=payload,
@@ -2957,9 +2987,11 @@ def _cmd_update(args: argparse.Namespace) -> None:
         change_my_mind=getattr(args, "change_my_mind", None) or None,
         require_structured_reasoning=getattr(args, "require_structured_reasoning", False),
         require_decision_readiness=getattr(args, "require_decision_readiness", False),
+        require_panel=getattr(args, "require_panel", False),
+        panel_run_ref=panel_run_ref,
+        panel_skipped_reason=getattr(args, "panel_skipped_reason", None),
     )
-    if panel_run_record is not None:
-        ledger.attach_panel_to_snapshot(panel_run_record["id"], snapshot.forecast_id)
+    # create_snapshot links panel_run_ref itself; no separate attach needed.
     print(f"created forecast snapshot {snapshot.forecast_id}")
     print(f"question: {snapshot.question_id}")
     print(f"as_of: {snapshot.as_of}")

@@ -975,6 +975,41 @@ def test_forecast_ledger_tool_can_require_update_citations(tmp_path):
     assert cited["forecast_snapshot"]["metadata"]["citation_policy"] == "required"
 
 
+def test_forecast_ledger_tool_high_impact_requires_panel_by_default(tmp_path):
+    db = str(tmp_path / "forecasting.db")
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "db": db,
+                "action": "create_question",
+                "title": "Will the high-impact tool path require a panel?",
+                "resolution_criteria": "Resolved yes if the panel formality blocks a bare update.",
+                "impact": "high",
+            }
+        )
+    )
+    question_id = created["question"]["id"]
+    base = {
+        "db": db,
+        "action": "update_forecast",
+        "question_id": question_id,
+        "probability": 0.6,
+        "rationale": "single-model call on a high-impact question",
+        "reasons_up": ["mechanism points up"],
+        "reasons_down": ["reversion risk"],
+        "change_my_mind": ["a confirming data release"],
+    }
+    blocked = json.loads(forecast_ledger_tool(dict(base)))
+    skipped = json.loads(
+        forecast_ledger_tool({**base, "panel_skipped_reason": "time-boxed; panel next cycle"})
+    )
+
+    assert blocked["success"] is False
+    assert "panel" in blocked["error"].lower()
+    assert skipped["success"] is True
+    assert skipped["forecast_snapshot"]["metadata"]["panel_skipped_reason"].startswith("time-boxed")
+
+
 def test_forecast_ledger_tool_stores_resolution_provenance(tmp_path):
     db = str(tmp_path / "forecasting.db")
     source = tmp_path / "resolution.txt"

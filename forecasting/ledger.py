@@ -1111,6 +1111,9 @@ class ForecastLedger:
         change_my_mind: list[str] | None = None,
         require_decision_readiness: bool = False,
         require_structured_reasoning: bool = False,
+        require_panel: bool = False,
+        panel_run_ref: str | None = None,
+        panel_skipped_reason: str | None = None,
     ) -> ForecastSnapshot:
         question = self.get_question(question_id)
         if forecast_origin not in FORECAST_ORIGINS:
@@ -1163,6 +1166,43 @@ class ForecastLedger:
         effective_cutoff = cutoff_ts or as_of_ts
         self._validate_evidence_refs(question_id, evidence_refs or [], effective_cutoff)
         snapshot_metadata = dict(metadata or {})
+
+        # Panel formality. A deliberative panel — independent multi-perspective
+        # estimates aggregated into a spread — is *indicated* for high-impact
+        # questions and for the first forecast on any question (see
+        # should_run_panel). For a high-impact live forecast we hard-require
+        # evidence one ran (a panel run linked via panel_run_ref) OR an explicit
+        # recorded reason for skipping it; the cost of a single-model miss is
+        # highest there. For a non-high-impact first forecast the panel is only
+        # recommended (recorded as a note), so routine and exploratory research
+        # stays unencumbered. Exploratory snapshots are exempt entirely.
+        if forecast_origin == "live":
+            from forecasting.panel import should_run_panel  # local import avoids cycle
+
+            if panel_run_ref:
+                linked_panel = self.get_panel_run(panel_run_ref)
+                if linked_panel["question_id"] != question_id:
+                    raise ValidationError("panel_run_ref belongs to a different question")
+            panel_skip = (panel_skipped_reason or "").strip()
+            panel_indicated = should_run_panel(
+                impact=question.impact,
+                has_prior_snapshot=bool(question.current_forecast_id),
+            )
+            high_impact = (question.impact or "").strip().lower() == "high"
+            if panel_indicated and not panel_run_ref and not panel_skip:
+                if require_panel and high_impact:
+                    raise ValidationError(
+                        "high-impact live forecast requires a deliberative panel: run a "
+                        "panel and pass panel_run_ref, record why you skipped it with "
+                        "panel_skipped_reason, rerun with require_panel=false, or record "
+                        "it as forecast_origin='exploratory'."
+                    )
+                # First-forecast panels on lower-impact questions are recommended,
+                # not required — leave a note the agent/guidance can surface.
+                snapshot_metadata["panel_recommended"] = True
+            if panel_skip:
+                snapshot_metadata["panel_skipped_reason"] = panel_skip
+
         if require_citations and forecast_origin == "live":
             citation_refs = [
                 *(evidence_refs or []),
@@ -1267,6 +1307,8 @@ class ForecastLedger:
                     "UPDATE forecast_questions SET current_forecast_id = ? WHERE id = ?",
                     (forecast_id, question_id),
                 )
+        if panel_run_ref:
+            self.attach_panel_to_snapshot(panel_run_ref, forecast_id)
         return self.get_snapshot(forecast_id)
 
     def get_snapshot(self, forecast_id: str) -> ForecastSnapshot:
