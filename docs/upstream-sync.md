@@ -18,11 +18,14 @@ fork, not a *tracking* fork.
 **2. Run the audit on a cadence (monthly, or before touching a subsystem).**
 Two reusable passes:
 
-- **Classify** — profile `git log <merge-base>..origin/main` by conventional-commit
-  type, scope, and diff size; keep only the fork-relevant scopes (`gateway`, `cli`,
-  `tui`, `agent`, `codex`, `mcp`, `skills`, `security`, `file-safety`, `prompt`,
-  `patch`). Drop web/kanban/docker/dashboard-auth/Nous-portal/chat-adapter/xAI/
-  image-gen — ~70% of churn, zero forecasting payoff.
+- **Classify** — profile `git log <audit-head>..origin/main` (the *incremental*
+  delta since the last audit — see the Ledger's "Audit head" marker; use the
+  `merge-base` only for a from-scratch re-audit) by conventional-commit type, scope,
+  and diff size; keep only the fork-relevant scopes (`gateway`, `cli`, `tui`,
+  `agent`, `codex`, `mcp`, `skills`, `security`, `file-safety`, `prompt`, `patch`).
+  Drop web/kanban/docker/dashboard-auth/Nous-portal/chat-adapter/xAI/image-gen —
+  ~70% of churn, zero forecasting payoff. **When the audit finishes, bump the audit
+  head to the new `origin/main` tip.**
 - **Assess against our tree** — for each candidate PR, read the *actual diff*,
   check how diverged our copy of the touched files is, and decide
   bring / adapt / skip / investigate / **already-have**. Verify claims against the
@@ -61,7 +64,32 @@ last one instead of a from-scratch re-read.
 
 ## Ledger
 
-`merge-base = edb2d910` · last audit: 2026-05-30.
+`merge-base = edb2d910` (fork point, PR #28814, 2026-05-20)
+· **audit head = `ea6eaabd8` (reviewed-through; origin/main tip at 2026-05-30, "perf(read_file): compact line-number gutter (#35368)")**
+· last audit: 2026-05-30.
+
+### Audit head — the incremental-review high-water mark
+
+`audit head` is the upstream commit we have **scanned through** (classify + assess
+over the fork-relevant scopes). It is NOT the merge-base and NOT a commit we merged —
+it's a bookmark so the *next* audit only looks at what's new. Advance it every audit.
+
+Remotes in this checkout: `origin` = upstream `NousResearch/hermes-agent`,
+`fork` = `teddyjfpender/superforecasting-agent` (where we push the snapshot branch).
+
+**Next audit starts here — review only commits after the audit head:**
+
+```sh
+git fetch origin
+git log --oneline ea6eaabd8..origin/main          # everything new since this audit
+git log --oneline ea6eaabd8..origin/main | wc -l  # how many new commits
+```
+
+Then re-run the classify → assess passes on that delta only (not the full
+`edb2d910..origin/main`, which is 986 commits as of this audit), make
+bring/adapt/skip decisions, port, and **bump the audit head to the new
+`origin/main` tip** in this line when done. The merge-base never changes; only the
+audit head moves.
 
 > **Useful fact for agent-runtime ports:** our fork *retained* upstream's
 > `run_agent.py` (the `AIAgent` class) and the `tests/run_agent/` harness
