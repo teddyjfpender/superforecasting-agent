@@ -288,7 +288,9 @@ def test_build_api_kwargs_codex(monkeypatch):
     assert kwargs["parallel_tool_calls"] is True
     assert isinstance(kwargs["prompt_cache_key"], str)
     assert len(kwargs["prompt_cache_key"]) > 0
-    assert "timeout" not in kwargs
+    # The Codex branch now forwards a resolved per-request timeout (#2d422720).
+    assert isinstance(kwargs.get("timeout"), float)
+    assert kwargs["timeout"] > 0
     assert "max_tokens" not in kwargs
     assert "extra_body" not in kwargs
 
@@ -1952,3 +1954,26 @@ def test_preflight_codex_input_deduplicates_reasoning_ids(monkeypatch):
     # IDs must be stripped — with store=False the API 404s on id lookups.
     for it in reasoning_items:
         assert "id" not in it
+
+
+def test_preflight_codex_api_kwargs_preserves_positive_timeout(monkeypatch):
+    """Positive numeric timeouts survive preflight so the SDK honors them."""
+    agent = _build_agent(monkeypatch)
+    kwargs = _codex_request_kwargs()
+    kwargs["timeout"] = 600.0
+
+    from agent.codex_responses_adapter import _preflight_codex_api_kwargs
+    result = _preflight_codex_api_kwargs(kwargs)
+    assert result["timeout"] == 600.0
+
+
+def test_preflight_codex_api_kwargs_drops_invalid_timeout(monkeypatch):
+    """Zero, negative, inf, and booleans are all dropped — not passed to SDK."""
+    agent = _build_agent(monkeypatch)
+    from agent.codex_responses_adapter import _preflight_codex_api_kwargs
+
+    for bad in (0, -1, float("inf"), True, False, "300", None):
+        kwargs = _codex_request_kwargs()
+        kwargs["timeout"] = bad
+        result = _preflight_codex_api_kwargs(kwargs)
+        assert "timeout" not in result, f"timeout={bad!r} should be dropped"
