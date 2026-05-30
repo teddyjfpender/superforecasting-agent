@@ -824,6 +824,47 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     update_parser.add_argument("--preview", action="store_true", help="Show update preview without writing a snapshot")
     update_parser.set_defaults(_forecast_handler=_cmd_update)
 
+    refresh_parser = forecast_sub.add_parser(
+        "refresh",
+        help="Pull latest watched-source readings + re-estimate, then auto-commit a new live snapshot",
+    )
+    refresh_parser.add_argument("id")
+    refresh_parser.add_argument(
+        "--agent",
+        action="store_true",
+        help="Run the full LLM update stage instead of the deterministic re-pool",
+    )
+    refresh_parser.add_argument(
+        "--no-commit",
+        dest="commit",
+        action="store_false",
+        default=True,
+        help="Preview the re-estimate without importing evidence or committing a snapshot",
+    )
+    refresh_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Alias for previewing: fetch + re-estimate but write nothing",
+    )
+    refresh_parser.add_argument(
+        "--carry-forward",
+        action="store_true",
+        help="Skip the re-pool; carry the prior probability forward (flags need for --agent / manual re-reasoning)",
+    )
+    refresh_parser.add_argument("--extremize", type=float, default=1.0)
+    refresh_parser.add_argument(
+        "--correlation",
+        help="Pass 'estimate' to correlation-adjust pooling weights when sources overlap",
+    )
+    refresh_parser.add_argument("--concurrency", type=int, default=4)
+    refresh_parser.add_argument("--now")
+    refresh_parser.add_argument("--json", action="store_true")
+    # --agent delegation reuses the protocol agent runner (forecast agent --stage update).
+    refresh_parser.add_argument("--model")
+    refresh_parser.add_argument("--provider")
+    refresh_parser.add_argument("--max-iterations", type=int, default=12)
+    refresh_parser.set_defaults(_forecast_handler=_cmd_refresh)
+
     ingest_parser = forecast_sub.add_parser(
         "ingest",
         help="Capture a URL, file, or note as external forecast context",
@@ -1625,6 +1666,11 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "--force",
         action="store_true",
         help="Bypass the pipeline sequencing gate (e.g. render the update stage early).",
+    )
+    pipeline_parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Pull latest watched-source readings + re-estimate + auto-commit, then render the post-refresh status.",
     )
     pipeline_parser.add_argument("--json", action="store_true")
     pipeline_parser.set_defaults(_forecast_handler=_cmd_pipeline)
@@ -7095,6 +7141,15 @@ _PIPELINE_STATUS_MARKERS = {"done": "[x]", "ready": "->", "blocked": "..", "opti
 
 def _cmd_pipeline(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
+    if getattr(args, "refresh", False):
+        from tools.forecasting_tool import fetch_watched_source_payloads
+
+        refresh = ledger.refresh_forecast(
+            args.id,
+            fetcher=lambda specs: fetch_watched_source_payloads(specs),
+            trigger_reason="pipeline_refresh",
+        )
+        print(f"refresh: {refresh['status']}" + (f" -> {refresh.get('forecast_id')}" if refresh.get("forecast_id") else ""))
     status = build_pipeline_status(ledger, args.id)
     stage = getattr(args, "stage", None)
 
@@ -8236,6 +8291,62 @@ def _cmd_autopilot_status(args: argparse.Namespace) -> None:
             f"latest_run: {latest['id']} status={latest['status']} "
             f"changed={latest['sources_changed']} material={latest['material_changes']}"
         )
+
+
+def _cmd_refresh(args: argparse.Namespace) -> None:
+    if args.agent:
+        # Delegate to the full LLM update stage (forecast agent --stage update).
+        args.stage = "update"
+        _cmd_agent(args)
+        return
+    from tools.forecasting_tool import fetch_watched_source_payloads
+
+    concurrency = args.concurrency
+    result = _ledger(args).refresh_forecast(
+        args.id,
+        fetcher=lambda specs: fetch_watched_source_payloads(specs, concurrency=concurrency),
+        now=args.now,
+        re_estimate="carry_forward" if args.carry_forward else "deterministic",
+        extremize=args.extremize,
+        correlation=args.correlation,
+        dry_run=args.dry_run,
+        commit=args.commit,
+        trigger_reason="manual_refresh",
+    )
+    if args.json:
+        print(json.dumps(result, indent=2, default=str))
+        return
+    status = result["status"]
+    print(f"status: {status}")
+    if result.get("fetch_failures"):
+        for failure in result["fetch_failures"]:
+            print(f"  fetch_failed: {failure['source']} ({failure['error']})")
+    if status in {"no_change", "no_watched_sources"}:
+        print(result.get("message", ""))
+        return
+    changed = result.get("changed_readings") or []
+    new_evidence = result.get("new_evidence_ids") or []
+    evidence_note = f", +{len(new_evidence)} evidence" if new_evidence else ""
+    print(f"refreshed {len(changed)} reading(s){evidence_note}")
+    prior = result.get("prior_probability")
+    proposed = result.get("proposed_probability")
+    if isinstance(prior, (int, float)) and isinstance(proposed, (int, float)):
+        print(f"probability: {float(prior):.4f} -> {float(proposed):.4f} (delta {float(proposed) - float(prior):+.4f})")
+    for reason in result.get("reasons_up") or []:
+        print(f"  up:   {reason}")
+    for reason in result.get("reasons_down") or []:
+        print(f"  down: {reason}")
+    if result.get("unmatched_sources"):
+        print(f"  unmatched (fetched but not wired to a component): {', '.join(result['unmatched_sources'])}")
+    if result.get("triggers_fired"):
+        print(f"  triggers_fired: {', '.join(result['triggers_fired'])}")
+    if result.get("needs_agent"):
+        print("  note: raw-data change carried forward — re-run with --agent for a re-reasoned estimate.")
+    committed = result.get("forecast_id")
+    if committed:
+        print(f"committed snapshot {committed}")
+    else:
+        print("(preview only — not committed)")
 
 
 def _cmd_autopilot_run(args: argparse.Namespace) -> None:

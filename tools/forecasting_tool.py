@@ -147,6 +147,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "disable_autopilot",
                     "autopilot_status",
                     "run_autopilot",
+                    "refresh_forecast",
                     "list_autopilot_policies",
                     "list_autopilot_runs",
                     "list_forecast_update_proposals",
@@ -678,6 +679,15 @@ FORECAST_LEDGER_SCHEMA = {
                 "description": "First run timestamp for schedule_review or enable_autopilot; defaults to now when omitted.",
             },
             "trigger_reason": {"type": "string"},
+            "re_estimate": {
+                "type": "string",
+                "enum": ["deterministic", "carry_forward"],
+                "description": "refresh_forecast: 'deterministic' re-pools the prior components after refreshing market/crowd readings; 'carry_forward' keeps the prior probability and flags that agent re-reasoning is needed.",
+            },
+            "extremize": {"type": "number", "description": "refresh_forecast: extremization factor applied during the deterministic re-pool (default 1.0)."},
+            "correlation": {"type": "string", "description": "refresh_forecast: pass 'estimate' to correlation-adjust pooling weights when sources overlap."},
+            "dry_run": {"type": "boolean", "description": "refresh_forecast: preview the re-estimate without importing evidence or committing a snapshot."},
+            "commit": {"type": "boolean", "description": "refresh_forecast: write the re-estimate as a new live snapshot (default true)."},
             "materiality_policy": {"type": "object"},
             "guardrail_policy": {"type": "object"},
             "notification_policy": {"type": "object"},
@@ -1460,6 +1470,21 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 trigger_reason=args.get("trigger_reason") or "manual",
                 proposed_probability_or_distribution=_tool_proposed_probability(args),
                 rationale=args.get("rationale"),
+            )
+            return tool_result(success=True, **_plain(result))
+
+        if action == "refresh_forecast":
+            _concurrency = int(args.get("concurrency") or 4)
+            result = ledger.refresh_forecast(
+                _required(args, "question_id"),
+                fetcher=lambda specs: fetch_watched_source_payloads(specs, concurrency=_concurrency),
+                now=args.get("now"),
+                re_estimate=args.get("re_estimate") or "deterministic",
+                extremize=float(args.get("extremize") or 1.0),
+                correlation=args.get("correlation"),
+                dry_run=bool(args.get("dry_run", False)),
+                commit=bool(args.get("commit", True)),
+                trigger_reason=args.get("trigger_reason") or "tool_refresh",
             )
             return tool_result(success=True, **_plain(result))
 
@@ -3018,6 +3043,45 @@ def _adapter_item_dict(item: Any) -> dict[str, Any]:
     if isinstance(item, dict):
         return dict(item)
     return dict(getattr(item, "__dict__", {}))
+
+
+def fetch_watched_source_payloads(
+    specs: list[dict[str, Any]], *, concurrency: int = 4
+) -> list[dict[str, Any]]:
+    """Re-fetch a list of watched sources and build add_evidence payloads.
+
+    This is the dependency injected into ``ForecastLedger.refresh_forecast`` so
+    the ledger (data layer) never imports the tool layer. Each spec is
+    ``{"source_type": <adapter name>, "source": <id/slug>, "args"?: {...}}``.
+    Returns, per spec, ``{"source_type", "source", "success", "payloads",
+    "error"}`` where ``payloads`` is a list of kwargs dicts for
+    ``ledger.add_evidence`` (each carrying ``metadata.adapter_item``). Pure
+    fetch — performs NO ledger writes (preserves SQLite's single writer).
+    """
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _one(spec: dict[str, Any]) -> dict[str, Any]:
+        adapter = str(spec.get("source_type") or "").strip()
+        source = str(spec.get("source") or "").strip()
+        adapter_args = dict(spec.get("args") or {})
+        result = {"source_type": adapter, "source": source, "success": False, "payloads": [], "error": None}
+        try:
+            items = _load_source_adapter_items(adapter, source, adapter_args)
+            result["payloads"] = [
+                _source_adapter_evidence_payload(adapter, source, item, adapter_args) for item in items
+            ]
+            result["success"] = True
+        except Exception as exc:  # noqa: BLE001 — one bad source must not abort the refresh
+            result["error"] = str(exc)
+        return result
+
+    if not specs:
+        return []
+    workers = max(1, min(int(concurrency), len(specs)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        # Iterate in submission order so imported evidence is deterministic.
+        return list(pool.map(_one, specs))
 
 
 def _first_adapter_value(data: dict[str, Any], *keys: str) -> str | None:

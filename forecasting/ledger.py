@@ -4424,6 +4424,411 @@ class ForecastLedger:
             )
         return self.get_forecast_update_proposal(proposal_id)
 
+    # Canonical pooling-method aliases so a re-pool matches the snapshot's
+    # original recipe. Mirrors the CLI's bayes-method handling.
+    _REFRESH_POOL_METHODS = {
+        "log_odds_pool": "log_odds_pool",
+        "log_odds": "log_odds_pool",
+        "logit": "log_odds_pool",
+        "geometric": "log_odds_pool",
+        "geo_mean_odds": "log_odds_pool",
+        "log_pool": "log_pool",
+        "log_linear": "log_pool",
+        "linear_pool": "linear_pool",
+        "linear": "linear_pool",
+    }
+
+    @classmethod
+    def _refresh_pool_method(cls, method: str | None) -> str:
+        """Map a stored snapshot.method to a combine_forecasts pooling method,
+        defaulting to log-odds pooling (the desk default for disagreeing sources)."""
+        key = (method or "").strip().lower()
+        return cls._REFRESH_POOL_METHODS.get(key, "log_odds_pool")
+
+    @staticmethod
+    def _refresh_source_keys(source_type: str, source: str) -> set[str]:
+        """The identifiers a fresh reading can match a component / prior
+        observation by (same scheme as _derive_trigger_observations)."""
+        keys = {source.strip().lower(), f"{source_type}:{source}".strip().lower()}
+        keys.discard("")
+        return keys
+
+    def refresh_forecast(
+        self,
+        question_id: str,
+        *,
+        fetcher: Any,
+        now: str | None = None,
+        re_estimate: str = "deterministic",
+        extremize: float = 1.0,
+        correlation: Any | None = None,
+        dry_run: bool = False,
+        commit: bool = True,
+        trigger_reason: str = "manual_refresh",
+    ) -> dict[str, Any]:
+        """Pull the latest watched-source readings, import the new values as
+        evidence, deterministically re-pool the forecast, and (by default)
+        auto-commit a new live snapshot.
+
+        ``fetcher(specs) -> [{source_type, source, success, payloads, error}]``
+        is injected by the caller (CLI / tool layer) so the ledger never imports
+        the adapter/tool layer; ``payloads`` are kwargs for :meth:`add_evidence`.
+        ``re_estimate="deterministic"`` re-pools the prior snapshot's
+        probability-bearing components after refreshing market/crowd readings;
+        ``"carry_forward"`` keeps the prior probability and flags that agent /
+        manual re-reasoning is needed (also the automatic fallback for
+        non-binary questions or raw-data-only sources). With ``commit`` and not
+        ``dry_run`` the re-estimate is written through :meth:`create_snapshot`
+        as a scored ``forecast_origin="live"`` snapshot; otherwise nothing is
+        persisted and a preview is returned.
+        """
+
+        if re_estimate not in {"deterministic", "carry_forward"}:
+            raise ValidationError("re_estimate must be 'deterministic' or 'carry_forward'")
+        question = self.get_question(question_id)
+        current = self.get_current_snapshot(question_id)
+        if current is None:
+            raise ValidationError("refresh requires a baseline forecast snapshot")
+        run_at = parse_timestamp(now, field_name="now") or utc_now_iso()
+        persist = bool(commit) and not dry_run
+
+        watches = self.list_watched_sources(
+            scope_type="question", scope_ref=question_id, status="active"
+        )
+        if not watches:
+            return {
+                "status": "no_watched_sources",
+                "committed": None,
+                "message": (
+                    "no active watched sources — add one with `forecast watch add`, "
+                    "or re-run with --agent to collect evidence via the LLM update stage."
+                ),
+            }
+
+        prior_observations = self._derive_trigger_observations(question_id)
+
+        # 1) Re-fetch every active watched source (parallel, injected fetcher).
+        specs = []
+        for watch in watches:
+            control_keys = {"autopilot_policy_id", "required", "auto_watch", "from_action", "source_ref"}
+            adapter_args = {
+                key: value
+                for key, value in (watch.get("metadata") or {}).items()
+                if key not in control_keys
+            }
+            specs.append(
+                {"source_type": watch["source_type"], "source": watch["source"], "args": adapter_args}
+            )
+        fetched = fetcher(specs)
+
+        # 2) Reduce each fetched reading to its latest numeric value + keys, and
+        #    decide which readings actually changed vs the last imported value.
+        fresh_market_readings: list[dict[str, Any]] = []
+        fresh_values: dict[str, float] = {}
+        changed_readings: list[dict[str, Any]] = []
+        fetch_failures: list[dict[str, str]] = []
+        new_evidence_ids: list[str] = []
+        for result in fetched or []:
+            if not result.get("success"):
+                fetch_failures.append(
+                    {"source": f"{result.get('source_type')}:{result.get('source')}", "error": result.get("error") or "fetch failed"}
+                )
+                continue
+            stype = str(result.get("source_type") or "")
+            source = str(result.get("source") or "")
+            keys = self._refresh_source_keys(stype, source)
+            for payload in result.get("payloads") or []:
+                item = (payload.get("metadata") or {}).get("adapter_item") or {}
+                market_p = self._numeric_probability(item.get("probability"))
+                raw_value = self._refresh_reading_value(item)
+                reading = market_p if market_p is not None else raw_value
+                if market_p is not None:
+                    # One reading, one entry (with all its identity keys) so the
+                    # same reading is never double-counted as matched + unmatched.
+                    fresh_market_readings.append(
+                        {"keys": set(keys), "probability": market_p, "label": f"{stype}:{source}"}
+                    )
+                for key in keys:
+                    if reading is not None:
+                        fresh_values[key] = reading
+                # A reading is "changed" if new or different from the last import.
+                is_changed = reading is None or any(
+                    key not in prior_observations or abs(prior_observations[key] - reading) > 1e-9
+                    for key in keys
+                )
+                if is_changed:
+                    changed_readings.append({"source_type": stype, "source": source, "value": reading, "payload": payload})
+                    if persist:
+                        evidence = self.add_evidence(
+                            question_id=question_id, archive_url_snapshot=False, **payload
+                        )
+                        new_evidence_ids.append(evidence.id)
+
+        # 3) Re-estimate.
+        prior_rows = self._ensemble_component_rows(current.ensemble_components)
+        binary = question.outcome_space.type == "binary" and isinstance(
+            current.probability_or_distribution, (int, float)
+        )
+        updated_components, unmatched_sources = self._apply_fresh_market_probabilities(
+            current.ensemble_components, fresh_market_readings
+        )
+        can_repool = (
+            re_estimate == "deterministic"
+            and binary
+            and bool(prior_rows)
+            and bool(updated_components["matched"])
+        )
+
+        prior_prob = float(current.probability_or_distribution) if binary else None
+        new_prob: Any = current.probability_or_distribution
+        new_components = current.ensemble_components
+        diff_dict: dict[str, Any] | None = None
+        reasons_up: list[str] = []
+        reasons_down: list[str] = []
+        needs_agent = not can_repool
+
+        if can_repool:
+            from forecasting.bayes_toolkit import (  # local import avoids cycle / heavy import at module load
+                combine_forecasts,
+                ensure_industry_backends,
+                forecast_diff,
+            )
+
+            ensure_industry_backends()
+            method = self._refresh_pool_method(current.method)
+            pool = combine_forecasts(
+                updated_components["rows"],
+                method=method,
+                extremize=extremize,
+                correlation_matrix=correlation,
+            )
+            new_prob = pool.probability
+            new_components = {"components": updated_components["rows"]}
+            diff = forecast_diff(
+                previous=prior_prob,
+                current=float(new_prob),
+                components=updated_components["diff_components"],
+            )
+            diff_dict = diff.to_dict()
+            for driver in diff.drivers:
+                pts = driver.get("contribution_pts")
+                if pts is None:
+                    continue
+                label = f"{driver.get('name', 'component')} ({pts:+.1f} pts)"
+                (reasons_up if pts >= 0 else reasons_down).append(label)
+
+        prob_changed = (
+            binary
+            and isinstance(new_prob, (int, float))
+            and abs(float(new_prob) - prior_prob) > 1e-9
+        )
+
+        # 4) No-op guard: nothing fetched-changed and probability unchanged.
+        if not changed_readings and not prob_changed:
+            return {
+                "status": "no_change",
+                "committed": None,
+                "message": "no new readings and probability unchanged — nothing committed.",
+                "prior_probability": current.probability_or_distribution,
+                "fetch_failures": fetch_failures,
+                "unmatched_sources": unmatched_sources,
+            }
+
+        # 5) Fire executable update_triggers against the fresh values (idempotent).
+        trigger_alerts: list[AlertEvent] = []
+        if persist:
+            trigger_alerts = self.check_update_triggers(
+                question_id=question_id, observations=fresh_values or None, now=run_at
+            )
+
+        # 6) Auto rationale (no human in the loop).
+        rationale = self._default_refresh_rationale(
+            changed_readings=changed_readings,
+            unmatched_sources=unmatched_sources,
+            new_prob=new_prob,
+            prior_prob=current.probability_or_distribution,
+            re_estimate="deterministic" if can_repool else "carry_forward",
+            needs_agent=needs_agent,
+        )
+
+        preview = {
+            "status": "carry_forward" if needs_agent else "re_pooled",
+            "committed": None,
+            "prior_probability": current.probability_or_distribution,
+            "proposed_probability": new_prob,
+            "diff": diff_dict,
+            "reasons_up": reasons_up,
+            "reasons_down": reasons_down,
+            "rationale": rationale,
+            "changed_readings": [
+                {"source_type": r["source_type"], "source": r["source"], "value": r["value"]}
+                for r in changed_readings
+            ],
+            "unmatched_sources": unmatched_sources,
+            "fetch_failures": fetch_failures,
+            "needs_agent": needs_agent,
+            "triggers_fired": [alert.reason for alert in trigger_alerts],
+        }
+
+        if not persist:
+            preview["message"] = "preview only — re-run without --dry-run/--no-commit to commit."
+            return preview
+
+        # 7) Record a model run as the audit + citation anchor, then commit.
+        change_my_mind = [
+            "A reversal in the strongest refreshed driver would move this back",
+            "A watched source going stale or failing on the next refresh",
+        ]
+        model_run = self.record_model_run(
+            question_id=question_id,
+            model_type="forecast_refresh",
+            inputs={
+                "trigger_reason": trigger_reason,
+                "prior_forecast_id": current.forecast_id,
+                "new_evidence_ids": new_evidence_ids,
+            },
+            parameters={
+                "re_estimate": "deterministic" if can_repool else "carry_forward",
+                "method": self._refresh_pool_method(current.method),
+                "extremize": extremize,
+            },
+            output={"proposed_probability": new_prob, "diff": diff_dict},
+            diagnostics={"changed_readings": len(changed_readings), "fetch_failures": fetch_failures},
+        )
+
+        snapshot = self.create_snapshot(
+            question_id=question_id,
+            probability_or_distribution=new_prob,
+            rationale=rationale,
+            method=current.method,
+            ensemble_components=new_components,
+            forecast_origin="live",
+            evidence_refs=new_evidence_ids,
+            model_run_refs=[model_run["id"]],
+            reasons_up=reasons_up or ["Refreshed watched-source readings"],
+            reasons_down=reasons_down or ["Counter-signals in the refreshed sources"],
+            change_my_mind=change_my_mind,
+            require_citations=True,
+            panel_skipped_reason=(
+                "automated forecast refresh — deterministic re-pool of existing components; "
+                "panel not required for a programmatic re-estimate"
+            ),
+            evidence_cutoff=run_at,
+            metadata={
+                "refresh": {
+                    "trigger_reason": trigger_reason,
+                    "re_estimate": "deterministic" if can_repool else "carry_forward",
+                    "prior_forecast_id": current.forecast_id,
+                    "needs_agent": needs_agent,
+                    "diff": diff_dict,
+                }
+            },
+        )
+
+        return {
+            **preview,
+            "status": "committed",
+            "committed": snapshot.__dict__,
+            "forecast_id": snapshot.forecast_id,
+            "model_run": model_run,
+            "new_evidence_ids": new_evidence_ids,
+            "message": None,
+        }
+
+    def _refresh_reading_value(self, item: dict[str, Any]) -> float | None:
+        """Extract the latest numeric reading from an adapter item (the same
+        canonical keys the trigger evaluator reads)."""
+        for key in self._TRIGGER_VALUE_KEYS:
+            raw = item.get(key)
+            if raw is None or isinstance(raw, bool):
+                continue
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def _apply_fresh_market_probabilities(
+        self, components: dict[str, Any], fresh_readings: list[dict[str, Any]]
+    ) -> tuple[dict[str, Any], list[str]]:
+        """Update each prior component's probability with a freshly-fetched
+        market/crowd reading that matches it. ``fresh_readings`` is a list of
+        ``{"keys": set[str], "probability": float, "label": str}``. Returns
+        ``{"rows", "diff_components", "matched"}`` and the list of reading
+        labels that did not match any component."""
+
+        raw_rows = (
+            list(components.get("components"))
+            if isinstance(components.get("components"), list)
+            else [
+                {"name": name, **(value if isinstance(value, dict) else {"probability": value})}
+                for name, value in (components or {}).items()
+            ]
+        )
+        rows: list[dict[str, Any]] = []
+        diff_components: list[dict[str, Any]] = []
+        matched_labels: set[str] = set()
+        for index, raw in enumerate(raw_rows, start=1):
+            if not isinstance(raw, dict):
+                continue
+            prior_p = self._numeric_probability(raw.get("probability"))
+            weight = self._numeric_probability(raw.get("weight", 1.0))
+            if prior_p is None or weight is None or weight < 0:
+                continue
+            name = str(raw.get("name") or raw.get("source") or f"component_{index}")
+            identity = {str(raw.get("source") or "").lower(), name.lower()}
+            identity.discard("")
+            new_p = prior_p
+            for reading in fresh_readings:
+                keys = reading["keys"]
+                if keys & identity or any(
+                    key in token or token in key for key in keys for token in identity
+                ):
+                    new_p = reading["probability"]
+                    matched_labels.add(reading["label"])
+                    break
+            # Preserve every original component key (esp. `source`) so the
+            # component stays matchable on the NEXT refresh; only the probability
+            # is overwritten. combine_forecasts ignores the extra keys.
+            row = dict(raw)
+            row["name"] = name
+            row["probability"] = new_p
+            row["weight"] = weight
+            rows.append(row)
+            diff_components.append(
+                {"name": name, "previous_p": prior_p, "current_p": new_p, "weight": weight}
+            )
+        unmatched = sorted({r["label"] for r in fresh_readings} - matched_labels)
+        return {"rows": rows, "diff_components": diff_components, "matched": sorted(matched_labels)}, unmatched
+
+    @staticmethod
+    def _default_refresh_rationale(
+        *,
+        changed_readings: list[dict[str, Any]],
+        unmatched_sources: list[str],
+        new_prob: Any,
+        prior_prob: Any,
+        re_estimate: str,
+        needs_agent: bool,
+    ) -> str:
+        sources = ", ".join(
+            sorted({f"{r['source_type']}:{r['source']}" for r in changed_readings})
+        ) or "no changed readings"
+        if re_estimate == "deterministic":
+            head = (
+                f"Automated refresh: re-pooled components after refreshing {sources}. "
+                f"Probability {prior_prob} -> {new_prob}."
+            )
+        else:
+            head = (
+                f"Automated refresh: imported fresh readings from {sources} and carried the prior "
+                f"probability {prior_prob} forward"
+                + (" — run with --agent for a re-reasoned estimate." if needs_agent else ".")
+            )
+        if unmatched_sources:
+            head += f" Unmatched fresh readings (not wired to a component): {', '.join(unmatched_sources)}."
+        return head
+
     def run_autopilot(
         self,
         question_id: str,
@@ -4768,7 +5173,9 @@ class ForecastLedger:
         return alerts
 
     # Canonical numeric-value keys an adapter item may expose, newest-relevant
-    # first. Used to derive the latest observation for an executable trigger.
+    # first. Used to derive the latest observation for an executable trigger and
+    # for refresh change-detection. "probability" covers market/crowd adapters
+    # (manifold/metaculus/polymarket/kalshi) whose reading IS a probability.
     _TRIGGER_VALUE_KEYS = (
         "value",
         "observed_value",
@@ -4782,6 +5189,7 @@ class ForecastLedger:
         "index_value",
         "views",
         "count",
+        "probability",
     )
 
     def _derive_trigger_observations(self, question_id: str) -> dict[str, float]:
