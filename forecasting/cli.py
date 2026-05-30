@@ -69,7 +69,12 @@ from forecasting.models import (
     timestamp_to_datetime,
     utc_now_iso,
 )
-from forecasting.protocol import PROTOCOL_STAGES, build_protocol_messages
+from forecasting.protocol import (
+    PROTOCOL_STAGES,
+    build_pipeline_status,
+    build_protocol_messages,
+    pipeline_advance_block,
+)
 from forecasting.source_adapters import (
     load_arxiv_papers,
     load_bluesky_posts,
@@ -1603,6 +1608,26 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     protocol_parser.add_argument("--stage", choices=sorted(PROTOCOL_STAGES), default="update")
     protocol_parser.add_argument("--json", action="store_true")
     protocol_parser.set_defaults(_forecast_handler=_cmd_protocol)
+
+    pipeline_parser = forecast_sub.add_parser(
+        "pipeline",
+        help="Show the guided forecasting loop for a question (which stages are done, what is next)",
+    )
+    pipeline_parser.add_argument("id")
+    pipeline_parser.add_argument(
+        "--stage",
+        choices=sorted(PROTOCOL_STAGES),
+        default=None,
+        help="Render this stage's protocol prompt. Advancing to 'update' is refused until "
+        "research+base_rate have produced ledger artifacts (override with --force).",
+    )
+    pipeline_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Bypass the pipeline sequencing gate (e.g. render the update stage early).",
+    )
+    pipeline_parser.add_argument("--json", action="store_true")
+    pipeline_parser.set_defaults(_forecast_handler=_cmd_pipeline)
 
     agent_parser = forecast_sub.add_parser("agent", help="Run a forecast protocol stage through AIAgent")
     agent_parser.add_argument("id")
@@ -7044,6 +7069,59 @@ def _cmd_protocol(args: argparse.Namespace) -> None:
         print(f"## {message.role}")
         print(message.content)
         print()
+
+
+_PIPELINE_STATUS_MARKERS = {"done": "[x]", "ready": "->", "blocked": "..", "optional": "(o)"}
+
+
+def _cmd_pipeline(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    status = build_pipeline_status(ledger, args.id)
+    stage = getattr(args, "stage", None)
+
+    if stage:
+        block = pipeline_advance_block(status, stage)
+        if block and not args.force:
+            print(f"forecast: {block}", file=sys.stderr)
+            raise SystemExit(1)
+        messages = build_protocol_messages(ledger, args.id, stage=stage)
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "stage": stage,
+                        "pipeline": status,
+                        "messages": [message.__dict__ for message in messages],
+                    },
+                    indent=2,
+                )
+            )
+            return
+        for message in messages:
+            print(f"## {message.role}")
+            print(message.content)
+            print()
+        return
+
+    if args.json:
+        print(json.dumps(status, indent=2))
+        return
+
+    print(f"question: {status['question_id']}")
+    print(f"next_stage: {status['next_stage'] or 'complete'}")
+    print(f"update_ready: {status['update_ready']}")
+    if status["update_blockers"]:
+        print(f"update_blocked_by: {', '.join(status['update_blockers'])}")
+    print("stages:")
+    for entry in status["stages"]:
+        marker = _PIPELINE_STATUS_MARKERS.get(entry["status"], "?")
+        print(f"  {marker} {entry['stage']:<11} [{entry['status']}] {entry['detail']}")
+    if status["decision_readiness_issues"]:
+        print("decision_gaps: " + "; ".join(status["decision_readiness_issues"]))
+    if status["next_stage"]:
+        print(
+            f"\nadvance: forecast pipeline {status['question_id']} --stage {status['next_stage']}"
+        )
 
 
 def _cmd_agent(args: argparse.Namespace) -> None:

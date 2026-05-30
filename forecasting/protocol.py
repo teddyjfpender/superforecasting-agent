@@ -21,6 +21,50 @@ PROTOCOL_STAGES = {
 }
 
 
+# The forecasting loop as an ordered, guided path. The pipeline driver walks a
+# question through these stages, reporting which are satisfied (from ledger
+# artifacts) and what comes next. It is a GUIDE, not a cage: the individual
+# stage commands and the raw `forecast update` stay free; only the pipeline's
+# own "advance to update" step enforces the sequencing prerequisite below.
+PIPELINE_SEQUENCE = (
+    "parse",
+    "research",
+    "base_rate",
+    "model",
+    "update",
+    "resolve",
+    "postmortem",
+)
+
+# Stages that improve a forecast but do not block progress when skipped.
+OPTIONAL_PIPELINE_STAGES = frozenset({"model"})
+
+# A stage becomes *reachable* only once these prior stages have produced ledger
+# artifacts. The keystone sequencing formality: do not commit a forecast before
+# an outside view (base rate) and source-backed evidence (research) exist. The
+# later stages chain naturally — you cannot resolve a forecast that was never
+# committed, or write a postmortem before it resolves.
+PIPELINE_PREREQUISITES: dict[str, tuple[str, ...]] = {
+    "update": ("research", "base_rate"),
+    "resolve": ("update",),
+    "postmortem": ("resolve",),
+}
+
+# Human hints for how to satisfy a missing prerequisite, surfaced in refusals.
+_PIPELINE_PREREQ_HINTS = {
+    "research": (
+        "collect timestamped evidence (forecast ingest / import-source-evidence, "
+        "or `forecast protocol <id> --stage research`)"
+    ),
+    "base_rate": (
+        "establish a reference class (`forecast reference-class add`, "
+        "or `forecast protocol <id> --stage base_rate`)"
+    ),
+    "update": "commit a forecast snapshot (`forecast update <id> ...`)",
+    "resolve": "record a resolution (`forecast resolve <id> ...`)",
+}
+
+
 SYSTEM_PROMPT = """You are a forecasting desk and a quantitative researcher, not a general assistant.
 
 Operate on scoreable forecasts. Think like a fox: outside view first (anchor on a base rate / reference class before the case-specific story), decompose into drivers, update on likelihood ratios in log-odds, seek the disconfirming view before committing, and widen intervals against overconfidence. Separate evidence from interpretation, preserve timestamps, avoid stale data, and make probability updates auditable. Treat any single number — including your own first instinct — as a prior to be checked, not the answer. Do not silently change probabilities; recommend an update unless the caller explicitly asks you to create a new forecast snapshot.
@@ -82,6 +126,103 @@ def build_protocol_messages(
         ProtocolMessage(role="system", content=SYSTEM_PROMPT.strip()),
         ProtocolMessage(role="user", content=f"{context}\n\n## Stage Task\n{task}"),
     ]
+
+
+def build_pipeline_status(ledger: ForecastLedger, question_id: str) -> dict[str, Any]:
+    """Inspect ledger state and report the forecasting loop's progress.
+
+    Returns a structured view of each stage (done / ready / blocked / optional),
+    the next actionable stage, whether `update` is reachable, and the decision
+    readiness gaps. Read-only — the driver computes the guided path from
+    artifacts the agent has already produced; it never mutates the ledger.
+    """
+
+    question = ledger.get_question(question_id)
+    snapshot = ledger.get_current_snapshot(question_id)
+    evidence = ledger.list_evidence(question_id)
+    reference_classes = ledger.list_reference_classes(question_id)
+    model_runs = ledger.list_model_runs(question_id)
+    resolution = ledger.get_latest_resolution(question_id)
+    postmortems = ledger.list_postmortems(question_id)
+    readiness_issues = ledger.decision_readiness_issues(question)
+
+    done = {
+        "parse": not readiness_issues,
+        "research": bool(evidence),
+        "base_rate": bool(reference_classes),
+        "model": bool(model_runs),
+        "update": snapshot is not None,
+        "resolve": resolution is not None,
+        "postmortem": bool(postmortems),
+    }
+    detail = {
+        "parse": (
+            "decision card complete"
+            if done["parse"]
+            else "decision gaps: " + "; ".join(readiness_issues)
+        ),
+        "research": f"{len(evidence)} evidence record(s)",
+        "base_rate": f"{len(reference_classes)} reference class(es)",
+        "model": (
+            f"{len(model_runs)} model run(s)" if model_runs else "no model runs (optional)"
+        ),
+        "update": (
+            f"current snapshot {snapshot.forecast_id}" if snapshot else "no forecast snapshot yet"
+        ),
+        "resolve": (
+            f"resolution {resolution.resolution_status}" if resolution else "unresolved"
+        ),
+        "postmortem": f"{len(postmortems)} postmortem(s)",
+    }
+
+    stages: list[dict[str, Any]] = []
+    for name in PIPELINE_SEQUENCE:
+        missing_prereqs = [p for p in PIPELINE_PREREQUISITES.get(name, ()) if not done[p]]
+        if done[name]:
+            status = "done"
+        elif missing_prereqs:
+            status = "blocked"
+        elif name in OPTIONAL_PIPELINE_STAGES:
+            status = "optional"
+        else:
+            status = "ready"
+        stages.append(
+            {
+                "stage": name,
+                "status": status,
+                "detail": detail[name],
+                "optional": name in OPTIONAL_PIPELINE_STAGES,
+                "missing_prerequisites": missing_prereqs,
+            }
+        )
+
+    next_stage = next((entry["stage"] for entry in stages if entry["status"] == "ready"), None)
+    update_blockers = [p for p in PIPELINE_PREREQUISITES["update"] if not done[p]]
+    return {
+        "question_id": question_id,
+        "stages": stages,
+        "next_stage": next_stage,
+        "update_ready": not update_blockers,
+        "update_blockers": update_blockers,
+        "decision_readiness_issues": readiness_issues,
+    }
+
+
+def pipeline_advance_block(status: dict[str, Any], stage: str) -> str | None:
+    """Return a refusal message if the pipeline should not advance to ``stage``
+    yet (prerequisites unmet), else None. Only the pipeline's guided advance is
+    gated — raw `forecast update` and the per-stage commands stay free."""
+
+    done_stages = {entry["stage"] for entry in status["stages"] if entry["status"] == "done"}
+    missing = [p for p in PIPELINE_PREREQUISITES.get(stage, ()) if p not in done_stages]
+    if not missing:
+        return None
+    steps = "; ".join(f"{name}: {_PIPELINE_PREREQ_HINTS.get(name, name)}" for name in missing)
+    return (
+        f"pipeline will not advance to '{stage}' yet — its prerequisites are not met. "
+        f"Missing: {steps}. Run those stages, or pass --force to override (the raw "
+        f"`forecast {stage}` path stays available for exploratory or out-of-band work)."
+    )
 
 
 def build_context_packet(

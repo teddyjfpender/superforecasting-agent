@@ -167,6 +167,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "export_all",
                     "import_packet",
                     "protocol",
+                    "pipeline",
                     "bayes",
                     "workflow_report",
                     "import_source_evidence_batch",
@@ -689,6 +690,13 @@ FORECAST_LEDGER_SCHEMA = {
             "stage": {
                 "type": "string",
                 "enum": ["parse", "research", "base_rate", "model", "update", "resolve", "postmortem", "self_check"],
+            },
+            "force": {
+                "type": "boolean",
+                "description": (
+                    "For action='pipeline' with a stage: bypass the sequencing gate that "
+                    "refuses advancing to 'update' before research+base_rate produced refs."
+                ),
             },
             "lesson": {"type": "string"},
             "db": {"type": "string"},
@@ -1616,6 +1624,25 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 stage=args.get("stage") or "update",
             )
             return tool_result(success=True, messages=[message.__dict__ for message in messages])
+
+        if action == "pipeline":
+            from forecasting.protocol import build_pipeline_status, pipeline_advance_block
+
+            question_id = _required(args, "question_id")
+            status = build_pipeline_status(ledger, question_id)
+            stage = args.get("stage")
+            if stage:
+                block = pipeline_advance_block(status, stage)
+                if block and not bool(args.get("force", False)):
+                    return tool_error(block, success=False)
+                messages = build_protocol_messages(ledger, question_id, stage=stage)
+                return tool_result(
+                    success=True,
+                    stage=stage,
+                    pipeline=status,
+                    messages=[message.__dict__ for message in messages],
+                )
+            return tool_result(success=True, pipeline=status)
 
         if action == "workflow_report":
             return _workflow_report_payload(ledger, args)
