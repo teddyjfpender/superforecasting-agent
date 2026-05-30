@@ -61,7 +61,15 @@ last one instead of a from-scratch re-read.
 
 ## Ledger
 
-`merge-base = edb2d910` · last audit: 2026-05-29.
+`merge-base = edb2d910` · last audit: 2026-05-30.
+
+> **Useful fact for agent-runtime ports:** our fork *retained* upstream's
+> `run_agent.py` (the `AIAgent` class) and the `tests/run_agent/` harness
+> (`object.__new__(AIAgent)` bare-construction, used by ~90 tests) alongside the
+> `superforecasting_agent.cli → forecasting.cli` entry. So upstream `agent/*` and
+> `tests/run_agent/*` changes mostly port *faithfully* (not just in spirit) — the
+> Wave-3 error-recovery PRs landed their integration tests verbatim. `run_agent.py`
+> forwards `run_conversation` to `agent.conversation_loop.run_conversation`.
 
 ### Ported (committed on `superforecasting-agent-snapshot`)
 
@@ -75,6 +83,9 @@ last one instead of a from-scratch re-read.
 | #28660 | Gate `OPENAI_API_KEY`/`OPENROUTER_API_KEY` to authoritative hosts (was leaking to any custom endpoint) — found via the c6a992e3 investigation | `1b844400` |
 | #32273 | Patch reliability: indentation preservation (`fuzzy_match.py` re-indent), CRLF preservation (`file_operations.py` detect + normalize), per-file failure escalation after 3 retries (`file_tools.py`) | `a1b834aa` |
 | #33733 | Region-gated `\t`/`\r` unescape on `new_string` across all match strategies (complements, not replaces, our `\'`/`\"` escape-drift guard) | `80bd20b7` |
+| #30259 | Recover from providers rejecting list-type tool content: `multimodal_tool_content_unsupported` failover reason + strip-image-parts retry + per-session no-list cache | `9e3897ac` |
+| #33883 | Classify provider content-policy/safety blocks as non-retryable `content_policy_blocked` → fall back immediately instead of burning retries; provider-safety guidance + clear `final_response` | `89593786` |
+| #33816 | Buffer retry/fallback/compression status chatter; surface only on terminal failure (silent on transient recovery). 4 buffer helpers + ~43 call-site conversions across loop/chat/stream | `cb9af80d` |
 
 ### Already-have (subsumed; do not port)
 
@@ -89,7 +100,6 @@ last one instead of a from-scratch re-read.
 | Upstream | Why deferred |
 |---|---|
 | #33042 | 613-line rewrite of `codex_runtime.py` (drops `responses.stream()`, consumes events directly) + 5 test files. Retires our hand-patch and the now-dead #43a3f119 fallback. The codex companions (#8601c4d4 TTFB watchdog, #283bb810 prefill, #2d422720 timeouts) sit on this same new event-consumption architecture, so they can't be cleanly applied onto our old `responses.stream()` path — they come *with* the rewrite. Our hand-patch works, so deferring is safe. **Do as its own wave.** |
-| #33883 / #30259 / #33816 | Error-recovery + status UX: content-policy immediate fallback (`error_classifier`), list-type tool-content recovery, buffered retry status (scattered `_emit_status` in `conversation_loop`). 334–490 lines into diverged files. |
 | c6a992e3 | Host-derived `<VENDOR>_API_KEY` fallback. Now unblocked for the `_resolve_openrouter_runtime` path by #28660; but its full value also needs the `_resolve_named_custom_runtime` chains gated (still ungated — separate upstream PRs). |
 
 ### Skip (off-target for a forecasting CLI/TUI fork)
