@@ -588,3 +588,42 @@ def test_custom_providers_uses_live_models_for_multi_model_endpoint(monkeypatch)
         "gateway-model-c",
     ], "Live models must replace the static subset"
     assert gateway_prov["total_models"] == 3
+
+
+def test_list_authenticated_providers_same_url_different_key_env_and_api_mode_stay_separate(monkeypatch):
+    """Same gateway host but different key_env/api_mode entries are distinct providers."""
+    monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
+    monkeypatch.setattr(providers_mod, "HERMES_OVERLAYS", {})
+
+    providers = list_authenticated_providers(
+        current_provider="custom:gpt",
+        current_base_url="https://gateway.example.com",
+        user_providers={},
+        custom_providers=[
+            {
+                "name": "gpt",
+                "base_url": "https://gateway.example.com",
+                "key_env": "GPT_KEY",
+                "api_mode": "codex_responses",
+                "model": "gpt-5.5",
+            },
+            {
+                "name": "claude",
+                "base_url": "https://gateway.example.com",
+                "key_env": "CLAUDE_KEY",
+                "api_mode": "anthropic_messages",
+                "model": "claude-opus-4-8",
+            },
+        ],
+        max_models=50,
+    )
+
+    custom = [p for p in providers if p.get("is_user_defined")]
+    by_slug = {p["slug"]: p for p in custom}
+
+    assert set(by_slug) == {"custom:gpt", "custom:claude"}
+    assert by_slug["custom:gpt"]["models"] == ["gpt-5.5"]
+    assert by_slug["custom:claude"]["models"] == ["claude-opus-4-8"]
+    assert by_slug["custom:gpt"]["is_current"] is True
+    assert by_slug["custom:claude"]["is_current"] is False
+
