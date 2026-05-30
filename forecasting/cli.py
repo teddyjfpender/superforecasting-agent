@@ -2035,6 +2035,25 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     self_check_parser.add_argument("--large-delta-threshold", type=float)
     self_check_parser.set_defaults(_forecast_handler=_cmd_self_check)
 
+    triggers_parser = forecast_sub.add_parser(
+        "triggers",
+        help="Evaluate a question's executable update_triggers against imported values",
+    )
+    triggers_parser.add_argument("id")
+    triggers_parser.add_argument(
+        "--observation",
+        dest="observations",
+        action="append",
+        default=[],
+        metavar="SOURCE_REF=VALUE",
+        help="Override an observed value, e.g. --observation fred:CPIAUCSL=3.2 (repeatable). "
+        "Omitted observations are derived from the question's imported evidence.",
+    )
+    triggers_parser.add_argument("--observations-json", default=None, help="JSON object of source_ref->value.")
+    triggers_parser.add_argument("--now")
+    triggers_parser.add_argument("--json", action="store_true")
+    triggers_parser.set_defaults(_forecast_handler=_cmd_triggers)
+
     backtest_parser = forecast_sub.add_parser("backtest", help="Run or inspect time-aware historical replay datasets")
     backtest_parser.add_argument("dataset", nargs="?")
     backtest_parser.add_argument("--as-of")
@@ -7742,15 +7761,31 @@ def _print_calibration_summary(summary: dict[str, Any], *, label: str | None = N
                 f"mean_proper_score={_format_metric(row.get('mean_proper_score'))} "
                 f"mean_log_score={_format_metric(row.get('mean_log_score'))}"
             )
+    ece = summary.get("expected_calibration_error")
+    mce = summary.get("max_calibration_error")
+    curve = summary.get("calibration_curve") or []
+    populated = [row for row in curve if row["count"]]
+    print(f"expected_calibration_error: {_format_metric(ece)}")
+    print(f"max_calibration_error: {_format_metric(mce)}")
+    print(f"calibration_curve_sample_count: {summary.get('calibration_curve_sample_count', 0)}")
+    if populated:
+        print("calibration_curve (P(yes): predicted vs observed):")
+        for row in populated:
+            print(
+                f"  {row['bucket']}: n={row['count']} "
+                f"predicted={_format_metric(row['mean_predicted'])} "
+                f"observed={_format_metric(row['observed_frequency'])} "
+                f"gap={_format_metric(row['calibration_gap'])} {row['sample_status']}"
+            )
     print("buckets:")
     if not summary["buckets"]:
         print("  none")
-        return
-    for bucket in summary["buckets"]:
-        print(
-            f"  {bucket['bucket']}: n={bucket['count']} "
-            f"mean_brier={_format_metric(bucket['mean_brier'])} {bucket['sample_status']}"
-        )
+    else:
+        for bucket in summary["buckets"]:
+            print(
+                f"  {bucket['bucket']}: n={bucket['count']} "
+                f"mean_brier={_format_metric(bucket['mean_brier'])} {bucket['sample_status']}"
+            )
     if label is not None:
         print()
 
@@ -8321,6 +8356,42 @@ def _cmd_self_check(args: argparse.Namespace) -> None:
     print(f"created {len(alerts)} alert(s)")
     for alert in alerts:
         print(f"{alert.id}: {alert.scope_ref} {alert.reason}")
+
+
+def _cmd_triggers(args: argparse.Namespace) -> None:
+    observations: dict[str, float] = {}
+    if args.observations_json:
+        parsed = _json_arg(args.observations_json, "observations-json")
+        if not isinstance(parsed, dict):
+            raise SystemExit("--observations-json must be a JSON object of source_ref->value")
+        for key, value in parsed.items():
+            try:
+                observations[str(key)] = float(value)
+            except (TypeError, ValueError):
+                raise SystemExit(f"--observations-json value for {key!r} must be numeric")
+    for item in args.observations:
+        if "=" not in item:
+            raise SystemExit(f"--observation must be SOURCE_REF=VALUE, got {item!r}")
+        key, _, raw = item.partition("=")
+        try:
+            observations[key.strip()] = float(raw.strip())
+        except ValueError:
+            raise SystemExit(f"--observation value for {key!r} must be numeric")
+    alerts = _ledger(args).check_update_triggers(
+        question_id=args.id,
+        observations=observations or None,
+        now=args.now,
+    )
+    if args.json:
+        print(json.dumps([alert.__dict__ for alert in alerts], indent=2))
+        return
+    if not alerts:
+        print("No update triggers fired.")
+        return
+    print(f"fired {len(alerts)} trigger(s)")
+    for alert in alerts:
+        print(f"{alert.id}: {alert.reason}")
+        print(f"  {alert.recommended_action}")
 
 
 def _cmd_backtest(args: argparse.Namespace) -> None:

@@ -51,6 +51,7 @@ from forecasting.models import (
     Resolution,
     ScoreRecord,
     ValidationError,
+    evaluate_update_triggers,
     json_dumps,
     json_loads,
     normalize_update_triggers,
@@ -2197,6 +2198,13 @@ class ForecastLedger:
             if self._horizon_matches(score.forecast_horizon_days, horizon)
         ]
         buckets: dict[str, list[float]] = defaultdict(list)
+        # Reliability-diagram accumulators, keyed by P(yes) decile (0..9). For
+        # binary questions we record the forecast's P(yes) and the realized
+        # outcome (1.0 yes / 0.0 no) so we can compare predicted vs observed
+        # frequency and compute the Expected Calibration Error.
+        curve_bins: dict[int, dict[str, list[float]]] = defaultdict(
+            lambda: {"predicted": [], "observed": []}
+        )
         sharpness_values: list[float] = []
         probability_movements: list[float] = []
         question_type_stats: dict[str, dict[str, Any]] = defaultdict(
@@ -2219,8 +2227,10 @@ class ForecastLedger:
             }
         )
         for score in scores:
+            outcome_space = None
             try:
-                question_type = self.get_question(score.question_id).outcome_space.type
+                outcome_space = self.get_question(score.question_id).outcome_space
+                question_type = outcome_space.type
             except LedgerNotFoundError:
                 question_type = "unknown"
             type_stats = question_type_stats[question_type]
@@ -2245,6 +2255,19 @@ class ForecastLedger:
             if sharpness is not None:
                 sharpness_values.append(sharpness)
                 type_stats["sharpness"].append(sharpness)
+            # Reliability point: bin the binary forecast by P(yes) and record the
+            # realized outcome so observed frequency can be compared to it.
+            if (
+                outcome_space is not None
+                and outcome_space.type == "binary"
+                and isinstance(snapshot.probability_or_distribution, (int, float))
+            ):
+                observed = self._binary_outcome_value(score, outcome_space)
+                if observed is not None:
+                    p_yes = float(snapshot.probability_or_distribution)
+                    decile = min(int(p_yes * 10), 9)
+                    curve_bins[decile]["predicted"].append(p_yes)
+                    curve_bins[decile]["observed"].append(observed)
             movement = self._score_probability_movement_before_close(score, snapshot)
             if movement is not None:
                 probability_movements.append(movement)
@@ -2301,6 +2324,50 @@ class ForecastLedger:
             }
             for question_type, stats in question_type_stats.items()
         ]
+        # Reliability curve on P(yes) + Expected/Max Calibration Error. ECE is the
+        # sample-weighted mean gap between observed frequency and mean predicted
+        # probability across the populated deciles; MCE is the worst single gap.
+        curve_rows = []
+        ece_numerator = 0.0
+        ece_denominator = 0
+        max_calibration_error = 0.0
+        for index in range(10):
+            data = curve_bins.get(index)
+            predicted = data["predicted"] if data else []
+            observed = data["observed"] if data else []
+            count = len(observed)
+            mean_predicted = sum(predicted) / count if count else None
+            observed_frequency = sum(observed) / count if count else None
+            gap = (
+                abs(observed_frequency - mean_predicted)
+                if count and mean_predicted is not None
+                else None
+            )
+            curve_rows.append(
+                {
+                    "bucket": f"{index / 10:.1f}-{(index + 1) / 10:.1f}",
+                    "count": count,
+                    "mean_predicted": mean_predicted,
+                    "observed_frequency": observed_frequency,
+                    "calibration_gap": gap,
+                    "sample_status": "empty"
+                    if not count
+                    else ("low_sample" if count < 5 else "ok"),
+                }
+            )
+            if count and gap is not None:
+                ece_numerator += count * gap
+                ece_denominator += count
+                max_calibration_error = max(max_calibration_error, gap)
+        expected_calibration_error = (
+            ece_numerator / ece_denominator if ece_denominator else None
+        )
+        curve_predicted = [
+            value for data in curve_bins.values() for value in data["predicted"]
+        ]
+        curve_observed = [
+            value for data in curve_bins.values() for value in data["observed"]
+        ]
         return {
             "count": len(all_values),
             "mean_brier": sum(all_values) / len(all_values) if all_values else None,
@@ -2326,6 +2393,16 @@ class ForecastLedger:
                 key=lambda row: (-row["count"], row["question_type"]),
             ),
             "buckets": bucket_rows,
+            "calibration_curve": curve_rows,
+            "expected_calibration_error": expected_calibration_error,
+            "max_calibration_error": max_calibration_error if ece_denominator else None,
+            "calibration_curve_sample_count": ece_denominator,
+            "mean_predicted": (
+                sum(curve_predicted) / len(curve_predicted) if curve_predicted else None
+            ),
+            "observed_frequency": (
+                sum(curve_observed) / len(curve_observed) if curve_observed else None
+            ),
             "domain": domain,
             "forecast_origin": forecast_origin,
             "horizon": horizon,
@@ -4679,6 +4756,114 @@ class ForecastLedger:
                     """,
                     (now_ts, current_signature, watch["id"]),
                 )
+        # Executable update_triggers: compare the question's triggers against the
+        # latest imported values and emit `trigger_fired` alerts. Scoped to the
+        # questions whose watched sources we just checked.
+        for question_id in {
+            watch["scope_ref"]
+            for watch in watches
+            if watch.get("scope_type") == "question" and watch.get("scope_ref")
+        }:
+            alerts.extend(self.check_update_triggers(question_id=question_id))
+        return alerts
+
+    # Canonical numeric-value keys an adapter item may expose, newest-relevant
+    # first. Used to derive the latest observation for an executable trigger.
+    _TRIGGER_VALUE_KEYS = (
+        "value",
+        "observed_value",
+        "latest_value",
+        "level",
+        "close_price",
+        "close",
+        "price",
+        "rate",
+        "yield",
+        "index_value",
+        "views",
+        "count",
+    )
+
+    def _derive_trigger_observations(self, question_id: str) -> dict[str, float]:
+        """Best-effort map of source_ref -> latest numeric value, derived from the
+        question's imported evidence. The newest evidence per source wins. Used
+        when the caller does not supply observations explicitly."""
+
+        latest: dict[str, tuple[str, float]] = {}
+        for evidence in self.list_evidence(question_id):
+            meta = evidence.metadata or {}
+            item = meta.get("adapter_item")
+            if not isinstance(item, dict):
+                continue
+            value: float | None = None
+            for key in self._TRIGGER_VALUE_KEYS:
+                raw = item.get(key)
+                if raw is None or isinstance(raw, bool):
+                    continue
+                try:
+                    value = float(raw)
+                    break
+                except (TypeError, ValueError):
+                    continue
+            if value is None:
+                continue
+            adapter = meta.get("adapter")
+            source = meta.get("source")
+            keys = set()
+            if source:
+                keys.add(str(source))
+                if adapter:
+                    keys.add(f"{adapter}:{source}")
+            if meta.get("source_ref"):
+                keys.add(str(meta["source_ref"]))
+            stamp = evidence.available_at or evidence.captured_at or ""
+            for key in keys:
+                if key not in latest or stamp >= latest[key][0]:
+                    latest[key] = (stamp, value)
+        return {key: value for key, (_, value) in latest.items()}
+
+    def check_update_triggers(
+        self,
+        *,
+        question_id: str,
+        observations: dict[str, Any] | None = None,
+        now: str | None = None,
+    ) -> list[AlertEvent]:
+        """Evaluate a question's executable update_triggers against imported
+        values and emit (idempotent) ``trigger_fired`` alerts. ``observations``
+        (source_ref -> value) overrides values derived from imported evidence."""
+
+        question = self.get_question(question_id)
+        merged = dict(self._derive_trigger_observations(question_id))
+        for key, value in (observations or {}).items():
+            merged[str(key)] = value
+        fired = evaluate_update_triggers(question.update_triggers, merged)
+        if not fired:
+            return []
+        open_reasons = {
+            alert.reason
+            for alert in self.list_alerts(unresolved_only=True)
+            if alert.scope_type == "question" and alert.scope_ref == question_id
+        }
+        alerts: list[AlertEvent] = []
+        for entry in fired:
+            reason = f"trigger_fired:{entry['source_ref']}"
+            if reason in open_reasons:
+                continue  # one open alert per source until acknowledged
+            alerts.append(
+                self.create_alert(
+                    severity="warning",
+                    scope_type="question",
+                    scope_ref=question_id,
+                    reason=reason,
+                    recommended_action=(
+                        f"Update trigger fired: {entry['mechanism']} "
+                        f"({entry['source_ref']} {entry['operator']} {entry['threshold']}; "
+                        f"observed {entry['observed']}). Re-run the forecast: "
+                        f"`forecast pipeline {question_id} --stage update`."
+                    ),
+                )
+            )
         return alerts
 
     def run_due_scheduled_reviews(
@@ -5251,6 +5436,11 @@ class ForecastLedger:
                 now=now,
             )
         )
+        # Fire executable update_triggers for in-scope questions against their
+        # latest imported values (idempotent — one open alert per source).
+        for question in questions:
+            if any(trigger.get("operator") for trigger in question.update_triggers):
+                alerts.extend(self.check_update_triggers(question_id=question.id, now=now))
         return alerts
 
     def pilot_report(
@@ -6507,6 +6697,26 @@ class ForecastLedger:
         if title_lower in {"will it happen?", "what will happen?", "forecast"}:
             issues.append("title is too generic")
         return issues
+
+    def _binary_outcome_value(
+        self, score: ScoreRecord, outcome_space: OutcomeSpace
+    ) -> float | None:
+        """Return 1.0 if the score's question resolved yes, 0.0 if no, else None
+        (unknown/ambiguous outcome). Used for the reliability curve."""
+
+        try:
+            resolution = self.get_resolution(score.resolution_id)
+        except LedgerNotFoundError:
+            return None
+        label = str(resolution.outcome).strip().lower()
+        yes_labels = {"yes", "y", "true", "1", "occurred", "success"}
+        no_labels = {"no", "n", "false", "0", "not_occurred", "failed"}
+        choices = [str(choice).lower() for choice in outcome_space.choices]
+        if label in yes_labels or (choices and label == choices[0]):
+            return 1.0
+        if label in no_labels or (len(choices) > 1 and label == choices[1]):
+            return 0.0
+        return None
 
     def _probability_for_outcome(
         self,

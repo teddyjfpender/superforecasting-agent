@@ -279,12 +279,23 @@ class ScoreRecord:
     notes: str | None
 
 
+# Comparison operators that make an update trigger *executable* — i.e. checkable
+# against an imported numeric observation, not just a free-form note.
+TRIGGER_OPERATORS = {">", ">=", "<", "<=", "==", "!="}
+
+
 def normalize_update_triggers(raw: Any) -> list[dict[str, Any]]:
     """Coerce ``update_triggers`` payload into a validated list of dicts.
 
     Each trigger requires a non-empty ``mechanism`` (free-form text or a source
     identifier such as ``fred:CPIAUCSL``). ``threshold``, ``action``, and
     ``window`` are optional. Strings are treated as ``{"mechanism": value}``.
+
+    A trigger becomes *executable* when it carries an ``operator`` (one of
+    :data:`TRIGGER_OPERATORS`) plus a ``source_ref`` and a numeric ``threshold``:
+    the loop can then compare it against the latest imported value for that
+    source and fire an alert. Setting ``operator`` requires a numeric
+    ``threshold``; without an operator the trigger stays a free-form note.
     """
 
     if raw is None:
@@ -316,8 +327,84 @@ def normalize_update_triggers(raw: Any) -> list[dict[str, Any]]:
                 if not value:
                     continue
             normalized[key] = value
+        operator = entry.get("operator")
+        if operator is not None:
+            operator = str(operator).strip()
+            if operator not in TRIGGER_OPERATORS:
+                raise ValidationError(
+                    f"update_triggers[{index}] operator must be one of "
+                    + ", ".join(sorted(TRIGGER_OPERATORS))
+                )
+            if "threshold" not in normalized:
+                raise ValidationError(
+                    f"update_triggers[{index}] with an operator requires a numeric threshold"
+                )
+            try:
+                normalized["threshold"] = float(normalized["threshold"])
+            except (TypeError, ValueError) as exc:
+                raise ValidationError(
+                    f"update_triggers[{index}] threshold must be numeric when an operator is set"
+                ) from exc
+            normalized["operator"] = operator
         out.append(normalized)
     return out
+
+
+def _compare_trigger(observed: float, operator: str, threshold: float) -> bool:
+    if operator == ">":
+        return observed > threshold
+    if operator == ">=":
+        return observed >= threshold
+    if operator == "<":
+        return observed < threshold
+    if operator == "<=":
+        return observed <= threshold
+    if operator == "==":
+        return observed == threshold
+    if operator == "!=":
+        return observed != threshold
+    return False
+
+
+def evaluate_update_triggers(
+    triggers: list[dict[str, Any]] | None,
+    observations: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Return the executable triggers that fire for the given observations.
+
+    ``observations`` maps a ``source_ref`` to its latest numeric value. Only
+    triggers with an ``operator``, a ``source_ref`` present in ``observations``,
+    and a numeric ``threshold`` are evaluated; free-form triggers are ignored.
+    Each fired entry records mechanism, source_ref, operator, threshold, and the
+    observed value so the caller can build an actionable alert.
+    """
+
+    fired: list[dict[str, Any]] = []
+    for trigger in triggers or []:
+        source_ref = trigger.get("source_ref")
+        operator = trigger.get("operator")
+        threshold = trigger.get("threshold")
+        if not source_ref or operator not in TRIGGER_OPERATORS:
+            continue
+        if not isinstance(threshold, (int, float)):
+            continue
+        if source_ref not in observations:
+            continue
+        try:
+            observed = float(observations[source_ref])
+        except (TypeError, ValueError):
+            continue
+        if _compare_trigger(observed, operator, float(threshold)):
+            fired.append(
+                {
+                    "mechanism": trigger["mechanism"],
+                    "source_ref": source_ref,
+                    "operator": operator,
+                    "threshold": float(threshold),
+                    "observed": observed,
+                }
+            )
+    return fired
 
 
 def question_decision_readiness_issues(question: "ForecastQuestion") -> list[str]:

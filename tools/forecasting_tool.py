@@ -168,6 +168,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "import_packet",
                     "protocol",
                     "pipeline",
+                    "check_update_triggers",
                     "bayes",
                     "workflow_report",
                     "import_source_evidence_batch",
@@ -252,7 +253,11 @@ FORECAST_LEDGER_SCHEMA = {
                 "description": (
                     "List of mechanism/threshold triggers that should prompt a review. "
                     "Each entry is either a free-form mechanism string or an object with "
-                    "mechanism, threshold, action, window, source_ref, or notes keys."
+                    "mechanism, threshold, action, window, source_ref, or notes keys. A "
+                    "trigger becomes EXECUTABLE (checkable via action='check_update_triggers') "
+                    "when it sets operator (>, >=, <, <=, ==, !=) plus a source_ref and a "
+                    "numeric threshold — then it fires automatically when the imported value "
+                    "for that source crosses the threshold."
                 ),
                 "items": {
                     "oneOf": [
@@ -261,7 +266,12 @@ FORECAST_LEDGER_SCHEMA = {
                             "type": "object",
                             "properties": {
                                 "mechanism": {"type": "string"},
-                                "threshold": {"type": "string"},
+                                "threshold": {"type": ["string", "number"]},
+                                "operator": {
+                                    "type": "string",
+                                    "enum": [">", ">=", "<", "<=", "==", "!="],
+                                    "description": "Comparison that makes the trigger executable; requires a numeric threshold.",
+                                },
                                 "action": {"type": "string"},
                                 "window": {"type": "string"},
                                 "source_ref": {"type": "string"},
@@ -683,6 +693,15 @@ FORECAST_LEDGER_SCHEMA = {
             "allow_missing_resolution_source": {"type": "boolean"},
             "enabled": {"type": "boolean"},
             "now": {"type": "string"},
+            "observations": {
+                "type": "object",
+                "description": (
+                    "For action='check_update_triggers': map of source_ref -> latest numeric "
+                    "value to evaluate executable update_triggers against. Omitted values are "
+                    "derived from the question's imported evidence."
+                ),
+                "additionalProperties": {"type": "number"},
+            },
             "include_inactive": {"type": "boolean"},
             "include_invalidated": {"type": "boolean"},
             "unresolved_only": {"type": "boolean"},
@@ -1643,6 +1662,20 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                     messages=[message.__dict__ for message in messages],
                 )
             return tool_result(success=True, pipeline=status)
+
+        if action == "check_update_triggers":
+            observations = args.get("observations")
+            if observations is not None and not isinstance(observations, dict):
+                return tool_error(
+                    "observations must be an object mapping source_ref -> value",
+                    success=False,
+                )
+            alerts = ledger.check_update_triggers(
+                question_id=_required(args, "question_id"),
+                observations=observations or None,
+                now=args.get("now"),
+            )
+            return tool_result(success=True, alerts=[alert.__dict__ for alert in alerts])
 
         if action == "workflow_report":
             return _workflow_report_payload(ledger, args)

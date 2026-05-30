@@ -382,8 +382,12 @@ def _stage_task(stage: str) -> str:
             "the decision card shown above: list any missing decision_owner, decision_deadline, "
             "action_threshold, or update_triggers. A forecast that does not inform a concrete "
             "decision is entertainment, not work — refuse to advance without a decision owner "
-            "and at least one action threshold tied to the probability. Return required "
-            "clarifications before any forecast update."
+            "and at least one action threshold tied to the probability. Make update_triggers "
+            "EXECUTABLE where you can: give a trigger a source_ref (e.g. fred:CPIAUCSL), an "
+            "operator (>, >=, <, <=, ==, !=), and a numeric threshold so it fires automatically "
+            "(trigger_fired alert) when the imported value crosses it — check them with the "
+            "forecast_ledger check_update_triggers action or `forecast triggers <id>`. Return "
+            "required clarifications before any forecast update."
         ),
         "research": (
             "Identify evidence gaps and propose timestamped evidence to collect. Distinguish facts, "
