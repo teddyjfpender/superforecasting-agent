@@ -553,20 +553,30 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
       <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
         <ScrollBox flexDirection="column" flexGrow={1} flexShrink={1} ref={detailScrollRef}>
           <Box flexDirection="column" paddingBottom={3} paddingRight={1}>
-            {latestNote ? (
-              <AnalystNote
-                note={latestNote}
-                t={t}
-                variant={latestNote.kind === 'retrospective' ? 'retrospective' : 'quickread'}
-                width={detailW}
-              />
-            ) : tailLoading ? (
-              <Box marginTop={1}>
-                <Text color={t.color.muted}>loading quick read…</Text>
-              </Box>
-            ) : null}
-            {latestNote ? <Rule t={t} width={detailW} /> : null}
-            <ForecastDetail item={selected} t={t} width={detailW} />
+            <ForecastDetail
+              afterChart={
+                latestNote ? (
+                  <>
+                    <Rule t={t} width={detailW} />
+                    <AnalystNote
+                      note={latestNote}
+                      showStance={selected.headline_kind !== 'distribution'}
+                      t={t}
+                      variant={latestNote.kind === 'retrospective' ? 'retrospective' : 'quickread'}
+                      width={detailW}
+                    />
+                    <Rule t={t} width={detailW} />
+                  </>
+                ) : tailLoading ? (
+                  <Box marginTop={1}>
+                    <Text color={t.color.muted}>loading quick read…</Text>
+                  </Box>
+                ) : null
+              }
+              item={selected}
+              t={t}
+              width={detailW}
+            />
             {packetTail && packetTail.length ? (
               <ForecastPacketTail sections={packetTail} t={t} width={detailW} />
             ) : tailLoading ? (
@@ -735,7 +745,17 @@ function KV({ k, t, v }: { k: string; t: Theme; v: string }) {
   )
 }
 
-export function ForecastDetail({ item, t, width }: { item: ForecastWorkspaceItem; t: Theme; width: number }) {
+export function ForecastDetail({
+  afterChart,
+  item,
+  t,
+  width
+}: {
+  afterChart?: ReactNode
+  item: ForecastWorkspaceItem
+  t: Theme
+  width: number
+}) {
   const delta = item.delta
   const deltaColor = !finite(delta) || Math.abs(delta) < 0.005 ? t.color.muted : delta > 0 ? t.color.ok : t.color.error
   const bandPoints = useMemo(() => historyToBandPoints(item), [item])
@@ -854,6 +874,10 @@ export function ForecastDetail({ item, t, width }: { item: ForecastWorkspaceItem
           </Text>
         </>
       ) : null}
+
+      {/* Title + quick stats + chart lead; the analyst quick read slots in here,
+          right after the chart, ahead of the deeper breakdown below. */}
+      {afterChart}
 
       {bars ? (
         <>
@@ -1075,17 +1099,19 @@ function Rule({ t, width }: { t: Theme; width: number }) {
 // A wrapping paragraph that never overflows the bounded detail ScrollBox: the
 // flexGrow + flexShrink + minWidth={0} value box lets long lines wrap as a
 // hanging indent instead of pushing past the pane edge.
+// A wrapping, hanging-indent paragraph. Uses paddingLeft on a plain column Box
+// (NOT a flexGrow row) so Ink wraps the text at (boxWidth - 2) deterministically.
+// The earlier flexGrow + minWidth={0} row resolved its width against the
+// ScrollBox's measured content and overflowed the pane by a column or two,
+// which both clipped the last characters and made the text reflow/jump as the
+// measurement settled. paddingLeft is the same mechanism the resolution-criteria
+// text uses, which wraps cleanly.
 function WrapText({ bold = false, children, color, t }: { bold?: boolean; children: string; color?: string; t: Theme }) {
   return (
-    <Box flexDirection="row">
-      <Box flexShrink={0} width={2}>
-        <Text> </Text>
-      </Box>
-      <Box flexGrow={1} flexShrink={1} minWidth={0}>
-        <Text bold={bold} color={color ?? t.color.text} wrap="wrap">
-          {children}
-        </Text>
-      </Box>
+    <Box paddingLeft={2}>
+      <Text bold={bold} color={color ?? t.color.text} wrap="wrap">
+        {children}
+      </Text>
     </Box>
   )
 }
@@ -1108,10 +1134,12 @@ const STANCE_LABEL: Record<string, string> = {
 // else falls back to the synthesized body split into paragraphs.
 export function AnalystNote({
   note,
+  showStance = true,
   t,
   variant
 }: {
   note: ForecastAnalystNote
+  showStance?: boolean
   t: Theme
   variant: 'quickread' | 'retrospective'
   width?: number
@@ -1141,7 +1169,9 @@ export function AnalystNote({
       <SectionTitle t={t}>{isRetro ? 'RETROSPECTIVE' : 'QUICK READ'}</SectionTitle>
       <Text wrap="truncate-end">
         <Text color={t.color.muted}>{`as of ${shortDate(note.as_of)}`}</Text>
-        {note.stance ? <Text color={t.color.label}>{`  ·  ${STANCE_LABEL[note.stance] ?? note.stance}`}</Text> : null}
+        {showStance && note.stance ? (
+          <Text color={t.color.label}>{`  ·  ${STANCE_LABEL[note.stance] ?? note.stance}`}</Text>
+        ) : null}
         {note.verdict ? (
           <Text bold color={verdictColor}>
             {`  ·  ${note.verdict}`}

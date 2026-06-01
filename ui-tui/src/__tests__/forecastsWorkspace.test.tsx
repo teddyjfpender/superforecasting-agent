@@ -443,6 +443,32 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('Comfortable around 59 percent')
   })
 
+  it('suppresses the ambiguous stance chip when showStance is false (distribution forecasts)', async () => {
+    const [{ renderSync }, { AnalystNote }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/forecastsWorkspace.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+    const note = {
+      as_of: '2026-06-01T00:00:00Z',
+      headline: 'May CPI still looks like a 4.2 or 4.3 print',
+      how_it_feels: 'A fairly comfortable number, not a heroic one.',
+      kind: 'brief' as const,
+      stance: 'lean_no' as const
+    }
+    const stdout = writeStream(120, 60)
+    renderSync(
+      React.createElement(AnalystNote, { note, showStance: false, t: DARK_THEME, variant: 'quickread' }),
+      { exitOnCtrlC: false, patchConsole: false, stdout: stdout.stream } as never
+    )
+    const text = normalize(stdout.text(), stripAnsi)
+    expect(text).toContain('QUICK READ')
+    expect(text).toContain('May CPI still looks like')
+    // The yes/no stance is meaningless for a distribution question, so it is hidden.
+    expect(text).not.toContain('lean no')
+  })
+
   it('renders a resolved retrospective with its verdict', async () => {
     const [{ renderSync }, { AnalystNote }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
       import('@hermes/ink'),
