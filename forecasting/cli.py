@@ -6936,19 +6936,30 @@ def _cmd_apikey_default(args: argparse.Namespace) -> None:
 
 
 def _print_apikey_list(*, json_output: bool) -> None:
+    import textwrap
+
     from forecasting.api_keys import list_api_keys
 
     rows = list_api_keys()
     if json_output:
         print(json.dumps(rows, indent=2, sort_keys=True))
         return
-    print(f"{'PROVIDER':16} {'ENV VAR':22} {'SET':5} VALUE / DESCRIPTION")
+    # One tidy block per provider: a compact PROVIDER / ENV VAR / SET row, then
+    # the description wrapped at a fixed width with a shallow hanging indent (so
+    # it reads as a paragraph, not a deep ragged column), then the signup URL,
+    # then a blank line so providers stay visually grouped. The deep 48-col
+    # indent of the old layout is what forced the ugly mid-word wrapping.
+    print(f"{'PROVIDER':14} {'ENV VAR':22} {'SET':4} VALUE / DESCRIPTION")
     for row in rows:
-        flag = "yes" if row["set"] else "no"
-        print(f"{row['name']:16} {row['env_var']:22} {flag:5} {row['redacted']}")
-        print(f"{'':16} {'':22} {'':5}   {row['description']}")
+        flag = "set" if row["set"] else "—"
+        print(f"{row['name']:14} {row['env_var']:22} {flag:4} {row['redacted']}")
+        for wrapped in textwrap.wrap(
+            row["description"], width=78, initial_indent="    ", subsequent_indent="    "
+        ):
+            print(wrapped)
         if row.get("signup_url") and not row["set"]:
-            print(f"{'':16} {'':22} {'':5}   get: {row['signup_url']}")
+            print(f"    get: {row['signup_url']}")
+        print()
 
 
 def _cmd_apikey_list(args: argparse.Namespace) -> None:

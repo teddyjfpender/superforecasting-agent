@@ -107,7 +107,22 @@ export function Banner({ t }: { t: Theme }) {
         </Text>
       )}
 
-      <Text color={t.color.muted}>{t.brand.icon} Superforecasting Agent · forecast ledger online</Text>
+      <Box>
+        <Text bold color={t.color.accent}>
+          {t.brand.icon} Superforecasting Agent
+        </Text>
+        <Text color={t.color.muted}> · forecast ledger online</Text>
+      </Box>
+
+      <Box marginTop={1}>
+        <Text color={t.color.muted}>start  </Text>
+        <Text color={t.color.primary}>/forecast</Text>
+        <Text color={t.color.muted}> desk · </Text>
+        <Text color={t.color.primary}>/forecast-rerun {'<name>'}</Text>
+        <Text color={t.color.muted}> re-run · </Text>
+        <Text color={t.color.primary}>/help</Text>
+        <Text color={t.color.muted}> all commands</Text>
+      </Box>
     </Box>
   )
 }

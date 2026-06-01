@@ -16,6 +16,26 @@ import { SkillsHub } from './skillsHub.js'
 
 const COMPLETION_WINDOW = 16
 
+// Color a generic pager line by role so dumps like `/api-key list` read as a
+// table rather than a flat wall of text: column/section headers in accent,
+// urls and "(not set)" markers muted, everything else in the body text color.
+const pagerLineColor = (
+  line: string,
+  theme: { color: { accent: string; muted: string; text: string } }
+): string => {
+  const trimmed = line.trim()
+  if (!trimmed) {
+    return theme.color.muted
+  }
+  if (/\bENV VAR\b|\bPROVIDER\b|VALUE \/ DESCRIPTION/.test(line) || /^[A-Z][A-Z /_]{3,}$/.test(trimmed)) {
+    return theme.color.accent
+  }
+  if (/^get:/.test(trimmed) || /https?:\/\//.test(trimmed) || /\(not set\)/.test(trimmed)) {
+    return theme.color.muted
+  }
+  return theme.color.text
+}
+
 export function PromptZone({
   cols,
   onApprovalChoice,
@@ -160,7 +180,9 @@ export function FloatingOverlays({
             )}
 
             {overlay.pager.lines.slice(overlay.pager.offset, overlay.pager.offset + pagerPageSize).map((line, i) => (
-              <Text key={i}>{line}</Text>
+              <Text color={pagerLineColor(line, theme)} key={i}>
+                {line}
+              </Text>
             ))}
 
             <Box marginTop={1}>
