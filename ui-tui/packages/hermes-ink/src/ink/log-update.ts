@@ -308,6 +308,9 @@ export class LogUpdate {
 
     let currentStyleId = stylePool.none
     let currentHyperlink: Hyperlink = undefined
+    // Re-anchor the SGR baseline on every row change in the incremental path
+    // (see the row-change reset below). -1 so the first written row resets too.
+    let lastWrittenY = -1
 
     // First pass: render changes to existing rows (rows < prev.screen.height)
     let needsFullReset = false
@@ -355,6 +358,20 @@ export class LogUpdate {
       }
 
       moveCursorTo(screen, x, y)
+
+      // Re-anchor the SGR baseline whenever we cross into a different row. The
+      // cursor just jumped over unchanged / hardware-scrolled cells whose
+      // on-screen SGR we don't track, so a delta from the prior CHANGED cell's
+      // style (currentStyleId, possibly on a different row) would be computed
+      // against phantom state — dropping or spuriously emitting \x1b[1m/\x1b[22m
+      // and making bold labels flicker frame-to-frame while scrolling. Reset to
+      // `none` first (mirrors renderFrameSlice's per-row reset before CR+LF) so
+      // the next cell's transition is absolute. Emits nothing when already none.
+      if (y !== lastWrittenY) {
+        currentStyleId = transitionStyle(screen.diff, stylePool, currentStyleId, stylePool.none)
+        currentHyperlink = transitionHyperlink(screen.diff, currentHyperlink, undefined)
+        lastWrittenY = y
+      }
 
       if (added) {
         const targetHyperlink = added.hyperlink

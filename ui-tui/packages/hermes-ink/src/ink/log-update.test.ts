@@ -1,3 +1,4 @@
+import type { AnsiCode } from '@alcalzone/ansi-tokenize'
 import { describe, expect, it } from 'vitest'
 
 import type { Frame } from './frame.js'
@@ -44,6 +45,21 @@ const stdoutOnly = (diff: ReturnType<LogUpdate['render']>) =>
 
 const hasDecstbm = (text: string) => /\x1b\[\d+;\d+r/.test(text)
 
+// Full emitted byte stream, including the pre-serialized style transitions
+// (styleStr patches), not just the stdout glyphs.
+const fullOutput = (diff: ReturnType<LogUpdate['render']>) =>
+  diff
+    .map(p =>
+      p.type === 'stdout'
+        ? (p as { content: string }).content
+        : p.type === 'styleStr'
+          ? (p as { str: string }).str
+          : ''
+    )
+    .join('')
+
+const BOLD: AnsiCode = { type: 'ansi', code: '\x1b[1m', endCode: '\x1b[22m' }
+
 describe('LogUpdate.render diff contract', () => {
   it('emits only changed cells when most rows match', () => {
     const w = 20
@@ -66,6 +82,43 @@ describe('LogUpdate.render diff contract', () => {
     expect(written).toContain('CHANGE')
     expect(written).not.toContain('HELLO')
     expect(written).not.toContain('STAYSHERE')
+  })
+
+  it('re-anchors SGR per row in the incremental diff so bold cannot flicker across rows', () => {
+    // Repro of the bold-on-scroll flicker: two bold cells on non-adjacent rows
+    // with an unchanged row between them. The diff cursor jumps row 0 -> row 2,
+    // skipping the unchanged row. Before the fix, the second bold cell was a
+    // no-op transition (bold -> bold == '') against the FIRST cell's lingering
+    // style, so its `\x1b[1m` was dropped and the bold relied on stale global
+    // SGR state that a hardware scroll could invalidate frame-to-frame. After
+    // the fix, each repainted row re-anchors to `none` first, so every bold row
+    // emits its own bold-on.
+    const w = 8
+    const h = 3
+    const boldId = stylePool.intern([BOLD])
+
+    const prev = mkScreen(w, h)
+    paint(prev, 0, 'xx')
+    paint(prev, 1, 'mid')
+    paint(prev, 2, 'yy')
+
+    const next = mkScreen(w, h)
+    setCellAt(next, 0, 0, { char: 'A', styleId: boldId, width: CellWidth.Narrow, hyperlink: undefined })
+    setCellAt(next, 1, 0, { char: 'A', styleId: boldId, width: CellWidth.Narrow, hyperlink: undefined })
+    paint(next, 1, 'mid') // unchanged row between the two bold rows
+    setCellAt(next, 0, 2, { char: 'B', styleId: boldId, width: CellWidth.Narrow, hyperlink: undefined })
+    setCellAt(next, 1, 2, { char: 'B', styleId: boldId, width: CellWidth.Narrow, hyperlink: undefined })
+    next.damage = { x: 0, y: 0, width: w, height: h }
+
+    const log = new LogUpdate({ isTTY: true, stylePool })
+    const out = fullOutput(log.render(mkFrame(prev, w, h), mkFrame(next, w, h), true, false))
+
+    // Both bold rows independently anchored: a `\x1b[1m` precedes EACH, rather
+    // than the second relying on the first's state.
+    const first = out.indexOf('\x1b[1m')
+    const second = out.indexOf('\x1b[1m', first + 1)
+    expect(first).toBeGreaterThanOrEqual(0)
+    expect(second).toBeGreaterThan(first)
   })
 
   it('width change emits a clearTerminal patch before repainting', () => {
