@@ -91,7 +91,12 @@ export const estimatedMsgHeight = (
     // Estimate content-aware: title + per-row wrapped lines at the panel's
     // value-column width (border 2 + paddingX*2 = 4 + the 20-wide key column).
     const sections = msg.panelData?.sections ?? []
-    const valueWidth = Math.max(10, cols - 2 - 4 - 20)
+    // The panel renders in the transcript column, which is narrower than the
+    // terminal when the forecast rail is showing (rail width 56 at cols >= 132).
+    // Account for it so the wrapped-line estimate isn't too low (the estimate is
+    // what keeps the virtual spacers from snapping).
+    const bodyCols = cols >= 132 ? cols - 57 : cols
+    const valueWidth = Math.max(10, bodyCols - 2 - 4 - 20)
     let h = 2 // panel title + its bottom margin
     for (const s of sections) {
       if (s.title) {
@@ -104,7 +109,7 @@ export const estimatedMsgHeight = (
         h += wrappedLines(it || ' ', Math.max(10, valueWidth + 18))
       }
       if (s.text) {
-        h += wrappedLines(s.text, Math.max(10, cols - 6))
+        h += wrappedLines(s.text, Math.max(10, bodyCols - 6))
       }
       h += 1 // marginTop between sections
     }

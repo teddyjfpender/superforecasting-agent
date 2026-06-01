@@ -413,7 +413,19 @@ export function SessionPanel({ info, sid, t }: SessionPanelProps) {
 
 export function Panel({ onCommandClick, onCommandDraft, sections, t, title }: PanelProps) {
   return (
-    <Box borderColor={t.color.border} borderStyle="round" flexDirection="column" paddingX={2} paddingY={1}>
+    // width="100%" constrains the box to the transcript column so long values
+    // wrap at the visible edge instead of growing the box past the terminal
+    // (which cropped the right border + cut every line). flexShrink lets it
+    // give way rather than overflow when space is tight.
+    <Box
+      borderColor={t.color.border}
+      borderStyle="round"
+      flexDirection="column"
+      flexShrink={1}
+      paddingX={2}
+      paddingY={1}
+      width="100%"
+    >
       <Box justifyContent="center" marginBottom={1}>
         <Text bold color={t.color.primary}>
           {title}
