@@ -85,7 +85,7 @@ When asked whether a ledger, tester cohort, or benchmark run is ready, inspect t
 
 To gather data and market prices, use the `forecast_ledger` `import_source_evidence` action with the right `source_type` — it covers FRED, BLS, EIA, Treasury, World Bank, Census, markets (`polymarket`, `kalshi`, `manifold`, `metaculus`), RSS/news, and more, with bounded timeouts and structured output. Do NOT write ad-hoc network code in the terminal (e.g. `urllib`/`requests`/`curl` loops) to pull these feeds: those calls have no timeout and routinely hang until the command limit fires, wasting minutes per call. Reserve the browser for pages that genuinely have no adapter. Batch one `import_source_evidence` call per series/market rather than scripting many fetches in one terminal block.
 
-To pull the LATEST readings for a question whose sources are already watched and re-estimate in one shot, use `forecast refresh <id>` (or the `forecast_ledger` `refresh_forecast` action): it re-fetches every active watched source, imports the fresh values as evidence, deterministically re-pools the existing market/crowd components, and auto-commits a new live snapshot — with `--dry-run` to preview and `--agent` to re-reason the update through the full LLM update stage instead of the deterministic re-pool.
+To pull the LATEST readings for a question whose sources are already watched and re-estimate in one shot, use `forecast refresh <id>` (or the `forecast_ledger` `refresh_forecast` action): it re-fetches every active watched source, imports the fresh values as evidence, deterministically re-pools the existing market/crowd components, and auto-commits a new live snapshot — with `--dry-run` to preview and `--agent` to re-reason the update through the full LLM update stage instead of the deterministic re-pool. For `forecast refresh` to work, the snapshot must carry its pool in the structured `ensemble_components` field (each market/crowd component with a stable `source` slug), and triggers must be executable (`source_ref` + `operator` + numeric `threshold`) — components left in prose or model_runs, and free-form triggers, cannot be refreshed or fire automatically. Imports are deduped by default, so a refresh that re-pulls an unchanged series will not pile up duplicate evidence.
 """
 
 
@@ -385,10 +385,14 @@ def _stage_task(stage: str) -> str:
             "action_threshold, or update_triggers. A forecast that does not inform a concrete "
             "decision is entertainment, not work — refuse to advance without a decision owner "
             "and at least one action threshold tied to the probability. Make update_triggers "
-            "EXECUTABLE where you can: give a trigger a source_ref (e.g. fred:CPIAUCSL), an "
-            "operator (>, >=, <, <=, ==, !=), and a numeric threshold so it fires automatically "
-            "(trigger_fired alert) when the imported value crosses it — check them with the "
-            "forecast_ledger check_update_triggers action or `forecast triggers <id>`. Return "
+            "EXECUTABLE, not prose: a free-form threshold like 'rerun if CPI rises a lot' NEVER "
+            "fires automatically. Each trigger that watches a numeric series MUST carry a "
+            "`source_ref` (e.g. fred:CPIAUCSL, or polymarket:<slug> for a market probability), an "
+            "`operator` (>, >=, <, <=, ==, !=), and a numeric `threshold`, so it fires a "
+            "trigger_fired alert when the imported value crosses it — check them with the "
+            "forecast_ledger check_update_triggers action or `forecast triggers <id>`. Keep the "
+            "human-readable mechanism text too, but always add the machine-checkable triple where a "
+            "trigger keys off a series or market you import. Return "
             "required clarifications before any forecast update."
         ),
         "research": (
@@ -428,8 +432,19 @@ def _stage_task(stage: str) -> str:
             "available natively via `forecast update --method log_odds_pool --extremize <f> "
             "--correlation estimate`. After moving the probability, decompose the change with "
             "bayes_action='forecast_diff' and stress-test it with bayes_action='sensitivity' so the "
-            "update is auditable, not ad hoc. Every saved snapshot MUST include three structured "
-            "reasoning fields: `reasons_up` (3 concrete reasons the probability should be HIGHER), "
+            "update is auditable, not ad hoc. PERSIST THE POOL, not just prose: every saved snapshot "
+            "that combines sources MUST pass `ensemble_components` — the actual list of "
+            "{name, probability, weight, source} rows you pooled — on `update_forecast` (or "
+            "`forecast update --component-json '[...]'`). Do not leave the components in a model_run "
+            "or the rationale only; the structured field is what makes the pool auditable and is what "
+            "`forecast refresh` re-pools next time. Capture every market/crowd reading AS A NUMERIC "
+            "component with a stable `source` slug (e.g. {name:'markets', source:'polymarket:<slug>', "
+            "probability:0.43, weight:2}) — even when you read the price off the browser because the "
+            "adapter returns no liquidity — so the next refresh can match and update it. To RE-RUN an "
+            "existing forecast whose sources are watched, prefer `forecast refresh <id>` (pulls latest "
+            "readings, re-pools, auto-commits) or `forecast refresh <id> --agent` for full "
+            "re-reasoning, instead of redoing the imports by hand. Every saved snapshot MUST include "
+            "three structured reasoning fields: `reasons_up` (3 concrete reasons the probability should be HIGHER), "
             "`reasons_down` (3 concrete reasons the probability should be LOWER), and "
             "`change_my_mind` (the specific observations/data that would force a material update). "
             "These prevent narrative collapse — pass them as repeated --reason-up / --reason-down / "

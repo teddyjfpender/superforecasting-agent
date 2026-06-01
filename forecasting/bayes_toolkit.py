@@ -414,10 +414,17 @@ def combine_forecasts(
         "log_odds_pool": log_odds_pool,
         "logit": log_odds_pool,
         "geometric": log_odds_pool,
+        "geo_mean_odds": log_odds_pool,
+        "log_odds_weighted": log_odds_pool,
+        "weighted_log_odds": log_odds_pool,
+        "log_odds": log_odds_pool,
         "linear_pool": linear_pool,
         "linear": linear_pool,
+        "weighted_ensemble": linear_pool,
+        "weighted_average": linear_pool,
         "log_pool": log_pool,
-    }.get(str(method).lower())
+        "log_linear": log_pool,
+    }.get(str(method).strip().lower())
     if pooler is None:
         raise ValidationError(
             f"unknown pooling method '{method}'"
@@ -516,8 +523,10 @@ def _resolve_correlation(correlation_matrix: Any, probs: Sequence[float]) -> Any
         return None
     n = len(probs)
     if isinstance(correlation_matrix, str):
-        if correlation_matrix.lower() != "estimate":
-            raise ValidationError("correlation_matrix string must be 'estimate'")
+        if correlation_matrix.strip().lower() not in {"estimate", "auto", "estimated", "infer"}:
+            raise ValidationError(
+                "correlation_matrix string must be 'estimate' (or pass an NxN matrix)"
+            )
         # Estimate a mild shared correlation from how tightly sources agree:
         # tightly-clustered logits ⇒ likely a shared underlying signal.
         logits = [logit(p) for p in probs]

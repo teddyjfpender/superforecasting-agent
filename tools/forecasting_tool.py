@@ -461,7 +461,16 @@ FORECAST_LEDGER_SCHEMA = {
             "proposed_probability": {"type": "number"},
             "proposed_probability_or_distribution": {},
             "baseline_type": {"type": "string"},
-            "components": {"type": "object"},
+            "components": {
+                "type": "object",
+                "description": (
+                    "update_forecast: the structured ensemble you pooled, as "
+                    "{\"components\":[{name, probability, weight, source}]}. PERSIST THIS on any "
+                    "snapshot that combines sources — do not leave the pool in prose or a model_run. "
+                    "Give each market/crowd component a stable `source` slug (e.g. "
+                    "'polymarket:<slug>') so `forecast refresh` can match and re-pool it next run."
+                ),
+            },
             "method": {"type": "string"},
             "rationale": {"type": "string"},
             "text": {"type": "string"},
@@ -700,6 +709,10 @@ FORECAST_LEDGER_SCHEMA = {
                 "type": "boolean",
                 "description": "For import_source_evidence: after a successful import, also attach the (source_type, source) tuple as a watched source on the question so future reruns start from the known identifier instead of broad search. Deduped — a no-op if an identical watch already exists.",
             },
+            "dedupe": {
+                "type": "boolean",
+                "description": "For import_source_evidence / import_source_evidence_batch: skip a reading already imported for this question (same source_type + adapter entry_id), so repeated refreshes don't pile up duplicate observations. Default true; the response reports skipped_duplicates. Free-form notes (no entry_id) are never deduped.",
+            },
             "allow_missing_resolution_source": {"type": "boolean"},
             "enabled": {"type": "boolean"},
             "now": {"type": "string"},
@@ -923,9 +936,20 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             question_id = _required(args, "question_id")
             adapter = _required(args, "source_type")
             source = _required(args, "source")
+            dedupe = bool(args.get("dedupe", True))
+            seen_keys = ledger.existing_evidence_keys(question_id) if dedupe else set()
             imported = []
+            skipped_duplicates = 0
             for item in _load_source_adapter_items(adapter, source, args):
                 evidence_payload = _source_adapter_evidence_payload(adapter, source, item, args)
+                # Skip a structured reading already imported for this question
+                # (same source_type + entry_id) so repeated refreshes don't bloat
+                # the evidence table with identical observations.
+                entry_id = (evidence_payload.get("metadata") or {}).get("entry_id")
+                dedupe_key = (evidence_payload.get("source_type") or "", str(entry_id)) if entry_id else None
+                if dedupe and dedupe_key and dedupe_key in seen_keys:
+                    skipped_duplicates += 1
+                    continue
                 # Structured adapters already capture the observation (the raw
                 # series value lives in metadata); fetching the source's HTML
                 # page to archive a snapshot adds ~5s/row of latency and no data
@@ -936,6 +960,8 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                     archive_url_snapshot=False,
                     **evidence_payload,
                 )
+                if dedupe_key:
+                    seen_keys.add(dedupe_key)
                 imported.append(
                     {
                         "evidence": evidence.__dict__,
@@ -982,6 +1008,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 source_type=adapter,
                 source=source,
                 imported_count=len(imported),
+                skipped_duplicates=skipped_duplicates,
                 imported=imported,
                 watched_source=watch,
                 auto_watch_note=watch_note,
@@ -2246,16 +2273,28 @@ def _import_source_evidence_batch_payload(ledger: "ForecastLedger", args: dict[s
 
     # Sequential ledger writes (keeps SQLite single-writer; cheap once the
     # network fetches are done).
+    dedupe = bool(args.get("dedupe", True))
+    seen_keys = ledger.existing_evidence_keys(question_id) if dedupe else set()
     results: list[dict[str, Any]] = []
     total_imported = 0
+    total_skipped = 0
     for fetch in fetched:
         if not fetch.get("success"):
             results.append({k: fetch[k] for k in ("index", "source_type", "source", "error", "elapsed_s") if k in fetch} | {"success": False, "imported_count": 0})
             continue
         evidence_rows: list[dict[str, Any]] = []
+        skipped_here = 0
         for payload in fetch["payloads"]:
+            entry_id = (payload.get("metadata") or {}).get("entry_id")
+            dedupe_key = (payload.get("source_type") or "", str(entry_id)) if entry_id else None
+            if dedupe and dedupe_key and dedupe_key in seen_keys:
+                skipped_here += 1
+                continue
             ev = ledger.add_evidence(question_id=question_id, archive_url_snapshot=False, **payload)
+            if dedupe_key:
+                seen_keys.add(dedupe_key)
             evidence_rows.append({"id": ev.id, "source_url": ev.source_url, "claim": ev.claim})
+        total_skipped += skipped_here
         # Optional auto_watch (same dedup as the single-source path).
         watch_note = None
         watch_record: dict[str, Any] | None = None
@@ -2284,7 +2323,8 @@ def _import_source_evidence_batch_payload(ledger: "ForecastLedger", args: dict[s
         results.append({
             "index": fetch["index"], "success": True,
             "source_type": fetch["source_type"], "source": fetch["source"],
-            "imported_count": len(evidence_rows), "evidence": evidence_rows,
+            "imported_count": len(evidence_rows), "skipped_duplicates": skipped_here,
+            "evidence": evidence_rows,
             "watched_source": watch_record, "auto_watch_note": watch_note,
             "elapsed_s": fetch["elapsed_s"],
         })
@@ -2293,6 +2333,7 @@ def _import_source_evidence_batch_payload(ledger: "ForecastLedger", args: dict[s
         success=True,
         question_id=question_id,
         imported_count=total_imported,
+        skipped_duplicates=total_skipped,
         results=results,
         concurrency=concurrency,
     )
@@ -2959,6 +3000,12 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
     if adapter_name == "metaculus":
         kwargs = {"api_base_url": api_base_url} if api_base_url else {}
         return [load_metaculus_question(source, **kwargs)]
+    if adapter_name in {"url", "http", "https", "web", "page", "html", "link"}:
+        raise ValueError(
+            f"source_type '{adapter}' is not a structured adapter. For a raw web page, use the "
+            "'ingest' action (or capture it as evidence with source_or_note=<url>) instead of "
+            "import_source_evidence, which is for structured feeds (fred/bls/polymarket/kalshi/...)."
+        )
     raise ValueError(f"source_type is not a supported import adapter: {adapter}")
 
 

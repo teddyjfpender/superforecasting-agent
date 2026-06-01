@@ -354,3 +354,111 @@ def test_tool_refresh_forecast_action(tmp_path, monkeypatch):
 def test_tool_refresh_forecast_in_action_enum():
     actions = ft.FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["action"]["enum"]
     assert "refresh_forecast" in actions
+
+
+# ── evidence dedup (#4) ─────────────────────────────────────────────────────
+
+
+def _fred_loader(value):
+    from types import SimpleNamespace
+
+    def load(adapter, source, args):
+        return [SimpleNamespace(value=value, observation_date="2026-05-13", entry_id=f"{source}:2026-05")]
+
+    return load
+
+
+def test_import_source_evidence_dedupes_repeat_readings(tmp_path, monkeypatch):
+    monkeypatch.setattr(ft, "_load_source_adapter_items", _fred_loader(3.5))
+    db = str(tmp_path / "f.db")
+    ledger = ForecastLedger(db_path=db)
+    ledger.initialize_schema()
+    q = ledger.create_question(
+        title="Will CPI be high?",
+        resolution_criteria="Resolves yes if CPI YoY exceeds 3.0%; otherwise no.",
+    )
+    base = {
+        "db": db, "action": "import_source_evidence", "question_id": q.id,
+        "source_type": "fred", "source": "CPIAUCSL", "available_at": "2026-05-13T00:00:00Z",
+    }
+    a1 = json.loads(ft.forecast_ledger_tool(dict(base)))
+    a2 = json.loads(ft.forecast_ledger_tool(dict(base)))  # identical reading
+    a3 = json.loads(ft.forecast_ledger_tool({**base, "dedupe": False}))  # forced
+    assert a1["imported_count"] == 1 and a1["skipped_duplicates"] == 0
+    assert a2["imported_count"] == 0 and a2["skipped_duplicates"] == 1
+    assert a3["imported_count"] == 1 and a3["skipped_duplicates"] == 0
+    assert len(ledger.list_evidence(q.id)) == 2  # not 3
+
+
+def test_existing_evidence_keys_skips_entryless_notes(tmp_path):
+    ledger = ForecastLedger(db_path=str(tmp_path / "f.db"))
+    ledger.initialize_schema()
+    q = ledger.create_question(
+        title="Will it?",
+        resolution_criteria="Resolves yes if the official source confirms; otherwise no.",
+    )
+    ledger.add_evidence(question_id=q.id, source_or_note="free-form note, no entry_id")
+    ledger.add_evidence(
+        question_id=q.id, source_or_note="fred", source_type="adapter:fred",
+        metadata={"entry_id": "CPIAUCSL:2026-05"},
+    )
+    keys = ledger.existing_evidence_keys(q.id)
+    assert keys == {("adapter:fred", "CPIAUCSL:2026-05")}  # note without entry_id excluded
+
+
+# ── tool-API friction (#6) ──────────────────────────────────────────────────
+
+
+def test_combine_forecasts_accepts_method_aliases():
+    from forecasting.bayes_toolkit import combine_forecasts, ensure_industry_backends
+
+    ensure_industry_backends()
+    comps = [{"name": "a", "probability": 0.6, "weight": 2}, {"name": "b", "probability": 0.4, "weight": 1}]
+    canonical = combine_forecasts(comps, method="log_odds_pool").probability
+    for alias in ("log_odds_weighted", "weighted_log_odds", "geo_mean_odds", "log_odds"):
+        assert combine_forecasts(comps, method=alias).probability == pytest.approx(canonical)
+
+
+def test_combine_forecasts_accepts_correlation_auto():
+    from forecasting.bayes_toolkit import combine_forecasts, ensure_industry_backends
+
+    ensure_industry_backends()
+    comps = [{"name": "a", "probability": 0.6}, {"name": "b", "probability": 0.4}]
+    result = combine_forecasts(comps, method="log_odds_pool", correlation_matrix="auto")
+    assert result.correlation_applied is True
+
+
+def test_import_url_source_type_points_to_ingest(tmp_path):
+    db = str(tmp_path / "f.db")
+    ledger = ForecastLedger(db_path=db)
+    ledger.initialize_schema()
+    q = ledger.create_question(
+        title="Will it?",
+        resolution_criteria="Resolves yes if the official source confirms; otherwise no.",
+    )
+    out = json.loads(
+        ft.forecast_ledger_tool(
+            {"db": db, "action": "import_source_evidence", "question_id": q.id, "source_type": "url", "source": "https://example.com"}
+        )
+    )
+    assert out["success"] is False
+    assert "ingest" in out["error"]
+
+
+# ── guidance (#1, #2) ───────────────────────────────────────────────────────
+
+
+def test_update_stage_guidance_requires_structured_components():
+    from forecasting.protocol import _stage_task
+
+    update_task = _stage_task("update")
+    assert "ensemble_components" in update_task
+    assert "forecast refresh" in update_task
+
+
+def test_parse_stage_guidance_requires_executable_triggers():
+    from forecasting.protocol import _stage_task
+
+    parse_task = _stage_task("parse")
+    assert "operator" in parse_task and "source_ref" in parse_task
+    assert "never fires" in parse_task.lower() or "cannot be refreshed" in parse_task.lower() or "prose" in parse_task.lower()

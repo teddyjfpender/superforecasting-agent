@@ -1480,6 +1480,19 @@ class ForecastLedger:
             ).fetchall()
         return [self._row_to_evidence(row) for row in rows]
 
+    def existing_evidence_keys(self, question_id: str) -> set[tuple[str, str]]:
+        """Return ``{(source_type, entry_id)}`` for evidence already imported for
+        the question. Used to skip re-importing identical structured readings
+        (e.g. the same FRED observation) on every refresh, which otherwise bloats
+        the evidence table. Items without an ``entry_id`` (e.g. free-form notes)
+        are never deduped."""
+        keys: set[tuple[str, str]] = set()
+        for item in self.list_evidence(question_id):
+            entry_id = (item.metadata or {}).get("entry_id")
+            if entry_id:
+                keys.add((item.source_type or "", str(entry_id)))
+        return keys
+
     def find_stale_evidence_refs(
         self,
         question_id: str,
