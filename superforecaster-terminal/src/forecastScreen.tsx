@@ -32,6 +32,7 @@ import {
   matchesFilter,
   pct,
   shortDate,
+  shortUnit,
   stanceTag,
   verdictTag,
 } from "./forecastFormat";
@@ -228,7 +229,7 @@ function TrendBlock({ item }: { item: ForecastWorkspaceItem }) {
             points={points}
             xLabels={xLabels}
             formatY={isDist ? (v) => `${compactNumber(v)}${unitSuffixFor(item)}` : (v) => pct(v)}
-            yLabel={isDist ? (item.units ?? "μ") : "P"}
+            yLabel={isDist ? shortUnit(item.units) || "μ" : "P"}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-[11px] uppercase text-term-dim">

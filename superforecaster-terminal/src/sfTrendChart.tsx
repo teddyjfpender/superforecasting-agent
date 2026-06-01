@@ -107,11 +107,6 @@ export function SfTrendChart({
 
   return (
     <div ref={ref} className="relative h-full min-h-0 w-full overflow-hidden">
-      {yLabel && (
-        <span className="pointer-events-none absolute left-1 top-1 z-10 text-[10px] uppercase text-term-dim">
-          {yLabel}
-        </span>
-      )}
       {W > 90 && H > 56 && (
         <svg className="block h-full w-full" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
           {/* plot frame */}
@@ -124,6 +119,19 @@ export function SfTrendChart({
             stroke="var(--color-term-border)"
             shapeRendering="crispEdges"
           />
+          {/* y-axis caption — parked in the top margin, right of the tick column */}
+          {yLabel && (
+            <text
+              x={padL + 3}
+              y={padT - 5}
+              textAnchor="start"
+              fontSize="9"
+              fill="var(--color-term-dim)"
+              fontFamily={MONO}
+            >
+              {yLabel}
+            </text>
+          )}
           {/* y grid + ticks */}
           {tickVals.map((_v, i) => {
             const yy = padT + (i / tCount) * innerH;

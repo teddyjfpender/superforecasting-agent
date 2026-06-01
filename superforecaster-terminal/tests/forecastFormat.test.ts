@@ -8,6 +8,7 @@ import {
   historyToBandPoints,
   matchesFilter,
   pct,
+  shortUnit,
 } from "../src/forecastFormat";
 import type { ForecastWorkspaceItem } from "../src/forecastFormat";
 
@@ -99,4 +100,13 @@ test("compactNumber + pct primitives", () => {
   expect(compactNumber(73000)).toBe("73k");
   expect(pct(0.523)).toBe("52%");
   expect(pct(null)).toBe("—");
+});
+
+test("shortUnit abbreviates long unit strings for the axis caption", () => {
+  expect(shortUnit("percent-year-over-year")).toBe("%");
+  expect(shortUnit("degrees fahrenheit")).toBe("°F");
+  expect(shortUnit("USD")).toBe("USD");
+  expect(shortUnit("storm count")).toBe("#");
+  expect(shortUnit("")).toBe("");
+  expect(shortUnit("widgets").length).toBeLessThanOrEqual(5);
 });

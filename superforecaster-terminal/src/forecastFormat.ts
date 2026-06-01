@@ -347,6 +347,18 @@ export const unitSuffix = (units: null | string | undefined): string => {
   return ''
 }
 
+/** Short axis caption for a units string: "percent-year-over-year" -> "%". */
+export const shortUnit = (units?: null | string): string => {
+  const u = (units ?? '').toLowerCase().trim()
+  if (!u) return ''
+  if (u.includes('percent') || u.includes('%')) return '%'
+  if (u.includes('fahrenheit')) return '°F'
+  if (u.includes('celsius')) return '°C'
+  if (u.includes('usd') || u.includes('dollar')) return 'USD'
+  if (u.includes('count') || u.includes('number')) return '#'
+  return (u.split(/[\s\-_/]+/)[0] ?? u).slice(0, 5).toUpperCase()
+}
+
 /**
  * Headline label for a forecast.
  *   probability/categorical → a percent ("59%")
