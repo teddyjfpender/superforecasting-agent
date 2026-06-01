@@ -1,0 +1,9 @@
+.env*
+!.env.example
+.claude/
+.playwright-cli/
+backend/target/
+dist/
+node_modules/
+output/
+*.tsbuildinfo

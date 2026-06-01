@@ -1,0 +1,236 @@
+@import "tailwindcss";
+
+@theme {
+  /* Type — Berkeley Mono TX-02 first, then progressive fallbacks */
+  --font-mono:
+    "TX-02", "Berkeley Mono", "JetBrains Mono", "IBM Plex Mono",
+    "SF Mono", "Menlo", "Consolas", ui-monospace, monospace;
+
+  /* Surfaces — pure black, high contrast. */
+  --color-term-bg:        #000000;
+  --color-term-bg-elev:   #0a0a0a;
+  --color-term-panel:     #050505;
+  --color-term-border:    #1f1f1f;
+  --color-term-border-hi: #2a2a2a;
+  --color-term-grid:      #141414;
+
+  /* Foreground — warm off-white phosphor, the original high-contrast text. */
+  --color-term-text:  #e8e3d3;
+  --color-term-dim:   #6b6256;
+  --color-term-muted: #4a443c;
+
+  /* Primary accent — warm cream / off-white.
+     Mono-terminal feel; solid blocks (panel headers, active F-tab) invert
+     to cream-on-black for maximum legibility, while text uses sit clearly
+     brighter than the warm phosphor body text. No hue competing with the
+     financial green/red. */
+  --color-term-accent:    #F0E6CC;
+  --color-term-accent-hi: #FFF6DA;
+  --color-term-orange:    #8A7E5C;   /* dim accent, name kept for compat */
+
+  /* Text color when placed on top of `bg-term-accent` (panel headers,
+     active F-tab, modal headers, tab inactive state). Flips per theme
+     so the heading is always legible regardless of accent lightness. */
+  --color-term-on-accent: #000000;
+
+  /* The inverted-color pair, used by TabbedPanel's active tab and any
+     other "selected/strong-emphasis" affordance. On dark themes this is
+     black with the accent as text; on the light "paper" theme it flips
+     to the paper bg with brown ink. */
+  --color-term-inv-bg:    #000000;
+  --color-term-inv-fg:    var(--color-term-accent-hi);
+
+  /* Semantic — financial green/red preserved at the original saturation. */
+  --color-term-green:     #00d26a;
+  --color-term-green-dim: #007a3d;
+  --color-term-red:       #ff3b3b;
+  --color-term-red-dim:   #8a1212;
+
+  /* Auxiliary callouts — used sparingly for ratings, warnings, market lights */
+  --color-term-cyan:    #4dd0e1;
+  --color-term-blue:    #3b82f6;
+  --color-term-yellow:  #ffd84d;
+  --color-term-magenta: #d97aff;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    background: var(--color-term-bg);
+    color: var(--color-term-text);
+  }
+
+  body {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "calt" 0, "liga" 0, "zero" 1, "ss01" 1;
+    font-variant-ligatures: none;
+    text-rendering: geometricPrecision;
+    letter-spacing: 0;
+    overflow: hidden;
+  }
+
+  ::selection {
+    background: var(--color-term-accent);
+    color: #000;
+  }
+
+  /* Scrollbars — hidden everywhere, content stays scrollable. */
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    background: transparent;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-thumb,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+}
+
+@layer utilities {
+  /* Blinking cursor */
+  @keyframes term-blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+  }
+  .blink {
+    animation: term-blink 1s steps(2, end) infinite;
+  }
+
+  /* Marquee for ticker */
+  @keyframes term-marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+  .ticker-track {
+    animation: term-marquee 90s linear infinite;
+    will-change: transform;
+  }
+
+  /* Subtle alert pulse — opacity only, no glow */
+  @keyframes term-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  .pulse-dot {
+    animation: term-pulse 1.4s ease-in-out infinite;
+  }
+
+  /* Tick flash — brief background fade when a price changes */
+  @keyframes term-flash-up {
+    0%   { background-color: color-mix(in srgb, var(--color-term-green) 45%, transparent); }
+    100% { background-color: transparent; }
+  }
+  @keyframes term-flash-down {
+    0%   { background-color: color-mix(in srgb, var(--color-term-red) 45%, transparent); }
+    100% { background-color: transparent; }
+  }
+  .flash-up   { animation: term-flash-up   0.65s ease-out 1; }
+  .flash-down { animation: term-flash-down 0.65s ease-out 1; }
+
+  /* Cell-level tick flash for individual price cells */
+  @keyframes term-cell-up {
+    0%   { color: #000; background-color: var(--color-term-green); }
+    100% {}
+  }
+  @keyframes term-cell-down {
+    0%   { color: #000; background-color: var(--color-term-red); }
+    100% {}
+  }
+  .cell-flash-up   { animation: term-cell-up   0.55s ease-out 1; }
+  .cell-flash-down { animation: term-cell-down 0.55s ease-out 1; }
+
+  /* Active / selected row marker */
+  .row-active {
+    background: color-mix(in srgb, var(--color-term-accent) 12%, transparent);
+    box-shadow: inset 2px 0 0 var(--color-term-accent);
+  }
+
+  /* Modal overlay */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 12vh;
+    z-index: 100;
+  }
+  .modal-frame {
+    background: var(--color-term-panel);
+    border: 1px solid var(--color-term-accent);
+    box-shadow: 0 0 0 1px #000, 0 8px 32px rgba(0, 0, 0, 0.85);
+    min-width: 520px;
+    max-width: min(960px, 92vw);
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Toast (alert trigger) — slides in then fades */
+  @keyframes term-toast-in {
+    0% { opacity: 0; transform: translateY(6px); }
+    8% { opacity: 1; transform: translateY(0); }
+    92% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(-4px); }
+  }
+  .toast {
+    animation: term-toast-in 4.8s ease-in-out forwards;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Theme variants — override the accent (and on `paper`, the surfaces) via
+   `data-theme` on the root element. The default (no attribute) is the cream
+   accent on pure black.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+:root[data-theme="amber"] {
+  --color-term-accent:    #ffa028;
+  --color-term-accent-hi: #ffc066;
+  --color-term-orange:    #ff7a00;
+}
+:root[data-theme="phosphor"] {
+  --color-term-accent:    #6BFFAA;
+  --color-term-accent-hi: #B6FFD3;
+  --color-term-orange:    #2C8044;
+  --color-term-text:      #c8f5d6;
+  --color-term-dim:       #4a7a5a;
+}
+:root[data-theme="paper"] {
+  --color-term-bg:        #f4f1ea;
+  --color-term-bg-elev:   #ebe7dd;
+  --color-term-panel:     #eee9de;
+  --color-term-border:    #d5cfc0;
+  --color-term-border-hi: #b8b1a0;
+  --color-term-grid:      #e1dccc;
+  --color-term-text:      #1a1a1a;
+  /* Darker dim/muted so they still pass WCAG AA against the cream panel. */
+  --color-term-dim:       #5a5448;
+  --color-term-muted:     #82786a;
+  --color-term-accent:    #4F2D04;     /* dark brown ink */
+  --color-term-accent-hi: #2a1700;     /* deeper brown for high emphasis */
+  --color-term-orange:    #6a3d08;
+  /* Inverted: on the brown header strip we paint paper-white text;
+     active TabbedPanel tab flips to paper-white bg with brown ink. */
+  --color-term-on-accent: #f4f1ea;
+  --color-term-inv-bg:    #f4f1ea;
+  --color-term-inv-fg:    #2a1700;
+  /* Earthy semantics — every text color below clears 4.5:1 against the
+     panel bg and the alert-yellow background carries black text legibly. */
+  --color-term-green:     #0f5430;
+  --color-term-red:       #8b1018;
+  --color-term-yellow:    #7a5500;
+}
