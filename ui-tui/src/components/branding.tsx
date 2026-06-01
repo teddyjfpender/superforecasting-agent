@@ -289,7 +289,21 @@ export function SessionPanel({ info, sid, t }: SessionPanelProps) {
   }
 
   return (
-    <Box borderColor={t.color.border} borderStyle="round" marginBottom={1} paddingX={2} paddingY={1}>
+    // width="100%" constrains the box to the transcript column (which is
+    // narrower than the terminal once the scrollbar + forecast rail take their
+    // columns). Without it the box sized to leftW + w (computed from the FULL
+    // terminal width) and overflowed past the right edge — clipping the border
+    // and the Available Tools list. The right column already has flexShrink +
+    // overflow="hidden", so a constrained parent is all it needs to give way.
+    <Box
+      borderColor={t.color.border}
+      borderStyle="round"
+      flexShrink={1}
+      marginBottom={1}
+      paddingX={2}
+      paddingY={1}
+      width="100%"
+    >
       {wide && (
         // flexShrink={0} pins the hero column at its full width. Without it, a
         // re-render triggered by toggling a collapsible (Available Tools/Skills)
