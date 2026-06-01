@@ -95,9 +95,14 @@ export const estimatedMsgHeight = (
     // terminal when the forecast rail is showing (rail width 56 at cols >= 132).
     // Account for it so the wrapped-line estimate isn't too low (the estimate is
     // what keeps the virtual spacers from snapping).
-    const bodyCols = cols >= 132 ? cols - 57 : cols
+    // Actual panel width = the transcript ScrollBox = terminal - scrollbar
+    // column (2) - forecast rail (56, only at cols >= 132). Matching it keeps
+    // the seeded height close to the measured height so spacers don't snap.
+    const bodyCols = Math.max(20, cols - 2 - (cols >= 132 ? 56 : 0))
     const valueWidth = Math.max(10, bodyCols - 2 - 4 - 20)
-    let h = 2 // panel title + its bottom margin
+    // border (top+bottom = 2) + paddingY (top+bottom = 2) + centered title row
+    // + the title's marginBottom = 6 rows of chrome before any section content.
+    let h = 6
     for (const s of sections) {
       if (s.title) {
         h += 1
