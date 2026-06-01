@@ -37,7 +37,10 @@ import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
 
 const FORECAST_RAIL_MIN_COLS = 132
-const FORECAST_RAIL_WIDTH = 44
+// Rail only renders at >= FORECAST_RAIL_MIN_COLS, so a wider rail still leaves
+// ~76 cols for the transcript. Widened from 44 -> 56 to cut the heavy value
+// truncation (value budget is FORECAST_RAIL_WIDTH - 19, so 25 -> 37 chars).
+const FORECAST_RAIL_WIDTH = 56
 type CommandClickEvent = {
   cellIsBlank?: boolean
   stopPropagation?: () => void
@@ -138,7 +141,7 @@ const TranscriptPane = memo(function TranscriptPane({
         ref={transcript.scrollRef}
         stickyScroll
       >
-        <Box flexDirection="column" paddingX={1}>
+        <Box flexDirection="column" paddingBottom={1} paddingX={1}>
           {transcript.virtualHistory.topSpacer > 0 ? <Box height={transcript.virtualHistory.topSpacer} /> : null}
 
           {transcript.virtualRows.slice(transcript.virtualHistory.start, transcript.virtualHistory.end).map(row => (

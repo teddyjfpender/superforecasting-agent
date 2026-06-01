@@ -102,6 +102,25 @@ API_KEY_PROVIDERS: tuple[ApiKeyProvider, ...] = (
         description="OpenAI — used by the OpenAI / Codex provider runtime when selected.",
         signup_url="https://platform.openai.com/account/api-keys",
     ),
+    ApiKeyProvider(
+        name="openrouter",
+        env_var="OPENROUTER_API_KEY",
+        description="OpenRouter — multi-model gateway used by the agent runtime when the OpenRouter provider is selected.",
+        signup_url="https://openrouter.ai/keys",
+    ),
+    ApiKeyProvider(
+        name="xai",
+        env_var="XAI_API_KEY",
+        description="xAI — Grok models used by the agent runtime when the xAI provider is selected.",
+        signup_url="https://console.x.ai/",
+        aliases=("grok",),
+    ),
+    ApiKeyProvider(
+        name="census",
+        env_var="CENSUS_API_KEY",
+        description="US Census Bureau — required for census.gov data imports (api.census.gov rejects keyless requests).",
+        signup_url="https://api.census.gov/data/key_signup.html",
+    ),
 )
 
 
