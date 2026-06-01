@@ -394,16 +394,14 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
   }, [packet, packetId, selectedId])
   const tailLoading = !!selectedId && packetId !== selectedId
 
-  // The analyst write-up time series (oldest-first). The most recent note is the
-  // desk quick-read; the rest are the reviewable log.
-  const analystNotes = useMemo(() => {
-    if (!packet || packetId !== selectedId) {
-      return null
-    }
-    return packet.packet?.analyst_notes ?? []
-  }, [packet, packetId, selectedId])
-  const latestNote = analystNotes && analystNotes.length ? analystNotes[analystNotes.length - 1] : null
-  const priorNotes = analystNotes ? analystNotes.slice(0, -1).reverse() : []
+  // The analyst write-up time series (oldest-first). Driven by the SELECTED ITEM,
+  // not the async forecast.question packet, so the quick read paints immediately
+  // on selection change instead of blanking out (flashing) while the packet
+  // fetch is in flight. The most recent note is the desk quick-read; the rest are
+  // the reviewable log.
+  const analystNotes = selected?.analyst_notes ?? []
+  const latestNote = analystNotes.length ? analystNotes[analystNotes.length - 1] : null
+  const priorNotes = analystNotes.slice(0, -1).reverse()
 
   const closeWith = () => {
     onClose()
@@ -578,10 +576,6 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
                     ) : null}
                     <Rule t={t} width={detailW} />
                   </>
-                ) : tailLoading ? (
-                  <Box marginTop={1}>
-                    <Text color={t.color.muted}>loading quick read…</Text>
-                  </Box>
                 ) : null
               }
               item={selected}

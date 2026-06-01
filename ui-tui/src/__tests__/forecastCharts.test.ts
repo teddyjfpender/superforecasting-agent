@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  axisLabels,
   bandChart,
   boxWhisker,
   clamp01,
@@ -99,6 +100,16 @@ describe('compactNumber', () => {
   })
 })
 
+describe('axisLabels', () => {
+  it('shares one decimal count + suffix across all ticks', () => {
+    expect(axisLabels([100.08, 100, 99.92])).toEqual(['100.08', '100.00', '99.92'])
+    expect(axisLabels([1, 0.5, 0])).toEqual(['1.0', '0.5', '0.0'])
+    expect(axisLabels([75000, 73000, 71000])).toEqual(['75k', '73k', '71k'])
+    expect(axisLabels([75500, 73000, 71000])).toEqual(['75.5k', '73.0k', '71.0k'])
+    expect(axisLabels([0.79, 0.61, 0.43])).toEqual(['0.79', '0.61', '0.43'])
+  })
+})
+
 describe('bandChart', () => {
   it('produces height rows each with a y-gutter', () => {
     const chart = bandChart([{ y: 0.5 }], { width: 20, height: 5 })
@@ -106,9 +117,15 @@ describe('bandChart', () => {
     for (const row of chart.rows) {
       expect(row).toContain('│')
     }
-    // Axis labels are abbreviated/trimmed: 1.00 -> "1", 0.00 -> "0".
-    expect(chart.axis.top).toBe('1')
-    expect(chart.axis.bottom).toBe('0')
+    // All three labels share one decimal count (the mid 0.5 forces 1 decimal).
+    expect(chart.axis.top).toBe('1.0')
+    expect(chart.axis.bottom).toBe('0.0')
+  })
+
+  it('gives all three axis labels the same number of decimal places', () => {
+    const chart = bandChart([{ y: 100 }], { width: 30, height: 5, yMin: 99.92, yMax: 100.08 })
+    const labels = chart.rows.map(row => row.split('│')[0]!.trim()).filter(Boolean)
+    expect(labels).toEqual(['100.08', '100.00', '99.92'])
   })
 
   it('pads axis labels to a uniform width so the plot column never shifts', () => {

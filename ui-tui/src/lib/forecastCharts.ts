@@ -51,19 +51,36 @@ const trimZeros = (s: string): string => (s.includes('.') ? s.replace(/\.?0+$/, 
  * `4.24` → `"4.24"`, `0.1` → `"0.1"`. Keeps axis labels and list values a
  * stable, short width regardless of magnitude (k / M / B / T). Nullish → `"—"`.
  */
+const MAGNITUDES: ReadonlyArray<readonly [number, string]> = [
+  [1e12, 'T'],
+  [1e9, 'B'],
+  [1e6, 'M'],
+  [1e3, 'k']
+]
+
+const pickScale = (maxAbs: number): readonly [number, string] => {
+  for (const [scale, suffix] of MAGNITUDES) {
+    if (maxAbs >= scale) {
+      return [scale, suffix]
+    }
+  }
+  return [1, '']
+}
+
+// Minimal decimals needed to represent a value (capped), e.g. 100.08 → 2, 100 → 0.
+const naturalDecimals = (x: number): number => {
+  const s = Math.abs(x).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
+  const dot = s.indexOf('.')
+  return dot === -1 ? 0 : s.length - dot - 1
+}
+
 export const compactNumber = (value: number | null | undefined): string => {
   if (!finite(value)) {
     return '—'
   }
   const sign = value < 0 ? '-' : ''
   const abs = Math.abs(value)
-  const units: ReadonlyArray<readonly [number, string]> = [
-    [1e12, 'T'],
-    [1e9, 'B'],
-    [1e6, 'M'],
-    [1e3, 'k']
-  ]
-  for (const [scale, suffix] of units) {
+  for (const [scale, suffix] of MAGNITUDES) {
     if (abs >= scale) {
       const scaled = abs / scale
       const decimals = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2
@@ -73,6 +90,22 @@ export const compactNumber = (value: number | null | undefined): string => {
   // Below 1000 there is no suffix; match the prior 2-decimal-then-trim display
   // (e.g. 4.24 -> "4.24", 0.098 -> "0.1") so existing values are unchanged.
   return `${sign}${trimZeros(abs.toFixed(2))}`
+}
+
+/**
+ * Format a set of axis tick values with a SHARED magnitude suffix AND a SHARED
+ * decimal count, so the labels always line up at the same precision: a chart
+ * spanning 99.92..100.08 reads "100.08 / 100.00 / 99.92", not "100.08 / 100 /
+ * 99.92". Non-finite entries render `"—"`.
+ */
+export const axisLabels = (values: ReadonlyArray<number | null | undefined>): string[] => {
+  const present = values.filter(finite)
+  if (!present.length) {
+    return values.map(() => '—')
+  }
+  const [scale, suffix] = pickScale(Math.max(...present.map(value => Math.abs(value)), 0))
+  const decimals = Math.min(4, Math.max(0, ...present.map(value => naturalDecimals(value / scale))))
+  return values.map(value => (finite(value) ? `${(value / scale).toFixed(decimals)}${suffix}` : '—'))
 }
 
 /** ISO timestamp → `YYYY-MM-DD`; nullish → `"—"`. */
@@ -140,12 +173,10 @@ export const bandChart = (
   }: { width?: number; height?: number; yMin?: number; yMax?: number } = {}
 ): BandChart => {
   const h = Math.max(3, height)
-  // Axis labels are abbreviated (k/M/B/T) and right-padded to a uniform width so
-  // the plot column never shifts with the number of digits (e.g. 73000.08 vs
-  // 0.62). The gutter sizes to the widest label + " │".
-  const topLabel = compactNumber(yMax)
-  const midLabel = compactNumber((yMax + yMin) / 2)
-  const bottomLabel = compactNumber(yMin)
+  // Axis labels are abbreviated (k/M/B/T) and share one decimal count + suffix so
+  // all three read at the same precision (100.08 / 100.00 / 99.92), then are
+  // right-padded to a uniform width so the plot column never shifts.
+  const [topLabel, midLabel, bottomLabel] = axisLabels([yMax, (yMax + yMin) / 2, yMin])
   const labelW = Math.max(4, topLabel.length, midLabel.length, bottomLabel.length)
   const gutterW = labelW + 2 // label + " │"
   const plotW = Math.max(1, width - gutterW)
