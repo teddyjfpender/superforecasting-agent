@@ -390,6 +390,9 @@ def build_workspace_payload(
                 "retrospective": _workspace_analyst_note(
                     next((note for note in reversed(analyst_notes) if note.get("kind") == "retrospective"), None)
                 ),
+                # Cross-pollination: related forecasts' world-views, the "informed
+                # by" provenance of the current snapshot, and shared-source flags.
+                "related": _workspace_related(ledger, question, current),
             }
         )
 
@@ -678,6 +681,60 @@ def _workspace_analyst_note(note: dict[str, Any] | None) -> dict[str, Any] | Non
         "verdict": note.get("verdict"),
         "forecast_id": note.get("forecast_id"),
         "generator": note.get("generator"),
+    }
+
+
+def _workspace_related_one(rel: dict[str, Any]) -> dict[str, Any]:
+    prob = rel.get("probability_or_distribution")
+    dist = _distribution_view(prob)
+    if dist and dist.get("mean") is not None:
+        headline_kind = "distribution"
+        headline_probability = dist.get("mean")
+        probability_display = f"μ {float(dist['mean']):.4g}"
+    elif isinstance(prob, (int, float)) and not isinstance(prob, bool) and 0.0 <= prob <= 1.0:
+        headline_kind = "probability"
+        headline_probability = float(prob)
+        probability_display = f"{round(prob * 100)}%"
+    else:
+        headline_kind = "probability"
+        headline_probability = _headline_numeric(prob)
+        probability_display = (
+            f"{headline_probability:.4g}" if isinstance(headline_probability, (int, float)) else "-"
+        )
+    return {
+        "id": rel.get("id"),
+        "title": rel.get("title"),
+        "relationship": rel.get("relationship"),
+        "link_type": "auto" if rel.get("link_type") == "auto" else "explicit",
+        "link_label": rel.get("link_label"),
+        "headline_kind": headline_kind,
+        "headline_probability": headline_probability,
+        "probability_display": probability_display,
+        "as_of": rel.get("as_of"),
+        "note_headline": rel.get("headline"),
+        "be_aware": rel.get("be_aware"),
+        "stance": rel.get("stance"),
+        "verdict": rel.get("verdict"),
+        "reasons_up": list(rel.get("reasons_up") or []),
+        "reasons_down": list(rel.get("reasons_down") or []),
+    }
+
+
+def _workspace_related(ledger: Any, question: Any, current: Any) -> dict[str, Any] | None:
+    related, shared = ledger.related_forecast_views(question)
+    metadata = getattr(current, "metadata", None) if current else None
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except Exception:
+            metadata = {}
+    informed = list(((metadata or {}).get("cross_refs") or {}).get("informed_by") or [])
+    if not related and not informed and not shared:
+        return None
+    return {
+        "forecasts": [_workspace_related_one(rel) for rel in related],
+        "informed_by": informed,
+        "shared_sources": [{"source": s, "kind": "watched_source", "shared_with": []} for s in shared],
     }
 
 

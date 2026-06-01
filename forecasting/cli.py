@@ -54,7 +54,7 @@ from forecasting.learning import (
     is_learning_review_reason,
     learned_error_profile_id,
 )
-from forecasting.ledger import ForecastLedger, WATCH_SOURCE_TYPES
+from forecasting.ledger import FORECAST_LINK_TYPES, ForecastLedger, WATCH_SOURCE_TYPES
 from forecasting.models import (
     ASSUMPTION_STATUSES,
     CALIBRATION_LESSON_STATUSES,
@@ -2005,6 +2005,33 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     watch_check.add_argument("--now")
     watch_check.set_defaults(_forecast_handler=_cmd_watch_check)
 
+    # Cross-pollination links between forecasts.
+    link_parser = forecast_sub.add_parser("link", help="Link related forecasts so they cross-pollinate context")
+    link_sub = link_parser.add_subparsers(dest="link_command")
+    link_add = link_sub.add_parser("add", help="Link two forecasts (related sibling, or component_of for hierarchy)")
+    link_add.add_argument("from_ref", help="row number, id, or search words")
+    link_add.add_argument("to_ref", help="row number, id, or search words")
+    link_add.add_argument("--type", dest="link_type", default="related", choices=sorted(FORECAST_LINK_TYPES))
+    link_add.add_argument("--rationale", default="")
+    link_add.set_defaults(_forecast_handler=_cmd_link_add)
+    link_list = link_sub.add_parser("list", help="List a forecast's links and related forecasts")
+    link_list.add_argument("ref", help="row number, id, or search words")
+    link_list.set_defaults(_forecast_handler=_cmd_link_list)
+    link_remove = link_sub.add_parser("remove", help="Remove the link(s) between two forecasts")
+    link_remove.add_argument("from_ref")
+    link_remove.add_argument("to_ref")
+    link_remove.add_argument("--type", dest="link_type", default=None, choices=sorted(FORECAST_LINK_TYPES))
+    link_remove.set_defaults(_forecast_handler=_cmd_link_remove)
+    # Flat aliases.
+    links_parser = forecast_sub.add_parser("links", help="List a forecast's links and related forecasts")
+    links_parser.add_argument("ref", help="row number, id, or search words")
+    links_parser.set_defaults(_forecast_handler=_cmd_link_list)
+    unlink_parser = forecast_sub.add_parser("unlink", help="Remove the link(s) between two forecasts")
+    unlink_parser.add_argument("from_ref")
+    unlink_parser.add_argument("to_ref")
+    unlink_parser.add_argument("--type", dest="link_type", default=None, choices=sorted(FORECAST_LINK_TYPES))
+    unlink_parser.set_defaults(_forecast_handler=_cmd_link_remove)
+
     autopilot_parser = forecast_sub.add_parser(
         "autopilot",
         help="Wire watched sources, schedules, materiality, and update proposals",
@@ -3137,6 +3164,8 @@ def _cmd_update(args: argparse.Namespace) -> None:
         require_panel=getattr(args, "require_panel", False),
         panel_run_ref=panel_run_ref,
         panel_skipped_reason=getattr(args, "panel_skipped_reason", None),
+        # Record which related forecasts informed this one (server-side provenance).
+        metadata={"cross_refs": _xrefs} if (_xrefs := ledger.build_cross_refs(args.id)) else None,
     )
     # create_snapshot links panel_run_ref itself; no separate attach needed.
     print(f"created forecast snapshot {snapshot.forecast_id}")
@@ -8261,6 +8290,47 @@ def _cmd_schedule_install_cron(args: argparse.Namespace) -> None:
     print(f"schedule: {job['schedule_display']}")
     print(f"script: {job['script']}")
     print(f"mode: {'no-agent' if job.get('no_agent') else 'agent'}")
+
+
+def _cmd_link_add(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    from_id = _resolve_question_id(ledger, args.from_ref)
+    to_id = _resolve_question_id(ledger, args.to_ref)
+    row = ledger.add_forecast_link(
+        from_id,
+        to_id,
+        link_type=args.link_type,
+        rationale=args.rationale or "",
+        created_by="cli",
+    )
+    print(f"forecast link {row['id']}")
+    print(f"type: {row['link_type']}")
+    print(f"from: {row['from_question_id']}")
+    print(f"to: {row['to_question_id']}")
+    if row.get("rationale"):
+        print(f"rationale: {row['rationale']}")
+
+
+def _cmd_link_list(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    qid = _resolve_question_id(ledger, args.ref)
+    related, shared = ledger.related_forecast_views(qid)
+    if not related:
+        print("No related forecasts (no explicit links and no auto matches).")
+    else:
+        print("Relationship      Type        Forecast")
+        for rel in related:
+            print(f"{(rel['relationship'] or '-'):<17} {(rel['link_type'] or '-'):<11} {rel['id']}  {rel.get('title') or ''}")
+    if shared:
+        print(f"shared sources (independence check): {', '.join(shared)}")
+
+
+def _cmd_link_remove(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    from_id = _resolve_question_id(ledger, args.from_ref)
+    to_id = _resolve_question_id(ledger, args.to_ref)
+    removed = ledger.remove_forecast_link(from_id, to_id, link_type=getattr(args, "link_type", None))
+    print(f"removed {removed} link(s) between {from_id} and {to_id}")
 
 
 def _cmd_watch_add(args: argparse.Namespace) -> None:

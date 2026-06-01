@@ -487,6 +487,37 @@ export interface ForecastAnalystNote {
   verdict?: 'close' | 'far' | 'right' | 'wrong' | null
 }
 
+// One related forecast's world-view, surfaced for cross-pollination on the desk.
+export interface ForecastRelatedView {
+  as_of?: null | string
+  be_aware?: null | string
+  headline_kind?: 'distribution' | 'probability'
+  headline_probability?: null | number
+  id?: string
+  link_label?: null | string
+  link_type?: 'auto' | 'explicit'
+  note_headline?: null | string
+  probability_display?: string
+  reasons_down?: string[]
+  reasons_up?: string[]
+  relationship?: 'child' | 'correlated_sibling' | 'parent'
+  stance?: 'lean_no' | 'lean_yes' | 'toss_up' | null
+  title?: string
+  verdict?: 'close' | 'far' | 'right' | 'wrong' | null
+}
+
+export interface ForecastSharedSource {
+  kind?: string
+  shared_with?: string[]
+  source?: string
+}
+
+export interface ForecastRelated {
+  forecasts?: ForecastRelatedView[]
+  informed_by?: string[]
+  shared_sources?: ForecastSharedSource[]
+}
+
 export interface ForecastQuestionPacket {
   analyst_note?: ForecastAnalystNote | null
   analyst_notes?: ForecastAnalystNote[]
@@ -497,10 +528,13 @@ export interface ForecastQuestionPacket {
   domain_error_profiles?: ForecastDashboardErrorProfile[]
   evidence?: ForecastQuestionPacketEvidence[]
   forecast_history?: ForecastQuestionPacketSnapshot[]
+  informed_by?: string[]
   model_runs?: Record<string, unknown>[]
   postmortems?: Record<string, unknown>[]
   question?: ForecastQuestionPacketQuestion
   reference_classes?: ForecastQuestionPacketReferenceClass[]
+  related_forecasts?: ForecastRelatedView[]
+  related_shared_sources?: ForecastSharedSource[]
   resolution?: Record<string, unknown> | null
   retrospective?: ForecastAnalystNote | null
   scores?: Record<string, unknown>[]
@@ -604,6 +638,7 @@ export interface ForecastWorkspaceItem {
   rationale?: null | string
   reasons_down?: string[]
   reasons_up?: string[]
+  related?: ForecastRelated | null
   resolution?: ForecastWorkspaceResolution | null
   resolution_criteria?: string
   resolution_time?: null | string

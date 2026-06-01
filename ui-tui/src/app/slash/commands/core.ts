@@ -793,6 +793,40 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
+    aliases: ['related'],
+    help: 'show the forecasts related to one (siblings, parent/child) and shared-source flags',
+    name: 'links',
+    run: (arg, ctx) =>
+      withForecastRef(ctx, arg, id => runForecastCommandArgv(ctx, ['links', id]), {
+        missingUsage: 'usage: /links <row|id|forecast words>'
+      })
+  },
+
+  {
+    help: 'link two forecasts so they cross-pollinate context: /link <ref> -- <ref> [--type component_of]',
+    name: 'link',
+    run: (arg, ctx) => {
+      const { ref, rest } = splitForecastRefAndRest(arg)
+      if (!ref || !rest) {
+        return ctx.transcript.sys('usage: /link <row|id|words> -- <row|id|words> [--type related|component_of]')
+      }
+      // Peel an optional --type off the second reference.
+      const typeMatch = rest.match(/--type\s+(related|component_of)\b/)
+      const linkType = typeMatch?.[1] ?? 'related'
+      const toRef = rest.replace(/--type\s+\S+/, '').replace(/\s+/g, ' ').trim()
+      withForecastRef(
+        ctx,
+        ref,
+        fromId =>
+          withForecastRef(ctx, toRef, toId => runForecastCommandArgv(ctx, ['link', 'add', fromId, toId, '--type', linkType]), {
+            missingUsage: 'usage: /link <row|id|words> -- <row|id|words> [--type related|component_of]'
+          }),
+        { missingUsage: 'usage: /link <row|id|words> -- <row|id|words> [--type related|component_of]' }
+      )
+    }
+  },
+
+  {
     help: 'record a forecast resolution',
     name: 'resolve',
     run: (arg, ctx) => runForecastCommand(ctx, `resolve ${arg.trim()}`.trim())

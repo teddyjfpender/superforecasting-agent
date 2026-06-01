@@ -8,6 +8,7 @@ import os
 from typing import Any
 
 from forecasting import ForecastLedger, PRODUCT_NAME, PRODUCT_SLUG
+from forecasting.ledger import FORECAST_LINK_TYPES
 from forecasting.backtesting import (
     DEFAULT_MIN_AGENT_PROTOCOL_CASES_FOR_CLAIM,
     DEFAULT_MIN_EXTERNAL_SOURCE_FAMILIES_FOR_CLAIM,
@@ -178,9 +179,19 @@ FORECAST_LEDGER_SCHEMA = {
                     "show_panel",
                     "list_panel",
                     "panel_perspectives",
+                    "link_forecasts",
+                    "list_links",
+                    "unlink_forecasts",
                 ],
             },
             "question_id": {"type": "string"},
+            "from_question_id": {"type": "string", "description": "For link/unlink: the source forecast id."},
+            "to_question_id": {"type": "string", "description": "For link/unlink: the target forecast id."},
+            "link_type": {
+                "type": "string",
+                "enum": sorted(FORECAST_LINK_TYPES),
+                "description": "related (symmetric sibling) or component_of (from=child, to=parent).",
+            },
             "title": {"type": "string"},
             "resolution_criteria": {"type": "string"},
             "resolution_source": {"type": "string"},
@@ -1050,6 +1061,29 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             )
             return tool_result(success=True, assumption=assumption)
 
+        if action == "link_forecasts":
+            link = ledger.add_forecast_link(
+                _required(args, "from_question_id"),
+                _required(args, "to_question_id"),
+                link_type=args.get("link_type") or "related",
+                rationale=args.get("rationale") or "",
+                created_by="agent",
+            )
+            return tool_result(success=True, link=link)
+
+        if action == "list_links":
+            related, shared = ledger.related_forecast_views(_required(args, "question_id"))
+            links = ledger.list_forecast_links(_required(args, "question_id"))
+            return tool_result(success=True, links=links, related=related, shared_sources=shared)
+
+        if action == "unlink_forecasts":
+            removed = ledger.remove_forecast_link(
+                _required(args, "from_question_id"),
+                _required(args, "to_question_id"),
+                link_type=args.get("link_type"),
+            )
+            return tool_result(success=True, removed=removed)
+
         if action == "list_assumptions":
             assumptions = ledger.list_assumptions(_required(args, "question_id"))
             return tool_result(success=True, assumptions=assumptions)
@@ -1224,7 +1258,12 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 require_citations=bool(args.get("require_citations", False)),
                 calibration_lesson_refs=calibration_lesson_refs,
                 calibration_adjustment=calibration_adjustment,
-                metadata=args.get("metadata") or {},
+                # Stamp which related forecasts informed this one, server-side from
+                # the resolver — never trusting the model to echo its own provenance.
+                metadata={
+                    **(args.get("metadata") or {}),
+                    **({"cross_refs": _xr} if (_xr := ledger.build_cross_refs(question_id)) else {}),
+                },
                 reasons_up=args.get("reasons_up"),
                 reasons_down=args.get("reasons_down"),
                 change_my_mind=args.get("change_my_mind"),

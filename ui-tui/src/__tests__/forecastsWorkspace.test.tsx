@@ -498,6 +498,46 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('tighter than the model implied')
   })
 
+  it('renders related forecasts with relationship tags and the shared-source flag', async () => {
+    const [{ renderSync }, { RelatedForecasts }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/forecastsWorkspace.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+    const related = {
+      forecasts: [
+        {
+          as_of: '2026-06-01T00:00:00Z',
+          headline_kind: 'probability' as const,
+          id: 'fq_cpi_yoy',
+          link_type: 'auto' as const,
+          note_headline: 'CPI tracking around 4.2',
+          probability_display: '61%',
+          relationship: 'correlated_sibling' as const,
+          title: 'CPI YoY May 2026?'
+        }
+      ],
+      informed_by: ['fq_cpi_yoy'],
+      shared_sources: [{ kind: 'watched_source', shared_with: [], source: 'fred:GASREGW' }]
+    }
+    const stdout = writeStream(120, 60)
+    renderSync(React.createElement(RelatedForecasts, { related, t: DARK_THEME, width: 70 }), {
+      exitOnCtrlC: false,
+      patchConsole: false,
+      stdout: stdout.stream
+    } as never)
+    const text = normalize(stdout.text(), stripAnsi)
+    expect(text).toContain('related forecasts')
+    expect(text).toContain('sibling')
+    expect(text).toContain('CPI YoY May 2026?')
+    expect(text).toContain('61%')
+    expect(text).toContain('CPI tracking around 4.2')
+    // independence heads-up, never merged
+    expect(text).toContain('shares fred:GASREGW')
+    expect(text).toContain('possibly non-independent')
+  })
+
   it('renders the packet tail (history, model runs, action playbook) under the summary', async () => {
     const { sections, text } = await renderTail({
       assumptions: [{ id: 'asm_1', status: 'active', text: 'Polling response rates hold near 2024 levels.' }],

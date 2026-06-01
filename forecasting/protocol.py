@@ -231,8 +231,14 @@ def build_context_packet(
     ledger: ForecastLedger,
     question: ForecastQuestion,
     snapshot: ForecastSnapshot | None,
+    related: list[dict[str, Any]] | None = None,
+    shared_sources: list[str] | None = None,
 ) -> str:
     """Render ledger state into a compact auditable context packet."""
+
+    if related is None:
+        related, shared_sources = ledger.related_forecast_views(question, limit=5)
+    shared_sources = shared_sources or []
 
     evidence = ledger.list_evidence(question.id)
     assumptions = ledger.list_assumptions(question.id)
@@ -297,6 +303,40 @@ def build_context_packet(
                 f"change_my_mind: {'; '.join(snapshot.change_my_mind) if snapshot.change_my_mind else '-'}",
             ]
         )
+    else:
+        lines.append("none")
+
+    # Cross-pollination: the world-views of related/parent/child forecasts, so this
+    # forecast stays coherent with correlated ones. World-views ONLY — shared
+    # evidence is flagged for independence, never merged in (avoid double-counting).
+    lines.extend(["", "## Related Forecasts"])
+    if related:
+        for rel in related:
+            rel_kind = rel.get("relationship") or "related"
+            rel_kind = "parent" if rel_kind == "parent" else "child" if rel_kind == "child" else "related"
+            prob = rel.get("probability_or_distribution")
+            prob_text = str(prob)
+            if len(prob_text) > 80:
+                prob_text = prob_text[:77] + "..."
+            stance = rel.get("verdict") or rel.get("stance") or "-"
+            lines.append(
+                f"- {rel_kind} {rel['id']} \"{rel.get('title') or rel['id']}\" "
+                f"p={prob_text} as_of={rel.get('as_of') or '-'} stance={stance}"
+            )
+            if rel.get("headline"):
+                lines.append(f"  note: {rel['headline']}")
+            if rel.get("be_aware"):
+                lines.append(f"  be_aware: {rel['be_aware']}")
+            if rel.get("reasons_up"):
+                lines.append(f"  reasons_up: {'; '.join(rel['reasons_up'][:3])}")
+            if rel.get("reasons_down"):
+                lines.append(f"  reasons_down: {'; '.join(rel['reasons_down'][:3])}")
+        if shared_sources:
+            lines.append(
+                "- independence note: shares "
+                + ", ".join(shared_sources)
+                + " with related forecasts; weigh as possibly non-independent, do not double-count."
+            )
     else:
         lines.append("none")
 

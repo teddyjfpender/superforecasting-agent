@@ -102,6 +102,11 @@ WATCH_SCOPE_TYPES = {"question", "domain", "topic", "domain_topic", "portfolio"}
 ANALYST_NOTE_KINDS = {"brief", "retrospective"}
 ANALYST_NOTE_STANCES = {"lean_yes", "lean_no", "toss_up"}
 ANALYST_NOTE_VERDICTS = {"right", "wrong", "close", "far"}
+
+# Cross-pollination links between forecasts. `related` is a symmetric correlation
+# edge (sibling <-> sibling); `component_of` is directed (from=child, to=parent)
+# so a higher-level question and its granular children inform each other.
+FORECAST_LINK_TYPES = {"related", "component_of"}
 SCHEDULE_SCOPE_TYPES = {"question", "domain", "topic", "domain_topic", "portfolio", "horizon"}
 AUTOPILOT_MODES = {"propose", "auto_commit", "alert_only"}
 AUTOPILOT_PROPOSAL_STATUSES = {"pending", "approved", "rejected", "expired", "auto_committed"}
@@ -281,6 +286,7 @@ _PACKET_JSON_FIELDS = {
         "metadata",
     },
     "analyst_notes": {"metadata"},
+    "forecast_links": {"metadata"},
     "baseline_comparisons": {"probability_or_distribution", "metadata"},
     "source_snapshots": {"parsed_values", "metadata"},
     "watched_sources": {"metadata"},
@@ -319,6 +325,7 @@ _PACKET_RECORD_LABELS = {
     "forecast_corrections": "corrections",
     "domain_error_profiles": "domain_error_profiles",
     "analyst_notes": "analyst_notes",
+    "forecast_links": "forecast_links",
     "baseline_comparisons": "baseline_comparisons",
     "source_snapshots": "source_snapshots",
     "watched_sources": "watched_sources",
@@ -887,6 +894,25 @@ class ForecastLedger:
 
                 CREATE INDEX IF NOT EXISTS idx_analyst_notes_question
                     ON analyst_notes(question_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS forecast_links (
+                    id TEXT PRIMARY KEY,
+                    from_question_id TEXT NOT NULL REFERENCES forecast_questions(id) ON DELETE CASCADE,
+                    to_question_id TEXT NOT NULL REFERENCES forecast_questions(id) ON DELETE CASCADE,
+                    link_type TEXT NOT NULL DEFAULT 'related',
+                    weight REAL NOT NULL DEFAULT 1.0,
+                    rationale TEXT NOT NULL DEFAULT '',
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    metadata TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_forecast_links_from
+                    ON forecast_links(from_question_id);
+                CREATE INDEX IF NOT EXISTS idx_forecast_links_to
+                    ON forecast_links(to_question_id);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_forecast_links_edge
+                    ON forecast_links(from_question_id, to_question_id, link_type);
 
                 CREATE TABLE IF NOT EXISTS domain_error_profiles (
                     id TEXT PRIMARY KEY,
@@ -4211,6 +4237,265 @@ class ForecastLedger:
             ).fetchall()
         return [self._row_to_watched_source(row) for row in rows]
 
+    # ── Forecast links (cross-pollination) ──────────────────────────────
+    def _forecast_link_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        data = dict(row)
+        data["metadata"] = json_loads(data.get("metadata"), {})
+        return data
+
+    def add_forecast_link(
+        self,
+        from_question_id: str,
+        to_question_id: str,
+        *,
+        link_type: str = "related",
+        weight: float = 1.0,
+        rationale: str = "",
+        created_by: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Record a typed edge between two forecasts. Idempotent on (from, to, type).
+
+        `related` is symmetric (the endpoints are normalized so A-B == B-A);
+        `component_of` is directed (from=child, to=parent).
+        """
+
+        self.get_question(from_question_id)
+        self.get_question(to_question_id)
+        if from_question_id == to_question_id:
+            raise ValidationError("a forecast cannot link to itself")
+        if link_type not in FORECAST_LINK_TYPES:
+            raise ValidationError(
+                f"link_type must be one of {', '.join(sorted(FORECAST_LINK_TYPES))}"
+            )
+        if link_type == "related" and from_question_id > to_question_id:
+            from_question_id, to_question_id = to_question_id, from_question_id
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT id FROM forecast_links WHERE from_question_id = ? AND to_question_id = ? AND link_type = ?",
+                (from_question_id, to_question_id, link_type),
+            ).fetchone()
+            if existing is not None:
+                return self.get_forecast_link(existing["id"])
+            link_id = f"fl_{uuid.uuid4().hex[:12]}"
+            conn.execute(
+                """
+                INSERT INTO forecast_links (
+                    id, from_question_id, to_question_id, link_type, weight,
+                    rationale, created_by, created_at, metadata
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    link_id,
+                    from_question_id,
+                    to_question_id,
+                    link_type,
+                    float(weight),
+                    rationale,
+                    created_by,
+                    utc_now_iso(),
+                    json_dumps(metadata or {}),
+                ),
+            )
+        return self.get_forecast_link(link_id)
+
+    def get_forecast_link(self, link_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM forecast_links WHERE id = ?", (link_id,)).fetchone()
+        if row is None:
+            raise LedgerNotFoundError(f"forecast link not found: {link_id}")
+        return self._forecast_link_to_dict(row)
+
+    def remove_forecast_link(
+        self,
+        from_question_id: str,
+        to_question_id: str,
+        *,
+        link_type: str | None = None,
+    ) -> int:
+        """Delete the edge(s) between two questions (either ordering). Returns the count."""
+
+        sql = (
+            "DELETE FROM forecast_links WHERE "
+            "((from_question_id = ? AND to_question_id = ?) OR (from_question_id = ? AND to_question_id = ?))"
+        )
+        params: list[Any] = [from_question_id, to_question_id, to_question_id, from_question_id]
+        if link_type is not None:
+            sql += " AND link_type = ?"
+            params.append(link_type)
+        with self._connect() as conn:
+            cur = conn.execute(sql, params)
+            return int(cur.rowcount or 0)
+
+    def list_forecast_links(
+        self,
+        question_id: str,
+        *,
+        link_type: str | None = None,
+        direction: str = "both",
+        status: str | None = None,  # accepted for signature parity; links have no status
+    ) -> list[dict[str, Any]]:
+        if direction == "outgoing":
+            clause, params = "from_question_id = ?", [question_id]
+        elif direction == "incoming":
+            clause, params = "to_question_id = ?", [question_id]
+        else:
+            clause, params = "(from_question_id = ? OR to_question_id = ?)", [question_id, question_id]
+        sql = f"SELECT * FROM forecast_links WHERE {clause}"
+        if link_type is not None:
+            sql += " AND link_type = ?"
+            params.append(link_type)
+        sql += " ORDER BY created_at DESC"
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._forecast_link_to_dict(row) for row in rows]
+
+    def shared_sources(self, question_id: str, other_id: str) -> list[dict[str, Any]]:
+        """Overlapping watched sources / evidence between two questions (read-only).
+
+        Used purely to FLAG possible non-independence; never merges or imports.
+        """
+
+        def _signatures(qid: str) -> dict[str, dict[str, Any]]:
+            out: dict[str, dict[str, Any]] = {}
+            for ws in self.list_watched_sources(scope_type="question", scope_ref=qid, status="active"):
+                source = str(ws.get("source") or "").strip().lower()
+                stype = str(ws.get("source_type") or "").strip().lower()
+                if source:
+                    out[f"{stype}:{source}"] = {"source_type": stype, "source": source, "kind": "watched_source"}
+            for item in self.list_evidence(qid):
+                stype = str(getattr(item, "source_type", "") or "").strip().lower()
+                ident = str(getattr(item, "source_url", None) or getattr(item, "source_name", None) or "").strip().lower()
+                if ident:
+                    out.setdefault(f"{stype}:{ident}", {"source_type": stype, "source": ident, "kind": "evidence"})
+            return out
+
+        mine = _signatures(question_id)
+        theirs = _signatures(other_id)
+        shared: list[dict[str, Any]] = []
+        for signature in mine.keys() & theirs.keys():
+            shared.append({"signature": signature, "shared_with": other_id, **mine[signature]})
+        shared.sort(key=lambda s: s["signature"])
+        return shared
+
+    def related_forecast_views(
+        self,
+        question: Any,
+        *,
+        limit: int = 5,
+        overlap_threshold: float = 0.2,
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        """Resolve the forecasts related to `question` and pull their world-views.
+
+        Unions explicit links with auto matches (same domain + topic Jaccard
+        overlap). Each entry carries only the relative's current forecast, latest
+        analyst-note view, and top drivers. Also returns the de-duplicated list of
+        overlapping source signatures for the independence flag. Never merges
+        evidence — world-views only.
+        """
+
+        if isinstance(question, str):
+            question = self.get_question(question)
+        question_id = question.id
+        base_topics = {str(t).lower() for t in (question.topics or [])}
+
+        # relationship from the perspective of `question`.
+        relatives: dict[str, dict[str, Any]] = {}
+
+        def _record(other_id: str, *, relationship: str, link_type: str, overlap: float,
+                    link_id: str | None = None, rationale: str = "") -> None:
+            if other_id == question_id or other_id in relatives:
+                return
+            relatives[other_id] = {
+                "id": other_id,
+                "relationship": relationship,
+                "link_type": link_type,
+                "link_label": link_type if link_type != "auto" else None,
+                "direction": "auto" if link_type == "auto" else "explicit",
+                "overlap_score": round(overlap, 3),
+                "link_id": link_id,
+                "rationale": rationale,
+            }
+
+        for link in self.list_forecast_links(question_id, direction="both"):
+            outgoing = link["from_question_id"] == question_id
+            other_id = link["to_question_id"] if outgoing else link["from_question_id"]
+            if link["link_type"] == "component_of":
+                # from=child, to=parent. If we are `from`, the other is our parent.
+                relationship = "parent" if outgoing else "child"
+            else:
+                relationship = "correlated_sibling"
+            _record(
+                other_id,
+                relationship=relationship,
+                link_type=link["link_type"],
+                overlap=1.0,
+                link_id=link["id"],
+                rationale=link.get("rationale", ""),
+            )
+
+        explicit_ids = set(relatives.keys())
+        if question.domain and base_topics:
+            for candidate in self.list_questions(domain=question.domain):
+                if candidate.id == question_id or candidate.id in explicit_ids:
+                    continue
+                other_topics = {str(t).lower() for t in (candidate.topics or [])}
+                union = base_topics | other_topics
+                jaccard = len(base_topics & other_topics) / len(union) if union else 0.0
+                if jaccard >= overlap_threshold:
+                    _record(candidate.id, relationship="correlated_sibling", link_type="auto", overlap=jaccard)
+
+        # Explicit first, then auto by overlap; truncate.
+        ordered = sorted(
+            relatives.values(),
+            key=lambda r: (r["link_type"] == "auto", -r["overlap_score"]),
+        )[: max(0, limit)]
+
+        shared_labels: list[str] = []
+        seen_labels: set[str] = set()
+        for rel in ordered:
+            other_id = rel["id"]
+            try:
+                other_q = self.get_question(other_id)
+                rel["title"] = other_q.title
+            except LedgerNotFoundError:
+                rel["title"] = other_id
+            snap = self.get_current_snapshot(other_id)
+            rel["probability_or_distribution"] = snap.probability_or_distribution if snap else None
+            rel["as_of"] = snap.as_of if snap else None
+            rel["reasons_up"] = list(snap.reasons_up or [])[:3] if snap else []
+            rel["reasons_down"] = list(snap.reasons_down or [])[:3] if snap else []
+            note = self.latest_analyst_note(other_id)
+            rel["headline"] = note.get("headline") if note else None
+            rel["be_aware"] = note.get("be_aware") if note else None
+            rel["stance"] = note.get("stance") if note else None
+            rel["verdict"] = note.get("verdict") if note else None
+            for shared in self.shared_sources(question_id, other_id):
+                if shared["signature"] not in seen_labels:
+                    seen_labels.add(shared["signature"])
+                    shared_labels.append(shared["signature"])
+
+        return ordered, shared_labels
+
+    def build_cross_refs(self, question: Any, *, advisory_only: bool = False) -> dict[str, Any]:
+        """The provenance record stamped onto a snapshot: which related forecasts
+        informed it (server-side, never trusting model echo). Empty when there are
+        no relatives. ``advisory_only`` marks the deterministic-refresh case where
+        the number is NOT derived from siblings."""
+
+        related, shared = self.related_forecast_views(question, limit=5)
+        if not related and not shared:
+            return {}
+        return {
+            "informed_by": [rel["id"] for rel in related],
+            "explicit_links": [rel["id"] for rel in related if rel.get("link_type") != "auto"],
+            "auto_related": [rel["id"] for rel in related if rel.get("link_type") == "auto"],
+            "shared_sources": [{"source": s, "note": "may not be independent"} for s in shared],
+            "as_of": utc_now_iso(),
+            "advisory_only": bool(advisory_only),
+        }
+
     def list_source_snapshots(
         self,
         *,
@@ -4923,7 +5208,10 @@ class ForecastLedger:
                     "prior_forecast_id": current.forecast_id,
                     "needs_agent": needs_agent,
                     "diff": diff_dict,
-                }
+                },
+                # Provenance only — the deterministic re-pool does NOT derive its
+                # number from siblings, so cross_refs are advisory.
+                **({"cross_refs": cross_refs} if (cross_refs := self.build_cross_refs(question_id, advisory_only=True)) else {}),
             },
         )
 
@@ -6347,6 +6635,7 @@ class ForecastLedger:
             postmortems=postmortems,
             calibration_lessons=calibration_lessons,
         )
+        related_forecasts, related_shared_sources = self.related_forecast_views(question_id)
         if fmt == "json":
             return json_dumps(
                 {
@@ -6376,6 +6665,11 @@ class ForecastLedger:
                     "analyst_notes": self.list_analyst_notes(question_id),
                     "analyst_note": self.latest_analyst_note(question_id, kind="brief"),
                     "retrospective": self.latest_analyst_note(question_id, kind="retrospective"),
+                    # forecast_links round-trips the raw edges; related_forecasts /
+                    # related_shared_sources are the derived audit copy the TUI reads.
+                    "forecast_links": self.list_forecast_links(question_id, direction="both"),
+                    "related_forecasts": related_forecasts,
+                    "related_shared_sources": [{"signature": s} for s in related_shared_sources],
                 }
             )
         if fmt != "markdown":
@@ -6745,6 +7039,8 @@ class ForecastLedger:
             ("forecast_update_proposals", "forecast_update_proposals"),
             ("domain_error_profiles", "domain_error_profiles"),
             ("analyst_notes", "analyst_notes"),
+            # forecast_links LAST so both endpoint questions are imported first.
+            ("forecast_links", "forecast_links"),
         ):
             self._import_packet_rows(conn, table, packet.get(key), conflict=conflict, summary=summary, seen=seen)
 
@@ -6792,6 +7088,16 @@ class ForecastLedger:
             summary["duplicates_in_packet"] += 1
             return
         seen.add(seen_key)
+
+        # A forecast_link can reference a question not present in this packet;
+        # with foreign_keys=ON that would IntegrityError. Skip dangling edges.
+        if table == "forecast_links":
+            for column in ("from_question_id", "to_question_id"):
+                if conn.execute(
+                    "SELECT 1 FROM forecast_questions WHERE id = ?", (row.get(column),)
+                ).fetchone() is None:
+                    summary["skipped_existing"] += 1
+                    return
 
         existing = conn.execute(f"SELECT 1 FROM {table} WHERE {pk} = ?", (record_id,)).fetchone()
         if existing is not None:

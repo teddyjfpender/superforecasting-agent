@@ -7,6 +7,7 @@ import type { GatewayClient } from '../gatewayClient.js'
 import type {
   ForecastAnalystNote,
   ForecastQuestionPacketResponse,
+  ForecastRelated,
   ForecastWorkspaceItem,
   ForecastWorkspacePanel,
   ForecastWorkspaceResponse
@@ -566,6 +567,15 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
                       variant={latestNote.kind === 'retrospective' ? 'retrospective' : 'quickread'}
                       width={detailW}
                     />
+                    {selected.related?.informed_by?.length ? (
+                      <Box>
+                        <Text color={t.color.muted} wrap="truncate-end">
+                          {`informed by ${selected.related.informed_by.length} related forecast${
+                            selected.related.informed_by.length === 1 ? '' : 's'
+                          }: ${selected.related.informed_by.join(', ')}`}
+                        </Text>
+                      </Box>
+                    ) : null}
                     <Rule t={t} width={detailW} />
                   </>
                 ) : tailLoading ? (
@@ -922,6 +932,8 @@ export function ForecastDetail({
         </>
       ) : null}
 
+      {item.related ? <RelatedForecasts related={item.related} t={t} width={width} /> : null}
+
       {item.evidence?.length ? (
         <>
           <SectionTitle t={t}>recent evidence</SectionTitle>
@@ -1227,6 +1239,62 @@ function AnalystLog({ notes, t }: { notes: ForecastAnalystNote[]; t: Theme }) {
         </Box>
       ))}
     </Box>
+  )
+}
+
+// Cross-pollination: the world-views of related / parent / child forecasts, plus
+// an amber heads-up where they share a source (possible non-independence). Pure
+// display — never wired into this forecast's evidence or math.
+const RELATIONSHIP_TAG: Record<string, { glyph: string; label: string }> = {
+  child: { glyph: '▾', label: 'child' },
+  correlated_sibling: { glyph: '~', label: 'sibling' },
+  parent: { glyph: '▴', label: 'parent' }
+}
+
+export function RelatedForecasts({ related, t, width }: { related: ForecastRelated; t: Theme; width: number }) {
+  const forecasts = related.forecasts ?? []
+  const shared = related.shared_sources ?? []
+  if (!forecasts.length && !shared.length) {
+    return null
+  }
+  return (
+    <>
+      <SectionTitle t={t}>related forecasts</SectionTitle>
+      {forecasts.map((rel, index) => {
+        const tag = RELATIONSHIP_TAG[rel.relationship ?? 'correlated_sibling'] ?? RELATIONSHIP_TAG.correlated_sibling
+        const lead = rel.note_headline || rel.reasons_up?.[0] || rel.be_aware || ''
+        return (
+          <Box flexDirection="column" key={rel.id ?? index} marginTop={index === 0 ? 0 : 1}>
+            <Text wrap="truncate-end">
+              <Text color={t.color.label}>{`${tag.glyph} ${tag.label}  `}</Text>
+              <Text color={t.color.text}>{truncate(rel.title ?? rel.id ?? 'untitled', Math.max(16, width - 28))}</Text>
+              <Text color={t.color.muted}>{`  ${rel.probability_display ?? '-'}`}</Text>
+              {rel.as_of ? <Text color={t.color.muted}>{`  ${shortDate(rel.as_of)}`}</Text> : null}
+              {rel.link_type === 'auto' ? <Text color={t.color.muted}>{'  · auto'}</Text> : null}
+            </Text>
+            {lead ? (
+              <Box paddingLeft={2}>
+                <Text color={t.color.muted} wrap="wrap">
+                  {lead}
+                </Text>
+              </Box>
+            ) : null}
+          </Box>
+        )
+      })}
+      {shared.map((src, index) => (
+        <Box flexDirection="row" key={`shared${index}`} marginTop={index === 0 ? 1 : 0}>
+          <Box flexShrink={0} width={2}>
+            <Text color={t.color.warn}>{'! '}</Text>
+          </Box>
+          <Box flexGrow={1} flexShrink={1} minWidth={0}>
+            <Text color={t.color.warn} wrap="wrap">
+              {`shares ${src.source} with a related forecast — weigh as possibly non-independent`}
+            </Text>
+          </Box>
+        </Box>
+      ))}
+    </>
   )
 }
 
