@@ -318,6 +318,7 @@ def build_workspace_payload(
         evidence_items = ledger.list_evidence(question.id)
         panel_runs = ledger.list_panel_runs(question.id, limit=1)
         resolution = ledger.get_latest_resolution(question.id)
+        analyst_notes = ledger.list_analyst_notes(question.id)
         question_scores = scores_by_question.get(question.id, [])
 
         probability = current.probability_or_distribution if current else None
@@ -381,6 +382,14 @@ def build_workspace_payload(
                 "panel": _workspace_panel(panel_runs[0]) if panel_runs else None,
                 "scores": _workspace_scores(question_scores) if question_scores else None,
                 "resolution": _workspace_resolution(resolution) if resolution else None,
+                # The analyst write-up stream: the latest brief drives the desk
+                # quick-read, the full list is the reviewable time series, and the
+                # retrospective (if any) is the terminal note.
+                "analyst_note": _workspace_analyst_note(analyst_notes[-1]) if analyst_notes else None,
+                "analyst_notes": [_workspace_analyst_note(note) for note in analyst_notes[-history_limit:]],
+                "retrospective": _workspace_analyst_note(
+                    next((note for note in reversed(analyst_notes) if note.get("kind") == "retrospective"), None)
+                ),
             }
         )
 
@@ -649,6 +658,26 @@ def _workspace_resolution(resolution: Any) -> dict[str, Any]:
         "resolution_status": resolution.resolution_status,
         "resolved_at": resolution.resolved_at,
         "scoreable": resolution.scoreable,
+    }
+
+
+def _workspace_analyst_note(note: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not note:
+        return None
+    return {
+        "as_of": note.get("as_of"),
+        "created_at": note.get("created_at"),
+        "kind": note.get("kind"),
+        "headline": note.get("headline"),
+        "body": note.get("body"),
+        "how_it_feels": note.get("how_it_feels"),
+        "how_it_thinks": note.get("how_it_thinks"),
+        "looking_for": note.get("looking_for"),
+        "be_aware": note.get("be_aware"),
+        "stance": note.get("stance"),
+        "verdict": note.get("verdict"),
+        "forecast_id": note.get("forecast_id"),
+        "generator": note.get("generator"),
     }
 
 

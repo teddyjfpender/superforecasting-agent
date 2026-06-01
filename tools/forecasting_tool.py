@@ -930,6 +930,13 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 admissible_for_backtests=bool(args.get("admissible_for_backtests", True)),
                 metadata=args.get("metadata") or {},
             )
+            try:
+                from forecasting.writeup import write_brief
+
+                _qid = args.get("question_id")
+                write_brief(ledger, _qid, ledger.get_current_snapshot(_qid), evidence_only=True)
+            except Exception:
+                pass
             return tool_result(success=True, evidence=item.__dict__)
 
         if action == "import_source_evidence":
@@ -1227,6 +1234,12 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 panel_run_ref=args.get("panel_run_ref"),
                 panel_skipped_reason=args.get("panel_skipped_reason"),
             )
+            try:
+                from forecasting.writeup import write_brief
+
+                write_brief(ledger, question_id, snapshot)
+            except Exception:
+                pass
             return tool_result(success=True, forecast_snapshot=snapshot.__dict__)
 
         if action == "resolve":
@@ -1246,6 +1259,14 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 scoreable=bool(args.get("scoreable", True)),
                 auto_score=bool(args.get("auto_score", True)),
             )
+            try:
+                if resolution.resolution_status == "confirmed" and resolution.criteria_satisfied:
+                    from forecasting.writeup import write_retrospective
+
+                    _qid = args.get("question_id")
+                    write_retrospective(ledger, _qid, score=ledger.get_current_score(_qid))
+            except Exception:
+                pass
             return tool_result(success=True, resolution=resolution.__dict__)
 
         if action == "score":

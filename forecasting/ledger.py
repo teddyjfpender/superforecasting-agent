@@ -94,6 +94,14 @@ def _normalize_reason_list(raw: Any, *, field: str) -> list[str]:
             cleaned.append(stripped)
     return cleaned
 WATCH_SCOPE_TYPES = {"question", "domain", "topic", "domain_topic", "portfolio"}
+
+# Analyst write-ups ("desk notes"): time-series-indexed prose the model writes
+# about each forecast. `brief` is written on every probability-bearing commit
+# (and on evidence-only thinking updates); `retrospective` is the terminal note
+# written once the question resolves.
+ANALYST_NOTE_KINDS = {"brief", "retrospective"}
+ANALYST_NOTE_STANCES = {"lean_yes", "lean_no", "toss_up"}
+ANALYST_NOTE_VERDICTS = {"right", "wrong", "close", "far"}
 SCHEDULE_SCOPE_TYPES = {"question", "domain", "topic", "domain_topic", "portfolio", "horizon"}
 AUTOPILOT_MODES = {"propose", "auto_commit", "alert_only"}
 AUTOPILOT_PROPOSAL_STATUSES = {"pending", "approved", "rejected", "expired", "auto_committed"}
@@ -272,6 +280,7 @@ _PACKET_JSON_FIELDS = {
         "change_my_mind",
         "metadata",
     },
+    "analyst_notes": {"metadata"},
     "baseline_comparisons": {"probability_or_distribution", "metadata"},
     "source_snapshots": {"parsed_values", "metadata"},
     "watched_sources": {"metadata"},
@@ -309,6 +318,7 @@ _PACKET_RECORD_LABELS = {
     "calibration_lessons": "calibration_lessons",
     "forecast_corrections": "corrections",
     "domain_error_profiles": "domain_error_profiles",
+    "analyst_notes": "analyst_notes",
     "baseline_comparisons": "baseline_comparisons",
     "source_snapshots": "source_snapshots",
     "watched_sources": "watched_sources",
@@ -850,6 +860,33 @@ class ForecastLedger:
 
                 CREATE INDEX IF NOT EXISTS idx_panel_estimates_run
                     ON panel_estimates(panel_run_id);
+
+                CREATE TABLE IF NOT EXISTS analyst_notes (
+                    id TEXT PRIMARY KEY,
+                    question_id TEXT NOT NULL REFERENCES forecast_questions(id) ON DELETE CASCADE,
+                    forecast_id TEXT REFERENCES forecast_snapshots(forecast_id) ON DELETE SET NULL,
+                    resolution_id TEXT REFERENCES resolutions(id) ON DELETE SET NULL,
+                    kind TEXT NOT NULL DEFAULT 'brief',
+                    created_at TEXT NOT NULL,
+                    as_of TEXT NOT NULL,
+                    headline TEXT NOT NULL DEFAULT '',
+                    body TEXT NOT NULL DEFAULT '',
+                    how_it_feels TEXT NOT NULL DEFAULT '',
+                    how_it_thinks TEXT NOT NULL DEFAULT '',
+                    looking_for TEXT NOT NULL DEFAULT '',
+                    be_aware TEXT NOT NULL DEFAULT '',
+                    stance TEXT,
+                    verdict TEXT,
+                    confidence_at_write REAL,
+                    agent_model TEXT,
+                    prompt_version TEXT,
+                    forecasting_protocol_version TEXT,
+                    generator TEXT NOT NULL DEFAULT 'llm',
+                    metadata TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_analyst_notes_question
+                    ON analyst_notes(question_id, created_at DESC);
 
                 CREATE TABLE IF NOT EXISTS domain_error_profiles (
                     id TEXT PRIMARY KEY,
@@ -2712,6 +2749,158 @@ class ForecastLedger:
         data["reasons_down"] = json_loads(data["reasons_down"], [])
         data["change_my_mind"] = json_loads(data["change_my_mind"], [])
         data["metadata"] = json_loads(data["metadata"], {})
+        return data
+
+    # ── Analyst notes (time-series desk write-ups) ──────────────────────
+    def add_analyst_note(
+        self,
+        *,
+        question_id: str,
+        body: str,
+        kind: str = "brief",
+        headline: str = "",
+        how_it_feels: str = "",
+        how_it_thinks: str = "",
+        looking_for: str = "",
+        be_aware: str = "",
+        as_of: str | None = None,
+        forecast_id: str | None = None,
+        resolution_id: str | None = None,
+        stance: str | None = None,
+        verdict: str | None = None,
+        probability_at_write: Any | None = None,
+        confidence_at_write: float | None = None,
+        agent_model: str | None = None,
+        prompt_version: str | None = None,
+        forecasting_protocol_version: str | None = None,
+        generator: str = "llm",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Append a time-indexed analyst write-up for a question.
+
+        Append-only: each call is one entry in the question's prose time series.
+        ``forecast_id`` chains a brief to the snapshot it annotates;
+        ``resolution_id`` chains a retrospective to the resolution. Both use
+        ``ON DELETE SET NULL`` so the historical record survives a later purge.
+        """
+
+        self.get_question(question_id)
+        if kind not in ANALYST_NOTE_KINDS:
+            raise ValidationError(
+                f"analyst note kind must be one of {', '.join(sorted(ANALYST_NOTE_KINDS))}"
+            )
+        if not body.strip():
+            raise ValidationError("analyst note body is required")
+        if stance is not None and stance not in ANALYST_NOTE_STANCES:
+            raise ValidationError(
+                f"analyst note stance must be one of {', '.join(sorted(ANALYST_NOTE_STANCES))}"
+            )
+        if verdict is not None and verdict not in ANALYST_NOTE_VERDICTS:
+            raise ValidationError(
+                f"analyst note verdict must be one of {', '.join(sorted(ANALYST_NOTE_VERDICTS))}"
+            )
+        if forecast_id is not None:
+            self.get_snapshot(forecast_id)
+        now = utc_now_iso()
+        as_of_ts = parse_timestamp(as_of, field_name="as_of") or now
+        note_id = f"an_{uuid.uuid4().hex[:12]}"
+        note_metadata = dict(metadata or {})
+        if probability_at_write is not None:
+            note_metadata["probability_at_write"] = probability_at_write
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO analyst_notes (
+                    id, question_id, forecast_id, resolution_id, kind, created_at,
+                    as_of, headline, body, how_it_feels, how_it_thinks, looking_for,
+                    be_aware, stance, verdict, confidence_at_write, agent_model,
+                    prompt_version, forecasting_protocol_version, generator, metadata
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    note_id,
+                    question_id,
+                    forecast_id,
+                    resolution_id,
+                    kind,
+                    now,
+                    as_of_ts,
+                    headline,
+                    body,
+                    how_it_feels,
+                    how_it_thinks,
+                    looking_for,
+                    be_aware,
+                    stance,
+                    verdict,
+                    confidence_at_write,
+                    agent_model,
+                    prompt_version,
+                    forecasting_protocol_version,
+                    generator,
+                    json_dumps(note_metadata),
+                ),
+            )
+        return self.get_analyst_note(note_id)
+
+    def get_analyst_note(self, note_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM analyst_notes WHERE id = ?",
+                (note_id,),
+            ).fetchone()
+        if row is None:
+            raise LedgerNotFoundError(f"analyst note not found: {note_id}")
+        return self._analyst_note_to_dict(row)
+
+    def list_analyst_notes(
+        self,
+        question_id: str,
+        *,
+        kind: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return a question's analyst notes oldest-first (a parallel time series
+        to ``forecast_history``)."""
+
+        sql = "SELECT * FROM analyst_notes WHERE question_id = ?"
+        params: list[Any] = [question_id]
+        if kind is not None:
+            sql += " AND kind = ?"
+            params.append(kind)
+        # rowid is the insertion-order tiebreaker: utc_now_iso() can tie when
+        # several notes are written in the same instant (e.g. resolve writes a
+        # brief and a retrospective back to back).
+        sql += " ORDER BY created_at ASC, rowid ASC"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(int(limit))
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._analyst_note_to_dict(row) for row in rows]
+
+    def latest_analyst_note(
+        self,
+        question_id: str,
+        *,
+        kind: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Return the most recent analyst note (powers the desk quick-read)."""
+
+        sql = "SELECT * FROM analyst_notes WHERE question_id = ?"
+        params: list[Any] = [question_id]
+        if kind is not None:
+            sql += " AND kind = ?"
+            params.append(kind)
+        sql += " ORDER BY created_at DESC, rowid DESC LIMIT 1"
+        with self._connect() as conn:
+            row = conn.execute(sql, params).fetchone()
+        return self._analyst_note_to_dict(row) if row else None
+
+    def _analyst_note_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        data = dict(row)
+        data["metadata"] = json_loads(data.get("metadata"), {})
         return data
 
     def create_calibration_lesson(
@@ -6184,6 +6373,9 @@ class ForecastLedger:
                     "domain_error_profiles": domain_error_profiles,
                     "corrections": corrections,
                     "panel_runs": self.list_panel_runs(question_id, limit=20),
+                    "analyst_notes": self.list_analyst_notes(question_id),
+                    "analyst_note": self.latest_analyst_note(question_id, kind="brief"),
+                    "retrospective": self.latest_analyst_note(question_id, kind="retrospective"),
                 }
             )
         if fmt != "markdown":
@@ -6552,6 +6744,7 @@ class ForecastLedger:
             ("autopilot_runs", "autopilot_runs"),
             ("forecast_update_proposals", "forecast_update_proposals"),
             ("domain_error_profiles", "domain_error_profiles"),
+            ("analyst_notes", "analyst_notes"),
         ):
             self._import_packet_rows(conn, table, packet.get(key), conflict=conflict, summary=summary, seen=seen)
 

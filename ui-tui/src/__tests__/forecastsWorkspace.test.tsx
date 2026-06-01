@@ -409,6 +409,69 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('No active forecasts')
   })
 
+  it('renders the analyst quick read with headline, labeled angles, and wrapped body', async () => {
+    const [{ renderSync }, { AnalystNote }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/forecastsWorkspace.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+    const note = {
+      as_of: '2026-06-01T00:00:00Z',
+      be_aware: 'The poll lead is early and not fully independent of prior evidence.',
+      body: '',
+      headline: 'Texas still leans Republican',
+      how_it_feels: 'Comfortable around 59 percent, with room for the number to drift.',
+      how_it_thinks: 'Fundamentals and the outside view both favor the Republican here.',
+      kind: 'brief' as const,
+      looking_for: 'A clean independent poll that confirms or breaks the Talarico signal.',
+      stance: 'lean_yes' as const
+    }
+    const stdout = writeStream(120, 60)
+    renderSync(React.createElement(AnalystNote, { note, t: DARK_THEME, variant: 'quickread' }), {
+      exitOnCtrlC: false,
+      patchConsole: false,
+      stdout: stdout.stream
+    } as never)
+    const text = normalize(stdout.text(), stripAnsi)
+    expect(text).toContain('QUICK READ')
+    expect(text).toContain('Texas still leans Republican')
+    expect(text).toContain('how it feels')
+    expect(text).toContain('watching for')
+    expect(text).toContain('be aware')
+    expect(text).toContain('lean yes')
+    expect(text).toContain('Comfortable around 59 percent')
+  })
+
+  it('renders a resolved retrospective with its verdict', async () => {
+    const [{ renderSync }, { AnalystNote }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/forecastsWorkspace.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+    const note = {
+      as_of: '2026-11-04T00:00:00Z',
+      body: 'It landed close.\n\nThe fundamentals held but the margin was tighter than the model implied.',
+      headline: 'Right call, thin margin',
+      kind: 'retrospective' as const,
+      verdict: 'close' as const
+    }
+    const stdout = writeStream(120, 60)
+    renderSync(React.createElement(AnalystNote, { note, t: DARK_THEME, variant: 'retrospective' }), {
+      exitOnCtrlC: false,
+      patchConsole: false,
+      stdout: stdout.stream
+    } as never)
+    const text = normalize(stdout.text(), stripAnsi)
+    expect(text).toContain('RETROSPECTIVE')
+    expect(text).toContain('close')
+    expect(text).toContain('Right call, thin margin')
+    // No discrete angle fields: falls back to the body paragraphs.
+    expect(text).toContain('It landed close')
+    expect(text).toContain('tighter than the model implied')
+  })
+
   it('renders the packet tail (history, model runs, action playbook) under the summary', async () => {
     const { sections, text } = await renderTail({
       assumptions: [{ id: 'asm_1', status: 'active', text: 'Polling response rates hold near 2024 levels.' }],

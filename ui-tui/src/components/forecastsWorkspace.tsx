@@ -5,6 +5,7 @@ import { forecastQuestionDetailSections } from '../app/forecastPanel.js'
 import { patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
+  ForecastAnalystNote,
   ForecastQuestionPacketResponse,
   ForecastWorkspaceItem,
   ForecastWorkspacePanel,
@@ -391,6 +392,17 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
   }, [packet, packetId, selectedId])
   const tailLoading = !!selectedId && packetId !== selectedId
 
+  // The analyst write-up time series (oldest-first). The most recent note is the
+  // desk quick-read; the rest are the reviewable log.
+  const analystNotes = useMemo(() => {
+    if (!packet || packetId !== selectedId) {
+      return null
+    }
+    return packet.packet?.analyst_notes ?? []
+  }, [packet, packetId, selectedId])
+  const latestNote = analystNotes && analystNotes.length ? analystNotes[analystNotes.length - 1] : null
+  const priorNotes = analystNotes ? analystNotes.slice(0, -1).reverse() : []
+
   const closeWith = () => {
     onClose()
   }
@@ -541,6 +553,19 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
       <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
         <ScrollBox flexDirection="column" flexGrow={1} flexShrink={1} ref={detailScrollRef}>
           <Box flexDirection="column" paddingBottom={3} paddingRight={1}>
+            {latestNote ? (
+              <AnalystNote
+                note={latestNote}
+                t={t}
+                variant={latestNote.kind === 'retrospective' ? 'retrospective' : 'quickread'}
+                width={detailW}
+              />
+            ) : tailLoading ? (
+              <Box marginTop={1}>
+                <Text color={t.color.muted}>loading quick read…</Text>
+              </Box>
+            ) : null}
+            {latestNote ? <Rule t={t} width={detailW} /> : null}
             <ForecastDetail item={selected} t={t} width={detailW} />
             {packetTail && packetTail.length ? (
               <ForecastPacketTail sections={packetTail} t={t} width={detailW} />
@@ -549,6 +574,7 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
                 <Text color={t.color.muted}>loading detail…</Text>
               </Box>
             ) : null}
+            <AnalystLog notes={priorNotes} t={t} />
           </Box>
         </ScrollBox>
         <NoSelect flexShrink={0} marginLeft={1}>
@@ -1034,6 +1060,142 @@ export function ForecastPacketTail({ sections, t, width }: { sections: PanelSect
         )
       })}
     </>
+  )
+}
+
+// A thin horizontal rule to separate opinion / data / history (Bloomberg feel).
+function Rule({ t, width }: { t: Theme; width: number }) {
+  return (
+    <Box marginTop={1}>
+      <Text color={t.color.border}>{'─'.repeat(Math.max(8, Math.min(width, 80)))}</Text>
+    </Box>
+  )
+}
+
+// A wrapping paragraph that never overflows the bounded detail ScrollBox: the
+// flexGrow + flexShrink + minWidth={0} value box lets long lines wrap as a
+// hanging indent instead of pushing past the pane edge.
+function WrapText({ bold = false, children, color, t }: { bold?: boolean; children: string; color?: string; t: Theme }) {
+  return (
+    <Box flexDirection="row">
+      <Box flexShrink={0} width={2}>
+        <Text> </Text>
+      </Box>
+      <Box flexGrow={1} flexShrink={1} minWidth={0}>
+        <Text bold={bold} color={color ?? t.color.text} wrap="wrap">
+          {children}
+        </Text>
+      </Box>
+    </Box>
+  )
+}
+
+const ANALYST_ANGLES: { key: 'be_aware' | 'how_it_feels' | 'how_it_thinks' | 'looking_for'; label: string; warn?: boolean }[] = [
+  { key: 'how_it_feels', label: 'how it feels' },
+  { key: 'how_it_thinks', label: 'how it thinks' },
+  { key: 'looking_for', label: 'watching for', warn: true },
+  { key: 'be_aware', label: 'be aware', warn: true }
+]
+
+const STANCE_LABEL: Record<string, string> = {
+  lean_no: 'lean no',
+  lean_yes: 'lean yes',
+  toss_up: 'toss-up'
+}
+
+// The prominent analyst write-up block (the desk "quick read", or the closing
+// "retrospective" once resolved). Renders the four labeled angles when present,
+// else falls back to the synthesized body split into paragraphs.
+export function AnalystNote({
+  note,
+  t,
+  variant
+}: {
+  note: ForecastAnalystNote
+  t: Theme
+  variant: 'quickread' | 'retrospective'
+  width?: number
+}) {
+  const isRetro = variant === 'retrospective'
+  const angles = ANALYST_ANGLES.map(angle => ({ ...angle, text: (note[angle.key] ?? '').trim() })).filter(
+    angle => angle.text
+  )
+  const fallback =
+    angles.length === 0
+      ? (note.body ?? '')
+          .split(/\n\n+/)
+          .map(paragraph => paragraph.trim())
+          .filter(Boolean)
+      : []
+  const verdictColor =
+    note.verdict === 'right'
+      ? t.color.ok
+      : note.verdict === 'close'
+        ? t.color.warn
+        : note.verdict
+          ? t.color.error
+          : t.color.muted
+
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <SectionTitle t={t}>{isRetro ? 'RETROSPECTIVE' : 'QUICK READ'}</SectionTitle>
+      <Text wrap="truncate-end">
+        <Text color={t.color.muted}>{`as of ${shortDate(note.as_of)}`}</Text>
+        {note.stance ? <Text color={t.color.label}>{`  ·  ${STANCE_LABEL[note.stance] ?? note.stance}`}</Text> : null}
+        {note.verdict ? (
+          <Text bold color={verdictColor}>
+            {`  ·  ${note.verdict}`}
+          </Text>
+        ) : null}
+        {note.generator === 'template' ? <Text color={t.color.muted}>{'  ·  auto'}</Text> : null}
+      </Text>
+      {note.headline ? (
+        <Box marginTop={1}>
+          <WrapText bold color={t.color.text} t={t}>
+            {note.headline}
+          </WrapText>
+        </Box>
+      ) : null}
+      {angles.map(angle => (
+        <Box flexDirection="column" key={angle.key} marginTop={1}>
+          <Text bold color={angle.warn ? t.color.warn : t.color.label}>
+            {angle.label}
+          </Text>
+          <WrapText t={t}>{angle.text}</WrapText>
+        </Box>
+      ))}
+      {fallback.map((paragraph, index) => (
+        <Box key={index} marginTop={1}>
+          <WrapText t={t}>{paragraph}</WrapText>
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
+// The reviewable time series of prior write-ups, newest-first, as compact
+// dateline + headline rows under the main quick read.
+function AnalystLog({ notes, t }: { notes: ForecastAnalystNote[]; t: Theme }) {
+  if (!notes.length) {
+    return null
+  }
+  return (
+    <Box flexDirection="column">
+      <SectionTitle t={t}>analyst log</SectionTitle>
+      {notes.map((note, index) => (
+        <Box flexDirection="row" key={`${note.created_at ?? note.as_of ?? ''}:${index}`}>
+          <Box flexShrink={0} width={2}>
+            <Text color={t.color.muted}>{note.kind === 'retrospective' ? '◆ ' : '· '}</Text>
+          </Box>
+          <Box flexGrow={1} flexShrink={1} minWidth={0}>
+            <Text wrap="truncate-end">
+              <Text color={t.color.muted}>{`${shortDate(note.as_of)}  `}</Text>
+              <Text color={t.color.text}>{note.headline || (note.body ?? '').slice(0, 90) || '(note)'}</Text>
+            </Text>
+          </Box>
+        </Box>
+      ))}
+    </Box>
   )
 }
 

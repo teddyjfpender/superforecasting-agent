@@ -469,7 +469,27 @@ export interface ForecastQuestionPacketResponse {
   packet?: ForecastQuestionPacket
 }
 
+// A time-indexed analyst write-up ("desk note"): the model's prose read on a
+// forecast. `brief` is written on every update, `retrospective` once it resolves.
+export interface ForecastAnalystNote {
+  as_of?: string
+  be_aware?: string
+  body?: string
+  created_at?: string
+  forecast_id?: null | string
+  generator?: string
+  headline?: string
+  how_it_feels?: string
+  how_it_thinks?: string
+  kind?: 'brief' | 'retrospective'
+  looking_for?: string
+  stance?: 'lean_no' | 'lean_yes' | 'toss_up' | null
+  verdict?: 'close' | 'far' | 'right' | 'wrong' | null
+}
+
 export interface ForecastQuestionPacket {
+  analyst_note?: ForecastAnalystNote | null
+  analyst_notes?: ForecastAnalystNote[]
   assumptions?: ForecastQuestionPacketAssumption[]
   baseline_comparisons?: Record<string, unknown>[]
   calibration_lessons?: ForecastDashboardLesson[]
@@ -482,6 +502,7 @@ export interface ForecastQuestionPacket {
   question?: ForecastQuestionPacketQuestion
   reference_classes?: ForecastQuestionPacketReferenceClass[]
   resolution?: Record<string, unknown> | null
+  retrospective?: ForecastAnalystNote | null
   scores?: Record<string, unknown>[]
   watched_sources?: Record<string, unknown>[]
 }
@@ -552,6 +573,8 @@ export interface ForecastWorkspaceResponse {
 
 export interface ForecastWorkspaceItem {
   action_threshold?: null | string
+  analyst_note?: ForecastAnalystNote | null
+  analyst_notes?: ForecastAnalystNote[]
   as_of?: null | string
   change_my_mind?: string[]
   close_time?: null | string
@@ -584,6 +607,7 @@ export interface ForecastWorkspaceItem {
   resolution?: ForecastWorkspaceResolution | null
   resolution_criteria?: string
   resolution_time?: null | string
+  retrospective?: ForecastAnalystNote | null
   scores?: ForecastWorkspaceScores | null
   snapshot_count?: number
   status?: string

@@ -2915,6 +2915,62 @@ def _cmd_show(args: argparse.Namespace) -> None:
         print(f"resolution: {resolution.outcome} ({resolution.resolution_status})")
 
 
+def _write_analyst_brief(
+    ledger: Any,
+    question_id: str,
+    snapshot: Any,
+    *,
+    previous: Any | None = None,
+    evidence_only: bool = False,
+    announce: bool = True,
+) -> dict[str, Any] | None:
+    """Generate + persist an analyst brief for a committed snapshot, then announce.
+
+    Thin CLI wrapper over :func:`forecasting.writeup.write_brief` (best-effort,
+    never raises) that prints the headline so the user sees the note was written.
+    """
+
+    try:
+        from forecasting.writeup import write_brief
+
+        record = write_brief(
+            ledger,
+            question_id,
+            snapshot,
+            previous=previous,
+            evidence_only=evidence_only,
+        )
+        if record and announce:
+            headline = record.get("headline") or record.get("body", "")
+            if headline:
+                print(f"analyst note: {headline[:80]}")
+        return record
+    except Exception:
+        return None
+
+
+def _write_retrospective(
+    ledger: Any,
+    question_id: str,
+    *,
+    score: Any | None = None,
+    announce: bool = True,
+) -> dict[str, Any] | None:
+    """Generate + persist the resolution retrospective, then announce. Best-effort."""
+
+    try:
+        from forecasting.writeup import write_retrospective
+
+        record = write_retrospective(ledger, question_id, score=score)
+        if record and announce:
+            headline = record.get("headline") or record.get("body", "")
+            if headline:
+                print(f"retrospective: {headline[:80]}")
+        return record
+    except Exception:
+        return None
+
+
 def _cmd_update(args: argparse.Namespace) -> None:
     components = _json_arg(args.component_json, "component-json")
     ledger = _ledger(args)
@@ -3097,6 +3153,9 @@ def _cmd_update(args: argparse.Namespace) -> None:
     if components:
         _print_component_drivers(components, snapshot.probability_or_distribution)
     _print_calibration_adjustment_summary(calibration_lesson_refs, calibration_adjustment)
+    # Standard step of the update process: write a time-indexed analyst brief for
+    # the snapshot we just committed. Best-effort, after the ledger write.
+    _write_analyst_brief(ledger, args.id, snapshot, previous=previous)
 
 
 def _print_update_preview(
@@ -7309,7 +7368,8 @@ def _cmd_evidence_add(args: argparse.Namespace) -> None:
     source_or_note = args.source_or_note or args.source_or_note_option or ""
     if not source_or_note and not args.source_url:
         raise SystemExit("forecast evidence add requires a source/note argument, --source, or --url")
-    item = _ledger(args).add_evidence(
+    ledger = _ledger(args)
+    item = ledger.add_evidence(
         question_id=args.id,
         source_or_note=source_or_note,
         claim=args.claim,
@@ -7330,6 +7390,15 @@ def _cmd_evidence_add(args: argparse.Namespace) -> None:
     print(f"available_at: {item.available_at}")
     print(f"stance: {item.stance}")
     print(f"claim_type: {item.claim_type}")
+    # New evidence is a thinking update: refresh the analyst's read on the current
+    # forecast even though the probability has not moved. Best-effort; no-op if the
+    # question has no forecast snapshot yet.
+    _write_analyst_brief(
+        ledger,
+        args.id,
+        ledger.get_current_snapshot(args.id),
+        evidence_only=True,
+    )
 
 
 def _cmd_evidence_list(args: argparse.Namespace) -> None:
@@ -7347,7 +7416,8 @@ def _cmd_evidence_list(args: argparse.Namespace) -> None:
 
 
 def _cmd_resolve(args: argparse.Namespace) -> None:
-    resolution = _ledger(args).resolve_question(
+    ledger = _ledger(args)
+    resolution = ledger.resolve_question(
         question_id=args.id,
         outcome=args.outcome,
         resolution_source=args.resolution_source,
@@ -7366,13 +7436,14 @@ def _cmd_resolve(args: argparse.Namespace) -> None:
     print(f"recorded resolution {resolution.id}")
     print(f"status: {resolution.resolution_status}")
     print(f"criteria_satisfied: {resolution.criteria_satisfied}")
+    score = None
     if (
         args.auto_score
         and resolution.resolution_status == "confirmed"
         and resolution.criteria_satisfied
         and not args.not_scoreable
     ):
-        score = _ledger(args).get_current_score(args.id)
+        score = ledger.get_current_score(args.id)
         if score is not None:
             print(
                 "auto_score: "
@@ -7380,6 +7451,10 @@ def _cmd_resolve(args: argparse.Namespace) -> None:
                 f"log={_format_metric(score.log_score)} "
                 f"origin={score.forecast_origin}"
             )
+    # Once the question is finalized, write the closing retrospective into the same
+    # time-indexed note stream. Best-effort, after the resolution is recorded.
+    if resolution.resolution_status == "confirmed" and resolution.criteria_satisfied:
+        _write_retrospective(ledger, args.id, score=score)
 
 
 def _cmd_score(args: argparse.Namespace) -> None:
@@ -7634,7 +7709,8 @@ def _cmd_panel_list(args: argparse.Namespace) -> None:
 
 
 def _cmd_postmortem(args: argparse.Namespace) -> None:
-    postmortem = _ledger(args).create_postmortem(
+    ledger = _ledger(args)
+    postmortem = ledger.create_postmortem(
         question_id=args.id,
         summary=args.summary,
         what_happened=args.what_happened,
@@ -7654,6 +7730,9 @@ def _cmd_postmortem(args: argparse.Namespace) -> None:
         print(f"failure_class: {postmortem['failure_class']}")
     if args.lesson:
         print("calibration_lesson: created")
+    # A postmortem is fresh learning: refresh the closing retrospective so it
+    # digests the new lesson. Best-effort, appended to the same note stream.
+    _write_retrospective(ledger, args.id, score=ledger.get_current_score(args.id))
 
 
 def _cmd_lesson_list(args: argparse.Namespace) -> None:
@@ -8325,16 +8404,18 @@ def _resolve_question_id(ledger: "ForecastLedger", ref: str) -> str:
 
 
 def _cmd_refresh(args: argparse.Namespace) -> None:
-    args.id = _resolve_question_id(_ledger(args), args.id)
+    ledger = _ledger(args)
+    args.id = _resolve_question_id(ledger, args.id)
     if args.agent:
         # Delegate to the full LLM update stage (forecast agent --stage update).
+        # The agent commits through the forecasting tool, whose hook writes the brief.
         args.stage = "update"
         _cmd_agent(args)
         return
     from tools.forecasting_tool import fetch_watched_source_payloads
 
     concurrency = args.concurrency
-    result = _ledger(args).refresh_forecast(
+    result = ledger.refresh_forecast(
         args.id,
         fetcher=lambda specs: fetch_watched_source_payloads(specs, concurrency=concurrency),
         now=args.now,
@@ -8377,6 +8458,12 @@ def _cmd_refresh(args: argparse.Namespace) -> None:
     committed = result.get("forecast_id")
     if committed:
         print(f"committed snapshot {committed}")
+        # Standard step of the refresh process: write an analyst brief for the
+        # snapshot the deterministic re-pool just committed. Best-effort.
+        try:
+            _write_analyst_brief(ledger, args.id, ledger.get_snapshot(committed))
+        except Exception:
+            pass
     else:
         print("(preview only — not committed)")
 
