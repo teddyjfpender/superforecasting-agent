@@ -71,6 +71,14 @@ export type ScrollBoxProps = Except<Styles, 'textWrap' | 'overflow' | 'overflowX
    * grows. Unset manually via scrollTo/scrollBy to break the stickiness.
    */
   stickyScroll?: boolean
+  /**
+   * Set to false for a ScrollBox that does NOT span the full terminal width
+   * (e.g. a detail pane beside a list). DECSTBM hardware scrolling moves the
+   * full width of the scroll region's rows, which would clobber the sibling
+   * column; disabling it falls back to a neighbor-safe region repaint.
+   * Defaults to true (full-width scrollers keep the fast path).
+   */
+  decstbm?: boolean
 }
 
 /**
@@ -83,7 +91,7 @@ export type ScrollBoxProps = Except<Styles, 'textWrap' | 'overflow' | 'overflowX
  *
  * Works best inside a fullscreen (constrained-height root) Ink tree.
  */
-function ScrollBox({ children, ref, stickyScroll, ...style }: PropsWithChildren<ScrollBoxProps>): React.ReactNode {
+function ScrollBox({ children, decstbm, ref, stickyScroll, ...style }: PropsWithChildren<ScrollBoxProps>): React.ReactNode {
   const domRef = useRef<DOMElement>(null)
   // scrollTo/scrollBy bypass React: they mutate scrollTop on the DOM node,
   // mark it dirty, and call the root's throttled scheduleRender directly.
@@ -262,6 +270,9 @@ function ScrollBox({ children, ref, stickyScroll, ...style }: PropsWithChildren<
         if (el) {
           el.scrollTop ??= 0
           el.notifyScrollChange = notify
+          // Opt out of full-width DECSTBM hardware scroll for non-full-width
+          // panes so scrolling never clobbers a sibling column.
+          el.decstbmDisabled = decstbm === false
         }
       }}
       style={{

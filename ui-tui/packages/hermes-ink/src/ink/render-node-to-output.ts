@@ -891,7 +891,17 @@ function renderNodeToOutput(
             const regionTop = Math.floor(y + contentYoga.getComputedTop())
             const regionBottom = regionTop + innerHeight - 1
 
-            if (cached?.y === y && cached.height === height && innerHeight > 0 && Math.abs(delta) < innerHeight) {
+            // DECSTBM scrolls the full width of [regionTop, regionBottom];
+            // a ScrollBox that opted out (non-full-width, with a sibling column
+            // sharing these rows) must fall back to a region repaint so the
+            // neighbor is not clobbered.
+            if (
+              !node.decstbmDisabled &&
+              cached?.y === y &&
+              cached.height === height &&
+              innerHeight > 0 &&
+              Math.abs(delta) < innerHeight
+            ) {
               hint = { top: regionTop, bottom: regionBottom, delta }
               scrollHint = hint
             } else {

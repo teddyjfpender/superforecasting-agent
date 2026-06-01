@@ -72,6 +72,12 @@ export type DOMElement = {
   scrollViewportHeight?: number
   scrollViewportTop?: number
   stickyScroll?: boolean
+  // When true, this ScrollBox opts out of the DECSTBM hardware-scroll
+  // optimization. DECSTBM scrolls the FULL width of the scroll region's rows,
+  // which corrupts any sibling content sharing those rows (e.g. a master list
+  // beside a scrolling detail pane). Side-by-side layouts must set this so
+  // scrolling falls back to a neighbor-safe region repaint.
+  decstbmDisabled?: boolean
   notifyScrollChange?: () => void
   // Set by ScrollBox.scrollToElement; render-node-to-output reads
   // el.yogaNode.getComputedTop() (FRESH — same Yoga pass as scrollHeight)

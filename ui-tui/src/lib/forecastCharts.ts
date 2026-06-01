@@ -43,6 +43,38 @@ export const pctDelta = (delta: number | null | undefined): string => {
   return `${deltaGlyph(delta)} ${sign}${points}pt`
 }
 
+const trimZeros = (s: string): string => (s.includes('.') ? s.replace(/\.?0+$/, '') : s) || '0'
+
+/**
+ * Compact number with a magnitude suffix and ~3 significant figures:
+ * `73000` → `"73k"`, `73500` → `"73.5k"`, `1_234_567` → `"1.23M"`,
+ * `4.24` → `"4.24"`, `0.1` → `"0.1"`. Keeps axis labels and list values a
+ * stable, short width regardless of magnitude (k / M / B / T). Nullish → `"—"`.
+ */
+export const compactNumber = (value: number | null | undefined): string => {
+  if (!finite(value)) {
+    return '—'
+  }
+  const sign = value < 0 ? '-' : ''
+  const abs = Math.abs(value)
+  const units: ReadonlyArray<readonly [number, string]> = [
+    [1e12, 'T'],
+    [1e9, 'B'],
+    [1e6, 'M'],
+    [1e3, 'k']
+  ]
+  for (const [scale, suffix] of units) {
+    if (abs >= scale) {
+      const scaled = abs / scale
+      const decimals = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2
+      return `${sign}${trimZeros(scaled.toFixed(decimals))}${suffix}`
+    }
+  }
+  // Below 1000 there is no suffix; match the prior 2-decimal-then-trim display
+  // (e.g. 4.24 -> "4.24", 0.098 -> "0.1") so existing values are unchanged.
+  return `${sign}${trimZeros(abs.toFixed(2))}`
+}
+
 /** ISO timestamp → `YYYY-MM-DD`; nullish → `"—"`. */
 export const shortDate = (value: string | null | undefined): string =>
   value ? value.slice(0, 10) : '—'
@@ -108,7 +140,14 @@ export const bandChart = (
   }: { width?: number; height?: number; yMin?: number; yMax?: number } = {}
 ): BandChart => {
   const h = Math.max(3, height)
-  const gutterW = 6 // "0.62 │"
+  // Axis labels are abbreviated (k/M/B/T) and right-padded to a uniform width so
+  // the plot column never shifts with the number of digits (e.g. 73000.08 vs
+  // 0.62). The gutter sizes to the widest label + " │".
+  const topLabel = compactNumber(yMax)
+  const midLabel = compactNumber((yMax + yMin) / 2)
+  const bottomLabel = compactNumber(yMin)
+  const labelW = Math.max(4, topLabel.length, midLabel.length, bottomLabel.length)
+  const gutterW = labelW + 2 // label + " │"
   const plotW = Math.max(1, width - gutterW)
   const span = yMax - yMin || 1
   const active = points.filter(point => finite(point.y))
@@ -139,21 +178,21 @@ export const bandChart = (
 
   const labelFor = (row: number): string => {
     if (row === 0) {
-      return yMax.toFixed(2).padStart(4)
+      return topLabel.padStart(labelW)
     }
     if (row === h - 1) {
-      return yMin.toFixed(2).padStart(4)
+      return bottomLabel.padStart(labelW)
     }
     if (row === Math.floor((h - 1) / 2)) {
-      return ((yMax + yMin) / 2).toFixed(2).padStart(4)
+      return midLabel.padStart(labelW)
     }
-    return '    '
+    return ' '.repeat(labelW)
   }
 
   const rows = grid.map((cells, row) => `${labelFor(row)} │${cells.join('')}`)
   return {
     rows,
-    axis: { top: yMax.toFixed(2), bottom: yMin.toFixed(2) }
+    axis: { top: topLabel, bottom: bottomLabel }
   }
 }
 

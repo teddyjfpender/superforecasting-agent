@@ -4,6 +4,7 @@ import {
   bandChart,
   boxWhisker,
   clamp01,
+  compactNumber,
   deltaGlyph,
   histogram,
   levelSparkline,
@@ -74,6 +75,30 @@ describe('levelSparkline', () => {
   })
 })
 
+describe('compactNumber', () => {
+  it('abbreviates large magnitudes with k/M/B/T at ~3 sig figs', () => {
+    expect(compactNumber(73000)).toBe('73k')
+    expect(compactNumber(73500)).toBe('73.5k')
+    expect(compactNumber(125)).toBe('125')
+    expect(compactNumber(1_234_567)).toBe('1.23M')
+    expect(compactNumber(2_500_000_000)).toBe('2.5B')
+    expect(compactNumber(3_000_000_000_000)).toBe('3T')
+  })
+
+  it('leaves sub-thousand values as the prior 2-decimal trimmed display', () => {
+    expect(compactNumber(4.24)).toBe('4.24')
+    expect(compactNumber(0.098)).toBe('0.1')
+    expect(compactNumber(49.3)).toBe('49.3')
+    expect(compactNumber(0)).toBe('0')
+  })
+
+  it('handles negatives and nullish', () => {
+    expect(compactNumber(-73000)).toBe('-73k')
+    expect(compactNumber(null)).toBe('—')
+    expect(compactNumber(Number.NaN)).toBe('—')
+  })
+})
+
 describe('bandChart', () => {
   it('produces height rows each with a y-gutter', () => {
     const chart = bandChart([{ y: 0.5 }], { width: 20, height: 5 })
@@ -81,8 +106,19 @@ describe('bandChart', () => {
     for (const row of chart.rows) {
       expect(row).toContain('│')
     }
-    expect(chart.axis.top).toBe('1.00')
-    expect(chart.axis.bottom).toBe('0.00')
+    // Axis labels are abbreviated/trimmed: 1.00 -> "1", 0.00 -> "0".
+    expect(chart.axis.top).toBe('1')
+    expect(chart.axis.bottom).toBe('0')
+  })
+
+  it('pads axis labels to a uniform width so the plot column never shifts', () => {
+    // Large-magnitude values (BTC ~73000) must not push the gutter wider on
+    // some rows than others, and must abbreviate with k/M/B/T.
+    const chart = bandChart([{ y: 73000 }], { width: 30, height: 5, yMin: 71000, yMax: 75000 })
+    const barColumns = chart.rows.map(row => row.indexOf('│'))
+    expect(new Set(barColumns).size).toBe(1) // the │ is at the same column in every row
+    expect(chart.axis.top).toBe('75k')
+    expect(chart.axis.bottom).toBe('71k')
   })
 
   it('places the marker higher for higher probabilities', () => {

@@ -17,6 +17,7 @@ import {
   bandChart,
   boxWhisker,
   clamp01,
+  compactNumber,
   deltaGlyph,
   histogram,
   type HistogramBar,
@@ -59,10 +60,10 @@ interface ForecastsWorkspaceProps {
 
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 
-const trimNum = (value: number): string => {
-  const fixed = value.toFixed(2)
-  return fixed.replace(/\.?0+$/, '') || '0'
-}
+// Distribution values (μ, σ, median, CI bounds, Δμ) are abbreviated with
+// k/M/B/T so a Bitcoin mean reads "73k", not "73000", and the master-list and
+// detail values stay short. Percentages and small values pass through unchanged.
+const trimNum = (value: number): string => compactNumber(value)
 
 const unitSuffix = (units: null | string | undefined): string => {
   const u = (units ?? '').toLowerCase()
@@ -551,7 +552,7 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
 
     const detail = selected ? (
       <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
-        <ScrollBox flexDirection="column" flexGrow={1} flexShrink={1} ref={detailScrollRef}>
+        <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} ref={detailScrollRef}>
           <Box flexDirection="column" paddingBottom={3} paddingRight={1}>
             <ForecastDetail
               afterChart={
