@@ -85,7 +85,30 @@ export const estimatedMsgHeight = (
   }
 
   if (msg.kind === 'panel') {
-    return Math.max(3, (msg.panelData?.sections.length ?? 1) * 2 + 1)
+    // A wrapped forecast-detail panel is 30-60+ rows tall, not the ~7-10 the old
+    // `sections * 2 + 1` estimate assumed. That gap is what made the virtual
+    // spacers snap (and the scroll jump) once Yoga measured the real height.
+    // Estimate content-aware: title + per-row wrapped lines at the panel's
+    // value-column width (border 2 + paddingX*2 = 4 + the 20-wide key column).
+    const sections = msg.panelData?.sections ?? []
+    const valueWidth = Math.max(10, cols - 2 - 4 - 20)
+    let h = 2 // panel title + its bottom margin
+    for (const s of sections) {
+      if (s.title) {
+        h += 1
+      }
+      for (const r of s.rows ?? []) {
+        h += wrappedLines(r[1] || ' ', valueWidth)
+      }
+      for (const it of s.items ?? []) {
+        h += wrappedLines(it || ' ', Math.max(10, valueWidth + 18))
+      }
+      if (s.text) {
+        h += wrappedLines(s.text, Math.max(10, cols - 6))
+      }
+      h += 1 // marginTop between sections
+    }
+    return Math.max(3, h)
   }
 
   if (msg.kind === 'trail' && msg.todos?.length) {

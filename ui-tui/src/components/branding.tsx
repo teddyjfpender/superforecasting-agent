@@ -446,15 +446,23 @@ export function Panel({ onCommandClick, onCommandDraft, sections, t, title }: Pa
                     : undefined
                 }
               >
-                {/* wrap (not truncate) so long evidence/history/rationale rows
-                    stay readable; a leading "› " marks rows you can click. */}
-                <Text wrap="wrap">
-                  <Text color={actionable ? t.color.accent : t.color.muted}>
-                    {actionable ? '› ' : '  '}
-                  </Text>
-                  <Text color={actionable ? t.color.accent : t.color.muted}>{k.padEnd(18)}</Text>
-                  {v ? <Text color={t.color.text}>{v}</Text> : null}
-                </Text>
+                {/* Two-column row: a fixed 20-wide key column + a flexible value
+                    column, so long values wrap as a HANGING-INDENT paragraph
+                    (continuation lines align under the value, not back at col 0).
+                    A leading "› " marks rows you can click. */}
+                <Box flexDirection="row">
+                  <Box flexShrink={0} width={20}>
+                    <Text color={actionable ? t.color.accent : t.color.muted}>{actionable ? '› ' : '  '}</Text>
+                    <Text color={actionable ? t.color.accent : t.color.muted}>{k.padEnd(18)}</Text>
+                  </Box>
+                  {v ? (
+                    <Box flexGrow={1}>
+                      <Text color={t.color.text} wrap="wrap">
+                        {v}
+                      </Text>
+                    </Box>
+                  ) : null}
+                </Box>
               </Box>
             )
           })}
@@ -471,10 +479,16 @@ export function Panel({ onCommandClick, onCommandDraft, sections, t, title }: Pa
                     : undefined
                 }
               >
-                <Text wrap="wrap">
-                  <Text color={command ? t.color.accent : t.color.muted}>{command ? '› ' : '  '}</Text>
-                  <Text color={command ? t.color.accent : t.color.text}>{item}</Text>
-                </Text>
+                <Box flexDirection="row">
+                  <Box flexShrink={0} width={2}>
+                    <Text color={command ? t.color.accent : t.color.muted}>{command ? '› ' : '  '}</Text>
+                  </Box>
+                  <Box flexGrow={1}>
+                    <Text color={command ? t.color.accent : t.color.text} wrap="wrap">
+                      {item}
+                    </Text>
+                  </Box>
+                </Box>
               </Box>
             )
           })}

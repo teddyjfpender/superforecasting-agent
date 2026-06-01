@@ -834,8 +834,9 @@ const packetProbability = (value: unknown) =>
   formatProbability(value as ForecastDashboardQuestion['probability'])
 
 const compactPacketSource = (item: { source_name?: null | string; source_type?: string; source_url?: null | string }) => {
-  const label = item.source_name || item.source_url || item.source_type || 'manual note'
-  return truncate(label, 42)
+  // No inner truncation: this label is embedded in the Recent Evidence value,
+  // which now wraps in full. The 42-char cap clipped real source names mid-word.
+  return item.source_name || item.source_url || item.source_type || 'manual note'
 }
 
 const packetQuestionTitle = (packet: ForecastQuestionPacket) =>
@@ -900,10 +901,8 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
     sections.push({
       rows: evidence.slice(-6).reverse().map(item => [
         `${shortId(item.id)} ${shortDate(item.available_at)}`,
-        truncate(
-          `${item.stance || '-'}  ${item.claim_type || '-'}  ${compactPacketSource(item)}  ${item.claim || item.summary || '-'}`,
-          116
-        )
+        // Full claim/summary — the primary evidence content; the renderer wraps it.
+        `${item.stance || '-'}  ${item.claim_type || '-'}  ${compactPacketSource(item)}  ${item.claim || item.summary || '-'}`
       ]),
       title: 'Recent Evidence'
     })
@@ -917,7 +916,7 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
           `P=${packetProbability(item.probability_or_distribution)}  conf ${formatConfidence(item.confidence)}  ${
             item.method || '-'
           }  ${item.rationale || '-'}`,
-          116
+          240
         )
       ]),
       title: 'Forecast History'
@@ -927,12 +926,12 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
   if (assumptions.length || references.length) {
     const rows: [string, string][] = []
     for (const item of assumptions.slice(0, 3)) {
-      rows.push([`asm ${shortId(item.id)} ${item.status || '-'}`, truncate(item.text || '-', 96)])
+      rows.push([`asm ${shortId(item.id)} ${item.status || '-'}`, truncate(item.text || '-', 180)])
     }
     for (const item of references.slice(0, 3)) {
       rows.push([
         `ref ${shortId(item.id)} ${item.status || '-'}`,
-        truncate(`${item.name || '-'}  base ${packetProbability(item.base_rate)}`, 96)
+        truncate(`${item.name || '-'}  base ${packetProbability(item.base_rate)}`, 150)
       ])
     }
     sections.push({ rows, title: 'Assumptions And References' })
@@ -949,7 +948,7 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
               modelRun,
               'summary'
             )}`,
-            104
+            200
           )
         ] as [string, string]
       }),
