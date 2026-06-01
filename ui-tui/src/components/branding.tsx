@@ -482,7 +482,11 @@ export function Panel({ onCommandClick, onCommandDraft, sections, t, title }: Pa
                     <Text color={actionable ? t.color.accent : t.color.muted}>{k.padEnd(18)}</Text>
                   </Box>
                   {v ? (
-                    <Box flexGrow={1}>
+                    // minWidth={0} is essential: without it the flex item's min
+                    // width is its longest unbreakable token (e.g. a URL), so it
+                    // refuses to shrink and the text overflows the box border
+                    // instead of wrapping. flexShrink lets it give way.
+                    <Box flexGrow={1} flexShrink={1} minWidth={0}>
                       <Text color={t.color.text} wrap="wrap">
                         {v}
                       </Text>
@@ -509,7 +513,7 @@ export function Panel({ onCommandClick, onCommandDraft, sections, t, title }: Pa
                   <Box flexShrink={0} width={2}>
                     <Text color={command ? t.color.accent : t.color.muted}>{command ? '› ' : '  '}</Text>
                   </Box>
-                  <Box flexGrow={1}>
+                  <Box flexGrow={1} flexShrink={1} minWidth={0}>
                     <Text color={command ? t.color.accent : t.color.text} wrap="wrap">
                       {item}
                     </Text>
