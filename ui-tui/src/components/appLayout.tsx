@@ -49,6 +49,15 @@ type CommandClickEvent = {
 const truncateRail = (value: string, max: number) =>
   value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value
 
+// Drop raw fq_ ids from a command shown in chrome (the header/next-action),
+// so the user reads "/questions" + the question title rather than a UUID. The
+// untouched command is still used as the click target.
+const cleanCommandForDisplay = (command: string) =>
+  command
+    .replace(/\bfq_[a-z0-9]+\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+
 const runTargetFromClick = (
   target: string | null | undefined,
   draftCommand: (command: string) => void,
@@ -619,9 +628,9 @@ const ForecastDeskHeader = memo(function ForecastDeskHeader({
           >
             <Text wrap="truncate">
               <Text color={ui.theme.color.muted}>  next </Text>
-              <Text color={ui.theme.color.accent}>{primaryAction.command}</Text>
+              <Text color={ui.theme.color.accent}>{cleanCommandForDisplay(primaryAction.command)}</Text>
               {primaryAction.detail ? (
-                <Text color={ui.theme.color.muted}> {truncateRail(primaryAction.detail, actionWidth)}</Text>
+                <Text color={ui.theme.color.text}> {truncateRail(primaryAction.detail, actionWidth)}</Text>
               ) : null}
             </Text>
           </Box>

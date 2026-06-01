@@ -318,7 +318,7 @@ describe('forecast desk panel helpers', () => {
     const sections = forecastDashboardSections(response)
     const railSections = forecastDeskRailSections(response)
 
-    expect(forecastDeskStatusLabel(response)).toContain('doctor needs tester pilot artifacts')
+    expect(forecastDeskStatusLabel(response)).toContain('doctor: needs tester pilot artifacts')
     expect(sections.find(section => section.title === 'Doctor Gate')?.rows).toEqual(
       expect.arrayContaining([
         ['status', 'needs tester pilot artifacts'],
@@ -558,9 +558,9 @@ describe('forecast desk panel helpers', () => {
     const sections = forecastDashboardSections(response)
     const railSections = forecastDeskRailSections(response)
 
-    expect(forecastDeskStatusLabel(response)).toContain('asm 5/1')
-    expect(forecastDeskStatusLabel(response)).toContain('refs 4/2')
-    expect(forecastDeskStatusLabel(response)).toContain('1 closing forecast')
+    expect(forecastDeskStatusLabel(response)).toContain('5 assumptions (1 stale)')
+    expect(forecastDeskStatusLabel(response)).toContain('4 ref-classes (2 stale)')
+    expect(forecastDeskStatusLabel(response)).toContain('1 closing')
     expect(sections.find(section => section.title === 'Desk')?.rows).toContainEqual(['assumptions', '5/1'])
     expect(sections.find(section => section.title === 'Desk')?.rows).toContainEqual(['reference classes', '4/2'])
     expect(sections.find(section => section.title === 'Desk')?.rows).toContainEqual(['closing soon', '1'])
@@ -739,7 +739,7 @@ describe('forecast desk panel helpers', () => {
     expect(focused?.rows).toEqual([
       [
         '/questions fq_review123456',
-        'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
+        'Will review question resolve yes?  —  P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale'
       ],
       [
         '/note fq_review123456 -- <evidence>',
@@ -770,7 +770,7 @@ describe('forecast desk panel helpers', () => {
       { command: '/review --stale', detail: '1 forecast queued for stale/close/evidence review' },
       {
         command: '/questions fq_review123456',
-        detail: 'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
+        detail: 'Will review question resolve yes?  —  P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale'
       },
       {
         command: '/note fq_review123456 -- <evidence>',
@@ -785,11 +785,11 @@ describe('forecast desk panel helpers', () => {
     ])
     expect(railFocused?.rows?.[0]).toEqual([
       '/questions fq_review123456',
-      'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
+      'Will review question resolve yes?  —  P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale'
     ])
     expect(forecastDeskPrimaryActionItem(railSections)).toEqual({
       command: '/questions fq_review123456',
-      detail: 'P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale  load full ledger context for Will review question resolve yes?'
+      detail: 'Will review question resolve yes?  —  P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale'
     })
     expect(review?.rows?.[0]?.[1]).toContain('close 2026-05-31')
   })

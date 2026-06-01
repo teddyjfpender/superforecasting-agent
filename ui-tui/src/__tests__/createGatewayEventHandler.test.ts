@@ -770,7 +770,7 @@ describe('createGatewayEventHandler', () => {
     createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
 
     await vi.waitFor(() => expect(appended.some(msg => msg.kind === 'panel')).toBe(true))
-    expect(getUiState().forecastDeskStatus).toBe('desk 1 active / 1 alert / 1 review / cal 3 / 1 lesson / asm 2/0')
+    expect(getUiState().forecastDeskStatus).toBe('1 active  ·  1 to review  ·  1 alert  ·  cal 3  ·  1 lesson  ·  2 assumptions')
     expect(getUiState().forecastDeskRailSections).toEqual([
       {
         rows: [
@@ -797,7 +797,7 @@ describe('createGatewayEventHandler', () => {
         rows: [
           [
             '/questions fq_123456789abc',
-            'P=0.630  as-of 2026-05-01  close -  reasons review_due,last_update_…  load full ledger context for Will X win the election?'
+            'Will X win the election?  —  P=0.630  as-of 2026-05-01  close -  reasons review_due,last_update_…'
           ],
           [
             '/note fq_123456789abc -- <evidence>',
@@ -939,7 +939,7 @@ describe('createGatewayEventHandler', () => {
             rows: [
               [
                 '/questions fq_123456789abc',
-                'P=0.630  as-of 2026-05-01  close -  reasons review_due,last_update_…  load full ledger context for Will X win the election?'
+                'Will X win the election?  —  P=0.630  as-of 2026-05-01  close -  reasons review_due,last_update_…'
               ],
               [
                 '/note fq_123456789abc -- <evidence>',
@@ -1082,7 +1082,7 @@ describe('createGatewayEventHandler', () => {
     createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
 
     await vi.waitFor(() => expect(resumeById).toHaveBeenCalledWith('explicit-session'))
-    await vi.waitFor(() => expect(getUiState().forecastDeskStatus).toBe('desk 3 active / 2 alerts / 1 review'))
+    await vi.waitFor(() => expect(getUiState().forecastDeskStatus).toBe('3 active  ·  1 to review  ·  2 alerts'))
     expect(ctx.gateway.rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 8 })
     expect(appended).toEqual([])
   })

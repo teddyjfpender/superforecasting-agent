@@ -310,41 +310,53 @@ export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): st
   const lessonCount = numberValue(summary.learning?.total_lessons)
   const assumptions = assumptionCounts(summary)
   const referenceClasses = referenceClassCounts(summary)
-  const bits = [`desk ${active} active`]
+  // Lead with what needs a human (active, to-review, alerts, closing), then the
+  // quieter health counters. Spell out the cryptic abbreviations and only show
+  // stale counts when there actually are stale items, so the strip reads as a
+  // glanceable summary rather than a slash-delimited code.
+  const bits = [`${active} active`]
+
+  if (reviews > 0) {
+    bits.push(`${reviews} to review`)
+  }
 
   if (alerts > 0) {
     bits.push(`${plural(alerts, 'alert')}`)
   }
 
-  if (reviews > 0) {
-    bits.push(`${plural(reviews, 'review')}`)
-  }
-
   if (closing > 0) {
-    bits.push(`${plural(closing, 'closing forecast')}`)
+    bits.push(`${closing} closing`)
   }
 
   if (calibrationCount !== null) {
     bits.push(`cal ${calibrationCount}`)
   }
 
-  if (lessonCount !== null) {
+  if (lessonCount) {
     bits.push(plural(lessonCount, 'lesson'))
   }
 
   if (assumptions.open > 0 || assumptions.stale > 0) {
-    bits.push(`asm ${assumptions.open}/${assumptions.stale}`)
+    bits.push(
+      assumptions.stale > 0
+        ? `${assumptions.open} assumptions (${assumptions.stale} stale)`
+        : `${plural(assumptions.open, 'assumption')}`
+    )
   }
 
   if (referenceClasses.open > 0 || referenceClasses.stale > 0) {
-    bits.push(`refs ${referenceClasses.open}/${referenceClasses.stale}`)
+    bits.push(
+      referenceClasses.stale > 0
+        ? `${referenceClasses.open} ref-classes (${referenceClasses.stale} stale)`
+        : `${referenceClasses.open} ref-classes`
+    )
   }
 
   if (summary.doctor?.doctor_status) {
-    bits.push(`doctor ${formatDoctorStatus(summary.doctor.doctor_status)}`)
+    bits.push(`doctor: ${formatDoctorStatus(summary.doctor.doctor_status)}`)
   }
 
-  return bits.join(' / ')
+  return bits.join('  ·  ')
 }
 
 const formatErrorScope = (row: { domain?: null | string; question_type?: null | string; topic?: null | string }) => {
@@ -561,7 +573,9 @@ const focusedActionRows = (questions: ForecastDashboardQuestion[], reviewQueue: 
   const label = truncate(row.title || row.id, 64)
   const context = focusedForecastContext(row)
   return [
-    [`/questions ${row.id}`, `${context}  load full ledger context for ${label}`],
+    // Lead with the question title so the desk header/rail show the NAME, not a
+    // raw fq_ id; the P=/as-of/reasons context follows.
+    [`/questions ${row.id}`, `${label}  —  ${context}`],
     [
       `/note ${row.id} -- <evidence>`,
       'append timestamped evidence without moving probability',
