@@ -361,6 +361,47 @@ describe('createSlashHandler', () => {
         arg: "update fq_cpi --probability 0.66 --rationale May CPI (all-items) and BLS's release shifted higher"
       })
     })
+
+    // /forecast-rerun resolves the name to an id then runs the deterministic
+    // `forecast refresh` (pull readings + new evidence + re-estimate + commit).
+    expect(handler('/forecast-rerun inflation')).toBe(true)
+    await vi.waitFor(() => {
+      expect(rpc).toHaveBeenCalledWith('forecast.command', { argv: ['refresh', 'fq_cpi'] })
+    })
+
+    // --agent re-reasons the estimate with the LLM; the flag survives ref resolution.
+    expect(handler('/forecast-rerun inflation --agent')).toBe(true)
+    await vi.waitFor(() => {
+      expect(rpc).toHaveBeenCalledWith('forecast.command', { argv: ['refresh', 'fq_cpi', '--agent'] })
+    })
+  })
+
+  it('routes the /rerun and /refresh aliases to forecast refresh', async () => {
+    const rpc = vi.fn((method: string) => {
+      if (method === 'forecast.dashboard') {
+        return Promise.resolve({
+          summary: {
+            active_count: 1,
+            open_alert_count: 0,
+            product: 'Superforecasting Agent',
+            questions: [{ domain: 'macro', id: 'fq_cpi', probability: 0.61, title: 'CPI?', topics: ['inflation'] }],
+            review_queue_count: 0
+          }
+        })
+      }
+      return Promise.resolve({ output: 'ok' })
+    })
+    const handler = createSlashHandler(buildCtx({ gateway: { ...buildGateway(), rpc } }))
+
+    expect(handler('/rerun fq_cpi')).toBe(true)
+    await vi.waitFor(() => {
+      expect(rpc).toHaveBeenCalledWith('forecast.command', { argv: ['refresh', 'fq_cpi'] })
+    })
+
+    expect(handler('/refresh inflation')).toBe(true)
+    await vi.waitFor(() => {
+      expect(rpc).toHaveBeenCalledWith('forecast.command', { argv: ['refresh', 'fq_cpi'] })
+    })
   })
 
   it('keeps /book as a forecast-question shortcut alias', async () => {

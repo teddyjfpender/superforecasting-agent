@@ -765,6 +765,34 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
+    aliases: ['rerun', 'refresh', 'forecast-refresh'],
+    help: 're-pull watched-source readings + new evidence, re-estimate, and auto-commit (add --agent to re-reason with the LLM)',
+    name: 'forecast-rerun',
+    run: (arg, ctx) => {
+      const trimmed = arg.trim()
+      // Peel a trailing/leading --agent off the reference: deterministic re-pool
+      // is the default, --agent re-reasons the estimate with the LLM.
+      const agentMode = /(?:^|\s)--agent\b/.test(trimmed)
+      const ref = trimmed
+        .replace(/(?:^|\s)--agent\b/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+      if (!ref) {
+        return ctx.transcript.sys('usage: /forecast-rerun <row|id|forecast words> [--agent]')
+      }
+
+      // Resolve the name/words to an id client-side (like /open and /note) so a
+      // multi-word name never trips the CLI argv split, then run `forecast refresh`.
+      withForecastRef(
+        ctx,
+        ref,
+        id => runForecastCommandArgv(ctx, agentMode ? ['refresh', id, '--agent'] : ['refresh', id]),
+        { missingUsage: 'usage: /forecast-rerun <row|id|forecast words> [--agent]' }
+      )
+    }
+  },
+
+  {
     help: 'record a forecast resolution',
     name: 'resolve',
     run: (arg, ctx) => runForecastCommand(ctx, `resolve ${arg.trim()}`.trim())
