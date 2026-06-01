@@ -5237,7 +5237,17 @@ class ForecastLedger:
                     keys.add(f"{adapter}:{source}")
             if meta.get("source_ref"):
                 keys.add(str(meta["source_ref"]))
-            stamp = evidence.available_at or evidence.captured_at or ""
+            # Rank by the OBSERVATION date, not the import time: a single batch
+            # import stamps every observation in a series with the same
+            # available_at, so using available_at would pick an arbitrary
+            # mid-series reading (e.g. a stale peak) instead of the latest
+            # observation. entry_id ("DCOILWTICO:2026-05-18") and
+            # observation_date carry the real series date; fall back to
+            # available_at for sources that have neither.
+            entry_id = str(meta.get("entry_id") or "")
+            obs_date = str(item.get("observation_date") or item.get("date") or "")
+            entry_suffix = entry_id.split(":", 1)[1] if ":" in entry_id else ""
+            stamp = obs_date or entry_suffix or evidence.available_at or evidence.captured_at or ""
             for key in keys:
                 if key not in latest or stamp >= latest[key][0]:
                     latest[key] = (stamp, value)

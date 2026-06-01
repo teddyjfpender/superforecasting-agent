@@ -7,10 +7,16 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from forecasting.ledger import ForecastLedger
-from forecasting.models import EvidenceItem, ForecastQuestion, ForecastSnapshot
+from forecasting.models import (
+    EvidenceItem,
+    ForecastQuestion,
+    ForecastSnapshot,
+    LedgerNotFoundError,
+)
 
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
+_QUESTION_ID_RE = re.compile(r"^fq_[0-9a-f]+$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -97,6 +103,59 @@ def match_to_dict(match: ForecastSearchMatch) -> dict[str, Any]:
         "matched_fields": match.matched_fields,
         "snippets": match.snippets,
     }
+
+
+@dataclass(frozen=True)
+class QuestionResolution:
+    """Result of resolving a user-supplied question reference (id OR name)."""
+
+    question: ForecastQuestion | None
+    candidates: list[ForecastSearchMatch]
+    # "id" | "unique_match" | "best_match" | "ambiguous" | "not_found"
+    reason: str
+
+
+def resolve_question_ref(
+    ledger: ForecastLedger,
+    ref: str,
+    *,
+    status: str | None = "active",
+) -> QuestionResolution:
+    """Resolve a user reference to a single question without forcing a UUID.
+
+    Accepts an exact ``fq_…`` id, or free-text that is matched against question
+    titles/domains/topics via :func:`search_forecasts` (semantic-ish ranking).
+    Resolves to a single question when there is one match, or when the top match
+    clearly dominates; otherwise returns the ranked ``candidates`` for
+    disambiguation. Falls back to searching all statuses when an active-only
+    search finds nothing, so re-running a closed/resolved question by name still
+    works.
+    """
+
+    ref = (ref or "").strip()
+    if not ref:
+        return QuestionResolution(None, [], "not_found")
+
+    if _QUESTION_ID_RE.match(ref):
+        try:
+            return QuestionResolution(ledger.get_question(ref), [], "id")
+        except LedgerNotFoundError:
+            return QuestionResolution(None, [], "not_found")
+
+    matches = search_forecasts(ledger, ref, status=status, limit=5)
+    if not matches and status not in {None, "all"}:
+        matches = search_forecasts(ledger, ref, status="all", limit=5)
+    if not matches:
+        return QuestionResolution(None, [], "not_found")
+    if len(matches) == 1:
+        return QuestionResolution(matches[0].question, matches, "unique_match")
+
+    top, second = matches[0], matches[1]
+    # Resolve to the top hit only when it clearly dominates the runner-up;
+    # otherwise surface the shortlist so the caller can disambiguate.
+    if top.score >= 2 * max(second.score, 1):
+        return QuestionResolution(top.question, matches, "best_match")
+    return QuestionResolution(None, matches, "ambiguous")
 
 
 def _score_question(

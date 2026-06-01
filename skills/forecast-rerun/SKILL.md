@@ -1,6 +1,6 @@
 ---
 name: forecast-rerun
-description: "Re-run an existing forecast the proper way: pull the latest watched-source readings, collect genuinely new evidence, re-pool with STRUCTURED components, and commit a fresh live snapshot — instead of redoing imports by hand. Invoke as /forecast-rerun <question id or title>."
+description: "Re-run an existing forecast the proper way: pull the latest watched-source readings, collect genuinely new evidence, re-pool with STRUCTURED components, and commit a fresh live snapshot — instead of redoing imports by hand. Invoke by NAME, e.g. /forecast-rerun May CPI — no UUID needed."
 version: 1.0.0
 author: Superforecasting Agent
 license: MIT
@@ -20,13 +20,22 @@ the structured ledger path below, not as an ad-hoc "collect evidence and update"
 freestyle. The whole point is that what you produce is re-poolable and
 auto-refreshable next time.
 
-## 0. Identify the question(s)
+## 0. Resolve the question BY NAME — never demand a UUID
 
-If the user named a question (id `fq_…` or a title), resolve it with the
-`forecast_ledger` `search`/`show_question` action. If they said "the forecasts"
-with no id, `list_questions` and re-run each active one. Read the CURRENT
-snapshot first (`show_question`) so you know the prior probability, method, and
-existing `ensemble_components`.
+The user refers to forecasts by plain-English name (e.g. "May CPI", "Texas
+Senate"), NOT by `fq_…` id. Do the resolution for them:
+
+- Run the `forecast_ledger` `search` action with their words and take the
+  best-matching active question. The CLI `forecast refresh "<name>"` /
+  `forecast show "<name>"` accept a name directly too (they resolve it).
+- If two or more forecasts match closely, show the short list of titles and ask
+  which one — do NOT ask the user for a UUID.
+- If they said "the forecasts" / "all of them" with no name, `list_questions`
+  and re-run each active one.
+
+Once resolved, read the CURRENT snapshot (`show_question`) so you know the prior
+probability, method, and existing `ensemble_components` before you touch
+anything.
 
 ## 1. Fast path first — `forecast refresh`
 
@@ -34,9 +43,9 @@ If the question already has watched sources AND its latest snapshot carries
 structured `ensemble_components`, just run:
 
 ```
-forecast refresh <id>            # pull latest readings, re-pool, auto-commit
-forecast refresh <id> --dry-run  # preview the move first
-forecast refresh <id> --agent    # full LLM re-reasoning instead of the re-pool
+forecast refresh "May CPI"            # name resolves; pull latest, re-pool, auto-commit
+forecast refresh "May CPI" --dry-run  # preview the move first
+forecast refresh "May CPI" --agent    # full LLM re-reasoning instead of the re-pool
 ```
 
 That single command re-fetches every active watched source, imports the fresh

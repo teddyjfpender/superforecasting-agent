@@ -135,7 +135,7 @@ from forecasting.source_adapters import (
     load_yahoo_finance_prices,
 )
 from forecasting.source_planner import SourceRecommendation, plan_sources_for_question
-from forecasting.search import match_to_dict, search_forecasts
+from forecasting.search import match_to_dict, resolve_question_ref, search_forecasts
 from forecasting.source_search import (
     WatchedTextSourceSearchResult,
     capture_watched_text_candidates,
@@ -2841,6 +2841,7 @@ def _cmd_set_decision(args: argparse.Namespace) -> None:
 
 def _cmd_show(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
+    args.id = _resolve_question_id(ledger, args.id)
     question = ledger.get_question(args.id)
     snapshots = ledger.list_snapshots(args.id)
     evidence = ledger.list_evidence(args.id)
@@ -7141,6 +7142,7 @@ _PIPELINE_STATUS_MARKERS = {"done": "[x]", "ready": "->", "blocked": "..", "opti
 
 def _cmd_pipeline(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
+    args.id = _resolve_question_id(ledger, args.id)
     if getattr(args, "refresh", False):
         from tools.forecasting_tool import fetch_watched_source_payloads
 
@@ -8293,7 +8295,26 @@ def _cmd_autopilot_status(args: argparse.Namespace) -> None:
         )
 
 
+def _resolve_question_id(ledger: "ForecastLedger", ref: str) -> str:
+    """Resolve a question id OR a free-text name to an id, so the user never has
+    to remember a UUID. Exits with a shortlist on ambiguity / no match."""
+    resolution = resolve_question_ref(ledger, ref)
+    if resolution.question is not None:
+        return resolution.question.id
+    if resolution.candidates:
+        print(f"forecast: '{ref}' matched several forecasts — narrow it or pass the id:", file=sys.stderr)
+        for match in resolution.candidates[:5]:
+            print(f"  {match.question.id}  {match.question.title}", file=sys.stderr)
+        raise SystemExit(2)
+    print(
+        f"forecast: no forecast matches '{ref}'. Try `forecast list` or `forecast search <words>`.",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+
 def _cmd_refresh(args: argparse.Namespace) -> None:
+    args.id = _resolve_question_id(_ledger(args), args.id)
     if args.agent:
         # Delegate to the full LLM update stage (forecast agent --stage update).
         args.stage = "update"
@@ -8470,6 +8491,7 @@ def _cmd_self_check(args: argparse.Namespace) -> None:
 
 
 def _cmd_triggers(args: argparse.Namespace) -> None:
+    args.id = _resolve_question_id(_ledger(args), args.id)
     observations: dict[str, float] = {}
     if args.observations_json:
         parsed = _json_arg(args.observations_json, "observations-json")
