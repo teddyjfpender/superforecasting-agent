@@ -570,6 +570,44 @@ def _distribution_view(payload: Any) -> dict[str, Any] | None:
             elif 25 in quantiles and 75 in quantiles:
                 moments["sd"] = (quantiles[75] - quantiles[25]) / 1.349
 
+    # Count distributions (p0, p1, ..., p6_plus) carry their uncertainty in the
+    # PMF, not in quantile keys, so derive the median / 90% interval / sd from the
+    # discrete CDF. Without this the chart band falls back to a degenerate
+    # confidence-score band (e.g. +/- 0.06) that misrepresents a Poisson count.
+    # Only when EVERY pmf label is count-like and no interval is already present
+    # (so the CPI bucket-mixture, which ships interval_* keys, is untouched).
+    if pmf and not intervals and "sd" not in moments:
+        counts: dict[int, float] = {}
+        all_counts = True
+        for label, prob in pmf.items():
+            match = re.match(r"^p_?(\d+)(?:_?plus|\+)?$", str(label).lower())
+            if match:
+                counts[int(match.group(1))] = counts.get(int(match.group(1)), 0.0) + prob
+            else:
+                all_counts = False
+                break
+        total = sum(counts.values()) if all_counts else 0.0
+        if all_counts and counts and total > 0:
+            ordered = sorted(counts.items())
+            expected = sum(value * (prob / total) for value, prob in ordered)
+            variance = sum((value - expected) ** 2 * (prob / total) for value, prob in ordered)
+            cdf = 0.0
+            q05 = q50 = q95 = None
+            for value, prob in ordered:
+                cdf += prob / total
+                if q05 is None and cdf >= 0.05:
+                    q05 = value
+                if q50 is None and cdf >= 0.5:
+                    q50 = value
+                if q95 is None and cdf >= 0.95:
+                    q95 = value
+            if q50 is not None:
+                moments.setdefault("median", float(q50))
+            moments.setdefault("mean", expected)
+            moments["sd"] = variance ** 0.5
+            if q05 is not None and q95 is not None:
+                intervals.setdefault("90", [float(q05), float(q95)])
+
     mean = moments.get("mean")
     if mean is None:
         mean = equivalent.get("mean")

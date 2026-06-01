@@ -45,13 +45,27 @@ def test_distribution_view_partial_quantiles_derive_sd_and_interval():
     assert view["ci90"] is not None and view["ci90"][0] < view["ci90"][1]
 
 
-def test_distribution_view_count_pmf_still_works():
-    # Storms: p0..p6_plus is a count PMF (each in [0,1], summing to ~1).
+def test_distribution_view_count_pmf_derives_interval_from_cdf():
+    # Storms: p0..p6_plus is a count PMF. It must render as a PMF AND yield a
+    # median / 90% interval / sd from the discrete CDF, so the chart band is a
+    # real count spread (e.g. [0,3]) instead of a degenerate confidence band.
     view = _distribution_view(
-        {"mean": 1.4, "p0": 0.247, "p1": 0.345, "p2": 0.242, "p3": 0.113, "p4": 0.039, "p5": 0.011, "p6_plus": 0.003}
+        {"mean": 1.2, "p0": 0.3, "p1": 0.36, "p2": 0.22, "p3": 0.09, "p4": 0.025, "p5": 0.004, "p6_plus": 0.001}
     )
     assert view is not None
     assert view["pmf"] is not None and len(view["pmf"]) >= 2
+    assert view["median"] == 1.0
+    assert view["ci90"] == [0.0, 3.0]
+    assert view["sd"] is not None and view["sd"] > 0.5
+
+
+def test_categorical_pmf_is_not_treated_as_a_count(tmp_path):
+    # A categorical PMF (party names) must NOT get a count interval derived.
+    view = _distribution_view({"Republican candidate": 0.59, "Democratic candidate": 0.4, "Other": 0.01})
+    # No mean recoverable from a pure categorical PMF, but if a view is produced
+    # it must not invent a numeric count interval.
+    if view is not None:
+        assert view["ci90"] is None
 
 
 # ── Input: the validator must be tolerant + give actionable errors ────────────
