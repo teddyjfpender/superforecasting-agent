@@ -194,7 +194,7 @@ describe('createSlashHandler', () => {
     })
   })
 
-  it('opens a structured forecast detail panel from /questions by numbered row', async () => {
+  it('opens the forecasts workspace focused on a numbered /questions row', async () => {
     const rpc = vi.fn((method: string, params: Record<string, unknown>) => {
       if (method === 'forecast.dashboard') {
         return Promise.resolve({
@@ -234,16 +234,13 @@ describe('createSlashHandler', () => {
 
     expect(createSlashHandler(ctx)('/questions 2')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 20 })
+    // The detail now lives in the workspace overlay (which fetches the packet
+    // and renders the tail itself), not the inline transcript panel.
     await vi.waitFor(() => {
-      expect(rpc).toHaveBeenCalledWith('forecast.question', { id: 'fq_second' })
-      expect(ctx.transcript.panel).toHaveBeenCalledWith(
-        'Forecast Detail',
-        expect.arrayContaining([
-          expect.objectContaining({ title: 'Second forecast' }),
-          expect.objectContaining({ title: 'Current Forecast' })
-        ])
-      )
+      expect(getOverlayState().forecasts).toBe(true)
+      expect(getOverlayState().forecastsInitialId).toBe('fq_second')
     })
+    expect(ctx.transcript.panel).not.toHaveBeenCalledWith('Forecast Detail', expect.anything())
   })
 
   it('searches forecasts from /questions without requiring a forecast id', async () => {
@@ -338,7 +335,8 @@ describe('createSlashHandler', () => {
 
     expect(handler('/open inflation')).toBe(true)
     await vi.waitFor(() => {
-      expect(rpc).toHaveBeenCalledWith('forecast.question', { id: 'fq_cpi' })
+      expect(getOverlayState().forecasts).toBe(true)
+      expect(getOverlayState().forecastsInitialId).toBe('fq_cpi')
     })
 
     expect(handler('/note inflation -- BLS release mentioned gasoline pressure')).toBe(true)

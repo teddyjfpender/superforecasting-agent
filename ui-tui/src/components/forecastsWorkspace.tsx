@@ -1,13 +1,16 @@
 import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
+import { forecastQuestionDetailSections } from '../app/forecastPanel.js'
 import { patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
+  ForecastQuestionPacketResponse,
   ForecastWorkspaceItem,
   ForecastWorkspacePanel,
   ForecastWorkspaceResponse
 } from '../gatewayTypes.js'
+import type { PanelSection } from '../types.js'
 import {
   type BandPoint,
   bandChart,
@@ -34,6 +37,17 @@ export const closeForecastsWorkspace = () =>
 
 const WIDE_COLS = 100
 const CONF_BAND_K = 0.18
+
+// Packet sections rendered under the visual summary. Intentionally excludes the
+// header facts (question/Current Forecast/Ledger State), Recent Evidence, and
+// Resolution — ForecastDetail already shows those — so the tail is purely the
+// long-form content the desk view omits.
+const TAIL_SECTION_TITLES = new Set<string>([
+  'Forecast History',
+  'Assumptions And References',
+  'Model Runs',
+  'Actions'
+])
 
 interface ForecastsWorkspaceProps {
   gw: GatewayClient
@@ -244,6 +258,12 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
   const [filtering, setFiltering] = useState(false)
   const [flash, setFlash] = useState('')
   const [now, setNow] = useState(0)
+  // The "tail end" detail (forecast history, assumptions, model runs, the action
+  // playbook) lives in the `forecast.question` packet, not the lighter
+  // `forecast.workspace` item. Fetch it per-selection and render it under the
+  // visual summary inside the detail pane's own ScrollBox.
+  const [packet, setPacket] = useState<ForecastQuestionPacketResponse | null>(null)
+  const [packetId, setPacketId] = useState<null | string>(null)
   const initialIdRef = useRef(initialId)
   const detailScrollRef = useRef<null | ScrollBoxHandle>(null)
 
@@ -327,6 +347,49 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
   }, [cursor])
 
   const selected = filtered[cursor] ?? null
+  const selectedId = selected?.id ?? null
+
+  useEffect(() => {
+    if (!selectedId) {
+      setPacket(null)
+      setPacketId(null)
+      return
+    }
+    // Race guard: if the cursor moves before this resolves, drop the stale
+    // result so the tail never shows a previous forecast's history/evidence.
+    let cancelled = false
+    gw.request<unknown>('forecast.question', { id: selectedId })
+      .then(raw => {
+        if (cancelled) {
+          return
+        }
+        const result = asRpcResult<ForecastQuestionPacketResponse>(raw)
+        setPacket(result ?? null)
+        setPacketId(result ? selectedId : null)
+      })
+      .catch(() => {
+        if (cancelled) {
+          return
+        }
+        setPacket(null)
+        setPacketId(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedId, gw])
+
+  // Only the sections the visual summary does NOT already cover — history,
+  // assumptions/references, model runs, and the action playbook.
+  const packetTail = useMemo(() => {
+    if (!packet || packetId !== selectedId) {
+      return null
+    }
+    return forecastQuestionDetailSections(packet).filter(
+      section => section.title && TAIL_SECTION_TITLES.has(section.title)
+    )
+  }, [packet, packetId, selectedId])
+  const tailLoading = !!selectedId && packetId !== selectedId
 
   const closeWith = () => {
     onClose()
@@ -479,6 +542,13 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
         <ScrollBox flexDirection="column" flexGrow={1} flexShrink={1} ref={detailScrollRef}>
           <Box flexDirection="column" paddingBottom={3} paddingRight={1}>
             <ForecastDetail item={selected} t={t} width={detailW} />
+            {packetTail && packetTail.length ? (
+              <ForecastPacketTail sections={packetTail} t={t} width={detailW} />
+            ) : tailLoading ? (
+              <Box marginTop={1}>
+                <Text color={t.color.muted}>loading detail…</Text>
+              </Box>
+            ) : null}
           </Box>
         </ScrollBox>
         <NoSelect flexShrink={0} marginLeft={1}>
@@ -882,6 +952,87 @@ function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePanel; t: T
           {estimate.crux ? <Text color={t.color.label}>{`  ${truncate(estimate.crux, 40)}`}</Text> : null}
         </Text>
       ))}
+    </>
+  )
+}
+
+// Renders the long-form packet sections (forecast history, assumptions, model
+// runs, actions) under the visual summary. Read-only — the workspace has its own
+// keymap, so the action rows are shown as a reference playbook, not links. Uses
+// the hanging-indent two-column pattern (fixed key column + flexGrow value with
+// minWidth={0}) so long rationales / URLs wrap instead of overflowing the pane.
+export function ForecastPacketTail({ sections, t, width }: { sections: PanelSection[]; t: Theme; width: number }) {
+  const keyWidth = Math.min(18, Math.max(8, Math.floor(width * 0.34)))
+  return (
+    <>
+      {sections.map((section, si) => {
+        const isActions = section.title === 'Actions'
+        return (
+          <Fragment key={section.title ?? si}>
+            {section.title ? <SectionTitle t={t}>{section.title}</SectionTitle> : null}
+            {(section.rows ?? []).map((row, ri) =>
+              // Action commands are long; render the command on its own wrapping
+              // line with the description indented beneath, like a playbook.
+              isActions ? (
+                <Box flexDirection="column" key={ri}>
+                  <Box flexDirection="row">
+                    <Box flexShrink={0} width={2}>
+                      <Text color={t.color.muted}>{'• '}</Text>
+                    </Box>
+                    <Box flexGrow={1} flexShrink={1} minWidth={0}>
+                      <Text color={t.color.accent} wrap="wrap">
+                        {row[0]}
+                      </Text>
+                    </Box>
+                  </Box>
+                  {row[1] ? (
+                    <Box flexDirection="row">
+                      <Box flexShrink={0} width={2}>
+                        <Text> </Text>
+                      </Box>
+                      <Box flexGrow={1} flexShrink={1} minWidth={0}>
+                        <Text color={t.color.muted} wrap="wrap">
+                          {row[1]}
+                        </Text>
+                      </Box>
+                    </Box>
+                  ) : null}
+                </Box>
+              ) : (
+                <Box flexDirection="row" key={ri}>
+                  <Box flexShrink={0} width={keyWidth}>
+                    <Text color={t.color.label} wrap="truncate-end">
+                      {row[0]}
+                    </Text>
+                  </Box>
+                  <Box flexGrow={1} flexShrink={1} minWidth={0}>
+                    <Text color={t.color.text} wrap="wrap">
+                      {row[1] || ' '}
+                    </Text>
+                  </Box>
+                </Box>
+              )
+            )}
+            {(section.items ?? []).map((item, ii) => (
+              <Box flexDirection="row" key={`it${ii}`}>
+                <Box flexShrink={0} width={2}>
+                  <Text color={t.color.muted}>{'· '}</Text>
+                </Box>
+                <Box flexGrow={1} flexShrink={1} minWidth={0}>
+                  <Text color={t.color.text} wrap="wrap">
+                    {item}
+                  </Text>
+                </Box>
+              </Box>
+            ))}
+            {section.text ? (
+              <Text color={t.color.muted} wrap="wrap">
+                {section.text}
+              </Text>
+            ) : null}
+          </Fragment>
+        )
+      })}
     </>
   )
 }

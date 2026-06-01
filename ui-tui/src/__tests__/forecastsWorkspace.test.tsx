@@ -214,6 +214,32 @@ const renderDetail = async (item: ForecastWorkspaceItem, width = 70) => {
   return normalize(stdout.text(), stripAnsi)
 }
 
+// Renders just the tail (forecast history / assumptions / model runs / actions)
+// the same way the workspace does: feed a packet through the real section
+// builder, keep only the tail titles, and render ForecastPacketTail directly so
+// the assertion doesn't depend on headless ScrollBox height measurement.
+const TAIL_TITLES = new Set(['Forecast History', 'Assumptions And References', 'Model Runs', 'Actions'])
+const renderTail = async (packet: Record<string, unknown>, width = 70) => {
+  const [{ renderSync }, { ForecastPacketTail }, { forecastQuestionDetailSections }, { DARK_THEME }, { stripAnsi }] =
+    await Promise.all([
+      import('@hermes/ink'),
+      import('../components/forecastsWorkspace.js'),
+      import('../app/forecastPanel.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+  const sections = forecastQuestionDetailSections({ packet } as never).filter(
+    section => section.title && TAIL_TITLES.has(section.title)
+  )
+  const stdout = writeStream(120, 80)
+  renderSync(React.createElement(ForecastPacketTail, { sections, t: DARK_THEME, width }), {
+    exitOnCtrlC: false,
+    patchConsole: false,
+    stdout: stdout.stream
+  } as never)
+  return { sections, text: normalize(stdout.text(), stripAnsi) }
+}
+
 describe('ForecastsWorkspace pure transforms', () => {
   let mod: typeof import('../components/forecastsWorkspace.js')
 
@@ -381,5 +407,45 @@ describe('ForecastsWorkspace render', () => {
       open_alert_count: 0
     })
     expect(text).toContain('No active forecasts')
+  })
+
+  it('renders the packet tail (history, model runs, action playbook) under the summary', async () => {
+    const { sections, text } = await renderTail({
+      assumptions: [{ id: 'asm_1', status: 'active', text: 'Polling response rates hold near 2024 levels.' }],
+      forecast_history: [
+        {
+          as_of: '2026-05-20T00:00:00Z',
+          confidence: 0.6,
+          forecast_id: 'fc_a',
+          method: 'panel',
+          probability_or_distribution: 0.55,
+          rationale: 'Initial estimate after first evidence sweep.'
+        },
+        {
+          as_of: '2026-05-27T00:00:00Z',
+          confidence: 0.62,
+          forecast_id: 'fc_b',
+          method: 'panel',
+          probability_or_distribution: 0.58,
+          rationale: 'Nudged up after the FEC filing widened the fundraising gap.'
+        }
+      ],
+      model_runs: [{ created_at: '2026-05-26T00:00:00Z', id: 'mr_1', model_type: 'gpt', summary: 'Ensemble agreed with the panel.' }],
+      question: { close_time: '2026-11-03T00:00:00Z', id: 'fq_tail', status: 'active', title: 'Tail test forecast' }
+    })
+
+    // The tail builder must surface exactly the long-form sections the desk omits.
+    expect(sections.map(s => s.title)).toEqual(['Forecast History', 'Assumptions And References', 'Model Runs', 'Actions'])
+    // Section labels render…
+    expect(text).toContain('Forecast History')
+    expect(text).toContain('Model Runs')
+    expect(text).toContain('Actions')
+    // …with their long-form content…
+    expect(text).toContain('fundraising gap')
+    expect(text).toContain('Ensemble agreed')
+    expect(text).toContain('Polling response rates')
+    // …and the action playbook is keyed to the question id, read-only.
+    expect(text).toContain('/revise fq_tail')
+    expect(text).toContain('/forecast research fq_tail')
   })
 })

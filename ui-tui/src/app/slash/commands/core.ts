@@ -9,7 +9,6 @@ import type {
   ConfigSetResponse,
   ForecastCommandResponse,
   ForecastDashboardResponse,
-  ForecastQuestionPacketResponse,
   SessionSaveResponse,
   SessionStatusResponse,
   SessionSteerResponse,
@@ -27,7 +26,6 @@ import {
   forecastDeskRailSections,
   forecastDeskStatusLabel,
   forecastLedgerViewSections,
-  forecastQuestionDetailSections,
   forecastQuestionSearchSections,
   rankForecastQuestionMatches
 } from '../../forecastPanel.js'
@@ -182,15 +180,13 @@ const renderForecastSearch = (response: ForecastDashboardResponse, query: string
   ctx.transcript.panel('Forecast Search', forecastQuestionSearchSections(response, query))
 }
 
-const renderForecastQuestionDetail = (response: ForecastQuestionPacketResponse, ctx: SlashRunCtx) => {
-  ctx.transcript.panel('Forecast Detail', forecastQuestionDetailSections(response))
-}
-
-const runForecastQuestionDetail = (ctx: SlashRunCtx, id: string) => {
-  ctx.gateway
-    .rpc<ForecastQuestionPacketResponse>('forecast.question', { id })
-    .then(ctx.guarded<ForecastQuestionPacketResponse>(r => renderForecastQuestionDetail(r, ctx)))
-    .catch(ctx.guardedErr)
+// Opening a forecast's full detail routes to the Forecasts workspace overlay
+// (the `/desk`-style full-screen pane that fetches `forecast.question` itself
+// and renders the tail sections in its own bounded ScrollBox) rather than the
+// inline transcript panel — the transcript virtualizer can't bound a 30-60 row
+// panel, so it overflowed/glitched while scrolling.
+const openForecastDetail = (id: string) => {
+  patchOverlayState({ forecasts: true, forecastsInitialId: id })
 }
 
 const LEDGER_VIEW_WORDS = new Set([
@@ -239,7 +235,7 @@ const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
 
   if (trimmed && !listMatch && openIndex === null) {
     if (FORECAST_ID_ARG.test(trimmed)) {
-      runForecastQuestionDetail(ctx, trimmed)
+      openForecastDetail(trimmed)
       return
     }
 
@@ -276,7 +272,7 @@ const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
           return
         }
 
-        runForecastQuestionDetail(ctx, row.id)
+        openForecastDetail(row.id)
       })
     )
     .catch(ctx.guardedErr)
@@ -596,7 +592,7 @@ export const coreCommands: SlashCommand[] = [
     help: 'open a forecast by row number, id, short id, or search words',
     name: 'open',
     run: (arg, ctx) =>
-      withForecastRef(ctx, arg, id => runForecastQuestionDetail(ctx, id), {
+      withForecastRef(ctx, arg, id => openForecastDetail(id), {
         missingUsage: 'usage: /open <row|id|forecast words>'
       })
   },
