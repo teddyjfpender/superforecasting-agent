@@ -22,6 +22,7 @@ import {
 } from '../lib/inputMetrics.js'
 import { PerfPane } from '../lib/perfPane.js'
 import { composerPromptText } from '../lib/prompt.js'
+import type { Theme } from '../theme.js'
 import type { PanelSection } from '../types.js'
 
 import { AgentsOverlay } from './agentsOverlay.js'
@@ -57,6 +58,52 @@ const cleanCommandForDisplay = (command: string) =>
     .replace(/\bfq_[a-z0-9]+\b/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim()
+
+// Color a desk-status segment by what it signals. The brand family (primary/
+// accent/muted) is one hue on most skins, so leaning on the semantic colors
+// (error/warn/ok — left at red/amber/green by skins that only retint the brand)
+// is what breaks the monochrome and makes alerts/stale/healthy scannable.
+const statusSegmentColor = (segment: string, theme: Theme): string => {
+  const s = segment.toLowerCase()
+  if (/\balert|\bfail|\bblocked|claim live: no|insufficient|needs /.test(s)) {
+    return theme.color.error
+  }
+  if (/\breview|stale|closing|due|gap|pilot|no\b/.test(s)) {
+    return theme.color.warn
+  }
+  if (/\bactive\b|\bok\b|clean|ready|live/.test(s)) {
+    return theme.color.ok
+  }
+  return theme.color.muted
+}
+
+// Color a rail value by the state it reports (defaults to body text, unlike the
+// status segments which default to muted). Turns the monochrome value column
+// into a scannable health signal.
+const railValueColor = (value: string, theme: Theme): string => {
+  const s = value.toLowerCase()
+  if (/insufficient|needs |fail|unavailable|: no\b|blocked|missing/.test(s)) {
+    return theme.color.error
+  }
+  if (/stale|due\b|gap|review|pending|pilot|closing/.test(s)) {
+    return theme.color.warn
+  }
+  if (/\bactive\b|ready|clean|\bset\b|\blive\b|collecting/.test(s)) {
+    return theme.color.ok
+  }
+  return theme.color.text
+}
+
+const StatusSegments = ({ status, theme }: { status: string; theme: Theme }) => (
+  <Text wrap="truncate">
+    {status.split('·').map((seg, i) => (
+      <Text color={statusSegmentColor(seg, theme)} key={i}>
+        {i > 0 ? ' · ' : ''}
+        {seg.trim()}
+      </Text>
+    ))}
+  </Text>
+)
 
 const runTargetFromClick = (
   target: string | null | undefined,
@@ -616,7 +663,7 @@ const ForecastDeskHeader = memo(function ForecastDeskHeader({
         {ui.forecastDeskStatus ? (
           <>
             <Text color={ui.theme.color.muted}>  </Text>
-            <Text color={ui.theme.color.muted}>{truncateRail(ui.forecastDeskStatus, statusWidth)}</Text>
+            <StatusSegments status={truncateRail(ui.forecastDeskStatus, statusWidth)} theme={ui.theme} />
           </>
         ) : null}
 
@@ -673,11 +720,7 @@ const ForecastDeskRail = memo(function ForecastDeskRail({
         Forecast Desk
       </Text>
 
-      {status && (
-        <Text color={ui.theme.color.muted} wrap="truncate">
-          {truncateRail(status, FORECAST_RAIL_WIDTH - 4)}
-        </Text>
-      )}
+      {status && <StatusSegments status={truncateRail(status, FORECAST_RAIL_WIDTH - 4)} theme={ui.theme} />}
 
       {visibleSections.map((sec, si) => (
         <Box flexDirection="column" key={si} marginTop={si > 0 || status ? 1 : 0}>
@@ -689,6 +732,7 @@ const ForecastDeskRail = memo(function ForecastDeskRail({
 
           {sec.rows?.slice(0, 4).map((row, rowIndex) => {
             const [key, value, commandCandidate] = row
+            const clickable = Boolean(panelCommandTarget(commandCandidate ?? key) || panelDraftTarget(commandCandidate ?? key))
             return (
               <Box
                 key={rowIndex}
@@ -696,22 +740,27 @@ const ForecastDeskRail = memo(function ForecastDeskRail({
                   runTargetFromClick(commandCandidate ?? key, draftCommand, runCommand, event)
                 }
               >
-                <Text color={ui.theme.color.muted}>{truncateRail(key, 13).padEnd(13)}</Text>
-                <Text color={ui.theme.color.text}>{truncateRail(value, FORECAST_RAIL_WIDTH - 19)}</Text>
+                <Text color={ui.theme.color.accent}>{clickable ? '› ' : '  '}</Text>
+                <Text color={ui.theme.color.muted}>{truncateRail(key, 12).padEnd(12)}</Text>
+                <Text color={railValueColor(value, ui.theme)}>{truncateRail(value, FORECAST_RAIL_WIDTH - 20)}</Text>
               </Box>
             )
           })}
 
-          {sec.items?.slice(0, 4).map((item, itemIndex) => (
-            <Box
-              key={itemIndex}
-              onClick={(event: CommandClickEvent) => runTargetFromClick(item, draftCommand, runCommand, event)}
-            >
-              <Text color={ui.theme.color.text} wrap="truncate">
-                {truncateRail(item, FORECAST_RAIL_WIDTH - 4)}
-              </Text>
-            </Box>
-          ))}
+          {sec.items?.slice(0, 4).map((item, itemIndex) => {
+            const clickable = Boolean(panelCommandTarget(item) || panelDraftTarget(item))
+            return (
+              <Box
+                key={itemIndex}
+                onClick={(event: CommandClickEvent) => runTargetFromClick(item, draftCommand, runCommand, event)}
+              >
+                <Text color={ui.theme.color.accent}>{clickable ? '› ' : '  '}</Text>
+                <Text color={clickable ? ui.theme.color.accent : ui.theme.color.text} wrap="truncate">
+                  {truncateRail(item, FORECAST_RAIL_WIDTH - 6)}
+                </Text>
+              </Box>
+            )
+          })}
 
           {sec.text && (
             <Text color={ui.theme.color.muted} wrap="truncate">

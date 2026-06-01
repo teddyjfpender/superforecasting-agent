@@ -446,9 +446,14 @@ export function Panel({ onCommandClick, onCommandDraft, sections, t, title }: Pa
                     : undefined
                 }
               >
-                <Text wrap="truncate">
-                  <Text color={actionable ? t.color.accent : t.color.muted}>{k.padEnd(20)}</Text>
-                  <Text color={t.color.text}>{v}</Text>
+                {/* wrap (not truncate) so long evidence/history/rationale rows
+                    stay readable; a leading "› " marks rows you can click. */}
+                <Text wrap="wrap">
+                  <Text color={actionable ? t.color.accent : t.color.muted}>
+                    {actionable ? '› ' : '  '}
+                  </Text>
+                  <Text color={actionable ? t.color.accent : t.color.muted}>{k.padEnd(18)}</Text>
+                  {v ? <Text color={t.color.text}>{v}</Text> : null}
                 </Text>
               </Box>
             )
@@ -466,8 +471,9 @@ export function Panel({ onCommandClick, onCommandDraft, sections, t, title }: Pa
                     : undefined
                 }
               >
-                <Text color={command ? t.color.accent : t.color.text} wrap="truncate">
-                  {item}
+                <Text wrap="wrap">
+                  <Text color={command ? t.color.accent : t.color.muted}>{command ? '› ' : '  '}</Text>
+                  <Text color={command ? t.color.accent : t.color.text}>{item}</Text>
                 </Text>
               </Box>
             )
