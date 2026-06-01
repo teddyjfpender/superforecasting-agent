@@ -505,6 +505,7 @@ def _distribution_view(payload: Any) -> dict[str, Any] | None:
     intervals: dict[str, list[float | None]] = {}
     equivalent: dict[str, float] = {}
     pmf: dict[str, float] = {}
+    quantiles: dict[int, float] = {}
 
     for raw_key, raw_value in payload.items():
         value = _finite_number(raw_value)
@@ -517,6 +518,16 @@ def _distribution_view(payload: Any) -> dict[str, Any] | None:
             pctile = interval.group(1)
             side = 0 if interval.group(2) in ("low", "lo", "l") else 1
             intervals.setdefault(pctile, [None, None])[side] = value
+            continue
+        # Quantile keys (q05/q50/q95, quantile_25, percentile_90) — a common
+        # distribution representation the model uses. Parse BEFORE the PMF catch
+        # so percent-valued quantiles (e.g. CPI's q05=0.05, in [0,1]) aren't
+        # mistaken for probability mass. Bare pNN keys stay PMF (count buckets).
+        qmatch = re.match(r"^(?:q|quantile|percentile)[_-]?(\d{1,3})$", key)
+        if qmatch:
+            pct = int(qmatch.group(1))
+            if 1 <= pct <= 99:
+                quantiles[pct] = value
             continue
         if key.startswith("equivalent_normal_"):
             equivalent[key[len("equivalent_normal_") :]] = value
@@ -535,6 +546,29 @@ def _distribution_view(payload: Any) -> dict[str, Any] | None:
         # Remaining numeric entries that look like probability mass.
         if 0.0 <= value <= 1.0:
             pmf[str(raw_key)] = value
+
+    # Fold quantiles into the canonical shape: q50 -> median, q25/q75 -> 50%
+    # interval, q05/q95 -> 90% interval, and a normal-equivalent sd from the
+    # widest available pair so the stat block + chart band always render.
+    if quantiles:
+        if 50 in quantiles:
+            moments.setdefault("median", quantiles[50])
+            moments.setdefault("mean", quantiles[50])
+        if 25 in quantiles and 75 in quantiles:
+            existing = intervals.setdefault("50", [None, None])
+            existing[0] = existing[0] if existing[0] is not None else quantiles[25]
+            existing[1] = existing[1] if existing[1] is not None else quantiles[75]
+        if 5 in quantiles and 95 in quantiles:
+            existing = intervals.setdefault("90", [None, None])
+            existing[0] = existing[0] if existing[0] is not None else quantiles[5]
+            existing[1] = existing[1] if existing[1] is not None else quantiles[95]
+        if "sd" not in moments:
+            if 5 in quantiles and 95 in quantiles:
+                moments["sd"] = (quantiles[95] - quantiles[5]) / 3.2897
+            elif 10 in quantiles and 90 in quantiles:
+                moments["sd"] = (quantiles[90] - quantiles[10]) / 2.5631
+            elif 25 in quantiles and 75 in quantiles:
+                moments["sd"] = (quantiles[75] - quantiles[25]) / 1.349
 
     mean = moments.get("mean")
     if mean is None:

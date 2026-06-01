@@ -338,6 +338,26 @@ _PACKET_RECORD_LABELS = {
 }
 
 
+def _coerce_distribution_number(raw: Any) -> float | None:
+    """Coerce a distribution value to a float, tolerating the numbers models
+    commonly quote ("50,000", "$71500", "4.2%"). Returns None for booleans and
+    anything not coercible so the caller can reject it with a named error."""
+
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if isinstance(raw, str):
+        cleaned = raw.strip().replace(",", "").replace("$", "").replace("%", "").strip()
+        if not cleaned:
+            return None
+        try:
+            return float(cleaned)
+        except ValueError:
+            return None
+    return None
+
+
 class ForecastLedger:
     """Local-first SQLite ledger for questions, evidence, forecasts, and scores."""
 
@@ -7585,14 +7605,24 @@ class ForecastLedger:
                 raise ValidationError("forecast distribution cannot be empty")
             normalized: dict[str, float] = {}
             for key, raw in value.items():
-                if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-                    raise ValidationError("distribution values must be numeric")
-                numeric = float(raw)
+                # A null entry (e.g. an omitted quantile) is simply dropped rather
+                # than failing the whole distribution.
+                if raw is None:
+                    continue
+                numeric = _coerce_distribution_number(raw)
+                if numeric is None:
+                    raise ValidationError(
+                        f"distribution value for '{key}' must be a number "
+                        f"(got {type(raw).__name__}: {raw!r}); use numeric quantiles/moments, "
+                        f"e.g. {{\"mean\": 0.36, \"q05\": 0.05, \"q50\": 0.35, \"q95\": 0.75}}"
+                    )
                 if not math.isfinite(numeric):
-                    raise ValidationError("distribution values must be finite")
+                    raise ValidationError(f"distribution value for '{key}' must be finite")
                 if outcome_type not in {"numeric", "distribution"} and not (0 <= numeric <= 1):
-                    raise ValidationError("distribution values must be between 0 and 1")
+                    raise ValidationError(f"distribution value for '{key}' must be between 0 and 1")
                 normalized[str(key)] = numeric
+            if not normalized:
+                raise ValidationError("forecast distribution cannot be empty")
             return normalized
         raise ValidationError("forecast update requires a probability or distribution")
 
