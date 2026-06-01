@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { fmt, fmtSigned, useNow } from "./components";
 import { COMMODITIES, FX, INDICES, WATCHLIST, type Quote } from "./data";
 import { ChatProvider } from "./chat";
+import { ForecastProviderRoot } from "./forecastProvider";
 import {
   AlertsManager,
   CommandPalette,
@@ -40,7 +41,7 @@ const F_KEYS: FKey[] = [
   "F1", "F2", "F3", "F4", "F5", "F6",
   "F7", "F8", "F9", "F10", "F11", "F12",
 ];
-const SECONDARIES: ScreenKey[] = ["MSG", "MOST", "ERN", "CORR", "GIP"];
+const SECONDARIES: ScreenKey[] = ["MSG", "MOST", "ERN", "CORR", "GIP", "SF"];
 const ALL_SCREEN_KEYS: ScreenKey[] = [...F_KEYS, ...SECONDARIES];
 
 function ActiveSymbolBadge() {
@@ -593,9 +594,11 @@ function AlertToastSlot() {
 export function App() {
   return (
     <DataProviderRoot>
-      <ModalRoot>
-        <AppShell />
-      </ModalRoot>
+      <ForecastProviderRoot>
+        <ModalRoot>
+          <AppShell />
+        </ModalRoot>
+      </ForecastProviderRoot>
     </DataProviderRoot>
   );
 }

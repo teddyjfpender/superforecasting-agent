@@ -64,12 +64,13 @@ import {
   MultiChartScreen,
   VolatilitySurface,
 } from "./secondaries";
+import { ForecastScreen } from "./forecastScreen";
 
 export type FKey =
   | "F1" | "F2" | "F3" | "F4" | "F5" | "F6"
   | "F7" | "F8" | "F9" | "F10" | "F11" | "F12";
 
-export type SecondaryKey = "MOST" | "ERN" | "CORR" | "GIP" | "MSG";
+export type SecondaryKey = "MOST" | "ERN" | "CORR" | "GIP" | "MSG" | "SF";
 export type ScreenKey = FKey | SecondaryKey;
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -110,6 +111,7 @@ function HelpScreen({ onJump }: { onJump: (k: ScreenKey) => void }) {
 
   type ScreenRow = [string, string, string]; // [Mnemonic, How to reach, Description]
   const SECONDARY_SCREENS: ScreenRow[] = [
+    ["SF",   "⌘K → SF   or CMD > SF",   "Superforecaster desk — distributions, analyst read, cross-pollination"],
     ["MSG",  "⌘/ or ⌘K → MSG",          "AI co-pilot — Claude with read-only data tools + navigation"],
     ["MOST", "⌘K → MOST or CMD > MOST", "Movers — top gainers, top losers, most active by |Δ%|"],
     ["GIP",  "⌘K → GIP  or CMD > GIP",  "Multi-chart grid — 2×2 quadrants, click to focus & bind"],
@@ -256,6 +258,7 @@ function HelpScreen({ onJump }: { onJump: (k: ScreenKey) => void }) {
     {
       title: "AI & Discovery",
       items: [
+        { k: "SF",   label: "SF",   desc: "Superforecaster desk · distributions · calibration" },
         { k: "MSG",  label: "MSG",  desc: "AI co-pilot · Claude · tool use enabled" },
         { k: "MOST", label: "MOST", desc: "Movers — gainers / losers / actives" },
         { k: "GIP",  label: "GIP",  desc: "Multi-chart grid (2×2 quadrants)" },
@@ -1300,6 +1303,7 @@ export const SCREEN_LABELS: Record<ScreenKey, string> = {
   CORR: "CORR",
   GIP:  "GIP",
   MSG:  "MSG",
+  SF:   "SF",
 };
 
 export const SCREEN_BREADCRUMBS: Record<ScreenKey, string> = {
@@ -1320,6 +1324,7 @@ export const SCREEN_BREADCRUMBS: Record<ScreenKey, string> = {
   CORR: "CORRELATION / WATCHLIST · 60D ρ",
   GIP:  "MULTI-CHART / GIP · 2×2 QUADRANTS",
   MSG:  "AI CO-PILOT / CLAUDE · TOOL USE ENABLED",
+  SF:   "SUPERFORECASTER / DESK · DISTRIBUTIONS · CROSS-POLLINATION",
 };
 
 export function isSecondary(key: string): key is SecondaryKey {
@@ -1328,7 +1333,8 @@ export function isSecondary(key: string): key is SecondaryKey {
     key === "ERN" ||
     key === "CORR" ||
     key === "GIP" ||
-    key === "MSG"
+    key === "MSG" ||
+    key === "SF"
   );
 }
 
@@ -1351,5 +1357,6 @@ export function renderScreen(key: ScreenKey, onJump: (k: ScreenKey) => void) {
     case "CORR": return <CorrelationScreen />;
     case "GIP":  return <MultiChartScreen />;
     case "MSG":  return <ChatScreen />;
+    case "SF":   return <ForecastScreen />;
   }
 }

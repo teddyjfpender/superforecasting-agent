@@ -16,14 +16,22 @@ data-plane backend is **not** vendored here — it stays deployed, and this app 
 at it. Source: the standalone `term` repo.
 
 ```
-src/            the terminal UI (screens F1-F12 + MSG/MOST/ERN/CORR/GIP, watchlist,
-                portfolio, news, chat, prediction markets, command palette, themes)
-src/termdApi.ts the typed client for the deployed termd data plane
-api/termd.js    Vercel serverless proxy: forwards /api/termd/* -> TERMD_API_BASE_URL,
-                injecting the auth token server-side (token never reaches the browser)
-vite.config.ts  dev proxy: /termd-api -> TERMD_API_BASE_URL with Authorization header
-vercel.json     deploy config (build with bun, output dist/)
-.env.example    the wiring template
+src/                 the terminal UI (screens F1-F12 + MSG/MOST/ERN/CORR/GIP/SF,
+                     watchlist, portfolio, news, chat, prediction markets,
+                     command palette, themes)
+src/termdApi.ts      the typed client for the deployed termd data plane
+src/forecastApi.ts   the typed client for the local Superforecaster bridge (SF screen)
+src/forecastProvider.tsx  SF data provider — a sibling to the finance provider
+                     (own context + poll loop; never touches the finance plane)
+src/forecastScreen.tsx    the SF desk: forecast book + distribution / analyst read
+src/forecastFormat.ts + src/forecastTypes.ts  pure render helpers + wire types,
+                     ported verbatim from the `forecast` TUI (no ui-tui dependency)
+api/termd.js         Vercel serverless proxy: forwards /api/termd/* -> TERMD_API_BASE_URL,
+                     injecting the auth token server-side (token never reaches the browser)
+vite.config.ts       dev proxy: /termd-api -> TERMD_API_BASE_URL (Authorization header);
+                     /forecast-api -> the local forecast bridge (127.0.0.1:8787)
+vercel.json          deploy config (build with bun, output dist/)
+.env.example         the wiring template
 ```
 
 ## Wiring (kept intact)
@@ -50,13 +58,46 @@ bun run build      # -> dist/
 bun run test:frontend
 ```
 
-## Roadmap: wiring in the Superforecasting Agent
+## Superforecaster desk (SF screen)
 
-Next phase (not done yet): surface the same features as the `forecast` TUI — and
-more — inside this terminal. The agent's data is served by the Python gateway
-(`tui_gateway/server.py`) over the `forecast.*` JSON-RPC methods
-(`forecast.dashboard`, `forecast.workspace`, `forecast.question`,
-`forecast.command`). The plan is to add a Superforecaster screen + data provider
-(mirroring `termdApi.ts` / `providers.tsx`) that reads the forecast ledger
-(desk, distributions, analyst write-ups, related forecasts, calibration) through a
-proxy to the gateway, alongside the existing financial data plane.
+The **SF** screen surfaces the `forecast` TUI's `/desk` workspace inside the
+terminal: the forecast book, headline + distribution intervals, the analyst
+QUICK READ (how it feels / how it thinks / watching for / be aware), a
+time-series trend with a confidence band, the outcome distribution, related
+(cross-pollinated) forecasts with shared-source warnings, reasoning, and recent
+evidence — all from one round trip. Reach it via the command line (`SF`), the
+command palette (⌘K → SF), or the F1 help menu.
+
+Because the forecast ledger is **local** (SQLite at
+`~/.superforecasting-agent/forecasting/forecasting.db`), the data path is
+dev-only and runs through a small read-only bridge rather than the deployed
+backend:
+
+```
+forecasting.db
+  → forecasting/webbridge.py   (stdlib HTTP, read-only, 127.0.0.1:8787)
+  → Vite /forecast-api proxy
+  → src/forecastApi.ts → src/forecastProvider.tsx → SF screen
+```
+
+The bridge (`forecasting/webbridge.py`, in the repo's `forecasting` package)
+exposes `GET /forecast/{health,workspace,dashboard,question/<id>}` — the same
+data the gateway serves the Ink TUI. It is **isolated from the termd finance
+plane**: a separate provider, context, proxy path, and env flag. To run it:
+
+```sh
+# terminal 1 — the read-only forecast bridge
+python3 -m forecasting.webbridge        # http://127.0.0.1:8787
+
+# terminal 2 — the web terminal, with SF enabled
+echo "VITE_FORECAST_API_ENABLED=1" >> .env.local
+bun run dev
+```
+
+Deployed builds leave `VITE_FORECAST_API_ENABLED` unset, so SF shows a "bridge
+offline" notice instead of polling a dead endpoint. See `.env.example` for the
+`FORECAST_*` / `VITE_FORECAST_*` knobs.
+
+Later increments ("and more", all backed by the existing payload): a desk-wide
+calibration / reliability view, multi-forecast overlay/compare, and a PIT /
+distribution-quality histogram for resolved distribution forecasts.

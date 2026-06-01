@@ -320,6 +320,7 @@ export function CommandPalette({
       out.push({ kind: "screen", key: k, label: `${k} · ${SCREEN_LABELS[k]}` });
     }
     const secondaries: { key: string; label: string }[] = [
+      { key: "SF",   label: "SF · Superforecaster desk (distributions · calibration)" },
       { key: "MSG",  label: "MSG · AI co-pilot chat  [⌘/]" },
       { key: "MOST", label: "MOST · Movers (gainers / losers / actives)" },
       { key: "ERN",  label: "ERN · Earnings calendar" },
