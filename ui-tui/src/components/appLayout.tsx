@@ -517,7 +517,7 @@ const ForecastDeskActionStrip = memo(function ForecastDeskActionStrip({
     <NoSelect flexDirection="column" flexShrink={0} paddingX={1}>
       <Box flexDirection="row" width={Math.max(1, cols - 2)}>
         <Box flexShrink={0} width={13}>
-          <Text bold color={ui.theme.color.primary}>
+          <Text bold color={ui.theme.color.label}>
             desk actions
           </Text>
         </Box>
@@ -566,14 +566,14 @@ const ForecastDeskCompactBrief = memo(function ForecastDeskCompactBrief({
   return (
     <NoSelect flexDirection="column" flexShrink={0} paddingX={1}>
       <Text wrap="truncate">
-        <Text bold color={ui.theme.color.primary}>
+        <Text bold color={ui.theme.color.label}>
           desk brief
         </Text>
 
         {items.map((item, index) => (
           <Fragment key={`${item.label}:${item.detail}`}>
             <Text color={ui.theme.color.muted}>{index === 0 ? '  ' : '  |  '}</Text>
-            <Text color={ui.theme.color.accent}>{item.label}</Text>
+            <Text color={ui.theme.color.text}>{item.label}</Text>
             <Text color={ui.theme.color.muted}> {truncateRail(item.detail, maxDetail)}</Text>
           </Fragment>
         ))}
@@ -604,7 +604,7 @@ const ForecastDeskViewStrip = memo(function ForecastDeskViewStrip({
     <NoSelect flexShrink={0} paddingX={1}>
       <Box flexDirection="row" width={Math.max(1, cols - 2)}>
         <Box flexShrink={0} width={7}>
-          <Text bold color={ui.theme.color.primary}>
+          <Text bold color={ui.theme.color.label}>
             views
           </Text>
         </Box>
@@ -620,13 +620,13 @@ const ForecastDeskViewStrip = memo(function ForecastDeskViewStrip({
             <Text wrap="truncate">
               <Text color={ui.theme.color.muted}>{index === 0 ? '' : '  |  '}</Text>
               <Text color={ui.theme.color.muted}>{forecastShortcutDisplayHotkey(shortcut)}</Text>
-              <Text color={ui.theme.color.accent}> {shortcut.label}</Text>
+              <Text color={ui.theme.color.text}> {shortcut.label}</Text>
             </Text>
           </Box>
         ))}
 
         <Text color={ui.theme.color.muted}>  |  {FORECAST_TUI_FIND_SHORTCUT.hotkey}</Text>
-        <Text color={ui.theme.color.accent}> {FORECAST_TUI_FIND_SHORTCUT.label}</Text>
+        <Text color={ui.theme.color.text}> {FORECAST_TUI_FIND_SHORTCUT.label}</Text>
       </Box>
     </NoSelect>
   )
@@ -725,7 +725,7 @@ const ForecastDeskRail = memo(function ForecastDeskRail({
       {visibleSections.map((sec, si) => (
         <Box flexDirection="column" key={si} marginTop={si > 0 || status ? 1 : 0}>
           {sec.title && (
-            <Text bold color={ui.theme.color.accent} wrap="truncate">
+            <Text bold color={ui.theme.color.label} wrap="truncate">
               {truncateRail(sec.title, FORECAST_RAIL_WIDTH - 4)}
             </Text>
           )}
@@ -755,7 +755,7 @@ const ForecastDeskRail = memo(function ForecastDeskRail({
                 onClick={(event: CommandClickEvent) => runTargetFromClick(item, draftCommand, runCommand, event)}
               >
                 <Text color={ui.theme.color.accent}>{clickable ? '› ' : '  '}</Text>
-                <Text color={clickable ? ui.theme.color.accent : ui.theme.color.text} wrap="truncate">
+                <Text color={ui.theme.color.text} wrap="truncate">
                   {truncateRail(item, FORECAST_RAIL_WIDTH - 6)}
                 </Text>
               </Box>

@@ -67,8 +67,12 @@ const FORECAST_HERO_ART = [
   '      ledger · score · postmortem · learn'
 ]
 
-const LOGO_GRADIENT = [0, 0, 1, 2] as const
-const FORECAST_HERO_GRADIENT = [2, 1, 0, 0, 1, 2, 3] as const
+// Palette is [primary(mint), accent(mint), border(teal), muted(neutral)] — see
+// colorize(). The masthead and hero keep ONE mint line each so green reads as a
+// brand accent, not a wall: the title row stays primary; rules go teal; the
+// tagline + data rows go neutral muted.
+const LOGO_GRADIENT = [2, 0, 3, 2] as const
+const FORECAST_HERO_GRADIENT = [3, 2, 3, 3, 3, 2, 3] as const
 
 const colorize = (art: string[], gradient: readonly number[], c: ThemeColors): Line[] => {
   const p = [c.primary, c.accent, c.border, c.muted]

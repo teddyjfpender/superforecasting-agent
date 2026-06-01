@@ -146,8 +146,8 @@ function CollapseToggle({
 }) {
   return (
     <Box onClick={onToggle}>
-      <Text color={t.color.accent}>{open ? '▾ ' : '▸ '}</Text>
-      <Text bold color={t.color.accent}>
+      <Text color={t.color.muted}>{open ? '▾ ' : '▸ '}</Text>
+      <Text bold color={t.color.label}>
         {title}
       </Text>
       {typeof count === 'number' ? (
@@ -325,7 +325,7 @@ export function SessionPanel({ info, sid, t }: SessionPanelProps) {
 
           {sid && (
             <Text>
-              <Text color={t.color.sessionLabel}>Session: </Text>
+              <Text color={t.color.muted}>Session: </Text>
               <Text color={t.color.sessionBorder}>{sid}</Text>
             </Text>
           )}
