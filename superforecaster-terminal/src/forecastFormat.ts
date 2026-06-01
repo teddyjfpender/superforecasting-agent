@@ -555,6 +555,66 @@ export const RELATIONSHIP_TAG: Record<string, { glyph: string; label: string }> 
   parent: { glyph: '▴', label: 'parent' }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Color / tag system — fast scanning by domain / stance / verdict / evidence.
+// One source of truth so the screen stays thin. All classes are existing term-*
+// tokens; `text` is safe as a label color on the dark panel, `chip` adds a
+// faint bordered/filled pill. Unknown values fall back to a neutral chip.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TagStyle {
+  text: string
+  chip: string
+}
+
+export const UNKNOWN_TAG: TagStyle = { text: 'text-term-dim', chip: 'border-term-border-hi' }
+
+const DOMAIN_TAG: Record<string, TagStyle> = {
+  macro: { text: 'text-term-yellow', chip: 'border-term-yellow/40 bg-term-yellow/10' },
+  markets: { text: 'text-term-green', chip: 'border-term-green/40 bg-term-green/10' },
+  equities: { text: 'text-term-green', chip: 'border-term-green/40 bg-term-green/10' },
+  crypto: { text: 'text-term-orange', chip: 'border-term-orange/50 bg-term-orange/10' },
+  tech: { text: 'text-term-cyan', chip: 'border-term-cyan/40 bg-term-cyan/10' },
+  ai: { text: 'text-term-cyan', chip: 'border-term-cyan/40 bg-term-cyan/10' },
+  politics: { text: 'text-term-magenta', chip: 'border-term-magenta/40 bg-term-magenta/10' },
+  geopol: { text: 'text-term-red', chip: 'border-term-red/40 bg-term-red/10' },
+  geopolitics: { text: 'text-term-red', chip: 'border-term-red/40 bg-term-red/10' },
+  climate: { text: 'text-term-green', chip: 'border-term-green-dim bg-term-green-dim/15' },
+  nature: { text: 'text-term-green', chip: 'border-term-green-dim bg-term-green-dim/15' },
+  weather: { text: 'text-term-cyan', chip: 'border-term-cyan/40 bg-term-cyan/10' },
+  space: { text: 'text-term-blue', chip: 'border-term-blue/50 bg-term-blue/10' },
+  science: { text: 'text-term-blue', chip: 'border-term-blue/50 bg-term-blue/10' },
+  sports: { text: 'text-term-blue', chip: 'border-term-blue/50 bg-term-blue/10' },
+  health: { text: 'text-term-magenta', chip: 'border-term-magenta/40 bg-term-magenta/10' },
+  ent: { text: 'text-term-magenta', chip: 'border-term-magenta/40 bg-term-magenta/10' }
+}
+
+const STANCE_TAG: Record<string, TagStyle> = {
+  lean_yes: { text: 'text-term-green', chip: 'border-term-green/50 bg-term-green/10' },
+  lean_no: { text: 'text-term-red', chip: 'border-term-red/50 bg-term-red/10' },
+  toss_up: { text: 'text-term-yellow', chip: 'border-term-yellow/50 bg-term-yellow/10' }
+}
+
+const VERDICT_TAG: Record<string, TagStyle> = {
+  right: { text: 'text-term-green', chip: 'border-term-green/60 bg-term-green/15' },
+  wrong: { text: 'text-term-red', chip: 'border-term-red/60 bg-term-red/15' },
+  close: { text: 'text-term-cyan', chip: 'border-term-cyan/50 bg-term-cyan/10' },
+  far: { text: 'text-term-yellow', chip: 'border-term-yellow/50 bg-term-yellow/10' }
+}
+
+export const domainTag = (d?: string | null): TagStyle => DOMAIN_TAG[(d ?? '').toLowerCase()] ?? UNKNOWN_TAG
+export const stanceTag = (s?: string | null): TagStyle => STANCE_TAG[(s ?? '').toLowerCase()] ?? UNKNOWN_TAG
+export const verdictTag = (v?: string | null): TagStyle => VERDICT_TAG[(v ?? '').toLowerCase()] ?? UNKNOWN_TAG
+
+/** Evidence stance → text color (no chip). Null when there is no stance. */
+export const evidenceStanceClass = (stance?: string | null): string | null => {
+  if (!stance) return null
+  const s = stance.toLowerCase()
+  if (/support|confirm|\bup\b|\bfor\b/.test(s)) return 'text-term-green'
+  if (/against|refut|contra|\bdown\b/.test(s)) return 'text-term-red'
+  return 'text-term-cyan'
+}
+
 // Re-export the data shapes so consumers can `import { ForecastWorkspaceItem } from './forecastFormat'`.
 export type {
   ForecastAnalystNote,
