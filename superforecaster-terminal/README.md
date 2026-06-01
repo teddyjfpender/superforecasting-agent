@@ -52,7 +52,8 @@ to the deployed backend. (`.env.local` is gitignored — secrets stay local.)
 ```sh
 cd superforecaster-terminal
 bun install
-bun run dev        # http://localhost:5173
+bun run dev        # finance plane only — http://localhost:5173
+bun run dev:sf     # one command: forecast bridge + Vite (SF screen enabled)
 bun run typecheck
 bun run build      # -> dist/
 bun run test:frontend
@@ -86,12 +87,19 @@ data the gateway serves the Ink TUI. It is **isolated from the termd finance
 plane**: a separate provider, context, proxy path, and env flag. To run it:
 
 ```sh
-# terminal 1 — the read-only forecast bridge
-python3 -m forecasting.webbridge        # http://127.0.0.1:8787
+# one command — starts the bridge AND Vite (SF enabled), tears both down on Ctrl-C
+bun run dev:sf
+```
 
-# terminal 2 — the web terminal, with SF enabled
-echo "VITE_FORECAST_API_ENABLED=1" >> .env.local
-bun run dev
+`dev:sf` (`scripts/dev.ts`) runs `python3 -m forecasting.webbridge` from the repo
+root and `vite` with `VITE_FORECAST_API_ENABLED=1`, prefixes the bridge's output,
+and kills both when either exits or on Ctrl-C. Overrides: `FORECAST_BRIDGE_PORT`
+(default 8787), `PYTHON` (default `python3`), `FORECAST_API_BASE_URL` (proxy
+target). The same thing by hand, in two terminals:
+
+```sh
+python3 -m forecasting.webbridge                       # terminal 1
+echo "VITE_FORECAST_API_ENABLED=1" >> .env.local && bun run dev   # terminal 2
 ```
 
 Deployed builds leave `VITE_FORECAST_API_ENABLED` unset, so SF shows a "bridge
