@@ -32,6 +32,9 @@ def build_dashboard_summary(
 
     rows = []
     for question in questions:
+        # Theses are aggregates of the other questions — summarized separately.
+        if ledger.is_thesis(question):
+            continue
         current = ledger.get_current_snapshot(question.id)
         snapshots = ledger.list_snapshots(question.id)
         probability = current.probability_or_distribution if current else None
@@ -267,10 +270,49 @@ def build_dashboard_summary(
         "scheduled_review_run_count": len(scheduled_review_runs),
         "scheduled_review_runs": scheduled_review_runs,
         "questions": rows,
+        "theses": build_thesis_summary(ledger=ledger, limit=limit),
         "review_queue": review_queue,
         "alerts": alert_rows,
         "recent_backtests": recent_backtests,
     }
+
+
+def build_thesis_summary(
+    *, ledger: ForecastLedger | None = None, limit: int = 50
+) -> list[dict[str, Any]]:
+    """A light per-thesis summary (health/score/delta/coverage) for the dashboard."""
+
+    ledger = ledger or ForecastLedger()
+    out: list[dict[str, Any]] = []
+    for question in ledger.list_questions(status="active", limit=limit):
+        if not ledger.is_thesis(question):
+            continue
+        snapshots = ledger.list_snapshots(question.id)
+        current = snapshots[-1] if snapshots else None
+        payload = current.probability_or_distribution if current else {}
+        payload = payload if isinstance(payload, dict) else {}
+        previous = snapshots[-2].probability_or_distribution if len(snapshots) >= 2 else None
+        previous_health = previous.get("health") if isinstance(previous, dict) else None
+        health = payload.get("health")
+        out.append(
+            {
+                "id": question.id,
+                "title": question.title,
+                "domain": question.domain,
+                "health_probability": health,
+                "health_display": f"{health:.0%}" if health is not None else "-",
+                "thesis_score": payload.get("thesis_score"),
+                "coverage": payload.get("coverage"),
+                "n_eff": payload.get("n_eff"),
+                "delta": (health - previous_health)
+                if (health is not None and previous_health is not None)
+                else None,
+                "member_count": len(ledger.list_thesis_members(question.id)),
+                "as_of": current.as_of if current else None,
+                "status": "withheld" if health is None else "ok",
+            }
+        )
+    return out
 
 
 def build_workspace_payload(
@@ -292,6 +334,10 @@ def build_workspace_payload(
 
     ledger = ledger or ForecastLedger()
     questions = ledger.list_questions(status="active", limit=limit)
+    # Theses are first-class questions but they are aggregates of the others, so
+    # they get their own payload section rather than polluting the forecast book.
+    member_questions = [q for q in questions if q.outcome_space.type != "thesis"]
+    thesis_questions = [q for q in questions if q.outcome_space.type == "thesis"]
 
     alerts = ledger.list_alerts(unresolved_only=True)
     alert_counts: dict[str, int] = {}
@@ -311,7 +357,7 @@ def build_workspace_payload(
 
     closing_soon = 0
     forecasts: list[dict[str, Any]] = []
-    for question in questions:
+    for question in member_questions:
         snapshots = ledger.list_snapshots(question.id)
         current = snapshots[-1] if snapshots else None
         previous = snapshots[-2] if len(snapshots) >= 2 else None
@@ -393,16 +439,143 @@ def build_workspace_payload(
                 # Cross-pollination: related forecasts' world-views, the "informed
                 # by" provenance of the current snapshot, and shared-source flags.
                 "related": _workspace_related(ledger, question, current),
+                # The theses this question is a weighted member of (the "member
+                # of: AI infra thesis" badge).
+                "thesis_ids": ledger.list_theses_for_member(question.id),
             }
         )
+
+    theses = [
+        _workspace_thesis(ledger, question, now=now, history_limit=history_limit)
+        for question in thesis_questions
+    ]
 
     return {
         "product": PRODUCT_NAME,
         "generated_at": utc_now_iso(),
-        "active_count": len(questions),
+        "active_count": len(member_questions),
         "open_alert_count": len(alerts),
         "closing_soon_count": closing_soon,
         "forecasts": forecasts,
+        # Thesis layer: macro forecasts that aggregate the weighted beliefs of
+        # their tagged members (computed after the members' latest runs).
+        "thesis_count": len(thesis_questions),
+        "theses": theses,
+    }
+
+
+def _thesis_history_point(snapshot: Any) -> dict[str, Any]:
+    """One point in a thesis's health/score time series (for the trend chart)."""
+
+    payload = snapshot.probability_or_distribution
+    payload = payload if isinstance(payload, dict) else {}
+    return {
+        "as_of": snapshot.as_of,
+        "created_at": snapshot.created_at,
+        # The health probability is the headline series; the score band is in
+        # score units (0-100) and is carried separately so a chart never mixes scales.
+        "headline_probability": payload.get("health"),
+        "thesis_score": payload.get("thesis_score"),
+        "score_low": payload.get("q05"),
+        "score_high": payload.get("q95"),
+    }
+
+
+def _workspace_thesis(
+    ledger: ForecastLedger,
+    question: Any,
+    *,
+    now: str | None = None,
+    history_limit: int = 80,
+) -> dict[str, Any]:
+    """Bundle a thesis question with its aggregate read + member contributions.
+
+    Reads the thesis's current aggregate snapshot (written by
+    ``ledger.aggregate_thesis``) and enriches the stored component rows with each
+    member's live headline so the desk can render the breakdown without a refetch.
+    """
+
+    snapshots = ledger.list_snapshots(question.id)
+    current = snapshots[-1] if snapshots else None
+    previous = snapshots[-2] if len(snapshots) >= 2 else None
+    payload = current.probability_or_distribution if current else {}
+    payload = payload if isinstance(payload, dict) else {}
+    ensemble = current.ensemble_components if current else {}
+    ensemble = ensemble if isinstance(ensemble, dict) else {}
+    stored_components = ensemble.get("components") or []
+
+    members = {m["member_question_id"]: m for m in ledger.list_thesis_members(question.id)}
+
+    component_views: list[dict[str, Any]] = []
+    for comp in stored_components:
+        member_id = comp.get("member_id")
+        member = members.get(member_id, {})
+        member_snapshot = ledger.get_current_snapshot(member_id) if member_id else None
+        belief = member_snapshot.probability_or_distribution if member_snapshot else None
+        outcome_type = member.get("member_outcome_type")
+        headline = _headline_numeric(belief) if belief is not None else None
+        if headline is None:
+            belief_display = "-"
+        elif outcome_type in {"binary", "categorical"}:
+            belief_display = f"{headline:.0%}"
+        else:
+            belief_display = f"μ{headline:g}"
+        component_views.append(
+            {
+                "id": member_id,
+                "title": comp.get("title") or member.get("member_title"),
+                "direction": comp.get("direction"),
+                "role": member.get("role"),
+                "weight": comp.get("weight"),
+                "w_norm": comp.get("w_norm"),
+                "s_raw": comp.get("s_raw"),
+                "s_i": comp.get("s_i"),
+                "sigma": comp.get("sigma"),
+                "contribution_pts": comp.get("contribution_pts"),
+                "marginal_health_delta": comp.get("marginal_health_delta"),
+                "status": comp.get("status"),
+                "flags": comp.get("flags") or [],
+                "as_of": comp.get("as_of"),
+                "outcome_type": outcome_type,
+                "latest_belief_display": belief_display,
+                "latest_headline": headline,
+            }
+        )
+
+    health = payload.get("health")
+    previous_payload = previous.probability_or_distribution if previous else None
+    previous_health = previous_payload.get("health") if isinstance(previous_payload, dict) else None
+    delta = (health - previous_health) if (health is not None and previous_health is not None) else None
+
+    band = None
+    if payload.get("q05") is not None and payload.get("q95") is not None:
+        band = {"q05": payload.get("q05"), "q50": payload.get("q50"), "q95": payload.get("q95")}
+
+    analyst_notes = ledger.list_analyst_notes(question.id)
+
+    return {
+        "id": question.id,
+        "title": question.title,
+        "domain": question.domain,
+        "topics": list(question.topics or []),
+        "status": question.status,
+        "as_of": current.as_of if current else None,
+        "freshness": format_freshness(current.as_of if current else None, now=now),
+        "health_probability": health,
+        "health_display": f"{health:.0%}" if health is not None else "-",
+        "thesis_score": payload.get("thesis_score"),
+        "score_band": band,
+        "coverage": payload.get("coverage"),
+        "n_eff": payload.get("n_eff"),
+        "rho": ensemble.get("rho"),
+        "delta": delta,
+        "member_count": len(members),
+        "components": component_views,
+        "spread": ensemble.get("spread"),
+        "history": [_thesis_history_point(snap) for snap in snapshots[-history_limit:]],
+        "analyst_note": _workspace_analyst_note(analyst_notes[-1]) if analyst_notes else None,
+        "rationale": current.rationale if current else None,
+        "snapshot_count": len(snapshots),
     }
 
 
@@ -854,6 +1027,28 @@ def render_dashboard_text(summary: dict[str, Any]) -> str:
                 f"{int(row.get('open_alert_count') or 0):>6}  "
                 f"{row.get('title') or ''}"
             )
+    theses = list(summary.get("theses") or [])
+    if theses:
+        lines.extend(["", "THESIS HEALTH"])
+        lines.append(
+            f"{'ID':<14} {'Health':<8} {'Score':<7} {'Delta':<7} {'Cov':<6} {'n_eff':<6} {'Mem':>3}  Thesis"
+        )
+        for th in theses:
+            score = f"{th['thesis_score']:.0f}" if th.get("thesis_score") is not None else "-"
+            delta = f"{th['delta'] * 100:+.0f}pp" if th.get("delta") is not None else "-"
+            cov = f"{th['coverage']:.0%}" if th.get("coverage") is not None else "-"
+            n_eff = f"{th['n_eff']:.1f}" if th.get("n_eff") is not None else "-"
+            lines.append(
+                f"{th.get('id', '-'):<14} "
+                f"{th.get('health_display', '-'):<8} "
+                f"{score:<7} "
+                f"{delta:<7} "
+                f"{cov:<6} "
+                f"{n_eff:<6} "
+                f"{int(th.get('member_count') or 0):>3}  "
+                f"{th.get('title') or ''}"
+            )
+
     review_queue = list(summary.get("review_queue") or [])
     if review_queue:
         lines.extend(["", "Review Queue"])

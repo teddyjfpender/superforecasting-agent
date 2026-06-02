@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-OUTCOME_TYPES = {"binary", "categorical", "numeric", "distribution"}
+OUTCOME_TYPES = {"binary", "categorical", "numeric", "distribution", "thesis"}
 QUESTION_STATUSES = {"active", "closed", "resolved", "archived"}
 # "exploratory" is the scratchpad origin: a forecast the agent is thinking
 # out loud with, NOT committing. It is exempt from the commit-time formalities

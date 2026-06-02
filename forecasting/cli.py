@@ -2032,6 +2032,66 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     unlink_parser.add_argument("--type", dest="link_type", default=None, choices=sorted(FORECAST_LINK_TYPES))
     unlink_parser.set_defaults(_forecast_handler=_cmd_link_remove)
 
+    # Thesis: aggregate the latest beliefs of several weighted member forecasts
+    # into a single thesis-level health snapshot (the thesis lags its members).
+    thesis_parser = forecast_sub.add_parser(
+        "thesis",
+        help="Group member forecasts under a thesis and aggregate their health",
+    )
+    thesis_sub = thesis_parser.add_subparsers(dest="thesis_command")
+    thesis_create = thesis_sub.add_parser("create", help="Create a thesis question (outcome type 'thesis')")
+    thesis_create.add_argument("title")
+    thesis_create.add_argument("--criteria", help="Resolution criteria (>=5 words); a sensible default is used when omitted")
+    thesis_create.add_argument("--domain")
+    thesis_create.add_argument("--topics", help="Comma-separated topics")
+    thesis_create.add_argument("--horizon", help="Free-text review horizon stored in question metadata")
+    thesis_create.add_argument("--rho", type=float, help="Default member correlation stored in question metadata")
+    thesis_create.set_defaults(_forecast_handler=_cmd_thesis_create)
+    thesis_tag = thesis_sub.add_parser("tag", help="Tag a member forecast into a thesis (idempotent upsert)")
+    thesis_tag.add_argument("thesis", help="row number, id, or search words for the thesis")
+    thesis_tag.add_argument("member", help="row number, id, or search words for the member forecast")
+    thesis_tag.add_argument("--weight", type=float, default=1.0)
+    thesis_tag.add_argument("--direction", choices=["support", "inverted"], default="support")
+    thesis_tag.add_argument("--role")
+    thesis_tag.add_argument("--target", type=float, default=None)
+    thesis_tag.add_argument(
+        "--lo-is-good",
+        dest="hi_is_good",
+        action="store_false",
+        default=True,
+        help="Lower member values are good for the thesis (default: higher is good)",
+    )
+    thesis_tag.add_argument("--rationale", default="")
+    thesis_tag.set_defaults(_forecast_handler=_cmd_thesis_tag)
+    thesis_untag = thesis_sub.add_parser("untag", help="Untag a member from a thesis")
+    thesis_untag.add_argument("thesis", help="row number, id, or search words for the thesis")
+    thesis_untag.add_argument("member", help="row number, id, or search words for the member forecast")
+    thesis_untag.set_defaults(_forecast_handler=_cmd_thesis_untag)
+    thesis_members = thesis_sub.add_parser("members", help="List a thesis's member forecasts")
+    thesis_members.add_argument("thesis", help="row number, id, or search words for the thesis")
+    thesis_members.set_defaults(_forecast_handler=_cmd_thesis_members)
+    thesis_aggregate = thesis_sub.add_parser("aggregate", help="Aggregate members into a fresh thesis snapshot")
+    thesis_aggregate.add_argument("thesis", help="row number, id, or search words for the thesis")
+    thesis_aggregate.add_argument("--rho", type=float, default=0.4)
+    thesis_aggregate.set_defaults(_forecast_handler=_cmd_thesis_aggregate)
+    thesis_show = thesis_sub.add_parser("show", help="Show thesis health + per-member contributions (no commit)")
+    thesis_show.add_argument("thesis", help="row number, id, or search words for the thesis")
+    thesis_show.add_argument("--rho", type=float, default=0.4)
+    thesis_show.set_defaults(_forecast_handler=_cmd_thesis_show)
+    thesis_list = thesis_sub.add_parser("list", help="List thesis questions")
+    thesis_list.add_argument("--limit", type=int, default=None)
+    thesis_list.set_defaults(_forecast_handler=_cmd_thesis_list)
+
+    # Two-phase batch: run members first, then aggregate theses (lag ordering).
+    run_all_parser = forecast_sub.add_parser(
+        "run-all",
+        help="Refresh every active member forecast, then aggregate every active thesis",
+    )
+    run_all_parser.add_argument("--limit", type=int, default=None, help="Cap the number of member forecasts run in phase 1")
+    run_all_parser.add_argument("--rho", type=float, default=0.4)
+    run_all_parser.add_argument("--dry-run", action="store_true", help="Print what would run without changing anything")
+    run_all_parser.set_defaults(_forecast_handler=_cmd_run_all)
+
     autopilot_parser = forecast_sub.add_parser(
         "autopilot",
         help="Wire watched sources, schedules, materiality, and update proposals",
@@ -8331,6 +8391,267 @@ def _cmd_link_remove(args: argparse.Namespace) -> None:
     to_id = _resolve_question_id(ledger, args.to_ref)
     removed = ledger.remove_forecast_link(from_id, to_id, link_type=getattr(args, "link_type", None))
     print(f"removed {removed} link(s) between {from_id} and {to_id}")
+
+
+# ── Thesis subcommands ───────────────────────────────────────────────────────
+
+
+def _cmd_thesis_create(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    criteria = (args.criteria or "").strip() or (
+        "Aggregate health of the tagged member forecasts; reviewed as members update."
+    )
+    topics = [t.strip() for t in (args.topics or "").split(",") if t.strip()] or None
+    metadata: dict[str, Any] = {}
+    if args.horizon:
+        metadata["horizon"] = args.horizon
+    if args.rho is not None:
+        metadata["rho"] = float(args.rho)
+    question = ledger.create_question(
+        title=args.title,
+        resolution_criteria=criteria,
+        outcome_space=OutcomeSpace(type="thesis"),
+        domain=args.domain,
+        topics=topics,
+        metadata=metadata or None,
+    )
+    print(f"created thesis {question.id}")
+    print(f"title: {question.title}")
+    print(f"status: {question.status}")
+    if metadata.get("horizon"):
+        print(f"horizon: {metadata['horizon']}")
+    if "rho" in metadata:
+        print(f"rho: {metadata['rho']}")
+
+
+def _cmd_thesis_tag(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    thesis_id = _resolve_question_id(ledger, args.thesis)
+    member_id = _resolve_question_id(ledger, args.member)
+    row = ledger.add_thesis_member(
+        thesis_id,
+        member_id,
+        direction=args.direction,
+        weight=args.weight,
+        role=args.role,
+        target=args.target,
+        hi_is_good=getattr(args, "hi_is_good", True),
+        rationale=args.rationale or "",
+        created_by="cli",
+    )
+    print(f"tagged member {row['member_question_id']} into thesis {thesis_id}")
+    print(f"direction: {row['direction']}  weight: {row['weight']}")
+    if row.get("role"):
+        print(f"role: {row['role']}")
+    if row.get("target") is not None:
+        print(f"target: {row['target']}  hi_is_good: {row['hi_is_good']}")
+
+
+def _cmd_thesis_untag(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    thesis_id = _resolve_question_id(ledger, args.thesis)
+    member_id = _resolve_question_id(ledger, args.member)
+    removed = ledger.remove_thesis_member(thesis_id, member_id)
+    print(f"removed {removed} member(s) from thesis {thesis_id}")
+
+
+def _cmd_thesis_members(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    thesis_id = _resolve_question_id(ledger, args.thesis)
+    members = ledger.list_thesis_members(thesis_id)
+    if not members:
+        print("No members tagged. Add some with `forecast thesis tag <thesis> <member>`.")
+        return
+    print("Direction   Weight  Role            Target    Type          Member")
+    for member in members:
+        target = member.get("target")
+        target_str = f"{float(target):.4g}" if target is not None else "-"
+        print(
+            f"{(member.get('direction') or '-'):<11} "
+            f"{float(member.get('weight') or 0.0):<7.2f} "
+            f"{(member.get('role') or '-'):<15} "
+            f"{target_str:<9} "
+            f"{(member.get('member_outcome_type') or '-'):<13} "
+            f"{member.get('member_title') or member.get('member_question_id')}"
+        )
+
+
+def _cmd_thesis_aggregate(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    thesis_id = _resolve_question_id(ledger, args.thesis)
+    result = ledger.aggregate_thesis(thesis_id, rho=args.rho)
+    agg = result["aggregate"]
+    print(f"thesis {thesis_id}: {result['title']}")
+    print(f"members: {result['member_count']}")
+    if agg.health is None:
+        print("health: withheld (no usable fresh member signal)")
+        for note in agg.notes:
+            print(f"  note: {note}")
+        if result.get("analyst_note_id"):
+            print(f"analyst_note: {result['analyst_note_id']}")
+        return
+    print(f"health: {agg.health * 100:.1f}%")
+    print(f"score: {agg.thesis_score:.1f}  band: {_format_thesis_band(agg.band)}")
+    print(f"coverage: {agg.coverage:.0%}  n_eff: {agg.n_eff:.1f}  rho: {agg.rho:.2f}")
+    if result.get("snapshot_id"):
+        print(f"snapshot: {result['snapshot_id']}")
+
+
+def _cmd_thesis_show(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    thesis_id = _resolve_question_id(ledger, args.thesis)
+    result = ledger.aggregate_thesis(thesis_id, rho=args.rho, commit=False)
+    agg = result["aggregate"]
+    print(f"thesis {thesis_id}: {result['title']}")
+    print(f"members: {result['member_count']}")
+    if agg.health is None:
+        print("health: withheld (no usable fresh member signal)")
+        for note in agg.notes:
+            print(f"  note: {note}")
+    else:
+        print(f"health: {agg.health * 100:.1f}%  score: {agg.thesis_score:.1f}  band: {_format_thesis_band(agg.band)}")
+        components = sorted(
+            agg.components,
+            key=lambda c: c.get("contribution_pts") or 0.0,
+            reverse=True,
+        )
+        if components:
+            print("")
+            print("Direction   Weight  w_norm  signal  contrib_pts  Status   Member")
+            for comp in components:
+                s_i = comp.get("s_i")
+                signal_str = f"{float(s_i):.3f}" if s_i is not None else "-"
+                print(
+                    f"{(comp.get('direction') or '-'):<11} "
+                    f"{float(comp.get('weight') or 0.0):<7.2f} "
+                    f"{float(comp.get('w_norm') or 0.0):<7.3f} "
+                    f"{signal_str:<7} "
+                    f"{float(comp.get('contribution_pts') or 0.0):<+12.2f} "
+                    f"{(comp.get('status') or '-'):<8} "
+                    f"{comp.get('title') or comp.get('member_id')}"
+                )
+    note = ledger.latest_analyst_note(thesis_id, kind="brief")
+    if note and note.get("headline"):
+        print("")
+        print(f"latest note: {note['headline']}")
+
+
+def _cmd_thesis_list(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    theses = [q for q in ledger.list_questions(status="active") if ledger.is_thesis(q)]
+    if args.limit is not None:
+        theses = theses[: args.limit]
+    if not theses:
+        print("No thesis questions found. Create one with `forecast thesis create <title>`.")
+        return
+    print("ID             Members  Health    Title")
+    for thesis in theses:
+        member_count = len(ledger.list_thesis_members(thesis.id))
+        snapshot = ledger.get_current_snapshot(thesis.id)
+        health = "-"
+        if snapshot is not None:
+            payload = snapshot.probability_or_distribution
+            if isinstance(payload, dict) and payload.get("health") is not None:
+                health = f"{float(payload['health']) * 100:.1f}%"
+        print(f"{thesis.id:<14} {member_count:<8} {health:<9} {thesis.title}")
+
+
+def _format_thesis_band(band: Any) -> str:
+    """Format the (q05, q50, q95) 0..100 band tuple, or '-' when withheld."""
+
+    if not band:
+        return "-"
+    q05, q50, q95 = band
+    return f"{q05:.1f} / {q50:.1f} / {q95:.1f}"
+
+
+def _run_one(ledger: "ForecastLedger", question_id: str, args: argparse.Namespace) -> bool:
+    """Refresh a single member forecast via the SAME deterministic re-pool the
+    `forecast refresh` handler uses. Tolerant: logs and returns False on any
+    failure so a batch run keeps going.
+    """
+
+    from tools.forecasting_tool import fetch_watched_source_payloads
+
+    try:
+        result = ledger.refresh_forecast(
+            question_id,
+            fetcher=lambda specs: fetch_watched_source_payloads(specs, concurrency=4),
+            re_estimate="deterministic",
+            trigger_reason="run_all_batch",
+        )
+    except Exception as exc:  # pragma: no cover — network/data variability
+        print(f"  {question_id}: refresh failed ({exc})", file=sys.stderr)
+        return False
+    status = result.get("status")
+    committed = result.get("forecast_id")
+    if committed:
+        try:
+            _write_analyst_brief(ledger, question_id, ledger.get_snapshot(committed))
+        except Exception:
+            pass
+    print(f"  {question_id}: {status}")
+    return True
+
+
+def _cmd_run_all(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    active = ledger.list_questions(status="active")
+    members = [q for q in active if not ledger.is_thesis(q)]
+    theses = [q for q in active if ledger.is_thesis(q)]
+    if args.limit is not None:
+        members = members[: args.limit]
+
+    if args.dry_run:
+        print(f"dry-run: would refresh {len(members)} member forecast(s) (phase 1):")
+        for question in members:
+            print(f"  {question.id}  {question.title}")
+        # Order theses: plain (non-nested) first, nested (member of another thesis) last.
+        ordered = _order_theses(ledger, theses)
+        print(f"dry-run: would aggregate {len(ordered)} thesis/theses (phase 2):")
+        for thesis in ordered:
+            print(f"  {thesis.id}  {thesis.title}")
+        return
+
+    # Phase 1: refresh every active member forecast (commits their snapshots).
+    ran = 0
+    failed = 0
+    print(f"phase1: refreshing {len(members)} member forecast(s)")
+    for question in members:
+        if _run_one(ledger, question.id, args):
+            ran += 1
+        else:
+            failed += 1
+
+    # Phase 2 (AFTER phase 1 commits): aggregate theses. Plain theses before
+    # nested ones so a thesis-of-theses reads its members' fresh snapshots.
+    ordered = _order_theses(ledger, theses)
+    aggregated = 0
+    print(f"phase2: aggregating {len(ordered)} thesis/theses")
+    for thesis in ordered:
+        try:
+            ledger.aggregate_thesis(thesis.id, rho=args.rho)
+            aggregated += 1
+            print(f"  {thesis.id}: aggregated")
+        except Exception as exc:  # pragma: no cover — keep batch going
+            print(f"  {thesis.id}: aggregate failed ({exc})", file=sys.stderr)
+
+    print(f"phase1: {ran} members run ({failed} failed); phase2: {aggregated} theses aggregated")
+
+
+def _order_theses(ledger: "ForecastLedger", theses: list[Any]) -> list[Any]:
+    """Run plain theses before nested ones: a thesis that is itself a member of
+    another thesis (``list_theses_for_member`` non-empty) is deferred to the end.
+    """
+
+    plain: list[Any] = []
+    nested: list[Any] = []
+    for thesis in theses:
+        if ledger.list_theses_for_member(thesis.id):
+            nested.append(thesis)
+        else:
+            plain.append(thesis)
+    return plain + nested
 
 
 def _cmd_watch_add(args: argparse.Namespace) -> None:

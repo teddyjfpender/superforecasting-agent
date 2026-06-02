@@ -358,6 +358,74 @@ def _coerce_distribution_number(raw: Any) -> float | None:
     return None
 
 
+_THESIS_DEAD_STATUS = {"stale", "missing", "unusable"}
+
+
+def _thesis_member_label(component: dict[str, Any]) -> str:
+    return str(component.get("title") or component.get("member_id") or "member")
+
+
+def _thesis_reason_lines(agg: Any, kind: str) -> list[str]:
+    """Top member contributions, as 'support' (lifting) or 'drag' (pulling down) lines."""
+
+    usable = [
+        c for c in agg.components
+        if c.get("status") not in _THESIS_DEAD_STATUS and (c.get("w_norm") or 0) > 0
+    ]
+    if kind == "support":
+        rows = sorted(
+            (c for c in usable if float(c.get("s_i") or 0) >= 0.5),
+            key=lambda c: -(float(c.get("contribution_pts") or 0)),
+        )
+    else:
+        rows = sorted(
+            (c for c in usable if float(c.get("s_i") or 0) < 0.5),
+            key=lambda c: float(c.get("s_i") or 0),
+        )
+    lines: list[str] = []
+    for c in rows[:4]:
+        lines.append(
+            f"{_thesis_member_label(c)}: signal {float(c.get('s_i') or 0):.0%}, "
+            f"weight {float(c.get('w_norm') or 0):.0%}"
+        )
+    return lines
+
+
+def _thesis_narrative(thesis: Any, agg: Any) -> tuple[str, str, str, str, str]:
+    """Build the rolling analyst note (headline, how_it_thinks, looking_for, be_aware, body)."""
+
+    health = agg.health
+    score = agg.thesis_score or 0.0
+    headline = f"{thesis.title} — health {health:.0%}" if health is not None else f"{thesis.title} — withheld"
+
+    usable = [c for c in agg.components if c.get("status") not in _THESIS_DEAD_STATUS]
+    top = sorted(usable, key=lambda c: -(float(c.get("contribution_pts") or 0)))[:3]
+    drivers = ", ".join(f"{_thesis_member_label(c)} ({float(c.get('s_i') or 0):.0%})" for c in top)
+    how_it_thinks = (
+        f"Weighted across {len(usable)} fresh member(s); score {score:.0f}/100."
+        + (f" Top drivers: {drivers}." if drivers else "")
+    )
+
+    contested = [c for c in usable if abs(float(c.get("s_i") or 0.5) - 0.5) < 0.2]
+    contested.sort(key=lambda c: abs(float(c.get("s_i") or 0.5) - 0.5))
+    looking_for = (
+        "; ".join(f"{_thesis_member_label(c)} is contested ({float(c.get('s_i') or 0):.0%})" for c in contested[:2])
+        or "No single member is decisively contested."
+    )
+
+    stale = [c for c in agg.components if c.get("status") in {"stale", "missing"}]
+    parts = [
+        f"coverage {agg.coverage:.0%}",
+        f"n_eff ~{agg.n_eff:.1f} of {len(agg.components)} (members co-move; rho {agg.rho:.2f})",
+    ]
+    if stale:
+        parts.append(f"{len(stale)} member(s) stale/missing and down-weighted")
+    be_aware = "; ".join(parts) + (("; " + "; ".join(agg.notes)) if agg.notes else "")
+
+    body = f"{headline}. {how_it_thinks} Watching: {looking_for} Caveats: {be_aware}."
+    return headline, how_it_thinks, looking_for, be_aware, body
+
+
 class ForecastLedger:
     """Local-first SQLite ledger for questions, evidence, forecasts, and scores."""
 
@@ -933,6 +1001,29 @@ class ForecastLedger:
                     ON forecast_links(to_question_id);
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_forecast_links_edge
                     ON forecast_links(from_question_id, to_question_id, link_type);
+
+                CREATE TABLE IF NOT EXISTS thesis_members (
+                    id TEXT PRIMARY KEY,
+                    thesis_question_id TEXT NOT NULL REFERENCES forecast_questions(id) ON DELETE CASCADE,
+                    member_question_id TEXT NOT NULL REFERENCES forecast_questions(id) ON DELETE CASCADE,
+                    direction TEXT NOT NULL DEFAULT 'support',
+                    weight REAL NOT NULL DEFAULT 1.0,
+                    role TEXT,
+                    target REAL,
+                    hi_is_good INTEGER NOT NULL DEFAULT 1,
+                    max_age_days REAL,
+                    rationale TEXT NOT NULL DEFAULT '',
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    metadata TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_thesis_members_thesis
+                    ON thesis_members(thesis_question_id);
+                CREATE INDEX IF NOT EXISTS idx_thesis_members_member
+                    ON thesis_members(member_question_id);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_thesis_members_edge
+                    ON thesis_members(thesis_question_id, member_question_id);
 
                 CREATE TABLE IF NOT EXISTS domain_error_profiles (
                     id TEXT PRIMARY KEY,
@@ -4516,6 +4607,299 @@ class ForecastLedger:
             "advisory_only": bool(advisory_only),
         }
 
+    # ── Thesis membership + aggregation ─────────────────────────────────
+    #
+    # A thesis is a first-class forecast question (outcome_space.type ==
+    # "thesis") whose belief is a DETERMINISTIC aggregate of its tagged
+    # members' latest snapshots (see forecasting/thesis.py). Membership lives
+    # in its own ``thesis_members`` table (NOT forecast_links) so the
+    # cross-pollination auto-walk never pulls a thesis into a member's
+    # provenance, and so each edge can carry a signed direction
+    # (support / inverted) + weight + a distributional target.
+
+    def is_thesis(self, question: Any) -> bool:
+        """True when ``question`` (object or id) is a thesis question."""
+
+        if isinstance(question, str):
+            try:
+                question = self.get_question(question)
+            except LedgerNotFoundError:
+                return False
+        return getattr(question.outcome_space, "type", None) == "thesis"
+
+    def _thesis_member_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        data = dict(row)
+        data["metadata"] = json_loads(data.get("metadata"), {})
+        data["hi_is_good"] = bool(data.get("hi_is_good", 1))
+        return data
+
+    def add_thesis_member(
+        self,
+        thesis_id: str,
+        member_id: str,
+        *,
+        direction: str = "support",
+        weight: float = 1.0,
+        role: str | None = None,
+        target: float | None = None,
+        hi_is_good: bool = True,
+        max_age_days: float | None = None,
+        rationale: str = "",
+        created_by: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Tag ``member_id`` to the thesis ``thesis_id``. Upsert on (thesis, member)."""
+
+        thesis = self.get_question(thesis_id)
+        self.get_question(member_id)
+        if not self.is_thesis(thesis):
+            raise ValidationError("thesis_id must reference a question with outcome type 'thesis'")
+        if thesis_id == member_id:
+            raise ValidationError("a thesis cannot be a member of itself")
+        if direction not in {"support", "inverted"}:
+            raise ValidationError("direction must be 'support' or 'inverted'")
+        if weight < 0:
+            raise ValidationError("weight must be non-negative")
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT id FROM thesis_members WHERE thesis_question_id = ? AND member_question_id = ?",
+                (thesis_id, member_id),
+            ).fetchone()
+            if existing is not None:
+                conn.execute(
+                    """
+                    UPDATE thesis_members SET direction = ?, weight = ?, role = ?, target = ?,
+                        hi_is_good = ?, max_age_days = ?, rationale = ?, metadata = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        direction,
+                        float(weight),
+                        role,
+                        target,
+                        1 if hi_is_good else 0,
+                        max_age_days,
+                        rationale,
+                        json_dumps(metadata or {}),
+                        existing["id"],
+                    ),
+                )
+                member_pk = existing["id"]
+            else:
+                member_pk = f"tm_{uuid.uuid4().hex[:12]}"
+                conn.execute(
+                    """
+                    INSERT INTO thesis_members (
+                        id, thesis_question_id, member_question_id, direction, weight,
+                        role, target, hi_is_good, max_age_days, rationale, created_by,
+                        created_at, metadata
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        member_pk,
+                        thesis_id,
+                        member_id,
+                        direction,
+                        float(weight),
+                        role,
+                        target,
+                        1 if hi_is_good else 0,
+                        max_age_days,
+                        rationale,
+                        created_by,
+                        utc_now_iso(),
+                        json_dumps(metadata or {}),
+                    ),
+                )
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM thesis_members WHERE id = ?", (member_pk,)).fetchone()
+        return self._thesis_member_to_dict(row)
+
+    def remove_thesis_member(self, thesis_id: str, member_id: str) -> int:
+        """Untag a member from a thesis. Returns the number of rows removed."""
+
+        with self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM thesis_members WHERE thesis_question_id = ? AND member_question_id = ?",
+                (thesis_id, member_id),
+            )
+            return int(cur.rowcount or 0)
+
+    def list_thesis_members(self, thesis_id: str) -> list[dict[str, Any]]:
+        """Members of a thesis, joined with each member's title + outcome type."""
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT tm.*, q.title AS member_title, q.outcome_space AS member_outcome_space,
+                       q.status AS member_status
+                FROM thesis_members tm
+                JOIN forecast_questions q ON q.id = tm.member_question_id
+                WHERE tm.thesis_question_id = ?
+                ORDER BY tm.weight DESC, tm.created_at ASC
+                """,
+                (thesis_id,),
+            ).fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            data = self._thesis_member_to_dict(row)
+            data["member_outcome_type"] = OutcomeSpace.from_json(data.pop("member_outcome_space", None)).type
+            out.append(data)
+        return out
+
+    def list_theses_for_member(self, member_id: str) -> list[dict[str, Any]]:
+        """The theses a member belongs to (for the 'member of …' badge)."""
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT tm.thesis_question_id AS thesis_id, tm.direction, tm.weight, tm.role,
+                       q.title AS thesis_title
+                FROM thesis_members tm
+                JOIN forecast_questions q ON q.id = tm.thesis_question_id
+                WHERE tm.member_question_id = ?
+                ORDER BY q.title ASC
+                """,
+                (member_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def _thesis_member_belief(self, member: dict[str, Any]) -> dict[str, Any]:
+        """Resolve a membership row into the input dict that thesis.aggregate_thesis wants."""
+
+        # Lazy import: dashboard imports the ledger, so importing it at module
+        # scope would be circular.
+        from forecasting.dashboard import _distribution_view
+
+        member_id = member["member_question_id"]
+        outcome_type = member.get("member_outcome_type") or "binary"
+        snapshot = self.get_current_snapshot(member_id)
+        belief = snapshot.probability_or_distribution if snapshot else None
+        record: dict[str, Any] = {
+            "member_id": member_id,
+            "title": member.get("member_title"),
+            "direction": member.get("direction", "support"),
+            "weight": float(member.get("weight", 1.0)),
+            "as_of": snapshot.as_of if snapshot else None,
+            "max_age_days": member.get("max_age_days"),
+            "target": member.get("target"),
+            "hi_is_good": bool(member.get("hi_is_good", True)),
+            "probability": None,
+            "dist": None,
+        }
+        if belief is None:
+            record["kind"] = "binary"  # unusable -> flagged missing downstream
+        elif outcome_type == "binary" and isinstance(belief, (int, float)):
+            record["kind"] = "binary"
+            record["probability"] = float(belief)
+        elif isinstance(belief, dict):
+            record["kind"] = "distribution"
+            record["dist"] = _distribution_view(belief) or {"mean": None}
+        elif isinstance(belief, (int, float)):
+            record["kind"] = "distribution"
+            record["dist"] = {"mean": float(belief)}
+        else:
+            record["kind"] = "binary"  # unrecognized -> unusable
+        return record
+
+    def aggregate_thesis(
+        self,
+        thesis_id: str,
+        *,
+        rho: float | str = 0.4,
+        now: str | None = None,
+        commit: bool = True,
+    ) -> dict[str, Any]:
+        """Deterministically aggregate a thesis's members into a fresh snapshot.
+
+        Reads each member's CURRENT snapshot (so callers must run the members
+        first — the thesis lags them), folds the beliefs via
+        :func:`forecasting.thesis.aggregate_thesis`, and (when ``commit``)
+        writes a thesis snapshot + a rolling analyst note.
+        """
+
+        from forecasting import thesis as thesis_math
+
+        thesis = self.get_question(thesis_id)
+        if not self.is_thesis(thesis):
+            raise ValidationError("aggregate_thesis requires a question with outcome type 'thesis'")
+        members = self.list_thesis_members(thesis_id)
+        beliefs = [self._thesis_member_belief(m) for m in members]
+        as_of = now or utc_now_iso()
+        agg = thesis_math.aggregate_thesis(beliefs, rho=rho, now=as_of)
+
+        result: dict[str, Any] = {
+            "thesis_id": thesis_id,
+            "title": thesis.title,
+            "aggregate": agg,
+            "payload": agg.to_payload(),
+            "member_count": len(members),
+            "snapshot_id": None,
+        }
+        if not commit:
+            return result
+
+        payload = agg.to_payload()
+        if payload.get("health") is None:
+            # No usable member signal: do not fabricate a number. Record the
+            # withholding as an analyst note and skip the snapshot.
+            note = self.add_analyst_note(
+                question_id=thesis_id,
+                body="; ".join(agg.notes) or "withheld: no usable member signal",
+                kind="brief",
+                headline=f"{thesis.title} — withheld (insufficient fresh members)",
+                be_aware="; ".join(agg.notes),
+                generator="thesis_aggregate",
+                metadata={"coverage": agg.coverage, "member_count": len(members)},
+            )
+            result["analyst_note_id"] = note.get("id")
+            return result
+
+        rationale = (
+            f"Deterministic aggregate of {len(members)} member forecast(s) "
+            f"(coverage {agg.coverage:.0%}, n_eff {agg.n_eff:.1f}, rho {agg.rho:.2f}). "
+            "Computed after the members' latest runs; not LLM-led."
+        )
+        snapshot = self.create_snapshot(
+            question_id=thesis_id,
+            probability_or_distribution=payload,
+            rationale=rationale,
+            as_of=as_of,
+            confidence=round(max(0.0, min(1.0, agg.coverage)), 3),
+            method="thesis_aggregate",
+            ensemble_components={
+                "components": agg.components,
+                "rho": agg.rho,
+                "n_eff": agg.n_eff,
+                "coverage": agg.coverage,
+                "spread": agg.spread,
+            },
+            forecast_origin="live",
+            calibration_eligible=False,
+            metadata={"thesis_notes": agg.notes, "thesis_spread": agg.spread},
+            reasons_up=_thesis_reason_lines(agg, "support"),
+            reasons_down=_thesis_reason_lines(agg, "drag"),
+        )
+        headline, how_it_thinks, looking_for, be_aware, body = _thesis_narrative(thesis, agg)
+        note = self.add_analyst_note(
+            question_id=thesis_id,
+            body=body,
+            kind="brief",
+            headline=headline,
+            how_it_thinks=how_it_thinks,
+            looking_for=looking_for,
+            be_aware=be_aware,
+            forecast_id=snapshot.forecast_id,
+            probability_at_write=payload,
+            confidence_at_write=round(max(0.0, min(1.0, agg.coverage)), 3),
+            generator="thesis_aggregate",
+            metadata={"coverage": agg.coverage, "n_eff": agg.n_eff, "rho": agg.rho},
+        )
+        result["snapshot_id"] = snapshot.forecast_id
+        result["analyst_note_id"] = note.get("id")
+        return result
+
     def list_source_snapshots(
         self,
         *,
@@ -7618,7 +8002,10 @@ class ForecastLedger:
                     )
                 if not math.isfinite(numeric):
                     raise ValidationError(f"distribution value for '{key}' must be finite")
-                if outcome_type not in {"numeric", "distribution"} and not (0 <= numeric <= 1):
+                # "thesis" carries a mixed payload (health in [0,1] plus a 0-100
+                # score and score-scale quantiles), so it is exempt from the
+                # [0,1] clamp like numeric/distribution.
+                if outcome_type not in {"numeric", "distribution", "thesis"} and not (0 <= numeric <= 1):
                     raise ValidationError(f"distribution value for '{key}' must be between 0 and 1")
                 normalized[str(key)] = numeric
             if not normalized:
@@ -7740,7 +8127,7 @@ class ForecastLedger:
                 "notes": f"{rule} against confirmed numeric resolution.",
             }
 
-        if outcome_space.type == "distribution":
+        if outcome_space.type in {"distribution", "thesis"}:
             if isinstance(probability_or_distribution, (int, float)):
                 forecast_value = self._numeric_forecast_point(probability_or_distribution)
                 outcome_value = self._numeric_outcome(outcome)
