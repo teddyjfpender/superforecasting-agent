@@ -5297,6 +5297,51 @@ class ForecastLedger:
         result["analyst_note_id"] = note.get("id")
         return result
 
+    def aggregate_all_theses(
+        self,
+        *,
+        now: str | None = None,
+        rho: float | str = 0.4,
+        limit: int = 500,
+    ) -> dict[str, Any]:
+        """Aggregate every active thesis (the trailing lag phase of a sweep).
+
+        Runs nested theses last (a thesis whose members include another thesis
+        re-aggregates after that member). Used by ``run-all`` Phase 2 and the
+        daily cron so theses + their entity suitabilities refresh after the
+        members. Each thesis is isolated: one failing thesis does not abort the rest.
+        """
+
+        now = now or utc_now_iso()
+        theses = [q for q in self.list_questions(status="active", limit=limit) if self.is_thesis(q)]
+
+        def _depends_on_thesis(thesis: Any) -> bool:
+            return any(
+                self.is_thesis(member["member_question_id"])
+                for member in self.list_thesis_members(thesis.id)
+            )
+
+        ordered = [q for q in theses if not _depends_on_thesis(q)] + [q for q in theses if _depends_on_thesis(q)]
+        results: list[dict[str, Any]] = []
+        for thesis in ordered:
+            try:
+                result = self.aggregate_thesis(thesis.id, rho=rho, now=now)
+                results.append(
+                    {
+                        "id": thesis.id,
+                        "title": thesis.title,
+                        "ok": True,
+                        "snapshot_id": result.get("snapshot_id"),
+                        "withheld": result.get("snapshot_id") is None,
+                        "health": (result.get("payload") or {}).get("health"),
+                        "entity_count": len(result.get("entities") or []),
+                        "trigger_count": len(result.get("triggers") or []),
+                    }
+                )
+            except Exception as exc:  # one bad thesis must not abort the sweep
+                results.append({"id": thesis.id, "title": thesis.title, "ok": False, "error": str(exc)})
+        return {"count": len(ordered), "results": results}
+
     def list_source_snapshots(
         self,
         *,

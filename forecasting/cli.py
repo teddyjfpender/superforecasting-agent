@@ -1970,6 +1970,11 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     schedule_cron.add_argument("--profile")
     schedule_cron.add_argument("--auto-score", action="store_true")
     schedule_cron.add_argument("--auto-postmortem", action="store_true")
+    schedule_cron.add_argument(
+        "--thesis-aggregate",
+        action="store_true",
+        help="Re-aggregate all theses (+ entity suitabilities) after each member review sweep",
+    )
     schedule_cron.set_defaults(_forecast_handler=_cmd_schedule_install_cron)
 
     watch_parser = forecast_sub.add_parser("watch", help="Manage watched sources for self-check alerts")
@@ -8385,6 +8390,7 @@ def _cmd_schedule_install_cron(args: argparse.Namespace) -> None:
         db_path=args.db,
         auto_score=args.auto_score,
         auto_postmortem=args.auto_postmortem,
+        thesis_aggregate=getattr(args, "thesis_aggregate", False),
     )
     print(f"cron_job: {job['id']}")
     print(f"name: {job['name']}")
