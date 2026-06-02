@@ -603,6 +603,75 @@ export interface ForecastWorkspaceResponse {
   open_alert_count?: number
   output?: string
   product?: string
+  thesis_count?: number
+  theses?: ForecastThesis[]
+}
+
+// ── Thesis layer ─────────────────────────────────────────────────────────────
+// A thesis aggregates the weighted beliefs of its member forecasts into a
+// rolling macro health probability + a 0-100 score (see forecasting/thesis.py).
+// These shapes mirror the web terminal's forecastTypes.ts field-for-field.
+
+export interface ForecastThesisBadge {
+  thesis_id: string
+  thesis_title?: string
+  direction?: 'support' | 'inverted'
+  weight?: null | number
+  role?: null | string
+}
+
+export interface ForecastThesisComponent {
+  id?: string
+  title?: null | string
+  direction?: 'support' | 'inverted'
+  role?: null | string
+  weight?: null | number
+  w_norm?: null | number
+  s_raw?: null | number
+  s_i?: null | number
+  sigma?: null | number
+  contribution_pts?: null | number
+  marginal_health_delta?: null | number
+  status?: string
+  flags?: string[]
+  as_of?: null | string
+  outcome_type?: null | string
+  latest_belief_display?: string
+  latest_headline?: null | number
+}
+
+export interface ForecastThesisHistoryPoint {
+  as_of?: string
+  created_at?: string
+  headline_probability?: null | number // the health probability series
+  thesis_score?: null | number
+  score_low?: null | number
+  score_high?: null | number
+}
+
+export interface ForecastThesis {
+  id?: string
+  title?: string
+  domain?: null | string
+  topics?: string[]
+  status?: string
+  as_of?: null | string
+  freshness?: string
+  health_probability?: null | number
+  health_display?: string
+  thesis_score?: null | number
+  score_band?: { q05?: null | number; q50?: null | number; q95?: null | number } | null
+  coverage?: null | number
+  n_eff?: null | number
+  rho?: null | number
+  delta?: null | number
+  member_count?: number
+  components?: ForecastThesisComponent[]
+  spread?: Record<string, unknown> | null
+  history?: ForecastThesisHistoryPoint[]
+  analyst_note?: ForecastAnalystNote | null
+  rationale?: null | string
+  snapshot_count?: number
 }
 
 export interface ForecastWorkspaceItem {
@@ -650,6 +719,8 @@ export interface ForecastWorkspaceItem {
   topics?: string[]
   units?: null | string
   update_triggers?: ForecastWorkspaceTrigger[]
+  // The theses this question is a weighted member of (the "member of" badge).
+  thesis_ids?: ForecastThesisBadge[]
 }
 
 export interface ForecastWorkspaceDistribution {

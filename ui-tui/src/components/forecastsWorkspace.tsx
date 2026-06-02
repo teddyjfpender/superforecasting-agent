@@ -8,14 +8,15 @@ import type {
   ForecastAnalystNote,
   ForecastQuestionPacketResponse,
   ForecastRelated,
+  ForecastThesis,
+  ForecastThesisComponent,
   ForecastWorkspaceItem,
   ForecastWorkspacePanel,
   ForecastWorkspaceResponse
 } from '../gatewayTypes.js'
-import type { PanelSection } from '../types.js'
 import {
-  type BandPoint,
   bandChart,
+  type BandPoint,
   boxWhisker,
   clamp01,
   compactNumber,
@@ -28,9 +29,11 @@ import {
   shortDate
 } from '../lib/forecastCharts.js'
 import { asRpcResult } from '../lib/rpc.js'
+import type { Theme } from '../theme.js'
+import type { PanelSection } from '../types.js'
+
 import { OverlayScrollbar } from './agentsOverlay.js'
 import { windowItems } from './overlayControls.js'
-import type { Theme } from '../theme.js'
 
 export const openForecastsWorkspace = (initialId: string | null = null) =>
   patchOverlayState({ forecasts: true, forecastsInitialId: initialId })
@@ -59,6 +62,14 @@ interface ForecastsWorkspaceProps {
   t: Theme
 }
 
+// One row of the navigable left column: the ALL lens-clear row, one row per
+// thesis (the lens filter), then the (lens-filtered) forecast rows below. A
+// single cursor walks all three kinds.
+type LeftRow =
+  | { kind: 'all' }
+  | { kind: 'thesis'; thesis: ForecastThesis }
+  | { item: ForecastWorkspaceItem; kind: 'forecast' }
+
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 
 // Distribution values (μ, σ, median, CI bounds, Δμ) are abbreviated with
@@ -68,9 +79,11 @@ const trimNum = (value: number): string => compactNumber(value)
 
 const unitSuffix = (units: null | string | undefined): string => {
   const u = (units ?? '').toLowerCase()
+
   if (u.includes('percent') || u.includes('%')) {
     return '%'
   }
+
   return ''
 }
 
@@ -82,21 +95,28 @@ const unitSuffix = (units: null | string | undefined): string => {
  */
 export const headlineLabel = (item: ForecastWorkspaceItem): string => {
   const dist = item.distribution
+
   if (item.headline_kind === 'distribution' && dist && finite(dist.mean)) {
     const suffix = unitSuffix(item.units)
     const parts = [`μ ${trimNum(dist.mean)}${suffix}`]
+
     if (finite(dist.sd)) {
       parts.push(`σ ${trimNum(dist.sd)}`)
     }
+
     return parts.join(' · ')
   }
+
   const headline = item.headline_probability
+
   if (finite(headline) && headline >= 0 && headline <= 1) {
     return pct(headline)
   }
+
   if (finite(headline)) {
     return item.probability_display ?? String(headline)
   }
+
   return item.probability_display ?? '—'
 }
 
@@ -105,22 +125,28 @@ const headlineCompact = (item: ForecastWorkspaceItem): string => {
   if (item.headline_kind === 'distribution' && item.distribution && finite(item.distribution.mean)) {
     return `μ${trimNum(item.distribution.mean)}${unitSuffix(item.units)}`
   }
+
   const headline = item.headline_probability
+
   if (finite(headline) && headline >= 0 && headline <= 1) {
     return pct(headline)
   }
+
   return finite(headline) ? String(headline) : '—'
 }
 
 /** Delta in headline units: percent-points for probabilities, outcome units (Δμ) for distributions. */
 const deltaLabel = (item: ForecastWorkspaceItem): string => {
   const d = item.delta
+
   if (!finite(d) || Math.abs(d) < (item.headline_kind === 'distribution' ? 1e-6 : 0.005)) {
     return '· flat'
   }
+
   if (item.headline_kind === 'distribution') {
     return `${deltaGlyph(d)} Δμ ${d > 0 ? '+' : ''}${trimNum(d)}${unitSuffix(item.units)}`
   }
+
   return pctDelta(d)
 }
 
@@ -131,11 +157,14 @@ export const matchesFilter = (item: ForecastWorkspaceItem, query: string): boole
   if (!query) {
     return true
   }
+
   const needle = query.toLowerCase()
+
   const haystack = [item.title, item.domain, item.id, ...(item.topics ?? [])]
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
+
   return haystack.includes(needle)
 }
 
@@ -144,14 +173,19 @@ export const distributionBars = (probability: ForecastWorkspaceItem['probability
   if (!probability || typeof probability !== 'object' || Array.isArray(probability)) {
     return null
   }
+
   const entries = Object.entries(probability).filter(([, value]) => finite(value)) as [string, number][]
+
   if (entries.length < 2) {
     return null
   }
+
   const distributionalKeys = new Set(['mean', 'mu', 'sd', 'sigma', 'std', 'stdev', 'variance', 'expected', 'value'])
+
   if (entries.every(([key]) => distributionalKeys.has(key.toLowerCase()))) {
     return null
   }
+
   return entries.map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
 }
 
@@ -165,33 +199,42 @@ const bandForPoint = (
   if (isLatest && panel?.spread && finite(panel.spread.min) && finite(panel.spread.max)) {
     return { hi: panel.spread.max, lo: panel.spread.min }
   }
+
   if (!finite(confidence)) {
     return {}
   }
+
   const half = clamp01(1 - confidence) * CONF_BAND_K
+
   return { hi: clamp01(y + half), lo: clamp01(y - half) }
 }
 
 export const historyToBandPoints = (item: ForecastWorkspaceItem): BandPoint[] => {
   const history = item.history ?? []
   const isDistribution = item.headline_kind === 'distribution'
+
   return history.map((point, index) => {
     const y = point.headline_probability
+
     if (!finite(y)) {
       return { y: null }
     }
+
     // Distribution snapshots carry their own 90% interval (in outcome units);
     // use it directly and never the panel's probability spread.
     if (finite(point.band_low) && finite(point.band_high)) {
       return { hi: point.band_high, lo: point.band_low, y }
     }
+
     const isLatest = index === history.length - 1
+
     const band = bandForPoint(
       y,
       point.confidence ?? item.confidence,
       !isDistribution && isLatest,
       isDistribution ? null : item.panel
     )
+
     return { hi: band.hi ?? null, lo: band.lo ?? null, y }
   })
 }
@@ -207,38 +250,48 @@ const MIN_CHART_SPAN = 0.12
  */
 export const chartScale = (points: BandPoint[]): { yMax: number; yMin: number } => {
   const values: number[] = []
+
   for (const point of points) {
     if (finite(point.y)) {
       values.push(point.y)
     }
+
     if (finite(point.lo)) {
       values.push(point.lo)
     }
+
     if (finite(point.hi)) {
       values.push(point.hi)
     }
   }
+
   if (!values.length) {
     return { yMax: 1, yMin: 0 }
   }
+
   const probabilityLike = values.every(value => value >= 0 && value <= 1)
   let lo = Math.min(...values)
   let hi = Math.max(...values)
+
   if (hi - lo < MIN_CHART_SPAN) {
     const mid = (lo + hi) / 2
     lo = mid - MIN_CHART_SPAN / 2
     hi = mid + MIN_CHART_SPAN / 2
   }
+
   const pad = (hi - lo) * 0.15
   lo -= pad
   hi += pad
+
   if (probabilityLike) {
     lo = Math.max(0, lo)
     hi = Math.min(1, hi)
   }
+
   if (hi - lo < 1e-6) {
     hi = lo + 1
   }
+
   return { yMax: hi, yMin: lo }
 }
 
@@ -248,11 +301,18 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
   const termRows = stdout?.rows ?? 24
 
   const [items, setItems] = useState<ForecastWorkspaceItem[]>([])
+  const [theses, setTheses] = useState<ForecastThesis[]>([])
+  // The active thesis lens: null = ALL FORECASTS (no lens). When set to a thesis
+  // id, the forecast rows in the left column are filtered to that thesis's
+  // members and the right pane leads with the thesis read.
+  const [lensId, setLensId] = useState<null | string>(null)
+
   const [desk, setDesk] = useState<{ active: number; alerts: number; closing: number; generatedAt?: string }>({
     active: 0,
     alerts: 0,
     closing: 0
   })
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<null | string>(null)
   const [cursor, setCursor] = useState(0)
@@ -277,13 +337,17 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
     gw.request<unknown>('forecast.workspace', { limit: 75 })
       .then(raw => {
         const result = asRpcResult<ForecastWorkspaceResponse>(raw)
+
         if (!result) {
           setError('forecast.workspace returned no data')
           setLoading(false)
+
           return
         }
+
         const forecasts = result.forecasts ?? []
         setItems(forecasts)
+        setTheses(result.theses ?? [])
         setDesk({
           active: result.active_count ?? forecasts.length,
           alerts: result.open_alert_count ?? 0,
@@ -292,16 +356,13 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
         })
         setError(null)
         setLoading(false)
+
         if (announce) {
           setFlash('refreshed')
         }
-        if (initialIdRef.current) {
-          const idx = forecasts.findIndex(item => item.id === initialIdRef.current)
-          initialIdRef.current = null
-          if (idx >= 0) {
-            setCursor(idx)
-          }
-        }
+        // The cursor now indexes the union [ALL, …theses, …forecasts], so the
+        // jump to an initial forecast id is resolved by the leftRows effect once
+        // the rows are built — not by a raw forecasts[] index here.
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
@@ -318,46 +379,105 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
     // Drives OverlayScrollbar reflow detection while the user scrolls the
     // detail pane (the content height changes per selected forecast).
     const id = setInterval(() => setNow(value => value + 1), 500)
+
     return () => clearInterval(id)
   }, [])
 
   useEffect(() => {
     // Re-opening the workspace on a different forecast (e.g. `/forecast <id>`
     // while it is already open) must jump the cursor. useRef alone never sees
-    // the prop change, so sync it here and navigate once items are loaded.
-    if (!initialId) {
-      return
+    // the prop change, so record the pending id here; the leftRows effect below
+    // navigates to its row once the (lens-aware) union list is built.
+    if (initialId) {
+      initialIdRef.current = initialId
     }
-    initialIdRef.current = initialId
-    const idx = items.findIndex(item => item.id === initialId)
-    if (idx >= 0) {
-      setCursor(idx)
-      setFocus('list')
-    }
-  }, [initialId, items])
+  }, [initialId])
 
-  const filtered = useMemo(() => items.filter(item => matchesFilter(item, query)), [items, query])
+  // The active thesis (the lens). Members are the question ids in its components.
+  const activeThesis = useMemo(
+    () => (lensId ? (theses.find(thesis => thesis.id === lensId) ?? null) : null),
+    [lensId, theses]
+  )
+
+  // The forecast rows, filtered by the active thesis lens (members only) and the
+  // text query. With no lens active (ALL), every forecast matching the query is
+  // shown — the prior behavior.
+  const filtered = useMemo(() => {
+    if (activeThesis) {
+      const memberIds = new Set(
+        (activeThesis.components ?? []).map(component => component.id).filter((id): id is string => Boolean(id))
+      )
+
+      return items.filter(item => item.id != null && memberIds.has(item.id) && matchesFilter(item, query))
+    }
+
+    return items.filter(item => matchesFilter(item, query))
+  }, [items, query, activeThesis])
+
+  // The single navigable column is the union of the lens filter rows (ALL +
+  // every thesis) and the forecast rows below. One cursor walks all of them: an
+  // ALL/thesis row drives the lens + the thesis read; a forecast row drives the
+  // existing detail. This matches the user's ask — "the thesis at the top row".
+  const leftRows = useMemo<LeftRow[]>(() => {
+    // Only surface the lens rows (ALL + each thesis) when at least one thesis
+    // exists; with no theses the column is exactly the prior forecast book.
+    const lensRows: LeftRow[] = theses.length
+      ? [{ kind: 'all' }, ...theses.map((thesis): LeftRow => ({ kind: 'thesis', thesis }))]
+      : []
+
+    return [...lensRows, ...filtered.map((item): LeftRow => ({ item, kind: 'forecast' }))]
+  }, [theses, filtered])
+
+  // The index of the first forecast row in leftRows (after ALL + thesis rows).
+  const firstForecastRow = theses.length ? theses.length + 1 : 0
 
   useEffect(() => {
-    // Keep the cursor inside the (possibly filtered) list.
-    if (cursor > filtered.length - 1) {
-      setCursor(Math.max(0, filtered.length - 1))
+    // Keep the cursor inside the (possibly filtered) union list.
+    if (cursor > leftRows.length - 1) {
+      setCursor(Math.max(0, leftRows.length - 1))
     }
-  }, [cursor, filtered.length])
+  }, [cursor, leftRows.length])
+
+  useEffect(() => {
+    // Resolve a pending `/forecast <id>` jump against the union list. The target
+    // is a forecast (question id), so search the forecast rows and park the
+    // cursor on it. A thesis lens may hide it; clear the lens so it is visible.
+    const pending = initialIdRef.current
+
+    if (!pending) {
+      return
+    }
+
+    const rowIndex = leftRows.findIndex(row => row.kind === 'forecast' && row.item.id === pending)
+
+    if (rowIndex >= 0) {
+      initialIdRef.current = null
+      setCursor(rowIndex)
+      setFocus('list')
+    } else if (lensId && items.some(item => item.id === pending)) {
+      // The forecast exists but is filtered out by the active lens — drop it so
+      // the next render rebuilds leftRows with the target visible.
+      setLensId(null)
+    }
+  }, [leftRows, lensId, items])
 
   useEffect(() => {
     detailScrollRef.current?.scrollTo(0)
   }, [cursor])
 
-  const selected = filtered[cursor] ?? null
+  const currentRow = leftRows[cursor] ?? null
+  const cursorThesis = currentRow?.kind === 'thesis' ? currentRow.thesis : null
+  const selected = currentRow?.kind === 'forecast' ? currentRow.item : null
   const selectedId = selected?.id ?? null
 
   useEffect(() => {
     if (!selectedId) {
       setPacket(null)
       setPacketId(null)
+
       return
     }
+
     // Race guard: if the cursor moves before this resolves, drop the stale
     // result so the tail never shows a previous forecast's history/evidence.
     let cancelled = false
@@ -366,6 +486,7 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
         if (cancelled) {
           return
         }
+
         const result = asRpcResult<ForecastQuestionPacketResponse>(raw)
         setPacket(result ?? null)
         setPacketId(result ? selectedId : null)
@@ -374,9 +495,11 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
         if (cancelled) {
           return
         }
+
         setPacket(null)
         setPacketId(null)
       })
+
     return () => {
       cancelled = true
     }
@@ -388,10 +511,12 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
     if (!packet || packetId !== selectedId) {
       return null
     }
+
     return forecastQuestionDetailSections(packet).filter(
       section => section.title && TAIL_SECTION_TITLES.has(section.title)
     )
   }, [packet, packetId, selectedId])
+
   const tailLoading = !!selectedId && packetId !== selectedId
 
   // The analyst write-up time series (oldest-first). Driven by the SELECTED ITEM,
@@ -415,16 +540,21 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
       if (key.return) {
         return setFiltering(false)
       }
+
       if (key.escape) {
         setQuery('')
+
         return setFiltering(false)
       }
+
       if (key.backspace || key.delete) {
         return setQuery(q => q.slice(0, -1))
       }
+
       if (ch && !key.ctrl && !key.meta && ch.length === 1 && ch >= ' ') {
         return setQuery(q => q + ch)
       }
+
       return
     }
 
@@ -442,6 +572,7 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
 
     if (ch === '/') {
       setQuery('')
+
       return setFiltering(true)
     }
 
@@ -449,42 +580,72 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
       if (key.leftArrow || ch === 'h') {
         return setFocus('list')
       }
+
       if (key.upArrow || ch === 'k' || key.wheelUp) {
         return detailScrollRef.current?.scrollBy(-2)
       }
+
       if (key.downArrow || ch === 'j' || key.wheelDown) {
         return detailScrollRef.current?.scrollBy(2)
       }
+
       if (key.pageUp || (key.ctrl && ch === 'u')) {
         return detailScrollRef.current?.scrollBy(-detailPageSize)
       }
+
       if (key.pageDown || (key.ctrl && ch === 'd')) {
         return detailScrollRef.current?.scrollBy(detailPageSize)
       }
+
       if (ch === 'g') {
         return detailScrollRef.current?.scrollTo(0)
       }
+
       if (ch === 'G') {
         return detailScrollRef.current?.scrollToBottom?.()
       }
+
       return
     }
 
-    // List focus.
-    if ((key.return || key.rightArrow || ch === 'l') && selected) {
-      return setFocus('detail')
+    // List focus. The cursor walks the union [ALL, …theses, …forecasts].
+    if (key.return || key.rightArrow || ch === 'l') {
+      if (currentRow?.kind === 'forecast') {
+        return setFocus('detail')
+      }
+
+      if (currentRow?.kind === 'all') {
+        // ALL FORECASTS row clears the lens. Park the cursor on the first
+        // forecast row so the book is immediately scannable.
+        setLensId(null)
+
+        return setCursor(firstForecastRow)
+      }
+
+      if (currentRow?.kind === 'thesis' && currentRow.thesis.id) {
+        // Activate this thesis as the lens: the forecast rows below collapse to
+        // its members. Keep the cursor on the thesis row so its read stays up
+        // and the user can arrow down into the members.
+        return setLensId(currentRow.thesis.id)
+      }
+
+      return
     }
+
     if (key.upArrow || ch === 'k' || key.wheelUp) {
       return setCursor(c => Math.max(0, c - 1))
     }
+
     if (key.downArrow || ch === 'j' || key.wheelDown) {
-      return setCursor(c => Math.min(Math.max(0, filtered.length - 1), c + 1))
+      return setCursor(c => Math.min(Math.max(0, leftRows.length - 1), c + 1))
     }
+
     if (ch === 'g') {
       return setCursor(0)
     }
+
     if (ch === 'G') {
-      return setCursor(Math.max(0, filtered.length - 1))
+      return setCursor(Math.max(0, leftRows.length - 1))
     }
   })
 
@@ -511,6 +672,7 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
 
   // ── Body ────────────────────────────────────────────────────────────
   let body: ReactNode
+
   if (loading && !items.length) {
     body = (
       <Box flexGrow={1}>
@@ -524,7 +686,7 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
         <Text color={t.color.muted}>Press r to retry · q to close</Text>
       </Box>
     )
-  } else if (!filtered.length) {
+  } else if (!filtered.length && !theses.length) {
     body = (
       <Box flexDirection="column" flexGrow={1}>
         <Text color={t.color.muted}>
@@ -541,13 +703,40 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
       <ForecastList
         cursor={cursor}
         focus={focus === 'list'}
-        items={filtered}
-        showWhenNarrowFocusList={!wide && focus === 'list'}
+        lensId={lensId}
+        rows={leftRows}
         t={t}
         visibleRows={visibleRows}
         width={listW}
       />
     )
+
+    // The right pane leads with the thesis read when the cursor is on a thesis
+    // row, the existing forecast detail when on a forecast row, and a hint on the
+    // ALL row.
+    const thesisRead = cursorThesis ? (
+      <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
+        <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} ref={detailScrollRef}>
+          <Box flexDirection="column" paddingBottom={3} paddingRight={1}>
+            <ThesisDeskRead t={t} thesis={cursorThesis} width={detailW} />
+          </Box>
+        </ScrollBox>
+        <NoSelect flexShrink={0} marginLeft={1}>
+          <OverlayScrollbar scrollRef={detailScrollRef} t={t} tick={now} />
+        </NoSelect>
+      </Box>
+    ) : null
+
+    const allHint =
+      currentRow?.kind === 'all' ? (
+        <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
+          <Text color={t.color.muted} wrap="wrap">
+            {theses.length
+              ? 'All forecasts. Pick a thesis above to filter the book to its members and read the thesis health.'
+              : 'All forecasts.'}
+          </Text>
+        </Box>
+      ) : null
 
     const detail = selected ? (
       <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
@@ -598,6 +787,10 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
       </Box>
     ) : null
 
+    // Cursor on a thesis row → thesis read; on a forecast row → forecast detail;
+    // on the ALL row → a short hint.
+    const rightPane = thesisRead ?? detail ?? allHint
+
     if (wide) {
       body = (
         <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
@@ -608,25 +801,32 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
             <Text color={t.color.border}>{'│'}</Text>
           </Box>
           <Box flexDirection="column" flexGrow={1} flexShrink={1} marginLeft={1} minHeight={0}>
-            {detail}
+            {rightPane}
           </Box>
         </Box>
       )
     } else {
       body = (
         <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
-          {focus === 'list' ? list : detail}
+          {focus === 'list' ? list : rightPane}
         </Box>
       )
     }
   }
 
   // ── Footer ──────────────────────────────────────────────────────────
+  const listHint =
+    currentRow?.kind === 'thesis'
+      ? `↑↓/jk move · Enter/→ lens this thesis · / filter · r refresh · Esc/q close`
+      : currentRow?.kind === 'all'
+        ? `↑↓/jk move · Enter/→ all forecasts · / filter · r refresh · Esc/q close`
+        : `↑↓/jk move · Enter/→ focus detail · / filter${query ? ` (${filtered.length}/${items.length})` : ''} · r refresh · Esc/q close`
+
   const footerHint = filtering
     ? `filter: ${truncate(query, Math.max(8, cols - 30))}▌  · Enter apply · Esc clear`
     : focus === 'detail'
       ? '↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · ←/Esc back to list · r refresh · q close'
-      : `↑↓/jk move · Enter/→ focus detail · / filter${query ? ` (${filtered.length}/${items.length})` : ''} · r refresh · Esc/q close`
+      : listHint
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
@@ -646,37 +846,173 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
   )
 }
 
-// ── Master list ───────────────────────────────────────────────────────────
+// ── Master list (lens rows + forecast book over one cursor) ─────────────────
 
 interface ForecastListProps {
   cursor: number
   focus: boolean
-  items: ForecastWorkspaceItem[]
-  showWhenNarrowFocusList: boolean
+  lensId: null | string
+  rows: LeftRow[]
   t: Theme
   visibleRows: number
   width: number
 }
 
-function ForecastList({ cursor, focus, items, t, visibleRows, width }: ForecastListProps) {
-  const { items: windowed, offset } = windowItems(items, cursor, visibleRows)
+// A faint section divider in the left column (LENS / BOOK).
+function LeftSectionLabel({ children, t }: { children: string; t: Theme }) {
+  return (
+    <Box>
+      <Text bold color={t.color.accent} wrap="truncate-end">
+        {children}
+      </Text>
+    </Box>
+  )
+}
+
+function ForecastList({ cursor, focus, lensId, rows, t, visibleRows, width }: ForecastListProps) {
+  const { items: windowed, offset } = windowItems(rows, cursor, visibleRows)
+
   return (
     <Box flexDirection="column" flexGrow={0} flexShrink={0} minHeight={0} overflow="hidden">
-      {windowed.map((item, i) => (
-        <ForecastListRow
-          active={offset + i === cursor && focus}
-          item={item}
-          key={item.id ?? offset + i}
-          t={t}
-          width={width}
-        />
-      ))}
-      {items.length > windowed.length ? (
+      {windowed.map((row, i) => {
+        const index = offset + i
+        const active = index === cursor && focus
+        const prev = windowed[i - 1]
+        // Section dividers: "LENS" above the first lens row (ALL/thesis) in view,
+        // "BOOK" at the lens→forecast boundary.
+        const showLens = i === 0 && (row.kind === 'all' || row.kind === 'thesis')
+
+        const showBook =
+          row.kind === 'forecast' && (i === 0 || prev?.kind === 'all' || prev?.kind === 'thesis')
+
+        if (row.kind === 'all') {
+          return (
+            <Fragment key="all">
+              {showLens ? <LeftSectionLabel t={t}>LENS</LeftSectionLabel> : null}
+              <LensRow
+                active={active}
+                count={countForLens(rows, null)}
+                label="ALL FORECASTS"
+                selected={lensId === null}
+                t={t}
+                width={width}
+              />
+            </Fragment>
+          )
+        }
+
+        if (row.kind === 'thesis') {
+          return (
+            <Fragment key={`th:${row.thesis.id ?? index}`}>
+              {showLens ? <LeftSectionLabel t={t}>LENS</LeftSectionLabel> : null}
+              <ThesisListRow
+                active={active}
+                selected={lensId === row.thesis.id}
+                t={t}
+                thesis={row.thesis}
+                width={width}
+              />
+            </Fragment>
+          )
+        }
+
+        return (
+          <Fragment key={row.item.id ?? `fc:${index}`}>
+            {showBook ? <LeftSectionLabel t={t}>BOOK</LeftSectionLabel> : null}
+            <ForecastListRow active={active} item={row.item} t={t} width={width} />
+          </Fragment>
+        )
+      })}
+      {rows.length > windowed.length ? (
         <Text color={t.color.muted}>
           {'  '}
-          {offset + windowed.length}/{items.length}
+          {offset + windowed.length}/{rows.length}
         </Text>
       ) : null}
+    </Box>
+  )
+}
+
+// Members in the book for a given lens (null = ALL). Used only for the ALL row's
+// count badge.
+const countForLens = (rows: LeftRow[], _lens: null): number =>
+  rows.filter(row => row.kind === 'forecast').length
+
+// Health color: green ≥60%, amber ≥45%, red below; withheld (null) → muted.
+const healthColor = (t: Theme, health?: null | number): string =>
+  !finite(health) ? t.color.muted : health >= 0.6 ? t.color.ok : health >= 0.45 ? t.color.warn : t.color.error
+
+// The ALL FORECASTS lens-clear row.
+function LensRow({
+  active,
+  count,
+  label,
+  selected,
+  t,
+  width
+}: {
+  active: boolean
+  count: number
+  label: string
+  selected: boolean
+  t: Theme
+  width: number
+}) {
+  const titleW = Math.max(8, width - 8)
+
+  return (
+    <Box width={width}>
+      <Text backgroundColor={active ? t.color.selectionBg : undefined} wrap="truncate-end">
+        <Text bold={active} color={active ? t.color.primary : t.color.muted}>
+          {active ? '▸ ' : selected ? '● ' : '  '}
+        </Text>
+        <Text bold={active || selected} color={selected ? t.color.primary : active ? t.color.text : t.color.label}>
+          {label.padEnd(titleW)}
+        </Text>
+        <Text color={t.color.muted}>{String(count).padStart(4)}</Text>
+      </Text>
+    </Box>
+  )
+}
+
+// One thesis row in the lens: "health% · title · (members)", active-highlighted.
+// A withheld health (no snapshot) reads "—", never a fake number.
+function ThesisListRow({
+  active,
+  selected,
+  t,
+  thesis,
+  width
+}: {
+  active: boolean
+  selected: boolean
+  t: Theme
+  thesis: ForecastThesis
+  width: number
+}) {
+  const health = thesis.health_probability
+  const healthText = (thesis.health_display ?? (finite(health) ? pct(health) : '—')).padStart(4)
+  const members = thesis.member_count ?? thesis.components?.length ?? 0
+  const memberText = `(${members})`
+  // marker(2) health(4) gap(1) members + gaps → reserve ~ 4 + 2 + memberText.length
+  const titleW = Math.max(6, width - 4 - 2 - memberText.length - 2)
+  const title = truncate(thesis.title ?? thesis.id ?? 'thesis', titleW).padEnd(titleW)
+
+  return (
+    <Box width={width}>
+      <Text backgroundColor={active ? t.color.selectionBg : undefined} wrap="truncate-end">
+        <Text bold={active} color={active ? t.color.primary : t.color.muted}>
+          {active ? '▸ ' : selected ? '● ' : '  '}
+        </Text>
+        <Text bold color={healthColor(t, health)}>
+          {healthText}
+        </Text>
+        <Text bold={active || selected} color={selected ? t.color.primary : active ? t.color.text : t.color.label}>
+          {' '}
+          {title}
+        </Text>
+        <Text color={t.color.muted}> {memberText}</Text>
+      </Text>
     </Box>
   )
 }
@@ -696,21 +1032,25 @@ function ForecastListRow({
   const glyph = deltaGlyph(delta)
   const deltaColor = !finite(delta) || Math.abs(delta) < 0.005 ? t.color.muted : delta > 0 ? t.color.ok : t.color.error
   const sparkValues = (item.history ?? []).slice(-8).map(point => point.headline_probability ?? null)
+
   // Probabilities use the fixed 0..1 scale; distribution means (e.g. ~4.2%)
   // are scaled to their own data range so the trend is visible, not clamped flat.
   const sparkOpts =
     item.headline_kind === 'distribution'
       ? (() => {
           const finiteVals = sparkValues.filter((v): v is number => finite(v))
+
           return finiteVals.length ? { yMax: Math.max(...finiteVals), yMin: Math.min(...finiteVals) } : {}
         })()
       : {}
+
   const spark = levelSparkline(sparkValues, sparkOpts)
   const probText = headlineCompact(item)
   // Reserve: marker(2) prob(6) gap(1) glyph(1) gap(1) spark(8) → ~20; rest for title.
   const titleW = Math.max(10, width - 21)
   const title = truncate(item.title ?? item.id ?? 'untitled', titleW).padEnd(titleW)
   const alertBadge = (item.open_alert_count ?? 0) > 0 ? `!${item.open_alert_count}` : ''
+
   return (
     <Box width={width}>
       <Text backgroundColor={active ? t.color.selectionBg : undefined} wrap="truncate-end">
@@ -766,21 +1106,26 @@ export function ForecastDetail({
   const bandPoints = useMemo(() => historyToBandPoints(item), [item])
   const hasSeries = bandPoints.some(point => finite(point.y))
   const scale = useMemo(() => chartScale(bandPoints), [bandPoints])
+
   const chart = useMemo(
     // Never exceed the pane width (clamps the chart on very narrow terminals so
     // the line-drawn axis/markers don't wrap and shred the layout).
     () => (hasSeries ? bandChart(bandPoints, { height: 9, width: Math.min(56, Math.max(1, width - 1)), ...scale }) : null),
     [bandPoints, hasSeries, scale, width]
   )
+
   // Prefer the server-classified PMF (buckets only, moments/intervals stripped);
   // fall back to the raw dict for plain categorical forecasts.
   const bars = useMemo(() => {
     const pmf = item.distribution?.pmf
+
     if (pmf && pmf.length) {
       return pmf.map(row => ({ label: row.label, value: row.probability }))
     }
+
     return distributionBars(item.probability)
   }, [item.distribution, item.probability])
+
   const dist = item.distribution
   const isDistribution = item.headline_kind === 'distribution'
   const unit = unitSuffix(item.units)
@@ -942,6 +1287,7 @@ export function ForecastDetail({
                   : evidence.stance === 'decreases'
                     ? t.color.error
                     : t.color.muted
+
               return (
                 <Text key={evidence.id ?? i} wrap="truncate-end">
                   <Text color={t.color.label}>{shortDate(evidence.available_at)} </Text>
@@ -982,6 +1328,7 @@ export function ForecastDetail({
 
 function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePanel; t: Theme; width: number }) {
   const whisker = boxWhisker(panel.spread ?? {}, { width: Math.max(12, Math.min(width - 18, 28)) })
+
   return (
     <>
       <SectionTitle t={t}>{`panel (${panel.estimates?.length ?? 0} perspectives)`}</SectionTitle>
@@ -1020,10 +1367,12 @@ function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePanel; t: T
 // minWidth={0}) so long rationales / URLs wrap instead of overflowing the pane.
 export function ForecastPacketTail({ sections, t, width }: { sections: PanelSection[]; t: Theme; width: number }) {
   const keyWidth = Math.min(18, Math.max(8, Math.floor(width * 0.34)))
+
   return (
     <>
       {sections.map((section, si) => {
         const isActions = section.title === 'Actions'
+
         return (
           <Fragment key={section.title ?? si}>
             {section.title ? <SectionTitle t={t}>{section.title}</SectionTitle> : null}
@@ -1152,9 +1501,11 @@ export function AnalystNote({
   width?: number
 }) {
   const isRetro = variant === 'retrospective'
+
   const angles = ANALYST_ANGLES.map(angle => ({ ...angle, text: (note[angle.key] ?? '').trim() })).filter(
     angle => angle.text
   )
+
   const fallback =
     angles.length === 0
       ? (note.body ?? '')
@@ -1162,6 +1513,7 @@ export function AnalystNote({
           .map(paragraph => paragraph.trim())
           .filter(Boolean)
       : []
+
   const verdictColor =
     note.verdict === 'right'
       ? t.color.ok
@@ -1216,6 +1568,7 @@ function AnalystLog({ notes, t }: { notes: ForecastAnalystNote[]; t: Theme }) {
   if (!notes.length) {
     return null
   }
+
   return (
     <Box flexDirection="column">
       <SectionTitle t={t}>analyst log</SectionTitle>
@@ -1248,15 +1601,18 @@ const RELATIONSHIP_TAG: Record<string, { glyph: string; label: string }> = {
 export function RelatedForecasts({ related, t, width }: { related: ForecastRelated; t: Theme; width: number }) {
   const forecasts = related.forecasts ?? []
   const shared = related.shared_sources ?? []
+
   if (!forecasts.length && !shared.length) {
     return null
   }
+
   return (
     <>
       <SectionTitle t={t}>related forecasts</SectionTitle>
       {forecasts.map((rel, index) => {
         const tag = RELATIONSHIP_TAG[rel.relationship ?? 'correlated_sibling'] ?? RELATIONSHIP_TAG.correlated_sibling
         const lead = rel.note_headline || rel.reasons_up?.[0] || rel.be_aware || ''
+
         return (
           <Box flexDirection="column" key={rel.id ?? index} marginTop={index === 0 ? 0 : 1}>
             <Text wrap="truncate-end">
@@ -1295,9 +1651,11 @@ export function RelatedForecasts({ related, t, width }: { related: ForecastRelat
 function DecisionCard({ item, t }: { item: ForecastWorkspaceItem; t: Theme }) {
   const issues = item.decision_readiness_issues ?? []
   const hasCard = item.decision_owner || item.action_threshold || (item.update_triggers?.length ?? 0) > 0
+
   if (!hasCard && !issues.length) {
     return null
   }
+
   return (
     <>
       <SectionTitle t={t}>decision card</SectionTitle>
@@ -1318,5 +1676,202 @@ function DecisionCard({ item, t }: { item: ForecastWorkspaceItem; t: Theme }) {
         </Text>
       ) : null}
     </>
+  )
+}
+
+// ── Thesis read (the right pane when the cursor is on a thesis row) ──────────
+// Mirrors the web ThesisTrendBlock + ThesisDeskRead + ThesisComponentRow: leads
+// with the health trend (health probability series + the score band), then the
+// aggregate stats (score, 90% band, coverage, n_eff, ρ), the analyst note, the
+// member-contribution table, and an uncertainty caveat. Withheld values render
+// as "—" / "withheld", never a fake number.
+
+const pctOf = (value?: null | number): string => (finite(value) ? `${(value * 100).toFixed(0)}%` : '—')
+
+const fixedOr = (value: null | number | undefined, digits: number): string =>
+  finite(value) ? value.toFixed(digits) : '—'
+
+// The thesis health time-series as a band chart (health probability with the
+// score band shown as the y-zoom). Distinct from the forecast band chart only in
+// that its series is the thesis's rolling health.
+export const thesisHealthBandPoints = (thesis: ForecastThesis): BandPoint[] =>
+  (thesis.history ?? []).map(point => ({
+    hi: null,
+    lo: null,
+    y: finite(point.headline_probability) ? point.headline_probability : null
+  }))
+
+function ThesisTrendBlock({ thesis, t, width }: { thesis: ForecastThesis; t: Theme; width: number }) {
+  const points = useMemo(() => thesisHealthBandPoints(thesis), [thesis])
+  const hasSeries = points.filter(point => finite(point.y)).length >= 2
+  const scale = useMemo(() => chartScale(points), [points])
+
+  const chart = useMemo(
+    () => (hasSeries ? bandChart(points, { height: 7, width: Math.min(56, Math.max(1, width - 1)), ...scale }) : null),
+    [points, hasSeries, scale, width]
+  )
+
+  const band = thesis.score_band
+  const health = thesis.health_probability
+  const delta = thesis.delta
+  // The glyph carries the sign; the number is the magnitude in health pp.
+  const deltaText = finite(delta) ? `${delta >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(delta * 100))}pp` : '· flat'
+  const deltaColor = !finite(delta) || Math.abs(delta) < 1e-9 ? t.color.muted : delta > 0 ? t.color.ok : t.color.error
+
+  return (
+    <Box flexDirection="column">
+      <Text wrap="truncate-end">
+        <Text color={t.color.muted}>health </Text>
+        <Text bold color={healthColor(t, health)}>
+          {thesis.health_display ?? (finite(health) ? pct(health) : 'withheld')}
+        </Text>
+        <Text color={t.color.muted}>{'   '}</Text>
+        <Text bold color={deltaColor}>
+          {deltaText}
+        </Text>
+        <Text color={t.color.muted}>{'   score '}</Text>
+        <Text color={t.color.text}>
+          {fixedOr(thesis.thesis_score, 0)}
+          {band && finite(band.q05) && finite(band.q95) ? ` (${band.q05.toFixed(0)}–${band.q95.toFixed(0)})` : ''}
+        </Text>
+        <Text color={t.color.muted}>{`   ${thesis.freshness ?? shortDate(thesis.as_of)}`}</Text>
+      </Text>
+      {chart ? (
+        <>
+          <SectionTitle t={t}>health over time</SectionTitle>
+          {chart.rows.map((row, i) => (
+            <Text color={t.color.accent} key={i}>
+              {row}
+            </Text>
+          ))}
+          <Text color={t.color.label} wrap="truncate-end">
+            {`  ${shortDate(thesis.history?.[0]?.as_of)} → ${shortDate(thesis.as_of)}  ● health`}
+          </Text>
+        </>
+      ) : (
+        <Box marginTop={1}>
+          <Text color={t.color.muted}>awaiting a second aggregation for a trend</Text>
+        </Box>
+      )}
+    </Box>
+  )
+}
+
+function ThesisComponentRow({ comp, t, width }: { comp: ForecastThesisComponent; t: Theme; width: number }) {
+  const s = comp.s_i
+  const signalColor = !finite(s) ? t.color.muted : s >= 0.5 ? t.color.ok : t.color.error
+  const dir = comp.direction === 'inverted' ? '↓risk' : '↑supp'
+  const dirColor = comp.direction === 'inverted' ? t.color.error : t.color.ok
+  const belief = (comp.latest_belief_display ?? '—').padStart(6)
+  const signal = (finite(s) ? `${(s * 100).toFixed(0)}%` : '—').padStart(5)
+
+  const contrib = finite(comp.contribution_pts)
+    ? `${comp.contribution_pts >= 0 ? '+' : ''}${comp.contribution_pts.toFixed(1)}`
+    : '—'
+
+  const stale = comp.status && comp.status !== 'ok'
+  // marker gaps: dir(6) gap belief(6) gap signal(5) gap contrib(~6) → reserve ~31
+  const titleW = Math.max(8, width - 32)
+  const title = truncate(comp.title ?? comp.id ?? 'member', titleW).padEnd(titleW)
+
+  return (
+    <Text wrap="truncate-end">
+      <Text bold color={dirColor}>
+        {dir.padEnd(6)}
+      </Text>
+      <Text color={t.color.text}>{title}</Text>
+      <Text color={t.color.label}> {belief}</Text>
+      <Text color={signalColor}> {signal}</Text>
+      <Text color={t.color.primary}> {contrib.padStart(6)}</Text>
+      {stale ? <Text color={t.color.warn}> {comp.status}</Text> : null}
+    </Text>
+  )
+}
+
+export function ThesisDeskRead({ thesis, t, width }: { thesis: ForecastThesis; t: Theme; width: number }) {
+  const note = thesis.analyst_note ?? null
+
+  const comps = [...(thesis.components ?? [])].sort(
+    (a, b) => (b.contribution_pts ?? 0) - (a.contribution_pts ?? 0)
+  )
+
+  const band = thesis.score_band
+  const members = thesis.member_count ?? comps.length
+  const topics = (thesis.topics ?? []).join(', ')
+
+  return (
+    <Box flexDirection="column">
+      <Text bold color={t.color.primary} wrap="truncate-end">
+        {thesis.title ?? thesis.id}
+      </Text>
+      <Text wrap="truncate-end">
+        {thesis.domain ? <Text color={t.color.label}>{thesis.domain}</Text> : null}
+        {thesis.status ? (
+          <Text color={thesis.status === 'active' ? t.color.ok : t.color.label}>
+            {thesis.domain ? ' · ' : ''}
+            {thesis.status}
+          </Text>
+        ) : null}
+        <Text color={t.color.muted}>{`${thesis.domain || thesis.status ? ' · ' : ''}${members} member${members === 1 ? '' : 's'}`}</Text>
+        {topics ? <Text color={t.color.muted}> · {topics}</Text> : null}
+      </Text>
+
+      <Box marginTop={1}>
+        <ThesisTrendBlock t={t} thesis={thesis} width={width} />
+      </Box>
+
+      <SectionTitle t={t}>aggregate</SectionTitle>
+      <KV k="health" t={t} v={thesis.health_display ?? (finite(thesis.health_probability) ? pct(thesis.health_probability) : 'withheld')} />
+      <KV k="score" t={t} v={fixedOr(thesis.thesis_score, 0)} />
+      <KV
+        k="90% band"
+        t={t}
+        v={band && finite(band.q05) && finite(band.q95) ? `${band.q05.toFixed(0)} – ${band.q95.toFixed(0)}` : '—'}
+      />
+      <KV k="coverage" t={t} v={pctOf(thesis.coverage)} />
+      <KV k="n_eff" t={t} v={fixedOr(thesis.n_eff, 1)} />
+      <KV k="rho" t={t} v={fixedOr(thesis.rho, 2)} />
+
+      {note ? (
+        <AnalystNote
+          note={note}
+          showStance={false}
+          t={t}
+          variant={note.kind === 'retrospective' ? 'retrospective' : 'quickread'}
+          width={width}
+        />
+      ) : (
+        <Box marginTop={1}>
+          <Text color={t.color.muted}>no thesis note yet</Text>
+        </Box>
+      )}
+
+      <SectionTitle t={t}>member contributions</SectionTitle>
+      <Text color={t.color.muted} wrap="truncate-end">
+        {'dir'.padEnd(6)}
+        {'member'.padEnd(Math.max(8, width - 32))}
+        {' '}
+        {'belief'.padStart(6)}
+        {' '}
+        {'signal'.padStart(5)}
+        {' '}
+        {'contrib'.padStart(7)}
+      </Text>
+      {comps.length ? (
+        comps.map((comp, i) => <ThesisComponentRow comp={comp} key={comp.id ?? `c${i}`} t={t} width={width} />)
+      ) : (
+        <Text color={t.color.muted}>no members tagged yet</Text>
+      )}
+
+      <SectionTitle t={t}>caveats</SectionTitle>
+      <Box paddingLeft={2}>
+        <Text color={t.color.warn} wrap="wrap">
+          {`Aggregated after the members' latest runs; members co-move (ρ ${fixedOr(thesis.rho, 2)}, n_eff ~${fixedOr(
+            thesis.n_eff,
+            1
+          )} of ${thesis.components?.length ?? 0}). Coverage ${pctOf(thesis.coverage)}.`}
+        </Text>
+      </Box>
+    </Box>
   )
 }

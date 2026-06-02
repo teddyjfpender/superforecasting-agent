@@ -3,7 +3,7 @@ import { PassThrough } from 'stream'
 import React from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import type { ForecastWorkspaceItem, ForecastWorkspaceResponse } from '../gatewayTypes.js'
+import type { ForecastThesis, ForecastWorkspaceItem, ForecastWorkspaceResponse } from '../gatewayTypes.js'
 
 const ESC = String.fromCharCode(27)
 const BEL = String.fromCharCode(7)
@@ -131,6 +131,64 @@ const fixture = (): ForecastWorkspaceResponse => ({
   product: 'Superforecasting Agent'
 })
 
+const inflationThesis = (): ForecastThesis => ({
+  analyst_note: {
+    as_of: '2026-05-29T00:00:00Z',
+    headline: 'Disinflation is stalling near 4%',
+    how_it_thinks: 'The members lean toward sticky prints rather than a clean glide path.',
+    kind: 'brief'
+  },
+  as_of: '2026-05-29T00:00:00Z',
+  coverage: 0.5,
+  components: [
+    {
+      contribution_pts: 12.4,
+      direction: 'support',
+      id: 'fq_cpi',
+      latest_belief_display: 'μ4.23%',
+      s_i: 0.62,
+      status: 'ok',
+      title: 'May 2026 CPI-U YoY',
+      weight: 1
+    },
+    {
+      contribution_pts: -3.1,
+      direction: 'inverted',
+      id: 'fq_unmatched',
+      latest_belief_display: '38%',
+      s_i: 0.38,
+      status: 'stale',
+      title: 'Fed cuts before September',
+      weight: 1
+    }
+  ],
+  delta: -0.04,
+  domain: 'macro',
+  freshness: 'fresh today',
+  health_display: '54%',
+  health_probability: 0.54,
+  history: [
+    { as_of: '2026-05-15T00:00:00Z', headline_probability: 0.5 },
+    { as_of: '2026-05-22T00:00:00Z', headline_probability: 0.58 },
+    { as_of: '2026-05-29T00:00:00Z', headline_probability: 0.54 }
+  ],
+  id: 'th_inflation',
+  member_count: 2,
+  n_eff: 1.3,
+  rho: 0.42,
+  score_band: { q05: 41, q50: 54, q95: 67 },
+  status: 'active',
+  thesis_score: 54,
+  title: 'Inflation stays sticky through 2026',
+  topics: ['inflation', 'macro']
+})
+
+const thesisFixture = (): ForecastWorkspaceResponse => ({
+  ...fixture(),
+  theses: [inflationThesis()],
+  thesis_count: 1
+})
+
 const writeStream = (columns: number, rows: number, isTTY = false) => {
   const stream = new PassThrough() as PassThrough & {
     columns: number
@@ -141,6 +199,7 @@ const writeStream = (columns: number, rows: number, isTTY = false) => {
     setRawMode?: (mode: boolean) => void
     unref?: () => PassThrough
   }
+
   let output = ''
   Object.assign(stream, {
     columns,
@@ -156,6 +215,7 @@ const writeStream = (columns: number, rows: number, isTTY = false) => {
   stream.on('data', chunk => {
     output += chunk.toString()
   })
+
   return { stream, text: () => output }
 }
 
@@ -169,6 +229,7 @@ const tick = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 const renderWorkspace = async (columns: number, response: ForecastWorkspaceResponse) => {
   process.env.FORECAST_TUI_INLINE = '1'
+
   const [{ render }, { ForecastsWorkspace }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
     import('@hermes/ink'),
     import('../components/forecastsWorkspace.js'),
@@ -187,11 +248,13 @@ const renderWorkspace = async (columns: number, response: ForecastWorkspaceRespo
     React.createElement(ForecastsWorkspace, { gw: fakeGw, onClose: () => undefined, t: DARK_THEME }),
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )
+
   // Allow the async forecast.workspace fetch promise + an Ink frame to flush.
   await tick(60)
   const text = normalize(stdout.text(), stripAnsi)
   instance.unmount?.()
   instance.cleanup?.()
+
   return text
 }
 
@@ -205,12 +268,14 @@ const renderDetail = async (item: ForecastWorkspaceItem, width = 70) => {
     import('../theme.js'),
     import('../lib/text.js')
   ])
+
   const stdout = writeStream(120, 60)
   renderSync(React.createElement(ForecastDetail, { item, t: DARK_THEME, width }), {
     exitOnCtrlC: false,
     patchConsole: false,
     stdout: stdout.stream
   } as never)
+
   return normalize(stdout.text(), stripAnsi)
 }
 
@@ -219,6 +284,7 @@ const renderDetail = async (item: ForecastWorkspaceItem, width = 70) => {
 // builder, keep only the tail titles, and render ForecastPacketTail directly so
 // the assertion doesn't depend on headless ScrollBox height measurement.
 const TAIL_TITLES = new Set(['Forecast History', 'Assumptions And References', 'Model Runs', 'Actions'])
+
 const renderTail = async (packet: Record<string, unknown>, width = 70) => {
   const [{ renderSync }, { ForecastPacketTail }, { forecastQuestionDetailSections }, { DARK_THEME }, { stripAnsi }] =
     await Promise.all([
@@ -228,15 +294,18 @@ const renderTail = async (packet: Record<string, unknown>, width = 70) => {
       import('../theme.js'),
       import('../lib/text.js')
     ])
+
   const sections = forecastQuestionDetailSections({ packet } as never).filter(
     section => section.title && TAIL_TITLES.has(section.title)
   )
+
   const stdout = writeStream(120, 80)
   renderSync(React.createElement(ForecastPacketTail, { sections, t: DARK_THEME, width }), {
     exitOnCtrlC: false,
     patchConsole: false,
     stdout: stdout.stream
   } as never)
+
   return { sections, text: normalize(stdout.text(), stripAnsi) }
 }
 
@@ -334,10 +403,12 @@ describe('ForecastsWorkspace pure transforms', () => {
 
   it('historyToBandPoints marks non-numeric points as null y', async () => {
     const { historyToBandPoints } = await import('../components/forecastsWorkspace.js')
+
     const points = historyToBandPoints({
       headline_kind: 'probability',
       history: [{ headline_probability: null }, { headline_probability: 0.5, confidence: 0.5 }]
     } as ForecastWorkspaceItem)
+
     expect(points[0]!.y).toBeNull()
     expect(points[1]!.y).toBe(0.5)
   })
@@ -406,6 +477,7 @@ describe('ForecastsWorkspace render', () => {
       forecasts: [],
       open_alert_count: 0
     })
+
     expect(text).toContain('No active forecasts')
   })
 
@@ -416,6 +488,7 @@ describe('ForecastsWorkspace render', () => {
       import('../theme.js'),
       import('../lib/text.js')
     ])
+
     const note = {
       as_of: '2026-06-01T00:00:00Z',
       be_aware: 'The poll lead is early and not fully independent of prior evidence.',
@@ -427,6 +500,7 @@ describe('ForecastsWorkspace render', () => {
       looking_for: 'A clean independent poll that confirms or breaks the Talarico signal.',
       stance: 'lean_yes' as const
     }
+
     const stdout = writeStream(120, 60)
     renderSync(React.createElement(AnalystNote, { note, t: DARK_THEME, variant: 'quickread' }), {
       exitOnCtrlC: false,
@@ -450,6 +524,7 @@ describe('ForecastsWorkspace render', () => {
       import('../theme.js'),
       import('../lib/text.js')
     ])
+
     const note = {
       as_of: '2026-06-01T00:00:00Z',
       headline: 'May CPI still looks like a 4.2 or 4.3 print',
@@ -457,6 +532,7 @@ describe('ForecastsWorkspace render', () => {
       kind: 'brief' as const,
       stance: 'lean_no' as const
     }
+
     const stdout = writeStream(120, 60)
     renderSync(
       React.createElement(AnalystNote, { note, showStance: false, t: DARK_THEME, variant: 'quickread' }),
@@ -476,6 +552,7 @@ describe('ForecastsWorkspace render', () => {
       import('../theme.js'),
       import('../lib/text.js')
     ])
+
     const note = {
       as_of: '2026-11-04T00:00:00Z',
       body: 'It landed close.\n\nThe fundamentals held but the margin was tighter than the model implied.',
@@ -483,6 +560,7 @@ describe('ForecastsWorkspace render', () => {
       kind: 'retrospective' as const,
       verdict: 'close' as const
     }
+
     const stdout = writeStream(120, 60)
     renderSync(React.createElement(AnalystNote, { note, t: DARK_THEME, variant: 'retrospective' }), {
       exitOnCtrlC: false,
@@ -505,6 +583,7 @@ describe('ForecastsWorkspace render', () => {
       import('../theme.js'),
       import('../lib/text.js')
     ])
+
     const related = {
       forecasts: [
         {
@@ -521,6 +600,7 @@ describe('ForecastsWorkspace render', () => {
       informed_by: ['fq_cpi_yoy'],
       shared_sources: [{ kind: 'watched_source', shared_with: [], source: 'fred:GASREGW' }]
     }
+
     const stdout = writeStream(120, 60)
     renderSync(React.createElement(RelatedForecasts, { related, t: DARK_THEME, width: 70 }), {
       exitOnCtrlC: false,
@@ -536,6 +616,77 @@ describe('ForecastsWorkspace render', () => {
     // independence heads-up, never merged
     expect(text).toContain('shares fred:GASREGW')
     expect(text).toContain('possibly non-independent')
+  })
+
+  it('renders the thesis lens rows at the top of the left column when theses are present', async () => {
+    const text = await renderWorkspace(120, thesisFixture())
+    // The lens section + the ALL clear row + the thesis row are above the book.
+    expect(text).toContain('LENS')
+    expect(text).toContain('ALL FORECASTS')
+    expect(text).toContain('54%') // thesis health
+    expect(text).toContain('Inflation stays sticky through 2026')
+    expect(text).toContain('(2)') // member count badge
+    expect(text).toContain('BOOK')
+    // The forecast book still renders below the lens.
+    expect(text).toContain('Texas Senate')
+  })
+
+  it('renders the thesis read with health trend, aggregate stats, members, and caveats', async () => {
+    const [{ renderSync }, { ThesisDeskRead }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/forecastsWorkspace.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const stdout = writeStream(120, 80)
+    renderSync(React.createElement(ThesisDeskRead, { t: DARK_THEME, thesis: inflationThesis(), width: 80 }), {
+      exitOnCtrlC: false,
+      patchConsole: false,
+      stdout: stdout.stream
+    } as never)
+    const text = normalize(stdout.text(), stripAnsi)
+    expect(text).toContain('Inflation stays sticky through 2026')
+    // health trend + delta in pp
+    expect(text).toContain('health over time')
+    expect(text).toContain('▼ 4pp')
+    // aggregate stats
+    expect(text).toContain('aggregate')
+    expect(text).toContain('54') // score
+    expect(text).toContain('41 – 67') // 90% band
+    expect(text).toContain('coverage')
+    expect(text).toContain('n_eff')
+    // analyst note
+    expect(text).toContain('Disinflation is stalling near 4%')
+    // member contribution table: direction, belief, signal, contribution
+    expect(text).toContain('member contributions')
+    expect(text).toContain('↑supp')
+    expect(text).toContain('↓risk')
+    expect(text).toContain('μ4.23%')
+    expect(text).toContain('+12.4')
+    // uncertainty caveat with rho / n_eff
+    expect(text).toContain('caveats')
+    expect(text).toContain('co-move')
+    expect(text).toContain('0.42')
+  })
+
+  it('shows withheld (not a fake number) for a thesis with no health snapshot', async () => {
+    const [{ renderSync }, { ThesisDeskRead }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/forecastsWorkspace.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const thesis = { ...inflationThesis(), health_display: undefined, health_probability: null }
+    const stdout = writeStream(120, 80)
+    renderSync(React.createElement(ThesisDeskRead, { t: DARK_THEME, thesis, width: 80 }), {
+      exitOnCtrlC: false,
+      patchConsole: false,
+      stdout: stdout.stream
+    } as never)
+    const text = normalize(stdout.text(), stripAnsi)
+    expect(text).toContain('withheld')
   })
 
   it('renders the packet tail (history, model runs, action playbook) under the summary', async () => {
