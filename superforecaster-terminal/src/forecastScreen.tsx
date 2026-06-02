@@ -515,6 +515,64 @@ function ForecastDetailModal({ item, close }: { item: ForecastWorkspaceItem; clo
   );
 }
 
+function ThesisDetailModal({ thesis, close }: { thesis: ForecastThesis; close: () => void }) {
+  return (
+    <>
+      <header className="flex shrink-0 items-center justify-between border-b border-term-border bg-term-accent px-3 py-1 text-[12px] font-semibold uppercase tracking-wider text-term-on-accent">
+        <span>THESIS ▸ {thesis.title || thesis.id}</span>
+        <button
+          onClick={close}
+          className="border border-term-on-accent/40 px-1.5 py-[1px] text-[10px] hover:bg-term-on-accent/15"
+        >
+          ESC
+        </button>
+      </header>
+      <div
+        className="grid min-h-0 flex-1 gap-px bg-term-border"
+        style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)" }}
+      >
+        <div className="flex min-h-0 min-w-0 flex-col border border-term-border bg-term-panel">
+          <div className="min-h-0 min-w-0 flex-1">
+            <ThesisTrendBlock thesis={thesis} />
+          </div>
+        </div>
+        <div className="min-h-0 min-w-0 overflow-auto border border-term-border bg-term-panel">
+          <ThesisDeskRead thesis={thesis} onJump={() => {}} />
+        </div>
+      </div>
+    </>
+  );
+}
+
+function FactorDetailModal({ factor, close }: { factor: ForecastFactor; close: () => void }) {
+  return (
+    <>
+      <header className="flex shrink-0 items-center justify-between border-b border-term-border bg-term-accent px-3 py-1 text-[12px] font-semibold uppercase tracking-wider text-term-on-accent">
+        <span>FACTOR ▸ {factor.title || factor.id}</span>
+        <button
+          onClick={close}
+          className="border border-term-on-accent/40 px-1.5 py-[1px] text-[10px] hover:bg-term-on-accent/15"
+        >
+          ESC
+        </button>
+      </header>
+      <div
+        className="grid min-h-0 flex-1 gap-px bg-term-border"
+        style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)" }}
+      >
+        <div className="flex min-h-0 min-w-0 flex-col border border-term-border bg-term-panel">
+          <div className="min-h-0 min-w-0 flex-1">
+            <FactorTrendBlock factor={factor} />
+          </div>
+        </div>
+        <div className="min-h-0 min-w-0 overflow-auto border border-term-border bg-term-panel">
+          <FactorDeskRead factor={factor} onJump={() => {}} />
+        </div>
+      </div>
+    </>
+  );
+}
+
 /* ── empty state ─────────────────────────────────────────────────────────── */
 
 function EmptyBook({ enabled, query }: { enabled: boolean; query: string }) {
@@ -1239,7 +1297,12 @@ export function ForecastScreen() {
               <Panel
                 id={4}
                 title={activeThesis.title || "THESIS"}
-                right={`${activeThesis.member_count ?? 0} MEMBERS`}
+                right={
+                  <span className="flex items-center gap-2">
+                    <span>{activeThesis.member_count ?? 0} MEMBERS</span>
+                    <ExpandButton onClick={() => modal.open((c) => <ThesisDetailModal thesis={activeThesis} close={c} />)} />
+                  </span>
+                }
               >
                 <ThesisDeskRead thesis={activeThesis} onJump={(id) => setSelectedId(id)} />
               </Panel>
@@ -1260,7 +1323,12 @@ export function ForecastScreen() {
               <Panel
                 id={4}
                 title={activeFactor.title || "FACTOR"}
-                right={`${activeFactor.member_count ?? 0} CONSTIT`}
+                right={
+                  <span className="flex items-center gap-2">
+                    <span>{activeFactor.member_count ?? 0} CONSTIT</span>
+                    <ExpandButton onClick={() => modal.open((c) => <FactorDetailModal factor={activeFactor} close={c} />)} />
+                  </span>
+                }
               >
                 <FactorDeskRead factor={activeFactor} onJump={(id) => setSelectedId(id)} />
               </Panel>
