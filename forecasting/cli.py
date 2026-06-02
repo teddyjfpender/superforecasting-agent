@@ -1840,6 +1840,21 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     lesson_status.add_argument("--recommended-adjustment-json")
     lesson_status.add_argument("--supersedes")
     lesson_status.set_defaults(_forecast_handler=_cmd_lesson_status)
+    lesson_synth = lesson_sub.add_parser(
+        "synthesize",
+        help="Derive signed over/under-confidence lessons from resolved forecasts (FDR-gated; advisory by default)",
+    )
+    lesson_synth.add_argument("--scope", default="all", help="'all', 'global', 'domain', or a specific domain name")
+    lesson_synth.add_argument("--since", help="Only count resolutions on/after this ISO date (regime cutoff)")
+    lesson_synth.add_argument("--recency-halflife", type=float, dest="recency_halflife_days", help="Exponential recency half-life (days)")
+    lesson_synth.add_argument(
+        "--mechanical",
+        action="store_true",
+        help="Opt in to bounded numeric logit-scale nudges (OFF by default → advisory text only)",
+    )
+    lesson_synth.add_argument("--no-activate", action="store_true", help="Leave every synthesized lesson tentative")
+    lesson_synth.add_argument("--dry-run", action="store_true", help="Measure and decide without writing any lesson")
+    lesson_synth.set_defaults(_forecast_handler=_cmd_lesson_synthesize)
 
     lessons_parser = forecast_sub.add_parser("lessons", help="List calibration lessons")
     lessons_parser.add_argument("--scope-type")
@@ -1900,6 +1915,15 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     )
     calibration_parser.add_argument("--horizon", help="Filter by horizon in days, e.g. 7 or 30-90")
     calibration_parser.add_argument("--all", action="store_true", help="Include calibration-ineligible scores")
+    calibration_parser.add_argument(
+        "--bias",
+        action="store_true",
+        help="Show the SIGNED over/under-confidence view (per scope: SCE, CI, status) instead of the unsigned summary",
+    )
+    calibration_parser.add_argument("--since", help="Bias view: only count resolutions on/after this ISO date")
+    calibration_parser.add_argument(
+        "--recency-halflife", type=float, dest="recency_halflife_days", help="Bias view: recency half-life (days)"
+    )
     calibration_parser.set_defaults(_forecast_handler=_cmd_calibration)
 
     errors_parser = forecast_sub.add_parser("errors", help="Show domain error profile summary")
@@ -8011,7 +8035,73 @@ def _cmd_resolver_list(args: argparse.Namespace) -> None:
         print(f"{policy['id']:<15} {policy['resolver_plugin']:<22} {scope:<17} {policy['enabled']}")
 
 
+def _cmd_lesson_synthesize(args: argparse.Namespace) -> None:
+    results = _ledger(args).synthesize_bias_lessons(
+        scope=args.scope,
+        since=args.since,
+        recency_halflife_days=args.recency_halflife_days,
+        enable_mechanical=args.mechanical,
+        activate=not args.no_activate,
+        dry_run=args.dry_run,
+    )
+    if not results:
+        print("No scopes with scored forecasts to assess.")
+        return
+    mode = "DRY-RUN" if args.dry_run else ("MECHANICAL" if args.mechanical else "advisory")
+    print(f"calibration-bias synthesis ({mode}); FDR q=0.10 across {len(results)} scope(s):")
+    for r in results:
+        scope = f"{r['scope_type']}:{r['scope_ref'] or '*'}"
+        line = f"  {scope:<22} {r['status']:<20} ess={r['ess']:.1f} n={r['n']}"
+        if r.get("sce_shrunk") is not None:
+            line += f" sce={r['sce_shrunk'] * 100:+.1f}pp"
+        if r.get("ci_low") is not None:
+            line += f" ci=[{r['ci_low'] * 100:+.1f},{r['ci_high'] * 100:+.1f}]pp"
+        line += f" bh={'yes' if r.get('bh_survived') else 'no'} -> {r.get('disposition', {}).get('lesson_status', '-')}"
+        print(line)
+        action = r.get("action", {})
+        if action.get("written"):
+            tail = f", retired {action['retired']}" if action.get("retired") else ""
+            print(f"      wrote {action['lesson_id']} ({action['lesson_status']}){tail}")
+        elif action.get("retired"):
+            print(f"      retired {action['retired']}")
+
+
+def _print_calibration_bias(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    if args.domain:
+        scopes = [("domain", args.domain)]
+    else:
+        scopes = [("global", None)] + [("domain", d) for d in ledger._domains_with_scores()]
+    print("Signed calibration bias (negative=under-confident, positive=over-confident):")
+    print(f"{'scope':<22} {'status':<20} {'ess':>6} {'n':>4} {'sce(pp)':>9} {'ci(pp)':>18}  note")
+    for scope_type, scope_ref in scopes:
+        rep = ledger.calibration_bias(
+            domain=scope_ref,
+            scope_type=scope_type,
+            since=args.since,
+            recency_halflife_days=args.recency_halflife_days,
+        )
+        scope = f"{scope_type}:{scope_ref or '*'}"
+        sce = "-" if rep["sce_shrunk"] is None else f"{rep['sce_shrunk'] * 100:+.1f}"
+        ci = (
+            "-"
+            if rep["ci_low"] is None
+            else f"[{rep['ci_low'] * 100:+.1f},{rep['ci_high'] * 100:+.1f}]"
+        )
+        if rep["status"] == "insufficient_evidence":
+            need = max(1, int(rep["ess_min"] - rep["ess"]) + 1)
+            note = f"need ~{need} more resolution(s)"
+        elif rep["status"] == "calibrated":
+            note = "within noise — no direction"
+        else:
+            note = (rep.get("advisory_text") or "")[:70]
+        print(f"{scope:<22} {rep['status']:<20} {rep['ess']:>6.1f} {rep['n']:>4} {sce:>9} {ci:>18}  {note}")
+
+
 def _cmd_calibration(args: argparse.Namespace) -> None:
+    if getattr(args, "bias", False):
+        _print_calibration_bias(args)
+        return
     if args.by_origin and args.forecast_origin:
         raise SystemExit("forecast calibration --by-origin cannot be combined with --origin")
     if args.by_origin:

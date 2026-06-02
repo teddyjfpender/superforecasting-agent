@@ -1549,7 +1549,7 @@ def summarize_error_profile(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def summarize_calibration_lesson(row: dict[str, Any]) -> dict[str, Any]:
-    return {
+    summary = {
         "id": row.get("id"),
         "status": row.get("status"),
         "scope_type": row.get("scope_type"),
@@ -1561,6 +1561,25 @@ def summarize_calibration_lesson(row: dict[str, Any]) -> dict[str, Any]:
         "source_score_count": len(row.get("source_score_record_refs") or []),
         "updated_at": row.get("updated_at"),
     }
+    # Surface the signed-bias provenance so dashboards can show direction /
+    # magnitude / convergence trajectory for self-correcting lessons.
+    metadata = dict(row.get("metadata") or {})
+    if metadata.get("source") == "calibration_bias":
+        sce = metadata.get("sce_shrunk")
+        summary["bias"] = {
+            "direction": metadata.get("direction"),
+            "sce_shrunk_pp": None if sce is None else round(float(sce) * 100, 1),
+            "ess": metadata.get("ess"),
+            "n": metadata.get("n"),
+            "ci_pp": [
+                None if v is None else round(float(v) * 100, 1)
+                for v in (metadata.get("ci") or [None, None])
+            ],
+            "trajectory_pp": [round(float(v) * 100, 1) for v in (metadata.get("sce_trajectory") or [])],
+            "horizon_label": metadata.get("horizon_label"),
+            "suppressed": bool(metadata.get("suppressed")),
+        }
+    return summary
 
 
 def summarize_alert(alert: Any) -> dict[str, Any]:

@@ -60,6 +60,7 @@ def apply_active_lesson_adjustments(
     applied_lessons = []
     probability_delta = 0.0
     logit_shift = 0.0
+    logit_scale = 1.0
     for lesson in selected:
         recommended = dict(lesson.get("recommended_adjustment") or {})
         item = {
@@ -75,6 +76,13 @@ def apply_active_lesson_adjustments(
         if shift is not None:
             logit_shift += shift
             item["logit_shift"] = shift
+        # Base-rate-neutral confidence rescale (sharpen >1 / flatten <1) around
+        # 0.5. Emitted by the signed-calibration-bias loop instead of a shift so
+        # a confidence correction never chases the realized yes/no base rate.
+        scale = _optional_float(recommended.get("logit_scale"))
+        if scale is not None and scale > 0:
+            logit_scale *= scale
+            item["logit_scale"] = scale
         applied_lessons.append(item)
 
     if applied_lessons:
@@ -92,6 +100,10 @@ def apply_active_lesson_adjustments(
     if logit_shift:
         adjusted = _sigmoid(_logit(adjusted) + logit_shift)
         adjustment["applied_logit_shift"] = logit_shift
+        changed = True
+    if logit_scale != 1.0:
+        adjusted = _sigmoid(_logit(adjusted) * logit_scale)
+        adjustment["applied_logit_scale"] = logit_scale
         changed = True
     if changed:
         adjustment["raw_probability"] = float(payload)

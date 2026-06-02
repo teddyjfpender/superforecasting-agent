@@ -3317,6 +3317,351 @@ class ForecastLedger:
             ).fetchall()
         return [self._row_to_calibration_lesson(row) for row in rows]
 
+    # ── Signed calibration-bias loop ─────────────────────────────────────────
+    # Measure whether committed binary forecasts run systematically over- or
+    # under-confident (the SIGNED companion to the unsigned ECE in
+    # ``calibration_summary``) and, optionally, distil that into a calibration
+    # lesson. Every gate here exists to keep the loop from teaching the model to
+    # over-bias; the math lives in :mod:`forecasting.calibration_bias`.
+
+    _BIAS_LESSON_SOURCE = "calibration_bias"
+
+    def _bias_observations(
+        self,
+        *,
+        domain: str | None,
+        since: str | None = None,
+        recency_halflife_days: float | None = None,
+        forecast_origin: str | None = "live",
+        now: str | None = None,
+    ) -> list[Any]:
+        """Reduce scored binary forecasts to ``calibration_bias.Observation`` rows.
+
+        Uses the *raw* pre-adjustment probability when a lesson previously moved
+        the number (contamination control), records whether a lesson was in
+        context (``lesson_active`` → kept off the derivation stratum upstream),
+        and attaches a recency weight when a half-life is supplied.
+        """
+
+        from datetime import datetime, timezone
+
+        from forecasting.calibration_bias import Observation
+
+        def _parse(ts: Any) -> "datetime | None":
+            if not ts:
+                return None
+            raw = str(ts).strip().replace("Z", "+00:00")
+            try:
+                parsed = datetime.fromisoformat(raw)
+            except ValueError:
+                return None
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+        now_dt = _parse(now) or datetime.now(timezone.utc)
+        scores = self.list_scores(
+            domain=domain,
+            forecast_origin=forecast_origin,
+            calibration_eligible=True,
+        )
+        observations: list[Any] = []
+        for score in scores:
+            try:
+                question = self.get_question(score.question_id)
+            except LedgerNotFoundError:
+                continue
+            if question.outcome_space.type != "binary":
+                continue
+            try:
+                snapshot = self.get_snapshot(score.forecast_id)
+            except LedgerNotFoundError:
+                continue
+            adjustment = snapshot.calibration_adjustment or {}
+            raw = adjustment.get("raw_probability")
+            committed = snapshot.probability_or_distribution
+            probability = raw if isinstance(raw, (int, float)) and not isinstance(raw, bool) else committed
+            if not isinstance(probability, (int, float)) or isinstance(probability, bool):
+                continue
+            observed = self._binary_outcome_value(score, question.outcome_space)
+            if observed is None:
+                continue
+            resolved_at = None
+            try:
+                resolved_at = self.get_resolution(score.resolution_id).resolved_at
+            except LedgerNotFoundError:
+                pass
+            if since and resolved_at and str(resolved_at) < str(since):
+                continue
+            weight = 1.0
+            if recency_halflife_days and recency_halflife_days > 0:
+                resolved_dt = _parse(resolved_at)
+                if resolved_dt is not None:
+                    age_days = (now_dt - resolved_dt).total_seconds() / 86400.0
+                    if age_days > 0:
+                        weight = 0.5 ** (age_days / recency_halflife_days)
+            observations.append(
+                Observation(
+                    p_yes=float(probability),
+                    outcome=float(observed),
+                    weight=weight,
+                    lesson_active=bool(snapshot.calibration_lesson_refs),
+                    horizon_days=score.forecast_horizon_days,
+                )
+            )
+        return observations
+
+    def calibration_bias(
+        self,
+        *,
+        domain: str | None = None,
+        scope_type: str | None = None,
+        since: str | None = None,
+        recency_halflife_days: float | None = None,
+        lesson_free_only: bool = True,
+        forecast_origin: str | None = "live",
+        enable_mechanical: bool = False,
+        shrink_prior: float = 0.0,
+        prior_scale: float | None = None,
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        """Signed calibration-bias report for one scope (global or a domain).
+
+        Returns the ``CalibrationBiasReport`` payload — including ``status``
+        (``insufficient_evidence`` until enough effective sample accrues), the
+        signed/shrunk SCE, its CI and p-value, the curve shape, and advisory
+        text. Emits nothing actionable on thin or noisy data by construction.
+        """
+
+        from forecasting.calibration_bias import assess_bias
+
+        scope = scope_type or ("domain" if domain else "global")
+        observations = self._bias_observations(
+            domain=domain,
+            since=since,
+            recency_halflife_days=recency_halflife_days,
+            forecast_origin=forecast_origin,
+            now=now,
+        )
+        report = assess_bias(
+            observations,
+            scope_type=scope,
+            scope_ref=domain,
+            lesson_free_only=lesson_free_only,
+            enable_mechanical=enable_mechanical,
+            prior_scale=prior_scale,
+            shrink_prior=shrink_prior,
+        )
+        return report.to_payload()
+
+    def _domains_with_scores(self, *, forecast_origin: str | None = "live") -> list[str]:
+        clauses = ["domain IS NOT NULL", "invalidated_by_correction_id IS NULL"]
+        params: list[Any] = []
+        if forecast_origin:
+            clauses.append("forecast_origin = ?")
+            params.append(forecast_origin)
+        where = " AND ".join(clauses)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT DISTINCT domain FROM score_records WHERE {where} ORDER BY domain",
+                params,
+            ).fetchall()
+        return [str(row[0]) for row in rows if row[0]]
+
+    def _prior_bias_lessons(self, scope_type: str, scope_ref: str | None) -> list[dict[str, Any]]:
+        """Bias-sourced lessons for a scope, newest first (any status)."""
+
+        lessons = self.list_calibration_lessons(scope_type=scope_type, scope_ref=scope_ref)
+        return [
+            lesson
+            for lesson in lessons
+            if (lesson.get("metadata") or {}).get("source") == self._BIAS_LESSON_SOURCE
+        ]
+
+    def synthesize_bias_lessons(
+        self,
+        *,
+        scope: str = "all",
+        domains: list[str] | None = None,
+        since: str | None = None,
+        recency_halflife_days: float | None = None,
+        forecast_origin: str | None = "live",
+        enable_mechanical: bool = False,
+        activate: bool = True,
+        dry_run: bool = False,
+        now: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Derive calibration-bias lessons across scopes with FDR control.
+
+        Computes a signed-bias report per scope (global + each domain that has
+        scored forecasts), shrinks each domain toward the global estimate,
+        applies Benjamini-Hochberg across the family, then writes/activates,
+        leaves tentative, or retires lessons per :func:`decide_disposition`.
+        ``dry_run`` measures and decides without writing. Returns one result
+        dict per scope (report payload + disposition + action taken).
+        """
+
+        from forecasting.calibration_bias import (
+            assess_bias,
+            benjamini_hochberg,
+            decide_disposition,
+        )
+
+        # Resolve the scope family.
+        targets: list[tuple[str, str | None]] = []
+        if scope in ("all", "global"):
+            targets.append(("global", None))
+        if scope in ("all", "domain"):
+            for name in (domains if domains is not None else self._domains_with_scores(forecast_origin=forecast_origin)):
+                targets.append(("domain", name))
+        if scope not in ("all", "global", "domain"):
+            targets = [("domain", scope)]
+
+        # Global estimate first — domains shrink toward it (empirical Bayes).
+        global_obs = self._bias_observations(
+            domain=None,
+            since=since,
+            recency_halflife_days=recency_halflife_days,
+            forecast_origin=forecast_origin,
+            now=now,
+        )
+        global_report = assess_bias(global_obs, scope_type="global", scope_ref=None)
+        global_prior = global_report.sce_raw or 0.0
+
+        reports = []
+        for scope_type, scope_ref in targets:
+            observations = self._bias_observations(
+                domain=scope_ref,
+                since=since,
+                recency_halflife_days=recency_halflife_days,
+                forecast_origin=forecast_origin,
+                now=now,
+            )
+            prior_lessons = self._prior_bias_lessons(scope_type, scope_ref)
+            prior_scale = None
+            if prior_lessons:
+                prior_scale = (prior_lessons[0].get("recommended_adjustment") or {}).get("logit_scale")
+            report = assess_bias(
+                observations,
+                scope_type=scope_type,
+                scope_ref=scope_ref,
+                lesson_free_only=True,
+                enable_mechanical=enable_mechanical,
+                prior_scale=prior_scale,
+                shrink_prior=0.0 if scope_type == "global" else global_prior,
+            )
+            reports.append((report, prior_lessons))
+
+        # Benjamini-Hochberg FDR across the family of detectable scopes.
+        pvalues = [rep.pvalue if rep.has_detectable_bias else None for rep, _ in reports]
+        survived = benjamini_hochberg(pvalues, q=0.10)
+
+        results: list[dict[str, Any]] = []
+        for (report, prior_lessons), bh_ok in zip(reports, survived):
+            trajectory = []
+            if prior_lessons:
+                trajectory = list((prior_lessons[0].get("metadata") or {}).get("sce_trajectory") or [])
+            disposition = decide_disposition(report, bh_survived=bh_ok, trajectory=trajectory)
+            status = disposition["lesson_status"]
+            if not activate and status == "active":
+                status = "tentative"
+            action = self._apply_bias_disposition(
+                report,
+                status=status,
+                trajectory=trajectory,
+                prior_lessons=prior_lessons,
+                dry_run=dry_run,
+            )
+            payload = report.to_payload()
+            payload["disposition"] = disposition
+            payload["bh_survived"] = bh_ok
+            payload["action"] = action
+            results.append(payload)
+        return results
+
+    def _apply_bias_disposition(
+        self,
+        report: Any,
+        *,
+        status: str,
+        trajectory: list[float],
+        prior_lessons: list[dict[str, Any]],
+        dry_run: bool,
+    ) -> dict[str, Any]:
+        """Write/activate, leave tentative, or retire a scope's bias lesson.
+
+        ``none`` retires any prior active lesson (a bias no longer detected must
+        not keep influencing forecasts). ``suppressed`` (trajectory diverging)
+        also retires and records an audit-only tentative marker. Otherwise a new
+        lesson supersedes the prior one — lessons never accumulate.
+        """
+
+        active_priors = [lesson for lesson in prior_lessons if lesson.get("status") == "active"]
+
+        if status == "none":
+            if dry_run:
+                return {"written": False, "retired": [l["id"] for l in active_priors], "status": "none"}
+            for lesson in active_priors:
+                self.update_calibration_lesson(lesson["id"], status="superseded")
+            return {"written": False, "retired": [l["id"] for l in active_priors], "status": "none"}
+
+        # Persist the per-scope |SCE| trajectory (capped history) for the guard.
+        magnitude = abs(report.sce_shrunk or 0.0)
+        new_trajectory = (trajectory + [round(magnitude, 5)])[-8:]
+        metadata = {
+            "source": self._BIAS_LESSON_SOURCE,
+            "sce_shrunk": report.sce_shrunk,
+            "sce_raw": report.sce_raw,
+            "ci": [report.ci_low, report.ci_high],
+            "pvalue": report.pvalue,
+            "ess": round(report.ess, 3),
+            "n": report.n,
+            "direction": report.direction,
+            "horizon_label": report.horizon_label,
+            "sce_trajectory": new_trajectory,
+            "suppressed": status == "suppressed",
+        }
+        confidence = None
+        if report.pvalue is not None:
+            confidence = round(min(max(1.0 - report.pvalue, 0.0), 1.0), 3)
+
+        # Suppressed: retire the active lesson and stop pushing; keep a tentative
+        # audit marker so the trajectory stays continuous.
+        write_status = "tentative" if status == "suppressed" else status
+        lesson_text = report.advisory_text or "Calibration bias detected; see metadata."
+        if status == "suppressed":
+            lesson_text = (
+                "[suppressed: bias trajectory diverging across cycles — not pushing further] "
+                + lesson_text
+            )
+
+        if dry_run:
+            return {
+                "written": False,
+                "would_write_status": write_status,
+                "retired": [l["id"] for l in active_priors],
+                "status": status,
+            }
+
+        supersedes = active_priors[0]["id"] if active_priors else None
+        for lesson in active_priors:
+            self.update_calibration_lesson(lesson["id"], status="superseded")
+        created = self.create_calibration_lesson(
+            scope_type=report.scope_type,
+            scope_ref=report.scope_ref,
+            lesson=lesson_text,
+            confidence=confidence,
+            recommended_adjustment=report.recommended_adjustment or {},
+            status=write_status,
+            supersedes_lesson_id=supersedes,
+            metadata=metadata,
+        )
+        return {
+            "written": True,
+            "lesson_id": created["id"],
+            "lesson_status": write_status,
+            "retired": [l["id"] for l in active_priors],
+            "status": status,
+        }
+
     def create_correction(
         self,
         *,

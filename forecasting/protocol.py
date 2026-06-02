@@ -252,11 +252,19 @@ def build_context_packet(
         for alert in ledger.list_alerts(unresolved_only=True)
         if alert.scope_type == "question" and alert.scope_ref == question.id
     ]
-    lessons = (
-        ledger.list_calibration_lessons(scope_type="domain", scope_ref=question.domain, active_only=True)
-        if question.domain
-        else []
-    )
+    # Active calibration lessons that bear on this question: the domain-scoped
+    # ones plus any GLOBAL bias advisory (e.g. "running under-confident across
+    # the book"), so a system-wide tendency surfaces even on a fresh domain.
+    lessons = list(ledger.list_calibration_lessons(scope_type="global", scope_ref=None, active_only=True))
+    if question.domain:
+        seen = {lesson["id"] for lesson in lessons}
+        lessons.extend(
+            lesson
+            for lesson in ledger.list_calibration_lessons(
+                scope_type="domain", scope_ref=question.domain, active_only=True
+            )
+            if lesson["id"] not in seen
+        )
     error_profiles = ledger.list_domain_error_profiles(domain=question.domain) if question.domain else []
 
     readiness_issues = ledger.decision_readiness_issues(question)
