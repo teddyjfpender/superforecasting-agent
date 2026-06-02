@@ -22,7 +22,14 @@ def build_dashboard_summary(
     *, ledger: ForecastLedger | None = None, limit: int = 50, now: str | None = None
 ) -> dict[str, Any]:
     ledger = ledger or ForecastLedger()
-    questions = ledger.list_questions(status="active", limit=limit)
+    # The detailed question ROWS are capped at `limit` for display, but the
+    # COUNTS must reflect true totals — otherwise a large book under-reports.
+    all_active = ledger.list_questions(status="active", limit=None)
+    theses_active = [q for q in all_active if ledger.is_thesis(q) and not ledger.is_factor(q)]
+    factors_active = [q for q in all_active if ledger.is_factor(q)]
+    book_active = [q for q in all_active if not ledger.is_thesis(q)]
+    entity_count = sum(len(ledger.list_thesis_entities(t.id)) for t in theses_active)
+    questions = book_active[:limit]
     alerts = ledger.list_alerts(unresolved_only=True)
     alert_counts: dict[str, int] = {}
     for alert in alerts:
@@ -254,7 +261,13 @@ def build_dashboard_summary(
 
     return {
         "product": PRODUCT_NAME,
-        "active_count": len(questions),
+        # active_count is the forecast BOOK (active, non-aggregate) — the thesis +
+        # factor aggregates are counted separately in the layer fields below.
+        "active_count": len(book_active),
+        "question_total": len(all_active),
+        "thesis_count": len(theses_active),
+        "factor_count": len(factors_active),
+        "entity_count": entity_count,
         "open_alert_count": len(alerts),
         "review_queue_count": len(review_queue),
         "closing_soon_count": closing_soon_count,
@@ -270,7 +283,8 @@ def build_dashboard_summary(
         "scheduled_review_run_count": len(scheduled_review_runs),
         "scheduled_review_runs": scheduled_review_runs,
         "questions": rows,
-        "theses": build_thesis_summary(ledger=ledger, limit=limit),
+        "theses": build_thesis_summary(ledger=ledger),
+        "factors": build_factor_summary(ledger=ledger),
         "review_queue": review_queue,
         "alerts": alert_rows,
         "recent_backtests": recent_backtests,
@@ -278,14 +292,18 @@ def build_dashboard_summary(
 
 
 def build_thesis_summary(
-    *, ledger: ForecastLedger | None = None, limit: int = 50
+    *, ledger: ForecastLedger | None = None, limit: int | None = None
 ) -> list[dict[str, Any]]:
-    """A light per-thesis summary (health/score/delta/coverage) for the dashboard."""
+    """A light per-thesis summary (health/score/delta/coverage) for the dashboard.
+
+    Uncapped by default so it finds every thesis regardless of creation order;
+    factors (aggregation='factor') are summarized separately by build_factor_summary.
+    """
 
     ledger = ledger or ForecastLedger()
     out: list[dict[str, Any]] = []
     for question in ledger.list_questions(status="active", limit=limit):
-        if not ledger.is_thesis(question):
+        if not ledger.is_thesis(question) or ledger.is_factor(question):
             continue
         snapshots = ledger.list_snapshots(question.id)
         current = snapshots[-1] if snapshots else None
@@ -310,6 +328,47 @@ def build_thesis_summary(
                 "member_count": len(ledger.list_thesis_members(question.id)),
                 "as_of": current.as_of if current else None,
                 "status": "withheld" if health is None else "ok",
+            }
+        )
+    return out
+
+
+def build_factor_summary(
+    *, ledger: ForecastLedger | None = None, limit: int | None = None
+) -> list[dict[str, Any]]:
+    """A light per-factor summary (return/vol/downside/delta) for the dashboard."""
+
+    ledger = ledger or ForecastLedger()
+    out: list[dict[str, Any]] = []
+    for question in ledger.list_questions(status="active", limit=limit):
+        if not ledger.is_factor(question):
+            continue
+        snapshots = ledger.list_snapshots(question.id)
+        current = snapshots[-1] if snapshots else None
+        payload = current.probability_or_distribution if current else {}
+        payload = payload if isinstance(payload, dict) else {}
+        previous = snapshots[-2].probability_or_distribution if len(snapshots) >= 2 else None
+        previous_mean = previous.get("factor_mean") if isinstance(previous, dict) else None
+        mean = payload.get("factor_mean")
+        out.append(
+            {
+                "id": question.id,
+                "title": question.title,
+                "domain": question.domain,
+                "units": question.outcome_space.units,
+                "mean": mean,
+                "sd": payload.get("factor_sd"),
+                "q05": payload.get("q05"),
+                "q95": payload.get("q95"),
+                "downside": payload.get("downside"),
+                "cvar": payload.get("cvar"),
+                "coverage": payload.get("coverage"),
+                "delta": (mean - previous_mean)
+                if (mean is not None and previous_mean is not None)
+                else None,
+                "member_count": len(ledger.list_thesis_members(question.id)),
+                "as_of": current.as_of if current else None,
+                "status": "withheld" if mean is None else "ok",
             }
         )
     return out
@@ -594,6 +653,19 @@ def _workspace_thesis(
         # trade triggers, written by ledger.aggregate_thesis into the snapshot.
         "entities": meta.get("entities") or [],
         "triggers": meta.get("triggers") or [],
+        # Every question in the thesis ECOSYSTEM — its weighted members PLUS every
+        # question any of its entities weights. The desk lens filters the book to
+        # this set so selecting a thesis shows its full related view, not only the
+        # health-driver members.
+        "question_ids": sorted(
+            {comp["id"] for comp in component_views if comp.get("id")}
+            | {
+                contribution.get("member_id")
+                for entity in (meta.get("entities") or [])
+                for contribution in (entity.get("contributions") or [])
+                if contribution.get("member_id")
+            }
+        ),
     }
 
 

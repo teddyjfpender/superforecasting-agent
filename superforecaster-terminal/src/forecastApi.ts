@@ -135,7 +135,7 @@ export class ForecastApiClient {
    * Fetch the standing forecast book. Mirrors `{ forecasts, active_count,
    * closing_soon_count, open_alert_count, generated_at, ... }`.
    */
-  async fetchWorkspace(limit = 75): Promise<ForecastWorkspacePayload> {
+  async fetchWorkspace(limit = 1000): Promise<ForecastWorkspacePayload> {
     const response = await this.fetchJson<ForecastWorkspaceWire>(
       `/forecast/workspace?limit=${encodeURIComponent(String(limit))}`,
     );

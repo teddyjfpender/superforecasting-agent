@@ -1047,9 +1047,11 @@ export function ForecastScreen() {
 
   const filtered = useMemo(() => {
     if (lens.kind === "thesis" && activeThesis) {
-      const ids = new Set(
-        (activeThesis.components ?? []).map((c) => c.id).filter((x): x is string => Boolean(x)),
-      );
+      // The full ecosystem (members + entity-weighted questions), falling back to
+      // the health-driver members when question_ids isn't present.
+      const ecosystem =
+        activeThesis.question_ids ?? (activeThesis.components ?? []).map((c) => c.id ?? "");
+      const ids = new Set(ecosystem.filter((x): x is string => Boolean(x)));
       return forecasts.filter((f) => f.id != null && ids.has(f.id) && matchesFilter(f, query));
     }
     if (lens.kind === "factor" && activeFactor) {

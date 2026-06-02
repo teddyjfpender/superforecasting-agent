@@ -343,7 +343,9 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
 
   const load = (announce = false) => {
     setLoading(true)
-    gw.request<unknown>('forecast.workspace', { limit: 75 })
+    // Load the FULL active book so the list + `/` filter cover every question
+    // (a small cap silently drops the oldest forecasts once the book grows).
+    gw.request<unknown>('forecast.workspace', { limit: 1000 })
       .then(raw => {
         const result = asRpcResult<ForecastWorkspaceResponse>(raw)
 
@@ -421,9 +423,11 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
   // matching the query is shown — the prior behavior.
   const filtered = useMemo(() => {
     if (activeThesis) {
-      const memberIds = new Set(
-        (activeThesis.components ?? []).map(component => component.id).filter((id): id is string => Boolean(id))
-      )
+      // The full ecosystem (members + entity-weighted questions); fall back to the
+      // health-driver members when question_ids isn't present.
+      const ecosystem =
+        activeThesis.question_ids ?? (activeThesis.components ?? []).map(component => component.id ?? '')
+      const memberIds = new Set(ecosystem.filter((id): id is string => Boolean(id)))
 
       return items.filter(item => item.id != null && memberIds.has(item.id) && matchesFilter(item, query))
     }

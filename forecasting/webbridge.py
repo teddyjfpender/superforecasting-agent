@@ -122,7 +122,9 @@ class ForecastBridgeHandler(BaseHTTPRequestHandler):
     def _handle_workspace(self, query: dict[str, list[str]]) -> None:
         from forecasting.dashboard import build_workspace_payload
 
-        limit = _query_int(query, "limit", 75)
+        # Default high so the desk loads the full active book (the client filters
+        # locally; a small cap silently hides the oldest forecasts).
+        limit = _query_int(query, "limit", 1000)
         # build_workspace_payload builds its own ledger when ledger=None,
         # so per-request thread affinity is handled for us.
         payload = build_workspace_payload(limit=limit)

@@ -290,6 +290,9 @@ export interface ForecastThesis {
   snapshot_count?: number
   entities?: ForecastThesisEntity[]
   triggers?: ForecastThesisTrigger[]
+  // Every question in the thesis ecosystem (members + entity-weighted questions);
+  // the lens filters the book to this set.
+  question_ids?: string[]
 }
 
 // ── Factor layer ─────────────────────────────────────────────────────────────

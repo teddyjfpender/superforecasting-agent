@@ -206,6 +206,44 @@ export interface ForecastDashboardSummary {
   scheduled_review_runs?: ForecastDashboardScheduleRun[]
   stale_assumption_count?: number
   stale_reference_class_count?: number
+  // Thesis layer summary (the macro aggregates over the book).
+  question_total?: number
+  thesis_count?: number
+  factor_count?: number
+  entity_count?: number
+  theses?: ForecastDashboardThesis[]
+  factors?: ForecastDashboardFactor[]
+}
+
+export interface ForecastDashboardThesis {
+  id?: string
+  title?: string
+  domain?: null | string
+  health_probability?: null | number
+  health_display?: string
+  thesis_score?: null | number
+  coverage?: null | number
+  n_eff?: null | number
+  delta?: null | number
+  member_count?: number
+  status?: string
+}
+
+export interface ForecastDashboardFactor {
+  id?: string
+  title?: string
+  domain?: null | string
+  units?: null | string
+  mean?: null | number
+  sd?: null | number
+  q05?: null | number
+  q95?: null | number
+  downside?: null | number
+  cvar?: null | number
+  coverage?: null | number
+  delta?: null | number
+  member_count?: number
+  status?: string
 }
 
 export interface ForecastDashboardDoctor {
@@ -711,6 +749,8 @@ export interface ForecastThesis {
   snapshot_count?: number
   entities?: ForecastThesisEntity[]
   triggers?: ForecastThesisTrigger[]
+  // Every question in the thesis ecosystem (members + entity-weighted questions).
+  question_ids?: string[]
 }
 
 // ── Factor layer ─────────────────────────────────────────────────────────────

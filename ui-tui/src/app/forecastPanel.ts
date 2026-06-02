@@ -303,6 +303,9 @@ export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): st
   }
 
   const active = numberValue(summary.active_count) ?? (summary.questions ?? []).length
+  const thesisCount = numberValue(summary.thesis_count) ?? (summary.theses ?? []).length
+  const factorCount = numberValue(summary.factor_count) ?? (summary.factors ?? []).length
+  const entityCount = numberValue(summary.entity_count) ?? 0
   const alerts = numberValue(summary.open_alert_count) ?? 0
   const reviews = numberValue(summary.review_queue_count) ?? (summary.review_queue ?? []).length
   const closing = numberValue(summary.closing_soon_count) ?? 0
@@ -314,7 +317,19 @@ export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): st
   // quieter health counters. Spell out the cryptic abbreviations and only show
   // stale counts when there actually are stale items, so the strip reads as a
   // glanceable summary rather than a slash-delimited code.
-  const bits = [`${active} active`]
+  const bits = [`${active} forecasts`]
+
+  if (thesisCount > 0) {
+    bits.push(`${thesisCount} ${thesisCount === 1 ? 'thesis' : 'theses'}`)
+  }
+
+  if (factorCount > 0) {
+    bits.push(`${factorCount} ${factorCount === 1 ? 'factor' : 'factors'}`)
+  }
+
+  if (entityCount > 0) {
+    bits.push(`${entityCount} entities`)
+  }
 
   if (reviews > 0) {
     bits.push(`${reviews} to review`)
@@ -1221,6 +1236,34 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
       title: 'Desk'
     }
   ]
+
+  // Thesis layer: the macro aggregates over the book — theses (health) + factors
+  // (basket return) + the entity-suitability count.
+  const theses = summary.theses ?? []
+  const factors = summary.factors ?? []
+  const thesisCount = summary.thesis_count ?? theses.length
+  const factorCount = summary.factor_count ?? factors.length
+  const entityCount = summary.entity_count ?? 0
+  if (thesisCount > 0 || factorCount > 0) {
+    const layerRows: ForecastPanelRow[] = [
+      ['theses', formatCount(thesisCount)],
+      ['factors', formatCount(factorCount)],
+      ['entities', formatCount(entityCount)]
+    ]
+    for (const t of theses.slice(0, 6)) {
+      const health =
+        typeof t.health_probability === 'number'
+          ? `${Math.round(t.health_probability * 100)}%`
+          : t.health_display ?? '—'
+      layerRows.push([truncate(t.title || t.id || 'thesis', 32), `${health} · ${formatCount(t.member_count)} members`])
+    }
+    for (const f of factors.slice(0, 6)) {
+      const mean = typeof f.mean === 'number' ? `${f.mean >= 0 ? '+' : ''}${f.mean.toFixed(1)}` : '—'
+      const vol = typeof f.sd === 'number' ? f.sd.toFixed(1) : '—'
+      layerRows.push([truncate(f.title || f.id || 'factor', 32), `ret ${mean} · vol ${vol}`])
+    }
+    sections.push({ rows: layerRows, title: 'Thesis Layer' })
+  }
 
   if (doctor) {
     sections.push({

@@ -2566,7 +2566,9 @@ def _(rid, params: dict) -> dict:
     try:
         from forecasting.dashboard import build_workspace_payload
 
-        limit = int(params.get("limit") or 50)
+        # Default high so the desk loads the full active book (the client filters
+        # locally; a small cap silently hides the oldest forecasts).
+        limit = int(params.get("limit") or 1000)
         payload = build_workspace_payload(limit=limit)
         return _ok(rid, payload)
     except Exception as e:
