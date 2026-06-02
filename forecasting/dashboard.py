@@ -337,7 +337,11 @@ def build_workspace_payload(
     # Theses are first-class questions but they are aggregates of the others, so
     # they get their own payload section rather than polluting the forecast book.
     member_questions = [q for q in questions if q.outcome_space.type != "thesis"]
-    thesis_questions = [q for q in questions if q.outcome_space.type == "thesis"]
+    aggregate_questions = [q for q in questions if q.outcome_space.type == "thesis"]
+    # Factors (basket return distributions) are theses with aggregation="factor";
+    # they get their own payload section, distinct from health theses.
+    factor_questions = [q for q in aggregate_questions if ledger.is_factor(q)]
+    thesis_questions = [q for q in aggregate_questions if not ledger.is_factor(q)]
 
     alerts = ledger.list_alerts(unresolved_only=True)
     alert_counts: dict[str, int] = {}
@@ -449,6 +453,10 @@ def build_workspace_payload(
         _workspace_thesis(ledger, question, now=now, history_limit=history_limit)
         for question in thesis_questions
     ]
+    factors = [
+        _workspace_factor(ledger, question, now=now, history_limit=history_limit)
+        for question in factor_questions
+    ]
 
     return {
         "product": PRODUCT_NAME,
@@ -461,6 +469,10 @@ def build_workspace_payload(
         # their tagged members (computed after the members' latest runs).
         "thesis_count": len(thesis_questions),
         "theses": theses,
+        # Factor layer: weighted baskets aggregated by portfolio math into a
+        # return distribution + volatility + downside.
+        "factor_count": len(factor_questions),
+        "factors": factors,
     }
 
 
@@ -582,6 +594,96 @@ def _workspace_thesis(
         # trade triggers, written by ledger.aggregate_thesis into the snapshot.
         "entities": meta.get("entities") or [],
         "triggers": meta.get("triggers") or [],
+    }
+
+
+def _factor_history_point(snapshot: Any) -> dict[str, Any]:
+    """One point in a factor's return-distribution time series (for the chart)."""
+
+    payload = snapshot.probability_or_distribution
+    payload = payload if isinstance(payload, dict) else {}
+    return {
+        "as_of": snapshot.as_of,
+        "created_at": snapshot.created_at,
+        # The factor mean return is the headline series; the band is the return
+        # 90% interval in the same units.
+        "headline_probability": payload.get("factor_mean"),
+        "band_low": payload.get("q05"),
+        "band_high": payload.get("q95"),
+        "volatility": payload.get("factor_sd"),
+    }
+
+
+def _workspace_factor(
+    ledger: ForecastLedger,
+    question: Any,
+    *,
+    now: str | None = None,
+    history_limit: int = 80,
+) -> dict[str, Any]:
+    """Bundle a factor question with its portfolio aggregate + constituents."""
+
+    snapshots = ledger.list_snapshots(question.id)
+    current = snapshots[-1] if snapshots else None
+    previous = snapshots[-2] if len(snapshots) >= 2 else None
+    payload = current.probability_or_distribution if current else {}
+    payload = payload if isinstance(payload, dict) else {}
+    ensemble = current.ensemble_components if current else {}
+    ensemble = ensemble if isinstance(ensemble, dict) else {}
+    stored = ensemble.get("components") or []
+
+    members = {m["member_question_id"]: m for m in ledger.list_thesis_members(question.id)}
+    constituents: list[dict[str, Any]] = []
+    for comp in stored:
+        member_id = comp.get("member_id")
+        member = members.get(member_id, {})
+        constituents.append(
+            {
+                "id": member_id,
+                "title": comp.get("title") or member.get("member_title"),
+                "direction": comp.get("direction"),
+                "weight": comp.get("weight"),
+                "w_norm": comp.get("w_norm"),
+                "mean": comp.get("mu"),
+                "sd": comp.get("sigma"),
+                "contribution": comp.get("contribution"),
+                "status": comp.get("status"),
+                "flags": comp.get("flags") or [],
+            }
+        )
+
+    mean = payload.get("factor_mean")
+    previous_payload = previous.probability_or_distribution if previous else None
+    previous_mean = previous_payload.get("factor_mean") if isinstance(previous_payload, dict) else None
+    delta = (mean - previous_mean) if (mean is not None and previous_mean is not None) else None
+
+    analyst_notes = ledger.list_analyst_notes(question.id)
+
+    return {
+        "id": question.id,
+        "title": question.title,
+        "domain": question.domain,
+        "topics": list(question.topics or []),
+        "units": question.outcome_space.units,
+        "as_of": current.as_of if current else None,
+        "freshness": format_freshness(current.as_of if current else None, now=now),
+        "mean": mean,
+        "sd": payload.get("factor_sd"),
+        "volatility": payload.get("factor_sd"),
+        "q05": payload.get("q05"),
+        "q50": payload.get("q50"),
+        "q95": payload.get("q95"),
+        "downside": payload.get("downside"),
+        "cvar": payload.get("cvar"),
+        "coverage": payload.get("coverage"),
+        "n_eff": payload.get("n_eff"),
+        "delta": delta,
+        "member_count": len(members),
+        "constituents": constituents,
+        "history": [_factor_history_point(snap) for snap in snapshots[-history_limit:]],
+        "analyst_note": _workspace_analyst_note(analyst_notes[-1]) if analyst_notes else None,
+        "rationale": current.rationale if current else None,
+        "snapshot_count": len(snapshots),
     }
 
 

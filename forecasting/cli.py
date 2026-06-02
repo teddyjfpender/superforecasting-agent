@@ -2128,6 +2128,45 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     entity_list.add_argument("--rho", type=float, default=0.4)
     entity_list.set_defaults(_forecast_handler=_cmd_thesis_entity_list)
 
+    # Factor: a weighted basket of constituent RETURN distributions, aggregated
+    # by portfolio math into a return distribution + volatility + downside. A
+    # factor is a thesis with metadata aggregation=factor, so it reuses the
+    # thesis membership table (a SHORT constituent is direction='inverted').
+    factor_parser = forecast_sub.add_parser(
+        "factor",
+        help="Build a weighted basket of constituent return distributions and aggregate it",
+    )
+    factor_sub = factor_parser.add_subparsers(dest="factor_command")
+    factor_create = factor_sub.add_parser("create", help="Create a factor question (a thesis with aggregation=factor)")
+    factor_create.add_argument("title")
+    factor_create.add_argument("--units", default="return", help="Return units stored on the outcome space (default: return)")
+    factor_create.add_argument("--domain")
+    factor_create.add_argument("--topics", help="Comma-separated topics")
+    factor_create.add_argument("--criteria", help="Resolution criteria (>=5 words); a sensible default is used when omitted")
+    factor_create.add_argument("--rho", type=float, help="Default constituent correlation stored in question metadata")
+    factor_create.set_defaults(_forecast_handler=_cmd_factor_create)
+    factor_add = factor_sub.add_parser("add", help="Add a constituent return distribution to a factor (short → inverted)")
+    factor_add.add_argument("factor", help="row number, id, or search words for the factor")
+    factor_add.add_argument("constituent", help="row number, id, or search words for the constituent forecast")
+    factor_add.add_argument("--weight", type=float, default=1.0)
+    factor_add.add_argument("--direction", choices=["long", "short"], default="long")
+    factor_add.set_defaults(_forecast_handler=_cmd_factor_add)
+    factor_remove = factor_sub.add_parser("remove", help="Remove a constituent from a factor")
+    factor_remove.add_argument("factor", help="row number, id, or search words for the factor")
+    factor_remove.add_argument("constituent", help="row number, id, or search words for the constituent forecast")
+    factor_remove.set_defaults(_forecast_handler=_cmd_factor_remove)
+    factor_list = factor_sub.add_parser("list", help="List factor questions")
+    factor_list.add_argument("--limit", type=int, default=None)
+    factor_list.set_defaults(_forecast_handler=_cmd_factor_list)
+    factor_aggregate = factor_sub.add_parser("aggregate", help="Aggregate constituents into a fresh factor snapshot")
+    factor_aggregate.add_argument("factor", help="row number, id, or search words for the factor")
+    factor_aggregate.add_argument("--rho", type=float, default=0.4)
+    factor_aggregate.set_defaults(_forecast_handler=_cmd_factor_aggregate)
+    factor_show = factor_sub.add_parser("show", help="Show the factor distribution + per-constituent contributions (no commit)")
+    factor_show.add_argument("factor", help="row number, id, or search words for the factor")
+    factor_show.add_argument("--rho", type=float, default=0.4)
+    factor_show.set_defaults(_forecast_handler=_cmd_factor_show)
+
     # Two-phase batch: run members first, then aggregate theses (lag ordering).
     run_all_parser = forecast_sub.add_parser(
         "run-all",
@@ -8628,6 +8667,153 @@ def _cmd_thesis_list(args: argparse.Namespace) -> None:
             if isinstance(payload, dict) and payload.get("health") is not None:
                 health = f"{float(payload['health']) * 100:.1f}%"
         print(f"{thesis.id:<14} {member_count:<8} {health:<9} {thesis.title}")
+
+
+def _cmd_factor_create(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    criteria = (args.criteria or "").strip() or (
+        "Portfolio return of the weighted constituent basket; reviewed as constituents update."
+    )
+    topics = [t.strip() for t in (args.topics or "").split(",") if t.strip()] or None
+    metadata: dict[str, Any] = {"aggregation": "factor"}
+    if args.rho is not None:
+        metadata["rho"] = float(args.rho)
+    units = (args.units or "return").strip() or "return"
+    question = ledger.create_question(
+        title=args.title,
+        resolution_criteria=criteria,
+        outcome_space=OutcomeSpace(type="thesis", units=units),
+        domain=args.domain,
+        topics=topics,
+        metadata=metadata,
+    )
+    print(f"created factor {question.id}")
+    print(f"title: {question.title}")
+    print(f"status: {question.status}")
+    print(f"units: {units}")
+    if "rho" in metadata:
+        print(f"rho: {metadata['rho']}")
+
+
+def _cmd_factor_add(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    factor_id = _resolve_question_id(ledger, args.factor)
+    constituent_id = _resolve_question_id(ledger, args.constituent)
+    direction = "inverted" if args.direction == "short" else "support"
+    row = ledger.add_thesis_member(
+        factor_id,
+        constituent_id,
+        direction=direction,
+        weight=args.weight,
+    )
+    side = "short" if row["direction"] == "inverted" else "long"
+    print(f"added constituent {row['member_question_id']} to factor {factor_id}")
+    print(f"direction: {side}  weight: {float(row['weight']):.2f}")
+
+
+def _cmd_factor_remove(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    factor_id = _resolve_question_id(ledger, args.factor)
+    constituent_id = _resolve_question_id(ledger, args.constituent)
+    removed = ledger.remove_thesis_member(factor_id, constituent_id)
+    print(f"removed {removed} constituent(s) from factor {factor_id}")
+
+
+def _cmd_factor_list(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    factors = [q for q in ledger.list_questions(status="active") if ledger.is_factor(q)]
+    if args.limit is not None:
+        factors = factors[: args.limit]
+    if not factors:
+        print("No factor questions found. Create one with `forecast factor create <title>`.")
+        return
+    print("ID             Const.   μ         vol       Title")
+    for factor in factors:
+        const_count = len(ledger.list_thesis_members(factor.id))
+        mean_str = "-"
+        vol_str = "-"
+        snapshot = ledger.get_current_snapshot(factor.id)
+        if snapshot is not None:
+            payload = snapshot.probability_or_distribution
+            if isinstance(payload, dict):
+                if payload.get("factor_mean") is not None:
+                    mean_str = f"{float(payload['factor_mean']):+.3f}"
+                if payload.get("factor_sd") is not None:
+                    vol_str = f"{float(payload['factor_sd']):.3f}"
+        print(f"{factor.id:<14} {const_count:<8} {mean_str:<9} {vol_str:<9} {factor.title}")
+
+
+def _print_factor_distribution(payload: dict[str, Any]) -> None:
+    print(f"μ (mean return): {float(payload['factor_mean']):+.4f}")
+    print(f"σ (volatility):  {float(payload['factor_sd']):.4f}")
+    print(
+        f"90% band: [{float(payload['q05']):+.4f} .. {float(payload['q95']):+.4f}]"
+    )
+    print(f"downside (q05):  {float(payload['downside']):+.4f}")
+    print(f"CVaR (5%):       {float(payload['cvar']):+.4f}")
+    print(f"coverage: {float(payload['coverage']):.0%}  n_eff: {float(payload['n_eff']):.1f}")
+
+
+def _cmd_factor_aggregate(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    factor_id = _resolve_question_id(ledger, args.factor)
+    result = ledger.aggregate_thesis(factor_id, rho=args.rho)
+    payload = result.get("payload") or {}
+    print(f"factor {factor_id}: {result['title']}")
+    print(f"constituents: {result['member_count']}")
+    if payload.get("factor_mean") is None:
+        print("distribution: withheld — insufficient fresh constituents")
+        for note in (result["aggregate"].notes or []):
+            print(f"  note: {note}")
+        if result.get("analyst_note_id"):
+            print(f"analyst_note: {result['analyst_note_id']}")
+        return
+    _print_factor_distribution(payload)
+    if result.get("snapshot_id"):
+        print(f"snapshot: {result['snapshot_id']}")
+
+
+def _cmd_factor_show(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    factor_id = _resolve_question_id(ledger, args.factor)
+    result = ledger.aggregate_thesis(factor_id, rho=args.rho, commit=False)
+    agg = result["aggregate"]
+    payload = result.get("payload") or {}
+    print(f"factor {factor_id}: {result['title']}")
+    print(f"constituents: {result['member_count']}")
+    if payload.get("factor_mean") is None:
+        print("distribution: withheld — insufficient fresh constituents")
+        for note in (agg.notes or []):
+            print(f"  note: {note}")
+    else:
+        _print_factor_distribution(payload)
+        components = sorted(
+            agg.components,
+            key=lambda c: abs(c.get("contribution") or 0.0),
+            reverse=True,
+        )
+        if components:
+            print("")
+            print("Direction   Title                       Weight  w_norm  μ(mu)     σ(sigma)  contribution")
+            for comp in components:
+                mu = comp.get("mu")
+                sigma = comp.get("sigma")
+                mu_str = f"{float(mu):+.4f}" if mu is not None else "-"
+                sigma_str = f"{float(sigma):.4f}" if sigma is not None else "-"
+                title = comp.get("title") or comp.get("member_id") or "-"
+                print(
+                    f"{(comp.get('direction') or '-'):<11} "
+                    f"{title[:27]:<27} "
+                    f"{float(comp.get('weight') or 0.0):<7.2f} "
+                    f"{float(comp.get('w_norm') or 0.0):<7.3f} "
+                    f"{mu_str:<9} "
+                    f"{sigma_str:<9} "
+                    f"{float(comp.get('contribution') or 0.0):+.4f}"
+                )
+    note = ledger.latest_analyst_note(factor_id, kind="brief")
+    if note and note.get("headline"):
+        print("")
+        print(f"latest note: {note['headline']}")
 
 
 def _cmd_thesis_entity_add(args: argparse.Namespace) -> None:

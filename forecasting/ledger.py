@@ -287,6 +287,8 @@ _PACKET_JSON_FIELDS = {
     },
     "analyst_notes": {"metadata"},
     "forecast_links": {"metadata"},
+    "thesis_members": {"metadata"},
+    "thesis_entities": {"weights", "metadata"},
     "baseline_comparisons": {"probability_or_distribution", "metadata"},
     "source_snapshots": {"parsed_values", "metadata"},
     "watched_sources": {"metadata"},
@@ -309,6 +311,7 @@ _PACKET_BOOL_FIELDS = {
     "postmortems": {"calibration_eligible"},
     "scheduled_reviews": {"enabled", "auto_score", "auto_postmortem"},
     "autopilot_policies": {"enabled"},
+    "thesis_members": {"hi_is_good"},
 }
 _PACKET_RECORD_LABELS = {
     "forecast_questions": "questions",
@@ -326,6 +329,8 @@ _PACKET_RECORD_LABELS = {
     "domain_error_profiles": "domain_error_profiles",
     "analyst_notes": "analyst_notes",
     "forecast_links": "forecast_links",
+    "thesis_members": "thesis_members",
+    "thesis_entities": "thesis_entities",
     "baseline_comparisons": "baseline_comparisons",
     "source_snapshots": "source_snapshots",
     "watched_sources": "watched_sources",
@@ -507,6 +512,42 @@ def _thesis_entity_triggers(
         )
     triggers.sort(key=lambda trigger: -abs(trigger["delta"]))
     return triggers
+
+
+def _factor_narrative(factor: Any, agg: Any) -> tuple[str, str, str, str, str]:
+    """Rolling note for a factor: basket return + volatility + downside (plain
+    units; the factor question's `units` supply the scale for display)."""
+
+    mean = agg.mean if agg.mean is not None else 0.0
+    sd = agg.sd
+    headline = (
+        f"{factor.title} — μ {mean:.2f} · vol {sd:.2f}" if sd is not None else f"{factor.title} — μ {mean:.2f}"
+    )
+    usable = [c for c in agg.components if c.get("status") not in _THESIS_DEAD_STATUS]
+    top = sorted(usable, key=lambda c: -abs(c.get("contribution") or 0))[:3]
+    drivers = ", ".join(
+        f"{(c.get('title') or c.get('member_id'))} ({(c.get('contribution') or 0):+.2f})" for c in top
+    )
+    how_it_thinks = (
+        f"Weighted basket of {len(usable)} constituent return distribution(s)."
+        + (f" Top contributors: {drivers}." if drivers else "")
+    )
+    looking_for = (
+        f"90% return band {agg.q05:.2f} to {agg.q95:.2f}."
+        if (agg.q05 is not None and agg.q95 is not None)
+        else "Awaiting dispersion."
+    )
+    parts = [
+        f"coverage {agg.coverage:.0%}",
+        f"n_eff ~{agg.n_eff:.1f} of {len(agg.components)} (constituents co-move; rho {agg.rho:.2f})",
+    ]
+    if agg.downside is not None:
+        parts.append(f"downside(5%) {agg.downside:.2f}")
+    if agg.cvar is not None:
+        parts.append(f"CVaR {agg.cvar:.2f}")
+    be_aware = "; ".join(parts) + (("; " + "; ".join(agg.notes)) if agg.notes else "")
+    body = f"{headline}. {how_it_thinks} {looking_for} Caveats: {be_aware}."
+    return headline, how_it_thinks, looking_for, be_aware, body
 
 
 class ForecastLedger:
@@ -4728,6 +4769,23 @@ class ForecastLedger:
                 return False
         return getattr(question.outcome_space, "type", None) == "thesis"
 
+    def is_factor(self, question: Any) -> bool:
+        """True when ``question`` is a FACTOR — a thesis whose members are a
+        weighted basket of return distributions aggregated by portfolio math
+        (mean/vol/downside) rather than the health-signal pool. Marked by
+        ``metadata['aggregation'] == 'factor'`` so it reuses the thesis
+        membership table, run-all, and cron wholesale."""
+
+        if isinstance(question, str):
+            try:
+                question = self.get_question(question)
+            except LedgerNotFoundError:
+                return False
+        if not self.is_thesis(question):
+            return False
+        meta = question.metadata if isinstance(question.metadata, dict) else {}
+        return str(meta.get("aggregation") or "").lower() == "factor"
+
     def _thesis_member_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
         data = dict(row)
         data["metadata"] = json_loads(data.get("metadata"), {})
@@ -5171,6 +5229,114 @@ class ForecastLedger:
         triggers = _thesis_entity_triggers(member_deltas, entities, member_map)
         return out, triggers
 
+    def _aggregate_factor(
+        self,
+        factor: Any,
+        *,
+        rho: float | str,
+        now: str | None,
+        commit: bool,
+    ) -> dict[str, Any]:
+        """Portfolio-aggregate a factor's constituent return distributions."""
+
+        from forecasting import factor as factor_math
+        from forecasting.dashboard import _distribution_view
+
+        members = self.list_thesis_members(factor.id)
+        as_of = now or utc_now_iso()
+        constituents: list[dict[str, Any]] = []
+        for member in members:
+            member_id = member["member_question_id"]
+            snapshot = self.get_current_snapshot(member_id)
+            belief = snapshot.probability_or_distribution if snapshot else None
+            mean: float | None = None
+            sd: float | None = None
+            if isinstance(belief, dict):
+                view = _distribution_view(belief) or {}
+                mean = view.get("mean")
+                sd = view.get("sd")
+            elif isinstance(belief, (int, float)):
+                mean = float(belief)
+            constituents.append(
+                {
+                    "member_id": member_id,
+                    "title": member.get("member_title"),
+                    "weight": float(member.get("weight", 1.0)),
+                    "direction": "short" if member.get("direction") == "inverted" else "long",
+                    "as_of": snapshot.as_of if snapshot else None,
+                    "max_age_days": member.get("max_age_days"),
+                    "mean": mean,
+                    "sd": sd,
+                }
+            )
+        agg = factor_math.aggregate_factor(constituents, rho=rho, now=as_of)
+        payload = agg.to_payload()
+        result: dict[str, Any] = {
+            "thesis_id": factor.id,
+            "title": factor.title,
+            "aggregate": agg,
+            "payload": payload,
+            "member_count": len(members),
+            "is_factor": True,
+            "entities": [],
+            "triggers": [],
+            "snapshot_id": None,
+        }
+        if not commit:
+            return result
+        if payload.get("factor_mean") is None:
+            note = self.add_analyst_note(
+                question_id=factor.id,
+                body="; ".join(agg.notes) or "withheld: no usable constituent",
+                kind="brief",
+                headline=f"{factor.title} — withheld (insufficient fresh constituents)",
+                be_aware="; ".join(agg.notes),
+                generator="factor_aggregate",
+                metadata={"coverage": agg.coverage, "member_count": len(members)},
+            )
+            result["analyst_note_id"] = note.get("id")
+            return result
+        rationale = (
+            f"Portfolio aggregate of {len(members)} constituent return distribution(s) "
+            f"(coverage {agg.coverage:.0%}, vol {agg.sd:.3f}, n_eff {agg.n_eff:.1f}, rho {agg.rho:.2f}). "
+            "Computed after the constituents' latest runs; not LLM-led."
+        )
+        snapshot = self.create_snapshot(
+            question_id=factor.id,
+            probability_or_distribution=payload,
+            rationale=rationale,
+            as_of=as_of,
+            confidence=round(max(0.0, min(1.0, agg.coverage)), 3),
+            method="factor_aggregate",
+            ensemble_components={
+                "components": agg.components,
+                "rho": agg.rho,
+                "n_eff": agg.n_eff,
+                "coverage": agg.coverage,
+            },
+            forecast_origin="live",
+            calibration_eligible=False,
+            metadata={"factor_notes": agg.notes, "aggregation": "factor"},
+        )
+        headline, how_it_thinks, looking_for, be_aware, body = _factor_narrative(factor, agg)
+        note = self.add_analyst_note(
+            question_id=factor.id,
+            body=body,
+            kind="brief",
+            headline=headline,
+            how_it_thinks=how_it_thinks,
+            looking_for=looking_for,
+            be_aware=be_aware,
+            forecast_id=snapshot.forecast_id,
+            probability_at_write=payload,
+            confidence_at_write=round(max(0.0, min(1.0, agg.coverage)), 3),
+            generator="factor_aggregate",
+            metadata={"coverage": agg.coverage, "n_eff": agg.n_eff, "rho": agg.rho},
+        )
+        result["snapshot_id"] = snapshot.forecast_id
+        result["analyst_note_id"] = note.get("id")
+        return result
+
     def aggregate_thesis(
         self,
         thesis_id: str,
@@ -5192,6 +5358,10 @@ class ForecastLedger:
         thesis = self.get_question(thesis_id)
         if not self.is_thesis(thesis):
             raise ValidationError("aggregate_thesis requires a question with outcome type 'thesis'")
+        if self.is_factor(thesis):
+            # A factor aggregates a weighted basket of return distributions via
+            # portfolio math, not the health-signal pool.
+            return self._aggregate_factor(thesis, rho=rho, now=now, commit=commit)
         members = self.list_thesis_members(thesis_id)
         beliefs = [self._thesis_member_belief(m) for m in members]
         as_of = now or utc_now_iso()
@@ -7514,6 +7684,11 @@ class ForecastLedger:
                     # forecast_links round-trips the raw edges; related_forecasts /
                     # related_shared_sources are the derived audit copy the TUI reads.
                     "forecast_links": self.list_forecast_links(question_id, direction="both"),
+                    # Thesis membership + entities round-trip the raw rows; the
+                    # import orphan-guard skips edges whose endpoint questions
+                    # aren't also in the packet.
+                    "thesis_members": self.list_thesis_members(question_id),
+                    "thesis_entities": self.list_thesis_entities(question_id),
                     "related_forecasts": related_forecasts,
                     "related_shared_sources": [{"signature": s} for s in related_shared_sources],
                 }
@@ -7885,8 +8060,11 @@ class ForecastLedger:
             ("forecast_update_proposals", "forecast_update_proposals"),
             ("domain_error_profiles", "domain_error_profiles"),
             ("analyst_notes", "analyst_notes"),
-            # forecast_links LAST so both endpoint questions are imported first.
+            # forecast_links + thesis membership/entities LAST so the endpoint
+            # questions are imported first.
             ("forecast_links", "forecast_links"),
+            ("thesis_members", "thesis_members"),
+            ("thesis_entities", "thesis_entities"),
         ):
             self._import_packet_rows(conn, table, packet.get(key), conflict=conflict, summary=summary, seen=seen)
 
@@ -7935,10 +8113,16 @@ class ForecastLedger:
             return
         seen.add(seen_key)
 
-        # A forecast_link can reference a question not present in this packet;
-        # with foreign_keys=ON that would IntegrityError. Skip dangling edges.
-        if table == "forecast_links":
-            for column in ("from_question_id", "to_question_id"):
+        # A link / membership / entity can reference a question not present in
+        # this packet; with foreign_keys=ON that would IntegrityError. Skip the
+        # dangling row rather than abort the import.
+        _orphan_fk_columns = {
+            "forecast_links": ("from_question_id", "to_question_id"),
+            "thesis_members": ("thesis_question_id", "member_question_id"),
+            "thesis_entities": ("thesis_question_id",),
+        }.get(table)
+        if _orphan_fk_columns:
+            for column in _orphan_fk_columns:
                 if conn.execute(
                     "SELECT 1 FROM forecast_questions WHERE id = ?", (row.get(column),)
                 ).fetchone() is None:
