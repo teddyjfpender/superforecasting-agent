@@ -379,7 +379,7 @@ function DeskReadBlock({ item, onJump }: { item: ForecastWorkspaceItem; onJump: 
   );
 
   return (
-    <div className="px-3 py-2 text-[12px]">
+    <div className="min-w-0 break-words px-3 py-2 text-[12px]">
       {/* domain / impact / counts strip */}
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
         {item.domain && <Tag label={item.domain} style={domainTag(item.domain)} />}
@@ -502,12 +502,12 @@ function ForecastDetailModal({ item, close }: { item: ForecastWorkspaceItem; clo
         className="grid min-h-0 flex-1 gap-px bg-term-border"
         style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)" }}
       >
-        <div className="flex min-h-0 flex-col border border-term-border bg-term-panel">
-          <div className="min-h-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-col border border-term-border bg-term-panel">
+          <div className="min-h-0 min-w-0 flex-1">
             <TrendBlock item={item} />
           </div>
         </div>
-        <div className="min-h-0 overflow-auto border border-term-border bg-term-panel">
+        <div className="min-h-0 min-w-0 overflow-auto border border-term-border bg-term-panel">
           <DeskReadBlock item={item} onJump={() => {}} />
         </div>
       </div>
@@ -681,7 +681,7 @@ function ThesisDeskRead({ thesis, onJump }: { thesis: ForecastThesis; onJump: (i
   );
   const pctOf = (v?: number | null) => (v != null ? `${(v * 100).toFixed(0)}%` : "—");
   return (
-    <div className="px-3 py-2 text-[12px]">
+    <div className="min-w-0 break-words px-3 py-2 text-[12px]">
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
         {thesis.domain && <Tag label={thesis.domain} style={domainTag(thesis.domain)} />}
         {(thesis.topics ?? []).slice(0, 6).map((t) => (
@@ -934,7 +934,7 @@ function FactorDeskRead({ factor, onJump }: { factor: ForecastFactor; onJump: (i
   const pctOf = (v?: number | null) => (v != null ? `${(v * 100).toFixed(0)}%` : "—");
   const withheld = factor.mean == null;
   return (
-    <div className="px-3 py-2 text-[12px]">
+    <div className="min-w-0 break-words px-3 py-2 text-[12px]">
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
         {factor.domain && <Tag label={factor.domain} style={domainTag(factor.domain)} />}
         {(factor.topics ?? []).slice(0, 6).map((t) => (
@@ -1115,7 +1115,7 @@ export function ForecastScreen() {
   return (
     <div className="col-span-12 grid min-h-0 grid-cols-12 gap-px bg-term-border">
       {/* 1) lens: theses, then factors, then domains */}
-      <div className="col-span-2 flex min-h-0">
+      <div className="col-span-2 flex min-h-0 min-w-0">
         <Panel
           id={1}
           title="Lens"
@@ -1180,7 +1180,7 @@ export function ForecastScreen() {
       </div>
 
       {/* 2) book (the thesis's members when a thesis lens is active) */}
-      <div className="col-span-5 flex min-h-0 flex-col gap-px bg-term-border">
+      <div className="col-span-5 flex min-h-0 min-w-0 flex-col gap-px bg-term-border">
         <div className="flex shrink-0 items-center gap-2 border border-term-border bg-term-panel px-2 py-1 text-[11px] uppercase">
           <span className="text-term-accent">FIND</span>
           <span className="text-term-dim">▸</span>
@@ -1221,12 +1221,12 @@ export function ForecastScreen() {
 
       {/* 3) trend  +  4) read — thesis read, or member detail */}
       <div
-        className="col-span-5 grid min-h-0 gap-px bg-term-border"
+        className="col-span-5 grid min-h-0 min-w-0 gap-px bg-term-border"
         style={{ gridTemplateRows: "minmax(0, 1.6fr) minmax(0, 1fr)" }}
       >
         {activeThesis && !selected ? (
           <>
-            <div className="flex min-h-0">
+            <div className="flex min-h-0 min-w-0">
               <Panel
                 id={3}
                 title="Thesis Health"
@@ -1235,7 +1235,7 @@ export function ForecastScreen() {
                 <ThesisTrendBlock thesis={activeThesis} />
               </Panel>
             </div>
-            <div className="flex min-h-0">
+            <div className="flex min-h-0 min-w-0">
               <Panel
                 id={4}
                 title={activeThesis.title || "THESIS"}
@@ -1247,7 +1247,7 @@ export function ForecastScreen() {
           </>
         ) : activeFactor && !selected ? (
           <>
-            <div className="flex min-h-0">
+            <div className="flex min-h-0 min-w-0">
               <Panel
                 id={3}
                 title="Factor Return"
@@ -1256,7 +1256,7 @@ export function ForecastScreen() {
                 <FactorTrendBlock factor={activeFactor} />
               </Panel>
             </div>
-            <div className="flex min-h-0">
+            <div className="flex min-h-0 min-w-0">
               <Panel
                 id={4}
                 title={activeFactor.title || "FACTOR"}
@@ -1268,7 +1268,7 @@ export function ForecastScreen() {
           </>
         ) : selected ? (
           <>
-            <div className="flex min-h-0">
+            <div className="flex min-h-0 min-w-0">
               <Panel
                 id={3}
                 title="Headline Trend"
@@ -1281,7 +1281,7 @@ export function ForecastScreen() {
                 <TrendBlock item={selected} />
               </Panel>
             </div>
-            <div className="flex min-h-0">
+            <div className="flex min-h-0 min-w-0">
               <Panel
                 id={4}
                 title={selected.title || selected.id || "DESK READ"}
@@ -1298,7 +1298,7 @@ export function ForecastScreen() {
             </div>
           </>
         ) : (
-          <div className="row-span-2 flex min-h-0">
+          <div className="row-span-2 flex min-h-0 min-w-0">
             <Panel id={3} title="Forecast Detail" right="SF">
               <div className="flex h-full items-center justify-center text-[11px] uppercase text-term-dim">
                 {enabled ? "select a forecast" : "forecast bridge offline"}
