@@ -348,7 +348,7 @@ function SourceBadge({ source }: { source: Quote["source"] }) {
   const label = dataSourceDisplayLabel(source);
   return (
     <span
-      className={`inline-flex min-w-10 justify-center border border-term-border-hi px-1 ${sourceClass(source)}`}
+      className={`inline-flex min-w-10 justify-center whitespace-nowrap border border-term-border-hi px-1 ${sourceClass(source)}`}
       title={[label, source?.label, source?.receivedAt].filter(Boolean).join(" ")}
     >
       {label}

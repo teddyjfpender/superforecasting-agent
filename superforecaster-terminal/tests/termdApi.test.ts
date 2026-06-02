@@ -55,7 +55,12 @@ const previousQuote: Quote = {
 
 test("renders source states with explicit terminal labels", () => {
   expect(dataSourceDisplayLabel(undefined)).toBe("LOCAL");
-  expect(dataSourceDisplayLabel({ kind: "live", label: "TERMD" })).toBe("LIVE · TERMD");
+  // Live sources show just the (abbreviated) source — the green colour already
+  // conveys "live", so the textual "LIVE ·" prefix is dropped as redundant, and
+  // verbose adapter names are collapsed to a single unwrappable token.
+  expect(dataSourceDisplayLabel({ kind: "live", label: "TERMD" })).toBe("TERMD");
+  expect(dataSourceDisplayLabel({ kind: "live", label: "yahoo-finance" })).toBe("YAHOO");
+  expect(dataSourceDisplayLabel({ kind: "live", label: "coingecko" })).toBe("COINGECKO");
   expect(dataSourceDisplayLabel({ kind: "live", label: "" })).toBe("LIVE");
   expect(dataSourceDisplayLabel({ kind: "stale", label: "termd-feed" })).toBe("STALE");
   expect(dataSourceDisplayLabel({ kind: "mock", label: "termd.fixed-income.fixture" })).toBe("MOCK");

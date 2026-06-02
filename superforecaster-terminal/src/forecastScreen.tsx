@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Panel, useArrowNav } from "./components";
+import { abbreviateSource } from "./data";
 import { useModal } from "./modals";
 import { useForecastWorkspace } from "./forecastProvider";
 import { SfTrendChart } from "./sfTrendChart";
@@ -331,7 +332,9 @@ function EvidenceRow({ e }: { e: ForecastWorkspaceEvidence }) {
   const stanceCls = evidenceStanceClass(e.stance);
   return (
     <div className="border-l-2 border-term-border pl-2 text-[11px] leading-snug">
-      <span className="mr-2 text-[10px] uppercase text-term-dim">{e.source ?? e.source_type ?? "src"}</span>
+      <span className="mr-2 whitespace-nowrap text-[10px] uppercase text-term-dim">
+        {abbreviateSource(e.source ?? e.source_type ?? "src")}
+      </span>
       {e.stance && <span className={`mr-2 text-[10px] uppercase ${stanceCls ?? "text-term-dim"}`}>{e.stance}</span>}
       <span className="text-term-text">{e.summary ?? e.claim ?? "—"}</span>
     </div>

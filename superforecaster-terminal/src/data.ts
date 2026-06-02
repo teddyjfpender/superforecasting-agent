@@ -6,11 +6,34 @@ export type DataSourceState = {
   receivedAt?: string;
 };
 
+// Recognizable short forms for the verbose data-adapter names so a SRC cell
+// never wraps. The map is for clarity; the fallback strips vendor suffixes and
+// joins any remaining word breaks so the result is a single, unwrappable token.
+const SOURCE_LABEL_OVERRIDES: Record<string, string> = {
+  "yahoo-finance": "YAHOO",
+  yahoo: "YAHOO",
+  coingecko: "COINGECKO",
+  frankfurter: "FRANKFURTER",
+  "alpha-vantage": "ALPHAVANTAGE",
+};
+
+/** Compact, single-token form of a source label (no spaces/hyphens to wrap on). */
+export function abbreviateSource(label: string): string {
+  const key = label.toLowerCase().trim();
+  if (SOURCE_LABEL_OVERRIDES[key]) return SOURCE_LABEL_OVERRIDES[key];
+  return key
+    .replace(/[-_](finance|api|data|markets?|io|com)$/g, "") // drop vendor suffixes
+    .replace(/[-_\s]+/g, "") // join remaining breaks -> one token
+    .toUpperCase();
+}
+
 export function dataSourceDisplayLabel(source: DataSourceState | undefined): string {
   if (!source) return "LOCAL";
   switch (source.kind) {
     case "live":
-      return source.label ? `LIVE · ${source.label}` : "LIVE";
+      // The green colour already conveys "live", so the textual "LIVE ·" prefix
+      // is redundant — show just the (abbreviated) source.
+      return source.label ? abbreviateSource(source.label) : "LIVE";
     case "stale":
       return "STALE";
     case "mock":
