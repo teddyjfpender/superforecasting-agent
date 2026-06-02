@@ -503,6 +503,8 @@ def _workspace_thesis(
     ensemble = current.ensemble_components if current else {}
     ensemble = ensemble if isinstance(ensemble, dict) else {}
     stored_components = ensemble.get("components") or []
+    meta = current.metadata if current else {}
+    meta = meta if isinstance(meta, dict) else {}
 
     members = {m["member_question_id"]: m for m in ledger.list_thesis_members(question.id)}
 
@@ -576,6 +578,10 @@ def _workspace_thesis(
         "analyst_note": _workspace_analyst_note(analyst_notes[-1]) if analyst_notes else None,
         "rationale": current.rationale if current else None,
         "snapshot_count": len(snapshots),
+        # Per-entity suitability + the §10 "signal moved -> entities affected"
+        # trade triggers, written by ledger.aggregate_thesis into the snapshot.
+        "entities": meta.get("entities") or [],
+        "triggers": meta.get("triggers") or [],
     }
 
 

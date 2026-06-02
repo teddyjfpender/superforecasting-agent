@@ -164,6 +164,34 @@ const inflationThesis = (): ForecastThesis => ({
   ],
   delta: -0.04,
   domain: 'macro',
+  entities: [
+    {
+      action: 'better suited',
+      delta: 0.25,
+      kind: 'stock',
+      name: 'BE',
+      stance: 'well-suited',
+      suitability: 0.71,
+      suitability_display: '71%',
+      top_driver: 'power-bottleneck rising'
+    },
+    {
+      action: 'less suited',
+      delta: -0.08,
+      kind: 'stock',
+      name: 'CORZ',
+      stance: 'marginal',
+      suitability: 0.41,
+      suitability_display: '41%',
+      top_driver: 'financing cost'
+    },
+    {
+      kind: 'stock',
+      name: 'IREN',
+      suitability: null,
+      top_driver: null
+    }
+  ],
   freshness: 'fresh today',
   health_display: '54%',
   health_probability: 0.54,
@@ -180,7 +208,17 @@ const inflationThesis = (): ForecastThesis => ({
   status: 'active',
   thesis_score: 54,
   title: 'Inflation stays sticky through 2026',
-  topics: ['inflation', 'macro']
+  topics: ['inflation', 'macro'],
+  triggers: [
+    {
+      better: ['BE', 'IREN'],
+      delta: 0.25,
+      direction: 'up',
+      member_id: 'fq_power',
+      note: 'Power ▲ +25pp → BE, IREN better suited',
+      signal: 'power'
+    }
+  ]
 })
 
 const thesisFixture = (): ForecastWorkspaceResponse => ({
@@ -668,6 +706,40 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('caveats')
     expect(text).toContain('co-move')
     expect(text).toContain('0.42')
+  })
+
+  it('renders the entity suitability table and trade triggers under the member contributions', async () => {
+    const [{ renderSync }, { ThesisDeskRead }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/forecastsWorkspace.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const stdout = writeStream(120, 90)
+    renderSync(React.createElement(ThesisDeskRead, { t: DARK_THEME, thesis: inflationThesis(), width: 90 }), {
+      exitOnCtrlC: false,
+      patchConsole: false,
+      stdout: stdout.stream
+    } as never)
+    const text = normalize(stdout.text(), stripAnsi)
+    // §22 per-name suitability table, sorted by suitability desc.
+    expect(text).toContain('ENTITY SUITABILITY')
+    expect(text).toContain('BE')
+    expect(text).toContain('71%')
+    expect(text).toContain('CORZ')
+    expect(text).toContain('41%')
+    // The best-suited name (BE, 71%) sorts above the marginal one (CORZ, 41%).
+    expect(text.indexOf('BE')).toBeLessThan(text.indexOf('CORZ'))
+    // signed delta in pp + the top driver.
+    expect(text).toContain('▲25pp')
+    expect(text).toContain('power-bottleneck rising')
+    // A withheld entity (IREN) shows "withheld", never a fabricated number.
+    expect(text).toContain('IREN')
+    expect(text).toContain('withheld')
+    // §10 trade triggers render their note verbatim.
+    expect(text).toContain('TRADE TRIGGERS')
+    expect(text).toContain('Power ▲ +25pp → BE, IREN better suited')
   })
 
   it('shows withheld (not a fake number) for a thesis with no health snapshot', async () => {

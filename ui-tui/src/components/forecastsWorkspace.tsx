@@ -10,6 +10,8 @@ import type {
   ForecastRelated,
   ForecastThesis,
   ForecastThesisComponent,
+  ForecastThesisEntity,
+  ForecastThesisTrigger,
   ForecastWorkspaceItem,
   ForecastWorkspacePanel,
   ForecastWorkspaceResponse
@@ -1788,6 +1790,108 @@ function ThesisComponentRow({ comp, t, width }: { comp: ForecastThesisComponent;
   )
 }
 
+// Suitability color: green ≥0.6, amber ≥0.45, red below; withheld (null) → muted.
+// The §22 per-name read shares the thesis's health bands so a "well-suited" name
+// reads the same green as a healthy thesis.
+const suitabilityColor = (t: Theme, suitability?: null | number): string =>
+  !finite(suitability) ? t.color.muted : suitability >= 0.6 ? t.color.ok : suitability >= 0.45 ? t.color.warn : t.color.error
+
+// One ENTITY SUITABILITY row: name (+kind), the 0..1 suitability (colored by
+// level), the stance/action read, the signed delta in pp, and the top driver.
+// A withheld suitability shows "withheld"/"—", never a fabricated number.
+function ThesisEntityRow({ entity, t, width }: { entity: ForecastThesisEntity; t: Theme; width: number }) {
+  const suitability = entity.suitability
+  const suitText = (entity.suitability_display ?? (finite(suitability) ? pctOf(suitability) : 'withheld')).padStart(8)
+  const read = entity.action || entity.stance || entity.trend || '—'
+  const delta = entity.delta
+  // The glyph carries the sign; the number is the magnitude in suitability pp.
+  const deltaText = finite(delta) ? `${delta >= 0 ? '▲' : '▼'}${Math.abs(Math.round(delta * 100))}pp` : '· flat'
+  const deltaColor = !finite(delta) || Math.abs(delta) < 1e-9 ? t.color.muted : delta > 0 ? t.color.ok : t.color.error
+  const driver = entity.top_driver ? truncate(entity.top_driver, Math.max(10, Math.floor(width * 0.3))) : ''
+  // marker gaps: suit(8) gap read(~12) gap delta(~6) → reserve ~30 + driver tail
+  const nameW = Math.max(8, width - 30 - (driver ? driver.length + 2 : 0))
+  const name = truncate(entity.label ?? entity.name ?? 'entity', nameW).padEnd(nameW)
+
+  return (
+    <Text wrap="truncate-end">
+      <Text color={t.color.text}>{name}</Text>
+      <Text bold color={suitabilityColor(t, suitability)}>
+        {' '}
+        {suitText}
+      </Text>
+      <Text color={t.color.label}> {truncate(read, 12).padEnd(12)}</Text>
+      <Text bold color={deltaColor}>
+        {' '}
+        {deltaText.padStart(6)}
+      </Text>
+      {entity.kind ? <Text color={t.color.muted}> {entity.kind}</Text> : null}
+      {driver ? <Text color={t.color.muted}> · {driver}</Text> : null}
+    </Text>
+  )
+}
+
+// §22 per-name suitability: one row per entity (stock / candidate / sector …),
+// sorted by suitability so the best-suited names lead. Only rendered when the
+// thesis carries entities (empty on the first aggregation, or for theses with no
+// per-name decomposition).
+function ThesisEntities({ entities, t, width }: { entities: ForecastThesisEntity[]; t: Theme; width: number }) {
+  if (!entities.length) {
+    return null
+  }
+
+  // Sort by suitability desc; withheld (null) sinks to the bottom.
+  const sorted = [...entities].sort(
+    (a, b) => (finite(b.suitability) ? b.suitability : -1) - (finite(a.suitability) ? a.suitability : -1)
+  )
+
+  return (
+    <>
+      <SectionTitle t={t}>ENTITY SUITABILITY</SectionTitle>
+      {sorted.map((entity, i) => (
+        <ThesisEntityRow entity={entity} key={entity.top_driver_id ?? entity.name ?? entity.label ?? `e${i}`} t={t} width={width} />
+      ))}
+    </>
+  )
+}
+
+// §10 trade triggers: the if-then rules a member signal move fires ("Power ▲
+// +25pp → BE, IREN better suited"). The up/down glyph is colored green/red; the
+// rule prose is taken verbatim from the trigger note. Empty on the first
+// aggregation (no prior snapshot to diff against).
+function ThesisTriggers({ triggers, t }: { triggers: ForecastThesisTrigger[]; t: Theme }) {
+  if (!triggers.length) {
+    return null
+  }
+
+  return (
+    <>
+      <SectionTitle t={t}>TRADE TRIGGERS</SectionTitle>
+      {triggers.map((trigger, i) => {
+        const up = trigger.direction !== 'down'
+        const glyph = up ? '▲' : '▼'
+        const glyphColor = up ? t.color.ok : t.color.error
+        const note = trigger.note || `${trigger.signal ?? 'signal'} ${glyph}`
+
+        return (
+          <Box flexDirection="row" key={trigger.member_id ?? `tr${i}`}>
+            <Box flexShrink={0} width={2}>
+              <Text bold color={glyphColor}>
+                {glyph}
+                {' '}
+              </Text>
+            </Box>
+            <Box flexGrow={1} flexShrink={1} minWidth={0}>
+              <Text color={t.color.text} wrap="wrap">
+                {note}
+              </Text>
+            </Box>
+          </Box>
+        )
+      })}
+    </>
+  )
+}
+
 export function ThesisDeskRead({ thesis, t, width }: { thesis: ForecastThesis; t: Theme; width: number }) {
   const note = thesis.analyst_note ?? null
 
@@ -1862,6 +1966,10 @@ export function ThesisDeskRead({ thesis, t, width }: { thesis: ForecastThesis; t
       ) : (
         <Text color={t.color.muted}>no members tagged yet</Text>
       )}
+
+      <ThesisEntities entities={thesis.entities ?? []} t={t} width={width} />
+
+      <ThesisTriggers t={t} triggers={thesis.triggers ?? []} />
 
       <SectionTitle t={t}>caveats</SectionTitle>
       <Box paddingLeft={2}>

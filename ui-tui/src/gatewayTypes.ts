@@ -649,6 +649,41 @@ export interface ForecastThesisHistoryPoint {
   score_high?: null | number
 }
 
+// Per-entity (stock / candidate / currency / sector …) suitability: the same
+// 0..1 weighted aggregate as the thesis, computed over the entity's own signal
+// vector. The §22 per-name read ("BE/IREN/CORZ better suited when the
+// power-bottleneck rises"). A withheld suitability stays null — never faked.
+export interface ForecastThesisEntity {
+  name?: string
+  label?: string
+  kind?: string
+  suitability?: null | number
+  suitability_display?: string
+  score?: null | number
+  band?: null | number[]
+  coverage?: null | number
+  n_eff?: null | number
+  delta?: null | number
+  stance?: string
+  trend?: string
+  action?: string
+  top_driver?: null | string
+  top_driver_id?: null | string
+  weight_count?: number
+  contributions?: ForecastThesisComponent[]
+}
+
+// A §10 trade trigger: a member signal moved → entities better / less suited.
+export interface ForecastThesisTrigger {
+  member_id?: string
+  signal?: string
+  delta?: null | number
+  direction?: 'down' | 'up'
+  note?: string
+  better?: string[]
+  less?: string[]
+}
+
 export interface ForecastThesis {
   id?: string
   title?: string
@@ -672,6 +707,8 @@ export interface ForecastThesis {
   analyst_note?: ForecastAnalystNote | null
   rationale?: null | string
   snapshot_count?: number
+  entities?: ForecastThesisEntity[]
+  triggers?: ForecastThesisTrigger[]
 }
 
 export interface ForecastWorkspaceItem {

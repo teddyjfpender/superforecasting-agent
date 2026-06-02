@@ -426,6 +426,89 @@ def _thesis_narrative(thesis: Any, agg: Any) -> tuple[str, str, str, str, str]:
     return headline, how_it_thinks, looking_for, be_aware, body
 
 
+def _entity_stance(
+    suitability: float | None, delta: float | None, threshold: float | None = None
+) -> tuple[str, str]:
+    """Map an entity's 0..1 suitability + its move into a stance + trend.
+
+    Generic across thesis kinds: a stock 'overweight', a candidate 'frontrunner',
+    a currency 'long' all share the same suitability ladder. The optional
+    per-entity ``threshold`` raises the overweight bar.
+    """
+
+    if suitability is None:
+        return ("WITHHELD", "flat")
+    over = threshold if (isinstance(threshold, (int, float)) and threshold > 0) else 0.65
+    if suitability >= over:
+        stance = "OVERWEIGHT"
+    elif suitability >= 0.55:
+        stance = "ADD"
+    elif suitability >= 0.45:
+        stance = "NEUTRAL"
+    elif suitability >= 0.35:
+        stance = "TRIM"
+    else:
+        stance = "UNDERWEIGHT"
+    move = delta or 0.0
+    trend = "rising" if move > 0.01 else "falling" if move < -0.01 else "flat"
+    return (stance, trend)
+
+
+def _thesis_entity_triggers(
+    member_deltas: dict[str, float],
+    entities: list[dict[str, Any]],
+    member_map: dict[str, dict[str, Any]],
+    *,
+    min_move: float = 0.05,
+) -> list[dict[str, Any]]:
+    """The §10 "if signal X moves -> entities Y better/less suited" lines, generic.
+
+    For each member signal that moved at least ``min_move`` since the prior
+    aggregation, ranks the entities weighting it and splits them into helped vs
+    hurt by the move's direction × the entity's weight direction.
+    """
+
+    triggers: list[dict[str, Any]] = []
+    for member_id, delta in member_deltas.items():
+        if abs(delta) < min_move:
+            continue
+        better: list[tuple[float, str]] = []
+        less: list[tuple[float, str]] = []
+        for entity in entities:
+            for weight in entity.get("weights", []):
+                if weight.get("member_id") != member_id or float(weight.get("weight", 0)) <= 0:
+                    continue
+                effect = (1 if delta > 0 else -1) * (1 if weight.get("direction", "support") == "support" else -1)
+                (better if effect > 0 else less).append((float(weight.get("weight", 0)), entity.get("name", "?")))
+                break
+        if not better and not less:
+            continue
+        better.sort(reverse=True)
+        less.sort(reverse=True)
+        better_names = [name for _, name in better][:8]
+        less_names = [name for _, name in less][:8]
+        member = member_map.get(member_id, {})
+        signal = member.get("member_title") or member.get("role") or member_id
+        parts: list[str] = []
+        if better_names:
+            parts.append(f"{', '.join(better_names)} better suited")
+        if less_names:
+            parts.append(f"{', '.join(less_names)} less suited")
+        triggers.append(
+            {
+                "member_id": member_id,
+                "signal": signal,
+                "delta": delta,
+                "direction": "up" if delta > 0 else "down",
+                "note": f"{signal} {'▲' if delta > 0 else '▼'} {delta * 100:+.0f}pp → " + "; ".join(parts),
+                "better": better_names,
+                "less": less_names,
+            }
+        )
+    triggers.sort(key=lambda trigger: -abs(trigger["delta"]))
+    return triggers
+
+
 class ForecastLedger:
     """Local-first SQLite ledger for questions, evidence, forecasts, and scores."""
 
@@ -1024,6 +1107,24 @@ class ForecastLedger:
                     ON thesis_members(member_question_id);
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_thesis_members_edge
                     ON thesis_members(thesis_question_id, member_question_id);
+
+                CREATE TABLE IF NOT EXISTS thesis_entities (
+                    id TEXT PRIMARY KEY,
+                    thesis_question_id TEXT NOT NULL REFERENCES forecast_questions(id) ON DELETE CASCADE,
+                    name TEXT NOT NULL,
+                    label TEXT,
+                    kind TEXT NOT NULL DEFAULT 'entity',
+                    weights TEXT NOT NULL DEFAULT '[]',
+                    action_threshold REAL,
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    metadata TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_thesis_entities_thesis
+                    ON thesis_entities(thesis_question_id);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_thesis_entities_name
+                    ON thesis_entities(thesis_question_id, name);
 
                 CREATE TABLE IF NOT EXISTS domain_error_profiles (
                     id TEXT PRIMARY KEY,
@@ -4765,26 +4866,45 @@ class ForecastLedger:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def _thesis_member_belief(self, member: dict[str, Any]) -> dict[str, Any]:
-        """Resolve a membership row into the input dict that thesis.aggregate_thesis wants."""
+    def _belief_record(
+        self,
+        member_id: str,
+        *,
+        direction: str = "support",
+        weight: float = 1.0,
+        target: float | None = None,
+        hi_is_good: bool = True,
+        max_age_days: float | None = None,
+        title: str | None = None,
+        outcome_type: str | None = None,
+    ) -> dict[str, Any]:
+        """Resolve one question's current belief into the input dict that
+        :func:`forecasting.thesis.aggregate_thesis` consumes. Shared by thesis
+        membership AND per-entity weight vectors (the suitability layer reuses
+        the exact same 0..1-signal reduction, just with a different weight set)."""
 
         # Lazy import: dashboard imports the ledger, so importing it at module
         # scope would be circular.
         from forecasting.dashboard import _distribution_view
 
-        member_id = member["member_question_id"]
-        outcome_type = member.get("member_outcome_type") or "binary"
+        if outcome_type is None or title is None:
+            try:
+                question = self.get_question(member_id)
+                outcome_type = outcome_type or question.outcome_space.type
+                title = title or question.title
+            except LedgerNotFoundError:
+                outcome_type = outcome_type or "binary"
         snapshot = self.get_current_snapshot(member_id)
         belief = snapshot.probability_or_distribution if snapshot else None
         record: dict[str, Any] = {
             "member_id": member_id,
-            "title": member.get("member_title"),
-            "direction": member.get("direction", "support"),
-            "weight": float(member.get("weight", 1.0)),
+            "title": title,
+            "direction": direction,
+            "weight": float(weight),
             "as_of": snapshot.as_of if snapshot else None,
-            "max_age_days": member.get("max_age_days"),
-            "target": member.get("target"),
-            "hi_is_good": bool(member.get("hi_is_good", True)),
+            "max_age_days": max_age_days,
+            "target": target,
+            "hi_is_good": bool(hi_is_good),
             "probability": None,
             "dist": None,
         }
@@ -4802,6 +4922,254 @@ class ForecastLedger:
         else:
             record["kind"] = "binary"  # unrecognized -> unusable
         return record
+
+    def _thesis_member_belief(self, member: dict[str, Any]) -> dict[str, Any]:
+        """Resolve a membership row into the input dict that thesis.aggregate_thesis wants."""
+
+        return self._belief_record(
+            member["member_question_id"],
+            direction=member.get("direction", "support"),
+            weight=float(member.get("weight", 1.0)),
+            target=member.get("target"),
+            hi_is_good=bool(member.get("hi_is_good", True)),
+            max_age_days=member.get("max_age_days"),
+            title=member.get("member_title"),
+            outcome_type=member.get("member_outcome_type") or "binary",
+        )
+
+    # ── Thesis entities (per-name suitability + trade triggers) ─────────────
+    #
+    # An entity — a stock, a candidate, a currency, a sector, anything the
+    # thesis's signals map onto — carries its OWN weighted vector over the
+    # thesis members. Its "suitability" is the same 0..1 aggregate as the
+    # thesis, just with the entity's weights + direction, so the §22/§10 rule
+    # ("if power-bottleneck prob rises -> BE/IREN/CORZ better suited") falls out
+    # generically for ANY thesis (elections, FX, manufacturing, ...).
+
+    def _thesis_entity_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        data = dict(row)
+        data["weights"] = json_loads(data.get("weights"), [])
+        data["metadata"] = json_loads(data.get("metadata"), {})
+        return data
+
+    def _normalize_entity_weights(self, weights: Any) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for weight in weights or []:
+            if not isinstance(weight, dict):
+                raise ValidationError("entity weight must be an object")
+            member_id = str(weight.get("member_id") or "").strip()
+            if not member_id:
+                raise ValidationError("entity weight requires a member_id")
+            self.get_question(member_id)  # must reference a real question
+            direction = str(weight.get("direction") or "support")
+            if direction not in {"support", "inverted"}:
+                raise ValidationError("entity weight direction must be 'support' or 'inverted'")
+            value = float(weight.get("weight", 1.0))
+            if value < 0:
+                raise ValidationError("entity weight must be non-negative")
+            entry: dict[str, Any] = {"member_id": member_id, "weight": value, "direction": direction}
+            if weight.get("role"):
+                entry["role"] = str(weight["role"])
+            if weight.get("hi_is_good") is not None:
+                entry["hi_is_good"] = bool(weight["hi_is_good"])
+            if weight.get("target") is not None:
+                entry["target"] = float(weight["target"])
+            out.append(entry)
+        return out
+
+    def add_thesis_entity(
+        self,
+        thesis_id: str,
+        name: str,
+        *,
+        label: str | None = None,
+        kind: str = "entity",
+        weights: Any = None,
+        action_threshold: float | None = None,
+        created_by: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Register an entity under a thesis with a weighted signal vector. Upsert on (thesis, name)."""
+
+        thesis = self.get_question(thesis_id)
+        if not self.is_thesis(thesis):
+            raise ValidationError("thesis_id must reference a question with outcome type 'thesis'")
+        name = (name or "").strip()
+        if not name:
+            raise ValidationError("entity name is required")
+        normalized = self._normalize_entity_weights(weights)
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT id FROM thesis_entities WHERE thesis_question_id = ? AND name = ?",
+                (thesis_id, name),
+            ).fetchone()
+            if existing is not None:
+                conn.execute(
+                    "UPDATE thesis_entities SET label = ?, kind = ?, weights = ?, action_threshold = ?, metadata = ? WHERE id = ?",
+                    (label, kind, json_dumps(normalized), action_threshold, json_dumps(metadata or {}), existing["id"]),
+                )
+                entity_id = existing["id"]
+            else:
+                entity_id = f"te_{uuid.uuid4().hex[:12]}"
+                conn.execute(
+                    """
+                    INSERT INTO thesis_entities (
+                        id, thesis_question_id, name, label, kind, weights,
+                        action_threshold, created_by, created_at, metadata
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        entity_id,
+                        thesis_id,
+                        name,
+                        label,
+                        kind,
+                        json_dumps(normalized),
+                        action_threshold,
+                        created_by,
+                        utc_now_iso(),
+                        json_dumps(metadata or {}),
+                    ),
+                )
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM thesis_entities WHERE id = ?", (entity_id,)).fetchone()
+        return self._thesis_entity_to_dict(row)
+
+    def set_entity_weight(
+        self,
+        thesis_id: str,
+        name: str,
+        member_id: str,
+        *,
+        weight: float = 1.0,
+        direction: str = "support",
+        hi_is_good: bool = True,
+        target: float | None = None,
+        role: str | None = None,
+    ) -> dict[str, Any]:
+        """Add/replace a single signal weight on an entity (creates the entity if new)."""
+
+        entities = {e["name"]: e for e in self.list_thesis_entities(thesis_id)}
+        existing = entities.get(name)
+        kept = [w for w in (existing["weights"] if existing else []) if w.get("member_id") != member_id]
+        entry: dict[str, Any] = {"member_id": member_id, "weight": float(weight), "direction": direction}
+        if role:
+            entry["role"] = role
+        entry["hi_is_good"] = bool(hi_is_good)
+        if target is not None:
+            entry["target"] = float(target)
+        kept.append(entry)
+        return self.add_thesis_entity(
+            thesis_id,
+            name,
+            label=(existing.get("label") if existing else None),
+            kind=(existing.get("kind") if existing else "entity"),
+            weights=kept,
+            action_threshold=(existing.get("action_threshold") if existing else None),
+            metadata=(existing.get("metadata") if existing else None),
+        )
+
+    def remove_thesis_entity(self, thesis_id: str, name: str) -> int:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM thesis_entities WHERE thesis_question_id = ? AND name = ?",
+                (thesis_id, name),
+            )
+            return int(cur.rowcount or 0)
+
+    def list_thesis_entities(self, thesis_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM thesis_entities WHERE thesis_question_id = ? ORDER BY name ASC",
+                (thesis_id,),
+            ).fetchall()
+        return [self._thesis_entity_to_dict(row) for row in rows]
+
+    def _compute_thesis_entities(
+        self,
+        thesis_id: str,
+        *,
+        rho: float | str,
+        now: str,
+        member_map: dict[str, dict[str, Any]],
+        current_components: list[dict[str, Any]],
+        prev_components: list[dict[str, Any]],
+        prev_entities: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Per-entity suitability (reusing the thesis aggregator) + trade triggers."""
+
+        from forecasting import thesis as thesis_math
+
+        entities = self.list_thesis_entities(thesis_id)
+        if not entities:
+            return [], []
+
+        prev_suit = {e.get("name"): e.get("suitability") for e in (prev_entities or [])}
+        out: list[dict[str, Any]] = []
+        for entity in entities:
+            records = []
+            for weight in entity.get("weights", []):
+                member_id = weight["member_id"]
+                member = member_map.get(member_id, {})
+                records.append(
+                    self._belief_record(
+                        member_id,
+                        direction=weight.get("direction", "support"),
+                        weight=float(weight.get("weight", 1.0)),
+                        target=weight["target"] if "target" in weight else member.get("target"),
+                        hi_is_good=weight["hi_is_good"]
+                        if "hi_is_good" in weight
+                        else bool(member.get("hi_is_good", True)),
+                        max_age_days=member.get("max_age_days"),
+                        title=member.get("member_title"),
+                        outcome_type=member.get("member_outcome_type"),
+                    )
+                )
+            agg = thesis_math.aggregate_thesis(records, rho=rho, now=now)
+            suitability = agg.health
+            previous = prev_suit.get(entity["name"])
+            delta = (
+                suitability - previous
+                if (suitability is not None and isinstance(previous, (int, float)))
+                else None
+            )
+            stance, trend = _entity_stance(suitability, delta, entity.get("action_threshold"))
+            usable = [c for c in agg.components if c.get("status") not in _THESIS_DEAD_STATUS]
+            top = max(usable, key=lambda c: abs(c.get("contribution_pts") or 0), default=None)
+            out.append(
+                {
+                    "name": entity["name"],
+                    "label": entity.get("label") or entity["name"],
+                    "kind": entity.get("kind", "entity"),
+                    "suitability": suitability,
+                    "suitability_display": f"{suitability:.0%}" if suitability is not None else "—",
+                    "score": agg.thesis_score,
+                    "band": list(agg.band) if agg.band else None,
+                    "coverage": agg.coverage,
+                    "n_eff": agg.n_eff,
+                    "delta": delta,
+                    "stance": stance,
+                    "trend": trend,
+                    "action": f"{stance} ({trend})" if suitability is not None else "withheld",
+                    "top_driver": top.get("title") if top else None,
+                    "top_driver_id": top.get("member_id") if top else None,
+                    "weight_count": len(entity.get("weights", [])),
+                    "contributions": agg.components,
+                }
+            )
+
+        # Trade triggers: member-signal moves since the prior aggregation, mapped
+        # through each entity's weight vector to "better/less suited" lines.
+        cur_sig = {c.get("member_id"): c.get("s_raw") for c in current_components}
+        prev_sig = {c.get("member_id"): c.get("s_raw") for c in (prev_components or [])}
+        member_deltas: dict[str, float] = {}
+        for member_id, signal in cur_sig.items():
+            previous_signal = prev_sig.get(member_id)
+            if isinstance(signal, (int, float)) and isinstance(previous_signal, (int, float)):
+                member_deltas[member_id] = signal - previous_signal
+        triggers = _thesis_entity_triggers(member_deltas, entities, member_map)
+        return out, triggers
 
     def aggregate_thesis(
         self,
@@ -4829,12 +5197,36 @@ class ForecastLedger:
         as_of = now or utc_now_iso()
         agg = thesis_math.aggregate_thesis(beliefs, rho=rho, now=as_of)
 
+        # Entity suitability + trade triggers. Read the PRIOR snapshot first
+        # (get_current_snapshot returns the latest before the new commit) so the
+        # per-entity deltas + signal-move triggers compare against it.
+        previous = self.get_current_snapshot(thesis_id)
+        prev_components: list[dict[str, Any]] = []
+        prev_entities: list[dict[str, Any]] = []
+        if previous is not None:
+            prev_ensemble = previous.ensemble_components if isinstance(previous.ensemble_components, dict) else {}
+            prev_components = prev_ensemble.get("components") or []
+            prev_meta = previous.metadata if isinstance(previous.metadata, dict) else {}
+            prev_entities = prev_meta.get("entities") or []
+        member_map = {m["member_question_id"]: m for m in members}
+        entities, triggers = self._compute_thesis_entities(
+            thesis_id,
+            rho=rho,
+            now=as_of,
+            member_map=member_map,
+            current_components=agg.components,
+            prev_components=prev_components,
+            prev_entities=prev_entities,
+        )
+
         result: dict[str, Any] = {
             "thesis_id": thesis_id,
             "title": thesis.title,
             "aggregate": agg,
             "payload": agg.to_payload(),
             "member_count": len(members),
+            "entities": entities,
+            "triggers": triggers,
             "snapshot_id": None,
         }
         if not commit:
@@ -4877,7 +5269,12 @@ class ForecastLedger:
             },
             forecast_origin="live",
             calibration_eligible=False,
-            metadata={"thesis_notes": agg.notes, "thesis_spread": agg.spread},
+            metadata={
+                "thesis_notes": agg.notes,
+                "thesis_spread": agg.spread,
+                "entities": entities,
+                "triggers": triggers,
+            },
             reasons_up=_thesis_reason_lines(agg, "support"),
             reasons_down=_thesis_reason_lines(agg, "drag"),
         )

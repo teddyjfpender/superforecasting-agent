@@ -42,6 +42,8 @@ import type {
   ForecastRelatedView,
   ForecastThesis,
   ForecastThesisComponent,
+  ForecastThesisEntity,
+  ForecastThesisTrigger,
   ForecastWorkspaceEvidence,
   ForecastWorkspaceItem,
   TagStyle,
@@ -646,6 +648,30 @@ function ThesisComponentRow({
   );
 }
 
+const suitabilityClass = (s?: number | null): string =>
+  s == null ? "text-term-dim" : s >= 0.6 ? "text-term-green" : s >= 0.45 ? "text-term-yellow" : "text-term-red";
+
+function EntityRow({ entity }: { entity: ForecastThesisEntity }) {
+  const d = entity.delta;
+  return (
+    <div className="flex items-baseline gap-2 border-b border-term-border/60 px-2 py-[3px] text-[11px] last:border-b-0">
+      <span className="w-16 shrink-0 truncate text-term-accent-hi" title={entity.kind}>
+        {entity.name}
+      </span>
+      <span className={`w-9 shrink-0 text-right tabular-nums ${suitabilityClass(entity.suitability)}`}>
+        {entity.suitability_display ?? "—"}
+      </span>
+      <span className="w-[5.5rem] shrink-0 truncate text-[10px] uppercase text-term-text">{entity.stance ?? "—"}</span>
+      <span className={`w-12 shrink-0 text-right tabular-nums ${deltaClass(d)}`}>
+        {d != null ? `${d >= 0 ? "▲" : "▼"} ${Math.abs(d * 100).toFixed(0)}pp` : "·"}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-[10px] text-term-dim" title={entity.top_driver ?? ""}>
+        {entity.top_driver ? `▸ ${entity.top_driver}` : ""}
+      </span>
+    </div>
+  );
+}
+
 function ThesisDeskRead({ thesis, onJump }: { thesis: ForecastThesis; onJump: (id: string) => void }) {
   const note = thesis.analyst_note ?? null;
   const comps = [...(thesis.components ?? [])].sort(
@@ -701,6 +727,42 @@ function ThesisDeskRead({ thesis, onJump }: { thesis: ForecastThesis; onJump: (i
           <div className="px-2 py-2 text-[11px] uppercase text-term-dim">no members tagged yet</div>
         )}
       </div>
+
+      {(thesis.entities?.length ?? 0) > 0 && (
+        <>
+          <SectionLabel>Entity Suitability</SectionLabel>
+          <div className="mb-1 flex items-baseline gap-2 px-2 text-[9px] uppercase text-term-dim">
+            <span className="w-16 shrink-0">name</span>
+            <span className="w-9 shrink-0 text-right">suit</span>
+            <span className="w-[5.5rem] shrink-0">stance</span>
+            <span className="w-12 shrink-0 text-right">Δ</span>
+            <span className="min-w-0 flex-1">top driver</span>
+          </div>
+          <div className="border border-term-border">
+            {[...(thesis.entities ?? [])]
+              .sort((a, b) => (b.suitability ?? 0) - (a.suitability ?? 0))
+              .map((e) => (
+                <EntityRow key={e.name} entity={e} />
+              ))}
+          </div>
+        </>
+      )}
+
+      {(thesis.triggers?.length ?? 0) > 0 && (
+        <>
+          <SectionLabel>Trade Triggers</SectionLabel>
+          <div className="space-y-1">
+            {(thesis.triggers ?? []).map((tr: ForecastThesisTrigger, i) => (
+              <div
+                key={tr.member_id ?? i}
+                className={`text-[11px] leading-snug ${tr.direction === "up" ? "text-term-green" : "text-term-red"}`}
+              >
+                {tr.note}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       <SectionLabel>Caveats</SectionLabel>
       <div className="text-[11px] leading-snug text-term-yellow">
