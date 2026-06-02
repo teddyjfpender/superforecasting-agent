@@ -630,6 +630,9 @@ export const evidenceStanceClass = (stance?: string | null): string | null => {
 // Re-export the data shapes so consumers can `import { ForecastWorkspaceItem } from './forecastFormat'`.
 export type {
   ForecastAnalystNote,
+  ForecastFactor,
+  ForecastFactorConstituent,
+  ForecastFactorHistoryPoint,
   ForecastRelated,
   ForecastRelatedView,
   ForecastSharedSource,

@@ -598,6 +598,8 @@ export interface ForecastQuestionPacketAssumption {
 export interface ForecastWorkspaceResponse {
   active_count?: number
   closing_soon_count?: number
+  factor_count?: number
+  factors?: ForecastFactor[]
   forecasts?: ForecastWorkspaceItem[]
   generated_at?: string
   open_alert_count?: number
@@ -709,6 +711,61 @@ export interface ForecastThesis {
   snapshot_count?: number
   entities?: ForecastThesisEntity[]
   triggers?: ForecastThesisTrigger[]
+}
+
+// ── Factor layer ─────────────────────────────────────────────────────────────
+// A factor is a weighted basket whose RETURN distribution + volatility +
+// downside is the portfolio aggregate of its constituents' return
+// distributions. Mirrors the thesis shapes but in return/volatility units
+// rather than a health probability. Withheld moments stay null — never faked.
+
+export interface ForecastFactorConstituent {
+  id?: string
+  title?: null | string
+  direction?: 'long' | 'short'
+  weight?: null | number
+  w_norm?: null | number
+  mean?: null | number
+  sd?: null | number
+  contribution?: null | number
+  status?: string
+  flags?: string[]
+}
+
+export interface ForecastFactorHistoryPoint {
+  as_of?: string
+  created_at?: string
+  headline_probability?: null | number // the factor return (mean) series
+  band_low?: null | number // q05
+  band_high?: null | number // q95
+  volatility?: null | number
+}
+
+export interface ForecastFactor {
+  id?: string
+  title?: string
+  domain?: null | string
+  topics?: string[]
+  units?: null | string
+  as_of?: null | string
+  freshness?: string
+  mean?: null | number
+  sd?: null | number
+  volatility?: null | number
+  q05?: null | number
+  q50?: null | number
+  q95?: null | number
+  downside?: null | number
+  cvar?: null | number
+  coverage?: null | number
+  n_eff?: null | number
+  delta?: null | number
+  member_count?: number
+  constituents?: ForecastFactorConstituent[]
+  history?: ForecastFactorHistoryPoint[]
+  analyst_note?: ForecastAnalystNote | null
+  rationale?: null | string
+  snapshot_count?: number
 }
 
 export interface ForecastWorkspaceItem {

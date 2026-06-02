@@ -39,6 +39,8 @@ import {
 } from "./forecastFormat";
 import type {
   ForecastAnalystNote,
+  ForecastFactor,
+  ForecastFactorConstituent,
   ForecastRelatedView,
   ForecastThesis,
   ForecastThesisComponent,
@@ -785,14 +787,241 @@ function BackToThesisButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+/* ── factor lens (left-column filter + the factor read) ──────────────────── */
+
+// A factor's μ is a signed RETURN: green when positive, red when negative,
+// dim/"—" when withheld (null mean).
+const returnClass = (v?: number | null): string =>
+  v == null || Math.abs(v) < 1e-9 ? "text-term-dim" : v > 0 ? "text-term-green" : "text-term-red";
+
+// A constituent's long/short leg colors green/red like a position direction.
+const legStyle = (direction?: string): TagStyle =>
+  direction === "short"
+    ? { text: "text-term-red", chip: "border-term-red/50 bg-term-red/10" }
+    : { text: "text-term-green", chip: "border-term-green/50 bg-term-green/10" };
+
+const factorMu = (factor: ForecastFactor): string =>
+  factor.mean != null ? `μ${compactNumber(factor.mean)}${unitSuffix(factor.units)}` : "—";
+
+const unitSuffix = (units?: null | string): string => {
+  const u = (units ?? "").toLowerCase();
+  return u.includes("percent") || u.includes("%") ? "%" : "";
+};
+
+function FactorRow({
+  factor,
+  active,
+  onSelect,
+}: {
+  factor: ForecastFactor;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const withheld = factor.mean == null;
+  return (
+    <li
+      data-nav-key={factor.id ?? factor.title ?? ""}
+      onClick={onSelect}
+      className={`flex cursor-pointer items-center gap-2 border-b border-term-border/60 px-2 py-1.5 ${
+        active ? "row-active" : "hover:bg-term-accent/10"
+      }`}
+    >
+      <span className={`min-w-[3rem] shrink-0 tabular-nums text-[12px] ${returnClass(factor.mean)}`}>
+        {withheld ? "—" : factorMu(factor)}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-[12px] text-term-accent-hi">{factor.title || factor.id}</span>
+      <span className="shrink-0 tabular-nums text-[10px] text-term-dim">
+        ({factor.member_count ?? factor.constituents?.length ?? 0})
+      </span>
+    </li>
+  );
+}
+
+function FactorTrendBlock({ factor }: { factor: ForecastFactor }) {
+  // The factor history carries a real band (q05/q95) -> pass lo/hi straight through.
+  const points = (factor.history ?? []).map((h) => ({
+    y: h.headline_probability ?? null,
+    lo: h.band_low ?? null,
+    hi: h.band_high ?? null,
+  }));
+  const series = points.filter((p) => p.y != null);
+  const dates = (factor.history ?? []).map((h) => h.as_of).filter(Boolean) as string[];
+  const xLabels = dates.length
+    ? [shortDate(dates[0]), shortDate(dates[Math.floor(dates.length / 2)]), shortDate(dates[dates.length - 1])]
+    : undefined;
+  const suffix = unitSuffix(factor.units);
+  const yLabel = shortUnit(factor.units) || "RET";
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-term-border px-3 py-1.5 text-[12px]">
+        <span className={`tabular-nums ${returnClass(factor.mean)}`}>
+          μ {factor.mean != null ? `${compactNumber(factor.mean)}${suffix}` : "—"}
+        </span>
+        <span className={`tabular-nums ${deltaClass(factor.delta)}`}>
+          {factor.delta != null
+            ? `${factor.delta >= 0 ? "▲" : "▼"} Δμ ${factor.delta > 0 ? "+" : ""}${compactNumber(factor.delta)}${suffix}`
+            : "· flat"}
+        </span>
+        <span className="text-[10px] uppercase text-term-dim">vol</span>
+        <span className="tabular-nums text-term-text">
+          {factor.volatility != null ? `σ ${compactNumber(factor.volatility)}` : "—"}
+        </span>
+        <span className="ml-auto text-[10px] uppercase text-term-dim">{factor.freshness ?? shortDate(factor.as_of)}</span>
+      </div>
+      <div className="min-h-0 flex-1">
+        {series.length >= 2 ? (
+          <SfTrendChart
+            points={points}
+            xLabels={xLabels}
+            formatY={(v) => `${compactNumber(v)}${suffix}`}
+            yLabel={yLabel}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-[11px] uppercase text-term-dim">
+            awaiting a second aggregation for a trend
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FactorConstituentRow({
+  c,
+  onJump,
+}: {
+  c: ForecastFactorConstituent;
+  onJump: (id: string) => void;
+}) {
+  const stale = c.status && c.status !== "ok";
+  return (
+    <button
+      onClick={() => c.id && onJump(c.id)}
+      disabled={!c.id}
+      className={`flex w-full items-baseline gap-2 border-b border-term-border/60 px-2 py-[3px] text-left text-[11px] last:border-b-0 ${
+        c.id ? "cursor-pointer hover:bg-term-accent/10" : "cursor-default"
+      }`}
+    >
+      <span className={`w-12 shrink-0 text-[10px] uppercase ${legStyle(c.direction).text}`}>
+        {c.direction === "short" ? "↓short" : "↑long"}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-term-text">{c.title || c.id}</span>
+      <span className="w-10 shrink-0 text-right tabular-nums text-term-dim">
+        {c.w_norm != null ? `${(c.w_norm * 100).toFixed(0)}%` : "—"}
+      </span>
+      <span className="w-12 shrink-0 text-right tabular-nums text-term-text">
+        {c.mean != null ? compactNumber(c.mean) : "—"}
+      </span>
+      <span className="w-10 shrink-0 text-right tabular-nums text-term-dim">
+        {c.sd != null ? compactNumber(c.sd) : "—"}
+      </span>
+      <span className={`w-12 shrink-0 text-right tabular-nums ${returnClass(c.contribution)}`}>
+        {c.contribution != null ? `${c.contribution >= 0 ? "+" : ""}${compactNumber(c.contribution)}` : "—"}
+      </span>
+      {stale && <span className="shrink-0 text-[9px] uppercase text-term-yellow">{c.status}</span>}
+    </button>
+  );
+}
+
+function FactorDeskRead({ factor, onJump }: { factor: ForecastFactor; onJump: (id: string) => void }) {
+  const note = factor.analyst_note ?? null;
+  const constituents = [...(factor.constituents ?? [])].sort(
+    (a, b) => Math.abs(b.contribution ?? 0) - Math.abs(a.contribution ?? 0),
+  );
+  const suffix = unitSuffix(factor.units);
+  const num = (v?: number | null) => (v != null ? `${compactNumber(v)}${suffix}` : "—");
+  const plain = (v?: number | null) => (v != null ? compactNumber(v) : "—");
+  const pctOf = (v?: number | null) => (v != null ? `${(v * 100).toFixed(0)}%` : "—");
+  const withheld = factor.mean == null;
+  return (
+    <div className="px-3 py-2 text-[12px]">
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        {factor.domain && <Tag label={factor.domain} style={domainTag(factor.domain)} />}
+        {(factor.topics ?? []).slice(0, 6).map((t) => (
+          <Tag key={t} label={t} />
+        ))}
+        <span className="ml-auto text-[10px] uppercase text-term-dim">
+          {factor.member_count ?? constituents.length} constituents
+        </span>
+      </div>
+
+      {withheld && (
+        <div className="mb-2 text-[11px] uppercase text-term-yellow">factor return withheld (insufficient coverage)</div>
+      )}
+
+      {note ? (
+        <QuickRead note={note} />
+      ) : (
+        <div className="text-[11px] uppercase text-term-dim">no factor note yet</div>
+      )}
+
+      <SectionLabel>Return Distribution</SectionLabel>
+      <div className="flex flex-wrap items-stretch border border-term-border">
+        <KvCell k="mean" v={num(factor.mean)} cls={returnClass(factor.mean)} />
+        <KvCell k="vol σ" v={plain(factor.volatility ?? factor.sd)} cls="text-term-text" />
+        <KvCell
+          k="90% band"
+          v={
+            factor.q05 != null && factor.q95 != null
+              ? `${compactNumber(factor.q05)}${suffix} – ${compactNumber(factor.q95)}${suffix}`
+              : "—"
+          }
+          cls="text-term-text"
+        />
+        <KvCell k="downside" v={num(factor.downside)} cls={returnClass(factor.downside)} />
+        <KvCell k="CVaR" v={num(factor.cvar)} cls={returnClass(factor.cvar)} />
+        <KvCell k="coverage" v={pctOf(factor.coverage)} cls="text-term-text" />
+        <KvCell k="n_eff" v={factor.n_eff != null ? factor.n_eff.toFixed(1) : "—"} cls="text-term-text" />
+      </div>
+
+      <SectionLabel>Constituents</SectionLabel>
+      <div className="mb-1 flex items-baseline gap-2 px-2 text-[9px] uppercase text-term-dim">
+        <span className="w-12 shrink-0">leg</span>
+        <span className="min-w-0 flex-1">name</span>
+        <span className="w-10 shrink-0 text-right">weight</span>
+        <span className="w-12 shrink-0 text-right">μ</span>
+        <span className="w-10 shrink-0 text-right">σ</span>
+        <span className="w-12 shrink-0 text-right">contrib</span>
+      </div>
+      <div className="border border-term-border">
+        {constituents.length ? (
+          constituents.map((c) => <FactorConstituentRow key={c.id ?? c.title} c={c} onJump={onJump} />)
+        ) : (
+          <div className="px-2 py-2 text-[11px] uppercase text-term-dim">no constituents tagged yet</div>
+        )}
+      </div>
+
+      <SectionLabel>Caveats</SectionLabel>
+      <div className="text-[11px] leading-snug text-term-yellow">
+        Basket return aggregated after the constituents&apos; latest runs; constituents co-move (ρ) so the band is
+        narrower than independence implies. Coverage {pctOf(factor.coverage)}, n_eff ~
+        {factor.n_eff != null ? factor.n_eff.toFixed(1) : "—"} of {factor.constituents?.length ?? 0}.
+      </div>
+    </div>
+  );
+}
+
+function BackToFactorButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="border border-term-on-accent/40 px-1.5 py-[1px] text-[10px] hover:bg-term-on-accent/15"
+      title="Back to the factor read"
+    >
+      ◂ FACTOR
+    </button>
+  );
+}
+
 /* ── the screen ──────────────────────────────────────────────────────────── */
 
-type Lens = { kind: "domain" | "thesis"; value: string };
+type Lens = { kind: "domain" | "thesis" | "factor"; value: string };
 
 export function ForecastScreen() {
   const { payload, source, enabled } = useForecastWorkspace();
   const forecasts = payload.forecasts;
   const theses = payload.theses ?? [];
+  const factors = payload.factors ?? [];
   const modal = useModal();
   const [query, setQuery] = useState("");
   const [lens, setLens] = useState<Lens>({ kind: "domain", value: "ALL" });
@@ -809,6 +1038,9 @@ export function ForecastScreen() {
   }, [forecasts]);
 
   const activeThesis = lens.kind === "thesis" ? theses.find((t) => t.id === lens.value) ?? null : null;
+  const activeFactor = lens.kind === "factor" ? factors.find((f) => f.id === lens.value) ?? null : null;
+  // Either a thesis or a factor lens leads with its aggregate read (not a member).
+  const activeLens = activeThesis ?? activeFactor;
 
   const inDomain = (f: ForecastWorkspaceItem, d: string) =>
     d === "ALL" || (f.domain ?? "other").toLowerCase() === d;
@@ -820,19 +1052,25 @@ export function ForecastScreen() {
       );
       return forecasts.filter((f) => f.id != null && ids.has(f.id) && matchesFilter(f, query));
     }
+    if (lens.kind === "factor" && activeFactor) {
+      const ids = new Set(
+        (activeFactor.constituents ?? []).map((c) => c.id).filter((x): x is string => Boolean(x)),
+      );
+      return forecasts.filter((f) => f.id != null && ids.has(f.id) && matchesFilter(f, query));
+    }
     const d = lens.kind === "domain" ? lens.value : "ALL";
     return forecasts.filter((f) => matchesFilter(f, query) && inDomain(f, d));
-  }, [forecasts, query, lens, activeThesis]);
+  }, [forecasts, query, lens, activeThesis, activeFactor]);
 
   const memberSelected = selectedId ? filtered.find((f) => f.id === selectedId) ?? null : null;
-  // A thesis lens leads with the thesis read; a domain lens leads with the first forecast.
-  const selected = activeThesis ? memberSelected : memberSelected ?? filtered[0] ?? null;
+  // A thesis/factor lens leads with the aggregate read; a domain lens leads with the first forecast.
+  const selected = activeLens ? memberSelected : memberSelected ?? filtered[0] ?? null;
 
   useEffect(() => {
-    if (!activeThesis && filtered.length && !filtered.some((f) => f.id === selectedId)) {
+    if (!activeLens && filtered.length && !filtered.some((f) => f.id === selectedId)) {
       setSelectedId(filtered[0].id ?? null);
     }
-  }, [filtered, selectedId, activeThesis]);
+  }, [filtered, selectedId, activeLens]);
 
   const selectDomain = (d: string) => {
     setLens({ kind: "domain", value: d });
@@ -842,6 +1080,10 @@ export function ForecastScreen() {
   const selectThesis = (id: string) => {
     setLens({ kind: "thesis", value: id });
     setSelectedId(null); // lead with the thesis read, not a member
+  };
+  const selectFactor = (id: string) => {
+    setLens({ kind: "factor", value: id });
+    setSelectedId(null); // lead with the factor read, not a constituent
   };
 
   const domainNav = useArrowNav<string, HTMLUListElement>({
@@ -864,13 +1106,19 @@ export function ForecastScreen() {
       : "CONNECTING";
   const bookTitle = activeThesis
     ? `Members — ${activeThesis.title ?? activeThesis.id}`
-    : `Forecast Book — ${lens.value}`;
+    : activeFactor
+      ? `Constituents — ${activeFactor.title ?? activeFactor.id}`
+      : `Forecast Book — ${lens.value}`;
 
   return (
     <div className="col-span-12 grid min-h-0 grid-cols-12 gap-px bg-term-border">
-      {/* 1) lens: theses at the top, then domains */}
+      {/* 1) lens: theses, then factors, then domains */}
       <div className="col-span-2 flex min-h-0">
-        <Panel id={1} title="Lens" right={`${theses.length}T · ${forecasts.length}Q`}>
+        <Panel
+          id={1}
+          title="Lens"
+          right={`${theses.length}T · ${factors.length}F · ${forecasts.length}Q`}
+        >
           {theses.length > 0 && (
             <>
               <div className="border-b border-term-border bg-term-bg-elev px-2 py-[2px] text-[9px] uppercase tracking-wider text-term-accent">
@@ -883,6 +1131,23 @@ export function ForecastScreen() {
                     thesis={t}
                     active={lens.kind === "thesis" && lens.value === t.id}
                     onSelect={() => t.id && selectThesis(t.id)}
+                  />
+                ))}
+              </ul>
+            </>
+          )}
+          {factors.length > 0 && (
+            <>
+              <div className="border-b border-term-border bg-term-bg-elev px-2 py-[2px] text-[9px] uppercase tracking-wider text-term-accent">
+                Factors
+              </div>
+              <ul className="outline-none">
+                {factors.map((f) => (
+                  <FactorRow
+                    key={f.id ?? f.title}
+                    factor={f}
+                    active={lens.kind === "factor" && lens.value === f.id}
+                    onSelect={() => f.id && selectFactor(f.id)}
                   />
                 ))}
               </ul>
@@ -978,6 +1243,27 @@ export function ForecastScreen() {
               </Panel>
             </div>
           </>
+        ) : activeFactor && !selected ? (
+          <>
+            <div className="flex min-h-0">
+              <Panel
+                id={3}
+                title="Factor Return"
+                right={`VOL ${activeFactor.volatility != null ? compactNumber(activeFactor.volatility) : "—"}`}
+              >
+                <FactorTrendBlock factor={activeFactor} />
+              </Panel>
+            </div>
+            <div className="flex min-h-0">
+              <Panel
+                id={4}
+                title={activeFactor.title || "FACTOR"}
+                right={`${activeFactor.member_count ?? 0} CONSTIT`}
+              >
+                <FactorDeskRead factor={activeFactor} onJump={(id) => setSelectedId(id)} />
+              </Panel>
+            </div>
+          </>
         ) : selected ? (
           <>
             <div className="flex min-h-0">
@@ -1000,6 +1286,7 @@ export function ForecastScreen() {
                 right={
                   <span className="flex items-center gap-1.5">
                     {activeThesis && <BackToThesisButton onClick={() => setSelectedId(null)} />}
+                    {activeFactor && <BackToFactorButton onClick={() => setSelectedId(null)} />}
                     <ExpandButton onClick={() => modal.open((c) => <ForecastDetailModal item={selected} close={c} />)} />
                   </span>
                 }

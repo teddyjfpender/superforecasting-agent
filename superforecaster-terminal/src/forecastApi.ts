@@ -13,6 +13,7 @@
 import type {
   ForecastWorkspaceItem,
   ForecastAnalystNote,
+  ForecastFactor,
   ForecastRelatedView,
   ForecastThesis,
 } from "./forecastFormat";
@@ -62,10 +63,12 @@ export type ForecastDataSource = {
 export type ForecastWorkspacePayload = {
   forecasts: ForecastWorkspaceItem[];
   theses: ForecastThesis[];
+  factors: ForecastFactor[];
   active_count: number;
   closing_soon_count: number;
   open_alert_count: number;
   thesis_count: number;
+  factor_count: number;
   generated_at: string | null;
   product?: string;
   output?: string;
@@ -76,10 +79,12 @@ export type ForecastWorkspacePayload = {
 type ForecastWorkspaceWire = {
   forecasts?: unknown;
   theses?: unknown;
+  factors?: unknown;
   active_count?: unknown;
   closing_soon_count?: unknown;
   open_alert_count?: unknown;
   thesis_count?: unknown;
+  factor_count?: unknown;
   generated_at?: unknown;
   product?: unknown;
   output?: unknown;
@@ -195,10 +200,12 @@ export function forecastWorkspaceToUi(
     // as a sparse object rather than throwing here.
     forecasts: asArray<ForecastWorkspaceItem>(payload.forecasts),
     theses: asArray<ForecastThesis>(payload.theses),
+    factors: asArray<ForecastFactor>(payload.factors),
     active_count: asCount(payload.active_count),
     closing_soon_count: asCount(payload.closing_soon_count),
     open_alert_count: asCount(payload.open_alert_count),
     thesis_count: asCount(payload.thesis_count),
+    factor_count: asCount(payload.factor_count),
     generated_at: generatedAt,
     ...(asString(payload.product) ? { product: asString(payload.product)! } : {}),
     ...(asString(payload.output) ? { output: asString(payload.output)! } : {}),

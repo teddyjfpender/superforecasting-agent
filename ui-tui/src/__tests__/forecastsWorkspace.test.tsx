@@ -3,7 +3,12 @@ import { PassThrough } from 'stream'
 import React from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import type { ForecastThesis, ForecastWorkspaceItem, ForecastWorkspaceResponse } from '../gatewayTypes.js'
+import type {
+  ForecastFactor,
+  ForecastThesis,
+  ForecastWorkspaceItem,
+  ForecastWorkspaceResponse
+} from '../gatewayTypes.js'
 
 const ESC = String.fromCharCode(27)
 const BEL = String.fromCharCode(7)
@@ -225,6 +230,69 @@ const thesisFixture = (): ForecastWorkspaceResponse => ({
   ...fixture(),
   theses: [inflationThesis()],
   thesis_count: 1
+})
+
+const powerFactor = (): ForecastFactor => ({
+  analyst_note: {
+    as_of: '2026-05-29T00:00:00Z',
+    headline: 'The power-bottleneck basket carries positive expected return',
+    how_it_thinks: 'The long names dominate the basket; the short hedge trims downside.',
+    kind: 'brief'
+  },
+  as_of: '2026-05-29T00:00:00Z',
+  constituents: [
+    {
+      contribution: 6.2,
+      direction: 'long',
+      id: 'fq_be',
+      mean: 8.4,
+      sd: 2.1,
+      status: 'ok',
+      title: 'Bloom Energy upside',
+      w_norm: 0.6,
+      weight: 0.6
+    },
+    {
+      contribution: -1.4,
+      direction: 'short',
+      id: 'fq_corz',
+      mean: -3.1,
+      sd: 1.8,
+      status: 'stale',
+      title: 'Core Scientific hedge',
+      w_norm: 0.4,
+      weight: 0.4
+    }
+  ],
+  coverage: 0.5,
+  cvar: -7.2,
+  delta: 0.9,
+  domain: 'energy',
+  downside: -4.5,
+  freshness: 'fresh today',
+  history: [
+    { as_of: '2026-05-15T00:00:00Z', band_high: 7.5, band_low: -2.0, headline_probability: 3.1, volatility: 2.9 },
+    { as_of: '2026-05-22T00:00:00Z', band_high: 8.0, band_low: -1.5, headline_probability: 3.8, volatility: 2.8 },
+    { as_of: '2026-05-29T00:00:00Z', band_high: 8.6, band_low: -1.2, headline_probability: 4.7, volatility: 2.7 }
+  ],
+  id: 'fx_power',
+  member_count: 2,
+  mean: 4.7,
+  n_eff: 1.4,
+  q05: -1.2,
+  q50: 4.7,
+  q95: 8.6,
+  sd: 2.7,
+  title: 'Power-bottleneck basket',
+  topics: ['energy', 'power'],
+  units: 'percent return',
+  volatility: 2.7
+})
+
+const factorFixture = (): ForecastWorkspaceResponse => ({
+  ...fixture(),
+  factor_count: 1,
+  factors: [powerFactor()]
 })
 
 const writeStream = (columns: number, rows: number, isTTY = false) => {
@@ -753,6 +821,83 @@ describe('ForecastsWorkspace render', () => {
     const thesis = { ...inflationThesis(), health_display: undefined, health_probability: null }
     const stdout = writeStream(120, 80)
     renderSync(React.createElement(ThesisDeskRead, { t: DARK_THEME, thesis, width: 80 }), {
+      exitOnCtrlC: false,
+      patchConsole: false,
+      stdout: stdout.stream
+    } as never)
+    const text = normalize(stdout.text(), stripAnsi)
+    expect(text).toContain('withheld')
+  })
+
+  it('renders the factor lens rows under a FACTORS divider, below the thesis rows and above the book', async () => {
+    const text = await renderWorkspace(120, factorFixture())
+    // The lens section + the ALL clear row are present, then a FACTORS divider.
+    expect(text).toContain('LENS')
+    expect(text).toContain('ALL FORECASTS')
+    expect(text).toContain('FACTORS')
+    // The factor row: signed μ mean, title, and the constituent-count badge.
+    expect(text).toContain('μ4.7')
+    expect(text).toContain('Power-bottleneck basket')
+    expect(text).toContain('(2)')
+    // The forecast book still renders below the lens.
+    expect(text).toContain('BOOK')
+    expect(text).toContain('Texas Senate')
+  })
+
+  it('renders the factor read with return trend, factor-return stats, constituents, and caveats', async () => {
+    const [{ renderSync }, { FactorDeskRead }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/forecastsWorkspace.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const stdout = writeStream(120, 90)
+    renderSync(React.createElement(FactorDeskRead, { factor: powerFactor(), t: DARK_THEME, width: 90 }), {
+      exitOnCtrlC: false,
+      patchConsole: false,
+      stdout: stdout.stream
+    } as never)
+    const text = normalize(stdout.text(), stripAnsi)
+    expect(text).toContain('The power-bottleneck basket carries positive expected return')
+    // return band trend over the factor history (mean + 90% band)
+    expect(text).toContain('return over time')
+    expect(text).toContain('●') // chart mean marker
+    expect(text).toContain('90% band')
+    // Factor Return aggregate stats
+    expect(text).toContain('Factor Return')
+    expect(text).toContain('vol σ')
+    expect(text).toContain('downside')
+    expect(text).toContain('CVaR')
+    expect(text).toContain('coverage')
+    expect(text).toContain('n_eff')
+    // analyst note
+    expect(text).toContain('long names dominate the basket')
+    // CONSTITUENTS table: direction long/short, title, w_norm %, μ, σ, contribution
+    expect(text).toContain('CONSTITUENTS')
+    expect(text).toContain('long')
+    expect(text).toContain('short')
+    expect(text).toContain('Bloom Energy upside')
+    expect(text).toContain('60%') // w_norm of the long leg
+    expect(text).toContain('+6.2') // signed contribution
+    // sorted by |contribution| desc: the long leg (|6.2|) leads the short hedge (|1.4|)
+    expect(text.indexOf('Bloom Energy upside')).toBeLessThan(text.indexOf('Core Scientific hedge'))
+    // uncertainty caveat names co-movement + n_eff
+    expect(text).toContain('caveats')
+    expect(text).toContain('co-move')
+  })
+
+  it('shows withheld (not a fake number) for a factor with no return snapshot', async () => {
+    const [{ renderSync }, { FactorDeskRead }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/forecastsWorkspace.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const factor = { ...powerFactor(), mean: null }
+    const stdout = writeStream(120, 90)
+    renderSync(React.createElement(FactorDeskRead, { factor, t: DARK_THEME, width: 90 }), {
       exitOnCtrlC: false,
       patchConsole: false,
       stdout: stdout.stream
