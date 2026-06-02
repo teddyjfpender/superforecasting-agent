@@ -31,9 +31,11 @@ const OFFLINE_SOURCE: ForecastDataSource = { kind: "unavailable", label: "SF" };
 
 const EMPTY_WORKSPACE: ForecastWorkspacePayload = {
   forecasts: [],
+  theses: [],
   active_count: 0,
   closing_soon_count: 0,
   open_alert_count: 0,
+  thesis_count: 0,
   generated_at: null,
   source: OFFLINE_SOURCE,
 };

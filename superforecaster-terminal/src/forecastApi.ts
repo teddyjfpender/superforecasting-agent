@@ -14,6 +14,7 @@ import type {
   ForecastWorkspaceItem,
   ForecastAnalystNote,
   ForecastRelatedView,
+  ForecastThesis,
 } from "./forecastFormat";
 
 // ---------------------------------------------------------------------------
@@ -60,9 +61,11 @@ export type ForecastDataSource = {
 /** Response of `GET /forecast/workspace`. */
 export type ForecastWorkspacePayload = {
   forecasts: ForecastWorkspaceItem[];
+  theses: ForecastThesis[];
   active_count: number;
   closing_soon_count: number;
   open_alert_count: number;
+  thesis_count: number;
   generated_at: string | null;
   product?: string;
   output?: string;
@@ -72,9 +75,11 @@ export type ForecastWorkspacePayload = {
 /** Wire shape of the workspace response before coercion. */
 type ForecastWorkspaceWire = {
   forecasts?: unknown;
+  theses?: unknown;
   active_count?: unknown;
   closing_soon_count?: unknown;
   open_alert_count?: unknown;
+  thesis_count?: unknown;
   generated_at?: unknown;
   product?: unknown;
   output?: unknown;
@@ -189,9 +194,11 @@ export function forecastWorkspaceToUi(
     // already permissive (every field optional), so a malformed entry surfaces
     // as a sparse object rather than throwing here.
     forecasts: asArray<ForecastWorkspaceItem>(payload.forecasts),
+    theses: asArray<ForecastThesis>(payload.theses),
     active_count: asCount(payload.active_count),
     closing_soon_count: asCount(payload.closing_soon_count),
     open_alert_count: asCount(payload.open_alert_count),
+    thesis_count: asCount(payload.thesis_count),
     generated_at: generatedAt,
     ...(asString(payload.product) ? { product: asString(payload.product)! } : {}),
     ...(asString(payload.output) ? { output: asString(payload.output)! } : {}),

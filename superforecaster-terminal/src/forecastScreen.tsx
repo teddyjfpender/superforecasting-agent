@@ -40,6 +40,8 @@ import {
 import type {
   ForecastAnalystNote,
   ForecastRelatedView,
+  ForecastThesis,
+  ForecastThesisComponent,
   ForecastWorkspaceEvidence,
   ForecastWorkspaceItem,
   TagStyle,
@@ -89,6 +91,14 @@ function KvCell({ k, v, cls = "text-term-accent-hi" }: { k: string; v: React.Rea
     <div className="flex min-w-0 flex-col items-start justify-center border-l border-term-border px-3 py-1 first:border-l-0">
       <span className="text-[10px] uppercase text-term-dim">{k}</span>
       <span className={`truncate tabular-nums text-[12px] ${cls}`}>{v}</span>
+    </div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-3 mb-1 border-b border-term-border pb-[2px] text-[10px] uppercase tracking-wider text-term-accent first:mt-2">
+      {children}
     </div>
   );
 }
@@ -523,14 +533,207 @@ function EmptyBook({ enabled, query }: { enabled: boolean; query: string }) {
   );
 }
 
+/* ── thesis lens (left-column filter + the thesis read) ──────────────────── */
+
+const directionStyle = (direction?: string): TagStyle =>
+  direction === "inverted"
+    ? { text: "text-term-red", chip: "border-term-red/50 bg-term-red/10" }
+    : { text: "text-term-green", chip: "border-term-green/50 bg-term-green/10" };
+
+const healthClass = (health?: number | null): string =>
+  health == null
+    ? "text-term-dim"
+    : health >= 0.6
+      ? "text-term-green"
+      : health >= 0.45
+        ? "text-term-yellow"
+        : "text-term-red";
+
+function ThesisRow({
+  thesis,
+  active,
+  onSelect,
+}: {
+  thesis: ForecastThesis;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <li
+      data-nav-key={thesis.id ?? thesis.title ?? ""}
+      onClick={onSelect}
+      className={`flex cursor-pointer items-center gap-2 border-b border-term-border/60 px-2 py-1.5 ${
+        active ? "row-active" : "hover:bg-term-accent/10"
+      }`}
+    >
+      <span className={`min-w-[2.5rem] shrink-0 tabular-nums text-[12px] ${healthClass(thesis.health_probability)}`}>
+        {thesis.health_display ?? "—"}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-[12px] text-term-accent-hi">{thesis.title || thesis.id}</span>
+      <span className="shrink-0 tabular-nums text-[10px] text-term-dim">
+        {thesis.member_count ?? thesis.components?.length ?? 0}
+      </span>
+    </li>
+  );
+}
+
+function ThesisTrendBlock({ thesis }: { thesis: ForecastThesis }) {
+  const points = (thesis.history ?? []).map((h) => ({ y: h.headline_probability ?? null, lo: null, hi: null }));
+  const series = points.filter((p) => p.y != null);
+  const dates = (thesis.history ?? []).map((h) => h.as_of).filter(Boolean) as string[];
+  const xLabels = dates.length
+    ? [shortDate(dates[0]), shortDate(dates[Math.floor(dates.length / 2)]), shortDate(dates[dates.length - 1])]
+    : undefined;
+  const band = thesis.score_band;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-term-border px-3 py-1.5 text-[12px]">
+        <span className={`tabular-nums ${healthClass(thesis.health_probability)}`}>health {thesis.health_display ?? "—"}</span>
+        <span className={`tabular-nums ${deltaClass(thesis.delta)}`}>
+          {thesis.delta != null ? `${thesis.delta >= 0 ? "▲" : "▼"} ${(thesis.delta * 100).toFixed(0)}pp` : "· flat"}
+        </span>
+        <span className="text-[10px] uppercase text-term-dim">score</span>
+        <span className="tabular-nums text-term-text">
+          {thesis.thesis_score != null ? thesis.thesis_score.toFixed(0) : "—"}
+          {band && band.q05 != null && band.q95 != null ? ` (${band.q05.toFixed(0)}–${band.q95.toFixed(0)})` : ""}
+        </span>
+        <span className="ml-auto text-[10px] uppercase text-term-dim">{thesis.freshness ?? shortDate(thesis.as_of)}</span>
+      </div>
+      <div className="min-h-0 flex-1">
+        {series.length >= 2 ? (
+          <SfTrendChart points={points} xLabels={xLabels} formatY={(v) => pct(v)} yLabel="HEALTH" />
+        ) : (
+          <div className="flex h-full items-center justify-center text-[11px] uppercase text-term-dim">
+            awaiting a second aggregation for a trend
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ThesisComponentRow({
+  comp,
+  onJump,
+}: {
+  comp: ForecastThesisComponent;
+  onJump: (id: string) => void;
+}) {
+  const s = comp.s_i;
+  const signalClass = s == null ? "text-term-dim" : s >= 0.5 ? "text-term-green" : "text-term-red";
+  const stale = comp.status && comp.status !== "ok";
+  return (
+    <button
+      onClick={() => comp.id && onJump(comp.id)}
+      disabled={!comp.id}
+      className={`flex w-full items-baseline gap-2 border-b border-term-border/60 px-2 py-[3px] text-left text-[11px] last:border-b-0 ${
+        comp.id ? "cursor-pointer hover:bg-term-accent/10" : "cursor-default"
+      }`}
+    >
+      <span className={`w-12 shrink-0 text-[10px] uppercase ${directionStyle(comp.direction).text}`}>
+        {comp.direction === "inverted" ? "↓risk" : "↑supp"}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-term-text">{comp.title || comp.id}</span>
+      <span className="w-10 shrink-0 text-right tabular-nums text-term-dim">{comp.latest_belief_display ?? "—"}</span>
+      <span className={`w-10 shrink-0 text-right tabular-nums ${signalClass}`}>
+        {s != null ? `${(s * 100).toFixed(0)}%` : "—"}
+      </span>
+      <span className="w-12 shrink-0 text-right tabular-nums text-term-accent-hi">
+        {comp.contribution_pts != null ? `${comp.contribution_pts >= 0 ? "+" : ""}${comp.contribution_pts.toFixed(1)}` : "—"}
+      </span>
+      {stale && <span className="shrink-0 text-[9px] uppercase text-term-yellow">{comp.status}</span>}
+    </button>
+  );
+}
+
+function ThesisDeskRead({ thesis, onJump }: { thesis: ForecastThesis; onJump: (id: string) => void }) {
+  const note = thesis.analyst_note ?? null;
+  const comps = [...(thesis.components ?? [])].sort(
+    (a, b) => (b.contribution_pts ?? 0) - (a.contribution_pts ?? 0),
+  );
+  const pctOf = (v?: number | null) => (v != null ? `${(v * 100).toFixed(0)}%` : "—");
+  return (
+    <div className="px-3 py-2 text-[12px]">
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        {thesis.domain && <Tag label={thesis.domain} style={domainTag(thesis.domain)} />}
+        {(thesis.topics ?? []).slice(0, 6).map((t) => (
+          <Tag key={t} label={t} />
+        ))}
+        <span className="ml-auto text-[10px] uppercase text-term-dim">{thesis.member_count ?? comps.length} members</span>
+      </div>
+
+      {note ? (
+        <QuickRead note={note} />
+      ) : (
+        <div className="text-[11px] uppercase text-term-dim">no thesis note yet</div>
+      )}
+
+      <SectionLabel>Aggregate</SectionLabel>
+      <div className="flex flex-wrap items-stretch border border-term-border">
+        <KvCell k="health" v={thesis.health_display ?? "—"} />
+        <KvCell k="score" v={thesis.thesis_score != null ? thesis.thesis_score.toFixed(0) : "—"} cls="text-term-text" />
+        <KvCell
+          k="90% band"
+          v={
+            thesis.score_band && thesis.score_band.q05 != null && thesis.score_band.q95 != null
+              ? `${thesis.score_band.q05.toFixed(0)} – ${thesis.score_band.q95.toFixed(0)}`
+              : "—"
+          }
+          cls="text-term-text"
+        />
+        <KvCell k="coverage" v={pctOf(thesis.coverage)} cls="text-term-text" />
+        <KvCell k="n_eff" v={thesis.n_eff != null ? thesis.n_eff.toFixed(1) : "—"} cls="text-term-text" />
+        <KvCell k="ρ" v={thesis.rho != null ? thesis.rho.toFixed(2) : "—"} cls="text-term-text" />
+      </div>
+
+      <SectionLabel>Member Contributions</SectionLabel>
+      <div className="mb-1 flex items-baseline gap-2 px-2 text-[9px] uppercase text-term-dim">
+        <span className="w-12 shrink-0">dir</span>
+        <span className="min-w-0 flex-1">member</span>
+        <span className="w-10 shrink-0 text-right">belief</span>
+        <span className="w-10 shrink-0 text-right">signal</span>
+        <span className="w-12 shrink-0 text-right">contrib</span>
+      </div>
+      <div className="border border-term-border">
+        {comps.length ? (
+          comps.map((c) => <ThesisComponentRow key={c.id ?? c.title} comp={c} onJump={onJump} />)
+        ) : (
+          <div className="px-2 py-2 text-[11px] uppercase text-term-dim">no members tagged yet</div>
+        )}
+      </div>
+
+      <SectionLabel>Caveats</SectionLabel>
+      <div className="text-[11px] leading-snug text-term-yellow">
+        Aggregated after the members&apos; latest runs; members co-move (ρ {thesis.rho?.toFixed(2) ?? "—"}, n_eff ~
+        {thesis.n_eff?.toFixed(1) ?? "—"} of {thesis.components?.length ?? 0}). Coverage {pctOf(thesis.coverage)}.
+      </div>
+    </div>
+  );
+}
+
+function BackToThesisButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="border border-term-on-accent/40 px-1.5 py-[1px] text-[10px] hover:bg-term-on-accent/15"
+      title="Back to the thesis read"
+    >
+      ◂ THESIS
+    </button>
+  );
+}
+
 /* ── the screen ──────────────────────────────────────────────────────────── */
+
+type Lens = { kind: "domain" | "thesis"; value: string };
 
 export function ForecastScreen() {
   const { payload, source, enabled } = useForecastWorkspace();
   const forecasts = payload.forecasts;
+  const theses = payload.theses ?? [];
   const modal = useModal();
   const [query, setQuery] = useState("");
-  const [domain, setDomain] = useState("ALL");
+  const [lens, setLens] = useState<Lens>({ kind: "domain", value: "ALL" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const domains = useMemo(() => {
@@ -543,33 +746,47 @@ export function ForecastScreen() {
     return [{ name: "ALL", count: forecasts.length }, ...list];
   }, [forecasts]);
 
+  const activeThesis = lens.kind === "thesis" ? theses.find((t) => t.id === lens.value) ?? null : null;
+
   const inDomain = (f: ForecastWorkspaceItem, d: string) =>
     d === "ALL" || (f.domain ?? "other").toLowerCase() === d;
 
-  const filtered = useMemo(
-    () => forecasts.filter((f) => matchesFilter(f, query) && inDomain(f, domain)),
-    [forecasts, query, domain],
-  );
-  const selected = filtered.find((f) => f.id === selectedId) ?? filtered[0] ?? null;
+  const filtered = useMemo(() => {
+    if (lens.kind === "thesis" && activeThesis) {
+      const ids = new Set(
+        (activeThesis.components ?? []).map((c) => c.id).filter((x): x is string => Boolean(x)),
+      );
+      return forecasts.filter((f) => f.id != null && ids.has(f.id) && matchesFilter(f, query));
+    }
+    const d = lens.kind === "domain" ? lens.value : "ALL";
+    return forecasts.filter((f) => matchesFilter(f, query) && inDomain(f, d));
+  }, [forecasts, query, lens, activeThesis]);
 
-  // keep the selection inside the active filter
+  const memberSelected = selectedId ? filtered.find((f) => f.id === selectedId) ?? null : null;
+  // A thesis lens leads with the thesis read; a domain lens leads with the first forecast.
+  const selected = activeThesis ? memberSelected : memberSelected ?? filtered[0] ?? null;
+
   useEffect(() => {
-    if (filtered.length && !filtered.some((f) => f.id === selectedId)) {
+    if (!activeThesis && filtered.length && !filtered.some((f) => f.id === selectedId)) {
       setSelectedId(filtered[0].id ?? null);
     }
-  }, [filtered, selectedId]);
+  }, [filtered, selectedId, activeThesis]);
 
-  const ensureSelectionInDomain = (d: string) => {
-    setDomain(d);
+  const selectDomain = (d: string) => {
+    setLens({ kind: "domain", value: d });
     const list = forecasts.filter((f) => matchesFilter(f, query) && inDomain(f, d));
     if (list.length && !list.some((f) => f.id === selectedId)) setSelectedId(list[0].id ?? null);
+  };
+  const selectThesis = (id: string) => {
+    setLens({ kind: "thesis", value: id });
+    setSelectedId(null); // lead with the thesis read, not a member
   };
 
   const domainNav = useArrowNav<string, HTMLUListElement>({
     items: domains.map((d) => d.name),
     getKey: (d) => d,
-    current: domain,
-    setCurrent: ensureSelectionInDomain,
+    current: lens.kind === "domain" ? lens.value : "",
+    setCurrent: selectDomain,
   });
   const bookNav = useArrowNav<ForecastWorkspaceItem, HTMLUListElement>({
     items: filtered,
@@ -583,12 +800,35 @@ export function ForecastScreen() {
     : source.kind === "live"
       ? `LIVE · ${shortDate(source.generatedAt ?? payload.generated_at)}`
       : "CONNECTING";
+  const bookTitle = activeThesis
+    ? `Members — ${activeThesis.title ?? activeThesis.id}`
+    : `Forecast Book — ${lens.value}`;
 
   return (
     <div className="col-span-12 grid min-h-0 grid-cols-12 gap-px bg-term-border">
-      {/* 1) domains */}
+      {/* 1) lens: theses at the top, then domains */}
       <div className="col-span-2 flex min-h-0">
-        <Panel id={1} title="Domains" right={`${forecasts.length} BOOK`}>
+        <Panel id={1} title="Lens" right={`${theses.length}T · ${forecasts.length}Q`}>
+          {theses.length > 0 && (
+            <>
+              <div className="border-b border-term-border bg-term-bg-elev px-2 py-[2px] text-[9px] uppercase tracking-wider text-term-accent">
+                Theses
+              </div>
+              <ul className="outline-none">
+                {theses.map((t) => (
+                  <ThesisRow
+                    key={t.id ?? t.title}
+                    thesis={t}
+                    active={lens.kind === "thesis" && lens.value === t.id}
+                    onSelect={() => t.id && selectThesis(t.id)}
+                  />
+                ))}
+              </ul>
+            </>
+          )}
+          <div className="border-b border-term-border bg-term-bg-elev px-2 py-[2px] text-[9px] uppercase tracking-wider text-term-accent">
+            Domains
+          </div>
           <ul
             ref={domainNav.ref}
             tabIndex={domainNav.tabIndex}
@@ -601,16 +841,16 @@ export function ForecastScreen() {
                 key={d.name}
                 name={d.name}
                 count={d.count}
-                active={domain === d.name}
+                active={lens.kind === "domain" && lens.value === d.name}
                 swatch={d.name === "ALL" ? "text-term-accent" : domainTag(d.name).text}
-                onSelect={() => ensureSelectionInDomain(d.name)}
+                onSelect={() => selectDomain(d.name)}
               />
             ))}
           </ul>
         </Panel>
       </div>
 
-      {/* 2) book */}
+      {/* 2) book (the thesis's members when a thesis lens is active) */}
       <div className="col-span-5 flex min-h-0 flex-col gap-px bg-term-border">
         <div className="flex shrink-0 items-center gap-2 border border-term-border bg-term-panel px-2 py-1 text-[11px] uppercase">
           <span className="text-term-accent">FIND</span>
@@ -626,7 +866,7 @@ export function ForecastScreen() {
             {filtered.length}/{forecasts.length}
           </span>
         </div>
-        <Panel id={2} title={`Forecast Book — ${domain}`} right={sourceRight}>
+        <Panel id={2} title={bookTitle} right={sourceRight}>
           {filtered.length === 0 ? (
             <EmptyBook enabled={enabled} query={query} />
           ) : (
@@ -650,12 +890,33 @@ export function ForecastScreen() {
         </Panel>
       </div>
 
-      {/* 3) trend  +  4) read */}
+      {/* 3) trend  +  4) read — thesis read, or member detail */}
       <div
         className="col-span-5 grid min-h-0 gap-px bg-term-border"
         style={{ gridTemplateRows: "minmax(0, 1.6fr) minmax(0, 1fr)" }}
       >
-        {selected ? (
+        {activeThesis && !selected ? (
+          <>
+            <div className="flex min-h-0">
+              <Panel
+                id={3}
+                title="Thesis Health"
+                right={`SCORE ${activeThesis.thesis_score != null ? activeThesis.thesis_score.toFixed(0) : "—"}`}
+              >
+                <ThesisTrendBlock thesis={activeThesis} />
+              </Panel>
+            </div>
+            <div className="flex min-h-0">
+              <Panel
+                id={4}
+                title={activeThesis.title || "THESIS"}
+                right={`${activeThesis.member_count ?? 0} MEMBERS`}
+              >
+                <ThesisDeskRead thesis={activeThesis} onJump={(id) => setSelectedId(id)} />
+              </Panel>
+            </div>
+          </>
+        ) : selected ? (
           <>
             <div className="flex min-h-0">
               <Panel
@@ -674,7 +935,12 @@ export function ForecastScreen() {
               <Panel
                 id={4}
                 title={selected.title || selected.id || "DESK READ"}
-                right={<ExpandButton onClick={() => modal.open((c) => <ForecastDetailModal item={selected} close={c} />)} />}
+                right={
+                  <span className="flex items-center gap-1.5">
+                    {activeThesis && <BackToThesisButton onClick={() => setSelectedId(null)} />}
+                    <ExpandButton onClick={() => modal.open((c) => <ForecastDetailModal item={selected} close={c} />)} />
+                  </span>
+                }
               >
                 <DeskReadBlock key={selected.id} item={selected} onJump={(id) => setSelectedId(id)} />
               </Panel>
