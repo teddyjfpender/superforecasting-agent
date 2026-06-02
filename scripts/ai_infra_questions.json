@@ -1,0 +1,1215 @@
+[
+ {
+  "key": "capex_accel",
+  "title": "Will aggregate 2026 AI/data-center capex from MSFT, AMZN, GOOGL, META, ORCL and major neoclouds exceed $400B and grow at least 30% YoY?",
+  "description": "This is the master demand variable for the AI-infrastructure thesis: hyperscaler plus neocloud capex is the upstream driver of every bottleneck (compute, power, memory, data-center capacity). If it misses, most AI-infra equities are likely over-earning and overvalued.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if the sum of full-year calendar-2026 capital expenditures reported by Microsoft, Amazon, Alphabet, Meta, and Oracle (property/equipment plus finance-lease additions, per their filings) plus disclosed 2026 capex/buildout spend from major neoclouds (CoreWeave, Nebius, and peers) is both (a) at least $400 billion in absolute terms AND (b) at least 30% above the comparable aggregate 2025 figure; otherwise NO. Chosen thresholds: $400B absolute and 30% YoY (the $400B figure is taken directly from the doc's section 24 paired-question example).",
+  "resolution_source": "Company 10-Ks/10-Qs and 8-Ks, quarterly earnings releases and transcripts, capex guidance; neocloud investor materials and filings; FactSet/Bloomberg consensus capex aggregates as a cross-check.",
+  "domain": "ai_infra",
+  "topics": [
+   "MSFT",
+   "AMZN",
+   "GOOGL",
+   "META",
+   "ORCL",
+   "hyperscaler_capex"
+  ],
+  "impact": "high",
+  "close_time": "2027-02-15",
+  "resolution_time": "2027-03-15"
+ },
+ {
+  "key": "compute_shortage",
+  "title": "Will AI accelerator demand still exceed contracted supply through 2026-12-31 (3-of-5 evidence test)?",
+  "description": "Tests whether scarcity rents on AI compute remain intact, which underpins neocloud and GPU-linked valuations (CRWV, NBIS, IREN, CORZ, APLD, NVDA, AMD). If supply catches up, neocloud margins and miner-to-HPC economics weaken.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, as of 2026-12-31, at least three of the following five conditions hold: (1) market GPU cloud prices for H100/H200/B200-equivalent compute have not fallen more than 25% from 2026-06-02 levels; (2) at least one of CoreWeave, Nebius, Oracle, AWS, Google, or Microsoft reports continued AI capacity constraints in 2026 earnings materials; (3) Nvidia or AMD describes data-center accelerator backlog as supply-constrained; (4) at least one major customer signs a new multiyear (3+ year) compute contract disclosed during 2026; (5) data-center leasing vacancy in top AI markets remains below 5%. Otherwise NO.",
+  "resolution_source": "GPU cloud pricing trackers (e.g., Vast.ai, CoreWeave/Lambda price sheets, SemiAnalysis); CRWV/NBIS/ORCL/AMZN/GOOGL/MSFT/NVDA/AMD earnings transcripts and filings; CBRE/JLL/datacenterHawk data-center vacancy reports.",
+  "domain": "ai_compute",
+  "topics": [
+   "CRWV",
+   "NBIS",
+   "NVDA",
+   "AMD",
+   "compute_scarcity",
+   "gpu_pricing"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-20",
+  "resolution_time": "2027-02-28"
+ },
+ {
+  "key": "inference_majority",
+  "title": "Will inference be the majority of incremental AI compute demand growth by 2027-06-30?",
+  "description": "Determines whether the bottleneck shifts toward low-cost power, deployment capacity, networking, and inference-optimized chips, versus frontier-training GPU scarcity remaining dominant. Reshapes which AI-infra names are best suited.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, as of 2027-06-30, the preponderance of cited evidence indicates that inference workloads account for more than 50% of the incremental (year-over-year added) AI compute demand growth, versus training; specifically YES if at least two of the following hold: (a) Nvidia or a major hyperscaler states on the record that inference is the majority of incremental data-center AI compute or revenue; (b) two or more independent analyst supply-demand models (e.g., SemiAnalysis, Morgan Stanley, Omdia) attribute >50% of incremental AI compute to inference; (c) hyperscaler disclosures show inference-driven workloads as the larger source of incremental capacity additions. Otherwise NO.",
+  "resolution_source": "NVDA and hyperscaler (MSFT/AMZN/GOOGL/META) earnings transcripts and investor decks; SemiAnalysis, Morgan Stanley, Omdia, and similar named analyst supply-demand reports.",
+  "domain": "ai_compute",
+  "topics": [
+   "NVDA",
+   "CRWV",
+   "NBIS",
+   "inference",
+   "training",
+   "compute_mix"
+  ],
+  "impact": "medium",
+  "close_time": "2027-06-15",
+  "resolution_time": "2027-07-31"
+ },
+ {
+  "key": "power_binding",
+  "title": "Will power availability be cited as a top-3 constraint in at least 4 major AI/data-center earnings calls or investor decks by 2026-12-31?",
+  "description": "Tests whether power is the binding AI bottleneck, which advantages distributed/behind-the-meter power and energy-infrastructure names (BE, SEI, PSIX, BW, APLD, IREN, CORZ). A key input to the power-bottleneck thesis health.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, in calendar-2026 earnings calls or investor presentations, at least four distinct companies among Microsoft, Amazon, Alphabet, Meta, Oracle, CoreWeave, Nebius, Digital Realty (DLR), Equinix (EQIX), or relevant utilities explicitly cite power/electricity availability (or grid interconnection) as a top-three constraint, bottleneck, or limiting factor on AI/data-center growth. Each company counts once; mentions must be on the record. Otherwise NO.",
+  "resolution_source": "Earnings-call transcripts and investor presentations from MSFT, AMZN, GOOGL, META, ORCL, CRWV, NBIS, DLR, EQIX, and utility filings (10-K/10-Q/8-K and IR decks).",
+  "domain": "ai_power",
+  "topics": [
+   "BE",
+   "DLR",
+   "EQIX",
+   "power_bottleneck",
+   "data_center",
+   "interconnection"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-20",
+  "resolution_time": "2027-02-28"
+ },
+ {
+  "key": "behind_meter_5gw",
+  "title": "Will at least 5 GW of new AI/data-center capacity be announced with dedicated/behind-the-meter/fuel-cell/gas/nuclear power by 2026-12-31?",
+  "description": "Central to Bloom Energy and energy-infrastructure picks: measures whether data centers are adopting self-supplied/behind-the-meter power at scale, validating the distributed-power leg of the thesis (BE, SEI, PSIX, BW, PUMP, APLD, IREN, CORZ).",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if the cumulative nameplate capacity of new AI/data-center power arrangements announced during the period and counted as of 2026-12-31 reaches at least 5 GW, where qualifying arrangements are behind-the-meter, fuel-cell, gas-turbine, nuclear (including SMR/PPA-dedicated), or otherwise dedicated/self-supplied generation tied to specific data-center projects. Announcements are summed across operators and developers; duplicate announcements of the same project are counted once. Otherwise NO.",
+  "resolution_source": "Company press releases, 8-Ks and investor decks (BE, hyperscalers, neoclouds, miners-to-HPC); utility interconnection and PPA filings; data-center industry trackers (datacenterHawk, S&P Global, Wood Mackenzie); EIA/grid-operator data.",
+  "domain": "ai_power",
+  "topics": [
+   "BE",
+   "SEI",
+   "PSIX",
+   "BW",
+   "behind_the_meter",
+   "dedicated_power"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-20",
+  "resolution_time": "2027-01-31"
+ },
+ {
+  "key": "bloom_orders",
+  "title": "Will Bloom Energy announce at least $1.5B of new AI/data-center orders or backlog by 2026-12-31?",
+  "description": "A clean test of whether Bloom Energy (BE, ~22.8% of the shown portfolio) is an actual AI-infrastructure power winner versus a sympathy trade. Directly informs the BE-as-AI-power-supplier thesis.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, by 2026-12-31, Bloom Energy discloses new AI/data-center-related orders, purchase agreements, or backlog additions during calendar 2026 with cumulative announced value of at least $1.5 billion, as stated in BE earnings releases, 8-Ks, or investor materials. Chosen threshold: $1.5B (the doc's distributional sibling Q11 sets $1.5B-$3B as 'strong validation'). If dollar value is disclosed only as MW or per-unit pricing, it is converted using BE-disclosed pricing where available; otherwise NO.",
+  "resolution_source": "Bloom Energy (BE) quarterly earnings releases and transcripts, 8-K filings, press releases, and investor decks.",
+  "domain": "ai_power",
+  "topics": [
+   "BE",
+   "fuel_cell",
+   "data_center_orders",
+   "backlog",
+   "power_bottleneck"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-20",
+  "resolution_time": "2027-02-28"
+ },
+ {
+  "key": "crwv_margin",
+  "title": "Will CoreWeave keep FY2026 backlog growing and GAAP gross margin above 60% with no material customer-concentration shock?",
+  "description": "CoreWeave (CRWV) is the fund's direct GPU-cloud / neocloud scarcity-rent bet. If margins compress quickly or a top customer defaults, the neocloud scarcity-rent thesis weakens materially. Doc Q7 / section C leaves the margin threshold as 'Y%'; I set it at 60% GAAP gross margin (the doc's distributional Q8 'severe scarcity rents' band is >60%, and CRWV has reported gross margin in the mid-60s).",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if CRWV's FY2026 (fiscal year ending 2026-12-31) reported revenue backlog at year-end exceeds the FY2025 year-end backlog AND full-year FY2026 GAAP gross margin is at or above 60%, with no disclosed event in which a single customer accounting for >25% of revenue churns, defaults, or materially renegotiates downward during 2026; otherwise NO.",
+  "resolution_source": "CoreWeave FY2026 Form 10-K and quarterly 10-Q filings, Q4/FY2026 earnings release and shareholder letter, and earnings-call transcripts (CRWV investor relations, SEC EDGAR).",
+  "domain": "ai_compute",
+  "topics": [
+   "CRWV",
+   "neocloud",
+   "gross_margin",
+   "backlog",
+   "customer_concentration",
+   "gpu_cloud"
+  ],
+  "impact": "high",
+  "close_time": "2027-02-28",
+  "resolution_time": "2027-03-31"
+ },
+ {
+  "key": "nbis_exec",
+  "title": "Will Nebius report AI cloud revenue/backlog above $2B or raise AI-infra guidance by at least 25% by 2026-12-31?",
+  "description": "Nebius (NBIS) is the fund's largest disclosed position (~38.9% of the shown 13F), making its execution a top-priority dashboard forecast. Doc Q8 / section 9.6 leaves the dollar threshold as '$X billion' and the guidance raise as 'Y%'; I set the threshold at $2.0B (the doc's distributional Q9 'early/strong validation' boundary) and the guidance raise at 25%.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if by 2026-12-31 Nebius discloses AI cloud annualized revenue run-rate or contracted AI-infrastructure backlog of at least $2.0 billion, OR raises its AI-infrastructure full-year revenue/ARR guidance by at least 25% versus its most recent prior guidance; otherwise NO.",
+  "resolution_source": "Nebius Group N.V. earnings releases, quarterly/annual filings (20-F / interim reports), investor presentations, and earnings-call transcripts (Nebius investor relations).",
+  "domain": "ai_compute",
+  "topics": [
+   "NBIS",
+   "neocloud",
+   "ai_cloud_revenue",
+   "backlog",
+   "guidance"
+  ],
+  "impact": "high",
+  "close_time": "2027-02-28",
+  "resolution_time": "2027-03-31"
+ },
+ {
+  "key": "miner_contracts",
+  "title": "Will at least 3 of NBIS/CRWV/IREN/CORZ/APLD/BTDR/CLSK/RIOT/BITF/HIVE announce new 3+ year AI/HPC contracts by 2026-12-31?",
+  "description": "This question (doc Q9 / section 9.8) distinguishes genuine, monetizable AI-infrastructure demand from 'bitcoin miners pivoting to AI' narrative. Durable multiyear contracts with hyperscalers, frontier labs, or enterprise AI customers are the signal that the physical infrastructure is being paid for as AI-relevant capacity.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, between 2026-01-01 and 2026-12-31, at least three distinct companies among NBIS, CRWV, IREN, CORZ, APLD, BTDR, CLSK, RIOT, BITF, and HIVE each announce at least one new AI/HPC compute or colocation contract with a hyperscaler, frontier AI lab, or enterprise AI customer having a stated term of 3 or more years; otherwise NO.",
+  "resolution_source": "Company press releases, 8-Ks / equivalent filings, earnings releases, and investor presentations for each named ticker (company IR pages, SEC EDGAR), corroborated by counterparty announcements where available.",
+  "domain": "ai_compute",
+  "topics": [
+   "IREN",
+   "CORZ",
+   "APLD",
+   "miner_to_hpc",
+   "contracts",
+   "hpc"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-31",
+  "resolution_time": "2027-02-28"
+ },
+ {
+  "key": "nbis_scaleup",
+  "title": "Will NBIS exceed a $2B annualized AI cloud revenue run-rate or disclose AI-infra backlog above $4B by 2026-12-31?",
+  "description": "Doc Q10 (section 9.6, NBIS scale-up) tests whether Nebius can convert the AI-cloud shortage into actual run-rate revenue and contracted backlog by securing GPUs, power, customers, and financing. The doc leaves thresholds as '$X annualized run-rate' and '$Y backlog'; I set run-rate at $2.0B (distributional Q9 'strong validation' floor) and backlog at $4.0B (distributional Q9 'major winner' band lower edge applied to backlog).",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if by 2026-12-31 Nebius discloses an annualized AI cloud revenue run-rate of at least $2.0 billion, OR discloses contracted AI-infrastructure backlog (committed/contracted future revenue) of at least $4.0 billion; otherwise NO.",
+  "resolution_source": "Nebius Group N.V. Q4/FY2026 earnings release, interim and annual filings, investor presentations, and earnings-call transcripts (Nebius investor relations).",
+  "domain": "ai_compute",
+  "topics": [
+   "NBIS",
+   "ai_cloud_revenue",
+   "run_rate",
+   "backlog",
+   "neocloud"
+  ],
+  "impact": "high",
+  "close_time": "2027-02-28",
+  "resolution_time": "2027-03-31"
+ },
+ {
+  "key": "crwv_durability",
+  "title": "Will CoreWeave maintain or expand contracted backlog while avoiding a major customer churn or default event by 2026-12-31?",
+  "description": "Doc Q11 (CRWV contract durability) is the failure-mode test for the neocloud scarcity-rent bet: it is best suited if GPU-cloud scarcity persists and enterprise/frontier-lab demand continues, and fails if hyperscalers internalize supply, pricing falls, or concentrated customers churn/default.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if CRWV's contracted revenue backlog disclosed for the period ending 2026-12-31 is greater than or equal to its backlog disclosed for the period ending 2025-12-31, AND CRWV does not disclose during 2026 a major customer churn or default event (a single customer representing >20% of revenue or backlog terminating, defaulting on, or materially reducing its commitment); otherwise NO.",
+  "resolution_source": "CoreWeave Q4/FY2026 earnings release, 10-K and 10-Q filings, shareholder letters, and earnings-call transcripts (CRWV investor relations, SEC EDGAR).",
+  "domain": "ai_compute",
+  "topics": [
+   "CRWV",
+   "backlog",
+   "customer_churn",
+   "neocloud",
+   "contract_durability"
+  ],
+  "impact": "high",
+  "close_time": "2027-02-28",
+  "resolution_time": "2027-03-31"
+ },
+ {
+  "key": "be_power_deals",
+  "title": "Will Bloom Energy sign or expand at least 3 material data-center power deals each above 100 MW or $0.5B by 2026-12-31?",
+  "description": "Doc Q12 (BE as AI power supplier) is the cleaner 'is Bloom an AI-infrastructure winner or a sympathy trade?' test, and BE is ~22.8% of the shown 13F. The doc leaves 'a disclosed MW or dollar threshold' unspecified; I set each deal at >=100 MW of contracted/announced capacity OR >=$0.5B in order value.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, between 2026-01-01 and 2026-12-31, Bloom Energy announces or expands at least three distinct data-center / AI-related power deals, where each of the three has a disclosed capacity of at least 100 MW OR a disclosed order/contract value of at least $0.5 billion; otherwise NO.",
+  "resolution_source": "Bloom Energy (BE) earnings releases, 8-Ks, press releases, investor decks, and earnings-call transcripts (BE investor relations, SEC EDGAR).",
+  "domain": "ai_power",
+  "topics": [
+   "BE",
+   "behind_the_meter",
+   "fuel_cell",
+   "power_deals",
+   "data_center"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-31",
+  "resolution_time": "2027-02-28"
+ },
+ {
+  "key": "miner_conversion",
+  "title": "Will AI/HPC revenue share exceed 25% for at least 3 of IREN/CORZ/APLD/RIOT/CLSK/BITF/BTDR/HIVE by 2026-12-31?",
+  "description": "Doc Q13 / section 9.8 tests the miner-to-HPC conversion thesis: whether cheap power and existing sites let crypto miners become genuine AI/HPC infrastructure providers, rather than the conversion staying narrative. The 25% revenue-share threshold for at least three companies is the doc's stated bar.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, for the most recently completed reporting period ending on or before 2026-12-31, at least three distinct companies among IREN, CORZ, APLD, RIOT, CLSK, BITF, BTDR, and HIVE each report AI/HPC (non-crypto-mining) revenue exceeding 25% of total revenue; otherwise NO.",
+  "resolution_source": "Quarterly and annual filings, earnings releases, and revenue-segment disclosures for each named ticker (company IR pages, SEC EDGAR / SEDAR+ as applicable).",
+  "domain": "ai_power",
+  "topics": [
+   "IREN",
+   "CORZ",
+   "APLD",
+   "miner_to_hpc",
+   "revenue_share",
+   "hpc"
+  ],
+  "impact": "medium",
+  "close_time": "2026-12-31",
+  "resolution_time": "2027-03-31"
+ },
+ {
+  "key": "memory_pricing_binary",
+  "title": "Will AI demand keep NAND/HBM/DRAM pricing above consensus with SNDK or MU raising guidance on AI demand through 2026-12-31?",
+  "description": "Doc Q14 / section 9.9 tests the memory/storage bottleneck thesis (SNDK is ~18.8% of the shown 13F, MU a smaller weight): whether AI inference and data workloads create memory/storage scarcity strong enough to lift pricing above consensus and drive an AI-attributed guidance raise.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, at any point through 2026-12-31, NAND, HBM, or DRAM contract/spot pricing is reported above the prevailing consensus/analyst forecast (per a named pricing provider) AND either SanDisk (SNDK) or Micron (MU) raises forward revenue or pricing guidance citing AI-related demand as a driver; otherwise NO.",
+  "resolution_source": "TrendForce / DRAMeXchange and Bloomberg memory-pricing data; SanDisk (SNDK) and Micron (MU) earnings releases, filings, and earnings-call transcripts (company IR, SEC EDGAR).",
+  "domain": "ai_memory",
+  "topics": [
+   "SNDK",
+   "MU",
+   "HBM",
+   "DRAM",
+   "NAND",
+   "memory_pricing"
+  ],
+  "impact": "medium",
+  "close_time": "2026-12-31",
+  "resolution_time": "2027-03-31"
+ },
+ {
+  "key": "accelerator_share",
+  "title": "Will Nvidia retain above 80% of data-center AI accelerator share (vs AMD materially gaining) by 2026-12-31?",
+  "description": "Doc Q15 (accelerator supply-chain broadening) decides whether the thesis broadens to AMD/SMH/TSM/ASML or stays concentrated in Nvidia-linked economics. Nvidia holding >80% data-center AI accelerator share means the broadening does not occur; AMD materially gaining would push share below that line.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, for the most recent full-year or trailing-four-quarter period reported on or before 2026-12-31, Nvidia retains more than 80% of data-center AI accelerator unit or revenue market share per a named market-research estimate; resolves NO if Nvidia's share is at or below 80% (i.e., AMD/others have materially gained).",
+  "resolution_source": "Market-share estimates from Mercury Research, IDC, or Omdia; corroborated by Nvidia (NVDA) and AMD data-center segment revenue disclosures in 10-K/10-Q filings and earnings releases.",
+  "domain": "ai_semis",
+  "topics": [
+   "NVDA",
+   "AMD",
+   "accelerator_share",
+   "data_center",
+   "semis"
+  ],
+  "impact": "medium",
+  "close_time": "2026-12-31",
+  "resolution_time": "2027-03-31"
+ },
+ {
+  "key": "conc_persists",
+  "title": "Will the next Situational Awareness 13F keep at least 60% of reported long equity value in its top-5 AI-infra positions?",
+  "description": "Tracks whether Leopold Aschenbrenner's Situational Awareness fund is still expressing its concentrated AI-infrastructure thesis. As of the referenced HedgeFollow snapshot the fund showed ~$3.86B 13F AUM across 26 holdings with the top positions being NBIS (38.89%), BE (22.79%), SNDK (18.79%), CRWV (14.42%), and IREN (10.40%). A sharp drop in concentration would signal the manager is de-risking the thesis.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, in the next Situational Awareness Form 13F filed with the SEC after 2026-06-02, the sum of the five largest reported long equity positions by market value is at least 60% of the fund's total reported 13F long equity value; otherwise NO.",
+  "resolution_source": "SEC EDGAR Form 13F-HR filings for Situational Awareness LP / Leopold Aschenbrenner; cross-checked against HedgeFollow and WhaleWisdom aggregations.",
+  "domain": "ai_portfolio",
+  "topics": [
+   "NBIS",
+   "BE",
+   "SNDK",
+   "CRWV",
+   "IREN",
+   "13f_concentration"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-15",
+  "resolution_time": "2026-12-31"
+ },
+ {
+  "key": "conc_maintain",
+  "title": "Will the next 13F show Situational Awareness maintaining or increasing concentration across NBIS, BE, SNDK, CRWV, IREN, CORZ, and APLD?",
+  "description": "Position-level conviction signal for the seven named AI-infra holdings (NBIS, BE, SNDK, CRWV, IREN, CORZ, APLD). The doc treats this as a meta-signal of whether the fund is still committed to the bottleneck-owner thesis, while cautioning that 13F data is lagged and should not be blindly followed.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, in the next Situational Awareness Form 13F after 2026-06-02, the aggregate reported market value across NBIS, BE, SNDK, CRWV, IREN, CORZ, and APLD is at least equal to the prior filing's aggregate value for those same tickers (maintained or increased, allowing share-for-share holdings to count even amid price moves) AND no more than one of the seven names is reduced by more than 10% in share count or fully exited; otherwise NO.",
+  "resolution_source": "SEC EDGAR Form 13F-HR filings for Situational Awareness LP; share-count and value deltas computed versus the immediately prior 13F, cross-checked against WhaleWisdom.",
+  "domain": "ai_portfolio",
+  "topics": [
+   "NBIS",
+   "BE",
+   "SNDK",
+   "CRWV",
+   "CORZ",
+   "APLD"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-15",
+  "resolution_time": "2026-12-31"
+ },
+ {
+  "key": "basket_alpha_binary",
+  "title": "Will a reconstructed Situational Awareness 13F basket outperform both SMH and the Nasdaq-100 over the next 6 months?",
+  "description": "Tests whether the fund's differentiated AI-infrastructure thesis adds value versus generic AI/semiconductor beta. A reconstructed long basket from the latest 13F is compared against the SMH semiconductor ETF and the Nasdaq-100 (QQQ) over a 6-month window from the start date.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if the total return of a 13F value-weighted reconstructed Situational Awareness long basket (latest filed holdings as of 2026-06-02) over the six months ending 2026-12-02 exceeds BOTH the total return of SMH AND the total return of the Nasdaq-100 (QQQ) over the same window; otherwise NO. Total returns include dividends.",
+  "resolution_source": "Daily total-return price data from a named provider (Bloomberg, FactSet, or Yahoo Finance) for the reconstructed basket constituents, SMH, and QQQ; basket weights from the latest SEC EDGAR 13F.",
+  "domain": "ai_portfolio",
+  "topics": [
+   "SMH",
+   "QQQ",
+   "nasdaq_100",
+   "basket_alpha",
+   "ai_beta"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-01",
+  "resolution_time": "2026-12-02"
+ },
+ {
+  "key": "scarcity_2026",
+  "title": "Will AI compute/data-center/power scarcity remain economically binding through 2026-12-31 under the doc's 3-of-6 test?",
+  "description": "The desk's core 'duration of trade' question for the 2026 horizon. Resolves on whether AI infrastructure scarcity rents are still intact at year-end 2026, using the six-criterion test the doc specifies for the scarcity-duration ladder.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, as of 2026-12-31, at least three of the following six hold: (1) GPU/cloud rental pricing remains elevated (H100/H200/B200-equiv not down more than 25% from June 2026 levels); (2) aggregate hyperscaler AI capex is still growing YoY; (3) data-center vacancy in top AI markets remains low; (4) power constraints are still cited in hyperscaler earnings or utility filings; (5) major AI-infra firms maintain high backlog and pricing; (6) the equity market still rewards AI-infra earnings beats. Otherwise NO.",
+  "resolution_source": "Company 10-K/10-Q filings and earnings transcripts (MSFT, AMZN, GOOGL, META, ORCL, CRWV, NBIS), GPU rental price trackers, CBRE/JLL data-center vacancy reports, EIA/utility filings, and FactSet/Bloomberg consensus.",
+  "domain": "ai_infra",
+  "topics": [
+   "compute_scarcity",
+   "hyperscaler_capex",
+   "power",
+   "data_center",
+   "CRWV",
+   "NBIS"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-15",
+  "resolution_time": "2026-12-31"
+ },
+ {
+  "key": "overbuild_2027",
+  "title": "Will the market begin pricing AI-infrastructure overbuild by 2027-06-30?",
+  "description": "Captures the onset of the capex-digestion/overbuild phase that would impair neocloud and miner-to-HPC scarcity rents. Resolution looks for at least one of the doc's overbuild signals: declining GPU cloud prices, falling utilization, negative estimate revisions, or hyperscaler capex guide-downs.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, by 2027-06-30, at least two of the following overbuild signals are observable: (1) H100/H200/B200-equivalent GPU cloud rental prices have fallen more than 15% from June 2026 levels; (2) disclosed AI accelerator/data-center utilization falls below 60%; (3) consensus forward revenue or EPS estimates for the AI-infra basket (NBIS, CRWV, BE, IREN, CORZ, APLD, SNDK) are revised net negative; (4) at least one major hyperscaler reduces or defers AI/data-center capex guidance. Otherwise NO.",
+  "resolution_source": "GPU rental price trackers, company earnings transcripts and capex guidance, FactSet/Bloomberg consensus revision data, and utilization disclosures from CRWV/NBIS/hyperscaler filings.",
+  "domain": "ai_infra",
+  "topics": [
+   "overbuild",
+   "gpu_pricing",
+   "utilization",
+   "capex_guidedown",
+   "CRWV",
+   "NBIS"
+  ],
+  "impact": "high",
+  "close_time": "2027-06-15",
+  "resolution_time": "2027-06-30"
+ },
+ {
+  "key": "monetization_validates",
+  "title": "Will major AI spenders demonstrate enough AI revenue/productivity to justify continued capex growth by 2027-12-31?",
+  "description": "Tests the sustainability of the buildout: whether AI monetization catches up to capex. The doc warns that if AI usage does not monetize, capex could stall even if models keep improving. Resolution leans on hyperscaler AI revenue disclosures and a capex-to-AI-revenue sustainability check.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, by 2027-12-31, aggregate disclosed AI-related revenue for major AI spenders (Microsoft, Amazon, Alphabet, Meta, Oracle, plus reported OpenAI/Anthropic revenue) has grown at least 40% YoY AND the aggregate AI capex-to-AI-revenue ratio for these spenders is at or below 4x; otherwise NO. Continued capex growth guidance with no broad guide-downs is treated as corroborating evidence.",
+  "resolution_source": "Hyperscaler 10-K/10-Q AI-segment revenue disclosures and earnings transcripts (Azure/AWS/GCP), Oracle filings, and publicly reported OpenAI/Anthropic revenue figures; FactSet/Bloomberg for capex aggregates.",
+  "domain": "ai_infra",
+  "topics": [
+   "ai_monetization",
+   "hyperscaler_capex",
+   "capex_to_revenue",
+   "MSFT",
+   "GOOGL"
+  ],
+  "impact": "high",
+  "close_time": "2027-12-15",
+  "resolution_time": "2027-12-31"
+ },
+ {
+  "key": "gpu_collapse",
+  "title": "Will rented H100/H200/B200-equivalent compute prices fall more than 40% from current levels by 2026-12-31?",
+  "description": "Red-team question on GPU price collapse. If rented accelerator prices fall sharply, neocloud margins and scarcity rents (CRWV, NBIS) are impaired and the bottleneck thesis weakens. The doc sets the threshold at a >40% decline from current levels.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, on 2026-12-31, the market-clearing hourly rental price for H100/H200/B200-equivalent AI compute (normalized to H100-equivalent) has fallen more than 40% from its June 2026 reference level; otherwise NO. The reference and resolution prices use the same named GPU-pricing index methodology.",
+  "resolution_source": "GPU rental price indices from named providers (Vast.ai, RunPod, CoreWeave/Lambda published rates, and SemiAnalysis or Together AI GPU-price trackers), normalized to H100-equivalent.",
+  "domain": "ai_compute",
+  "topics": [
+   "gpu_pricing",
+   "H100",
+   "B200",
+   "CRWV",
+   "NBIS",
+   "scarcity_rent"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-15",
+  "resolution_time": "2026-12-31"
+ },
+ {
+  "key": "capex_guidedown",
+  "title": "Will at least three major hyperscalers reduce or defer AI/data-center capex guidance by 2026-12-31?",
+  "description": "Red-team question on capex digestion. If three or more major hyperscalers cut or defer AI/data-center capex guidance, the doc treats the thesis as likely entering a digestion/overbuild phase, calling for reduced AI-infra exposure.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, at any point on or before 2026-12-31, at least three of Microsoft, Amazon, Alphabet, Meta, and Oracle explicitly reduce or defer their AI/data-center capital expenditure guidance versus prior guidance, as stated in an earnings release, transcript, or filing; otherwise NO.",
+  "resolution_source": "Quarterly earnings releases, transcripts, and 10-Q/10-K capex guidance for MSFT, AMZN, GOOGL, META, and ORCL; cross-checked against FactSet/Bloomberg capex estimate revisions.",
+  "domain": "ai_infra",
+  "topics": [
+   "capex_guidedown",
+   "MSFT",
+   "AMZN",
+   "GOOGL",
+   "META",
+   "ORCL"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-15",
+  "resolution_time": "2026-12-31"
+ },
+ {
+  "key": "power_solved",
+  "title": "Will data-center power constraints ease enough that power is no longer a major bottleneck by 2027-12-31?",
+  "description": "Red-team question on the power thesis. If grid interconnection, utility buildout, or hyperscaler self-generation resolves the power constraint faster than expected, the doc notes that BE and other power-scarcity names lose their premium narrative.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, as of 2027-12-31, power availability is no longer cited as a top-three constraint in the majority of major AI/data-center earnings calls (MSFT, AMZN, GOOGL, META, ORCL, CRWV, NBIS, DLR, EQIX) AND utility interconnection wait times or grid-buildout disclosures show material easing versus 2026; otherwise NO.",
+  "resolution_source": "Earnings transcripts and investor presentations from hyperscalers and data-center REITs (DLR, EQIX), utility interconnection-queue filings, FERC/grid-operator data, and EIA reports.",
+  "domain": "ai_power",
+  "topics": [
+   "power",
+   "grid_interconnection",
+   "BE",
+   "data_center",
+   "self_generation"
+  ],
+  "impact": "medium",
+  "close_time": "2027-12-15",
+  "resolution_time": "2027-12-31"
+ },
+ {
+  "key": "model_progress_slows",
+  "title": "Will leading AI benchmark progress, model adoption, or frontier-lab investment slow enough to reduce expected compute growth by 2026-12-31?",
+  "description": "Red-team question on demand-side risk. If frontier model progress, adoption, or lab investment decelerates, expected compute-demand growth falls and the entire scarcity chain weakens. Resolution uses benchmark improvements, model release cadence, API usage, AI revenue disclosures, and capex guidance.",
+  "outcome_type": "binary",
+  "units": "",
+  "bounds": [],
+  "choices": [],
+  "resolution_criteria": "Resolves YES if, by 2026-12-31, at least two of the following hold: (1) leading frontier-model benchmark gains (e.g., on major public evals) materially decelerate versus the prior year; (2) frontier-lab capital raised or announced training spend declines YoY; (3) major API/model-usage growth rates decelerate as disclosed by providers; AND at least one major hyperscaler or AI lab cites slowing model progress as a reason to moderate compute/capex plans. Otherwise NO.",
+  "resolution_source": "Public benchmark leaderboards (e.g., LMArena, MMLU/SWE-bench style evals), frontier-lab funding announcements, provider-disclosed API/usage growth, and hyperscaler/lab earnings transcripts and capex guidance.",
+  "domain": "ai_compute",
+  "topics": [
+   "model_progress",
+   "frontier_labs",
+   "compute_demand",
+   "benchmarks",
+   "capex"
+  ],
+  "impact": "medium",
+  "close_time": "2026-12-15",
+  "resolution_time": "2026-12-31"
+ },
+ {
+  "key": "d_capex_2026",
+  "title": "What will aggregate calendar-2026 AI/data-center capex be for Microsoft, Amazon, Alphabet, Meta, Oracle, and major neoclouds (USD billions)?",
+  "description": "The master demand variable for the AI-infrastructure thesis: total 2026 AI/data-center capital expenditure across the named hyperscalers and major neoclouds. The doc's buckets read sub-250B as thesis cooling, 325-425B strong continuation, and >550B as an extreme buildout/possible-bubble phase.",
+  "outcome_type": "distribution",
+  "units": "usd_billions",
+  "bounds": [
+   150,
+   750
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolves to the sum of disclosed calendar-2026 capital expenditure for Microsoft, Amazon, Alphabet, Meta, and Oracle plus disclosed neocloud capex (CoreWeave, Nebius), in USD billions, from full-year filings. If a firm reports fiscal-year capex not aligned to the calendar year, the four-quarter sum covering calendar 2026 is used; the point estimate is the central reported aggregate.",
+  "resolution_source": "Company FY2026 10-Ks/20-Fs and Q4-2026 earnings releases and transcripts; capex line items and guidance; FactSet/Bloomberg consensus aggregation if a direct disclosure is unavailable.",
+  "domain": "ai_compute",
+  "topics": [
+   "MSFT",
+   "AMZN",
+   "GOOGL",
+   "META",
+   "ORCL",
+   "hyperscaler_capex"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-15",
+  "resolution_time": "2027-03-31"
+ },
+ {
+  "key": "d_supply_demand",
+  "title": "By 2026-12-31, what will the global AI accelerator capacity supply-demand balance be (percent, negative=surplus, positive=shortage)?",
+  "description": "Estimated gap between demand for AI accelerator capacity and available contracted supply as of year-end 2026. Positive values denote demand exceeding supply (scarcity rents intact); negative values denote surplus (overbuild/margin compression). Doc buckets: >40% severe scarcity, +-5% thesis maturing, >20% surplus overbuild.",
+  "outcome_type": "distribution",
+  "units": "percent",
+  "bounds": [
+   -40,
+   80
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolves to the estimated percentage by which AI accelerator demand exceeds (positive) or falls short of (negative) available contracted supply at 2026-12-31, taken as the median of published sell-side AI accelerator supply-demand models; where models disagree, the simple mean of available named-analyst estimates is used.",
+  "resolution_source": "Sell-side AI accelerator supply-demand models (e.g. Morgan Stanley, Bernstein, SemiAnalysis); Nvidia/AMD/TSMC shipment and backlog disclosures; CoreWeave/Nebius backlog filings; data-center utilization reports.",
+  "domain": "ai_compute",
+  "topics": [
+   "NVDA",
+   "AMD",
+   "TSM",
+   "accelerator_supply",
+   "compute_scarcity"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-31",
+  "resolution_time": "2027-02-28"
+ },
+ {
+  "key": "d_gpu_price",
+  "title": "What will the percent change in H100/H200/B200-equivalent GPU-hour rental price be from current levels as of 2026-12-31?",
+  "description": "Market-clearing hourly rental price for H100/H200/B200-equivalent AI compute on 2026-12-31, expressed as percent change from current (June 2026) levels. The cleanest market price for compute scarcity; doc buckets run from +25% (worsening shortage) to below -50% (overbuild/commoditization).",
+  "outcome_type": "distribution",
+  "units": "percent",
+  "bounds": [
+   -70,
+   60
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolves to the percent change, from the June-2026 baseline to 2026-12-31, in the on-demand H100-equivalent GPU-hour rental price, normalized for accelerator generation, measured as the median advertised on-demand rate across tracked neocloud and hyperscaler providers. A fall greater than 40% would also trigger the doc's binary GPU-collapse red-team test.",
+  "resolution_source": "Published GPU cloud price trackers (e.g. Vast.ai, CoreWeave/Lambda/AWS/Azure on-demand rate cards), SemiAnalysis ClusterMAX/rental indices, and provider pricing pages normalized to H100-equivalent.",
+  "domain": "ai_compute",
+  "topics": [
+   "CRWV",
+   "NBIS",
+   "NVDA",
+   "gpu_pricing",
+   "compute_scarcity"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-31",
+  "resolution_time": "2027-01-31"
+ },
+ {
+  "key": "d_power_demand_gw",
+  "title": "How many gigawatts of incremental AI/data-center power demand will be announced, contracted, or under active development by 2026-12-31?",
+  "description": "Cumulative incremental AI/data-center electrical demand announced, contracted, or in active development as of year-end 2026. Doc buckets: <10 GW weak power thesis, 25-50 GW strong bottleneck, >75 GW extreme infrastructure cycle.",
+  "outcome_type": "distribution",
+  "units": "gw",
+  "bounds": [
+   0,
+   100
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolves to the cumulative gigawatts of new AI/data-center power demand announced, contracted, or under active development as of 2026-12-31, aggregated from utility interconnection-queue data, hyperscaler/operator announcements, and grid-operator filings; double-counted projects appearing in multiple sources are counted once at the larger disclosed figure.",
+  "resolution_source": "Utility interconnection queues, grid-operator (PJM/ERCOT/MISO) and EIA data, data-center leasing reports (CBRE/JLL), and hyperscaler plus CRWV/NBIS/APLD/IREN/CORZ filings and announcements.",
+  "domain": "ai_power",
+  "topics": [
+   "BE",
+   "APLD",
+   "IREN",
+   "CORZ",
+   "power_bottleneck",
+   "data_center_demand"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-15",
+  "resolution_time": "2027-02-28"
+ },
+ {
+  "key": "d_power_severity",
+  "title": "What will the AI/data-center power bottleneck severity index be on 2026-12-31 (0-100)?",
+  "description": "Constructed composite index of AI/data-center power constraint severity: 25% grid interconnection delays, 25% disclosed data-center power shortages, 20% power-related capex announcements, 15% electricity price pressure in key markets, 15% frequency of power-constraint mentions in earnings/transcripts. Doc buckets: 0-20 not binding, 60-80 severe, 80-100 systemic.",
+  "outcome_type": "distribution",
+  "units": "index_0_100",
+  "bounds": [
+   0,
+   100
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolves to the composite Power Bottleneck Severity Index value on 2026-12-31, computed per the doc's fixed weighting (25% interconnection delays, 25% disclosed shortages, 20% power capex, 15% electricity-price pressure, 15% transcript-mention frequency), with each sub-component normalized to 0-100 against its trailing baseline.",
+  "resolution_source": "Grid-operator interconnection-queue timing data, EIA electricity prices, hyperscaler/operator earnings transcripts (MSFT, AMZN, GOOGL, META, ORCL, CRWV, NBIS, DLR, EQIX), utility rate filings, and a transcript-mention NLP count.",
+  "domain": "ai_power",
+  "topics": [
+   "BE",
+   "APLD",
+   "IREN",
+   "CORZ",
+   "SEI",
+   "power_bottleneck"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-31",
+  "resolution_time": "2027-02-28"
+ },
+ {
+  "key": "d_behind_meter_gw",
+  "title": "How many GW of dedicated/behind-the-meter data-center power capacity will be announced by 2026-12-31?",
+  "description": "Cumulative gigawatts of dedicated, behind-the-meter, fuel-cell, gas, nuclear, or renewable-plus-storage self-supplied data-center power capacity announced by year-end 2026. Central to the Bloom Energy and energy-infra thesis. Doc buckets: <2 GW weak, 5-10 GW meaningful validation, >20 GW power supercycle.",
+  "outcome_type": "distribution",
+  "units": "gw",
+  "bounds": [
+   0,
+   50
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolves to the cumulative gigawatts of dedicated or behind-the-meter (fuel-cell, gas-turbine, nuclear/SMR, or renewable-plus-storage) data-center power capacity announced as of 2026-12-31, summed across company press releases and filings; only self-supplied or contracted-dedicated capacity counts, and projects in multiple sources are counted once.",
+  "resolution_source": "Company press releases, 8-Ks, and investor decks (Bloom Energy, GE Vernova, gas-turbine and SMR developers, hyperscalers, APLD/IREN/CORZ), plus data-center power-deal trackers and trade press.",
+  "domain": "ai_power",
+  "topics": [
+   "BE",
+   "SEI",
+   "PSIX",
+   "BW",
+   "behind_the_meter",
+   "distributed_generation"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-15",
+  "resolution_time": "2027-02-28"
+ },
+ {
+  "key": "d_crwv_revenue",
+  "title": "What will CoreWeave's FY2026 revenue be (USD billions)?",
+  "description": "Full-year 2026 reported revenue for CoreWeave (CRWV), a direct measure of neocloud demand and execution. The doc frames outcomes relative to consensus (a miss of >20% below as a thesis miss, >50% above as a breakout scarcity-rent outcome); bounds chosen around the plausible FY2026 range given current run-rate and backlog.",
+  "outcome_type": "distribution",
+  "units": "usd_billions",
+  "bounds": [
+   4,
+   30
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolves to CoreWeave's total reported FY2026 (fiscal year ending 2026-12-31) revenue in USD billions as stated in its Q4-2026 earnings release and 10-K. The point estimate is GAAP total revenue; if restated, the first-reported figure governs.",
+  "resolution_source": "CoreWeave (CRWV) Q4-2026 earnings release, 10-K filing with the SEC, and earnings transcript.",
+  "domain": "ai_portfolio",
+  "topics": [
+   "CRWV",
+   "neocloud",
+   "revenue",
+   "execution"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-31",
+  "resolution_time": "2027-03-31"
+ },
+ {
+  "key": "d_crwv_margin",
+  "title": "What will CoreWeave's FY2026 gross margin be (percent)?",
+  "description": "Full-year 2026 gross margin for CoreWeave (CRWV). Revenue growth with margin compression would mean the scarcity-rent thesis is weaker than the top line suggests. Doc buckets: <30% commodity/debt-stress risk, 45-60% strong economics, >60% severe scarcity rents.",
+  "outcome_type": "distribution",
+  "units": "percent",
+  "bounds": [
+   10,
+   80
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolves to CoreWeave's reported FY2026 gross margin in percent, computed as (revenue minus cost of revenue) divided by revenue from the 10-K income statement; if CoreWeave reports a headline gross-margin figure, that disclosed figure governs over a computed one.",
+  "resolution_source": "CoreWeave (CRWV) FY2026 10-K and Q4-2026 earnings release income statement.",
+  "domain": "ai_portfolio",
+  "topics": [
+   "CRWV",
+   "neocloud",
+   "gross_margin",
+   "scarcity_rent"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-31",
+  "resolution_time": "2027-03-31"
+ },
+ {
+  "key": "d_nbis_runrate",
+  "title": "What will Nebius's AI cloud annualized revenue run-rate be by 2026-12-31 (USD billions)?",
+  "description": "Annualized AI cloud revenue run-rate (ARR) for Nebius (NBIS) at year-end 2026. NBIS is the fund's largest shown position, making this a top-priority distributional forecast. Doc buckets: <$1B disappointing, $2-4B strong validation, $4-7B major winner, >$7B exceptional.",
+  "outcome_type": "distribution",
+  "units": "usd_billions",
+  "bounds": [
+   0,
+   10
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolves to Nebius's disclosed AI cloud annualized revenue run-rate (ARR) as of 2026-12-31 in USD billions, taken from its Q4-2026 reporting; if Nebius discloses an exit-rate or December annualized figure, that governs, otherwise Q4-2026 AI cloud revenue multiplied by four is used.",
+  "resolution_source": "Nebius Group (NBIS) Q4-2026 earnings release, 20-F/annual report, and investor presentation ARR disclosures.",
+  "domain": "ai_portfolio",
+  "topics": [
+   "NBIS",
+   "neocloud",
+   "ARR",
+   "ai_cloud"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-31",
+  "resolution_time": "2027-03-31"
+ },
+ {
+  "key": "d_nbis_backlog",
+  "title": "What will Nebius's disclosed AI cloud backlog or contracted revenue be by 2026-12-31 (USD billions)?",
+  "description": "Disclosed AI cloud backlog / contracted future revenue for Nebius (NBIS) at year-end 2026. For infrastructure companies backlog leads revenue, so this can reveal future thesis strength before the income statement does. Tracked separately from the run-rate sibling.",
+  "outcome_type": "distribution",
+  "units": "usd_billions",
+  "bounds": [
+   0,
+   25
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolves to the largest disclosed Nebius AI cloud backlog or contracted/remaining-performance-obligation figure as of 2026-12-31 in USD billions, as stated in its Q4-2026 reporting; if multiple backlog metrics are disclosed, total contracted revenue (RPO) governs.",
+  "resolution_source": "Nebius Group (NBIS) Q4-2026 earnings release, 20-F/annual report, and investor materials disclosing backlog or remaining performance obligations.",
+  "domain": "ai_portfolio",
+  "topics": [
+   "NBIS",
+   "backlog",
+   "contracted_revenue",
+   "ai_cloud"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-31",
+  "resolution_time": "2027-03-31"
+ },
+ {
+  "key": "d_bloom_orders",
+  "title": "What will the total value of Bloom Energy's AI/data-center orders or backlog announced during 2026 be (USD billions)?",
+  "description": "Total announced value of Bloom Energy (BE) AI/data-center-related orders or backlog during calendar 2026. Tests whether BE's valuation is tied to plausible order growth or speculative narrative. Doc buckets: <$0.5B weak, $1.5-3B strong validation, $3-5B major AI power winner, >$5B thesis-changing.",
+  "outcome_type": "distribution",
+  "units": "usd_billions",
+  "bounds": [
+   0,
+   8
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolves to the cumulative announced USD-billion value of Bloom Energy AI/data-center-related orders, purchase agreements, or backlog additions disclosed during calendar 2026; where deals are disclosed in MW rather than dollars, the company-stated or implied contract value is used, and each deal is counted once.",
+  "resolution_source": "Bloom Energy (BE) 2026 earnings releases, 8-Ks, press releases, and investor decks announcing data-center/AI orders or backlog.",
+  "domain": "ai_power",
+  "topics": [
+   "BE",
+   "data_center_orders",
+   "fuel_cell",
+   "power_bottleneck"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-31",
+  "resolution_time": "2027-03-31"
+ },
+ {
+  "key": "d_bloom_margin",
+  "title": "What will Bloom Energy's FY2026 gross margin be (percent)?",
+  "description": "Full-year 2026 gross margin for Bloom Energy (BE). A large order book only creates shareholder value if margins are real; this distributional sibling pairs the order-value question to separate genuine power-thesis economics from narrative. Bounds set around Bloom's plausible gross-margin range.",
+  "outcome_type": "distribution",
+  "units": "percent",
+  "bounds": [
+   0,
+   45
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolves to Bloom Energy's reported FY2026 (fiscal year ending 2026-12-31) gross margin in percent, computed as (total revenue minus cost of revenue) divided by total revenue from the 10-K; a company-reported non-GAAP gross margin, if highlighted as the headline metric, is recorded alongside but GAAP governs the resolution.",
+  "resolution_source": "Bloom Energy (BE) FY2026 10-K and Q4-2026 earnings release income statement.",
+  "domain": "ai_power",
+  "topics": [
+   "BE",
+   "gross_margin",
+   "fuel_cell",
+   "profitability"
+  ],
+  "impact": "medium",
+  "close_time": "2026-12-31",
+  "resolution_time": "2027-03-31"
+ },
+ {
+  "key": "d_miner_share",
+  "title": "What will the basket-weighted AI/HPC revenue share be for the miner-to-HPC basket (IREN/CORZ/APLD/RIOT/CLSK/BITF/BTDR/HIVE) by 2026-12-31?",
+  "description": "Distributional sibling to DQ13: measures how far the Bitcoin-miner-to-AI conversion has progressed across the eight-name miner/data-center basket, separating monetizable AI infrastructure demand from narrative. Distinguishes genuine business-model transformation from speculative optionality.",
+  "outcome_type": "distribution",
+  "units": "percent",
+  "bounds": [
+   0,
+   100
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolve to the basket-weighted average percentage of revenue derived from AI/HPC (rather than crypto mining) across IREN, CORZ, APLD, RIOT, CLSK, BITF, BTDR, and HIVE, computed from the most recent fiscal-period revenue segmentation disclosed on or before 2026-12-31; weight by each company's total revenue. Doc buckets: <5% narrative, 5-15% early, 15-30% meaningful, 30-50% validated, >50% transformation.",
+  "resolution_source": "Company 10-Q/10-K filings, quarterly earnings releases and investor presentations for IREN, CORZ, APLD, RIOT, CLSK, BITF, BTDR, HIVE; segment revenue disclosures; SEC EDGAR.",
+  "domain": "ai_compute",
+  "topics": [
+   "IREN",
+   "CORZ",
+   "APLD",
+   "miner_to_hpc",
+   "ai_revenue_share"
+  ],
+  "impact": "medium",
+  "close_time": "2026-12-15",
+  "resolution_time": "2026-12-31"
+ },
+ {
+  "key": "d_miner_mw",
+  "title": "How many MW of power capacity across the miner basket (IREN/CORZ/APLD/RIOT/CLSK/BITF/BTDR/HIVE) will be contracted for AI/HPC workloads by 2026-12-31?",
+  "description": "Distributional sibling to DQ14: contracted MW leads revenue and reveals whether the physical infrastructure (power, land, sites) of crypto miners is actually being repurposed for AI/HPC. A leading physical indicator of the miner-to-HPC conversion thesis.",
+  "outcome_type": "distribution",
+  "units": "megawatts",
+  "bounds": [
+   0,
+   5000
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolve to the aggregate megawatts of power capacity contracted, signed, or under binding agreement for AI/HPC workloads (excluding crypto-mining load) across IREN, CORZ, APLD, RIOT, CLSK, BITF, BTDR, and HIVE, summed from disclosures dated on or before 2026-12-31. Counts only AI/HPC-designated capacity backed by a customer contract or definitive lease.",
+  "resolution_source": "Company 8-Ks, press releases, earnings transcripts and investor decks for the eight basket tickers; contracted-capacity / lease disclosures; SEC EDGAR.",
+  "domain": "ai_power",
+  "topics": [
+   "IREN",
+   "CORZ",
+   "APLD",
+   "miner_to_hpc",
+   "contracted_mw"
+  ],
+  "impact": "medium",
+  "close_time": "2026-12-15",
+  "resolution_time": "2026-12-31"
+ },
+ {
+  "key": "d_memory_index",
+  "title": "What will the AI-relevant memory/storage pricing index change be on 2026-12-31 relative to today?",
+  "description": "Distributional sibling to DQ15: tracks whether AI inference and data workloads drive a stronger NAND/HBM/DRAM cycle than consensus expects, the core of the memory/storage bottleneck thesis informing SNDK and MU. The doc's index weights HBM 40%, DRAM 25%, NAND 25%, supply-tightness 10%.",
+  "outcome_type": "distribution",
+  "units": "percent",
+  "bounds": [
+   -40,
+   80
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolve to the percentage change in a composite AI memory/storage pricing index (40% HBM pricing, 25% DRAM contract pricing, 25% NAND enterprise SSD pricing, 10% supply-tightness indicators) on 2026-12-31 versus the 2026-06-02 baseline. Doc buckets: <-20% roll-over, -20% to 0% softening, 0-20% healthy, 20-50% strong AI cycle, >50% supercycle.",
+  "resolution_source": "TrendForce and DRAMeXchange contract/spot price series; Micron and SanDisk earnings disclosures; named market-data providers for HBM/DRAM/NAND enterprise SSD pricing.",
+  "domain": "ai_memory",
+  "topics": [
+   "SNDK",
+   "MU",
+   "memory_pricing",
+   "HBM",
+   "NAND_DRAM"
+  ],
+  "impact": "medium",
+  "close_time": "2026-12-15",
+  "resolution_time": "2026-12-31"
+ },
+ {
+  "key": "d_sndk_ai_share",
+  "title": "What percentage of SanDisk's FY2026 revenue will be attributable to AI/data-center storage demand?",
+  "description": "Distributional sibling to DQ16: separates a generic NAND commodity cycle from a genuine AI thesis for SanDisk (SNDK), the fund's third-largest disclosed position. Chosen metric: share of total FY2026 revenue (not growth) attributable to AI/data-center storage.",
+  "outcome_type": "distribution",
+  "units": "percent",
+  "bounds": [
+   0,
+   100
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolve to the percentage of SanDisk's FY2026 total revenue attributable to AI/data-center storage demand (enterprise SSD / data-center segment tied to AI), per SanDisk's FY2026 segment disclosures; where SanDisk does not break this out explicitly, use the disclosed data-center/enterprise segment revenue as the proxy and state the proxy used at resolution.",
+  "resolution_source": "SanDisk (SNDK) FY2026 10-K and quarterly 10-Q filings, earnings releases and investor presentations; segment revenue disclosures; SEC EDGAR.",
+  "domain": "ai_memory",
+  "topics": [
+   "SNDK",
+   "ai_storage",
+   "data_center",
+   "revenue_share"
+  ],
+  "impact": "medium",
+  "close_time": "2026-12-15",
+  "resolution_time": "2026-12-31"
+ },
+ {
+  "key": "d_ai_revenue",
+  "title": "What will aggregate 2026 AI-related revenue be for MSFT/AMZN/GOOGL/META/ORCL plus OpenAI, Anthropic, and major enterprise AI platforms?",
+  "description": "Distributional sibling to DQ17: the AI-monetization master variable. The capex boom persists only if AI revenue or strategic urgency justifies it; this distribution sizes how close monetization is to validating the buildout. Doc bounds $50B-$500B.",
+  "outcome_type": "distribution",
+  "units": "usd_billions",
+  "bounds": [
+   50,
+   500
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolve to aggregate calendar-2026 AI-related revenue summed across Microsoft, Amazon, Alphabet, Meta, Oracle, OpenAI, Anthropic, and major enterprise AI platforms, in USD billions, using disclosed AI/cloud-AI revenue lines and reported private-company run-rates. Doc buckets: <$100B lagging, $100-200B plausible-but-capex-heavy, $200-350B strong validation, >$350B supercycle.",
+  "resolution_source": "Hyperscaler 10-K/10-Q filings and earnings transcripts (Azure/AWS/GCP AI disclosures); OpenAI and Anthropic reported revenue/run-rate figures from press and investor reporting; FactSet/Bloomberg consensus where needed.",
+  "domain": "ai_infra",
+  "topics": [
+   "MSFT",
+   "GOOGL",
+   "OpenAI",
+   "Anthropic",
+   "ai_monetization",
+   "ai_revenue"
+  ],
+  "impact": "high",
+  "close_time": "2027-02-28",
+  "resolution_time": "2027-06-30"
+ },
+ {
+  "key": "d_capex_rev_ratio",
+  "title": "What will the aggregate AI capex-to-AI-revenue ratio be in 2026 for major AI spenders?",
+  "description": "Distributional sibling to DQ18: the sustainability-of-buildout metric. A high ratio signals an arms-race/strategic-investment phase with future capex-cut risk; a low ratio signals excellent monetization. Doc interpretation bands run from <1x (excellent) to >8x (high cut risk).",
+  "outcome_type": "distribution",
+  "units": "ratio",
+  "bounds": [
+   0.5,
+   10
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolve to the aggregate 2026 AI/data-center capex divided by aggregate 2026 AI-related revenue for the major AI spenders (MSFT/AMZN/GOOGL/META/ORCL plus OpenAI/Anthropic), expressed as a ratio. Doc bands: <1x monetization excellent, 1-2x sustainable, 2-4x strategic-investment, 4-8x bubble/arms-race risk, >8x high future-capex-cut risk.",
+  "resolution_source": "Company 10-K/10-Q capex disclosures and earnings transcripts; AI-revenue figures per the aggregate AI-revenue resolution; FactSet/Bloomberg consensus where filings are incomplete.",
+  "domain": "ai_infra",
+  "topics": [
+   "MSFT",
+   "AMZN",
+   "ai_capex",
+   "monetization",
+   "sustainability"
+  ],
+  "impact": "high",
+  "close_time": "2027-02-28",
+  "resolution_time": "2027-06-30"
+ },
+ {
+  "key": "d_utilization",
+  "title": "What will average utilization of AI accelerator/data-center capacity be by 2027-06-30?",
+  "description": "Distributional sibling to DQ19 and a core overbuild-risk gauge: utilization falling toward the lower buckets is an early signal of overcapacity that hurts CRWV/NBIS/IREN/CORZ/APLD/BE/SNDK. Doc bounds 30%-100%.",
+  "outcome_type": "distribution",
+  "units": "percent",
+  "bounds": [
+   30,
+   100
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolve to the average utilization rate of AI accelerator/data-center capacity as of 2027-06-30, synthesized from disclosed utilization figures, GPU rental pricing, cloud availability, backlog conversion, data-center leasing, and company commentary. Doc buckets: >90% severe shortage, 75-90% tight, 60-75% balanced, 45-60% overbuild emerging, <45% serious overcapacity.",
+  "resolution_source": "Company-disclosed utilization (CRWV, NBIS, IREN, CORZ, APLD), GPU rental price trackers, data-center leasing reports (e.g. CBRE/JLL), earnings commentary.",
+  "domain": "ai_compute",
+  "topics": [
+   "CRWV",
+   "NBIS",
+   "utilization",
+   "overbuild",
+   "ai_compute"
+  ],
+  "impact": "high",
+  "close_time": "2027-06-15",
+  "resolution_time": "2027-06-30"
+ },
+ {
+  "key": "d_overbuild_drawdown",
+  "title": "What will the drawdown of the custom AI-infrastructure equity basket be by 2027-06-30 if overbuild signs emerge?",
+  "description": "Distributional sibling to DQ20: sizes the left-tail repricing risk of the AI-infra complex into mid-2027, essential for position sizing and hedging. Basket per doc: NBIS, CRWV, BE, IREN, CORZ, APLD, SNDK, MU, RIOT, CLSK, BTDR, BITF.",
+  "outcome_type": "distribution",
+  "units": "percent",
+  "bounds": [
+   -90,
+   10
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolve to the peak-to-trough total-return drawdown (negative percent) over 2026-06-02 to 2027-06-30 of an equal-weighted basket of NBIS, CRWV, BE, IREN, CORZ, APLD, SNDK, MU, RIOT, CLSK, BTDR, BITF. Doc buckets: 0 to -10% benign, -10 to -25% normal correction, -25 to -50% impairment, -50 to -75% bubble unwind, <-75% catastrophic.",
+  "resolution_source": "Daily security total-return prices (dividends included) from a named provider (Bloomberg/Refinitiv/Yahoo Finance) for the twelve basket tickers over the measurement window.",
+  "domain": "ai_portfolio",
+  "topics": [
+   "NBIS",
+   "CRWV",
+   "overbuild",
+   "drawdown",
+   "ai_basket"
+  ],
+  "impact": "high",
+  "close_time": "2027-06-15",
+  "resolution_time": "2027-06-30"
+ },
+ {
+  "key": "d_basket_return",
+  "title": "What will be the 6-month total return of the reconstructed Situational Awareness 13F long basket from the latest filing date?",
+  "description": "Distributional sibling to DQ21: the headline thesis-expression return for the reconstructed Situational Awareness 13F basket. Resolved using the equal-weighted variant over a 6-month window. Doc buckets span <-50% crash to >+75% supercycle upside.",
+  "outcome_type": "distribution",
+  "units": "percent",
+  "bounds": [
+   -80,
+   120
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolve to the 6-month total return (percent) of an equal-weighted reconstructed Situational Awareness 13F long basket, measured from 2026-06-02 to 2026-12-31. Doc buckets: <-50% severe crash, -50 to -25% major impairment, -25 to 0% weak/risk-off, 0 to +25% moderate, +25 to +75% strong, >+75% bubble/supercycle.",
+  "resolution_source": "Latest Situational Awareness Form 13F-HR (SEC EDGAR) for basket constituents and weights; daily total-return security prices from a named provider (Bloomberg/Refinitiv/Yahoo Finance).",
+  "domain": "ai_portfolio",
+  "topics": [
+   "NBIS",
+   "BE",
+   "13F",
+   "basket_return",
+   "situational_awareness"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-15",
+  "resolution_time": "2026-12-31"
+ },
+ {
+  "key": "d_basket_alpha",
+  "title": "What will be the 6-month alpha of the reconstructed Situational Awareness basket versus SMH and QQQ?",
+  "description": "Distributional sibling to DQ22: distinguishes differentiated security-selection insight from generic AI beta by measuring relative outperformance against the SMH semiconductor ETF and the QQQ Nasdaq-100 ETF. Doc buckets run from <-30pp (thesis failing) to >+30pp (strong selection).",
+  "outcome_type": "distribution",
+  "units": "percent",
+  "bounds": [
+   -50,
+   60
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolve to the basket's 6-month total return minus the average of SMH and QQQ 6-month total returns, in percentage points, over 2026-06-02 to 2026-12-31, using the same equal-weighted reconstructed Situational Awareness 13F basket. Doc buckets: <-30pp failing, -30 to -10pp underperforming, -10 to +10pp no alpha, +10 to +30pp meaningful, >+30pp strong.",
+  "resolution_source": "Latest Situational Awareness 13F-HR (SEC EDGAR) for constituents; daily total-return prices for the basket, SMH and QQQ from a named provider (Bloomberg/Refinitiv/Yahoo Finance).",
+  "domain": "ai_portfolio",
+  "topics": [
+   "SMH",
+   "QQQ",
+   "13F",
+   "alpha",
+   "situational_awareness"
+  ],
+  "impact": "high",
+  "close_time": "2026-12-15",
+  "resolution_time": "2026-12-31"
+ },
+ {
+  "key": "d_contract_duration",
+  "title": "What will the weighted-average duration of AI/data-center contracts disclosed by NBIS/CRWV/IREN/CORZ/APLD/BE be by 2026-12-31?",
+  "description": "Distributional sibling to DQ27: contract duration bridges growth-stock valuation and infrastructure-style valuation, telling the desk whether these are spot-exposed names or utility-like contracted-base businesses. Doc buckets range from <1yr spot to >10yr utility-like.",
+  "outcome_type": "distribution",
+  "units": "years",
+  "bounds": [
+   0,
+   15
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolve to the revenue-weighted (or backlog-weighted) average remaining duration in years of AI/data-center contracts disclosed by NBIS, CRWV, IREN, CORZ, APLD, and BE in filings and investor materials dated on or before 2026-12-31. Doc buckets: <1yr spot, 1-3yr moderate, 3-5yr durable, 5-10yr infrastructure-like, >10yr utility-like.",
+  "resolution_source": "Company 10-K/10-Q filings, earnings transcripts and investor presentations for NBIS, CRWV, IREN, CORZ, APLD, BE; disclosed contract/backlog duration; SEC EDGAR.",
+  "domain": "ai_infra",
+  "topics": [
+   "NBIS",
+   "CRWV",
+   "BE",
+   "contract_duration",
+   "backlog"
+  ],
+  "impact": "medium",
+  "close_time": "2026-12-15",
+  "resolution_time": "2026-12-31"
+ },
+ {
+  "key": "d_cost_capital",
+  "title": "What will the weighted-average cost of capital / debt financing cost for AI-infra companies be by 2026-12-31?",
+  "description": "Distributional sibling to DQ28: many AI-infra names (CRWV, NBIS, APLD, IREN, CORZ, BE) are capex-financing stories, so financing cost is a key risk factor. Doc bands run from <6% capital-abundant to >16% business-model stress.",
+  "outcome_type": "distribution",
+  "units": "percent",
+  "bounds": [
+   3,
+   20
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolve to the weighted-average cost of debt / WACC proxy across CRWV, NBIS, APLD, IREN, CORZ, BE, and the miner-to-HPC basket as of 2026-12-31, computed from disclosed coupon rates on outstanding debt and new issuance, weighted by debt outstanding. Doc bands: <6% abundant, 6-9% manageable, 9-12% constraining, 12-16% severe, >16% stress.",
+  "resolution_source": "Company 10-K/10-Q debt footnotes, bond/loan issuance terms, credit-facility disclosures; bond pricing from a named provider (Bloomberg/Refinitiv); SEC EDGAR.",
+  "domain": "ai_infra",
+  "topics": [
+   "CRWV",
+   "NBIS",
+   "APLD",
+   "cost_of_capital",
+   "financing_risk"
+  ],
+  "impact": "medium",
+  "close_time": "2026-12-15",
+  "resolution_time": "2026-12-31"
+ },
+ {
+  "key": "d_valuation_multiple",
+  "title": "What will the median EV/revenue multiple be for the AI-infrastructure basket on 2026-12-31?",
+  "description": "Distributional sibling to DQ29: returns equal revenue growth times margin change times multiple change, so a thesis can play out operationally while stocks fall if multiples compress. Resolved on the EV/revenue measure as instructed.",
+  "outcome_type": "distribution",
+  "units": "ratio",
+  "bounds": [
+   0,
+   50
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolve to the median forward EV/revenue (NTM) multiple across the AI-infrastructure basket (NBIS, CRWV, BE, IREN, CORZ, APLD, SNDK, MU and the broad-semis sleeve) as of market close 2026-12-31, computed from enterprise value over consensus next-twelve-month revenue. A higher multiple implies more valuation-compression risk; a lower multiple implies cheaper entry.",
+  "resolution_source": "Enterprise value from market data and balance-sheet filings; consensus revenue from FactSet/Bloomberg; closing prices on 2026-12-31 from a named provider.",
+  "domain": "ai_infra",
+  "topics": [
+   "NBIS",
+   "CRWV",
+   "ev_revenue",
+   "valuation",
+   "multiple_compression"
+  ],
+  "impact": "medium",
+  "close_time": "2026-12-15",
+  "resolution_time": "2026-12-31"
+ },
+ {
+  "key": "d_scarcity_peak",
+  "title": "How many quarters from 2026-Q2 until AI compute/data-center/power scarcity reaches its economic peak?",
+  "description": "Distributional sibling to DQ30 and the desk's duration-of-trade question: it answers how long to stay with the AI-infra trade. Encoded in quarters from 2026-Q2 (0 = already peaked, 16 = four years out). Doc buckets map before-2026-Q4 to 2029-or-later.",
+  "outcome_type": "distribution",
+  "units": "quarters_from_2026q2",
+  "bounds": [
+   0,
+   16
+  ],
+  "choices": [],
+  "resolution_criteria": "Resolve to the number of quarters after 2026-Q2 at which AI compute/data-center/power scarcity reaches its economic peak (peak GPU/cloud pricing, peak power-constraint citations, peak backlog/pricing power), 0 meaning already peaked by 2026-Q2 and 16 meaning four years out. Doc buckets: before 2026-Q4 very short-lived, 2027-H1 near-term digestion, 2027-H2 maturing, 2028 long runway, 2029+ secular cycle.",
+  "resolution_source": "GPU/cloud pricing trackers, hyperscaler capex trajectory, data-center vacancy and power-constraint citations in earnings/utility filings, AI-infra backlog and pricing disclosures; retrospective determination of the peak quarter.",
+  "domain": "ai_infra",
+  "topics": [
+   "scarcity_duration",
+   "thesis_duration",
+   "ai_compute",
+   "ai_power",
+   "trade_management"
+  ],
+  "impact": "high",
+  "close_time": "2027-12-15",
+  "resolution_time": "2027-12-31"
+ }
+]
