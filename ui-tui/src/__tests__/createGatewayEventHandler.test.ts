@@ -770,7 +770,7 @@ describe('createGatewayEventHandler', () => {
     createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
 
     await vi.waitFor(() => expect(appended.some(msg => msg.kind === 'panel')).toBe(true))
-    expect(getUiState().forecastDeskStatus).toBe('1 active  ·  1 to review  ·  1 alert  ·  cal 3  ·  1 lesson  ·  2 assumptions')
+    expect(getUiState().forecastDeskStatus).toBe('1 forecasts  ·  1 to review  ·  1 alert  ·  cal 3  ·  1 lesson  ·  2 assumptions')
     expect(getUiState().forecastDeskRailSections).toEqual([
       {
         rows: [
@@ -1082,7 +1082,7 @@ describe('createGatewayEventHandler', () => {
     createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
 
     await vi.waitFor(() => expect(resumeById).toHaveBeenCalledWith('explicit-session'))
-    await vi.waitFor(() => expect(getUiState().forecastDeskStatus).toBe('3 active  ·  1 to review  ·  2 alerts'))
+    await vi.waitFor(() => expect(getUiState().forecastDeskStatus).toBe('3 forecasts  ·  1 to review  ·  2 alerts'))
     expect(ctx.gateway.rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 8 })
     expect(appended).toEqual([])
   })
@@ -1382,5 +1382,40 @@ describe('createGatewayEventHandler', () => {
       vi.runAllTimers()
       vi.useRealTimers()
     }
+  })
+
+  describe('auth-expiry error presentation', () => {
+    const TOKEN_EXPIRED =
+      "Error code: 401 - {'error': {'message': 'Provided authentication token is expired. " +
+      "Please try signing in again.', 'type': None, 'code': 'token_expired', 'param': None}, 'status': 401}"
+
+    it('shows actionable re-auth panel instead of the raw 401 dict', () => {
+      const appended: Msg[] = []
+      const ctx = buildCtx(appended)
+      const onEvent = createGatewayEventHandler(ctx)
+
+      onEvent({ payload: { message: TOKEN_EXPIRED }, type: 'error' } as any)
+
+      const panel = appended.find(m => (m as any).kind === 'panel') as any
+      expect(panel).toBeDefined()
+      expect(panel.panelData.title).toBe('Sign-in Required')
+      // Steps name the real re-auth surfaces.
+      const flat = JSON.stringify(panel.panelData.sections)
+      expect(flat).toContain('/model')
+      expect(flat).toContain('auth add')
+      // The raw provider dict must NOT be dumped via the system line.
+      expect(ctx.system.sys).not.toHaveBeenCalledWith(expect.stringContaining('token_expired'))
+    })
+
+    it('still routes an ordinary error through the system line', () => {
+      const appended: Msg[] = []
+      const ctx = buildCtx(appended)
+      const onEvent = createGatewayEventHandler(ctx)
+
+      onEvent({ payload: { message: 'Tool failed: boom' }, type: 'error' } as any)
+
+      expect(ctx.system.sys).toHaveBeenCalledWith('error: Tool failed: boom')
+      expect(appended.find(m => (m as any).kind === 'panel')).toBeUndefined()
+    })
   })
 })

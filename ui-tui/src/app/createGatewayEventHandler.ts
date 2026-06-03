@@ -1,5 +1,6 @@
 import { STARTUP_IMAGE, STARTUP_QUERY } from '../config/env.js'
 import { STREAM_BATCH_MS } from '../config/timing.js'
+import { AUTH_EXPIRED_RE, AUTH_EXPIRED_TITLE, buildAuthExpiredSections } from '../content/auth.js'
 import { SETUP_REQUIRED_TITLE, buildSetupRequiredSections } from '../content/setup.js'
 import type {
   CommandsCatalogResponse,
@@ -746,6 +747,16 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
         {
           const message = String(ev.payload?.message || 'unknown error')
+
+          // Auth/credential expiry: show actionable re-auth steps instead of
+          // dumping the raw provider 401 dict at the user.
+          if (AUTH_EXPIRED_RE.test(message)) {
+            turnController.pushActivity('authentication expired — sign in again', 'error')
+            panel(AUTH_EXPIRED_TITLE, buildAuthExpiredSections())
+            setStatus('sign-in required')
+
+            return
+          }
 
           turnController.pushActivity(message, 'error')
 
