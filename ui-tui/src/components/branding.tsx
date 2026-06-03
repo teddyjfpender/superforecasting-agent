@@ -10,6 +10,7 @@ import type { PanelRow, PanelSection, SessionInfo } from '../types.js'
 const LOADER_TICK_MS = 120
 const PANEL_COMMAND_PLACEHOLDER_RE = /(?:<[^>]+>|\[[^\]]+\]|\.\.\.|;)/
 const PANEL_DRAFT_PREFIX = 'draft:'
+const FORECAST_LEDGER_STATUS = 'Superforecasting Agent · forecast ledger online'
 type PanelClickEvent = { cellIsBlank?: boolean; stopPropagation?: () => void }
 
 export function panelCommandTarget(candidate?: null | string): string | null {
@@ -96,6 +97,7 @@ export function ArtLines({ lines }: { lines: [string, string][] }) {
 export function Banner({ t }: { t: Theme }) {
   const cols = useStdout().stdout?.columns ?? 80
   const logoLines = logo(t.color, t.bannerLogo || undefined)
+  const [agentLabel, ledgerLabel] = FORECAST_LEDGER_STATUS.split(' · ')
 
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -109,9 +111,9 @@ export function Banner({ t }: { t: Theme }) {
 
       <Box>
         <Text bold color={t.color.accent}>
-          {t.brand.icon} Superforecasting Agent
+          {t.brand.icon} {agentLabel}
         </Text>
-        <Text color={t.color.muted}> · forecast ledger online</Text>
+        <Text color={t.color.muted}> · {ledgerLabel}</Text>
       </Box>
 
       <Box marginTop={1}>

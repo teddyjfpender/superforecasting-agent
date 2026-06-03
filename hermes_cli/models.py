@@ -2212,7 +2212,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
             pass
         # Live failed (or no creds). Fall back to the docs-hosted manifest
         # — NOT the in-repo _PROVIDER_MODELS["nous"] snapshot — so newly
-        # added Portal models still surface without a Hermes release.
+        # added Portal models still surface without a Superforecasting Agent release.
         manifest_ids = get_curated_nous_model_ids()
         if manifest_ids:
             return manifest_ids
