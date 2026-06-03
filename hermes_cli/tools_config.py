@@ -1418,10 +1418,28 @@ def _toolset_has_keys(ts_key: str, config: dict = None) -> bool:
 
 # ─── Menu Helpers ─────────────────────────────────────────────────────────────
 
-def _prompt_choice(question: str, choices: list, default: int = 0) -> int:
-    """Single-select menu (arrow keys). Delegates to curses_radiolist."""
+def _prompt_choice(
+    question: str,
+    choices: list,
+    default: int = 0,
+    *,
+    cancel_returns: int | None = None,
+    raise_on_interrupt: bool = False,
+) -> int:
+    """Single-select menu (arrow keys). Delegates to curses_radiolist.
+
+    ``cancel_returns`` overrides what ESC/q returns (defaults to ``default``);
+    set it to a "Done"/exit index so cancelling a menu does not re-trigger the
+    default action and trap the user. ``raise_on_interrupt`` lets Ctrl+C abort.
+    """
     from hermes_cli.curses_ui import curses_radiolist
-    return curses_radiolist(question, choices, selected=default, cancel_returns=default)
+    return curses_radiolist(
+        question,
+        choices,
+        selected=default,
+        cancel_returns=default if cancel_returns is None else cancel_returns,
+        raise_on_interrupt=raise_on_interrupt,
+    )
 
 
 # ─── Token Estimation ────────────────────────────────────────────────────────
@@ -1520,6 +1538,7 @@ def _prompt_toolset_checklist(platform_label: str, enabled: Set[str], platform: 
         pre_selected,
         cancel_returns=pre_selected,
         status_fn=status_fn,
+        raise_on_interrupt=True,
     )
     return {effective[i][0] for i in chosen}
 
@@ -2866,7 +2885,15 @@ def tools_command(args=None, first_install: bool = False, config: dict = None):
     _done_idx = _reconfig_idx + (2 if _has_mcp else 1)
 
     while True:
-        idx = _prompt_choice("Select an option:", platform_choices, default=0)
+        # ESC/q exits to "Done" (not the default action) so cancelling the menu
+        # never re-opens the tool checklist and traps the user; Ctrl+C aborts.
+        idx = _prompt_choice(
+            "Select an option:",
+            platform_choices,
+            default=0,
+            cancel_returns=_done_idx,
+            raise_on_interrupt=True,
+        )
 
         # "Done" selected
         if idx == _done_idx:

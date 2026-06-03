@@ -39,6 +39,7 @@ def curses_checklist(
     *,
     cancel_returns: Set[int] | None = None,
     status_fn: Optional[Callable[[Set[int]], str]] = None,
+    raise_on_interrupt: bool = False,
 ) -> Set[int]:
     """Curses multi-select checklist. Returns set of selected indices.
 
@@ -50,6 +51,10 @@ def curses_checklist(
         status_fn: Optional callback ``f(chosen_indices) -> str`` whose return
             value is rendered on the bottom row of the terminal.  Use this for
             live aggregate info (e.g. estimated token counts).
+        raise_on_interrupt: When True, Ctrl+C propagates as ``KeyboardInterrupt``
+            so the caller can abort, instead of being swallowed into
+            ``cancel_returns`` (which can trap the user in a menu loop). Default
+            False preserves the legacy "Ctrl+C behaves like ESC" behaviour.
     """
     if cancel_returns is None:
         cancel_returns = set(selected)
@@ -151,15 +156,22 @@ def curses_checklist(
                 elif key in {27, ord("q")}:
                     result_holder[0] = cancel_returns
                     return
+                elif raise_on_interrupt and key == 3:  # ^C byte when ISIG is off
+                    raise KeyboardInterrupt
 
         curses.wrapper(_draw)
         flush_stdin()
         return result_holder[0] if result_holder[0] is not None else cancel_returns
 
     except KeyboardInterrupt:
+        if raise_on_interrupt:
+            raise
         return cancel_returns
     except Exception:
-        return _numbered_fallback(title, items, selected, cancel_returns, status_fn)
+        return _numbered_fallback(
+            title, items, selected, cancel_returns, status_fn,
+            raise_on_interrupt=raise_on_interrupt,
+        )
 
 
 def curses_radiolist(
@@ -169,6 +181,7 @@ def curses_radiolist(
     *,
     cancel_returns: int | None = None,
     description: str | None = None,
+    raise_on_interrupt: bool = False,
 ) -> int:
     """Curses single-select radio list. Returns the selected index.
 
@@ -180,6 +193,10 @@ def curses_radiolist(
         description: Optional multi-line text shown between the title and
             the item list.  Useful for context that should survive the
             curses screen clear.
+        raise_on_interrupt: When True, Ctrl+C propagates as ``KeyboardInterrupt``
+            so the caller can abort, instead of being swallowed into
+            ``cancel_returns`` (which can trap the user in a menu loop). Default
+            False preserves the legacy "Ctrl+C behaves like ESC" behaviour.
     """
     if cancel_returns is None:
         cancel_returns = selected
@@ -275,15 +292,22 @@ def curses_radiolist(
                 elif key in {27, ord("q")}:
                     result_holder[0] = cancel_returns
                     return
+                elif raise_on_interrupt and key == 3:  # ^C byte when ISIG is off
+                    raise KeyboardInterrupt
 
         curses.wrapper(_draw)
         flush_stdin()
         return result_holder[0] if result_holder[0] is not None else cancel_returns
 
     except KeyboardInterrupt:
+        if raise_on_interrupt:
+            raise
         return cancel_returns
     except Exception:
-        return _radio_numbered_fallback(title, items, selected, cancel_returns)
+        return _radio_numbered_fallback(
+            title, items, selected, cancel_returns,
+            raise_on_interrupt=raise_on_interrupt,
+        )
 
 
 def _radio_numbered_fallback(
@@ -291,6 +315,8 @@ def _radio_numbered_fallback(
     items: List[str],
     selected: int,
     cancel_returns: int,
+    *,
+    raise_on_interrupt: bool = False,
 ) -> int:
     """Text-based numbered fallback for radio selection."""
     print(color(f"\n  {title}", Colors.YELLOW))
@@ -308,7 +334,11 @@ def _radio_numbered_fallback(
         if 0 <= idx < len(items):
             return idx
         return selected
-    except (ValueError, KeyboardInterrupt, EOFError):
+    except KeyboardInterrupt:
+        if raise_on_interrupt:
+            raise
+        return cancel_returns
+    except (ValueError, EOFError):
         return cancel_returns
 
 
@@ -443,6 +473,8 @@ def _numbered_fallback(
     selected: Set[int],
     cancel_returns: Set[int],
     status_fn: Optional[Callable[[Set[int]], str]] = None,
+    *,
+    raise_on_interrupt: bool = False,
 ) -> Set[int]:
     """Text-based toggle fallback for terminals without curses."""
     chosen = set(selected)
@@ -465,7 +497,11 @@ def _numbered_fallback(
             idx = int(val) - 1
             if 0 <= idx < len(items):
                 chosen.symmetric_difference_update({idx})
-        except (ValueError, KeyboardInterrupt, EOFError):
+        except KeyboardInterrupt:
+            if raise_on_interrupt:
+                raise
+            return cancel_returns
+        except (ValueError, EOFError):
             return cancel_returns
         print()
 

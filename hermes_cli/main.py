@@ -1918,7 +1918,13 @@ def cmd_setup(args):
     """Interactive setup wizard."""
     from hermes_cli.setup import run_setup_wizard
 
-    run_setup_wizard(args)
+    try:
+        run_setup_wizard(args)
+    except KeyboardInterrupt:
+        # Ctrl+C from an interactive menu (curses widgets now propagate it
+        # instead of trapping the user) — exit cleanly, no traceback.
+        print("\nSetup cancelled. Re-run `superforecasting-agent setup` anytime.")
+        raise SystemExit(130)
 
 
 def cmd_postinstall(args):
@@ -12350,7 +12356,13 @@ Examples:
             _require_tty("tools")
             from hermes_cli.tools_config import tools_command
 
-            tools_command(args)
+            try:
+                tools_command(args)
+            except KeyboardInterrupt:
+                # The interactive menu now propagates Ctrl+C instead of trapping
+                # the user — exit cleanly, no traceback.
+                print("\nCancelled.")
+                raise SystemExit(130)
 
     tools_parser.set_defaults(func=cmd_tools)
 
