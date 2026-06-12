@@ -61,8 +61,12 @@ def test_launcher_missing_runtime_dependency_points_to_forecast_desk(monkeypatch
 
     assert exc.value.code == 1
     captured = capsys.readouterr()
-    assert "legacy `hermes` compatibility launcher" in captured.err
-    assert "Use `./forecast ...`, `./superforecasting-agent status`" in captured.err
+    # Since 52b980048 `./hermes` routes through superforecasting_agent.cli,
+    # which emits the fork-native compatibility-alias warning and the
+    # missing-runtime-dependency guidance.
+    assert "`hermes` is a compatibility alias" in captured.err
+    assert "needs optional CLI runtime" in captured.err
+    assert "forecast desk" in captured.err
     assert 'uv pip install -e ".[all,dev]"' in captured.err
     assert "Traceback" not in captured.err
 
@@ -86,7 +90,8 @@ def test_launcher_late_missing_runtime_dependency_points_to_forecast_desk(
 
     assert exc.value.code == 1
     captured = capsys.readouterr()
-    assert "legacy `hermes` compatibility launcher" in captured.err
-    assert "Use `./forecast ...`, `./superforecasting-agent status`" in captured.err
+    # Same fork-native guidance for late import failures inside hermes_cli.main.
+    assert "needs optional CLI runtime" in captured.err
+    assert "forecast desk" in captured.err
     assert 'uv pip install -e ".[all,dev]"' in captured.err
     assert "Traceback" not in captured.err

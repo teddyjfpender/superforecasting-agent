@@ -93,7 +93,7 @@ def test_prompt_toolset_checklist_passes_status_fn(monkeypatch):
 
     captured_kwargs = {}
 
-    def fake_checklist(title, items, selected, *, cancel_returns=None, status_fn=None):
+    def fake_checklist(title, items, selected, *, cancel_returns=None, status_fn=None, raise_on_interrupt=False):
         captured_kwargs["status_fn"] = status_fn
         captured_kwargs["title"] = title
         return selected  # Return pre-selected unchanged
@@ -116,7 +116,7 @@ def test_status_fn_returns_formatted_token_count(monkeypatch):
 
     captured = {}
 
-    def fake_checklist(title, items, selected, *, cancel_returns=None, status_fn=None):
+    def fake_checklist(title, items, selected, *, cancel_returns=None, status_fn=None, raise_on_interrupt=False):
         captured["status_fn"] = status_fn
         return selected
 
@@ -144,7 +144,7 @@ def test_status_fn_deduplicates_overlapping_tools(monkeypatch):
 
     captured = {}
 
-    def fake_checklist(title, items, selected, *, cancel_returns=None, status_fn=None):
+    def fake_checklist(title, items, selected, *, cancel_returns=None, status_fn=None, raise_on_interrupt=False):
         captured["status_fn"] = status_fn
         return selected
 

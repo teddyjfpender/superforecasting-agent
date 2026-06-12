@@ -191,7 +191,9 @@ class TestHandoffCommandRegistration:
         cmd = resolve_command("handoff")
         assert cmd is not None
         assert cmd.name == "handoff"
-        assert cmd.category == "Session"
+        # Fork change (606488c89): handoff was re-categorized from "Session"
+        # to "Compatibility" when the forecast-desk help took priority.
+        assert cmd.category == "Compatibility"
 
     def test_command_is_cli_only(self):
         """`/handoff` is initiated from the CLI; gateway shouldn't expose it."""

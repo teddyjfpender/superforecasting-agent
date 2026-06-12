@@ -1094,14 +1094,27 @@ class TestHermesHomeIsolation:
         assert "hermes_test" in hermes_home, "Should point to test temp dir"
 
     def test_get_hermes_home_fallback(self):
-        """Without HERMES_HOME set, falls back to the active OS home."""
+        """Without HERMES_HOME set, falls back to the active OS home.
+
+        Fork contract (hermes_constants._default_home_candidate): prefer the
+        native ``~/.superforecasting-agent`` home; an existing legacy
+        ``~/.hermes`` directory is only used when the native one is absent.
+        """
         from tools.tirith_security import _get_hermes_home
         with patch.dict(os.environ, {}, clear=True):
             # Remove HERMES_HOME entirely. With HOME also absent, expanduser
             # falls back to the account database; compute expected under the
             # same environment instead of after patch.dict restores HOME.
             os.environ.pop("HERMES_HOME", None)
-            expected = os.path.join(os.path.expanduser("~"), ".hermes")
+            os_home = os.path.expanduser("~")
+            native = os.path.join(os_home, ".superforecasting-agent")
+            legacy = os.path.join(os_home, ".hermes")
+            if os.path.isdir(native):
+                expected = native
+            elif os.path.isdir(legacy):
+                expected = legacy
+            else:
+                expected = native
             result = _get_hermes_home()
         assert result == expected
 
