@@ -303,6 +303,11 @@ class TestStdinHelpers:
         lockout (#17959). For interactive stdin → PTY mode is now the only
         supported path.
         """
+        # Real PTY spawn requires the optional ``pty`` extra; without it the
+        # registry falls back to pipe mode and the child exits immediately.
+        pytest.importorskip(
+            "ptyprocess", reason="PTY mode requires the optional ptyprocess package"
+        )
         session = registry.spawn_local(
             'python3 -c "import sys; print(sys.stdin.read().strip())"',
             cwd=str(tmp_path),

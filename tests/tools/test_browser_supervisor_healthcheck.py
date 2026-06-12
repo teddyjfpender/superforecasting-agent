@@ -12,6 +12,10 @@ from types import SimpleNamespace
 
 import pytest
 
+# browser_supervisor depends on the optional ``websockets`` package; skip
+# collection cleanly when it isn't installed (it is not a core dependency).
+pytest.importorskip("websockets", reason="websockets not installed")
+
 from tools import browser_supervisor as bs
 
 

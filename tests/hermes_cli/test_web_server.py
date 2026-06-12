@@ -2397,6 +2397,11 @@ class TestPtyWebSocket:
         assert exc.value.code == 4401
 
     def test_streams_child_stdout_to_client(self, monkeypatch):
+        # Real PTY spawn requires the optional ``pty`` extra (ptyprocess);
+        # without it /api/pty refuses and no byte frames ever arrive.
+        pytest.importorskip(
+            "ptyprocess", reason="PTY bridge requires the optional ptyprocess package"
+        )
         monkeypatch.setattr(
             self.ws_module,
             "_resolve_chat_argv",
@@ -2425,6 +2430,11 @@ class TestPtyWebSocket:
             assert b"hermes-ws-ok" in buf
 
     def test_client_input_reaches_child_stdin(self, monkeypatch):
+        # Real PTY spawn requires the optional ``pty`` extra (ptyprocess);
+        # without it /api/pty refuses and no byte frames ever arrive.
+        pytest.importorskip(
+            "ptyprocess", reason="PTY bridge requires the optional ptyprocess package"
+        )
         # ``cat`` echoes stdin back, so a write → read round-trip proves
         # the full duplex path.
         monkeypatch.setattr(
@@ -2447,6 +2457,11 @@ class TestPtyWebSocket:
             assert b"round-trip-payload" in buf
 
     def test_resize_escape_is_forwarded(self, monkeypatch):
+        # Real PTY spawn requires the optional ``pty`` extra (ptyprocess);
+        # without it /api/pty refuses and no byte frames ever arrive.
+        pytest.importorskip(
+            "ptyprocess", reason="PTY bridge requires the optional ptyprocess package"
+        )
         # Resize escape gets intercepted and applied via TIOCSWINSZ, then the
         # child reads the TTY ioctl directly. Avoid tput because CI may not set
         # TERM for non-interactive shells.

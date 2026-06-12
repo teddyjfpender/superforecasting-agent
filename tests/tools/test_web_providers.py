@@ -289,6 +289,11 @@ class TestUnconfiguredErrorEnvelopeParity:
             "TOOL_GATEWAY_DOMAIN",
         ):
             monkeypatch.delenv(k, raising=False)
+        # ddgs is a keyless backend gated only on package importability;
+        # force it unavailable so these tests model a truly unconfigured
+        # system even when the ddgs package happens to be installed.
+        from tools import web_tools
+        monkeypatch.setattr(web_tools, "_ddgs_package_importable", lambda: False)
 
     def test_unconfigured_search_emits_top_level_error(self, monkeypatch):
         """``web_search_tool`` with no creds returns ``{"error": "Error searching web: ..."}``

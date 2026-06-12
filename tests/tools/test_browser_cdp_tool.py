@@ -14,7 +14,12 @@ from typing import Any, Dict, List
 
 import pytest
 
-import websockets
+# ``websockets`` is an optional dependency (not in core install); skip this
+# module cleanly instead of erroring at collection when it is absent.
+websockets = pytest.importorskip("websockets", reason="websockets not installed")
+pytest.importorskip(
+    "websockets.asyncio.server", reason="websockets >= 13 asyncio API required"
+)
 from websockets.asyncio.server import serve
 
 from tools import browser_cdp_tool
