@@ -150,6 +150,19 @@ audit head moves.
 | #9f95f72b9 | Strip `api_messages` in thinking-signature recovery so the retry actually omits thinking blocks (our shallow `msg.copy()` made the bug live) | `81fdcfb84` |
 | #86e10dd87 | Route "thinking blocks cannot be modified" 400s to recovery | `428cc4f27` |
 | #f456f302d / #44267 | Refuse to write service definitions with a temp-dir agent home (regex matches all 3 home-alias env names) | `481ef8529` |
+| **Compressor SUMMARY_PREFIX chain (deferred 2026-06-12 → ported same day as one unit, oldest-first)** | | |
+| #020601d41 | Drop "resume exactly" directive from SUMMARY_PREFIX (latest-message-wins framing) | `114ee5904` |
+| #42bbd221e / #35344 | `_HISTORICAL_SUMMARY_PREFIXES` + renormalization; froze the FORK's shipped prefix generation (with MEMORY clause) in addition to upstream's pre-fork variant so saved sessions renormalize | `3cafbc538` |
+| #d5e2fbf24 | `HISTORICAL_*_HEADING` constants — frame compaction handoff as historical context; +fix-beyond-upstream: iterative-update prompt now uses the constants (upstream still references a section its template dropped) | `eff90b520` |
+| #8f8cad7ec / #41607 | Strengthen compression preamble (remove consistent-context carveout; topic-overlap neutralizer; STALE framing) | `9b6608e86` |
+| #acb2954d8 | Freeze carveout-era SUMMARY_PREFIX into the history list | `9733a7249` |
+| **MCP/gateway medium-value batch (2026-06-12)** | | |
+| #5affecb44 | Capability-gate tools/list for prompt-only MCP servers (+ping keepalive, list_changed guard) | `284370da0` |
+| #73dd58499 | Propagate agent home onto the MCP event loop via the contextvar override (alias-agnostic) | `d21efbb6a` |
+| #e71d674682 | 5-state MCP server status (connected/disabled/connecting/failed/configured) — no more false "failed" before startup. Consumer hunks (banner.py, ui-tui) NOT yet ported — additive keys, safe | `919e3a68b` |
+| #dca11b665 | Case-insensitive Windows location-var allowlist in `_build_safe_env` (Docker Desktop MCP launchers). The `mcp add -- argv` hermes_cli half NOT ported | `9aec125e0` |
+| #a942bfd9c | Reset `_last_flushed_db_idx` on cached-agent reuse (depth-0 only) | `170e7fa50` |
+| #13650ab7f | Audio attachment note clarification | `40d480883` |
 | #782681f90 | Atomic private (0600) writes for google_chat OAuth credentials | `302500df` |
 
 ### Already-have (subsumed; do not port)
@@ -164,15 +177,11 @@ audit head moves.
 
 ### Deferred (valuable; needs a focused pass or a prerequisite)
 
-- **Compressor SUMMARY_PREFIX modernization chain** — port as ONE unit,
-  oldest-first: `020601d41` → `42bbd221e` (#35344, `_HISTORICAL_SUMMARY_PREFIXES`
-  + renormalization) → `d5e2fbf24` (frame compaction handoff as historical
-  context) → `8f8cad7ec` (strengthen compression preamble) → `acb2954d8` (freeze
-  carveout-era prefix). Together they replace our fork-point-era "resume exactly"
-  SUMMARY_PREFIX — a known stale-task-hijack vector upstream — with
-  latest-message-wins framing. Attempted 2026-06-12; the two tail commits are
-  unportable without the #35344 foundation, so take the whole chain in a focused
-  pass.
+- **Remaining halves of two ported MCP commits** (owner-boundary, not
+  difficulty): `e71d674682`'s status-consumer hunks (`hermes_cli/banner.py`,
+  ui-tui branding/types) so not-yet-started MCP servers stop rendering as
+  "failed"; `dca11b665`'s `mcp add -- argv` passthrough half
+  (`hermes_cli/main.py`, `mcp_config.py`, `subcommands/mcp.py`).
 
 ### Skip (off-target for a forecasting CLI/TUI fork)
 
@@ -213,15 +222,14 @@ audit head moves.
   (dashboard/docker crash), `782681f90` (google_chat plugin). Details in the
   `security-triage-2026-05-30` memory.
 - `transcript-tail across resizes` (TUI) — flagged earlier, never SHA-pinned.
-- From the 2026-06-12 triage, assessed-but-not-ported medium-value candidates:
-  `5affecb44` (capability-gate `tools/list` for prompt-only MCP servers, +215
-  LOC), `73dd58499` (propagate HERMES_HOME onto MCP event loop), `ee1a744ac`
-  (demote non-coding skills to names-only), `e71d74682` (avoid false MCP
-  failed-startup status), `dca11b665` (preserve MCP stdio argv passthrough),
-  `a942bfd9c` (reset `_last_flushed_db_idx` on agent reuse), `13650ab7f`
-  (audio attachment note clarification).
-- `a4f179c50` (GPT/Codex patch-mode steering) — **skipped-absent 2026-06-12**:
-  no `agent/coding_context.py` / `_EDIT_FORMAT_GUIDANCE` in the fork.
+- `a4f179c50` (GPT/Codex patch-mode steering) and `ee1a744ac` (demote
+  non-coding skills to names-only) — **skipped-absent 2026-06-12**: both sit on
+  the coding-context posture chain (#43316 → #44387 → #44342); the fork has no
+  `agent/coding_context.py` / posture / `hidden_categories` machinery. Revisit
+  only if we ever import that feature family wholesale.
+- Pre-existing `tests/gateway` drift (not upstream ports): 7 tests monkeypatch
+  the no-longer-existing `gateway.run._env_path`; 3 message-wording assertions
+  stale post-rebrand ("Background research task started", pairing text).
 - Rebrand-drift cleanup (pre-existing, not upstream ports): `test_model_catalog`
   docs URL (`build_catalog()` emits `nousresearch.com`, committed json uses
   `teddyjfpender.github.io`); `test_auxiliary_client_azure_foundry` expects
