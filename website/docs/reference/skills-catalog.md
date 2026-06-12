@@ -116,7 +116,6 @@ If a skill is missing from this list but present in the repo, the catalog is reg
 | [`gif-search`](/user-guide/skills/bundled/media/media-gif-search) | Search/download GIFs from Tenor via curl + jq. | `media/gif-search` |
 | [`heartmula`](/user-guide/skills/bundled/media/media-heartmula) | HeartMuLa: Suno-like song generation from lyrics + tags. | `media/heartmula` |
 | [`songsee`](/user-guide/skills/bundled/media/media-songsee) | Audio spectrograms/features (mel, chroma, MFCC) via CLI. | `media/songsee` |
-| [`spotify`](/user-guide/skills/bundled/media/media-spotify) | Spotify: play, search, queue, manage playlists and devices. | `media/spotify` |
 | [`youtube-content`](/user-guide/skills/bundled/media/media-youtube-content) | YouTube transcripts to summaries, threads, blogs. | `media/youtube-content` |
 
 ## mlops

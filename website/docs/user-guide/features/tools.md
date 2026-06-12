@@ -54,7 +54,7 @@ forecasting work:
 
 It does not enable broad inherited support surfaces by default. Memory-provider tools,
 skills marketplace tools, image generation, delegation, messaging delivery,
-Home Assistant, Spotify, Discord administration, RL training, and other broad
+Home Assistant, Discord administration, RL training, and other broad
 integrations are opt-in.
 
 Legacy `hermes-*` platform presets remain available for existing configs and
@@ -138,7 +138,7 @@ superforecasting-agent desk --toolsets "forecast-desk,browser,mcp-market-data"
 Common inherited toolsets include `web`, `search`, `terminal`, `file`,
 `browser`, `vision`, `image_gen`, `skills`, `tts`, `todo`, `memory`,
 `session_search`, `cronjob`, `code_execution`, `delegation`, `clarify`,
-`homeassistant`, `messaging`, `spotify`, `discord`, `debugging`, `safe`, and
+`homeassistant`, `messaging`, `discord`, `debugging`, `safe`, and
 `rl`.
 
 See [Toolsets Reference](../../reference/toolsets-reference.md) for the full

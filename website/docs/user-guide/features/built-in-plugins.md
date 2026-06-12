@@ -63,11 +63,11 @@ The repo ships these bundled plugins under `plugins/`.
 | `disk-cleanup` | hooks + slash command | Keeps temporary forecast research artifacts, cron outputs, and test files from accumulating |
 | `observability/langfuse` | hooks | Traces model calls, tool calls, and usage so forecast-impacting runs can be audited outside the ledger |
 | `google_meet` | standalone | Captures meeting transcripts that can become evidence candidates after review |
+| `obsidian` | standalone | Publishes calibration lessons and question dossiers into an Obsidian vault; native note read/write/search |
 | `kanban/dashboard` | dashboard tab | Coordinates multi-worker forecast research and implementation tasks |
 | `image_gen/openai` | image backend | Inherited media backend; not part of default forecast probability work |
 | `image_gen/openai-codex` | image backend | Inherited media backend using Codex OAuth |
 | `image_gen/xai` | image backend | Inherited media backend using xAI |
-| `spotify` | backend tools | Inherited personal/media tooling; secondary unless a forecast workflow explicitly needs it |
 | `hermes-achievements` | hidden dashboard route | Inherited session-achievement dashboard; not calibration, scoring, or forecast performance |
 
 Memory providers (`plugins/memory/*`) and context engines (`plugins/context_engine/*`) are listed separately on [Memory Providers](./memory-providers). They are supporting recall/context systems, not durable forecast state.
@@ -206,9 +206,9 @@ superforecasting-agent plugins disable observability/langfuse
 
 **What it adds:**
 
-- headless browser participation in a Meet URL
-- live transcription through the configured STT provider
-- `meet_summarize`, `meet_speak`, and `meet_followup` tools
+- headless browser participation in a Meet URL (`meet_join`, `meet_leave`)
+- live caption scraping into a transcript (`meet_status`, `meet_transcript`)
+- realtime agent speech in the call via `meet_say` (join with `mode='realtime'`)
 - post-meeting artifacts under `~/.superforecasting-agent/cache/google_meet/<meeting_id>/`
 
 Legacy `~/.hermes/cache/google_meet/<meeting_id>/` remains a migration-compatible cache path.
@@ -227,6 +227,20 @@ Use meeting output as candidate evidence:
 forecast evidence add <id> --source "google-meet:<meeting-id>" --summary "..."
 forecast update <id>
 ```
+
+### obsidian
+
+`obsidian` makes an Obsidian vault the desk's publishing surface. The agent can read, write, append, and search vault notes natively (frontmatter, wikilinks, traversal-safe paths), and `obsidian_sync_learnings` publishes the ledger's learnings — one note per calibration lesson, one dossier per question (description, current probability, analyst-note timeline), plus a `Forecast Desk Index` — as a linked knowledge graph under `Forecasting/`. Syncs are idempotent: generated content lives between managed markers, so human annotations survive. The ledger DB stays the source of truth.
+
+**Setup:**
+
+```bash
+superforecasting-agent plugins enable obsidian
+# optional — defaults to ~/Documents/Obsidian Vault
+echo 'OBSIDIAN_VAULT_PATH="/path/to/vault"' >> ~/.superforecasting-agent/.env
+```
+
+See [Obsidian Vault Integration](./obsidian.md) for the full tool reference.
 
 Do not let a meeting summary update probability automatically. A reviewer should decide which transcript claims, timestamps, and speaker attributions belong in the ledger.
 

@@ -439,7 +439,6 @@ Enable/disable via `superforecasting-agent tools` (interactive) or `superforecas
 | `kanban` | Multi-agent work-queue tools (gated to workers) |
 | `debugging` | Extra introspection/debug tools (off by default) |
 | `safe` | Minimal, low-risk toolset for locked-down sessions |
-| `spotify` | Spotify playback and playlist control |
 | `homeassistant` | Smart home control (off by default) |
 | `discord` | Discord integration tools |
 | `discord_admin` | Discord admin/moderation tools |

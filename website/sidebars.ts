@@ -61,6 +61,7 @@ const sidebars: SidebarsConfig = {
             'user-guide/features/skins',
             'user-guide/features/plugins',
             'user-guide/features/built-in-plugins',
+            'user-guide/features/obsidian',
           ],
         },
         {
@@ -101,13 +102,6 @@ const sidebars: SidebarsConfig = {
             'user-guide/features/web-dashboard',
             'user-guide/features/extending-the-dashboard',
             'user-guide/features/subscription-proxy',
-          ],
-        },
-        {
-          type: 'category',
-          label: 'Advanced',
-          items: [
-            'user-guide/features/spotify',
           ],
         },
         {
@@ -256,7 +250,6 @@ const sidebars: SidebarsConfig = {
                     'user-guide/skills/bundled/media/media-gif-search',
                     'user-guide/skills/bundled/media/media-heartmula',
                     'user-guide/skills/bundled/media/media-songsee',
-                    'user-guide/skills/bundled/media/media-spotify',
                     'user-guide/skills/bundled/media/media-youtube-content',
                   ],
                 },

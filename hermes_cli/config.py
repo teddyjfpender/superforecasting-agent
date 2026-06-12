@@ -132,7 +132,7 @@ _ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # IMPORTANT: ``SUPERFORECASTING_AGENT_*`` / ``FORECAST_*`` / ``HERMES_*``
 # overall is NOT blocked. Many legitimate integration credentials follow
 # those prefixes (HERMES_GEMINI_CLIENT_ID, HERMES_LANGFUSE_PUBLIC_KEY,
-# HERMES_SPOTIFY_CLIENT_ID, HERMES_QWEN_BASE_URL, ...). The denylist is
+# HERMES_QWEN_BASE_URL, ...). The denylist is
 # name-by-name on purpose so the gate stays narrow and doesn't
 # accidentally break provider setup wizards.
 #
@@ -156,7 +156,7 @@ _ENV_VAR_NAME_DENYLIST: frozenset[str] = frozenset({
     # Agent runtime location — never via dashboard env writer.
     # NOT a SUPERFORECASTING_AGENT_*/FORECAST_*/HERMES_* blanket:
     # integration credentials (HERMES_GEMINI_*, HERMES_LANGFUSE_*,
-    # HERMES_SPOTIFY_*, ...) ARE allowed. Only these runtime-location
+    # ...) ARE allowed. Only these runtime-location
     # names are blocked, and we block all three alias prefixes.
     "SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME",
     "SUPERFORECASTING_AGENT_PROFILE", "FORECAST_PROFILE", "HERMES_PROFILE",

@@ -162,7 +162,6 @@ audio's energy.
 - **Skills:** `kanban-worker`, `songsee` (audio visualization), plus one of:
   - `songwriting-and-ai-music` — when commissioning lyrics + Suno prompts
   - `heartmula` — when generating music with the open-source local model
-  - `spotify` — when sourcing existing tracks
 - **Outputs:** `audio/track.mp3`, `audio/beats.json`, optional
   `audio/track-spectrogram.png`
 

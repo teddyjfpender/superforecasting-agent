@@ -98,7 +98,7 @@ enabled.
 
 The default intentionally does not include generic memory-provider tools,
 skills marketplace tools, image generation, delegation, messaging delivery,
-Home Assistant, Spotify, Discord administration, RL training, or other broad
+Home Assistant, Discord administration, RL training, or other broad
 assistant integrations. Enable those explicitly when a forecast workflow
 actually needs them.
 
@@ -131,7 +131,6 @@ actually needs them.
 | `kanban` | `kanban_*` tools | Multi-agent board coordination for dispatcher/worker profiles. |
 | `discord` | `discord` | Discord text/embed/DM actions for gateway use. |
 | `discord_admin` | `discord_admin` | Discord moderation and server administration. |
-| `spotify` | `spotify_*` tools | Spotify playback, queue, search, playlist, album, and library control. |
 | `x_search` | `x_search` | Search X posts and threads through xAI credentials; off by default. |
 | `moa` | `mixture_of_agents` | Multi-model consensus. |
 | `yuanbao` | `yb_*` tools | Yuanbao DM/group/sticker actions. |

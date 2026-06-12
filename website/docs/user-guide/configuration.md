@@ -127,7 +127,7 @@ agent:
 
 Broad inherited assistant capabilities are opt-in: generic memory tools,
 skills marketplace tools, image/video generation, delegation, outbound
-messaging, Home Assistant, Spotify, Discord administration, RL tools, and
+messaging, Home Assistant, Discord administration, RL tools, and
 wildcard `all` tool exposure.
 
 Secondary runtimes use matching forecast-scoped presets by default. For

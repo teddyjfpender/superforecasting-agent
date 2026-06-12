@@ -406,10 +406,9 @@ superforecasting-agent auth remove openrouter 2                          # Remov
 superforecasting-agent auth reset openrouter                             # Clear cooldowns
 superforecasting-agent auth status anthropic                             # Show auth status for a provider
 superforecasting-agent auth logout anthropic                             # Log out and clear stored auth state
-superforecasting-agent auth spotify                                      # Authenticate Superforecasting Agent with Spotify via PKCE
 ```
 
-Subcommands: `add`, `list`, `remove`, `reset`, `status`, `logout`, `spotify`. When called with no subcommand, launches the interactive management wizard.
+Subcommands: `add`, `list`, `remove`, `reset`, `status`, `logout`. When called with no subcommand, launches the interactive management wizard.
 
 ## `superforecasting-agent status`
 

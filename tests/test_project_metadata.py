@@ -2278,7 +2278,6 @@ def test_runtime_command_guidance_is_forecast_native_where_not_compatibility():
         root / "plugins" / "kanban" / "systemd" / "hermes-kanban-dispatcher.service",
         root / "plugins" / "memory" / "honcho" / "cli.py",
         root / "plugins" / "memory" / "supermemory" / "__init__.py",
-        root / "plugins" / "spotify" / "__init__.py",
         root / "plugins" / "web" / "xai" / "provider.py",
         root / "tools" / "mcp_oauth_manager.py",
         root / "tools" / "process_registry.py",
@@ -2294,7 +2293,6 @@ def test_runtime_command_guidance_is_forecast_native_where_not_compatibility():
     assert "superforecasting-agent mcp remove" in text
     assert "superforecasting-agent desk --model" in text
     assert "superforecasting-agent skills install <url>" in text
-    assert "superforecasting-agent auth spotify" in text
     assert "superforecasting-agent memory setup" in text
     assert "superforecasting-agent update --gateway" in text
     assert "superforecasting-agent kanban show" in text
@@ -2348,9 +2346,6 @@ def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
         "tools/terminal_tool.py",
         "tools/transcription_tools.py",
         "plugins/memory/honcho/cli.py",
-        "plugins/spotify/__init__.py",
-        "plugins/spotify/client.py",
-        "plugins/spotify/plugin.yaml",
         "plugins/video_gen/fal/__init__.py",
         "plugins/web/firecrawl/provider.py",
         "plugins/web/xai/provider.py",
@@ -2376,7 +2371,6 @@ def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
         (root / rel_path).read_text(encoding="utf-8") for rel_path in checked_paths
     )
 
-    assert "superforecasting-agent auth spotify" in text
     assert "superforecasting-agent tools" in text
     assert "superforecasting-agent setup" in text
     assert "superforecasting-agent model" in text
@@ -2391,13 +2385,11 @@ def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     assert "superforecasting-agent meet setup" in text
     assert "forecast-meet-node" in text
     assert "active agent-home .env" in text
-    assert "active agent-home auth store" in text
     assert "active Superforecasting Agent home cache" in text
 
     assert "Run: hermes config set memory.provider honcho" not in text
     assert "Running 'hermes memory setup'" not in text
     assert "redirects to hermes memory setup" not in text
-    assert "hermes auth spotify" not in text
     assert "Run `hermes tools`" not in text
     assert "run `hermes tools`" not in text
     assert "via `hermes tools`" not in text
@@ -3391,18 +3383,7 @@ def test_skill_examples_are_forecast_native():
 def test_media_skill_docs_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [
-        root / "skills" / "media" / "spotify" / "SKILL.md",
         root / "skills" / "media" / "gif-search" / "SKILL.md",
-        (
-            root
-            / "website"
-            / "docs"
-            / "user-guide"
-            / "skills"
-            / "bundled"
-            / "media"
-            / "media-spotify.md"
-        ),
         (
             root
             / "website"
@@ -3418,10 +3399,8 @@ def test_media_skill_docs_are_forecast_native():
 
     assert "author: Superforecasting Agent" in text
     assert "| Author | Superforecasting Agent |" in text
-    assert "inherited Spotify toolset" in text
     assert "author: Hermes Agent" not in text
     assert "| Author | Hermes Agent |" not in text
-    assert "Hermes Spotify toolset" not in text
 
 
 def test_skill_author_metadata_is_forecast_native():

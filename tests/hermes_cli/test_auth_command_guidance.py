@@ -13,8 +13,8 @@ def test_auth_status_missing_provider_uses_forecast_native_example():
         auth_status_command(SimpleNamespace(provider=""))
 
     message = str(exc.value)
-    assert "`superforecasting-agent auth status spotify`" in message
-    assert "`hermes auth status spotify`" not in message
+    assert "`superforecasting-agent auth status xai-oauth`" in message
+    assert "`hermes auth status xai-oauth`" not in message
 
 
 def test_auth_add_unsupported_type_uses_forecast_native_command(monkeypatch, tmp_path):
@@ -55,10 +55,8 @@ def test_removed_login_command_points_to_fork_native_replacements(capsys):
 def test_auth_docs_urls_are_repo_local():
     import hermes_cli.auth as auth
 
-    assert auth.SPOTIFY_DOCS_URL == "website/docs/user-guide/features/spotify.md"
     assert auth.XAI_OAUTH_DOCS_URL == "website/docs/guides/xai-grok-oauth.md"
     assert auth.OAUTH_OVER_SSH_DOCS_URL == "website/docs/guides/oauth-over-ssh.md"
-    assert "hermes-agent.nousresearch.com" not in auth.SPOTIFY_DOCS_URL
     assert "hermes-agent.nousresearch.com" not in auth.XAI_OAUTH_DOCS_URL
     assert "hermes-agent.nousresearch.com" not in auth.OAUTH_OVER_SSH_DOCS_URL
 

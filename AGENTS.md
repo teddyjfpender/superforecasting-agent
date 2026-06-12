@@ -78,8 +78,8 @@ superforecasting-agent/
 │   ├── hermes-achievements/  # Gamified achievement tracking
 │   ├── observability/    # Metrics / traces / logs plugin
 │   ├── image_gen/        # Image-generation providers
-│   └── <others>/         # disk-cleanup, example-dashboard, google_meet, platforms,
-│                         #   spotify, strike-freedom-cockpit, ...
+│   └── <others>/         # disk-cleanup, example-dashboard, google_meet, obsidian,
+│                         #   platforms, strike-freedom-cockpit, ...
 ├── optional-skills/      # Heavier/niche skills shipped but NOT active by default
 ├── skills/               # Built-in skills bundled with the repo
 ├── ui-tui/               # Ink (React) terminal UI — `superforecasting-agent tui`
@@ -757,7 +757,7 @@ Current toolset keys: `browser`, `clarify`, `code_execution`, `cronjob`,
 `debugging`, `delegation`, `discord`, `discord_admin`, `feishu_doc`,
 `feishu_drive`, `file`, `homeassistant`, `image_gen`, `kanban`, `memory`,
 `messaging`, `moa`, `rl`, `safe`, `search`, `session_search`, `skills`,
-`spotify`, `terminal`, `todo`, `tts`, `video`, `vision`, `web`, `yuanbao`.
+`terminal`, `todo`, `tts`, `video`, `vision`, `web`, `yuanbao`.
 
 Enable/disable per platform via `superforecasting-agent tools` (the curses UI)
 or the `tools.<platform>.enabled` / `tools.<platform>.disabled` lists in

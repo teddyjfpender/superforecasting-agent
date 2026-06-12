@@ -191,19 +191,19 @@ def test_get_platform_tools_x_search_respects_explicit_config(monkeypatch):
         "hermes_cli.tools_config._xai_credentials_present", lambda: True
     )
 
-    # User explicitly opted into spotify but not x_search via `hermes tools`.
-    config = {"platform_toolsets": {"cli": ["hermes-cli", "spotify"]}}
+    # User explicitly opted into homeassistant but not x_search via `hermes tools`.
+    config = {"platform_toolsets": {"cli": ["hermes-cli", "homeassistant"]}}
     enabled = _get_platform_tools(config, "cli")
     assert "x_search" not in enabled
-    assert "spotify" in enabled
+    assert "homeassistant" in enabled
 
 
 def test_get_platform_tools_expands_composite_when_mixed_with_configurable():
-    """``[hermes-cli, spotify]`` (composite + configurable) must keep the full
-    ``hermes-cli`` toolset alongside the explicit Spotify opt-in. The
-    has_explicit_config branch used to drop ``hermes-cli`` on the floor,
-    leaving sessions with only ``{spotify, kanban}``."""
-    config = {"platform_toolsets": {"cli": ["hermes-cli", "spotify"]}}
+    """``[hermes-cli, homeassistant]`` (composite + configurable) must keep the
+    full ``hermes-cli`` toolset alongside the explicit Home Assistant opt-in.
+    The has_explicit_config branch used to drop ``hermes-cli`` on the floor,
+    leaving sessions with only ``{homeassistant, kanban}``."""
+    config = {"platform_toolsets": {"cli": ["hermes-cli", "homeassistant"]}}
 
     enabled = _get_platform_tools(config, "cli", include_default_mcp_servers=False)
 
@@ -211,8 +211,8 @@ def test_get_platform_tools_expands_composite_when_mixed_with_configurable():
     for ts in ("terminal", "file", "web", "browser", "memory", "delegation",
                "code_execution", "todo", "session_search", "skills"):
         assert ts in enabled, f"{ts} should be enabled when hermes-cli is listed"
-    # User explicitly opted into Spotify — must survive _DEFAULT_OFF_TOOLSETS subtraction.
-    assert "spotify" in enabled
+    # User explicitly opted into Home Assistant — must survive _DEFAULT_OFF_TOOLSETS subtraction.
+    assert "homeassistant" in enabled
 
 
 def test_get_platform_tools_legacy_hermes_cli_composite_stays_broad():
@@ -1068,10 +1068,10 @@ def test_get_platform_tools_feishu_tools_not_on_other_platforms():
 
 
 def test_get_effective_configurable_toolsets_dedupes_bundled_plugins():
-    """Bundled plugins (plugins/spotify) share their toolset key with the
-    built-in CONFIGURABLE_TOOLSETS entry. The effective list must not list
-    them twice — otherwise `hermes tools` → "reconfigure existing" shows
-    the same toolset two rows in a row.
+    """Bundled plugins that share their toolset key with a built-in
+    CONFIGURABLE_TOOLSETS entry must not be listed twice — otherwise
+    `hermes tools` → "reconfigure existing" shows the same toolset two
+    rows in a row.
     """
     from hermes_cli.tools_config import _get_effective_configurable_toolsets
 
@@ -1081,11 +1081,6 @@ def test_get_effective_configurable_toolsets_dedupes_bundled_plugins():
         f"duplicate toolset keys in effective list: "
         f"{[k for k in keys if keys.count(k) > 1]}"
     )
-    # Spotify specifically — the bug that motivated the dedupe.
-    spotify_rows = [t for t in all_ts if t[0] == "spotify"]
-    assert len(spotify_rows) == 1, spotify_rows
-    # Built-in label wins over the plugin label.
-    assert spotify_rows[0][1] == "🎵 Spotify"
 
 
 @pytest.mark.parametrize("provider,config_key,expected", [
@@ -1134,21 +1129,6 @@ def test_reconfigure_provider_runs_post_setup_for_env_var_providers(
     _reconfigure_provider(provider, {})
 
     assert called == [post_setup_key]
-
-
-def test_spotify_post_setup_retry_guidance_is_fork_native(monkeypatch, capsys):
-    import hermes_cli.auth as auth_mod
-
-    def _abort(_args):
-        raise SystemExit("cancelled")
-
-    monkeypatch.setattr(auth_mod, "login_spotify_command", _abort)
-
-    _run_post_setup("spotify")
-
-    out = capsys.readouterr().out
-    assert "superforecasting-agent auth spotify" in out
-    assert "hermes auth spotify" not in out
 
 
 def test_tools_command_guidance_is_fork_native(monkeypatch, capsys, tmp_path):

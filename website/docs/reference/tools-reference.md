@@ -281,20 +281,6 @@ Registered on the legacy runtime `hermes-discord` platform toolset. Moderation a
 |------|-------------|----------------------|
 | `discord_admin` | Manage a Discord server via the REST API: list guilds/channels/roles, create/edit/delete channels, manage role grants, timeouts, kicks, and bans. | `DISCORD_BOT_TOKEN` + bot permissions |
 
-## `spotify` toolset
-
-Registered by the bundled `spotify` plugin. Requires an OAuth token; run `superforecasting-agent spotify setup` once to authorize.
-
-| Tool | Description | Requires environment |
-|------|-------------|----------------------|
-| `spotify_playback` | Control Spotify playback, inspect the active playback state, or fetch recently played tracks. | Spotify OAuth |
-| `spotify_devices` | List Spotify Connect devices or transfer playback to a different device. | Spotify OAuth |
-| `spotify_queue` | Inspect the user's Spotify queue or add an item to it. | Spotify OAuth |
-| `spotify_search` | Search the Spotify catalog for tracks, albums, artists, playlists, shows, or episodes. | Spotify OAuth |
-| `spotify_playlists` | List, inspect, create, update, and modify Spotify playlists. | Spotify OAuth |
-| `spotify_albums` | Fetch Spotify album metadata or album tracks. | Spotify OAuth |
-| `spotify_library` | List, save, or remove the user's saved Spotify tracks or albums. | Spotify OAuth |
-
 ## `hermes-yuanbao` toolset
 
 Registered only on the legacy runtime `hermes-yuanbao` platform toolset. Yuanbao is Tencent's chat app; these tools drive its DM/group/sticker APIs.

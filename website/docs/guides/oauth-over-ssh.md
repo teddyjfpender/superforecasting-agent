@@ -25,7 +25,7 @@ superforecasting-agent auth add xai-oauth --no-browser
 #   the request to the remote listener, login completes.
 ```
 
-Port `56121` is what xAI OAuth uses. For Spotify, replace it with `43827`. Superforecasting Agent prints the exact port it bound to on the `Waiting for callback on ...` line — copy it from there.
+Port `56121` is what xAI OAuth uses. Superforecasting Agent prints the exact port it bound to on the `Waiting for callback on ...` line — copy it from there.
 
 ## Browser-only remote (Cloud Shell / Codespaces / EC2 Instance Connect)
 
@@ -49,7 +49,6 @@ Superforecasting Agent uses the **same PKCE verifier, state and nonce** for both
 | Provider | Loopback port | Tunnel needed? |
 |----------|---------------|----------------|
 | `xai-oauth` (Grok SuperGrok) | `56121` | Yes, when the forecast runtime is remote |
-| Spotify | `43827` | Yes, when the forecast runtime is remote |
 | `anthropic` (Claude Pro/Max) | n/a | No — paste-the-code flow |
 | `openai-codex` (ChatGPT Plus/Pro) | n/a | No — device code flow |
 | `minimax`, `nous-portal` | n/a | No — device code flow |
@@ -58,7 +57,7 @@ If your provider isn't in the table, you don't need a tunnel.
 
 ## Why the listener can't just bind 0.0.0.0
 
-xAI and Spotify both validate the `redirect_uri` parameter against an allowlist. Both require the loopback form (`http://127.0.0.1:<exact-port>/callback`). Binding the listener to `0.0.0.0` or a different port would cause the auth server to reject the request as a redirect_uri mismatch. The SSH tunnel keeps the loopback URI intact end-to-end.
+xAI validates the `redirect_uri` parameter against an allowlist and requires the loopback form (`http://127.0.0.1:<exact-port>/callback`). Binding the listener to `0.0.0.0` or a different port would cause the auth server to reject the request as a redirect_uri mismatch. The SSH tunnel keeps the loopback URI intact end-to-end.
 
 ## Step-by-step: single SSH hop
 
@@ -67,9 +66,6 @@ xAI and Spotify both validate the `redirect_uri` parameter against an allowlist.
 ```bash
 # xAI Grok OAuth (port 56121)
 ssh -N -L 56121:127.0.0.1:56121 user@remote-host
-
-# Or for Spotify (port 43827)
-ssh -N -L 43827:127.0.0.1:43827 user@remote-host
 ```
 
 `-N` means "don't open a remote shell, just hold the tunnel open." Keep this terminal running for the duration of the login.
@@ -79,8 +75,6 @@ ssh -N -L 43827:127.0.0.1:43827 user@remote-host
 ```bash
 ssh user@remote-host
 superforecasting-agent auth add xai-oauth --no-browser
-# or for Spotify:
-# superforecasting-agent auth add spotify --no-browser
 ```
 
 Superforecasting Agent detects the SSH session, skips the browser auto-open, and prints an authorize URL plus a `Waiting for callback on http://127.0.0.1:<port>/callback` line.
@@ -150,5 +144,4 @@ The tokens are written under the Linux user that ran `superforecasting-agent aut
 ## See Also
 
 - [xAI Grok OAuth](./xai-grok-oauth.md)
-- [Spotify (`Running over SSH`)](../user-guide/features/spotify.md#running-over-ssh--in-a-headless-environment)
 - [SSH `-J` / ProxyJump (man page)](https://man.openbsd.org/ssh#J)

@@ -3,7 +3,7 @@
 **Release Date:** April 30, 2026
 **Since v0.11.0:** 1,096 commits · 550 merged PRs · 1,270 files changed · 217,776 insertions · 213 community contributors (including co-authors)
 
-> The Curator release — Hermes Agent now maintains itself. An autonomous background Curator grades, prunes, and consolidates your skill library on its own schedule. The self-improvement loop that reviews what to save got a substantial upgrade. Four new inference providers, a 18th messaging platform, a 19th via Teams plugin, native Spotify + Google Meet integrations, ComfyUI and TouchDesigner-MCP moved from optional to bundled-by-default, and a ~57% cut to visible TUI cold start.
+> The Curator release — Hermes Agent now maintains itself. An autonomous background Curator grades, prunes, and consolidates your skill library on its own schedule. The self-improvement loop that reviews what to save got a substantial upgrade. Four new inference providers, a 18th messaging platform, a 19th via Teams plugin, native Google Meet integration, ComfyUI and TouchDesigner-MCP moved from optional to bundled-by-default, and a ~57% cut to visible TUI cold start.
 
 ---
 
@@ -22,8 +22,6 @@
 - **Pluggable gateway platforms + Microsoft Teams** — the gateway is now a plugin host. Drop-in messaging adapters live outside the core, and Microsoft Teams is the first plugin-shipped platform. (Salvage of #17664.) ([#17751](https://github.com/NousResearch/hermes-agent/pull/17751), [#17828](https://github.com/NousResearch/hermes-agent/pull/17828))
 
 - **Tencent 元宝 (Yuanbao) — 18th messaging platform** — native gateway adapter with text + media delivery. ([#16298](https://github.com/NousResearch/hermes-agent/pull/16298), [#17424](https://github.com/NousResearch/hermes-agent/pull/17424))
-
-- **Spotify — native tools + bundled skill + wizard** — 7 tools (play, search, queue, playlists, devices) behind PKCE OAuth, interactive setup wizard, bundled skill, surfacing in `hermes tools`, cron usage documented. ([#15121](https://github.com/NousResearch/hermes-agent/pull/15121), [#15130](https://github.com/NousResearch/hermes-agent/pull/15130), [#15154](https://github.com/NousResearch/hermes-agent/pull/15154), [#15180](https://github.com/NousResearch/hermes-agent/pull/15180))
 
 - **Google Meet plugin** — join calls, transcribe, speak, follow up. Realtime OpenAI transport + Node bot server, full pipeline bundled as a plugin. ([#16364](https://github.com/NousResearch/hermes-agent/pull/16364))
 
@@ -227,7 +225,7 @@
 - **`pre_gateway_dispatch` hook** ([#15050](https://github.com/NousResearch/hermes-agent/pull/15050))
 - **`pre_approval_request` + `post_approval_response` hooks** ([#16776](https://github.com/NousResearch/hermes-agent/pull/16776))
 - **`duration_ms` on `post_tool_call`** (inspired by Claude Code 2.1.119) ([#15429](https://github.com/NousResearch/hermes-agent/pull/15429))
-- **Bundled plugins**: Spotify ([#15174](https://github.com/NousResearch/hermes-agent/pull/15174)), Google Meet ([#16364](https://github.com/NousResearch/hermes-agent/pull/16364)), Langfuse observability ([#16917](https://github.com/NousResearch/hermes-agent/pull/16917)), hermes-achievements ([#17754](https://github.com/NousResearch/hermes-agent/pull/17754))
+- **Bundled plugins**: Google Meet ([#16364](https://github.com/NousResearch/hermes-agent/pull/16364)), Langfuse observability ([#16917](https://github.com/NousResearch/hermes-agent/pull/16917)), hermes-achievements ([#17754](https://github.com/NousResearch/hermes-agent/pull/17754))
 - **Page-scoped plugin slots for built-in dashboard pages** ([#15658](https://github.com/NousResearch/hermes-agent/pull/15658))
 - **Declarative plugin installation for NixOS module** (@alt-glitch) ([#15953](https://github.com/NousResearch/hermes-agent/pull/15953))
 
