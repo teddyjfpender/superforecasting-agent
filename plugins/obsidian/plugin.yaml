@@ -1,0 +1,15 @@
+name: obsidian
+version: 0.1.0
+description: "Native Obsidian vault integration — read, write, append, and search notes, plus sync the forecast desk's learnings (calibration lessons, analyst notes, question dossiers) into the vault as linked markdown notes. Vault path comes from OBSIDIAN_VAULT_PATH (falls back to ~/Documents/Obsidian Vault). Generated notes keep agent content inside managed markers so human edits outside them survive re-syncs."
+author: teddyjfpender
+kind: standalone
+platforms:
+  - linux
+  - macos
+  - windows
+provides_tools:
+  - obsidian_read_note
+  - obsidian_write_note
+  - obsidian_append_note
+  - obsidian_search
+  - obsidian_sync_learnings
