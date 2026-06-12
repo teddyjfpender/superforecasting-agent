@@ -287,7 +287,7 @@ class TestSteerCommandRegistry:
         assert cmd is not None
         assert cmd.name == "steer"
         assert cmd.category == "Session"
-        assert cmd.args_hint == "<prompt>"
+        assert cmd.args_hint == "<forecast note>"
 
     def test_steer_in_bypass_set(self):
         """When the agent is running, /steer MUST bypass the Level-1

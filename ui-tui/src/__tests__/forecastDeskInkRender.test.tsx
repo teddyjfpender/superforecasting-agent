@@ -312,7 +312,7 @@ describe('forecast desk Ink render', () => {
     expect(compact).toContain(`views${viewHotkey('book')}book`)
     expect(compact).toContain(`${viewHotkey('evidence')}evidence`)
     expect(compact).toContain('Ctrl+Ffind')
-    expect(compact).toContain('2active·1toreview·1alert')
+    expect(compact).toContain('2forecasts·1toreview·1alert')
     expect(compact).toContain('Triage')
     expect(compact).toContain('/forecastreadiness')
     expect(compact).toContain('Watchlist')

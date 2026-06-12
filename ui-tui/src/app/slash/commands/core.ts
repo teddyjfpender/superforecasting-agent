@@ -461,6 +461,8 @@ export const coreCommands: SlashCommand[] = [
             ['/review [args]', 'run forecast review workflow'],
             ['/alerts [args]', 'show forecast alerts'],
             ['/calibration [args]', 'show calibration analytics; defaults to --by-origin'],
+            ['/panel [subcommand]', 'multi-perspective panel: perspectives, record, aggregate, show'],
+            ['/bayes [args]', 'auditable Bayesian scratchpad (priors, LRs, pooling)'],
             ['/performance [args]', 'show recent backtest performance'],
             ['/readiness [args]', 'show forecast evidence claim gaps'],
             ['/doctor [args]', 'run combined pilot/readiness/operator checks'],
@@ -854,6 +856,18 @@ export const coreCommands: SlashCommand[] = [
     help: 'show forecast calibration analytics',
     name: 'calibration',
     run: (arg, ctx) => runForecastCommand(ctx, `calibration ${arg.trim() || '--by-origin'}`.trim())
+  },
+
+  {
+    help: 'run/aggregate/inspect a multi-perspective forecast panel',
+    name: 'panel',
+    run: (arg, ctx) => runForecastCommand(ctx, `panel ${arg.trim()}`.trim())
+  },
+
+  {
+    help: 'run the auditable Bayesian scratchpad (forecast bayes)',
+    name: 'bayes',
+    run: (arg, ctx) => runForecastCommand(ctx, `bayes ${arg.trim()}`.trim())
   },
 
   {

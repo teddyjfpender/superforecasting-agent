@@ -512,7 +512,7 @@ describe('createSlashHandler', () => {
     await vi.waitFor(() => {
       expect(ctx.transcript.sys).toHaveBeenCalledWith('created forecast question fq_123')
       expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 8 })
-      expect(getUiState().forecastDeskStatus).toBe('2 active  ·  1 to review  ·  1 alert')
+      expect(getUiState().forecastDeskStatus).toBe('2 forecasts  ·  1 to review  ·  1 alert')
     })
   })
 
