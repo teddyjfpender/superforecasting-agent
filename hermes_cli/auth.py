@@ -2932,6 +2932,16 @@ def _xai_validate_inference_base_url(value: str, *, fallback: str) -> str:
     return candidate
 
 
+def _oauth_pkce_code_verifier(length: int = 64) -> str:
+    raw = base64.urlsafe_b64encode(os.urandom(length)).decode("ascii")
+    return raw.rstrip("=")[:128]
+
+
+def _oauth_pkce_code_challenge(code_verifier: str) -> str:
+    digest = hashlib.sha256(code_verifier.encode("utf-8")).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
 def _xai_oauth_discovery(timeout_seconds: float = 15.0) -> Dict[str, str]:
     try:
         response = httpx.get(
