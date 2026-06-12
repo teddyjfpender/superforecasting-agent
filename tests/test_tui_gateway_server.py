@@ -96,6 +96,15 @@ def test_forecast_command_accepts_argv_without_shell_splitting(tmp_path):
                     question.id,
                     "--probability",
                     "0.66",
+                    # Live updates hard-require structured reasoning (gate
+                    # default flipped ON); satisfy it so the test stays about
+                    # argv passthrough, not the policy.
+                    "--reason-up",
+                    "shelter inflation sticky",
+                    "--reason-down",
+                    "energy base effects",
+                    "--change-my-mind",
+                    "next CPI print below 0.2% m/m",
                     "--rationale",
                     "May CPI (all-items) and BLS's release shifted higher",
                 ]
@@ -125,6 +134,11 @@ def test_forecast_command_tolerates_raw_update_rationale_tail(tmp_path):
             "params": {
                 "arg": (
                     f"--db {db_path} update {question.id} --probability 0.67 "
+                    # Reasons satisfy the live structured-reasoning gate; they
+                    # sit BEFORE --rationale so the unquoted tail under test
+                    # still ends the command line.
+                    '--reason-up "shelter sticky" --reason-down "base effects" '
+                    '--change-my-mind "sub-0.2 print" '
                     "--rationale May CPI (all-items) and BLS's release shifted higher"
                 )
             },
