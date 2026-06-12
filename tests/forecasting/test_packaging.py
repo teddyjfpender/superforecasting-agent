@@ -16,7 +16,9 @@ def test_pyproject_exposes_forecast_first_console_scripts():
     assert scripts["superforecasting-agent"] == "superforecasting_agent.cli:main"
     assert scripts["superforecasting-agent-acp"] == "acp_adapter.entry:main"
     assert scripts["superforecast-acp"] == "acp_adapter.entry:main"
-    assert scripts["hermes"] == "hermes_cli.main:main"
+    # 52b980048 routed the legacy `hermes` alias through the fork-native shim
+    # (alias warning + missing-runtime guidance) instead of hermes_cli directly.
+    assert scripts["hermes"] == "superforecasting_agent.cli:main"
     assert scripts["hermes-agent"] == "superforecasting_agent.cli:main"
     assert scripts["hermes-acp"] == "acp_adapter.entry:main"
 

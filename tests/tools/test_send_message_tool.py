@@ -2499,6 +2499,7 @@ class TestSendTelegramThreadNotFoundRetry:
     def test_text_send_retries_without_thread_id_on_thread_not_found(self):
         """When thread is not found, the text send should retry without
         message_thread_id."""
+        pytest.importorskip("telegram")  # _send_telegram imports Bot for real
         call_args = []
 
         async def fake_retry(bot, *, chat_id, text, parse_mode, **kwargs):
@@ -2532,6 +2533,7 @@ class TestSendTelegramThreadNotFoundRetry:
 
     def test_disable_web_page_preview_not_leaked_to_media_sends(self):
         """disable_web_page_preview should only appear in text send, not media sends."""
+        pytest.importorskip("telegram")  # _send_telegram imports Bot for real
         text_kwargs_seen = []
         media_kwargs_seen = []
 
