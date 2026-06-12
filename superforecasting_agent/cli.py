@@ -8,17 +8,52 @@ import sys
 from functools import lru_cache
 from typing import Sequence
 
-from forecasting.cli import cmd_forecast, main as forecast_main, register_cli
-
 _PROFILE_FLAGS = {"-p", "--profile"}
+_VERSION_FLAGS = {"--version", "-V"}
 _LEGACY_ENTRYPOINTS = {"hermes", "hermes-agent"}
 _TUI_ENV_VARS = ("SUPERFORECASTING_AGENT_TUI", "FORECAST_TUI", "HERMES_TUI")
 _ENV_TRUE_VALUES = {"1", "true", "yes", "on"}
 _legacy_entrypoint_notice_shown = False
 
 
+# ``forecasting.cli`` re-exports (``cmd_forecast``, ``forecast_main``,
+# ``register_cli``, ``main_forecast``) are provided lazily via module
+# ``__getattr__`` below so that fast paths (``--version``) never pay the
+# import cost. ``main()`` resolves ``forecast_main`` through the module
+# dict first, so tests can still monkeypatch ``fork_cli.forecast_main``.
+_LAZY_FORECAST_EXPORTS = {
+    "cmd_forecast": "cmd_forecast",
+    "forecast_main": "main",
+    "main_forecast": "main",
+    "register_cli": "register_cli",
+}
+
+
+def __getattr__(name: str):
+    target = _LAZY_FORECAST_EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import forecasting.cli as _forecasting_cli
+
+    value = getattr(_forecasting_cli, target)
+    globals()[name] = value
+    return value
+
+
+def _resolve_forecast_main():
+    """Return ``forecast_main`` honoring monkeypatched module attributes."""
+    fn = globals().get("forecast_main")
+    if fn is None:
+        from forecasting.cli import main as fn  # type: ignore[no-redef]
+
+        globals()["forecast_main"] = fn
+    return fn
+
+
 @lru_cache(maxsize=1)
 def _forecast_command_names() -> frozenset[str]:
+    from forecasting.cli import register_cli
+
     parser = argparse.ArgumentParser(prog="superforecasting-agent", add_help=False)
     subparsers = parser.add_subparsers(dest="_forecast_root")
     forecast_parser = register_cli(subparsers)
@@ -169,6 +204,53 @@ def _exit_with_missing_runtime_dependency(exc: ModuleNotFoundError) -> None:
     raise SystemExit(1) from exc
 
 
+def _print_version() -> None:
+    """Print version info without importing the heavy CLI runtime.
+
+    Mirrors ``hermes_cli.main.cmd_version`` output. ``hermes_cli``'s package
+    ``__init__`` is intentionally light (version constants only), so this
+    path skips ``hermes_cli.main`` / ``forecasting.cli`` entirely.
+    """
+
+    from pathlib import Path
+
+    import hermes_cli
+
+    project_root = Path(hermes_cli.__file__).resolve().parent.parent
+    print(
+        f"Superforecasting Agent v{hermes_cli.__version__} "
+        f"({hermes_cli.__release_date__})"
+    )
+    print(f"Project: {project_root}")
+    print(f"Python: {sys.version.split()[0]}")
+    # Metadata lookup (~2ms) instead of ``import openai`` (~800ms).
+    try:
+        from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+        try:
+            print(f"OpenAI SDK: {_pkg_version('openai')}")
+        except PackageNotFoundError:
+            print("OpenAI SDK: Not installed")
+    except ImportError:
+        print("OpenAI SDK: Not installed")
+    # Update status, same as cmd_version (best effort, never fatal).
+    try:
+        from hermes_cli.banner import check_for_updates
+        from hermes_cli.config import recommended_update_command
+
+        behind = check_for_updates()
+        if behind and behind > 0:
+            commits_word = "commit" if behind == 1 else "commits"
+            print(
+                f"Update available: {behind} {commits_word} behind — "
+                f"run '{recommended_update_command()}'"
+            )
+        elif behind == 0:
+            print("Up to date")
+    except Exception:
+        pass
+
+
 def _run_inherited_runtime(argv: Sequence[str]) -> None:
     try:
         from hermes_cli.main import main as inherited_main
@@ -216,6 +298,11 @@ def main(argv: list[str] | None = None) -> None:
 
     _warn_legacy_entrypoint_if_needed(argv is not None)
     raw_argv = list(sys.argv[1:] if argv is None else argv)
+    # Fast path: ``--version`` / ``-V`` short-circuits before any heavy
+    # import (forecasting.cli parser build, hermes_cli.main runtime).
+    if len(raw_argv) == 1 and raw_argv[0] in _VERSION_FLAGS:
+        _print_version()
+        return
     forecast_candidate_argv, profile_name = _strip_profile_args(raw_argv)
     tui_shorthand = _tui_shorthand_argv(raw_argv)
     if tui_shorthand is not None:
@@ -228,11 +315,9 @@ def main(argv: list[str] | None = None) -> None:
     if normalized_forecast_argv is not None:
         _apply_profile(profile_name)
         normalized_forecast_argv = _hoist_forecast_global_args(normalized_forecast_argv)
-        forecast_main(normalized_forecast_argv, prog="superforecasting-agent")
+        _resolve_forecast_main()(normalized_forecast_argv, prog="superforecasting-agent")
         return
     _run_inherited_runtime(raw_argv)
 
-
-main_forecast = forecast_main
 
 __all__ = ["cmd_forecast", "forecast_main", "main", "main_forecast", "register_cli"]

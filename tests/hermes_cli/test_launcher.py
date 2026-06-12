@@ -46,6 +46,11 @@ def test_launcher_delegates_to_argparse_entrypoint(monkeypatch):
 
 def test_launcher_missing_runtime_dependency_points_to_forecast_desk(monkeypatch, capsys):
     launcher_path = Path(__file__).resolve().parents[2] / "hermes"
+    # The compatibility-alias warning is one-shot per process; reset it so
+    # this test is order-independent under xdist.
+    import superforecasting_agent.cli as fork_cli
+
+    monkeypatch.setattr(fork_cli, "_legacy_entrypoint_notice_shown", False)
     original_import = __import__
 
     def fail_import(name, *args, **kwargs):

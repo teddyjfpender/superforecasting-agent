@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import superforecasting_agent.cli as fork_cli
@@ -56,3 +57,37 @@ def test_source_tree_superforecasting_launcher_renders_forecast_help():
     assert result.returncode == 0, result.stderr
     assert "usage: superforecasting-agent" in result.stdout
     assert "Superforecasting Agent: create, update, review" in result.stdout
+
+
+def test_version_fast_path_skips_heavy_imports():
+    """`superforecasting-agent --version` short-circuits in the entry shim:
+    it must print version info without importing forecasting.cli (parser
+    build) or hermes_cli.main (inherited runtime)."""
+    root = Path(__file__).resolve().parents[1]
+    probe = (
+        "import sys\n"
+        "from superforecasting_agent.cli import main\n"
+        "main(['--version'])\n"
+        "assert 'forecasting.cli' not in sys.modules, 'forecasting.cli imported'\n"
+        "assert 'hermes_cli.main' not in sys.modules, 'hermes_cli.main imported'\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith("Superforecasting Agent v")
+    assert "Python:" in result.stdout
+
+
+def test_version_short_flag_matches_long_flag(capsys):
+    fork_cli.main(["-V"])
+    short = capsys.readouterr().out
+    fork_cli.main(["--version"])
+    long = capsys.readouterr().out
+    assert short.splitlines()[0].startswith("Superforecasting Agent v")
+    assert short.splitlines()[0] == long.splitlines()[0]
