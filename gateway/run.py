@@ -7850,7 +7850,11 @@ class GatewayRunner:
                 _note = (
                     f"[The user sent an audio file attachment: '{_display}'. "
                     f"It is saved at: {_agent_path}. "
-                    f"Ask the user what they'd like you to do with it, or pass the path to a transcription or media tool.]"
+                    f"Its content is not inlined here. If the user's request involves "
+                    f"what the audio contains, transcribe or process it yourself — for "
+                    f"example by passing the path to a transcription or media tool — "
+                    f"instead of asking the user to describe it. Only ask what to do "
+                    f"with it if their intent is genuinely unclear.]"
                 )
                 message_text = f"{_note}\n\n{message_text}"
 
