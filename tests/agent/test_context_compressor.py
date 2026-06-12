@@ -1008,8 +1008,8 @@ class TestCompressWithClient:
         """When the summary lands as standalone role='user' (e.g. head ends
         with assistant/tool), the message body must include the explicit
         '--- END OF CONTEXT SUMMARY ---' marker. Without it, weak models
-        read the verbatim past user request quoted in '## Active Task' as
-        fresh input (#11475, #14521).
+        read the verbatim past user request quoted in the historical task
+        snapshot as fresh input (#11475, #14521).
         """
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]

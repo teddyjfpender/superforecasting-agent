@@ -34,6 +34,12 @@ from agent.redact import redact_sensitive_text
 
 logger = logging.getLogger(__name__)
 
+HISTORICAL_TASK_HEADING = "## Historical Task Snapshot"
+HISTORICAL_IN_PROGRESS_HEADING = "## Historical In-Progress State"
+HISTORICAL_PENDING_ASKS_HEADING = "## Historical Pending User Asks"
+HISTORICAL_REMAINING_WORK_HEADING = "## Historical Remaining Work"
+
+
 SUMMARY_PREFIX = (
     "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted "
     "into the summary below. This is a handoff from a previous context "
@@ -43,12 +49,14 @@ SUMMARY_PREFIX = (
     "Respond ONLY to the latest user message that appears AFTER this "
     "summary — that message is the single source of truth for what to do "
     "right now. "
-    "If the latest user message is consistent with the '## Active Task' "
+    f"If the latest user message is consistent with the '{HISTORICAL_TASK_HEADING}' "
     "section, you may use the summary as background. If the latest user "
     "message contradicts, supersedes, changes topic from, or in any way "
-    "diverges from '## Active Task' / '## In Progress' / '## Pending User "
-    "Asks' / '## Remaining Work', the latest message WINS — discard those "
-    "stale items entirely and do not 'wrap up the old task first'. "
+    f"diverges from '{HISTORICAL_TASK_HEADING}' / "
+    f"'{HISTORICAL_IN_PROGRESS_HEADING}' / "
+    f"'{HISTORICAL_PENDING_ASKS_HEADING}' / "
+    f"'{HISTORICAL_REMAINING_WORK_HEADING}', the latest message WINS — "
+    "discard those stale items entirely and do not 'wrap up the old task first'. "
     "Reverse signals in the latest message (e.g. 'stop', 'undo', 'roll "
     "back', 'just verify', 'don't do that anymore', 'never mind', a new "
     "topic) must immediately end any in-flight work described in the "
@@ -1014,7 +1022,7 @@ class ContextCompressor(ContextEngine):
         )
 
         # Shared structured template (used by both paths).
-        _template_sections = f"""## Active Task
+        _template_sections = f"""{HISTORICAL_TASK_HEADING}
 [THE SINGLE MOST IMPORTANT FIELD. Copy the user's most recent request or
 task assignment verbatim — the exact words they used. If multiple tasks
 were requested and only some are done, list only the ones NOT yet completed.
@@ -1050,7 +1058,7 @@ Be specific with file paths, commands, line numbers, and results.]
 - Any running processes or servers
 - Environment details that matter]
 
-## In Progress
+{HISTORICAL_IN_PROGRESS_HEADING}
 [Work currently underway — what was being done when compaction fired]
 
 ## Blocked
@@ -1062,13 +1070,13 @@ Be specific with file paths, commands, line numbers, and results.]
 ## Resolved Questions
 [Questions the user asked that were ALREADY answered — include the answer so it is not repeated]
 
-## Pending User Asks
+{HISTORICAL_PENDING_ASKS_HEADING}
 [Questions or requests from the user that have NOT yet been answered or fulfilled. If none, write "None."]
 
 ## Relevant Files
 [Files read, modified, or created — with brief note on each]
 
-## Remaining Work
+{HISTORICAL_REMAINING_WORK_HEADING}
 [What remains to be done — framed as context, not instructions]
 
 ## Critical Context
@@ -1090,7 +1098,7 @@ PREVIOUS SUMMARY:
 NEW TURNS TO INCORPORATE:
 {content_to_summarize}
 
-Update the summary using this exact structure. PRESERVE all existing information that is still relevant. ADD new completed actions to the numbered list (continue numbering). Move items from "In Progress" to "Completed Actions" when done. Move answered questions to "Resolved Questions". Update "Active State" to reflect current state. Remove information only if it is clearly obsolete. CRITICAL: Update "## Active Task" to reflect the user's most recent unfulfilled request — this is the most important field for task continuity.
+Update the summary using this exact structure. PRESERVE all existing information that is still relevant. ADD new completed actions to the numbered list (continue numbering). Move items from "{HISTORICAL_IN_PROGRESS_HEADING}" to "Completed Actions" when done. Move answered questions to "Resolved Questions". Update "Active State" to reflect current state. Remove information only if it is clearly obsolete. CRITICAL: Update "{HISTORICAL_TASK_HEADING}" to reflect the user's most recent unfulfilled request — this is the most important field for task continuity.
 
 {_template_sections}"""
         else:
@@ -1789,8 +1797,8 @@ This compaction should PRIORITISE preserving all information related to the focu
                 _merge_summary_into_tail = True
 
         # When the summary lands as a standalone role="user" message,
-        # weak models read the verbatim "## Active Task" quote of a past
-        # user request as fresh input (#11475, #14521). Append the explicit
+        # weak models read the verbatim historical-task-snapshot quote of a
+        # past user request as fresh input (#11475, #14521). Append the explicit
         # end marker — the same one used in the merge-into-tail path — so
         # the model has a clear "summary above, not new input" signal.
         if not _merge_summary_into_tail and summary_role == "user":
