@@ -598,15 +598,28 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
     }
   }, [leftRows, lensId, factorLensId, items])
 
-  useEffect(() => {
-    detailScrollRef.current?.scrollTo(0)
-  }, [cursor])
-
   const currentRow = leftRows[cursor] ?? null
   const cursorThesis = currentRow?.kind === 'thesis' ? currentRow.thesis : null
   const cursorFactor = currentRow?.kind === 'factor' ? currentRow.factor : null
   const selected = currentRow?.kind === 'forecast' ? currentRow.item : null
   const selectedId = selected?.id ?? null
+
+  // Reset the detail pane to the top whenever the SELECTED ENTITY changes —
+  // keyed on identity, not the cursor index: lens toggles and list reorders
+  // can put a different entity under the same index, which kept the previous
+  // entity's scroll offset (detail "sometimes" opened mid-scroll).
+  const detailIdentity =
+    currentRow?.kind === 'forecast'
+      ? currentRow.item.id
+      : currentRow?.kind === 'thesis'
+        ? `thesis:${currentRow.thesis.id}`
+        : currentRow?.kind === 'factor'
+          ? `factor:${currentRow.factor.id}`
+          : (currentRow?.kind ?? null)
+
+  useEffect(() => {
+    detailScrollRef.current?.scrollTo(0)
+  }, [detailIdentity])
 
   useEffect(() => {
     if (!selectedId) {

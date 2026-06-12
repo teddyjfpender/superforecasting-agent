@@ -772,6 +772,24 @@ function renderNodeToOutput(
 
         const atBottom = sticky || (grew && scrollTopBeforeFollow >= prevMaxScroll)
 
+        // Viewport shrink (composer grew a wrapped line, a status rule
+        // appeared): keep the BOTTOM edge stable when the user was reading
+        // the tail — advance scrollTop by the shrink so the same line stays
+        // at the bottom edge instead of the chat bar sliding over the last
+        // transcript lines. Only when the bottom edge was within a line of
+        // the content end; mid-history reading stays top-stable.
+        const viewportShrink = Math.max(0, prevInnerHeight - innerHeight)
+
+        if (
+          !atBottom &&
+          viewportShrink > 0 &&
+          scrollHeight >= prevScrollHeight &&
+          scrollTopBeforeFollow + prevInnerHeight >= prevScrollHeight - 1 &&
+          (node.pendingScrollDelta ?? 0) >= 0
+        ) {
+          node.scrollTop = Math.min(maxScroll, scrollTopBeforeFollow + viewportShrink)
+        }
+
         if (atBottom && (node.pendingScrollDelta ?? 0) >= 0) {
           node.scrollTop = maxScroll
           node.pendingScrollDelta = undefined

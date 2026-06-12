@@ -201,6 +201,12 @@ export function CalibrationView({ gw, onClose, t }: CalibrationViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gw])
 
+  // Start each load (open or refresh) reading from the top — the ScrollBox
+  // otherwise keeps the previous visit's offset.
+  useEffect(() => {
+    scrollRef.current?.scrollTo(0)
+  }, [data])
+
   useEffect(() => {
     // Drives OverlayScrollbar reflow detection (content height settles async).
     const id = setInterval(() => setNow(value => value + 1), 500)
