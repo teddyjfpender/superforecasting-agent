@@ -3030,6 +3030,136 @@ class ForecastLedger:
         data["metadata"] = json_loads(data["metadata"], {})
         return data
 
+    # ── Component track record (measured "weight by track record") ──────
+    def component_track_record(
+        self,
+        *,
+        forecast_origin: str | None = "live",
+        min_count: int | None = None,
+        shrink_n0: float | None = None,
+        edge_scale: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """Measure each ensemble component's and panel perspective's Brier edge
+        over the committed aggregate across resolved binary questions, and map
+        it to an ADVISORY recommended weight (see :mod:`forecasting.track_record`
+        for the shrinkage/clipping gates).
+
+        Pairing rule — one observation per (question, component): the latest
+        matching-origin snapshot that carries ``ensemble_components`` supplies
+        the ensemble pairs (component probability vs that snapshot's committed
+        probability); the latest panel run supplies the perspective pairs
+        (estimate probability vs that run's aggregate). Non-binary questions
+        and non-numeric payloads are skipped — the math is only proper for
+        binary Brier.
+        """
+        from forecasting.ensembles import _component_rows
+        from forecasting.track_record import (
+            DEFAULT_EDGE_SCALE,
+            DEFAULT_MIN_COUNT,
+            DEFAULT_SHRINK_N0,
+            ComponentObservation,
+            summarize_components,
+        )
+
+        observations: list[ComponentObservation] = []
+        for question in self.list_questions(status="resolved"):
+            if question.outcome_space.type != "binary":
+                continue
+            resolution = self.get_latest_resolution(question.id, confirmed_only=True)
+            if resolution is None:
+                continue
+
+            def _brier(probability: Any) -> float | None:
+                try:
+                    payload = self._score_forecast_payload(
+                        float(probability), resolution.outcome, question.outcome_space
+                    )
+                except (TypeError, ValueError, ValidationError):
+                    return None
+                value = payload.get("brier_score")
+                return float(value) if isinstance(value, (int, float)) else None
+
+            # Ensemble components: latest matching-origin snapshot that has them.
+            snapshots = [
+                snap
+                for snap in self.list_snapshots(question.id)
+                if forecast_origin is None or snap.forecast_origin == forecast_origin
+            ]
+            for snapshot in reversed(snapshots):
+                rows = _component_rows(
+                    snapshot.ensemble_components
+                    if isinstance(snapshot.ensemble_components, dict)
+                    else {}
+                )
+                if not rows:
+                    continue
+                aggregate_brier = _brier(snapshot.probability_or_distribution)
+                if aggregate_brier is None:
+                    continue
+                for row in rows:
+                    name = str(row.get("name") or "").strip()
+                    component_brier = _brier(row.get("probability"))
+                    if not name or component_brier is None:
+                        continue
+                    observations.append(
+                        ComponentObservation(
+                            name=name,
+                            kind="ensemble",
+                            question_id=question.id,
+                            component_brier=component_brier,
+                            aggregate_brier=aggregate_brier,
+                        )
+                    )
+                break  # one snapshot per question — newest with components
+
+            # Panel perspectives: latest run, paired against its own aggregate.
+            runs = self.list_panel_runs(question.id, limit=1)
+            if runs:
+                run = runs[0]
+                aggregate_brier = _brier(run.get("aggregate_probability"))
+                if aggregate_brier is not None:
+                    for estimate in run.get("estimates", []):
+                        perspective = str(estimate.get("perspective") or "").strip()
+                        component_brier = _brier(estimate.get("probability"))
+                        if not perspective or component_brier is None:
+                            continue
+                        observations.append(
+                            ComponentObservation(
+                                name=perspective,
+                                kind="panel",
+                                question_id=question.id,
+                                component_brier=component_brier,
+                                aggregate_brier=aggregate_brier,
+                            )
+                        )
+
+        records = summarize_components(
+            observations,
+            min_count=min_count if min_count is not None else DEFAULT_MIN_COUNT,
+            shrink_n0=shrink_n0 if shrink_n0 is not None else DEFAULT_SHRINK_N0,
+            edge_scale=edge_scale if edge_scale is not None else DEFAULT_EDGE_SCALE,
+        )
+        return [record.to_dict() for record in records]
+
+    def recommended_component_weights(
+        self,
+        *,
+        kind: str = "panel",
+        forecast_origin: str | None = "live",
+        min_count: int | None = None,
+    ) -> dict[str, float]:
+        """``{name: weight}`` for measured components only — advisory, never
+        silently applied; callers opt in (e.g. ``forecast panel record
+        --track-record-weights``)."""
+        records = self.component_track_record(
+            forecast_origin=forecast_origin, min_count=min_count
+        )
+        return {
+            row["name"]: float(row["recommended_weight"])
+            for row in records
+            if row["kind"] == kind and row["status"] == "measured"
+        }
+
     # ── Analyst notes (time-series desk write-ups) ──────────────────────
     def add_analyst_note(
         self,

@@ -1601,6 +1601,14 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         default="manual",
     )
     panel_record_parser.add_argument("--snapshot-id")
+    panel_record_parser.add_argument(
+        "--track-record-weights", action="store_true",
+        help=(
+            "Weight perspectives by their measured Brier edge over the committed "
+            "aggregate (resolved questions only; advisory weights from `forecast "
+            "track-record`). Estimates that already carry an explicit weight keep it."
+        ),
+    )
     panel_record_parser.set_defaults(_forecast_handler=_cmd_panel_record)
 
     panel_show_parser = panel_sub.add_parser(
@@ -1925,6 +1933,31 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "--recency-halflife", type=float, dest="recency_halflife_days", help="Bias view: recency half-life (days)"
     )
     calibration_parser.set_defaults(_forecast_handler=_cmd_calibration)
+
+    track_record_parser = forecast_sub.add_parser(
+        "track-record",
+        help=(
+            "Measured Brier edge of each ensemble component / panel perspective "
+            "over the committed aggregate, with advisory weights"
+        ),
+    )
+    track_record_parser.add_argument(
+        "--kind", choices=["all", "ensemble", "panel"], default="all",
+        help="Restrict to ensemble components or panel perspectives",
+    )
+    track_record_parser.add_argument(
+        "--origin",
+        dest="forecast_origin",
+        choices=["live", "backtest", "imported_baseline", "any"],
+        default="live",
+        help="Which snapshots count toward the record (default: live; 'any' = all origins)",
+    )
+    track_record_parser.add_argument(
+        "--min-count", type=int, default=None,
+        help="Observations required before a weight is recommended (default 5)",
+    )
+    track_record_parser.add_argument("--json", action="store_true")
+    track_record_parser.set_defaults(_forecast_handler=_cmd_track_record)
 
     errors_parser = forecast_sub.add_parser("errors", help="Show domain error profile summary")
     errors_parser.add_argument("--domain")
@@ -7856,6 +7889,23 @@ def _cmd_panel_record(args: argparse.Namespace) -> None:
     if isinstance(data, dict) and "estimates" in data:
         data = data["estimates"]
     ledger = _ledger(args)
+    if getattr(args, "track_record_weights", False) and isinstance(data, list):
+        weights = ledger.recommended_component_weights(kind="panel")
+        applied = []
+        for row in data:
+            if not isinstance(row, dict) or "weight" in row:
+                continue
+            weight = weights.get(str(row.get("perspective", "")).strip())
+            if weight is not None:
+                row["weight"] = weight
+                applied.append(f"{row['perspective']}={weight:.2f}")
+        if applied:
+            print("track-record weights applied: " + ", ".join(applied))
+        else:
+            print(
+                "track-record weights: none applied (no measured perspectives yet "
+                "— see `forecast track-record`)"
+            )
     record = ledger.record_panel_run(
         question_id=args.question_id,
         estimates=data,
@@ -8096,6 +8146,37 @@ def _print_calibration_bias(args: argparse.Namespace) -> None:
         else:
             note = (rep.get("advisory_text") or "")[:70]
         print(f"{scope:<22} {rep['status']:<20} {rep['ess']:>6.1f} {rep['n']:>4} {sce:>9} {ci:>18}  {note}")
+
+
+def _cmd_track_record(args: argparse.Namespace) -> None:
+    origin = None if args.forecast_origin == "any" else args.forecast_origin
+    records = _ledger(args).component_track_record(
+        forecast_origin=origin,
+        min_count=args.min_count,
+    )
+    if args.kind != "all":
+        records = [row for row in records if row["kind"] == args.kind]
+    if args.json:
+        print(json.dumps(records, indent=2, sort_keys=True))
+        return
+    if not records:
+        print(
+            "No component track record yet — it accrues as questions whose "
+            "snapshots carry ensemble_components (or panel runs) resolve and score."
+        )
+        return
+    print(f"{'kind':<9} {'component':<16} {'n':>3} {'comp_brier':>10} {'agg_brier':>10} {'edge':>8} {'shrunk':>8} {'weight':>7}  status")
+    for row in records:
+        print(
+            f"{row['kind']:<9} {row['name']:<16} {row['count']:>3} "
+            f"{row['component_brier_mean']:>10.4f} {row['aggregate_brier_mean']:>10.4f} "
+            f"{row['edge_mean']:>+8.4f} {row['edge_shrunk']:>+8.4f} "
+            f"{row['recommended_weight']:>7.2f}  {row['status']}"
+        )
+    print(
+        "\nedge > 0 means the component beat the committed aggregate. Weights are "
+        "advisory — apply with `forecast panel record --track-record-weights`."
+    )
 
 
 def _cmd_calibration(args: argparse.Namespace) -> None:

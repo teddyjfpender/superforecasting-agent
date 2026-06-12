@@ -21,12 +21,20 @@ def run_due_reviews(
     auto_score: bool = False,
     auto_postmortem: bool = False,
     thesis_aggregate: bool = False,
+    synthesize_lessons: bool | None = None,
 ) -> str:
     """Run due forecast schedule rows and return a concise alert report.
 
     With ``thesis_aggregate`` (or ``FORECAST_THESIS_AGGREGATE``), a trailing
     phase re-aggregates every active thesis AFTER the review sweep — so theses +
     their entity suitabilities lag the members' fresh runs automatically.
+
+    ``synthesize_lessons`` closes the calibration learning loop on a cadence:
+    ``True`` runs :meth:`ForecastLedger.synthesize_bias_lessons` every sweep,
+    ``False`` never, and the default ``None`` runs it exactly when this sweep
+    minted new score records or postmortems (resolutions accrued, so the bias
+    measurement has fresh data). Safe to run eagerly — synthesis is heavily
+    gated internally (ESS, CI, FDR, shrinkage) and emits nothing on thin data.
     """
 
     ledger = ForecastLedger(db_path)
@@ -41,9 +49,9 @@ def run_due_reviews(
             alert_rows.append(alert)
 
     sections: list[str] = []
+    score_events = [alert for alert in alert_rows if alert.reason.startswith("score_created:")]
+    postmortem_events = [alert for alert in alert_rows if alert.reason.startswith("postmortem_created:")]
     if results and alert_rows:
-        score_events = [alert for alert in alert_rows if alert.reason.startswith("score_created:")]
-        postmortem_events = [alert for alert in alert_rows if alert.reason.startswith("postmortem_created:")]
         learning_review_events = [
             alert for alert in alert_rows if is_learning_review_reason(alert.reason)
         ]
@@ -89,6 +97,40 @@ def run_due_reviews(
                 )
             sections.append("\n".join(lines) + "\n")
 
+    # Trailing lesson-synthesis phase: when this sweep minted scores or
+    # postmortems (or the caller forced it), re-measure signed calibration
+    # bias and update the lesson set. Internally gated — emits nothing on
+    # thin/noisy data — so the cadence can be eager without over-biasing.
+    run_synthesis = (
+        synthesize_lessons
+        if synthesize_lessons is not None
+        else bool(score_events or postmortem_events)
+    )
+    if run_synthesis:
+        try:
+            synth_results = ledger.synthesize_bias_lessons(now=now)
+        except Exception as exc:  # never break the cron sweep on synthesis
+            sections.append(f"Lesson synthesis\nERROR: {exc}\n")
+        else:
+            acted = [
+                row
+                for row in synth_results
+                if (row.get("action") or {}).get("written")
+                or (row.get("action") or {}).get("retired")
+            ]
+            if acted:
+                lines = ["Lesson synthesis", f"scopes_measured: {len(synth_results)}", ""]
+                for row in acted:
+                    scope_label = row.get("scope_ref") or row.get("scope_type") or "global"
+                    action = row.get("action") or {}
+                    bits = []
+                    if action.get("written"):
+                        bits.append(f"lesson {action.get('lesson_status', 'written')}")
+                    if action.get("retired"):
+                        bits.append(f"retired {len(action['retired'])}")
+                    lines.append(f"- {scope_label}: {', '.join(bits)}")
+                sections.append("\n".join(lines) + "\n")
+
     return "\n".join(sections)
 
 
@@ -99,14 +141,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--auto-score", action="store_true")
     parser.add_argument("--auto-postmortem", action="store_true")
     parser.add_argument("--thesis-aggregate", action="store_true")
+    parser.add_argument(
+        "--synthesize-lessons", action="store_true",
+        help="Force calibration-lesson synthesis every sweep (default: runs when new scores/postmortems accrue)",
+    )
+    parser.add_argument(
+        "--no-synthesize-lessons", action="store_true",
+        help="Never run lesson synthesis from this cron sweep",
+    )
     args = parser.parse_args(argv)
     db_path = args.db or os.getenv("FORECAST_LEDGER_DB") or None
+    synthesize: bool | None = None
+    if args.no_synthesize_lessons or _env_flag("FORECAST_NO_LESSON_SYNTHESIS"):
+        synthesize = False
+    elif args.synthesize_lessons or _env_flag("FORECAST_SYNTHESIZE_LESSONS"):
+        synthesize = True
     text = run_due_reviews(
         db_path=db_path,
         now=args.now,
         auto_score=args.auto_score or _env_flag("FORECAST_AUTO_SCORE"),
         auto_postmortem=args.auto_postmortem or _env_flag("FORECAST_AUTO_POSTMORTEM"),
         thesis_aggregate=args.thesis_aggregate or _env_flag("FORECAST_THESIS_AGGREGATE"),
+        synthesize_lessons=synthesize,
     )
     if text:
         print(text, end="")

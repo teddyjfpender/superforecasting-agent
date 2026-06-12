@@ -179,6 +179,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "show_panel",
                     "list_panel",
                     "panel_perspectives",
+                    "component_track_record",
                     "link_forecasts",
                     "list_links",
                     "unlink_forecasts",
@@ -1788,6 +1789,26 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 now=args.get("now"),
             )
             return tool_result(success=True, alerts=[alert.__dict__ for alert in alerts])
+
+        if action == "component_track_record":
+            origin = args.get("forecast_origin", "live")
+            records = ledger.component_track_record(
+                forecast_origin=None if origin in (None, "any") else origin,
+                min_count=args.get("min_count"),
+            )
+            kind = args.get("kind")
+            if kind in ("ensemble", "panel"):
+                records = [row for row in records if row["kind"] == kind]
+            return tool_result(
+                success=True,
+                components=records,
+                note=(
+                    "edge > 0 = component beat the committed aggregate (paired Brier, "
+                    "resolved binary questions). Weights are ADVISORY and shrunk by "
+                    "sample size; apply to a panel via record_panel estimates' "
+                    "weight field, never silently."
+                ),
+            )
 
         if action == "workflow_report":
             return _workflow_report_payload(ledger, args)
