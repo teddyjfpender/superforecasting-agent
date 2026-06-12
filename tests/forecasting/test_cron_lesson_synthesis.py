@@ -103,3 +103,31 @@ def test_cli_flags_wire_through(tmp_path, synth_spy, monkeypatch, capsys):
     assert len(synth_spy) == 1
     assert cron_runner.main(["--no-synthesize-lessons"]) == 0
     assert len(synth_spy) == 1  # unchanged
+
+
+def test_obsidian_sync_phase_publishes_to_vault(tmp_path, monkeypatch):
+    _fake_reviews(monkeypatch, [])
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
+    text = cron_runner.run_due_reviews(db_path=tmp_path / "f.db", obsidian_sync=True)
+    assert "Obsidian sync" in text
+    assert "published" in text
+    assert (vault / "Forecasting" / "Forecast Desk Index.md").is_file()
+
+
+def test_obsidian_sync_phase_degrades_without_vault(tmp_path, monkeypatch):
+    _fake_reviews(monkeypatch, [])
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "missing"))
+    text = cron_runner.run_due_reviews(db_path=tmp_path / "f.db", obsidian_sync=True)
+    assert "skipped: no vault" in text
+
+
+def test_obsidian_sync_off_by_default(tmp_path, monkeypatch):
+    _fake_reviews(monkeypatch, [])
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
+    text = cron_runner.run_due_reviews(db_path=tmp_path / "f.db")
+    assert "Obsidian sync" not in text
+    assert not (vault / "Forecasting").exists()

@@ -243,8 +243,8 @@ class TestSyncLearnings:
 # ---------------------------------------------------------------------------
 
 class TestRegistration:
-    def test_register_wires_tools_and_cli(self):
-        registered = {"tools": [], "cli": []}
+    def test_register_wires_tools_cli_and_hook(self):
+        registered = {"tools": [], "cli": [], "hooks": []}
 
         class Ctx:
             def register_tool(self, **kwargs):
@@ -253,11 +253,27 @@ class TestRegistration:
             def register_cli_command(self, **kwargs):
                 registered["cli"].append(kwargs)
 
+            def register_hook(self, hook_name, callback):
+                registered["hooks"].append((hook_name, callback))
+
         register(Ctx())
         names = {t["name"] for t in registered["tools"]}
         assert names == {name for name, *_ in _TOOLS}
         assert all(t["toolset"] == "obsidian" for t in registered["tools"])
         assert registered["cli"][0]["name"] == "obsidian"
+        assert [name for name, _ in registered["hooks"]] == ["on_session_end"]
+
+    def test_session_end_autosync_is_opt_in(self, vault, ledger, monkeypatch):
+        from plugins.obsidian import _on_session_end
+
+        _seed_ledger(ledger)
+        monkeypatch.delenv("OBSIDIAN_AUTOSYNC", raising=False)
+        _on_session_end()
+        assert not (vault / "Forecasting").exists()
+
+        monkeypatch.setenv("OBSIDIAN_AUTOSYNC", "1")
+        _on_session_end()
+        assert (vault / "Forecasting" / "Forecast Desk Index.md").is_file()
 
     def test_schema_names_match_plugin_yaml(self):
         import yaml

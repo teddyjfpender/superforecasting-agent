@@ -17,6 +17,9 @@ skill.
 
 from __future__ import annotations
 
+import logging
+import os
+
 from plugins.obsidian.cli import obsidian_command as _obsidian_command
 from plugins.obsidian.cli import register_cli as _register_obsidian_cli
 from plugins.obsidian.tools import (
@@ -33,6 +36,8 @@ from plugins.obsidian.tools import (
     handle_obsidian_write_note,
 )
 
+logger = logging.getLogger(__name__)
+
 _TOOLS = (
     ("obsidian_read_note",      OBSIDIAN_READ_NOTE_SCHEMA,      handle_obsidian_read_note,      "📖"),
     ("obsidian_write_note",     OBSIDIAN_WRITE_NOTE_SCHEMA,     handle_obsidian_write_note,     "📝"),
@@ -40,6 +45,34 @@ _TOOLS = (
     ("obsidian_search",         OBSIDIAN_SEARCH_SCHEMA,         handle_obsidian_search,         "🔍"),
     ("obsidian_sync_learnings", OBSIDIAN_SYNC_LEARNINGS_SCHEMA, handle_obsidian_sync_learnings, "🧠"),
 )
+
+
+def _autosync_enabled() -> bool:
+    return os.getenv("OBSIDIAN_AUTOSYNC", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _on_session_end(**kwargs) -> None:
+    """Best-effort vault publish when a session ends, so resolutions and
+    lessons recorded interactively land in the user's notes without a manual
+    `obsidian sync`. Opt-in via ``OBSIDIAN_AUTOSYNC=1`` — silent writes to a
+    personal vault should be a deliberate choice. Never fails the session.
+    """
+    if not _autosync_enabled():
+        return
+    try:
+        from plugins.obsidian.sync import sync_learnings
+        from plugins.obsidian.vault import resolve_vault_path
+
+        vault = resolve_vault_path()
+        if vault is None:
+            return
+        summary = sync_learnings(vault)
+        logger.debug(
+            "obsidian autosync: %s question(s), %s lesson(s) -> %s",
+            summary["questions"], summary["lessons"], summary["vault"],
+        )
+    except Exception as e:  # pragma: no cover — defensive
+        logger.debug("obsidian on_session_end sync failed: %s", e)
 
 
 def register(ctx) -> None:
@@ -57,6 +90,8 @@ def register(ctx) -> None:
             check_fn=check_obsidian_available,
             emoji=emoji,
         )
+
+    ctx.register_hook("on_session_end", _on_session_end)
 
     ctx.register_cli_command(
         name="obsidian",

@@ -13,3 +13,5 @@ provides_tools:
   - obsidian_append_note
   - obsidian_search
   - obsidian_sync_learnings
+hooks:
+  - on_session_end

@@ -45,3 +45,19 @@ superforecasting-agent obsidian sync     # publish lessons + dossiers
 superforecasting-agent obsidian sync --active-only --scope lessons
 superforecasting-agent obsidian path     # print resolved vault path
 ```
+
+## Auto-sync
+
+Two opt-in hooks keep the vault tracking the desk without manual syncs:
+
+- **Cron** — the no-agent self-check sweep republishes after each run when
+  `FORECAST_OBSIDIAN_SYNC=1` is set (or `--obsidian-sync` is passed to the
+  cron runner). Resolutions scored and lessons synthesized by the sweep land
+  in the vault in the same pass.
+- **Session end** — with `OBSIDIAN_AUTOSYNC=1`, the plugin republishes when an
+  interactive session ends, so resolutions and postmortems recorded in
+  conversation appear in your notes immediately.
+
+Both are off by default — silent writes to a personal vault should be a
+deliberate choice — and both degrade to a quiet no-op when the vault or
+plugin is unavailable.

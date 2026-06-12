@@ -22,6 +22,7 @@ def run_due_reviews(
     auto_postmortem: bool = False,
     thesis_aggregate: bool = False,
     synthesize_lessons: bool | None = None,
+    obsidian_sync: bool = False,
 ) -> str:
     """Run due forecast schedule rows and return a concise alert report.
 
@@ -35,6 +36,12 @@ def run_due_reviews(
     minted new score records or postmortems (resolutions accrued, so the bias
     measurement has fresh data). Safe to run eagerly — synthesis is heavily
     gated internally (ESS, CI, FDR, shrinkage) and emits nothing on thin data.
+
+    ``obsidian_sync`` (or ``FORECAST_OBSIDIAN_SYNC``) republishes the desk's
+    learnings into the Obsidian vault after the sweep, so resolutions,
+    postmortems, and fresh lessons land in the user's notes without a manual
+    `obsidian sync`. Lazy plugin import + vault checks — a missing plugin or
+    vault degrades to a no-op note, never an error.
     """
 
     ledger = ForecastLedger(db_path)
@@ -131,6 +138,30 @@ def run_due_reviews(
                     lines.append(f"- {scope_label}: {', '.join(bits)}")
                 sections.append("\n".join(lines) + "\n")
 
+    # Trailing vault-publish phase (opt-in): keep the user's Obsidian vault
+    # tracking the desk. Plugin and vault are both optional — degrade quietly.
+    if obsidian_sync:
+        try:
+            from plugins.obsidian.sync import sync_learnings
+            from plugins.obsidian.vault import resolve_vault_path
+        except ImportError:
+            sections.append("Obsidian sync\nskipped: obsidian plugin not available\n")
+        else:
+            vault = resolve_vault_path()
+            if vault is None:
+                sections.append("Obsidian sync\nskipped: no vault (set OBSIDIAN_VAULT_PATH)\n")
+            else:
+                try:
+                    summary = sync_learnings(vault, db=str(ledger.db_path))
+                except Exception as exc:  # never break the cron sweep on publishing
+                    sections.append(f"Obsidian sync\nERROR: {exc}\n")
+                else:
+                    sections.append(
+                        "Obsidian sync\n"
+                        f"published {summary['questions']} question dossier(s) and "
+                        f"{summary['lessons']} lesson(s) -> {summary['vault']}\n"
+                    )
+
     return "\n".join(sections)
 
 
@@ -149,6 +180,10 @@ def main(argv: list[str] | None = None) -> int:
         "--no-synthesize-lessons", action="store_true",
         help="Never run lesson synthesis from this cron sweep",
     )
+    parser.add_argument(
+        "--obsidian-sync", action="store_true",
+        help="Republish lessons + question dossiers to the Obsidian vault after the sweep",
+    )
     args = parser.parse_args(argv)
     db_path = args.db or os.getenv("FORECAST_LEDGER_DB") or None
     synthesize: bool | None = None
@@ -163,6 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         auto_postmortem=args.auto_postmortem or _env_flag("FORECAST_AUTO_POSTMORTEM"),
         thesis_aggregate=args.thesis_aggregate or _env_flag("FORECAST_THESIS_AGGREGATE"),
         synthesize_lessons=synthesize,
+        obsidian_sync=args.obsidian_sync or _env_flag("FORECAST_OBSIDIAN_SYNC"),
     )
     if text:
         print(text, end="")
