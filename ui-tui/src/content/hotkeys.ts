@@ -23,6 +23,7 @@ export const HOTKEYS: [string, string][] = [
   [paste + '+V / /paste', 'paste text; /paste attaches clipboard image'],
   ['Ctrl+F', 'start forecast search; converts a typed phrase into /find <phrase>'],
   ['Alt/Option+1..9 or /1..9', 'forecast views: book, review, alerts, evidence, learning, schedules, calibration, backtests, all'],
+  ['/calibration --visual', 'full-screen calibration view: reliability curve, buckets, signed bias verdict'],
   ['Tab', 'apply completion'],
   ['↑/↓', 'completions / queue edit / history'],
   ['Ctrl+X', 'delete the queued forecast note you’re editing (Esc cancels edit)'],

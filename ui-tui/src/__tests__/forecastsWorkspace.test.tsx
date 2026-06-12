@@ -518,6 +518,99 @@ describe('ForecastsWorkspace pure transforms', () => {
     expect(points[0]!.y).toBeNull()
     expect(points[1]!.y).toBe(0.5)
   })
+
+  it('panelFromPacket prefers the recorded panel run', async () => {
+    const { panelFromPacket } = await import('../components/forecastsWorkspace.js')
+
+    const panel = panelFromPacket({
+      forecast_history: [
+        {
+          ensemble_components: { components: [{ name: 'base_rate', probability: 0.4 }, { name: 'model', probability: 0.6 }] },
+          probability_or_distribution: 0.5
+        }
+      ],
+      panel_runs: [
+        {
+          aggregate_probability: 0.52,
+          aggregation_method: 'trimmed_geomean_odds',
+          estimates: [
+            { perspective: 'outside', probability: 0.5, trimmed: false },
+            { perspective: 'inside', probability: 0.58, trimmed: true }
+          ],
+          id: 'pr_1',
+          spread_summary: { max: 0.58, min: 0.5 },
+          trim: 1
+        }
+      ]
+    })
+
+    expect(panel).not.toBeNull()
+    expect(panel!.kind).toBe('panel')
+    expect(panel!.aggregate_probability).toBe(0.52)
+    expect(panel!.estimates).toHaveLength(2)
+    expect(panel!.spread).toEqual({ max: 0.58, min: 0.5 })
+  })
+
+  it('panelFromPacket reconstructs an ensemble spread from snapshot components', async () => {
+    const { panelFromPacket } = await import('../components/forecastsWorkspace.js')
+
+    const panel = panelFromPacket({
+      forecast_history: [
+        { ensemble_components: {}, probability_or_distribution: 0.2 },
+        {
+          as_of: '2026-06-01T00:00:00Z',
+          ensemble_components: {
+            components: [
+              { name: 'base_rate', probability: 0.4, weight: 2 },
+              { name: 'model', probability: 0.62, weight: 1 },
+              { name: 'broken', probability: 'nope' }
+            ]
+          },
+          method: 'log_odds_pool',
+          probability_or_distribution: 0.48
+        }
+      ]
+    })
+
+    expect(panel).not.toBeNull()
+    expect(panel!.kind).toBe('ensemble')
+    expect(panel!.aggregate_probability).toBe(0.48)
+    expect(panel!.aggregation_method).toBe('log_odds_pool')
+    // the malformed component is dropped, never rendered as a fake number
+    expect(panel!.estimates!.map(estimate => estimate.perspective)).toEqual(['base_rate', 'model'])
+    expect(panel!.estimates![0]!.weight).toBe(2)
+  })
+
+  it('panelFromPacket reads plain name→probability ensemble maps', async () => {
+    const { panelFromPacket } = await import('../components/forecastsWorkspace.js')
+
+    const panel = panelFromPacket({
+      forecast_history: [
+        { ensemble_components: { base_rate: 0.4, market: { probability: 0.55, weight: 1.5 } }, probability_or_distribution: 0.5 }
+      ]
+    })
+
+    expect(panel).not.toBeNull()
+    expect(panel!.estimates!.map(estimate => [estimate.perspective, estimate.probability])).toEqual([
+      ['base_rate', 0.4],
+      ['market', 0.55]
+    ])
+  })
+
+  it('panelFromPacket returns null without a run or 2+ usable components', async () => {
+    const { panelFromPacket } = await import('../components/forecastsWorkspace.js')
+
+    expect(panelFromPacket(null)).toBeNull()
+    expect(panelFromPacket({})).toBeNull()
+    expect(panelFromPacket({ forecast_history: [] })).toBeNull()
+    expect(
+      panelFromPacket({
+        forecast_history: [
+          { ensemble_components: { components: [{ name: 'only_one', probability: 0.5 }] }, probability_or_distribution: 0.5 }
+        ]
+      })
+    ).toBeNull()
+  })
 })
 
 describe('ForecastsWorkspace render', () => {
@@ -549,6 +642,67 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('decision card')
     expect(text).toContain('Desk lead')
     expect(text).toContain('recent evidence')
+  })
+
+  it('panel section shows each perspective vs the aggregate with rail, delta, and trim note', async () => {
+    const text = await renderDetail(texasItem())
+    expect(text).toContain('panel (3 perspectives)')
+    // every perspective gets a value + delta-from-aggregate column
+    expect(text).toContain('outside')
+    expect(text).toContain('-2pt') // outside 50% vs aggregate 52%
+    expect(text).toContain('inside')
+    expect(text).toContain('+6pt') // inside 58% vs aggregate 52%
+    expect(text).toContain('market')
+    expect(text).toContain('+2pt')
+    // the trimmed estimate is marked and the trimmed-mean rule is spelled out
+    expect(text).toContain('×')
+    expect(text).toContain('trimmed mean: 1 outlier estimate (×) excluded before pooling')
+    // each row has the position rail with the aggregate tick
+    expect(text).toContain('┊')
+    expect(text).toContain('fundraising') // crux still shown
+  })
+
+  it('detail falls back to the packet panel when the workspace item has none', async () => {
+    const [{ renderSync }, { ForecastDetail, panelFromPacket }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/forecastsWorkspace.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const item = { ...texasItem(), panel: null }
+    const packetPanel = panelFromPacket({
+      forecast_history: [
+        {
+          ensemble_components: {
+            components: [
+              { name: 'base_rate', probability: 0.45, weight: 2 },
+              { name: 'model', probability: 0.6, weight: 1 }
+            ]
+          },
+          method: 'log_odds_pool',
+          probability_or_distribution: 0.52
+        }
+      ]
+    })
+
+    const stdout = writeStream(120, 60)
+    renderSync(React.createElement(ForecastDetail, { item, packetPanel, t: DARK_THEME, width: 70 }), {
+      exitOnCtrlC: false,
+      patchConsole: false,
+      stdout: stdout.stream
+    } as never)
+    const text = normalize(stdout.text(), stripAnsi)
+
+    expect(text).toContain('ensemble (2 components)')
+    expect(text).toContain('base_rate')
+    expect(text).toContain('-7pt') // 45% vs aggregate 52%
+    expect(text).toContain('model')
+    expect(text).toContain('+8pt')
+    // differing weights are surfaced for ensemble components
+    expect(text).toContain('w 2.0')
+    // no trim on ensembles → no trimmed-mean note
+    expect(text).not.toContain('trimmed mean')
   })
 
   it('renders a distribution forecast as μ/σ, mean-over-time, PMF buckets, and CI — not raw JSON', async () => {

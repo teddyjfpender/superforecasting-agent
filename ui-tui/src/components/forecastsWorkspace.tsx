@@ -8,6 +8,7 @@ import type {
   ForecastAnalystNote,
   ForecastFactor,
   ForecastFactorConstituent,
+  ForecastQuestionPacket,
   ForecastQuestionPacketResponse,
   ForecastRelated,
   ForecastThesis,
@@ -16,6 +17,7 @@ import type {
   ForecastThesisTrigger,
   ForecastWorkspaceItem,
   ForecastWorkspacePanel,
+  ForecastWorkspacePanelEstimate,
   ForecastWorkspaceResponse
 } from '../gatewayTypes.js'
 import {
@@ -25,6 +27,7 @@ import {
   clamp01,
   compactNumber,
   deltaGlyph,
+  dotTrack,
   histogram,
   type HistogramBar,
   levelSparkline,
@@ -300,6 +303,101 @@ export const chartScale = (points: BandPoint[]): { yMax: number; yMin: number } 
   return { yMax: hi, yMin: lo }
 }
 
+// ── Panel / ensemble spread fallback (from the forecast.question packet) ─────
+
+const probabilityLike = (value: unknown): value is number => finite(value) && value >= 0 && value <= 1
+
+/**
+ * Ensemble components dict → panel-style estimates. Mirrors the ledger's
+ * `_ensemble_component_rows`: either `{components: [{name, probability,
+ * weight}, …]}` or a plain `{name: probability|{probability, weight}}` map.
+ */
+const ensembleEstimates = (components: Record<string, unknown> | null | undefined): ForecastWorkspacePanelEstimate[] => {
+  if (!components || typeof components !== 'object') {
+    return []
+  }
+
+  const rawRows: Record<string, unknown>[] = Array.isArray(components.components)
+    ? (components.components.filter(row => row && typeof row === 'object') as Record<string, unknown>[])
+    : Object.entries(components).map(([name, value]) =>
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? { name, ...(value as Record<string, unknown>) }
+          : { name, probability: value }
+      )
+
+  const estimates: ForecastWorkspacePanelEstimate[] = []
+
+  rawRows.forEach((row, index) => {
+    const probability = row.probability
+
+    if (!probabilityLike(probability)) {
+      return
+    }
+
+    const weight = row.weight
+
+    estimates.push({
+      perspective: String(row.name ?? row.source ?? `component_${index + 1}`),
+      probability,
+      trimmed: false,
+      weight: finite(weight) && weight >= 0 ? weight : 1
+    })
+  })
+
+  return estimates
+}
+
+/**
+ * The panel-spread data for a question whose lighter workspace item carries no
+ * `panel`: prefer the packet's latest recorded panel run; otherwise reconstruct
+ * the spread from the current snapshot's ensemble components (method `panel`/
+ * ensemble pools store their inputs there). Returns null when neither exists —
+ * the detail pane simply omits the section, never fakes a spread.
+ */
+export const panelFromPacket = (packet: ForecastQuestionPacket | null | undefined): ForecastWorkspacePanel | null => {
+  if (!packet) {
+    return null
+  }
+
+  const run = packet.panel_runs?.[0]
+
+  if (run && (run.estimates?.length || finite(run.aggregate_probability))) {
+    return {
+      aggregate_probability: run.aggregate_probability,
+      aggregation_method: run.aggregation_method,
+      created_at: run.created_at,
+      estimates: run.estimates ?? [],
+      id: run.id,
+      kind: 'panel',
+      spread: run.spread_summary ?? {},
+      trim: run.trim
+    }
+  }
+
+  const history = packet.forecast_history ?? []
+  const latest = history[history.length - 1]
+
+  if (!latest) {
+    return null
+  }
+
+  const estimates = ensembleEstimates(latest.ensemble_components)
+
+  if (estimates.length < 2) {
+    return null
+  }
+
+  return {
+    aggregate_probability: probabilityLike(latest.probability_or_distribution) ? latest.probability_or_distribution : null,
+    aggregation_method: latest.method ?? 'ensemble',
+    created_at: latest.as_of,
+    estimates,
+    kind: 'ensemble',
+    spread: {},
+    trim: 0
+  }
+}
+
 export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: ForecastsWorkspaceProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
@@ -556,6 +654,14 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
       section => section.title && TAIL_SECTION_TITLES.has(section.title)
     )
   }, [packet, packetId, selectedId])
+
+  // The panel-spread fallback: when the lighter workspace item has no `panel`,
+  // derive one from the packet (latest panel run, else the current snapshot's
+  // ensemble components) so panel-method forecasts still show their spread.
+  const packetPanel = useMemo(
+    () => (packet && packetId === selectedId ? panelFromPacket(packet.packet) : null),
+    [packet, packetId, selectedId]
+  )
 
   const tailLoading = !!selectedId && packetId !== selectedId
 
@@ -835,6 +941,7 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
                 ) : null
               }
               item={selected}
+              packetPanel={packetPanel}
               t={t}
               width={detailW}
             />
@@ -1230,11 +1337,13 @@ function KV({ k, t, v }: { k: string; t: Theme; v: string }) {
 export function ForecastDetail({
   afterChart,
   item,
+  packetPanel = null,
   t,
   width
 }: {
   afterChart?: ReactNode
   item: ForecastWorkspaceItem
+  packetPanel?: ForecastWorkspacePanel | null
   t: Theme
   width: number
 }) {
@@ -1266,7 +1375,10 @@ export function ForecastDetail({
   const dist = item.distribution
   const isDistribution = item.headline_kind === 'distribution'
   const unit = unitSuffix(item.units)
-  const panel = item.panel ?? null
+  // Panel spread: the workspace item's own panel run, else the packet-derived
+  // fallback. Distribution forecasts never borrow it — their components live
+  // on the outcome scale, not the probability scale.
+  const panel = item.panel ?? (isDistribution ? null : packetPanel)
   const topics = (item.topics ?? []).join(', ')
 
   return (
@@ -1356,7 +1468,7 @@ export function ForecastDetail({
           ))}
           <Text color={t.color.label} wrap="truncate-end">
             {`  ${shortDate(item.history?.[0]?.as_of)} → ${shortDate(item.as_of)}  ${
-              isDistribution ? '● mean  ░ 90% interval' : panel ? '● forecast  ░ panel spread / confidence band' : '● forecast  ░ confidence band'
+              isDistribution ? '● mean  ░ 90% interval' : item.panel ? '● forecast  ░ panel spread / confidence band' : '● forecast  ░ confidence band'
             }`}
           </Text>
         </>
@@ -1463,18 +1575,47 @@ export function ForecastDetail({
   )
 }
 
-function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePanel; t: Theme; width: number }) {
+/** Compact perspective-vs-aggregate delta: `"+6pt"` / `"-2pt"` / `"·"`. */
+const spreadDelta = (probability: null | number | undefined, aggregate: null | number | undefined): string => {
+  if (!finite(probability) || !finite(aggregate)) {
+    return ''
+  }
+
+  const points = Math.round((probability - aggregate) * 100)
+
+  if (points === 0) {
+    return '·'
+  }
+
+  return `${points > 0 ? '+' : ''}${points}pt`
+}
+
+export function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePanel; t: Theme; width: number }) {
   const whisker = boxWhisker(panel.spread ?? {}, { width: Math.max(12, Math.min(width - 18, 28)) })
+  const estimates = panel.estimates ?? []
+  const aggregate = panel.aggregate_probability
+  const isEnsemble = panel.kind === 'ensemble'
+  const title = isEnsemble
+    ? `ensemble (${estimates.length} components)`
+    : `panel (${estimates.length} perspectives)`
+  // Per-perspective rail: each estimate (●) positioned on the same 0..1 track
+  // with the aggregate as the reference tick (┊), so the spread reads at a
+  // glance. Budget: marker(2) name(10) value(6) gap(1) rail gap(2) delta(5).
+  const railW = Math.max(0, Math.min(24, width - 28))
+  const nameW = 10
+  const trimmedCount = estimates.filter(estimate => estimate.trimmed).length
+  const weights = estimates.map(estimate => estimate.weight).filter(finite)
+  const showWeights = isEnsemble && weights.length > 0 && new Set(weights).size > 1
 
   return (
     <>
-      <SectionTitle t={t}>{`panel (${panel.estimates?.length ?? 0} perspectives)`}</SectionTitle>
+      <SectionTitle t={t}>{title}</SectionTitle>
       <Text wrap="truncate-end">
         <Text color={t.color.muted}>aggregate </Text>
         <Text bold color={t.color.primary}>
-          {pct(panel.aggregate_probability)}
+          {pct(aggregate)}
         </Text>
-        <Text color={t.color.muted}>{`  ${panel.aggregation_method ?? 'pool'} · trim ${panel.trim ?? 0}`}</Text>
+        <Text color={t.color.muted}>{`  ${panel.aggregation_method ?? 'pool'}${isEnsemble ? '' : ` · trim ${panel.trim ?? 0}`}`}</Text>
       </Text>
       {whisker ? (
         <Text wrap="truncate-end">
@@ -1483,16 +1624,37 @@ function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePanel; t: T
           <Text color={t.color.label}>{` ${pct(panel.spread?.max)}`}</Text>
         </Text>
       ) : null}
-      {(panel.estimates ?? []).map((estimate, i) => (
-        <Text key={estimate.perspective ?? i} wrap="truncate-end">
-          <Text bold={!estimate.trimmed} color={estimate.trimmed ? t.color.muted : t.color.label}>
-            {estimate.trimmed ? '× ' : '  '}
-            {(estimate.perspective ?? '—').padEnd(10)}
+      {estimates.map((estimate, i) => {
+        const rail = railW >= 8 ? dotTrack(estimate.probability, aggregate, { width: railW }) : ''
+        const delta = spreadDelta(estimate.probability, aggregate)
+        const deltaColor =
+          !delta || delta === '·'
+            ? t.color.muted
+            : delta.startsWith('+')
+              ? t.color.ok
+              : t.color.error
+
+        return (
+          <Text key={estimate.perspective ?? i} wrap="truncate-end">
+            <Text bold={!estimate.trimmed} color={estimate.trimmed ? t.color.muted : t.color.label}>
+              {estimate.trimmed ? '× ' : '  '}
+              {truncate(estimate.perspective ?? '—', nameW).padEnd(nameW)}
+            </Text>
+            <Text color={estimate.trimmed ? t.color.muted : t.color.text}>{pct(estimate.probability).padStart(5)}</Text>
+            {rail ? <Text color={estimate.trimmed ? t.color.muted : t.color.accent}>{`  ${rail}`}</Text> : null}
+            {delta ? <Text color={deltaColor}>{`  ${delta.padStart(5)}`}</Text> : null}
+            {showWeights && finite(estimate.weight) ? (
+              <Text color={t.color.muted}>{`  w ${estimate.weight.toFixed(1)}`}</Text>
+            ) : null}
+            {estimate.crux ? <Text color={t.color.label}>{`  ${truncate(estimate.crux, 32)}`}</Text> : null}
           </Text>
-          <Text color={t.color.text}>{pct(estimate.probability).padStart(5)}</Text>
-          {estimate.crux ? <Text color={t.color.label}>{`  ${truncate(estimate.crux, 40)}`}</Text> : null}
+        )
+      })}
+      {(panel.trim ?? 0) > 0 || trimmedCount > 0 ? (
+        <Text color={t.color.muted} wrap="truncate-end">
+          {`  trimmed mean: ${trimmedCount || panel.trim} outlier estimate${(trimmedCount || panel.trim) === 1 ? '' : 's'} (×) excluded before pooling`}
         </Text>
-      ))}
+      ) : null}
     </>
   )
 }

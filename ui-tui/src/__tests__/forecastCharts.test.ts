@@ -7,6 +7,7 @@ import {
   clamp01,
   compactNumber,
   deltaGlyph,
+  dotTrack,
   histogram,
   levelSparkline,
   pct,
@@ -221,6 +222,38 @@ describe('boxWhisker', () => {
   it('returns empty when min/max are missing', () => {
     expect(boxWhisker({})).toBe('')
     expect(boxWhisker({ min: 0.2 })).toBe('')
+  })
+})
+
+describe('dotTrack', () => {
+  it('places the value marker and the reference tick on the rail', () => {
+    const line = dotTrack(0.25, 0.75, { width: 21 })
+    expect(line).toHaveLength(21)
+    expect(line).toContain('●')
+    expect(line).toContain('┊')
+    expect(line.indexOf('●')).toBeLessThan(line.indexOf('┊'))
+  })
+
+  it('the value wins when value and reference share a cell', () => {
+    const line = dotTrack(0.5, 0.5, { width: 21 })
+    expect(line).toContain('●')
+    expect(line).not.toContain('┊')
+  })
+
+  it('omits the reference tick when the reference is not finite', () => {
+    const line = dotTrack(0.5, null, { width: 11 })
+    expect(line).toContain('●')
+    expect(line).not.toContain('┊')
+  })
+
+  it('returns empty for a non-finite value', () => {
+    expect(dotTrack(null, 0.5)).toBe('')
+    expect(dotTrack(Number.NaN, 0.5)).toBe('')
+  })
+
+  it('clamps out-of-range values onto the rail ends', () => {
+    expect(dotTrack(1.4, 0.5, { width: 11 }).endsWith('●')).toBe(true)
+    expect(dotTrack(-0.4, 0.5, { width: 11 }).startsWith('●')).toBe(true)
   })
 })
 

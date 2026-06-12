@@ -260,6 +260,34 @@ export const histogram = (
   })
 }
 
+// ── Dot track (one value vs a reference on a shared scale) ──────────────────
+
+/**
+ * One-line position track: `····●····┊······` — a dotted [yMin, yMax] rail
+ * with the value (●) and an optional reference mark (┊, e.g. the panel
+ * aggregate). When the two land on the same cell the value wins, so a
+ * perspective sitting exactly on the aggregate reads as ● on the rail.
+ * Returns `''` when the value is not finite.
+ */
+export const dotTrack = (
+  value: number | null | undefined,
+  reference: number | null | undefined,
+  { width = 20, yMin = 0, yMax = 1 }: { width?: number; yMin?: number; yMax?: number } = {}
+): string => {
+  if (!finite(value)) {
+    return ''
+  }
+  const track = Math.max(3, width)
+  const span = yMax - yMin || 1
+  const col = (v: number): number => Math.round(clamp01((v - yMin) / span) * (track - 1))
+  const cells = Array.from({ length: track }, () => '·')
+  if (finite(reference)) {
+    cells[col(reference)] = '┊'
+  }
+  cells[col(value)] = '●'
+  return cells.join('')
+}
+
 // ── Box-whisker (panel spread) ───────────────────────────────────────────────
 
 export interface SpreadSummary {

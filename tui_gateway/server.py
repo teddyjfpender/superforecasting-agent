@@ -205,6 +205,7 @@ _LONG_HANDLERS = frozenset(
     {
         "browser.manage",
         "cli.exec",
+        "forecast.calibration",
         "forecast.command",
         "forecast.workspace",
         "session.branch",
@@ -2571,6 +2572,99 @@ def _(rid, params: dict) -> dict:
         limit = int(params.get("limit") or 1000)
         payload = build_workspace_payload(limit=limit)
         return _ok(rid, payload)
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+# ── forecast.calibration ─────────────────────────────────────────────
+# Structured calibration analytics for the TUI's native calibration view.
+# `forecast.command` already exposes the same numbers as CLI text; this RPC
+# returns the raw ledger payloads (reliability curve, ECE/MCE, signed bias)
+# so the client can chart them instead of re-parsing prose.
+
+# The compact per-scope row used by the domain/origin breakdowns. Headline
+# metrics only — the full curve/buckets ship once, for the global summary.
+_CALIBRATION_BREAKDOWN_FIELDS = (
+    "count",
+    "mean_brier",
+    "expected_calibration_error",
+    "calibration_curve_sample_count",
+    "mean_predicted",
+    "observed_frequency",
+)
+
+
+def _calibration_breakdown_row(summary: dict) -> dict:
+    return {field: summary.get(field) for field in _CALIBRATION_BREAKDOWN_FIELDS}
+
+
+def _calibration_bias_or_none(ledger, *, domain: str | None = None):
+    """Signed-bias report, or None when the loop can't run (legacy ledgers,
+    import errors). The report itself already degrades to
+    ``insufficient_evidence`` on thin data — only true failures become None."""
+
+    try:
+        return ledger.calibration_bias(domain=domain)
+    except Exception:
+        logger.exception("forecast.calibration bias assessment failed")
+        return None
+
+
+@method("forecast.calibration")
+def _(rid, params: dict) -> dict:
+    domain = params.get("domain") or None
+    origin = params.get("origin") or None
+    if domain is not None and not isinstance(domain, str):
+        return _err(rid, 4003, "domain must be a string")
+    if origin is not None and not isinstance(origin, str):
+        return _err(rid, 4003, "origin must be a string")
+
+    try:
+        from forecasting.ledger import ForecastLedger
+
+        ledger = ForecastLedger()
+        summary = ledger.calibration_summary(
+            domain=domain,
+            forecast_origin=origin,
+            calibration_eligible=True,
+        )
+        bias = _calibration_bias_or_none(ledger, domain=domain)
+
+        # Per-domain / per-origin breakdowns only make sense on the unfiltered
+        # view; a filtered request already IS one row of that breakdown.
+        domains: list[dict] = []
+        origins: list[dict] = []
+        if domain is None and origin is None:
+            scores = ledger.list_scores(calibration_eligible=True)
+            domain_names = sorted({s.domain for s in scores if s.domain})
+            origin_names = sorted({s.forecast_origin for s in scores if s.forecast_origin})
+            for name in domain_names:
+                row = _calibration_breakdown_row(
+                    ledger.calibration_summary(domain=name, calibration_eligible=True)
+                )
+                row["domain"] = name
+                row["bias"] = _calibration_bias_or_none(ledger, domain=name)
+                domains.append(row)
+            for name in origin_names:
+                row = _calibration_breakdown_row(
+                    ledger.calibration_summary(
+                        forecast_origin=name, calibration_eligible=True
+                    )
+                )
+                row["origin"] = name
+                origins.append(row)
+
+        return _ok(
+            rid,
+            {
+                "summary": summary,
+                "bias": bias,
+                "domains": domains,
+                "origins": origins,
+                "domain": domain,
+                "origin": origin,
+            },
+        )
     except Exception as e:
         return _err(rid, 5008, str(e))
 

@@ -76,6 +76,7 @@ export interface OverlayState {
   agents: boolean
   agentsInitialHistoryIndex: number
   approval: ApprovalReq | null
+  calibration: boolean
   clarify: ClarifyReq | null
   confirm: ConfirmReq | null
   forecasts: boolean

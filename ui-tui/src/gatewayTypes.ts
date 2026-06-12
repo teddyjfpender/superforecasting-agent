@@ -374,6 +374,82 @@ export interface ForecastDashboardQuestionTypeCalibration {
   score_rules?: string[]
 }
 
+// ── forecast.calibration (the native calibration view) ──────────────────────
+
+// One decile of the reliability curve: predicted vs observed frequency for
+// binary forecasts whose P(yes) fell in `bucket`.
+export interface ForecastCalibrationCurveRow {
+  bucket?: string
+  calibration_gap?: null | number
+  count?: number
+  mean_predicted?: null | number
+  observed_frequency?: null | number
+  sample_status?: 'empty' | 'low_sample' | 'ok'
+}
+
+export interface ForecastCalibrationBucketRow {
+  bucket?: string
+  count?: number
+  mean_brier?: null | number
+  sample_status?: 'empty' | 'low_sample' | 'ok'
+}
+
+// The signed calibration-bias report (forecasting/calibration_bias.py
+// CalibrationBiasReport.to_payload). `status` is the measurement verdict;
+// insufficient_evidence is a real state, not an error.
+export interface ForecastCalibrationBias {
+  advisory_text?: null | string
+  ci_high?: null | number
+  ci_low?: null | number
+  curve_shape?: Record<string, unknown>[]
+  direction?: 'over' | 'under' | null
+  ece?: null | number
+  ess?: number
+  ess_min?: number
+  horizon_label?: null | string
+  n?: number
+  notes?: string[]
+  pvalue?: null | number
+  scope_ref?: null | string
+  scope_type?: string
+  sce_raw?: null | number
+  sce_shrunk?: null | number
+  status?: 'calibrated' | 'insufficient_evidence' | 'overconfident' | 'underconfident'
+}
+
+// The full unsigned summary (forecasting/ledger.py calibration_summary).
+export interface ForecastCalibrationSummary extends ForecastDashboardCalibration {
+  buckets?: ForecastCalibrationBucketRow[]
+  calibration_curve?: ForecastCalibrationCurveRow[]
+  calibration_curve_sample_count?: number
+  expected_calibration_error?: null | number
+  max_calibration_error?: null | number
+  mean_predicted?: null | number
+  observed_frequency?: null | number
+}
+
+// A compact per-scope breakdown row (headline metrics only, no curve).
+export interface ForecastCalibrationBreakdownRow {
+  bias?: ForecastCalibrationBias | null
+  calibration_curve_sample_count?: number
+  count?: number
+  domain?: string
+  expected_calibration_error?: null | number
+  mean_brier?: null | number
+  mean_predicted?: null | number
+  observed_frequency?: null | number
+  origin?: string
+}
+
+export interface ForecastCalibrationResponse {
+  bias?: ForecastCalibrationBias | null
+  domain?: null | string
+  domains?: ForecastCalibrationBreakdownRow[]
+  origin?: null | string
+  origins?: ForecastCalibrationBreakdownRow[]
+  summary?: ForecastCalibrationSummary
+}
+
 export interface ForecastDashboardBacktest {
   agent_edge?: null | number
   agent_mean_brier?: null | number
@@ -568,6 +644,7 @@ export interface ForecastQuestionPacket {
   forecast_history?: ForecastQuestionPacketSnapshot[]
   informed_by?: string[]
   model_runs?: Record<string, unknown>[]
+  panel_runs?: ForecastQuestionPacketPanelRun[]
   postmortems?: Record<string, unknown>[]
   question?: ForecastQuestionPacketQuestion
   reference_classes?: ForecastQuestionPacketReferenceClass[]
@@ -604,12 +681,26 @@ export interface ForecastQuestionPacketQuestion {
 export interface ForecastQuestionPacketSnapshot {
   as_of?: string
   confidence?: null | number
+  ensemble_components?: Record<string, unknown> | null
   evidence_refs?: string[]
   forecast_id?: string
   forecast_origin?: string
   method?: null | string
   probability_or_distribution?: null | number | Record<string, unknown> | string
   rationale?: string
+}
+
+// A raw `panel_runs` row from the exported question packet (the ledger's
+// panel_run + estimates join). Source for the workspace's panel-spread
+// fallback when the lighter workspace item carries no `panel`.
+export interface ForecastQuestionPacketPanelRun {
+  aggregate_probability?: null | number
+  aggregation_method?: string
+  created_at?: string
+  estimates?: ForecastWorkspacePanelEstimate[]
+  id?: string
+  spread_summary?: Record<string, number>
+  trim?: number
 }
 
 export interface ForecastQuestionPacketEvidence {
@@ -902,6 +993,10 @@ export interface ForecastWorkspacePanel {
   created_at?: string
   estimates?: ForecastWorkspacePanelEstimate[]
   id?: string
+  // Provenance for the spread section: a recorded multi-perspective panel run,
+  // or ensemble components reconstructed from the current snapshot (the
+  // workspace fallback when no panel run was persisted).
+  kind?: 'ensemble' | 'panel'
   spread?: Record<string, number>
   trim?: number
 }

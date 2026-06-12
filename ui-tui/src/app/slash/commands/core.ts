@@ -460,7 +460,7 @@ export const coreCommands: SlashCommand[] = [
             ['/postmortem [args]', 'diagnose a resolved forecast'],
             ['/review [args]', 'run forecast review workflow'],
             ['/alerts [args]', 'show forecast alerts'],
-            ['/calibration [args]', 'show calibration analytics; defaults to --by-origin'],
+            ['/calibration [args]', 'show calibration analytics; defaults to --by-origin; --visual opens the chart view'],
             ['/panel [subcommand]', 'multi-perspective panel: perspectives, record, aggregate, show'],
             ['/bayes [args]', 'auditable Bayesian scratchpad (priors, LRs, pooling)'],
             ['/performance [args]', 'show recent backtest performance'],
@@ -853,9 +853,21 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'show forecast calibration analytics',
+    help: 'show forecast calibration analytics (--visual opens the chart view)',
     name: 'calibration',
-    run: (arg, ctx) => runForecastCommand(ctx, `calibration ${arg.trim() || '--by-origin'}`.trim())
+    run: (arg, ctx) => {
+      const trimmed = arg.trim()
+
+      // `--visual` (or bare `visual`) opens the native full-screen calibration
+      // view — reliability curve, bucket table, signed-bias verdict — instead
+      // of the classic CLI text. Plain `/calibration` keeps the text report.
+      if (/^(--visual|visual)$/i.test(trimmed)) {
+        patchOverlayState({ calibration: true })
+        return
+      }
+
+      runForecastCommand(ctx, `calibration ${trimmed || '--by-origin'}`.trim())
+    }
   },
 
   {

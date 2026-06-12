@@ -204,6 +204,167 @@ def test_forecast_workspace_is_routed_to_thread_pool():
     assert "forecast.workspace" in server._LONG_HANDLERS
 
 
+def _fake_calibration_ledger(*, bias_raises: bool = False):
+    """A FakeLedger mirroring the ForecastLedger calibration surface."""
+
+    class FakeLedger:
+        bias_calls: list = []
+        summary_calls: list = []
+
+        def calibration_summary(self, *, domain=None, forecast_origin=None, horizon=None, calibration_eligible=True):
+            FakeLedger.summary_calls.append((domain, forecast_origin))
+            assert calibration_eligible is True
+            return {
+                "count": 12 if domain is None and forecast_origin is None else 4,
+                "mean_brier": 0.18,
+                "expected_calibration_error": 0.052,
+                "max_calibration_error": 0.09,
+                "calibration_curve_sample_count": 10,
+                "mean_predicted": 0.61,
+                "observed_frequency": 0.55,
+                "calibration_curve": [
+                    {
+                        "bucket": "0.6-0.7",
+                        "count": 10,
+                        "mean_predicted": 0.64,
+                        "observed_frequency": 0.58,
+                        "calibration_gap": 0.06,
+                        "sample_status": "ok",
+                    }
+                ],
+                "buckets": [],
+                "domain": domain,
+                "forecast_origin": forecast_origin,
+            }
+
+        def calibration_bias(self, *, domain=None):
+            FakeLedger.bias_calls.append(domain)
+            if bias_raises:
+                raise RuntimeError("no bias table")
+            return {
+                "scope_type": "domain" if domain else "global",
+                "scope_ref": domain,
+                "status": "underconfident" if domain == "macro" else "calibrated",
+                "n": 12,
+                "ess": 11.0,
+                "sce_shrunk": -0.06 if domain == "macro" else 0.0,
+                "advisory_text": "under-confident in macro" if domain == "macro" else None,
+            }
+
+        def list_scores(self, *, calibration_eligible=True):
+            assert calibration_eligible is True
+            return [
+                types.SimpleNamespace(domain="macro", forecast_origin="live"),
+                types.SimpleNamespace(domain="macro", forecast_origin="backtest"),
+                types.SimpleNamespace(domain="geopolitics", forecast_origin="live"),
+                types.SimpleNamespace(domain=None, forecast_origin="live"),
+            ]
+
+    return FakeLedger
+
+
+def test_forecast_calibration_returns_summary_bias_and_breakdowns(monkeypatch):
+    import forecasting.ledger as ledger_module
+
+    monkeypatch.setattr(ledger_module, "ForecastLedger", _fake_calibration_ledger())
+
+    resp = server.handle_request(
+        {"id": "1", "method": "forecast.calibration", "params": {}}
+    )
+
+    result = resp["result"]
+    assert result["summary"]["count"] == 12
+    assert result["summary"]["expected_calibration_error"] == 0.052
+    assert result["bias"]["scope_type"] == "global"
+    # Domain breakdown: sorted distinct domains, each with a lite summary + bias.
+    assert [row["domain"] for row in result["domains"]] == ["geopolitics", "macro"]
+    macro = result["domains"][1]
+    assert macro["count"] == 4
+    assert macro["bias"]["status"] == "underconfident"
+    assert macro["bias"]["advisory_text"] == "under-confident in macro"
+    # Lite rows carry headline metrics only, never the full curve.
+    assert "calibration_curve" not in macro
+    # Origin breakdown: sorted distinct origins, no bias (bias is scope=domain/global).
+    assert [row["origin"] for row in result["origins"]] == ["backtest", "live"]
+    assert "bias" not in result["origins"][0]
+
+
+def test_forecast_calibration_domain_filter_skips_breakdowns(monkeypatch):
+    import forecasting.ledger as ledger_module
+
+    fake = _fake_calibration_ledger()
+    monkeypatch.setattr(ledger_module, "ForecastLedger", fake)
+
+    resp = server.handle_request(
+        {"id": "1", "method": "forecast.calibration", "params": {"domain": "macro"}}
+    )
+
+    result = resp["result"]
+    assert result["domain"] == "macro"
+    assert result["domains"] == []
+    assert result["origins"] == []
+    assert result["bias"]["status"] == "underconfident"
+    # Only the single filtered summary was computed.
+    assert fake.summary_calls == [("macro", None)]
+
+
+def test_forecast_calibration_survives_bias_failure(monkeypatch):
+    import forecasting.ledger as ledger_module
+
+    monkeypatch.setattr(
+        ledger_module, "ForecastLedger", _fake_calibration_ledger(bias_raises=True)
+    )
+
+    resp = server.handle_request(
+        {"id": "1", "method": "forecast.calibration", "params": {}}
+    )
+
+    result = resp["result"]
+    assert result["bias"] is None
+    assert result["summary"]["count"] == 12
+    assert all(row["bias"] is None for row in result["domains"])
+
+
+def test_forecast_calibration_rejects_non_string_filters():
+    resp = server.handle_request(
+        {"id": "1", "method": "forecast.calibration", "params": {"domain": 7}}
+    )
+
+    assert resp["error"]["code"] == 4003
+
+
+def test_forecast_calibration_empty_ledger_reports_zero_counts(tmp_path, monkeypatch):
+    # A real, empty ledger: the RPC must report honest zeros (count 0, no curve
+    # samples), never fabricate buckets — the TUI renders its empty state off this.
+    from forecasting.ledger import ForecastLedger
+
+    db_path = tmp_path / "forecast.sqlite"
+    ForecastLedger(db_path)  # create the schema
+
+    import forecasting.ledger as ledger_module
+
+    real = ledger_module.ForecastLedger
+    monkeypatch.setattr(
+        ledger_module, "ForecastLedger", lambda *a, **k: real(db_path)
+    )
+
+    resp = server.handle_request(
+        {"id": "1", "method": "forecast.calibration", "params": {}}
+    )
+
+    result = resp["result"]
+    assert result["summary"]["count"] == 0
+    assert result["summary"]["expected_calibration_error"] is None
+    assert result["domains"] == []
+    assert result["origins"] == []
+    bias = result["bias"]
+    assert bias is None or bias["status"] == "insufficient_evidence"
+
+
+def test_forecast_calibration_is_routed_to_thread_pool():
+    assert "forecast.calibration" in server._LONG_HANDLERS
+
+
 def test_dispatch_rejects_non_object_request():
     resp = server.dispatch([])
 

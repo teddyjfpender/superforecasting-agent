@@ -27,6 +27,7 @@ import type { PanelSection } from '../types.js'
 
 import { AgentsOverlay } from './agentsOverlay.js'
 import { ForecastPulse, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
+import { CalibrationView } from './calibrationView.js'
 import { ForecastsWorkspace } from './forecastsWorkspace.js'
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { Banner, Panel, panelCommandTarget, panelDraftTarget, SessionPanel } from './branding.js'
@@ -455,6 +456,13 @@ const ForecastsWorkspacePane = memo(function ForecastsWorkspacePane() {
   )
 })
 
+const CalibrationViewPane = memo(function CalibrationViewPane() {
+  const { gw } = useGateway()
+  const ui = useStore($uiState)
+
+  return <CalibrationView gw={gw} onClose={() => patchOverlayState({ calibration: false })} t={ui.theme} />
+})
+
 const StatusRulePane = memo(function StatusRulePane({
   at,
   composer,
@@ -783,9 +791,10 @@ export const AppLayout = memo(function AppLayout({
 }: AppLayoutProps) {
   const overlay = useStore($overlayState)
   const ui = useStore($uiState)
-  // A full-screen overlay (spawn tree or forecasts workspace) takes over the
-  // viewport — hide the desk chrome and transcript while one is open.
-  const fullscreen = overlay.agents || overlay.forecasts
+  // A full-screen overlay (spawn tree, forecasts workspace, or calibration
+  // view) takes over the viewport — hide the desk chrome and transcript while
+  // one is open.
+  const fullscreen = overlay.agents || overlay.forecasts || overlay.calibration
   const showForecastRail =
     !fullscreen && !ui.compact && composer.cols >= FORECAST_RAIL_MIN_COLS && ui.forecastDeskRailSections.length > 0
 
@@ -822,6 +831,10 @@ export const AppLayout = memo(function AppLayout({
           {overlay.forecasts ? (
             <PerfPane id="forecasts">
               <ForecastsWorkspacePane />
+            </PerfPane>
+          ) : overlay.calibration ? (
+            <PerfPane id="calibration">
+              <CalibrationViewPane />
             </PerfPane>
           ) : overlay.agents ? (
             <PerfPane id="agents">

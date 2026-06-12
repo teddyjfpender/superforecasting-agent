@@ -638,12 +638,31 @@ describe('createSlashHandler', () => {
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
   })
 
+  it('opens the native calibration view for /calibration --visual without touching the CLI', () => {
+    const rpc = vi.fn(() => Promise.resolve({ code: 0, output: 'count: 12' }))
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+    const handle = createSlashHandler(ctx)
+
+    expect(handle('/calibration --visual')).toBe(true)
+    expect(getOverlayState().calibration).toBe(true)
+    expect(rpc).not.toHaveBeenCalled()
+
+    resetOverlayState()
+
+    // The bare word works too.
+    expect(handle('/calibration visual')).toBe(true)
+    expect(getOverlayState().calibration).toBe(true)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
   it('routes forecast-native analytics shortcuts with args', async () => {
     const rpc = vi.fn(() => Promise.resolve({ code: 0, output: 'count: 12' }))
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/calibration')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'calibration --by-origin' })
+    // Plain /calibration keeps the text report — never the overlay.
+    expect(getOverlayState().calibration).toBe(false)
     expect(createSlashHandler(ctx)('/calibration --domain macro')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'calibration --domain macro' })
     expect(createSlashHandler(ctx)('/performance --last 3')).toBe(true)
