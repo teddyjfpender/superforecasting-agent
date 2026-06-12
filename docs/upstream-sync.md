@@ -65,8 +65,10 @@ last one instead of a from-scratch re-read.
 ## Ledger
 
 `merge-base = edb2d910` (fork point, PR #28814, 2026-05-20)
-· **audit head = `ea6eaabd8` (reviewed-through; origin/main tip at 2026-05-30, "perf(read_file): compact line-number gutter (#35368)")**
-· last audit: 2026-05-30.
+· **audit head = `d62979a6f` (reviewed-through; origin/main tip at 2026-06-12)**
+· last audit: 2026-06-12 (delta `ea6eaabd8..d62979a6f`: 1,409 commits — ~230
+fork-relevant, ~1,100 desktop/chat-adapter/Nous-deprecation/image-gen churn,
+~79 chore/metadata; 9 ported, 1 deferred chain, 1 skipped-absent).
 
 ### Audit head — the incremental-review high-water mark
 
@@ -81,8 +83,8 @@ Remotes in this checkout: `origin` = upstream `NousResearch/hermes-agent`,
 
 ```sh
 git fetch origin
-git log --oneline ea6eaabd8..origin/main          # everything new since this audit
-git log --oneline ea6eaabd8..origin/main | wc -l  # how many new commits
+git log --oneline d62979a6f..origin/main          # everything new since this audit
+git log --oneline d62979a6f..origin/main | wc -l  # how many new commits
 ```
 
 Then re-run the classify → assess passes on that delta only (not the full
@@ -138,6 +140,16 @@ audit head moves.
 | #44df52005 | Guard `Path.home()` PermissionError in `has_direct_modal_credentials` | `6c9b96ce` |
 | #79fc92e9c | `.env` 0600 perms at doctor/profiles/setup creation sites | `0497e401` |
 | #ec4d6f182+#9c77a0c3c | Masked typing feedback for CLI + plugin secret prompts (`secret_prompt.py`) | `d2337199` |
+| **2026-06-12 wave (audit `ea6eaabd8..d62979a6f`)** | | |
+| #621bf3a87 | **Security:** strip backslash-escapes (`r\m`) and empty-quote splits (`r''m`) in the shell-denylist normalizer; fail-closed (not silent-pass) when `tools.approval` can't import in the TUI gateway | `5895ca3d8` |
+| #9b78f411c / #35684 | **Security:** neutralize bare file paths in the mutation-verifier footer (backtick-wrap + `_neutralize_footer_paths`) so gateway `extract_local_files()` can't auto-attach denied-write credential paths to messaging channels | `df0a91aa9` |
+| #434c684bf | Focus automatic context compression on recent user turns (prevents stale-task drift) | `9223825c1` |
+| #286ecd26d / #14665 | Strip MEDIA directives from compressor summarizer input | `35b37f33e` |
+| #b2d151abe | Strip `default` from `$ref` nodes in tool schemas (unblocks Fireworks-hosted Kimi) | `0ec877881` |
+| #e7ae145ac | Gateway: guide the agent to extract PDF/DOCX text instead of punting on binary attachments | `c2fe2277f` |
+| #9f95f72b9 | Strip `api_messages` in thinking-signature recovery so the retry actually omits thinking blocks (our shallow `msg.copy()` made the bug live) | `81fdcfb84` |
+| #86e10dd87 | Route "thinking blocks cannot be modified" 400s to recovery | `428cc4f27` |
+| #f456f302d / #44267 | Refuse to write service definitions with a temp-dir agent home (regex matches all 3 home-alias env names) | `481ef8529` |
 | #782681f90 | Atomic private (0600) writes for google_chat OAuth credentials | `302500df` |
 
 ### Already-have (subsumed; do not port)
@@ -152,8 +164,15 @@ audit head moves.
 
 ### Deferred (valuable; needs a focused pass or a prerequisite)
 
-_(none currently — c6a992e3 host-derived fallback was ported with the
-`_resolve_named_custom_runtime` gating in `098b45c1`.)_
+- **Compressor SUMMARY_PREFIX modernization chain** — port as ONE unit,
+  oldest-first: `020601d41` → `42bbd221e` (#35344, `_HISTORICAL_SUMMARY_PREFIXES`
+  + renormalization) → `d5e2fbf24` (frame compaction handoff as historical
+  context) → `8f8cad7ec` (strengthen compression preamble) → `acb2954d8` (freeze
+  carveout-era prefix). Together they replace our fork-point-era "resume exactly"
+  SUMMARY_PREFIX — a known stale-task-hijack vector upstream — with
+  latest-message-wins framing. Attempted 2026-06-12; the two tail commits are
+  unportable without the #35344 foundation, so take the whole chain in a focused
+  pass.
 
 ### Skip (off-target for a forecasting CLI/TUI fork)
 
@@ -194,7 +213,17 @@ _(none currently — c6a992e3 host-derived fallback was ported with the
   (dashboard/docker crash), `782681f90` (google_chat plugin). Details in the
   `security-triage-2026-05-30` memory.
 - `transcript-tail across resizes` (TUI) — flagged earlier, never SHA-pinned.
+- From the 2026-06-12 triage, assessed-but-not-ported medium-value candidates:
+  `5affecb44` (capability-gate `tools/list` for prompt-only MCP servers, +215
+  LOC), `73dd58499` (propagate HERMES_HOME onto MCP event loop), `ee1a744ac`
+  (demote non-coding skills to names-only), `e71d74682` (avoid false MCP
+  failed-startup status), `dca11b665` (preserve MCP stdio argv passthrough),
+  `a942bfd9c` (reset `_last_flushed_db_idx` on agent reuse), `13650ab7f`
+  (audio attachment note clarification).
+- `a4f179c50` (GPT/Codex patch-mode steering) — **skipped-absent 2026-06-12**:
+  no `agent/coding_context.py` / `_EDIT_FORMAT_GUIDANCE` in the fork.
 - Rebrand-drift cleanup (pre-existing, not upstream ports): `test_model_catalog`
   docs URL (`build_catalog()` emits `nousresearch.com`, committed json uses
   `teddyjfpender.github.io`); `test_auxiliary_client_azure_foundry` expects
   `"hermes doctor"` vs the emitted `"superforecasting-agent doctor"`.
+  (The `test_steer.py` args_hint drift from `ac3ab85b7` was fixed 2026-06-12.)
