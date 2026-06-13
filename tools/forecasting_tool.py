@@ -181,6 +181,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "panel_perspectives",
                     "component_track_record",
                     "tail_audit",
+                    "market_quality",
                     "link_forecasts",
                     "list_links",
                     "unlink_forecasts",
@@ -371,8 +372,20 @@ FORECAST_LEDGER_SCHEMA = {
                 "description": (
                     "For the `tail_audit` action: the categorical distribution to audit as "
                     "{outcome_label: probability}. (For update_forecast, pass the distribution via "
-                    "probability_or_distribution instead.)"
+                    "probability_or_distribution instead.) The audit also returns a NULL-MODEL "
+                    "comparison: your no-path tail vs a deliberately simple model that floors any "
+                    "outcome without a named path — if yours is much fatter, justify it or compress."
                 ),
+            },
+            "markets": {
+                "type": "array",
+                "description": (
+                    "For the `market_quality` action: market readings to stratify by liquidity + "
+                    "recency, each {source, volume?, updated_at? (ISO) or age_days?, probability?}. "
+                    "Returns an advisory pooling weight in [0,1] per market so a thin/stale price "
+                    "can't inflate a tail — multiply it into the component weight, never drop silently."
+                ),
+                "items": {"type": "object"},
             },
             "failure_class": {
                 "type": "string",
@@ -1851,6 +1864,47 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                     "compress it onto outcomes with a live mechanism. Pass these same "
                     "outcome_paths to update_forecast with require_outcome_paths=true to "
                     "enforce it on the committed snapshot."
+                ),
+            )
+
+        if action == "market_quality":
+            from forecasting.market_quality import (
+                MarketReading,
+                age_days_from_timestamp,
+                classify_market,
+                reading_from_evidence,
+            )
+
+            markets = args.get("markets")
+            if not isinstance(markets, list) or not markets:
+                return tool_error(
+                    "market_quality requires a `markets` array of "
+                    "{source, volume?, updated_at?|age_days?, probability?} objects",
+                    success=False,
+                )
+            results = []
+            for row in markets:
+                if not isinstance(row, dict):
+                    continue
+                if "age_days" in row and row.get("age_days") is not None:
+                    reading = MarketReading(
+                        source=str(row.get("source") or "market"),
+                        probability=row.get("probability"),
+                        volume=row.get("volume"),
+                        age_days=row.get("age_days"),
+                    )
+                else:
+                    reading = reading_from_evidence(row, now=args.get("now"))
+                results.append(classify_market(reading).to_dict())
+            return tool_result(
+                success=True,
+                markets=results,
+                note=(
+                    "weight is an ADVISORY pooling multiplier in [0,1]: stale or thin markets "
+                    "are discounted so a price nobody is defending can't inflate a tail. Multiply "
+                    "it into the market component's `weight` in ensemble_components on update_forecast "
+                    "(e.g. a liquid market weight 2 stays 2; a stale one at 0.25 becomes 0.5). Never "
+                    "drop a market silently — record the discounted weight."
                 ),
             )
 

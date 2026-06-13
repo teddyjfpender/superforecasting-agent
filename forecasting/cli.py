@@ -1975,6 +1975,22 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     tail_audit_parser.add_argument("--json", action="store_true")
     tail_audit_parser.set_defaults(_forecast_handler=_cmd_tail_audit)
 
+    market_quality_parser = forecast_sub.add_parser(
+        "market-quality",
+        help=(
+            "Stratify market readings by liquidity + recency into an advisory pooling "
+            "weight, so a thin/stale market can't inflate a tail"
+        ),
+    )
+    market_quality_parser.add_argument(
+        "--markets",
+        dest="market_quality_markets",
+        required=True,
+        help='JSON array of {source, volume?, updated_at?|age_days?, probability?} objects',
+    )
+    market_quality_parser.add_argument("--json", action="store_true")
+    market_quality_parser.set_defaults(_forecast_handler=_cmd_market_quality)
+
     track_record_parser = forecast_sub.add_parser(
         "track-record",
         help=(
@@ -8234,6 +8250,44 @@ def _cmd_tail_audit(args: argparse.Namespace) -> None:
         print(render_audit_table(audit))
     if not audit.passes:
         raise SystemExit(1)
+
+
+def _cmd_market_quality(args: argparse.Namespace) -> None:
+    from forecasting.market_quality import (
+        MarketReading,
+        classify_market,
+        reading_from_evidence,
+    )
+
+    try:
+        markets = json.loads(args.market_quality_markets)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"forecast market-quality: invalid --markets JSON: {exc.msg}") from exc
+    if not isinstance(markets, list) or not markets:
+        raise SystemExit("forecast market-quality: --markets must be a non-empty JSON array")
+
+    results = []
+    for row in markets:
+        if not isinstance(row, dict):
+            continue
+        if row.get("age_days") is not None:
+            reading = MarketReading(
+                source=str(row.get("source") or "market"),
+                probability=row.get("probability"),
+                volume=row.get("volume"),
+                age_days=row.get("age_days"),
+            )
+        else:
+            reading = reading_from_evidence(row)
+        results.append(classify_market(reading))
+
+    if getattr(args, "json", False):
+        print(json.dumps([r.to_dict() for r in results], indent=2, sort_keys=True))
+        return
+    print(f"{'source':<28} {'tier':<12} {'weight':>6}  why")
+    print(f"{'-' * 28} {'-' * 12} {'-' * 6}  {'-' * 30}")
+    for r in results:
+        print(f"{r.source[:28]:<28} {r.tier:<12} {r.weight:>6.2f}  {'; '.join(r.reasons)[:50]}")
 
 
 def _cmd_track_record(args: argparse.Namespace) -> None:

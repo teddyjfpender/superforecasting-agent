@@ -94,6 +94,37 @@ class TestAuditLogic:
         assert "FAIL" in table
         assert "Conway" in table
         assert "!" in table  # the unearned flag
+        assert "null model" in table  # the sharper-null comparison line
+
+
+class TestNullModel:
+    def test_fat_no_path_tail_flagged_vs_null(self):
+        # Conway 6% + Other 4% with no path → a fat tail vs the floored null.
+        dist = {"Lasher": 0.50, "Bores": 0.33, "Schlossberg": 0.07, "Conway": 0.06, "Other": 0.04}
+        audit = audit_outcomes(outcome_paths_from_inputs(dist, NY12_PATHS))
+        nm = audit.null_model
+        assert nm is not None
+        # Conway (0.06) is the genuine no-path tail; "Other" is a residual
+        # catch-all and is excluded from the null comparison.
+        assert nm.agent_tail == pytest.approx(0.06, abs=1e-9)
+        assert nm.null_tail < 0.02  # floored
+        assert nm.ratio > 2.0
+        assert nm.within_tolerance is False
+        assert any("null model" in i for i in audit.issues)
+
+    def test_null_model_within_tolerance_when_paths_named(self):
+        paths = {**NY12_PATHS, "Conway": {"path": "surprise poll", "evidence_strength": "weak"}}
+        audit = audit_outcomes(outcome_paths_from_inputs(NY12, paths))
+        # Only the tiny residual "Other" lacks a path → tail is negligible.
+        assert audit.null_model.within_tolerance is True
+
+    def test_null_distribution_floors_no_path_outcomes(self):
+        dist = {"A": 0.6, "B": 0.3, "C": 0.1}
+        audit = audit_outcomes(outcome_paths_from_inputs(dist, {"A": "x", "B": "y"}))
+        null = audit.null_model.null_distribution
+        # C (no path) floored near zero; A and B keep their 2:1 ratio.
+        assert null["C"] < 0.01
+        assert null["A"] / null["B"] == pytest.approx(2.0, abs=0.05)
 
 
 class TestCommitGate:

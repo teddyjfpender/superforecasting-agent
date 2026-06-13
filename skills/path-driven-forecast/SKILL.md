@@ -112,6 +112,25 @@ same):
   Commit with `--require-outcome-paths` (tool: `require_outcome_paths=true`) to
   make the gate hard — the live snapshot is refused until the mass is earned.
   The audit table is recorded on the snapshot either way.
+- **Sharper null model**: the same audit compares your distribution to a
+  deliberately simple model — any outcome with no named path is floored near
+  zero and the rest keep their proportions. If your no-path tail is several
+  times fatter than the null's (`no-path tail X% vs simple-null Y%`), the richer
+  model owes an explanation; if you can't give one, fall back to the simple one.
+- **Don't let thin markets inflate the tail**: a price nobody is defending is
+  not strong evidence. Stratify each market reading by liquidity + recency
+  before you pool it:
+
+  ```
+  forecast market-quality --markets '[{"source":"polymarket:slug","volume":90000,"updated_at":"2026-06-01T00:00:00Z"},
+                                       {"source":"manifold:x","volume":300,"age_days":1}]'
+  ```
+
+  (agent tool: `forecast_ledger` action `market_quality`.) It returns an
+  advisory weight in [0,1] per market — liquid 1.0, thin ~0.35, stale ~0.25,
+  placeholder ~0.05. **Multiply that weight into the market component's `weight`
+  in `ensemble_components`** so a stale or thin market pools at a fraction of a
+  liquid one. Never drop a market silently — record the discounted weight.
 - **Leader suppression**: is your top outcome held *below* what the paths,
   polls, and fundamentals imply? Sharpen it.
 

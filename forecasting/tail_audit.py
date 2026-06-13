@@ -80,6 +80,41 @@ class OutcomeVerdict:
         }
 
 
+# The floor a no-path outcome gets under the sharper null model — "absent a
+# named mechanism, an outcome starts near zero", per the agent's own rule.
+DEFAULT_NULL_FLOOR = 0.003  # 0.3%
+# How many times fatter the agent's no-path tail can be vs the null's before the
+# richer model must explain the difference.
+DEFAULT_NULL_TOLERANCE_RATIO = 2.0
+
+
+@dataclass
+class NullComparison:
+    """The agent distribution vs a deliberately simple null model: outcomes
+    WITH a named path keep their relative proportions; outcomes WITHOUT one are
+    floored near zero. A richer model whose no-path tail is much fatter than the
+    null's owes an explanation."""
+
+    null_distribution: dict[str, float]
+    agent_tail: float  # agent mass on no-path outcomes
+    null_tail: float  # null mass on the same outcomes
+    excess_tail: float  # agent_tail - null_tail
+    ratio: float  # agent_tail / null_tail (inf when null_tail≈0 and agent_tail>0)
+    floor: float
+    within_tolerance: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "null_distribution": self.null_distribution,
+            "agent_tail": self.agent_tail,
+            "null_tail": self.null_tail,
+            "excess_tail": self.excess_tail,
+            "ratio": self.ratio,
+            "floor": self.floor,
+            "within_tolerance": self.within_tolerance,
+        }
+
+
 @dataclass
 class TailAudit:
     verdicts: list[OutcomeVerdict]
@@ -89,6 +124,7 @@ class TailAudit:
     residual_cap: float
     passes: bool
     issues: list[str] = field(default_factory=list)
+    null_model: NullComparison | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -99,6 +135,7 @@ class TailAudit:
             "residual_cap": self.residual_cap,
             "issues": list(self.issues),
             "outcomes": [v.to_dict() for v in self.verdicts],
+            "null_model": self.null_model.to_dict() if self.null_model else None,
         }
 
 
@@ -118,6 +155,48 @@ def _infer_classification(outcome: OutcomePath, threshold: float, residual_cap: 
     if strength == "strong":
         return "live"
     return "live_ish"  # has a path; mixed/weak/unspecified evidence — watch it
+
+
+def compare_to_null(
+    outcomes: list[OutcomePath],
+    *,
+    floor: float = DEFAULT_NULL_FLOOR,
+    tolerance_ratio: float = DEFAULT_NULL_TOLERANCE_RATIO,
+) -> NullComparison:
+    """Build a sharper NULL model and compare the agent distribution to it.
+
+    Null rule (the "deliberately simple model" the agent asks for): an outcome
+    WITH a named path keeps its weight; an outcome WITHOUT one is floored near
+    zero. The whole thing is renormalized to sum to 1. A residual catch-all
+    bucket is treated as earned (it has an implicit "some other thing" path and
+    is capped separately by the audit), so it is NOT part of the no-path tail.
+    If the agent's mass on genuine no-path outcomes is much fatter than the
+    null's, the richer model must justify the difference.
+    """
+    no_path = {o.name for o in outcomes if not o.has_path and not o.is_residual}
+    raw: dict[str, float] = {}
+    for o in outcomes:
+        raw[o.name] = floor if (o.name in no_path) else max(float(o.probability), 0.0)
+    total = sum(raw.values()) or 1.0
+    null = {name: value / total for name, value in raw.items()}
+
+    agent_tail = sum(float(o.probability) for o in outcomes if o.name in no_path)
+    null_tail = sum(null[o.name] for o in outcomes if o.name in no_path)
+    excess = agent_tail - null_tail
+    if null_tail <= 1e-9:
+        ratio = float("inf") if agent_tail > 1e-9 else 1.0
+    else:
+        ratio = agent_tail / null_tail
+    within = ratio <= tolerance_ratio or agent_tail <= DEFAULT_MASS_THRESHOLD
+    return NullComparison(
+        null_distribution=null,
+        agent_tail=agent_tail,
+        null_tail=null_tail,
+        excess_tail=excess,
+        ratio=ratio,
+        floor=floor,
+        within_tolerance=within,
+    )
 
 
 def audit_outcomes(
@@ -187,6 +266,15 @@ def audit_outcomes(
             "no named path) — compress it onto outcomes with a live mechanism"
         )
 
+    null = compare_to_null(outcomes)
+    if not null.within_tolerance:
+        ratio_text = "∞" if null.ratio == float("inf") else f"{null.ratio:.1f}x"
+        issues.append(
+            f"no-path tail is {ratio_text} the sharper null model's "
+            f"({null.agent_tail:.1%} vs {null.null_tail:.1%}) — the richer model must justify "
+            "the extra mass or fall back to the simple one"
+        )
+
     passes = unearned_mass <= threshold and not any(i.startswith("probabilities sum") for i in issues)
     return TailAudit(
         verdicts=verdicts,
@@ -196,6 +284,7 @@ def audit_outcomes(
         residual_cap=residual_cap,
         passes=passes,
         issues=issues,
+        null_model=null,
     )
 
 
@@ -248,6 +337,13 @@ def render_audit_table(audit: TailAudit) -> str:
         f"{verdict}: unearned tail mass {audit.unearned_mass:.1%} "
         f"(threshold {audit.threshold:.1%}); total mass {audit.total_mass:.3f}"
     )
+    if audit.null_model is not None:
+        nm = audit.null_model
+        ratio_text = "∞" if nm.ratio == float("inf") else f"{nm.ratio:.1f}x"
+        rows.append(
+            f"null model: no-path tail {nm.agent_tail:.1%} vs simple-null {nm.null_tail:.1%} "
+            f"({ratio_text})"
+        )
     for issue in audit.issues:
         rows.append(f"  - {issue}")
     return "\n".join(rows)
