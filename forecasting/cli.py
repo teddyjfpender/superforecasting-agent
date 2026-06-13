@@ -807,6 +807,23 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         help="Recorded reason for committing a panel-indicated forecast without a panel "
         "(escape valve for the panel formality).",
     )
+    update_parser.add_argument(
+        "--outcome-path",
+        dest="outcome_paths",
+        action="append",
+        default=[],
+        metavar="OUTCOME=PATH",
+        help="Categorical forecasts: name the causal path for an outcome, e.g. "
+        "--outcome-path 'Lasher=leads polls + endorsements'. Repeatable. Feeds the "
+        "probability-mass audit that flags unearned tail mass.",
+    )
+    update_parser.add_argument(
+        "--require-outcome-paths",
+        dest="require_outcome_paths",
+        action="store_true",
+        help="Categorical live forecasts: refuse to commit when a material outcome holds "
+        "mass with no named path (unearned tail mass).",
+    )
     update_parser.add_argument("--evidence-cutoff")
     update_parser.add_argument("--backtest-run-id")
     update_parser.add_argument("--calibration-ineligible", action="store_true")
@@ -1933,6 +1950,30 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "--recency-halflife", type=float, dest="recency_halflife_days", help="Bias view: recency half-life (days)"
     )
     calibration_parser.set_defaults(_forecast_handler=_cmd_calibration)
+
+    tail_audit_parser = forecast_sub.add_parser(
+        "tail-audit",
+        help=(
+            "Probability-mass audit for a categorical distribution: flag UNEARNED tail "
+            "mass (material outcomes with no named path — the outcome-space-anchoring failure)"
+        ),
+    )
+    tail_audit_parser.add_argument(
+        "--dist",
+        dest="tail_audit_dist",
+        required=True,
+        help='Categorical distribution as JSON, e.g. \'{"A":0.55,"B":0.35,"C":0.1}\'',
+    )
+    tail_audit_parser.add_argument(
+        "--outcome-path",
+        dest="tail_audit_paths",
+        action="append",
+        default=[],
+        metavar="OUTCOME=PATH",
+        help="Name the causal path for an outcome (repeatable), e.g. --outcome-path 'A=leads polls'.",
+    )
+    tail_audit_parser.add_argument("--json", action="store_true")
+    tail_audit_parser.set_defaults(_forecast_handler=_cmd_tail_audit)
 
     track_record_parser = forecast_sub.add_parser(
         "track-record",
@@ -3366,6 +3407,8 @@ def _cmd_update(args: argparse.Namespace) -> None:
         require_panel=getattr(args, "require_panel", False),
         panel_run_ref=panel_run_ref,
         panel_skipped_reason=getattr(args, "panel_skipped_reason", None),
+        outcome_paths=_parse_outcome_paths(getattr(args, "outcome_paths", None)),
+        require_outcome_paths=getattr(args, "require_outcome_paths", False),
         # Record which related forecasts informed this one (server-side provenance).
         metadata={"cross_refs": _xrefs} if (_xrefs := ledger.build_cross_refs(args.id)) else None,
     )
@@ -8146,6 +8189,51 @@ def _print_calibration_bias(args: argparse.Namespace) -> None:
         else:
             note = (rep.get("advisory_text") or "")[:70]
         print(f"{scope:<22} {rep['status']:<20} {rep['ess']:>6.1f} {rep['n']:>4} {sce:>9} {ci:>18}  {note}")
+
+
+def _parse_outcome_paths(raw: list[str] | None) -> dict[str, str] | None:
+    """Parse repeated --outcome-path 'Outcome=path text' flags into a map."""
+    if not raw:
+        return None
+    paths: dict[str, str] = {}
+    for item in raw:
+        if "=" not in item:
+            raise SystemExit(
+                f"forecast: --outcome-path expects OUTCOME=PATH, got {item!r}"
+            )
+        name, path = item.split("=", 1)
+        name = name.strip()
+        if name:
+            paths[name] = path.strip()
+    return paths or None
+
+
+def _cmd_tail_audit(args: argparse.Namespace) -> None:
+    from forecasting.tail_audit import (
+        audit_outcomes,
+        outcome_paths_from_inputs,
+        render_audit_table,
+    )
+
+    try:
+        dist_raw = json.loads(args.tail_audit_dist)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"forecast tail-audit: invalid --dist JSON: {exc.msg}") from exc
+    if not isinstance(dist_raw, dict) or not dist_raw:
+        raise SystemExit("forecast tail-audit: --dist must be a non-empty JSON object")
+    try:
+        dist = {str(k): float(v) for k, v in dist_raw.items()}
+    except (TypeError, ValueError):
+        raise SystemExit("forecast tail-audit: distribution probabilities must be numeric")
+
+    paths = _parse_outcome_paths(getattr(args, "tail_audit_paths", None))
+    audit = audit_outcomes(outcome_paths_from_inputs(dist, paths))
+    if getattr(args, "json", False):
+        print(json.dumps(audit.to_dict(), indent=2, sort_keys=True))
+    else:
+        print(render_audit_table(audit))
+    if not audit.passes:
+        raise SystemExit(1)
 
 
 def _cmd_track_record(args: argparse.Namespace) -> None:

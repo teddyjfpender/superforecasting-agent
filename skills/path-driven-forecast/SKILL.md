@@ -92,9 +92,26 @@ your information frontier. Guard against two leaks:
 Audit for **under-confidence** as hard as for overconfidence (it is scored the
 same):
 
-- **No-path tails**: every option or bucket holding material mass must have a
-  nameable path. Mass you cannot justify is miscalibration — move it onto the
-  outcomes the evidence supports. A two-horse race is not a seven-horse race.
+- **No-path tails (run the audit)**: for a *categorical* forecast, do not
+  forecast from the answer choices — forecast from the causal paths. Run the
+  probability-mass audit before you commit:
+
+  ```
+  forecast tail-audit --dist '{"Lasher":0.55,"Bores":0.35,"Conway":0.017,"Other":0.013}' \
+      --outcome-path 'Lasher=leads polls + endorsements + field' \
+      --outcome-path 'Bores=fundraising + establishment lane'
+  ```
+
+  (agent tool: `forecast_ledger` action `tail_audit` with `distribution` +
+  `outcome_paths`.) It demands a named path for every outcome holding **≥0.5%**
+  and flags **unearned tail mass** — a named-but-non-live option (a candidate
+  with no poll, ballot line, or money) holding a tail purely because it appears
+  in the outcome set. That is *outcome-space anchoring*, the classic junior
+  error: a listed outcome is not a live one. Name the mechanism for each
+  material outcome, or compress that mass onto the outcomes with a live path.
+  Commit with `--require-outcome-paths` (tool: `require_outcome_paths=true`) to
+  make the gate hard — the live snapshot is refused until the mass is earned.
+  The audit table is recorded on the snapshot either way.
 - **Leader suppression**: is your top outcome held *below* what the paths,
   polls, and fundamentals imply? Sharpen it.
 

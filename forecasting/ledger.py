@@ -1431,6 +1431,8 @@ class ForecastLedger:
         require_panel: bool = False,
         panel_run_ref: str | None = None,
         panel_skipped_reason: str | None = None,
+        outcome_paths: dict[str, Any] | None = None,
+        require_outcome_paths: bool = False,
     ) -> ForecastSnapshot:
         question = self.get_question(question_id)
         if forecast_origin not in FORECAST_ORIGINS:
@@ -1535,6 +1537,26 @@ class ForecastLedger:
                     "rerun with require_citations=false, or record it as forecast_origin='exploratory'"
                 )
             snapshot_metadata["citation_policy"] = "required"
+        # Probability-mass audit for CATEGORICAL forecasts: route every
+        # material outcome through a named mechanism so mass can't be spread
+        # across answer-choice labels by default (outcome-space anchoring).
+        # Always recorded for auditability; only ENFORCED when the caller opts
+        # in via require_outcome_paths on a live forecast.
+        if question.outcome_space.type == "categorical" and isinstance(payload, dict):
+            from forecasting.tail_audit import audit_outcomes, outcome_paths_from_inputs
+
+            audit = audit_outcomes(outcome_paths_from_inputs(payload, outcome_paths))
+            snapshot_metadata["tail_audit"] = audit.to_dict()
+            if require_outcome_paths and forecast_origin == "live" and not audit.passes:
+                offenders = [v.name for v in audit.verdicts if v.unearned]
+                raise ValidationError(
+                    "live categorical forecast has unearned tail mass "
+                    f"({audit.unearned_mass:.1%}) on outcomes with no named path: "
+                    f"{', '.join(offenders)}. Name the mechanism for each (pass "
+                    "outcome_paths / --outcome-path), compress the mass onto outcomes "
+                    "with a live path, rerun with require_outcome_paths=false, or record "
+                    "it as forecast_origin='exploratory'."
+                )
         if stale_evidence_days is not None and evidence_refs:
             stale_refs = self.find_stale_evidence_refs(
                 question_id,

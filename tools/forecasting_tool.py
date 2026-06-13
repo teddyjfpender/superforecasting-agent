@@ -180,6 +180,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "list_panel",
                     "panel_perspectives",
                     "component_track_record",
+                    "tail_audit",
                     "link_forecasts",
                     "list_links",
                     "unlink_forecasts",
@@ -344,6 +345,33 @@ FORECAST_LEDGER_SCHEMA = {
                 "description": (
                     "Recorded reason for committing a panel-indicated forecast without a panel "
                     "(the escape valve for the panel formality). Stored on the snapshot."
+                ),
+            },
+            "outcome_paths": {
+                "type": "object",
+                "description": (
+                    "CATEGORICAL forecasts: a {outcome_label: path-info} map naming the causal "
+                    "PATH that routes mass to each material outcome. path-info is a string (the "
+                    "path) or an object {path, classification, evidence_strength: strong|mixed|weak}. "
+                    "Used by the probability-mass audit (also the `tail_audit` action) to flag "
+                    "UNEARNED tail mass — material outcomes (>=0.5%) with no named mechanism, the "
+                    "outcome-space-anchoring failure. The audit is always recorded on the snapshot."
+                ),
+            },
+            "require_outcome_paths": {
+                "type": "boolean",
+                "description": (
+                    "Categorical live forecasts: refuse to save when any material outcome holds "
+                    "mass with no named path (unearned tail mass). Provide outcome_paths, compress "
+                    "the mass, set false, or record as exploratory. Default false."
+                ),
+            },
+            "distribution": {
+                "type": "object",
+                "description": (
+                    "For the `tail_audit` action: the categorical distribution to audit as "
+                    "{outcome_label: probability}. (For update_forecast, pass the distribution via "
+                    "probability_or_distribution instead.)"
                 ),
             },
             "failure_class": {
@@ -1273,6 +1301,8 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 require_panel=bool(args.get("require_panel", True)),
                 panel_run_ref=args.get("panel_run_ref"),
                 panel_skipped_reason=args.get("panel_skipped_reason"),
+                outcome_paths=args.get("outcome_paths"),
+                require_outcome_paths=bool(args.get("require_outcome_paths", False)),
             )
             try:
                 from forecasting.writeup import write_brief
@@ -1789,6 +1819,40 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 now=args.get("now"),
             )
             return tool_result(success=True, alerts=[alert.__dict__ for alert in alerts])
+
+        if action == "tail_audit":
+            from forecasting.tail_audit import (
+                audit_outcomes,
+                outcome_paths_from_inputs,
+                render_audit_table,
+            )
+
+            distribution = args.get("distribution")
+            if not isinstance(distribution, dict) or not distribution:
+                return tool_error(
+                    "tail_audit requires a categorical `distribution` object "
+                    "{outcome: probability}",
+                    success=False,
+                )
+            try:
+                dist = {str(k): float(v) for k, v in distribution.items()}
+            except (TypeError, ValueError):
+                return tool_error("distribution probabilities must be numeric", success=False)
+            audit = audit_outcomes(
+                outcome_paths_from_inputs(dist, args.get("outcome_paths"))
+            )
+            return tool_result(
+                success=True,
+                audit=audit.to_dict(),
+                table=render_audit_table(audit),
+                note=(
+                    "Every material outcome (>=0.5%) must route through a named path; "
+                    "mass with no mechanism is UNEARNED tail mass — name the path or "
+                    "compress it onto outcomes with a live mechanism. Pass these same "
+                    "outcome_paths to update_forecast with require_outcome_paths=true to "
+                    "enforce it on the committed snapshot."
+                ),
+            )
 
         if action == "component_track_record":
             origin = args.get("forecast_origin", "live")
