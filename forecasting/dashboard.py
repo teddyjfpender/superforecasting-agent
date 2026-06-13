@@ -18,6 +18,18 @@ from forecasting.ledger import ForecastLedger
 from forecasting.models import LedgerNotFoundError, utc_now_iso
 
 
+def _snapshot_tail_audit(snapshot: Any) -> dict[str, Any] | None:
+    """The probability-mass audit recorded on a categorical snapshot (None for
+    binary/numeric/older snapshots). Carried onto each desk row so the rail,
+    book, and status strip can flag a forecast with UNEARNED tail mass — the
+    glanceable text agrees with the detail pane's Tail Audit section."""
+    metadata = getattr(snapshot, "metadata", None)
+    if not isinstance(metadata, dict):
+        return None
+    audit = metadata.get("tail_audit")
+    return audit if isinstance(audit, dict) else None
+
+
 def build_dashboard_summary(
     *, ledger: ForecastLedger | None = None, limit: int = 50, now: str | None = None
 ) -> dict[str, Any]:
@@ -86,6 +98,7 @@ def build_dashboard_summary(
                 ),
                 "stale_reference_class_count": len(stale_reference_classes),
                 "open_alert_count": alert_counts.get(question.id, 0),
+                "tail_audit": _snapshot_tail_audit(current),
             }
         )
 
@@ -112,6 +125,7 @@ def build_dashboard_summary(
                 "priority": row.get("priority", 9),
                 "reasons": reasons,
                 "next_action": review_next_action(question.id, reasons),
+                "tail_audit": _snapshot_tail_audit(snapshot),
             }
         )
     review_rows_by_id = {str(row["id"]): row for row in review_queue if row.get("id")}
@@ -473,6 +487,7 @@ def build_workspace_payload(
                 "reasons_up": list(current.reasons_up) if current else [],
                 "reasons_down": list(current.reasons_down) if current else [],
                 "change_my_mind": list(current.change_my_mind) if current else [],
+                "tail_audit": _snapshot_tail_audit(current),
                 "decision_owner": question.decision_owner,
                 "decision_deadline": question.decision_deadline,
                 "action_threshold": question.action_threshold,
