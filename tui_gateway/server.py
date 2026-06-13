@@ -5533,6 +5533,34 @@ def _(rid, params: dict) -> dict:
                 "display": "/mouse",
                 "meta": "Toggle mouse/wheel tracking [on|off|toggle]",
             },
+            # TUI-native commands handled by the Ink slash registry (not the
+            # hermes_cli completer catalog) — list them here so they're
+            # discoverable in the composer's autocomplete.
+            {
+                "text": "/theme",
+                "display": "/theme",
+                "meta": "Pick a color theme (interactive picker, live preview)",
+            },
+            {
+                "text": "/auth",
+                "display": "/auth",
+                "meta": "Sign in to an AI provider without leaving the TUI",
+            },
+            {
+                "text": "/panel",
+                "display": "/panel",
+                "meta": "Multi-perspective forecast panel (outside/inside/market/red-team/sanity)",
+            },
+            {
+                "text": "/bayes",
+                "display": "/bayes",
+                "meta": "Auditable Bayesian scratchpad (priors, likelihood ratios, pooling)",
+            },
+            {
+                "text": "/calibration",
+                "display": "/calibration",
+                "meta": "Calibration analytics; /calibration --visual for the reliability view",
+            },
         ]
         for extra in extras:
             if extra["text"].startswith(text_lower) and not any(

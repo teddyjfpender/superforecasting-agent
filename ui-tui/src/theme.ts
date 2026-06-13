@@ -137,6 +137,104 @@ function relativeLuminance(red: number, green: number, blue: number): number {
   return 0.2126 * channelLuminance(red) + 0.7152 * channelLuminance(green) + 0.0722 * channelLuminance(blue)
 }
 
+// ── Dark-terminal contrast floor ─────────────────────────────────────
+// Several skins set `muted`/dim foregrounds dark enough to be near-invisible
+// on a black terminal (e.g. ares crimson #6B1717 ≈ 1.8:1, poseidon navy ≈
+// 1.9:1) — well under the 4.5:1 WCAG AA floor for body text. Since `muted`
+// carries the bulk of secondary text (hints, descriptions, separators), that
+// reads as "faint, hard-to-read text". We lift only the text-bearing
+// foregrounds toward white until they clear the floor, preserving the rest of
+// the palette. Applied to ANY skin (built-in or user), only in dark mode.
+
+// Pure-black reference background (the WCAG comparison point). Using true
+// black keeps the floor surgical — it lifts only colors that are unreadable
+// even on black (the 1.0–2.8:1 dim values several skins ship), and leaves
+// already-readable foregrounds (incl. the gold default muted at ~6:1)
+// byte-for-byte unchanged.
+const DARK_BG_LUMINANCE = 0.0
+const DARK_TEXT_CONTRAST_FLOOR = 4.5
+
+// Foregrounds that carry readable TEXT — the only ones we lift. Severity
+// colors (ok/warn/error), accent, and primary are already bright on every
+// shipped skin, and borders/backgrounds are decorative, so we leave them.
+const DARK_CONTRAST_FLOORED_KEYS: readonly (keyof ThemeColors)[] = [
+  'text',
+  'muted',
+  'label',
+  'prompt',
+  'sessionLabel',
+  'sessionBorder',
+  'info'
+]
+
+function wcagContrast(luminance: number, background: number): number {
+  const hi = Math.max(luminance, background)
+  const lo = Math.min(luminance, background)
+
+  return (hi + 0.05) / (lo + 0.05)
+}
+
+function colorLuminance(hex: string): null | number {
+  const rgb = parseHex(hex)
+
+  return rgb ? relativeLuminance(rgb[0], rgb[1], rgb[2]) : null
+}
+
+// Lift a too-dark color toward white until it clears `floor` against a dark
+// background. Non-hex inputs (e.g. `ansi256(...)`) pass through untouched.
+function enforceDarkContrast(
+  hex: string,
+  floor = DARK_TEXT_CONTRAST_FLOOR,
+  background = DARK_BG_LUMINANCE
+): string {
+  const lum = colorLuminance(hex)
+
+  if (lum === null || wcagContrast(lum, background) >= floor) {
+    return hex
+  }
+
+  // Binary-search the blend toward white; 14 steps resolves to hex precision.
+  let lo = 0
+  let hi = 1
+  let result = mix(hex, '#FFFFFF', 1)
+
+  for (let i = 0; i < 14; i++) {
+    const t = (lo + hi) / 2
+    const candidate = mix(hex, '#FFFFFF', t)
+    const candidateLum = colorLuminance(candidate)
+
+    if (candidateLum !== null && wcagContrast(candidateLum, background) >= floor) {
+      result = candidate
+      hi = t
+    } else {
+      lo = t
+    }
+  }
+
+  return result
+}
+
+export function enforceDarkContrastFloor(theme: Theme, isLight = detectLightMode()): Theme {
+  if (isLight) {
+    return theme
+  }
+
+  const color = { ...theme.color }
+  let changed = false
+
+  for (const key of DARK_CONTRAST_FLOORED_KEYS) {
+    const lifted = enforceDarkContrast(color[key])
+    if (lifted !== color[key]) {
+      color[key] = lifted
+      changed = true
+    }
+  }
+
+  // Return the SAME theme object when nothing needed lifting — preserves the
+  // DEFAULT_THEME === DARK_THEME aliasing invariant other code relies on.
+  return changed ? { ...theme, color } : theme
+}
+
 function rgbToHsl(red: number, green: number, blue: number): [number, number, number] {
   const rn = red / 255
   const gn = green / 255
@@ -510,9 +608,12 @@ export function normalizeThemeForAnsiLightTerminal(
 
 const DEFAULT_LIGHT_MODE = detectLightMode()
 
-export const DEFAULT_THEME: Theme = normalizeThemeForAnsiLightTerminal(
-  DEFAULT_LIGHT_MODE ? LIGHT_THEME : DARK_THEME,
-  process.env,
+export const DEFAULT_THEME: Theme = enforceDarkContrastFloor(
+  normalizeThemeForAnsiLightTerminal(
+    DEFAULT_LIGHT_MODE ? LIGHT_THEME : DARK_THEME,
+    process.env,
+    DEFAULT_LIGHT_MODE
+  ),
   DEFAULT_LIGHT_MODE
 )
 
@@ -542,7 +643,8 @@ export function fromSkin(
   const completionMetaBg = c('completion_menu_meta_bg') ?? completionBg
   const completionMetaCurrentBg = c('completion_menu_meta_current_bg') ?? completionCurrentBg
 
-  return normalizeThemeForAnsiLightTerminal(
+  return enforceDarkContrastFloor(
+    normalizeThemeForAnsiLightTerminal(
     {
       color: {
         primary: c('ui_primary') ?? c('banner_title') ?? d.color.primary,
@@ -597,6 +699,8 @@ export function fromSkin(
       bannerHero
     },
     process.env,
+    DEFAULT_LIGHT_MODE
+    ),
     DEFAULT_LIGHT_MODE
   )
 }

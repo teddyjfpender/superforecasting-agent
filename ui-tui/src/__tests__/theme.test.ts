@@ -334,3 +334,49 @@ describe('fromSkin', () => {
     expect(color.statusGood).toBe('#008000')
   })
 })
+
+describe('dark-terminal contrast floor', () => {
+  // Minimal WCAG contrast against a near-black terminal background.
+  const cl = (v: number) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4)
+  const lum = (hex: string) => {
+    const n = parseInt(hex.replace('#', ''), 16)
+    return 0.2126 * cl((n >> 16) & 255) + 0.7152 * cl((n >> 8) & 255) + 0.0722 * cl(n & 255)
+  }
+  const contrast = (hex: string, bg = 0) => {
+    const L = lum(hex)
+    return (Math.max(L, bg) + 0.05) / (Math.min(L, bg) + 0.05)
+  }
+
+  it('lifts a near-invisible muted color to at least AA (4.5:1) in dark mode', async () => {
+    const { fromSkin } = await importThemeWithCleanEnv()
+    // poseidon-style deep navy dim — ~1.9:1 on black before the floor.
+    const { color } = fromSkin({ banner_dim: '#153C73' }, {})
+    expect(contrast(color.muted)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('preserves hue while lifting — a crimson muted stays reddish, not gray/white', async () => {
+    const { fromSkin } = await importThemeWithCleanEnv()
+    const { color } = fromSkin({ banner_dim: '#6B1717' }, {})
+    const n = parseInt(color.muted.replace('#', ''), 16)
+    const r = (n >> 16) & 255
+    const g = (n >> 8) & 255
+    const b = n & 255
+    expect(contrast(color.muted)).toBeGreaterThanOrEqual(4.5)
+    expect(r).toBeGreaterThan(g) // still red-dominant
+    expect(r).toBeGreaterThan(b)
+  })
+
+  it('leaves already-readable colors untouched', async () => {
+    const { fromSkin } = await importThemeWithCleanEnv()
+    // #c9d1d9 is ~13:1 on black — well above the floor, must not change.
+    const { color } = fromSkin({ ui_text: '#c9d1d9' }, {})
+    expect(color.text).toBe('#c9d1d9')
+  })
+
+  it('does NOT lift colors in light mode (dark text is correct on light bg)', async () => {
+    const { fromSkin } = await importThemeWithEnv({ FORECAST_TUI_LIGHT: '1' })
+    const { color } = fromSkin({ banner_dim: '#153C73' }, {})
+    // Light mode: the dark dim is intended; the dark-floor must be a no-op.
+    expect(color.muted).toBe('#153C73')
+  })
+})
