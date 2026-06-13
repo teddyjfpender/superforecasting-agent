@@ -105,6 +105,10 @@ full discipline when you commit a live forecast.
 
 ## Where this fits
 
+- Reasoning *to* the number before you commit it (status quo + horizon anchor,
+  trace and price the path to each outcome, tail check) → **path-driven-forecast**.
+  It lives inside the `update` stage and is how you avoid a junior forecast — a
+  number pulled from a vibe.
 - Moving or combining a probability → reach for **bayes-forecast-scratchpad**
   (log-odds pooling, likelihood ratios, market de-vig, conditional chains).
 - Running a question end-to-end, or unsure what is next → this skill and

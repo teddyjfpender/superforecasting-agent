@@ -9,7 +9,7 @@ metadata:
   hermes:
     tags: [forecasting, bayesian, probability, likelihood-ratio, pooling, calibration, polls, markets, sensitivity, superforecasting]
     category: forecasting
-    related_skills: []
+    related_skills: [path-driven-forecast, forecasting-loop]
 ---
 
 # Bayesian Forecast Scratchpad
