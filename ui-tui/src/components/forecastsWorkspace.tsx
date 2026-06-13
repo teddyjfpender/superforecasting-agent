@@ -11,6 +11,8 @@ import type {
   ForecastQuestionPacket,
   ForecastQuestionPacketResponse,
   ForecastRelated,
+  ForecastTailAudit,
+  ForecastTailOutcome,
   ForecastThesis,
   ForecastThesisComponent,
   ForecastThesisEntity,
@@ -35,6 +37,17 @@ import {
   pctDelta,
   shortDate
 } from '../lib/forecastCharts.js'
+import {
+  looksLikeMarketSource,
+  nullModelLine,
+  outcomeSeverity,
+  packetTailAudit,
+  tailAuditChip,
+  tailAuditFails,
+  tailPct,
+  type TailSeverity,
+  unearnedHeadline
+} from '../lib/forecastTail.js'
 import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
 import type { PanelSection } from '../types.js'
@@ -347,6 +360,69 @@ const ensembleEstimates = (components: Record<string, unknown> | null | undefine
   return estimates
 }
 
+// One pooled ensemble component, with its source slug preserved (the panel-style
+// `ensembleEstimates` above drops `source`; the detail pane needs it to flag a
+// down-weighted market).
+export interface EnsembleComponentRow {
+  name: string
+  probability: number
+  source: null | string
+  weight: number
+}
+
+/**
+ * The current snapshot's pooled ensemble components as rows, preserving the
+ * source slug. Mirrors the ledger's `_ensemble_component_rows`: either
+ * `{components: [{name, probability, weight, source}, …]}` or a plain
+ * `{name: probability|{probability, weight}}` map. Returns [] when the snapshot
+ * carries no usable components.
+ */
+export const ensembleComponentRows = (
+  packet: ForecastQuestionPacket | null | undefined
+): EnsembleComponentRow[] => {
+  const history = packet?.forecast_history ?? []
+  const latest = history.length ? history[history.length - 1] : null
+  const components = latest?.ensemble_components
+
+  if (!components || typeof components !== 'object') {
+    return []
+  }
+
+  const rawRows: Record<string, unknown>[] = Array.isArray(
+    (components as { components?: unknown }).components
+  )
+    ? ((components as { components: unknown[] }).components.filter(
+        row => row && typeof row === 'object'
+      ) as Record<string, unknown>[])
+    : Object.entries(components as Record<string, unknown>).map(([name, value]) =>
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? { name, ...(value as Record<string, unknown>) }
+          : { name, probability: value }
+      )
+
+  const rows: EnsembleComponentRow[] = []
+
+  rawRows.forEach((raw, index) => {
+    const probability = raw.probability
+
+    if (!probabilityLike(probability)) {
+      return
+    }
+
+    const weight = raw.weight
+    const source = typeof raw.source === 'string' ? raw.source : null
+
+    rows.push({
+      name: String(raw.name ?? raw.source ?? `component_${index + 1}`),
+      probability,
+      source,
+      weight: finite(weight) && weight >= 0 ? weight : 1
+    })
+  })
+
+  return rows
+}
+
 /**
  * The panel-spread data for a question whose lighter workspace item carries no
  * `panel`: prefer the packet's latest recorded panel run; otherwise reconstruct
@@ -525,6 +601,7 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
       // health-driver members when question_ids isn't present.
       const ecosystem =
         activeThesis.question_ids ?? (activeThesis.components ?? []).map(component => component.id ?? '')
+
       const memberIds = new Set(ecosystem.filter((id): id is string => Boolean(id)))
 
       return items.filter(item => item.id != null && memberIds.has(item.id) && matchesFilter(item, query))
@@ -673,6 +750,21 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
   // ensemble components) so panel-method forecasts still show their spread.
   const packetPanel = useMemo(
     () => (packet && packetId === selectedId ? panelFromPacket(packet.packet) : null),
+    [packet, packetId, selectedId]
+  )
+
+  // The current snapshot's tail audit (categorical only). Null on
+  // binary/distribution questions and on older snapshots — the detail pane then
+  // omits the Tail Audit section rather than fake a zero-mass audit.
+  const tailAudit = useMemo(
+    () => (packet && packetId === selectedId ? packetTailAudit(packet.packet) : null),
+    [packet, packetId, selectedId]
+  )
+
+  // The current snapshot's pooled ensemble components (raw rows, so source slugs
+  // and discounted weights survive). Null when the snapshot has no components.
+  const ensembleRows = useMemo(
+    () => (packet && packetId === selectedId ? ensembleComponentRows(packet.packet) : []),
     [packet, packetId, selectedId]
   )
 
@@ -940,6 +1032,7 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
                       variant={latestNote.kind === 'retrospective' ? 'retrospective' : 'quickread'}
                       width={detailW}
                     />
+                    <TailAuditChip audit={tailAudit} t={t} />
                     {selected.related?.informed_by?.length ? (
                       <Box>
                         <Text color={t.color.muted} wrap="truncate-end">
@@ -953,9 +1046,11 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
                   </>
                 ) : null
               }
+              ensembleRows={ensembleRows}
               item={selected}
               packetPanel={packetPanel}
               t={t}
+              tailAudit={tailAudit}
               width={detailW}
             />
             {packetTail && packetTail.length ? (
@@ -1349,15 +1444,19 @@ function KV({ k, t, v }: { k: string; t: Theme; v: string }) {
 
 export function ForecastDetail({
   afterChart,
+  ensembleRows = [],
   item,
   packetPanel = null,
   t,
+  tailAudit = null,
   width
 }: {
   afterChart?: ReactNode
+  ensembleRows?: EnsembleComponentRow[]
   item: ForecastWorkspaceItem
   packetPanel?: ForecastWorkspacePanel | null
   t: Theme
+  tailAudit?: ForecastTailAudit | null
   width: number
 }) {
   const delta = item.delta
@@ -1507,31 +1606,18 @@ export function ForecastDetail({
         </>
       ) : null}
 
+      <TailAuditSection audit={tailAudit} t={t} width={width} />
+
+      <EnsembleComponentsSection rows={ensembleRows} t={t} width={width} />
+
       {panel ? <PanelSection panel={panel} t={t} width={width} /> : null}
 
-      {(item.reasons_up?.length || item.reasons_down?.length || item.change_my_mind?.length) ? (
-        <>
-          <SectionTitle t={t}>reasoning</SectionTitle>
-          {(item.reasons_up ?? []).map((reason, i) => (
-            <Text color={t.color.text} key={`up${i}`} wrap="truncate-end">
-              <Text color={t.color.ok}>▲ </Text>
-              {reason}
-            </Text>
-          ))}
-          {(item.reasons_down ?? []).map((reason, i) => (
-            <Text color={t.color.text} key={`dn${i}`} wrap="truncate-end">
-              <Text color={t.color.error}>▼ </Text>
-              {reason}
-            </Text>
-          ))}
-          {(item.change_my_mind ?? []).map((reason, i) => (
-            <Text color={t.color.text} key={`cmm${i}`} wrap="truncate-end">
-              <Text color={t.color.warn}>⟳ </Text>
-              {reason}
-            </Text>
-          ))}
-        </>
-      ) : null}
+      <ReasoningPaths
+        breaksIf={item.change_my_mind ?? []}
+        pathDown={item.reasons_down ?? []}
+        pathUp={item.reasons_up ?? []}
+        t={t}
+      />
 
       {item.related ? <RelatedForecasts related={item.related} t={t} width={width} /> : null}
 
@@ -1588,6 +1674,252 @@ export function ForecastDetail({
   )
 }
 
+// ── Tail audit (categorical probability-mass audit) ─────────────────────────
+
+// Map the engine's tail-audit severity onto the workspace theme so an UNEARNED
+// outcome reads error-red, a weak/unpriced one amber, a live one green, and a
+// residual/negligible one muted — the same severity grammar the rest of the
+// desk uses for health/delta.
+const tailSeverityColor = (t: Theme, severity: TailSeverity): string =>
+  severity === 'error'
+    ? t.color.error
+    : severity === 'warn'
+      ? t.color.warn
+      : severity === 'ok'
+        ? t.color.ok
+        : t.color.muted
+
+// A glyph for a classification: a live path reads as a filled dot, an unearned
+// outcome as a bang, the weak middle as a hollow dot, residual as a dash.
+const tailGlyph = (outcome: ForecastTailOutcome): string => {
+  if (outcome.unearned) {
+    return '!'
+  }
+
+  const classification = outcome.classification ?? ''
+
+  if (classification === 'live') {
+    return '●'
+  }
+
+  if (classification === 'residual') {
+    return '·'
+  }
+
+  return '○'
+}
+
+// The inline "tail audit: FAIL — Conway 1.7% unpriced" chip that sits next to
+// the analyst quick read so the commentary and the audit never contradict each
+// other. A passing audit reads a quiet green "tail audit: PASS"; no audit at all
+// (non-categorical / older snapshot) renders nothing.
+function TailAuditChip({ audit, t }: { audit: ForecastTailAudit | null; t: Theme }) {
+  const chip = tailAuditChip(audit)
+
+  if (!chip) {
+    return null
+  }
+
+  const fails = tailAuditFails(audit)
+
+  return (
+    <Box>
+      <Text bold color={fails ? t.color.error : t.color.ok} wrap="truncate-end">
+        {chip}
+      </Text>
+    </Box>
+  )
+}
+
+// The probability-mass table for a categorical question: one row per outcome
+// (glyph / name / prob / classification / evidence / path), unearned rows
+// coloured error, a small classification-coloured mass bar, the unearned-mass
+// headline, and the null-model comparison line. Rendered only when the snapshot
+// actually carries an audit (categorical only); otherwise nothing.
+function TailAuditSection({ audit, t, width }: { audit: ForecastTailAudit | null; t: Theme; width: number }) {
+  if (!audit || !(audit.outcomes ?? []).length) {
+    return null
+  }
+
+  const fails = tailAuditFails(audit)
+  const outcomes = [...(audit.outcomes ?? [])].sort((a, b) => (b.probability ?? 0) - (a.probability ?? 0))
+  const headline = unearnedHeadline(audit)
+  const nullLine = nullModelLine(audit)
+  // Budget: glyph(2) name(flex) prob(6) gap classification(11) → keep the name
+  // column wide enough to read on a narrow pane.
+  const nameW = Math.max(10, Math.min(28, width - 26))
+  const barW = Math.max(4, Math.min(12, width - nameW - 26))
+  const maxMass = Math.max(...outcomes.map(outcome => outcome.probability ?? 0), 0.0001)
+
+  return (
+    <>
+      <SectionTitle t={t}>Tail Audit</SectionTitle>
+      <Text wrap="truncate-end">
+        <Text bold color={fails ? t.color.error : t.color.ok}>
+          {fails ? 'FAIL' : 'PASS'}
+        </Text>
+        <Text color={t.color.muted}>{`  total ${tailPct(audit.total_mass)}  ·  threshold ${tailPct(audit.threshold)}`}</Text>
+      </Text>
+      {headline ? (
+        <Text bold color={fails ? t.color.error : t.color.warn} wrap="truncate-end">
+          {headline}
+        </Text>
+      ) : null}
+      {outcomes.map((outcome, i) => {
+        const severity = outcomeSeverity(outcome)
+        const color = tailSeverityColor(t, severity)
+        const name = truncate(outcome.name ?? '—', nameW).padEnd(nameW)
+        const classification = (outcome.classification ?? '—').padEnd(11)
+        const fill = Math.max(0, Math.round(clamp01((outcome.probability ?? 0) / maxMass) * barW))
+        const bar = `${'█'.repeat(fill)}${'░'.repeat(Math.max(0, barW - fill))}`
+
+        return (
+          <Text key={outcome.name ?? `o${i}`} wrap="truncate-end">
+            <Text bold color={color}>
+              {tailGlyph(outcome)}{' '}
+            </Text>
+            <Text color={outcome.unearned ? color : t.color.text}>{name}</Text>
+            <Text color={t.color.text}> {tailPct(outcome.probability).padStart(6)}</Text>
+            <Text color={color}> {bar}</Text>
+            <Text color={t.color.label}> {classification}</Text>
+            <Text color={t.color.muted}>
+              {outcome.has_path ? `path: ${truncate(outcome.path || '—', 24)}` : 'no path'}
+              {outcome.evidence_strength && outcome.evidence_strength !== 'unspecified'
+                ? ` · ${outcome.evidence_strength}`
+                : ''}
+            </Text>
+          </Text>
+        )
+      })}
+      {nullLine ? (
+        <Text color={audit.null_model?.within_tolerance ? t.color.muted : t.color.warn} wrap="truncate-end">
+          {`  null model: ${nullLine}${audit.null_model?.within_tolerance ? '' : ' — owes an explanation'}`}
+        </Text>
+      ) : null}
+      {(audit.issues ?? []).map((issue, i) => (
+        <Text color={t.color.warn} key={`issue${i}`} wrap="truncate-end">
+          {`  ⚠ ${issue}`}
+        </Text>
+      ))}
+    </>
+  )
+}
+
+// The pooled ensemble components with weights + source slugs, so a market that
+// was down-weighted for being thin/stale (a fraction of a liquid component's
+// weight) is visible. A market-looking source whose weight is conspicuously low
+// relative to the heaviest component is hinted "discounted".
+function EnsembleComponentsSection({
+  rows,
+  t,
+  width
+}: {
+  rows: EnsembleComponentRow[]
+  t: Theme
+  width: number
+}) {
+  if (rows.length < 2) {
+    return null
+  }
+
+  const maxWeight = Math.max(...rows.map(row => row.weight), 0)
+  const totalWeight = rows.reduce((sum, row) => sum + row.weight, 0) || 1
+  // marker(2) name(flex) prob(6) gap weight(7) gap source(tail)
+  const nameW = Math.max(10, Math.min(24, width - 30))
+
+  return (
+    <>
+      <SectionTitle t={t}>{`ensemble components (${rows.length})`}</SectionTitle>
+      {rows.map((row, i) => {
+        const share = row.weight / totalWeight
+
+        // A market component whose weight is a small fraction of the heaviest is
+        // flagged: it was likely discounted for being thin/stale.
+        const discounted =
+          looksLikeMarketSource(row.source) && maxWeight > 0 && row.weight <= maxWeight * 0.5
+
+        const name = truncate(row.name, nameW).padEnd(nameW)
+
+        return (
+          <Text key={row.source ?? row.name ?? `c${i}`} wrap="truncate-end">
+            <Text color={discounted ? t.color.warn : t.color.label}>{discounted ? '× ' : '  '}</Text>
+            <Text color={t.color.text}>{name}</Text>
+            <Text color={t.color.text}> {pct(row.probability).padStart(5)}</Text>
+            <Text color={t.color.muted}>{`  w ${row.weight.toFixed(2)} (${pct(share)})`}</Text>
+            {row.source ? <Text color={t.color.muted}>{`  ${truncate(row.source, 20)}`}</Text> : null}
+            {discounted ? <Text color={t.color.warn}>{'  discounted'}</Text> : null}
+          </Text>
+        )
+      })}
+    </>
+  )
+}
+
+// Path-driven structured reasoning: the causal PATHS, not a generic "reasons"
+// blob. "Path up" (links that push the probability up), "Path down" (links that
+// push it down), and "Breaks if" (the weakest load-bearing link — what would
+// change the forecaster's mind).
+function ReasoningPaths({
+  breaksIf,
+  pathDown,
+  pathUp,
+  t
+}: {
+  breaksIf: string[]
+  pathDown: string[]
+  pathUp: string[]
+  t: Theme
+}) {
+  if (!pathUp.length && !pathDown.length && !breaksIf.length) {
+    return null
+  }
+
+  return (
+    <>
+      <SectionTitle t={t}>causal paths</SectionTitle>
+      {pathUp.length ? (
+        <>
+          <Text bold color={t.color.ok}>
+            Path up
+          </Text>
+          {pathUp.map((link, i) => (
+            <Text color={t.color.text} key={`up${i}`} wrap="truncate-end">
+              <Text color={t.color.ok}>▲ </Text>
+              {link}
+            </Text>
+          ))}
+        </>
+      ) : null}
+      {pathDown.length ? (
+        <>
+          <Text bold color={t.color.error}>
+            Path down
+          </Text>
+          {pathDown.map((link, i) => (
+            <Text color={t.color.text} key={`dn${i}`} wrap="truncate-end">
+              <Text color={t.color.error}>▼ </Text>
+              {link}
+            </Text>
+          ))}
+        </>
+      ) : null}
+      {breaksIf.length ? (
+        <>
+          <Text bold color={t.color.warn}>
+            Breaks if
+          </Text>
+          {breaksIf.map((link, i) => (
+            <Text color={t.color.text} key={`brk${i}`} wrap="truncate-end">
+              <Text color={t.color.warn}>⟳ </Text>
+              {link}
+            </Text>
+          ))}
+        </>
+      ) : null}
+    </>
+  )
+}
+
 /** Compact perspective-vs-aggregate delta: `"+6pt"` / `"-2pt"` / `"·"`. */
 const spreadDelta = (probability: null | number | undefined, aggregate: null | number | undefined): string => {
   if (!finite(probability) || !finite(aggregate)) {
@@ -1608,9 +1940,11 @@ export function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePane
   const estimates = panel.estimates ?? []
   const aggregate = panel.aggregate_probability
   const isEnsemble = panel.kind === 'ensemble'
+
   const title = isEnsemble
     ? `ensemble (${estimates.length} components)`
     : `panel (${estimates.length} perspectives)`
+
   // Per-perspective rail: each estimate (●) positioned on the same 0..1 track
   // with the aggregate as the reference tick (┊), so the spread reads at a
   // glance. Budget: marker(2) name(10) value(6) gap(1) rail gap(2) delta(5).
@@ -1640,6 +1974,7 @@ export function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePane
       {estimates.map((estimate, i) => {
         const rail = railW >= 8 ? dotTrack(estimate.probability, aggregate, { width: railW }) : ''
         const delta = spreadDelta(estimate.probability, aggregate)
+
         const deltaColor =
           !delta || delta === '·'
             ? t.color.muted

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import type {
   ForecastFactor,
+  ForecastTailAudit,
   ForecastThesis,
   ForecastWorkspaceItem,
   ForecastWorkspaceResponse
@@ -630,14 +631,16 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('focus detail')
   })
 
-  it('renders the detail pane with charts, panel, reasoning, and decision card', async () => {
+  it('renders the detail pane with charts, panel, causal paths, and decision card', async () => {
     const text = await renderDetail(texasItem())
     expect(text).toContain('Will the Republican win the Texas Senate seat?')
     expect(text).toContain('probability over time')
     expect(text).toContain('●') // chart marker
     expect(text).toContain('panel')
     expect(text).toContain('aggregate')
-    expect(text).toContain('reasoning')
+    // Reasons render as labelled causal PATHS, not a generic "reasons" blob.
+    expect(text).toContain('causal paths')
+    expect(text).toContain('Path up')
     expect(text).toContain('turnout model') // reasons_up
     expect(text).toContain('decision card')
     expect(text).toContain('Desk lead')
@@ -1098,5 +1101,94 @@ describe('ForecastsWorkspace render', () => {
     // …and the action playbook is keyed to the question id, read-only.
     expect(text).toContain('/revise fq_tail')
     expect(text).toContain('/forecast research fq_tail')
+  })
+})
+
+// ── Tail audit + ensemble components + causal paths (the new desk surfaces) ──
+
+const failingAudit = (): ForecastTailAudit => ({
+  issues: ['1.7% of probability is unearned tail mass'],
+  null_model: {
+    agent_tail: 0.04,
+    null_tail: 0.006,
+    ratio: 6.7,
+    within_tolerance: false
+  },
+  outcomes: [
+    { classification: 'live', evidence_strength: 'strong', has_path: true, name: 'Abbott', path: 'leads polls', probability: 0.62, unearned: false },
+    { classification: 'live_ish', evidence_strength: 'mixed', has_path: true, name: 'Allred', path: 'ad spend', probability: 0.34, unearned: false },
+    { classification: 'unpriced', evidence_strength: 'none', has_path: false, name: 'Conway', path: '', probability: 0.017, unearned: true },
+    { classification: 'residual', has_path: false, name: 'Other', path: '', probability: 0.023, unearned: false }
+  ],
+  passes: false,
+  residual_cap: 0.05,
+  threshold: 0.005,
+  total_mass: 1,
+  unearned_mass: 0.017
+})
+
+const renderDetailProps = async (
+  props: Record<string, unknown>,
+  width = 90
+) => {
+  const [{ renderSync }, { ForecastDetail }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+    import('@hermes/ink'),
+    import('../components/forecastsWorkspace.js'),
+    import('../theme.js'),
+    import('../lib/text.js')
+  ])
+
+  const stdout = writeStream(140, 70)
+  renderSync(React.createElement(ForecastDetail, { t: DARK_THEME, width, ...props } as never), {
+    exitOnCtrlC: false,
+    patchConsole: false,
+    stdout: stdout.stream
+  } as never)
+
+  return normalize(stdout.text(), stripAnsi)
+}
+
+describe('forecasts workspace tail audit + ensemble', () => {
+  it('renders the Tail Audit section with the probability-mass table, headline, and null model', async () => {
+    const text = await renderDetailProps({ item: texasItem(), tailAudit: failingAudit() })
+    expect(text).toContain('Tail Audit')
+    expect(text).toContain('FAIL')
+    // The probability-mass table: outcome name, classification, and the unearned offender.
+    expect(text).toContain('Abbott')
+    expect(text).toContain('Conway')
+    expect(text).toContain('unpriced')
+    // The unearned-mass headline (1.7% over the 0.5% threshold).
+    expect(text).toContain('unearned tail mass 1.7%')
+    // The null-model comparison line.
+    expect(text).toContain('no-path tail 4%')
+    expect(text).toContain('simple-null')
+    expect(text).toContain('6.7x')
+  })
+
+  it('omits the Tail Audit section entirely when no audit is present (honest empty state)', async () => {
+    const text = await renderDetailProps({ item: texasItem(), tailAudit: null })
+    expect(text).not.toContain('Tail Audit')
+  })
+
+  it('renders pooled ensemble components with weights and flags a discounted thin market', async () => {
+    const rows = [
+      { name: 'outside view', probability: 0.5, source: 'reference_class', weight: 1.0 },
+      { name: 'kalshi market', probability: 0.58, source: 'kalshi:tx-senate', weight: 0.2 },
+      { name: 'liquid market', probability: 0.54, source: 'polymarket:tx-senate', weight: 1.0 }
+    ]
+    const text = await renderDetailProps({ ensembleRows: rows, item: texasItem() })
+    expect(text).toContain('ensemble components (3)')
+    expect(text).toContain('kalshi market')
+    expect(text).toContain('w 0.20')
+    // The thin kalshi market (weight 0.2 vs a liquid 1.0) is hinted as discounted.
+    expect(text).toContain('discounted')
+  })
+
+  it('colours the unearned outcome row and the headline as a finding (not buried)', async () => {
+    // The unearned Conway row and the unearned-mass headline both render; the
+    // ! glyph marks the offender so it reads as a flag, not steady state.
+    const text = await renderDetailProps({ item: texasItem(), tailAudit: failingAudit() })
+    expect(text).toContain('! Conway')
+    expect(text).toContain('owes an explanation') // null-model out-of-tolerance note
   })
 })
