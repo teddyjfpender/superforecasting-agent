@@ -116,6 +116,34 @@ def sanitize_writeup_text(text: str) -> str:
     return text.strip()
 
 
+def tail_audit_summary(snapshot: Any) -> str:
+    """One-line summary of a snapshot's probability-mass audit, or '' when the
+    snapshot has none (non-categorical / older) or the audit passed. Injected
+    into the write-up so the analyst commentary FLAGS unearned tail mass instead
+    of contradicting the audit the desk shows."""
+    metadata = getattr(snapshot, "metadata", None)
+    if not isinstance(metadata, dict):
+        return ""
+    audit = metadata.get("tail_audit")
+    if not isinstance(audit, dict) or audit.get("passes"):
+        return ""
+    unearned = audit.get("unearned_mass") or 0.0
+    offenders = [
+        o.get("name")
+        for o in (audit.get("outcomes") or [])
+        if isinstance(o, dict) and o.get("unearned")
+    ]
+    null = audit.get("null_model") or {}
+    bits = [f"tail audit FAIL: {unearned:.1%} unearned tail mass"]
+    if offenders:
+        bits.append("on " + ", ".join(str(o) for o in offenders if o))
+    if null and not null.get("within_tolerance", True):
+        ratio = null.get("ratio")
+        if isinstance(ratio, (int, float)) and ratio != float("inf"):
+            bits.append(f"(no-path tail {ratio:.1f}x the simple null)")
+    return " ".join(bits)
+
+
 def build_writeup_messages(
     question: Any,
     snapshot: Any,
@@ -131,6 +159,15 @@ def build_writeup_messages(
         if evidence_only
         else ""
     )
+    audit_summary = tail_audit_summary(snapshot)
+    audit_block = (
+        f"\n## Probability-Mass Audit\n{audit_summary}. In `be_aware`, name this "
+        "unearned tail mass explicitly and say it should be priced through a mechanism "
+        "or compressed — do not let the note imply those outcomes are live when the "
+        "audit says they have no path.\n"
+        if audit_summary
+        else ""
+    )
     user = (
         f"## Shared Ledger Context\n{context_packet}\n\n"
         f"## This Forecast\n"
@@ -140,7 +177,8 @@ def build_writeup_messages(
         f"Prior probability: {prior_probability}\n"
         f"Delta since last: {delta}\n"
         f"Confidence: {getattr(snapshot, 'confidence', None)}\n"
-        f"Method: {getattr(snapshot, 'method', None)}\n\n"
+        f"Method: {getattr(snapshot, 'method', None)}\n"
+        f"{audit_block}\n"
         f"## Task\nWrite the desk note covering the four angles. Return ONLY the JSON object."
     )
     return [

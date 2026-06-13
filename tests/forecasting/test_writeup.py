@@ -148,3 +148,47 @@ def test_generate_writeup_parses_a_successful_response(monkeypatch):
     assert "—" not in out["how_it_feels"]  # sanitized
     assert out["agent_model"] == "test-model"
     assert out["prompt_version"] == writeup.PROMPT_VERSION
+
+
+def test_tail_audit_summary_flags_failing_categorical():
+    snap = types.SimpleNamespace(
+        metadata={
+            "tail_audit": {
+                "passes": False,
+                "unearned_mass": 0.017,
+                "outcomes": [
+                    {"name": "Conway", "unearned": True},
+                    {"name": "Lasher", "unearned": False},
+                ],
+                "null_model": {"within_tolerance": False, "ratio": 4.3},
+            }
+        }
+    )
+    summary = writeup.tail_audit_summary(snap)
+    assert "tail audit FAIL" in summary
+    assert "1.7%" in summary
+    assert "Conway" in summary
+    assert "4.3x" in summary
+
+
+def test_tail_audit_summary_empty_when_passing_or_absent():
+    assert writeup.tail_audit_summary(types.SimpleNamespace(metadata={"tail_audit": {"passes": True}})) == ""
+    assert writeup.tail_audit_summary(types.SimpleNamespace(metadata={})) == ""
+    assert writeup.tail_audit_summary(types.SimpleNamespace()) == ""
+
+
+def test_writeup_prompt_injects_audit_block_only_on_failure():
+    failing = types.SimpleNamespace(
+        metadata={"tail_audit": {"passes": False, "unearned_mass": 0.06, "outcomes": [{"name": "X", "unearned": True}]}},
+        probability_or_distribution={"A": 0.6}, confidence=0.5, method="panel",
+    )
+    msgs = writeup.build_writeup_messages(types.SimpleNamespace(title="Q"), failing, "ctx")
+    assert "Probability-Mass Audit" in msgs[1]["content"]
+    assert "be_aware" in msgs[1]["content"]
+
+    passing = types.SimpleNamespace(
+        metadata={"tail_audit": {"passes": True}},
+        probability_or_distribution=0.5, confidence=None, method=None,
+    )
+    msgs2 = writeup.build_writeup_messages(types.SimpleNamespace(title="Q"), passing, "ctx")
+    assert "Probability-Mass Audit" not in msgs2[1]["content"]
