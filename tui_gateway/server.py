@@ -203,6 +203,7 @@ _DETAIL_MODES = frozenset({"hidden", "collapsed", "expanded"})
 # response writes are safe.
 _LONG_HANDLERS = frozenset(
     {
+        "auth.start",
         "browser.manage",
         "cli.exec",
         "forecast.calibration",
@@ -5677,6 +5678,135 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5034, str(e))
 
 
+# ── In-TUI OAuth (device-code) ──────────────────────────────────────────
+# The CLI's `superforecasting-agent auth` is a blocking interactive flow, so
+# an expired Codex sign-in used to force the user OUT of the TUI. The
+# device-code handshake needs no loopback listener — show a code, poll —
+# which makes it fully drivable from the TUI: auth.start returns the
+# verification URL + user code immediately and polls in a background
+# thread; auth.poll reports pending/success/failure.
+_auth_flow_lock = threading.Lock()
+_auth_flow: dict = {}
+
+
+def _auth_flow_snapshot() -> dict:
+    with _auth_flow_lock:
+        return dict(_auth_flow)
+
+
+def _auth_flow_update(**fields) -> None:
+    with _auth_flow_lock:
+        _auth_flow.update(fields)
+
+
+def _run_codex_device_poll(grant, interval: int) -> None:
+    """Background poller: wait for the user to finish signing in, then
+    exchange + persist tokens. All terminal states land in _auth_flow."""
+    import time as _time
+
+    from hermes_cli import codex_device_flow as _flow
+
+    deadline = _time.monotonic() + _flow.DEVICE_FLOW_MAX_WAIT_SECONDS
+    try:
+        while _time.monotonic() < deadline:
+            snapshot = _auth_flow_snapshot()
+            if snapshot.get("cancelled"):
+                _auth_flow_update(status="cancelled", message="sign-in cancelled")
+                return
+            _time.sleep(interval)
+            result = _flow.poll_device_token_once(grant)
+            if result is None:
+                continue
+            creds = _flow.exchange_device_code(
+                result["authorization_code"], result["code_verifier"]
+            )
+            from hermes_cli.auth import _save_codex_tokens
+
+            _save_codex_tokens(creds["tokens"], creds.get("last_refresh"))
+            _auth_flow_update(status="success", message="signed in to OpenAI Codex")
+            return
+        _auth_flow_update(
+            status="failed", message="sign-in timed out after 15 minutes — run /auth again"
+        )
+    except Exception as e:  # AuthError or network failure — surface, don't crash
+        _auth_flow_update(status="failed", message=str(e))
+
+
+@method("auth.start")
+def _(rid, params: dict) -> dict:
+    """Start an in-TUI provider sign-in. Currently: openai-codex device code.
+
+    Returns {url, user_code, interval} for the TUI to display; completion is
+    observed via auth.poll. One flow at a time — starting a new flow
+    supersedes a pending one.
+    """
+    provider = (params.get("provider") or "openai-codex").strip().lower()
+    if provider in {"codex", "openai", "chatgpt"}:
+        provider = "openai-codex"
+    if provider != "openai-codex":
+        return _err(
+            rid,
+            4003,
+            f"in-TUI sign-in supports openai-codex today; for {provider} use "
+            "/api-key (data + API-key providers) or `superforecasting-agent auth "
+            f"add {provider}` in a terminal",
+        )
+    try:
+        from hermes_cli.codex_device_flow import request_device_code
+
+        grant = request_device_code()
+    except Exception as e:
+        return _err(rid, 5035, str(e))
+
+    with _auth_flow_lock:
+        _auth_flow.clear()
+        _auth_flow.update(
+            {
+                "provider": provider,
+                "status": "pending",
+                "user_code": grant.user_code,
+                "url": grant.verification_url,
+                "cancelled": False,
+            }
+        )
+    threading.Thread(
+        target=_run_codex_device_poll,
+        args=(grant, grant.interval),
+        daemon=True,
+        name="codex-device-poll",
+    ).start()
+    return _ok(
+        rid,
+        {
+            "provider": provider,
+            "url": grant.verification_url,
+            "user_code": grant.user_code,
+            "interval": grant.interval,
+        },
+    )
+
+
+@method("auth.poll")
+def _(rid, params: dict) -> dict:
+    """Report the in-flight sign-in state: none | pending | success | failed |
+    cancelled. With params.cancel, abandon the pending flow."""
+    if params.get("cancel"):
+        _auth_flow_update(cancelled=True)
+    snapshot = _auth_flow_snapshot()
+    if not snapshot:
+        return _ok(rid, {"status": "none"})
+    return _ok(
+        rid,
+        {
+            "status": snapshot.get("status", "none"),
+            "provider": snapshot.get("provider"),
+            "user_code": snapshot.get("user_code"),
+            "url": snapshot.get("url"),
+            "message": snapshot.get("message", ""),
+        },
+    )
+
+
 @method("model.disconnect")
 def _(rid, params: dict) -> dict:
     """Remove credentials for a provider.
@@ -5780,6 +5910,15 @@ def _mirror_slash_side_effects(sid: str, session: dict, command: str) -> str:
 
             process_registry.kill_all()
     except Exception as e:
+        # Expired/missing provider sign-in is fixable WITHOUT leaving the TUI
+        # — point at /auth instead of echoing the CLI's "run
+        # `superforecasting-agent auth`" guidance (rate-limit errors are not
+        # auth problems and keep their own message).
+        if getattr(e, "relogin_required", False) or "missing access_token" in str(e):
+            return (
+                f"{e}\n\nSign in without leaving the TUI: run /auth "
+                "(shows a code to enter at auth.openai.com, then reconnects this session)."
+            )
         return f"live session sync failed: {e}"
     return ""
 

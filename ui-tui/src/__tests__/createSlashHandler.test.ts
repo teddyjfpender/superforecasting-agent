@@ -77,6 +77,54 @@ describe('createSlashHandler', () => {
     vi.useRealTimers()
   })
 
+  it('runs the in-TUI device-code sign-in for /auth and reports success', async () => {
+    const rpc = vi.fn((method: string) => {
+      if (method === 'auth.start') {
+        return Promise.resolve({
+          interval: 3,
+          provider: 'openai-codex',
+          url: 'https://auth.openai.com/codex/device',
+          user_code: 'ABCD-1234'
+        })
+      }
+
+      if (method === 'auth.poll') {
+        return Promise.resolve({ status: 'success' })
+      }
+
+      return Promise.resolve({})
+    })
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/auth')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('auth.start', { provider: 'openai-codex' })
+
+    await vi.waitFor(() => {
+      expect(ctx.transcript.panel).toHaveBeenCalledWith(
+        'Sign in',
+        expect.arrayContaining([
+          expect.objectContaining({
+            rows: expect.arrayContaining([
+              ['1. open', 'https://auth.openai.com/codex/device'],
+              ['2. enter code', 'ABCD-1234']
+            ]),
+            title: 'openai-codex sign-in'
+          })
+        ])
+      )
+    })
+
+    await vi.waitFor(
+      () => {
+        expect(rpc).toHaveBeenCalledWith('auth.poll', {})
+        expect(ctx.transcript.sys).toHaveBeenCalledWith(
+          'signed in to OpenAI Codex — pick a model with /model (no restart needed)'
+        )
+      },
+      { timeout: 5000 }
+    )
+  })
+
   it('routes /status to live forecast session.status instead of slash worker', async () => {
     patchUiState({ sid: 'sid-abc' })
     const rpc = vi.fn(() => Promise.resolve({ output: 'Superforecasting Agent TUI Status' }))

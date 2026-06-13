@@ -1,0 +1,126 @@
+"""In-TUI device-code auth: auth.start / auth.poll RPCs.
+
+The flow that previously forced users OUT of the TUI ("Run
+`superforecasting-agent auth` to re-authenticate") is now drivable in-place:
+auth.start returns the verification URL + user code immediately, a gateway
+thread polls until the user finishes in the browser, and auth.poll reports
+pending/success/failed. Network and persistence are faked at the
+codex_device_flow seam.
+"""
+
+from __future__ import annotations
+
+import time
+
+from hermes_cli.codex_device_flow import DeviceCodeGrant
+from tui_gateway import server
+
+
+def _start(params=None):
+    return server.handle_request(
+        {"id": "1", "method": "auth.start", "params": params or {}}
+    )
+
+
+def _poll(params=None):
+    return server.handle_request(
+        {"id": "2", "method": "auth.poll", "params": params or {}}
+    )
+
+
+def _fake_grant():
+    return DeviceCodeGrant(user_code="ABCD-1234", device_auth_id="dev_1", interval=3)
+
+
+def _wait_status(target: str, timeout: float = 5.0) -> dict:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = _poll()["result"]
+        if result["status"] == target:
+            return result
+        time.sleep(0.02)
+    raise AssertionError(f"auth flow never reached status {target!r}: {_poll()['result']}")
+
+
+def test_auth_start_returns_code_and_url(monkeypatch):
+    import hermes_cli.codex_device_flow as flow
+
+    monkeypatch.setattr(flow, "request_device_code", lambda **kw: _fake_grant())
+    # Keep the poller pending so this test only checks the start surface.
+    monkeypatch.setattr(flow, "poll_device_token_once", lambda grant, **kw: None)
+
+    resp = _start()
+    assert "result" in resp, resp
+    result = resp["result"]
+    assert result["user_code"] == "ABCD-1234"
+    assert result["url"].startswith("https://auth.openai.com/")
+    assert result["provider"] == "openai-codex"
+
+    assert _poll()["result"]["status"] == "pending"
+    _poll({"cancel": True})
+    _wait_status("cancelled")
+
+
+def test_auth_flow_success_persists_tokens(monkeypatch):
+    import hermes_cli.auth as auth_mod
+    import hermes_cli.codex_device_flow as flow
+
+    saved = {}
+    monkeypatch.setattr(flow, "request_device_code", lambda **kw: _fake_grant())
+    monkeypatch.setattr(
+        flow,
+        "poll_device_token_once",
+        lambda grant, **kw: {"authorization_code": "ac", "code_verifier": "cv"},
+    )
+    monkeypatch.setattr(
+        flow,
+        "exchange_device_code",
+        lambda ac, cv, **kw: {"tokens": {"access_token": "at", "refresh_token": "rt"}},
+    )
+    monkeypatch.setattr(
+        auth_mod,
+        "_save_codex_tokens",
+        lambda tokens, last_refresh=None, **kw: saved.update(tokens),
+    )
+    # The poller sleeps `interval` seconds before each poll — shrink it.
+    monkeypatch.setattr(
+        flow, "request_device_code",
+        lambda **kw: DeviceCodeGrant(user_code="ABCD-1234", device_auth_id="dev_1", interval=0),
+    )
+
+    resp = _start({"provider": "codex"})  # alias normalizes to openai-codex
+    assert "result" in resp, resp
+
+    result = _wait_status("success")
+    assert "signed in" in result["message"]
+    assert saved == {"access_token": "at", "refresh_token": "rt"}
+
+
+def test_auth_flow_failure_surfaces_message(monkeypatch):
+    import hermes_cli.codex_device_flow as flow
+
+    def boom(grant, **kw):
+        raise flow.AuthError("device auth polling returned status 500", provider="openai-codex")
+
+    monkeypatch.setattr(
+        flow, "request_device_code",
+        lambda **kw: DeviceCodeGrant(user_code="ABCD-1234", device_auth_id="dev_1", interval=0),
+    )
+    monkeypatch.setattr(flow, "poll_device_token_once", boom)
+
+    assert "result" in _start()
+    result = _wait_status("failed")
+    assert "500" in result["message"]
+
+
+def test_auth_start_rejects_unsupported_provider():
+    resp = _start({"provider": "anthropic"})
+    assert "error" in resp, resp
+    assert "/api-key" in resp["error"]["message"]
+
+
+def test_auth_poll_with_no_flow():
+    # Fresh-state behavior: clear any flow left by earlier tests.
+    with server._auth_flow_lock:
+        server._auth_flow.clear()
+    assert _poll()["result"]["status"] == "none"
