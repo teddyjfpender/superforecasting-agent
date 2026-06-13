@@ -164,6 +164,18 @@ audit head moves.
 | #a942bfd9c | Reset `_last_flushed_db_idx` on cached-agent reuse (depth-0 only) | `170e7fa50` |
 | #13650ab7f | Audio attachment note clarification | `40d480883` |
 | #782681f90 | Atomic private (0600) writes for google_chat OAuth credentials | `302500df` |
+| **Codex/provider auth wave (2026-06-13 — user-reported broken Codex login)** | | |
+| #09a5cd808 | Sync `manual:device_code` Codex pool entries on re-auth | `a30fee1e2` |
+| #2bbd53493 | Sync credential_pool on Codex re-auth | `aee9144c2` |
+| #bb0619dbc | Align Codex OAuth persistence paths | `1dae01c05` |
+| #761b744ab / #39236 | Preserve independent Codex pool entries on re-auth (distinguish legacy singleton-aliases from `auth add` accounts) | `4bf281877` |
+| #c78b3e1d3 | `auth add openai-codex` creates distinct `manual:device_code` entries (multi-account; first add marks provider active) | `55623d15c` |
+| #f1422ffd7 | Classify Codex 429 as rate-limit not missing-credentials (CODEX_RATE_LIMITED_CODE, Retry-After, `relogin_required=False`) — fixes the false "re-authenticate" prompt on quota | `6bbcc31e1` |
+| #9c9d9113a / #42263 | Auto-detect OpenRouter credential from the pool, not just env | `a1c35bc1f` |
+| #5f62ba8e4 + #34a290352 + #cd68b8f0e | Route `auth add xai-oauth` through the singleton save + `mark_provider_active_if_unset` (was leaving active_provider unset → "no provider configured") | `cc90a7ce6` |
+| #aeb87508c + #a6b0414ea / #21437 | Add openai-api provider (direct OPENAI_API_KEY, live /v1/models) | `3eccda2b6` |
+| #38577 (fork slice) | Relabel "OpenAI Codex" → "OpenAI OAuth (ChatGPT)" to disambiguate from the new openai-api key path (web/desktop hunks N/A) | `3eccda2b6` |
+| **(fork-native, no upstream)** | In-TUI `/auth` device-code sign-in: `codex_device_flow.py` + gateway `auth.start`/`auth.poll` + `/auth` slash command, so an expired Codex sign-in no longer forces the user out of the TUI | `fbab14449` |
 
 ### Already-have (subsumed; do not port)
 
