@@ -9,14 +9,46 @@ import type {
   ForecastDashboardReview,
   ForecastDashboardScheduleRun,
   ForecastQuestionPacket,
-  ForecastQuestionPacketResponse
+  ForecastQuestionPacketResponse,
+  ForecastQuestionPacketSnapshot
 } from '../gatewayTypes.js'
 import {
   FORECAST_TUI_FIND_SHORTCUT,
   FORECAST_TUI_VIEW_SHORTCUTS,
   forecastShortcutDisplayHotkey
 } from '../lib/forecastShortcuts.js'
+import { snapshotTailAudit, tailAuditChip, tailAuditFails, unearnedOutcomes } from '../lib/forecastTail.js'
 import type { PanelSection } from '../types.js'
+
+// A categorical forecast with UNEARNED tail mass is a desk flag: the visual
+// detail and the glanceable text must agree. These helpers read the optional
+// `tail_audit` on a dashboard question; questions without one (binary,
+// distribution, older snapshots, or a payload that doesn't carry the audit yet)
+// are simply never flagged — no fake findings.
+const questionHasUnearnedTail = (row: { tail_audit?: ForecastDashboardQuestion['tail_audit'] }): boolean =>
+  tailAuditFails(row.tail_audit)
+
+const countUnearnedTail = (questions: ForecastDashboardQuestion[]): number =>
+  questions.reduce((count, row) => (questionHasUnearnedTail(row) ? count + 1 : count), 0)
+
+// The compact "unearned tail" book/rail marker for one question, or '' when
+// clean. e.g. "unearned tail 1.7% (Conway)".
+const unearnedTailMarker = (row: ForecastDashboardQuestion): string => {
+  if (!questionHasUnearnedTail(row)) {
+    return ''
+  }
+
+  const audit = row.tail_audit
+  const offenders = unearnedOutcomes(audit)
+  const lead = offenders[0]?.name
+
+  const mass =
+    typeof audit?.unearned_mass === 'number' && Number.isFinite(audit.unearned_mass)
+      ? `${(audit.unearned_mass * 100).toFixed(audit.unearned_mass * 100 < 10 ? 1 : 0)}%`
+      : ''
+
+  return `unearned tail${mass ? ` ${mass}` : ''}${lead ? ` (${lead})` : ''}`
+}
 
 type ForecastPanelRow = NonNullable<PanelSection['rows']>[number]
 
@@ -46,17 +78,20 @@ const unsafeCommandExample = (value: string) => /(?:<[^>]+>|\[[^\]]+\]|\.\.\.|;)
 
 const forecastActionTarget = (value: null | string | undefined): string | undefined => {
   const raw = (value ?? '').trim()
+
   if (!raw) {
     return undefined
   }
 
   const direct = raw.startsWith('/') ? raw.split(/\s+(?:and|then)\s+/i)[0]?.trim() ?? raw : ''
+
   if (direct && !unsafeCommandExample(direct)) {
     return direct
   }
 
   const quoted = raw.match(/`(\/?(?:forecast|superforecasting-agent\s+forecast)\s+[^`]+)`/i)?.[1]?.trim()
   const command = quoted || raw.match(/\b(forecast\s+[A-Za-z0-9][^.;\n]*)/i)?.[1]?.trim()
+
   if (!command || unsafeCommandExample(command)) {
     return undefined
   }
@@ -80,6 +115,7 @@ const numberValue = (value: unknown): number | null =>
 
 const formatCount = (value: unknown) => {
   const number = numberValue(value)
+
   return number === null ? '0' : String(number)
 }
 
@@ -97,9 +133,11 @@ const formatDistribution = (value: Record<string, unknown>): string => {
   }
 
   const looksProbabilistic = entries.every(([, n]) => n >= 0 && n <= 1)
+
   if (looksProbabilistic) {
     const [topKey, topValue] = [...entries].sort((a, b) => b[1] - a[1])[0]!
     const more = entries.length > 1 ? ` (+${entries.length - 1})` : ''
+
     return truncate(`${topKey} ${topValue.toFixed(2)}${more}`, 24)
   }
 
@@ -112,11 +150,13 @@ const formatDistribution = (value: Record<string, unknown>): string => {
 const formatPercent = (number: number) => {
   const pct = number * 100
   const text = Math.abs(pct - Math.round(pct)) < 0.05 ? pct.toFixed(0) : pct.toFixed(1)
+
   return `${text}%`
 }
 
 const formatProbability = (value: ForecastDashboardQuestion['probability']) => {
   const number = numberValue(value)
+
   if (number !== null) {
     return formatPercent(number)
   }
@@ -130,6 +170,7 @@ const formatProbability = (value: ForecastDashboardQuestion['probability']) => {
 
 const formatDelta = (value: ForecastDashboardQuestion['delta']) => {
   const number = numberValue(value)
+
   if (number === null) {
     return '-'
   }
@@ -140,11 +181,13 @@ const formatDelta = (value: ForecastDashboardQuestion['delta']) => {
 
   const pts = Math.abs(number) * 100
   const text = Math.abs(pts - Math.round(pts)) < 0.05 ? pts.toFixed(0) : pts.toFixed(1)
+
   return `${number > 0 ? '↑' : '↓'}${text}pt`
 }
 
 const formatConfidence = (value: ForecastDashboardQuestion['confidence']) => {
   const number = numberValue(value)
+
   return number === null ? '-' : formatPercent(number)
 }
 
@@ -152,6 +195,7 @@ const formatConfidence = (value: ForecastDashboardQuestion['confidence']) => {
 // score differences, not probability points, so the ↑pt grammar would lie.
 const formatSigned = (value: ForecastDashboardQuestion['delta']) => {
   const number = numberValue(value)
+
   if (number === null) {
     return '-'
   }
@@ -171,26 +215,33 @@ export const forecastFreshnessLabel = (value: null | string | undefined, now = n
   }
 
   const timestamp = Date.parse(value)
+
   if (!Number.isFinite(timestamp)) {
     return 'as-of set'
   }
 
   const ageDays = Math.max(0, Math.floor((now.getTime() - timestamp) / DAY_MS))
+
   if (ageDays === 0) {
     return 'fresh today'
   }
+
   if (ageDays === 1) {
     return '1d old'
   }
+
   if (ageDays < 31) {
     return `${ageDays}d old`
   }
+
   const ageMonths = Math.floor(ageDays / 30)
+
   return `${ageMonths}mo old`
 }
 
 const formatMetric = (value: null | number | undefined) => {
   const number = numberValue(value)
+
   return number === null ? '-' : number.toFixed(6)
 }
 
@@ -202,6 +253,7 @@ const formatBacktestSources = (row: ForecastDashboardBacktest) =>
 
 const formatClaimVerdict = (claimStatus: ForecastDashboardClaimStatus | undefined) => {
   const verdict = claimStatus?.verdict
+
   if (verdict === 'benchmark_replay_only') {
     return 'replay only'
   }
@@ -225,6 +277,7 @@ const formatScheduleRunScope = (row: ForecastDashboardScheduleRun) => {
   if (row.scope_type === 'domain_topic' && row.scope_ref) {
     try {
       const parsed = JSON.parse(row.scope_ref) as { domain?: string; topic?: string }
+
       return `domain:${parsed.domain || '*'}/${parsed.topic || '*'}`
     } catch {
       return `domain:${row.scope_ref}`
@@ -284,6 +337,7 @@ const assumptionCounts = (summary: ForecastDashboardResponse['summary']) => {
 
   const summaryOpen = numberValue(summary.open_assumption_count)
   const summaryStale = numberValue(summary.stale_assumption_count)
+
   if (summaryOpen !== null || summaryStale !== null) {
     return { open: summaryOpen ?? 0, stale: summaryStale ?? 0 }
   }
@@ -306,6 +360,7 @@ const referenceClassCounts = (summary: ForecastDashboardResponse['summary']) => 
 
   const summaryOpen = numberValue(summary.open_reference_class_count)
   const summaryStale = numberValue(summary.stale_reference_class_count)
+
   if (summaryOpen !== null || summaryStale !== null) {
     return { open: summaryOpen ?? 0, stale: summaryStale ?? 0 }
   }
@@ -367,6 +422,15 @@ export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): st
     bits.push(`${closing} closing`)
   }
 
+  // A categorical forecast with unearned tail mass is a finding the desk must
+  // surface, not bury — it belongs with the act-on-me counters, not the quiet
+  // inventory. Only shown when at least one exists.
+  const unearnedTail = countUnearnedTail(summary.questions ?? [])
+
+  if (unearnedTail > 0) {
+    bits.push(`${unearnedTail} with unearned tail`)
+  }
+
   // Steady-state inventory (calibration totals, lesson counts, healthy
   // assumptions/reference classes) stays OFF the strip — it's findable in
   // /calibration and the question detail. The strip only carries counts a
@@ -392,6 +456,7 @@ const formatErrorScope = (row: { domain?: null | string; question_type?: null | 
   const base = row.domain || 'global'
   const topic = row.topic ? `/${row.topic}` : ''
   const questionType = row.question_type ? `:${row.question_type}` : ''
+
   return truncate(`${base}${topic}${questionType}`, 28)
 }
 
@@ -400,6 +465,7 @@ const formatLessonScope = (row: { scope_ref?: null | string; scope_type?: null |
 
 const componentContributionRows = (calibration: ForecastDashboardCalibration | undefined, limit: number): [string, string][] => {
   const rows = calibration?.ensemble_component_contributions
+
   if (!Array.isArray(rows)) {
     return []
   }
@@ -414,6 +480,7 @@ const componentContributionRows = (calibration: ForecastDashboardCalibration | u
 
 const questionTypeCalibrationRows = (calibration: ForecastDashboardCalibration | undefined, limit: number): [string, string][] => {
   const rows = calibration?.question_type_breakdown
+
   if (!Array.isArray(rows)) {
     return []
   }
@@ -435,6 +502,14 @@ const forecastStatus = (row: ForecastDashboardQuestion) => {
     return `${alerts} alert${alerts === 1 ? '' : 's'}`
   }
 
+  // An unearned tail is a finding, not steady-state: it outranks the stale
+  // bookkeeping counters in the one-line status.
+  const tailMarker = unearnedTailMarker(row)
+
+  if (tailMarker) {
+    return tailMarker
+  }
+
   if (staleAssumptions > 0) {
     return `${staleAssumptions} stale asm`
   }
@@ -452,6 +527,7 @@ const forecastStatus = (row: ForecastDashboardQuestion) => {
 
 const triageRows = (response: ForecastDashboardResponse): [string, string][] => {
   const summary = response.summary
+
   if (!summary) {
     return []
   }
@@ -468,10 +544,20 @@ const triageRows = (response: ForecastDashboardResponse): [string, string][] => 
   const assumptions = assumptionCounts(summary)
   const referenceClasses = referenceClassCounts(summary)
   const doctor = summary.doctor
+  const unearnedTail = countUnearnedTail(summary.questions ?? [])
   const rows: [string, string][] = []
 
   if (alerts > 0) {
     rows.push(['/alerts', `${plural(alerts, 'open alert')} need source or resolution review`])
+  }
+
+  if (unearnedTail > 0) {
+    rows.push([
+      '/forecast self-check',
+      `${plural(unearnedTail, 'categorical forecast')} ${
+        unearnedTail === 1 ? 'has' : 'have'
+      } unearned tail mass — price each outcome by its path or compress the tail`
+    ])
   }
 
   if (closing > 0) {
@@ -506,6 +592,7 @@ const triageRows = (response: ForecastDashboardResponse): [string, string][] => 
   }
 
   const evidenceGaps = summary.evidence_status?.gaps ?? []
+
   if (evidenceGaps.length > 0) {
     const nextAction = summary.evidence_status?.next_actions?.[0]?.action
     rows.push([
@@ -595,12 +682,14 @@ const focusedForecastContext = (row: FocusedForecastRow) => {
 
 const focusedActionRows = (questions: ForecastDashboardQuestion[], reviewQueue: ForecastDashboardReview[]): ForecastPanelRow[] => {
   const row: FocusedForecastRow | undefined = reviewQueue.find(candidate => candidate.id) ?? questions.find(candidate => candidate.id)
+
   if (!row?.id) {
     return []
   }
 
   const label = truncate(row.title || row.id, 64)
   const context = focusedForecastContext(row)
+
   return [
     // Lead with the question title so the desk header/rail show the NAME, not a
     // raw fq_ id; the P=/as-of/reasons context follows.
@@ -649,6 +738,7 @@ const uniqueForecastRows = (
     if (!row.id || seen.has(row.id)) {
       return
     }
+
     seen.add(row.id)
     rows.push({ index, row })
   })
@@ -657,6 +747,7 @@ const uniqueForecastRows = (
     if (!row.id || seen.has(row.id)) {
       return
     }
+
     seen.add(row.id)
     rows.push({ index: rows.length, row })
   })
@@ -676,10 +767,12 @@ const scoreForecastQuestionMatch = (
   const topics = 'topics' in row && Array.isArray(row.topics) ? row.topics.join(' ') : ''
   const status = 'status' in row ? row.status || '' : ''
   const latestRationale = 'latest_rationale' in row ? row.latest_rationale || '' : ''
+
   const latestEvidence = [
     'latest_evidence_claim' in row ? row.latest_evidence_claim || '' : '',
     'latest_evidence_summary' in row ? row.latest_evidence_summary || '' : ''
   ].join(' ')
+
   const text = searchNormalize([id, short, title, domain, topics, status, latestRationale, latestEvidence].join(' '))
   const fullQuery = searchNormalize(query)
   const matched = new Set<string>()
@@ -726,7 +819,9 @@ const scoreForecastQuestionMatch = (
     if (!text.includes(token)) {
       continue
     }
+
     score += searchNormalize(title).includes(token) ? 4 : 2
+
     if (searchNormalize(title).includes(token)) {
       matched.add(token)
     }
@@ -745,14 +840,17 @@ export const rankForecastQuestionMatches = (
   limit = 12
 ): ForecastQuestionSearchMatch[] => {
   const summary = response.summary
+
   if (!summary) {
     return []
   }
 
   const tokens = searchTokens(query)
+
   return uniqueForecastRows(summary.questions ?? [], summary.review_queue ?? [])
     .map(({ index, row }) => {
       const match = scoreForecastQuestionMatch(row, query, tokens)
+
       return match ? { ...match, index } : null
     })
     .filter((match): match is ForecastQuestionSearchMatch => Boolean(match))
@@ -786,6 +884,7 @@ export const forecastQuestionSearchSections = (
   }
 
   const matches = rankForecastQuestionMatches(response, trimmed, 12)
+
   const sections: PanelSection[] = [
     {
       rows: [
@@ -802,6 +901,7 @@ export const forecastQuestionSearchSections = (
       text: 'No matching active forecasts or review-queue items. Try fewer words, a topic, a domain, or /questions list 50.',
       title: 'Matches'
     })
+
     return sections
   }
 
@@ -811,6 +911,7 @@ export const forecastQuestionSearchSections = (
       // Title-first: identity reads as the question, not the ledger id. The
       // numeric cluster trails as a compact suffix.
       const key = `${match.index + 1}. ${formatProbability(row.probability)}  ${searchRowDelta(row)}`
+
       const details = [
         truncate(row.title || '(untitled forecast)', 72),
         forecastFreshnessLabel(row.as_of, now),
@@ -826,6 +927,7 @@ export const forecastQuestionSearchSections = (
   })
 
   const top = matches[0]?.row
+
   if (top?.id) {
     const title = truncate(top.title || top.id, 68)
     sections.push({
@@ -852,9 +954,11 @@ export const forecastQuestionSearchSections = (
 
 const fieldString = (row: Record<string, unknown> | null | undefined, key: string) => {
   const value = row?.[key]
+
   if (value === null || value === undefined || value === '') {
     return '-'
   }
+
   return String(value)
 }
 
@@ -872,9 +976,20 @@ const compactPacketSource = (item: { source_name?: null | string; source_type?: 
 const packetQuestionTitle = (packet: ForecastQuestionPacket) =>
   packet.question?.title || packet.question?.id || '(untitled forecast)'
 
+// The tail-audit row(s) for the current snapshot, or [] when it carries no
+// audit (non-categorical / older snapshot). Renders the same FAIL/PASS chip the
+// workspace shows so the textual detail never contradicts the visual one.
+const currentTailAuditRows = (current: ForecastQuestionPacketSnapshot | undefined): [string, string][] => {
+  const audit = snapshotTailAudit(current)
+  const chip = tailAuditChip(audit)
+
+  return chip ? [['tail audit', chip]] : []
+}
+
 export const forecastQuestionDetailSections = (response: ForecastQuestionPacketResponse): PanelSection[] => {
   const packet = response.packet
   const question = packet?.question
+
   if (!packet || !question?.id) {
     return [{ text: '(forecast question not found)', title: 'Forecast Detail' }]
   }
@@ -888,6 +1003,7 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
   const watchedSources = packet.watched_sources ?? []
   const title = packetQuestionTitle(packet)
   const topicText = question.topics?.length ? question.topics.join(', ') : '-'
+
   const sections: PanelSection[] = [
     {
       rows: [
@@ -910,6 +1026,9 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
         ['confidence', formatConfidence(current?.confidence)],
         ['method', current?.method || '-'],
         ['origin', current?.forecast_origin || '-'],
+        // The categorical tail audit, when the current snapshot carries one, so
+        // the textual detail agrees with the workspace's Tail Audit section.
+        ...currentTailAuditRows(current),
         ['rationale', truncate(current?.rationale || 'No forecast snapshot recorded.', 118)]
       ],
       title: 'Current Forecast'
@@ -955,15 +1074,18 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
 
   if (assumptions.length || references.length) {
     const rows: [string, string][] = []
+
     for (const item of assumptions.slice(0, 3)) {
       rows.push([`assumption · ${item.status || '-'}`, truncate(item.text || '-', 180)])
     }
+
     for (const item of references.slice(0, 3)) {
       rows.push([
         `reference · ${item.status || '-'}`,
         truncate(`${item.name || '-'}  base ${packetProbability(item.base_rate)}`, 150)
       ])
     }
+
     sections.push({ rows, title: 'Assumptions And References' })
   }
 
@@ -971,6 +1093,7 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
     sections.push({
       rows: modelRuns.slice(-4).reverse().map(row => {
         const modelRun = row as Record<string, unknown>
+
         return [
           `${shortId(fieldString(modelRun, 'id'))} ${shortDate(fieldString(modelRun, 'created_at'))}`,
           truncate(
@@ -1024,6 +1147,7 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
 const probability_delta = (previous: unknown, current: unknown) => {
   const previousNumber = numberValue(previous)
   const currentNumber = numberValue(current)
+
   return previousNumber === null || currentNumber === null ? null : currentNumber - previousNumber
 }
 
@@ -1067,6 +1191,7 @@ export const forecastLedgerViewSections = (
 ): PanelSection[] => {
   const normalized = searchNormalize(view) || 'book'
   const searchPrefix = 'search '
+
   if (normalized.startsWith(searchPrefix)) {
     return forecastQuestionSearchSections(response, view.trim().replace(/^search\s+/i, ''), now)
   }
@@ -1085,12 +1210,14 @@ export const forecastLedgerViewSections = (
 
   const alias = normalized === 'state' || normalized === 'store' || normalized === 'desk' ? 'book' : normalized
   const titles = sectionTitlesByLedgerView[alias]
+
   if (!titles) {
     return forecastQuestionSearchSections(response, view, now)
   }
 
   const dashboardSections = forecastDashboardSections(response)
   const selected = dashboardSections.filter(section => section.title && titles.includes(section.title))
+
   return [ledgerViewShortcuts(alias), ...(selected.length ? selected : forecastDashboardSections(response))]
 }
 
@@ -1098,14 +1225,18 @@ export const forecastDeskActionStripItems = (sections: PanelSection[], max = 4):
   const actions: ForecastDeskActionItem[] = []
   const seen = new Set<string>()
   const sectionByTitle = new Map(sections.map(section => [section.title, section]))
+
   const addRows = (section: PanelSection | undefined, skip = 0, limit = Number.POSITIVE_INFINITY) => {
     let added = 0
+
     for (const [command, detail, target] of (section?.rows ?? []).slice(skip)) {
       if (command.startsWith('/')) {
         const before = actions.length
         addUniqueAction(actions, seen, command, detail, max, target)
+
         if (actions.length > before) {
           added += 1
+
           if (added >= limit) {
             return
           }
@@ -1113,6 +1244,7 @@ export const forecastDeskActionStripItems = (sections: PanelSection[], max = 4):
       }
     }
   }
+
   const addItems = (section: PanelSection | undefined) => {
     for (const command of section?.items ?? []) {
       if (command.startsWith('/')) {
@@ -1132,6 +1264,7 @@ export const forecastDeskActionStripItems = (sections: PanelSection[], max = 4):
 
 export const forecastDeskPrimaryActionItem = (sections: PanelSection[]): ForecastDeskActionItem | undefined => {
   const focused = sections.find(section => section.title === 'Focused Actions')?.rows?.find(row => row[0].startsWith('/'))
+
   if (focused) {
     return { command: focused[0], detail: focused[1] }
   }
@@ -1158,11 +1291,13 @@ export const forecastDeskCompactItems = (sections: PanelSection[], max = 3): For
   const items: ForecastDeskCompactItem[] = []
   const book = findSection(sections, 'Book')
   const bookRows = new Map((book?.rows ?? []).map(([key, value]) => [key, value] as [string, string]))
+
   const bookBits = [
     `${bookRows.get('active') ?? '0'} active`,
     `${bookRows.get('alerts') ?? '0'} alerts`,
     `${bookRows.get('reviews') ?? '0'} reviews`
   ]
+
   const assumptions = bookRows.get('assumptions')
   const referenceClasses = bookRows.get('refs')
 
@@ -1180,21 +1315,25 @@ export const forecastDeskCompactItems = (sections: PanelSection[], max = 3): For
 
   const doctor = findSection(sections, 'Doctor') ?? findSection(sections, 'Doctor Gate')
   const doctorStatus = doctor?.rows?.find(row => row[0] === 'status')
+
   if (doctorStatus) {
     addCompactItem(items, 'doctor', doctorStatus[1], max)
   }
 
   const triage = findSection(sections, 'Triage')?.rows?.[0]
+
   if (triage) {
     addCompactItem(items, 'triage', `${triage[0]} ${triage[1]}`, max)
   }
 
   const watch = findSection(sections, 'Watchlist')?.rows?.[0]
+
   if (watch) {
     addCompactItem(items, 'watch', `${watch[0]} ${watch[1]}`, max)
   }
 
   const alert = findSection(sections, 'Alerts')?.rows?.[0]
+
   if (alert) {
     addCompactItem(items, 'alert', `${alert[0]} ${alert[1]}`, max)
   }
@@ -1203,6 +1342,7 @@ export const forecastDeskCompactItems = (sections: PanelSection[], max = 3): For
     sections,
     'Evidence'
   )?.rows?.find(row => row[0] === 'gaps')
+
   if (evidence) {
     addCompactItem(items, 'evidence', `${evidence[0]} ${evidence[1]}`, max)
   }
@@ -1259,24 +1399,29 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
   const thesisCount = summary.thesis_count ?? theses.length
   const factorCount = summary.factor_count ?? factors.length
   const entityCount = summary.entity_count ?? 0
+
   if (thesisCount > 0 || factorCount > 0) {
     const layerRows: ForecastPanelRow[] = [
       ['theses', formatCount(thesisCount)],
       ['factors', formatCount(factorCount)],
       ['entities', formatCount(entityCount)]
     ]
+
     for (const t of theses.slice(0, 6)) {
       const health =
         typeof t.health_probability === 'number'
           ? `${Math.round(t.health_probability * 100)}%`
           : t.health_display ?? '—'
+
       layerRows.push([truncate(t.title || t.id || 'thesis', 32), `${health} · ${formatCount(t.member_count)} members`])
     }
+
     for (const f of factors.slice(0, 6)) {
       const mean = typeof f.mean === 'number' ? `${f.mean >= 0 ? '+' : ''}${f.mean.toFixed(1)}` : '—'
       const vol = typeof f.sd === 'number' ? f.sd.toFixed(1) : '—'
       layerRows.push([truncate(f.title || f.id || 'factor', 32), `ret ${mean} · vol ${vol}`])
     }
+
     sections.push({ rows: layerRows, title: 'Thesis Layer' })
   }
 
@@ -1293,6 +1438,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
         const key = `${formatProbability(row.probability)}  ${formatDelta(row.delta)}`
         const staleRefs = numberValue(row.stale_reference_class_count) ?? 0
         const staleAssumptions = numberValue(row.stale_assumption_count) ?? 0
+
         const details = [
           // Title-first identity; bookkeeping counts only when actionable
           // (stale) — steady-state inventory lives in the detail pane.
@@ -1322,6 +1468,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
       rows: reviewQueue.slice(0, 6).map(row => {
         const reasons = (row.reasons ?? []).slice(0, 3).map(formatReviewReason).join(', ') || 'review'
         const key = `priority ${row.priority ?? 9}`
+
         const details = [
           truncate(row.title || '(untitled forecast)', 56),
           formatProbability(row.probability),
@@ -1342,6 +1489,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
       rows: alertsList.slice(0, 6).map(row => {
         const scope = `${row.scope_type || '-'}:${row.scope_ref || '-'}`
         const key = `${shortId(row.id)}  ${row.severity || 'info'}  ${truncate(scope, 28)}`
+
         const details = [
           shortDate(row.created_at),
           truncate(row.reason || 'alert', 52),
@@ -1363,6 +1511,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
       ['movement n', formatCount(calibration.probability_movement_count)],
       ['mean abs movement', formatMetric(calibration.mean_abs_probability_movement_before_close)]
     ]
+
     calibrationRows.push(...componentContributionRows(calibration, 3))
     calibrationRows.push(...questionTypeCalibrationRows(calibration, 4))
 
@@ -1421,6 +1570,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
     const scoreCounts = evidenceStatus.score_counts ?? {}
     const backtestCounts = evidenceStatus.backtests ?? {}
     const gaps = (evidenceStatus.gaps ?? []).slice(0, 4).map(gap => gap.replace(/_/g, ' ')).join(', ') || 'none'
+
     const evidenceRows: ForecastPanelRow[] = [
       ['verdict', formatVerdict(evidenceStatus.verdict)],
       [
@@ -1481,6 +1631,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
         const baseline = row.best_baseline
           ? `${row.best_baseline}=${formatMetric(row.best_baseline_brier)}`
           : 'baseline -'
+
         const details = [
           `cases ${formatCount(row.case_count)}`,
           `src ${formatBacktestSources(row)}`,
@@ -1500,6 +1651,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
   }
 
   const triage = triageRows(response)
+
   if (triage.length) {
     sections.push({
       rows: triage,
@@ -1508,6 +1660,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
   }
 
   const focusedActions = focusedActionRows(questions, reviewQueue)
+
   if (focusedActions.length) {
     sections.push({
       rows: focusedActions,
@@ -1630,12 +1783,14 @@ export const forecastBookSections = (
       text: 'No active forecasts. Create one with /forecast new "Will X happen?" --resolution-criteria "...".',
       title: 'Forecast Questions'
     })
+
     return sections
   }
 
   sections.push({
     rows: questions.slice(0, 20).map((row, index) => {
       const key = `${index + 1}. ${formatProbability(row.probability)} ${formatDelta(row.delta)}`
+
       const details = [
         truncate(row.title || '(untitled forecast)', 76),
         forecastFreshnessLabel(row.as_of, now),
@@ -1715,6 +1870,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
   const closing = summary.closing_soon_count ?? 0
   const assumptions = assumptionCounts(summary)
   const referenceClasses = referenceClassCounts(summary)
+
   const sections: PanelSection[] = [
     {
       rows: [
@@ -1747,6 +1903,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
   }
 
   const triage = triageRows(response)
+
   if (triage.length) {
     sections.push({
       rows: triage.slice(0, 3),
@@ -1755,6 +1912,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
   }
 
   const focusedRows = focusedActionRows(questions, reviewQueue)
+
   if (focusedRows.length) {
     sections.push({
       rows: focusedRows.slice(0, 3),
@@ -1778,6 +1936,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
     sections.push({
       rows: atRisk.map(row => {
         const key = `${formatProbability(row.probability)} ${formatDelta(row.delta)}`
+
         const details = truncate(
           `${row.title || '(untitled forecast)'}  ${forecastStatus(row)}  as-of ${shortDate(row.as_of)}  close ${shortDate(
             row.close_time
@@ -1823,6 +1982,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
     const scoreCounts = evidenceStatus.score_counts ?? {}
     const backtestCounts = evidenceStatus.backtests ?? {}
     const gaps = (evidenceStatus.gaps ?? []).slice(0, 3).map(gap => gap.replace(/_/g, ' ')).join(', ') || 'none'
+
     const evidenceRows: ForecastPanelRow[] = [
       ['readiness', formatVerdict(evidenceStatus.verdict)],
       ['live/backtest', `${formatCount(scoreCounts.live)}/${formatCount(scoreCounts.backtest)}`],
@@ -1832,7 +1992,9 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
       ],
       ['gaps', truncate(gaps, 58)]
     ]
+
     const nextAction = evidenceStatus.next_actions?.[0]
+
     if (nextAction) {
       const action = nextAction.action || '/forecast readiness'
       evidenceRows.push(
@@ -1860,7 +2022,9 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
       ],
       ['claim', formatClaimVerdict(livePerformance.claim_status)]
     ]
+
     const topBaseline = liveBaselines[0]
+
     if (topBaseline) {
       liveRows.push([
         formatLiveBaselineName(topBaseline),
@@ -1882,6 +2046,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
   }
 
   const topComponents = componentContributionRows(calibration, 2)
+
   if (topComponents.length) {
     sections.push({
       rows: topComponents,

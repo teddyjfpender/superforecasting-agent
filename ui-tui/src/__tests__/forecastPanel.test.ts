@@ -986,3 +986,108 @@ describe('forecast desk panel helpers', () => {
     )
   })
 })
+
+describe('forecast desk unearned-tail heuristics', () => {
+  const responseWithUnearnedTail = (): ForecastDashboardResponse => ({
+    summary: {
+      active_count: 2,
+      open_alert_count: 0,
+      product: 'Superforecasting Agent',
+      questions: [
+        {
+          as_of: '2026-05-24T00:00:00Z',
+          close_time: '2026-11-03T00:00:00Z',
+          confidence: 0.62,
+          delta: 0.01,
+          evidence_count: 4,
+          id: 'fq_senate',
+          open_alert_count: 0,
+          probability: { Abbott: 0.62, Allred: 0.34, Conway: 0.017, Other: 0.023 },
+          tail_audit: {
+            outcomes: [{ classification: 'unpriced', has_path: false, name: 'Conway', probability: 0.017, unearned: true }],
+            passes: false,
+            threshold: 0.005,
+            unearned_mass: 0.017
+          },
+          title: 'Who wins the Texas Senate seat?'
+        },
+        {
+          as_of: '2026-05-24T00:00:00Z',
+          close_time: '2026-06-30T00:00:00Z',
+          confidence: 0.62,
+          delta: 0.08,
+          evidence_count: 4,
+          id: 'fq_cpi',
+          open_alert_count: 0,
+          probability: 0.61,
+          title: 'Will the CPI release exceed consensus?'
+        }
+      ],
+      review_queue_count: 0
+    }
+  })
+
+  it('counts unearned-tail forecasts in the desk status strip', () => {
+    expect(forecastDeskStatusLabel(responseWithUnearnedTail())).toContain('1 with unearned tail')
+  })
+
+  it('marks the unearned-tail book row and surfaces a triage row', () => {
+    const sections = forecastDashboardSections(responseWithUnearnedTail())
+    const senateRow = sections
+      .find(section => section.title === 'Active Forecasts')
+      ?.rows?.find(row => row[2] === '/questions fq_senate')
+    expect(senateRow?.[1]).toContain('unearned tail 1.7%')
+    expect(senateRow?.[1]).toContain('Conway')
+
+    const triage = sections.find(section => section.title === 'Triage')
+    expect(triage?.rows?.some(row => /unearned tail mass/.test(row[1]))).toBe(true)
+  })
+
+  it('does not flag forecasts whose tail audit passes or is absent', () => {
+    const clean: ForecastDashboardResponse = {
+      summary: {
+        active_count: 1,
+        product: 'Superforecasting Agent',
+        questions: [
+          {
+            id: 'fq_clean',
+            probability: 0.5,
+            tail_audit: { outcomes: [], passes: true, threshold: 0.005, unearned_mass: 0 },
+            title: 'Clean categorical'
+          },
+          { id: 'fq_binary', probability: 0.5, title: 'No audit at all' }
+        ]
+      }
+    }
+    expect(forecastDeskStatusLabel(clean)).not.toContain('unearned tail')
+    const triage = forecastDashboardSections(clean).find(section => section.title === 'Triage')
+    expect(triage?.rows?.some(row => /unearned tail/.test(row[1]))).toBe(false)
+  })
+
+  it('shows the tail-audit chip in the question detail packet section', () => {
+    const sections = forecastQuestionDetailSections({
+      packet: {
+        forecast_history: [
+          {
+            as_of: '2026-05-24T00:00:00Z',
+            metadata: {
+              tail_audit: {
+                outcomes: [{ classification: 'unpriced', has_path: false, name: 'Conway', probability: 0.017, unearned: true }],
+                passes: false,
+                threshold: 0.005,
+                unearned_mass: 0.017
+              }
+            },
+            probability_or_distribution: { Abbott: 0.62, Conway: 0.017 },
+            rationale: 'Latest categorical read.'
+          }
+        ],
+        question: { id: 'fq_senate', status: 'active', title: 'Texas Senate' }
+      }
+    })
+    const current = sections.find(section => section.title === 'Current Forecast')
+    const tailRow = current?.rows?.find(row => row[0] === 'tail audit')
+    expect(tailRow?.[1]).toContain('FAIL')
+    expect(tailRow?.[1]).toContain('Conway')
+  })
+})
