@@ -1,6 +1,7 @@
 import { withInkSuspended } from '@hermes/ink'
 
 import { forecastCommandDisplayName, launchForecastCommand } from '../../../lib/externalCli.js'
+import { patchOverlayState } from '../../overlayStore.js'
 import { runExternalSetup } from '../../setupHandoff.js'
 import type { SlashCommand, SlashRunCtx } from '../types.js'
 
@@ -84,6 +85,27 @@ export const setupCommands: SlashCommand[] = [
           })
         )
         .catch(ctx.guardedErr)
+    }
+  },
+
+  {
+    aliases: ['themes', 'color', 'colors'],
+    help: 'pick a color theme — interactive picker with live preview',
+    name: 'theme',
+    run: (arg, ctx) => {
+      // `/theme <name>` sets directly (fires skin.changed); bare `/theme`
+      // opens the live picker.
+      const name = arg.trim()
+      if (name) {
+        ctx.gateway
+          .rpc('config.set', { key: 'skin', value: name })
+          .then(ctx.guarded(() => ctx.transcript.sys(`theme → ${name}`)))
+          .catch(ctx.guardedErr)
+
+        return
+      }
+
+      patchOverlayState({ themePicker: true })
     }
   },
 

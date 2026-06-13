@@ -87,6 +87,7 @@ export interface OverlayState {
   secret: null | SecretReq
   skillsHub: boolean
   sudo: null | SudoReq
+  themePicker: boolean
 }
 
 export interface PagerState {

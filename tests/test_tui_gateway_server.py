@@ -59,6 +59,19 @@ def test_write_json_returns_false_on_broken_pipe(monkeypatch):
     assert server.write_json({"ok": True}) is False
 
 
+def test_theme_list_returns_skins_with_colors():
+    resp = server.handle_request({"id": "1", "method": "theme.list", "params": {}})
+    assert "result" in resp, resp
+    result = resp["result"]
+    themes = result["themes"]
+    # Built-in skins must be present, each with a usable color map for preview.
+    by_name = {t["name"]: t for t in themes}
+    assert {"default", "mono", "slate"} <= set(by_name)
+    assert by_name["slate"]["colors"]  # non-empty color map
+    assert all("name" in t and "colors" in t for t in themes)
+    assert isinstance(result.get("active"), str)
+
+
 def test_forecast_command_runs_forecast_cli_with_raw_args(tmp_path):
     db_path = tmp_path / "forecast.sqlite"
     resp = server.handle_request(

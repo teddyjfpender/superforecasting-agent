@@ -18,6 +18,22 @@ describe('createSlashHandler', () => {
     expect(getOverlayState().picker).toBe(true)
   })
 
+  it('opens the theme picker overlay for bare /theme', () => {
+    const ctx = buildCtx()
+
+    expect(createSlashHandler(ctx)('/theme')).toBe(true)
+    expect(getOverlayState().themePicker).toBe(true)
+  })
+
+  it('sets a theme directly for /theme <name> without opening the picker', () => {
+    const rpc = vi.fn(() => Promise.resolve({ value: 'slate' }))
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)('/theme slate')).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('config.set', { key: 'skin', value: 'slate' })
+    expect(getOverlayState().themePicker).toBe(false)
+  })
+
   it('handles /redraw locally without slash worker fallback', () => {
     const ctx = buildCtx()
 

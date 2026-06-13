@@ -5558,6 +5558,45 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5020, str(e))
 
 
+@method("theme.list")
+def _(rid, params: dict) -> dict:
+    """List every available theme (built-in skins + user skins) with its
+    resolved color map and branding, so the TUI's /theme picker can render a
+    live preview of each without a round-trip per theme. Also reports the
+    currently active theme name."""
+    try:
+        from hermes_cli.skin_engine import (
+            get_active_skin_name,
+            init_skin_from_config,
+            list_skins,
+            load_skin,
+        )
+
+        init_skin_from_config(_load_cfg())
+        active = get_active_skin_name()
+        themes = []
+        for entry in list_skins():
+            name = entry.get("name", "")
+            if not name:
+                continue
+            try:
+                skin = load_skin(name)
+            except Exception:
+                continue
+            themes.append(
+                {
+                    "name": name,
+                    "description": entry.get("description", ""),
+                    "source": entry.get("source", "builtin"),
+                    "colors": skin.colors,
+                    "branding": skin.branding,
+                }
+            )
+        return _ok(rid, {"themes": themes, "active": active})
+    except Exception as e:
+        return _err(rid, 5036, str(e))
+
+
 @method("model.options")
 def _(rid, params: dict) -> dict:
     try:

@@ -148,6 +148,13 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       return patchOverlayState({ modelPicker: false })
     }
 
+    if (overlay.themePicker) {
+      // ESC (handled inside ThemePicker) reverts to the pre-open theme; a hard
+      // Ctrl+C just closes — the previewed theme stays for the session but was
+      // never persisted, so a restart restores the saved skin.
+      return patchOverlayState({ themePicker: false })
+    }
+
     if (overlay.skillsHub) {
       return patchOverlayState({ skillsHub: false })
     }

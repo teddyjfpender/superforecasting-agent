@@ -13,6 +13,7 @@ import { OverlayHint } from './overlayControls.js'
 import { ApprovalPrompt, ClarifyPrompt, ConfirmPrompt } from './prompts.js'
 import { SessionPicker } from './sessionPicker.js'
 import { SkillsHub } from './skillsHub.js'
+import { ThemePicker } from './themePicker.js'
 
 const COMPLETION_WINDOW = 16
 
@@ -124,7 +125,13 @@ export function FloatingOverlays({
   const sid = useStore($uiSessionId)
   const theme = useStore($uiTheme)
 
-  const hasAny = overlay.modelPicker || overlay.pager || overlay.picker || overlay.skillsHub || completions.length
+  const hasAny =
+    overlay.modelPicker ||
+    overlay.themePicker ||
+    overlay.pager ||
+    overlay.picker ||
+    overlay.skillsHub ||
+    completions.length
 
   if (!hasAny) {
     return null
@@ -159,6 +166,12 @@ export function FloatingOverlays({
             sessionId={sid}
             t={theme}
           />
+        </FloatBox>
+      )}
+
+      {overlay.themePicker && (
+        <FloatBox color={theme.color.border}>
+          <ThemePicker gw={gw} onClose={() => patchOverlayState({ themePicker: false })} t={theme} />
         </FloatBox>
       )}
 

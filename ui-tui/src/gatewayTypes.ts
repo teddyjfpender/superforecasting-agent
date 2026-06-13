@@ -95,6 +95,19 @@ export interface ConfigGetValueResponse {
   value?: string
 }
 
+export interface ThemeOption {
+  branding?: Record<string, string>
+  colors?: Record<string, string>
+  description?: string
+  name: string
+  source?: string
+}
+
+export interface ThemeListResponse {
+  active?: string
+  themes?: ThemeOption[]
+}
+
 export interface ConfigSetResponse {
   credential_warning?: string
   history_reset?: boolean
