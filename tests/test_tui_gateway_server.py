@@ -70,6 +70,26 @@ def test_theme_list_returns_skins_with_colors():
     assert by_name["slate"]["colors"]  # non-empty color map
     assert all("name" in t and "colors" in t for t in themes)
     assert isinstance(result.get("active"), str)
+    # The light/dark appearance override is reported for the picker.
+    assert result.get("appearance") in {"light", "dark", "auto"}
+
+
+def test_appearance_config_set_persists_and_validates(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    ok = server.handle_request(
+        {"id": "1", "method": "config.set", "params": {"key": "appearance", "value": "dark"}}
+    )
+    assert "result" in ok, ok
+    assert ok["result"]["value"] == "dark"
+    # theme.list and resolve_skin both report the persisted choice.
+    listed = server.handle_request({"id": "2", "method": "theme.list", "params": {}})
+    assert listed["result"]["appearance"] == "dark"
+    assert server.resolve_skin().get("appearance") == "dark"
+    # Invalid values are rejected, not silently coerced.
+    bad = server.handle_request(
+        {"id": "3", "method": "config.set", "params": {"key": "appearance", "value": "bogus"}}
+    )
+    assert "error" in bad, bad
 
 
 def test_forecast_command_runs_forecast_cli_with_raw_args(tmp_path):

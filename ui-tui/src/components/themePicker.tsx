@@ -19,10 +19,20 @@ interface ThemePickerProps {
   t: Theme
 }
 
+export type Appearance = 'auto' | 'dark' | 'light'
+
+const APPEARANCE_CYCLE: Appearance[] = ['auto', 'light', 'dark']
+
+// Map an appearance choice to an explicit light/dark override for fromSkin;
+// 'auto' returns undefined so terminal auto-detection stands.
+const appearanceOverride = (mode: Appearance): boolean | undefined =>
+  mode === 'light' ? true : mode === 'dark' ? false : undefined
+
 // Build a live Theme from a skin's color/branding maps — same path the gateway
 // `skin.changed` event uses, so the preview is exactly what commit will apply.
-export const themeFromOption = (option: ThemeOption): Theme =>
-  fromSkin(option.colors ?? {}, option.branding ?? {})
+// `mode` forces light/dark so the user can flip appearance and see it live.
+export const themeFromOption = (option: ThemeOption, mode: Appearance = 'auto'): Theme =>
+  fromSkin(option.colors ?? {}, option.branding ?? {}, '', '', '', '', appearanceOverride(mode))
 
 // The swatch row: a labelled chip per load-bearing color so a glance shows
 // whether a theme is gold, blue, mono, etc. and how severity reads in it.
@@ -39,6 +49,7 @@ const SWATCH_KEYS: { key: keyof Theme['color']; label: string }[] = [
 export function ThemePicker({ gw, onClose, t }: ThemePickerProps) {
   const [themes, setThemes] = useState<ThemeOption[]>([])
   const [idx, setIdx] = useState(0)
+  const [mode, setMode] = useState<Appearance>('auto')
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
@@ -70,6 +81,9 @@ export function ThemePicker({ gw, onClose, t }: ThemePickerProps) {
         )
 
         setIdx(activeIdx)
+
+        const appearance = (r.appearance ?? 'auto') as Appearance
+        setMode(APPEARANCE_CYCLE.includes(appearance) ? appearance : 'auto')
         setLoading(false)
       })
       .catch((e: unknown) => {
@@ -78,15 +92,15 @@ export function ThemePicker({ gw, onClose, t }: ThemePickerProps) {
       })
   }, [gw])
 
-  // Apply the highlighted theme live as the cursor moves — the whole point of
-  // a picker is seeing the change, not reading a name.
+  // Apply the highlighted theme + chosen appearance live — the whole point of
+  // a picker is seeing the change, including the light/dark flip.
   useEffect(() => {
     const option = themes[idx]
 
     if (option) {
-      patchUiState({ theme: themeFromOption(option) })
+      patchUiState({ theme: themeFromOption(option, mode) })
     }
-  }, [themes, idx])
+  }, [themes, idx, mode])
 
   const cancel = () => {
     patchUiState({ theme: originalTheme.current })
@@ -101,9 +115,13 @@ export function ThemePicker({ gw, onClose, t }: ThemePickerProps) {
     }
 
     setSaving(true)
-    // Persist via the existing skin config key (fires skin.changed); the live
-    // preview already applied the theme, so we just keep it on success.
-    gw.request<ConfigSetResponse>('config.set', { key: 'skin', value: option.name })
+    // Persist both the skin and the appearance choice. The live preview
+    // already applied the theme; the launcher re-exports appearance as the
+    // TUI THEME env so the light/dark choice also survives a restart.
+    Promise.all([
+      gw.request<ConfigSetResponse>('config.set', { key: 'skin', value: option.name }),
+      gw.request<ConfigSetResponse>('config.set', { key: 'appearance', value: mode })
+    ])
       .then(() => onClose())
       .catch((e: unknown) => {
         setErr(rpcErrorMessage(e))
@@ -128,6 +146,11 @@ export function ThemePicker({ gw, onClose, t }: ThemePickerProps) {
       return commit()
     }
 
+    // Tab (or 'm') cycles auto → light → dark, applied live to the preview.
+    if (key.tab || ch === 'm') {
+      return setMode(m => APPEARANCE_CYCLE[(APPEARANCE_CYCLE.indexOf(m) + 1) % APPEARANCE_CYCLE.length]!)
+    }
+
     if (key.upArrow || ch === 'k') {
       return setIdx(i => (i <= 0 ? themes.length - 1 : i - 1))
     }
@@ -140,7 +163,7 @@ export function ThemePicker({ gw, onClose, t }: ThemePickerProps) {
   const current = themes[idx]
   // The preview must use the PREVIEWED theme's colors, not the picker's prop
   // `t` (which is the original) — otherwise the swatches wouldn't change.
-  const preview = useMemo(() => (current ? themeFromOption(current) : t), [current, t])
+  const preview = useMemo(() => (current ? themeFromOption(current, mode) : t), [current, mode, t])
 
   if (loading) {
     return (
@@ -165,7 +188,13 @@ export function ThemePicker({ gw, onClose, t }: ThemePickerProps) {
 
   return (
     <Box flexDirection="column" width={width}>
-      <Text color={preview.color.primary}>Theme — live preview</Text>
+      <Box justifyContent="space-between" width={width - 2}>
+        <Text color={preview.color.primary}>Theme — live preview</Text>
+        <Text color={preview.color.info}>
+          appearance: {mode}
+          {mode === 'auto' ? ' (auto-detect)' : ''}
+        </Text>
+      </Box>
 
       <Box flexDirection="row" marginTop={1}>
         {/* Left: theme list */}
@@ -173,7 +202,7 @@ export function ThemePicker({ gw, onClose, t }: ThemePickerProps) {
           {items.map((option, i) => {
             const realIdx = offset + i
             const selected = realIdx === idx
-            const optionTheme = themeFromOption(option)
+            const optionTheme = themeFromOption(option, mode)
 
             return (
               <Text
@@ -218,7 +247,7 @@ export function ThemePicker({ gw, onClose, t }: ThemePickerProps) {
 
       <Box marginTop={1}>
         <OverlayHint t={t}>
-          {saving ? 'saving…' : '↑↓/jk browse · enter apply & save · esc cancel'}
+          {saving ? 'saving…' : '↑↓/jk browse · tab light/dark · enter apply & save · esc cancel'}
         </OverlayHint>
       </Box>
     </Box>

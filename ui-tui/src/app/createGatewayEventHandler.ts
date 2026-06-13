@@ -1,7 +1,7 @@
 import { STARTUP_IMAGE, STARTUP_QUERY } from '../config/env.js'
 import { STREAM_BATCH_MS } from '../config/timing.js'
 import { AUTH_EXPIRED_RE, AUTH_EXPIRED_TITLE, buildAuthExpiredSections } from '../content/auth.js'
-import { SETUP_REQUIRED_TITLE, buildSetupRequiredSections } from '../content/setup.js'
+import { buildSetupRequiredSections, SETUP_REQUIRED_TITLE } from '../content/setup.js'
 import type {
   CommandsCatalogResponse,
   ConfigFullResponse,
@@ -28,6 +28,12 @@ const NO_PROVIDER_RE = /\bNo (?:LLM|inference) provider configured\b/i
 
 const statusFromBusy = () => (getUiState().busy ? 'running…' : 'ready')
 
+// Map the persisted appearance ('light'|'dark'|'auto') to fromSkin's explicit
+// light/dark override so the user's choice applies app-wide; 'auto'/unset
+// leaves terminal auto-detection in charge.
+const appearanceToOverride = (appearance?: string): boolean | undefined =>
+  appearance === 'light' ? true : appearance === 'dark' ? false : undefined
+
 const applySkin = (s: GatewaySkin) =>
   patchUiState({
     theme: fromSkin(
@@ -36,7 +42,8 @@ const applySkin = (s: GatewaySkin) =>
       s.banner_logo ?? '',
       s.banner_hero ?? '',
       s.tool_prefix ?? '',
-      s.help_header ?? ''
+      s.help_header ?? '',
+      appearanceToOverride(s.appearance)
     )
   })
 
@@ -219,6 +226,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           forecastDeskRailSections: forecastDeskRailSections(r || {}),
           forecastDeskStatus: forecastDeskStatusLabel(r || {})
         })
+
         if (renderPanel) {
           panel('Forecast Desk', forecastDashboardSections(r || {}))
         }
@@ -371,6 +379,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
         if (p.kind === 'goal') {
           sys(p.text)
+
           const brief = p.text.startsWith('✓')
             ? '✓ goal complete'
             : p.text.startsWith('↻')
@@ -378,8 +387,10 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
               : p.text.startsWith('⏸')
                 ? '⏸ goal paused'
                 : 'ready'
+
           setStatus(brief)
           restoreStatusAfter(6000)
+
           return
         }
 
@@ -387,6 +398,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
         if (p.kind === 'compressing') {
           sys(p.text)
+
           return
         }
 
@@ -612,7 +624,6 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         sys(`[bg ${ev.payload.task_id}] ${ev.payload.text}`)
 
         return
-
       case 'review.summary': {
         // Self-improvement background review emitted a persistent summary
         // of what it saved to memory/skills. Surface it as a system line
@@ -620,6 +631,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         // flash. Python-side already formats it as "💾 Self-improvement
         // review: …".
         const text = String(ev.payload?.text ?? '').trim()
+
         if (text) {
           sys(text)
         }

@@ -1356,6 +1356,23 @@ def _launch_tui(
     )
     os.close(active_session_fd)
     _set_tui_env_aliases(env, "ACTIVE_SESSION_FILE", active_session_file)
+
+    # Persisted light/dark appearance override (display.appearance =
+    # light|dark|auto, set via the in-TUI /theme picker). Export it as the
+    # TUI's THEME env so detectLightMode() honors the user's explicit choice
+    # across restarts instead of re-guessing from the terminal. "auto" (or
+    # unset) leaves detection alone; an already-set env wins so a one-off
+    # `FORECAST_TUI_THEME=...` still overrides the saved preference.
+    try:
+        from hermes_cli.config import load_config as _load_cfg_for_theme
+
+        _appearance = str(
+            (_load_cfg_for_theme().get("display") or {}).get("appearance", "")
+        ).strip().lower()
+        if _appearance in {"light", "dark"} and not _tui_env_value("THEME"):
+            _set_tui_env_aliases(env, "THEME", _appearance)
+    except Exception:
+        pass
     python_src_root = _runtime_env_value("PYTHON_SRC_ROOT") or str(PROJECT_ROOT)
     _set_runtime_env_aliases(env, "PYTHON_SRC_ROOT", python_src_root)
     python_bin = (

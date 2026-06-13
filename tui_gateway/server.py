@@ -828,6 +828,11 @@ def resolve_skin() -> dict:
 
         init_skin_from_config(_load_cfg())
         skin = get_active_skin()
+        appearance = str(
+            (_load_cfg().get("display") or {}).get("appearance", "auto")
+        ).strip().lower()
+        if appearance not in {"light", "dark", "auto"}:
+            appearance = "auto"
         return {
             "name": skin.name,
             "colors": skin.colors,
@@ -836,6 +841,7 @@ def resolve_skin() -> dict:
             "banner_hero": skin.banner_hero,
             "tool_prefix": skin.tool_prefix,
             "help_header": (skin.branding or {}).get("help_header", ""),
+            "appearance": appearance,
         }
     except Exception:
         return {}
@@ -4360,6 +4366,19 @@ def _(rid, params: dict) -> dict:
         _write_config_key("display.tui_status_indicator", raw)
         return _ok(rid, {"key": key, "value": raw})
 
+    if key == "appearance":
+        raw = str(value or "auto").strip().lower()
+        if raw not in {"light", "dark", "auto"}:
+            return _err(rid, 4002, "appearance must be light, dark, or auto")
+        try:
+            _write_config_key("display.appearance", raw)
+            # Re-emit the skin so the TUI re-resolves light/dark live; the
+            # payload carries the appearance for fromSkin's mode override.
+            _emit("skin.changed", "", resolve_skin())
+            return _ok(rid, {"key": key, "value": raw})
+        except Exception as e:
+            return _err(rid, 5001, str(e))
+
     if key in {"prompt", "personality", "skin"}:
         try:
             cfg = _load_cfg()
@@ -5600,8 +5619,12 @@ def _(rid, params: dict) -> dict:
             load_skin,
         )
 
-        init_skin_from_config(_load_cfg())
+        cfg = _load_cfg()
+        init_skin_from_config(cfg)
         active = get_active_skin_name()
+        appearance = str((cfg.get("display") or {}).get("appearance", "auto")).strip().lower()
+        if appearance not in {"light", "dark", "auto"}:
+            appearance = "auto"
         themes = []
         for entry in list_skins():
             name = entry.get("name", "")
@@ -5620,7 +5643,7 @@ def _(rid, params: dict) -> dict:
                     "branding": skin.branding,
                 }
             )
-        return _ok(rid, {"themes": themes, "active": active})
+        return _ok(rid, {"themes": themes, "active": active, "appearance": appearance})
     except Exception as e:
         return _err(rid, 5036, str(e))
 

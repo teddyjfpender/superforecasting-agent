@@ -154,9 +154,12 @@ function relativeLuminance(red: number, green: number, blue: number): number {
 const DARK_BG_LUMINANCE = 0.0
 const DARK_TEXT_CONTRAST_FLOOR = 4.5
 
-// Foregrounds that carry readable TEXT — the only ones we lift. Severity
-// colors (ok/warn/error), accent, and primary are already bright on every
-// shipped skin, and borders/backgrounds are decorative, so we leave them.
+// Foregrounds that carry readable TEXT or headers — the ones we lift. On
+// dark-designed skins these are all already bright (so the floor is a no-op
+// and DEFAULT_THEME === DARK_THEME still holds); on a LIGHT skin forced into
+// dark mode their dark values get lifted so the theme stays legible instead
+// of vanishing into the background. Severity colors (ok/warn/error) are
+// bright on every shipped skin; borders/backgrounds are decorative — left.
 const DARK_CONTRAST_FLOORED_KEYS: readonly (keyof ThemeColors)[] = [
   'text',
   'muted',
@@ -164,7 +167,9 @@ const DARK_CONTRAST_FLOORED_KEYS: readonly (keyof ThemeColors)[] = [
   'prompt',
   'sessionLabel',
   'sessionBorder',
-  'info'
+  'info',
+  'primary',
+  'accent'
 ]
 
 function wcagContrast(luminance: number, background: number): number {
@@ -619,14 +624,20 @@ export const DEFAULT_THEME: Theme = enforceDarkContrastFloor(
 
 // ── Skin → Theme ─────────────────────────────────────────────────────
 
+// `isLightOverride` lets the caller force light/dark independent of terminal
+// auto-detection — the in-TUI /theme picker passes the user's explicit
+// appearance choice so they can flip mode and see it live. Undefined keeps
+// the auto-detected DEFAULT_LIGHT_MODE.
 export function fromSkin(
   colors: Record<string, string>,
   branding: Record<string, string>,
   bannerLogo = '',
   bannerHero = '',
   toolPrefix = '',
-  helpHeader = ''
+  helpHeader = '',
+  isLightOverride?: boolean
 ): Theme {
+  const isLight = isLightOverride ?? DEFAULT_LIGHT_MODE
   const d = DEFAULT_THEME
   const c = (k: string) => colors[k]
   const hasSkinColors = Object.keys(colors).length > 0
@@ -699,8 +710,8 @@ export function fromSkin(
       bannerHero
     },
     process.env,
-    DEFAULT_LIGHT_MODE
+    isLight
     ),
-    DEFAULT_LIGHT_MODE
+    isLight
   )
 }

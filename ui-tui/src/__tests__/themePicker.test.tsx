@@ -140,6 +140,35 @@ describe('themeFromOption', () => {
     const primaries = [forecast, slate, mono].map(option => themeFromOption(option).color.primary)
     expect(new Set(primaries).size).toBe(3)
   })
+
+  it('dark mode lifts a light theme so it stays legible (no dark-on-dark)', async () => {
+    const { themeFromOption } = await import('../components/themePicker.js')
+    // A light-designed theme: near-black text + dark-blue accent (unreadable
+    // on a dark terminal until the dark-mode contrast floor lifts them).
+    const lightTheme = {
+      branding: {},
+      colors: { banner_accent: '#1e40af', ui_primary: '#1e3a8a', ui_text: '#111827' },
+      description: 'light',
+      name: 'daylight',
+      source: 'builtin' as const
+    }
+    const cl = (v: number) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4)
+    const lum = (hex: string) => {
+      const n = parseInt(hex.replace('#', ''), 16)
+      return 0.2126 * cl((n >> 16) & 255) + 0.7152 * cl((n >> 8) & 255) + 0.0722 * cl(n & 255)
+    }
+    const contrast = (hex: string) => (lum(hex) + 0.05) / 0.05
+
+    // Forced dark mode: text + accent get lifted above the AA floor.
+    const dark = themeFromOption(lightTheme, 'dark')
+    expect(contrast(dark.color.text)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(dark.color.accent)).toBeGreaterThanOrEqual(4.5)
+
+    // Forced light mode: the dark text is intended (legible on a light bg),
+    // so the floor leaves it dark.
+    const light = themeFromOption(lightTheme, 'light')
+    expect(light.color.text).toBe('#111827')
+  })
 })
 
 describe('ThemePicker', () => {

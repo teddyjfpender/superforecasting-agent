@@ -1,6 +1,7 @@
 import type { SessionInfo, SlashCategory, SubagentStatus, Usage } from './types.js'
 
 export interface GatewaySkin {
+  appearance?: string
   banner_hero?: string
   banner_logo?: string
   branding?: Record<string, string>
@@ -105,6 +106,7 @@ export interface ThemeOption {
 
 export interface ThemeListResponse {
   active?: string
+  appearance?: string
   themes?: ThemeOption[]
 }
 

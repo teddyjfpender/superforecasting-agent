@@ -25,6 +25,7 @@ interface AuthPollResponse {
 // narrates the outcome into the transcript.
 const watchAuthFlow = (ctx: SlashRunCtx, intervalMs: number) => {
   const startedAt = Date.now()
+
   const tick = () => {
     if (Date.now() - startedAt > 16 * 60 * 1000) {
       return
@@ -35,6 +36,7 @@ const watchAuthFlow = (ctx: SlashRunCtx, intervalMs: number) => {
       .then(r => {
         if (!r || r.status === 'pending') {
           setTimeout(tick, intervalMs)
+
           return
         }
 
@@ -44,6 +46,7 @@ const watchAuthFlow = (ctx: SlashRunCtx, intervalMs: number) => {
               ? 'signed in to OpenAI Codex — this session is ready, keep going'
               : 'signed in to OpenAI Codex — run /model to start using it'
           )
+
           return
         }
 
@@ -90,16 +93,27 @@ export const setupCommands: SlashCommand[] = [
 
   {
     aliases: ['themes', 'color', 'colors'],
-    help: 'pick a color theme — interactive picker with live preview',
+    help: 'pick a color theme — interactive picker (live preview, light/dark toggle)',
     name: 'theme',
     run: (arg, ctx) => {
-      // `/theme <name>` sets directly (fires skin.changed); bare `/theme`
-      // opens the live picker.
-      const name = arg.trim()
-      if (name) {
+      const value = arg.trim().toLowerCase()
+
+      // `/theme light|dark|auto` sets the appearance mode directly.
+      if (value === 'light' || value === 'dark' || value === 'auto') {
         ctx.gateway
-          .rpc('config.set', { key: 'skin', value: name })
-          .then(ctx.guarded(() => ctx.transcript.sys(`theme → ${name}`)))
+          .rpc('config.set', { key: 'appearance', value })
+          .then(ctx.guarded(() => ctx.transcript.sys(`appearance → ${value}`)))
+          .catch(ctx.guardedErr)
+
+        return
+      }
+
+      // `/theme <name>` sets a skin directly (fires skin.changed); bare
+      // `/theme` opens the live picker.
+      if (value) {
+        ctx.gateway
+          .rpc('config.set', { key: 'skin', value: arg.trim() })
+          .then(ctx.guarded(() => ctx.transcript.sys(`theme → ${arg.trim()}`)))
           .catch(ctx.guardedErr)
 
         return
