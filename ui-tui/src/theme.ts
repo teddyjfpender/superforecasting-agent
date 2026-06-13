@@ -15,6 +15,10 @@ export interface ThemeColors {
   ok: string
   error: string
   warn: string
+  // Informational emphasis (model names, lenses, non-command links): a calm
+  // blue distinct from both the gold brand family and the severity triple,
+  // so gold can stay reserved for brand + interactive affordances.
+  info: string
 
   prompt: string
   sessionLabel: string
@@ -274,6 +278,7 @@ export const DARK_THEME: Theme = {
     ok: '#4caf50',
     error: '#ef5350',
     warn: '#ffa726',
+    info: '#64B5F6',
 
     prompt: '#FFF8DC',
     // sessionLabel/sessionBorder intentionally track the `dim` value — they
@@ -322,6 +327,7 @@ export const LIGHT_THEME: Theme = {
     ok: '#2E7D32',
     error: '#C62828',
     warn: '#E65100',
+    info: '#01579B',
 
     prompt: '#2B2014',
     sessionLabel: '#7A5A0F',
@@ -553,6 +559,7 @@ export function fromSkin(
         ok: c('ui_ok') ?? d.color.ok,
         error: c('ui_error') ?? d.color.error,
         warn: c('ui_warn') ?? d.color.warn,
+        info: c('ui_info') ?? d.color.info,
 
         prompt: c('prompt') ?? c('banner_text') ?? d.color.prompt,
         sessionLabel: c('session_label') ?? muted,

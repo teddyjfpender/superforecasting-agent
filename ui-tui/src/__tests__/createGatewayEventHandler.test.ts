@@ -770,7 +770,7 @@ describe('createGatewayEventHandler', () => {
     createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
 
     await vi.waitFor(() => expect(appended.some(msg => msg.kind === 'panel')).toBe(true))
-    expect(getUiState().forecastDeskStatus).toBe('1 forecasts  ·  1 to review  ·  1 alert  ·  cal 3  ·  1 lesson  ·  2 assumptions')
+    expect(getUiState().forecastDeskStatus).toBe('1 forecasts  ·  1 to review  ·  1 alert')
     expect(getUiState().forecastDeskRailSections).toEqual([
       {
         rows: [
@@ -797,7 +797,7 @@ describe('createGatewayEventHandler', () => {
         rows: [
           [
             '/questions fq_123456789abc',
-            'Will X win the election?  —  P=0.630  as-of 2026-05-01  close -  reasons review_due,last_update_…'
+            'Will X win the election?  —  63%  as-of 2026-05-01  close -  reasons review_due,last_update_…'
           ],
           [
             '/note fq_123456789abc -- <evidence>',
@@ -815,8 +815,8 @@ describe('createGatewayEventHandler', () => {
       {
         rows: [
           [
-            '12345678 P=0.630 Δ=+0.080',
-            '1 alert  as-of 2026-05-01  close 2026-11-03  conf 0.74  Will X win the election?',
+            '63% ↑8pt',
+            'Will X win the election?  1 alert  as-of 2026-05-01  close 2026-11-03  conf 74%',
             '/questions fq_123456789abc'
           ]
         ],
@@ -869,8 +869,8 @@ describe('createGatewayEventHandler', () => {
           {
             rows: [
               [
-                '12345678  P=0.630  Δ=+0.080',
-                'as-of 2026-05-01  close 2026-11-03  conf 0.74  ev 4  base 2  refs 0/0  asm 2/0  1 alert  Will X win the election?',
+                '63%  ↑8pt',
+                'Will X win the election?  as-of 2026-05-01  close 2026-11-03  conf 74%  4 evidence  1 alert',
                 '/questions fq_123456789abc'
               ]
             ],
@@ -879,8 +879,8 @@ describe('createGatewayEventHandler', () => {
           {
             rows: [
               [
-                '12345678  priority 4',
-                'P=0.630  as-of 2026-05-01  close -  review_due, last_update_7d_plus  forecast research fq_123456789abc; forecast update fq_123456789…',
+                'priority 4',
+                'Will X win the election?  63%  as-of 2026-05-01  close -  review_due, last_update_7d_plus  forecast research fq_123456789abc; forecast update fq_123456789…',
                 '/questions fq_123456789abc'
               ]
             ],
@@ -939,7 +939,7 @@ describe('createGatewayEventHandler', () => {
             rows: [
               [
                 '/questions fq_123456789abc',
-                'Will X win the election?  —  P=0.630  as-of 2026-05-01  close -  reasons review_due,last_update_…'
+                'Will X win the election?  —  63%  as-of 2026-05-01  close -  reasons review_due,last_update_…'
               ],
               [
                 '/note fq_123456789abc -- <evidence>',

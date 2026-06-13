@@ -316,7 +316,7 @@ describe('forecast desk Ink render', () => {
     expect(compact).toContain('Triage')
     expect(compact).toContain('/forecastreadiness')
     expect(compact).toContain('Watchlist')
-    expect(compact).toContain('watch123P=0.630')
+    expect(compact).toContain('63%↑8pt')
     expect(compact).toContain('deskactions')
     expect(compact).toContain('/questionsfq_review123456')
     expect(compact).not.toContain('deskbrief')

@@ -309,7 +309,10 @@ export function StatusRule({
             <Text color={statusColor}>{status}</Text>
           )}
           {deskStatus ? <Text color={t.color.muted}> │ {deskStatus}</Text> : null}
-          <Text color={t.color.muted}> │ {modelLabel(model, modelReasoningEffort, modelFast)}</Text>
+          <Text color={t.color.muted}>
+            {' │ '}
+            <Text color={t.color.info}>{modelLabel(model, modelReasoningEffort, modelFast)}</Text>
+          </Text>
           {ctxLabel ? <Text color={t.color.muted}> │ {ctxLabel}</Text> : null}
           {bar ? (
             <Text color={t.color.muted}>

@@ -57,13 +57,13 @@ describe('forecast desk panel helpers', () => {
     expect(forecastFreshnessLabel('2026-05-26T00:00:00Z', new Date('2026-05-26T12:00:00Z'))).toBe('fresh today')
     expect(sections.find(section => section.title === 'Forecast Questions')?.rows).toEqual([
       [
-        '1. P=0.610 Δ=+0.080',
-        '2d old  as-of 2026-05-24  close 2026-06-30  conf 0.62  ev 4  active  Will the CPI release exceed consensus?',
+        '1. 61% ↑8pt',
+        'Will the CPI release exceed consensus?  2d old  as-of 2026-05-24  close 2026-06-30  conf 62%  4 evidence  active',
         '/questions 1'
       ],
       [
-        '2. P=0.210 Δ=-0.040',
-        '1mo old  as-of 2026-04-01  close 2026-09-30  conf 0.55  ev 2  1 alert  Will company Y default?',
+        '2. 21% ↓4pt',
+        'Will company Y default?  1mo old  as-of 2026-04-01  close 2026-09-30  conf 55%  2 evidence  1 alert',
         '/questions 2'
       ]
     ])
@@ -128,9 +128,9 @@ describe('forecast desk panel helpers', () => {
     const sections = forecastQuestionSearchSections(response, 'inflation energy', new Date('2026-05-26T00:00:00Z'))
 
     expect(matches.map(match => match.row.id)).toEqual(['fq_inflation001', 'fq_review_energy'])
-    expect(sections.find(section => section.title === 'Matches')?.rows?.[0]?.[0]).toBe('1. inflatio  P=0.610  Δ=+0.080')
+    expect(sections.find(section => section.title === 'Matches')?.rows?.[0]?.[0]).toBe('1. 61%  ↑8pt')
     expect(sections.find(section => section.title === 'Matches')?.rows?.[0]?.[1]).toContain(
-      '2d old  close 2026-06-30  conf 0.62  ev 4  active  Will the CPI release exceed consensus?'
+      'Will the CPI release exceed consensus?  2d old  close 2026-06-30  conf 62%  4 evidence  active'
     )
     expect(sections.find(section => section.title === 'Matches')?.rows?.[0]?.[2]).toBe('/questions fq_inflation001')
     expect(sections.find(section => section.title === 'Top Match Shortcuts')?.rows).toEqual([
@@ -172,9 +172,9 @@ describe('forecast desk panel helpers', () => {
       new Date('2026-05-26T00:00:00Z')
     )
 
-    expect(sections.find(section => section.title === 'Forecast Questions')?.rows?.[0]?.[0]).toBe('1. P=0.000 Δ=-')
+    expect(sections.find(section => section.title === 'Forecast Questions')?.rows?.[0]?.[0]).toBe('1. 0% -')
     expect(sections.find(section => section.title === 'Forecast Questions')?.rows?.[0]?.[1]).toContain(
-      'active  Will the impossible event happen?'
+      'Will the impossible event happen?'
     )
   })
 
@@ -205,9 +205,9 @@ describe('forecast desk panel helpers', () => {
     const activeRow = forecastDashboardSections(response).find(section => section.title === 'Active Forecasts')?.rows?.[0]
     const watchlistRow = forecastDeskRailSections(response).find(section => section.title === 'Watchlist')?.rows?.[0]
 
-    expect(activeRow?.[0]).toContain('P=0.610')
+    expect(activeRow?.[0]).toContain('61%')
     expect(activeRow?.[2]).toBe('/questions fq_inflation001')
-    expect(watchlistRow?.[0]).toContain('inflatio P=0.610')
+    expect(watchlistRow?.[0]).toContain('61%')
     expect(watchlistRow?.[2]).toBe('/questions fq_inflation001')
   })
 
@@ -558,8 +558,8 @@ describe('forecast desk panel helpers', () => {
     const sections = forecastDashboardSections(response)
     const railSections = forecastDeskRailSections(response)
 
-    expect(forecastDeskStatusLabel(response)).toContain('5 assumptions (1 stale)')
-    expect(forecastDeskStatusLabel(response)).toContain('4 ref-classes (2 stale)')
+    expect(forecastDeskStatusLabel(response)).toContain('1 stale assumption')
+    expect(forecastDeskStatusLabel(response)).toContain('2 stale reference classes')
     expect(forecastDeskStatusLabel(response)).toContain('1 closing')
     expect(sections.find(section => section.title === 'Desk')?.rows).toContainEqual(['assumptions', '5/1'])
     expect(sections.find(section => section.title === 'Desk')?.rows).toContainEqual(['reference classes', '4/2'])
@@ -739,7 +739,7 @@ describe('forecast desk panel helpers', () => {
     expect(focused?.rows).toEqual([
       [
         '/questions fq_review123456',
-        'Will review question resolve yes?  —  P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale'
+        'Will review question resolve yes?  —  55%  as-of 2026-05-20  close 2026-05-31  reasons stale'
       ],
       [
         '/note fq_review123456 -- <evidence>',
@@ -770,7 +770,7 @@ describe('forecast desk panel helpers', () => {
       { command: '/review --stale', detail: '1 forecast queued for stale/close/evidence review' },
       {
         command: '/questions fq_review123456',
-        detail: 'Will review question resolve yes?  —  P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale'
+        detail: 'Will review question resolve yes?  —  55%  as-of 2026-05-20  close 2026-05-31  reasons stale'
       },
       {
         command: '/note fq_review123456 -- <evidence>',
@@ -785,11 +785,11 @@ describe('forecast desk panel helpers', () => {
     ])
     expect(railFocused?.rows?.[0]).toEqual([
       '/questions fq_review123456',
-      'Will review question resolve yes?  —  P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale'
+      'Will review question resolve yes?  —  55%  as-of 2026-05-20  close 2026-05-31  reasons stale'
     ])
     expect(forecastDeskPrimaryActionItem(railSections)).toEqual({
       command: '/questions fq_review123456',
-      detail: 'Will review question resolve yes?  —  P=0.550  as-of 2026-05-20  close 2026-05-31  reasons stale'
+      detail: 'Will review question resolve yes?  —  55%  as-of 2026-05-20  close 2026-05-31  reasons stale'
     })
     expect(review?.rows?.[0]?.[1]).toContain('close 2026-05-31')
   })
@@ -840,7 +840,7 @@ describe('forecast desk panel helpers', () => {
       { detail: '2 active / 1 alerts / 1 reviews / asm 3/2', label: 'book' },
       { detail: '/alerts 1 open alert need source or resolution review', label: 'triage' },
       {
-        detail: 'watch123 P=0.710 Δ=- 1 alert  as-of -  close 2026-06-01  conf -  Will the watched forecast need review?',
+        detail: '71% - Will the watched forecast need review?  1 alert  as-of -  close 2026-06-01  conf -',
         label: 'watch'
       }
     ])
@@ -896,12 +896,12 @@ describe('forecast desk panel helpers', () => {
     })
 
     expect(sections.find(section => section.title === 'Current Forecast')?.rows).toContainEqual([
-      'P(now)',
-      '0.610'
+      'probability',
+      '61%'
     ])
     expect(sections.find(section => section.title === 'Current Forecast')?.rows).toContainEqual([
       'delta',
-      '+0.060'
+      '↑6pt'
     ])
     expect(sections.find(section => section.title === 'Recent Evidence')?.rows?.[0]?.[1]).toContain(
       'Retail gasoline prices rose'

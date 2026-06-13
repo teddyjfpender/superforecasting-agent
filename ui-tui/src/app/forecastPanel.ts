@@ -106,10 +106,19 @@ const formatDistribution = (value: Record<string, unknown>): string => {
   return truncate(entries.slice(0, 2).map(([key, n]) => `${key} ${n}`).join('  '), 24)
 }
 
+// Human-first number grammar: probabilities read as percentages ("61%",
+// "8.5%"), deltas as direction + points ("↑8pt", "↓0.4pt"). The raw-decimal
+// "P=0.610 Δ=+0.080" notation read like ledger internals, not a dashboard.
+const formatPercent = (number: number) => {
+  const pct = number * 100
+  const text = Math.abs(pct - Math.round(pct)) < 0.05 ? pct.toFixed(0) : pct.toFixed(1)
+  return `${text}%`
+}
+
 const formatProbability = (value: ForecastDashboardQuestion['probability']) => {
   const number = numberValue(value)
   if (number !== null) {
-    return number.toFixed(3)
+    return formatPercent(number)
   }
 
   if (value && typeof value === 'object') {
@@ -125,12 +134,29 @@ const formatDelta = (value: ForecastDashboardQuestion['delta']) => {
     return '-'
   }
 
-  return `${number >= 0 ? '+' : ''}${number.toFixed(3)}`
+  if (number === 0) {
+    return 'unchanged'
+  }
+
+  const pts = Math.abs(number) * 100
+  const text = Math.abs(pts - Math.round(pts)) < 0.05 ? pts.toFixed(0) : pts.toFixed(1)
+  return `${number > 0 ? '↑' : '↓'}${text}pt`
 }
 
 const formatConfidence = (value: ForecastDashboardQuestion['confidence']) => {
   const number = numberValue(value)
-  return number === null ? '-' : number.toFixed(2)
+  return number === null ? '-' : formatPercent(number)
+}
+
+// Signed decimal for SCORE quantities (Brier edges, CI bounds) — these are
+// score differences, not probability points, so the ↑pt grammar would lie.
+const formatSigned = (value: ForecastDashboardQuestion['delta']) => {
+  const number = numberValue(value)
+  if (number === null) {
+    return '-'
+  }
+
+  return `${number >= 0 ? '+' : ''}${number.toFixed(3)}`
 }
 
 const shortDate = (value: null | string | undefined) => (value ? value.slice(0, 10) : '-')
@@ -190,7 +216,7 @@ const formatClaimStatus = (row: ForecastDashboardBacktest) => {
 const formatCi95 = (low: null | number | undefined, high: null | number | undefined) =>
   numberValue(low) === null || numberValue(high) === null
     ? '-'
-    : `[${formatDelta(low)},${formatDelta(high)}]`
+    : `[${formatSigned(low)},${formatSigned(high)}]`
 
 const formatLiveBaselineName = (row: ForecastDashboardLiveBaseline) =>
   truncate(`${row.baseline_type || '-'}:${row.source || '-'}`, 28)
@@ -309,8 +335,6 @@ export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): st
   const alerts = numberValue(summary.open_alert_count) ?? 0
   const reviews = numberValue(summary.review_queue_count) ?? (summary.review_queue ?? []).length
   const closing = numberValue(summary.closing_soon_count) ?? 0
-  const calibrationCount = numberValue(summary.calibration?.count)
-  const lessonCount = numberValue(summary.learning?.total_lessons)
   const assumptions = assumptionCounts(summary)
   const referenceClasses = referenceClassCounts(summary)
   // Lead with what needs a human (active, to-review, alerts, closing), then the
@@ -343,27 +367,17 @@ export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): st
     bits.push(`${closing} closing`)
   }
 
-  if (calibrationCount !== null) {
-    bits.push(`cal ${calibrationCount}`)
+  // Steady-state inventory (calibration totals, lesson counts, healthy
+  // assumptions/reference classes) stays OFF the strip — it's findable in
+  // /calibration and the question detail. The strip only carries counts a
+  // human should act on, so an amber/red segment is meaningful at a glance.
+  if (assumptions.stale > 0) {
+    bits.push(`${assumptions.stale} stale ${assumptions.stale === 1 ? 'assumption' : 'assumptions'}`)
   }
 
-  if (lessonCount) {
-    bits.push(plural(lessonCount, 'lesson'))
-  }
-
-  if (assumptions.open > 0 || assumptions.stale > 0) {
+  if (referenceClasses.stale > 0) {
     bits.push(
-      assumptions.stale > 0
-        ? `${assumptions.open} assumptions (${assumptions.stale} stale)`
-        : `${plural(assumptions.open, 'assumption')}`
-    )
-  }
-
-  if (referenceClasses.open > 0 || referenceClasses.stale > 0) {
-    bits.push(
-      referenceClasses.stale > 0
-        ? `${referenceClasses.open} ref-classes (${referenceClasses.stale} stale)`
-        : `${referenceClasses.open} ref-classes`
+      `${referenceClasses.stale} stale reference ${referenceClasses.stale === 1 ? 'class' : 'classes'}`
     )
   }
 
@@ -567,7 +581,7 @@ type FocusedForecastRow = ForecastDashboardQuestion | ForecastDashboardReview
 
 const focusedForecastContext = (row: FocusedForecastRow) => {
   const bits = [
-    `P=${formatProbability(row.probability)}`,
+    formatProbability(row.probability),
     `as-of ${shortDate(row.as_of)}`,
     `close ${shortDate(row.close_time)}`
   ]
@@ -794,15 +808,16 @@ export const forecastQuestionSearchSections = (
   sections.push({
     rows: matches.map(match => {
       const row = match.row
-      const key = `${match.index + 1}. ${shortId(row.id)}  P=${formatProbability(row.probability)}  Δ=${searchRowDelta(row)}`
+      // Title-first: identity reads as the question, not the ledger id. The
+      // numeric cluster trails as a compact suffix.
+      const key = `${match.index + 1}. ${formatProbability(row.probability)}  ${searchRowDelta(row)}`
       const details = [
-        `score ${match.score}`,
+        truncate(row.title || '(untitled forecast)', 72),
         forecastFreshnessLabel(row.as_of, now),
         `close ${shortDate(row.close_time)}`,
         `conf ${searchRowConfidence(row)}`,
-        `ev ${searchRowEvidenceCount(row)}`,
-        forecastStatus(row as ForecastDashboardQuestion),
-        truncate(row.title || '(untitled forecast)', 72)
+        `${searchRowEvidenceCount(row)} evidence`,
+        forecastStatus(row as ForecastDashboardQuestion)
       ].join('  ')
 
       return [key, details, row.id ? `/questions ${row.id}` : ''] as [string, string, string]
@@ -889,7 +904,7 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
     },
     {
       rows: [
-        ['P(now)', packetProbability(current?.probability_or_distribution)],
+        ['probability', packetProbability(current?.probability_or_distribution)],
         ['delta', history.length >= 2 ? formatDelta(probability_delta(history.at(-2)?.probability_or_distribution, current?.probability_or_distribution)) : '-'],
         ['as-of', shortDate(current?.as_of)],
         ['confidence', formatConfidence(current?.confidence)],
@@ -926,9 +941,9 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
   if (history.length) {
     sections.push({
       rows: history.slice(-6).reverse().map(item => [
-        `${shortId(item.forecast_id)} ${shortDate(item.as_of)}`,
+        shortDate(item.as_of),
         truncate(
-          `P=${packetProbability(item.probability_or_distribution)}  conf ${formatConfidence(item.confidence)}  ${
+          `${packetProbability(item.probability_or_distribution)}  conf ${formatConfidence(item.confidence)}  ${
             item.method || '-'
           }  ${item.rationale || '-'}`,
           240
@@ -941,11 +956,11 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
   if (assumptions.length || references.length) {
     const rows: [string, string][] = []
     for (const item of assumptions.slice(0, 3)) {
-      rows.push([`asm ${shortId(item.id)} ${item.status || '-'}`, truncate(item.text || '-', 180)])
+      rows.push([`assumption · ${item.status || '-'}`, truncate(item.text || '-', 180)])
     }
     for (const item of references.slice(0, 3)) {
       rows.push([
-        `ref ${shortId(item.id)} ${item.status || '-'}`,
+        `reference · ${item.status || '-'}`,
         truncate(`${item.name || '-'}  base ${packetProbability(item.base_rate)}`, 150)
       ])
     }
@@ -1275,17 +1290,20 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
   if (questions.length) {
     sections.push({
       rows: questions.slice(0, 12).map(row => {
-        const key = `${shortId(row.id)}  P=${formatProbability(row.probability)}  Δ=${formatDelta(row.delta)}`
+        const key = `${formatProbability(row.probability)}  ${formatDelta(row.delta)}`
+        const staleRefs = numberValue(row.stale_reference_class_count) ?? 0
+        const staleAssumptions = numberValue(row.stale_assumption_count) ?? 0
         const details = [
+          // Title-first identity; bookkeeping counts only when actionable
+          // (stale) — steady-state inventory lives in the detail pane.
+          truncate(row.title || '(untitled forecast)', 72),
           `as-of ${shortDate(row.as_of)}`,
           `close ${shortDate(row.close_time)}`,
           `conf ${formatConfidence(row.confidence)}`,
-          `ev ${formatCount(row.evidence_count)}`,
-          `base ${formatCount(row.baseline_count)}`,
-          `refs ${formatCount(row.open_reference_class_count)}/${formatCount(row.stale_reference_class_count)}`,
-          `asm ${formatCount(row.open_assumption_count)}/${formatCount(row.stale_assumption_count)}`,
-          forecastStatus(row),
-          truncate(row.title || '(untitled forecast)', 72)
+          `${formatCount(row.evidence_count)} evidence`,
+          ...(staleRefs > 0 ? [`${staleRefs} stale reference ${staleRefs === 1 ? 'class' : 'classes'}`] : []),
+          ...(staleAssumptions > 0 ? [`${staleAssumptions} stale ${staleAssumptions === 1 ? 'assumption' : 'assumptions'}`] : []),
+          forecastStatus(row)
         ].join('  ')
 
         return [key, details, row.id ? `/questions ${row.id}` : ''] as [string, string, string]
@@ -1303,9 +1321,10 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
     sections.push({
       rows: reviewQueue.slice(0, 6).map(row => {
         const reasons = (row.reasons ?? []).slice(0, 3).map(formatReviewReason).join(', ') || 'review'
-        const key = `${shortId(row.id)}  priority ${row.priority ?? 9}`
+        const key = `priority ${row.priority ?? 9}`
         const details = [
-          `P=${formatProbability(row.probability)}`,
+          truncate(row.title || '(untitled forecast)', 56),
+          formatProbability(row.probability),
           `as-of ${shortDate(row.as_of)}`,
           `close ${shortDate(row.close_time)}`,
           truncate(reasons, 52),
@@ -1442,7 +1461,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
     for (const row of liveBaselines.slice(0, 4)) {
       liveRows.push([
         formatLiveBaselineName(row),
-        `brier ${formatMetric(row.mean_brier)}  paired ${formatCount(row.paired_count)}  edge ${formatDelta(
+        `brier ${formatMetric(row.mean_brier)}  paired ${formatCount(row.paired_count)}  edge ${formatSigned(
           row.mean_brier_improvement_vs_baseline
         )}  ci95 ${formatCi95(row.paired_agent_edge_ci95_low, row.paired_agent_edge_ci95_high)}  wins ${formatBacktestWins(
           row
@@ -1467,7 +1486,7 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
           `src ${formatBacktestSources(row)}`,
           `agent ${formatMetric(row.agent_mean_brier)}`,
           baseline,
-          `edge ${formatDelta(row.agent_edge)}`,
+          `edge ${formatSigned(row.agent_edge)}`,
           `wins ${formatBacktestWins(row)}`,
           `claim ${formatClaimStatus(row)}`,
           row.leakage_checks_passed === false ? 'leakage review' : 'leakage ok',
@@ -1616,15 +1635,15 @@ export const forecastBookSections = (
 
   sections.push({
     rows: questions.slice(0, 20).map((row, index) => {
-      const key = `${index + 1}. P=${formatProbability(row.probability)} Δ=${formatDelta(row.delta)}`
+      const key = `${index + 1}. ${formatProbability(row.probability)} ${formatDelta(row.delta)}`
       const details = [
+        truncate(row.title || '(untitled forecast)', 76),
         forecastFreshnessLabel(row.as_of, now),
         `as-of ${shortDate(row.as_of)}`,
         `close ${shortDate(row.close_time)}`,
         `conf ${formatConfidence(row.confidence)}`,
-        `ev ${formatCount(row.evidence_count)}`,
-        forecastStatus(row),
-        truncate(row.title || '(untitled forecast)', 76)
+        `${formatCount(row.evidence_count)} evidence`,
+        forecastStatus(row)
       ].join('  ')
 
       return [key, details, `/questions ${index + 1}`]
@@ -1758,11 +1777,11 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
   if (atRisk.length) {
     sections.push({
       rows: atRisk.map(row => {
-        const key = `${shortId(row.id)} P=${formatProbability(row.probability)} Δ=${formatDelta(row.delta)}`
+        const key = `${formatProbability(row.probability)} ${formatDelta(row.delta)}`
         const details = truncate(
-          `${forecastStatus(row)}  as-of ${shortDate(row.as_of)}  close ${shortDate(row.close_time)}  conf ${formatConfidence(
-            row.confidence
-          )}  ${row.title || '(untitled forecast)'}`,
+          `${row.title || '(untitled forecast)'}  ${forecastStatus(row)}  as-of ${shortDate(row.as_of)}  close ${shortDate(
+            row.close_time
+          )}  conf ${formatConfidence(row.confidence)}`,
           88
         )
 
@@ -1848,7 +1867,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
         truncate(
           `brier ${formatMetric(topBaseline.mean_brier)} paired ${formatCount(
             topBaseline.paired_count
-          )} edge ${formatDelta(topBaseline.mean_brier_improvement_vs_baseline)} wins ${formatBacktestWins(
+          )} edge ${formatSigned(topBaseline.mean_brier_improvement_vs_baseline)} wins ${formatBacktestWins(
             topBaseline
           )}`,
           64
@@ -1875,7 +1894,7 @@ export const forecastDeskRailSections = (response: ForecastDashboardResponse): P
       rows: backtests.slice(0, 2).map(row => [
         row.id || '-',
         truncate(
-          `src ${formatBacktestSources(row)}  agent ${formatMetric(row.agent_mean_brier)}  edge ${formatDelta(row.agent_edge)}  ${formatClaimStatus(row)}`,
+          `src ${formatBacktestSources(row)}  agent ${formatMetric(row.agent_mean_brier)}  edge ${formatSigned(row.agent_edge)}  ${formatClaimStatus(row)}`,
           64
         )
       ]),
