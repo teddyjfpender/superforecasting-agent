@@ -78,6 +78,7 @@ describe('createSlashHandler', () => {
   })
 
   it('runs the in-TUI device-code sign-in for /auth and reports success', async () => {
+    patchUiState({ sid: 'sid-auth' })
     const rpc = vi.fn((method: string) => {
       if (method === 'auth.start') {
         return Promise.resolve({
@@ -89,7 +90,7 @@ describe('createSlashHandler', () => {
       }
 
       if (method === 'auth.poll') {
-        return Promise.resolve({ status: 'success' })
+        return Promise.resolve({ credentials_applied: true, status: 'success' })
       }
 
       return Promise.resolve({})
@@ -97,7 +98,7 @@ describe('createSlashHandler', () => {
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/auth')).toBe(true)
-    expect(rpc).toHaveBeenCalledWith('auth.start', { provider: 'openai-codex' })
+    expect(rpc).toHaveBeenCalledWith('auth.start', { provider: 'openai-codex', session_id: 'sid-auth' })
 
     await vi.waitFor(() => {
       expect(ctx.transcript.panel).toHaveBeenCalledWith(
@@ -118,7 +119,7 @@ describe('createSlashHandler', () => {
       () => {
         expect(rpc).toHaveBeenCalledWith('auth.poll', {})
         expect(ctx.transcript.sys).toHaveBeenCalledWith(
-          'signed in to OpenAI Codex — pick a model with /model (no restart needed)'
+          'signed in to OpenAI Codex — this session is ready, keep going'
         )
       },
       { timeout: 5000 }

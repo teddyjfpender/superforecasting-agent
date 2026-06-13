@@ -5732,6 +5732,51 @@ def _run_codex_device_poll(grant, interval: int) -> None:
         _auth_flow_update(status="failed", message=str(e))
 
 
+def _refresh_agent_credentials_after_auth(sid: str, provider: str) -> bool:
+    """Re-resolve *provider* credentials from disk and apply them to the live
+    agent, so a fresh in-TUI sign-in takes effect WITHOUT a TUI restart.
+
+    Mirrors what `_apply_model_switch` does (same model/provider, freshly
+    resolved key) — the long-lived agent caches its api_key/base_url at
+    construction, so newly-written Codex tokens are otherwise invisible until
+    the process restarts. Returns True when the live agent was updated.
+    """
+    session = _sessions.get(sid or "")
+    if not session:
+        return False
+    agent = session.get("agent")
+    if not agent:
+        return False
+    # Don't mutate the agent mid-turn; the user just signed in interactively,
+    # so this is virtually never contended, but stay consistent with the
+    # /model running-guard rather than risk a torn client swap.
+    if session.get("running"):
+        return False
+    current_provider = (getattr(agent, "provider", "") or "").strip()
+    # Only refresh when the agent is actually on the provider we re-authed
+    # (or an alias of it) — otherwise leave the agent's current creds alone.
+    codex_aliases = {"openai-codex", "openai", "codex"}
+    if provider == "openai-codex" and current_provider not in codex_aliases:
+        return False
+    try:
+        from hermes_cli.runtime_provider import resolve_runtime_provider
+
+        runtime = resolve_runtime_provider(requested=current_provider or provider)
+        agent.switch_model(
+            new_model=getattr(agent, "model", "") or "",
+            new_provider=runtime.get("provider", current_provider) or current_provider,
+            api_key=runtime.get("api_key", ""),
+            base_url=runtime.get("base_url", "") or "",
+            api_mode=runtime.get("api_mode", "") or "",
+        )
+        _restart_slash_worker(session)
+        _emit("session.info", sid, _session_info(agent))
+        return True
+    except Exception as e:  # never turn a successful sign-in into an error
+        logger.warning("post-auth credential refresh failed: %s", e)
+        return False
+
+
 @method("auth.start")
 def _(rid, params: dict) -> dict:
     """Start an in-TUI provider sign-in. Currently: openai-codex device code.
@@ -5767,6 +5812,8 @@ def _(rid, params: dict) -> dict:
                 "user_code": grant.user_code,
                 "url": grant.verification_url,
                 "cancelled": False,
+                "session_id": (params.get("session_id") or "").strip(),
+                "consumed": False,
             }
         )
     threading.Thread(
@@ -5789,16 +5836,51 @@ def _(rid, params: dict) -> dict:
 @method("auth.poll")
 def _(rid, params: dict) -> dict:
     """Report the in-flight sign-in state: none | pending | success | failed |
-    cancelled. With params.cancel, abandon the pending flow."""
+    cancelled. With params.cancel, abandon the pending flow.
+
+    On the FIRST observation of success, this refreshes the live agent's
+    credentials in place (so the new sign-in works without a restart) and
+    marks the flow consumed — a terminal status is reported exactly once, so
+    a lingering second poll loop can't double-report "signed in".
+    """
     if params.get("cancel"):
         _auth_flow_update(cancelled=True)
     snapshot = _auth_flow_snapshot()
     if not snapshot:
         return _ok(rid, {"status": "none"})
+
+    status = snapshot.get("status", "none")
+
+    # Terminal states are reported once, then the flow is cleared so repeat
+    # polls (and any stale concurrent watcher) see "none".
+    if status in {"success", "failed", "cancelled"} and not snapshot.get("consumed"):
+        applied = False
+        if status == "success":
+            session_id = snapshot.get("session_id") or params.get("session_id") or ""
+            applied = _refresh_agent_credentials_after_auth(
+                session_id, snapshot.get("provider") or "openai-codex"
+            )
+        with _auth_flow_lock:
+            _auth_flow["consumed"] = True
+        return _ok(
+            rid,
+            {
+                "status": status,
+                "provider": snapshot.get("provider"),
+                "user_code": snapshot.get("user_code"),
+                "url": snapshot.get("url"),
+                "message": snapshot.get("message", ""),
+                "credentials_applied": applied,
+            },
+        )
+
+    if snapshot.get("consumed"):
+        return _ok(rid, {"status": "none"})
+
     return _ok(
         rid,
         {
-            "status": snapshot.get("status", "none"),
+            "status": status,
             "provider": snapshot.get("provider"),
             "user_code": snapshot.get("user_code"),
             "url": snapshot.get("url"),

@@ -12,6 +12,7 @@ interface AuthStartResponse {
 }
 
 interface AuthPollResponse {
+  credentials_applied?: boolean
   message?: string
   status?: string
   url?: string
@@ -37,7 +38,11 @@ const watchAuthFlow = (ctx: SlashRunCtx, intervalMs: number) => {
         }
 
         if (r.status === 'success') {
-          ctx.transcript.sys('signed in to OpenAI Codex — pick a model with /model (no restart needed)')
+          ctx.transcript.sys(
+            r.credentials_applied
+              ? 'signed in to OpenAI Codex — this session is ready, keep going'
+              : 'signed in to OpenAI Codex — run /model to start using it'
+          )
           return
         }
 
@@ -60,7 +65,7 @@ export const setupCommands: SlashCommand[] = [
       const provider = arg.trim() || 'openai-codex'
 
       ctx.gateway
-        .rpc<AuthStartResponse>('auth.start', { provider })
+        .rpc<AuthStartResponse>('auth.start', { provider, session_id: ctx.sid })
         .then(
           ctx.guarded<AuthStartResponse>(r => {
             const intervalMs = Math.max(3, r.interval ?? 5) * 1000

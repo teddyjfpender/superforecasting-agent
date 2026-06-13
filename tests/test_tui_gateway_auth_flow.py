@@ -113,6 +113,85 @@ def test_auth_flow_failure_surfaces_message(monkeypatch):
     assert "500" in result["message"]
 
 
+def test_auth_success_refreshes_live_agent_credentials(monkeypatch):
+    """The core fix: on success, the live agent's credentials are re-resolved
+    and applied in place — no TUI restart needed."""
+    import hermes_cli.codex_device_flow as flow
+
+    monkeypatch.setattr(
+        flow, "request_device_code",
+        lambda **kw: DeviceCodeGrant(user_code="ABCD-1234", device_auth_id="dev_1", interval=0),
+    )
+    monkeypatch.setattr(
+        flow, "poll_device_token_once",
+        lambda grant, **kw: {"authorization_code": "ac", "code_verifier": "cv"},
+    )
+    monkeypatch.setattr(
+        flow, "exchange_device_code",
+        lambda ac, cv, **kw: {"tokens": {"access_token": "fresh_at", "refresh_token": "rt"}},
+    )
+    monkeypatch.setattr("hermes_cli.auth._save_codex_tokens", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "hermes_cli.runtime_provider.resolve_runtime_provider",
+        lambda **kw: {
+            "provider": "openai-codex",
+            "api_key": "fresh_at",
+            "base_url": "https://chatgpt.com/backend-api/codex",
+            "api_mode": "codex_responses",
+        },
+    )
+
+    switched = {}
+
+    class _FakeAgent:
+        provider = "openai-codex"
+        model = "gpt-5.4"
+
+        def switch_model(self, *, new_model, new_provider, api_key, base_url, api_mode):
+            switched.update(
+                new_model=new_model, new_provider=new_provider,
+                api_key=api_key, base_url=base_url, api_mode=api_mode,
+            )
+
+    monkeypatch.setattr(server, "_restart_slash_worker", lambda session: None)
+    monkeypatch.setattr(server, "_emit", lambda *a, **k: None)
+    monkeypatch.setattr(server, "_session_info", lambda agent: {})
+    server._sessions["sid_auth"] = {"agent": _FakeAgent(), "running": False}
+    try:
+        assert "result" in _start({"provider": "openai-codex", "session_id": "sid_auth"})
+        result = _wait_status("success")
+        assert result["credentials_applied"] is True
+        assert switched["api_key"] == "fresh_at"
+        assert switched["new_provider"] == "openai-codex"
+    finally:
+        server._sessions.pop("sid_auth", None)
+
+
+def test_auth_poll_reports_terminal_status_once(monkeypatch):
+    """A consumed success is reported exactly once; a second poll sees 'none'
+    (so a lingering watcher can't double-print 'signed in')."""
+    import hermes_cli.codex_device_flow as flow
+
+    monkeypatch.setattr(
+        flow, "request_device_code",
+        lambda **kw: DeviceCodeGrant(user_code="ABCD-1234", device_auth_id="dev_1", interval=0),
+    )
+    monkeypatch.setattr(
+        flow, "poll_device_token_once",
+        lambda grant, **kw: {"authorization_code": "ac", "code_verifier": "cv"},
+    )
+    monkeypatch.setattr(
+        flow, "exchange_device_code",
+        lambda ac, cv, **kw: {"tokens": {"access_token": "at", "refresh_token": "rt"}},
+    )
+    monkeypatch.setattr("hermes_cli.auth._save_codex_tokens", lambda *a, **k: None)
+
+    assert "result" in _start()
+    assert _wait_status("success")["status"] == "success"
+    # Already consumed by _wait_status's successful poll → now reports none.
+    assert _poll()["result"]["status"] == "none"
+
+
 def test_auth_start_rejects_unsupported_provider():
     resp = _start({"provider": "anthropic"})
     assert "error" in resp, resp
