@@ -1,7 +1,7 @@
 import { PassThrough } from 'stream'
 
 import React from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import type { BernardAnimation } from '../content/bernardAnimation.js'
 
