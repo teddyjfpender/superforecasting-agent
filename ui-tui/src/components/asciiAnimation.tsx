@@ -60,13 +60,20 @@ export function AsciiAnimation({ active = true, animation = BERNARD_ANIMATION }:
         <Text key={y} wrap="truncate-end">
           {row.map((span, i) => {
             const color = span.c >= 0 ? animation.palette[span.c] : undefined
+            // Half-block cells carry an optional background color (the lower
+            // sub-pixel) so a `▀` paints two stacked colors in one cell — 2x
+            // vertical resolution. Plain full-block cells omit `b`.
+            const bg =
+              span.b !== undefined && span.b >= 0 ? animation.palette[span.b] : undefined
 
-            return color ? (
-              <Text color={color} key={i}>
+            if (!color && !bg) {
+              return <Text key={i}>{span.t}</Text>
+            }
+
+            return (
+              <Text backgroundColor={bg} color={color} key={i}>
                 {span.t}
               </Text>
-            ) : (
-              <Text key={i}>{span.t}</Text>
             )
           })}
         </Text>
