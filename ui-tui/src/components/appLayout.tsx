@@ -27,6 +27,7 @@ import type { PanelSection } from '../types.js'
 
 import { AgentsOverlay } from './agentsOverlay.js'
 import { ForecastPulse, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
+import { AsciiAnimation } from './asciiAnimation.js'
 import { CalibrationView } from './calibrationView.js'
 import { ForecastsWorkspace } from './forecastsWorkspace.js'
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
@@ -724,8 +725,12 @@ const ForecastDeskRail = memo(function ForecastDeskRail({
       paddingY={1}
       width={FORECAST_RAIL_WIDTH}
     >
+      <Box flexShrink={0} marginBottom={1}>
+        <AsciiAnimation />
+      </Box>
+
       <Text bold color={ui.theme.color.primary} wrap="truncate">
-        Forecast Desk
+        Bernard · Forecast Desk
       </Text>
 
       {status && <StatusSegments status={truncateRail(status, FORECAST_RAIL_WIDTH - 4)} theme={ui.theme} />}
