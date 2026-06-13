@@ -568,6 +568,10 @@ export interface ForecastDashboardQuestion {
   stale_assumption_count?: number
   stale_reference_class_count?: number
   status?: string
+  // The current snapshot's tail audit (categorical only). Optional: present only
+  // when the dashboard payload carries it; the heuristics flag a question only
+  // when this audit is present and failing (unearned mass over threshold).
+  tail_audit?: ForecastTailAudit | null
   title?: string
   topics?: string[]
 }
@@ -695,14 +699,69 @@ export interface ForecastQuestionPacketQuestion {
 
 export interface ForecastQuestionPacketSnapshot {
   as_of?: string
+  change_my_mind?: string[]
   confidence?: null | number
   ensemble_components?: Record<string, unknown> | null
   evidence_refs?: string[]
   forecast_id?: string
   forecast_origin?: string
+  // The full snapshot metadata blob. Categorical snapshots carry a `tail_audit`
+  // here (probability-mass audit); older snapshots have neither, so the renderer
+  // must treat both the blob and the audit as optional.
+  metadata?: ForecastSnapshotMetadata | null
   method?: null | string
   probability_or_distribution?: null | number | Record<string, unknown> | string
   rationale?: string
+  reasons_down?: string[]
+  reasons_up?: string[]
+}
+
+export interface ForecastSnapshotMetadata {
+  tail_audit?: ForecastTailAudit | null
+  [key: string]: unknown
+}
+
+// The probability-mass audit for a categorical snapshot (see
+// forecasting/tail_audit.py). Every field is optional so a malformed or partial
+// blob degrades to an empty state rather than throwing.
+export interface ForecastTailAudit {
+  issues?: string[]
+  null_model?: ForecastTailNullModel | null
+  outcomes?: ForecastTailOutcome[]
+  passes?: boolean
+  residual_cap?: number
+  threshold?: number
+  total_mass?: number
+  unearned_mass?: number
+}
+
+export type ForecastTailClassification =
+  | 'edge_case'
+  | 'live'
+  | 'live_ish'
+  | 'remote_tail'
+  | 'residual'
+  | 'unpriced'
+
+export interface ForecastTailOutcome {
+  classification?: ForecastTailClassification | string
+  evidence_strength?: string
+  has_path?: boolean
+  name?: string
+  note?: string
+  path?: string
+  probability?: number
+  unearned?: boolean
+}
+
+export interface ForecastTailNullModel {
+  agent_tail?: number
+  excess_tail?: number
+  floor?: number
+  null_distribution?: Record<string, number>
+  null_tail?: number
+  ratio?: number
+  within_tolerance?: boolean
 }
 
 // A raw `panel_runs` row from the exported question packet (the ledger's
@@ -955,6 +1014,10 @@ export interface ForecastWorkspaceItem {
   scores?: ForecastWorkspaceScores | null
   snapshot_count?: number
   status?: string
+  // The current snapshot's tail audit (categorical only). Optional: absent on
+  // binary/distribution questions and on older snapshots; the desk shows the
+  // "unearned tail" flag only when an audit is present and failing.
+  tail_audit?: ForecastTailAudit | null
   title?: string
   topics?: string[]
   units?: null | string
