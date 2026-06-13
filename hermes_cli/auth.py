@@ -181,9 +181,17 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
     ),
     "openai-codex": ProviderConfig(
         id="openai-codex",
-        name="OpenAI Codex",
+        name="OpenAI OAuth (ChatGPT)",
         auth_type="oauth_external",
         inference_base_url=DEFAULT_CODEX_BASE_URL,
+    ),
+    "openai-api": ProviderConfig(
+        id="openai-api",
+        name="OpenAI API",
+        auth_type="api_key",
+        inference_base_url="https://api.openai.com/v1",
+        api_key_env_vars=("OPENAI_API_KEY",),
+        base_url_env_var="OPENAI_BASE_URL",
     ),
     "xai-oauth": ProviderConfig(
         id="xai-oauth",
