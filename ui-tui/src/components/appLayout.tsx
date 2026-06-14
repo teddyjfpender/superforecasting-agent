@@ -725,7 +725,7 @@ const ForecastDeskRail = memo(function ForecastDeskRail({
       paddingY={1}
       width={FORECAST_RAIL_WIDTH}
     >
-      <Box flexShrink={0} marginBottom={1}>
+      <Box flexShrink={0} justifyContent="center" marginBottom={1}>
         <AsciiAnimation />
       </Box>
 
