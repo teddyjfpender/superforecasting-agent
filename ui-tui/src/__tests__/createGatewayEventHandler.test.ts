@@ -616,7 +616,7 @@ describe('createGatewayEventHandler', () => {
     expect(resumeById).not.toHaveBeenCalled()
   })
 
-  it('on gateway.ready renders the forecast desk panel before chat traffic', async () => {
+  it('on gateway.ready sets the desk status without dumping a panel into the transcript', async () => {
     const appended: Msg[] = []
     const ctx = buildCtx(appended)
 
@@ -769,7 +769,7 @@ describe('createGatewayEventHandler', () => {
 
     createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
 
-    await vi.waitFor(() => expect(appended.some(msg => msg.kind === 'panel')).toBe(true))
+    await vi.waitFor(() => expect(getUiState().forecastDeskStatus).not.toBe(''))
     expect(getUiState().forecastDeskStatus).toBe('1 forecasts  ·  1 to review  ·  1 alert')
     expect(getUiState().forecastDeskRailSections).toEqual([
       {
@@ -848,211 +848,10 @@ describe('createGatewayEventHandler', () => {
         title: 'Backtests'
       }
     ])
-    expect(appended[0]).toMatchObject({
-      kind: 'panel',
-      panelData: {
-        sections: [
-          {
-            rows: [
-              ['product', 'Superforecasting Agent'],
-              ['active forecasts', '1'],
-              ['open alerts', '1'],
-              ['review queue', '1'],
-              ['closing soon', '0'],
-              ['assumptions', '2/0'],
-              ['reference classes', '0/0'],
-              ['calibration n', '3'],
-              ['lessons', '1']
-            ],
-            title: 'Desk'
-          },
-          {
-            rows: [
-              [
-                '63%  ↑8pt',
-                'Will X win the election?  as-of 2026-05-01  close 2026-11-03  conf 74%  4 evidence  1 alert',
-                '/questions fq_123456789abc'
-              ]
-            ],
-            title: 'Active Forecasts'
-          },
-          {
-            rows: [
-              [
-                'priority 4',
-                'Will X win the election?  63%  as-of 2026-05-01  close -  review_due, last_update_7d_plus  forecast research fq_123456789abc; forecast update fq_123456789…',
-                '/questions fq_123456789abc'
-              ]
-            ],
-            title: 'Review Queue'
-          },
-          {
-            rows: [
-              ['eligible scores', '3'],
-              ['mean brier', '0.120000'],
-              ['mean log score', '-0.420000'],
-              ['mean sharpness', '0.380000'],
-              ['movement n', '2'],
-              ['mean abs movement', '0.110000'],
-              ['component market', 'n 3  contrib 0.420000  share 0.750000  p 0.560000'],
-              ['component base_rate', 'n 3  contrib 0.120000  share 0.250000  p 0.480000'],
-              ['type binary', 'n 3  brier_n 3  brier 0.120000  proper 0.120000']
-            ],
-            title: 'Calibration'
-          },
-          {
-            rows: [
-              ['lessons', 'active 0  tentative 1  invalidated 0'],
-              ['politics:binary', 'n 6  brier 0.180000  overweighted_late_polls'],
-              ['tentative domain:politics', 'Election forecasts should discount late poll herding.']
-            ],
-            title: 'Learning Memory'
-          },
-          {
-            rows: [
-              ['verdict', 'insufficient live evidence'],
-              ['scores', 'live 3  backtest 12  baseline 12'],
-              ['backtests', 'agent-protocol 0  leakage-free 1  edge 1  datasets 1  external 1  families 1'],
-              ['gaps', 'live scored forecasts, agent protocol scored cases']
-            ],
-            title: 'Evidence Status'
-          },
-          {
-            rows: [
-              [
-                'bt_fixture001',
-                'cases 12  src forecast-engine  agent 0.080000  market:fixture=0.100000  edge +0.020  wins 8/3/1  claim replay only  leakage ok  fixture-corpus'
-              ]
-            ],
-            title: 'Recent Backtests'
-          },
-          {
-            rows: [
-              ['/alerts', '1 open alert need source or resolution review'],
-              ['/review --stale', '1 forecast queued for stale/close/evidence review'],
-              ['/forecast readiness', '2 evidence gaps blocking stronger benchmark claims'],
-              ['/forecast lesson list', '1 lesson awaiting review']
-            ],
-            title: 'Triage'
-          },
-          {
-            rows: [
-              [
-                '/questions fq_123456789abc',
-                'Will X win the election?  —  63%  as-of 2026-05-01  close -  reasons review_due,last_update_…'
-              ],
-              [
-                '/note fq_123456789abc -- <evidence>',
-                'append timestamped evidence without moving probability',
-                'draft:/note fq_123456789abc -- '
-              ],
-              [
-                '/revise fq_123456789abc -- --probability <p> --rationale <why>',
-                'append a probability update after reviewing evidence',
-                'draft:/revise fq_123456789abc -- --probability '
-              ],
-              ['/sources --question fq_123456789abc', 'plan official data, RSS/news, markets, and watched searches'],
-              ['/forecast research fq_123456789abc', 'collect source notes and evidence without moving probability'],
-              [
-                '/forecast base-rate fq_123456789abc --name <reference-class> --inclusion-criteria <criteria> --base-rate <p>',
-                'add reference-class evidence before changing probability'
-              ],
-              [
-                "/trend-model fq_123456789abc --series-json '[...]' --target-date <date>",
-                'run a deterministic trend projection when time series matter'
-              ],
-              [
-                '/forecast resolve fq_123456789abc --outcome <value> --resolution-source <url>',
-                'record resolution when criteria are met'
-              ]
-            ],
-            title: 'Focused Actions'
-          },
-          {
-            items: [
-              '/sources',
-              '/sources --question <id>',
-              '/forecast new "<question>" --resolution-criteria "<criteria>" --source-plan',
-              '/forecast import news <rss-or-atom-url> --question <id> --keyword <term>',
-              '/forecast watch add --question <id> --source-type rss rss:<feed-url> --keyword <term>',
-              '/forecast import gdelt "<query>" --question <id>',
-              '/forecast import fivethirtyeight <dataset-or-url> --question <id>',
-              '/forecast import owid <slug> --entity "<entity>" --question <id>',
-              '/forecast import whogho <indicator-code> --country <ISO3> --question <id>',
-              '/forecast import fema <state|disaster-number|query> --question <id>',
-              '/forecast import eia <series-id-or-api-url> --question <id>',
-              '/forecast import treasury <dataset-path-or-api-url> --question <id>',
-              '/forecast import imf <indicator>/<country> --question <id>',
-              '/forecast import census "<dataset-path?get=...&for=...>" --question <id>',
-              '/forecast import socrata <domain>/<dataset-id> --question <id>',
-              '/forecast import ckan <domain>/<query> --question <id>',
-              '/forecast import stooq <symbol-or-csv-url> --question <id>',
-              '/forecast import yahoo <symbol> --question <id>',
-              '/forecast import coingecko <coin-id> --question <id>',
-              '/forecast import sec <cik> --question <id>',
-              '/forecast import secfacts <cik>/<concept> --question <id>',
-              '/forecast import crossref "<query-or-DOI>" --question <id>',
-              '/forecast import wikipediapageviews <project>/<article> --question <id>',
-              '/forecast import githubrepo <owner/repo> --question <id>',
-              '/forecast import githubissues <owner/repo> --question <id>',
-              '/forecast import githubcommits <owner/repo> --question <id>',
-              '/forecast import githubactions <owner/repo> --question <id>',
-              '/forecast import pypi <package> --question <id>',
-              '/forecast import npm <package> --question <id>',
-              '/forecast import hackernews "<query>" --question <id>',
-              '/forecast import reddit "<query>" --question <id>',
-              '/forecast import bluesky "<query>" --question <id>',
-              '/forecast import mastodon <tag-or-instance/tag> --question <id>',
-              '/forecast import reliefweb "<query>" --question <id>',
-              '/forecast import clinicaltrials <query-or-NCT-id> --question <id>',
-              '/forecast import openfda <query-or-application-number> --question <id>',
-              '/forecast import pubmed "<query-or-PMID>" --question <id>',
-              '/forecast import openmeteo <lat,lon> --question <id>',
-              '/forecast import airquality <lat,lon> --question <id>',
-              '/forecast import weatherhistory <lat,lon> --start-date <date> --end-date <date> --question <id>',
-              '/forecast import usgs "<query>" --question <id>',
-              '/forecast import eonet "<query-or-category>" --question <id>',
-              '/forecast import nws "<area-or-point-or-query>" --question <id>',
-              '/forecast import nvd "<keyword-or-CVE>" --question <id>',
-              '/forecast import cisakev "<keyword-or-CVE-or-all>" --question <id>',
-              '/forecast import federalregister "<query>" --question <id>',
-              '/forecast import courtlistener "<query>" --question <id>',
-              '/forecast watch add --question <id> <adapter>:<source>'
-            ],
-            title: 'Evidence Imports'
-          },
-          {
-            items: [
-              '/forecast review --stale',
-              '/forecast self-check',
-              '/sources',
-              "/trend-model <id> --series-json '[...]' --target-date <date>",
-              '/forecast calibration --by-origin',
-              '/forecast lesson list',
-              '/forecast errors',
-              '/forecast autopilot status <id>',
-              '/forecast autopilot enable <id> --source <adapter>:<source> --required-source <critical-adapter>:<source> --cadence 1d --mode propose',
-              '/forecast autopilot history <id>',
-              '/forecast schedule run --due --auto-score --auto-postmortem',
-              '/forecast schedule history --json',
-              '/forecast performance --last 5',
-              '/forecast readiness',
-              '/forecast doctor',
-              '/forecast pilot-report',
-              '/forecast pilot-cohort examples/forecasting/live-cohort.example.csv --dry-run --json',
-              '/forecast pilot-bundle --include-export --output .pilot/tester-bundle.json',
-              '/forecast export all --format json --output .pilot/tester-export.json',
-              '/forecast import packet .pilot/tester-export.json --conflict skip --json',
-              '/forecast pilot-aggregate .pilot/*-export.json --json',
-              '/forecast backtest --benchmarks'
-            ],
-            title: 'Next Commands'
-          }
-        ],
-        title: 'Forecast Desk'
-      },
-      role: 'system'
-    })
+    // The dashboard feeds the bottom status line / rail data only — it must NOT
+    // push a panel into the transcript on startup (that was the setup→ready
+    // repaint and clobbered the clean landing).
+    expect(appended.some(msg => msg.kind === 'panel')).toBe(false)
   })
 
   it('refreshes forecast desk status without showing startup panel for explicit resume', async () => {

@@ -18,7 +18,7 @@ import { fromSkin } from '../theme.js'
 import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 
 import { applyDelegationStatus, getDelegationState } from './delegationStore.js'
-import { forecastDashboardSections, forecastDeskRailSections, forecastDeskStatusLabel } from './forecastPanel.js'
+import { forecastDeskRailSections, forecastDeskStatusLabel } from './forecastPanel.js'
 import type { GatewayEventHandlerContext } from './interfaces.js'
 import { patchOverlayState } from './overlayStore.js'
 import { turnController } from './turnController.js'
@@ -215,7 +215,10 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     }
 
     startupForecastDashboardShown = true
-    const renderPanel = !STARTUP_RESUME_ID && !STARTUP_QUERY && !STARTUP_IMAGE
+    // Pull the dashboard for the bottom status line only — do NOT dump a panel
+    // into the transcript on startup. That panel both clobbered the clean
+    // landing and was the visible repaint on the setting-up → ready transition.
+    // The full dashboard stays one command away (`/forecast desk`).
     rpc<ForecastDashboardResponse>('forecast.dashboard', { limit: 8 })
       .then(r => {
         if (!r?.summary && !String(r?.output || '').trim()) {
@@ -226,10 +229,6 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           forecastDeskRailSections: forecastDeskRailSections(r || {}),
           forecastDeskStatus: forecastDeskStatusLabel(r || {})
         })
-
-        if (renderPanel) {
-          panel('Forecast Desk', forecastDashboardSections(r || {}))
-        }
       })
       .catch(() => {})
   }

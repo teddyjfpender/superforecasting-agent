@@ -170,9 +170,8 @@ const TranscriptPane = memo(function TranscriptPane({
 const ComposerPane = memo(function ComposerPane({
   actions,
   composer,
-  landing = false,
   status
-}: Pick<AppLayoutProps, 'actions' | 'composer' | 'status'> & { landing?: boolean }) {
+}: Pick<AppLayoutProps, 'actions' | 'composer' | 'status'>) {
   const ui = useStore($uiState)
   const isBlocked = useStore($isBlocked)
   const sh = (composer.inputBuf[0] ?? composer.input).startsWith('!')
@@ -252,9 +251,9 @@ const ComposerPane = memo(function ComposerPane({
         <Box height={1} onMouseDown={captureInputDrag} onMouseDrag={dragFromSpacer} onMouseUp={endInputDrag} />
       )}
 
-      {!landing && <StatusRulePane at="top" composer={composer} status={status} />}
+      <StatusRulePane at="top" composer={composer} status={status} />
 
-      <Box flexDirection="column" marginTop={landing || ui.statusBar === 'top' ? 0 : 1} position="relative">
+      <Box flexDirection="column" marginTop={ui.statusBar === 'top' ? 0 : 1} position="relative">
         <FloatingOverlays
           cols={composer.cols}
           compIdx={composer.compIdx}
@@ -307,7 +306,7 @@ const ComposerPane = memo(function ComposerPane({
                   onChange={composer.updateInput}
                   onPaste={composer.handleTextPaste}
                   onSubmit={composer.submit}
-                  placeholder={composer.empty || landing ? PLACEHOLDER : ui.busy ? 'Ctrl+C to interrupt…' : ''}
+                  placeholder={composer.empty ? PLACEHOLDER : ui.busy ? 'Ctrl+C to interrupt…' : ''}
                   value={composer.input}
                   voiceRecordKey={composer.voiceRecordKey}
                 />
@@ -321,9 +320,9 @@ const ComposerPane = memo(function ComposerPane({
         )}
       </Box>
 
-      {!landing && !composer.empty && !ui.sid && <Text color={ui.theme.color.muted}>P {ui.status}</Text>}
+      {!composer.empty && !ui.sid && <Text color={ui.theme.color.muted}>P {ui.status}</Text>}
 
-      {!landing && <StatusRulePane at="bottom" composer={composer} status={status} />}
+      <StatusRulePane at="bottom" composer={composer} status={status} />
     </NoSelect>
   )
 })
@@ -368,15 +367,11 @@ const CalibrationViewPane = memo(function CalibrationViewPane() {
 const StatusRulePane = memo(function StatusRulePane({
   at,
   composer,
-  force = false,
   status
-}: Pick<AppLayoutProps, 'composer' | 'status'> & { at: 'bottom' | 'top'; force?: boolean }) {
+}: Pick<AppLayoutProps, 'composer' | 'status'> & { at: 'bottom' | 'top' }) {
   const ui = useStore($uiState)
 
-  // `force` pins the status at the bottom of the landing regardless of the
-  // top/bottom preference (the centred landing has no "top"), but still
-  // honours statusBar === 'off'.
-  if (force ? ui.statusBar === 'off' : ui.statusBar !== at) {
+  if (ui.statusBar !== at) {
     return null
   }
 
@@ -424,10 +419,9 @@ export const AppLayout = memo(function AppLayout({
   // Landing = the first-run screen, before any real interaction. We hold it
   // through gateway connect / startup notices and only leave once a turn or a
   // command panel lands — so startup `sys` warnings (which make `composer.empty`
-  // false) don't collapse the centred layout or cause a starting→ready flip.
-  // On the landing the hero + prompt float around the vertical centre and the
-  // status pins to the very bottom (opencode-style); once active, the prompt
-  // drops to the bottom and the transcript fills above it.
+  // false) don't collapse the layout or cause a starting→ready flip. On the
+  // landing the hero floats centred in the space above the prompt; the prompt
+  // itself stays pinned to the bottom exactly as in the active transcript.
   const hasInteraction = transcript.historyItems.some(
     msg => msg.role === 'user' || msg.role === 'assistant' || msg.kind === 'panel'
   )
@@ -443,8 +437,8 @@ export const AppLayout = memo(function AppLayout({
   const Shell = INLINE_MODE ? Fragment : AlternateScreen
   const shellProps = INLINE_MODE ? {} : { mouseTracking }
 
-  // The prompt + input + status bar. Shared by the landing (centred) and the
-  // active transcript (pinned to the bottom) layouts.
+  // The prompt + input + status bar, pinned to the bottom in both the landing
+  // and active layouts.
   const promptBar = (
     <>
       <PerfPane id="prompt">
@@ -488,55 +482,39 @@ export const AppLayout = memo(function AppLayout({
               </PerfPane>
             )}
           </Box>
-        ) : landing ? (
-          // Hero + prompt float as one group around the optical centre (top
-          // spacer smaller than the bottom); the status pins to the very
-          // bottom like opencode's footer.
-          <Box flexDirection="column" flexGrow={1}>
-            <Box flexGrow={3} />
-            <HomeHero info={ui.info ?? undefined} t={ui.theme} />
-            <PerfPane id="prompt">
-              <PromptZone
-                cols={composer.cols}
-                onApprovalChoice={actions.answerApproval}
-                onClarifyAnswer={actions.answerClarify}
-                onSecretSubmit={actions.answerSecret}
-                onSudoSubmit={actions.answerSudo}
-              />
-            </PerfPane>
-            <PerfPane id="composer">
-              <ComposerPane actions={actions} composer={composer} landing status={status} />
-            </PerfPane>
-            {landingNotices.length > 0 && (
-              <NoSelect flexDirection="column" marginTop={1} paddingX={1}>
-                {landingNotices.map((msg, index) => (
-                  <MessageLine
-                    cols={composer.cols}
-                    compact={ui.compact}
-                    detailsMode={ui.detailsMode}
-                    detailsModeCommandOverride={ui.detailsModeCommandOverride}
-                    key={index}
-                    msg={msg}
-                    sections={ui.sections}
-                    t={ui.theme}
-                  />
-                ))}
-              </NoSelect>
-            )}
-            <Box flexGrow={4} />
-            <StatusRulePane at="bottom" composer={composer} force status={status} />
-            {SHOW_FPS && (
-              <Box flexShrink={0} justifyContent="flex-end" paddingRight={1}>
-                <FpsOverlay t={ui.theme} />
-              </Box>
-            )}
-          </Box>
         ) : (
           <>
             <Box flexDirection="row" flexGrow={1}>
-              <PerfPane id="transcript">
-                <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
-              </PerfPane>
+              {landing ? (
+                // First run: the hero sits centred in the empty space above the
+                // prompt; any startup notices render just below it. The input
+                // stays where it always is — pinned to the bottom (promptBar).
+                <Box flexDirection="column" flexGrow={1}>
+                  <Box flexGrow={1} />
+                  <HomeHero info={ui.info ?? undefined} t={ui.theme} />
+                  {landingNotices.length > 0 && (
+                    <NoSelect flexDirection="column" marginTop={1} paddingX={1}>
+                      {landingNotices.map((msg, index) => (
+                        <MessageLine
+                          cols={composer.cols}
+                          compact={ui.compact}
+                          detailsMode={ui.detailsMode}
+                          detailsModeCommandOverride={ui.detailsModeCommandOverride}
+                          key={index}
+                          msg={msg}
+                          sections={ui.sections}
+                          t={ui.theme}
+                        />
+                      ))}
+                    </NoSelect>
+                  )}
+                  <Box flexGrow={1} />
+                </Box>
+              ) : (
+                <PerfPane id="transcript">
+                  <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
+                </PerfPane>
+              )}
             </Box>
             {promptBar}
           </>
