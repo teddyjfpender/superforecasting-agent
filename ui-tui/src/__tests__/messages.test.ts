@@ -6,10 +6,21 @@ import { describe, expect, it } from 'vitest'
 
 import { panelCommandTarget, panelDraftTarget } from '../components/branding.js'
 import { MessageLine } from '../components/messageLine.js'
-import { toTranscriptMessages } from '../domain/messages.js'
+import { sessionInfoMsg, toTranscriptMessages } from '../domain/messages.js'
 import { upsert } from '../lib/messages.js'
 import { stripAnsi } from '../lib/text.js'
 import { DEFAULT_THEME } from '../theme.js'
+
+describe('sessionInfoMsg', () => {
+  it('builds a session-kind system message carrying the info payload for /info', () => {
+    const info = { cwd: '/x', model: 'opus', skills: {}, tools: {} }
+    const msg = sessionInfoMsg(info)
+
+    expect(msg.kind).toBe('session')
+    expect(msg.role).toBe('system')
+    expect(msg.info).toBe(info)
+  })
+})
 
 describe('toTranscriptMessages', () => {
   it('preserves assistant tool-call rows so resume does not drop prior turns', () => {

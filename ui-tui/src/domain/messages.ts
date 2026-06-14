@@ -4,6 +4,10 @@ import type { Msg, SessionInfo } from '../types.js'
 
 export const introMsg = (info: SessionInfo): Msg => ({ info, kind: 'intro', role: 'system', text: '' })
 
+// `/info` renders the full session panel (model, tools, skills, MCP, system
+// prompt) on demand — it no longer rides the landing screen.
+export const sessionInfoMsg = (info: SessionInfo): Msg => ({ info, kind: 'session', role: 'system', text: '' })
+
 export const imageTokenMeta = (info?: ImageMeta | null) => {
   const { width, height, token_estimate: t } = info ?? {}
 

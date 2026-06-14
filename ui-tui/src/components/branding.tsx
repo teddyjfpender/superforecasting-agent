@@ -2,7 +2,7 @@ import { Box, Text, useStdout } from '@hermes/ink'
 import { useEffect, useState } from 'react'
 import unicodeSpinners from 'unicode-animations'
 
-import { artWidth, FORECAST_HERO_WIDTH, forecastHero, logo, LOGO_WIDTH } from '../banner.js'
+import { artWidth, FORECAST_HERO_WIDTH, forecastHero } from '../banner.js'
 import { flat } from '../lib/text.js'
 import type { Theme } from '../theme.js'
 import type { PanelRow, PanelSection, SessionInfo } from '../types.js'
@@ -12,7 +12,6 @@ import { AsciiAnimation } from './asciiAnimation.js'
 const LOADER_TICK_MS = 120
 const PANEL_COMMAND_PLACEHOLDER_RE = /(?:<[^>]+>|\[[^\]]+\]|\.\.\.|;)/
 const PANEL_DRAFT_PREFIX = 'draft:'
-const FORECAST_LEDGER_STATUS = 'Superforecasting Agent · forecast ledger online'
 type PanelClickEvent = { cellIsBlank?: boolean; stopPropagation?: () => void }
 
 export function panelCommandTarget(candidate?: null | string): string | null {
@@ -93,41 +92,6 @@ export function ArtLines({ lines }: { lines: [string, string][] }) {
         </Text>
       ))}
     </>
-  )
-}
-
-export function Banner({ t }: { t: Theme }) {
-  const cols = useStdout().stdout?.columns ?? 80
-  const logoLines = logo(t.color, t.bannerLogo || undefined)
-  const [agentLabel, ledgerLabel] = FORECAST_LEDGER_STATUS.split(' · ')
-
-  return (
-    <Box flexDirection="column" marginBottom={1}>
-      {cols >= (t.bannerLogo ? artWidth(logoLines) : LOGO_WIDTH) ? (
-        <ArtLines lines={logoLines} />
-      ) : (
-        <Text bold color={t.color.primary}>
-          {t.brand.icon} FORECAST DESK
-        </Text>
-      )}
-
-      <Box>
-        <Text bold color={t.color.accent}>
-          {t.brand.icon} {agentLabel}
-        </Text>
-        <Text color={t.color.muted}> · {ledgerLabel}</Text>
-      </Box>
-
-      <Box marginTop={1}>
-        <Text color={t.color.muted}>start  </Text>
-        <Text color={t.color.primary}>/forecast</Text>
-        <Text color={t.color.muted}> desk · </Text>
-        <Text color={t.color.primary}>/forecast-rerun {'<name>'}</Text>
-        <Text color={t.color.muted}> re-run · </Text>
-        <Text color={t.color.primary}>/help</Text>
-        <Text color={t.color.muted}> all commands</Text>
-      </Box>
-    </Box>
   )
 }
 

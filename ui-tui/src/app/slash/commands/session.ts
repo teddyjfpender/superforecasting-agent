@@ -1,4 +1,4 @@
-import { attachedImageNotice, introMsg, toTranscriptMessages } from '../../../domain/messages.js'
+import { attachedImageNotice, introMsg, sessionInfoMsg, toTranscriptMessages } from '../../../domain/messages.js'
 import { TUI_SESSION_MODEL_FLAG } from '../../../domain/slash.js'
 import type {
   BackgroundStartResponse,
@@ -43,6 +43,23 @@ const modelValueForConfigSet = (arg: string) => {
 }
 
 export const sessionCommands: SlashCommand[] = [
+  {
+    aliases: ['session'],
+    help: 'show session info — model, tools, skills, MCP, system prompt',
+    name: 'info',
+    run: (_arg, ctx) => {
+      const info = ctx.ui.info
+
+      if (!info) {
+        ctx.transcript.sys('session info not available yet')
+
+        return
+      }
+
+      ctx.transcript.setHistoryItems(items => [...items, sessionInfoMsg(info)])
+    }
+  },
+
   {
     aliases: ['bg', 'btw'],
     help: 'launch a background forecast note',
@@ -104,6 +121,7 @@ export const sessionCommands: SlashCommand[] = [
       if (ctx.session.guardBusySessionSwitch('switch forecast sessions')) {
         return
       }
+
       if (!arg.trim()) {
         return patchOverlayState({ picker: true })
       }
@@ -343,6 +361,7 @@ export const sessionCommands: SlashCommand[] = [
           .then(
             ctx.guarded<ConfigGetValueResponse>(r => {
               const rawValue = typeof r.value === 'string' ? r.value : ''
+
               const displayValue =
                 INDICATOR_STYLE_ALIASES[rawValue.trim().toLowerCase()] || rawValue || DEFAULT_INDICATOR_STYLE
 

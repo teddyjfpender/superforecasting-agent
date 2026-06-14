@@ -20,7 +20,7 @@ import { composerPromptText } from '../lib/prompt.js'
 import { AgentsOverlay } from './agentsOverlay.js'
 import { ForecastPulse, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
-import { HomeHero, Panel } from './branding.js'
+import { HomeHero, Panel, SessionPanel } from './branding.js'
 import { CalibrationView } from './calibrationView.js'
 import { ForecastsWorkspace } from './forecastsWorkspace.js'
 import { FpsOverlay } from './fpsOverlay.js'
@@ -114,6 +114,8 @@ const TranscriptPane = memo(function TranscriptPane({
 
               {row.msg.kind === 'intro' ? (
                 <HomeHero info={row.msg.info} t={ui.theme} />
+              ) : row.msg.kind === 'session' && row.msg.info ? (
+                <SessionPanel info={row.msg.info} sid={ui.sid} t={ui.theme} />
               ) : row.msg.kind === 'panel' && row.msg.panelData ? (
                 <Panel
                   onCommandClick={actions.runCommand}
