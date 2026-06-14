@@ -162,7 +162,7 @@ const normalizeOutput = (value: string, stripAnsi: (input: string) => string) =>
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
-const renderForecastDesk = async (columns: number) => {
+const renderForecastDesk = async (columns: number, { landing = false }: { landing?: boolean } = {}) => {
   vi.resetModules()
   process.env.FORECAST_TUI_INLINE = '1'
 
@@ -203,7 +203,11 @@ const renderForecastDesk = async (columns: number) => {
       role: 'system',
       text: ''
     },
-    { kind: 'panel', panelData: { sections: panelSections, title: 'Forecast Desk' }, role: 'system', text: '' }
+    // The landing (empty) state shows only the intro; a panel message arrives
+    // once a command has returned data.
+    ...(landing
+      ? []
+      : [{ kind: 'panel', panelData: { sections: panelSections, title: 'Forecast Desk' }, role: 'system', text: '' } as Msg])
   ]
   const virtualRows = historyItems.map((msg, index) => ({ index, key: `row-${index}`, msg }))
   const stdout = writeStream(columns, 32)
@@ -236,7 +240,7 @@ const renderForecastDesk = async (columns: number) => {
       cols: columns,
       compIdx: 0,
       completions: [],
-      empty: false,
+      empty: landing,
       handleTextPaste: () => null,
       input: '',
       inputBuf: [],
@@ -332,6 +336,21 @@ describe('forecast desk Ink render', () => {
     expect(compact).toContain('63%↑8pt')
     // The status footer still summarises desk state in one slim line.
     expect(compact).toContain('2forecasts·1toreview·1alert')
+  })
+
+  it('on the empty landing shows only the centred hero (no transcript panel)', async () => {
+    const output = await renderForecastDesk(150, { landing: true })
+    const compact = output.replace(/\s+/g, '')
+
+    // The hero + prompt are the whole screen.
+    expect(compact).toContain('SuperforecastingAgent')
+    expect(compact).toContain('Askaforecastingquestiontobegin')
+    expect(compact).toContain('/commands')
+
+    // No transcript/panel content renders before the first turn.
+    expect(compact).not.toContain('ActiveForecasts')
+    expect(compact).not.toContain('63%↑8pt')
+    expect(compact).not.toContain('Triage')
   })
 
   it('keeps the landing minimal at narrow width too', async () => {

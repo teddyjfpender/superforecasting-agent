@@ -415,6 +415,11 @@ export const AppLayout = memo(function AppLayout({
   // The forecast desk surfaces live entirely in those overlays now (opened by
   // command); the main screen is just transcript + prompt + status.
   const fullscreen = overlay.agents || overlay.forecasts || overlay.calibration
+  // Landing = the empty conversation (only the intro). Before any messages
+  // exist we float the hero + prompt around the vertical centre, like a chat
+  // app's first-run screen; once a turn lands the prompt drops to the bottom
+  // and the transcript fills the space above it.
+  const landing = composer.empty && !fullscreen
 
   // Inline mode skips AlternateScreen so the host terminal's native
   // scrollback captures rows scrolled off the top; composer + progress
@@ -422,50 +427,68 @@ export const AppLayout = memo(function AppLayout({
   const Shell = INLINE_MODE ? Fragment : AlternateScreen
   const shellProps = INLINE_MODE ? {} : { mouseTracking }
 
+  // The prompt + input + status bar. Shared by the landing (centred) and the
+  // active transcript (pinned to the bottom) layouts.
+  const promptBar = (
+    <>
+      <PerfPane id="prompt">
+        <PromptZone
+          cols={composer.cols}
+          onApprovalChoice={actions.answerApproval}
+          onClarifyAnswer={actions.answerClarify}
+          onSecretSubmit={actions.answerSecret}
+          onSudoSubmit={actions.answerSudo}
+        />
+      </PerfPane>
+
+      <PerfPane id="composer">
+        <ComposerPane actions={actions} composer={composer} status={status} />
+      </PerfPane>
+
+      {SHOW_FPS && (
+        <Box flexShrink={0} justifyContent="flex-end" paddingRight={1}>
+          <FpsOverlay t={ui.theme} />
+        </Box>
+      )}
+    </>
+  )
+
   return (
     <Shell {...shellProps}>
       <Box flexDirection="column" flexGrow={1}>
-        <Box flexDirection="row" flexGrow={1}>
-          {overlay.forecasts ? (
-            <PerfPane id="forecasts">
-              <ForecastsWorkspacePane />
-            </PerfPane>
-          ) : overlay.calibration ? (
-            <PerfPane id="calibration">
-              <CalibrationViewPane />
-            </PerfPane>
-          ) : overlay.agents ? (
-            <PerfPane id="agents">
-              <AgentsOverlayPane />
-            </PerfPane>
-          ) : (
-            <PerfPane id="transcript">
-              <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
-            </PerfPane>
-          )}
-        </Box>
-
-        {!fullscreen && (
-          <>
-            <PerfPane id="prompt">
-              <PromptZone
-                cols={composer.cols}
-                onApprovalChoice={actions.answerApproval}
-                onClarifyAnswer={actions.answerClarify}
-                onSecretSubmit={actions.answerSecret}
-                onSudoSubmit={actions.answerSudo}
-              />
-            </PerfPane>
-
-            <PerfPane id="composer">
-              <ComposerPane actions={actions} composer={composer} status={status} />
-            </PerfPane>
-
-            {SHOW_FPS && (
-              <Box flexShrink={0} justifyContent="flex-end" paddingRight={1}>
-                <FpsOverlay t={ui.theme} />
-              </Box>
+        {fullscreen ? (
+          <Box flexDirection="row" flexGrow={1}>
+            {overlay.forecasts ? (
+              <PerfPane id="forecasts">
+                <ForecastsWorkspacePane />
+              </PerfPane>
+            ) : overlay.calibration ? (
+              <PerfPane id="calibration">
+                <CalibrationViewPane />
+              </PerfPane>
+            ) : (
+              <PerfPane id="agents">
+                <AgentsOverlayPane />
+              </PerfPane>
             )}
+          </Box>
+        ) : landing ? (
+          // Top spacer slightly smaller than the bottom one so the group
+          // settles around the optical centre rather than dead centre.
+          <Box flexDirection="column" flexGrow={1}>
+            <Box flexGrow={3} />
+            <HomeHero info={ui.info ?? undefined} t={ui.theme} />
+            {promptBar}
+            <Box flexGrow={4} />
+          </Box>
+        ) : (
+          <>
+            <Box flexDirection="row" flexGrow={1}>
+              <PerfPane id="transcript">
+                <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
+              </PerfPane>
+            </Box>
+            {promptBar}
           </>
         )}
       </Box>

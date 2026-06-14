@@ -104,12 +104,17 @@ def _suppress_mouse_residue_early() -> None:
         # the log with raw CSI.
         if not os.isatty(1):
             return
-        # Disable every mouse-tracking variant we know about. Idempotent and
-        # safe to send even when no tracking is currently asserted.
+        # Disable every mouse-tracking variant we know about, then clear the
+        # screen + home the cursor. The clear wipes the user's shell content
+        # immediately so it does not flash for the ≈100–300ms the launcher
+        # spends importing before the Node TUI mounts and enters the alt
+        # screen. entry.tsx clears again on the alt buffer; this is the early
+        # cousin that closes the pre-mount window. Idempotent and safe.
         os.write(
             1,
             b"\x1b[?1003l\x1b[?1002l\x1b[?1001l\x1b[?1000l\x1b[?9l"
-            b"\x1b[?1006l\x1b[?1005l\x1b[?1015l\x1b[?1016l\x1b[?2029l",
+            b"\x1b[?1006l\x1b[?1005l\x1b[?1015l\x1b[?1016l\x1b[?2029l"
+            b"\x1b[H\x1b[2J",
         )
     except OSError:
         pass
