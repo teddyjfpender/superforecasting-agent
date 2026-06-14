@@ -7,6 +7,8 @@ import { flat } from '../lib/text.js'
 import type { Theme } from '../theme.js'
 import type { PanelRow, PanelSection, SessionInfo } from '../types.js'
 
+import { AsciiAnimation } from './asciiAnimation.js'
+
 const LOADER_TICK_MS = 120
 const PANEL_COMMAND_PLACEHOLDER_RE = /(?:<[^>]+>|\[[^\]]+\]|\.\.\.|;)/
 const PANEL_DRAFT_PREFIX = 'draft:'
@@ -124,6 +126,69 @@ export function Banner({ t }: { t: Theme }) {
         <Text color={t.color.muted}> re-run · </Text>
         <Text color={t.color.primary}>/help</Text>
         <Text color={t.color.muted}> all commands</Text>
+      </Box>
+    </Box>
+  )
+}
+
+// ── Home hero (landing / empty state) ────────────────────────────────
+//
+// The landing screen is deliberately sparse: a restrained, animated orb
+// floating in space, a wordmark, one dim context line, and a single hint
+// line. Everything else (forecast desk, calibration) lives behind explicit
+// commands and opens full-screen — so a new user sees one obvious thing to
+// do: type. The orb is gated by terminal size so it never dominates a small
+// window.
+
+const HOME_HINTS: [string, string][] = [
+  ['/', 'commands'],
+  ['?', 'help'],
+  ['⏎', 'send']
+]
+
+function shortenHomePath(value?: string): string {
+  if (!value) {
+    return ''
+  }
+
+  const home = process.env.HOME || process.env.USERPROFILE || ''
+
+  return home && value.startsWith(home) ? `~${value.slice(home.length)}` : value
+}
+
+export function HomeHero({ info, t }: { info?: SessionInfo; t: Theme }) {
+  const out = useStdout().stdout
+  const rows = out?.rows ?? 24
+  const cols = out?.columns ?? 80
+  // Only float the orb when there's genuine room for it; otherwise the
+  // wordmark alone carries the identity so the prompt stays in view.
+  const showOrb = rows >= 22 && cols >= 40
+  const context = [info?.model, shortenHomePath(info?.cwd)].filter(Boolean).join('  ·  ')
+
+  return (
+    <Box alignItems="center" flexDirection="column" marginTop={showOrb ? 2 : 1}>
+      {showOrb ? (
+        <Box flexShrink={0} marginBottom={1}>
+          <AsciiAnimation />
+        </Box>
+      ) : null}
+
+      <Text bold color={t.color.primary}>
+        {t.brand.icon} Superforecasting Agent
+      </Text>
+
+      {context ? <Text color={t.color.muted}>{context}</Text> : null}
+
+      <Box marginTop={1}>
+        <Text color={t.color.muted}>Ask a forecasting question to begin</Text>
+      </Box>
+
+      <Box gap={3} marginTop={1}>
+        {HOME_HINTS.map(([key, label]) => (
+          <Text color={t.color.muted} key={key}>
+            <Text color={t.color.accent}>{key}</Text> {label}
+          </Text>
+        ))}
       </Box>
     </Box>
   )

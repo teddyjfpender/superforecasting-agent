@@ -299,46 +299,54 @@ describe('forecast desk Ink render', () => {
     delete process.env.FORECAST_TUI_INLINE
   })
 
-  it('renders the wide-terminal forecast rail and persistent desk actions from the real AppLayout path', async () => {
+  // The landing is deliberately minimal: a HomeHero (wordmark + context + one
+  // hint line) above the prompt, and NONE of the old desk chrome (top header,
+  // view strip, right rail, compact brief, action strip). The rich desk lives
+  // behind explicit commands / full-screen overlays now. These tests render the
+  // real AppLayout path and assert both the hero is present and the removed
+  // chrome stays gone — so it can't silently creep back.
+
+  it('renders the minimal landing hero — and none of the removed desk chrome — at wide width', async () => {
     const output = await renderForecastDesk(150)
     const compact = output.replace(/\s+/g, '')
 
-    expect(output).toContain('Superforecasting Agent · forecast ledger online')
-    expect(output).toContain('forecast-model · Superforecasting Agent')
-    expect(output).not.toContain('Nous Research')
-    expect(compact).toContain('ForecastDesk')
-    expect(compact).toContain('next/questions')
-    expect(compact).not.toContain('next/questionsfq_')
-    expect(compact).toContain(`views${viewHotkey('book')}book`)
-    expect(compact).toContain(`${viewHotkey('evidence')}evidence`)
-    expect(compact).toContain('Ctrl+Ffind')
-    expect(compact).toContain('2forecasts·1toreview·1alert')
-    expect(compact).toContain('Triage')
-    expect(compact).toContain('/forecastreadiness')
-    expect(compact).toContain('Watchlist')
-    expect(compact).toContain('63%↑8pt')
-    expect(compact).toContain('deskactions')
-    expect(compact).toContain('/questionsfq_review123456')
+    // HomeHero identity + the single discoverability hint line.
+    expect(compact).toContain('SuperforecastingAgent')
+    expect(compact).toContain('forecast-model')
+    expect(compact).toContain('Askaforecastingquestiontobegin')
+    expect(compact).toContain('/commands')
+    expect(compact).toContain('?help')
+    expect(compact).toContain('⏎send')
+
+    // Removed chrome must not render, regardless of populated desk data.
+    expect(compact).not.toContain('next/questions')
+    expect(compact).not.toContain(`views${viewHotkey('book')}book`)
+    expect(compact).not.toContain(`${viewHotkey('evidence')}evidence`)
+    expect(compact).not.toContain('Ctrl+Ffind')
     expect(compact).not.toContain('deskbrief')
+    expect(compact).not.toContain('deskactions')
+
+    // A panel-kind message (data returned by a command) still renders inline —
+    // that generic surface is retained, only the always-on chrome was removed.
+    expect(compact).toContain('Triage')
+    expect(compact).toContain('63%↑8pt')
+    // The status footer still summarises desk state in one slim line.
+    expect(compact).toContain('2forecasts·1toreview·1alert')
   })
 
-  it('renders the narrow-terminal desk brief when the rail cannot fit', async () => {
+  it('keeps the landing minimal at narrow width too', async () => {
     const output = await renderForecastDesk(104)
     const compact = output.replace(/\s+/g, '')
 
-    expect(compact).toContain('ForecastDesk')
-    expect(compact).toContain('next/questions')
-    expect(compact).toContain(`views${viewHotkey('book')}book`)
-    expect(compact).toContain(`${viewHotkey('alerts')}alerts`)
-    expect(compact).toContain('Ctrl+Ffind')
-    expect(compact).toContain('deskbrief')
-    expect(compact).toContain('book2active')
-    expect(compact).toContain('1alerts')
-    expect(compact).toContain('reviewqueue1')
-    expect(compact).toContain('assumptions3/1')
-    expect(compact).toContain('referenceclasses2/1')
-    expect(compact).toContain('triage/alerts1openalert')
-    expect(compact).toContain('deskactions')
-    expect(compact).toContain('/questionsfq_review123456')
+    expect(compact).toContain('SuperforecastingAgent')
+    expect(compact).toContain('Askaforecastingquestiontobegin')
+    expect(compact).toContain('/commands')
+
+    expect(compact).not.toContain('next/questions')
+    expect(compact).not.toContain(`views${viewHotkey('book')}book`)
+    expect(compact).not.toContain(`${viewHotkey('alerts')}alerts`)
+    expect(compact).not.toContain('Ctrl+Ffind')
+    expect(compact).not.toContain('deskbrief')
+    expect(compact).not.toContain('deskactions')
   })
 })

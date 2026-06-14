@@ -2,18 +2,12 @@ import { AlternateScreen, Box, NoSelect, ScrollBox, Text } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
 import { Fragment, memo, useMemo, useRef } from 'react'
 
-import { forecastDeskActionStripItems, forecastDeskCompactItems, forecastDeskPrimaryActionItem } from '../app/forecastPanel.js'
 import { useGateway } from '../app/gatewayContext.js'
 import type { AppLayoutProps } from '../app/interfaces.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../app/overlayStore.js'
 import { $uiState } from '../app/uiStore.js'
 import { INLINE_MODE, SHOW_FPS } from '../config/env.js'
 import { PLACEHOLDER } from '../content/placeholders.js'
-import {
-  FORECAST_TUI_FIND_SHORTCUT,
-  FORECAST_TUI_VIEW_SHORTCUTS,
-  forecastShortcutDisplayHotkey
-} from '../lib/forecastShortcuts.js'
 import {
   COMPOSER_PROMPT_GAP_WIDTH,
   composerPromptWidth,
@@ -22,111 +16,19 @@ import {
 } from '../lib/inputMetrics.js'
 import { PerfPane } from '../lib/perfPane.js'
 import { composerPromptText } from '../lib/prompt.js'
-import type { Theme } from '../theme.js'
-import type { PanelSection } from '../types.js'
 
 import { AgentsOverlay } from './agentsOverlay.js'
 import { ForecastPulse, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
-import { AsciiAnimation } from './asciiAnimation.js'
+import { FloatingOverlays, PromptZone } from './appOverlays.js'
+import { HomeHero, Panel } from './branding.js'
 import { CalibrationView } from './calibrationView.js'
 import { ForecastsWorkspace } from './forecastsWorkspace.js'
-import { FloatingOverlays, PromptZone } from './appOverlays.js'
-import { Banner, Panel, panelCommandTarget, panelDraftTarget, SessionPanel } from './branding.js'
 import { FpsOverlay } from './fpsOverlay.js'
 import { HelpHint } from './helpHint.js'
 import { MessageLine } from './messageLine.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
-
-const FORECAST_RAIL_MIN_COLS = 132
-// Rail only renders at >= FORECAST_RAIL_MIN_COLS, so a wider rail still leaves
-// ~76 cols for the transcript. Widened from 44 -> 56 to cut the heavy value
-// truncation (value budget is FORECAST_RAIL_WIDTH - 19, so 25 -> 37 chars).
-const FORECAST_RAIL_WIDTH = 56
-type CommandClickEvent = {
-  cellIsBlank?: boolean
-  stopPropagation?: () => void
-}
-
-const truncateRail = (value: string, max: number) =>
-  value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value
-
-// Drop raw fq_ ids from a command shown in chrome (the header/next-action),
-// so the user reads "/questions" + the question title rather than a UUID. The
-// untouched command is still used as the click target.
-const cleanCommandForDisplay = (command: string) =>
-  command
-    .replace(/\bfq_[a-z0-9]+\b/gi, '')
-    .replace(/\s{2,}/g, ' ')
-    .trim()
-
-// Color a desk-status segment by what it signals. The brand family (primary/
-// accent/muted) is one hue on most skins, so leaning on the semantic colors
-// (error/warn/ok — left at red/amber/green by skins that only retint the brand)
-// is what breaks the monochrome and makes alerts/stale/healthy scannable.
-const statusSegmentColor = (segment: string, theme: Theme): string => {
-  const s = segment.toLowerCase()
-  if (/\balert|\bfail|\bblocked|claim live: no|insufficient|needs /.test(s)) {
-    return theme.color.error
-  }
-  if (/\breview|stale|closing|due|gap|pilot|no\b/.test(s)) {
-    return theme.color.warn
-  }
-  if (/\bactive\b|\bok\b|clean|ready|live/.test(s)) {
-    return theme.color.ok
-  }
-  return theme.color.muted
-}
-
-// Color a rail value by the state it reports (defaults to body text, unlike the
-// status segments which default to muted). Turns the monochrome value column
-// into a scannable health signal.
-const railValueColor = (value: string, theme: Theme): string => {
-  const s = value.toLowerCase()
-  if (/insufficient|needs |fail|unavailable|: no\b|blocked|missing/.test(s)) {
-    return theme.color.error
-  }
-  if (/stale|due\b|gap|review|pending|pilot|closing/.test(s)) {
-    return theme.color.warn
-  }
-  if (/\bactive\b|ready|clean|\bset\b|\blive\b|collecting/.test(s)) {
-    return theme.color.ok
-  }
-  return theme.color.text
-}
-
-const StatusSegments = ({ status, theme }: { status: string; theme: Theme }) => (
-  <Text wrap="truncate">
-    {status.split('·').map((seg, i) => (
-      <Text color={statusSegmentColor(seg, theme)} key={i}>
-        {i > 0 ? ' · ' : ''}
-        {seg.trim()}
-      </Text>
-    ))}
-  </Text>
-)
-
-const runTargetFromClick = (
-  target: string | null | undefined,
-  draftCommand: (command: string) => void,
-  runCommand: (command: string) => void,
-  event?: CommandClickEvent
-) => {
-  const command = panelCommandTarget(target)
-  const draft = panelDraftTarget(target)
-
-  if ((!command && !draft) || event?.cellIsBlank) {
-    return
-  }
-
-  event?.stopPropagation?.()
-  if (command) {
-    runCommand(command)
-  } else if (draft) {
-    draftCommand(draft)
-  }
-}
 
 const PromptPrefix = memo(function PromptPrefix({
   bold = false,
@@ -211,11 +113,7 @@ const TranscriptPane = memo(function TranscriptPane({
               )}
 
               {row.msg.kind === 'intro' ? (
-                <Box flexDirection="column" paddingTop={1}>
-                  <Banner t={ui.theme} />
-
-                  {row.msg.info && <SessionPanel info={row.msg.info} sid={ui.sid} t={ui.theme} />}
-                </Box>
+                <HomeHero info={row.msg.info} t={ui.theme} />
               ) : row.msg.kind === 'panel' && row.msg.panelData ? (
                 <Panel
                   onCommandClick={actions.runCommand}
@@ -499,292 +397,6 @@ const StatusRulePane = memo(function StatusRulePane({
   )
 })
 
-const ForecastDeskActionStrip = memo(function ForecastDeskActionStrip({
-  cols,
-  draftCommand,
-  railVisible,
-  runCommand
-}: {
-  cols: number
-  draftCommand: (command: string) => void
-  railVisible: boolean
-  runCommand: (command: string) => void
-}) {
-  const ui = useStore($uiState)
-  const actions = useMemo(
-    () => forecastDeskActionStripItems(ui.forecastDeskRailSections, railVisible ? 3 : 4),
-    [railVisible, ui.forecastDeskRailSections]
-  )
-
-  if (!actions.length || ui.compact) {
-    return null
-  }
-
-  const maxDetail = Math.max(18, Math.min(46, Math.floor(cols / actions.length) - 14))
-
-  return (
-    <NoSelect flexDirection="column" flexShrink={0} paddingX={1}>
-      <Box flexDirection="row" width={Math.max(1, cols - 2)}>
-        <Box flexShrink={0} width={13}>
-          <Text bold color={ui.theme.color.label}>
-            desk actions
-          </Text>
-        </Box>
-
-        {actions.map((action, index) => (
-          <Box
-            flexShrink={0}
-            key={action.command}
-            onClick={(event: CommandClickEvent) =>
-              runTargetFromClick(action.target ?? action.command, draftCommand, runCommand, event)
-            }
-          >
-            <Text wrap="truncate">
-              <Text color={ui.theme.color.muted}>{index === 0 ? '  ' : '  |  '}</Text>
-              <Text color={ui.theme.color.accent}>{action.command}</Text>
-              {action.detail ? (
-                <Text color={ui.theme.color.muted}> {truncateRail(action.detail, maxDetail)}</Text>
-              ) : null}
-            </Text>
-          </Box>
-        ))}
-      </Box>
-    </NoSelect>
-  )
-})
-
-const ForecastDeskCompactBrief = memo(function ForecastDeskCompactBrief({
-  cols,
-  railVisible
-}: {
-  cols: number
-  railVisible: boolean
-}) {
-  const ui = useStore($uiState)
-  const items = useMemo(() => forecastDeskCompactItems(ui.forecastDeskRailSections, railVisible ? 0 : 3), [
-    railVisible,
-    ui.forecastDeskRailSections
-  ])
-
-  if (!items.length || ui.compact || railVisible) {
-    return null
-  }
-
-  const maxDetail = Math.max(18, Math.min(58, Math.floor(cols / Math.max(1, items.length)) - 12))
-
-  return (
-    <NoSelect flexDirection="column" flexShrink={0} paddingX={1}>
-      <Text wrap="truncate">
-        <Text bold color={ui.theme.color.label}>
-          desk brief
-        </Text>
-
-        {items.map((item, index) => (
-          <Fragment key={`${item.label}:${item.detail}`}>
-            <Text color={ui.theme.color.muted}>{index === 0 ? '  ' : '  |  '}</Text>
-            <Text color={ui.theme.color.text}>{item.label}</Text>
-            <Text color={ui.theme.color.muted}> {truncateRail(item.detail, maxDetail)}</Text>
-          </Fragment>
-        ))}
-      </Text>
-    </NoSelect>
-  )
-})
-
-const ForecastDeskViewStrip = memo(function ForecastDeskViewStrip({
-  cols,
-  draftCommand,
-  runCommand
-}: {
-  cols: number
-  draftCommand: (command: string) => void
-  runCommand: (command: string) => void
-}) {
-  const ui = useStore($uiState)
-
-  if (!ui.forecastDeskRailSections.length || ui.compact || cols < 88) {
-    return null
-  }
-
-  const viewLimit = cols >= 170 ? 9 : cols >= 146 ? 7 : cols >= 120 ? 5 : 3
-  const views = FORECAST_TUI_VIEW_SHORTCUTS.slice(0, viewLimit)
-
-  return (
-    <NoSelect flexShrink={0} paddingX={1}>
-      <Box flexDirection="row" width={Math.max(1, cols - 2)}>
-        <Box flexShrink={0} width={7}>
-          <Text bold color={ui.theme.color.label}>
-            views
-          </Text>
-        </Box>
-
-        {views.map((shortcut, index) => (
-          <Box
-            flexShrink={0}
-            key={shortcut.id}
-            onClick={(event: CommandClickEvent) =>
-              runTargetFromClick(shortcut.command, draftCommand, runCommand, event)
-            }
-          >
-            <Text wrap="truncate">
-              <Text color={ui.theme.color.muted}>{index === 0 ? '' : '  |  '}</Text>
-              <Text color={ui.theme.color.muted}>{forecastShortcutDisplayHotkey(shortcut)}</Text>
-              <Text color={ui.theme.color.text}> {shortcut.label}</Text>
-            </Text>
-          </Box>
-        ))}
-
-        <Text color={ui.theme.color.muted}>  |  {FORECAST_TUI_FIND_SHORTCUT.hotkey}</Text>
-        <Text color={ui.theme.color.text}> {FORECAST_TUI_FIND_SHORTCUT.label}</Text>
-      </Box>
-    </NoSelect>
-  )
-})
-
-const ForecastDeskHeader = memo(function ForecastDeskHeader({
-  cols,
-  draftCommand,
-  runCommand
-}: {
-  cols: number
-  draftCommand: (command: string) => void
-  runCommand: (command: string) => void
-}) {
-  const ui = useStore($uiState)
-  const primaryAction = useMemo(() => forecastDeskPrimaryActionItem(ui.forecastDeskRailSections), [
-    ui.forecastDeskRailSections
-  ])
-
-  if (!ui.forecastDeskRailSections.length || ui.compact) {
-    return null
-  }
-
-  const statusWidth = primaryAction ? Math.max(12, Math.floor(cols * 0.32)) : Math.max(18, cols - 18)
-  const actionWidth = Math.max(18, cols - statusWidth - 34)
-
-  return (
-    <NoSelect flexShrink={0} paddingX={1}>
-      <Box flexDirection="row" width={Math.max(1, cols - 2)}>
-        <Text bold color={ui.theme.color.primary}>
-          Forecast Desk
-        </Text>
-
-        {ui.forecastDeskStatus ? (
-          <>
-            <Text color={ui.theme.color.muted}>  </Text>
-            <StatusSegments status={truncateRail(ui.forecastDeskStatus, statusWidth)} theme={ui.theme} />
-          </>
-        ) : null}
-
-        {primaryAction ? (
-          <Box
-            onClick={(event: CommandClickEvent) =>
-              runTargetFromClick(primaryAction.target ?? primaryAction.command, draftCommand, runCommand, event)
-            }
-          >
-            <Text wrap="truncate">
-              <Text color={ui.theme.color.muted}>  next </Text>
-              <Text color={ui.theme.color.accent}>{cleanCommandForDisplay(primaryAction.command)}</Text>
-              {primaryAction.detail ? (
-                <Text color={ui.theme.color.text}> {truncateRail(primaryAction.detail, actionWidth)}</Text>
-              ) : null}
-            </Text>
-          </Box>
-        ) : null}
-      </Box>
-    </NoSelect>
-  )
-})
-
-const ForecastDeskRail = memo(function ForecastDeskRail({
-  draftCommand,
-  runCommand,
-  sections,
-  status
-}: {
-  draftCommand: (command: string) => void
-  runCommand: (command: string) => void
-  sections: PanelSection[]
-  status: string
-}) {
-  const ui = useStore($uiState)
-  const visibleSections = sections.filter(sec => sec.rows?.length || sec.items?.length || sec.text).slice(0, 5)
-
-  if (!visibleSections.length) {
-    return null
-  }
-
-  return (
-    <Box
-      borderColor={ui.theme.color.border}
-      borderStyle="single"
-      flexDirection="column"
-      flexShrink={0}
-      height="100%"
-      paddingX={1}
-      paddingY={1}
-      width={FORECAST_RAIL_WIDTH}
-    >
-      <Box flexShrink={0} justifyContent="center" marginBottom={1}>
-        <AsciiAnimation />
-      </Box>
-
-      <Text bold color={ui.theme.color.primary} wrap="truncate">
-        Bernard · Forecast Desk
-      </Text>
-
-      {status && <StatusSegments status={truncateRail(status, FORECAST_RAIL_WIDTH - 4)} theme={ui.theme} />}
-
-      {visibleSections.map((sec, si) => (
-        <Box flexDirection="column" key={si} marginTop={si > 0 || status ? 1 : 0}>
-          {sec.title && (
-            <Text bold color={ui.theme.color.label} wrap="truncate">
-              {truncateRail(sec.title, FORECAST_RAIL_WIDTH - 4)}
-            </Text>
-          )}
-
-          {sec.rows?.slice(0, 4).map((row, rowIndex) => {
-            const [key, value, commandCandidate] = row
-            const clickable = Boolean(panelCommandTarget(commandCandidate ?? key) || panelDraftTarget(commandCandidate ?? key))
-            return (
-              <Box
-                key={rowIndex}
-                onClick={(event: CommandClickEvent) =>
-                  runTargetFromClick(commandCandidate ?? key, draftCommand, runCommand, event)
-                }
-              >
-                <Text color={ui.theme.color.accent}>{clickable ? '› ' : '  '}</Text>
-                <Text color={ui.theme.color.muted}>{truncateRail(key, 12).padEnd(12)}</Text>
-                <Text color={railValueColor(value, ui.theme)}>{truncateRail(value, FORECAST_RAIL_WIDTH - 20)}</Text>
-              </Box>
-            )
-          })}
-
-          {sec.items?.slice(0, 4).map((item, itemIndex) => {
-            const clickable = Boolean(panelCommandTarget(item) || panelDraftTarget(item))
-            return (
-              <Box
-                key={itemIndex}
-                onClick={(event: CommandClickEvent) => runTargetFromClick(item, draftCommand, runCommand, event)}
-              >
-                <Text color={ui.theme.color.accent}>{clickable ? '› ' : '  '}</Text>
-                <Text color={ui.theme.color.text} wrap="truncate">
-                  {truncateRail(item, FORECAST_RAIL_WIDTH - 6)}
-                </Text>
-              </Box>
-            )
-          })}
-
-          {sec.text && (
-            <Text color={ui.theme.color.muted} wrap="truncate">
-              {truncateRail(sec.text, FORECAST_RAIL_WIDTH - 4)}
-            </Text>
-          )}
-        </Box>
-      ))}
-    </Box>
-  )
-})
 
 export const AppLayout = memo(function AppLayout({
   actions,
@@ -797,11 +409,10 @@ export const AppLayout = memo(function AppLayout({
   const overlay = useStore($overlayState)
   const ui = useStore($uiState)
   // A full-screen overlay (spawn tree, forecasts workspace, or calibration
-  // view) takes over the viewport — hide the desk chrome and transcript while
-  // one is open.
+  // view) takes over the viewport — hide the transcript while one is open.
+  // The forecast desk surfaces live entirely in those overlays now (opened by
+  // command); the main screen is just transcript + prompt + status.
   const fullscreen = overlay.agents || overlay.forecasts || overlay.calibration
-  const showForecastRail =
-    !fullscreen && !ui.compact && composer.cols >= FORECAST_RAIL_MIN_COLS && ui.forecastDeskRailSections.length > 0
 
   // Inline mode skips AlternateScreen so the host terminal's native
   // scrollback captures rows scrolled off the top; composer + progress
@@ -812,26 +423,6 @@ export const AppLayout = memo(function AppLayout({
   return (
     <Shell {...shellProps}>
       <Box flexDirection="column" flexGrow={1}>
-        {!fullscreen && (
-          <PerfPane id="forecast-header">
-            <ForecastDeskHeader
-              cols={composer.cols}
-              draftCommand={actions.draftCommand}
-              runCommand={actions.runCommand}
-            />
-          </PerfPane>
-        )}
-
-        {!fullscreen && (
-          <PerfPane id="forecast-views">
-            <ForecastDeskViewStrip
-              cols={composer.cols}
-              draftCommand={actions.draftCommand}
-              runCommand={actions.runCommand}
-            />
-          </PerfPane>
-        )}
-
         <Box flexDirection="row" flexGrow={1}>
           {overlay.forecasts ? (
             <PerfPane id="forecasts">
@@ -846,24 +437,9 @@ export const AppLayout = memo(function AppLayout({
               <AgentsOverlayPane />
             </PerfPane>
           ) : (
-            <>
-              <PerfPane id="transcript">
-                <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
-              </PerfPane>
-
-              {showForecastRail && (
-                <NoSelect flexShrink={0} marginLeft={1}>
-                  <PerfPane id="forecast-rail">
-                    <ForecastDeskRail
-                      draftCommand={actions.draftCommand}
-                      runCommand={actions.runCommand}
-                      sections={ui.forecastDeskRailSections}
-                      status={ui.forecastDeskStatus}
-                    />
-                  </PerfPane>
-                </NoSelect>
-              )}
-            </>
+            <PerfPane id="transcript">
+              <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
+            </PerfPane>
           )}
         </Box>
 
@@ -876,19 +452,6 @@ export const AppLayout = memo(function AppLayout({
                 onClarifyAnswer={actions.answerClarify}
                 onSecretSubmit={actions.answerSecret}
                 onSudoSubmit={actions.answerSudo}
-              />
-            </PerfPane>
-
-            <PerfPane id="forecast-brief">
-              <ForecastDeskCompactBrief cols={composer.cols} railVisible={showForecastRail} />
-            </PerfPane>
-
-            <PerfPane id="forecast-actions">
-              <ForecastDeskActionStrip
-                cols={composer.cols}
-                draftCommand={actions.draftCommand}
-                railVisible={showForecastRail}
-                runCommand={actions.runCommand}
               />
             </PerfPane>
 
