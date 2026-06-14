@@ -140,7 +140,10 @@ class PanelAggregation:
         return {
             "method": self.method,
             "aggregate_probability": round(self.aggregate_probability, 6),
-            "spread": {k: round(v, 6) for k, v in self.spread.items()},
+            "spread": {
+                k: (round(v, 6) if isinstance(v, (int, float)) and not isinstance(v, bool) else v)
+                for k, v in self.spread.items()
+            },
             "trim": self.trim,
             "estimates": self.estimates,
             "notes": self.notes,
@@ -284,7 +287,7 @@ def _spread_summary(probabilities: Sequence[float]) -> dict[str, float]:
         return {}
     sorted_probs = sorted(probabilities)
     n = len(sorted_probs)
-    return {
+    summary = {
         "min": sorted_probs[0],
         "max": sorted_probs[-1],
         "median": float(median(sorted_probs)),
@@ -293,6 +296,83 @@ def _spread_summary(probabilities: Sequence[float]) -> dict[str, float]:
         "p75": _percentile(sorted_probs, 75),
         "iqr": _percentile(sorted_probs, 75) - _percentile(sorted_probs, 25),
         "count": float(n),
+    }
+    # Fold the log-odds disagreement scalar into the spread so it is persisted
+    # on every panel run and rendered by the desk without extra plumbing.
+    summary.update(disagreement_signal(sorted_probs))
+    return summary
+
+
+# ── Disagreement signal ──────────────────────────────────────────────────────
+#
+# Disagreement is the most valuable part of a panel: a wide spread is epistemic
+# uncertainty the aggregate hides. We measure it in LOG-ODDS space (the space
+# the panel pools in) so an order-of-magnitude split low in the range counts as
+# much as one mid-range, and squash it to a [0, 1] index that can be regressed
+# against realised error downstream (see the calibration learning loop).
+
+_LOGIT_EPS = 1e-6
+# Logit-space dispersion knee: sd≈2 (panelists split ~0.12 vs ~0.88) → ~0.76.
+_DISAGREEMENT_SCALE = 2.0
+
+
+def _logit(p: float) -> float:
+    p = min(max(float(p), _LOGIT_EPS), 1.0 - _LOGIT_EPS)
+    return math.log(p / (1.0 - p))
+
+
+def _disagreement_band(index: float) -> str:
+    if index < 0.15:
+        return "calm"
+    if index < 0.40:
+        return "moderate"
+    if index < 0.65:
+        return "high"
+    return "severe"
+
+
+def disagreement_signal(
+    probabilities: Sequence[float],
+    weights: Sequence[float] | None = None,
+) -> dict[str, Any]:
+    """Quantify panel disagreement as a first-class, learnable signal.
+
+    Returns ``sd_logit`` (weighted std of the logits), ``disagreement_index``
+    (``tanh(sd_logit / scale)`` in [0, 1]), ``disagreement_band`` (calm /
+    moderate / high / severe), and ``prob_range``. A single estimate has zero
+    disagreement by definition. Keys are prefixed so they merge cleanly into a
+    spread summary.
+    """
+
+    probs = [float(p) for p in probabilities]
+    if not probs:
+        raise ValidationError("disagreement_signal requires at least one probability")
+    n = len(probs)
+    if weights is None:
+        weights = [1.0] * n
+    weights = [float(w) for w in weights]
+    if len(weights) != n:
+        raise ValidationError("weights length must match probabilities length")
+    total_w = sum(weights)
+    if total_w <= 0:
+        raise ValidationError("weights must sum to > 0")
+
+    logits = [_logit(p) for p in probs]
+    mean = sum(w * x for w, x in zip(weights, logits)) / total_w
+    if n == 1:
+        sd = 0.0
+    else:
+        var = sum(w * (x - mean) ** 2 for w, x in zip(weights, logits)) / total_w
+        sd = math.sqrt(max(var, 0.0))
+    # Round first, then band off the rounded value, so the stored index and
+    # band never disagree — and any consumer that recomputes the band from the
+    # index (e.g. the desk meter) lands on the same label at the boundaries.
+    index = round(math.tanh(sd / _DISAGREEMENT_SCALE), 6)
+    return {
+        "sd_logit": round(sd, 6),
+        "disagreement_index": index,
+        "disagreement_band": _disagreement_band(index),
+        "prob_range": round(max(probs) - min(probs), 6),
     }
 
 
@@ -427,4 +507,5 @@ __all__ = [
     "aggregate_panel_estimates",
     "build_perspective_prompts",
     "should_run_panel",
+    "disagreement_signal",
 ]

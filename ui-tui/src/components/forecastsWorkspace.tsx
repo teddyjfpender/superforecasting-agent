@@ -1935,6 +1935,43 @@ const spreadDelta = (probability: null | number | undefined, aggregate: null | n
   return `${points > 0 ? '+' : ''}${points}pt`
 }
 
+// Disagreement meter — the log-odds dispersion of the panel, rendered as a
+// short filled bar. A wide quorum/panel spread is epistemic uncertainty the
+// aggregate hides, so the desk surfaces it as a calm→severe signal to
+// investigate (not average away). The scalar is computed server-side and
+// carried inside spread_summary (see forecasting/panel.disagreement_signal).
+function disagreementBand(index: number): 'calm' | 'moderate' | 'high' | 'severe' {
+  if (index < 0.15) return 'calm'
+  if (index < 0.4) return 'moderate'
+  if (index < 0.65) return 'high'
+  return 'severe'
+}
+
+export function DisagreementMeter({ spread, t }: { spread?: Record<string, number>; t: Theme }) {
+  const index = spread?.disagreement_index
+  if (!finite(index)) return null
+  const band = disagreementBand(index)
+  const color =
+    band === 'calm'
+      ? t.color.ok
+      : band === 'moderate'
+        ? t.color.accent
+        : band === 'high'
+          ? t.color.warn
+          : t.color.error
+  const cells = 10
+  const filled = Math.max(0, Math.min(cells, Math.round(index * cells)))
+  const bar = '█'.repeat(filled) + '░'.repeat(cells - filled)
+  return (
+    <Text wrap="truncate-end">
+      <Text color={t.color.muted}>{'disagree  '}</Text>
+      <Text color={color}>{bar}</Text>
+      <Text color={color}>{`  ${band}`}</Text>
+      <Text color={t.color.muted}>{`  (${index.toFixed(2)})`}</Text>
+    </Text>
+  )
+}
+
 export function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePanel; t: Theme; width: number }) {
   const whisker = boxWhisker(panel.spread ?? {}, { width: Math.max(12, Math.min(width - 18, 28)) })
   const estimates = panel.estimates ?? []
@@ -1971,6 +2008,7 @@ export function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePane
           <Text color={t.color.label}>{` ${pct(panel.spread?.max)}`}</Text>
         </Text>
       ) : null}
+      <DisagreementMeter spread={panel.spread} t={t} />
       {estimates.map((estimate, i) => {
         const rail = railW >= 8 ? dotTrack(estimate.probability, aggregate, { width: railW }) : ''
         const delta = spreadDelta(estimate.probability, aggregate)

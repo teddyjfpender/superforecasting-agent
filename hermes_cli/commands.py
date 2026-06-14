@@ -87,6 +87,7 @@ FORECAST_DESK_SUBCOMMANDS: tuple[str, ...] = (
     "research",
     "base-rate",
     "model",
+    "quorum",
     "api-key",
     "bayes",
     "protocol",

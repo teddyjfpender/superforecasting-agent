@@ -1644,6 +1644,62 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     panel_list_parser.add_argument("--limit", type=int, default=20)
     panel_list_parser.set_defaults(_forecast_handler=_cmd_panel_list)
 
+    quorum_parser = forecast_sub.add_parser(
+        "quorum",
+        help=(
+            "Run a model-diverse forecast quorum (Fusion-style): dispatch a "
+            "panel of models, then a judge synthesizes a verdict. Subcommands: "
+            "`quorum <id>` (run), `quorum status [run-id]`, `quorum config "
+            "[set k v]`, `quorum default on|off`."
+        ),
+    )
+    quorum_parser.add_argument(
+        "target",
+        nargs="?",
+        help="Question id to forecast, or one of: status | config | default.",
+    )
+    quorum_parser.add_argument(
+        "rest",
+        nargs="*",
+        help="Sub-arguments (run-id for status; key value for config set; on/off for default).",
+    )
+    quorum_parser.add_argument(
+        "--preset",
+        choices=sorted(("frontier", "budget", "self")),
+        help="Panel preset (overrides the configured default).",
+    )
+    quorum_parser.add_argument(
+        "--models",
+        help="Comma-separated OpenRouter model ids (overrides the preset).",
+    )
+    quorum_parser.add_argument("--judge", help="Judge model id (overrides the preset default).")
+    quorum_parser.add_argument(
+        "--pool",
+        dest="pool_method",
+        choices=sorted({"trimmed_geomean_odds", "log_odds_pool", "median"}),
+        help="Pooling method for the panel.",
+    )
+    quorum_parser.add_argument("--trim", type=int, help="Drop this many extremes before pooling.")
+    quorum_parser.add_argument("--samples", type=int, help="Self-fusion sample count (self preset).")
+    quorum_parser.add_argument(
+        "--attach-snapshot",
+        dest="attach_snapshot",
+        help="Attach the resulting panel run to an existing snapshot id.",
+    )
+    quorum_parser.add_argument("--triggered-by", dest="triggered_by", default="quorum")
+    quorum_parser.add_argument(
+        "--scope",
+        choices=sorted(("high_impact", "always", "first_only")),
+        help="For `quorum default`: which indicated panels get a quorum.",
+    )
+    quorum_parser.add_argument(
+        "--wait",
+        action="store_true",
+        help="Run synchronously and print the result (default: background job + run-id).",
+    )
+    quorum_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    quorum_parser.set_defaults(_forecast_handler=_cmd_quorum)
+
     apikey_parser = forecast_sub.add_parser(
         "api-key",
         help="Manage data-provider API keys (FRED, EIA, Firecrawl, Exa, …). Writes to the user .env and activates immediately.",
@@ -3446,6 +3502,56 @@ def _cmd_update(args: argparse.Namespace) -> None:
     # Standard step of the update process: write a time-indexed analyst brief for
     # the snapshot we just committed. Best-effort, after the ledger write.
     _write_analyst_brief(ledger, args.id, snapshot, previous=previous)
+    _maybe_recommend_quorum(
+        ledger, args.id, has_panel=panel_run_ref is not None,
+        has_prior_snapshot=previous is not None,
+        forecast_origin=args.forecast_origin,
+    )
+
+
+def _maybe_recommend_quorum(
+    ledger: "ForecastLedger",
+    question_id: str,
+    *,
+    has_panel: bool,
+    has_prior_snapshot: bool,
+    forecast_origin: str | None,
+) -> None:
+    """Nudge to run a quorum when one is auto-indicated but none was attached.
+
+    Non-invasive: this runs after the commit and never alters it. The quorum
+    produces a ``panel_run_id`` that satisfies the existing ``--panel-run-ref``
+    gate, so the recommended flow keeps the senior process intact.
+    """
+
+    if has_panel or (forecast_origin or "live") != "live":
+        return
+    try:
+        from hermes_cli.config import load_config
+        from forecasting.panel import should_run_panel
+        from forecasting.quorum import quorum_auto_indicated
+
+        cfg = load_config().get("quorum", {})
+        if not cfg.get("default_enabled"):
+            return
+        question = ledger.get_question(question_id)
+        panel_indicated = should_run_panel(
+            impact=getattr(question, "impact", None),
+            has_prior_snapshot=has_prior_snapshot,
+        )
+        if not quorum_auto_indicated(
+            cfg, panel_indicated=panel_indicated, has_prior_snapshot=has_prior_snapshot
+        ):
+            return
+        print(
+            "↳ quorum recommended for this forecast (quorum.default_enabled, "
+            f"scope={cfg.get('default_scope', 'high_impact')}).\n"
+            f"  run:  forecast quorum {question_id}\n"
+            "  then commit with  forecast update "
+            f"{question_id} --panel-run-ref <panel_run_id>"
+        )
+    except Exception:  # pragma: no cover — a nudge must never break update
+        return
 
 
 def _print_update_preview(
@@ -8013,6 +8119,227 @@ def _cmd_panel_list(args: argparse.Namespace) -> None:
             f"{row['aggregation_method']:<24} {row['trim']:<5} "
             f"{row['aggregate_probability']:.3f}     {spread_text}"
         )
+
+
+def _cmd_quorum(args: argparse.Namespace) -> None:
+    """Dispatch `forecast quorum …` (run | status | config | default)."""
+
+    target = (args.target or "").strip()
+    rest = [str(r) for r in (args.rest or [])]
+    if target == "status":
+        _quorum_status(args, rest)
+        return
+    if target == "config":
+        _quorum_config(rest)
+        return
+    if target == "default":
+        _quorum_default(rest, scope=args.scope)
+        return
+    if target == "calibration":
+        _quorum_calibration(args)
+        return
+    if not target:
+        _quorum_overview()
+        return
+    _quorum_run(args, question_id=target)
+
+
+def _quorum_overview() -> None:
+    from hermes_cli.config import load_config
+
+    cfg = load_config().get("quorum", {})
+    print("forecast quorum — model-diverse forecast panel with judge synthesis")
+    print(f"  default_enabled: {bool(cfg.get('default_enabled'))}  "
+          f"scope: {cfg.get('default_scope', 'high_impact')}")
+    print(f"  preset: {cfg.get('preset', 'frontier')}  "
+          f"pool: {cfg.get('pool_method', 'trimmed_geomean_odds')} (trim={cfg.get('trim', 1)})")
+    print("usage:")
+    print("  forecast quorum <question-id> [--preset frontier|budget|self] [--wait]")
+    print("  forecast quorum status [run-id]")
+    print("  forecast quorum config [set <key> <value>]")
+    print("  forecast quorum default on|off [--scope high_impact|always|first_only]")
+    print("  forecast quorum calibration   (how disagreement relates to realised error)")
+
+
+def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
+    from hermes_cli.config import load_config
+    from forecasting.quorum_jobs import read_job, start_job
+
+    cfg = load_config().get("quorum", {})
+    active_model = load_config().get("model") or None
+
+    # Fail fast if the question does not exist (immediate feedback before we
+    # spawn a multi-minute background job).
+    ledger = _ledger(args)
+    ledger.get_question(question_id)
+
+    models = None
+    if args.models:
+        models = [m.strip() for m in args.models.split(",") if m.strip()]
+    elif cfg.get("models"):
+        models = [str(m).strip() for m in cfg["models"] if str(m).strip()]
+
+    preset = args.preset or cfg.get("preset") or "frontier"
+    judge = args.judge or (cfg.get("judge") or None)
+    pool_method = args.pool_method or cfg.get("pool_method") or "trimmed_geomean_odds"
+    trim = args.trim if args.trim is not None else int(cfg.get("trim", 1))
+
+    self_fusion = preset == "self" and not models
+    if self_fusion:
+        if not active_model:
+            raise SystemExit(
+                "forecast quorum: the 'self' preset needs a default model — set one "
+                "with `--models <id>` or a config `model`."
+            )
+        samples = args.samples or 3
+        models = [active_model] * samples
+        judge = judge or active_model
+        preset = None  # models now explicit
+
+    spec = {
+        "question_id": question_id,
+        "db": getattr(args, "db", None),
+        "preset": preset,
+        "models": models,
+        "judge": judge,
+        "pool_method": pool_method,
+        "trim": trim,
+        "self_fusion": self_fusion,
+        "samples": args.samples,
+        "attach_snapshot": args.attach_snapshot,
+        "triggered_by": args.triggered_by or "quorum",
+        "active_model": active_model,
+        "max_iterations": int(cfg.get("max_iterations", 30)),
+        "model_timeout": int(cfg.get("model_timeout", 300)),
+    }
+
+    run_id = start_job(spec, wait=bool(args.wait))
+
+    if args.wait:
+        job = read_job(run_id)
+        _print_quorum_job(job, json_output=args.json)
+        return
+    if args.json:
+        print(json.dumps({"run_id": run_id, "status": "queued"}, indent=2))
+        return
+    print(f"quorum run started: {run_id}")
+    print(f"  poll with:  forecast quorum status {run_id}")
+
+
+def _quorum_status(args: argparse.Namespace, rest: list[str]) -> None:
+    from forecasting.quorum_jobs import list_jobs, read_job
+
+    if not rest:
+        jobs = list_jobs()
+        if args.json:
+            print(json.dumps(jobs, indent=2))
+            return
+        if not jobs:
+            print("No quorum runs yet. Start one with `forecast quorum <question-id>`.")
+            return
+        print("Run            Status   Question        Updated")
+        for job in jobs:
+            print(
+                f"{job['run_id']:<14} {job['status']:<8} "
+                f"{(job.get('question_id') or '-'):<15} {job.get('updated_at', '-')}"
+            )
+        return
+    try:
+        job = read_job(rest[0])
+    except FileNotFoundError as exc:
+        raise SystemExit(f"forecast quorum status: {exc}") from exc
+    _print_quorum_job(job, json_output=args.json)
+
+
+def _print_quorum_job(job: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps(job, indent=2, sort_keys=True))
+        return
+    print(f"quorum run: {job['run_id']}  [{job['status']}]")
+    print(f"  question: {job.get('question_id')}")
+    if job.get("panel_run_id"):
+        print(f"  panel_run: {job['panel_run_id']}")
+    if job.get("error"):
+        print(f"  error: {job['error']}")
+    for step in job.get("progress") or []:
+        print(f"  · {step['stage']}: {step['detail']}")
+    result = job.get("result")
+    if not result:
+        return
+    print(f"  aggregate: {result['aggregate_probability']:.3f}  "
+          f"({result['pool_method']}, trim={result['trim']})")
+    dis = result.get("disagreement") or {}
+    print(f"  disagreement: {dis.get('disagreement_band', '?')} "
+          f"(index={dis.get('disagreement_index')}, sd_logit={dis.get('sd_logit')})")
+    for f in result.get("forecasts") or []:
+        if f.get("error"):
+            print(f"    ✗ {f['model']}: {f['error']}")
+        else:
+            print(f"    • {f['model']}: {f['probability']:.3f}")
+    judge = result.get("judge")
+    if judge:
+        if judge.get("probability") is not None:
+            print(f"  judge verdict: {judge['probability']:.3f} — {judge.get('rationale', '')}")
+        for spot in judge.get("blind_spots") or []:
+            print(f"    blind spot: {spot}")
+
+
+def _quorum_config(rest: list[str]) -> None:
+    from hermes_cli.config import load_config, set_config_value
+
+    if rest and rest[0] == "set":
+        if len(rest) < 3:
+            raise SystemExit("forecast quorum config set <key> <value>")
+        key, value = rest[1], rest[2]
+        set_config_value(f"quorum.{key}", value)
+        print(f"✓ set quorum.{key} = {value}")
+        return
+    cfg = load_config().get("quorum", {})
+    print("quorum config:")
+    for key in (
+        "default_enabled", "default_scope", "preset", "models",
+        "judge", "pool_method", "trim", "model_timeout", "max_iterations",
+    ):
+        print(f"  {key}: {cfg.get(key)}")
+
+
+def _quorum_default(rest: list[str], *, scope: str | None) -> None:
+    from hermes_cli.config import load_config, set_config_value
+
+    state = rest[0].strip().lower() if rest else None
+    if state in {"on", "off"}:
+        set_config_value("quorum.default_enabled", "true" if state == "on" else "false")
+        print(f"✓ quorum-by-default {'enabled' if state == 'on' else 'disabled'}")
+    elif state is not None:
+        raise SystemExit("forecast quorum default on|off")
+    if scope:
+        set_config_value("quorum.default_scope", scope)
+        print(f"✓ quorum default scope = {scope}")
+    cfg = load_config().get("quorum", {})
+    print(f"quorum default_enabled: {bool(cfg.get('default_enabled'))}  "
+          f"scope: {cfg.get('default_scope', 'high_impact')}")
+
+
+def _quorum_calibration(args: argparse.Namespace) -> None:
+    """Report how quorum disagreement relates to realised forecast error."""
+
+    from forecasting.quorum_analysis import disagreement_calibration
+
+    report = disagreement_calibration(_ledger(args))
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return
+    print(f"quorum disagreement → error  (n={report['n']} scored quorum forecasts)")
+    if not report["n"]:
+        print("  no scored quorum forecasts yet — resolve some and run again.")
+        return
+    corr = report["correlation"]
+    print(f"  correlation(disagreement, brier): {corr if corr is not None else '—'}")
+    for band in ("calm", "moderate", "high", "severe"):
+        bucket = report["bands"].get(band)
+        if bucket:
+            print(f"    {band:<9} n={bucket['count']:<3} mean_brier={bucket['mean_brier']:.4f}")
+    print(f"  → {report['interpretation']}")
 
 
 def _cmd_postmortem(args: argparse.Namespace) -> None:

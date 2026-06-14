@@ -658,6 +658,33 @@ DEFAULT_CONFIG = {
     "fallback_providers": [],
     "credential_pool_strategies": {},
     "toolsets": ["forecast-desk"],
+    # Quorum — model-diverse forecast panel ("Fusion" analogue). When
+    # default_enabled is on, a quorum auto-runs at the update stage wherever a
+    # deliberative panel is already indicated (see default_scope), so the user
+    # gets multi-model fusion without passing flags every time. See
+    # forecasting/quorum.py.
+    "quorum": {
+        # Run a quorum panel automatically when a panel is indicated.
+        "default_enabled": False,
+        # Which indicated panels get a quorum when default_enabled:
+        #   "high_impact" — only high-impact / first-forecast (the existing
+        #                   panel trigger). Keeps the multi-model spend bounded.
+        #   "always"      — every probability-bearing update (expensive).
+        #   "first_only"  — only the first forecast for a question.
+        "default_scope": "high_impact",
+        # Default panel preset when none is passed: frontier | budget | self.
+        "preset": "frontier",
+        # Optional explicit model list (OpenRouter ids); overrides the preset.
+        "models": [],
+        # Judge model for the synthesis pass. Empty = preset default.
+        "judge": "",
+        # Pooling: trimmed_geomean_odds | log_odds_pool | median.
+        "pool_method": "trimmed_geomean_odds",
+        "trim": 1,
+        # Per-panelist runtime ceiling (seconds) and tool-iteration cap.
+        "model_timeout": 300,
+        "max_iterations": 30,
+    },
     "agent": {
         "max_turns": 90,
         # Inactivity timeout for gateway agent execution (seconds).
