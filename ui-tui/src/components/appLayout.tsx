@@ -170,8 +170,9 @@ const TranscriptPane = memo(function TranscriptPane({
 const ComposerPane = memo(function ComposerPane({
   actions,
   composer,
+  landing = false,
   status
-}: Pick<AppLayoutProps, 'actions' | 'composer' | 'status'>) {
+}: Pick<AppLayoutProps, 'actions' | 'composer' | 'status'> & { landing?: boolean }) {
   const ui = useStore($uiState)
   const isBlocked = useStore($isBlocked)
   const sh = (composer.inputBuf[0] ?? composer.input).startsWith('!')
@@ -251,9 +252,9 @@ const ComposerPane = memo(function ComposerPane({
         <Box height={1} onMouseDown={captureInputDrag} onMouseDrag={dragFromSpacer} onMouseUp={endInputDrag} />
       )}
 
-      <StatusRulePane at="top" composer={composer} status={status} />
+      {!landing && <StatusRulePane at="top" composer={composer} status={status} />}
 
-      <Box flexDirection="column" marginTop={ui.statusBar === 'top' ? 0 : 1} position="relative">
+      <Box flexDirection="column" marginTop={landing || ui.statusBar === 'top' ? 0 : 1} position="relative">
         <FloatingOverlays
           cols={composer.cols}
           compIdx={composer.compIdx}
@@ -306,7 +307,7 @@ const ComposerPane = memo(function ComposerPane({
                   onChange={composer.updateInput}
                   onPaste={composer.handleTextPaste}
                   onSubmit={composer.submit}
-                  placeholder={composer.empty ? PLACEHOLDER : ui.busy ? 'Ctrl+C to interrupt…' : ''}
+                  placeholder={composer.empty || landing ? PLACEHOLDER : ui.busy ? 'Ctrl+C to interrupt…' : ''}
                   value={composer.input}
                   voiceRecordKey={composer.voiceRecordKey}
                 />
@@ -320,9 +321,9 @@ const ComposerPane = memo(function ComposerPane({
         )}
       </Box>
 
-      {!composer.empty && !ui.sid && <Text color={ui.theme.color.muted}>P {ui.status}</Text>}
+      {!landing && !composer.empty && !ui.sid && <Text color={ui.theme.color.muted}>P {ui.status}</Text>}
 
-      <StatusRulePane at="bottom" composer={composer} status={status} />
+      {!landing && <StatusRulePane at="bottom" composer={composer} status={status} />}
     </NoSelect>
   )
 })
@@ -367,11 +368,15 @@ const CalibrationViewPane = memo(function CalibrationViewPane() {
 const StatusRulePane = memo(function StatusRulePane({
   at,
   composer,
+  force = false,
   status
-}: Pick<AppLayoutProps, 'composer' | 'status'> & { at: 'bottom' | 'top' }) {
+}: Pick<AppLayoutProps, 'composer' | 'status'> & { at: 'bottom' | 'top'; force?: boolean }) {
   const ui = useStore($uiState)
 
-  if (ui.statusBar !== at) {
+  // `force` pins the status at the bottom of the landing regardless of the
+  // top/bottom preference (the centred landing has no "top"), but still
+  // honours statusBar === 'off'.
+  if (force ? ui.statusBar === 'off' : ui.statusBar !== at) {
     return null
   }
 
@@ -415,11 +420,22 @@ export const AppLayout = memo(function AppLayout({
   // The forecast desk surfaces live entirely in those overlays now (opened by
   // command); the main screen is just transcript + prompt + status.
   const fullscreen = overlay.agents || overlay.forecasts || overlay.calibration
-  // Landing = the empty conversation (only the intro). Before any messages
-  // exist we float the hero + prompt around the vertical centre, like a chat
-  // app's first-run screen; once a turn lands the prompt drops to the bottom
-  // and the transcript fills the space above it.
-  const landing = composer.empty && !fullscreen
+
+  // Landing = the first-run screen, before any real interaction. We hold it
+  // through gateway connect / startup notices and only leave once a turn or a
+  // command panel lands — so startup `sys` warnings (which make `composer.empty`
+  // false) don't collapse the centred layout or cause a starting→ready flip.
+  // On the landing the hero + prompt float around the vertical centre and the
+  // status pins to the very bottom (opencode-style); once active, the prompt
+  // drops to the bottom and the transcript fills above it.
+  const hasInteraction = transcript.historyItems.some(
+    msg => msg.role === 'user' || msg.role === 'assistant' || msg.kind === 'panel'
+  )
+
+  const landing = !hasInteraction && !fullscreen
+  // Startup notices (credential/config warnings, update tips) still surface on
+  // the landing — rendered under the prompt rather than lost behind it.
+  const landingNotices = landing ? transcript.historyItems.filter(msg => msg.kind !== 'intro') : []
 
   // Inline mode skips AlternateScreen so the host terminal's native
   // scrollback captures rows scrolled off the top; composer + progress
@@ -473,13 +489,47 @@ export const AppLayout = memo(function AppLayout({
             )}
           </Box>
         ) : landing ? (
-          // Top spacer slightly smaller than the bottom one so the group
-          // settles around the optical centre rather than dead centre.
+          // Hero + prompt float as one group around the optical centre (top
+          // spacer smaller than the bottom); the status pins to the very
+          // bottom like opencode's footer.
           <Box flexDirection="column" flexGrow={1}>
             <Box flexGrow={3} />
             <HomeHero info={ui.info ?? undefined} t={ui.theme} />
-            {promptBar}
+            <PerfPane id="prompt">
+              <PromptZone
+                cols={composer.cols}
+                onApprovalChoice={actions.answerApproval}
+                onClarifyAnswer={actions.answerClarify}
+                onSecretSubmit={actions.answerSecret}
+                onSudoSubmit={actions.answerSudo}
+              />
+            </PerfPane>
+            <PerfPane id="composer">
+              <ComposerPane actions={actions} composer={composer} landing status={status} />
+            </PerfPane>
+            {landingNotices.length > 0 && (
+              <NoSelect flexDirection="column" marginTop={1} paddingX={1}>
+                {landingNotices.map((msg, index) => (
+                  <MessageLine
+                    cols={composer.cols}
+                    compact={ui.compact}
+                    detailsMode={ui.detailsMode}
+                    detailsModeCommandOverride={ui.detailsModeCommandOverride}
+                    key={index}
+                    msg={msg}
+                    sections={ui.sections}
+                    t={ui.theme}
+                  />
+                ))}
+              </NoSelect>
+            )}
             <Box flexGrow={4} />
+            <StatusRulePane at="bottom" composer={composer} force status={status} />
+            {SHOW_FPS && (
+              <Box flexShrink={0} justifyContent="flex-end" paddingRight={1}>
+                <FpsOverlay t={ui.theme} />
+              </Box>
+            )}
           </Box>
         ) : (
           <>
