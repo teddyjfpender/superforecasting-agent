@@ -16,15 +16,33 @@ export const closeObsidianView = () => patchOverlayState({ obsidian: false })
 const truncate = (value: string, max: number): string =>
   value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value
 
-type Focus = 'doc' | 'list'
+// Split YAML frontmatter off the body so the markdown renderer gets clean
+// markdown (otherwise `---` renders as a rule and `tags:` as raw text). The
+// tags line is surfaced separately. Math ($…$) is handled by the renderer.
+const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n?/
+
+const splitFrontmatter = (text: string): { body: string; tags: string } => {
+  const m = FRONTMATTER_RE.exec(text)
+
+  if (!m) {
+    return { body: text, tags: '' }
+  }
+
+  const tagMatch = /tags:\s*\[([^\]]*)\]/.exec(m[1])
+
+  return { body: text.slice(m[0].length), tags: tagMatch ? tagMatch[1].trim() : '' }
+}
+
+type PromptMode = 'comment' | 'create'
 
 interface ObsidianViewProps {
   gw: GatewayClient
   onClose: () => void
+  onDraft?: (command: string) => void
   t: Theme
 }
 
-export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
+export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
@@ -38,7 +56,7 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
   const [doc, setDoc] = useState<ObsidianNoteResponse | null>(null)
   const [docLoading, setDocLoading] = useState(false)
   const [docError, setDocError] = useState<null | string>(null)
-  const [focus, setFocus] = useState<Focus>('list')
+  const [prompt, setPrompt] = useState<null | { mode: PromptMode; value: string }>(null)
   const listScrollRef = useRef<null | ScrollBoxHandle>(null)
   const docScrollRef = useRef<null | ScrollBoxHandle>(null)
 
@@ -80,7 +98,6 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
       .then(raw => {
         setDoc(asRpcResult<ObsidianNoteResponse>(raw) ?? null)
         setDocLoading(false)
-        docScrollRef.current?.scrollTo(0)
       })
       .catch((err: unknown) => {
         setDocError(err instanceof Error ? err.message : String(err))
@@ -88,7 +105,6 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
       })
   }
 
-  // Create + seed a vault when none is connected, then reload into it.
   const runSetup = () => {
     setLoading(true)
     setFlash('setting up vault…')
@@ -100,12 +116,69 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
       })
   }
 
+  // Draft a chat prompt that targets the open note, then drop to the chat so
+  // the user can refine/send it — the "co-write with the desk" move.
+  const askAgent = () => {
+    if (!onDraft || !currentRel) {
+      return
+    }
+
+    onDraft(`Work on the Obsidian note "${currentRel}" — `)
+    onClose()
+  }
+
+  const submitPrompt = () => {
+    if (!prompt) {
+      return
+    }
+
+    const value = prompt.value.trim()
+    const mode = prompt.mode
+    setPrompt(null)
+
+    if (!value) {
+      return
+    }
+
+    if (mode === 'create') {
+      gw.request<unknown>('obsidian.create', { rel_path: value })
+        .then(raw => {
+          const created = (asRpcResult<{ rel_path?: string }>(raw) ?? {}).rel_path ?? value
+          setFlash(`created ${created}`)
+          load()
+        })
+        .catch((err: unknown) => setFlash(`create failed: ${err instanceof Error ? err.message : String(err)}`))
+
+      return
+    }
+
+    // comment → append to the open note
+    if (!currentRel) {
+      return
+    }
+
+    gw.request<unknown>('obsidian.append', { rel_path: currentRel, text: value })
+      .then(() => {
+        setFlash('comment added')
+        loadNote(currentRel)
+      })
+      .catch((err: unknown) => setFlash(`comment failed: ${err instanceof Error ? err.message : String(err)}`))
+  }
+
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gw])
 
-  // Keep selection in range as the note set changes.
+  // No real text cursor in this view — park it so it doesn't sit in the corner.
+  useEffect(() => {
+    stdout?.write('\x1b[?25l')
+
+    return () => {
+      stdout?.write('\x1b[?25h')
+    }
+  }, [stdout])
+
   useEffect(() => {
     if (notes.length && selected > notes.length - 1) {
       setSelected(notes.length - 1)
@@ -113,7 +186,6 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data])
 
-  // Load the selected note whenever its identity changes (selection or refresh).
   useEffect(() => {
     if (currentRel) {
       loadNote(currentRel)
@@ -123,7 +195,11 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentRel])
 
-  // Keep the selected row visible in the (1-line-per-note) list.
+  // Each opened note starts at the top (after its content renders).
+  useEffect(() => {
+    docScrollRef.current?.scrollTo(0)
+  }, [doc])
+
   useEffect(() => {
     listScrollRef.current?.scrollTo(Math.max(0, selected - 2))
   }, [selected])
@@ -138,12 +214,29 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
   const move = (delta: number) => setSelected(s => Math.max(0, Math.min(notes.length - 1, s + delta)))
 
   useInput((ch, key) => {
-    if (ch === 'q') {
-      return onClose()
+    // Inline prompt (new note / comment) captures input while open.
+    if (prompt) {
+      if (key.escape) {
+        return setPrompt(null)
+      }
+
+      if (key.return) {
+        return submitPrompt()
+      }
+
+      if (key.backspace || key.delete) {
+        return setPrompt(p => (p ? { ...p, value: p.value.slice(0, -1) } : p))
+      }
+
+      if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
+        return setPrompt(p => (p ? { ...p, value: p.value + ch } : p))
+      }
+
+      return
     }
 
-    if (key.escape) {
-      return focus === 'doc' ? setFocus('list') : onClose()
+    if (ch === 'q' || key.escape) {
+      return onClose()
     }
 
     if (!hasVault) {
@@ -162,53 +255,38 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
       return load(true)
     }
 
-    if (key.tab || ch === '\t') {
-      return setFocus(f => (f === 'list' ? 'doc' : 'list'))
+    if (ch === 'n') {
+      return setPrompt({ mode: 'create', value: '' })
     }
 
-    if (focus === 'list') {
-      if (key.upArrow || ch === 'k' || key.wheelUp) {
-        return move(-1)
-      }
-
-      if (key.downArrow || ch === 'j' || key.wheelDown) {
-        return move(1)
-      }
-
-      if (key.pageUp) {
-        return move(-pageSize)
-      }
-
-      if (key.pageDown) {
-        return move(pageSize)
-      }
-
-      if (key.return || key.rightArrow || ch === 'l') {
-        return setFocus('doc')
-      }
-
+    if (!notes.length) {
       return
     }
 
-    // focus === 'doc'
-    if (key.leftArrow || ch === 'h') {
-      return setFocus('list')
+    if (ch === 'c') {
+      return setPrompt({ mode: 'comment', value: '' })
     }
 
-    if (key.upArrow || ch === 'k' || key.wheelUp) {
-      return docScrollRef.current?.scrollBy(-2)
+    if (ch === 'a') {
+      return askAgent()
     }
 
-    if (key.downArrow || ch === 'j' || key.wheelDown) {
-      return docScrollRef.current?.scrollBy(2)
+    // List navigation (left): arrows / jk.
+    if (key.upArrow || ch === 'k') {
+      return move(-1)
     }
 
-    if (key.pageUp || (key.ctrl && ch === 'u')) {
-      return docScrollRef.current?.scrollBy(-pageSize)
+    if (key.downArrow || ch === 'j') {
+      return move(1)
     }
 
-    if (key.pageDown || (key.ctrl && ch === 'd')) {
+    // Document scroll (right): PgUp/PgDn, space, ctrl-u/d, wheel — no focus to switch.
+    if (key.pageDown || ch === ' ' || (key.ctrl && ch === 'd') || key.wheelDown) {
       return docScrollRef.current?.scrollBy(pageSize)
+    }
+
+    if (key.pageUp || (key.ctrl && ch === 'u') || key.wheelUp) {
+      return docScrollRef.current?.scrollBy(-pageSize)
     }
 
     if (ch === 'g') {
@@ -222,6 +300,7 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
 
   const listW = Math.max(22, Math.min(40, Math.floor(cols * 0.32)))
   const docWidth = Math.max(30, cols - listW - 6)
+  const { body: docBody, tags: docTags } = doc?.content ? splitFrontmatter(doc.content) : { body: '', tags: '' }
 
   let body
 
@@ -247,15 +326,14 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
               s
             </Text>{' '}
             to set one up. The desk will create a vault and seed it with a starter forecasting
-            knowledge base — the art of superforecasting, a getting-started guide, the core methods
-            (reference classes, Bayesian updating, calibration), and a question-dossier template, all
-            wikilinked into an index.
+            knowledge base — the art of superforecasting, a getting-started guide, the core methods,
+            and a question-dossier template, all wikilinked into an index.
           </Text>
         </Box>
         <Box marginTop={1}>
           <Text color={t.color.muted} wrap="wrap">
-            It is created at ~/Documents/Obsidian Vault by default; set OBSIDIAN_VAULT_PATH first to
-            choose a different location.
+            Created at ~/Documents/Obsidian Vault by default; set OBSIDIAN_VAULT_PATH first to choose
+            a different location.
           </Text>
         </Box>
       </Box>
@@ -263,16 +341,16 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
   } else if (notes.length === 0) {
     body = (
       <Text color={t.color.muted} wrap="wrap">
-        Vault is connected but empty of notes yet — ask the desk to sync learnings or write a forecast
-        dossier, and they will appear here.
+        Vault is connected but has no notes yet — press n to create one, or ask the desk to sync
+        learnings.
       </Text>
     )
   } else {
     body = (
       <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
-        {/* Left: the note list */}
+        {/* Left: note list */}
         <Box flexDirection="column" flexShrink={0} marginRight={2} width={listW}>
-          <Text bold={focus === 'list'} color={focus === 'list' ? t.color.primary : t.color.muted} wrap="truncate-end">
+          <Text bold color={t.color.label} wrap="truncate-end">
             {`Notes (${notes.length})`}
           </Text>
           <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} ref={listScrollRef}>
@@ -289,7 +367,6 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
 
                     event.stopPropagation?.()
                     setSelected(i)
-                    setFocus('list')
                   }}
                 >
                   <Text color={sel ? t.color.primary : t.color.muted}>{sel ? '▸ ' : '  '}</Text>
@@ -302,11 +379,16 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
           </ScrollBox>
         </Box>
 
-        {/* Right: the selected note */}
+        {/* Right: selected note */}
         <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
-          <Text bold={focus === 'doc'} color={focus === 'doc' ? t.color.primary : t.color.muted} wrap="truncate-end">
+          <Text bold color={t.color.label} wrap="truncate-end">
             {truncate(currentRel ?? 'no note', docWidth)}
           </Text>
+          {docTags ? (
+            <Text color={t.color.muted} wrap="truncate-end">
+              {truncate(docTags, docWidth)}
+            </Text>
+          ) : null}
           <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
             <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} ref={docScrollRef}>
               <Box flexDirection="column" paddingBottom={3} paddingRight={1}>
@@ -316,12 +398,14 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
                   <Text color={t.color.error} wrap="wrap">
                     {docError}
                   </Text>
-                ) : doc?.content ? (
-                  <Md cols={docWidth} t={t} text={doc.content} />
+                ) : docBody ? (
+                  <Md cols={docWidth} t={t} text={docBody} />
                 ) : (
                   <Text color={t.color.muted}>Select a note to read it.</Text>
                 )}
-                {doc?.truncated ? <Text color={t.color.muted}>{'\n… (truncated — open in Obsidian for the rest)'}</Text> : null}
+                {doc?.truncated ? (
+                  <Text color={t.color.muted}>{'\n… (truncated — open in Obsidian for the rest)'}</Text>
+                ) : null}
               </Box>
             </ScrollBox>
             <NoSelect flexShrink={0} marginLeft={1}>
@@ -360,17 +444,28 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
   const footerKeys = !hasVault
     ? 's set up vault · r retry · Esc/q close'
     : notes.length === 0
-      ? 'r refresh · Esc/q close'
-      : focus === 'list'
-        ? '↑↓ select · ⏎/→ read · Tab pane · r refresh · Esc/q close'
-        : '↑↓/jk scroll · PgUp/PgDn page · g/G · ←/Tab list · q close'
+      ? 'n new note · r refresh · Esc/q close'
+      : '↑↓ select · Space/PgDn scroll · n new · c comment · a ask desk · r refresh · q close'
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      {flash ? <Text color={t.color.accent}>{flash}</Text> : null}
-      <Text color={t.color.muted} wrap="truncate-end">
-        {footerKeys}
-      </Text>
+      {prompt ? (
+        <Text wrap="truncate-end">
+          <Text color={t.color.primary}>{prompt.mode === 'create' ? 'new note path: ' : 'comment: '}</Text>
+          <Text color={t.color.text}>{prompt.value}</Text>
+          <Text color={t.color.text} inverse>
+            {' '}
+          </Text>
+          <Text color={t.color.muted}>{'  ⏎ submit · Esc cancel'}</Text>
+        </Text>
+      ) : (
+        <>
+          {flash ? <Text color={t.color.accent}>{flash}</Text> : null}
+          <Text color={t.color.muted} wrap="truncate-end">
+            {footerKeys}
+          </Text>
+        </>
+      )}
     </Box>
   )
 

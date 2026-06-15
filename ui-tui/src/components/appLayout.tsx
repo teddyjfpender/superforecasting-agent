@@ -389,11 +389,18 @@ const CalendarViewPane = memo(function CalendarViewPane() {
   return <CalendarView gw={gw} onClose={() => patchOverlayState({ calendar: false })} t={ui.theme} />
 })
 
-const ObsidianViewPane = memo(function ObsidianViewPane() {
+const ObsidianViewPane = memo(function ObsidianViewPane({ onDraft }: { onDraft: (command: string) => void }) {
   const { gw } = useGateway()
   const ui = useStore($uiState)
 
-  return <ObsidianView gw={gw} onClose={() => patchOverlayState({ obsidian: false })} t={ui.theme} />
+  return (
+    <ObsidianView
+      gw={gw}
+      onClose={() => patchOverlayState({ obsidian: false })}
+      onDraft={onDraft}
+      t={ui.theme}
+    />
+  )
 })
 
 const StatusRulePane = memo(function StatusRulePane({
@@ -534,7 +541,7 @@ export const AppLayout = memo(function AppLayout({
               </PerfPane>
             ) : overlay.obsidian ? (
               <PerfPane id="obsidian">
-                <ObsidianViewPane />
+                <ObsidianViewPane onDraft={actions.draftCommand} />
               </PerfPane>
             ) : (
               <PerfPane id="agents">

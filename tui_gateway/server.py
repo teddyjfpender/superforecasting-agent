@@ -2716,6 +2716,52 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5011, str(e))
 
 
+@method("obsidian.create")
+def _(rid, params: dict) -> dict:
+    """Create a new note (refuses to clobber an existing one)."""
+    try:
+        from plugins.obsidian.vault import resolve_vault_path, safe_note_path, write_note
+
+        vault = resolve_vault_path()
+        if vault is None:
+            return _err(rid, 5012, "no Obsidian vault configured")
+        rel = str(params.get("rel_path") or "").strip()
+        if not rel:
+            return _err(rid, 5012, "rel_path is required")
+        path = safe_note_path(vault, rel)
+        if path.exists():
+            return _err(rid, 5012, f"note already exists: {path.relative_to(vault)}")
+        title = str(params.get("title") or path.stem).strip()
+        body = str(params.get("content") or f"---\ntags: [forecasting]\ntype: note\n---\n\n# {title}\n\n")
+        write_note(path, body)
+        return _ok(rid, {"ok": True, "rel_path": str(path.relative_to(vault))})
+    except Exception as e:
+        return _err(rid, 5012, str(e))
+
+
+@method("obsidian.append")
+def _(rid, params: dict) -> dict:
+    """Append text (a comment / note) to an existing note."""
+    try:
+        from plugins.obsidian.vault import resolve_vault_path, safe_note_path, write_note
+
+        vault = resolve_vault_path()
+        if vault is None:
+            return _err(rid, 5013, "no Obsidian vault configured")
+        rel = str(params.get("rel_path") or "").strip()
+        text = str(params.get("text") or "").strip()
+        if not rel or not text:
+            return _err(rid, 5013, "rel_path and text are required")
+        path = safe_note_path(vault, rel)
+        if not path.is_file():
+            return _err(rid, 5013, f"note not found: {rel}")
+        existing = path.read_text(encoding="utf-8", errors="replace").rstrip("\n")
+        write_note(path, f"{existing}\n\n{text}\n")
+        return _ok(rid, {"ok": True, "rel_path": rel})
+    except Exception as e:
+        return _err(rid, 5013, str(e))
+
+
 # ── forecast.calibration ─────────────────────────────────────────────
 # Structured calibration analytics for the TUI's native calibration view.
 # `forecast.command` already exposes the same numbers as CLI text; this RPC
