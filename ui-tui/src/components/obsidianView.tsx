@@ -204,6 +204,26 @@ interface ChatTurn {
   text: string
 }
 
+interface ChatTodo {
+  done: boolean
+  text: string
+}
+
+interface ChatState {
+  busy: boolean
+  confirmSave: boolean
+  input: string
+  status: string
+  stream: string
+  todos: ChatTodo[]
+  turns: ChatTurn[]
+}
+
+// Playful words for the "agent is working" status, cycled by the tick so it
+// reads as alive even before the first concrete event arrives.
+const THINKING_WORDS = ['thinking', 'pondering', 'reasoning', 'mulling', 'cooking', 'scheming', 'noodling']
+const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
 export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
@@ -234,9 +254,8 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
     sel: number
   }>(null)
 
-  const [chat, setChat] = useState<null | { busy: boolean; confirmSave: boolean; input: string; turns: ChatTurn[] }>(
-    null
-  )
+  const [chat, setChat] = useState<ChatState | null>(null)
+  const [spin, setSpin] = useState(0)
 
   const dirtyRef = useRef(false)
   const saveTimer = useRef<null | ReturnType<typeof setTimeout>>(null)
@@ -369,7 +388,7 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
   // vault. The agent shares the main session, so the exchange also lands in
   // the main transcript.
   const askAgent = () => {
-    setChat({ busy: false, confirmSave: false, input: '', turns: [] })
+    setChat({ busy: false, confirmSave: false, input: '', status: '', stream: '', todos: [], turns: [] })
   }
 
   const sendChat = (raw: string) => {
@@ -381,7 +400,9 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
 
     const context = currentRel ? `(About the Obsidian note "${currentRel}".)\n\n` : ''
 
-    setChat(c => (c ? { ...c, busy: true, input: '', turns: [...c.turns, { role: 'user', text }] } : c))
+    setChat(c =>
+      c ? { ...c, busy: true, input: '', status: 'sending', stream: '', todos: [], turns: [...c.turns, { role: 'user', text }] } : c
+    )
     gw.request<unknown>('prompt.submit', { session_id: sid ?? 'default', text: `${context}${text}` }).catch(
       (err: unknown) => {
         setChat(c =>
@@ -389,6 +410,7 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
             ? {
                 ...c,
                 busy: false,
+                status: '',
                 turns: [...c.turns, { role: 'system', text: `couldn't reach the desk: ${String(err)}` }]
               }
             : c
@@ -602,17 +624,95 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
       return
     }
 
-    const handler = (ev: { payload?: { message?: string; rendered?: string; text?: string }; session_id?: string; type: string }) => {
+     
+    const parseTodos = (raw: any): ChatTodo[] | undefined =>
+      Array.isArray(raw)
+        ?  
+          raw.map((td: any) => ({
+            done: td?.status === 'completed',
+            text: String(td?.content ?? td?.text ?? td?.subject ?? '').trim()
+          }))
+        : undefined
+
+     
+    const handler = (ev: any) => {
       if (ev.session_id && sid && ev.session_id !== sid) {
         return
       }
 
-      if (ev.type === 'message.complete') {
-        const text = (ev.payload?.text ?? ev.payload?.rendered ?? '').trim()
-        setChat(c => (c ? { ...c, busy: false, turns: text ? [...c.turns, { role: 'assistant', text }] : c.turns } : c))
-      } else if (ev.type === 'error') {
-        const message = ev.payload?.message ?? 'unknown error'
-        setChat(c => (c ? { ...c, busy: false, turns: [...c.turns, { role: 'system', text: `error: ${message}` }] } : c))
+      const p = ev.payload ?? {}
+
+      switch (ev.type as string) {
+        case 'error':
+          setChat(c =>
+            c
+              ? { ...c, busy: false, status: '', turns: [...c.turns, { role: 'system', text: `error: ${p.message ?? 'unknown error'}` }] }
+              : c
+          )
+
+          return
+
+        case 'message.complete':
+          setChat(c => {
+            if (!c) {
+              return c
+            }
+
+            const text = String(p.text ?? p.rendered ?? c.stream ?? '').trim()
+
+            return {
+              ...c,
+              busy: false,
+              status: '',
+              stream: '',
+              todos: [],
+              turns: text ? [...c.turns, { role: 'assistant', text }] : c.turns
+            }
+          })
+
+          return
+
+        case 'message.delta':
+          setChat(c => (c ? { ...c, status: 'writing', stream: c.stream + String(p.text ?? '') } : c))
+
+          return
+
+        case 'message.start':
+          setChat(c => (c ? { ...c, status: 'writing', stream: '' } : c))
+
+          return
+
+        case 'reasoning.available':
+
+        case 'reasoning.delta':
+          setChat(c => (c ? { ...c, status: 'reasoning' } : c))
+
+          return
+
+        case 'status.update':
+          setChat(c => (c ? { ...c, status: String(p.text || p.kind || c.status) } : c))
+
+          return
+
+        case 'thinking.delta':
+          setChat(c => (c ? { ...c, status: 'thinking' } : c))
+
+          return
+
+        case 'tool.complete':
+          setChat(c => (c ? { ...c, status: `${p.name ?? 'tool'} ✓`, todos: parseTodos(p.todos) ?? c.todos } : c))
+
+          return
+
+        case 'tool.generating':
+          setChat(c => (c ? { ...c, status: `drafting ${p.name ?? 'tool'}` } : c))
+
+          return
+
+        case 'tool.start':
+          setChat(c => (c ? { ...c, status: `running ${p.name ?? 'tool'}`, todos: parseTodos(p.todos) ?? c.todos } : c))
+
+          return
       }
     }
 
@@ -621,8 +721,20 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
     return () => {
       gw.off('event', handler)
     }
-     
+
   }, [chatOpen, sid, gw])
+
+  // Animate the spinner / thinking word while the desk is working.
+  const chatBusy = chat?.busy ?? false
+  useEffect(() => {
+    if (!chatBusy) {
+      return
+    }
+
+    const id = setInterval(() => setSpin(s => s + 1), 110)
+
+    return () => clearInterval(id)
+  }, [chatBusy])
 
   // Debounced autosave while editing.
   useEffect(() => {
@@ -1133,77 +1245,7 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
 
   let body
 
-  if (chat) {
-    const modalW = Math.max(40, Math.min(cols - 8, 92))
-
-    body = (
-      <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
-        <Box
-          borderColor={t.color.accent}
-          borderStyle="round"
-          flexDirection="column"
-          flexShrink={1}
-          minHeight={0}
-          paddingX={2}
-          paddingY={1}
-          width={modalW}
-        >
-          <Text wrap="truncate-end">
-            <Text bold color={t.color.primary}>
-              Ask the desk
-            </Text>
-            <Text color={t.color.muted}>{currentRel ? `  ·  ${docTitle}` : ''}</Text>
-          </Text>
-
-          <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
-            {chat.turns.length === 0 && !chat.busy ? (
-              <Text color={t.color.muted} wrap="wrap">
-                Chat with the desk about this note without leaving Obsidian. It shares your main
-                session, so the exchange also appears in the chat when you go back.
-              </Text>
-            ) : (
-              chat.turns.map((turn, i) => (
-                <Box flexDirection="column" key={i} marginTop={i ? 1 : 0}>
-                  <Text bold color={turn.role === 'user' ? t.color.primary : turn.role === 'system' ? t.color.error : t.color.accent}>
-                    {turn.role === 'user' ? 'you' : turn.role === 'system' ? 'system' : 'desk'}
-                  </Text>
-                  {turn.role === 'assistant' ? (
-                    <Md cols={modalW - 4} t={t} text={turn.text} />
-                  ) : (
-                    <Text color={turn.role === 'system' ? t.color.error : t.color.text} wrap="wrap">
-                      {turn.text}
-                    </Text>
-                  )}
-                </Box>
-              ))
-            )}
-            {chat.busy ? <Text color={t.color.muted}>desk is working…</Text> : null}
-          </ScrollBox>
-
-          {chat.confirmSave ? (
-            <Box marginTop={1}>
-              <Text color={t.color.warn} wrap="truncate-end">
-                Unsaved edits — save before leaving? y save · n discard · Esc keep chatting
-              </Text>
-            </Box>
-          ) : (
-            <>
-              <Box marginTop={1}>
-                <Text color={t.color.muted}>{'› '}</Text>
-                <Text color={t.color.text}>{chat.input}</Text>
-                <Text color={t.color.text} inverse>
-                  {' '}
-                </Text>
-              </Box>
-              <Text color={t.color.muted} wrap="truncate-end">
-                {chat.busy ? 'waiting for the desk…' : '⏎ send · Esc close'}
-              </Text>
-            </>
-          )}
-        </Box>
-      </Box>
-    )
-  } else if (search) {
+  if (search) {
     const modalW = Math.max(40, Math.min(cols - 8, 88))
 
     body = (
@@ -1691,11 +1733,128 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
     </Box>
   )
 
+  // Floating chat modal — drawn absolutely over the page (the doc stays
+  // visible behind it) with a live activity feed + streamed reply.
+  let chatOverlay = null
+
+  if (chat) {
+    const modalW = Math.max(40, Math.min(cols - 6, 96))
+    const spinner = SPINNER[spin % SPINNER.length]
+    const word = THINKING_WORDS[Math.floor(spin / 8) % THINKING_WORDS.length]
+
+    const liveLabel = chat.status && !['reasoning', 'sending', 'thinking', 'writing'].includes(chat.status)
+      ? chat.status
+      : chat.status === 'writing'
+        ? 'writing'
+        : chat.status === 'reasoning'
+          ? 'reasoning'
+          : word
+
+    chatOverlay = (
+      <Box
+        alignItems="center"
+        bottom={1}
+        justifyContent="center"
+        left={1}
+        position="absolute"
+        right={1}
+        top={1}
+      >
+        <Box
+          backgroundColor={t.color.completionBg}
+          borderColor={t.color.accent}
+          borderStyle="round"
+          flexDirection="column"
+          flexShrink={1}
+          minHeight={0}
+          paddingX={2}
+          paddingY={1}
+          width={modalW}
+        >
+          <Text wrap="truncate-end">
+            <Text bold color={t.color.primary}>
+              Ask the desk
+            </Text>
+            <Text color={t.color.muted}>{currentRel ? `  ·  ${docTitle}` : ''}</Text>
+          </Text>
+
+          <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
+            {chat.turns.length === 0 && !chat.busy ? (
+              <Text color={t.color.muted} wrap="wrap">
+                Chat with the desk about this note without leaving Obsidian. It shares your main
+                session, so the exchange is also in the chat when you go back.
+              </Text>
+            ) : (
+              chat.turns.map((turn, i) => (
+                <Box flexDirection="column" key={i} marginTop={i ? 1 : 0}>
+                  <Text bold color={turn.role === 'user' ? t.color.primary : turn.role === 'system' ? t.color.error : t.color.accent}>
+                    {turn.role === 'user' ? 'you' : turn.role === 'system' ? 'system' : 'desk'}
+                  </Text>
+                  {turn.role === 'assistant' ? (
+                    <Md cols={modalW - 4} t={t} text={turn.text} />
+                  ) : (
+                    <Text color={turn.role === 'system' ? t.color.error : t.color.text} wrap="wrap">
+                      {turn.text}
+                    </Text>
+                  )}
+                </Box>
+              ))
+            )}
+
+            {chat.busy ? (
+              <Box flexDirection="column" marginTop={chat.turns.length ? 1 : 0}>
+                <Text color={t.color.accent} wrap="truncate-end">
+                  {`${spinner} ${liveLabel}…`}
+                </Text>
+                {chat.todos.length > 0 ? (
+                  <Box flexDirection="column">
+                    {chat.todos.map((td, i) => (
+                      <Text color={td.done ? t.color.ok : t.color.muted} key={i} wrap="truncate-end">
+                        {`${td.done ? '☑' : '☐'} ${td.text}`}
+                      </Text>
+                    ))}
+                  </Box>
+                ) : null}
+                {chat.stream ? (
+                  <Text color={t.color.text} wrap="wrap">
+                    {chat.stream}
+                  </Text>
+                ) : null}
+              </Box>
+            ) : null}
+          </ScrollBox>
+
+          {chat.confirmSave ? (
+            <Box marginTop={1}>
+              <Text color={t.color.warn} wrap="truncate-end">
+                Unsaved edits — save before leaving? y save · n discard · Esc keep chatting
+              </Text>
+            </Box>
+          ) : (
+            <>
+              <Box marginTop={1}>
+                <Text color={t.color.muted}>{'› '}</Text>
+                <Text color={t.color.text}>{chat.input}</Text>
+                <Text color={t.color.text} inverse>
+                  {' '}
+                </Text>
+              </Box>
+              <Text color={t.color.muted} wrap="truncate-end">
+                {chat.busy ? `${spinner} the desk is on it — type to queue · Esc close` : '⏎ send · Esc close'}
+              </Text>
+            </>
+          )}
+        </Box>
+      </Box>
+    )
+  }
+
   return (
     <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
       {header}
       {body}
       {footer}
+      {chatOverlay}
     </Box>
   )
 }
