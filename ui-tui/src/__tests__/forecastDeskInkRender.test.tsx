@@ -357,7 +357,7 @@ describe('forecast desk Ink render', () => {
     const output = await renderForecastDesk(150, { landing: true })
     const compact = output.replace(/\s+/g, '')
 
-    for (const label of ['Home', 'Desk', 'Warnings', 'Calibration', 'Agents']) {
+    for (const label of ['Home', 'Desk', 'Warnings', 'Calibration', 'Agents', 'Help']) {
       expect(compact).toContain(label)
     }
   })

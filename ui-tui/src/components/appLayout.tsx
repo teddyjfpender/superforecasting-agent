@@ -18,6 +18,7 @@ import { PerfPane } from '../lib/perfPane.js'
 import { composerPromptText } from '../lib/prompt.js'
 
 import { AgentsOverlay } from './agentsOverlay.js'
+import { AlertsView } from './alertsView.js'
 import { ForecastPulse, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { HomeHero, Panel, SessionPanel } from './branding.js'
@@ -25,6 +26,7 @@ import { CalibrationView } from './calibrationView.js'
 import { ForecastsWorkspace } from './forecastsWorkspace.js'
 import { FpsOverlay } from './fpsOverlay.js'
 import { HelpHint } from './helpHint.js'
+import { HelpView } from './helpView.js'
 import { MessageLine } from './messageLine.js'
 import { NavBar } from './navBar.js'
 import { QueuedMessages } from './queuedMessages.js'
@@ -365,6 +367,19 @@ const CalibrationViewPane = memo(function CalibrationViewPane() {
   return <CalibrationView gw={gw} onClose={() => patchOverlayState({ calibration: false })} t={ui.theme} />
 })
 
+const AlertsViewPane = memo(function AlertsViewPane() {
+  const { gw } = useGateway()
+  const ui = useStore($uiState)
+
+  return <AlertsView gw={gw} onClose={() => patchOverlayState({ alerts: false })} t={ui.theme} />
+})
+
+const HelpViewPane = memo(function HelpViewPane() {
+  const ui = useStore($uiState)
+
+  return <HelpView onClose={() => patchOverlayState({ help: false })} t={ui.theme} />
+})
+
 const StatusRulePane = memo(function StatusRulePane({
   at,
   composer,
@@ -411,11 +426,13 @@ export const AppLayout = memo(function AppLayout({
 }: AppLayoutProps) {
   const overlay = useStore($overlayState)
   const ui = useStore($uiState)
+
   // A full-screen overlay (spawn tree, forecasts workspace, or calibration
   // view) takes over the viewport — hide the transcript while one is open.
   // The forecast desk surfaces live entirely in those overlays now (opened by
   // command); the main screen is just transcript + prompt + status.
-  const fullscreen = overlay.agents || overlay.forecasts || overlay.calibration
+  const fullscreen =
+    overlay.agents || overlay.forecasts || overlay.calibration || overlay.alerts || overlay.help
 
   // Landing = the first-run screen, before any real interaction. We hold it
   // through gateway connect / startup notices and only leave once a turn or a
@@ -468,7 +485,7 @@ export const AppLayout = memo(function AppLayout({
     <Shell {...shellProps}>
       <Box flexDirection="column" flexGrow={1}>
         <PerfPane id="navbar">
-          <NavBar onCommand={actions.runCommand} />
+          <NavBar />
         </PerfPane>
 
         {fullscreen ? (
@@ -480,6 +497,14 @@ export const AppLayout = memo(function AppLayout({
             ) : overlay.calibration ? (
               <PerfPane id="calibration">
                 <CalibrationViewPane />
+              </PerfPane>
+            ) : overlay.alerts ? (
+              <PerfPane id="alerts">
+                <AlertsViewPane />
+              </PerfPane>
+            ) : overlay.help ? (
+              <PerfPane id="help">
+                <HelpViewPane />
               </PerfPane>
             ) : (
               <PerfPane id="agents">

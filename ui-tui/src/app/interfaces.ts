@@ -75,12 +75,14 @@ export interface GatewayProviderProps {
 export interface OverlayState {
   agents: boolean
   agentsInitialHistoryIndex: number
+  alerts: boolean
   approval: ApprovalReq | null
   calibration: boolean
   clarify: ClarifyReq | null
   confirm: ConfirmReq | null
   forecasts: boolean
   forecastsInitialId: null | string
+  help: boolean
   modelPicker: boolean
   pager: null | PagerState
   picker: boolean

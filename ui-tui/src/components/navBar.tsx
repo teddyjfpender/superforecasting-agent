@@ -19,25 +19,36 @@ const NAV_TABS: NavTab[] = [
   { key: 'desk', label: 'Desk' },
   { key: 'warnings', label: 'Warnings' },
   { key: 'calibration', label: 'Calibration' },
-  { key: 'agents', label: 'Agents' }
+  { key: 'agents', label: 'Agents' },
+  { key: 'help', label: 'Help' }
 ]
 
 // Clearing every view flag returns to the chat/home route.
-const HOME_PATCH = { agents: false, calibration: false, forecasts: false, forecastsInitialId: null } as const
+const HOME_PATCH = {
+  agents: false,
+  alerts: false,
+  calibration: false,
+  forecasts: false,
+  forecastsInitialId: null,
+  help: false
+} as const
 
-export function NavBar({ onCommand }: { onCommand: (command: string) => void }) {
+export function NavBar() {
   const overlay = useStore($overlayState)
   const { theme: t } = useStore($uiState)
 
-  // Which tab is the active route. Warnings is an action (it surfaces the
-  // alerts panel on the home route), so it is never the persistent active tab.
+  // Which tab is the active route.
   const active = overlay.forecasts
     ? 'desk'
     : overlay.calibration
       ? 'calibration'
-      : overlay.agents
-        ? 'agents'
-        : 'home'
+      : overlay.alerts
+        ? 'warnings'
+        : overlay.agents
+          ? 'agents'
+          : overlay.help
+            ? 'help'
+            : 'home'
 
   const select = (key: string) => {
     switch (key) {
@@ -47,18 +58,17 @@ export function NavBar({ onCommand }: { onCommand: (command: string) => void }) 
       case 'desk':
         return patchOverlayState({ ...HOME_PATCH, forecasts: true })
 
+      case 'warnings':
+        return patchOverlayState({ ...HOME_PATCH, alerts: true })
+
       case 'calibration':
         return patchOverlayState({ ...HOME_PATCH, calibration: true })
 
       case 'agents':
         return patchOverlayState({ ...HOME_PATCH, agents: true, agentsInitialHistoryIndex: 0 })
 
-      case 'warnings':
-        // No dedicated alerts overlay yet — drop to home and surface the
-        // open-alerts panel via the same command the user would type.
-        patchOverlayState({ ...HOME_PATCH })
-
-        return onCommand('/alerts')
+      case 'help':
+        return patchOverlayState({ ...HOME_PATCH, help: true })
     }
   }
 

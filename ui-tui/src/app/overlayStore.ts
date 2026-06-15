@@ -5,12 +5,14 @@ import type { OverlayState } from './interfaces.js'
 const buildOverlayState = (): OverlayState => ({
   agents: false,
   agentsInitialHistoryIndex: 0,
+  alerts: false,
   approval: null,
   calibration: false,
   clarify: null,
   confirm: null,
   forecasts: false,
   forecastsInitialId: null,
+  help: false,
   modelPicker: false,
   pager: null,
   picker: false,
@@ -26,11 +28,13 @@ export const $isBlocked = computed(
   $overlayState,
   ({
     agents,
+    alerts,
     approval,
     calibration,
     clarify,
     confirm,
     forecasts,
+    help,
     modelPicker,
     pager,
     picker,
@@ -41,11 +45,13 @@ export const $isBlocked = computed(
   }) =>
     Boolean(
       agents ||
+        alerts ||
         approval ||
         calibration ||
         clarify ||
         confirm ||
         forecasts ||
+        help ||
         modelPicker ||
         pager ||
         picker ||
