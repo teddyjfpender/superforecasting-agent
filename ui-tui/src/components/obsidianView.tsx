@@ -1440,7 +1440,7 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
         ) : null}
 
         {/* Right: selected note */}
-        <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
+        <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} minWidth={0}>
           {/* Header is fixed-height so it never collapses onto the body. */}
           <Box flexDirection="column" flexShrink={0}>
             <Text bold color={t.color.text} wrap="truncate-end">
@@ -1494,15 +1494,15 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
                           blockRefs.current[i] = el
                         }}
                       >
-                        <Text color={t.color.primary}>{onCursor ? '▎' : ' '}</Text>
-                        <Box flexGrow={1} flexShrink={1}>
+                        <Text color={t.color.primary}>{onCursor ? '▎ ' : '  '}</Text>
+                        <Box flexGrow={1} flexShrink={1} minWidth={0}>
                           <Md
                             activeWikiLink={
                               focusedLink >= 0 && docLinks[focusedLink]?.block === i
                                 ? focusedLink - blockLinkBase[i]!
                                 : undefined
                             }
-                            cols={docWidth - 1}
+                            cols={Math.max(10, docWidth - 2)}
                             onWikiLink={(target: string) => jumpTo(resolveTarget(target))}
                             t={t}
                             text={b.text}
@@ -1747,6 +1747,9 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
 
   if (chat) {
     const modalW = Math.max(40, Math.min(cols - 6, 96))
+    // Fixed height so a long reply scrolls inside the card instead of growing
+    // the box until the absolute layout breaks (which collapsed the modal).
+    const modalH = Math.max(8, Math.min(termRows - 4, 30))
     const spinner = SPINNER[spin % SPINNER.length]
     const word = THINKING_WORDS[Math.floor(spin / 8) % THINKING_WORDS.length]
 
@@ -1769,11 +1772,10 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
         top={1}
       >
         <Box
-          backgroundColor={t.color.completionBg}
           borderColor={t.color.accent}
           borderStyle="round"
           flexDirection="column"
-          flexShrink={1}
+          height={modalH}
           minHeight={0}
           paddingX={2}
           paddingY={1}
