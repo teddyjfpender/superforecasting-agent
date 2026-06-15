@@ -17,8 +17,10 @@ type NavTab = { key: string; label: string }
 const NAV_TABS: NavTab[] = [
   { key: 'home', label: 'Home' },
   { key: 'desk', label: 'Desk' },
+  { key: 'calendar', label: 'Calendar' },
   { key: 'warnings', label: 'Warnings' },
   { key: 'calibration', label: 'Calibration' },
+  { key: 'obsidian', label: 'Obsidian' },
   { key: 'agents', label: 'Agents' },
   { key: 'help', label: 'Help' }
 ]
@@ -27,10 +29,12 @@ const NAV_TABS: NavTab[] = [
 const HOME_PATCH = {
   agents: false,
   alerts: false,
+  calendar: false,
   calibration: false,
   forecasts: false,
   forecastsInitialId: null,
-  help: false
+  help: false,
+  obsidian: false
 } as const
 
 export function NavBar() {
@@ -40,15 +44,19 @@ export function NavBar() {
   // Which tab is the active route.
   const active = overlay.forecasts
     ? 'desk'
-    : overlay.calibration
-      ? 'calibration'
-      : overlay.alerts
-        ? 'warnings'
-        : overlay.agents
-          ? 'agents'
-          : overlay.help
-            ? 'help'
-            : 'home'
+    : overlay.calendar
+      ? 'calendar'
+      : overlay.calibration
+        ? 'calibration'
+        : overlay.alerts
+          ? 'warnings'
+          : overlay.obsidian
+            ? 'obsidian'
+            : overlay.agents
+              ? 'agents'
+              : overlay.help
+                ? 'help'
+                : 'home'
 
   const select = (key: string) => {
     switch (key) {
@@ -58,11 +66,17 @@ export function NavBar() {
       case 'desk':
         return patchOverlayState({ ...HOME_PATCH, forecasts: true })
 
+      case 'calendar':
+        return patchOverlayState({ ...HOME_PATCH, calendar: true })
+
       case 'warnings':
         return patchOverlayState({ ...HOME_PATCH, alerts: true })
 
       case 'calibration':
         return patchOverlayState({ ...HOME_PATCH, calibration: true })
+
+      case 'obsidian':
+        return patchOverlayState({ ...HOME_PATCH, obsidian: true })
 
       case 'agents':
         return patchOverlayState({ ...HOME_PATCH, agents: true, agentsInitialHistoryIndex: 0 })

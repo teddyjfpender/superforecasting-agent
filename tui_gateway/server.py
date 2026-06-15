@@ -2583,6 +2583,80 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
+@method("obsidian.status")
+def _(rid, params: dict) -> dict:
+    """Vault status + a list of the desk's notes for the Obsidian view.
+
+    The ledger is the source of truth; the vault is a published view. This
+    enumerates the vault's markdown notes (Forecasting/ first, then most-recent),
+    with a title + one-line excerpt, so the TUI can browse the write-ups and
+    dossiers the agent has synced. Bounded to keep the payload small.
+    """
+    try:
+        from plugins.obsidian.vault import resolve_vault_path
+
+        vault = resolve_vault_path()
+        if vault is None:
+            return _ok(rid, {"vault": None, "exists": False, "count": 0, "notes": []})
+
+        limit = int(params.get("limit") or 200)
+        md_files: list[Path] = []
+        for root, dirs, files in os.walk(vault):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]  # skip .obsidian etc.
+            for name in files:
+                if name.endswith(".md"):
+                    md_files.append(Path(root) / name)
+
+        def _sort_key(p: Path):
+            try:
+                rel = p.relative_to(vault)
+                mtime = p.stat().st_mtime
+            except OSError:
+                return (2, 0.0)
+            forecasting_first = 0 if str(rel).startswith("Forecasting") else 1
+            return (forecasting_first, -mtime)
+
+        md_files.sort(key=_sort_key)
+
+        notes: list[dict] = []
+        for p in md_files[:limit]:
+            try:
+                rel = p.relative_to(vault)
+                st = p.stat()
+                text = p.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            title = p.stem
+            excerpt = ""
+            for line in text.splitlines():
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                if stripped.startswith("#"):
+                    if title == p.stem:
+                        title = stripped.lstrip("#").strip() or title
+                    continue
+                if stripped.startswith(("---", "```", ">", "<!--")):
+                    continue
+                excerpt = stripped[:160]
+                break
+            folder = str(rel.parent) if str(rel.parent) != "." else ""
+            notes.append(
+                {
+                    "title": title,
+                    "rel_path": str(rel),
+                    "folder": folder,
+                    "modified": datetime.fromtimestamp(st.st_mtime).isoformat(),
+                    "size": st.st_size,
+                    "excerpt": excerpt,
+                }
+            )
+
+        return _ok(rid, {"vault": str(vault), "exists": True, "count": len(md_files), "notes": notes})
+    except Exception as e:
+        return _err(rid, 5009, str(e))
+
+
 # ── forecast.calibration ─────────────────────────────────────────────
 # Structured calibration analytics for the TUI's native calibration view.
 # `forecast.command` already exposes the same numbers as CLI text; this RPC

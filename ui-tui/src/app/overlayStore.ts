@@ -7,6 +7,7 @@ const buildOverlayState = (): OverlayState => ({
   agentsInitialHistoryIndex: 0,
   alerts: false,
   approval: null,
+  calendar: false,
   calibration: false,
   clarify: null,
   confirm: null,
@@ -14,6 +15,7 @@ const buildOverlayState = (): OverlayState => ({
   forecastsInitialId: null,
   help: false,
   modelPicker: false,
+  obsidian: false,
   pager: null,
   picker: false,
   secret: null,
@@ -30,12 +32,14 @@ export const $isBlocked = computed(
     agents,
     alerts,
     approval,
+    calendar,
     calibration,
     clarify,
     confirm,
     forecasts,
     help,
     modelPicker,
+    obsidian,
     pager,
     picker,
     secret,
@@ -47,12 +51,14 @@ export const $isBlocked = computed(
       agents ||
         alerts ||
         approval ||
+        calendar ||
         calibration ||
         clarify ||
         confirm ||
         forecasts ||
         help ||
         modelPicker ||
+        obsidian ||
         pager ||
         picker ||
         secret ||

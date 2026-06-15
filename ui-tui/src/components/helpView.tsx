@@ -15,8 +15,10 @@ export const closeHelpView = () => patchOverlayState({ help: false })
 const VIEWS: [string, string][] = [
   ['Home', 'the chat desk — ask a forecasting question to begin'],
   ['Desk', 'the forecasts workspace (/forecast desk)'],
+  ['Calendar', 'upcoming closes + resolutions, by date'],
   ['Warnings', 'open alerts, review queue, stale items, readiness gaps'],
   ['Calibration', 'reliability curve + signed-bias verdict (/calibration --visual)'],
+  ['Obsidian', 'browse the vault write-ups + dossiers the desk publishes'],
   ['Agents', 'the subagent / spawn-tree view']
 ]
 

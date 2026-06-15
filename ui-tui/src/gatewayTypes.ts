@@ -1461,3 +1461,20 @@ export type GatewayEvent =
       type: 'message.complete'
     }
   | { payload?: { message?: string }; session_id?: string; type: 'error' }
+
+// ── obsidian.status (the Obsidian vault view) ───────────────────────────────
+export interface ObsidianNote {
+  excerpt?: string
+  folder?: string
+  modified?: string
+  rel_path?: string
+  size?: number
+  title?: string
+}
+
+export interface ObsidianStatusResponse {
+  count?: number
+  exists?: boolean
+  notes?: ObsidianNote[]
+  vault?: null | string
+}

@@ -77,6 +77,7 @@ export interface OverlayState {
   agentsInitialHistoryIndex: number
   alerts: boolean
   approval: ApprovalReq | null
+  calendar: boolean
   calibration: boolean
   clarify: ClarifyReq | null
   confirm: ConfirmReq | null
@@ -84,6 +85,7 @@ export interface OverlayState {
   forecastsInitialId: null | string
   help: boolean
   modelPicker: boolean
+  obsidian: boolean
   pager: null | PagerState
   picker: boolean
   secret: null | SecretReq

@@ -22,6 +22,7 @@ import { AlertsView } from './alertsView.js'
 import { ForecastPulse, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { HomeHero, Panel, SessionPanel } from './branding.js'
+import { CalendarView } from './calendarView.js'
 import { CalibrationView } from './calibrationView.js'
 import { ForecastsWorkspace } from './forecastsWorkspace.js'
 import { FpsOverlay } from './fpsOverlay.js'
@@ -29,6 +30,7 @@ import { HelpHint } from './helpHint.js'
 import { HelpView } from './helpView.js'
 import { MessageLine } from './messageLine.js'
 import { NavBar } from './navBar.js'
+import { ObsidianView } from './obsidianView.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
@@ -380,6 +382,20 @@ const HelpViewPane = memo(function HelpViewPane() {
   return <HelpView onClose={() => patchOverlayState({ help: false })} t={ui.theme} />
 })
 
+const CalendarViewPane = memo(function CalendarViewPane() {
+  const { gw } = useGateway()
+  const ui = useStore($uiState)
+
+  return <CalendarView gw={gw} onClose={() => patchOverlayState({ calendar: false })} t={ui.theme} />
+})
+
+const ObsidianViewPane = memo(function ObsidianViewPane() {
+  const { gw } = useGateway()
+  const ui = useStore($uiState)
+
+  return <ObsidianView gw={gw} onClose={() => patchOverlayState({ obsidian: false })} t={ui.theme} />
+})
+
 const StatusRulePane = memo(function StatusRulePane({
   at,
   composer,
@@ -432,7 +448,13 @@ export const AppLayout = memo(function AppLayout({
   // The forecast desk surfaces live entirely in those overlays now (opened by
   // command); the main screen is just transcript + prompt + status.
   const fullscreen =
-    overlay.agents || overlay.forecasts || overlay.calibration || overlay.alerts || overlay.help
+    overlay.agents ||
+    overlay.forecasts ||
+    overlay.calibration ||
+    overlay.alerts ||
+    overlay.help ||
+    overlay.calendar ||
+    overlay.obsidian
 
   // Landing = the first-run screen, before any real interaction. We hold it
   // through gateway connect / startup notices and only leave once a turn or a
@@ -505,6 +527,14 @@ export const AppLayout = memo(function AppLayout({
             ) : overlay.help ? (
               <PerfPane id="help">
                 <HelpViewPane />
+              </PerfPane>
+            ) : overlay.calendar ? (
+              <PerfPane id="calendar">
+                <CalendarViewPane />
+              </PerfPane>
+            ) : overlay.obsidian ? (
+              <PerfPane id="obsidian">
+                <ObsidianViewPane />
               </PerfPane>
             ) : (
               <PerfPane id="agents">
