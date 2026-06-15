@@ -48,6 +48,7 @@ import {
   type TailSeverity,
   unearnedHeadline
 } from '../lib/forecastTail.js'
+import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
 import type { PanelSection } from '../types.js'
@@ -479,9 +480,13 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
 
-  const [items, setItems] = useState<ForecastWorkspaceItem[]>([])
-  const [theses, setTheses] = useState<ForecastThesis[]>([])
-  const [factors, setFactors] = useState<ForecastFactor[]>([])
+  // Hydrate from the last workspace payload so reopening the desk is instant
+  // (it then refreshes in the background). The cache survives unmount.
+  const cachedWs = getOverlayCache<ForecastWorkspaceResponse>('forecast.workspace')
+
+  const [items, setItems] = useState<ForecastWorkspaceItem[]>(() => cachedWs?.forecasts ?? [])
+  const [theses, setTheses] = useState<ForecastThesis[]>(() => cachedWs?.theses ?? [])
+  const [factors, setFactors] = useState<ForecastFactor[]>(() => cachedWs?.factors ?? [])
   // The active thesis lens: null = ALL FORECASTS (no lens). When set to a thesis
   // id, the forecast rows in the left column are filtered to that thesis's
   // members and the right pane leads with the thesis read.
@@ -490,13 +495,18 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
   // to a factor id, the forecast rows collapse to that factor's constituent ids.
   const [factorLensId, setFactorLensId] = useState<null | string>(null)
 
-  const [desk, setDesk] = useState<{ active: number; alerts: number; closing: number; generatedAt?: string }>({
-    active: 0,
-    alerts: 0,
-    closing: 0
-  })
+  const [desk, setDesk] = useState<{ active: number; alerts: number; closing: number; generatedAt?: string }>(() =>
+    cachedWs
+      ? {
+          active: cachedWs.active_count ?? (cachedWs.forecasts ?? []).length,
+          alerts: cachedWs.open_alert_count ?? 0,
+          closing: cachedWs.closing_soon_count ?? 0,
+          generatedAt: cachedWs.generated_at
+        }
+      : { active: 0, alerts: 0, closing: 0 }
+  )
 
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!cachedWs)
   const [error, setError] = useState<null | string>(null)
   const [cursor, setCursor] = useState(0)
   const [focus, setFocus] = useState<'detail' | 'list'>('list')
@@ -516,7 +526,7 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
   const wide = cols >= WIDE_COLS
 
   const load = (announce = false) => {
-    setLoading(true)
+    setLoading(!cachedWs)
     // Load the FULL active book so the list + `/` filter cover every question
     // (a small cap silently drops the oldest forecasts once the book grows).
     gw.request<unknown>('forecast.workspace', { limit: 1000 })
@@ -530,6 +540,7 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
           return
         }
 
+        setOverlayCache('forecast.workspace', result)
         const forecasts = result.forecasts ?? []
         setItems(forecasts)
         setTheses(result.theses ?? [])
@@ -1941,16 +1952,21 @@ const spreadDelta = (probability: null | number | undefined, aggregate: null | n
 // investigate (not average away). The scalar is computed server-side and
 // carried inside spread_summary (see forecasting/panel.disagreement_signal).
 function disagreementBand(index: number): 'calm' | 'moderate' | 'high' | 'severe' {
-  if (index < 0.15) return 'calm'
-  if (index < 0.4) return 'moderate'
-  if (index < 0.65) return 'high'
+  if (index < 0.15) {return 'calm'}
+
+  if (index < 0.4) {return 'moderate'}
+
+  if (index < 0.65) {return 'high'}
+
   return 'severe'
 }
 
 export function DisagreementMeter({ spread, t }: { spread?: Record<string, number>; t: Theme }) {
   const index = spread?.disagreement_index
-  if (!finite(index)) return null
+
+  if (!finite(index)) {return null}
   const band = disagreementBand(index)
+
   const color =
     band === 'calm'
       ? t.color.ok
@@ -1959,9 +1975,11 @@ export function DisagreementMeter({ spread, t }: { spread?: Record<string, numbe
         : band === 'high'
           ? t.color.warn
           : t.color.error
+
   const cells = 10
   const filled = Math.max(0, Math.min(cells, Math.round(index * cells)))
   const bar = '█'.repeat(filled) + '░'.repeat(cells - filled)
+
   return (
     <Text wrap="truncate-end">
       <Text color={t.color.muted}>{'disagree  '}</Text>

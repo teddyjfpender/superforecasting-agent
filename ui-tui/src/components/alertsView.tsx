@@ -8,6 +8,7 @@ import type {
   ForecastDashboardResponse,
   ForecastDashboardReview
 } from '../gatewayTypes.js'
+import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
 
@@ -45,15 +46,18 @@ export function AlertsView({ gw, onClose, t }: AlertsViewProps) {
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
 
-  const [data, setData] = useState<ForecastDashboardResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState<ForecastDashboardResponse | null>(
+    () => getOverlayCache<ForecastDashboardResponse>('forecast.dashboard:alerts') ?? null
+  )
+
+  const [loading, setLoading] = useState(!data)
   const [error, setError] = useState<null | string>(null)
   const [flash, setFlash] = useState('')
   const [now, setNow] = useState(0)
   const scrollRef = useRef<null | ScrollBoxHandle>(null)
 
   const load = (announce = false) => {
-    setLoading(true)
+    setLoading(!data)
     gw.request<unknown>('forecast.dashboard', { limit: 50 })
       .then(raw => {
         const result = asRpcResult<ForecastDashboardResponse>(raw)
@@ -65,6 +69,7 @@ export function AlertsView({ gw, onClose, t }: AlertsViewProps) {
           return
         }
 
+        setOverlayCache('forecast.dashboard:alerts', result)
         setData(result)
         setError(null)
         setLoading(false)

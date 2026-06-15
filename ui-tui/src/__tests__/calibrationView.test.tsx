@@ -1,9 +1,14 @@
 import { PassThrough } from 'stream'
 
 import React from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { ForecastCalibrationBias, ForecastCalibrationResponse } from '../gatewayTypes.js'
+import { clearOverlayCache } from '../lib/overlayCache.js'
+
+// The overlay cache is a process-lived singleton; reset it so one test's
+// fixture doesn't bleed into the next (e.g. the empty-state case).
+beforeEach(() => clearOverlayCache())
 
 const ESC = String.fromCharCode(27)
 const BEL = String.fromCharCode(7)

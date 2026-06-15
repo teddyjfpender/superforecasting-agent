@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type { ForecastDashboardResponse } from '../gatewayTypes.js'
+import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
 
@@ -91,15 +92,19 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
 
-  const [data, setData] = useState<ForecastDashboardResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  // Render the last dashboard immediately on reopen, refresh in the background.
+  const [data, setData] = useState<ForecastDashboardResponse | null>(
+    () => getOverlayCache<ForecastDashboardResponse>('forecast.dashboard') ?? null
+  )
+
+  const [loading, setLoading] = useState(!data)
   const [error, setError] = useState<null | string>(null)
   const [flash, setFlash] = useState('')
   const [now, setNow] = useState(0)
   const scrollRef = useRef<null | ScrollBoxHandle>(null)
 
   const load = (announce = false) => {
-    setLoading(true)
+    setLoading(!data)
     gw.request<unknown>('forecast.dashboard', { limit: 200 })
       .then(raw => {
         const result = asRpcResult<ForecastDashboardResponse>(raw)
@@ -111,6 +116,7 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
           return
         }
 
+        setOverlayCache('forecast.dashboard', result)
         setData(result)
         setError(null)
         setLoading(false)

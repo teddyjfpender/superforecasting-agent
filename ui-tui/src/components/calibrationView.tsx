@@ -11,6 +11,7 @@ import type {
   ForecastCalibrationSummary
 } from '../gatewayTypes.js'
 import { bandChart, type BandPoint, pct } from '../lib/forecastCharts.js'
+import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
 
@@ -162,15 +163,18 @@ export function CalibrationView({ gw, onClose, t }: CalibrationViewProps) {
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
 
-  const [data, setData] = useState<ForecastCalibrationResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState<ForecastCalibrationResponse | null>(
+    () => getOverlayCache<ForecastCalibrationResponse>('forecast.calibration') ?? null
+  )
+
+  const [loading, setLoading] = useState(!data)
   const [error, setError] = useState<null | string>(null)
   const [flash, setFlash] = useState('')
   const [now, setNow] = useState(0)
   const scrollRef = useRef<null | ScrollBoxHandle>(null)
 
   const load = (announce = false) => {
-    setLoading(true)
+    setLoading(!data)
     gw.request<unknown>('forecast.calibration', {})
       .then(raw => {
         const result = asRpcResult<ForecastCalibrationResponse>(raw)
@@ -182,6 +186,7 @@ export function CalibrationView({ gw, onClose, t }: CalibrationViewProps) {
           return
         }
 
+        setOverlayCache('forecast.calibration', result)
         setData(result)
         setError(null)
         setLoading(false)

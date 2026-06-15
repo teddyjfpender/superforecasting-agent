@@ -11,6 +11,7 @@ import type {
   ObsidianStatusResponse
 } from '../gatewayTypes.js'
 import { highlightMarkdownLine } from '../lib/markdownEditorHighlight.js'
+import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
 
@@ -229,8 +230,13 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
 
-  const [data, setData] = useState<ObsidianStatusResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  // Render the last known vault immediately on reopen, then refresh in the
+  // background — reopening should feel instant, not flash a loading screen.
+  const [data, setData] = useState<ObsidianStatusResponse | null>(
+    () => getOverlayCache<ObsidianStatusResponse>('obsidian.status') ?? null
+  )
+
+  const [loading, setLoading] = useState(!data)
   const [error, setError] = useState<null | string>(null)
   const [flash, setFlash] = useState('')
   const [now, setNow] = useState(0)
@@ -333,7 +339,8 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
   }
 
   const load = (announce = false) => {
-    setLoading(true)
+    // Only show the loading screen when we have nothing cached to show.
+    setLoading(!data)
     gw.request<unknown>('obsidian.status', { limit: 200 })
       .then(raw => {
         const result = asRpcResult<ObsidianStatusResponse>(raw)
@@ -345,6 +352,7 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
           return
         }
 
+        setOverlayCache('obsidian.status', result)
         setData(result)
         setError(null)
         setLoading(false)
