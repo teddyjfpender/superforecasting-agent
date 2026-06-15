@@ -1414,6 +1414,9 @@ DEFAULT_CONFIG = {
         "reasoning_effort": "",  # reasoning effort for subagents: "xhigh", "high", "medium",
                                  # "low", "minimal", "none" (empty = inherit parent's level)
         "max_concurrent_children": 3,  # max parallel children per batch; floor of 1 enforced, no ceiling
+        "max_async_children": 3,  # max concurrent delegate_task(background=true) subagents; new
+                                  # dispatches are REJECTED at capacity (not queued). Floor of 1,
+                                  # no ceiling. Env override: DELEGATION_MAX_ASYNC_CHILDREN.
         # Orchestrator role controls (see tools/delegate_tool.py:_get_max_spawn_depth
         # and _get_orchestrator_enabled).  Values are clamped to [1, 3] with a
         # warning log if out of range.

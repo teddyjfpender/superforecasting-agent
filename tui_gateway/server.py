@@ -384,6 +384,14 @@ def _finalize_session(session: dict | None, end_reason: str = "tui_close") -> No
 
 
 def _shutdown_sessions() -> None:
+    # Interrupt dangling background subagents so they don't keep running with
+    # no one to deliver their result to.
+    try:
+        from tools.async_delegation import interrupt_all as _interrupt_async
+
+        _interrupt_async(reason="tui_shutdown")
+    except Exception:
+        pass
     for session in list(_sessions.values()):
         _finalize_session(session, end_reason="tui_shutdown")
         try:
@@ -3326,17 +3334,29 @@ def _(rid, params: dict) -> dict:
     from tools.delegate_tool import (
         is_spawn_paused,
         list_active_subagents,
+        _get_max_async_children,
         _get_max_concurrent_children,
         _get_max_spawn_depth,
     )
+
+    # Background (async) delegations live in their own registry, not the
+    # synchronous subagent list — surface both so the TUI can show them.
+    try:
+        from tools.async_delegation import list_async_delegations
+
+        async_delegations = list_async_delegations()
+    except Exception:
+        async_delegations = []
 
     return _ok(
         rid,
         {
             "active": list_active_subagents(),
+            "async": async_delegations,
             "paused": is_spawn_paused(),
             "max_spawn_depth": _get_max_spawn_depth(),
             "max_concurrent_children": _get_max_concurrent_children(),
+            "max_async_children": _get_max_async_children(),
         },
     )
 

@@ -846,6 +846,13 @@ def _run_cleanup():
         _cleanup_all_terminals()
     except Exception:
         pass
+    # Interrupt any dangling background subagents so they don't keep burning
+    # tokens after the session ends.
+    try:
+        from tools.async_delegation import interrupt_all as _interrupt_async
+        _interrupt_async(reason="CLI shutdown")
+    except Exception:
+        pass
     try:
         _cleanup_all_browsers()
     except Exception:
@@ -5361,18 +5368,27 @@ class HermesCLI:
         Inspired by OpenAI Codex's separation of interrupt (stop current turn)
         from /stop (clean up background processes). See openai/codex#14602.
         """
+        from tools.async_delegation import active_count, interrupt_all
         from tools.process_registry import process_registry
 
         processes = process_registry.list_sessions()
         running = [p for p in processes if p.get("status") == "running"]
+        # Background subagents live in the async-delegation registry, not the
+        # process registry — interrupt them here too or /stop misses them.
+        n_async = active_count()
 
-        if not running:
+        if not running and not n_async:
             print("  No running background processes.")
             return
 
-        print(f"  Stopping {len(running)} background process(es)...")
-        killed = process_registry.kill_all()
-        print(f"  ✅ Stopped {killed} process(es).")
+        if running:
+            print(f"  Stopping {len(running)} background process(es)...")
+            killed = process_registry.kill_all()
+            print(f"  ✅ Stopped {killed} process(es).")
+
+        if n_async:
+            stopped = interrupt_all(reason="/stop")
+            print(f"  ✅ Interrupted {stopped} background delegation(s).")
 
     def _handle_agents_command(self):
         """Handle /agents — show background processes and agent status."""
@@ -5390,6 +5406,21 @@ class HermesCLI:
 
         if finished:
             _cprint(f"  Recently finished: {len(finished)}")
+
+        # Background subagents (delegate_task(background=true)) live outside the
+        # process registry — surface them here too.
+        try:
+            from tools.async_delegation import list_async_delegations
+
+            delegations = list_async_delegations()
+            running_d = [d for d in delegations if d.get("status") == "running"]
+            if running_d:
+                _cprint(f"  Background delegations: {len(running_d)} running")
+                for d in running_d:
+                    goal = (d.get("goal", "") or "")[:60]
+                    _cprint(f"    {d.get('delegation_id', '?')} · {d.get('status')} · {goal}")
+        except Exception:
+            pass
 
         agent_running = getattr(self, "_agent_running", False)
         _cprint(f"  Agent: {'running' if agent_running else 'idle'}")

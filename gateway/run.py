@@ -1464,6 +1464,11 @@ def _format_gateway_process_notification(evt: dict) -> "str | None":
         text += "]"
         return text
 
+    if evt_type == "async_delegation":
+        # Reuse the shared rich task-source formatter.
+        from tools.process_registry import format_process_notification
+        return format_process_notification(evt)
+
     return None
 
 
@@ -5756,6 +5761,16 @@ class GatewayRunner:
                 except Exception as _e:
                     logger.debug("process_registry.kill_all (%s) error: %s", phase, _e)
                 try:
+                    from tools.async_delegation import interrupt_all as _interrupt_async
+                    _async_n = _interrupt_async(reason=f"gateway shutdown ({phase})")
+                    if _async_n:
+                        logger.info(
+                            "Shutdown (%s): interrupted %d background delegation(s)",
+                            phase, _async_n,
+                        )
+                except Exception as _e:
+                    logger.debug("async interrupt_all (%s) error: %s", phase, _e)
+                try:
                     from tools.terminal_tool import cleanup_all_environments
                     cleanup_all_environments()
                 except Exception as _e:
@@ -8743,17 +8758,19 @@ class GatewayRunner:
             except Exception as e:
                 logger.error("Process watcher setup error: %s", e)
 
-            # Drain watch pattern notifications that arrived during the agent run.
-            # Watch events and completions share the same queue; completions are
-            # already handled by the per-process watcher task above, so we only
-            # inject watch-type events here.
+            # Drain watch pattern notifications + async-delegation completions
+            # that arrived during the agent run. These share the queue with
+            # process completions (handled by the per-process watcher task
+            # above), so we only inject watch-type and async_delegation events
+            # here. Async-delegation events carry session_key, which
+            # _build_process_event_source resolves to a source on its own.
             try:
                 from tools.process_registry import process_registry as _pr
                 _watch_events = []
                 while not _pr.completion_queue.empty():
                     evt = _pr.completion_queue.get_nowait()
                     evt_type = evt.get("type", "completion")
-                    if evt_type in {"watch_match", "watch_disabled"}:
+                    if evt_type in {"watch_match", "watch_disabled", "async_delegation"}:
                         _watch_events.append(evt)
                     # else: completion events are handled by the watcher task
                 for evt in _watch_events:
