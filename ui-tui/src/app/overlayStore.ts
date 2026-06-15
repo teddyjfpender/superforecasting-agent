@@ -89,10 +89,16 @@ export const resetFlowOverlays = () =>
     ...buildOverlayState(),
     agents: $overlayState.get().agents,
     agentsInitialHistoryIndex: $overlayState.get().agentsInitialHistoryIndex,
+    // User-toggled fullscreen views — opened deliberately, so they must
+    // survive a turn ending (e.g. asking the desk from inside Obsidian).
+    alerts: $overlayState.get().alerts,
+    calendar: $overlayState.get().calendar,
     calibration: $overlayState.get().calibration,
     forecasts: $overlayState.get().forecasts,
     forecastsInitialId: $overlayState.get().forecastsInitialId,
+    help: $overlayState.get().help,
     modelPicker: $overlayState.get().modelPicker,
+    obsidian: $overlayState.get().obsidian,
     picker: $overlayState.get().picker,
     skillsHub: $overlayState.get().skillsHub,
     themePicker: $overlayState.get().themePicker

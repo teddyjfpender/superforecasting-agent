@@ -427,8 +427,10 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
     )
   }
 
-  // Esc out of chat: if the open note has unsaved edits, confirm first; then
-  // reload it so any edits the desk made on disk are picked up.
+  // Esc out of chat: if the open note has unsaved edits, confirm first.
+  // Otherwise just close the modal and return the reader to exactly where they
+  // were — no reload (that would reset scroll/cursor to the top). Press r to
+  // pull in any edits the desk made on disk.
   const closeChat = () => {
     if (dirtyRef.current && editing) {
       setChat(c => (c ? { ...c, confirmSave: true } : c))
@@ -437,10 +439,6 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
     }
 
     setChat(null)
-
-    if (currentRel) {
-      loadNote(currentRel)
-    }
   }
 
   // ── In-pane editor (multiline, debounced autosave) ──────────────────────
