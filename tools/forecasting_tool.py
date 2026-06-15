@@ -2578,6 +2578,20 @@ def _workflow_report_payload(ledger: "ForecastLedger", args: dict[str, Any]) -> 
         except (TypeError, ValueError):
             return None
 
+    def _as_dict(value: Any) -> dict[str, Any]:
+        # Evidence metadata / source_snapshot can arrive as a dict, a JSON
+        # string (older rows), or None — coerce so `.get()` never explodes
+        # ('str' object has no attribute 'get').
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str) and value.strip():
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, dict) else {}
+            except (ValueError, TypeError):
+                return {}
+        return {}
+
     question_id = _required(args, "question_id")
     question = ledger.get_question(question_id)
     since_dt = _parse(args.get("since"))
@@ -2610,10 +2624,10 @@ def _workflow_report_payload(ledger: "ForecastLedger", args: dict[str, Any]) -> 
     blocked_items: list[dict[str, Any]] = []
     domain_counts: Counter[str] = Counter()
     for item in evidence:
-        meta = item.metadata or {}
-        blocked_flag = bool(meta.get("blocked") or (meta.get("source_snapshot") or {}).get("blocked"))
+        meta = _as_dict(item.metadata)
+        blocked_flag = bool(meta.get("blocked") or _as_dict(meta.get("source_snapshot")).get("blocked"))
         if blocked_flag:
-            snap = meta.get("source_snapshot") or {}
+            snap = _as_dict(meta.get("source_snapshot"))
             blocked_items.append({
                 "evidence_id": item.id,
                 "source_url": item.source_url,
@@ -2658,7 +2672,7 @@ def _workflow_report_payload(ledger: "ForecastLedger", args: dict[str, Any]) -> 
     events: list[tuple[str, str, str, str]] = []
     for e in evidence:
         summary = _short(e.claim or e.summary or e.source_url, 100)
-        kind = "blocked" if (e.metadata or {}).get("blocked") else "evidence"
+        kind = "blocked" if _as_dict(e.metadata).get("blocked") else "evidence"
         events.append((e.captured_at or "", kind, e.id, summary))
     for s in snapshots:
         prob = _opt_float(s.probability_or_distribution)

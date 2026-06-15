@@ -1621,6 +1621,17 @@ def cmd_chat(args):
     except Exception:
         pass
 
+    # Refresh the SOUL.md persona template the same way — updates an un-edited
+    # soul to the current template, never clobbers a customised one. (The
+    # forecasting process itself is code-owned and ships via the ephemeral
+    # system prompt, independent of this.)
+    try:
+        from tools.soul_sync import sync_soul
+
+        sync_soul(quiet=True)
+    except Exception:
+        pass
+
     # --yolo: bypass all dangerous command approvals
     if getattr(args, "yolo", False):
         _set_runtime_env_aliases(os.environ, "YOLO_MODE", "1")

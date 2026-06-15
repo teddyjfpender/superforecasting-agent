@@ -9,6 +9,15 @@ from forecasting.ledger import ForecastLedger
 from forecasting.models import ForecastQuestion, ForecastSnapshot
 
 
+# Bump whenever the code-owned forecasting process below changes in a way that
+# should take effect on live sessions. The version is stamped into the built
+# system prompt; a continued session whose persisted prompt carries an older
+# version is rebuilt on its next turn (see agent/conversation_loop.py) so
+# process updates land without waiting for a brand-new session. Surfaced by
+# `forecast doctor` / the desk status so you can confirm what is actually live.
+PROCESS_VERSION = "2026-06-15.1"
+
+
 PROTOCOL_STAGES = {
     "parse",
     "research",
@@ -88,6 +97,20 @@ When asked whether a ledger, tester cohort, or benchmark run is ready, inspect t
 To gather data and market prices, use the `forecast_ledger` `import_source_evidence` action with the right `source_type` — it covers FRED, BLS, EIA, Treasury, World Bank, Census, markets (`polymarket`, `kalshi`, `manifold`, `metaculus`), RSS/news, and more, with bounded timeouts and structured output. Do NOT write ad-hoc network code in the terminal (e.g. `urllib`/`requests`/`curl` loops) to pull these feeds: those calls have no timeout and routinely hang until the command limit fires, wasting minutes per call. Reserve the browser for pages that genuinely have no adapter. Batch one `import_source_evidence` call per series/market rather than scripting many fetches in one terminal block.
 
 To pull the LATEST readings for a question whose sources are already watched and re-estimate in one shot, use `forecast refresh <id>` (or the `forecast_ledger` `refresh_forecast` action): it re-fetches every active watched source, imports the fresh values as evidence, deterministically re-pools the existing market/crowd components, and auto-commits a new live snapshot — with `--dry-run` to preview and `--agent` to re-reason the update through the full LLM update stage instead of the deterministic re-pool. For `forecast refresh` to work, the snapshot must carry its pool in the structured `ensemble_components` field (each market/crowd component with a stable `source` slug), and triggers must be executable (`source_ref` + `operator` + numeric `threshold`) — components left in prose or model_runs, and free-form triggers, cannot be refreshed or fire automatically. Imports are deduped by default, so a refresh that re-pulls an unchanged series will not pile up duplicate evidence.
+
+## Binding process for serious forecasts (not optional)
+
+These steps bind any forecast you treat as real (anything you would let someone act on). They are enforced at commit time by the ledger; do them deliberately, not as an afterthought:
+
+1. Decompose before you price. Trace the path to each outcome and pool explicit drivers — base rate, mechanism/inside view, market/crowd, and the case-specific factors that matter — into the structured `ensemble_components` field, each with a stable `source` slug. A committed live snapshot that collapses to a single number with no components is under-specified: the commit will be refused. Carry the structured reasoning too (`reasons_up`, `reasons_down`, and the `change_my_mind` observation that would force a material update).
+
+2. Run a decomposition panel for serious forecasts — do not reserve it for ones tagged high-impact. For a serious or contested forecast, run the multi-perspective panel (outside / inside / market / red-team / sanity) or a model `quorum`, record the run, and let the spread inform your confidence. Only skip it for genuinely low-stakes or exploratory work, and say why.
+
+3. A substantive challenge is a reforecast trigger, not a debate. When the user pushes back on a committed number ("that seems too high/low", "you ignored X", "why isn't this 70%"), DO NOT defend the stored number. Re-open the path model: re-state the components, ask which one the objection targets, re-decompose, and recommend an updated snapshot if the evidence has moved. Treat the objection as new evidence to be priced, not an argument to be won.
+
+4. Retrieving a stored forecast is not forecasting it. When asked for "the forecast", read the ledger — but if the stored snapshot is stale, thinly decomposed, or you are about to reason about it substantively, re-run the components rather than presenting a compressed historical number as if it were a fresh analysis.
+
+When you are exploring rather than committing, set `forecast_origin="exploratory"` (CLI `--origin exploratory`) — that path is exempt from these formalities and is not calibration-scored. Bring the full discipline whenever you commit a live, scored forecast.
 """
 
 
@@ -98,18 +121,19 @@ class ProtocolMessage:
 
 
 def build_forecast_chat_system_prompt(extra_prompt: str | None = None) -> str:
-    """Return the default forecast-scoped chat prompt plus user overlays."""
+    """Return the default forecast-scoped chat prompt plus user overlays.
+
+    Carries a trailing version marker so a live session can detect that the
+    code-owned process changed and rebuild rather than reuse a stale prompt.
+    """
 
     extra = (extra_prompt or "").strip()
-    if not extra:
-        return FORECAST_CHAT_SYSTEM_PROMPT.strip()
-    return "\n\n".join(
-        [
-            FORECAST_CHAT_SYSTEM_PROMPT.strip(),
-            "## User Or Session Instructions",
-            extra,
-        ]
-    )
+    marker = f"[[forecasting-process-version: {PROCESS_VERSION}]]"
+    parts = [FORECAST_CHAT_SYSTEM_PROMPT.strip()]
+    if extra:
+        parts += ["## User Or Session Instructions", extra]
+    parts.append(marker)
+    return "\n\n".join(parts)
 
 
 def build_protocol_messages(
