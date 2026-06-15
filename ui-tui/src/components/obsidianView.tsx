@@ -1150,12 +1150,46 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
     return h
   })()
 
+  // Scroll the cursor block into view, but ONLY when it's actually outside the
+  // viewport — so the cursor moves line-by-line within the visible area and we
+  // only scroll at the edges (smooth when an arrow is held), instead of
+  // re-pinning the cursor to a fixed offset every move (which jumped the doc
+  // and tucked the top line under the header).
   const scrollToBlock = (bi: number) => {
     const el = blockRefs.current[bi]
+    const sb = docScrollRef.current
 
-    if (el) {
-      docScrollRef.current?.scrollToElement?.(el, 2)
+    if (!el || !sb) {
+      return
     }
+
+    const node = el.yogaNode
+
+    if (!node) {
+      sb.scrollToElement?.(el, 1)
+
+      return
+    }
+
+    const top = node.getComputedTop()
+    const height = node.getComputedHeight() || 1
+    const scrollTop = sb.getScrollTop?.() ?? 0
+    const viewH = sb.getViewportHeight?.() ?? 0
+
+    if (viewH <= 0) {
+      sb.scrollToElement?.(el, 1)
+
+      return
+    }
+
+    if (top < scrollTop) {
+      // Above the top edge → bring it to the top (one row of breathing room).
+      sb.scrollToElement?.(el, 1)
+    } else if (top + height > scrollTop + viewH) {
+      // Below the bottom edge → scroll so it sits at the bottom of the view.
+      sb.scrollToElement?.(el, Math.max(1, viewH - height - 1))
+    }
+    // Otherwise it's already fully visible — leave the scroll position alone.
   }
 
   // Move the reading cursor to the next selectable (non-blank) block. The
