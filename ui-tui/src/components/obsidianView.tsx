@@ -441,11 +441,32 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
     </Box>
   )
 
-  const footerKeys = !hasVault
-    ? 's set up vault · r retry · Esc/q close'
+  // Clickable action bar — mirrors the hotkeys so it is obvious (and
+  // mouse-reachable) what you can do. Contextual to the current state.
+  type Action = { k: string; label: string; run: () => void }
+
+  const actions: Action[] = !hasVault
+    ? [{ k: 's', label: 'Set up vault', run: runSetup }]
     : notes.length === 0
-      ? 'n new note · r refresh · Esc/q close'
-      : '↑↓ select · Space/PgDn scroll · n new · c comment · a ask desk · r refresh · q close'
+      ? [{ k: 'n', label: 'New note', run: () => setPrompt({ mode: 'create', value: '' }) }]
+      : [
+          { k: 'n', label: 'New', run: () => setPrompt({ mode: 'create', value: '' }) },
+          { k: 'c', label: 'Comment', run: () => setPrompt({ mode: 'comment', value: '' }) },
+          { k: 'a', label: 'Ask desk', run: askAgent },
+          { k: 'r', label: 'Refresh', run: () => load(true) }
+        ]
+
+  actions.push({ k: 'q', label: 'Close', run: onClose })
+
+  const onActionClick =
+    (run: () => void) => (event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
+      if (event.cellIsBlank) {
+        return
+      }
+
+      event.stopPropagation?.()
+      run()
+    }
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
@@ -461,9 +482,23 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
       ) : (
         <>
           {flash ? <Text color={t.color.accent}>{flash}</Text> : null}
-          <Text color={t.color.muted} wrap="truncate-end">
-            {footerKeys}
-          </Text>
+          <Box>
+            {actions.map(action => (
+              <Box key={action.k} marginRight={2} onClick={onActionClick(action.run)}>
+                <Text color={t.color.muted}>[</Text>
+                <Text bold color={t.color.accent}>
+                  {action.k}
+                </Text>
+                <Text color={t.color.label}>{` ${action.label}`}</Text>
+                <Text color={t.color.muted}>]</Text>
+              </Box>
+            ))}
+          </Box>
+          {hasVault && notes.length > 0 ? (
+            <Text color={t.color.muted} wrap="truncate-end">
+              ↑↓ select · Space/PgDn scroll · g/G top/bottom · click a note to open
+            </Text>
+          ) : null}
         </>
       )}
     </Box>
