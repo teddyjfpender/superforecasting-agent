@@ -2795,6 +2795,99 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5014, str(e))
 
 
+@method("obsidian.search")
+def _(rid, params: dict) -> dict:
+    """Ranked full-text search across the vault for the TUI search modal.
+
+    Scores each note by weighted term frequency (title > headings > body) so
+    the most relevant notes float to the top, with the best-matching line as a
+    snippet. This is lexical, not vector-semantic — there is no embedding
+    service wired in — but multi-term weighted ranking gets most of the way for
+    a knowledge base of this size. (A future obsidian.search could add a
+    semantic mode if embeddings become available.)
+    """
+    try:
+        import re
+
+        from plugins.obsidian.vault import resolve_vault_path
+
+        vault = resolve_vault_path()
+        if vault is None:
+            return _err(rid, 5015, "no Obsidian vault configured")
+
+        query = str(params.get("query") or "").strip()
+        if not query:
+            return _ok(rid, {"query": query, "count": 0, "results": []})
+
+        limit = max(1, min(int(params.get("limit") or 30), 100))
+        terms = [t for t in re.split(r"\s+", query.lower()) if t]
+
+        results: list[dict] = []
+        for path in vault.rglob("*.md"):
+            parts = path.relative_to(vault).parts
+            if any(p.startswith(".") for p in parts):
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+
+            lines = text.splitlines()
+            title = path.stem
+            for line in lines:
+                s = line.strip()
+                if s.startswith("#"):
+                    title = s.lstrip("#").strip() or title
+                    break
+
+            low = text.lower()
+            title_low = title.lower()
+            heading_low = "\n".join(s.lstrip("#").strip().lower() for s in lines if s.strip().startswith("#"))
+
+            score = 0
+            matched_terms = 0
+            for term in terms:
+                t_body = low.count(term)
+                if t_body == 0 and term not in title_low:
+                    continue
+                matched_terms += 1
+                score += title_low.count(term) * 6
+                score += heading_low.count(term) * 3
+                score += t_body
+            if matched_terms == 0:
+                continue
+            # Require all terms for multi-term queries to win the top slots, but
+            # still surface partial matches below them.
+            if matched_terms == len(terms):
+                score += 10
+
+            # Best snippet: the first line containing any term.
+            snippet = ""
+            sn_line = 0
+            for lineno, line in enumerate(lines, start=1):
+                ll = line.lower()
+                if any(term in ll for term in terms):
+                    snippet = line.strip()[:160]
+                    sn_line = lineno
+                    break
+
+            results.append(
+                {
+                    "rel_path": str(path.relative_to(vault)),
+                    "title": title,
+                    "score": score,
+                    "matched_terms": matched_terms,
+                    "snippet": snippet,
+                    "line": sn_line,
+                }
+            )
+
+        results.sort(key=lambda r: (-r["score"], r["rel_path"]))
+        return _ok(rid, {"query": query, "count": len(results), "results": results[:limit]})
+    except Exception as e:
+        return _err(rid, 5015, str(e))
+
+
 # ── forecast.calibration ─────────────────────────────────────────────
 # Structured calibration analytics for the TUI's native calibration view.
 # `forecast.command` already exposes the same numbers as CLI text; this RPC

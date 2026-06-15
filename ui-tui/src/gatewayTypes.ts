@@ -1486,3 +1486,18 @@ export interface ObsidianNoteResponse {
   size?: number
   truncated?: boolean
 }
+
+export interface ObsidianSearchResult {
+  line?: number
+  matched_terms?: number
+  rel_path?: string
+  score?: number
+  snippet?: string
+  title?: string
+}
+
+export interface ObsidianSearchResponse {
+  count?: number
+  query?: string
+  results?: ObsidianSearchResult[]
+}

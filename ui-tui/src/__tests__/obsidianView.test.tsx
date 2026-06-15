@@ -123,16 +123,24 @@ const renderView = async () => {
   )
 
   await tick(80)
-  const text = normalize(stdout.text(), stripAnsi)
-  instance.unmount?.()
-  instance.cleanup?.()
 
-  return text
+  const read = () => normalize(stdout.text(), stripAnsi)
+  const text = read()
+
+  return {
+    cleanup: () => {
+      instance.unmount?.()
+      instance.cleanup?.()
+    },
+    read,
+    stdin: stdin.stream,
+    text
+  }
 }
 
 describe('ObsidianView render', () => {
   it('renders markdown, an outline of headings, LaTeX and wikilinks for the open note', async () => {
-    const text = await renderView()
+    const { cleanup, text } = await renderView()
 
     // Frontmatter is stripped (no raw --- rule, no `type: note` line in the body)
     expect(text).not.toContain('type: note')
@@ -156,5 +164,20 @@ describe('ObsidianView render', () => {
 
     // …and is mirrored in the clickable Links index
     expect(text).toContain('Links')
+
+    cleanup()
+  })
+
+  it('opens the centered search modal on "s"', async () => {
+    const { cleanup, read, stdin } = await renderView()
+
+    stdin.write('s')
+    await tick(60)
+    const text = read()
+
+    expect(text).toContain('Search the vault')
+    expect(text).toContain('Type to search')
+
+    cleanup()
   })
 })

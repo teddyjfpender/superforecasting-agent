@@ -3,7 +3,13 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
-import type { ObsidianNote, ObsidianNoteResponse, ObsidianStatusResponse } from '../gatewayTypes.js'
+import type {
+  ObsidianNote,
+  ObsidianNoteResponse,
+  ObsidianSearchResponse,
+  ObsidianSearchResult,
+  ObsidianStatusResponse
+} from '../gatewayTypes.js'
 import { highlightMarkdownLine } from '../lib/markdownEditorHighlight.js'
 import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
@@ -214,6 +220,14 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
   const [cursor, setCursor] = useState(0)
   const [selAnchor, setSelAnchor] = useState(-1)
   const [focusedLink, setFocusedLink] = useState(-1)
+
+  const [search, setSearch] = useState<null | {
+    loading: boolean
+    query: string
+    results: ObsidianSearchResult[]
+    sel: number
+  }>(null)
+
   const dirtyRef = useRef(false)
   const saveTimer = useRef<null | ReturnType<typeof setTimeout>>(null)
   const listScrollRef = useRef<null | ScrollBoxHandle>(null)
@@ -272,6 +286,23 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
     if (idx >= 0) {
       setSelected(idx)
     }
+  }
+
+  const runSearch = (query: string) => {
+    gw.request<unknown>('obsidian.search', { limit: 30, query })
+      .then(raw => {
+        const res = asRpcResult<ObsidianSearchResponse>(raw)
+        setSearch(s => (s && s.query === query ? { ...s, loading: false, results: res?.results ?? [], sel: 0 } : s))
+      })
+      .catch(() => setSearch(s => (s ? { ...s, loading: false } : s)))
+  }
+
+  const openSearchResult = (rel?: string) => {
+    if (rel) {
+      jumpTo(rel)
+    }
+
+    setSearch(null)
   }
 
   const load = (announce = false) => {
@@ -503,6 +534,20 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
     setFocusedLink(-1)
   }, [doc])
 
+  // Live search: debounce the query so we don't hit the gateway per keystroke.
+  const searchQuery = search?.query ?? ''
+  const searchOpen = search !== null
+  useEffect(() => {
+    if (!searchOpen || !searchQuery.trim()) {
+      return
+    }
+
+    const id = setTimeout(() => runSearch(searchQuery), 200)
+
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, searchOpen])
+
   // Debounced autosave while editing.
   useEffect(() => {
     if (!editing || !dirtyRef.current) {
@@ -548,6 +593,35 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
   const move = (delta: number) => setSelected(s => Math.max(0, Math.min(notes.length - 1, s + delta)))
 
   useInput((ch, key) => {
+    // Search modal captures input while open.
+    if (search) {
+      if (key.escape) {
+        return setSearch(null)
+      }
+
+      if (key.return) {
+        return openSearchResult(search.results[search.sel]?.rel_path)
+      }
+
+      if (key.upArrow) {
+        return setSearch(s => (s ? { ...s, sel: Math.max(0, s.sel - 1) } : s))
+      }
+
+      if (key.downArrow) {
+        return setSearch(s => (s ? { ...s, sel: Math.min(s.results.length - 1, s.sel + 1) } : s))
+      }
+
+      if (key.backspace || key.delete) {
+        return setSearch(s => (s ? { ...s, query: s.query.slice(0, -1) } : s))
+      }
+
+      if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
+        return setSearch(s => (s ? { ...s, loading: true, query: s.query + ch } : s))
+      }
+
+      return
+    }
+
     // Inline prompt (new note / comment) captures input while open.
     if (prompt) {
       if (key.escape) {
@@ -632,6 +706,10 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
 
     if (ch === 'r') {
       return load(true)
+    }
+
+    if (ch === 's') {
+      return setSearch({ loading: false, query: '', results: [], sel: 0 })
     }
 
     if (ch === 'n') {
@@ -917,7 +995,80 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
 
   let body
 
-  if (loading && !data) {
+  if (search) {
+    const modalW = Math.max(40, Math.min(cols - 8, 88))
+
+    body = (
+      <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
+        <Box
+          borderColor={t.color.accent}
+          borderStyle="round"
+          flexDirection="column"
+          paddingX={2}
+          paddingY={1}
+          width={modalW}
+        >
+          <Text bold color={t.color.primary}>
+            Search the vault
+          </Text>
+          <Box marginTop={1}>
+            <Text color={t.color.muted}>{'🔎 '}</Text>
+            <Text color={t.color.text}>{search.query}</Text>
+            <Text color={t.color.text} inverse>
+              {' '}
+            </Text>
+          </Box>
+          <Box flexDirection="column" marginTop={1}>
+            {!search.query.trim() ? (
+              <Text color={t.color.muted}>Type to search titles, headings and content across the vault…</Text>
+            ) : search.results.length === 0 ? (
+              <Text color={t.color.muted}>{search.loading ? 'Searching…' : 'No matches.'}</Text>
+            ) : (
+              search.results.slice(0, 12).map((r, i) => {
+                const on = i === search.sel
+                const folder = (r.rel_path ?? '').split('/').slice(0, -1).join('/')
+
+                return (
+                  <Box
+                    flexDirection="column"
+                    key={r.rel_path ?? i}
+                    onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
+                      if (event.cellIsBlank) {
+                        return
+                      }
+
+                      event.stopPropagation?.()
+                      openSearchResult(r.rel_path)
+                    }}
+                  >
+                    <Text wrap="truncate-end">
+                      <Text color={on ? t.color.primary : t.color.muted}>{on ? '▸ ' : '  '}</Text>
+                      <Text bold={on} color={on ? t.color.text : t.color.label}>
+                        {truncate(r.title || r.rel_path || '—', modalW - 18)}
+                      </Text>
+                      {folder ? <Text color={t.color.muted}>{`  ${folder}`}</Text> : null}
+                    </Text>
+                    {r.snippet ? (
+                      <Text color={t.color.muted} wrap="truncate-end">
+                        {`    ${r.snippet}`}
+                      </Text>
+                    ) : null}
+                  </Box>
+                )
+              })
+            )}
+          </Box>
+          <Box marginTop={1}>
+            <Text color={t.color.muted}>
+              {search.results.length > 12
+                ? `↑↓ select · ⏎ open · Esc close · ${search.results.length} matches`
+                : '↑↓ select · ⏎ open · Esc close'}
+            </Text>
+          </Box>
+        </Box>
+      </Box>
+    )
+  } else if (loading && !data) {
     body = <Text color={t.color.muted}>Loading vault…</Text>
   } else if (error) {
     body = (
@@ -1268,6 +1419,7 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
     : notes.length === 0
       ? [{ k: 'n', label: 'New note', run: () => setPrompt({ mode: 'create', value: '' }) }]
       : [
+          { k: 's', label: 'Search', run: () => setSearch({ loading: false, query: '', results: [], sel: 0 }) },
           { k: 'e', label: 'Edit', run: enterEdit },
           { k: 'n', label: 'New', run: () => setPrompt({ mode: 'create', value: '' }) },
           { k: 'c', label: 'Comment', run: () => setPrompt({ mode: 'comment', value: '' }) },
