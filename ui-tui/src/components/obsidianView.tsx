@@ -68,23 +68,66 @@ const splitSections = (body: string): Section[] => {
   return out
 }
 
-// Insert a comment block at the end of section `index` (before the next
-// heading), so comments are anchored under the section they're about. Falls
-// back to appending at the end when the section has no heading.
-const insertCommentUnderSection = (fullContent: string, index: number, comment: string): string => {
-  const block = `> 💬 ${comment}`
-  const { body } = splitFrontmatter(fullContent)
-  const fm = fullContent.slice(0, fullContent.length - body.length)
-  const secs = splitSections(body)
-  const target = secs[index]
+// Comments live in a managed block at the foot of the note (kept out of the
+// prose) and are shown in a right-hand rail, each anchored to a section so it
+// reads like a margin note linked to that part of the doc.
+interface DocComment {
+  anchor: string
+  text: string
+}
 
-  if (!target || !target.title) {
-    return `${fullContent.replace(/\n+$/, '')}\n\n${block}\n`
+const COMMENTS_RE = /\n*<!-- comments:begin -->\n([\s\S]*?)\n<!-- comments:end -->\s*$/
+
+// Strip the managed comments block off the body and parse its entries. The
+// returned body is what gets rendered/sectioned; the comments feed the rail.
+export const splitComments = (body: string): { body: string; comments: DocComment[] } => {
+  const m = COMMENTS_RE.exec(body)
+
+  if (!m) {
+    return { body, comments: [] }
   }
 
-  secs[index] = { ...target, text: `${target.text.replace(/\n+$/, '')}\n\n${block}` }
+  const comments: DocComment[] = []
+  let cur: DocComment | null = null
 
-  return fm + secs.map(s => s.text).join('\n')
+  for (const line of m[1]!.split('\n')) {
+    const a = /^@@ (.*)$/.exec(line)
+
+    if (a) {
+      if (cur) {
+        comments.push(cur)
+      }
+
+      cur = { anchor: a[1]!.trim(), text: '' }
+    } else if (cur) {
+      cur.text += (cur.text ? '\n' : '') + line
+    }
+  }
+
+  if (cur) {
+    comments.push(cur)
+  }
+
+  return {
+    body: body.slice(0, m.index).replace(/\n+$/, ''),
+    comments: comments.map(c => ({ ...c, text: c.text.trim() })).filter(c => c.text)
+  }
+}
+
+const serializeComments = (comments: DocComment[]): string =>
+  comments.length
+    ? `<!-- comments:begin -->\n${comments.map(c => `@@ ${c.anchor}\n${c.text}`).join('\n')}\n<!-- comments:end -->`
+    : ''
+
+// Append a comment anchored to `anchor`, rewriting the managed block.
+export const addComment = (fullContent: string, anchor: string, text: string): string => {
+  const { body } = splitFrontmatter(fullContent)
+  const fm = fullContent.slice(0, fullContent.length - body.length)
+  const { body: clean, comments } = splitComments(body)
+
+  comments.push({ anchor, text })
+
+  return `${fm}${clean.replace(/\n+$/, '')}\n\n${serializeComments(comments)}\n`
 }
 
 type PromptMode = 'comment' | 'create'
@@ -352,12 +395,14 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
       return
     }
 
-    // comment → anchor under the active outline section of the open note
+    // comment → anchored to the active section, stored in the managed block
+    // and shown in the right-hand rail (kept out of the prose).
     if (!currentRel || !doc?.content) {
       return
     }
 
-    const next = insertCommentUnderSection(doc.content, activeSection, value)
+    const anchor = sections[activeSection]?.title || 'note'
+    const next = addComment(doc.content, anchor, value)
     gw.request<unknown>('obsidian.write', { content: next, rel_path: currentRel })
       .then(() => {
         setFlash('comment added')
@@ -600,11 +645,19 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
     }
   })
 
-  const { body: docBody, tags: docTags } = doc?.content ? splitFrontmatter(doc.content) : { body: '', tags: '' }
-  const listW = Math.max(18, Math.min(34, Math.floor(cols * 0.22)))
+  const { body: rawBody, tags: docTags } = doc?.content ? splitFrontmatter(doc.content) : { body: '', tags: '' }
+  const { body: docBody, comments: docComments } = splitComments(rawBody)
+  const listW = Math.max(16, Math.min(30, Math.floor(cols * 0.2)))
   // The outline column only shows while reading (the editor takes the full pane).
-  const outlineW = editing ? 0 : Math.max(16, Math.min(30, Math.floor(cols * 0.2)))
-  const docWidth = Math.max(30, cols - listW - outlineW - (outlineW ? 10 : 6))
+  const outlineW = editing ? 0 : Math.max(15, Math.min(26, Math.floor(cols * 0.17)))
+  // The comments rail shows on the right when the terminal is wide enough.
+  const showComments = !editing && cols >= 100
+  const commentsW = showComments ? Math.max(20, Math.min(34, Math.floor(cols * 0.22))) : 0
+
+  const docWidth = Math.max(
+    24,
+    cols - listW - outlineW - commentsW - 6 - (outlineW ? 2 : 0) - (commentsW ? 2 : 0)
+  )
 
   // Editor render data: lines + a block cursor at (cursorRow, cursorCol).
   const editLines = editText.split('\n')
@@ -977,6 +1030,53 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
             </NoSelect>
           </Box>
         </Box>
+
+        {/* Far right: comments rail (margin notes anchored to sections) */}
+        {showComments ? (
+          <Box flexDirection="column" flexShrink={0} marginLeft={2} width={commentsW}>
+            <Text bold color={t.color.label} wrap="truncate-end">
+              {`Comments${docComments.length ? ` (${docComments.length})` : ''}`}
+            </Text>
+            <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1}>
+              {docComments.length > 0 ? (
+                docComments.map((c, i) => {
+                  const on = c.anchor === sections[activeSection]?.title
+
+                  return (
+                    <Box
+                      flexDirection="column"
+                      key={i}
+                      marginBottom={1}
+                      onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
+                        if (event.cellIsBlank) {
+                          return
+                        }
+
+                        event.stopPropagation?.()
+                        const si = sections.findIndex(s => s.title === c.anchor)
+
+                        if (si >= 0) {
+                          scrollToSection(si)
+                        }
+                      }}
+                    >
+                      <Text color={on ? t.color.primary : t.color.accent} wrap="truncate-end">
+                        {`▌ ${c.anchor}`}
+                      </Text>
+                      <Text color={t.color.text} wrap="wrap">
+                        {c.text}
+                      </Text>
+                    </Box>
+                  )
+                })
+              ) : (
+                <Text color={t.color.muted} wrap="wrap">
+                  No comments yet. Select a section (outline or [ ]) and press c to pin a note to it.
+                </Text>
+              )}
+            </ScrollBox>
+          </Box>
+        ) : null}
       </Box>
     )
   }
@@ -1095,7 +1195,7 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
           </Box>
           {hasVault && notes.length > 0 ? (
             <Text color={t.color.muted} wrap="truncate-end">
-              ↑↓ select · [ ] section · Tab link · ⏎ open · click links/headings · Space scroll
+              ↑↓ note · [ ] section · Tab link · ⏎ open · c comment on section · click links
             </Text>
           ) : null}
         </>
