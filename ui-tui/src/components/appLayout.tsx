@@ -26,6 +26,7 @@ import { ForecastsWorkspace } from './forecastsWorkspace.js'
 import { FpsOverlay } from './fpsOverlay.js'
 import { HelpHint } from './helpHint.js'
 import { MessageLine } from './messageLine.js'
+import { NavBar } from './navBar.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
@@ -466,6 +467,10 @@ export const AppLayout = memo(function AppLayout({
   return (
     <Shell {...shellProps}>
       <Box flexDirection="column" flexGrow={1}>
+        <PerfPane id="navbar">
+          <NavBar onCommand={actions.runCommand} />
+        </PerfPane>
+
         {fullscreen ? (
           <Box flexDirection="row" flexGrow={1}>
             {overlay.forecasts ? (

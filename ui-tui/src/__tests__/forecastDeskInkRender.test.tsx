@@ -353,6 +353,15 @@ describe('forecast desk Ink render', () => {
     expect(compact).not.toContain('Triage')
   })
 
+  it('renders the clickable nav bar with the view tabs at the top', async () => {
+    const output = await renderForecastDesk(150, { landing: true })
+    const compact = output.replace(/\s+/g, '')
+
+    for (const label of ['Home', 'Desk', 'Warnings', 'Calibration', 'Agents']) {
+      expect(compact).toContain(label)
+    }
+  })
+
   it('keeps the landing minimal at narrow width too', async () => {
     const output = await renderForecastDesk(104)
     const compact = output.replace(/\s+/g, '')
