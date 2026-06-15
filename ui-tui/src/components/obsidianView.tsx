@@ -792,8 +792,11 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
 
                 {outgoing.length > 0 ? (
                   <Box flexDirection="column" marginTop={1}>
-                    <Text bold color={t.color.accent}>
-                      Links
+                    <Text>
+                      <Text bold color={t.color.accent}>
+                        Links
+                      </Text>
+                      <Text color={t.color.muted}> · click to open</Text>
                     </Text>
                     {outgoing.map((link, i) => (
                       <Box
@@ -807,8 +810,8 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
                           jumpTo(link.rel)
                         }}
                       >
-                        <Text color={link.rel ? t.color.primary : t.color.muted}>{link.rel ? '→ ' : '× '}</Text>
-                        <Text color={link.rel ? t.color.text : t.color.muted} wrap="truncate-end">
+                        <Text color={link.rel ? t.color.primary : t.color.muted}>{link.rel ? '↗ ' : '× '}</Text>
+                        <Text color={link.rel ? t.color.primary : t.color.muted} underline={Boolean(link.rel)} wrap="truncate-end">
                           {truncate(link.name, docWidth - 6)}
                         </Text>
                         {!link.rel ? <Text color={t.color.muted}> (unresolved)</Text> : null}
@@ -834,8 +837,8 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
                           jumpTo(note.rel_path)
                         }}
                       >
-                        <Text color={t.color.primary}>← </Text>
-                        <Text color={t.color.text} wrap="truncate-end">
+                        <Text color={t.color.primary}>↩ </Text>
+                        <Text color={t.color.primary} underline wrap="truncate-end">
                           {truncate(note.title || note.rel_path || '—', docWidth - 6)}
                         </Text>
                       </Box>

@@ -116,6 +116,29 @@ describe('stripInlineMarkup', () => {
     expect(stripInlineMarkup('$\\mathbb{Z}$ is a ring')).toBe('\\mathbb{Z} is a ring')
     expect(stripInlineMarkup('see \\(a + b\\) ok')).toBe('see a + b ok')
   })
+
+  it('renders wikilinks as their label with a link glyph', () => {
+    expect(stripInlineMarkup('see [[Bayesian Updating]] next')).toBe('see ↗Bayesian Updating next')
+    expect(stripInlineMarkup('per [[Calibration|the scoring note]]')).toBe('per ↗the scoring note')
+    expect(stripInlineMarkup('[[Folder/Deep Note#Section]]')).toBe('↗Deep Note')
+  })
+})
+
+describe('INLINE_RE wikilinks', () => {
+  it('matches [[wikilinks]] including alias and heading forms', () => {
+    expect(matches('see [[Getting Started]] now')).toEqual(['[[Getting Started]]'])
+    expect(matches('[[Calibration and Scoring|scoring]]')).toEqual(['[[Calibration and Scoring|scoring]]'])
+  })
+
+  it('renders a wikilink inline with the link glyph and label', () => {
+    const lines = renderPlain(
+      React.createElement(Md, { t: DEFAULT_THEME, text: 'See [[Bayesian Updating]] for more.' })
+    )
+
+    const joined = lines.join('\n')
+    expect(joined).toContain('↗Bayesian Updating')
+    expect(joined).not.toContain('[[')
+  })
 })
 
 describe('INLINE_RE inline math', () => {

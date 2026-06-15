@@ -126,10 +126,25 @@ export const INLINE_RE = new RegExp(
     //                                MdInline dispatcher would treat them as
     //                                bare URLs and render them as autolinks.
     `(?<!\\$)\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\$)`, // 17   inline math $...$
-    `\\\\\\(([^\\n]+?)\\\\\\)` // 18   inline math \(...\)
+    `\\\\\\(([^\\n]+?)\\\\\\)`, // 18   inline math \(...\)
+    `\\[\\[([^\\]\\[]+?)\\]\\]` // 19   wikilink [[target|alias]]
   ].join('|'),
   'g'
 )
+
+// `[[target|alias]]` / `[[target#heading]]` → the human label to display.
+// Alias wins; otherwise the target's last path segment, heading stripped.
+export const wikiLinkLabel = (raw: string): string => {
+  const alias = raw.includes('|') ? raw.slice(raw.indexOf('|') + 1).trim() : ''
+
+  if (alias) {
+    return alias
+  }
+
+  const target = raw.split('|')[0]!.split('#')[0]!.trim()
+
+  return (target.split('/').pop() ?? target).trim() || target
+}
 
 const indentDepth = (s: string) => Math.floor(s.replace(/\t/g, '  ').length / 2)
 
@@ -205,6 +220,7 @@ export const stripInlineMarkup = (v: string) =>
     .replace(/~([A-Za-z0-9]{1,8})~/g, '_$1')
     .replace(/(?<!\$)\$([^\s$](?:[^$\n]*?[^\s$])?)\$(?!\$)/g, '$1')
     .replace(/\\\(([^\n]+?)\\\)/g, '$1')
+    .replace(/\[\[([^\][]+?)\]\]/g, (_m, inner: string) => `↗${wikiLinkLabel(inner)}`)
 
 const SAFETY_MARGIN = 4
 const MIN_COL_WIDTH = 3
@@ -213,7 +229,7 @@ const TABLE_PADDING_LEFT = 2 // paddingLeft={2} on the outer <Box>
 
 const renderTable = (k: number, rows: string[][], t: Theme, cols?: number) => {
   // Guard: empty table
-  if (rows.length === 0 || rows[0]!.length === 0) return null
+  if (rows.length === 0 || rows[0]!.length === 0) {return null}
 
   const cellDisplayWidth = (raw: string) => stringWidth(stripInlineMarkup(raw))
 
@@ -221,7 +237,9 @@ const renderTable = (k: number, rows: string[][], t: Theme, cols?: number) => {
   const minCellWidth = (raw: string) => {
     const text = stripInlineMarkup(raw)
     const words = text.split(/\s+/).filter(w => w.length > 0)
-    if (words.length === 0) return MIN_COL_WIDTH
+
+    if (words.length === 0) {return MIN_COL_WIDTH}
+
     return Math.max(...words.map(w => stringWidth(w)), MIN_COL_WIDTH)
   }
 
@@ -229,7 +247,8 @@ const renderTable = (k: number, rows: string[][], t: Theme, cols?: number) => {
 
   // Normalize ragged rows: ensure every row has exactly numCols cells
   const normalizedRows = rows.map(row => {
-    if (row.length >= numCols) return row.slice(0, numCols)
+    if (row.length >= numCols) {return row.slice(0, numCols)}
+
     return [...row, ...Array<string>(numCols - row.length).fill('')]
   })
 
@@ -247,6 +266,7 @@ const renderTable = (k: number, rows: string[][], t: Theme, cols?: number) => {
   // transcriptBodyWidth (source of cols) subtracts message gutter + scrollbar,
   // but NOT this table's paddingLeft — we subtract it here.
   const gapOverhead = (numCols - 1) * COL_GAP
+
   const availableWidth = cols
     ? Math.max(cols - TABLE_PADDING_LEFT - gapOverhead - SAFETY_MARGIN, numCols * MIN_COL_WIDTH)
     : Infinity
@@ -266,19 +286,23 @@ const renderTable = (k: number, rows: string[][], t: Theme, cols?: number) => {
     const extraSpace = availableWidth - totalMin
     const overflows = idealWidths.map((ideal, i) => ideal - minWidths[i]!)
     const totalOverflow = overflows.reduce((a, b) => a + b, 0)
+
     if (totalOverflow === 0) {
       columnWidths = [...minWidths]
     } else {
       const rawAlloc = minWidths.map((min, i) =>
         min + (overflows[i]! / totalOverflow) * extraSpace
       )
+
       columnWidths = rawAlloc.map(v => Math.floor(v))
       // Distribute rounding remainders to columns with largest fractional part
       let remainder = availableWidth - columnWidths.reduce((a, b) => a + b, 0)
+
       const fracs = rawAlloc.map((v, i) => ({ i, frac: v - Math.floor(v) }))
         .sort((a, b) => b.frac - a.frac)
+
       for (const { i } of fracs) {
-        if (remainder <= 0) break
+        if (remainder <= 0) {break}
         columnWidths[i]!++
         remainder--
       }
@@ -292,10 +316,12 @@ const renderTable = (k: number, rows: string[][], t: Theme, cols?: number) => {
     const rawAlloc = minWidths.map(w => w * scaleFactor)
     columnWidths = rawAlloc.map(v => Math.max(Math.floor(v), MIN_COL_WIDTH))
     let remainder = availableWidth - columnWidths.reduce((a, b) => a + b, 0)
+
     const fracs = rawAlloc.map((v, i) => ({ i, frac: v - Math.floor(v) }))
       .sort((a, b) => b.frac - a.frac)
+
     for (const { i } of fracs) {
-      if (remainder <= 0) break
+      if (remainder <= 0) {break}
       columnWidths[i]!++
       remainder--
     }
@@ -315,8 +341,10 @@ const renderTable = (k: number, rows: string[][], t: Theme, cols?: number) => {
   // Operates on stripped text for correct width measurement.
   const wrapCell = (raw: string, width: number, hard: boolean): string[] => {
     const text = stripInlineMarkup(raw)
-    if (width <= 0) return [text]
-    if (stringWidth(text) <= width) return [text]
+
+    if (width <= 0) {return [text]}
+
+    if (stringWidth(text) <= width) {return [text]}
 
     const words = text.split(/\s+/).filter(w => w.length > 0)
     const lines: string[] = []
@@ -325,15 +353,18 @@ const renderTable = (k: number, rows: string[][], t: Theme, cols?: number) => {
 
     for (const word of words) {
       const w = stringWidth(word)
+
       if (currentWidth === 0) {
         if (hard && w > width) {
           for (const ch of graphemes(word)) {
             const cw = stringWidth(ch)
+
             if (currentWidth + cw > width && current) {
               lines.push(current)
               current = ''
               currentWidth = 0
             }
+
             current += ch
             currentWidth += cw
           }
@@ -350,7 +381,9 @@ const renderTable = (k: number, rows: string[][], t: Theme, cols?: number) => {
         currentWidth = w
       }
     }
-    if (current) lines.push(current)
+
+    if (current) {lines.push(current)}
+
     return lines.length > 0 ? lines : ['']
   }
 
@@ -367,6 +400,7 @@ const renderTable = (k: number, rows: string[][], t: Theme, cols?: number) => {
         const text = stripInlineMarkup(cell)
         const pad = ' '.repeat(Math.max(0, columnWidths[ci]! - stringWidth(text)))
         const gap = ci < numCols - 1 ? '  ' : ''
+
         return text + pad + gap
       }).join('')
 
@@ -397,20 +431,26 @@ const renderTable = (k: number, rows: string[][], t: Theme, cols?: number) => {
     const cellLines = row.map((cell, ci) =>
       wrapCell(cell, columnWidths[ci]!, isHard)
     )
+
     const maxLines = Math.max(...cellLines.map(l => l.length), 1)
 
     const result: string[] = []
+
     for (let li = 0; li < maxLines; li++) {
       let line = ''
+
       for (let ci = 0; ci < numCols; ci++) {
         const cl = cellLines[ci] ?? ['']
         const cellText = li < cl.length ? cl[li]! : ''
         const pad = ' '.repeat(Math.max(0, columnWidths[ci]! - stringWidth(cellText)))
         line += cellText + pad
-        if (ci < numCols - 1) line += '  '
+
+        if (ci < numCols - 1) {line += '  '}
       }
+
       result.push(line)
     }
+
     return result
   }
 
@@ -421,7 +461,9 @@ const renderTable = (k: number, rows: string[][], t: Theme, cols?: number) => {
     const kind = ri === 0 ? 'header' as const : 'body' as const
     const rowLines = buildRowLines(row)
     rowLines.forEach(text => allEntries.push({ text, kind }))
-    if (ri > 0) tallestBodyRow = Math.max(tallestBodyRow, rowLines.length)
+
+    if (ri > 0) {tallestBodyRow = Math.max(tallestBodyRow, rowLines.length)}
+
     if (ri === 0 && normalizedRows.length > 1) {
       allEntries.push({ text: sep, kind: 'separator' })
     }
@@ -462,6 +504,7 @@ const renderTable = (k: number, rows: string[][], t: Theme, cols?: number) => {
             {headers.map((header, ci) => {
               const cell = row[ci] ?? ''
               const label = stripInlineMarkup(header) || `Col ${ci + 1}`
+
               return (
                 <Text key={ci} wrap="wrap-trim">
                   <Text bold color={t.color.accent}>{label}:</Text>
@@ -593,6 +636,17 @@ function MdInline({ t, text }: { t: Theme; text: string }) {
       parts.push(
         <Text color={t.color.accent} italic key={parts.length}>
           {renderMath(texToUnicode(m[17] ?? m[18]!))}
+        </Text>
+      )
+    } else if (m[19]) {
+      // Internal [[wikilink]] — styled so it reads as a link inline: a small
+      // leading glyph plus underline in the link color. (Terminal inline text
+      // can't carry its own click target, so navigation lives in the note's
+      // Links/Backlinks index, which mirrors this styling.)
+      parts.push(
+        <Text color={t.color.primary} key={parts.length} underline>
+          {'↗'}
+          {wikiLinkLabel(m[19])}
         </Text>
       )
     }

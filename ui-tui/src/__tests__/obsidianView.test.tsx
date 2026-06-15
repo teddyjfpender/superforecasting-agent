@@ -150,8 +150,11 @@ describe('ObsidianView render', () => {
     expect(text).toContain('²')
     expect(text).not.toContain('$E = mc^2$')
 
-    // The wikilink is surfaced as a resolvable outgoing link
+    // The inline [[wikilink]] renders as a styled link (glyph + label), not raw brackets
+    expect(text).toContain('↗Calibration and Scoring')
+    expect(text).not.toContain('[[Calibration and Scoring]]')
+
+    // …and is mirrored in the clickable Links index
     expect(text).toContain('Links')
-    expect(text).toContain('Calibration and Scoring')
   })
 })
