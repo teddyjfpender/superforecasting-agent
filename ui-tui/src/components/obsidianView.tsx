@@ -1011,12 +1011,21 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
       return moveCursor(1, Boolean(key.shift) || ch === 'J')
     }
 
-    // Document scroll: PgUp/PgDn, space, ctrl-u/d, wheel.
-    if (key.pageDown || ch === ' ' || (key.ctrl && ch === 'd') || key.wheelDown) {
+    // Mouse wheel: small, smooth steps (a full page per tick felt janky).
+    if (key.wheelDown) {
+      return docScrollRef.current?.scrollBy(3)
+    }
+
+    if (key.wheelUp) {
+      return docScrollRef.current?.scrollBy(-3)
+    }
+
+    // Page scroll: PgUp/PgDn, space, ctrl-u/d.
+    if (key.pageDown || ch === ' ' || (key.ctrl && ch === 'd')) {
       return docScrollRef.current?.scrollBy(pageSize)
     }
 
-    if (key.pageUp || (key.ctrl && ch === 'u') || key.wheelUp) {
+    if (key.pageUp || (key.ctrl && ch === 'u')) {
       return docScrollRef.current?.scrollBy(-pageSize)
     }
 
@@ -1371,7 +1380,7 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
     body = (
       <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
         {/* Left: note list */}
-        <Box flexDirection="column" flexShrink={0} marginRight={2} width={listW}>
+        <Box flexDirection="column" flexShrink={0} marginRight={2} noSelect width={listW}>
           <Text bold color={t.color.label} wrap="truncate-end">
             {`Notes (${notes.length})`}
           </Text>
@@ -1403,7 +1412,7 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
 
         {/* Middle: outline (markdown headings) */}
         {!editing && outlineW > 0 ? (
-          <Box flexDirection="column" flexShrink={0} marginRight={2} width={outlineW}>
+          <Box flexDirection="column" flexShrink={0} marginRight={2} noSelect width={outlineW}>
             <Text bold color={t.color.label} wrap="truncate-end">
               Outline
             </Text>
@@ -1494,7 +1503,9 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
                           blockRefs.current[i] = el
                         }}
                       >
-                        <Text color={t.color.primary}>{onCursor ? '▎ ' : '  '}</Text>
+                        <Text bold={onCursor} color={onCursor ? t.color.primary : t.color.muted}>
+                          {onCursor ? '▌ ' : '  '}
+                        </Text>
                         <Box flexGrow={1} flexShrink={1} minWidth={0}>
                           <Md
                             activeWikiLink={
@@ -1557,7 +1568,7 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
 
         {/* Far right: comments rail (margin notes anchored to sections) */}
         {showComments ? (
-          <Box flexDirection="column" flexShrink={0} marginLeft={2} width={commentsW}>
+          <Box flexDirection="column" flexShrink={0} marginLeft={2} noSelect width={commentsW}>
             <Text bold color={t.color.label} wrap="truncate-end">
               {`Comments${docComments.length ? ` (${docComments.length})` : ''}`}
             </Text>
@@ -1650,6 +1661,7 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
       ? [{ k: 'n', label: 'New note', run: () => setPrompt({ mode: 'create', value: '' }) }]
       : [
           { k: 's', label: 'Search', run: () => setSearch({ loading: false, query: '', results: [], sel: 0 }) },
+          { k: 'v', label: selAnchor >= 0 ? 'End select' : 'Select', run: toggleSelect },
           { k: 'e', label: 'Edit', run: enterEdit },
           { k: 'n', label: 'New', run: () => setPrompt({ mode: 'create', value: '' }) },
           { k: 'c', label: 'Comment', run: () => setPrompt({ mode: 'comment', value: '' }) },
@@ -1741,15 +1753,16 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
     </Box>
   )
 
-  // Floating chat modal — drawn absolutely over the page (the doc stays
-  // visible behind it) with a live activity feed + streamed reply.
+  // Chat modal — a focused chat window that replaces the content region while
+  // open (so nothing renders behind it: opaque, theme-matched, no bleed). The
+  // OBSIDIAN header + footer stay, so it's clearly still inside the vault.
   let chatOverlay = null
 
   if (chat) {
     const modalW = Math.max(40, Math.min(cols - 6, 96))
     // Fixed height so a long reply scrolls inside the card instead of growing
-    // the box until the absolute layout breaks (which collapsed the modal).
-    const modalH = Math.max(8, Math.min(termRows - 4, 30))
+    // the box unbounded.
+    const modalH = Math.max(8, Math.min(termRows - 6, 32))
     const spinner = SPINNER[spin % SPINNER.length]
     const word = THINKING_WORDS[Math.floor(spin / 8) % THINKING_WORDS.length]
 
@@ -1762,15 +1775,7 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
           : word
 
     chatOverlay = (
-      <Box
-        alignItems="center"
-        bottom={1}
-        justifyContent="center"
-        left={1}
-        position="absolute"
-        right={1}
-        top={1}
-      >
+      <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
         <Box
           borderColor={t.color.accent}
           borderStyle="round"
@@ -1862,9 +1867,8 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
   return (
     <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
       {header}
-      {body}
+      {chat ? chatOverlay : body}
       {footer}
-      {chatOverlay}
     </Box>
   )
 }
