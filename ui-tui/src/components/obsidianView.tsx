@@ -292,6 +292,10 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
   const [spin, setSpin] = useState(0)
 
   const dirtyRef = useRef(false)
+  // Cursor source-of-truth for the editor. State (editCursor) drives the
+  // render; the ref stays synchronously correct so rapid inserts (e.g. holding
+  // Enter) splice at the right position even when React batches the updates.
+  const editCursorRef = useRef(0)
   const saveTimer = useRef<null | ReturnType<typeof setTimeout>>(null)
   const listScrollRef = useRef<null | ScrollBoxHandle>(null)
   const docScrollRef = useRef<null | ScrollBoxHandle>(null)
@@ -494,10 +498,17 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
 
     const text = doc.content ?? ''
     setEditText(text)
+    editCursorRef.current = text.length
     setEditCursor(text.length)
     dirtyRef.current = false
     setSaveState('idle')
     setEditing(true)
+  }
+
+  // Move the editor cursor to an absolute position (keeps ref + state in sync).
+  const setCur = (next: number) => {
+    editCursorRef.current = Math.max(0, next)
+    setEditCursor(editCursorRef.current)
   }
 
   const exitEdit = () => {
@@ -517,27 +528,34 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
     }
   }
 
-  // Edit primitives operate on (editText, editCursor).
+  // Edit primitives splice at editCursorRef (synchronously correct) so batched
+  // keystrokes don't all splice at the same stale position.
   const editInsert = (s: string) => {
-    setEditText(text => text.slice(0, editCursor) + s + text.slice(editCursor))
-    setEditCursor(c => c + s.length)
+    const at = editCursorRef.current
+    editCursorRef.current = at + s.length
+    setEditText(text => text.slice(0, at) + s + text.slice(at))
+    setEditCursor(editCursorRef.current)
     dirtyRef.current = true
     setSaveState('idle')
   }
 
   const editBackspace = () => {
-    if (editCursor <= 0) {
+    const at = editCursorRef.current
+
+    if (at <= 0) {
       return
     }
 
-    setEditText(text => text.slice(0, editCursor - 1) + text.slice(editCursor))
-    setEditCursor(c => Math.max(0, c - 1))
+    editCursorRef.current = at - 1
+    setEditText(text => text.slice(0, at - 1) + text.slice(at))
+    setEditCursor(editCursorRef.current)
     dirtyRef.current = true
     setSaveState('idle')
   }
 
   const editMoveLine = (dir: -1 | 1) => {
-    const before = editText.slice(0, editCursor)
+    const at = editCursorRef.current
+    const before = editText.slice(0, at)
     const row = before.split('\n').length - 1
     const col = before.length - (before.lastIndexOf('\n') + 1)
     const lines = editText.split('\n')
@@ -550,10 +568,10 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
     let idx = 0
 
     for (let i = 0; i < targetRow; i++) {
-      idx += lines[i].length + 1
+      idx += lines[i]!.length + 1
     }
 
-    setEditCursor(idx + Math.min(col, lines[targetRow].length))
+    setCur(idx + Math.min(col, lines[targetRow]!.length))
   }
 
   const submitPrompt = () => {
@@ -927,11 +945,11 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
       }
 
       if (key.leftArrow) {
-        return setEditCursor(c => Math.max(0, c - 1))
+        return setCur(editCursorRef.current - 1)
       }
 
       if (key.rightArrow) {
-        return setEditCursor(c => Math.min(editText.length, c + 1))
+        return setCur(Math.min(editText.length, editCursorRef.current + 1))
       }
 
       if (key.upArrow) {
