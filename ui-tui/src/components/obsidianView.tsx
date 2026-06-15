@@ -1592,11 +1592,20 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
                   </Text>
                 ) : docBody ? (
                   blocks.map((b, i) => {
-                    if (b.kind === 'blank') {
-                      return <Text key={i}> </Text>
-                    }
-
                     const onCursor = i >= selLo && i <= selHi
+
+                    // Blank lines inside a selection still draw the gutter so a
+                    // multi-line selection reads as one continuous bar (no gaps).
+                    if (b.kind === 'blank') {
+                      return (
+                        <Box flexDirection="row" key={i}>
+                          <Text bold={onCursor} color={onCursor ? t.color.primary : t.color.muted}>
+                            {onCursor ? '▌ ' : '  '}
+                          </Text>
+                          <Text> </Text>
+                        </Box>
+                      )
+                    }
 
                     return (
                       <Box
