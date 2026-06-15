@@ -1,9 +1,10 @@
 import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type { ObsidianNote, ObsidianNoteResponse, ObsidianStatusResponse } from '../gatewayTypes.js'
+import { highlightMarkdownLine } from '../lib/markdownEditorHighlight.js'
 import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
 
@@ -611,6 +612,64 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
   const cursorRow = editBefore.split('\n').length - 1
   const cursorCol = editBefore.length - (editBefore.lastIndexOf('\n') + 1)
 
+  // Render one editor line with markdown syntax highlighting, splicing in the
+  // block cursor at `col` (a single inverse cell) when this is the active row.
+  const renderEditorLine = (line: string, col: number | null): ReactNode => {
+    const segs = highlightMarkdownLine(line, t)
+    const out: ReactNode[] = []
+    let at = 0
+
+    for (const s of segs) {
+      const end = at + s.text.length
+
+      if (col === null || col < at || col >= end) {
+        out.push(
+          <Text bold={s.bold} color={s.color} dimColor={s.dim} italic={s.italic} key={out.length} underline={s.underline}>
+            {s.text}
+          </Text>
+        )
+      } else {
+        // The cursor falls inside this run — split it around the cursor cell.
+        const rel = col - at
+        const common = { bold: s.bold, color: s.color, dimColor: s.dim, italic: s.italic, underline: s.underline }
+
+        if (rel > 0) {
+          out.push(
+            <Text {...common} key={out.length}>
+              {s.text.slice(0, rel)}
+            </Text>
+          )
+        }
+
+        out.push(
+          <Text inverse key={out.length}>
+            {s.text.slice(rel, rel + 1)}
+          </Text>
+        )
+        out.push(
+          <Text {...common} key={out.length}>
+            {s.text.slice(rel + 1)}
+          </Text>
+        )
+      }
+
+      at = end
+    }
+
+    // Cursor at end-of-line: trailing inverse space so it stays visible.
+    if (col !== null && col >= line.length) {
+      out.push(
+        <Text inverse key={out.length}>
+          {' '}
+        </Text>
+      )
+    }
+
+    return (
+      <Text wrap="truncate-end">{out.length ? out : ' '}</Text>
+    )
+  }
+
   // Split the body into heading-delimited sections so the content renders as
   // per-section blocks (each ref'd for scroll-to) and the outline can navigate.
   const sections = splitSections(docBody)
@@ -812,25 +871,9 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
               <Box flexDirection="column" paddingBottom={3} paddingRight={1}>
                 {editing ? (
                   <Box flexDirection="column">
-                    {editLines.map((line, i) => {
-                      if (i !== cursorRow) {
-                        return (
-                          <Text key={i} wrap="truncate-end">
-                            {line || ' '}
-                          </Text>
-                        )
-                      }
-
-                      const at = line.slice(cursorCol, cursorCol + 1) || ' '
-
-                      return (
-                        <Text key={i} wrap="truncate-end">
-                          {line.slice(0, cursorCol)}
-                          <Text inverse>{at}</Text>
-                          {line.slice(cursorCol + 1)}
-                        </Text>
-                      )
-                    })}
+                    {editLines.map((line, i) => (
+                      <Box key={i}>{renderEditorLine(line, i === cursorRow ? cursorCol : null)}</Box>
+                    ))}
                   </Box>
                 ) : (
                   <>
