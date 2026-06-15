@@ -113,6 +113,8 @@ const renderView = async () => {
   const stdin = writeStream(120, 50, true)
 
   const fakeGw = {
+    off: () => undefined,
+    on: () => undefined,
     request: (method: string) =>
       method === 'obsidian.note' ? Promise.resolve(noteFixture()) : Promise.resolve(statusFixture())
   } as unknown as Parameters<typeof ObsidianView>[0]['gw']
@@ -177,6 +179,19 @@ describe('ObsidianView render', () => {
 
     expect(text).toContain('Search the vault')
     expect(text).toContain('Type to search')
+
+    cleanup()
+  })
+
+  it('opens the in-Obsidian chat modal on "a"', async () => {
+    const { cleanup, read, stdin } = await renderView()
+
+    stdin.write('a')
+    await tick(60)
+    const text = read()
+
+    expect(text).toContain('Ask the desk')
+    expect(text).toContain('⏎ send')
 
     cleanup()
   })

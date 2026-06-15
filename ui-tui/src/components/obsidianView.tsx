@@ -195,10 +195,16 @@ interface ObsidianViewProps {
   gw: GatewayClient
   onClose: () => void
   onDraft?: (command: string) => void
+  sid?: null | string
   t: Theme
 }
 
-export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
+interface ChatTurn {
+  role: 'assistant' | 'system' | 'user'
+  text: string
+}
+
+export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
@@ -227,6 +233,10 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
     results: ObsidianSearchResult[]
     sel: number
   }>(null)
+
+  const [chat, setChat] = useState<null | { busy: boolean; confirmSave: boolean; input: string; turns: ChatTurn[] }>(
+    null
+  )
 
   const dirtyRef = useRef(false)
   const saveTimer = useRef<null | ReturnType<typeof setTimeout>>(null)
@@ -357,15 +367,52 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
       })
   }
 
-  // Draft a chat prompt that targets the open note, then drop to the chat so
-  // the user can refine/send it — the "co-write with the desk" move.
+  // Open the in-Obsidian chat modal — talk to the desk without leaving the
+  // vault. The agent shares the main session, so the exchange also lands in
+  // the main transcript.
   const askAgent = () => {
-    if (!onDraft || !currentRel) {
+    setChat({ busy: false, confirmSave: false, input: '', turns: [] })
+  }
+
+  const sendChat = (raw: string) => {
+    const text = raw.trim()
+
+    if (!text) {
       return
     }
 
-    onDraft(`Work on the Obsidian note "${currentRel}" — `)
-    onClose()
+    const context = currentRel ? `(About the Obsidian note "${currentRel}".)\n\n` : ''
+
+    setChat(c => (c ? { ...c, busy: true, input: '', turns: [...c.turns, { role: 'user', text }] } : c))
+    gw.request<unknown>('prompt.submit', { session_id: sid ?? 'default', text: `${context}${text}` }).catch(
+      (err: unknown) => {
+        setChat(c =>
+          c
+            ? {
+                ...c,
+                busy: false,
+                turns: [...c.turns, { role: 'system', text: `couldn't reach the desk: ${String(err)}` }]
+              }
+            : c
+        )
+      }
+    )
+  }
+
+  // Esc out of chat: if the open note has unsaved edits, confirm first; then
+  // reload it so any edits the desk made on disk are picked up.
+  const closeChat = () => {
+    if (dirtyRef.current && editing) {
+      setChat(c => (c ? { ...c, confirmSave: true } : c))
+
+      return
+    }
+
+    setChat(null)
+
+    if (currentRel) {
+      loadNote(currentRel)
+    }
   }
 
   // ── In-pane editor (multiline, debounced autosave) ──────────────────────
@@ -548,6 +595,37 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, searchOpen])
 
+  // While the chat modal is open, mirror the agent's reply into it. The desk
+  // shares the main session, so we listen to the same gateway event stream and
+  // pick up the final assistant text (and errors) for our session.
+  const chatOpen = chat !== null
+  useEffect(() => {
+    if (!chatOpen) {
+      return
+    }
+
+    const handler = (ev: { payload?: { message?: string; rendered?: string; text?: string }; session_id?: string; type: string }) => {
+      if (ev.session_id && sid && ev.session_id !== sid) {
+        return
+      }
+
+      if (ev.type === 'message.complete') {
+        const text = (ev.payload?.text ?? ev.payload?.rendered ?? '').trim()
+        setChat(c => (c ? { ...c, busy: false, turns: text ? [...c.turns, { role: 'assistant', text }] : c.turns } : c))
+      } else if (ev.type === 'error') {
+        const message = ev.payload?.message ?? 'unknown error'
+        setChat(c => (c ? { ...c, busy: false, turns: [...c.turns, { role: 'system', text: `error: ${message}` }] } : c))
+      }
+    }
+
+    gw.on('event', handler)
+
+    return () => {
+      gw.off('event', handler)
+    }
+     
+  }, [chatOpen, sid, gw])
+
   // Debounced autosave while editing.
   useEffect(() => {
     if (!editing || !dirtyRef.current) {
@@ -593,6 +671,49 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
   const move = (delta: number) => setSelected(s => Math.max(0, Math.min(notes.length - 1, s + delta)))
 
   useInput((ch, key) => {
+    // Chat modal captures input while open.
+    if (chat) {
+      if (chat.confirmSave) {
+        if (ch === 'y') {
+          saveNow(editText)
+          setChat(null)
+
+          return
+        }
+
+        if (ch === 'n') {
+          dirtyRef.current = false
+          setChat(null)
+
+          return
+        }
+
+        if (key.escape) {
+          return setChat(c => (c ? { ...c, confirmSave: false } : c))
+        }
+
+        return
+      }
+
+      if (key.escape) {
+        return closeChat()
+      }
+
+      if (key.return) {
+        return sendChat(chat.input)
+      }
+
+      if (key.backspace || key.delete) {
+        return setChat(c => (c ? { ...c, input: c.input.slice(0, -1) } : c))
+      }
+
+      if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
+        return setChat(c => (c ? { ...c, input: c.input + ch } : c))
+      }
+
+      return
+    }
+
     // Search modal captures input while open.
     if (search) {
       if (key.escape) {
@@ -995,7 +1116,77 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
 
   let body
 
-  if (search) {
+  if (chat) {
+    const modalW = Math.max(40, Math.min(cols - 8, 92))
+
+    body = (
+      <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
+        <Box
+          borderColor={t.color.accent}
+          borderStyle="round"
+          flexDirection="column"
+          flexShrink={1}
+          minHeight={0}
+          paddingX={2}
+          paddingY={1}
+          width={modalW}
+        >
+          <Text wrap="truncate-end">
+            <Text bold color={t.color.primary}>
+              Ask the desk
+            </Text>
+            <Text color={t.color.muted}>{currentRel ? `  ·  ${docTitle}` : ''}</Text>
+          </Text>
+
+          <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
+            {chat.turns.length === 0 && !chat.busy ? (
+              <Text color={t.color.muted} wrap="wrap">
+                Chat with the desk about this note without leaving Obsidian. It shares your main
+                session, so the exchange also appears in the chat when you go back.
+              </Text>
+            ) : (
+              chat.turns.map((turn, i) => (
+                <Box flexDirection="column" key={i} marginTop={i ? 1 : 0}>
+                  <Text bold color={turn.role === 'user' ? t.color.primary : turn.role === 'system' ? t.color.error : t.color.accent}>
+                    {turn.role === 'user' ? 'you' : turn.role === 'system' ? 'system' : 'desk'}
+                  </Text>
+                  {turn.role === 'assistant' ? (
+                    <Md cols={modalW - 4} t={t} text={turn.text} />
+                  ) : (
+                    <Text color={turn.role === 'system' ? t.color.error : t.color.text} wrap="wrap">
+                      {turn.text}
+                    </Text>
+                  )}
+                </Box>
+              ))
+            )}
+            {chat.busy ? <Text color={t.color.muted}>desk is working…</Text> : null}
+          </ScrollBox>
+
+          {chat.confirmSave ? (
+            <Box marginTop={1}>
+              <Text color={t.color.warn} wrap="truncate-end">
+                Unsaved edits — save before leaving? y save · n discard · Esc keep chatting
+              </Text>
+            </Box>
+          ) : (
+            <>
+              <Box marginTop={1}>
+                <Text color={t.color.muted}>{'› '}</Text>
+                <Text color={t.color.text}>{chat.input}</Text>
+                <Text color={t.color.text} inverse>
+                  {' '}
+                </Text>
+              </Box>
+              <Text color={t.color.muted} wrap="truncate-end">
+                {chat.busy ? 'waiting for the desk…' : '⏎ send · Esc close'}
+              </Text>
+            </>
+          )}
+        </Box>
+      </Box>
+    )
+  } else if (search) {
     const modalW = Math.max(40, Math.min(cols - 8, 88))
 
     body = (

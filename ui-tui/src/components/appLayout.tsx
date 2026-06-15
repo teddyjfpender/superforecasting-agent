@@ -398,6 +398,7 @@ const ObsidianViewPane = memo(function ObsidianViewPane({ onDraft }: { onDraft: 
       gw={gw}
       onClose={() => patchOverlayState({ obsidian: false })}
       onDraft={onDraft}
+      sid={ui.sid}
       t={ui.theme}
     />
   )
