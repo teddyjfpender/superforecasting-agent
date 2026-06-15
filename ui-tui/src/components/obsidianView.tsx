@@ -153,6 +153,87 @@ export const buildBlocks = (body: string): DocBlock[] => {
   return out
 }
 
+// ── Notes directory tree ─────────────────────────────────────────────────
+// The note list is grouped by folder so the vault reads as a directory tree
+// you can drill into. Folders collapse/expand (a folder is expanded unless its
+// path is in the `collapsed` set, so newly-synced folders show by default).
+interface TreeRow {
+  depth: number
+  expanded: boolean
+  kind: 'folder' | 'note'
+  name: string
+  noteIndex: number
+  path: string
+}
+
+interface TreeNode {
+  children: Map<string, TreeNode>
+  name: string
+  noteIndex: number
+  path: string
+}
+
+export const buildNoteRows = (notes: ObsidianNote[], collapsed: Set<string>): TreeRow[] => {
+  const root: TreeNode = { children: new Map(), name: '', noteIndex: -1, path: '' }
+
+  notes.forEach((note, idx) => {
+    const rel = note.rel_path ?? ''
+    const parts = rel.split('/').filter(Boolean)
+
+    if (!parts.length) {
+      return
+    }
+
+    let cur = root
+    let acc = ''
+
+    for (let d = 0; d < parts.length - 1; d++) {
+      acc = acc ? `${acc}/${parts[d]}` : parts[d]!
+      let child = cur.children.get(parts[d]!)
+
+      if (!child) {
+        child = { children: new Map(), name: parts[d]!, noteIndex: -1, path: acc }
+        cur.children.set(parts[d]!, child)
+      }
+
+      cur = child
+    }
+
+    const leaf = parts[parts.length - 1]!
+    cur.children.set(`note:${idx}`, {
+      children: new Map(),
+      name: note.title || leaf.replace(/\.md$/i, ''),
+      noteIndex: idx,
+      path: rel
+    })
+  })
+
+  const rows: TreeRow[] = []
+
+  const walk = (node: TreeNode, depth: number) => {
+    const entries = [...node.children.values()]
+    const folders = entries.filter(e => e.noteIndex < 0).sort((a, b) => a.name.localeCompare(b.name))
+    const leaves = entries.filter(e => e.noteIndex >= 0).sort((a, b) => a.name.localeCompare(b.name))
+
+    for (const f of folders) {
+      const expanded = !collapsed.has(f.path)
+      rows.push({ depth, expanded, kind: 'folder', name: f.name, noteIndex: -1, path: f.path })
+
+      if (expanded) {
+        walk(f, depth + 1)
+      }
+    }
+
+    for (const l of leaves) {
+      rows.push({ depth, expanded: false, kind: 'note', name: l.name, noteIndex: l.noteIndex, path: l.path })
+    }
+  }
+
+  walk(root, 0)
+
+  return rows
+}
+
 // Comments live in a managed block at the foot of the note (kept out of the
 // prose) and are shown in a right-hand rail, each anchored to a section so it
 // reads like a margin note linked to that part of the doc.
@@ -280,6 +361,9 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
   // Which pane the arrow keys drive: ←/→ move focus between notes ↔ outline ↔
   // doc; ↑/↓ then navigate within the focused pane.
   const [focus, setFocus] = useState<'doc' | 'list' | 'outline'>('doc')
+  // Collapsed folder paths in the notes tree, and the tree cursor row.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [listIdx, setListIdx] = useState(0)
 
   const [search, setSearch] = useState<null | {
     loading: boolean
@@ -305,6 +389,42 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
   const notes: ObsidianNote[] = data?.notes ?? []
   const hasVault = Boolean(data?.exists && data?.vault)
   const currentRel = notes[selected]?.rel_path
+
+  // The notes pane as a directory tree (folders collapse/expand).
+  const noteRows = buildNoteRows(notes, collapsed)
+
+  const toggleFolder = (path: string) =>
+    setCollapsed(s => {
+      const next = new Set(s)
+      next.has(path) ? next.delete(path) : next.add(path)
+
+      return next
+    })
+
+  // Move the tree cursor (list focus). Folders just highlight; Enter toggles
+  // them, Enter on a note opens it.
+  const listMove = (dir: -1 | 1) => {
+    if (!noteRows.length) {
+      return
+    }
+
+    setListIdx(i => Math.max(0, Math.min(noteRows.length - 1, i + dir)))
+  }
+
+  const listActivate = () => {
+    const row = noteRows[listIdx]
+
+    if (!row) {
+      return
+    }
+
+    if (row.kind === 'folder') {
+      toggleFolder(row.path)
+    } else {
+      setSelected(row.noteIndex)
+      setFocus('doc')
+    }
+  }
 
   // Resolve [[wikilink]] targets the way Obsidian does — by note basename
   // (or title), case-insensitive — so links and backlinks can be followed.
@@ -820,8 +940,8 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
   }, [editCursor, editing])
 
   useEffect(() => {
-    listScrollRef.current?.scrollTo(Math.max(0, selected - 2))
-  }, [selected])
+    listScrollRef.current?.scrollTo(Math.max(0, listIdx - 2))
+  }, [listIdx])
 
   useEffect(() => {
     const id = setInterval(() => setNow(value => value + 1), 500)
@@ -1041,8 +1161,10 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
       return focusLink(key.shift ? -1 : 1)
     }
 
+    // Enter: in the notes tree it toggles a folder / opens a note; in the doc
+    // it follows the focused wikilink.
     if (key.return) {
-      return openFocusedLink()
+      return focus === 'list' ? listActivate() : openFocusedLink()
     }
 
     // ←/→ move focus across panes: notes ↔ outline ↔ doc.
@@ -1319,7 +1441,7 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
   // ↑/↓ act on the focused pane.
   const navStep = (dir: -1 | 1, extend: boolean) => {
     if (focus === 'list') {
-      return move(dir)
+      return listMove(dir)
     }
 
     if (focus === 'outline') {
@@ -1513,12 +1635,38 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
             {`${focus === 'list' ? '▸ ' : '  '}Notes (${notes.length})`}
           </Text>
           <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} ref={listScrollRef}>
-            {notes.map((note, i) => {
-              const sel = i === selected
+            {noteRows.map((row, ri) => {
+              const onCursor = focus === 'list' && ri === listIdx
+              const indent = '  '.repeat(row.depth)
+
+              if (row.kind === 'folder') {
+                return (
+                  <Box
+                    key={`f:${row.path}`}
+                    onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
+                      if (event.cellIsBlank || editing) {
+                        return
+                      }
+
+                      event.stopPropagation?.()
+                      setFocus('list')
+                      setListIdx(ri)
+                      toggleFolder(row.path)
+                    }}
+                  >
+                    <Text color={onCursor ? t.color.primary : t.color.muted}>{`${indent}${row.expanded ? '▾' : '▸'} `}</Text>
+                    <Text bold color={onCursor ? t.color.text : t.color.label} wrap="truncate-end">
+                      {truncate(row.name, listW - indent.length - 3)}
+                    </Text>
+                  </Box>
+                )
+              }
+
+              const sel = row.noteIndex === selected
 
               return (
                 <Box
-                  key={note.rel_path ?? i}
+                  key={`n:${row.path}`}
                   onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
                     if (event.cellIsBlank || editing) {
                       return
@@ -1526,12 +1674,15 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
 
                     event.stopPropagation?.()
                     setFocus('list')
-                    setSelected(i)
+                    setListIdx(ri)
+                    setSelected(row.noteIndex)
                   }}
                 >
-                  <Text color={sel ? t.color.primary : t.color.muted}>{sel ? '▸ ' : '  '}</Text>
-                  <Text bold={sel} color={sel ? t.color.text : t.color.muted} wrap="truncate-end">
-                    {truncate(note.title || note.rel_path || '—', listW - 3)}
+                  <Text color={onCursor ? t.color.primary : sel ? t.color.accent : t.color.muted}>
+                    {`${indent}${onCursor ? '▸' : sel ? '•' : ' '} `}
+                  </Text>
+                  <Text bold={sel || onCursor} color={sel || onCursor ? t.color.text : t.color.muted} wrap="truncate-end">
+                    {truncate(row.name, listW - indent.length - 3)}
                   </Text>
                 </Box>
               )
