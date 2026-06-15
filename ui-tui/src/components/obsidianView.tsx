@@ -277,6 +277,9 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
   const [cursor, setCursor] = useState(0)
   const [selAnchor, setSelAnchor] = useState(-1)
   const [focusedLink, setFocusedLink] = useState(-1)
+  // Which pane the arrow keys drive: ←/→ move focus between notes ↔ outline ↔
+  // doc; ↑/↓ then navigate within the focused pane.
+  const [focus, setFocus] = useState<'doc' | 'list' | 'outline'>('doc')
 
   const [search, setSearch] = useState<null | {
     loading: boolean
@@ -1024,14 +1027,23 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
       return openFocusedLink()
     }
 
-    // Reading cursor (right doc): ↑↓/jk move it line/block-wise. v starts a
-    // selection (then movement extends); Shift/J/K also extend directly.
+    // ←/→ move focus across panes: notes ↔ outline ↔ doc.
+    if (key.leftArrow || ch === 'h') {
+      return moveFocus(-1)
+    }
+
+    if (key.rightArrow || ch === 'l') {
+      return moveFocus(1)
+    }
+
+    // ↑↓/jk navigate the focused pane (note list / outline / doc cursor).
+    // v + ↑↓ (or Shift/J/K) extend a selection in the doc.
     if (key.upArrow || ch === 'k' || ch === 'K') {
-      return moveCursor(-1, Boolean(key.shift) || ch === 'K')
+      return navStep(-1, Boolean(key.shift) || ch === 'K')
     }
 
     if (key.downArrow || ch === 'j' || ch === 'J') {
-      return moveCursor(1, Boolean(key.shift) || ch === 'J')
+      return navStep(1, Boolean(key.shift) || ch === 'J')
     }
 
     // Mouse wheel: small, smooth steps (a full page per tick felt janky).
@@ -1258,6 +1270,47 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
     scrollToBlock(bi)
   }
 
+  // Step the outline: jump the doc cursor to the previous/next heading.
+  const stepHeading = (dir: -1 | 1) => {
+    if (!headings.length) {
+      return
+    }
+
+    const pos = headings.findIndex(h => h.i === activeHeadingIdx)
+    const next = headings[Math.max(0, Math.min(headings.length - 1, (pos < 0 ? 0 : pos) + dir))]
+
+    if (next) {
+      jumpCursor(next.i)
+    }
+  }
+
+  // ←/→ move focus across the panes; outline is skipped when it's hidden.
+  const focusOrder = (): ('doc' | 'list' | 'outline')[] =>
+    outlineW > 0 ? ['list', 'outline', 'doc'] : ['list', 'doc']
+
+  const moveFocus = (dir: -1 | 1) => {
+    const order = focusOrder()
+    const idx = order.indexOf(focus)
+    const next = order[Math.max(0, Math.min(order.length - 1, (idx < 0 ? order.length - 1 : idx) + dir))]
+
+    if (next) {
+      setFocus(next)
+    }
+  }
+
+  // ↑/↓ act on the focused pane.
+  const navStep = (dir: -1 | 1, extend: boolean) => {
+    if (focus === 'list') {
+      return move(dir)
+    }
+
+    if (focus === 'outline') {
+      return stepHeading(dir)
+    }
+
+    return moveCursor(dir, extend)
+  }
+
   // Current selection as a block-index range (inclusive).
   const selLo = selAnchor < 0 ? cursor : Math.min(selAnchor, cursor)
   const selHi = selAnchor < 0 ? cursor : Math.max(selAnchor, cursor)
@@ -1438,8 +1491,8 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
       <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
         {/* Left: note list */}
         <Box flexDirection="column" flexShrink={0} marginRight={2} noSelect width={listW}>
-          <Text bold color={t.color.label} wrap="truncate-end">
-            {`Notes (${notes.length})`}
+          <Text bold color={focus === 'list' ? t.color.primary : t.color.label} wrap="truncate-end">
+            {`${focus === 'list' ? '▸ ' : '  '}Notes (${notes.length})`}
           </Text>
           <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} ref={listScrollRef}>
             {notes.map((note, i) => {
@@ -1454,6 +1507,7 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
                     }
 
                     event.stopPropagation?.()
+                    setFocus('list')
                     setSelected(i)
                   }}
                 >
@@ -1470,8 +1524,8 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
         {/* Middle: outline (markdown headings) */}
         {!editing && outlineW > 0 ? (
           <Box flexDirection="column" flexShrink={0} marginRight={2} noSelect width={outlineW}>
-            <Text bold color={t.color.label} wrap="truncate-end">
-              Outline
+            <Text bold color={focus === 'outline' ? t.color.primary : t.color.label} wrap="truncate-end">
+              {`${focus === 'outline' ? '▸ ' : '  '}Outline`}
             </Text>
             <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1}>
               {headings.length > 0 ? (
@@ -1488,6 +1542,7 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
                         }
 
                         event.stopPropagation?.()
+                        setFocus('outline')
                         jumpCursor(h.i)
                       }}
                     >
@@ -1509,8 +1564,8 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
         <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} minWidth={0}>
           {/* Header is fixed-height so it never collapses onto the body. */}
           <Box flexDirection="column" flexShrink={0}>
-            <Text bold color={t.color.text} wrap="truncate-end">
-              {truncate(docTitle, docWidth)}
+            <Text bold color={focus === 'doc' ? t.color.primary : t.color.text} wrap="truncate-end">
+              {`${focus === 'doc' ? '▸ ' : '  '}${truncate(docTitle, docWidth - 2)}`}
             </Text>
             {docSubtitle ? (
               <Text color={t.color.muted} wrap="truncate-end">
@@ -1553,6 +1608,7 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
                           }
 
                           event.stopPropagation?.()
+                          setFocus('doc')
                           jumpCursor(i)
                         }}
                          
@@ -1802,7 +1858,7 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
             <Text color={t.color.muted} wrap="truncate-end">
               {selAnchor >= 0
                 ? `SELECTING ${lineRef} · ↑↓ extend · c comment · Esc cancel`
-                : '↑↓ line · v select · [ ] note · Tab link · ⏎ open · c comment'}
+                : `←/→ ${focus === 'list' ? 'notes' : focus === 'outline' ? 'outline' : 'doc'} · ↑↓ navigate · v select · ⏎ open link · c comment`}
             </Text>
           ) : null}
         </>

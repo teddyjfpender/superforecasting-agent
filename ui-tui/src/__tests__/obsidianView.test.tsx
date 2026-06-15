@@ -201,6 +201,21 @@ describe('ObsidianView render', () => {
     cleanup()
   })
 
+  it('moves pane focus left with ← (doc → outline → notes)', async () => {
+    const { cleanup, read, stdin } = await renderView()
+
+    // Default focus is the doc; left arrow steps doc → outline → notes.
+    stdin.write('[D') // ← arrow
+    await tick(20)
+    expect(read()).toContain('▸ Outline')
+
+    stdin.write('[D') // ← arrow again
+    await tick(20)
+    expect(read()).toContain('▸ Notes')
+
+    cleanup()
+  })
+
   it('opens the in-Obsidian chat modal on "a"', async () => {
     const { cleanup, read, stdin } = await renderView()
 
