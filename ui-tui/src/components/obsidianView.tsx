@@ -280,8 +280,6 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
     return notes.find(n => n.rel_path?.replace(/\.md$/i, '').toLowerCase() === key)?.rel_path
   }
 
-  const outgoing = (notes[selected]?.links ?? []).map(name => ({ name, rel: resolve(name) }))
-
   const backlinks = notes.filter(
     n => n.rel_path !== currentRel && (n.links ?? []).some(l => resolve(l) === currentRel)
   )
@@ -1451,36 +1449,8 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
                   <Text color={t.color.muted}>{'\n… (truncated — open in Obsidian for the rest)'}</Text>
                 ) : null}
 
-                {outgoing.length > 0 ? (
-                  <Box flexDirection="column" marginTop={1}>
-                    <Text>
-                      <Text bold color={t.color.accent}>
-                        Links
-                      </Text>
-                      <Text color={t.color.muted}> · click to open</Text>
-                    </Text>
-                    {outgoing.map((link, i) => (
-                      <Box
-                        key={`${link.name}-${i}`}
-                        onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                          if (event.cellIsBlank || !link.rel) {
-                            return
-                          }
-
-                          event.stopPropagation?.()
-                          jumpTo(link.rel)
-                        }}
-                      >
-                        <Text color={link.rel ? t.color.primary : t.color.muted}>{link.rel ? '↗ ' : '× '}</Text>
-                        <Text color={link.rel ? t.color.primary : t.color.muted} underline={Boolean(link.rel)} wrap="truncate-end">
-                          {truncate(link.name, docWidth - 6)}
-                        </Text>
-                        {!link.rel ? <Text color={t.color.muted}> (unresolved)</Text> : null}
-                      </Box>
-                    ))}
-                  </Box>
-                ) : null}
-
+                {/* Outgoing links live inline now (click / Tab) — no separate
+                    index needed. Backlinks stay: they aren't shown inline. */}
                 {backlinks.length > 0 ? (
                   <Box flexDirection="column" marginTop={1}>
                     <Text bold color={t.color.accent}>

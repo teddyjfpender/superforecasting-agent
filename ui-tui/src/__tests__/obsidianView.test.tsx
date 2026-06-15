@@ -160,12 +160,11 @@ describe('ObsidianView render', () => {
     expect(text).toContain('²')
     expect(text).not.toContain('$E = mc^2$')
 
-    // The inline [[wikilink]] renders as a styled link (glyph + label), not raw brackets
+    // The inline [[wikilink]] renders as a styled, clickable link (glyph +
+    // label), not raw brackets — and there's no redundant Links index now.
     expect(text).toContain('↗Calibration and Scoring')
     expect(text).not.toContain('[[Calibration and Scoring]]')
-
-    // …and is mirrored in the clickable Links index
-    expect(text).toContain('Links')
+    expect(text).not.toContain('click to open')
 
     cleanup()
   })
