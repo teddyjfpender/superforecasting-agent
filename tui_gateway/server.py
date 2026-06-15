@@ -2657,6 +2657,34 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5009, str(e))
 
 
+@method("obsidian.setup")
+def _(rid, params: dict) -> dict:
+    """Create the vault (if needed) and seed the starter forecasting wiki.
+
+    Targets OBSIDIAN_VAULT_PATH when set, else ~/Documents/Obsidian Vault.
+    Seeding never overwrites existing notes, so this is safe to run repeatedly.
+    """
+    try:
+        from plugins.obsidian.starter import seed_starter_vault
+        from plugins.obsidian.vault import DEFAULT_VAULT
+
+        configured = os.getenv("OBSIDIAN_VAULT_PATH", "").strip()
+        target = Path(configured).expanduser() if configured else DEFAULT_VAULT
+        target.mkdir(parents=True, exist_ok=True)
+        result = seed_starter_vault(target)
+        return _ok(
+            rid,
+            {
+                "ok": True,
+                "vault": str(target),
+                "created": result["created"],
+                "skipped": result["skipped"],
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5010, str(e))
+
+
 # ── forecast.calibration ─────────────────────────────────────────────
 # Structured calibration analytics for the TUI's native calibration view.
 # `forecast.command` already exposes the same numbers as CLI text; this RPC

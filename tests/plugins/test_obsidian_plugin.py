@@ -283,3 +283,35 @@ class TestRegistration:
             (Path(__file__).resolve().parents[2] / "plugins" / "obsidian" / "plugin.yaml").read_text()
         )
         assert set(manifest["provides_tools"]) == {name for name, *_ in _TOOLS}
+
+
+def test_seed_starter_vault_creates_wikilinked_kb(tmp_path):
+    from plugins.obsidian.starter import STARTER_DOCS, seed_starter_vault
+
+    vault = tmp_path / "vault"
+    result = seed_starter_vault(vault)
+
+    assert len(result["created"]) == len(STARTER_DOCS)
+    assert result["skipped"] == []
+    # Index is the home MOC and wikilinks the core notes.
+    index = (vault / "Forecasting" / "Index.md").read_text(encoding="utf-8")
+    assert "[[Superforecasting]]" in index
+    assert "[[Getting Started]]" in index
+    # Knowledge + template land in their own folders (no collision with sync).
+    assert (vault / "Forecasting" / "Knowledge" / "Superforecasting.md").is_file()
+    assert (vault / "Forecasting" / "Templates" / "Question Dossier.md").is_file()
+
+
+def test_seed_starter_vault_is_idempotent_and_preserves_edits(tmp_path):
+    from plugins.obsidian.starter import seed_starter_vault
+
+    vault = tmp_path / "vault"
+    seed_starter_vault(vault)
+
+    # A user edit must survive a re-seed.
+    edited = vault / "Forecasting" / "Knowledge" / "Superforecasting.md"
+    edited.write_text("# my own notes", encoding="utf-8")
+
+    result = seed_starter_vault(vault)
+    assert result["created"] == []
+    assert edited.read_text(encoding="utf-8") == "# my own notes"

@@ -74,6 +74,19 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
       })
   }
 
+  // Create the vault (default or OBSIDIAN_VAULT_PATH) and seed the starter
+  // knowledge base, then reload to show it.
+  const runSetup = () => {
+    setLoading(true)
+    setFlash('setting up vault…')
+    gw.request<unknown>('obsidian.setup', {})
+      .then(() => load(true))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+        setLoading(false)
+      })
+  }
+
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -94,6 +107,11 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
   useInput((ch, key) => {
     if (ch === 'q' || key.escape) {
       return onClose()
+    }
+
+    // `s` sets up + seeds a vault when none is connected yet.
+    if (ch === 's' && !(data?.exists && data?.vault)) {
+      return runSetup()
     }
 
     if (ch === 'r') {
@@ -144,13 +162,25 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
     body = (
       <Box flexDirection="column">
         <Text color={t.color.warn} wrap="wrap">
-          No Obsidian vault found.
+          No Obsidian vault connected yet.
         </Text>
         <Box marginTop={1}>
+          <Text color={t.color.text} wrap="wrap">
+            Press{' '}
+            <Text bold color={t.color.primary}>
+              s
+            </Text>{' '}
+            to set one up. The desk will create a vault and seed it with a starter forecasting
+            knowledge base — the art of superforecasting, a getting-started guide, the core methods
+            (reference classes, Bayesian updating, calibration), and a question-dossier template, all
+            wikilinked into an index.
+          </Text>
+        </Box>
+        <Box marginTop={1}>
           <Text color={t.color.muted} wrap="wrap">
-            Set OBSIDIAN_VAULT_PATH (or create ~/Documents/Obsidian Vault), then ask the desk to
-            publish: it syncs calibration lessons and question dossiers under Forecasting/ as a linked
-            knowledge graph you can read, write and wikilink.
+            It is created at ~/Documents/Obsidian Vault by default; set OBSIDIAN_VAULT_PATH first to
+            choose a different location. From there the desk reads, writes and links notes — your
+            knowledge base grows as you forecast.
           </Text>
         </Box>
       </Box>
@@ -220,7 +250,9 @@ export function ObsidianView({ gw, onClose, t }: ObsidianViewProps) {
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
       {flash ? <Text color={t.color.accent}>{flash}</Text> : null}
       <Text color={t.color.muted} wrap="truncate-end">
-        ↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · r refresh · Esc/q close
+        {hasVault
+          ? '↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · r refresh · Esc/q close'
+          : 's set up vault · r retry · Esc/q close'}
       </Text>
     </Box>
   )
