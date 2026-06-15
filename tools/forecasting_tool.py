@@ -1322,7 +1322,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 reasons_down=args.get("reasons_down"),
                 change_my_mind=args.get("change_my_mind"),
                 require_structured_reasoning=bool(args.get("require_structured_reasoning", True)),
-                require_components=bool(args.get("require_components", False)),
+                require_components=bool(args.get("require_components", True)),
                 require_decision_readiness=bool(args.get("require_decision_readiness", False)),
                 require_panel=bool(args.get("require_panel", True)),
                 panel_run_ref=args.get("panel_run_ref"),
@@ -1486,9 +1486,12 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 doctor_status = "benchmark_evidence_ready_live_claim_unproven"
 
             operational_status = _forecast_operational_status(ledger, pilot_report)
+            from forecasting.protocol import PROCESS_VERSION
+
             return tool_result(
                 success=True,
                 product=PRODUCT_NAME,
+                process_version=PROCESS_VERSION,
                 generated_at=utc_now_iso(),
                 doctor_status=doctor_status,
                 tester_handoff_ready=pilot_ready,

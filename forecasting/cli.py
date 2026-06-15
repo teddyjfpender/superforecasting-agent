@@ -2909,8 +2909,11 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
     else:
         doctor_status = "benchmark_evidence_ready_live_claim_unproven"
 
+    from forecasting.protocol import PROCESS_VERSION
+
     return {
         "product": PRODUCT_NAME,
+        "process_version": PROCESS_VERSION,
         "generated_at": utc_now_iso(),
         "doctor_status": doctor_status,
         "tester_handoff_ready": pilot_ready,
@@ -2958,6 +2961,7 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
         f"pilot {pilot_report['passed_checks']}/{pilot_report['total_checks']} checks, "
         f"readiness {readiness.get('verdict')}"
     )
+    print(f"process_version: {report['process_version']}")
     print(f"ledger: {status['ledger_path']}")
     print(
         "book: "

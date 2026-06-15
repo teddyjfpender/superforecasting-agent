@@ -158,7 +158,7 @@ def test_forecast_ledger_tool_searches_questions_by_ledger_context(tmp_path):
     forecast_ledger_tool(
         {
             "db": db,
-            "action": "update_forecast",
+            "action": "update_forecast", "require_components": False,
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -877,7 +877,7 @@ def test_forecast_ledger_tool_lifecycle(tmp_path):
         forecast_ledger_tool(
             {
                 "db": db,
-                "action": "update_forecast",
+                "action": "update_forecast", "require_components": False,
                 "reasons_up": ["base rate and recent signal point higher"],
                 "reasons_down": ["small sample; reversion risk"],
                 "change_my_mind": ["a confirmed contradicting data release"],
@@ -929,7 +929,7 @@ def test_forecast_ledger_tool_can_require_update_citations(tmp_path):
         forecast_ledger_tool(
             {
                 "db": db,
-                "action": "update_forecast",
+                "action": "update_forecast", "require_components": False,
                 "reasons_up": ["base rate and recent signal point higher"],
                 "reasons_down": ["small sample; reversion risk"],
                 "change_my_mind": ["a confirmed contradicting data release"],
@@ -955,7 +955,7 @@ def test_forecast_ledger_tool_can_require_update_citations(tmp_path):
         forecast_ledger_tool(
             {
                 "db": db,
-                "action": "update_forecast",
+                "action": "update_forecast", "require_components": False,
                 "reasons_up": ["base rate and recent signal point higher"],
                 "reasons_down": ["small sample; reversion risk"],
                 "change_my_mind": ["a confirmed contradicting data release"],
@@ -991,7 +991,7 @@ def test_forecast_ledger_tool_high_impact_requires_panel_by_default(tmp_path):
     question_id = created["question"]["id"]
     base = {
         "db": db,
-        "action": "update_forecast",
+        "action": "update_forecast", "require_components": False,
         "question_id": question_id,
         "probability": 0.6,
         "rationale": "single-model call on a high-impact question",
@@ -1076,7 +1076,7 @@ def test_forecast_ledger_tool_records_structured_postmortem_learning(tmp_path):
     forecast_ledger_tool(
         {
             "db": db,
-            "action": "update_forecast",
+            "action": "update_forecast", "require_components": False,
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -1238,7 +1238,7 @@ def test_forecast_ledger_tool_show_question_returns_research_context(tmp_path):
     forecast_ledger_tool(
         {
             "db": db,
-            "action": "update_forecast",
+            "action": "update_forecast", "require_components": False,
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -1530,7 +1530,7 @@ def test_forecast_ledger_tool_manages_autopilot_update_proposals(tmp_path):
         forecast_ledger_tool(
             {
                 "db": db,
-                "action": "update_forecast",
+                "action": "update_forecast", "require_components": False,
                 "reasons_up": ["base rate and recent signal point higher"],
                 "reasons_down": ["small sample; reversion risk"],
                 "change_my_mind": ["a confirmed contradicting data release"],
@@ -1642,7 +1642,7 @@ def test_forecast_ledger_tool_can_save_ensemble_components(tmp_path):
         forecast_ledger_tool(
             {
                 "db": db,
-                "action": "update_forecast",
+                "action": "update_forecast", "require_components": False,
                 "reasons_up": ["base rate and recent signal point higher"],
                 "reasons_down": ["small sample; reversion risk"],
                 "change_my_mind": ["a confirmed contradicting data release"],
@@ -1771,7 +1771,7 @@ def test_forecast_ledger_tool_lists_model_runs_and_postmortems(tmp_path):
     forecast_ledger_tool(
         {
             "db": db,
-            "action": "update_forecast",
+            "action": "update_forecast", "require_components": False,
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -1847,7 +1847,7 @@ def test_forecast_ledger_tool_exports_audit_packets(tmp_path):
     forecast_ledger_tool(
         {
             "db": db,
-            "action": "update_forecast",
+            "action": "update_forecast", "require_components": False,
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -1945,7 +1945,7 @@ def test_forecast_ledger_tool_returns_pilot_report(tmp_path):
     forecast_ledger_tool(
         {
             "db": db,
-            "action": "update_forecast",
+            "action": "update_forecast", "require_components": False,
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -2021,7 +2021,7 @@ def test_forecast_ledger_tool_returns_doctor_report(tmp_path):
     forecast_ledger_tool(
         {
             "db": db,
-            "action": "update_forecast",
+            "action": "update_forecast", "require_components": False,
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -2093,7 +2093,7 @@ def test_forecast_ledger_tool_records_corrections_and_invalidates_learning(tmp_p
     forecast_ledger_tool(
         {
             "db": db,
-            "action": "update_forecast",
+            "action": "update_forecast", "require_components": False,
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -2180,7 +2180,7 @@ def test_forecast_ledger_tool_lists_scores_for_calibration_review(tmp_path):
     forecast_ledger_tool(
         {
             "db": db,
-            "action": "update_forecast",
+            "action": "update_forecast", "require_components": False,
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -2349,7 +2349,7 @@ def test_forecast_ledger_tool_stores_snapshot_audit_metadata(tmp_path):
         forecast_ledger_tool(
             {
                 "db": db,
-                "action": "update_forecast",
+                "action": "update_forecast", "require_components": False,
                 "reasons_up": ["base rate and recent signal point higher"],
                 "reasons_down": ["small sample; reversion risk"],
                 "change_my_mind": ["a confirmed contradicting data release"],
@@ -2415,7 +2415,7 @@ def test_forecast_ledger_tool_can_apply_active_calibration_lessons(tmp_path):
         forecast_ledger_tool(
             {
                 "db": db,
-                "action": "update_forecast",
+                "action": "update_forecast", "require_components": False,
                 "reasons_up": ["base rate and recent signal point higher"],
                 "reasons_down": ["small sample; reversion risk"],
                 "change_my_mind": ["a confirmed contradicting data release"],
@@ -2779,7 +2779,7 @@ def test_forecast_ledger_tool_reviews_focused_books(tmp_path):
     forecast_ledger_tool(
         {
             "db": db,
-            "action": "update_forecast",
+            "action": "update_forecast", "require_components": False,
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -2792,7 +2792,7 @@ def test_forecast_ledger_tool_reviews_focused_books(tmp_path):
     forecast_ledger_tool(
         {
             "db": db,
-            "action": "update_forecast",
+            "action": "update_forecast", "require_components": False,
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -2836,7 +2836,7 @@ def test_forecast_ledger_tool_reads_calibration_and_error_memory(tmp_path):
     forecast_ledger_tool(
         {
             "db": db,
-            "action": "update_forecast",
+            "action": "update_forecast", "require_components": False,
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -4617,9 +4617,9 @@ def test_workflow_report_aggregates_question_activity(tmp_path):
         forecast_ledger_tool({"action": "add_evidence", "db": db, "question_id": qid,
                               "source_or_note": f"note {i}", "claim": f"c{i}"})
     _reasons = {"reasons_up": ["up"], "reasons_down": ["down"], "change_my_mind": ["new data"]}
-    forecast_ledger_tool({"action": "update_forecast", "db": db, "question_id": qid,
+    forecast_ledger_tool({"action": "update_forecast", "require_components": False, "db": db, "question_id": qid,
                           "probability": 0.55, "rationale": "first", **_reasons})
-    forecast_ledger_tool({"action": "update_forecast", "db": db, "question_id": qid,
+    forecast_ledger_tool({"action": "update_forecast", "require_components": False, "db": db, "question_id": qid,
                           "probability": 0.6, "rationale": "second", **_reasons})
 
     out = json.loads(forecast_ledger_tool({"action": "workflow_report", "db": db, "question_id": qid}))
@@ -4856,7 +4856,7 @@ def test_forecast_ledger_tool_update_forecast_persists_reasons(tmp_path):
         forecast_ledger_tool(
             {
                 "db": db,
-                "action": "update_forecast",
+                "action": "update_forecast", "require_components": False,
                 "question_id": qid,
                 "probability": 0.41,
                 "rationale": "base rate plus inside view",
@@ -4888,7 +4888,7 @@ def test_forecast_ledger_tool_update_forecast_enforces_structured_reasoning(tmp_
         forecast_ledger_tool(
             {
                 "db": db,
-                "action": "update_forecast",
+                "action": "update_forecast", "require_components": False,
                 "question_id": qid,
                 "probability": 0.55,
                 "rationale": "rough call",
@@ -4912,7 +4912,7 @@ def test_forecast_ledger_tool_structured_reasoning_enforced_by_default_for_live(
 
     # No reasons, no require flag, origin defaults to live -> rejected by default.
     rejected = json.loads(forecast_ledger_tool({
-        "db": db, "action": "update_forecast", "question_id": qid,
+        "db": db, "action": "update_forecast", "require_components": False, "question_id": qid,
         "probability": 0.55, "rationale": "rough call",
     }))
     assert rejected["success"] is False
@@ -4920,7 +4920,7 @@ def test_forecast_ledger_tool_structured_reasoning_enforced_by_default_for_live(
 
     # Explicit opt-out lets a bare live forecast through (judgment retained).
     allowed = json.loads(forecast_ledger_tool({
-        "db": db, "action": "update_forecast", "question_id": qid,
+        "db": db, "action": "update_forecast", "require_components": False, "question_id": qid,
         "probability": 0.55, "rationale": "rough call",
         "require_structured_reasoning": False,
     }))
@@ -4938,7 +4938,7 @@ def test_forecast_ledger_tool_exploratory_origin_is_exempt(tmp_path):
     }))["question"]["id"]
 
     out = json.loads(forecast_ledger_tool({
-        "db": db, "action": "update_forecast", "question_id": qid,
+        "db": db, "action": "update_forecast", "require_components": False, "question_id": qid,
         "probability": 0.55, "rationale": "thinking out loud",
         "forecast_origin": "exploratory",
     }))
@@ -4965,7 +4965,7 @@ def test_forecast_ledger_tool_update_forecast_enforces_decision_readiness(tmp_pa
         forecast_ledger_tool(
             {
                 "db": db,
-                "action": "update_forecast",
+                "action": "update_forecast", "require_components": False,
                 "reasons_up": ["base rate and recent signal point higher"],
                 "reasons_down": ["small sample; reversion risk"],
                 "change_my_mind": ["a confirmed contradicting data release"],
@@ -4996,7 +4996,7 @@ def test_forecast_ledger_tool_postmortem_persists_failure_class(tmp_path):
     forecast_ledger_tool(
         {
             "db": db,
-            "action": "update_forecast",
+            "action": "update_forecast", "require_components": False,
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -5045,7 +5045,7 @@ def test_forecast_ledger_tool_postmortem_rejects_unknown_failure_class(tmp_path)
     forecast_ledger_tool(
         {
             "db": db,
-            "action": "update_forecast",
+            "action": "update_forecast", "require_components": False,
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -5088,3 +5088,47 @@ def test_forecast_ledger_tool_schema_advertises_decision_card_properties():
         assert field in props, f"missing tool schema field: {field}"
     actions = props["action"]["enum"]
     assert "set_decision" in actions
+
+
+def test_forecast_ledger_tool_requires_components_by_default_for_live(tmp_path):
+    """A live forecast with structured reasoning but NO ensemble components is
+    rejected by default — the decomposition formality defaults ON for commits,
+    so a serious forecast cannot collapse into a bare number."""
+    db = str(tmp_path / "ledger.db")
+    qid = json.loads(forecast_ledger_tool({
+        "db": db, "action": "create_question",
+        "title": "Will the bridge open before 2027-01-01?",
+        "resolution_criteria": "Official opening date confirmed by the authority.",
+    }))["question"]["id"]
+
+    reasons = {
+        "reasons_up": ["permits cleared"],
+        "reasons_down": ["weather risk"],
+        "change_my_mind": ["a slipped contractor milestone"],
+    }
+
+    # Reasons present, but no components, origin defaults to live -> rejected.
+    rejected = json.loads(forecast_ledger_tool({
+        "db": db, "action": "update_forecast", "question_id": qid,
+        "probability": 0.6, "rationale": "bare number", **reasons,
+    }))
+    assert rejected["success"] is False
+    assert "ensemble_components" in rejected["error"]
+
+    # Providing pooled components satisfies the gate.
+    allowed = json.loads(forecast_ledger_tool({
+        "db": db, "action": "update_forecast", "question_id": qid,
+        "rationale": "decomposed", "method": "weighted_ensemble", **reasons,
+        "components": {
+            "base_rate": {"probability": 0.5, "weight": 1},
+            "inside_view": {"probability": 0.7, "weight": 1},
+        },
+    }))
+    assert allowed["success"] is True
+
+    # Exploratory work bypasses the gate (judgment retained for scratch forecasts).
+    explore = json.loads(forecast_ledger_tool({
+        "db": db, "action": "update_forecast", "question_id": qid,
+        "probability": 0.6, "rationale": "scratch", "forecast_origin": "exploratory",
+    }))
+    assert explore["success"] is True
