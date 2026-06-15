@@ -2685,6 +2685,37 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5010, str(e))
 
 
+@method("obsidian.note")
+def _(rid, params: dict) -> dict:
+    """Read one vault note's content for the Obsidian view's reading pane."""
+    try:
+        from plugins.obsidian.vault import resolve_vault_path, safe_note_path
+
+        vault = resolve_vault_path()
+        if vault is None:
+            return _err(rid, 5011, "no Obsidian vault configured")
+        rel = str(params.get("rel_path") or "").strip()
+        if not rel:
+            return _err(rid, 5011, "rel_path is required")
+        path = safe_note_path(vault, rel)  # refuses paths escaping the vault
+        if not path.is_file():
+            return _err(rid, 5011, f"note not found: {rel}")
+        text = path.read_text(encoding="utf-8", errors="replace")
+        max_chars = 80_000
+        truncated = len(text) > max_chars
+        return _ok(
+            rid,
+            {
+                "rel_path": rel,
+                "content": text[:max_chars],
+                "truncated": truncated,
+                "size": path.stat().st_size,
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5011, str(e))
+
+
 # ── forecast.calibration ─────────────────────────────────────────────
 # Structured calibration analytics for the TUI's native calibration view.
 # `forecast.command` already exposes the same numbers as CLI text; this RPC

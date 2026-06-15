@@ -1478,3 +1478,10 @@ export interface ObsidianStatusResponse {
   notes?: ObsidianNote[]
   vault?: null | string
 }
+
+export interface ObsidianNoteResponse {
+  content?: string
+  rel_path?: string
+  size?: number
+  truncated?: boolean
+}
