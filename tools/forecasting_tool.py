@@ -316,7 +316,17 @@ FORECAST_LEDGER_SCHEMA = {
                 "type": "boolean",
                 "description": (
                     "Refuse to save the snapshot unless reasons_up, reasons_down, and "
-                    "change_my_mind are all populated."
+                    "change_my_mind are all populated. Defaults true for live forecasts."
+                ),
+            },
+            "require_components": {
+                "type": "boolean",
+                "description": (
+                    "Refuse to save a live snapshot unless ensemble_components is populated "
+                    "(the pooled drivers — base rate, mechanism, market/crowd, case-specific — "
+                    "each with a stable source slug). Defaults true; stops a serious forecast "
+                    "collapsing into a bare number. Set false or use forecast_origin="
+                    "'exploratory' for scratch work."
                 ),
             },
             "require_decision_readiness": {
@@ -330,8 +340,10 @@ FORECAST_LEDGER_SCHEMA = {
                 "type": "boolean",
                 "description": (
                     "For a high-impact live forecast, refuse to save unless a deliberative "
-                    "panel run is linked (panel_run_ref) or panel_skipped_reason is recorded. "
-                    "Defaults true; lower-impact first forecasts are only nudged, not blocked."
+                    "panel/quorum run is linked (panel_run_ref) or panel_skipped_reason is "
+                    "recorded. Defaults true; lower-impact first forecasts are nudged "
+                    "(panel_recommended), not blocked. Run a panel/quorum for serious "
+                    "forecasts regardless — see the process discipline."
                 ),
             },
             "panel_run_ref": {
@@ -1310,6 +1322,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 reasons_down=args.get("reasons_down"),
                 change_my_mind=args.get("change_my_mind"),
                 require_structured_reasoning=bool(args.get("require_structured_reasoning", True)),
+                require_components=bool(args.get("require_components", False)),
                 require_decision_readiness=bool(args.get("require_decision_readiness", False)),
                 require_panel=bool(args.get("require_panel", True)),
                 panel_run_ref=args.get("panel_run_ref"),

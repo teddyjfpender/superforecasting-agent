@@ -1428,6 +1428,7 @@ class ForecastLedger:
         change_my_mind: list[str] | None = None,
         require_decision_readiness: bool = False,
         require_structured_reasoning: bool = False,
+        require_components: bool = False,
         require_panel: bool = False,
         panel_run_ref: str | None = None,
         panel_skipped_reason: str | None = None,
@@ -1469,6 +1470,27 @@ class ForecastLedger:
                     "require_structured_reasoning=false, or record it as "
                     "forecast_origin='exploratory'."
                 )
+        if require_components and forecast_origin == "live":
+            # A serious live forecast must show its work: the pooled drivers
+            # (base rate, mechanism, market/crowd, case-specific factors) in the
+            # structured ensemble_components field, not a bare number. This is
+            # the gate that stops snapshots collapsing into an under-specified
+            # point estimate.
+            component_rows = ensemble_components
+            if isinstance(component_rows, dict):
+                component_rows = component_rows.get("components", component_rows)
+            has_components = bool(component_rows) and (
+                len(component_rows) > 0 if isinstance(component_rows, (list, dict)) else False
+            )
+            if not has_components:
+                raise ValidationError(
+                    "live forecast requires ensemble_components: decompose the estimate "
+                    "into pooled drivers (base rate, mechanism, market/crowd, case-specific "
+                    "factors), each with a stable source slug. Provide ensemble_components, "
+                    "rerun with require_components=false, or record it as "
+                    "forecast_origin='exploratory'."
+                )
+
         if require_decision_readiness and forecast_origin == "live":
             readiness_issues = question_decision_readiness_issues(question)
             if readiness_issues:
@@ -1512,8 +1534,8 @@ class ForecastLedger:
                 if require_panel and high_impact:
                     raise ValidationError(
                         "high-impact live forecast requires a deliberative panel: run a "
-                        "panel and pass panel_run_ref, record why you skipped it with "
-                        "panel_skipped_reason, rerun with require_panel=false, or record "
+                        "panel or quorum and pass panel_run_ref, record why you skipped it "
+                        "with panel_skipped_reason, rerun with require_panel=false, or record "
                         "it as forecast_origin='exploratory'."
                     )
                 # First-forecast panels on lower-impact questions are recommended,
