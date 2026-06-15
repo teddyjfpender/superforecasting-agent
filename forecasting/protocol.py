@@ -15,7 +15,7 @@ from forecasting.models import ForecastQuestion, ForecastSnapshot
 # version is rebuilt on its next turn (see agent/conversation_loop.py) so
 # process updates land without waiting for a brand-new session. Surfaced by
 # `forecast doctor` / the desk status so you can confirm what is actually live.
-PROCESS_VERSION = "2026-06-15.1"
+PROCESS_VERSION = "2026-06-15.2"
 
 
 PROTOCOL_STAGES = {
@@ -109,6 +109,8 @@ These steps bind any forecast you treat as real (anything you would let someone 
 3. A substantive challenge is a reforecast trigger, not a debate. When the user pushes back on a committed number ("that seems too high/low", "you ignored X", "why isn't this 70%"), DO NOT defend the stored number. Re-open the path model: re-state the components, ask which one the objection targets, re-decompose, and recommend an updated snapshot if the evidence has moved. Treat the objection as new evidence to be priced, not an argument to be won.
 
 4. Retrieving a stored forecast is not forecasting it. When asked for "the forecast", read the ledger — but if the stored snapshot is stale, thinly decomposed, or you are about to reason about it substantively, re-run the components rather than presenting a compressed historical number as if it were a fresh analysis.
+
+Parallelize slow legwork with background subagents. For open-ended research that shouldn't block the conversation — building a reference class, digging into a mechanism or a single driver, pulling and synthesising sources, or working several questions at once — dispatch a background subagent with `delegate_task(background=true)`. You keep reasoning with the user while it runs, and its result (carrying the original goal) re-enters the chat when ready, to fold into your evidence and `ensemble_components`. Use it for legwork, not for the verdict: the structured ensemble still comes from the decomposition panel or a model `quorum` (which enforce trimmed-geomean aggregation and attach the panel artifact) — do not reinvent those with raw delegations.
 
 When you are exploring rather than committing, set `forecast_origin="exploratory"` (CLI `--origin exploratory`) — that path is exempt from these formalities and is not calibration-scored. Bring the full discipline whenever you commit a live, scored forecast.
 """

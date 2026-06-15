@@ -355,6 +355,12 @@ TOOLSETS = {
             "todo",
             "clarify",
             "cronjob",
+            # Lets the desk fan research legwork out to subagents — synchronously,
+            # or in the background (delegate_task(background=true)) so the user
+            # keeps interacting while it runs and the result re-enters the chat
+            # when ready. The structured ensemble still comes from the panel /
+            # quorum (see forecasting/protocol.py), not raw delegations.
+            "delegation",
         ],
     },
 
@@ -371,6 +377,7 @@ TOOLSETS = {
             "todo",
             "clarify",
             "messaging",
+            "delegation",
         ],
     },
 
@@ -385,6 +392,7 @@ TOOLSETS = {
             "file",
             "code_execution",
             "todo",
+            "delegation",
         ],
     },
 
@@ -399,6 +407,7 @@ TOOLSETS = {
             "code_execution",
             "todo",
             "messaging",
+            "delegation",
         ],
     },
 

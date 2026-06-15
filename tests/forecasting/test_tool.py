@@ -70,7 +70,11 @@ def test_cli_default_toolsets_are_forecast_desk_scoped():
     assert "memory" not in enabled
     assert "skills" not in enabled
     assert "image_gen" not in enabled
-    assert "delegation" not in enabled
+    # Delegation IS enabled on the desk so it can fan research legwork out to
+    # subagents (sync or background); the structured ensemble still comes from
+    # the panel/quorum (see forecasting/protocol.py). The desk stays scoped
+    # away from memory/skills/image_gen.
+    assert "delegation" in enabled
 
     tool_names = {
         tool["function"]["name"]
@@ -80,7 +84,7 @@ def test_cli_default_toolsets_are_forecast_desk_scoped():
     assert "memory" not in tool_names
     assert "skill_manage" not in tool_names
     assert "image_generate" not in tool_names
-    assert "delegate_task" not in tool_names
+    assert "delegate_task" in tool_names
 
 
 def test_fork_native_inherited_toolset_aliases_remain_available():
@@ -107,7 +111,9 @@ def test_forecast_platform_toolsets_are_scoped_to_forecasting():
         assert "skill_manage" not in tools
         assert "image_generate" not in tools
         assert "text_to_speech" not in tools
-        assert "delegate_task" not in tools
+        # Delegation is intentionally available to the forecast runtimes (for
+        # research fan-out); the desk stays scoped away from memory/skills/etc.
+        assert "delegate_task" in tools
 
     assert "discord" in resolve_toolset(PLATFORMS["discord"].default_toolset)
     assert "discord_admin" not in resolve_toolset(PLATFORMS["discord"].default_toolset)
