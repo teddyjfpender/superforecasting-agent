@@ -33,6 +33,59 @@ const splitFrontmatter = (text: string): { body: string; tags: string } => {
   return { body: text.slice(m[0].length), tags: tagMatch ? tagMatch[1].trim() : '' }
 }
 
+type Section = { level: number; text: string; title: string }
+
+// Split a markdown body into heading-delimited sections. Joining the sections'
+// text with '\n' reproduces the body exactly (used for comment insertion).
+const splitSections = (body: string): Section[] => {
+  const out: Section[] = []
+  let cur: Section = { level: 0, text: '', title: '' }
+  let fenced = false
+
+  for (const line of body.split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      fenced = !fenced
+    }
+
+    const h = fenced ? null : /^(#{1,6})\s+(.*)$/.exec(line)
+
+    if (h) {
+      if (cur.text.trim() || cur.title) {
+        out.push(cur)
+      }
+
+      cur = { level: h[1].length, text: line, title: h[2].trim() }
+    } else {
+      cur.text += (cur.text ? '\n' : '') + line
+    }
+  }
+
+  if (cur.text.trim() || cur.title) {
+    out.push(cur)
+  }
+
+  return out
+}
+
+// Insert a comment block at the end of section `index` (before the next
+// heading), so comments are anchored under the section they're about. Falls
+// back to appending at the end when the section has no heading.
+const insertCommentUnderSection = (fullContent: string, index: number, comment: string): string => {
+  const block = `> 💬 ${comment}`
+  const { body } = splitFrontmatter(fullContent)
+  const fm = fullContent.slice(0, fullContent.length - body.length)
+  const secs = splitSections(body)
+  const target = secs[index]
+
+  if (!target || !target.title) {
+    return `${fullContent.replace(/\n+$/, '')}\n\n${block}\n`
+  }
+
+  secs[index] = { ...target, text: `${target.text.replace(/\n+$/, '')}\n\n${block}` }
+
+  return fm + secs.map(s => s.text).join('\n')
+}
+
 type PromptMode = 'comment' | 'create'
 
 interface ObsidianViewProps {
@@ -61,10 +114,13 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
   const [editText, setEditText] = useState('')
   const [editCursor, setEditCursor] = useState(0)
   const [saveState, setSaveState] = useState<'error' | 'idle' | 'saved' | 'saving'>('idle')
+  const [activeSection, setActiveSection] = useState(0)
   const dirtyRef = useRef(false)
   const saveTimer = useRef<null | ReturnType<typeof setTimeout>>(null)
   const listScrollRef = useRef<null | ScrollBoxHandle>(null)
   const docScrollRef = useRef<null | ScrollBoxHandle>(null)
+   
+  const sectionRefs = useRef<any[]>([])
 
   const notes: ObsidianNote[] = data?.notes ?? []
   const hasVault = Boolean(data?.exists && data?.vault)
@@ -279,12 +335,13 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
       return
     }
 
-    // comment → append to the open note
-    if (!currentRel) {
+    // comment → anchor under the active outline section of the open note
+    if (!currentRel || !doc?.content) {
       return
     }
 
-    gw.request<unknown>('obsidian.append', { rel_path: currentRel, text: value })
+    const next = insertCommentUnderSection(doc.content, activeSection, value)
+    gw.request<unknown>('obsidian.write', { content: next, rel_path: currentRel })
       .then(() => {
         setFlash('comment added')
         loadNote(currentRel)
@@ -325,6 +382,7 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
   // Each opened note starts at the top (after its content renders).
   useEffect(() => {
     docScrollRef.current?.scrollTo(0)
+    setActiveSection(0)
   }, [doc])
 
   // Debounced autosave while editing.
@@ -478,6 +536,15 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
       return askAgent()
     }
 
+    // Section navigation (middle outline): [ previous, ] next.
+    if (ch === '[') {
+      return stepSection(-1)
+    }
+
+    if (ch === ']') {
+      return stepSection(1)
+    }
+
     // List navigation (left): arrows / jk.
     if (key.upArrow || ch === 'k') {
       return move(-1)
@@ -505,15 +572,45 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
     }
   })
 
-  const listW = Math.max(22, Math.min(40, Math.floor(cols * 0.32)))
-  const docWidth = Math.max(30, cols - listW - 6)
   const { body: docBody, tags: docTags } = doc?.content ? splitFrontmatter(doc.content) : { body: '', tags: '' }
+  const listW = Math.max(18, Math.min(34, Math.floor(cols * 0.22)))
+  // The outline column only shows while reading (the editor takes the full pane).
+  const outlineW = editing ? 0 : Math.max(16, Math.min(30, Math.floor(cols * 0.2)))
+  const docWidth = Math.max(30, cols - listW - outlineW - (outlineW ? 10 : 6))
 
   // Editor render data: lines + a block cursor at (cursorRow, cursorCol).
   const editLines = editText.split('\n')
   const editBefore = editText.slice(0, editCursor)
   const cursorRow = editBefore.split('\n').length - 1
   const cursorCol = editBefore.length - (editBefore.lastIndexOf('\n') + 1)
+
+  // Split the body into heading-delimited sections so the content renders as
+  // per-section blocks (each ref'd for scroll-to) and the outline can navigate.
+  const sections = splitSections(docBody)
+  const headings = sections.map((s, i) => ({ ...s, i })).filter(s => s.title)
+  const activeHeadingPos = headings.findIndex(h => h.i === activeSection)
+
+  const scrollToSection = (sectionIndex: number) => {
+    setActiveSection(sectionIndex)
+    const el = sectionRefs.current[sectionIndex]
+
+    if (el) {
+      docScrollRef.current?.scrollToElement?.(el, 0)
+    }
+  }
+
+  const stepSection = (dir: -1 | 1) => {
+    if (!headings.length) {
+      return
+    }
+
+    const pos = activeHeadingPos < 0 ? 0 : activeHeadingPos
+    const next = headings[Math.max(0, Math.min(headings.length - 1, pos + dir))]
+
+    if (next) {
+      scrollToSection(next.i)
+    }
+  }
 
   let body
 
@@ -592,6 +689,44 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
           </ScrollBox>
         </Box>
 
+        {/* Middle: outline (markdown headings) */}
+        {!editing && outlineW > 0 ? (
+          <Box flexDirection="column" flexShrink={0} marginRight={2} width={outlineW}>
+            <Text bold color={t.color.label} wrap="truncate-end">
+              Outline
+            </Text>
+            <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1}>
+              {headings.length > 0 ? (
+                headings.map(h => {
+                  const on = h.i === activeSection
+                  const indent = '  '.repeat(Math.max(0, h.level - 1))
+
+                  return (
+                    <Box
+                      key={h.i}
+                      onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
+                        if (event.cellIsBlank) {
+                          return
+                        }
+
+                        event.stopPropagation?.()
+                        scrollToSection(h.i)
+                      }}
+                    >
+                      <Text color={on ? t.color.primary : t.color.muted}>{`${indent}${on ? '▸ ' : '  '}`}</Text>
+                      <Text bold={on} color={on ? t.color.text : t.color.muted} wrap="truncate-end">
+                        {truncate(h.title, outlineW - indent.length - 4)}
+                      </Text>
+                    </Box>
+                  )
+                })
+              ) : (
+                <Text color={t.color.muted}>no sections</Text>
+              )}
+            </ScrollBox>
+          </Box>
+        ) : null}
+
         {/* Right: selected note */}
         <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
           <Text bold color={t.color.label} wrap="truncate-end">
@@ -636,7 +771,18 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
                     {docError}
                   </Text>
                 ) : docBody ? (
-                  <Md cols={docWidth} t={t} text={docBody} />
+                  sections.map((sec, i) => (
+                    <Box
+                       
+                      flexDirection="column"
+                      key={i}
+                      ref={(el: any) => {
+                        sectionRefs.current[i] = el
+                      }}
+                    >
+                      <Md cols={docWidth} t={t} text={sec.text} />
+                    </Box>
+                  ))
                 ) : (
                   <Text color={t.color.muted}>Select a note to read it.</Text>
                 )}
@@ -796,7 +942,9 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
       ) : prompt ? (
         <Text wrap="truncate-end">
           <Text color={t.color.primary}>
-            {prompt.mode === 'create' ? 'new note path (folders created, e.g. Topic/Note): ' : 'comment: '}
+            {prompt.mode === 'create'
+              ? 'new note path (folders created, e.g. Topic/Note): '
+              : `comment on “${sections[activeSection]?.title || 'note'}”: `}
           </Text>
           <Text color={t.color.text}>{prompt.value}</Text>
           <Text color={t.color.text} inverse>
@@ -821,7 +969,7 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
           </Box>
           {hasVault && notes.length > 0 ? (
             <Text color={t.color.muted} wrap="truncate-end">
-              ↑↓ select · Space/PgDn scroll · g/G top/bottom · click a note to open
+              ↑↓ select · [ ] section · Space/PgDn scroll · g/G top/bottom · click a heading or note
             </Text>
           ) : null}
         </>
