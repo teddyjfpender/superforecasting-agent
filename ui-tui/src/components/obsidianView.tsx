@@ -807,6 +807,11 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
       return
     }
 
+    // Esc clears an active selection first, then closes the view.
+    if (key.escape && selAnchor >= 0) {
+      return setSelAnchor(-1)
+    }
+
     if (ch === 'q' || key.escape) {
       return onClose()
     }
@@ -851,6 +856,12 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
       return askAgent()
     }
 
+    // Start/stop a visual line selection at the cursor (vim-style). While
+    // active, plain ↑↓/jk extend it; c then comments on the whole range.
+    if (ch === 'v') {
+      return toggleSelect()
+    }
+
     // Switch notes (left list): [ previous, ] next.
     if (ch === '[') {
       return move(-1)
@@ -870,14 +881,14 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
       return openFocusedLink()
     }
 
-    // Reading cursor (right doc): ↑↓/jk move it line/block-wise, Shift extends
-    // the selection. The selection is what a comment cites by line.
+    // Reading cursor (right doc): ↑↓/jk move it line/block-wise. v starts a
+    // selection (then movement extends); Shift/J/K also extend directly.
     if (key.upArrow || ch === 'k' || ch === 'K') {
-      return moveCursor(-1, key.shift || ch === 'K')
+      return moveCursor(-1, Boolean(key.shift) || ch === 'K')
     }
 
     if (key.downArrow || ch === 'j' || ch === 'J') {
-      return moveCursor(1, key.shift || ch === 'J')
+      return moveCursor(1, Boolean(key.shift) || ch === 'J')
     }
 
     // Document scroll: PgUp/PgDn, space, ctrl-u/d, wheel.
@@ -1020,8 +1031,10 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
     }
   }
 
-  // Move the reading cursor to the next selectable (non-blank) block. When
-  // `extend` is set, grow the selection from the existing anchor.
+  // Move the reading cursor to the next selectable (non-blank) block. The
+  // selection grows when `extend` is asked for OR a visual selection is
+  // already active (selAnchor set via `v`) — so once you start selecting,
+  // plain ↑↓/jk keep extending until you clear it.
   const moveCursor = (dir: -1 | 1, extend = false) => {
     let nc = cursor
 
@@ -1033,7 +1046,7 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
       return
     }
 
-    if (extend) {
+    if (extend || selAnchor >= 0) {
       setSelAnchor(prev => (prev < 0 ? cursor : prev))
     } else {
       setSelAnchor(-1)
@@ -1041,6 +1054,12 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
 
     setCursor(nc)
     scrollToBlock(nc)
+  }
+
+  // Toggle a visual selection anchored at the current line (vim-style). While
+  // active, movement extends the range; `v` again or Esc clears it.
+  const toggleSelect = () => {
+    setSelAnchor(prev => (prev < 0 ? cursor : -1))
   }
 
   const jumpCursor = (bi: number) => {
@@ -1662,7 +1681,9 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
           </Box>
           {hasVault && notes.length > 0 ? (
             <Text color={t.color.muted} wrap="truncate-end">
-              ↑↓ line · ⇧↑↓ select · [ ] note · Tab link · ⏎ open · c comment on selection
+              {selAnchor >= 0
+                ? `SELECTING ${lineRef} · ↑↓ extend · c comment · Esc cancel`
+                : '↑↓ line · v select · [ ] note · Tab link · ⏎ open · c comment'}
             </Text>
           ) : null}
         </>

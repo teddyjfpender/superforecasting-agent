@@ -182,6 +182,25 @@ describe('ObsidianView render', () => {
     cleanup()
   })
 
+  it('selects a multi-line range (v then move) and cites it as a range, not L1', async () => {
+    const { cleanup, read, stdin } = await renderView()
+
+    stdin.write('v') // start a visual selection at the cursor (line 1)
+    await tick(20)
+    stdin.write('j') // extend down a block
+    await tick(20)
+    stdin.write('j') // extend further
+    await tick(20)
+    stdin.write('c') // comment on the selection
+    await tick(40)
+    const text = read()
+
+    // The comment prompt cites a line range (L1-N), not a single line.
+    expect(text).toMatch(/comment on L1-\d/)
+
+    cleanup()
+  })
+
   it('opens the in-Obsidian chat modal on "a"', async () => {
     const { cleanup, read, stdin } = await renderView()
 
