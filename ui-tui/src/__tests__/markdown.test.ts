@@ -139,6 +139,24 @@ describe('INLINE_RE wikilinks', () => {
     expect(joined).toContain('↗Bayesian Updating')
     expect(joined).not.toContain('[[')
   })
+
+  it('renders interactive (clickable) flow mode without dropping prose or markers', () => {
+    // onWikiLink switches MdInline to the flex-wrap clickable layout; bullets,
+    // links and the surrounding words must all survive the restructure.
+    const lines = renderPlain(
+      React.createElement(Md, {
+        onWikiLink: () => undefined,
+        t: DEFAULT_THEME,
+        text: '- [[Getting Started]] — how the desk fits together'
+      })
+    )
+
+    const joined = lines.join('\n')
+    expect(joined).toContain('↗Getting Started')
+    expect(joined).toContain('how the desk fits together')
+    expect(joined).toContain('•')
+    expect(joined).not.toContain('[[')
+  })
 })
 
 describe('INLINE_RE inline math', () => {

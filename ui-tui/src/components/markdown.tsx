@@ -536,7 +536,114 @@ const renderTable = (k: number, rows: string[][], t: Theme, cols?: number) => {
   )
 }
 
-function MdInline({ t, text }: { t: Theme; text: string }) {
+// Top-level wikilink count in a string (matches MdInline's own counting, so
+// per-block offsets line up). Nested wikilinks inside bold/italic are owned by
+// the outer span and not counted here — consistent with how they render.
+export const countWikiLinks = (s: string): number => {
+  let c = 0
+
+  for (const m of s.matchAll(INLINE_RE)) {
+    if (m[19]) {
+      c++
+    }
+  }
+
+  return c
+}
+
+interface MdInlineProps {
+  // Absolute index (within the parent Md's text) of the wikilink to highlight.
+  activeWikiLink?: number
+  // When set, wikilinks become clickable: each is its own flex box (so it gets
+  // a hit-rect — inline <Text> spans are squashed and can't be clicked) and a
+  // click fires onWikiLink(target). The line is laid out as a flex-wrap row of
+  // word / span / link boxes so text still flows and wraps.
+  onWikiLink?: (target: string) => void
+  t: Theme
+  text: string
+  // Index of this block's first wikilink within the parent Md's text.
+  wikiBase?: number
+}
+
+function MdInline({ activeWikiLink, onWikiLink, t, text, wikiBase = 0 }: MdInlineProps) {
+  const interactive = Boolean(onWikiLink) && /\[\[[^\][]+?\]\]/.test(text)
+  let wiki = wikiBase
+
+  // ── Interactive flow mode: flex-wrap row of clickable link boxes + word /
+  // span boxes. Used only by callers that pass onWikiLink (the Obsidian doc).
+  if (interactive) {
+    const items: ReactNode[] = []
+    let last = 0
+
+    const pushWords = (chunk: string) => {
+      for (const word of chunk.split(/\s+/)) {
+        if (!word) {
+          continue
+        }
+
+        items.push(
+          <Box key={items.length} marginRight={1}>
+            <Text>{word}</Text>
+          </Box>
+        )
+      }
+    }
+
+    for (const m of text.matchAll(INLINE_RE)) {
+      const i = m.index ?? 0
+
+      if (i > last) {
+        pushWords(text.slice(last, i))
+      }
+
+      if (m[19]) {
+        const active = wiki === activeWikiLink
+        const target = m[19]
+        wiki++
+
+        items.push(
+          <Box
+            key={items.length}
+            marginRight={1}
+            onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
+              if (event.cellIsBlank) {
+                return
+              }
+
+              event.stopPropagation?.()
+              onWikiLink!(target)
+            }}
+          >
+            <Text bold={active} color={t.color.primary} inverse={active} underline>
+              {'↗'}
+              {wikiLinkLabel(target)}
+            </Text>
+          </Box>
+        )
+      } else {
+        // Other inline spans (bold, math, code, links…) render at full
+        // fidelity via a non-interactive recursion, as one atomic flex item.
+        items.push(
+          <Box key={items.length} marginRight={1}>
+            <MdInline t={t} text={m[0]} />
+          </Box>
+        )
+      }
+
+      last = i + m[0].length
+    }
+
+    if (last < text.length) {
+      pushWords(text.slice(last))
+    }
+
+    return (
+      <Box flexDirection="row" flexWrap="wrap">
+        {items}
+      </Box>
+    )
+  }
+
   const parts: ReactNode[] = []
 
   let last = 0
@@ -640,11 +747,14 @@ function MdInline({ t, text }: { t: Theme; text: string }) {
       )
     } else if (m[19]) {
       // Internal [[wikilink]] — styled so it reads as a link inline: a small
-      // leading glyph plus underline in the link color. (Terminal inline text
-      // can't carry its own click target, so navigation lives in the note's
-      // Links/Backlinks index, which mirrors this styling.)
+      // leading glyph plus underline in the link color. (Non-interactive text
+      // mode: clicking lives in the flow mode above / the Links index. The
+      // active link is shown inverse for keyboard focus.)
+      const active = wiki === activeWikiLink
+      wiki++
+
       parts.push(
-        <Text color={t.color.primary} key={parts.length} underline>
+        <Text bold={active} color={t.color.primary} inverse={active} key={parts.length} underline>
           {'↗'}
           {wikiLinkLabel(m[19])}
         </Text>
@@ -699,11 +809,13 @@ const cacheSet = (b: Map<string, ReactNode[]>, key: string, v: ReactNode[]) => {
   }
 }
 
-function MdImpl({ cols, compact, t, text }: MdProps) {
+function MdImpl({ activeWikiLink, cols, compact, onWikiLink, t, text }: MdProps) {
   const nodes = useMemo(() => {
     const bucket = cacheBucket(t)
-    const cacheKey = `${compact ? '1' : '0'}|${cols ?? ''}|${text}`
-    const cached = cacheGet(bucket, cacheKey)
+    const cacheKey = `${compact ? '1' : '0'}|${cols ?? ''}|${activeWikiLink ?? ''}|${text}`
+    // Interactive renders carry click closures and a moving highlight, so they
+    // are never cached (only the Obsidian doc uses them — cheap to rebuild).
+    const cached = onWikiLink ? undefined : cacheGet(bucket, cacheKey)
 
     if (cached) {
       return cached
@@ -711,6 +823,31 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
 
     const lines = ensureEmojiPresentation(text).split('\n')
     const nodes: ReactNode[] = []
+
+    // Running offset so each block's MdInline knows the absolute index of its
+    // first wikilink (for activeWikiLink highlight + click identity).
+    let wikiBase = 0
+
+    // flow=true → clickable flex-wrap layout (returns a Box, so the caller must
+    // not nest it in <Text>). flow=false → inline text mode (safe inside
+    // <Text>), still honouring the activeWikiLink highlight. Both count toward
+    // wikiBase so absolute link indices line up across the whole doc.
+    const inline = (body: string, key?: number | string, flow = false) => {
+      const node = (
+        <MdInline
+          activeWikiLink={activeWikiLink}
+          key={key}
+          onWikiLink={flow ? onWikiLink : undefined}
+          t={t}
+          text={body}
+          wikiBase={wikiBase}
+        />
+      )
+
+      wikiBase += countWikiLinks(body)
+
+      return node
+    }
 
     let prevKind: Kind = null
     let i = 0
@@ -889,7 +1026,7 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
 
         if (closeIdx < 0) {
           start('paragraph')
-          nodes.push(<MdInline key={key} t={t} text={line} />)
+          nodes.push(inline(line, key, true))
           i++
 
           continue
@@ -930,7 +1067,7 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
         start('heading')
         nodes.push(
           <Text bold color={t.color.accent} key={key} wrap="wrap-trim">
-            <MdInline t={t} text={heading} />
+            {inline(heading)}
           </Text>
         )
         i++
@@ -942,7 +1079,7 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
         start('heading')
         nodes.push(
           <Text bold color={t.color.accent} key={key} wrap="wrap-trim">
-            <MdInline t={t} text={line.trim()} />
+            {inline(line.trim())}
           </Text>
         )
         i += 2
@@ -968,7 +1105,7 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
         start('list')
         nodes.push(
           <Text color={t.color.muted} key={key} wrap="wrap-trim">
-            [{footnote[1]}] <MdInline t={t} text={footnote[2] ?? ''} />
+            [{footnote[1]}] {inline(footnote[2] ?? '')}
           </Text>
         )
         i++
@@ -977,7 +1114,7 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
           nodes.push(
             <Box key={`${key}-cont-${i}`} paddingLeft={2}>
               <Text color={t.color.muted} wrap="wrap-trim">
-                <MdInline t={t} text={lines[i]!.trim()} />
+                {inline(lines[i]!.trim())}
               </Text>
             </Box>
           )
@@ -1006,7 +1143,7 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
           nodes.push(
             <Text key={`${key}-def-${i}`} wrap="wrap-trim">
               <Text color={t.color.muted}> · </Text>
-              <MdInline t={t} text={def} />
+              {inline(def)}
             </Text>
           )
           i++
@@ -1022,14 +1159,26 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
 
         const task = bullet[2]!.match(TASK_RE)
         const marker = task ? (task[1]!.toLowerCase() === 'x' ? '☑' : '☐') : '•'
+        const content = task ? task[2]! : bullet[2]!
 
         nodes.push(
-          <Box key={key} paddingLeft={indentDepth(bullet[1]!) * 2}>
-            <Text wrap="wrap-trim">
+          onWikiLink ? (
+            // Flow layout: marker fixed at left, the clickable flex-wrap body
+            // beside it so continuation lines align under the text.
+            <Box flexDirection="row" key={key} paddingLeft={indentDepth(bullet[1]!) * 2}>
               <Text color={t.color.muted}>{marker} </Text>
-              <MdInline t={t} text={task ? task[2]! : bullet[2]!} />
-            </Text>
-          </Box>
+              <Box flexGrow={1} flexShrink={1}>
+                {inline(content, undefined, true)}
+              </Box>
+            </Box>
+          ) : (
+            <Box key={key} paddingLeft={indentDepth(bullet[1]!) * 2}>
+              <Text wrap="wrap-trim">
+                <Text color={t.color.muted}>{marker} </Text>
+                {inline(content)}
+              </Text>
+            </Box>
+          )
         )
         i++
 
@@ -1041,12 +1190,21 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
       if (numbered) {
         start('list')
         nodes.push(
-          <Box key={key} paddingLeft={indentDepth(numbered[1]!) * 2}>
-            <Text wrap="wrap-trim">
+          onWikiLink ? (
+            <Box flexDirection="row" key={key} paddingLeft={indentDepth(numbered[1]!) * 2}>
               <Text color={t.color.muted}>{numbered[2]}. </Text>
-              <MdInline t={t} text={numbered[3]!} />
-            </Text>
-          </Box>
+              <Box flexGrow={1} flexShrink={1}>
+                {inline(numbered[3]!, undefined, true)}
+              </Box>
+            </Box>
+          ) : (
+            <Box key={key} paddingLeft={indentDepth(numbered[1]!) * 2}>
+              <Text wrap="wrap-trim">
+                <Text color={t.color.muted}>{numbered[2]}. </Text>
+                {inline(numbered[3]!)}
+              </Text>
+            </Box>
+          )
         )
         i++
 
@@ -1070,7 +1228,7 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
             {quoteLines.map((ql, qi) => (
               <Box key={qi} paddingLeft={Math.max(0, ql.depth - 1) * 2}>
                 <Text color={t.color.muted} wrap="wrap-trim">
-                  │ <MdInline t={t} text={ql.text} />
+                  │ {inline(ql.text)}
                 </Text>
               </Box>
             ))}
@@ -1149,14 +1307,16 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
       }
 
       start('paragraph')
-      nodes.push(<MdInline key={key} t={t} text={line} />)
+      nodes.push(inline(line, key, true))
       i++
     }
 
-    cacheSet(bucket, cacheKey, nodes)
+    if (!onWikiLink) {
+      cacheSet(bucket, cacheKey, nodes)
+    }
 
     return nodes
-  }, [cols, compact, t, text])
+  }, [activeWikiLink, cols, compact, onWikiLink, t, text])
 
   return <Box flexDirection="column">{nodes}</Box>
 }
@@ -1166,8 +1326,10 @@ export const Md = memo(MdImpl)
 type Kind = 'blank' | 'code' | 'heading' | 'list' | 'paragraph' | 'quote' | 'rule' | 'table' | null
 
 interface MdProps {
+  activeWikiLink?: number
   cols?: number
   compact?: boolean
+  onWikiLink?: (target: string) => void
   t: Theme
   text: string
 }

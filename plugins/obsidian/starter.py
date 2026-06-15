@@ -66,8 +66,8 @@ angles at once and let them argue.
 
 ## Outside view first
 Anchor on a base rate before the case-specific story: *how often do things of
-this sort happen in situations of this sort?* See [[Reference Classes and Base
-Rates]]. Only then adjust with the inside view.
+this sort happen in situations of this sort?* See
+[[Reference Classes and Base Rates]]. Only then adjust with the inside view.
 
 ## Anchor on the status quo and the horizon
 The world changes slowly; weight the persistence outcome, and weight it more
@@ -83,8 +83,8 @@ carry heavy mass. "The economy is weak" is a vibe; "rates hold → demand
 softens → the print clears X by date D" is a path.
 
 ## Update like a Bayesian
-Move in log-odds on likelihood ratios — often, but not wildly. See [[Bayesian
-Updating]].
+Move in log-odds on likelihood ratios — often, but not wildly.
+See [[Bayesian Updating]].
 
 ## Calibrate in both directions
 Under-confidence is a scored failure, not humility. If a tail holds 10%, name
@@ -117,8 +117,8 @@ type: note
 1. **Parse** — make the question scoreable and decision-relevant (clear
    resolution criteria, an as-of cutoff, a decision it informs).
 2. **Research** — gather timestamped, source-backed evidence.
-3. **Base rate** — establish the outside view with a [[Reference Classes and
-   Base Rates|reference class]].
+3. **Base rate** — establish the outside view with a
+   [[Reference Classes and Base Rates|reference class]].
 4. **Model / update** — decompose into components, pool them, and commit a
    snapshot with structured reasoning (reasons up, reasons down, what would
    change your mind).
@@ -248,7 +248,7 @@ starts from accumulated knowledge instead of a blank page.
 
 ## Conventions
 - **One idea per note.** Small notes link better than long ones.
-- **Link, don't copy.** Reference [[other notes]] instead of repeating them;
+- **Link, don't copy.** Reference other notes with `[[wikilinks]]` instead of repeating them;
   the graph is the value.
 - **Frontmatter tags.** Tag by topic and `type` (note / index / template /
   dossier) so notes can be gathered programmatically.
@@ -285,8 +285,8 @@ type: template
 
 ## Outside view
 - Reference class: <class + inclusion/exclusion>
-- Base rate: <p, with sample size and uncertainty> — see [[Reference Classes
-  and Base Rates]]
+- Base rate: <p, with sample size and uncertainty>
+  — see [[Reference Classes and Base Rates]]
 
 ## Paths
 - Path to YES: <link → link → outcome>

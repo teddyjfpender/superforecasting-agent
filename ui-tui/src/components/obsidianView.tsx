@@ -8,7 +8,7 @@ import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
-import { Md } from './markdown.js'
+import { INLINE_RE, Md, wikiLinkLabel } from './markdown.js'
 
 export const openObsidianView = () => patchOverlayState({ obsidian: true })
 export const closeObsidianView = () => patchOverlayState({ obsidian: false })
@@ -115,6 +115,7 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
   const [editCursor, setEditCursor] = useState(0)
   const [saveState, setSaveState] = useState<'error' | 'idle' | 'saved' | 'saving'>('idle')
   const [activeSection, setActiveSection] = useState(0)
+  const [focusedLink, setFocusedLink] = useState(-1)
   const dirtyRef = useRef(false)
   const saveTimer = useRef<null | ReturnType<typeof setTimeout>>(null)
   const listScrollRef = useRef<null | ScrollBoxHandle>(null)
@@ -140,6 +141,21 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
     }
 
     return undefined
+  }
+
+  // Resolve a raw [[target|alias#heading]] to a note path: drop the alias and
+  // heading, then match by basename/title, or by full relative path.
+  const resolveTarget = (raw: string): string | undefined => {
+    const target = raw.split('|')[0]!.split('#')[0]!.trim()
+    const byName = resolve(target)
+
+    if (byName) {
+      return byName
+    }
+
+    const key = target.replace(/\.md$/i, '').toLowerCase()
+
+    return notes.find(n => n.rel_path?.replace(/\.md$/i, '').toLowerCase() === key)?.rel_path
   }
 
   const outgoing = (notes[selected]?.links ?? []).map(name => ({ name, rel: resolve(name) }))
@@ -383,6 +399,7 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
   useEffect(() => {
     docScrollRef.current?.scrollTo(0)
     setActiveSection(0)
+    setFocusedLink(-1)
   }, [doc])
 
   // Debounced autosave while editing.
@@ -545,6 +562,16 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
       return stepSection(1)
     }
 
+    // Wikilink focus (in-document): Tab cycles links, Enter opens the focused
+    // one. Clicking a link works too — each is its own hit-target.
+    if (key.tab) {
+      return focusLink(key.shift ? -1 : 1)
+    }
+
+    if (key.return) {
+      return openFocusedLink()
+    }
+
     // List navigation (left): arrows / jk.
     if (key.upArrow || ch === 'k') {
       return move(-1)
@@ -609,6 +636,49 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
 
     if (next) {
       scrollToSection(next.i)
+    }
+  }
+
+  // Ordered [[wikilinks]] in the body (document order), each tagged with its
+  // section and whether it resolves — the model behind keyboard focus (Tab)
+  // and the inline highlight. The same INLINE_RE the markdown renderer uses,
+  // so indices line up with what Md highlights.
+  const docLinks: { rel?: string; section: number; target: string }[] = []
+  const sectionLinkBase: number[] = []
+
+  sections.forEach((sec, si) => {
+    sectionLinkBase[si] = docLinks.length
+
+    for (const m of sec.text.matchAll(INLINE_RE)) {
+      if (m[19]) {
+        docLinks.push({ rel: resolveTarget(m[19]), section: si, target: m[19] })
+      }
+    }
+  })
+
+  const focusLink = (dir: -1 | 1) => {
+    if (!docLinks.length) {
+      return
+    }
+
+    const next =
+      focusedLink < 0
+        ? dir > 0
+          ? 0
+          : docLinks.length - 1
+        : (focusedLink + dir + docLinks.length) % docLinks.length
+
+    setFocusedLink(next)
+    scrollToSection(docLinks[next]!.section)
+  }
+
+  const openFocusedLink = () => {
+    const link = focusedLink >= 0 ? docLinks[focusedLink] : undefined
+
+    if (link?.rel) {
+      jumpTo(link.rel)
+    } else if (link) {
+      setFlash(`unresolved link: ${wikiLinkLabel(link.target)}`)
     }
   }
 
@@ -780,7 +850,17 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
                         sectionRefs.current[i] = el
                       }}
                     >
-                      <Md cols={docWidth} t={t} text={sec.text} />
+                      <Md
+                        activeWikiLink={
+                          focusedLink >= 0 && docLinks[focusedLink]?.section === i
+                            ? focusedLink - sectionLinkBase[i]!
+                            : undefined
+                        }
+                        cols={docWidth}
+                        onWikiLink={(target: string) => jumpTo(resolveTarget(target))}
+                        t={t}
+                        text={sec.text}
+                      />
                     </Box>
                   ))
                 ) : (
@@ -972,7 +1052,7 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
           </Box>
           {hasVault && notes.length > 0 ? (
             <Text color={t.color.muted} wrap="truncate-end">
-              ↑↓ select · [ ] section · Space/PgDn scroll · g/G top/bottom · click a heading or note
+              ↑↓ select · [ ] section · Tab link · ⏎ open · click links/headings · Space scroll
             </Text>
           ) : null}
         </>
