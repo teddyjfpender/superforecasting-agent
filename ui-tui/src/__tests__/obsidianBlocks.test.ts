@@ -18,21 +18,25 @@ const x = 1
 `
 
 describe('buildBlocks (reading-cursor line model)', () => {
-  it('splits into heading / paragraph / list / fenced blocks with 1-based line ranges', () => {
+  it('emits one block per source line (no skipping) but groups fenced code', () => {
     const blocks = buildBlocks(DOC)
 
     const heading = blocks.find(b => b.title === 'Title')
     expect(heading).toMatchObject({ kind: 'heading', level: 1, start: 1, end: 1 })
 
-    // The two-line paragraph is one block spanning its source lines.
-    const para = blocks.find(b => b.text.startsWith('First paragraph'))
-    expect(para).toMatchObject({ kind: 'block', start: 3, end: 4 })
+    // Each prose line is its own block so the cursor moves line-by-line.
+    const l3 = blocks.find(b => b.text === 'First paragraph line one')
+    const l4 = blocks.find(b => b.text === 'line two of the same paragraph.')
+    expect(l3).toMatchObject({ start: 3, end: 3 })
+    expect(l4).toMatchObject({ start: 4, end: 4 })
 
-    // The bullet run groups into a single block.
-    const list = blocks.find(b => b.text.includes('bullet a'))
-    expect(list?.text).toContain('bullet b')
+    // Each bullet is its own line/block too.
+    const a = blocks.find(b => b.text === '- bullet a')
+    const b = blocks.find(b => b.text === '- bullet b')
+    expect(a?.start).toBe(8)
+    expect(b?.start).toBe(9)
 
-    // The fenced code block is one unit including its fences.
+    // The fenced code block stays one unit including its fences.
     const fence = blocks.find(b => b.text.includes('const x = 1'))
     expect(fence?.text.startsWith('```')).toBe(true)
     expect(fence?.end).toBeGreaterThan(fence!.start)

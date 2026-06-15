@@ -57,37 +57,27 @@ interface DocBlock {
 export const buildBlocks = (body: string): DocBlock[] => {
   const lines = body.split('\n')
   const out: DocBlock[] = []
-  let run: null | { lines: string[]; start: number } = null
-
-  const flush = () => {
-    if (run) {
-      out.push({
-        end: run.start + run.lines.length - 1,
-        kind: 'block',
-        level: 0,
-        start: run.start,
-        text: run.lines.join('\n'),
-        title: ''
-      })
-      run = null
-    }
-  }
-
   let i = 0
+
+  const push = (start: number, end: number, text: string, kind: DocBlock['kind'] = 'block', level = 0, title = '') =>
+    out.push({ end, kind, level, start, text, title })
+
+  const isFence = (l: string) => /^\s*(```|~~~)/.test(l)
+  // A table is a row containing a pipe immediately followed by a divider row.
+  const isDivider = (l: string) => l.includes('-') && /^\s*\|?[\s:|-]+\|?\s*$/.test(l)
 
   while (i < lines.length) {
     const line = lines[i]!
     const ln = i + 1
 
-    if (/^\s*(```|~~~)/.test(line)) {
-      flush()
-      const start = ln
+    // Fenced code — one block (so the fence renders as a unit).
+    if (isFence(line)) {
       const buf = [line]
       i++
 
       while (i < lines.length) {
         buf.push(lines[i]!)
-        const closed = /^\s*(```|~~~)/.test(lines[i]!)
+        const closed = isFence(lines[i]!)
         i++
 
         if (closed) {
@@ -95,14 +85,51 @@ export const buildBlocks = (body: string): DocBlock[] => {
         }
       }
 
-      out.push({ end: start + buf.length - 1, kind: 'block', level: 0, start, text: buf.join('\n'), title: '' })
+      push(ln, ln + buf.length - 1, buf.join('\n'))
+
+      continue
+    }
+
+    // Display math block ($$ … $$ / \[ … \]) — one block.
+    if (/^\s*(\$\$|\\\[)/.test(line)) {
+      const buf = [line]
+      const closesHere = /(\$\$|\\\])\s*$/.test(line.replace(/^\s*(\$\$|\\\[)/, ''))
+      i++
+
+      if (!closesHere) {
+        while (i < lines.length) {
+          buf.push(lines[i]!)
+          const closed = /(\$\$|\\\])\s*$/.test(lines[i]!)
+          i++
+
+          if (closed) {
+            break
+          }
+        }
+      }
+
+      push(ln, ln + buf.length - 1, buf.join('\n'))
+
+      continue
+    }
+
+    // Table — one block so Md sees the header + divider together.
+    if (line.includes('|') && i + 1 < lines.length && isDivider(lines[i + 1]!)) {
+      const buf = [line]
+      i++
+
+      while (i < lines.length && lines[i]!.includes('|') && lines[i]!.trim()) {
+        buf.push(lines[i]!)
+        i++
+      }
+
+      push(ln, ln + buf.length - 1, buf.join('\n'))
 
       continue
     }
 
     if (!line.trim()) {
-      flush()
-      out.push({ end: ln, kind: 'blank', level: 0, start: ln, text: '', title: '' })
+      push(ln, ln, '', 'blank')
       i++
 
       continue
@@ -111,19 +138,17 @@ export const buildBlocks = (body: string): DocBlock[] => {
     const heading = /^(#{1,6})\s+(.*)$/.exec(line)
 
     if (heading) {
-      flush()
-      out.push({ end: ln, kind: 'heading', level: heading[1]!.length, start: ln, text: line, title: heading[2]!.trim() })
+      push(ln, ln, line, 'heading', heading[1]!.length, heading[2]!.trim())
       i++
 
       continue
     }
 
-    run ??= { lines: [], start: ln }
-    run.lines.push(line)
+    // Everything else: ONE block per source line, so the reading cursor moves
+    // and comments anchor line-by-line (no skipping over a paragraph).
+    push(ln, ln, line)
     i++
   }
-
-  flush()
 
   return out
 }
@@ -1182,12 +1207,12 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
       return
     }
 
+    // Nudge by exactly the overflow with a relative scroll (no anchored
+    // re-layout) so holding an arrow scrolls one line at a time, smoothly.
     if (top < scrollTop) {
-      // Above the top edge → bring it to the top (one row of breathing room).
-      sb.scrollToElement?.(el, 1)
+      sb.scrollBy?.(top - scrollTop)
     } else if (top + height > scrollTop + viewH) {
-      // Below the bottom edge → scroll so it sits at the bottom of the view.
-      sb.scrollToElement?.(el, Math.max(1, viewH - height - 1))
+      sb.scrollBy?.(top + height - (scrollTop + viewH))
     }
     // Otherwise it's already fully visible — leave the scroll position alone.
   }
