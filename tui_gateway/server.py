@@ -2775,6 +2775,26 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5013, str(e))
 
 
+@method("obsidian.write")
+def _(rid, params: dict) -> dict:
+    """Overwrite a note's full content (used by the in-pane editor's autosave)."""
+    try:
+        from plugins.obsidian.vault import resolve_vault_path, safe_note_path, write_note
+
+        vault = resolve_vault_path()
+        if vault is None:
+            return _err(rid, 5014, "no Obsidian vault configured")
+        rel = str(params.get("rel_path") or "").strip()
+        content = params.get("content")
+        if not rel or not isinstance(content, str):
+            return _err(rid, 5014, "rel_path and string content are required")
+        path = safe_note_path(vault, rel)
+        write_note(path, content)
+        return _ok(rid, {"ok": True, "rel_path": rel, "size": len(content.encode("utf-8"))})
+    except Exception as e:
+        return _err(rid, 5014, str(e))
+
+
 # ── forecast.calibration ─────────────────────────────────────────────
 # Structured calibration analytics for the TUI's native calibration view.
 # `forecast.command` already exposes the same numbers as CLI text; this RPC

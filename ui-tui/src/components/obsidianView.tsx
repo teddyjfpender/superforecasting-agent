@@ -57,6 +57,12 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
   const [docLoading, setDocLoading] = useState(false)
   const [docError, setDocError] = useState<null | string>(null)
   const [prompt, setPrompt] = useState<null | { mode: PromptMode; value: string }>(null)
+  const [editing, setEditing] = useState(false)
+  const [editText, setEditText] = useState('')
+  const [editCursor, setEditCursor] = useState(0)
+  const [saveState, setSaveState] = useState<'error' | 'idle' | 'saved' | 'saving'>('idle')
+  const dirtyRef = useRef(false)
+  const saveTimer = useRef<null | ReturnType<typeof setTimeout>>(null)
   const listScrollRef = useRef<null | ScrollBoxHandle>(null)
   const docScrollRef = useRef<null | ScrollBoxHandle>(null)
 
@@ -161,6 +167,93 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
     onClose()
   }
 
+  // ── In-pane editor (multiline, debounced autosave) ──────────────────────
+  const saveNow = (text: string) => {
+    if (!currentRel) {
+      return
+    }
+
+    setSaveState('saving')
+    gw.request<unknown>('obsidian.write', { content: text, rel_path: currentRel })
+      .then(() => {
+        dirtyRef.current = false
+        setSaveState('saved')
+      })
+      .catch((err: unknown) => {
+        setSaveState('error')
+        setFlash(`save failed: ${err instanceof Error ? err.message : String(err)}`)
+      })
+  }
+
+  const enterEdit = () => {
+    if (!doc || !currentRel) {
+      return
+    }
+
+    const text = doc.content ?? ''
+    setEditText(text)
+    setEditCursor(text.length)
+    dirtyRef.current = false
+    setSaveState('idle')
+    setEditing(true)
+  }
+
+  const exitEdit = () => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current)
+      saveTimer.current = null
+    }
+
+    if (dirtyRef.current) {
+      saveNow(editText)
+    }
+
+    setEditing(false)
+
+    if (currentRel) {
+      loadNote(currentRel)
+    }
+  }
+
+  // Edit primitives operate on (editText, editCursor).
+  const editInsert = (s: string) => {
+    setEditText(text => text.slice(0, editCursor) + s + text.slice(editCursor))
+    setEditCursor(c => c + s.length)
+    dirtyRef.current = true
+    setSaveState('idle')
+  }
+
+  const editBackspace = () => {
+    if (editCursor <= 0) {
+      return
+    }
+
+    setEditText(text => text.slice(0, editCursor - 1) + text.slice(editCursor))
+    setEditCursor(c => Math.max(0, c - 1))
+    dirtyRef.current = true
+    setSaveState('idle')
+  }
+
+  const editMoveLine = (dir: -1 | 1) => {
+    const before = editText.slice(0, editCursor)
+    const row = before.split('\n').length - 1
+    const col = before.length - (before.lastIndexOf('\n') + 1)
+    const lines = editText.split('\n')
+    const targetRow = Math.max(0, Math.min(lines.length - 1, row + dir))
+
+    if (targetRow === row) {
+      return
+    }
+
+    let idx = 0
+
+    for (let i = 0; i < targetRow; i++) {
+      idx += lines[i].length + 1
+    }
+
+    setEditCursor(idx + Math.min(col, lines[targetRow].length))
+  }
+
   const submitPrompt = () => {
     if (!prompt) {
       return
@@ -234,6 +327,37 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
     docScrollRef.current?.scrollTo(0)
   }, [doc])
 
+  // Debounced autosave while editing.
+  useEffect(() => {
+    if (!editing || !dirtyRef.current) {
+      return
+    }
+
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current)
+    }
+
+    saveTimer.current = setTimeout(() => saveNow(editText), 800)
+
+    return () => {
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editText, editing])
+
+  // Keep the edit cursor's line in view.
+  useEffect(() => {
+    if (!editing) {
+      return
+    }
+
+    const row = editText.slice(0, editCursor).split('\n').length - 1
+    docScrollRef.current?.scrollTo(Math.max(0, row - 3))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editCursor, editing])
+
   useEffect(() => {
     listScrollRef.current?.scrollTo(Math.max(0, selected - 2))
   }, [selected])
@@ -264,6 +388,51 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
 
       if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
         return setPrompt(p => (p ? { ...p, value: p.value + ch } : p))
+      }
+
+      return
+    }
+
+    // Edit mode captures input (Esc saves + exits; q is just a character here).
+    if (editing) {
+      if (key.escape) {
+        return exitEdit()
+      }
+
+      if (key.ctrl && ch === 's') {
+        return saveNow(editText)
+      }
+
+      if (key.return) {
+        return editInsert('\n')
+      }
+
+      if (key.backspace || key.delete) {
+        return editBackspace()
+      }
+
+      if (key.leftArrow) {
+        return setEditCursor(c => Math.max(0, c - 1))
+      }
+
+      if (key.rightArrow) {
+        return setEditCursor(c => Math.min(editText.length, c + 1))
+      }
+
+      if (key.upArrow) {
+        return editMoveLine(-1)
+      }
+
+      if (key.downArrow) {
+        return editMoveLine(1)
+      }
+
+      if (key.tab) {
+        return editInsert('  ')
+      }
+
+      if (ch && !key.ctrl && !key.meta) {
+        return editInsert(ch)
       }
 
       return
@@ -301,6 +470,10 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
       return setPrompt({ mode: 'comment', value: '' })
     }
 
+    if (ch === 'e') {
+      return enterEdit()
+    }
+
     if (ch === 'a') {
       return askAgent()
     }
@@ -335,6 +508,12 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
   const listW = Math.max(22, Math.min(40, Math.floor(cols * 0.32)))
   const docWidth = Math.max(30, cols - listW - 6)
   const { body: docBody, tags: docTags } = doc?.content ? splitFrontmatter(doc.content) : { body: '', tags: '' }
+
+  // Editor render data: lines + a block cursor at (cursorRow, cursorCol).
+  const editLines = editText.split('\n')
+  const editBefore = editText.slice(0, editCursor)
+  const cursorRow = editBefore.split('\n').length - 1
+  const cursorCol = editBefore.length - (editBefore.lastIndexOf('\n') + 1)
 
   let body
 
@@ -395,7 +574,7 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
                 <Box
                   key={note.rel_path ?? i}
                   onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                    if (event.cellIsBlank) {
+                    if (event.cellIsBlank || editing) {
                       return
                     }
 
@@ -426,6 +605,30 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
           <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
             <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} ref={docScrollRef}>
               <Box flexDirection="column" paddingBottom={3} paddingRight={1}>
+                {editing ? (
+                  <Box flexDirection="column">
+                    {editLines.map((line, i) => {
+                      if (i !== cursorRow) {
+                        return (
+                          <Text key={i} wrap="truncate-end">
+                            {line || ' '}
+                          </Text>
+                        )
+                      }
+
+                      const at = line.slice(cursorCol, cursorCol + 1) || ' '
+
+                      return (
+                        <Text key={i} wrap="truncate-end">
+                          {line.slice(0, cursorCol)}
+                          <Text inverse>{at}</Text>
+                          {line.slice(cursorCol + 1)}
+                        </Text>
+                      )
+                    })}
+                  </Box>
+                ) : (
+                  <>
                 {docLoading ? (
                   <Text color={t.color.muted}>Loading…</Text>
                 ) : docError ? (
@@ -493,6 +696,8 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
                     ))}
                   </Box>
                 ) : null}
+                  </>
+                )}
               </Box>
             </ScrollBox>
             <NoSelect flexShrink={0} marginLeft={1}>
@@ -537,6 +742,7 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
     : notes.length === 0
       ? [{ k: 'n', label: 'New note', run: () => setPrompt({ mode: 'create', value: '' }) }]
       : [
+          { k: 'e', label: 'Edit', run: enterEdit },
           { k: 'n', label: 'New', run: () => setPrompt({ mode: 'create', value: '' }) },
           { k: 'c', label: 'Comment', run: () => setPrompt({ mode: 'comment', value: '' }) },
           { k: 'a', label: 'Ask desk', run: askAgent },
@@ -555,11 +761,43 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
       run()
     }
 
+  const saveLabel =
+    saveState === 'saving'
+      ? 'saving…'
+      : saveState === 'saved'
+        ? 'saved'
+        : saveState === 'error'
+          ? 'save failed'
+          : dirtyRef.current
+            ? 'modified'
+            : ''
+
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      {prompt ? (
+      {editing ? (
+        <>
+          <Box>
+            <Box marginRight={2} onClick={onActionClick(exitEdit)}>
+              <Text color={t.color.muted}>[</Text>
+              <Text bold color={t.color.accent}>
+                {'⎋'}
+              </Text>
+              <Text color={t.color.label}>{' Save & exit'}</Text>
+              <Text color={t.color.muted}>]</Text>
+            </Box>
+            {saveLabel ? (
+              <Text color={saveState === 'error' ? t.color.error : t.color.muted}>{saveLabel}</Text>
+            ) : null}
+          </Box>
+          <Text color={t.color.muted} wrap="truncate-end">
+            editing · arrows move · ⏎ newline · ⌃S save now · autosaves
+          </Text>
+        </>
+      ) : prompt ? (
         <Text wrap="truncate-end">
-          <Text color={t.color.primary}>{prompt.mode === 'create' ? 'new note path: ' : 'comment: '}</Text>
+          <Text color={t.color.primary}>
+            {prompt.mode === 'create' ? 'new note path (folders created, e.g. Topic/Note): ' : 'comment: '}
+          </Text>
           <Text color={t.color.text}>{prompt.value}</Text>
           <Text color={t.color.text} inverse>
             {' '}
