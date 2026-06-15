@@ -2593,6 +2593,8 @@ def _(rid, params: dict) -> dict:
     dossiers the agent has synced. Bounded to keep the payload small.
     """
     try:
+        import re
+
         from plugins.obsidian.vault import resolve_vault_path
 
         vault = resolve_vault_path()
@@ -2641,6 +2643,16 @@ def _(rid, params: dict) -> dict:
                 excerpt = stripped[:160]
                 break
             folder = str(rel.parent) if str(rel.parent) != "." else ""
+            # Extract [[wikilink]] targets (drop |alias and #heading) so the
+            # client can build the outgoing/backlink graph without extra reads.
+            links: list[str] = []
+            seen_links: set[str] = set()
+            for m in re.finditer(r"\[\[([^\]\n]+)\]\]", text):
+                target = m.group(1).split("|", 1)[0].split("#", 1)[0].strip()
+                key = target.lower()
+                if target and key not in seen_links:
+                    seen_links.add(key)
+                    links.append(target)
             notes.append(
                 {
                     "title": title,
@@ -2649,6 +2661,7 @@ def _(rid, params: dict) -> dict:
                     "modified": datetime.fromtimestamp(st.st_mtime).isoformat(),
                     "size": st.st_size,
                     "excerpt": excerpt,
+                    "links": links,
                 }
             )
 

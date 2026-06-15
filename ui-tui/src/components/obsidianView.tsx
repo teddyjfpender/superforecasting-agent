@@ -64,6 +64,40 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
   const hasVault = Boolean(data?.exists && data?.vault)
   const currentRel = notes[selected]?.rel_path
 
+  // Resolve [[wikilink]] targets the way Obsidian does — by note basename
+  // (or title), case-insensitive — so links and backlinks can be followed.
+  const baseName = (rel: string) => (rel.split('/').pop() ?? rel).replace(/\.md$/i, '').toLowerCase()
+
+  const resolve = (name: string): string | undefined => {
+    const key = name.toLowerCase()
+
+    for (const n of notes) {
+      if (n.rel_path && (baseName(n.rel_path) === key || (n.title ?? '').toLowerCase() === key)) {
+        return n.rel_path
+      }
+    }
+
+    return undefined
+  }
+
+  const outgoing = (notes[selected]?.links ?? []).map(name => ({ name, rel: resolve(name) }))
+
+  const backlinks = notes.filter(
+    n => n.rel_path !== currentRel && (n.links ?? []).some(l => resolve(l) === currentRel)
+  )
+
+  const jumpTo = (rel: string | undefined) => {
+    if (!rel) {
+      return
+    }
+
+    const idx = notes.findIndex(n => n.rel_path === rel)
+
+    if (idx >= 0) {
+      setSelected(idx)
+    }
+  }
+
   const load = (announce = false) => {
     setLoading(true)
     gw.request<unknown>('obsidian.status', { limit: 200 })
@@ -405,6 +439,59 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
                 )}
                 {doc?.truncated ? (
                   <Text color={t.color.muted}>{'\n… (truncated — open in Obsidian for the rest)'}</Text>
+                ) : null}
+
+                {outgoing.length > 0 ? (
+                  <Box flexDirection="column" marginTop={1}>
+                    <Text bold color={t.color.accent}>
+                      Links
+                    </Text>
+                    {outgoing.map((link, i) => (
+                      <Box
+                        key={`${link.name}-${i}`}
+                        onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
+                          if (event.cellIsBlank || !link.rel) {
+                            return
+                          }
+
+                          event.stopPropagation?.()
+                          jumpTo(link.rel)
+                        }}
+                      >
+                        <Text color={link.rel ? t.color.primary : t.color.muted}>{link.rel ? '→ ' : '× '}</Text>
+                        <Text color={link.rel ? t.color.text : t.color.muted} wrap="truncate-end">
+                          {truncate(link.name, docWidth - 6)}
+                        </Text>
+                        {!link.rel ? <Text color={t.color.muted}> (unresolved)</Text> : null}
+                      </Box>
+                    ))}
+                  </Box>
+                ) : null}
+
+                {backlinks.length > 0 ? (
+                  <Box flexDirection="column" marginTop={1}>
+                    <Text bold color={t.color.accent}>
+                      Backlinks
+                    </Text>
+                    {backlinks.map((note, i) => (
+                      <Box
+                        key={note.rel_path ?? i}
+                        onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
+                          if (event.cellIsBlank) {
+                            return
+                          }
+
+                          event.stopPropagation?.()
+                          jumpTo(note.rel_path)
+                        }}
+                      >
+                        <Text color={t.color.primary}>← </Text>
+                        <Text color={t.color.text} wrap="truncate-end">
+                          {truncate(note.title || note.rel_path || '—', docWidth - 6)}
+                        </Text>
+                      </Box>
+                    ))}
+                  </Box>
                 ) : null}
               </Box>
             </ScrollBox>

@@ -1466,6 +1466,7 @@ export type GatewayEvent =
 export interface ObsidianNote {
   excerpt?: string
   folder?: string
+  links?: string[]
   modified?: string
   rel_path?: string
   size?: number
