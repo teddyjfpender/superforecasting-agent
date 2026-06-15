@@ -10606,7 +10606,9 @@ class HermesCLI:
             return
         from tools.voice_mode import create_audio_recorder, check_voice_requirements
 
-        reqs = check_voice_requirements()
+        # auto_install: pull in the capture libs (sounddevice/numpy) on first
+        # use so the user never has to pip-install by hand.
+        reqs = check_voice_requirements(auto_install=True)
         if not reqs["audio_available"]:
             if _is_termux_environment():
                 details = reqs.get("details", "")
@@ -10930,7 +10932,9 @@ class HermesCLI:
                 _cprint(f"  {_DIM}{warning}{_RST}")
             return
 
-        reqs = check_voice_requirements()
+        # auto_install: fetch the capture libs automatically on enable so
+        # users don't hit a manual pip step.
+        reqs = check_voice_requirements(auto_install=True)
         if not reqs["available"]:
             _cprint(f"\n{_ACCENT}Voice mode requirements not met:{_RST}")
             for line in reqs["details"].split("\n"):

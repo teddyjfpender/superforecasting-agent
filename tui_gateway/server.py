@@ -6665,6 +6665,15 @@ def _(rid, params: dict) -> dict:
             if not _voice_mode_enabled():
                 return _err(rid, 4015, "voice mode is off — enable with /voice on")
 
+            # Auto-install the microphone capture libs (sounddevice/numpy) on
+            # first record so the user never has to pip-install by hand.
+            try:
+                from tools.voice_mode import ensure_audio_deps
+
+                ensure_audio_deps()
+            except Exception as e:
+                logger.info("voice.record: ensure_audio_deps skipped: %s", e)
+
             with _voice_sid_lock:
                 global _voice_event_sid
                 _voice_event_sid = params.get("session_id") or _voice_event_sid

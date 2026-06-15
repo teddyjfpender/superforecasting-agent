@@ -49,6 +49,40 @@ def _audio_available() -> bool:
         return False
 
 
+# Auto-install of the capture libs is attempted at most once per process so a
+# persistently-broken environment (e.g. missing system PortAudio) doesn't retry
+# pip on every probe.
+_audio_install_attempted = False
+
+
+def ensure_audio_deps() -> bool:
+    """Best-effort: lazy-install the microphone capture libs (sounddevice,
+    numpy) so users never have to ``pip install`` them by hand, then report
+    whether audio is importable.
+
+    Returns True if audio is available (already, or after install). Missing
+    *system* libraries (PortAudio → OSError) can't be fixed by pip, so those
+    just return False. Honors ``security.allow_lazy_installs`` via lazy_deps.
+    """
+    global _audio_install_attempted
+
+    if _audio_available():
+        return True
+
+    if _audio_install_attempted:
+        return _audio_available()
+
+    _audio_install_attempted = True
+    try:
+        from tools.lazy_deps import ensure as _ensure
+
+        _ensure("voice.audio", prompt=False)
+    except Exception as e:  # FeatureUnavailable, network, disabled, etc.
+        logger.info("voice: auto-install of audio capture libs skipped/failed: %s", e)
+
+    return _audio_available()
+
+
 from hermes_constants import is_termux as _is_termux_environment
 
 
@@ -582,10 +616,16 @@ class AudioRecorder:
         try:
             _import_audio()
         except (ImportError, OSError) as e:
-            raise RuntimeError(
-                "Voice mode requires sounddevice and numpy.\n"
-                f"Install with: {sys.executable} -m pip install sounddevice numpy"
-            ) from e
+            # Last-resort auto-install of the capture libs (covers any caller
+            # that reached here without the upstream requirements check). A
+            # missing system PortAudio (OSError) can't be fixed by pip.
+            if isinstance(e, ImportError) and ensure_audio_deps():
+                _import_audio()
+            else:
+                raise RuntimeError(
+                    "Voice mode requires sounddevice and numpy.\n"
+                    f"Install with: {sys.executable} -m pip install sounddevice numpy"
+                ) from e
 
         with self._lock:
             if self._recording:
@@ -922,8 +962,14 @@ def play_audio_file(file_path: str) -> bool:
 # ============================================================================
 # Requirements check
 # ============================================================================
-def check_voice_requirements() -> Dict[str, Any]:
+def check_voice_requirements(*, auto_install: bool = False) -> Dict[str, Any]:
     """Check if all voice mode requirements are met.
+
+    ``auto_install``: when True, transparently lazy-install the microphone
+    capture libs (sounddevice/numpy) if they're missing, so enabling voice or
+    starting a recording "just works" without a manual ``pip install``. Passive
+    callers (the ``/voice status`` probe) leave this False so a status check
+    never triggers an install.
 
     Returns:
         Dict with ``available``, ``audio_available``, ``stt_available``,
@@ -939,6 +985,11 @@ def check_voice_requirements() -> Dict[str, Any]:
     missing: List[str] = []
     termux_capture = _termux_voice_capture_available()
     has_audio = _audio_available() or termux_capture
+
+    # Auto-heal the common case: the lightweight capture libs aren't installed.
+    # (Termux uses the API microphone, so don't pip there.)
+    if not has_audio and auto_install and not termux_capture:
+        has_audio = ensure_audio_deps()
 
     if not has_audio:
         missing.extend(["sounddevice", "numpy"])

@@ -118,6 +118,15 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     "tts.edge": ("edge-tts==7.2.7",),
     "tts.elevenlabs": ("elevenlabs==1.59.0",),
 
+    # ─── Voice audio capture (microphone) ───────────────────────────────────
+    # Just the lightweight capture libs, so enabling voice mode auto-installs
+    # them without pulling the heavy local-STT wheels (those stay under
+    # stt.faster_whisper, only needed when the user picks local transcription).
+    "voice.audio": (
+        "sounddevice==0.5.5",
+        "numpy==2.4.3",
+    ),
+
     # ─── Speech-to-text providers ──────────────────────────────────────────
     "stt.faster_whisper": (
         "faster-whisper==1.2.1",
