@@ -9,7 +9,7 @@ import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
-import { INLINE_RE, Md, wikiLinkLabel } from './markdown.js'
+import { INLINE_RE, Md, stripInlineMarkup, wikiLinkLabel } from './markdown.js'
 
 export const openObsidianView = () => patchOverlayState({ obsidian: true })
 export const closeObsidianView = () => patchOverlayState({ obsidian: false })
@@ -34,36 +34,89 @@ const splitFrontmatter = (text: string): { body: string; tags: string } => {
   return { body: text.slice(m[0].length), tags: tagMatch ? tagMatch[1].trim() : '' }
 }
 
-type Section = { level: number; text: string; title: string }
+// A renderable unit of the document with its source line range (1-based,
+// inclusive). Headings and fenced code are their own blocks; runs of prose /
+// list lines group together; blank lines are non-selectable spacers. The
+// reading cursor moves over the non-blank blocks and comments cite their lines.
+interface DocBlock {
+  end: number
+  kind: 'blank' | 'block' | 'heading'
+  level: number
+  start: number
+  text: string
+  title: string
+}
 
-// Split a markdown body into heading-delimited sections. Joining the sections'
-// text with '\n' reproduces the body exactly (used for comment insertion).
-const splitSections = (body: string): Section[] => {
-  const out: Section[] = []
-  let cur: Section = { level: 0, text: '', title: '' }
-  let fenced = false
+export const buildBlocks = (body: string): DocBlock[] => {
+  const lines = body.split('\n')
+  const out: DocBlock[] = []
+  let run: null | { lines: string[]; start: number } = null
 
-  for (const line of body.split('\n')) {
-    if (/^\s*(```|~~~)/.test(line)) {
-      fenced = !fenced
+  const flush = () => {
+    if (run) {
+      out.push({
+        end: run.start + run.lines.length - 1,
+        kind: 'block',
+        level: 0,
+        start: run.start,
+        text: run.lines.join('\n'),
+        title: ''
+      })
+      run = null
     }
+  }
 
-    const h = fenced ? null : /^(#{1,6})\s+(.*)$/.exec(line)
+  let i = 0
 
-    if (h) {
-      if (cur.text.trim() || cur.title) {
-        out.push(cur)
+  while (i < lines.length) {
+    const line = lines[i]!
+    const ln = i + 1
+
+    if (/^\s*(```|~~~)/.test(line)) {
+      flush()
+      const start = ln
+      const buf = [line]
+      i++
+
+      while (i < lines.length) {
+        buf.push(lines[i]!)
+        const closed = /^\s*(```|~~~)/.test(lines[i]!)
+        i++
+
+        if (closed) {
+          break
+        }
       }
 
-      cur = { level: h[1].length, text: line, title: h[2].trim() }
-    } else {
-      cur.text += (cur.text ? '\n' : '') + line
+      out.push({ end: start + buf.length - 1, kind: 'block', level: 0, start, text: buf.join('\n'), title: '' })
+
+      continue
     }
+
+    if (!line.trim()) {
+      flush()
+      out.push({ end: ln, kind: 'blank', level: 0, start: ln, text: '', title: '' })
+      i++
+
+      continue
+    }
+
+    const heading = /^(#{1,6})\s+(.*)$/.exec(line)
+
+    if (heading) {
+      flush()
+      out.push({ end: ln, kind: 'heading', level: heading[1]!.length, start: ln, text: line, title: heading[2]!.trim() })
+      i++
+
+      continue
+    }
+
+    run ??= { lines: [], start: ln }
+    run.lines.push(line)
+    i++
   }
 
-  if (cur.text.trim() || cur.title) {
-    out.push(cur)
-  }
+  flush()
 
   return out
 }
@@ -158,14 +211,15 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
   const [editText, setEditText] = useState('')
   const [editCursor, setEditCursor] = useState(0)
   const [saveState, setSaveState] = useState<'error' | 'idle' | 'saved' | 'saving'>('idle')
-  const [activeSection, setActiveSection] = useState(0)
+  const [cursor, setCursor] = useState(0)
+  const [selAnchor, setSelAnchor] = useState(-1)
   const [focusedLink, setFocusedLink] = useState(-1)
   const dirtyRef = useRef(false)
   const saveTimer = useRef<null | ReturnType<typeof setTimeout>>(null)
   const listScrollRef = useRef<null | ScrollBoxHandle>(null)
   const docScrollRef = useRef<null | ScrollBoxHandle>(null)
    
-  const sectionRefs = useRef<any[]>([])
+  const blockRefs = useRef<any[]>([])
 
   const notes: ObsidianNote[] = data?.notes ?? []
   const hasVault = Boolean(data?.exists && data?.vault)
@@ -401,7 +455,7 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
       return
     }
 
-    const anchor = sections[activeSection]?.title || 'note'
+    const anchor = selSnippet ? `${lineRef} ¦ ${selSnippet}` : lineRef
     const next = addComment(doc.content, anchor, value)
     gw.request<unknown>('obsidian.write', { content: next, rel_path: currentRel })
       .then(() => {
@@ -444,7 +498,8 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
   // Each opened note starts at the top (after its content renders).
   useEffect(() => {
     docScrollRef.current?.scrollTo(0)
-    setActiveSection(0)
+    setCursor(0)
+    setSelAnchor(-1)
     setFocusedLink(-1)
   }, [doc])
 
@@ -599,13 +654,13 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
       return askAgent()
     }
 
-    // Section navigation (middle outline): [ previous, ] next.
+    // Switch notes (left list): [ previous, ] next.
     if (ch === '[') {
-      return stepSection(-1)
+      return move(-1)
     }
 
     if (ch === ']') {
-      return stepSection(1)
+      return move(1)
     }
 
     // Wikilink focus (in-document): Tab cycles links, Enter opens the focused
@@ -618,16 +673,17 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
       return openFocusedLink()
     }
 
-    // List navigation (left): arrows / jk.
-    if (key.upArrow || ch === 'k') {
-      return move(-1)
+    // Reading cursor (right doc): ↑↓/jk move it line/block-wise, Shift extends
+    // the selection. The selection is what a comment cites by line.
+    if (key.upArrow || ch === 'k' || ch === 'K') {
+      return moveCursor(-1, key.shift || ch === 'K')
     }
 
-    if (key.downArrow || ch === 'j') {
-      return move(1)
+    if (key.downArrow || ch === 'j' || ch === 'J') {
+      return moveCursor(1, key.shift || ch === 'J')
     }
 
-    // Document scroll (right): PgUp/PgDn, space, ctrl-u/d, wheel — no focus to switch.
+    // Document scroll: PgUp/PgDn, space, ctrl-u/d, wheel.
     if (key.pageDown || ch === ' ' || (key.ctrl && ch === 'd') || key.wheelDown) {
       return docScrollRef.current?.scrollBy(pageSize)
     }
@@ -637,11 +693,20 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
     }
 
     if (ch === 'g') {
-      return docScrollRef.current?.scrollTo(0)
+      const first = blocks.findIndex(b => b.kind !== 'blank')
+
+      return first >= 0 ? jumpCursor(first) : docScrollRef.current?.scrollTo(0)
     }
 
     if (ch === 'G') {
-      return docScrollRef.current?.scrollToBottom?.()
+      let last = -1
+      blocks.forEach((b, bi) => {
+        if (b.kind !== 'blank') {
+          last = bi
+        }
+      })
+
+      return last >= 0 ? jumpCursor(last) : docScrollRef.current?.scrollToBottom?.()
     }
   })
 
@@ -723,47 +788,91 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
     )
   }
 
-  // Split the body into heading-delimited sections so the content renders as
-  // per-section blocks (each ref'd for scroll-to) and the outline can navigate.
-  const sections = splitSections(docBody)
-  const headings = sections.map((s, i) => ({ ...s, i })).filter(s => s.title)
-  const activeHeadingPos = headings.findIndex(h => h.i === activeSection)
+  // Header: the note's title (H1 / filename, never the raw path) on its own
+  // line, with folder + tags as a muted subtitle beneath it.
+  const docTitle =
+    notes[selected]?.title || (currentRel ? (currentRel.split('/').pop() ?? '').replace(/\.md$/i, '') : 'no note')
 
-  const scrollToSection = (sectionIndex: number) => {
-    setActiveSection(sectionIndex)
-    const el = sectionRefs.current[sectionIndex]
+  const docFolder = currentRel ? currentRel.split('/').slice(0, -1).join('/') : ''
+  const docSubtitle = [docFolder, docTags && docTags.replace(/\s*,\s*/g, ' · ')].filter(Boolean).join('   ·   ')
+
+  // Split the body into renderable blocks with source line ranges. A reading
+  // cursor moves over these (skipping blanks); the selected range drives the
+  // line references attached to comments.
+  const blocks = buildBlocks(docBody)
+  const headings = blocks.map((b, i) => ({ i, level: b.level, title: b.title })).filter(b => b.title)
+
+  // Outline highlight: the heading at/above the cursor.
+  const activeHeadingIdx = (() => {
+    let h = -1
+
+    for (const head of headings) {
+      if (head.i <= cursor) {
+        h = head.i
+      }
+    }
+
+    return h
+  })()
+
+  const scrollToBlock = (bi: number) => {
+    const el = blockRefs.current[bi]
 
     if (el) {
-      docScrollRef.current?.scrollToElement?.(el, 0)
+      docScrollRef.current?.scrollToElement?.(el, 2)
     }
   }
 
-  const stepSection = (dir: -1 | 1) => {
-    if (!headings.length) {
+  // Move the reading cursor to the next selectable (non-blank) block. When
+  // `extend` is set, grow the selection from the existing anchor.
+  const moveCursor = (dir: -1 | 1, extend = false) => {
+    let nc = cursor
+
+    do {
+      nc += dir
+    } while (nc >= 0 && nc < blocks.length && blocks[nc]!.kind === 'blank')
+
+    if (nc < 0 || nc >= blocks.length) {
       return
     }
 
-    const pos = activeHeadingPos < 0 ? 0 : activeHeadingPos
-    const next = headings[Math.max(0, Math.min(headings.length - 1, pos + dir))]
-
-    if (next) {
-      scrollToSection(next.i)
+    if (extend) {
+      setSelAnchor(prev => (prev < 0 ? cursor : prev))
+    } else {
+      setSelAnchor(-1)
     }
+
+    setCursor(nc)
+    scrollToBlock(nc)
   }
 
-  // Ordered [[wikilinks]] in the body (document order), each tagged with its
-  // section and whether it resolves — the model behind keyboard focus (Tab)
-  // and the inline highlight. The same INLINE_RE the markdown renderer uses,
-  // so indices line up with what Md highlights.
-  const docLinks: { rel?: string; section: number; target: string }[] = []
-  const sectionLinkBase: number[] = []
+  const jumpCursor = (bi: number) => {
+    if (bi < 0 || bi >= blocks.length) {
+      return
+    }
 
-  sections.forEach((sec, si) => {
-    sectionLinkBase[si] = docLinks.length
+    setSelAnchor(-1)
+    setCursor(bi)
+    scrollToBlock(bi)
+  }
 
-    for (const m of sec.text.matchAll(INLINE_RE)) {
-      if (m[19]) {
-        docLinks.push({ rel: resolveTarget(m[19]), section: si, target: m[19] })
+  // Current selection as a block-index range (inclusive).
+  const selLo = selAnchor < 0 ? cursor : Math.min(selAnchor, cursor)
+  const selHi = selAnchor < 0 ? cursor : Math.max(selAnchor, cursor)
+
+  // Ordered [[wikilinks]] in the body, tagged with their block (for the
+  // inline highlight + keyboard focus). Same INLINE_RE the renderer uses.
+  const docLinks: { block: number; rel?: string; target: string }[] = []
+  const blockLinkBase: number[] = []
+
+  blocks.forEach((b, bi) => {
+    blockLinkBase[bi] = docLinks.length
+
+    if (b.kind !== 'blank') {
+      for (const m of b.text.matchAll(INLINE_RE)) {
+        if (m[19]) {
+          docLinks.push({ block: bi, rel: resolveTarget(m[19]), target: m[19] })
+        }
       }
     }
   })
@@ -781,7 +890,7 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
         : (focusedLink + dir + docLinks.length) % docLinks.length
 
     setFocusedLink(next)
-    scrollToSection(docLinks[next]!.section)
+    jumpCursor(docLinks[next]!.block)
   }
 
   const openFocusedLink = () => {
@@ -793,6 +902,18 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
       setFlash(`unresolved link: ${wikiLinkLabel(link.target)}`)
     }
   }
+
+  // The line-reference label + snippet for the current selection (what a new
+  // comment anchors to).
+  const selStartLine = blocks[selLo]?.start ?? 0
+  const selEndLine = blocks[selHi]?.end ?? selStartLine
+  const lineRef = selStartLine ? (selEndLine > selStartLine ? `L${selStartLine}-${selEndLine}` : `L${selStartLine}`) : 'note'
+
+  const selSnippet = stripInlineMarkup((blocks[selLo]?.text ?? '').split('\n')[0] ?? '')
+    .replace(/^#+\s*/, '')
+    .replace(/^[-*+]\s*/, '')
+    .slice(0, 42)
+    .trim()
 
   let body
 
@@ -880,7 +1001,7 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
             <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1}>
               {headings.length > 0 ? (
                 headings.map(h => {
-                  const on = h.i === activeSection
+                  const on = h.i === activeHeadingIdx
                   const indent = '  '.repeat(Math.max(0, h.level - 1))
 
                   return (
@@ -892,7 +1013,7 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
                         }
 
                         event.stopPropagation?.()
-                        scrollToSection(h.i)
+                        jumpCursor(h.i)
                       }}
                     >
                       <Text color={on ? t.color.primary : t.color.muted}>{`${indent}${on ? '▸ ' : '  '}`}</Text>
@@ -911,14 +1032,17 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
 
         {/* Right: selected note */}
         <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
-          <Text bold color={t.color.label} wrap="truncate-end">
-            {truncate(currentRel ?? 'no note', docWidth)}
-          </Text>
-          {docTags ? (
-            <Text color={t.color.muted} wrap="truncate-end">
-              {truncate(docTags, docWidth)}
+          {/* Header is fixed-height so it never collapses onto the body. */}
+          <Box flexDirection="column" flexShrink={0}>
+            <Text bold color={t.color.text} wrap="truncate-end">
+              {truncate(docTitle, docWidth)}
             </Text>
-          ) : null}
+            {docSubtitle ? (
+              <Text color={t.color.muted} wrap="truncate-end">
+                {truncate(docSubtitle, docWidth)}
+              </Text>
+            ) : null}
+          </Box>
           <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
             <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} ref={docScrollRef}>
               <Box flexDirection="column" paddingBottom={3} paddingRight={1}>
@@ -937,28 +1061,47 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
                     {docError}
                   </Text>
                 ) : docBody ? (
-                  sections.map((sec, i) => (
-                    <Box
-                       
-                      flexDirection="column"
-                      key={i}
-                      ref={(el: any) => {
-                        sectionRefs.current[i] = el
-                      }}
-                    >
-                      <Md
-                        activeWikiLink={
-                          focusedLink >= 0 && docLinks[focusedLink]?.section === i
-                            ? focusedLink - sectionLinkBase[i]!
-                            : undefined
-                        }
-                        cols={docWidth}
-                        onWikiLink={(target: string) => jumpTo(resolveTarget(target))}
-                        t={t}
-                        text={sec.text}
-                      />
-                    </Box>
-                  ))
+                  blocks.map((b, i) => {
+                    if (b.kind === 'blank') {
+                      return <Text key={i}> </Text>
+                    }
+
+                    const onCursor = i >= selLo && i <= selHi
+
+                    return (
+                      <Box
+                        flexDirection="row"
+                        key={i}
+                        onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
+                          if (event.cellIsBlank) {
+                            return
+                          }
+
+                          event.stopPropagation?.()
+                          jumpCursor(i)
+                        }}
+                         
+                        ref={(el: any) => {
+                          blockRefs.current[i] = el
+                        }}
+                      >
+                        <Text color={t.color.primary}>{onCursor ? '▎' : ' '}</Text>
+                        <Box flexGrow={1} flexShrink={1}>
+                          <Md
+                            activeWikiLink={
+                              focusedLink >= 0 && docLinks[focusedLink]?.block === i
+                                ? focusedLink - blockLinkBase[i]!
+                                : undefined
+                            }
+                            cols={docWidth - 1}
+                            onWikiLink={(target: string) => jumpTo(resolveTarget(target))}
+                            t={t}
+                            text={b.text}
+                          />
+                        </Box>
+                      </Box>
+                    )
+                  })
                 ) : (
                   <Text color={t.color.muted}>Select a note to read it.</Text>
                 )}
@@ -1040,7 +1183,13 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
             <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1}>
               {docComments.length > 0 ? (
                 docComments.map((c, i) => {
-                  const on = c.anchor === sections[activeSection]?.title
+                  // anchor = "L12-14 ¦ snippet" — split the line-ref from the snippet.
+                  const [ref, ...rest] = c.anchor.split(' ¦ ')
+                  const snippet = rest.join(' ¦ ')
+                  const lineM = /^L(\d+)(?:-(\d+))?/.exec(ref ?? '')
+                  const lo = lineM ? Number(lineM[1]) : -1
+                  const hi = lineM ? Number(lineM[2] ?? lineM[1]) : -1
+                  const on = lo >= 0 && selStartLine <= hi && selEndLine >= lo
 
                   return (
                     <Box
@@ -1053,16 +1202,21 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
                         }
 
                         event.stopPropagation?.()
-                        const si = sections.findIndex(s => s.title === c.anchor)
+                        const bi = blocks.findIndex(b => b.kind !== 'blank' && b.start <= lo && b.end >= lo)
 
-                        if (si >= 0) {
-                          scrollToSection(si)
+                        if (bi >= 0) {
+                          jumpCursor(bi)
                         }
                       }}
                     >
                       <Text color={on ? t.color.primary : t.color.accent} wrap="truncate-end">
-                        {`▌ ${c.anchor}`}
+                        {`▌ ${ref}`}
                       </Text>
+                      {snippet ? (
+                        <Text color={t.color.muted} wrap="truncate-end">
+                          {snippet}
+                        </Text>
+                      ) : null}
                       <Text color={t.color.text} wrap="wrap">
                         {c.text}
                       </Text>
@@ -1071,7 +1225,7 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
                 })
               ) : (
                 <Text color={t.color.muted} wrap="wrap">
-                  No comments yet. Select a section (outline or [ ]) and press c to pin a note to it.
+                  No comments yet. Put the cursor on a line (↑↓, Shift to select more) and press c.
                 </Text>
               )}
             </ScrollBox>
@@ -1170,7 +1324,7 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
           <Text color={t.color.primary}>
             {prompt.mode === 'create'
               ? 'new note path (folders created, e.g. Topic/Note): '
-              : `comment on “${sections[activeSection]?.title || 'note'}”: `}
+              : `comment on ${lineRef}${selSnippet ? ` (${selSnippet})` : ''}: `}
           </Text>
           <Text color={t.color.text}>{prompt.value}</Text>
           <Text color={t.color.text} inverse>
@@ -1195,7 +1349,7 @@ export function ObsidianView({ gw, onClose, onDraft, t }: ObsidianViewProps) {
           </Box>
           {hasVault && notes.length > 0 ? (
             <Text color={t.color.muted} wrap="truncate-end">
-              ↑↓ note · [ ] section · Tab link · ⏎ open · c comment on section · click links
+              ↑↓ line · ⇧↑↓ select · [ ] note · Tab link · ⏎ open · c comment on selection
             </Text>
           ) : null}
         </>
