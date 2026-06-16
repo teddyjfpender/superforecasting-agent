@@ -1,0 +1,94 @@
+name: Release (GitHub) — bundled TUI wheel
+
+# Builds an installable wheel that bundles the prebuilt TUI and attaches it to
+# a GitHub Release, so anyone can install + launch without this repo:
+#
+#     pipx install https://github.com/<owner>/<repo>/releases/download/<tag>/superforecasting_agent-<ver>-py3-none-any.whl
+#     superforecasting-agent --tui
+#
+# This is the fork's "release binary" path. It does NOT publish to PyPI
+# (upload_to_pypi.yml owns that, if/when the fork configures a publisher).
+# Mirrors upload_to_pypi.yml's build so a Release wheel matches a PyPI wheel.
+
+on:
+  push:
+    tags:
+      - 'v*'        # e.g. v2026.6.16, v0.14.0
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to release (e.g. v2026.6.16)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build bundled-TUI wheel + GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the Release + upload assets
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-tags: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build TUI bundle
+        run: cd ui-tui && npm ci && npm run build
+
+      - name: Build web dashboard
+        run: cd web && npm ci && npm run build
+
+      - name: Bundle TUI + install scripts into hermes_cli
+        run: |
+          mkdir -p hermes_cli/tui_dist hermes_cli/scripts
+          cp ui-tui/dist/entry.js hermes_cli/tui_dist/entry.js
+          cp scripts/install.sh hermes_cli/scripts/install.sh
+          cp scripts/install.ps1 hermes_cli/scripts/install.ps1
+
+      - name: Verify bundled assets
+        run: |
+          test -f hermes_cli/tui_dist/entry.js || { echo "ERROR: tui_dist not built"; exit 1; }
+          test -f hermes_cli/web_dist/index.html || { echo "ERROR: web_dist not built"; exit 1; }
+
+      - name: Build wheel and sdist
+        run: uv build --sdist --wheel
+
+      - name: Create GitHub Release and attach artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          NOTES="Standalone install (no git checkout / venv / npm needed):
+
+          \`\`\`
+          pipx install <the attached .whl URL>
+          superforecasting-agent --tui
+          \`\`\`
+
+          The wheel bundles the prebuilt TUI; the launcher auto-provisions Node and runs the gateway from pipx's own Python."
+          gh release create "$TAG" dist/*.whl dist/*.tar.gz \
+            --title "$TAG" \
+            --notes "$NOTES" \
+            --verify-tag || \
+          gh release upload "$TAG" dist/*.whl dist/*.tar.gz --clobber
