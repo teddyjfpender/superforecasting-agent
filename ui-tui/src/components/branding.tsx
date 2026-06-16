@@ -7,7 +7,7 @@ import { flat } from '../lib/text.js'
 import type { Theme } from '../theme.js'
 import type { PanelRow, PanelSection, SessionInfo } from '../types.js'
 
-import { AsciiAnimation } from './asciiAnimation.js'
+import { OutriderHeader } from './outriderHeader.js'
 
 const LOADER_TICK_MS = 120
 const PANEL_COMMAND_PLACEHOLDER_RE = /(?:<[^>]+>|\[[^\]]+\]|\.\.\.|;)/
@@ -124,16 +124,17 @@ export function HomeHero({ info, t }: { info?: SessionInfo; t: Theme }) {
   const out = useStdout().stdout
   const rows = out?.rows ?? 24
   const cols = out?.columns ?? 80
-  // Only float the orb when there's genuine room for it; otherwise the
-  // wordmark alone carries the identity so the prompt stays in view.
-  const showOrb = rows >= 22 && cols >= 40
+  // Only float the header when there's genuine room for it; otherwise the
+  // wordmark alone carries the identity so the prompt stays in view. The
+  // outrider scales to fit, so the gate just needs basic breathing room.
+  const showOrb = rows >= 20 && cols >= 42
   const context = [info?.model, shortenHomePath(info?.cwd)].filter(Boolean).join('  ·  ')
 
   return (
-    <Box alignItems="center" flexDirection="column" marginTop={showOrb ? 2 : 1}>
+    <Box alignItems="center" flexDirection="column" marginTop={showOrb ? 1 : 1}>
       {showOrb ? (
         <Box flexShrink={0} marginBottom={1}>
-          <AsciiAnimation />
+          <OutriderHeader t={t} />
         </Box>
       ) : null}
 
