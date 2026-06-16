@@ -122,14 +122,21 @@ export function OutriderHeader({ t }: { t: Theme }) {
   const lines = useMemo(() => {
     const { cellW, cellH, glyphs } = glyphTable(GLYPH_FAMILY)
 
-    // Fit both axes. Width is bounded by the terminal (capped) AND by the rows
-    // left after the wordmark/hints (~7) so the hero never pushes the prompt
-    // off. The rows→cols factor folds in the image aspect and the family's
-    // sub-pixel shape: outRows = ASPECT * cellW / cellH * outCols.
+    // Fit both axes without distortion. A terminal cell is ~1 wide x 2 tall, so
+    // the rendered aspect depends on both the image aspect AND the cell shape:
+    // sub-pixel width = cellPxW/cellW, sub-pixel height = cellPxH/cellH, with
+    // cellPxH/cellPxW = CELL_ASPECT (~2). Working that through, the cell-grid
+    // ratio is independent of the glyph family: outRows = outCols * ASPECT /
+    // CELL_ASPECT. (For half/octant cellH = 2*cellW so this matched the old
+    // formula; for sextant/quad it did not — the figure stretched vertically.)
+    const CELL_ASPECT = 2
+    const rowsPerCol = ASPECT / CELL_ASPECT
+    // Width is bounded by the terminal (capped) AND by the rows left after the
+    // wordmark/hints (~7) so the hero never pushes the prompt off.
     const rowBudget = Math.max(8, termRows - 7)
-    const colsFromRows = Math.floor((rowBudget * cellH) / (ASPECT * cellW))
+    const colsFromRows = Math.floor(rowBudget / rowsPerCol)
     const outCols = Math.max(40, Math.min(MAX_WIDTH, colsFromRows, cols - 2))
-    const outRows = Math.max(1, Math.round((ASPECT * cellW * outCols) / cellH))
+    const outRows = Math.max(1, Math.round(outCols * rowsPerCol))
 
     const subW = outCols * cellW
     const subH = outRows * cellH
