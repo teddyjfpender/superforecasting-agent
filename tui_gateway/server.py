@@ -383,7 +383,85 @@ def _finalize_session(session: dict | None, end_reason: str = "tui_close") -> No
             pass
 
 
+# ── Cron ticker ───────────────────────────────────────────────────────
+#
+# The full gateway (gateway/run.py) runs a background thread that ticks the
+# cron scheduler every 60s so scheduled jobs fire automatically.  The TUI
+# gateway is a separate, lighter process and historically had NO ticker — so
+# a user running only the TUI never saw their cron jobs fire, and a manual
+# `cronjob run` (which just sets next_run_at=now and waits for "the next
+# scheduler tick") silently never executed.  Run the same ticker here.
+#
+# The scheduler holds a cross-process file lock (.tick.lock), so this is safe
+# even if the full gateway is also running — only one tick executes at a time.
+# Off-switch: SUPERFORECASTING_AGENT_TUI_CRON_TICKER=0 (or FORECAST_/HERMES_
+# aliases). Interval override: ..._TUI_CRON_TICKER_INTERVAL (seconds).
+_cron_ticker_stop = threading.Event()
+_cron_ticker_thread: threading.Thread | None = None
+
+
+def _cron_ticker_disabled() -> bool:
+    return _tui_env("CRON_TICKER", "1").strip().lower() in {"0", "off", "false", "no"}
+
+
+def _cron_ticker_interval() -> int:
+    raw = _tui_env("CRON_TICKER_INTERVAL", "").strip()
+    if raw:
+        try:
+            value = int(float(raw))
+            if value > 0:
+                return value
+        except ValueError:
+            pass
+    return 60
+
+
+def _cron_ticker_loop(stop_event: threading.Event, interval: int) -> None:
+    # Deferred import: the cron scheduler pulls in croniter/agent machinery we
+    # don't want on the TUI's cold-start critical path.
+    from cron.scheduler import tick as cron_tick
+
+    while not stop_event.is_set():
+        try:
+            # No adapters/loop: local-only jobs save their output to disk; jobs
+            # configured to deliver to a platform use the scheduler's standalone
+            # send path (asyncio.run in a worker thread).
+            count = cron_tick(verbose=False)
+            if count:
+                # Sessionless notification — lands on the stdio transport so the
+                # TUI can surface "N cron job(s) fired" if it chooses to.
+                write_json({
+                    "jsonrpc": "2.0",
+                    "method": "event",
+                    "params": {"type": "cron.fired", "payload": {"count": count}},
+                })
+        except Exception:
+            # A single bad tick must never kill the ticker — keep looping.
+            pass
+        stop_event.wait(interval)
+
+
+def start_cron_ticker() -> None:
+    """Start the background cron ticker once per process (idempotent)."""
+    global _cron_ticker_thread
+    if _cron_ticker_thread is not None or _cron_ticker_disabled():
+        return
+    _cron_ticker_thread = threading.Thread(
+        target=_cron_ticker_loop,
+        args=(_cron_ticker_stop, _cron_ticker_interval()),
+        name="tui-cron-ticker",
+        daemon=True,
+    )
+    _cron_ticker_thread.start()
+
+
+def _stop_cron_ticker() -> None:
+    _cron_ticker_stop.set()
+
+
 def _shutdown_sessions() -> None:
+    # Stop the cron ticker first so no new tick starts mid-shutdown.
+    _stop_cron_ticker()
     # Interrupt dangling background subagents so they don't keep running with
     # no one to deliver their result to.
     try:

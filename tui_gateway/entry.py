@@ -252,6 +252,17 @@ def main():
         _log_exit("startup write failed (broken stdout pipe before first event)")
         sys.exit(0)
 
+    # Fire scheduled cron jobs while the TUI is open.  Without this, a user
+    # running only the TUI never sees their cron jobs trigger — and a manual
+    # `cronjob run` (which just marks the job due for "the next scheduler
+    # tick") never executes.  Safe alongside the full gateway: the scheduler
+    # holds a cross-process file lock.  Started after gateway.ready so it never
+    # delays first paint; disable via SUPERFORECASTING_AGENT_TUI_CRON_TICKER=0.
+    try:
+        server.start_cron_ticker()
+    except Exception:
+        pass
+
     for raw in sys.stdin:
         line = raw.strip()
         if not line:
