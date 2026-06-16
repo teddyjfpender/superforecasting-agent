@@ -74,21 +74,45 @@ jobs:
       - name: Build wheel and sdist
         run: uv build --sdist --wheel
 
+      - name: Stage the standalone installer as install.sh
+        # Attached as a release asset so the public one-liner works:
+        #   curl -fsSL .../releases/latest/download/install.sh | bash
+        run: cp scripts/install-release.sh install.sh
+
       - name: Create GitHub Release and attach artifacts
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          NOTES="Standalone install (no git checkout / venv / npm needed):
+          # Quoted heredoc keeps markdown backticks literal; sed fills the tag.
+          cat > /tmp/notes.md <<'NOTES'
+          ## Install — one command
 
-          \`\`\`
-          pipx install <the attached .whl URL>
+          ```bash
+          curl -fsSL https://github.com/teddyjfpender/superforecasting-agent/releases/latest/download/install.sh | bash
+          ```
+
+          Then start the desk:
+
+          ```bash
           superforecasting-agent --tui
-          \`\`\`
+          ```
 
-          The wheel bundles the prebuilt TUI; the launcher auto-provisions Node and runs the gateway from pipx's own Python."
-          gh release create "$TAG" dist/*.whl dist/*.tar.gz \
+          That's it — **no git clone, no Python venv, no `npm install`.** The script grabs the prebuilt wheel, installs it with `pipx` (installing `pipx` for you if missing), and the launcher auto-provisions Node and runs the gateway from pipx's own venv. Re-run the same command anytime to upgrade. Only prerequisite: **Python 3.10+**.
+
+          <details>
+          <summary>Pin this exact version, or install by hand</summary>
+
+          ```bash
+          curl -fsSL https://github.com/teddyjfpender/superforecasting-agent/releases/download/__TAG__/install.sh | bash
+          ```
+
+          Windows (PowerShell) and other options: see `scripts/install-release.sh` / `scripts/install.ps1`.
+          </details>
+          NOTES
+          sed -i "s/__TAG__/$TAG/g" /tmp/notes.md
+          gh release create "$TAG" dist/*.whl dist/*.tar.gz install.sh \
             --title "$TAG" \
-            --notes "$NOTES" \
+            --notes-file /tmp/notes.md \
             --verify-tag || \
-          gh release upload "$TAG" dist/*.whl dist/*.tar.gz --clobber
+          gh release upload "$TAG" dist/*.whl dist/*.tar.gz install.sh --clobber
