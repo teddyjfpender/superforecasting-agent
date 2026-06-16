@@ -139,7 +139,7 @@ export function HomeHero({ info, t }: { info?: SessionInfo; t: Theme }) {
       ) : null}
 
       <Text bold color={t.color.primary}>
-        {t.brand.icon} Superforecasting Agent
+        {t.brand.icon} {t.brand.name}
       </Text>
 
       {context ? <Text color={t.color.muted}>{context}</Text> : null}
@@ -348,7 +348,7 @@ export function SessionPanel({ info, sid, t }: SessionPanelProps) {
 
           <Text color={t.color.accent}>
             {info.model.split('/').pop()}
-            <Text color={t.color.muted}> · Superforecasting Agent</Text>
+            <Text color={t.color.muted}> · {t.brand.name}</Text>
           </Text>
 
           <Text color={t.color.muted} wrap="truncate-end">

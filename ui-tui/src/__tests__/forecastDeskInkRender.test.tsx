@@ -315,7 +315,7 @@ describe('forecast desk Ink render', () => {
     const compact = output.replace(/\s+/g, '')
 
     // HomeHero identity + the single discoverability hint line.
-    expect(compact).toContain('SuperforecastingAgent')
+    expect(compact).toContain('Outrider')
     expect(compact).toContain('forecast-model')
     expect(compact).toContain('Askaforecastingquestiontobegin')
     expect(compact).toContain('/commands')
@@ -343,7 +343,7 @@ describe('forecast desk Ink render', () => {
     const compact = output.replace(/\s+/g, '')
 
     // The hero + prompt are the whole screen.
-    expect(compact).toContain('SuperforecastingAgent')
+    expect(compact).toContain('Outrider')
     expect(compact).toContain('Askaforecastingquestiontobegin')
     expect(compact).toContain('/commands')
 
@@ -366,7 +366,7 @@ describe('forecast desk Ink render', () => {
     const output = await renderForecastDesk(104)
     const compact = output.replace(/\s+/g, '')
 
-    expect(compact).toContain('SuperforecastingAgent')
+    expect(compact).toContain('Outrider')
     expect(compact).toContain('Askaforecastingquestiontobegin')
     expect(compact).toContain('/commands')
 

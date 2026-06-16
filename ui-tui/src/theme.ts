@@ -229,6 +229,7 @@ export function enforceDarkContrastFloor(theme: Theme, isLight = detectLightMode
 
   for (const key of DARK_CONTRAST_FLOORED_KEYS) {
     const lifted = enforceDarkContrast(color[key])
+
     if (lifted !== color[key]) {
       color[key] = lifted
       changed = true
@@ -343,8 +344,8 @@ function normalizeAnsiForeground(color: string): string {
 // ── Defaults ─────────────────────────────────────────────────────────
 
 const BRAND: ThemeBrand = {
-  name: 'Superforecasting Agent',
-  icon: 'P',
+  name: 'Outrider',
+  icon: '✦',
   prompt: '❯',
   welcome: 'Forecast desk ready. Type /forecast or /help.',
   goodbye: 'Goodbye.',

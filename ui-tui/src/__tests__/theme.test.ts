@@ -49,7 +49,7 @@ describe('DEFAULT_THEME', () => {
   it('has brand defaults', async () => {
     const { DEFAULT_THEME } = await importThemeWithCleanEnv()
 
-    expect(DEFAULT_THEME.brand.name).toBe('Superforecasting Agent')
+    expect(DEFAULT_THEME.brand.name).toBe('Outrider')
     expect(DEFAULT_THEME.brand.prompt).toBe('❯')
     expect(DEFAULT_THEME.brand.tool).toBe('┊')
   })
@@ -338,12 +338,16 @@ describe('fromSkin', () => {
 describe('dark-terminal contrast floor', () => {
   // Minimal WCAG contrast against a near-black terminal background.
   const cl = (v: number) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4)
+
   const lum = (hex: string) => {
     const n = parseInt(hex.replace('#', ''), 16)
+
     return 0.2126 * cl((n >> 16) & 255) + 0.7152 * cl((n >> 8) & 255) + 0.0722 * cl(n & 255)
   }
+
   const contrast = (hex: string, bg = 0) => {
     const L = lum(hex)
+
     return (Math.max(L, bg) + 0.05) / (Math.min(L, bg) + 0.05)
   }
 
