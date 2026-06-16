@@ -41,17 +41,29 @@ const render = async (cols: number, rows: number) => {
   return text
 }
 
+// Any block-element / sub-cell glyph: classic blocks, sextants (U+1FB00), the
+// quarter-band blocks (U+1FB82/85), and Unicode-16 octants (U+1CD00…).
+const BLOCK_GLYPH = /[▀-▟\u{1fb00}-\u{1fb3b}\u{1fb82}\u{1fb85}\u{1cd00}-\u{1cdeb}]/u
+// Built via constructor so the ESC byte isn't a control char in a regex literal.
+const TRUECOLOR = new RegExp(`${String.fromCharCode(27)}\\[38;2;\\d+;\\d+;\\d+m`)
+
 describe('OutriderHeader', () => {
-  it('renders half-block art tinted with truecolor', async () => {
+  it('renders sub-cell block art tinted with truecolor', async () => {
     const text = await render(100, 40)
-    // Half-block glyphs (the 2x-vertical-resolution renderer)
-    expect(/[▀▄]/.test(text)).toBe(true)
+    expect(BLOCK_GLYPH.test(text)).toBe(true)
     // 24-bit truecolor foreground escapes (theme-tinted)
-    expect(/\x1b\[38;2;\d+;\d+;\d+m/.test(text)).toBe(true)
+    expect(TRUECOLOR.test(text)).toBe(true)
+  })
+
+  it('uses octant glyphs at the default density', async () => {
+    const text = await render(100, 40)
+    // Default family is octant — at least some cells should land on a glyph in
+    // the Unicode-16 octant range that no coarser family can produce.
+    expect(/[\u{1cd00}-\u{1cdeb}]/u.test(text)).toBe(true)
   })
 
   it('scales down to a narrow terminal without crashing', async () => {
     const text = await render(46, 22)
-    expect(/[▀▄]/.test(text)).toBe(true)
+    expect(BLOCK_GLYPH.test(text)).toBe(true)
   })
 })

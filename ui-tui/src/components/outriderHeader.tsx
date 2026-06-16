@@ -2,6 +2,7 @@ import { Box, Text, useStdout } from '@hermes/ink'
 import { useMemo } from 'react'
 
 import { OUTRIDER_HEADER } from '../content/outriderHeader.js'
+import { type GlyphFamily, glyphTable } from '../lib/subcellGlyphs.js'
 import type { Theme } from '../theme.js'
 
 // Off-switch: any TUI alias triple set falsey disables the desk header.
@@ -21,6 +22,26 @@ const DISABLED = (() => {
   return false
 })()
 
+// Glyph family controls how many sub-pixels we pack per terminal cell — i.e.
+// how small the "pixels" are. octant (2x4) is the sharpest (true half-size
+// square pixels) but needs a Unicode-16 font; drop to sextant/quad/half via
+// the env override if the chosen glyphs render as tofu boxes.
+const GLYPH_FAMILY: GlyphFamily = (() => {
+  for (const key of [
+    'SUPERFORECASTING_AGENT_TUI_HEADER_GLYPHS',
+    'FORECAST_TUI_HEADER_GLYPHS',
+    'HERMES_TUI_HEADER_GLYPHS'
+  ]) {
+    const v = (process.env[key] ?? '').trim().toLowerCase()
+
+    if (v === 'half' || v === 'quad' || v === 'sextant' || v === 'octant') {
+      return v
+    }
+  }
+
+  return 'octant'
+})()
+
 // Luminance below this (0-255) renders transparent, so the figure floats on
 // the terminal background in any theme.
 const THRESHOLD = 22
@@ -29,6 +50,7 @@ const MAX_WIDTH = 96 // cap so the hero never dominates a very wide terminal
 // Decode the base64 luminance rows once at module load.
 const NATIVE_W = OUTRIDER_HEADER.w
 const NATIVE_H = OUTRIDER_HEADER.h
+const ASPECT = NATIVE_H / NATIVE_W
 const LUM: Uint8Array[] = OUTRIDER_HEADER.rows.map(r => Uint8Array.from(Buffer.from(r, 'base64')))
 
 const parseHex = (hex: string): [number, number, number] => {
@@ -77,10 +99,15 @@ interface Span {
   t: string
 }
 
-// A theme-tinted, resolution-scaled half-block render of the outrider art.
-// The stored bitmap is high-res luminance; we downscale (box-average) it to the
-// width that fits the terminal, then tint each pixel through a theme-derived
-// ramp. Two stacked pixels per cell via ▀/▄ for 2x vertical resolution.
+// A theme-tinted, resolution-scaled sub-cell render of the outrider art.
+//
+// The stored bitmap is high-res luminance. We downscale (box-average) it to a
+// sub-pixel grid sized to the chosen glyph family (cellW x cellH per cell),
+// then for each cell pick the glyph + 2 colours that best approximate its
+// sub-pixels: an optimal 1-D two-means split partitions the sub-pixels into a
+// bright (foreground) group and a dim (background) group, and the glyph whose
+// mask matches the bright group is drawn. Dim groups below THRESHOLD render
+// transparent so the figure floats on the terminal background in any theme.
 export function OutriderHeader({ t }: { t: Theme }) {
   const out = useStdout().stdout
   const cols = out?.columns ?? 80
@@ -88,25 +115,28 @@ export function OutriderHeader({ t }: { t: Theme }) {
   const primary = t.color.primary
 
   const lines = useMemo(() => {
-    // Fit both axes: width to the terminal (capped), height to the rows left
-    // after the wordmark/hints (~7) so the hero never pushes the prompt off.
-    const maxWByRows = Math.max(40, (termRows - 7) * 5) // aspect ≈ 2.5 → rows ≈ width/5
-    const targetW = Math.max(40, Math.min(MAX_WIDTH, maxWByRows, cols - 2))
-    let targetH = Math.round((targetW * NATIVE_H) / NATIVE_W)
+    const { cellW, cellH, glyphs } = glyphTable(GLYPH_FAMILY)
 
-    if (targetH % 2) {
-      targetH += 1
-    }
+    // Fit both axes. Width is bounded by the terminal (capped) AND by the rows
+    // left after the wordmark/hints (~7) so the hero never pushes the prompt
+    // off. The rows→cols factor folds in the image aspect and the family's
+    // sub-pixel shape: outRows = ASPECT * cellW / cellH * outCols.
+    const rowBudget = Math.max(8, termRows - 7)
+    const colsFromRows = Math.floor((rowBudget * cellH) / (ASPECT * cellW))
+    const outCols = Math.max(40, Math.min(MAX_WIDTH, colsFromRows, cols - 2))
+    const outRows = Math.max(1, Math.round((ASPECT * cellW * outCols) / cellH))
 
-    const rows = targetH / 2
+    const subW = outCols * cellW
+    const subH = outRows * cellH
     const ramp = buildRamp(parseHex(primary))
 
-    // Box-average the native luminance grid for output pixel (tx, ty).
-    const sample = (tx: number, ty: number): number => {
-      const x0 = Math.floor((tx * NATIVE_W) / targetW)
-      const x1 = Math.max(x0 + 1, Math.floor(((tx + 1) * NATIVE_W) / targetW))
-      const y0 = Math.floor((ty * NATIVE_H) / targetH)
-      const y1 = Math.max(y0 + 1, Math.floor(((ty + 1) * NATIVE_H) / targetH))
+    // Box-average the native luminance grid for sub-pixel (sx, sy); below
+    // THRESHOLD reads as 0 (transparent black) so edges stay crisp.
+    const sample = (sx: number, sy: number): number => {
+      const x0 = Math.floor((sx * NATIVE_W) / subW)
+      const x1 = Math.max(x0 + 1, Math.floor(((sx + 1) * NATIVE_W) / subW))
+      const y0 = Math.floor((sy * NATIVE_H) / subH)
+      const y1 = Math.max(y0 + 1, Math.floor(((sy + 1) * NATIVE_H) / subH))
       let sum = 0
       let n = 0
 
@@ -119,12 +149,15 @@ export function OutriderHeader({ t }: { t: Theme }) {
         }
       }
 
-      return n ? sum / n : 0
+      const avg = n ? sum / n : 0
+
+      return avg >= THRESHOLD ? avg : 0
     }
 
+    const N = cellW * cellH
     const result: Span[][] = []
 
-    for (let ry = 0; ry < rows; ry++) {
+    for (let ry = 0; ry < outRows; ry++) {
       const spans: Span[] = []
 
       const push = (ch: string, c?: string, b?: string) => {
@@ -137,21 +170,78 @@ export function OutriderHeader({ t }: { t: Theme }) {
         }
       }
 
-      for (let x = 0; x < targetW; x++) {
-        const top = sample(x, ry * 2)
-        const bot = sample(x, ry * 2 + 1)
-        const to = top >= THRESHOLD
-        const bo = bot >= THRESHOLD
+      for (let cx = 0; cx < outCols; cx++) {
+        // Gather this cell's sub-pixel luminances (bit index = row*cellW+col).
+        const sub: number[] = []
+        let total = 0
 
-        if (to && bo) {
-          push('▀', ramp[Math.round(top)], ramp[Math.round(bot)])
-        } else if (to) {
-          push('▀', ramp[Math.round(top)])
-        } else if (bo) {
-          push('▄', ramp[Math.round(bot)])
-        } else {
-          push(' ')
+        for (let dy = 0; dy < cellH; dy++) {
+          for (let dx = 0; dx < cellW; dx++) {
+            const v = sample(cx * cellW + dx, ry * cellH + dy)
+            sub.push(v)
+            total += v
+          }
         }
+
+        if (total === 0) {
+          push(' ')
+
+          continue
+        }
+
+        // Optimal two-means split: sort sub-pixels, then try every cut point.
+        // The brighter tail becomes the foreground group; everything below the
+        // cut is background. Minimises within-group variance in O(N log N).
+        const order = sub.map((_, i) => i).sort((a, b) => sub[a]! - sub[b]!)
+        let sumsq = 0
+
+        for (const v of sub) {
+          sumsq += v * v
+        }
+
+        let bgSum = 0
+        let bestK = 0
+        let bestErr = Infinity
+
+        for (let k = 0; k <= N; k++) {
+          const fgSum = total - bgSum
+          const bgMean = k ? bgSum / k : 0
+          const fgMean = k < N ? fgSum / (N - k) : 0
+          const err = sumsq - bgMean * bgSum - fgMean * fgSum
+
+          if (err < bestErr - 1e-6) {
+            bestErr = err
+            bestK = k
+          }
+
+          if (k < N) {
+            bgSum += sub[order[k]!]!
+          }
+        }
+
+        // Build the foreground mask (sub-pixels order[bestK..N-1]) and means.
+        let mask = 0
+        let fgSum = 0
+
+        for (let i = bestK; i < N; i++) {
+          mask |= 1 << order[i]!
+          fgSum += sub[order[i]!]!
+        }
+
+        const fgCount = N - bestK
+        const fgMean = fgCount ? fgSum / fgCount : 0
+        const bgCount = bestK
+        const bgMean = bgCount ? (total - fgSum) / bgCount : 0
+
+        if (fgMean < THRESHOLD) {
+          push(' ')
+
+          continue
+        }
+
+        const fg = ramp[Math.round(fgMean)]
+        const bg = bgMean >= THRESHOLD ? ramp[Math.round(bgMean)] : undefined
+        push(glyphs[mask]!, fg, bg)
       }
 
       result.push(spans)
