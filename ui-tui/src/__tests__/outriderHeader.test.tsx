@@ -55,11 +55,11 @@ describe('OutriderHeader', () => {
     expect(TRUECOLOR.test(text)).toBe(true)
   })
 
-  it('uses octant glyphs at the default density', async () => {
+  it('uses sextant glyphs at the default density', async () => {
     const text = await render(100, 40)
-    // Default family is octant — at least some cells should land on a glyph in
-    // the Unicode-16 octant range that no coarser family can produce.
-    expect(/[\u{1cd00}-\u{1cdeb}]/u.test(text)).toBe(true)
+    // Default family is sextant (compat-first) — at least some cells should
+    // land on a glyph in the U+1FB00 sextant range.
+    expect(/[\u{1fb00}-\u{1fb3b}]/u.test(text)).toBe(true)
   })
 
   it('scales down to a narrow terminal without crashing', async () => {

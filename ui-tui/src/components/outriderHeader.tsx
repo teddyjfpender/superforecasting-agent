@@ -23,9 +23,14 @@ const DISABLED = (() => {
 })()
 
 // Glyph family controls how many sub-pixels we pack per terminal cell — i.e.
-// how small the "pixels" are. octant (2x4) is the sharpest (true half-size
-// square pixels) but needs a Unicode-16 font; drop to sextant/quad/half via
-// the env override if the chosen glyphs render as tofu boxes.
+// how small the "pixels" are. Finer glyphs = sharper, but need newer fonts:
+//   octant  (2x4) — sharpest (true half-size square pixels), Unicode 16 (2024).
+//                   Many fonts ship it only PARTIALLY, so a few cells tofu.
+//   sextant (2x3) — ~3x the detail of half, Unicode 13 (2020), mature/complete
+//                   coverage in modern coding fonts. The compat-first default.
+//   quad    (2x2) — classic Block Elements, universal, 2x horizontal only.
+//   half    (1x2) — the original look.
+// Override with ..._TUI_HEADER_GLYPHS=octant (etc.) if your font is complete.
 const GLYPH_FAMILY: GlyphFamily = (() => {
   for (const key of [
     'SUPERFORECASTING_AGENT_TUI_HEADER_GLYPHS',
@@ -39,7 +44,7 @@ const GLYPH_FAMILY: GlyphFamily = (() => {
     }
   }
 
-  return 'octant'
+  return 'sextant'
 })()
 
 // Luminance below this (0-255) renders transparent, so the figure floats on
