@@ -1,4 +1,4 @@
-import { Box, NoSelect, Text, useInput, useStdout } from '@hermes/ink'
+import { Box, Text, useInput, useStdout } from '@hermes/ink'
 import { useEffect, useState } from 'react'
 
 import { patchOverlayState } from '../app/overlayStore.js'
@@ -10,8 +10,9 @@ export const openMessagingView = () => patchOverlayState({ messaging: true })
 export const closeMessagingView = () => patchOverlayState({ messaging: false })
 
 // Messaging — the Telegram / Signal surface. No account is linked yet; this
-// renders the chat scaffold (conversation rail + thread pane + a disabled
-// composer) so threads drop straight in once an account is connected.
+// renders an aligned chat scaffold: a CHATS rail (avatar · name · time, with a
+// preview line) and a thread pane with properly placed incoming/outgoing
+// bubbles, so conversations drop straight in once an account is connected.
 
 interface Channel {
   key: string
@@ -22,6 +23,22 @@ const CHANNELS: Channel[] = [
   { key: 'telegram', label: 'Telegram' },
   { key: 'signal', label: 'Signal' }
 ]
+
+const bar = (n: number): string => '░'.repeat(Math.max(3, n))
+
+// Placeholder bubble widths + side. Alternating sides with varied widths read
+// as a real back-and-forth thread rather than a uniform ladder.
+const BUBBLES: { mine: boolean; w: number }[] = [
+  { mine: false, w: 26 },
+  { mine: true, w: 16 },
+  { mine: false, w: 32 },
+  { mine: true, w: 22 },
+  { mine: false, w: 18 },
+  { mine: true, w: 28 }
+]
+
+const NAME_WIDTHS = [8, 6, 9, 7, 8, 6, 9, 7]
+const PREVIEW_WIDTHS = [13, 10, 14, 11, 9, 12, 13, 10]
 
 interface MessagingViewProps {
   onClose: () => void
@@ -72,10 +89,10 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     }
   })
 
-  const width = Math.max(40, cols - 4)
+  const width = Math.max(48, cols - 4)
   const live = tick % 2 === 0
-  const railWidth = Math.min(26, Math.max(16, Math.floor(width * 0.3)))
-  const threadWidth = Math.max(20, width - railWidth - 2)
+  const railWidth = Math.min(32, Math.max(24, Math.floor(width * 0.3)))
+  const bubbleMax = Math.max(12, Math.floor((width - railWidth) * 0.5))
 
   const header = (
     <Box flexShrink={0} marginBottom={1}>
@@ -96,49 +113,69 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     </Box>
   )
 
-  // Conversation rail: a name bar + a muted last-message preview per row.
+  // CHATS rail — avatar · name (left) · time (right), preview beneath.
   const rail = (
-    <NoSelect flexDirection="column" flexShrink={0} marginRight={1} width={railWidth}>
+    <Box
+      borderColor={t.color.border}
+      borderStyle="round"
+      flexDirection="column"
+      flexShrink={0}
+      marginRight={1}
+      paddingX={1}
+      width={railWidth}
+    >
       <Text bold color={t.color.label}>
         CHATS
       </Text>
-      {Array.from({ length: chatCount }, (_, r) => {
-        const isActive = r === selected
-
-        return (
-          <Box flexDirection="column" key={r} marginTop={r === 0 ? 1 : 0} onClick={() => setSelected(r)}>
-            <Text color={isActive ? t.color.accent : t.color.muted} wrap="truncate-end">
-              {isActive ? '▸ ' : '  '}
-              {'— — —'}
-            </Text>
-            <Text color={t.color.border} wrap="truncate-end">
-              {'  '}
-              {'─'.repeat(Math.max(6, railWidth - 6))}
-            </Text>
-          </Box>
-        )
-      })}
-    </NoSelect>
-  )
-
-  // Thread pane: alternating left/right skeleton bubbles so the chat shape
-  // reads at a glance, then the connect hint.
-  const thread = (
-    <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} width={threadWidth}>
-      <Text bold color={t.color.label} wrap="truncate-end">
-        {CHANNELS[channel].label.toUpperCase()} · —
-      </Text>
-      <Box flexDirection="column" flexGrow={1} marginTop={1}>
-        {Array.from({ length: Math.max(3, Math.min(6, termRows - 16)) }, (_, r) => {
-          const mine = r % 2 === 1
-          const bubble = '─'.repeat(Math.max(8, Math.floor(threadWidth * (r % 3 === 0 ? 0.55 : 0.4))))
+      <Box flexDirection="column" marginTop={1}>
+        {Array.from({ length: chatCount }, (_, r) => {
+          const isActive = r === selected
 
           return (
-            <Box justifyContent={mine ? 'flex-end' : 'flex-start'} key={r} marginBottom={1}>
-              <Text color={t.color.border}>{bubble}</Text>
+            <Box flexDirection="column" key={r} marginBottom={1} onClick={() => setSelected(r)}>
+              <Box justifyContent="space-between" width="100%">
+                <Box>
+                  <Text color={isActive ? t.color.accent : t.color.muted}>{isActive ? '▸ ' : '  '}</Text>
+                  <Text color={isActive ? t.color.accent : t.color.muted}>● </Text>
+                  <Text color={isActive ? t.color.text : t.color.border} wrap="truncate-end">
+                    {bar(NAME_WIDTHS[r % NAME_WIDTHS.length])}
+                  </Text>
+                </Box>
+                <Text color={t.color.border}>░░:░░</Text>
+              </Box>
+              <Text color={t.color.border} wrap="truncate-end">
+                {'      '}
+                {bar(PREVIEW_WIDTHS[r % PREVIEW_WIDTHS.length])}
+              </Text>
             </Box>
           )
         })}
+      </Box>
+    </Box>
+  )
+
+  // Thread pane — incoming bubbles left, outgoing right, each a bordered chip.
+  const thread = (
+    <Box
+      borderColor={t.color.border}
+      borderStyle="round"
+      flexDirection="column"
+      flexGrow={1}
+      flexShrink={1}
+      minHeight={0}
+      paddingX={1}
+    >
+      <Text bold color={t.color.label} wrap="truncate-end">
+        {CHANNELS[channel].label.toUpperCase()} · {bar(6)}
+      </Text>
+      <Box flexDirection="column" flexGrow={1} marginTop={1}>
+        {BUBBLES.map((b, i) => (
+          <Box justifyContent={b.mine ? 'flex-end' : 'flex-start'} key={i} marginBottom={1}>
+            <Box borderColor={t.color.border} borderStyle="round" paddingX={1}>
+              <Text color={t.color.border}>{bar(Math.min(b.w, bubbleMax))}</Text>
+            </Box>
+          </Box>
+        ))}
       </Box>
       <Box marginTop={1}>
         <Text color={t.color.muted} wrap="wrap">

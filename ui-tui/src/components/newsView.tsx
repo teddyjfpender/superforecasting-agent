@@ -1,4 +1,4 @@
-import { Box, NoSelect, Text, useInput, useStdout } from '@hermes/ink'
+import { Box, Text, useInput, useStdout } from '@hermes/ink'
 import { useEffect, useState } from 'react'
 
 import { patchOverlayState } from '../app/overlayStore.js'
@@ -9,16 +9,16 @@ import { type FooterChip, FooterChips } from './footerChips.js'
 export const openNewsView = () => patchOverlayState({ news: true })
 export const closeNewsView = () => patchOverlayState({ news: false })
 
-// News — live RSS feeds with quick article reading. No feeds are wired yet;
-// this renders the two-pane scaffold (sources rail + headline list + reading
-// pane) so articles slot straight in once a feed is configured.
+// News — live RSS feeds with quick reading. No feeds are wired yet; this
+// renders the three-pane scaffold the reader will use: a SOURCES rail to
+// filter, an ARTICLES list to browse, and a READER pane to consume the
+// selected item. Aligned, bordered panes so data slots straight in.
 
 interface FeedSource {
   key: string
   label: string
 }
 
-// Placeholder source rail — the categories a reader would group feeds under.
 const SOURCES: FeedSource[] = [
   { key: 'all', label: 'All feeds' },
   { key: 'markets', label: 'Markets' },
@@ -27,6 +27,15 @@ const SOURCES: FeedSource[] = [
   { key: 'politics', label: 'Politics' },
   { key: 'science', label: 'Science' }
 ]
+
+// A skeleton text bar — light-shade blocks read as "content pending" rather
+// than the rule-lines a row of dashes implied.
+const bar = (n: number): string => '░'.repeat(Math.max(3, n))
+
+// Organic-looking placeholder widths so the list/reader don't look like a
+// perfectly uniform grid.
+const TITLE_WIDTHS = [30, 22, 34, 18, 28, 24, 32, 20, 26, 23]
+const PARA_WIDTHS = [40, 44, 38, 42, 30, 44, 36]
 
 interface NewsViewProps {
   onClose: () => void
@@ -38,7 +47,8 @@ export function NewsView({ onClose, t }: NewsViewProps) {
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
 
-  const [selected, setSelected] = useState(0)
+  const [source, setSource] = useState(0)
+  const [article, setArticle] = useState(0)
   const [tick, setTick] = useState(0)
 
   useEffect(() => {
@@ -56,25 +66,35 @@ export function NewsView({ onClose, t }: NewsViewProps) {
     }
   }, [stdout])
 
+  const width = Math.max(48, cols - 4)
+  const rowCount = Math.max(4, Math.min(10, termRows - 12))
+
   useInput((ch, key) => {
     if (ch === 'q' || key.escape) {
       return onClose()
     }
 
+    // Tab / ←→ filters by source; ↑↓ browses the article list.
+    if (key.tab || key.rightArrow) {
+      return setSource(i => (i + 1) % SOURCES.length)
+    }
+
+    if (key.leftArrow) {
+      return setSource(i => (i - 1 + SOURCES.length) % SOURCES.length)
+    }
+
     if (key.upArrow || ch === 'k') {
-      return setSelected(i => Math.max(0, i - 1))
+      return setArticle(i => Math.max(0, i - 1))
     }
 
     if (key.downArrow || ch === 'j') {
-      return setSelected(i => Math.min(SOURCES.length - 1, i + 1))
+      return setArticle(i => Math.min(rowCount - 1, i + 1))
     }
   })
 
-  const width = Math.max(40, cols - 4)
   const live = tick % 2 === 0
-  const railWidth = Math.min(22, Math.max(14, Math.floor(width * 0.28)))
-  const listWidth = Math.max(20, width - railWidth - 2)
-  const rowCount = Math.max(4, Math.min(10, termRows - 12))
+  const railWidth = Math.min(26, Math.max(20, Math.floor(width * 0.2)))
+  const readerWidth = Math.min(52, Math.max(28, Math.floor(width * 0.36)))
 
   const header = (
     <Box flexShrink={0} marginBottom={1}>
@@ -91,55 +111,116 @@ export function NewsView({ onClose, t }: NewsViewProps) {
     </Box>
   )
 
+  // 1. SOURCES rail — filter. Counts right-aligned for a tidy column.
   const rail = (
-    <NoSelect flexDirection="column" flexShrink={0} marginRight={1} width={railWidth}>
+    <Box
+      borderColor={t.color.border}
+      borderStyle="round"
+      flexDirection="column"
+      flexShrink={0}
+      marginRight={1}
+      paddingX={1}
+      width={railWidth}
+    >
       <Text bold color={t.color.label}>
         SOURCES
       </Text>
-      {SOURCES.map((source, i) => {
-        const isActive = i === selected
+      <Box flexDirection="column" marginTop={1}>
+        {SOURCES.map((src, i) => {
+          const isActive = i === source
 
-        return (
-          <Box key={source.key} onClick={() => setSelected(i)}>
-            <Text color={isActive ? t.color.accent : t.color.muted} wrap="truncate-end">
-              {isActive ? '▸ ' : '  '}
-              {source.label}
-            </Text>
-            <Text color={t.color.border}> · —</Text>
-          </Box>
-        )
-      })}
-    </NoSelect>
+          return (
+            <Box justifyContent="space-between" key={src.key} onClick={() => setSource(i)} width="100%">
+              <Text color={isActive ? t.color.accent : t.color.muted} wrap="truncate-end">
+                {isActive ? '▸ ' : '  '}
+                {src.label}
+              </Text>
+              <Text color={t.color.border}>—</Text>
+            </Box>
+          )
+        })}
+      </Box>
+    </Box>
   )
 
-  // Skeleton headline rows: a title bar, then a muted "source · time" line.
-  const headlines = (
-    <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} width={listWidth}>
+  // 2. ARTICLES list — browse. Each row: marker + headline bar, meta beneath.
+  const list = (
+    <Box
+      borderColor={t.color.border}
+      borderStyle="round"
+      flexDirection="column"
+      flexGrow={1}
+      flexShrink={1}
+      marginRight={1}
+      minHeight={0}
+      paddingX={1}
+    >
       <Text bold color={t.color.label} wrap="truncate-end">
-        {SOURCES[selected].label.toUpperCase()}
+        {SOURCES[source].label.toUpperCase()}
       </Text>
       <Box flexDirection="column" marginTop={1}>
-        {Array.from({ length: rowCount }, (_, r) => (
-          <Box flexDirection="column" key={r} marginBottom={1}>
-            <Text color={t.color.border} wrap="truncate-end">
-              {'─'.repeat(Math.max(8, Math.floor(listWidth * (r % 3 === 0 ? 0.8 : 0.6))))}
+        {Array.from({ length: rowCount }, (_, r) => {
+          const isActive = r === article
+
+          return (
+            <Box flexDirection="column" key={r} marginBottom={1} onClick={() => setArticle(r)}>
+              <Box width="100%">
+                <Text color={isActive ? t.color.accent : t.color.border}>{isActive ? '▸ ' : '  '}</Text>
+                <Text color={isActive ? t.color.text : t.color.border} wrap="truncate-end">
+                  {bar(TITLE_WIDTHS[r % TITLE_WIDTHS.length])}
+                </Text>
+              </Box>
+              <Text color={t.color.muted} wrap="truncate-end">
+                {'   '}
+                {bar(8)} · {bar(3)}
+              </Text>
+            </Box>
+          )
+        })}
+      </Box>
+    </Box>
+  )
+
+  // 3. READER pane — consume. Headline + byline + paragraph skeleton.
+  const reader = (
+    <Box
+      borderColor={t.color.border}
+      borderStyle="round"
+      flexDirection="column"
+      flexShrink={0}
+      minHeight={0}
+      paddingX={1}
+      width={readerWidth}
+    >
+      <Text bold color={t.color.label} wrap="truncate-end">
+        READER
+      </Text>
+      <Box flexDirection="column" marginTop={1}>
+        <Text color={t.color.text} wrap="truncate-end">
+          {bar(TITLE_WIDTHS[article % TITLE_WIDTHS.length])}
+        </Text>
+        <Text color={t.color.muted} wrap="truncate-end">
+          {bar(10)} · {bar(6)}
+        </Text>
+        <Box flexDirection="column" marginTop={1}>
+          {PARA_WIDTHS.map((w, i) => (
+            <Text color={t.color.border} key={i} wrap="truncate-end">
+              {bar(Math.min(w, readerWidth - 4))}
             </Text>
-            <Text color={t.color.muted} wrap="truncate-end">
-              {'— — —'} · —
-            </Text>
-          </Box>
-        ))}
+          ))}
+        </Box>
       </Box>
       <Box marginTop={1}>
         <Text color={t.color.muted} wrap="wrap">
-          No feeds configured yet — add an RSS source and headlines will populate this list, newest first.
+          Select an article to read its full text here. No feeds configured yet — add an RSS source to populate.
         </Text>
       </Box>
     </Box>
   )
 
   const chips: FooterChip[] = [
-    { k: '↑↓', label: 'Source' },
+    { k: '↑↓', label: 'Browse' },
+    { k: '⇥', label: 'Source', run: () => setSource(i => (i + 1) % SOURCES.length) },
     { k: '⏎', label: 'Open' },
     { k: 'a', label: 'Add feed' },
     { k: 'r', label: 'Refresh' },
@@ -150,7 +231,7 @@ export function NewsView({ onClose, t }: NewsViewProps) {
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
       <FooterChips chips={chips} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
-        ↑↓/jk source · Enter open · a add feed · r refresh · Esc/q close
+        ↑↓/jk browse · Tab/←→ source · Enter open · a add feed · r refresh · Esc/q close
       </Text>
     </Box>
   )
@@ -160,7 +241,8 @@ export function NewsView({ onClose, t }: NewsViewProps) {
       {header}
       <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
         {rail}
-        {headlines}
+        {list}
+        {reader}
       </Box>
       {footer}
     </Box>
