@@ -1,7 +1,7 @@
 import { PassThrough } from 'stream'
 
 import React from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 // Smoke tests for the three "serious product" views — Markets, News, and
 // Messaging. They ship without a live data source wired yet, so these assert
@@ -106,25 +106,117 @@ describe('MarketsView scaffold', () => {
   })
 })
 
-describe('NewsView scaffold', () => {
-  it('renders the title, sources rail, and a no-feeds-yet hint', async () => {
-    const { NewsView } = await import('../components/newsView.js')
-    const text = await renderComponent(NewsView)
+describe('NewsView', () => {
+  // Isolate the subscription store to a fresh temp home so these tests don't
+  // read/write the developer's real ~/.superforecasting-agent.
+  let prevHome: string | undefined
+  let home: string
+
+  beforeAll(async () => {
+    const { mkdtempSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    home = mkdtempSync(join(tmpdir(), 'news-view-'))
+    prevHome = process.env.SUPERFORECASTING_AGENT_HOME
+    process.env.SUPERFORECASTING_AGENT_HOME = home
+  })
+
+  afterAll(async () => {
+    const { rmSync } = await import('node:fs')
+    rmSync(home, { force: true, recursive: true })
+
+    if (prevHome === undefined) {
+      delete process.env.SUPERFORECASTING_AGENT_HOME
+    } else {
+      process.env.SUPERFORECASTING_AGENT_HOME = prevHome
+    }
+  })
+
+  // Render that exposes stdin so we can drive key presses.
+  const renderNews = async () => {
+    process.env.FORECAST_TUI_INLINE = '1'
+
+    const [{ render }, { NewsView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/newsView.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const stdout = writeStream(120, 40)
+    const stdin = writeStream(120, 40, true)
+
+    const instance = render(React.createElement(NewsView, { onClose: () => undefined, t: DARK_THEME }), {
+      exitOnCtrlC: false,
+      patchConsole: false,
+      stdin: stdin.stream,
+      stdout: stdout.stream
+    })
+
+    await tick(40)
+
+    return {
+      cleanup: () => {
+        instance.unmount?.()
+        instance.cleanup?.()
+      },
+      press: async (keys: string) => {
+        stdin.stream.write(keys)
+        await tick(40)
+      },
+      text: () => normalize(stdout.text(), stripAnsi)
+    }
+  }
+
+  it('renders the three-pane scaffold and a no-feeds-yet empty state', async () => {
+    const n = await renderNews()
+    const text = n.text()
+    n.cleanup()
 
     expect(text).toContain('NEWS')
     expect(text).toContain('live RSS feeds')
-    // three panes: sources rail · article list · reader
     expect(text).toContain('SOURCES')
     expect(text).toContain('All feeds')
-    expect(text).toContain('Technology')
     expect(text).toContain('READER')
-    // honest empty state (assert tokens that survive reader-pane word-wrap)
-    expect(text).toContain('Select an article')
-    expect(text).toContain('configured yet')
-    expect(text).toContain('add feed')
+    expect(text).toContain('No feeds yet')
     // bracketed keybinding chip layer
     expect(text).toContain('[a Add feed]')
     expect(text).toContain('[q Close]')
+  })
+
+  it('opens the Add-feed modal on "a", shows categories, and searches the catalog', async () => {
+    const n = await renderNews()
+    await n.press('a')
+    const opened = n.text()
+    expect(opened).toContain('Add a feed')
+    expect(opened).toContain('subscribed')
+    expect(opened).toContain('CATEGORIES') // scrollable category rail
+    expect(opened).toContain('All') // the 'All' (unfiltered) category
+    expect(opened).toContain('[ ]') // unchecked subscription boxes
+
+    // Typing filters the catalog — "hacker" surfaces the Hacker News feed.
+    await n.press('hacker')
+    const searched = n.text()
+    n.cleanup()
+    expect(searched).toContain('Hacker News')
+  })
+
+  it('subscribes the highlighted feed on Enter and persists it to the store', async () => {
+    const { loadSubscribedFeeds, newsFeedsFile } = await import('../lib/newsFeedStore.js')
+    expect(loadSubscribedFeeds(newsFeedsFile(home))).toHaveLength(0)
+
+    const n = await renderNews()
+    await n.press('a') // open modal
+    await n.press('\r') // Enter → toggle the top result
+    const after = n.text()
+    n.cleanup()
+
+    // The always-rendered header reflects the new subscription count…
+    expect(after).toContain('1 subscribed')
+    // …and the feed was written through to the store on disk (source of truth).
+    const saved = loadSubscribedFeeds(newsFeedsFile(home))
+    expect(saved).toHaveLength(1)
+    expect(saved[0].url).toMatch(/^https?:\/\//)
   })
 })
 
