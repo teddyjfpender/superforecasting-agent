@@ -121,7 +121,7 @@ describe('NewsView scaffold', () => {
 })
 
 describe('MessagingView scaffold', () => {
-  it('renders the title, channels, chat rail, disabled composer, and a connect hint', async () => {
+  it('renders the title, channels, chat rail, and a connect hint (no input composer)', async () => {
     const { MessagingView } = await import('../components/messagingView.js')
     const text = await renderComponent(MessagingView)
 
@@ -130,8 +130,11 @@ describe('MessagingView scaffold', () => {
     expect(text).toContain('Signal')
     // conversation rail
     expect(text).toContain('CHATS')
-    // disabled composer + honest empty state
-    expect(text).toContain('Connect an account to start messaging')
+    // honest empty state in the thread pane
     expect(text).toContain('Not connected')
+    // interaction parity with the other routes: a footer hint, not a typing
+    // composer pinned to the bottom like the home route has.
+    expect(text).toContain('Esc/q close')
+    expect(text).not.toContain('start messaging…')
   })
 })

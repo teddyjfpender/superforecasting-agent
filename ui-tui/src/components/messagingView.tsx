@@ -137,15 +137,6 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     </Box>
   )
 
-  // Disabled composer — visually present so the input affordance is obvious.
-  const composer = (
-    <Box borderColor={t.color.border} borderStyle="round" flexShrink={0} marginTop={1} paddingX={1}>
-      <Text color={t.color.muted} wrap="truncate-end">
-        Connect an account to start messaging…
-      </Text>
-    </Box>
-  )
-
   const footer = (
     <Box flexShrink={0} marginTop={1}>
       <Text color={t.color.muted} wrap="truncate-end">
@@ -161,7 +152,6 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         {rail}
         {thread}
       </Box>
-      {composer}
       {footer}
     </Box>
   )
