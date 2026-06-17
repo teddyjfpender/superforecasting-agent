@@ -14,7 +14,10 @@ const buildOverlayState = (): OverlayState => ({
   forecasts: false,
   forecastsInitialId: null,
   help: false,
+  markets: false,
+  messaging: false,
   modelPicker: false,
+  news: false,
   obsidian: false,
   pager: null,
   picker: false,
@@ -38,7 +41,10 @@ export const $isBlocked = computed(
     confirm,
     forecasts,
     help,
+    markets,
+    messaging,
     modelPicker,
+    news,
     obsidian,
     pager,
     picker,
@@ -57,7 +63,10 @@ export const $isBlocked = computed(
         confirm ||
         forecasts ||
         help ||
+        markets ||
+        messaging ||
         modelPicker ||
+        news ||
         obsidian ||
         pager ||
         picker ||
@@ -97,7 +106,10 @@ export const resetFlowOverlays = () =>
     forecasts: $overlayState.get().forecasts,
     forecastsInitialId: $overlayState.get().forecastsInitialId,
     help: $overlayState.get().help,
+    markets: $overlayState.get().markets,
+    messaging: $overlayState.get().messaging,
     modelPicker: $overlayState.get().modelPicker,
+    news: $overlayState.get().news,
     obsidian: $overlayState.get().obsidian,
     picker: $overlayState.get().picker,
     skillsHub: $overlayState.get().skillsHub,

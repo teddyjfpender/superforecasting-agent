@@ -28,8 +28,11 @@ import { ForecastsWorkspace } from './forecastsWorkspace.js'
 import { FpsOverlay } from './fpsOverlay.js'
 import { HelpHint } from './helpHint.js'
 import { HelpView } from './helpView.js'
+import { MarketsView } from './marketsView.js'
 import { MessageLine } from './messageLine.js'
+import { MessagingView } from './messagingView.js'
 import { NavBar } from './navBar.js'
+import { NewsView } from './newsView.js'
 import { ObsidianView } from './obsidianView.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
@@ -382,6 +385,24 @@ const HelpViewPane = memo(function HelpViewPane() {
   return <HelpView onClose={() => patchOverlayState({ help: false })} t={ui.theme} />
 })
 
+const MarketsViewPane = memo(function MarketsViewPane() {
+  const ui = useStore($uiState)
+
+  return <MarketsView onClose={() => patchOverlayState({ markets: false })} t={ui.theme} />
+})
+
+const NewsViewPane = memo(function NewsViewPane() {
+  const ui = useStore($uiState)
+
+  return <NewsView onClose={() => patchOverlayState({ news: false })} t={ui.theme} />
+})
+
+const MessagingViewPane = memo(function MessagingViewPane() {
+  const ui = useStore($uiState)
+
+  return <MessagingView onClose={() => patchOverlayState({ messaging: false })} t={ui.theme} />
+})
+
 const CalendarViewPane = memo(function CalendarViewPane() {
   const { gw } = useGateway()
   const ui = useStore($uiState)
@@ -462,6 +483,9 @@ export const AppLayout = memo(function AppLayout({
     overlay.alerts ||
     overlay.help ||
     overlay.calendar ||
+    overlay.markets ||
+    overlay.news ||
+    overlay.messaging ||
     overlay.obsidian
 
   // Landing = the first-run screen, before any real interaction. We hold it
@@ -535,6 +559,18 @@ export const AppLayout = memo(function AppLayout({
             ) : overlay.help ? (
               <PerfPane id="help">
                 <HelpViewPane />
+              </PerfPane>
+            ) : overlay.markets ? (
+              <PerfPane id="markets">
+                <MarketsViewPane />
+              </PerfPane>
+            ) : overlay.news ? (
+              <PerfPane id="news">
+                <NewsViewPane />
+              </PerfPane>
+            ) : overlay.messaging ? (
+              <PerfPane id="messaging">
+                <MessagingViewPane />
               </PerfPane>
             ) : overlay.calendar ? (
               <PerfPane id="calendar">

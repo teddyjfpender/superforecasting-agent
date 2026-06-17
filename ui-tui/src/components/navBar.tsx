@@ -17,6 +17,9 @@ type NavTab = { key: string; label: string }
 const NAV_TABS: NavTab[] = [
   { key: 'home', label: 'Home' },
   { key: 'desk', label: 'Desk' },
+  { key: 'markets', label: 'Markets' },
+  { key: 'news', label: 'News' },
+  { key: 'messaging', label: 'Messaging' },
   { key: 'calendar', label: 'Calendar' },
   { key: 'warnings', label: 'Warnings' },
   { key: 'calibration', label: 'Calibration' },
@@ -34,6 +37,9 @@ const HOME_PATCH = {
   forecasts: false,
   forecastsInitialId: null,
   help: false,
+  markets: false,
+  messaging: false,
+  news: false,
   obsidian: false
 } as const
 
@@ -44,19 +50,25 @@ export function NavBar() {
   // Which tab is the active route.
   const active = overlay.forecasts
     ? 'desk'
-    : overlay.calendar
-      ? 'calendar'
-      : overlay.calibration
-        ? 'calibration'
-        : overlay.alerts
-          ? 'warnings'
-          : overlay.obsidian
-            ? 'obsidian'
-            : overlay.agents
-              ? 'agents'
-              : overlay.help
-                ? 'help'
-                : 'home'
+    : overlay.markets
+      ? 'markets'
+      : overlay.news
+        ? 'news'
+        : overlay.messaging
+          ? 'messaging'
+          : overlay.calendar
+            ? 'calendar'
+            : overlay.calibration
+              ? 'calibration'
+              : overlay.alerts
+                ? 'warnings'
+                : overlay.obsidian
+                  ? 'obsidian'
+                  : overlay.agents
+                    ? 'agents'
+                    : overlay.help
+                      ? 'help'
+                      : 'home'
 
   const select = (key: string) => {
     switch (key) {
@@ -65,6 +77,15 @@ export function NavBar() {
 
       case 'desk':
         return patchOverlayState({ ...HOME_PATCH, forecasts: true })
+
+      case 'markets':
+        return patchOverlayState({ ...HOME_PATCH, markets: true })
+
+      case 'news':
+        return patchOverlayState({ ...HOME_PATCH, news: true })
+
+      case 'messaging':
+        return patchOverlayState({ ...HOME_PATCH, messaging: true })
 
       case 'calendar':
         return patchOverlayState({ ...HOME_PATCH, calendar: true })

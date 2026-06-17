@@ -85,6 +85,7 @@ const refreshForecastDeskStatus = (ctx: SlashRunCtx) => {
 const renderForecastCommandOutput = (response: ForecastCommandResponse, ctx: SlashRunCtx) => {
   const output = response.output || '(no output)'
   const code = response.code ?? 0
+
   // Exit code 2 is an argparse usage error — usually a natural-language request
   // sent to the deterministic CLI. Point the user at the agentic path instead of
   // a raw "exited with code 2" so the desk feels conversational, not brittle.
@@ -94,6 +95,7 @@ const renderForecastCommandOutput = (response: ForecastCommandResponse, ctx: Sla
       : code === 2
         ? `forecast needs more detail to run that as a command (exit ${code}).\n${output}\n\nTip: describe it in plain language instead — e.g. "run the CPI forecast update" or /forecast new <question> — and the agent will fill in the details and execute.`
         : `forecast exited with code ${code}\n${output}`
+
   const long = text.length > 180 || text.split('\n').filter(Boolean).length > 2
 
   long ? ctx.transcript.page(text, 'Forecast') : ctx.transcript.sys(text)
@@ -157,6 +159,7 @@ const renderForecastDashboard = (response: ForecastDashboardResponse, ctx: Slash
   if (response.summary) {
     updateForecastDeskState(response)
     ctx.transcript.panel('Forecast Desk', forecastDashboardSections(response))
+
     return
   }
 
@@ -167,6 +170,7 @@ const renderForecastBook = (response: ForecastDashboardResponse, ctx: SlashRunCt
   if (response.summary) {
     updateForecastDeskState(response)
     ctx.transcript.panel('Forecast Book', forecastBookSections(response))
+
     return
   }
 
@@ -177,6 +181,7 @@ const renderForecastSearch = (response: ForecastDashboardResponse, query: string
   if (response.summary) {
     updateForecastDeskState(response)
   }
+
   ctx.transcript.panel('Forecast Search', forecastQuestionSearchSections(response, query))
 }
 
@@ -210,6 +215,7 @@ const LEDGER_VIEW_WORDS = new Set([
 
 const searchNormalizeForLimit = (view: string) => {
   const first = view.trim().toLowerCase().split(/\s+/)[0] || 'book'
+
   return first === 'search' || !LEDGER_VIEW_WORDS.has(first)
 }
 
@@ -217,6 +223,7 @@ const renderForecastLedgerView = (response: ForecastDashboardResponse, view: str
   if (response.summary) {
     updateForecastDeskState(response)
   }
+
   ctx.transcript.panel('Forecast Ledger', forecastLedgerViewSections(response, view))
 }
 
@@ -236,6 +243,7 @@ const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
   if (trimmed && !listMatch && openIndex === null) {
     if (FORECAST_ID_ARG.test(trimmed)) {
       openForecastDetail(trimmed)
+
       return
     }
 
@@ -243,6 +251,7 @@ const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
       .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit: 50 })
       .then(ctx.guarded<ForecastDashboardResponse>(r => renderForecastSearch(r, trimmed, ctx)))
       .catch(ctx.guardedErr)
+
     return
   }
 
@@ -251,9 +260,11 @@ const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
   }
 
   const listLimit = listMatch?.[1] ? Number.parseInt(listMatch[1], 10) : 20
+
   if (!Number.isFinite(listLimit) || listLimit <= 0) {
     return ctx.transcript.sys('usage: /questions [list [limit]|row-number|forecast-id]')
   }
+
   const limit = Math.max(openIndex ?? listLimit, listLimit)
 
   ctx.gateway
@@ -262,13 +273,16 @@ const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
       ctx.guarded<ForecastDashboardResponse>(r => {
         if (!r.summary || openIndex === null || listMatch) {
           renderForecastBook(r, ctx)
+
           return
         }
 
         updateForecastDeskState(r)
         const row = r.summary.questions?.[openIndex - 1]
+
         if (!row?.id) {
           ctx.transcript.sys(`no forecast row ${openIndex}; run /questions list ${limit} to inspect current forecast questions`)
+
           return
         }
 
@@ -308,6 +322,7 @@ type ForecastRefResolution =
 const resolveForecastRef = (response: ForecastDashboardResponse, ref: string): ForecastRefResolution => {
   const trimmed = ref.trim()
   const summary = response.summary
+
   if (!summary || !trimmed) {
     return { response, status: 'missing' }
   }
@@ -318,14 +333,18 @@ const resolveForecastRef = (response: ForecastDashboardResponse, ref: string): F
   if (INTEGER_ARG.test(trimmed)) {
     const index = Number.parseInt(trimmed, 10) - 1
     const row = questions[index]
+
     return row?.id ? { id: row.id, response, status: 'resolved' } : { response, status: 'missing' }
   }
 
   const lower = trimmed.toLowerCase()
+
   const exact = [...questions, ...reviewQueue].find(row => {
     const id = row.id || ''
+
     return id.toLowerCase() === lower || id.replace(/^fq_/, '').toLowerCase().startsWith(lower)
   })
+
   if (exact?.id) {
     return { id: exact.id, response, status: 'resolved' }
   }
@@ -333,6 +352,7 @@ const resolveForecastRef = (response: ForecastDashboardResponse, ref: string): F
   const matches = rankForecastQuestionMatches(response, trimmed, 8)
   const top = matches[0]
   const next = matches[1]
+
   if (top?.row.id && (!next || top.score >= next.score + 10)) {
     return { id: top.row.id, response, status: 'resolved' }
   }
@@ -347,6 +367,7 @@ const withForecastRef = (
   options: { ambiguousTitle?: string; missingUsage: string } = { missingUsage: 'usage: /open <row|id|words>' }
 ) => {
   const trimmed = ref.trim()
+
   if (!trimmed) {
     return ctx.transcript.sys(options.missingUsage)
   }
@@ -356,13 +377,16 @@ const withForecastRef = (
     .then(
       ctx.guarded<ForecastDashboardResponse>(response => {
         const resolved = resolveForecastRef(response, trimmed)
+
         if (resolved.status === 'resolved') {
           onResolved(resolved.id)
+
           return
         }
 
         if (resolved.status === 'ambiguous') {
           renderForecastSearch(resolved.response, trimmed, ctx)
+
           return
         }
 
@@ -375,6 +399,7 @@ const withForecastRef = (
 const splitForecastRefAndRest = (arg: string): { ref: string; rest: string } => {
   const trimmed = arg.trim()
   const separator = trimmed.indexOf(' -- ')
+
   if (separator >= 0) {
     return {
       ref: trimmed.slice(0, separator).trim(),
@@ -383,6 +408,7 @@ const splitForecastRefAndRest = (arg: string): { ref: string; rest: string } => 
   }
 
   const parts = trimmed.split(/\s+/)
+
   return {
     ref: parts[0] || '',
     rest: parts.slice(1).join(' ').trim()
@@ -391,6 +417,7 @@ const splitForecastRefAndRest = (arg: string): { ref: string; rest: string } => 
 
 const runForecastUpdateShortcut = (arg: string, ctx: SlashRunCtx, missingUsage: string) => {
   const trimmed = arg.trim()
+
   if (!trimmed) {
     return ctx.transcript.sys(missingUsage)
   }
@@ -400,6 +427,7 @@ const runForecastUpdateShortcut = (arg: string, ctx: SlashRunCtx, missingUsage: 
   }
 
   const { ref, rest } = splitForecastRefAndRest(trimmed)
+
   if (!rest) {
     return runForecastCommand(ctx, `update ${trimmed}`)
   }
@@ -460,6 +488,9 @@ export const coreCommands: SlashCommand[] = [
             ['/postmortem [args]', 'diagnose a resolved forecast'],
             ['/review [args]', 'run forecast review workflow'],
             ['/alerts [args]', 'show forecast alerts'],
+            ['/markets', 'open the live markets tape'],
+            ['/news', 'open the live news feed reader'],
+            ['/messaging', 'open the messaging view (Telegram / Signal)'],
             ['/calibration [args]', 'show calibration analytics; defaults to --by-origin; --visual opens the chart view'],
             ['/panel [subcommand]', 'multi-perspective panel: perspectives, record, aggregate, show'],
             ['/bayes [args]', 'auditable Bayesian scratchpad (priors, LRs, pooling)'],
@@ -578,6 +609,7 @@ export const coreCommands: SlashCommand[] = [
     name: 'find',
     run: (arg, ctx) => {
       const query = arg.trim()
+
       if (!query) {
         return ctx.transcript.sys('usage: /find <forecast words>')
       }
@@ -615,6 +647,7 @@ export const coreCommands: SlashCommand[] = [
     name: 'note',
     run: (arg, ctx) => {
       const { ref, rest } = splitForecastRefAndRest(arg)
+
       if (!ref || !rest) {
         return ctx.transcript.sys('usage: /note <row|id|forecast words> -- <evidence note>')
       }
@@ -631,6 +664,7 @@ export const coreCommands: SlashCommand[] = [
     name: 'revise',
     run: (arg, ctx) => {
       const { ref, rest } = splitForecastRefAndRest(arg)
+
       if (!ref || !rest) {
         return ctx.transcript.sys(
           'usage: /revise <row|id|forecast words> -- --probability <0-1> --rationale <why>'
@@ -659,11 +693,13 @@ export const coreCommands: SlashCommand[] = [
           .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit: 20 })
           .then(ctx.guarded<ForecastDashboardResponse>(r => renderForecastDashboard(r, ctx)))
           .catch(ctx.guardedErr)
+
         return
       }
 
       if (trimmed && !INTEGER_ARG.test(trimmed)) {
         const newMatch = trimmed.match(/^new\b\s*([\s\S]*)$/i)
+
         if (newMatch && !FORECAST_NEW_CLI_FLAG.test(trimmed)) {
           return runForecastNewViaAgent(newMatch[1] ?? '', ctx)
         }
@@ -671,6 +707,7 @@ export const coreCommands: SlashCommand[] = [
         // A forecast id opens the workspace focused on that forecast.
         if (FORECAST_ID_ARG.test(trimmed)) {
           patchOverlayState({ forecasts: true, forecastsInitialId: trimmed })
+
           return
         }
 
@@ -728,9 +765,11 @@ export const coreCommands: SlashCommand[] = [
     name: 'new-forecast',
     run: (arg, ctx) => {
       const trimmed = arg.trim()
+
       if (trimmed && FORECAST_NEW_CLI_FLAG.test(trimmed)) {
         return runForecastCommand(ctx, `new ${trimmed}`.trim())
       }
+
       return runForecastNewViaAgent(trimmed, ctx)
     }
   },
@@ -754,6 +793,7 @@ export const coreCommands: SlashCommand[] = [
     name: 'trend-model',
     run: (arg, ctx) => {
       const trimmed = arg.trim()
+
       return runForecastCommand(ctx, `model ${trimmed}${trimmed ? ' ' : ''}--type trend_projection`)
     }
   },
@@ -775,10 +815,12 @@ export const coreCommands: SlashCommand[] = [
       // Peel a trailing/leading --agent off the reference: deterministic re-pool
       // is the default, --agent re-reasons the estimate with the LLM.
       const agentMode = /(?:^|\s)--agent\b/.test(trimmed)
+
       const ref = trimmed
         .replace(/(?:^|\s)--agent\b/g, ' ')
         .replace(/\s+/g, ' ')
         .trim()
+
       if (!ref) {
         return ctx.transcript.sys('usage: /forecast-rerun <row|id|forecast words> [--agent]')
       }
@@ -809,9 +851,11 @@ export const coreCommands: SlashCommand[] = [
     name: 'link',
     run: (arg, ctx) => {
       const { ref, rest } = splitForecastRefAndRest(arg)
+
       if (!ref || !rest) {
         return ctx.transcript.sys('usage: /link <row|id|words> -- <row|id|words> [--type related|component_of]')
       }
+
       // Peel an optional --type off the second reference.
       const typeMatch = rest.match(/--type\s+(related|component_of)\b/)
       const linkType = typeMatch?.[1] ?? 'related'
@@ -853,6 +897,27 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
+    aliases: ['quotes', 'tape'],
+    help: 'open the live markets tape',
+    name: 'markets',
+    run: () => patchOverlayState({ markets: true })
+  },
+
+  {
+    aliases: ['feeds', 'rss'],
+    help: 'open the live news feed reader',
+    name: 'news',
+    run: () => patchOverlayState({ news: true })
+  },
+
+  {
+    aliases: ['chat', 'telegram', 'signal'],
+    help: 'open the messaging view (Telegram / Signal)',
+    name: 'messaging',
+    run: () => patchOverlayState({ messaging: true })
+  },
+
+  {
     help: 'show forecast calibration analytics (--visual opens the chart view)',
     name: 'calibration',
     run: (arg, ctx) => {
@@ -863,6 +928,7 @@ export const coreCommands: SlashCommand[] = [
       // of the classic CLI text. Plain `/calibration` keeps the text report.
       if (/^(--visual|visual)$/i.test(trimmed)) {
         patchOverlayState({ calibration: true })
+
         return
       }
 

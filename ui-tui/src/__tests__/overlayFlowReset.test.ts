@@ -9,7 +9,17 @@ describe('resetFlowOverlays (turn-end teardown)', () => {
     // Asking the desk from inside Obsidian runs a turn; turnController.idle()
     // calls resetFlowOverlays() on completion. The obsidian view (and the
     // other deliberately-opened views) must survive it.
-    patchOverlayState({ alerts: true, calendar: true, calibration: true, forecasts: true, help: true, obsidian: true })
+    patchOverlayState({
+      alerts: true,
+      calendar: true,
+      calibration: true,
+      forecasts: true,
+      help: true,
+      markets: true,
+      messaging: true,
+      news: true,
+      obsidian: true
+    })
 
     resetFlowOverlays()
 
@@ -20,6 +30,9 @@ describe('resetFlowOverlays (turn-end teardown)', () => {
     expect(s.help).toBe(true)
     expect(s.calibration).toBe(true)
     expect(s.forecasts).toBe(true)
+    expect(s.markets).toBe(true)
+    expect(s.news).toBe(true)
+    expect(s.messaging).toBe(true)
   })
 
   it('still drops flow-scoped overlays (approval / clarify / sudo)', () => {

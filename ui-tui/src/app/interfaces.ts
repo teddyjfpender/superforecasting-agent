@@ -84,7 +84,10 @@ export interface OverlayState {
   forecasts: boolean
   forecastsInitialId: null | string
   help: boolean
+  markets: boolean
+  messaging: boolean
   modelPicker: boolean
+  news: boolean
   obsidian: boolean
   pager: null | PagerState
   picker: boolean
