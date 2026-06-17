@@ -42,7 +42,15 @@ const SYNONYMS: Record<string, string[]> = {
   cars: ['automotive', 'vehicles', 'auto'],
   food: ['cooking', 'recipes', 'cuisine'],
   design: ['ui', 'ux', 'product design'],
-  photography: ['photo', 'camera']
+  photography: ['photo', 'camera'],
+  weather: ['storm', 'hurricane', 'cyclone', 'typhoon', 'forecast', 'climate', 'meteorology', 'severe'],
+  storm: ['hurricane', 'cyclone', 'typhoon', 'weather', 'severe', 'tropical'],
+  hurricane: ['cyclone', 'typhoon', 'tropical', 'storm', 'weather', 'nhc'],
+  flood: ['flooding', 'weather', 'disaster', 'rain'],
+  earthquake: ['quake', 'seismic', 'usgs', 'disaster', 'hazard'],
+  disaster: ['hazard', 'emergency', 'flood', 'earthquake', 'storm', 'weather', 'relief'],
+  climate: ['weather', 'warming', 'environment', 'emissions'],
+  wildfire: ['fire', 'wildfires', 'weather', 'hazard']
 }
 
 const expand = (tokens: string[]): string[] => {

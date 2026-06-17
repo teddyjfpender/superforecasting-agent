@@ -114,6 +114,18 @@ SUPPLEMENT = [
     ("Economics", "NBER - New Working Papers", "https://back.nber.org/rss/new.xml", "Latest NBER working papers."),
     ("Economics", "Noahpinion", "https://www.noahpinion.blog/feed", "Noah Smith on economics and policy."),
     ("Economics", "The Economist - Finance & Economics", "https://www.economist.com/finance-and-economics/rss.xml", "Economics coverage from The Economist."),
+    # Weather & natural-hazard tracking — global severe-weather events.
+    ("Weather", "GDACS - Global Disaster Alerts", "https://www.gdacs.org/xml/rss.xml", "Global cyclones, floods, droughts and quakes (UN/EC)."),
+    ("Weather", "ReliefWeb - Disasters", "https://reliefweb.int/disasters/rss.xml", "Global disaster updates from UN OCHA."),
+    ("Weather", "NHC - Atlantic Tropical Cyclones", "https://www.nhc.noaa.gov/index-at.xml", "NOAA National Hurricane Center, Atlantic basin."),
+    ("Weather", "NHC - East Pacific Tropical Cyclones", "https://www.nhc.noaa.gov/index-ep.xml", "NOAA National Hurricane Center, East Pacific."),
+    ("Weather", "NWS - Active US Weather Alerts", "https://api.weather.gov/alerts/active.atom", "Live US National Weather Service warnings."),
+    ("Weather", "NASA Earth Observatory - Natural Hazards", "https://earthobservatory.nasa.gov/feeds/natural-hazards.rss", "Satellite imagery of storms, fires and floods."),
+    ("Weather", "USGS - Significant Earthquakes (week)", "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.atom", "Notable quakes worldwide, past 7 days."),
+    ("Weather", "USGS - M4.5+ Earthquakes (day)", "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.atom", "Magnitude 4.5+ quakes, past 24 hours."),
+    ("Weather", "Severe Weather Europe", "https://www.severe-weather.eu/feed/", "Forecasts and analysis of European severe weather."),
+    ("Weather", "FloodList", "https://floodlist.com/feed", "Reports on floods and flooding worldwide."),
+    ("Weather", "The Watchers", "https://watchers.news/feed/", "Severe weather, geophysical and space-weather events."),
 ]
 
 

@@ -55,6 +55,11 @@ describe('searchFeeds — semantic (synonym) recall', () => {
     const res = searchFeeds('ai')
     expect(res.some(f => ['Programming', 'Technology'].includes(f.category))).toBe(true)
   })
+
+  it('surfaces Weather feeds for "hurricane" and "earthquake"', () => {
+    expect(searchFeeds('hurricane').some(f => f.category === 'Weather')).toBe(true)
+    expect(searchFeeds('earthquake').some(f => f.category === 'Weather')).toBe(true)
+  })
 })
 
 describe('scoreFeed', () => {
