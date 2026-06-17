@@ -44,6 +44,17 @@ const RIGHT_RULE = {
 const truncate = (value: string, max: number): string =>
   value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value
 
+// Short, recognizable provider/brand from a feed title: the part before the
+// first " - / | — : " separator (so "CNBC - Top News" → "CNBC", "MarketWatch -
+// Top Stories" → "MarketWatch"), trimmed to a fixed column width.
+const PROVIDER_WIDTH = 12
+
+const providerName = (feedTitle: string): string => {
+  const brand = feedTitle.split(/\s+[-|—:·]\s+/)[0]?.trim() || feedTitle
+
+  return truncate(brand, PROVIDER_WIDTH).padEnd(PROVIDER_WIDTH)
+}
+
 const ALL_FEEDS = 'All feeds'
 const STALE_MS = 10 * 60 * 1000
 
@@ -323,11 +334,11 @@ export function NewsView({ onClose, t }: NewsViewProps) {
         return cycleModalCat(-1)
       }
 
-      if (key.upArrow) {
+      if (key.upArrow || key.wheelUp) {
         return setModalSel(i => Math.max(0, i - 1))
       }
 
-      if (key.downArrow) {
+      if (key.downArrow || key.wheelDown) {
         return setModalSel(i => Math.min(Math.max(0, results.length - 1), i + 1))
       }
 
@@ -386,11 +397,11 @@ export function NewsView({ onClose, t }: NewsViewProps) {
       return setSource(i => (i - 1 + sources.length) % sources.length)
     }
 
-    if (key.upArrow || ch === 'k') {
+    if (key.upArrow || ch === 'k' || key.wheelUp) {
       return setSel(i => Math.max(0, i - 1))
     }
 
-    if (key.downArrow || ch === 'j') {
+    if (key.downArrow || ch === 'j' || key.wheelDown) {
       return setSel(i => Math.min(Math.max(0, visibleArticles.length - 1), i + 1))
     }
   })
@@ -502,15 +513,17 @@ export function NewsView({ onClose, t }: NewsViewProps) {
           windowedArticles.map((article, i) => {
             const idx = listStart + i
             const on = idx === clampedSel
-            // Fixed-width recency prefix so the timestamp is always visible even
-            // when the headline is truncated; the source shows in the reader.
+            // Fixed-width recency + provider prefixes so both stay visible (and
+            // aligned) even when the headline is truncated.
             const when = (article.publishedAt ? relTime(article.publishedAt) : '·').padEnd(5)
+            const provider = providerName(article.feedTitle)
 
             return (
               <Box key={`${article.feedUrl}:${idx}`} onClick={() => setSel(idx)} width="100%">
                 <Text wrap="truncate-end">
                   <Text color={on ? t.color.accent : t.color.border}>{on ? '▸ ' : '  '}</Text>
                   <Text color={t.color.muted}>{when} </Text>
+                  <Text color={t.color.info}>{provider} </Text>
                   <Text bold={on} color={on ? t.color.text : t.color.label}>
                     {article.title}
                   </Text>
