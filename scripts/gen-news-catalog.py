@@ -80,6 +80,40 @@ SUPPLEMENT = [
     ("Politics", "The Guardian - Politics", "https://www.theguardian.com/politics/rss", "UK & world politics."),
     ("World", "BBC News - World", "http://feeds.bbci.co.uk/news/world/rss.xml", "BBC world headlines."),
     ("World", "Al Jazeera - All", "https://www.aljazeera.com/xml/rss/all.xml", "Al Jazeera global coverage."),
+    # Long-form / ideas / essays — "interesting reads".
+    ("Long Reads", "The Atlantic", "https://www.theatlantic.com/feed/all/", "Politics, culture, science and ideas."),
+    ("Long Reads", "The New Yorker - Everything", "https://www.newyorker.com/feed/everything", "Reporting, essays, culture and fiction."),
+    ("Long Reads", "Aeon", "https://aeon.co/feed.rss", "Essays on philosophy, science and culture."),
+    ("Long Reads", "Nautilus", "https://nautil.us/feed/", "Science connected to philosophy and culture."),
+    ("Long Reads", "Longreads", "https://longreads.com/feed/", "The best long-form storytelling on the web."),
+    ("Long Reads", "The Marginalian", "https://www.themarginalian.org/feed/", "Maria Popova on art, science and meaning."),
+    ("Long Reads", "Astral Codex Ten", "https://www.astralcodexten.com/feed", "Scott Alexander on science, reasoning and society."),
+    ("Long Reads", "Marginal Revolution", "https://feeds.feedburner.com/marginalrevolution/feed", "Tyler Cowen & Alex Tabarrok on economics and ideas."),
+    # Art.
+    ("Art", "Hyperallergic", "https://hyperallergic.com/feed/", "Perspectives on art and culture."),
+    ("Art", "Colossal", "https://www.thisiscolossal.com/feed/", "Art, design and visual culture."),
+    ("Art", "ARTnews", "https://www.artnews.com/feed/", "Art world news and market coverage."),
+    ("Art", "The Art Newspaper", "https://www.theartnewspaper.com/rss.xml", "International art news and analysis."),
+    ("Art", "Artsy - News", "https://www.artsy.net/rss/news", "Art market and culture news."),
+    ("Art", "Smithsonian Magazine", "https://www.smithsonianmag.com/rss/latest_articles/", "History, science, art and culture."),
+    # Academic / research journalism.
+    ("Academic", "Science | AAAS - News", "https://www.science.org/rss/news_current.xml", "Latest news from Science / AAAS."),
+    ("Academic", "ScienceDaily - All", "https://www.sciencedaily.com/rss/all.xml", "Research news across all sciences."),
+    ("Academic", "Phys.org", "https://phys.org/rss-feed/", "Physics, tech and science research news."),
+    ("Academic", "The Conversation - Articles", "https://theconversation.com/articles.atom", "Research-based analysis written by academics."),
+    ("Academic", "JSTOR Daily", "https://daily.jstor.org/feed/", "Scholarship made accessible."),
+    ("Academic", "Nature - News", "https://www.nature.com/nature/articles?type=news.rss", "News from the journal Nature."),
+    # arXiv preprints (research frontier).
+    ("arXiv", "arXiv cs.AI — Artificial Intelligence", "https://rss.arxiv.org/rss/cs.AI", "New AI preprints on arXiv."),
+    ("arXiv", "arXiv cs.LG — Machine Learning", "https://rss.arxiv.org/rss/cs.LG", "New machine-learning preprints on arXiv."),
+    ("arXiv", "arXiv cs.CL — Computation & Language", "https://rss.arxiv.org/rss/cs.CL", "New NLP / language preprints on arXiv."),
+    ("arXiv", "arXiv stat.ML — Statistics / ML", "https://rss.arxiv.org/rss/stat.ML", "New statistical machine-learning preprints."),
+    ("arXiv", "arXiv econ.EM — Econometrics", "https://rss.arxiv.org/rss/econ.EM", "New econometrics preprints on arXiv."),
+    ("arXiv", "arXiv q-fin — Quantitative Finance", "https://rss.arxiv.org/rss/q-fin", "New quantitative-finance preprints on arXiv."),
+    # Economics.
+    ("Economics", "NBER - New Working Papers", "https://back.nber.org/rss/new.xml", "Latest NBER working papers."),
+    ("Economics", "Noahpinion", "https://www.noahpinion.blog/feed", "Noah Smith on economics and policy."),
+    ("Economics", "The Economist - Finance & Economics", "https://www.economist.com/finance-and-economics/rss.xml", "Economics coverage from The Economist."),
 ]
 
 

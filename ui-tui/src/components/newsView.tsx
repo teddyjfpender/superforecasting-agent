@@ -1,9 +1,11 @@
 import { Box, Text, useInput, useStdout } from '@hermes/ink'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { patchOverlayState } from '../app/overlayStore.js'
 import type { CatalogFeed } from '../content/newsFeedCatalog.js'
 import { FEED_CATEGORIES } from '../content/newsFeedCatalog.js'
+import { type ArticleCache, loadArticleCache, saveArticleCache } from '../lib/newsFeedCache.js'
+import { type Article, fetchFeeds } from '../lib/newsFeedFetch.js'
 import { ALL_CATEGORY, searchFeeds } from '../lib/newsFeedSearch.js'
 import {
   ensureFeedUrlScheme,
@@ -23,9 +25,10 @@ import { type FooterChip, FooterChips } from './footerChips.js'
 export const openNewsView = () => patchOverlayState({ news: true })
 export const closeNewsView = () => patchOverlayState({ news: false })
 
-// News — live RSS feeds with quick reading. The catalog + Add-feed modal are
-// wired (press `a`); article fetching is the next step. Panes are separated by
-// thin vertical rules and given an explicit height so the layout never reflows.
+// News — live RSS feeds with quick reading. Press `a` to manage subscriptions
+// (catalog + search + paste URL); feeds are fetched and parsed in the TUI's
+// Node runtime, so the article list + reader fill in automatically. Panes are
+// separated by thin vertical rules with an explicit height so nothing reflows.
 
 const bar = (n: number): string => '░'.repeat(Math.max(3, n))
 
@@ -42,6 +45,43 @@ const truncate = (value: string, max: number): string =>
   value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value
 
 const ALL_FEEDS = 'All feeds'
+const STALE_MS = 10 * 60 * 1000
+
+const relTime = (ms: number): string => {
+  if (!ms) {
+    return ''
+  }
+
+  const diff = Date.now() - ms
+
+  if (diff < 0) {
+    return 'soon'
+  }
+
+  const m = Math.floor(diff / 60_000)
+
+  if (m < 1) {
+    return 'just now'
+  }
+
+  if (m < 60) {
+    return `${m}m`
+  }
+
+  const h = Math.floor(m / 60)
+
+  if (h < 24) {
+    return `${h}h`
+  }
+
+  const d = Math.floor(h / 24)
+
+  if (d < 7) {
+    return `${d}d`
+  }
+
+  return new Date(ms).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
+}
 
 interface NewsViewProps {
   onClose: () => void
@@ -57,6 +97,8 @@ export function NewsView({ onClose, t }: NewsViewProps) {
   const [source, setSource] = useState(0)
   const [sel, setSel] = useState(0)
   const [tick, setTick] = useState(0)
+  const [articles, setArticles] = useState<Article[]>([])
+  const [fetching, setFetching] = useState(false)
 
   // Add-feed modal state.
   const [adding, setAdding] = useState(false)
@@ -65,10 +107,17 @@ export function NewsView({ onClose, t }: NewsViewProps) {
   const [modalSel, setModalSel] = useState(0)
   const [flash, setFlash] = useState('')
 
+  const cacheRef = useRef<ArticleCache>(loadArticleCache())
+  const inflightRef = useRef(false)
+  const aliveRef = useRef(true)
+
   useEffect(() => {
     const id = setInterval(() => setTick(value => value + 1), 600)
 
-    return () => clearInterval(id)
+    return () => {
+      clearInterval(id)
+      aliveRef.current = false
+    }
   }, [])
 
   // No real text cursor in this view — park it so it doesn't sit in the corner.
@@ -80,14 +129,19 @@ export function NewsView({ onClose, t }: NewsViewProps) {
     }
   }, [stdout])
 
-  const subscribedUrls = useMemo(
-    () => new Set(subscribed.map(f => normalizeFeedUrl(f.url))),
-    [subscribed]
-  )
-
+  const subscribedUrls = useMemo(() => new Set(subscribed.map(f => normalizeFeedUrl(f.url))), [subscribed])
   const isSubscribed = (url: string) => subscribedUrls.has(normalizeFeedUrl(url))
 
-  // Sources rail: "All feeds" + the categories present in the subscriptions.
+  const categoryByUrl = useMemo(() => {
+    const m = new Map<string, string>()
+
+    for (const f of subscribed) {
+      m.set(normalizeFeedUrl(f.url), f.category)
+    }
+
+    return m
+  }, [subscribed])
+
   const sources = useMemo(() => {
     const cats = [...new Set(subscribed.map(f => f.category))].sort((a, b) => a.localeCompare(b))
 
@@ -96,11 +150,77 @@ export function NewsView({ onClose, t }: NewsViewProps) {
 
   const activeSource = sources[Math.min(source, sources.length - 1)] ?? ALL_FEEDS
 
-  const visibleFeeds = useMemo(() => {
-    const pool = activeSource === ALL_FEEDS ? subscribed : subscribed.filter(f => f.category === activeSource)
+  // Aggregate the cached articles for the currently-subscribed feeds.
+  const rebuild = () => {
+    if (!aliveRef.current) {
+      return
+    }
 
-    return [...pool].sort((a, b) => b.addedAt - a.addedAt || a.title.localeCompare(b.title))
-  }, [subscribed, activeSource])
+    const out: Article[] = []
+
+    for (const f of subscribed) {
+      const entry = cacheRef.current[normalizeFeedUrl(f.url)]
+
+      if (entry?.articles?.length) {
+        out.push(...entry.articles)
+      }
+    }
+
+    out.sort((a, b) => b.publishedAt - a.publishedAt)
+    setArticles(out)
+  }
+
+  // Fetch feeds that are missing or stale (or everything, when forced).
+  const refresh = async (force: boolean) => {
+    if (inflightRef.current) {
+      return
+    }
+
+    const targets = subscribed.filter(f => {
+      const entry = cacheRef.current[normalizeFeedUrl(f.url)]
+
+      return force || !entry || Date.now() - entry.fetchedAt > STALE_MS
+    })
+
+    if (targets.length === 0) {
+      rebuild()
+
+      return
+    }
+
+    inflightRef.current = true
+
+    if (aliveRef.current) {
+      setFetching(true)
+    }
+
+    await fetchFeeds(
+      targets.map(f => ({ title: f.title, url: f.url })),
+      (url, result) => {
+        cacheRef.current[normalizeFeedUrl(url)] = {
+          articles: result.articles,
+          error: result.error ?? undefined,
+          fetchedAt: Date.now()
+        }
+        rebuild()
+      }
+    )
+
+    saveArticleCache(cacheRef.current)
+    inflightRef.current = false
+
+    if (aliveRef.current) {
+      setFetching(false)
+    }
+  }
+
+  // Rebuild from cache immediately, then refresh, whenever the subscription set
+  // changes (covers first mount and every add/remove → auto-refresh).
+  useEffect(() => {
+    rebuild()
+    void refresh(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subscribed])
 
   const modalCategories = useMemo(() => [ALL_CATEGORY, ...FEED_CATEGORIES], [])
   const results = useMemo(() => searchFeeds(query, modalCat), [query, modalCat])
@@ -118,14 +238,7 @@ export function NewsView({ onClose, t }: NewsViewProps) {
       persist(subscribed.filter(f => normalizeFeedUrl(f.url) !== key))
       setFlash(`unsubscribed ${feed.title}`)
     } else {
-      const entry: SubscribedFeed = {
-        addedAt: Date.now(),
-        category: feed.category,
-        title: feed.title,
-        url: feed.url
-      }
-
-      persist([entry, ...subscribed])
+      persist([{ addedAt: Date.now(), category: feed.category, title: feed.title, url: feed.url }, ...subscribed])
       setFlash(`subscribed ${feed.title}`)
     }
   }
@@ -161,6 +274,21 @@ export function NewsView({ onClose, t }: NewsViewProps) {
     const i = modalCategories.indexOf(modalCat)
     const next = (i + dir + modalCategories.length) % modalCategories.length
     setModalCat(modalCategories[next])
+    setModalSel(0)
+  }
+
+  const visibleArticles = useMemo(() => {
+    if (activeSource === ALL_FEEDS) {
+      return articles
+    }
+
+    return articles.filter(a => categoryByUrl.get(normalizeFeedUrl(a.feedUrl)) === activeSource)
+  }, [articles, activeSource, categoryByUrl])
+
+  const openModal = () => {
+    setAdding(true)
+    setQuery('')
+    setModalCat(ALL_CATEGORY)
     setModalSel(0)
   }
 
@@ -206,7 +334,6 @@ export function NewsView({ onClose, t }: NewsViewProps) {
         return setQuery(q => q.slice(0, -1))
       }
 
-      // Printable input (including pasted URLs) feeds the search box.
       if (ch && !key.ctrl && !key.meta) {
         const printable = [...ch].filter(c => c >= ' ').join('')
 
@@ -224,26 +351,21 @@ export function NewsView({ onClose, t }: NewsViewProps) {
     }
 
     if (ch === 'a') {
-      setAdding(true)
-      setQuery('')
-      setModalCat(ALL_CATEGORY)
-      setModalSel(0)
-
-      return
+      return openModal()
     }
 
     if (ch === 'r') {
-      setSubscribed(loadSubscribedFeeds())
-      setFlash('reloaded')
+      setFlash('refreshing…')
 
-      return
+      return void refresh(true)
     }
 
     if (key.return) {
-      const feed = visibleFeeds[sel]
+      const article = visibleArticles[sel]
+      const target = article?.link || article?.feedUrl
 
-      if (feed && openExternalUrl(ensureFeedUrlScheme(feed.url))) {
-        setFlash(`opened ${feedHost(feed.url)}`)
+      if (target && openExternalUrl(ensureFeedUrlScheme(target))) {
+        setFlash('opened in browser')
       }
 
       return
@@ -266,7 +388,7 @@ export function NewsView({ onClose, t }: NewsViewProps) {
     }
 
     if (key.downArrow || ch === 'j') {
-      return setSel(i => Math.min(Math.max(0, visibleFeeds.length - 1), i + 1))
+      return setSel(i => Math.min(Math.max(0, visibleArticles.length - 1), i + 1))
     }
   })
 
@@ -276,7 +398,14 @@ export function NewsView({ onClose, t }: NewsViewProps) {
   const hasFeeds = subscribed.length > 0
   const railWidth = Math.min(26, Math.max(20, Math.floor(width * 0.2)))
   const listRows = Math.max(3, Math.floor((contentHeight - 2) / 2))
-  const selectedFeed = visibleFeeds[Math.min(sel, Math.max(0, visibleFeeds.length - 1))]
+  const clampedSel = Math.min(sel, Math.max(0, visibleArticles.length - 1))
+  const selectedArticle = visibleArticles[clampedSel]
+
+  // Window the article list around the selection so scrolling stays visible.
+  const listStart = Math.max(0, Math.min(clampedSel - Math.floor(listRows / 2), visibleArticles.length - listRows))
+  const windowedArticles = visibleArticles.slice(Math.max(0, listStart), Math.max(0, listStart) + listRows)
+
+  const statusWord = fetching ? 'fetching…' : hasFeeds ? 'idle' : 'no feeds'
 
   const header = (
     <Box flexShrink={0} marginBottom={1}>
@@ -285,18 +414,18 @@ export function NewsView({ onClose, t }: NewsViewProps) {
           NEWS
         </Text>
         <Text color={t.color.muted}>{'   '}</Text>
-        <Text color={live ? t.color.ok : t.color.muted}>●</Text>
-        <Text color={t.color.muted}> {hasFeeds ? 'idle' : 'no feeds'} · </Text>
+        <Text color={fetching ? (live ? t.color.warn : t.color.muted) : t.color.ok}>●</Text>
+        <Text color={t.color.muted}> {statusWord} · </Text>
         <Text color={t.color.text}>live RSS feeds</Text>
         <Text color={t.color.muted}>
           {' · '}
-          {hasFeeds ? `${subscribed.length} subscribed` : 'press a to add feeds'}
+          {hasFeeds ? `${subscribed.length} feeds · ${articles.length} articles` : 'press a to add feeds'}
         </Text>
       </Text>
     </Box>
   )
 
-  // SOURCES rail — categories of the subscribed feeds (filter).
+  // SOURCES rail — subscribed categories with article counts (filter).
   const rail = (
     <Box
       {...RIGHT_RULE}
@@ -314,10 +443,22 @@ export function NewsView({ onClose, t }: NewsViewProps) {
       <Box flexDirection="column" marginTop={1}>
         {sources.map((src, i) => {
           const isActive = i === source
-          const count = src === ALL_FEEDS ? subscribed.length : subscribed.filter(f => f.category === src).length
+
+          const count =
+            src === ALL_FEEDS
+              ? articles.length
+              : articles.filter(a => categoryByUrl.get(normalizeFeedUrl(a.feedUrl)) === src).length
 
           return (
-            <Box justifyContent="space-between" key={src} onClick={() => { setSource(i); setSel(0) }} width="100%">
+            <Box
+              justifyContent="space-between"
+              key={src}
+              onClick={() => {
+                setSource(i)
+                setSel(0)
+              }}
+              width="100%"
+            >
               <Text color={isActive ? t.color.accent : t.color.muted} wrap="truncate-end">
                 {isActive ? '▸ ' : '  '}
                 {src}
@@ -330,7 +471,7 @@ export function NewsView({ onClose, t }: NewsViewProps) {
     </Box>
   )
 
-  // ALL FEEDS / list — the subscribed feeds (browse), or a scaffold when empty.
+  // ARTICLES list — headlines (browse), or a scaffold when empty.
   const list = (
     <Box
       {...RIGHT_RULE}
@@ -347,27 +488,36 @@ export function NewsView({ onClose, t }: NewsViewProps) {
     >
       <Text bold color={t.color.label} wrap="truncate-end">
         {activeSource.toUpperCase()}
+        {visibleArticles.length ? <Text color={t.color.muted}>{`  (${visibleArticles.length})`}</Text> : null}
       </Text>
       <Box flexDirection="column" marginTop={1}>
-        {hasFeeds ? (
-          visibleFeeds.slice(0, listRows).map((feed, i) => {
-            const on = i === sel
+        {visibleArticles.length > 0 ? (
+          windowedArticles.map((article, i) => {
+            const idx = listStart + i
+            const on = idx === clampedSel
 
             return (
-              <Box flexDirection="column" key={`${feed.url}:${i}`} marginBottom={1} onClick={() => setSel(i)}>
+              <Box flexDirection="column" key={`${article.feedUrl}:${idx}`} marginBottom={1} onClick={() => setSel(idx)}>
                 <Box width="100%">
                   <Text color={on ? t.color.accent : t.color.border}>{on ? '▸ ' : '  '}</Text>
                   <Text bold={on} color={on ? t.color.text : t.color.label} wrap="truncate-end">
-                    {feed.title}
+                    {article.title}
                   </Text>
                 </Box>
                 <Text color={t.color.muted} wrap="truncate-end">
                   {'   '}
-                  {feed.category} · {feedHost(feed.url)}
+                  {article.feedTitle}
+                  {article.publishedAt ? ` · ${relTime(article.publishedAt)}` : ''}
                 </Text>
               </Box>
             )
           })
+        ) : hasFeeds ? (
+          <Text color={t.color.muted} wrap="wrap">
+            {fetching
+              ? 'Fetching articles…'
+              : `No articles${activeSource === ALL_FEEDS ? '' : ` in ${activeSource}`} yet — feeds may be slow or unreachable. Press r to retry.`}
+          </Text>
         ) : (
           <Box flexDirection="column">
             {Array.from({ length: Math.min(6, listRows) }, (_, r) => (
@@ -388,7 +538,7 @@ export function NewsView({ onClose, t }: NewsViewProps) {
     </Box>
   )
 
-  // READER pane — the selected feed's detail, or paragraph skeleton when empty.
+  // READER pane — the selected article, or paragraph skeleton when empty.
   const reader = (
     <Box
       flexBasis={0}
@@ -403,22 +553,32 @@ export function NewsView({ onClose, t }: NewsViewProps) {
       <Text bold color={t.color.label} wrap="truncate-end">
         READER
       </Text>
-      {hasFeeds && selectedFeed ? (
+      {selectedArticle ? (
         <Box flexDirection="column" marginTop={1}>
-          <Text bold color={t.color.text} wrap="truncate-end">
-            {selectedFeed.title}
+          <Text bold color={t.color.text} wrap="wrap">
+            {selectedArticle.title}
           </Text>
           <Text color={t.color.muted} wrap="truncate-end">
-            {selectedFeed.category} · {feedHost(selectedFeed.url)}
+            {selectedArticle.feedTitle}
+            {selectedArticle.publishedAt ? ` · ${relTime(selectedArticle.publishedAt)}` : ''}
           </Text>
-          <Box marginTop={1}>
-            <Text color={t.color.accent} wrap="truncate-end">
-              {selectedFeed.url}
-            </Text>
-          </Box>
+          {selectedArticle.summary ? (
+            <Box marginTop={1}>
+              <Text color={t.color.text} wrap="wrap">
+                {truncate(selectedArticle.summary, 600)}
+              </Text>
+            </Box>
+          ) : null}
+          {selectedArticle.link ? (
+            <Box marginTop={1}>
+              <Text color={t.color.accent} wrap="truncate-end">
+                {selectedArticle.link}
+              </Text>
+            </Box>
+          ) : null}
           <Box marginTop={1}>
             <Text color={t.color.muted} wrap="wrap">
-              Articles will appear here once feeds are fetched. Press Enter to open this source in your browser.
+              Press Enter to open this article in your browser.
             </Text>
           </Box>
         </Box>
@@ -433,7 +593,11 @@ export function NewsView({ onClose, t }: NewsViewProps) {
           </Box>
           <Box marginTop={1}>
             <Text color={t.color.muted} wrap="wrap">
-              No feeds yet. Press a to browse a catalog of quality RSS feeds, search them, or paste your own URL.
+              {hasFeeds
+                ? fetching
+                  ? 'Fetching the latest articles…'
+                  : 'Select an article on the left to read it here.'
+                : 'No feeds yet. Press a to browse a catalog of quality RSS feeds, search them, or paste your own URL.'}
             </Text>
           </Box>
         </Box>
@@ -445,8 +609,8 @@ export function NewsView({ onClose, t }: NewsViewProps) {
     { k: '↑↓', label: 'Browse' },
     { k: '⇥', label: 'Source', run: () => { setSel(0); setSource(i => (i + 1) % sources.length) } },
     { k: '⏎', label: 'Open' },
-    { k: 'a', label: 'Add feed', run: () => { setAdding(true); setQuery(''); setModalCat(ALL_CATEGORY); setModalSel(0) } },
-    { k: 'r', label: 'Refresh', run: () => { setSubscribed(loadSubscribedFeeds()); setFlash('reloaded') } },
+    { k: 'a', label: 'Add feed', run: openModal },
+    { k: 'r', label: 'Refresh', run: () => { setFlash('refreshing…'); void refresh(true) } },
     { k: 'q', label: 'Close', run: onClose }
   ]
 
@@ -471,7 +635,10 @@ export function NewsView({ onClose, t }: NewsViewProps) {
           isSubscribed={isSubscribed}
           isUrlQuery={isUrlQuery}
           onAddUrl={addUrlFeed}
-          onPickCategory={cat => { setModalCat(cat); setModalSel(0) }}
+          onPickCategory={cat => {
+            setModalCat(cat)
+            setModalSel(0)
+          }}
           onToggle={toggleFeed}
           query={query}
           results={results}

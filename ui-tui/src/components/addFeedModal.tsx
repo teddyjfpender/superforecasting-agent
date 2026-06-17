@@ -68,14 +68,19 @@ export function AddFeedModal({
   const modalH = Math.max(14, Math.min(rows - 4, 38))
   const inner = modalW - 6 // border (2) + paddingX (4)
 
-  // Reserve rows for chrome (title, search, rule, url/rule, footer + paddings).
-  const bodyRows = Math.max(4, modalH - 9)
+  // Exact body height so windowed rows never overflow into the hidden region
+  // (which would clip the active row and make its ▸ cursor vanish):
+  //   modalH − border(2) − paddingY(2) − title(1) − search(2) − rule(2)
+  //          − url/rule(1) − footer(2) = modalH − 12.
+  const bodyRows = Math.max(3, modalH - 12)
+  // The CATEGORIES rail spends its top row on the label, so it shows one fewer.
+  const catRows = Math.max(2, bodyRows - 1)
 
   const railWidth = 18
   const resultWidth = Math.max(20, inner - railWidth - 1)
 
   const catIdx = Math.max(0, categories.indexOf(category))
-  const cats = window(categories, catIdx, bodyRows)
+  const cats = window(categories, catIdx, catRows)
   const res = window(results, resultSel, bodyRows)
 
   const click = (run: () => void) => (event: ClickEvent) => {
