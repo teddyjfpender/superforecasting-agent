@@ -220,24 +220,51 @@ describe('NewsView', () => {
   })
 })
 
-describe('MessagingView scaffold', () => {
-  it('renders the title, channels, chat rail, and a connect hint (no input composer)', async () => {
+describe('MessagingView', () => {
+  // Isolate to a temp home with no signal config so the view renders its
+  // setup-guide state deterministically (not the connected/Signal state).
+  let prevHome: string | undefined
+  let prevAcct: string | undefined
+  let home: string
+
+  beforeAll(async () => {
+    const { mkdtempSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    home = mkdtempSync(join(tmpdir(), 'msg-view-'))
+    prevHome = process.env.SUPERFORECASTING_AGENT_HOME
+    prevAcct = process.env.SIGNAL_ACCOUNT
+    process.env.SUPERFORECASTING_AGENT_HOME = home
+    delete process.env.SIGNAL_ACCOUNT
+  })
+
+  afterAll(async () => {
+    const { rmSync } = await import('node:fs')
+    rmSync(home, { force: true, recursive: true })
+
+    if (prevHome === undefined) {
+      delete process.env.SUPERFORECASTING_AGENT_HOME
+    } else {
+      process.env.SUPERFORECASTING_AGENT_HOME = prevHome
+    }
+
+    if (prevAcct !== undefined) {
+      process.env.SIGNAL_ACCOUNT = prevAcct
+    }
+  })
+
+  it('renders the Signal setup guide when no account is configured', async () => {
     const { MessagingView } = await import('../components/messagingView.js')
     const text = await renderComponent(MessagingView)
 
     expect(text).toContain('MESSAGING')
-    expect(text).toContain('Telegram')
     expect(text).toContain('Signal')
-    // conversation rail
-    expect(text).toContain('CHATS')
-    // honest empty state in the thread pane
-    expect(text).toContain('Not connected')
-    // interaction parity with the other routes: a footer hint, not a typing
-    // composer pinned to the bottom like the home route has.
+    expect(text).toContain('Telegram (soon)')
+    expect(text).toContain('not connected')
+    // setup guide content + footer keys (not a persistent composer)
+    expect(text).toContain('signal-cli')
+    expect(text).toContain('SIGNAL_ACCOUNT')
     expect(text).toContain('Esc/q close')
     expect(text).not.toContain('start messaging…')
-    // bracketed keybinding chip layer
-    expect(text).toContain('[c Connect]')
-    expect(text).toContain('[q Close]')
   })
 })

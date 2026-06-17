@@ -1,7 +1,23 @@
 import { Box, Text, useInput, useStdout } from '@hermes/ink'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { patchOverlayState } from '../app/overlayStore.js'
+import {
+  checkHealth,
+  listContacts,
+  listGroups,
+  openReceiveStream,
+  sendSignalMessage,
+  type SignalContact,
+  type SignalGroup
+} from '../lib/signalClient.js'
+import {
+  appendMessage,
+  loadSignalCache,
+  resolveSignalConfig,
+  saveSignalCache,
+  type SignalCache
+} from '../lib/signalStore.js'
 import type { Theme } from '../theme.js'
 
 import { type FooterChip, FooterChips } from './footerChips.js'
@@ -9,45 +25,68 @@ import { type FooterChip, FooterChips } from './footerChips.js'
 export const openMessagingView = () => patchOverlayState({ messaging: true })
 export const closeMessagingView = () => patchOverlayState({ messaging: false })
 
-// Messaging — the Telegram / Signal surface. No account is linked yet; this
-// renders an aligned chat scaffold: a CHATS rail (avatar · name · time, with a
-// preview line) and a thread pane with incoming/outgoing bubbles. The rail is
-// separated by a thin vertical rule (not a full box) and the layout is given an
-// explicit height so it never reflows on keystroke.
+// Messaging — your personal Signal client. Talks to a signal-cli daemon (the
+// same one the agent bridge uses) so you can read and send your own
+// conversations as yourself. Telegram is deferred (its bot API can't read a
+// personal account). The agent bridge (deployers messaging the system) is a
+// separate concern that lives in the full `gateway run` daemon.
 
-interface Channel {
-  key: string
-  label: string
+const truncate = (value: string, max: number): string =>
+  value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value
+
+const relTime = (ms: number): string => {
+  if (!ms) {
+    return ''
+  }
+
+  const diff = Date.now() - ms
+
+  if (diff < 0) {
+    return 'now'
+  }
+
+  const m = Math.floor(diff / 60_000)
+
+  if (m < 1) {
+    return 'now'
+  }
+
+  if (m < 60) {
+    return `${m}m`
+  }
+
+  const h = Math.floor(m / 60)
+
+  if (h < 24) {
+    return `${h}h`
+  }
+
+  const d = Math.floor(h / 24)
+
+  if (d < 7) {
+    return `${d}d`
+  }
+
+  return new Date(ms).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
 }
 
-const CHANNELS: Channel[] = [
-  { key: 'telegram', label: 'Telegram' },
-  { key: 'signal', label: 'Signal' }
-]
+const clock = (ms: number): string =>
+  ms ? new Date(ms).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''
 
-const bar = (n: number): string => '░'.repeat(Math.max(3, n))
-
-// Placeholder bubble widths + side. Alternating sides with varied widths read
-// as a real back-and-forth thread rather than a uniform ladder.
-const BUBBLES: { mine: boolean; w: number }[] = [
-  { mine: false, w: 26 },
-  { mine: true, w: 16 },
-  { mine: false, w: 32 },
-  { mine: true, w: 22 },
-  { mine: false, w: 18 },
-  { mine: true, w: 28 }
-]
-
-const NAME_WIDTHS = [8, 6, 9, 7, 8, 6, 9, 7]
-const PREVIEW_WIDTHS = [13, 10, 14, 11, 9, 12, 13, 10]
-
-// A pane's right-edge vertical separator (all other edges off).
 const RIGHT_RULE = {
   borderBottom: false,
   borderLeft: false,
   borderStyle: 'single',
   borderTop: false
 } as const
+
+interface Conversation {
+  chatId: string
+  hasMessages: boolean
+  lastText: string
+  lastTs: number
+  name: string
+}
 
 interface MessagingViewProps {
   onClose: () => void
@@ -59,17 +98,32 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
 
-  const [channel, setChannel] = useState(0)
-  const [selected, setSelected] = useState(0)
+  const cfg = useMemo(() => resolveSignalConfig(), [])
+
+  const [reachable, setReachable] = useState<boolean | null>(cfg ? null : false)
+  const [streaming, setStreaming] = useState(false)
+  const [contacts, setContacts] = useState<SignalContact[]>([])
+  const [groups, setGroups] = useState<SignalGroup[]>([])
+  const [sel, setSel] = useState(0)
   const [tick, setTick] = useState(0)
+  const [flash, setFlash] = useState('')
+  const [composing, setComposing] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  const cacheRef = useRef<SignalCache>(loadSignalCache())
+  const [cacheVersion, setCacheVersion] = useState(0)
+  const aliveRef = useRef(true)
 
   useEffect(() => {
-    const id = setInterval(() => setTick(value => value + 1), 600)
+    aliveRef.current = true
+    const id = setInterval(() => setTick(v => v + 1), 600)
 
-    return () => clearInterval(id)
+    return () => {
+      aliveRef.current = false
+      clearInterval(id)
+    }
   }, [])
 
-  // No real text cursor in this view — park it so it doesn't sit in the corner.
   useEffect(() => {
     stdout?.write('\x1b[?25l')
 
@@ -78,36 +132,247 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     }
   }, [stdout])
 
-  // Explicit content height = screen minus chrome (padding 2 + header 2 +
-  // footer 3). Fixing it stops the panes reflowing as state changes.
-  const contentHeight = Math.max(8, termRows - 7)
-  // Each chat row is 2 lines + a gap; size the rail to fit.
-  const chatCount = Math.max(4, Math.min(8, Math.floor((contentHeight - 2) / 3)))
-  // Each bubble is a 3-row box + a gap; reserve the title + connect hint.
-  const bubbleCount = Math.max(2, Math.min(BUBBLES.length, Math.floor((contentHeight - 4) / 4)))
+  // Connect: health check → load contacts/groups → open the receive stream.
+  useEffect(() => {
+    if (!cfg) {
+      return
+    }
+
+    let stop = () => {}
+    void (async () => {
+      const ok = await checkHealth(cfg)
+
+      if (!aliveRef.current) {
+        return
+      }
+
+      setReachable(ok)
+
+      if (!ok) {
+        return
+      }
+
+      const [cs, gs] = await Promise.all([listContacts(cfg), listGroups(cfg)])
+
+      if (!aliveRef.current) {
+        return
+      }
+
+      setContacts(cs)
+      setGroups(gs)
+      stop = openReceiveStream(
+        cfg,
+        msg => {
+          cacheRef.current = appendMessage(cacheRef.current, msg)
+          saveSignalCache(cacheRef.current)
+
+          if (aliveRef.current) {
+            setCacheVersion(v => v + 1)
+          }
+        },
+        connected => {
+          if (aliveRef.current) {
+            setStreaming(connected)
+          }
+        }
+      )
+    })()
+
+    return () => stop()
+  }, [cfg])
+
+  const conversations = useMemo<Conversation[]>(() => {
+    const cache = cacheRef.current
+    const nameById = new Map<string, string>()
+
+    for (const c of contacts) {
+      nameById.set(c.id, c.name)
+    }
+
+    for (const g of groups) {
+      nameById.set(`group:${g.id}`, g.name)
+    }
+
+    const ids = new Set<string>([
+      ...contacts.map(c => c.id),
+      ...groups.map(g => `group:${g.id}`),
+      ...Object.keys(cache)
+    ])
+
+    const list: Conversation[] = [...ids].map(chatId => {
+      const msgs = cache[chatId] ?? []
+      const last = msgs[msgs.length - 1]
+      const preview = last ? `${last.fromMe ? 'You: ' : ''}${last.text || (last.attachments ? '📎 attachment' : '')}` : ''
+
+      return {
+        chatId,
+        hasMessages: msgs.length > 0,
+        lastText: preview,
+        lastTs: last?.timestamp ?? 0,
+        name: nameById.get(chatId) || (chatId.startsWith('group:') ? 'Signal group' : chatId)
+      }
+    })
+
+    list.sort((a, b) => b.lastTs - a.lastTs || a.name.localeCompare(b.name))
+
+    return list
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contacts, groups, cacheVersion])
+
+  const clampedSel = Math.min(sel, Math.max(0, conversations.length - 1))
+  const activeConv = conversations[clampedSel]
+  const threadMessages = activeConv ? cacheRef.current[activeConv.chatId] ?? [] : []
+
+  const sendDraft = () => {
+    const text = draft.trim()
+    setComposing(false)
+    setDraft('')
+
+    if (!text || !activeConv || !cfg) {
+      return
+    }
+
+    setFlash('sending…')
+
+    void (async () => {
+      const { error, timestamp } = await sendSignalMessage(cfg, activeConv.chatId, text)
+
+      if (!aliveRef.current) {
+        return
+      }
+
+      if (error) {
+        setFlash(`send failed: ${error}`)
+
+        return
+      }
+
+      cacheRef.current = appendMessage(cacheRef.current, {
+        attachments: 0,
+        author: 'me',
+        chatId: activeConv.chatId,
+        fromMe: true,
+        text,
+        timestamp: timestamp || Date.now()
+      })
+      saveSignalCache(cacheRef.current)
+      setCacheVersion(v => v + 1)
+      setFlash('sent')
+    })()
+  }
+
+  const reconnect = () => {
+    if (!cfg) {
+      return
+    }
+
+    setFlash('reconnecting…')
+
+    void (async () => {
+      const ok = await checkHealth(cfg)
+
+      if (!aliveRef.current) {
+        return
+      }
+
+      setReachable(ok)
+
+      if (ok) {
+        const [cs, gs] = await Promise.all([listContacts(cfg), listGroups(cfg)])
+
+        if (aliveRef.current) {
+          setContacts(cs)
+          setGroups(gs)
+          setFlash('refreshed')
+        }
+      }
+    })()
+  }
+
+  const connected = reachable === true
 
   useInput((ch, key) => {
+    if (composing) {
+      if (key.escape) {
+        setComposing(false)
+        setDraft('')
+
+        return
+      }
+
+      if (key.return) {
+        return sendDraft()
+      }
+
+      if (key.backspace || key.delete) {
+        return setDraft(d => d.slice(0, -1))
+      }
+
+      if (ch && !key.ctrl && !key.meta) {
+        const printable = [...ch].filter(c => c >= ' ').join('')
+
+        if (printable) {
+          setDraft(d => d + printable)
+        }
+      }
+
+      return
+    }
+
     if (ch === 'q' || key.escape) {
       return onClose()
     }
 
-    if (key.tab) {
-      return setChannel(i => (i + 1) % CHANNELS.length)
+    if (ch === 'r') {
+      return reconnect()
     }
 
-    if (key.upArrow || ch === 'k') {
-      return setSelected(i => Math.max(0, i - 1))
+    if (!connected) {
+      return
     }
 
-    if (key.downArrow || ch === 'j') {
-      return setSelected(i => Math.min(chatCount - 1, i + 1))
+    if ((ch === 'i' || key.return) && activeConv) {
+      setDraft('')
+
+      return setComposing(true)
+    }
+
+    if (key.upArrow || ch === 'k' || key.wheelUp) {
+      return setSel(i => Math.max(0, i - 1))
+    }
+
+    if (key.downArrow || ch === 'j' || key.wheelDown) {
+      return setSel(i => Math.min(Math.max(0, conversations.length - 1), i + 1))
     }
   })
 
   const width = Math.max(48, cols - 4)
+  const contentHeight = Math.max(8, termRows - 7)
   const live = tick % 2 === 0
-  const railWidth = Math.min(32, Math.max(24, Math.floor(width * 0.3)))
-  const bubbleMax = Math.max(12, Math.floor((width - railWidth) * 0.5))
+  const railWidth = Math.min(32, Math.max(24, Math.floor(width * 0.32)))
+  const railRows = Math.max(3, contentHeight - 2)
+
+  const statusDot = !cfg
+    ? t.color.muted
+    : reachable === null
+      ? live
+        ? t.color.warn
+        : t.color.muted
+      : connected
+        ? streaming
+          ? t.color.ok
+          : t.color.warn
+        : t.color.error
+
+  const statusWord = !cfg
+    ? 'not connected'
+    : reachable === null
+      ? 'connecting…'
+      : connected
+        ? streaming
+          ? 'online'
+          : 'connected'
+        : 'unreachable'
 
   const header = (
     <Box flexShrink={0} marginBottom={1}>
@@ -116,19 +381,55 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           MESSAGING
         </Text>
         <Text color={t.color.muted}>{'   '}</Text>
-        <Text color={live ? t.color.warn : t.color.muted}>●</Text>
-        <Text color={t.color.muted}> offline · </Text>
-        {CHANNELS.map((c, i) => (
-          <Text color={i === channel ? t.color.accent : t.color.muted} key={c.key}>
-            {i > 0 ? ' · ' : ''}
-            {c.label}
-          </Text>
-        ))}
+        <Text color={statusDot}>●</Text>
+        <Text color={t.color.muted}> {statusWord} · </Text>
+        <Text color={connected ? t.color.accent : t.color.text}>Signal</Text>
+        <Text color={t.color.muted}> · Telegram (soon)</Text>
+        {cfg ? <Text color={t.color.muted}>{`  ${cfg.account}`}</Text> : null}
       </Text>
     </Box>
   )
 
-  // CHATS rail — avatar · name (left) · time (right), preview beneath.
+  // ---- Not configured: setup guide ----------------------------------------
+  if (!cfg) {
+    const step = (n: string, body: string) => (
+      <Box marginTop={1}>
+        <Text wrap="wrap">
+          <Text bold color={t.color.accent}>{`${n} `}</Text>
+          <Text color={t.color.text}>{body}</Text>
+        </Text>
+      </Box>
+    )
+
+    return (
+      <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
+        {header}
+        <Box flexDirection="column" flexGrow={1} paddingX={1}>
+          <Text color={t.color.label} wrap="wrap">
+            Connect your Signal account to message as yourself. Outrider talks to a local signal-cli daemon — the same
+            one the agent bridge uses, so one linked device serves both.
+          </Text>
+          {step('1.', 'Install signal-cli (needs Java 17+):  brew install signal-cli')}
+          {step('2.', 'Link it to your phone as a device:  signal-cli link -n "Outrider"  then scan the QR in Signal → Settings → Linked devices.')}
+          {step('3.', 'Run the daemon in HTTP mode:  signal-cli -a +<your-number> daemon --http 127.0.0.1:8080')}
+          {step('4.', 'Tell Outrider your number:  set SIGNAL_ACCOUNT=+<your-number> (and SIGNAL_HTTP_URL if not the default), or write ~/.superforecasting-agent/signal.json with { "account": "+<your-number>", "httpUrl": "http://127.0.0.1:8080" }.')}
+          {step('5.', 'Reopen Messaging (or press r). Your conversations appear as messages arrive — signal-cli streams from connect-time, so history builds up over time.')}
+        </Box>
+        <Box flexDirection="column" flexShrink={0} marginTop={1}>
+          <FooterChips chips={[{ k: 'r', label: 'Recheck', run: reconnect }, { k: 'q', label: 'Close', run: onClose }]} t={t} />
+          <Text color={t.color.muted} wrap="truncate-end">
+            {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
+            r recheck · Esc/q close
+          </Text>
+        </Box>
+      </Box>
+    )
+  }
+
+  // ---- CHATS rail ----------------------------------------------------------
+  const listStart = Math.max(0, Math.min(clampedSel - Math.floor(railRows / 2), conversations.length - railRows))
+  const windowedConvs = conversations.slice(Math.max(0, listStart), Math.max(0, listStart) + railRows)
+
   const rail = (
     <Box
       {...RIGHT_RULE}
@@ -140,37 +441,45 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       paddingRight={1}
       width={railWidth}
     >
-      <Text bold color={t.color.label}>
-        CHATS
+      <Text bold color={t.color.label} wrap="truncate-end">
+        CHATS{conversations.length ? <Text color={t.color.muted}>{`  (${conversations.length})`}</Text> : null}
       </Text>
       <Box flexDirection="column" marginTop={1}>
-        {Array.from({ length: chatCount }, (_, r) => {
-          const isActive = r === selected
+        {windowedConvs.length > 0 ? (
+          windowedConvs.map((conv, i) => {
+            const idx = listStart + i
+            const on = idx === clampedSel
 
-          return (
-            <Box flexDirection="column" key={r} marginBottom={1} onClick={() => setSelected(r)}>
-              <Box justifyContent="space-between" width="100%">
-                <Box>
-                  <Text color={isActive ? t.color.accent : t.color.muted}>{isActive ? '▸ ' : '  '}</Text>
-                  <Text color={isActive ? t.color.accent : t.color.muted}>● </Text>
-                  <Text color={isActive ? t.color.text : t.color.border} wrap="truncate-end">
-                    {bar(NAME_WIDTHS[r % NAME_WIDTHS.length])}
-                  </Text>
+            return (
+              <Box flexDirection="column" key={conv.chatId} marginBottom={1} onClick={() => setSel(idx)}>
+                <Box justifyContent="space-between" width="100%">
+                  <Box>
+                    <Text color={on ? t.color.accent : t.color.muted}>{on ? '▸ ' : '  '}</Text>
+                    <Text bold={on} color={on ? t.color.text : t.color.label} wrap="truncate-end">
+                      {truncate(conv.name, railWidth - 10)}
+                    </Text>
+                  </Box>
+                  <Text color={t.color.border}>{relTime(conv.lastTs)}</Text>
                 </Box>
-                <Text color={t.color.border}>░░:░░</Text>
+                <Text color={t.color.muted} wrap="truncate-end">
+                  {'     '}
+                  {conv.lastText || '—'}
+                </Text>
               </Box>
-              <Text color={t.color.border} wrap="truncate-end">
-                {'      '}
-                {bar(PREVIEW_WIDTHS[r % PREVIEW_WIDTHS.length])}
-              </Text>
-            </Box>
-          )
-        })}
+            )
+          })
+        ) : (
+          <Text color={t.color.muted} wrap="wrap">
+            {connected ? 'No conversations yet. Messages appear as they arrive.' : ''}
+          </Text>
+        )}
       </Box>
     </Box>
   )
 
-  // Thread pane — incoming bubbles left, outgoing right, each a bordered chip.
+  // ---- Thread pane ---------------------------------------------------------
+  const recent = threadMessages.slice(-60)
+
   const thread = (
     <Box
       flexDirection="column"
@@ -182,37 +491,77 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       overflow="hidden"
     >
       <Text bold color={t.color.label} wrap="truncate-end">
-        {CHANNELS[channel].label.toUpperCase()} · {bar(6)}
+        {activeConv ? truncate(activeConv.name, 40) : 'SIGNAL'}
+        {activeConv?.chatId.startsWith('group:') ? <Text color={t.color.muted}> · group</Text> : null}
       </Text>
-      <Box flexDirection="column" flexGrow={1} marginTop={1}>
-        {BUBBLES.slice(0, bubbleCount).map((b, i) => (
-          <Box justifyContent={b.mine ? 'flex-end' : 'flex-start'} key={i} marginBottom={1}>
-            <Box borderColor={t.color.border} borderStyle="round" paddingX={1}>
-              <Text color={t.color.border}>{bar(Math.min(b.w, bubbleMax))}</Text>
-            </Box>
-          </Box>
-        ))}
-      </Box>
-      <Box flexShrink={0} marginTop={1}>
-        <Text color={t.color.muted} wrap="wrap">
-          Not connected — link a Telegram or Signal account and your conversations will appear here.
-        </Text>
-      </Box>
+
+      {!connected ? (
+        <Box flexDirection="column" flexGrow={1} marginTop={1}>
+          <Text color={reachable === false ? t.color.error : t.color.muted} wrap="wrap">
+            {reachable === false
+              ? `Can't reach signal-cli at ${cfg.httpUrl}. Start the daemon (signal-cli -a ${cfg.account} daemon --http 127.0.0.1:8080) and press r.`
+              : 'Connecting to signal-cli…'}
+          </Text>
+        </Box>
+      ) : (
+        <Box flexDirection="column" flexGrow={1} justifyContent="flex-end" marginTop={1} overflow="hidden">
+          {recent.length === 0 ? (
+            <Text color={t.color.muted} wrap="wrap">
+              No messages in this conversation yet. Press i (or Enter) to write one.
+            </Text>
+          ) : (
+            recent.map((m, i) => {
+              const label = m.fromMe ? 'You' : truncate(activeConv?.chatId.startsWith('group:') ? m.author : activeConv?.name ?? m.author, 24)
+
+              return (
+                <Box flexDirection="column" key={`${m.timestamp}:${i}`} marginBottom={1}>
+                  <Text wrap="truncate-end">
+                    <Text bold color={m.fromMe ? t.color.ok : t.color.accent}>
+                      {label}
+                    </Text>
+                    <Text color={t.color.muted}>{`  ${clock(m.timestamp)}`}</Text>
+                  </Text>
+                  <Text color={t.color.text} wrap="wrap">
+                    {m.text || (m.attachments ? '📎 attachment' : '')}
+                  </Text>
+                </Box>
+              )
+            })
+          )}
+        </Box>
+      )}
+
+      {/* Compose line — only while composing, so the resting view has no cursor. */}
+      {composing ? (
+        <Box borderColor={t.color.accent} borderStyle="round" flexShrink={0} marginTop={1} paddingX={1}>
+          <Text color={t.color.muted}>{'› '}</Text>
+          <Text color={t.color.text}>{draft}</Text>
+          <Text color={t.color.text} inverse>
+            {' '}
+          </Text>
+        </Box>
+      ) : null}
     </Box>
   )
 
-  const chips: FooterChip[] = [
-    { k: '⇥', label: 'Channel', run: () => setChannel(i => (i + 1) % CHANNELS.length) },
-    { k: '↑↓', label: 'Chat' },
-    { k: 'c', label: 'Connect' },
-    { k: 'q', label: 'Close', run: onClose }
-  ]
+  const chips: FooterChip[] = composing
+    ? [
+        { k: '⏎', label: 'Send' },
+        { k: '⎋', label: 'Cancel' }
+      ]
+    : [
+        { k: '↑↓', label: 'Chats' },
+        { k: 'i', label: 'Write', run: () => activeConv && setComposing(true) },
+        { k: 'r', label: 'Reconnect', run: reconnect },
+        { k: 'q', label: 'Close', run: onClose }
+      ]
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
       <FooterChips chips={chips} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
-        Tab channel · ↑↓/jk chat · c connect · Esc/q close
+        {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
+        {composing ? '⏎ send · Esc cancel' : '↑↓/jk chats · i/⏎ write · r reconnect · Esc/q close'}
       </Text>
     </Box>
   )
