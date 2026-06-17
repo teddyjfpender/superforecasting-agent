@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 
-import { findSignalCli } from './signalDaemon.js'
+import { daemonEnv, findSignalCli } from './signalDaemon.js'
 
 export const commandExists = (bin: string): boolean =>
   spawnSync(process.platform === 'win32' ? 'where' : 'which', [bin], { encoding: 'utf8' }).status === 0
@@ -49,7 +49,7 @@ export const runLink = (
     return { cancel: () => {} }
   }
 
-  const child = spawn(cli.path, ['link', '-n', name || 'Outrider'], { stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(cli.path, ['link', '-n', name || 'Outrider'], { env: daemonEnv(), stdio: ['ignore', 'pipe', 'pipe'] })
   let buffer = ''
   let uriSent = false
 
@@ -93,7 +93,7 @@ const runOnce = (args: string[], timeoutMs = 60000): Promise<{ error: string; ok
       return
     }
 
-    const child = spawn(cli.path, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(cli.path, args, { env: daemonEnv(), stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
 
     const timer = setTimeout(() => {

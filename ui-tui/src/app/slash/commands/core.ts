@@ -490,7 +490,8 @@ export const coreCommands: SlashCommand[] = [
             ['/alerts [args]', 'show forecast alerts'],
             ['/markets', 'open the live markets tape'],
             ['/news', 'open the live news feed reader'],
-            ['/messaging', 'open the messaging view (Telegram / Signal)'],
+            ['/messaging', 'open the messaging view (your personal Signal client)'],
+            ['/messaging-gateway', 'set up the agent messaging bridge (people message the system)'],
             ['/calibration [args]', 'show calibration analytics; defaults to --by-origin; --visual opens the chart view'],
             ['/panel [subcommand]', 'multi-perspective panel: perspectives, record, aggregate, show'],
             ['/bayes [args]', 'auditable Bayesian scratchpad (priors, LRs, pooling)'],
@@ -915,6 +916,51 @@ export const coreCommands: SlashCommand[] = [
     help: 'open the messaging view (Telegram / Signal)',
     name: 'messaging',
     run: () => patchOverlayState({ messaging: true })
+  },
+
+  {
+    // The AGENT-SIDE bridge — deployers letting people message the SYSTEM to
+    // invoke it. Deliberately named apart from /messaging (your personal Signal
+    // client) so the two concepts don't blur.
+    aliases: ['bridge', 'agent-messaging', 'gateway-messaging'],
+    help: 'set up the agent messaging bridge (let people message the system to invoke it)',
+    name: 'messaging-gateway',
+    run: (_arg, ctx) => {
+      const signalAccount = (process.env.SIGNAL_ACCOUNT || '').trim()
+      const telegramToken = (process.env.TELEGRAM_BOT_TOKEN || '').trim()
+      const signalAllow = (process.env.SIGNAL_ALLOWED_USERS || '').trim()
+      const telegramAllow = (process.env.TELEGRAM_ALLOWED_USERS || '').trim()
+
+      const yes = (v: boolean) => (v ? '✓ configured' : '· not set')
+
+      const text = [
+        'AGENT MESSAGING BRIDGE',
+        '',
+        'Lets people message the SYSTEM (this agent) on Signal or Telegram so it',
+        'can run forecasts and tasks for them. This is distinct from the Messaging',
+        'view (/messaging), which is your OWN personal Signal client — you chatting',
+        'as yourself. The bridge runs in the always-on gateway, not in the TUI.',
+        '',
+        'Detected configuration:',
+        `  Signal     ${yes(Boolean(signalAccount))}${signalAccount ? `  (${signalAccount})` : ''}`,
+        `             allowlist: ${signalAllow || 'SIGNAL_ALLOWED_USERS not set (defaults apply)'}`,
+        `  Telegram   ${yes(Boolean(telegramToken))}`,
+        `             allowlist: ${telegramAllow || 'TELEGRAM_ALLOWED_USERS not set'}`,
+        '',
+        'Enable it:',
+        '  1. Configure platforms:   superforecasting-agent gateway setup',
+        '  2. Start the bridge:      superforecasting-agent gateway run',
+        '     Keep it running (e.g. `gateway install` as a launchd/systemd service).',
+        '',
+        'Notes:',
+        '  • Signal shares the same signal-cli account/daemon as your Messaging',
+        '    view, so one linked device serves both you and the bridge.',
+        '  • Set SIGNAL_ALLOWED_USERS / TELEGRAM_ALLOWED_USERS to control exactly',
+        '    who is allowed to invoke the agent.'
+      ].join('\n')
+
+      ctx.transcript.page(text, 'Agent Messaging Bridge')
+    }
   },
 
   {

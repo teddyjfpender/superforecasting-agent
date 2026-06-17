@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 
 import { forecastHomeDir } from './forecastHome.js'
 import { checkHealth, type SignalConfig } from './signalClient.js'
@@ -23,6 +23,7 @@ export interface DaemonInfo {
 
 export interface BinaryStatus {
   found: boolean
+  home?: string // JAVA_HOME for java (the keg/JDK root), so callers can export it
   path: string
   version: string
 }
@@ -54,10 +55,94 @@ export const findSignalCli = (): BinaryStatus => {
   return { found: Boolean(path), path, version: path ? versionOf(path, ['--version']) : '' }
 }
 
-export const findJava = (): BinaryStatus => {
-  const path = which('java')
+// Java is the fiddly one: Homebrew's openjdk is KEG-ONLY (not symlinked onto
+// PATH), and macOS ships a /usr/bin/java stub that errors when no JDK is
+// registered. So we probe known JDK locations directly and validate each by
+// actually running `java -version`, preferring a 17+ runtime.
+const javaCandidates = (): string[] => {
+  const out: string[] = []
+  const add = (p: string) => p && out.push(p)
 
-  return { found: Boolean(path), path, version: path ? versionOf(path, ['-version']) : '' }
+  if (process.env.JAVA_HOME) {
+    add(join(process.env.JAVA_HOME, 'bin', 'java'))
+  }
+
+  add(which('java')) // may be the macOS stub; validated below
+
+  // Homebrew keg-only openjdk (current + commonly-pinned majors), both arches.
+  for (const prefix of ['/opt/homebrew/opt', '/usr/local/opt']) {
+    for (const formula of ['openjdk', 'openjdk@21', 'openjdk@17']) {
+      add(join(prefix, formula, 'bin', 'java'))
+    }
+  }
+
+  try {
+    const r = spawnSync('brew', ['--prefix', 'openjdk'], { encoding: 'utf8', timeout: 4000 })
+    const prefix = (r.stdout || '').trim()
+
+    if (prefix) {
+      add(join(prefix, 'bin', 'java'))
+    }
+  } catch {
+    /* brew not present */
+  }
+
+  // Installed JDK bundles — macOS (.../Contents/Home) and Linux (/usr/lib/jvm).
+  for (const dir of ['/Library/Java/JavaVirtualMachines', '/usr/lib/jvm']) {
+    try {
+      for (const entry of readdirSync(dir)) {
+        add(join(dir, entry, 'Contents', 'Home', 'bin', 'java'))
+        add(join(dir, entry, 'bin', 'java'))
+      }
+    } catch {
+      /* dir absent */
+    }
+  }
+
+  return [...new Set(out)]
+}
+
+export const findJava = (): BinaryStatus => {
+  let fallback: BinaryStatus | null = null
+
+  for (const candidate of javaCandidates()) {
+    if (!existsSync(candidate)) {
+      continue
+    }
+
+    const version = versionOf(candidate, ['-version'])
+    const major = parseMajorVersion(version)
+
+    if (major <= 0) {
+      continue // the macOS stub / unparseable → not a real JDK
+    }
+
+    const status: BinaryStatus = { found: true, home: candidate.replace(/[/\\]bin[/\\]java$/, ''), path: candidate, version }
+
+    if (major >= 17) {
+      return status
+    }
+
+    fallback ??= status // remember an older JDK so we can report its version
+  }
+
+  return fallback ?? { found: false, home: '', path: '', version: '' }
+}
+
+// Environment for spawning signal-cli: export JAVA_HOME + prepend its bin so the
+// daemon finds Java even when Homebrew's openjdk is keg-only / off PATH.
+export const daemonEnv = (): NodeJS.ProcessEnv => {
+  const java = findJava()
+
+  if (!java.home) {
+    return { ...process.env }
+  }
+
+  return {
+    ...process.env,
+    JAVA_HOME: java.home,
+    PATH: `${join(java.home, 'bin')}${delimiter}${process.env.PATH ?? ''}`
+  }
 }
 
 // Parse a major version out of a `java -version` / `signal-cli --version` line.
@@ -181,7 +266,7 @@ export const startDaemon = async (account: string, timeoutMs = 25000): Promise<S
   let child
 
   try {
-    child = spawn(cli.path, daemonArgs(account, port), { detached: true, stdio: 'ignore' })
+    child = spawn(cli.path, daemonArgs(account, port), { detached: true, env: daemonEnv(), stdio: 'ignore' })
     child.unref()
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err), info: null }
