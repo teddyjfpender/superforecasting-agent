@@ -21,6 +21,7 @@ import {
 import type { Theme } from '../theme.js'
 
 import { type FooterChip, FooterChips } from './footerChips.js'
+import { SignalSetupModal } from './signalSetupModal.js'
 
 export const openMessagingView = () => patchOverlayState({ messaging: true })
 export const closeMessagingView = () => patchOverlayState({ messaging: false })
@@ -98,7 +99,8 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
 
-  const cfg = useMemo(() => resolveSignalConfig(), [])
+  const [cfg, setCfg] = useState<ReturnType<typeof resolveSignalConfig>>(() => resolveSignalConfig())
+  const [setup, setSetup] = useState(false)
 
   const [reachable, setReachable] = useState<boolean | null>(cfg ? null : false)
   const [streaming, setStreaming] = useState(false)
@@ -291,7 +293,21 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
   const connected = reachable === true
 
+  // The setup modal finished provisioning + started the daemon and wrote
+  // signal.json — re-resolve config so the connect effect fires and we attach.
+  const onConnected = () => {
+    setSetup(false)
+    setReachable(null)
+    setCfg(resolveSignalConfig())
+    setFlash('connected')
+  }
+
   useInput((ch, key) => {
+    // While the setup modal is open it owns all input.
+    if (setup) {
+      return
+    }
+
     if (composing) {
       if (key.escape) {
         setComposing(false)
@@ -321,6 +337,10 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
     if (ch === 'q' || key.escape) {
       return onClose()
+    }
+
+    if (ch === 's') {
+      return setSetup(true)
     }
 
     if (ch === 'r') {
@@ -390,36 +410,51 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     </Box>
   )
 
-  // ---- Not configured: setup guide ----------------------------------------
-  if (!cfg) {
-    const step = (n: string, body: string) => (
-      <Box marginTop={1}>
-        <Text wrap="wrap">
-          <Text bold color={t.color.accent}>{`${n} `}</Text>
-          <Text color={t.color.text}>{body}</Text>
-        </Text>
-      </Box>
-    )
-
+  // ---- Setup modal (press s) — paints over everything ---------------------
+  if (setup) {
     return (
       <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
         {header}
-        <Box flexDirection="column" flexGrow={1} paddingX={1}>
-          <Text color={t.color.label} wrap="wrap">
-            Connect your Signal account to message as yourself. Outrider talks to a local signal-cli daemon — the same
-            one the agent bridge uses, so one linked device serves both.
-          </Text>
-          {step('1.', 'Install signal-cli (needs Java 17+):  brew install signal-cli')}
-          {step('2.', 'Link it to your phone as a device:  signal-cli link -n "Outrider"  then scan the QR in Signal → Settings → Linked devices.')}
-          {step('3.', 'Run the daemon in HTTP mode:  signal-cli -a +<your-number> daemon --http 127.0.0.1:8080')}
-          {step('4.', 'Tell Outrider your number:  set SIGNAL_ACCOUNT=+<your-number> (and SIGNAL_HTTP_URL if not the default), or write ~/.superforecasting-agent/signal.json with { "account": "+<your-number>", "httpUrl": "http://127.0.0.1:8080" }.')}
-          {step('5.', 'Reopen Messaging (or press r). Your conversations appear as messages arrive — signal-cli streams from connect-time, so history builds up over time.')}
+        <SignalSetupModal
+          cols={cols}
+          onCancel={() => setSetup(false)}
+          onConnected={onConnected}
+          rows={termRows}
+          t={t}
+        />
+      </Box>
+    )
+  }
+
+  // ---- Not configured: prompt the in-TUI setup ----------------------------
+  if (!cfg) {
+    return (
+      <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
+        {header}
+        <Box alignItems="center" flexGrow={1} justifyContent="center">
+          <Box flexDirection="column" width={Math.min(72, Math.max(40, cols - 8))}>
+            <Text bold color={t.color.text}>
+              Message on Signal, as yourself.
+            </Text>
+            <Box marginTop={1}>
+              <Text color={t.color.muted} wrap="wrap">
+                Outrider runs a local signal-cli daemon for you: installing it, linking your account (or registering a
+                new number), and starting it on a free port. It all happens here; you never leave the TUI.
+              </Text>
+            </Box>
+            <Box marginTop={1}>
+              <Text bold color={t.color.accent}>
+                Press s
+              </Text>
+              <Text color={t.color.text}> to set up Signal.</Text>
+            </Box>
+          </Box>
         </Box>
         <Box flexDirection="column" flexShrink={0} marginTop={1}>
-          <FooterChips chips={[{ k: 'r', label: 'Recheck', run: reconnect }, { k: 'q', label: 'Close', run: onClose }]} t={t} />
+          <FooterChips chips={[{ k: 's', label: 'Set up', run: () => setSetup(true) }, { k: 'q', label: 'Close', run: onClose }]} t={t} />
           <Text color={t.color.muted} wrap="truncate-end">
             {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-            r recheck · Esc/q close
+            s set up Signal · Esc/q close
           </Text>
         </Box>
       </Box>

@@ -253,7 +253,43 @@ describe('MessagingView', () => {
     }
   })
 
-  it('renders the Signal setup guide when no account is configured', async () => {
+  // Render that exposes stdin so we can press the `s` setup shortcut.
+  const renderMessaging = async () => {
+    process.env.FORECAST_TUI_INLINE = '1'
+
+    const [{ render }, { MessagingView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/messagingView.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const stdout = writeStream(120, 36)
+    const stdin = writeStream(120, 36, true)
+
+    const instance = render(React.createElement(MessagingView, { onClose: () => undefined, t: DARK_THEME }), {
+      exitOnCtrlC: false,
+      patchConsole: false,
+      stdin: stdin.stream,
+      stdout: stdout.stream
+    })
+
+    await tick(40)
+
+    return {
+      cleanup: () => {
+        instance.unmount?.()
+        instance.cleanup?.()
+      },
+      press: async (keys: string) => {
+        stdin.stream.write(keys)
+        await tick(60)
+      },
+      text: () => normalize(stdout.text(), stripAnsi)
+    }
+  }
+
+  it('prompts to press s to set up Signal when no account is configured', async () => {
     const { MessagingView } = await import('../components/messagingView.js')
     const text = await renderComponent(MessagingView)
 
@@ -261,10 +297,23 @@ describe('MessagingView', () => {
     expect(text).toContain('Signal')
     expect(text).toContain('Telegram (soon)')
     expect(text).toContain('not connected')
-    // setup guide content + footer keys (not a persistent composer)
-    expect(text).toContain('signal-cli')
-    expect(text).toContain('SIGNAL_ACCOUNT')
+    expect(text).toContain('Press s')
+    expect(text).toContain('set up Signal')
     expect(text).toContain('Esc/q close')
     expect(text).not.toContain('start messaging…')
+  })
+
+  it('opens the in-TUI onboarding modal on s with a prerequisites check', async () => {
+    const m = await renderMessaging()
+    await m.press('s')
+    const text = m.text()
+    m.cleanup()
+
+    expect(text).toContain('Connect Signal')
+    expect(text).toContain('Prerequisites')
+    expect(text).toContain('signal-cli')
+    // both onboarding paths are offered
+    expect(text).toContain('Link an existing')
+    expect(text).toContain('Register a new')
   })
 })
