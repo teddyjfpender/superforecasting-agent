@@ -112,6 +112,9 @@ export function NewsView({ onClose, t }: NewsViewProps) {
   const aliveRef = useRef(true)
 
   useEffect(() => {
+    // Reset on (re)mount — not just initial — so a remount re-enables the
+    // async-safe setState guard that the cleanup turns off.
+    aliveRef.current = true
     const id = setInterval(() => setTick(value => value + 1), 600)
 
     return () => {
@@ -397,7 +400,8 @@ export function NewsView({ onClose, t }: NewsViewProps) {
   const live = tick % 2 === 0
   const hasFeeds = subscribed.length > 0
   const railWidth = Math.min(26, Math.max(20, Math.floor(width * 0.2)))
-  const listRows = Math.max(3, Math.floor((contentHeight - 2) / 2))
+  // One screen row per article (single-line rows) below the pane label + gap.
+  const listRows = Math.max(3, contentHeight - 2)
   const clampedSel = Math.min(sel, Math.max(0, visibleArticles.length - 1))
   const selectedArticle = visibleArticles[clampedSel]
 
@@ -492,22 +496,24 @@ export function NewsView({ onClose, t }: NewsViewProps) {
       </Text>
       <Box flexDirection="column" marginTop={1}>
         {visibleArticles.length > 0 ? (
+          // One contiguous line per article — title (bright/bold when selected)
+          // then a dim "source · time" tail. Single-line rows avoid the diff
+          // ghosting that two-line rows hit when the window scrolls.
           windowedArticles.map((article, i) => {
             const idx = listStart + i
             const on = idx === clampedSel
+            // Fixed-width recency prefix so the timestamp is always visible even
+            // when the headline is truncated; the source shows in the reader.
+            const when = (article.publishedAt ? relTime(article.publishedAt) : '·').padEnd(5)
 
             return (
-              <Box flexDirection="column" key={`${article.feedUrl}:${idx}`} marginBottom={1} onClick={() => setSel(idx)}>
-                <Box width="100%">
+              <Box key={`${article.feedUrl}:${idx}`} onClick={() => setSel(idx)} width="100%">
+                <Text wrap="truncate-end">
                   <Text color={on ? t.color.accent : t.color.border}>{on ? '▸ ' : '  '}</Text>
-                  <Text bold={on} color={on ? t.color.text : t.color.label} wrap="truncate-end">
+                  <Text color={t.color.muted}>{when} </Text>
+                  <Text bold={on} color={on ? t.color.text : t.color.label}>
                     {article.title}
                   </Text>
-                </Box>
-                <Text color={t.color.muted} wrap="truncate-end">
-                  {'   '}
-                  {article.feedTitle}
-                  {article.publishedAt ? ` · ${relTime(article.publishedAt)}` : ''}
                 </Text>
               </Box>
             )
@@ -521,16 +527,11 @@ export function NewsView({ onClose, t }: NewsViewProps) {
         ) : (
           <Box flexDirection="column">
             {Array.from({ length: Math.min(6, listRows) }, (_, r) => (
-              <Box flexDirection="column" key={r} marginBottom={1}>
-                <Text color={t.color.border} wrap="truncate-end">
-                  {'  '}
-                  {bar(22 + (r % 3) * 6)}
-                </Text>
-                <Text color={t.color.muted} wrap="truncate-end">
-                  {'   '}
-                  {bar(8)} · {bar(3)}
-                </Text>
-              </Box>
+              <Text color={t.color.border} key={r} wrap="truncate-end">
+                {'  '}
+                {bar(22 + (r % 3) * 6)}
+                <Text color={t.color.muted}>{`  ${bar(8)} · ${bar(3)}`}</Text>
+              </Text>
             ))}
           </Box>
         )}
