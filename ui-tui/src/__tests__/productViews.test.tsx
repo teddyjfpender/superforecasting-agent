@@ -113,12 +113,14 @@ describe('NewsView scaffold', () => {
 
     expect(text).toContain('NEWS')
     expect(text).toContain('live RSS feeds')
-    // sources rail
+    // three panes: sources rail · article list · reader
     expect(text).toContain('SOURCES')
     expect(text).toContain('All feeds')
     expect(text).toContain('Technology')
-    // honest empty state + footer keys
-    expect(text).toContain('No feeds configured yet')
+    expect(text).toContain('READER')
+    // honest empty state (assert tokens that survive reader-pane word-wrap)
+    expect(text).toContain('Select an article')
+    expect(text).toContain('configured yet')
     expect(text).toContain('add feed')
     // bracketed keybinding chip layer
     expect(text).toContain('[a Add feed]')

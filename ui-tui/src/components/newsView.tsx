@@ -12,7 +12,8 @@ export const closeNewsView = () => patchOverlayState({ news: false })
 // News — live RSS feeds with quick reading. No feeds are wired yet; this
 // renders the three-pane scaffold the reader will use: a SOURCES rail to
 // filter, an ARTICLES list to browse, and a READER pane to consume the
-// selected item. Aligned, bordered panes so data slots straight in.
+// selected item. Panes are separated by thin vertical rules (not full boxes)
+// and given an explicit height so the layout never reflows on keystroke.
 
 interface FeedSource {
   key: string
@@ -36,6 +37,15 @@ const bar = (n: number): string => '░'.repeat(Math.max(3, n))
 // perfectly uniform grid.
 const TITLE_WIDTHS = [30, 22, 34, 18, 28, 24, 32, 20, 26, 23]
 const PARA_WIDTHS = [40, 44, 38, 42, 30, 44, 36]
+
+// Props for a pane's right-edge vertical separator. Edges show unless set to
+// false, so this leaves a single vertical line on the right.
+const RIGHT_RULE = {
+  borderBottom: false,
+  borderLeft: false,
+  borderStyle: 'single',
+  borderTop: false
+} as const
 
 interface NewsViewProps {
   onClose: () => void
@@ -67,7 +77,11 @@ export function NewsView({ onClose, t }: NewsViewProps) {
   }, [stdout])
 
   const width = Math.max(48, cols - 4)
-  const rowCount = Math.max(4, Math.min(10, termRows - 12))
+  // Explicit content height = screen minus chrome (padding 2 + header 2 +
+  // footer 3). Fixing it stops the panes from reflowing as state changes.
+  const contentHeight = Math.max(8, termRows - 7)
+  // Each article occupies 3 rows (title + meta + gap); size the list to fit.
+  const rowCount = Math.max(3, Math.min(10, Math.floor((contentHeight - 2) / 3)))
 
   useInput((ch, key) => {
     if (ch === 'q' || key.escape) {
@@ -114,12 +128,13 @@ export function NewsView({ onClose, t }: NewsViewProps) {
   // 1. SOURCES rail — filter. Counts right-aligned for a tidy column.
   const rail = (
     <Box
+      {...RIGHT_RULE}
       borderColor={t.color.border}
-      borderStyle="round"
       flexDirection="column"
       flexShrink={0}
-      marginRight={1}
-      paddingX={1}
+      height={contentHeight}
+      overflow="hidden"
+      paddingRight={1}
       width={railWidth}
     >
       <Text bold color={t.color.label}>
@@ -146,14 +161,16 @@ export function NewsView({ onClose, t }: NewsViewProps) {
   // 2. ARTICLES list — browse. Each row: marker + headline bar, meta beneath.
   const list = (
     <Box
+      {...RIGHT_RULE}
       borderColor={t.color.border}
-      borderStyle="round"
       flexDirection="column"
       flexGrow={1}
       flexShrink={1}
-      marginRight={1}
-      minHeight={0}
-      paddingX={1}
+      height={contentHeight}
+      marginLeft={1}
+      minWidth={0}
+      overflow="hidden"
+      paddingRight={1}
     >
       <Text bold color={t.color.label} wrap="truncate-end">
         {SOURCES[source].label.toUpperCase()}
@@ -184,12 +201,11 @@ export function NewsView({ onClose, t }: NewsViewProps) {
   // 3. READER pane — consume. Headline + byline + paragraph skeleton.
   const reader = (
     <Box
-      borderColor={t.color.border}
-      borderStyle="round"
       flexDirection="column"
       flexShrink={0}
-      minHeight={0}
-      paddingX={1}
+      height={contentHeight}
+      marginLeft={1}
+      overflow="hidden"
       width={readerWidth}
     >
       <Text bold color={t.color.label} wrap="truncate-end">
@@ -205,7 +221,7 @@ export function NewsView({ onClose, t }: NewsViewProps) {
         <Box flexDirection="column" marginTop={1}>
           {PARA_WIDTHS.map((w, i) => (
             <Text color={t.color.border} key={i} wrap="truncate-end">
-              {bar(Math.min(w, readerWidth - 4))}
+              {bar(Math.min(w, readerWidth - 2))}
             </Text>
           ))}
         </Box>
@@ -239,7 +255,7 @@ export function NewsView({ onClose, t }: NewsViewProps) {
   return (
     <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
       {header}
-      <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
+      <Box flexDirection="row" flexShrink={0} height={contentHeight}>
         {rail}
         {list}
         {reader}

@@ -11,8 +11,9 @@ export const closeMessagingView = () => patchOverlayState({ messaging: false })
 
 // Messaging — the Telegram / Signal surface. No account is linked yet; this
 // renders an aligned chat scaffold: a CHATS rail (avatar · name · time, with a
-// preview line) and a thread pane with properly placed incoming/outgoing
-// bubbles, so conversations drop straight in once an account is connected.
+// preview line) and a thread pane with incoming/outgoing bubbles. The rail is
+// separated by a thin vertical rule (not a full box) and the layout is given an
+// explicit height so it never reflows on keystroke.
 
 interface Channel {
   key: string
@@ -39,6 +40,14 @@ const BUBBLES: { mine: boolean; w: number }[] = [
 
 const NAME_WIDTHS = [8, 6, 9, 7, 8, 6, 9, 7]
 const PREVIEW_WIDTHS = [13, 10, 14, 11, 9, 12, 13, 10]
+
+// A pane's right-edge vertical separator (all other edges off).
+const RIGHT_RULE = {
+  borderBottom: false,
+  borderLeft: false,
+  borderStyle: 'single',
+  borderTop: false
+} as const
 
 interface MessagingViewProps {
   onClose: () => void
@@ -69,7 +78,13 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     }
   }, [stdout])
 
-  const chatCount = Math.max(4, Math.min(8, termRows - 14))
+  // Explicit content height = screen minus chrome (padding 2 + header 2 +
+  // footer 3). Fixing it stops the panes reflowing as state changes.
+  const contentHeight = Math.max(8, termRows - 7)
+  // Each chat row is 2 lines + a gap; size the rail to fit.
+  const chatCount = Math.max(4, Math.min(8, Math.floor((contentHeight - 2) / 3)))
+  // Each bubble is a 3-row box + a gap; reserve the title + connect hint.
+  const bubbleCount = Math.max(2, Math.min(BUBBLES.length, Math.floor((contentHeight - 4) / 4)))
 
   useInput((ch, key) => {
     if (ch === 'q' || key.escape) {
@@ -116,12 +131,13 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   // CHATS rail — avatar · name (left) · time (right), preview beneath.
   const rail = (
     <Box
+      {...RIGHT_RULE}
       borderColor={t.color.border}
-      borderStyle="round"
       flexDirection="column"
       flexShrink={0}
-      marginRight={1}
-      paddingX={1}
+      height={contentHeight}
+      overflow="hidden"
+      paddingRight={1}
       width={railWidth}
     >
       <Text bold color={t.color.label}>
@@ -157,19 +173,19 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   // Thread pane — incoming bubbles left, outgoing right, each a bordered chip.
   const thread = (
     <Box
-      borderColor={t.color.border}
-      borderStyle="round"
       flexDirection="column"
       flexGrow={1}
       flexShrink={1}
-      minHeight={0}
-      paddingX={1}
+      height={contentHeight}
+      marginLeft={1}
+      minWidth={0}
+      overflow="hidden"
     >
       <Text bold color={t.color.label} wrap="truncate-end">
         {CHANNELS[channel].label.toUpperCase()} · {bar(6)}
       </Text>
       <Box flexDirection="column" flexGrow={1} marginTop={1}>
-        {BUBBLES.map((b, i) => (
+        {BUBBLES.slice(0, bubbleCount).map((b, i) => (
           <Box justifyContent={b.mine ? 'flex-end' : 'flex-start'} key={i} marginBottom={1}>
             <Box borderColor={t.color.border} borderStyle="round" paddingX={1}>
               <Text color={t.color.border}>{bar(Math.min(b.w, bubbleMax))}</Text>
@@ -177,7 +193,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           </Box>
         ))}
       </Box>
-      <Box marginTop={1}>
+      <Box flexShrink={0} marginTop={1}>
         <Text color={t.color.muted} wrap="wrap">
           Not connected — link a Telegram or Signal account and your conversations will appear here.
         </Text>
@@ -204,7 +220,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   return (
     <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
       {header}
-      <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
+      <Box flexDirection="row" flexShrink={0} height={contentHeight}>
         {rail}
         {thread}
       </Box>
