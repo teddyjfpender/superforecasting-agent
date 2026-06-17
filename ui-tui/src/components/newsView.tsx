@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { patchOverlayState } from '../app/overlayStore.js'
 import type { Theme } from '../theme.js'
 
+import { type FooterChip, FooterChips } from './footerChips.js'
+
 export const openNewsView = () => patchOverlayState({ news: true })
 export const closeNewsView = () => patchOverlayState({ news: false })
 
@@ -136,8 +138,17 @@ export function NewsView({ onClose, t }: NewsViewProps) {
     </Box>
   )
 
+  const chips: FooterChip[] = [
+    { k: '↑↓', label: 'Source' },
+    { k: '⏎', label: 'Open' },
+    { k: 'a', label: 'Add feed' },
+    { k: 'r', label: 'Refresh' },
+    { k: 'q', label: 'Close', run: onClose }
+  ]
+
   const footer = (
-    <Box flexShrink={0} marginTop={1}>
+    <Box flexDirection="column" flexShrink={0} marginTop={1}>
+      <FooterChips chips={chips} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
         ↑↓/jk source · Enter open · a add feed · r refresh · Esc/q close
       </Text>

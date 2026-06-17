@@ -100,6 +100,9 @@ describe('MarketsView scaffold', () => {
     // honest empty state + footer keys
     expect(text).toContain('Awaiting market feed')
     expect(text).toContain('Esc/q close')
+    // bracketed keybinding chip layer (parity with Obsidian)
+    expect(text).toContain('[⇥ Category]')
+    expect(text).toContain('[q Close]')
   })
 })
 
@@ -117,6 +120,9 @@ describe('NewsView scaffold', () => {
     // honest empty state + footer keys
     expect(text).toContain('No feeds configured yet')
     expect(text).toContain('add feed')
+    // bracketed keybinding chip layer
+    expect(text).toContain('[a Add feed]')
+    expect(text).toContain('[q Close]')
   })
 })
 
@@ -136,5 +142,8 @@ describe('MessagingView scaffold', () => {
     // composer pinned to the bottom like the home route has.
     expect(text).toContain('Esc/q close')
     expect(text).not.toContain('start messaging…')
+    // bracketed keybinding chip layer
+    expect(text).toContain('[c Connect]')
+    expect(text).toContain('[q Close]')
   })
 })

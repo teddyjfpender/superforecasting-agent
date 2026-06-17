@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { patchOverlayState } from '../app/overlayStore.js'
 import type { Theme } from '../theme.js'
 
+import { type FooterChip, FooterChips } from './footerChips.js'
+
 export const openMessagingView = () => patchOverlayState({ messaging: true })
 export const closeMessagingView = () => patchOverlayState({ messaging: false })
 
@@ -146,8 +148,16 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     </Box>
   )
 
+  const chips: FooterChip[] = [
+    { k: '⇥', label: 'Channel', run: () => setChannel(i => (i + 1) % CHANNELS.length) },
+    { k: '↑↓', label: 'Chat' },
+    { k: 'c', label: 'Connect' },
+    { k: 'q', label: 'Close', run: onClose }
+  ]
+
   const footer = (
-    <Box flexShrink={0} marginTop={1}>
+    <Box flexDirection="column" flexShrink={0} marginTop={1}>
+      <FooterChips chips={chips} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
         Tab channel · ↑↓/jk chat · c connect · Esc/q close
       </Text>
