@@ -108,7 +108,6 @@ export function NewsView({ onClose, t }: NewsViewProps) {
 
   const live = tick % 2 === 0
   const railWidth = Math.min(26, Math.max(20, Math.floor(width * 0.2)))
-  const readerWidth = Math.min(52, Math.max(28, Math.floor(width * 0.36)))
 
   const header = (
     <Box flexShrink={0} marginBottom={1}>
@@ -163,6 +162,7 @@ export function NewsView({ onClose, t }: NewsViewProps) {
     <Box
       {...RIGHT_RULE}
       borderColor={t.color.border}
+      flexBasis={0}
       flexDirection="column"
       flexGrow={1}
       flexShrink={1}
@@ -201,12 +201,14 @@ export function NewsView({ onClose, t }: NewsViewProps) {
   // 3. READER pane — consume. Headline + byline + paragraph skeleton.
   const reader = (
     <Box
+      flexBasis={0}
       flexDirection="column"
-      flexShrink={0}
+      flexGrow={1}
+      flexShrink={1}
       height={contentHeight}
       marginLeft={1}
+      minWidth={0}
       overflow="hidden"
-      width={readerWidth}
     >
       <Text bold color={t.color.label} wrap="truncate-end">
         READER
@@ -221,7 +223,7 @@ export function NewsView({ onClose, t }: NewsViewProps) {
         <Box flexDirection="column" marginTop={1}>
           {PARA_WIDTHS.map((w, i) => (
             <Text color={t.color.border} key={i} wrap="truncate-end">
-              {bar(Math.min(w, readerWidth - 2))}
+              {bar(w)}
             </Text>
           ))}
         </Box>
