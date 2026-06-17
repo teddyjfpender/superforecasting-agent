@@ -69,6 +69,15 @@ export function MarketsView({ onClose, t }: MarketsViewProps) {
     return () => clearInterval(id)
   }, [])
 
+  // No real text cursor in this view — park it so it doesn't sit in the corner.
+  useEffect(() => {
+    stdout?.write('\x1b[?25l')
+
+    return () => {
+      stdout?.write('\x1b[?25h')
+    }
+  }, [stdout])
+
   useInput((ch, key) => {
     if (ch === 'q' || key.escape) {
       return onClose()

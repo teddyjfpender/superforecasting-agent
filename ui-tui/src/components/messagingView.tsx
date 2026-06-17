@@ -41,6 +41,15 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     return () => clearInterval(id)
   }, [])
 
+  // No real text cursor in this view — park it so it doesn't sit in the corner.
+  useEffect(() => {
+    stdout?.write('\x1b[?25l')
+
+    return () => {
+      stdout?.write('\x1b[?25h')
+    }
+  }, [stdout])
+
   const chatCount = Math.max(4, Math.min(8, termRows - 14))
 
   useInput((ch, key) => {
