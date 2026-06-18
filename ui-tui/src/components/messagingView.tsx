@@ -179,6 +179,12 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const [newName, setNewName] = useState('')
   const [newField, setNewField] = useState<'name' | 'number'>('number')
 
+  // Chats with an incoming message you haven't opened yet (unread heuristic).
+  const [unread, setUnread] = useState<Set<string>>(() => new Set())
+  // Contact card (press c): view + rename the highlighted chat's contact.
+  const [contactView, setContactView] = useState(false)
+  const [editName, setEditName] = useState('')
+
   const cacheRef = useRef<SignalCache>(loadSignalCache())
   const [cacheVersion, setCacheVersion] = useState(0)
   const aliveRef = useRef(true)
@@ -260,6 +266,12 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
           if (aliveRef.current) {
             setCacheVersion(v => v + 1)
+
+            // Flag the chat unread (the open-chat effect clears it if you're
+            // already looking at it).
+            if (!msg.fromMe) {
+              setUnread(prev => (prev.has(msg.chatId) ? prev : new Set(prev).add(msg.chatId)))
+            }
           }
         },
         connected => {
@@ -343,6 +355,25 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     setThreadScroll(0)
   }, [activeConv?.chatId])
 
+  // Opening / viewing a chat clears its unread flag (also when a new message
+  // lands while it's open — hence the cacheVersion dep).
+  useEffect(() => {
+    if (focus !== 'thread' || !activeConv) {
+      return
+    }
+
+    setUnread(prev => {
+      if (!prev.has(activeConv.chatId)) {
+        return prev
+      }
+
+      const next = new Set(prev)
+      next.delete(activeConv.chatId)
+
+      return next
+    })
+  }, [focus, activeConv?.chatId, cacheVersion])
+
   // Start a conversation with a typed number: validate, save it to the address
   // book (so the name persists), then select + open it (chatId selection means
   // it resolves as soon as the book update lands it in the list).
@@ -366,6 +397,27 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     setThreadScroll(0)
     setFocus('thread')
     setFlash(`new chat · ${newName.trim() || number}`)
+  }
+
+  // Contact card: prefill the editable name with the saved one (blank = unnamed).
+  const openContact = () => {
+    if (!activeConv) {
+      return
+    }
+
+    setEditName(contactBook[activeConv.chatId]?.name ?? '')
+    setContactView(true)
+  }
+
+  const saveContact = () => {
+    if (activeConv) {
+      const book = upsertContact(contactBook, { chatId: activeConv.chatId, name: editName })
+      setContactBook(book)
+      saveContactBook(book)
+      setFlash(`contact saved${editName.trim() ? ` · ${editName.trim()}` : ''}`)
+    }
+
+    setContactView(false)
   }
 
   const sendDraft = () => {
@@ -501,6 +553,31 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       return
     }
 
+    // Contact card: edit the saved name for the highlighted chat.
+    if (contactView) {
+      if (key.escape) {
+        return setContactView(false)
+      }
+
+      if (key.return) {
+        return saveContact()
+      }
+
+      if (key.backspace || key.delete) {
+        return setEditName(s => s.slice(0, -1))
+      }
+
+      if (ch && !key.ctrl && !key.meta) {
+        const printable = [...ch].filter(c => c >= ' ').join('')
+
+        if (printable) {
+          setEditName(s => s + printable)
+        }
+      }
+
+      return
+    }
+
     // Open thread: the composer is always active here (type immediately).
     // Enter sends, arrows/wheel scroll history, Esc returns to the list. All
     // other printable keys (incl. q/s/r/n) go into the draft — no global
@@ -544,12 +621,18 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       return onClose()
     }
 
-    if (ch === 's') {
+    // Setup is only reachable when not connected — so an accidental 's' can't
+    // relaunch onboarding mid-session.
+    if (ch === 's' && !connected) {
       return setSetup(true)
     }
 
     if (ch === 'r') {
       return reconnect()
+    }
+
+    if (ch === 'c' && activeConv) {
+      return openContact()
     }
 
     if (ch === 'n') {
@@ -695,6 +778,61 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     )
   }
 
+  // ---- Contact card (press c) ---------------------------------------------
+  if (contactView && activeConv) {
+    const modalW = Math.max(40, Math.min(cols - 4, 70))
+    const saved = contactBook[activeConv.chatId]
+
+    const row = (label: string, value: string, color = t.color.text) => (
+      <Text wrap="truncate-end">
+        <Text color={t.color.label}>{label.padEnd(9)}</Text>
+        <Text color={value ? color : t.color.muted}>{value || '—'}</Text>
+      </Text>
+    )
+
+    return (
+      <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
+        {header}
+        <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
+          <Box borderColor={t.color.accent} borderStyle="round" flexDirection="column" paddingX={2} paddingY={1} width={modalW}>
+            <Text bold color={t.color.primary}>
+              Contact
+            </Text>
+            <Box marginTop={1}>
+              <Text color={t.color.border}>{'─'.repeat(modalW - 6)}</Text>
+            </Box>
+            <Box flexDirection="column" marginTop={1}>
+              {/* Editable name (the only mutable field). */}
+              <Box>
+                <Text bold color={t.color.accent}>
+                  {'Name'.padEnd(9)}
+                </Text>
+                <Text color={t.color.muted}>{'› '}</Text>
+                <Text color={t.color.text}>{editName}</Text>
+                {live ? (
+                  <Text color={t.color.text} inverse>
+                    {' '}
+                  </Text>
+                ) : (
+                  <Text>{' '}</Text>
+                )}
+                {!editName ? <Text color={t.color.muted}> (no name set)</Text> : null}
+              </Box>
+              {row('Number', activeConv.chatId.startsWith('group:') ? '' : saved?.number || activeConv.chatId)}
+              {row(activeConv.chatId.startsWith('group:') ? 'Group' : 'Chat id', activeConv.chatId, t.color.muted)}
+              {row('Added', saved?.addedAt ? new Date(saved.addedAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : '', t.color.muted)}
+            </Box>
+            <Box marginTop={1}>
+              <Text color={t.color.muted} wrap="truncate-end">
+                ⏎ save name · Esc cancel
+              </Text>
+            </Box>
+          </Box>
+        </Box>
+      </Box>
+    )
+  }
+
   // ---- Not configured: prompt the in-TUI setup ----------------------------
   if (!cfg) {
     return (
@@ -752,22 +890,29 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       </Text>
       <Box flexDirection="column" marginTop={1}>
         {windowedConvs.length > 0 ? (
-          // Single line per chat — name + relative time. Two-line rows desync
-          // the fixed-height window on scroll and ghost over each other.
+          // Single line per chat — name then a dim message preview right after
+          // (no big gap), with an unread dot + highlight. One line keeps the
+          // fixed-height window from desyncing/ghosting on scroll.
           windowedConvs.map((conv, i) => {
             const idx = listStart + i
             const on = idx === clampedSel
-            const time = relTime(conv.lastTs)
-            const nameW = Math.max(6, railWidth - 4 - time.length)
+            const isUnread = unread.has(conv.chatId)
+            const nameMax = Math.min(16, Math.max(8, Math.floor(railWidth * 0.42)))
+            const previewW = Math.max(0, railWidth - 2 - nameMax - 1)
+            const prefix = on ? '▸ ' : isUnread ? '● ' : '  '
 
             return (
               <Box key={conv.chatId} onClick={() => { setSelectedChatId(conv.chatId); setThreadScroll(0); setFocus('thread') }} width="100%">
                 <Text wrap="truncate-end">
-                  <Text color={on ? t.color.accent : t.color.border}>{on ? '▸ ' : '  '}</Text>
-                  <Text bold={on} color={on ? t.color.text : t.color.label}>
-                    {truncate(conv.name, nameW).padEnd(nameW)}
+                  <Text bold={isUnread} color={on ? t.color.accent : isUnread ? t.color.ok : t.color.border}>
+                    {prefix}
                   </Text>
-                  <Text color={t.color.border}> {time}</Text>
+                  <Text bold={on || isUnread} color={on || isUnread ? t.color.text : t.color.label}>
+                    {truncate(conv.name, nameMax).padEnd(nameMax)}
+                  </Text>
+                  {previewW > 4 && conv.lastText ? (
+                    <Text color={isUnread ? t.color.muted : t.color.border}> {truncate(conv.lastText, previewW)}</Text>
+                  ) : null}
                 </Text>
               </Box>
             )
@@ -872,8 +1017,8 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     : [
         { k: '↑↓', label: 'Chats' },
         { k: '⏎', label: 'Open', run: () => activeConv && setFocus('thread') },
+        { k: 'c', label: 'Contact', run: openContact },
         { k: 'n', label: 'New message', run: () => { setNewNumber(''); setNewName(''); setNewField('number'); setNewChat(true) } },
-        { k: 'r', label: 'Reconnect', run: reconnect },
         { k: 'q', label: 'Close', run: onClose }
       ]
 
@@ -884,7 +1029,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
         {composing
           ? 'type to write · ⏎ send · ↑↓/wheel scroll history · Esc back to chats'
-          : '↑↓/jk chats · ⏎/→ open & write · n new message · r reconnect · Esc/q close'}
+          : `↑↓/jk chats · ⏎/→ open & write · c contact · n new · r reconnect${connected ? '' : ' · s set up'} · Esc/q close`}
       </Text>
     </Box>
   )
