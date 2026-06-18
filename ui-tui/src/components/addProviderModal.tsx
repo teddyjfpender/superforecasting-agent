@@ -132,11 +132,9 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
       return
     }
 
+    // Esc saves what's selected and closes (toggles applied incrementally) —
+    // matches the News modal: ↑↓ move, Tab/←→ switch, Enter toggle, Esc done.
     if (key.escape) {
-      return commit() // Esc saves what's selected (toggles are the action)
-    }
-
-    if (key.return) {
       return commit()
     }
 
@@ -156,14 +154,14 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
         : setCatIdx(i => Math.min(MARKET_CATEGORIES.length - 1, i + 1))
     }
 
-    if (ch === ' ') {
+    // Enter toggles the highlighted item in the focused pane.
+    if (key.return) {
       if (focus === 'providers') {
         return toggleProvider()
       }
 
       const cat = MARKET_CATEGORIES[catIdx]
       const next = new Set(categories)
-
       if (next.has(cat)) {
         next.delete(cat)
       } else {
@@ -217,7 +215,7 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
   const footer =
     focus === 'key'
       ? '⏎ save key · Esc back'
-      : 'Tab switch · ↑↓ move · Space toggle · ⏎ done · Esc save & close'
+      : 'Tab/←→ switch · ↑↓ move · ⏎ toggle · Esc save & close'
 
   return (
     <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
