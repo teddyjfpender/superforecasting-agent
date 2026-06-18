@@ -2,7 +2,7 @@ import { Box, Text, useInput, useStdout } from '@hermes/ink'
 import { useEffect, useRef, useState } from 'react'
 
 import { commandExists, gitInit } from '../lib/docsCli.js'
-import { docsDir, ensureWorkspaceDirs, vaultDir } from '../lib/latexDocs.js'
+import { docsDir, ensureWorkspaceDirs, migrateLegacyVault, vaultDir } from '../lib/latexDocs.js'
 import { seedLatexExamples } from '../lib/latexExamples.js'
 import { saveProviderKey } from '../lib/marketKeys.js'
 import { semantics } from '../lib/visualSemantics.js'
@@ -54,6 +54,7 @@ export function DocsSetup({ onClose, onReady, t }: DocsSetupProps) {
     // vault path so the gateway's Obsidian tools use the unified location.
     const { latex } = ensureWorkspaceDirs()
     seedLatexExamples(latex)
+    migrateLegacyVault(vault) // bring existing notes into the unified vault
     saveProviderKey('OBSIDIAN_VAULT_PATH', vault)
     process.env.OBSIDIAN_VAULT_PATH = vault
 

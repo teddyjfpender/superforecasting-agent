@@ -1,4 +1,4 @@
-import { type Dirent, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, type Dirent, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative } from 'node:path'
 
@@ -18,6 +18,53 @@ export const docsDir = (env: NodeJS.ProcessEnv = process.env, _home = homedir())
 // Subdirectories of the workspace: the Markdown (Obsidian) vault and LaTeX.
 export const vaultDir = (env: NodeJS.ProcessEnv = process.env): string => join(docsDir(env), 'vault')
 export const latexSubdir = (env: NodeJS.ProcessEnv = process.env): string => join(docsDir(env), 'latex')
+
+// signal-cli era's default Obsidian vault location, before the unified docs/.
+export const legacyVaultDir = (home = homedir()): string => join(home, 'Documents', 'Obsidian Vault')
+
+const visibleEntries = (dir: string): Dirent[] => {
+  try {
+    return readdirSync(dir, { encoding: 'utf8', withFileTypes: true }).filter(e => !e.name.startsWith('.'))
+  } catch {
+    return []
+  }
+}
+
+// One-time migration: if the unified vault is empty but the legacy default vault
+// has notes, copy them in (never overwrites a populated vault). Returns the
+// number of top-level items copied. This recovers notes orphaned when the vault
+// path was relocated into docs/.
+export const migrateLegacyVault = (newVaultDir: string, home = homedir()): number => {
+  try {
+    if (visibleEntries(newVaultDir).length > 0) {
+      return 0 // already has content — don't touch it
+    }
+
+    const legacy = legacyVaultDir(home)
+
+    if (!existsSync(legacy) || legacy === newVaultDir) {
+      return 0
+    }
+
+    const items = visibleEntries(legacy)
+
+    if (items.length === 0) {
+      return 0
+    }
+
+    mkdirSync(newVaultDir, { recursive: true })
+    let copied = 0
+
+    for (const e of items) {
+      cpSync(join(legacy, e.name), join(newVaultDir, e.name), { errorOnExist: false, recursive: true })
+      copied += 1
+    }
+
+    return copied
+  } catch {
+    return 0
+  }
+}
 
 export const docsRootExists = (env: NodeJS.ProcessEnv = process.env): boolean => {
   try {

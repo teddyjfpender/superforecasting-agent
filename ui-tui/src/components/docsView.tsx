@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import type { GatewayClient } from '../gatewayClient.js'
-import { docsRootExists } from '../lib/latexDocs.js'
+import { docsRootExists, migrateLegacyVault, vaultDir } from '../lib/latexDocs.js'
 import type { Theme } from '../theme.js'
 
 import { DocsSetup } from './docsSetup.js'
@@ -26,9 +26,20 @@ interface DocsViewProps {
 
 export function DocsView({ gw, onClose, onDraft, sid, t }: DocsViewProps) {
   const [kind, setKind] = useState<DocKind>('markdown')
+
   // First run: no ~/.superforecasting-agent/docs yet → offer to create the
-  // unified workspace (vault + latex + git) before showing either kind.
-  const [ready, setReady] = useState(() => docsRootExists())
+  // unified workspace (vault + latex + git) before showing either kind. When it
+  // exists, recover any notes from the legacy default vault into docs/vault
+  // (one-time; never overwrites a populated vault) so relocation didn't lose them.
+  const [ready, setReady] = useState(() => {
+    const exists = docsRootExists()
+
+    if (exists) {
+      migrateLegacyVault(vaultDir())
+    }
+
+    return exists
+  })
 
   if (!ready) {
     return <DocsSetup onClose={onClose} onReady={() => setReady(true)} t={t} />

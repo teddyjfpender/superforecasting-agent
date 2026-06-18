@@ -84,3 +84,24 @@ describe('ensureWorkspaceDirs', () => {
     expect(() => ensureWorkspaceDirs(env)).not.toThrow() // idempotent
   })
 })
+
+describe('migrateLegacyVault', () => {
+  it('copies legacy vault notes into an empty docs vault, but never overwrites', async () => {
+    const { mkdirSync, writeFileSync, existsSync } = await import('node:fs')
+    const fakeHome = freshDir()
+    const legacy = join(fakeHome, 'Documents', 'Obsidian Vault')
+    mkdirSync(legacy, { recursive: true })
+    writeFileSync(join(legacy, 'note.md'), '# hi')
+    mkdirSync(join(legacy, 'sub'), { recursive: true })
+    writeFileSync(join(legacy, 'sub', 'b.md'), 'x')
+
+    const newVault = freshDir()
+    const { migrateLegacyVault } = await import('../lib/latexDocs.js')
+    expect(migrateLegacyVault(newVault, fakeHome)).toBe(2)
+    expect(existsSync(join(newVault, 'note.md'))).toBe(true)
+    expect(existsSync(join(newVault, 'sub', 'b.md'))).toBe(true)
+
+    // a populated vault is left alone
+    expect(migrateLegacyVault(newVault, fakeHome)).toBe(0)
+  })
+})
