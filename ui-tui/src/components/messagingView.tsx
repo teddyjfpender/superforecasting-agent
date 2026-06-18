@@ -83,6 +83,27 @@ const relTime = (ms: number): string => {
 const clock = (ms: number): string =>
   ms ? new Date(ms).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''
 
+// Which messages get a sender/time header: the first, any sender change, or a
+// gap longer than `gapMs` (default 5 min). A run from one person within the gap
+// reads as a single block (standard messaging-app grouping).
+export const GROUP_GAP_MS = 5 * 60 * 1000
+
+export const messageHeaders = (
+  messages: { author?: string; fromMe: boolean; timestamp: number }[],
+  gapMs = GROUP_GAP_MS
+): boolean[] =>
+  messages.map((m, i) => {
+    const prev = messages[i - 1]
+
+    if (!prev) {
+      return true
+    }
+
+    const sameSender = prev.fromMe === m.fromMe && (m.fromMe || prev.author === m.author)
+
+    return !(sameSender && m.timestamp - prev.timestamp < gapMs)
+  })
+
 // Human label for a conversation: the resolved contact/group name when we have
 // one, otherwise a tidy fallback — a phone number as-is, a group placeholder, or
 // a shortened opaque id (so a raw UUID doesn't dominate the rail).
@@ -141,6 +162,12 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const [flash, setFlash] = useState('')
   const [composing, setComposing] = useState(false)
   const [draft, setDraft] = useState('')
+
+  // Focus: the chat LIST, or a single THREAD (read mode — scrolling moves the
+  // message history, not the conversation list). `threadScroll` counts messages
+  // scrolled up from the latest.
+  const [focus, setFocus] = useState<'list' | 'thread'>('list')
+  const [threadScroll, setThreadScroll] = useState(0)
 
   // Persisted address book (names/numbers) + the "new message" composer.
   const [contactBook, setContactBook] = useState<ContactBook>(() => loadContactBook())
@@ -294,6 +321,24 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const clampedSel = Math.min(sel, Math.max(0, conversations.length - 1))
   const activeConv = conversations[clampedSel]
   const threadMessages = activeConv ? cacheRef.current[activeConv.chatId] ?? [] : []
+
+  // Layout + thread-window geometry (needed by both the key handler and render).
+  const width = Math.max(48, cols - 4)
+  const contentHeight = Math.max(8, termRows - 7)
+  const railWidth = Math.min(40, Math.max(26, Math.floor(width * 0.34)))
+  const railRows = Math.max(3, contentHeight - 2)
+  // Rows available for messages: header + marginTop + (composer when writing).
+  const composerRows = composing ? 3 : 0
+  const msgRows = Math.max(1, contentHeight - 2 - composerRows)
+  // ~2 rows per message (sender line + text); window by message for scrolling.
+  const threadVisible = Math.max(1, Math.floor(msgRows / 2))
+  const maxThreadScroll = Math.max(0, threadMessages.length - threadVisible)
+  const threadScrollClamped = Math.min(threadScroll, maxThreadScroll)
+
+  // Reset the scroll to the latest whenever the open conversation changes.
+  useEffect(() => {
+    setThreadScroll(0)
+  }, [activeConv?.chatId])
 
   // After creating a new chat, select it once it appears in the list and drop
   // straight into the composer.
@@ -494,7 +539,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       return
     }
 
-    if (ch === 'q' || key.escape) {
+    if (ch === 'q') {
       return onClose()
     }
 
@@ -514,14 +559,32 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       return setNewChat(true)
     }
 
-    if (!connected) {
+    // Thread focus: ↑↓/wheel scroll the message history (not the chat list).
+    if (focus === 'thread') {
+      if (key.escape || key.leftArrow || ch === 'h') {
+        return setFocus('list')
+      }
+
+      if (ch === 'i' || key.return) {
+        setDraft('')
+
+        return setComposing(true)
+      }
+
+      if (key.upArrow || ch === 'k' || key.wheelUp) {
+        return setThreadScroll(s => Math.min(maxThreadScroll, s + 1))
+      }
+
+      if (key.downArrow || ch === 'j' || key.wheelDown) {
+        return setThreadScroll(s => Math.max(0, s - 1))
+      }
+
       return
     }
 
-    if ((ch === 'i' || key.return) && activeConv) {
-      setDraft('')
-
-      return setComposing(true)
+    // List focus.
+    if (key.escape) {
+      return onClose()
     }
 
     if (key.upArrow || ch === 'k' || key.wheelUp) {
@@ -531,13 +594,22 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     if (key.downArrow || ch === 'j' || key.wheelDown) {
       return setSel(i => Math.min(Math.max(0, conversations.length - 1), i + 1))
     }
+
+    // Enter / → opens the highlighted chat in focused read mode; i writes.
+    if (ch === 'i' && activeConv) {
+      setDraft('')
+
+      return setComposing(true)
+    }
+
+    if ((key.return || key.rightArrow || ch === 'l') && activeConv) {
+      setThreadScroll(0)
+
+      return setFocus('thread')
+    }
   })
 
-  const width = Math.max(48, cols - 4)
-  const contentHeight = Math.max(8, termRows - 7)
   const live = tick % 2 === 0
-  const railWidth = Math.min(40, Math.max(26, Math.floor(width * 0.34)))
-  const railRows = Math.max(3, contentHeight - 2)
 
   const statusDot = !cfg
     ? t.color.muted
@@ -690,10 +762,12 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const listStart = Math.max(0, Math.min(clampedSel - Math.floor(railRows / 2), conversations.length - railRows))
   const windowedConvs = conversations.slice(Math.max(0, listStart), Math.max(0, listStart) + railRows)
 
+  const listFocused = focus === 'list'
+
   const rail = (
     <Box
       {...RIGHT_RULE}
-      borderColor={t.color.border}
+      borderColor={listFocused ? t.color.accent : t.color.border}
       flexDirection="column"
       flexShrink={0}
       height={contentHeight}
@@ -701,7 +775,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       paddingRight={1}
       width={railWidth}
     >
-      <Text bold color={t.color.label} wrap="truncate-end">
+      <Text bold color={listFocused ? t.color.accent : t.color.label} wrap="truncate-end">
         CHATS{conversations.length ? <Text color={t.color.muted}>{`  (${conversations.length})`}</Text> : null}
       </Text>
       <Box flexDirection="column" marginTop={1}>
@@ -736,25 +810,27 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   )
 
   // ---- Thread pane ---------------------------------------------------------
-  const recent = threadMessages.slice(-60)
+  const threadFocused = focus === 'thread'
+  const headerForMsg = messageHeaders(threadMessages)
+
+  const threadEnd = Math.max(0, threadMessages.length - threadScrollClamped)
+  const threadStart = Math.max(0, threadEnd - threadVisible)
+  const windowMsgs = threadMessages.slice(threadStart, threadEnd)
+  const olderCount = threadStart
+  const newerCount = threadMessages.length - threadEnd
 
   const thread = (
-    <Box
-      flexDirection="column"
-      flexGrow={1}
-      flexShrink={1}
-      height={contentHeight}
-      marginLeft={1}
-      minWidth={0}
-      overflow="hidden"
-    >
-      <Text bold color={t.color.label} wrap="truncate-end">
-        {activeConv ? truncate(activeConv.name, 40) : 'SIGNAL'}
+    <Box flexDirection="column" flexGrow={1} flexShrink={1} height={contentHeight} marginLeft={1} minWidth={0} overflow="hidden">
+      <Text bold={threadFocused} color={threadFocused ? t.color.accent : t.color.label} wrap="truncate-end">
+        {threadFocused ? '▸ ' : ''}
+        {activeConv ? truncate(activeConv.name, 32) : 'SIGNAL'}
         {activeConv?.chatId.startsWith('group:') ? <Text color={t.color.muted}> · group</Text> : null}
+        {threadFocused && olderCount > 0 ? <Text color={t.color.muted}>{`  ↑ ${olderCount} older`}</Text> : null}
+        {threadFocused && newerCount > 0 ? <Text color={t.color.muted}>{`  ↓ ${newerCount} newer`}</Text> : null}
       </Text>
 
       {!connected ? (
-        <Box flexDirection="column" flexGrow={1} marginTop={1}>
+        <Box flexDirection="column" height={msgRows} marginTop={1}>
           <Text color={reachable === false ? t.color.error : t.color.muted} wrap="wrap">
             {reachable === false
               ? `Can't reach signal-cli at ${cfg.httpUrl}. Start the daemon (signal-cli -a ${cfg.account} daemon --http 127.0.0.1:8080) and press r.`
@@ -762,23 +838,30 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           </Text>
         </Box>
       ) : (
-        <Box flexDirection="column" flexGrow={1} justifyContent="flex-end" marginTop={1} overflow="hidden">
-          {recent.length === 0 ? (
+        <Box flexDirection="column" height={msgRows} justifyContent="flex-end" marginTop={1} overflow="hidden">
+          {threadMessages.length === 0 ? (
             <Text color={t.color.muted} wrap="wrap">
-              No messages in this conversation yet. Press i (or Enter) to write one.
+              No messages yet. Press i to write one.
             </Text>
           ) : (
-            recent.map((m, i) => {
-              const label = m.fromMe ? 'You' : truncate(activeConv?.chatId.startsWith('group:') ? m.author : activeConv?.name ?? m.author, 24)
+            windowMsgs.map((m, i) => {
+              const gi = threadStart + i
+              const showHeader = headerForMsg[gi]
+
+              const label = m.fromMe
+                ? 'You'
+                : truncate(activeConv?.chatId.startsWith('group:') ? m.author : activeConv?.name ?? m.author, 24)
 
               return (
-                <Box flexDirection="column" key={`${m.timestamp}:${i}`} marginBottom={1}>
-                  <Text wrap="truncate-end">
-                    <Text bold color={m.fromMe ? t.color.ok : t.color.accent}>
-                      {label}
+                <Box flexDirection="column" key={`${m.timestamp}:${gi}`} marginTop={showHeader && i > 0 ? 1 : 0}>
+                  {showHeader ? (
+                    <Text wrap="truncate-end">
+                      <Text bold color={m.fromMe ? t.color.ok : t.color.accent}>
+                        {label}
+                      </Text>
+                      <Text color={t.color.muted}>{`  ${clock(m.timestamp)}`}</Text>
                     </Text>
-                    <Text color={t.color.muted}>{`  ${clock(m.timestamp)}`}</Text>
-                  </Text>
+                  ) : null}
                   <Text color={t.color.text} wrap="wrap">
                     {m.text || (m.attachments ? `${ICON.attach} attachment` : '')}
                   </Text>
@@ -789,9 +872,9 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         </Box>
       )}
 
-      {/* Compose line — only while composing, so the resting view has no cursor. */}
+      {/* Native bottom composer — sits below the history, doesn't overlap it. */}
       {composing ? (
-        <Box borderColor={t.color.accent} borderStyle="round" flexShrink={0} marginTop={1} paddingX={1}>
+        <Box borderColor={t.color.accent} borderStyle="round" flexShrink={0} paddingX={1}>
           <Text color={t.color.muted}>{'› '}</Text>
           <Text color={t.color.text}>{draft}</Text>
           <Text color={t.color.text} inverse>
@@ -807,20 +890,31 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         { k: '⏎', label: 'Send' },
         { k: '⎋', label: 'Cancel' }
       ]
-    : [
-        { k: '↑↓', label: 'Chats' },
-        { k: 'i', label: 'Write', run: () => activeConv && setComposing(true) },
-        { k: 'n', label: 'New message', run: () => { setNewNumber(''); setNewName(''); setNewField('number'); setNewChat(true) } },
-        { k: 'r', label: 'Reconnect', run: reconnect },
-        { k: 'q', label: 'Close', run: onClose }
-      ]
+    : threadFocused
+      ? [
+          { k: '↑↓', label: 'Scroll' },
+          { k: 'i', label: 'Write', run: () => activeConv && setComposing(true) },
+          { k: '⎋', label: 'Back', run: () => setFocus('list') },
+          { k: 'q', label: 'Close', run: onClose }
+        ]
+      : [
+          { k: '↑↓', label: 'Chats' },
+          { k: '⏎', label: 'Open', run: () => activeConv && setFocus('thread') },
+          { k: 'i', label: 'Write', run: () => activeConv && setComposing(true) },
+          { k: 'n', label: 'New message', run: () => { setNewNumber(''); setNewName(''); setNewField('number'); setNewChat(true) } },
+          { k: 'q', label: 'Close', run: onClose }
+        ]
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
       <FooterChips chips={chips} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-        {composing ? '⏎ send · Esc cancel' : '↑↓/jk chats · i/⏎ write · n new message · r reconnect · Esc/q close'}
+        {composing
+          ? '⏎ send · Esc cancel'
+          : threadFocused
+            ? '↑↓/jk scroll history · i write · Esc/← back to chats · q close'
+            : '↑↓/jk chats · ⏎/→ open · i write · n new message · r reconnect · Esc/q close'}
       </Text>
     </Box>
   )
