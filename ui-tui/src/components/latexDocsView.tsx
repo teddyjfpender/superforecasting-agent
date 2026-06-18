@@ -1,9 +1,20 @@
 import { Box, Text, useInput, useStdout } from '@hermes/ink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { commandExists, gitCommitPush, gitPull, type GitStatus, gitStatus, isGitRepo, overleaf } from '../lib/docsCli.js'
+import {
+  commandExists,
+  gitClone,
+  gitCommitPush,
+  gitInit,
+  gitPull,
+  gitSetRemote,
+  type GitStatus,
+  gitStatus,
+  isGitRepo,
+  overleaf
+} from '../lib/docsCli.js'
 import { statusGlyph } from '../lib/icons.js'
-import { ensureLatexDir, latexDocsDir, listTexFiles, readTexFile, type TexFile } from '../lib/latexDocs.js'
+import { createTexFile, docsDir, ensureLatexDir, listTexFiles, readTexFile, type TexFile } from '../lib/latexDocs.js'
 import { type LatexBlock, renderLatex } from '../lib/latexRender.js'
 import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
@@ -30,7 +41,7 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
   const termRows = stdout?.rows ?? 24
   const sem = semantics(t)
 
-  const dirRef = useRef(latexDocsDir())
+  const dirRef = useRef(docsDir())
   const dir = dirRef.current
 
   const [files, setFiles] = useState<TexFile[]>([])
@@ -46,6 +57,8 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
   const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState('')
   const [tick, setTick] = useState(0)
+  // Inline prompt for onboarding actions: name a new doc, or paste a remote URL.
+  const [prompt, setPrompt] = useState<null | { mode: 'newdoc' | 'remote'; value: string }>(null)
   const aliveRef = useRef(true)
 
   useEffect(() => {
@@ -125,8 +138,64 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
 
       setBusy(false)
       setFlash(error ? `${label} failed: ${truncate(error, 60)}` : `${label} done`)
+      reload() // a clone/pull may have added or changed files
       await refreshGit()
     })()
+  }
+
+  // Onboarding actions: create a doc (folders in the path are made), init the
+  // git repo, or connect/clone a remote (GitHub or an Overleaf git URL).
+  const submitPrompt = () => {
+    if (!prompt) {
+      return
+    }
+
+    const value = prompt.value.trim()
+    const mode = prompt.mode
+    setPrompt(null)
+
+    if (!value) {
+      return
+    }
+
+    if (mode === 'newdoc') {
+      ensureLatexDir(dir)
+      const { error, rel } = createTexFile(dir, value)
+
+      if (error) {
+        setFlash(`new doc: ${error}`)
+
+        return
+      }
+
+      const next = listTexFiles(dir)
+      setFiles(next)
+      const idx = next.findIndex(f => f.rel === rel)
+
+      if (idx >= 0) {
+        setSel(idx)
+        setScroll(0)
+        setFocus('reader')
+      }
+
+      setFlash(`created ${rel}`)
+
+      return
+    }
+
+    // remote: clone into an empty workspace, else init (if needed) + set origin
+    ensureLatexDir(dir)
+    runSync('connect', async () => {
+      if (!repo && files.length === 0) {
+        return gitClone(value, dir)
+      }
+
+      if (!repo) {
+        await gitInit(dir)
+      }
+
+      return gitSetRemote(dir, value)
+    })
   }
 
   const width = Math.max(48, cols - 4)
@@ -137,6 +206,30 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
   const readerRows = Math.max(3, contentHeight - 1)
 
   useInput((ch, key) => {
+    if (prompt) {
+      if (key.escape) {
+        return setPrompt(null)
+      }
+
+      if (key.return) {
+        return submitPrompt()
+      }
+
+      if (key.backspace || key.delete) {
+        return setPrompt(p => (p ? { ...p, value: p.value.slice(0, -1) } : p))
+      }
+
+      if (ch && !key.ctrl && !key.meta) {
+        const printable = [...ch].filter(c => c >= ' ').join('')
+
+        if (printable) {
+          setPrompt(p => (p ? { ...p, value: p.value + printable } : p))
+        }
+      }
+
+      return
+    }
+
     if (searching) {
       if (key.escape || key.return) {
         return setSearching(false)
@@ -165,6 +258,19 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
     // Docs kind tabs: 1 Markdown · 2 LaTeX (this view).
     if (onSelectKind && (ch === '1' || ch === '2')) {
       return onSelectKind(ch === '2' ? 'latex' : 'markdown')
+    }
+
+    // Onboarding / authoring: new doc, init git repo, connect Overleaf/GitHub.
+    if (ch === 'n') {
+      return setPrompt({ mode: 'newdoc', value: '' })
+    }
+
+    if (ch === 'g' && tools.git) {
+      return runSync('git init', () => gitInit(dir))
+    }
+
+    if (ch === 'O' && tools.git) {
+      return setPrompt({ mode: 'remote', value: '' })
     }
 
     if (ch === '/') {
@@ -255,34 +361,70 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
     </Box>
   )
 
-  // Empty state.
+  // Inline prompt (shared by both states): name a doc, or paste a remote URL.
+  const promptLine = prompt ? (
+    <Box flexShrink={0}>
+      <Text bold color={t.color.accent}>{prompt.mode === 'newdoc' ? 'New doc  ' : 'Remote   '}</Text>
+      <Text color={t.color.muted}>{'› '}</Text>
+      <Text color={t.color.text}>{prompt.value}</Text>
+      <Text color={t.color.text} inverse>
+        {' '}
+      </Text>
+      {!prompt.value ? (
+        <Text color={t.color.muted}>
+          {prompt.mode === 'newdoc' ? ' name, e.g. papers/intro.tex' : ' git URL — GitHub or https://git.overleaf.com/…'}
+        </Text>
+      ) : null}
+    </Box>
+  ) : null
+
+  const onboardChips: FooterChip[] = [
+    { k: 'n', label: 'New doc', run: () => setPrompt({ mode: 'newdoc', value: '' }) },
+    ...(tools.git ? [{ k: 'g', label: 'Init git', run: () => runSync('git init', () => gitInit(dir)) }] : []),
+    ...(tools.git ? [{ k: 'O', label: 'Overleaf / GitHub', run: () => setPrompt({ mode: 'remote', value: '' }) }] : []),
+    { k: 'r', label: 'Refresh', run: () => { reload(); void refreshGit(); setFlash('refreshed') } },
+    { k: 'q', label: 'Close', run: onClose }
+  ]
+
+  // Onboarding (no documents yet): suggest creating one + setting up sync.
   if (files.length === 0 && !searching) {
     return (
       <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
         {header}
         <Box alignItems="center" flexGrow={1} justifyContent="center">
-          <Box flexDirection="column" width={Math.min(74, width)}>
+          <Box flexDirection="column" width={Math.min(78, width)}>
             <Text bold color={t.color.text}>
-              No LaTeX documents yet.
+              Start your LaTeX workspace.
             </Text>
             <Box marginTop={1}>
               <Text color={t.color.muted} wrap="wrap">
-                Put .tex files in <Text color={t.color.accent}>{dir}</Text> (set LATEX_DOCS_PATH / OVERLEAF_DIR to point
-                elsewhere) — clone an Overleaf or GitHub project there with {tools.olcli ? 'olcli or git' : 'git'}, then
-                press r to refresh.
+                One git-backed docs folder lives at <Text color={t.color.accent}>{dir}</Text> — everything syncs to a
+                single remote. Create a document, initialise the repo, then connect Overleaf or GitHub.
+              </Text>
+            </Box>
+            <Box flexDirection="column" marginTop={1}>
+              <Text color={t.color.text}>
+                <Text bold color={t.color.accent}>n</Text> new .tex document (folders in the path are created)
+              </Text>
+              <Text color={t.color.text}>
+                <Text bold color={t.color.accent}>g</Text> initialise the git repo {tools.git ? '' : '— install git first'}
+              </Text>
+              <Text color={t.color.text}>
+                <Text bold color={t.color.accent}>O</Text> connect Overleaf / GitHub (paste the project's git URL)
               </Text>
             </Box>
             <Box marginTop={1}>
               <Text color={t.color.muted} wrap="truncate-end">
-                {`git ${tools.git ? '✓' : '✗ (install to sync)'}  ·  olcli ${tools.olcli ? '✓' : '✗ (Overleaf CLI)'}`}
+                {`git ${tools.git ? '✓' : '✗ install to sync'}  ·  olcli ${tools.olcli ? '✓ Overleaf CLI ready' : '✗ optional — git URL works without it'}`}
               </Text>
             </Box>
           </Box>
         </Box>
-        <Box flexShrink={0} marginTop={1}>
+        <Box flexDirection="column" flexShrink={0} marginTop={1}>
+          {prompt ? promptLine : <FooterChips chips={onboardChips} t={t} />}
           <Text color={t.color.muted} wrap="truncate-end">
             {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-            r refresh · Esc/q close
+            {prompt ? '⏎ confirm · Esc cancel' : 'n new doc · g init git · O Overleaf/GitHub · r refresh · q close'}
           </Text>
         </Box>
       </Box>
@@ -431,6 +573,7 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
   const chips: FooterChip[] = [
     { k: '↑↓', label: readerFocused ? 'Scroll' : 'Docs' },
     { k: '⏎', label: 'Read', run: () => activeFile && setFocus('reader') },
+    { k: 'n', label: 'New', run: () => setPrompt({ mode: 'newdoc', value: '' }) },
     { k: '/', label: 'Search', run: () => setSearching(true) },
     ...(tools.git ? [{ k: 'p', label: 'Pull', run: () => runSync('pull', () => gitPull(dir)) }] : []),
     ...(tools.git ? [{ k: 'P', label: 'Push', run: () => runSync('commit + push', () => gitCommitPush(dir, 'LaTeX docs sync from Outrider')) }] : []),
@@ -462,14 +605,16 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
             </Box>
           </Box>
         ) : null}
-        <FooterChips chips={chips} t={t} />
+        {prompt ? promptLine : <FooterChips chips={chips} t={t} />}
         <Text color={t.color.muted} wrap="truncate-end">
           {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-          {searching
-            ? 'type to filter · ⏎/Esc done'
-            : readerFocused
-              ? '↑↓ scroll · Esc/← back · / search · q close'
-              : `↑↓ docs · ⏎/→ read · / search${tools.git ? ' · p pull · P push' : ''}${tools.olcli ? ' · o overleaf' : ''} · r refresh · q close`}
+          {prompt
+            ? '⏎ confirm · Esc cancel'
+            : searching
+              ? 'type to filter · ⏎/Esc done'
+              : readerFocused
+                ? '↑↓ scroll · Esc/← back · / search · q close'
+                : `↑↓ docs · ⏎/→ read · n new · O Overleaf/GitHub · /${tools.git ? ' · p pull · P push' : ''}${tools.olcli ? ' · o overleaf' : ''} · r refresh · q`}
         </Text>
       </Box>
     </Box>

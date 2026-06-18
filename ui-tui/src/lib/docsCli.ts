@@ -111,6 +111,30 @@ export const gitCommitPush = async (dir: string, message: string): Promise<RunRe
   return runCli('git', ['-C', dir, 'push'], dir, 90_000)
 }
 
+// Initialise a git repo + first commit (tolerates an empty tree / existing repo).
+export const gitInit = async (dir: string): Promise<RunResult> => {
+  const init = await runCli('git', ['-C', dir, 'init'], dir)
+
+  if (init.code !== 0) {
+    return init
+  }
+
+  await runCli('git', ['-C', dir, 'add', '-A'], dir)
+
+  return runCli('git', ['-C', dir, 'commit', '-m', 'Initialise docs workspace'], dir)
+}
+
+// Point the repo at a remote (add origin, or update it if it already exists).
+export const gitSetRemote = async (dir: string, url: string): Promise<RunResult> => {
+  const add = await runCli('git', ['-C', dir, 'remote', 'add', 'origin', url], dir)
+
+  return add.code === 0 ? add : runCli('git', ['-C', dir, 'remote', 'set-url', 'origin', url], dir)
+}
+
+// Clone a remote (GitHub or an Overleaf git URL) into an empty/new dir.
+export const gitClone = (url: string, dir: string): Promise<RunResult> =>
+  runCli('git', ['clone', url, dir], '.', 120_000)
+
 // ── Overleaf (olcli) ─────────────────────────────────────────────────────────
 
 export const overleaf = (dir: string, args: string[]): Promise<RunResult> => runCli('olcli', args, dir, 90_000)

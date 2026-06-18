@@ -1,17 +1,60 @@
-import { type Dirent, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { type Dirent, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, relative } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 
 import { forecastHomeDir } from './forecastHome.js'
 
-// Local LaTeX workspace: a directory of .tex files (often a git clone of an
-// Overleaf or GitHub project). Default ~/.superforecasting-agent/latex; override
-// with LATEX_DOCS_PATH or OVERLEAF_DIR.
+// The single docs workspace: ~/.superforecasting-agent/docs — one directory we
+// initialise as a git repo so everything (LaTeX, and eventually the Markdown
+// vault) lives under one remote / GitHub account. Override with LATEX_DOCS_PATH
+// or OVERLEAF_DIR. The LaTeX view browses .tex files anywhere under it.
 
-export const latexDocsDir = (env: NodeJS.ProcessEnv = process.env, _home = homedir()): string => {
+export const docsDir = (env: NodeJS.ProcessEnv = process.env, _home = homedir()): string => {
   const override = env.LATEX_DOCS_PATH?.trim() || env.OVERLEAF_DIR?.trim()
 
-  return override || join(forecastHomeDir(), 'latex')
+  return override || join(forecastHomeDir(), 'docs')
+}
+
+// Starter document for a brand-new .tex file.
+export const newTexTemplate = (title: string): string =>
+  `\\documentclass{article}\n\\title{${title}}\n\\author{}\n\\date{\\today}\n\n\\begin{document}\n\\maketitle\n\n\\section{Introduction}\n\n\\end{document}\n`
+
+// Create a new .tex file (folders in the path are created). rel may be
+// "paper" or "papers/intro.tex"; ".tex" is appended if missing.
+export const createTexFile = (dir: string, rel: string): { error: null | string; rel: string } => {
+  let path = rel.trim()
+
+  if (!path) {
+    return { error: 'name required', rel: '' }
+  }
+
+  if (path.includes('..')) {
+    return { error: 'invalid path', rel: '' }
+  }
+
+  if (!/\.tex$/i.test(path)) {
+    path += '.tex'
+  }
+
+  const full = join(dir, path)
+
+  try {
+    mkdirSync(dirname(full), { recursive: true })
+
+    if (existsSync(full)) {
+      return { error: 'already exists', rel: path }
+    }
+
+    const title = basename(path)
+      .replace(/\.tex$/i, '')
+      .replace(/[-_]+/g, ' ')
+
+    writeFileSync(full, newTexTemplate(title))
+
+    return { error: null, rel: path }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'write failed', rel: '' }
+  }
 }
 
 export interface TexFile {
