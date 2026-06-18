@@ -280,6 +280,29 @@ export const sendSignalMessage = async (
   return { error, timestamp: Number.isFinite(ts) ? ts : 0 }
 }
 
+// Create a new group (signal-cli `updateGroup` with no groupId). Returns the
+// new base64 groupId so the caller can open it as `group:<id>`.
+export const createGroup = async (
+  cfg: SignalConfig,
+  name: string,
+  members: string[]
+): Promise<{ error: null | string; groupId: string }> => {
+  const { error, result } = await signalRpc(cfg, 'updateGroup', {
+    account: cfg.account,
+    member: members,
+    name
+  })
+
+  if (error) {
+    return { error, groupId: '' }
+  }
+
+  const r = (result && typeof result === 'object' ? result : {}) as Record<string, unknown>
+  const groupId = str(r.groupId) || str(r.id)
+
+  return { error: groupId ? null : 'no group id returned', groupId }
+}
+
 // Open the SSE receive stream. Calls onMessage for each parsed message and
 // onStatus(connected) on connect/drop. Returns a stop() function. Auto-
 // reconnects with backoff until stopped.

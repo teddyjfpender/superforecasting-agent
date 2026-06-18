@@ -5,6 +5,7 @@ import { patchOverlayState } from '../app/overlayStore.js'
 import { ICON, statusGlyph, type StatusKind } from '../lib/icons.js'
 import {
   checkHealth,
+  createGroup,
   listContacts,
   listGroups,
   openReceiveStream,
@@ -175,9 +176,13 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   // Persisted address book (names/numbers) + the "new message" composer.
   const [contactBook, setContactBook] = useState<ContactBook>(() => loadContactBook())
   const [newChat, setNewChat] = useState(false)
+  const [newMode, setNewMode] = useState<'direct' | 'group'>('direct')
+  // Reused across modes: in 'direct' newNumber=recipient, newName=contact name;
+  // in 'group' newNumber=member-being-typed, newName=group name, groupMembers=added.
   const [newNumber, setNewNumber] = useState('')
   const [newName, setNewName] = useState('')
   const [newField, setNewField] = useState<'name' | 'number'>('number')
+  const [groupMembers, setGroupMembers] = useState<string[]>([])
 
   // Chats with an incoming message you haven't opened yet (unread heuristic).
   const [unread, setUnread] = useState<Set<string>>(() => new Set())
@@ -399,6 +404,86 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     setFlash(`new chat · ${newName.trim() || number}`)
   }
 
+  // Open the new-message composer fresh (direct mode, empty fields).
+  const openNewChat = () => {
+    setNewMode('direct')
+    setNewNumber('')
+    setNewName('')
+    setNewField('number')
+    setGroupMembers([])
+    setNewChat(true)
+  }
+
+  // Add the typed number to the pending group's member list (deduped, valid).
+  const addGroupMember = () => {
+    const number = normalizeNumber(newNumber)
+
+    if (!isValidNumber(number)) {
+      setFlash('enter a valid number, e.g. +12674553945')
+
+      return
+    }
+
+    setGroupMembers(ms => (ms.includes(number) ? ms : [...ms, number]))
+    setNewNumber('')
+  }
+
+  // Create the group via signal-cli, then open it. Saves the name to the book.
+  const createGroupChat = () => {
+    const name = newName.trim()
+
+    if (!name) {
+      setFlash('group needs a name')
+
+      return
+    }
+
+    if (groupMembers.length === 0) {
+      setFlash('add at least one member')
+
+      return
+    }
+
+    if (!cfg) {
+      setFlash('connect Signal first')
+
+      return
+    }
+
+    const members = [...groupMembers]
+    const activeCfg = cfg
+    setNewChat(false)
+    setNewName('')
+    setNewNumber('')
+    setGroupMembers([])
+    setNewField('number')
+    setNewMode('direct')
+    setFlash('creating group…')
+
+    void (async () => {
+      const { error, groupId } = await createGroup(activeCfg, name, members)
+
+      if (!aliveRef.current) {
+        return
+      }
+
+      if (error || !groupId) {
+        setFlash(`group failed: ${error ?? 'unknown'}`)
+
+        return
+      }
+
+      const chatId = `group:${groupId}`
+      const book = upsertContact(contactBook, { chatId, name })
+      setContactBook(book)
+      saveContactBook(book)
+      setSelectedChatId(chatId)
+      setThreadScroll(0)
+      setFocus('thread')
+      setFlash(`group created · ${name}`)
+    })()
+  }
+
   // Contact card: prefill the editable name with the saved one (blank = unnamed).
   const openContact = () => {
     if (!activeConv) {
@@ -524,21 +609,44 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       return
     }
 
-    // New-message composer: number + optional name, Tab switches field.
+    // New-message composer: Direct (a number) or Group (name + members).
+    // Tab/←→ switch mode, ↑↓ switch field, Enter acts per mode/field.
     if (newChat) {
       if (key.escape) {
         return setNewChat(false)
       }
 
-      if (key.return) {
-        return createNewChat()
+      if (key.tab || key.leftArrow || key.rightArrow) {
+        const next = newMode === 'direct' ? 'group' : 'direct'
+        setNewMode(next)
+        setNewField(next === 'group' ? 'name' : 'number')
+
+        return
       }
 
-      if (key.tab) {
+      if (key.upArrow || key.downArrow) {
         return setNewField(f => (f === 'number' ? 'name' : 'number'))
       }
 
+      if (key.return) {
+        if (newMode === 'direct') {
+          return createNewChat()
+        }
+
+        // Group: name → member, then type+⏎ adds, empty ⏎ creates.
+        if (newField === 'name') {
+          return setNewField('number')
+        }
+
+        return newNumber.trim() ? addGroupMember() : createGroupChat()
+      }
+
       if (key.backspace || key.delete) {
+        // Empty member field + Backspace removes the last added member.
+        if (newMode === 'group' && newField === 'number' && !newNumber) {
+          return setGroupMembers(ms => ms.slice(0, -1))
+        }
+
         return newField === 'number' ? setNewNumber(s => s.slice(0, -1)) : setNewName(s => s.slice(0, -1))
       }
 
@@ -636,11 +744,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     }
 
     if (ch === 'n') {
-      setNewNumber('')
-      setNewName('')
-      setNewField('number')
-
-      return setNewChat(true)
+      return openNewChat()
     }
 
     if (key.upArrow || ch === 'k' || key.wheelUp) {
@@ -718,15 +822,16 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     )
   }
 
-  // ---- New-message composer (press n) -------------------------------------
+  // ---- New-message composer (press n): Direct message or new Group -------
   if (newChat) {
-    const modalW = Math.max(40, Math.min(cols - 4, 66))
-    const valid = isValidNumber(newNumber)
+    const modalW = Math.max(44, Math.min(cols - 4, 72))
+    const isGroup = newMode === 'group'
+    const numValid = isValidNumber(newNumber)
 
     const field = (label: string, value: string, active: boolean, placeholder: string) => (
       <Box>
         <Text bold={active} color={active ? t.color.accent : t.color.label}>
-          {label.padEnd(8)}
+          {label.padEnd(9)}
         </Text>
         <Text color={t.color.muted}>{'› '}</Text>
         <Text color={t.color.text}>{value}</Text>
@@ -743,33 +848,73 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       </Box>
     )
 
+    const tab = (label: string, on: boolean) => (
+      <Text bold={on} color={on ? t.color.accent : t.color.muted}>
+        {on ? `▸ ${label}` : `  ${label}`}
+      </Text>
+    )
+
     return (
       <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
         {header}
         <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
           <Box borderColor={t.color.accent} borderStyle="round" flexDirection="column" paddingX={2} paddingY={1} width={modalW}>
-            <Text bold color={t.color.primary}>
-              New message
-            </Text>
+            <Box justifyContent="space-between">
+              <Text bold color={t.color.primary}>
+                {isGroup ? 'New group' : 'New message'}
+              </Text>
+              <Box>
+                {tab('Direct', !isGroup)}
+                <Text color={t.color.border}>{'   '}</Text>
+                {tab('Group', isGroup)}
+              </Box>
+            </Box>
             <Box marginTop={1}>
               <Text color={t.color.border}>{'─'.repeat(modalW - 6)}</Text>
             </Box>
-            <Box flexDirection="column" marginTop={1}>
-              {field('Number', newNumber, newField === 'number', '+12674553945')}
-              {field('Name', newName, newField === 'name', 'optional')}
-            </Box>
-            <Box marginTop={1}>
-              <Text color={newNumber ? (valid ? t.color.ok : t.color.error) : t.color.muted} wrap="truncate-end">
-                {newNumber
-                  ? valid
-                    ? `${ICON.ok} valid Signal number`
-                    : 'needs E.164 format, e.g. +12674553945'
-                  : 'Enter a phone number in E.164 format (with country code).'}
-              </Text>
-            </Box>
+
+            {isGroup ? (
+              <Box flexDirection="column" marginTop={1}>
+                {field('Name', newName, newField === 'name', 'group name')}
+                {field('Member', newNumber, newField === 'number', '+1… then ⏎ to add')}
+                <Box flexDirection="column" marginTop={1}>
+                  <Text color={t.color.label}>{`Members (${groupMembers.length})`}</Text>
+                  {groupMembers.length === 0 ? (
+                    <Text color={t.color.muted}> none yet — type a number, ⏎ to add</Text>
+                  ) : (
+                    groupMembers.slice(0, 8).map(m => (
+                      <Text color={t.color.text} key={m} wrap="truncate-end">
+                        {`  • ${contactBook[m]?.name || m}`}
+                        {contactBook[m]?.name ? <Text color={t.color.muted}>{`  ${m}`}</Text> : null}
+                      </Text>
+                    ))
+                  )}
+                  {groupMembers.length > 8 ? (
+                    <Text color={t.color.muted}>{`  +${groupMembers.length - 8} more`}</Text>
+                  ) : null}
+                </Box>
+              </Box>
+            ) : (
+              <Box flexDirection="column" marginTop={1}>
+                {field('Number', newNumber, newField === 'number', '+12674553945')}
+                {field('Name', newName, newField === 'name', 'optional')}
+                <Box marginTop={1}>
+                  <Text color={newNumber ? (numValid ? t.color.ok : t.color.error) : t.color.muted} wrap="truncate-end">
+                    {newNumber
+                      ? numValid
+                        ? `${ICON.ok} valid Signal number`
+                        : 'needs E.164 format, e.g. +12674553945'
+                      : 'Enter a phone number in E.164 format (with country code).'}
+                  </Text>
+                </Box>
+              </Box>
+            )}
+
             <Box marginTop={1}>
               <Text color={t.color.muted} wrap="truncate-end">
-                ⏎ start chat · Tab switch field · Esc cancel
+                {isGroup
+                  ? '⏎ add member · ⏎ (empty) create · ⌫ remove last · ↑↓ field · Tab direct · Esc cancel'
+                  : '⏎ start chat · ↑↓ field · Tab group · Esc cancel'}
               </Text>
             </Box>
           </Box>
@@ -1018,7 +1163,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         { k: '↑↓', label: 'Chats' },
         { k: '⏎', label: 'Open', run: () => activeConv && setFocus('thread') },
         { k: 'c', label: 'Contact', run: openContact },
-        { k: 'n', label: 'New message', run: () => { setNewNumber(''); setNewName(''); setNewField('number'); setNewChat(true) } },
+        { k: 'n', label: 'New / group', run: openNewChat },
         { k: 'q', label: 'Close', run: onClose }
       ]
 
