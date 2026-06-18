@@ -16,7 +16,7 @@ import {
   overleaf
 } from '../lib/docsCli.js'
 import { statusGlyph } from '../lib/icons.js'
-import { createTexFile, docsDir, ensureLatexDir, latexSubdir, listTexFiles, readTexFile, type TexFile } from '../lib/latexDocs.js'
+import { createTexFile, docsDir, ensureLatexDir, latexSubdir, listTexFiles, readTexFile, type TexFile, writeTexFile } from '../lib/latexDocs.js'
 import { seedLatexExamples } from '../lib/latexExamples.js'
 import { type LatexBlock, renderLatex } from '../lib/latexRender.js'
 import { semantics } from '../lib/visualSemantics.js'
@@ -34,11 +34,12 @@ const truncate = (value: string, max: number): string =>
 interface LatexDocsViewProps {
   docKind?: 'latex' | 'markdown'
   onClose: () => void
+  onDraft?: (command: string) => void
   onSelectKind?: (kind: 'latex' | 'markdown') => void
   t: Theme
 }
 
-export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsViewProps) {
+export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: LatexDocsViewProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
@@ -62,6 +63,11 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
   const [tick, setTick] = useState(0)
   // Inline prompt for onboarding actions: name a new doc, or paste a remote URL.
   const [prompt, setPrompt] = useState<null | { mode: 'github' | 'newdoc' | 'remote'; value: string }>(null)
+  // Edit mode: a plain-text editor over the .tex source.
+  const [editing, setEditing] = useState(false)
+  const [editText, setEditText] = useState('')
+  const [editCursor, setEditCursor] = useState(0)
+  const [dirty, setDirty] = useState(false)
   const aliveRef = useRef(true)
 
   useEffect(() => {
@@ -222,6 +228,102 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
     })
   }
 
+  // ── editing the .tex source ─────────────────────────────────────────────
+  const enterEdit = () => {
+    if (!activeFile) {
+      return
+    }
+
+    setEditText(content)
+    setEditCursor(content.length)
+    setDirty(false)
+    setEditing(true)
+    setFocus('reader')
+  }
+
+  const saveEdit = (exit: boolean) => {
+    if (activeFile) {
+      const { error } = writeTexFile(dir, activeFile.rel, editText)
+
+      if (error) {
+        setFlash(`save failed: ${truncate(error, 50)}`)
+
+        return
+      }
+
+      setContent(editText)
+      setDirty(false)
+      setFlash('saved')
+      reload()
+    }
+
+    if (exit) {
+      setEditing(false)
+    }
+  }
+
+  const insertAtCursor = (s: string) => {
+    setEditText(t => t.slice(0, editCursor) + s + t.slice(editCursor))
+    setEditCursor(c => c + s.length)
+    setDirty(true)
+  }
+
+  const backspaceEdit = () => {
+    if (editCursor === 0) {
+      return
+    }
+
+    setEditText(t => t.slice(0, editCursor - 1) + t.slice(editCursor))
+    setEditCursor(c => Math.max(0, c - 1))
+    setDirty(true)
+  }
+
+  // Move the edit cursor up/down a line, keeping the column where possible.
+  const moveCursorVertical = (delta: -1 | 1) => {
+    const before = editText.slice(0, editCursor)
+    const lineStart = before.lastIndexOf('\n') + 1
+    const col = editCursor - lineStart
+
+    if (delta === -1) {
+      if (lineStart === 0) {
+        return setEditCursor(0)
+      }
+
+      const prevStart = editText.lastIndexOf('\n', lineStart - 2) + 1
+      const prevLen = lineStart - 1 - prevStart
+
+      return setEditCursor(prevStart + Math.min(col, prevLen))
+    }
+
+    const lineEnd = editText.indexOf('\n', editCursor)
+
+    if (lineEnd === -1) {
+      return setEditCursor(editText.length)
+    }
+
+    const nextStart = lineEnd + 1
+    const nextEndIdx = editText.indexOf('\n', nextStart)
+    const nextLen = (nextEndIdx === -1 ? editText.length : nextEndIdx) - nextStart
+
+    return setEditCursor(nextStart + Math.min(col, nextLen))
+  }
+
+  // Hand the current document to the agent (drafts a starter into the composer).
+  const askAgent = () => {
+    if (!activeFile) {
+      return
+    }
+
+    if (!onDraft) {
+      setFlash('agent unavailable here')
+
+      return
+    }
+
+    onDraft(`About my LaTeX document "${activeFile.rel}": `)
+    onClose()
+  }
+
   const width = Math.max(48, cols - 4)
   const contentHeight = Math.max(8, termRows - 8)
   const listW = Math.min(40, Math.max(24, Math.floor(width * 0.32)))
@@ -230,6 +332,50 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
   const readerRows = Math.max(3, contentHeight - 1)
 
   useInput((ch, key) => {
+    if (editing) {
+      if (key.escape) {
+        return saveEdit(true)
+      }
+
+      if (key.ctrl && (ch === 's' || ch === 'S')) {
+        return saveEdit(false)
+      }
+
+      if (key.leftArrow) {
+        return setEditCursor(c => Math.max(0, c - 1))
+      }
+
+      if (key.rightArrow) {
+        return setEditCursor(c => Math.min(editText.length, c + 1))
+      }
+
+      if (key.upArrow) {
+        return moveCursorVertical(-1)
+      }
+
+      if (key.downArrow) {
+        return moveCursorVertical(1)
+      }
+
+      if (key.return) {
+        return insertAtCursor('\n')
+      }
+
+      if (key.backspace || key.delete) {
+        return backspaceEdit()
+      }
+
+      if (ch && !key.ctrl && !key.meta) {
+        const printable = [...ch].filter(c => c >= ' ').join('')
+
+        if (printable) {
+          insertAtCursor(printable)
+        }
+      }
+
+      return
+    }
+
     if (prompt) {
       if (key.escape) {
         return setPrompt(null)
@@ -311,6 +457,14 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
       setFlash('refreshed')
 
       return
+    }
+
+    if (ch === 'e' && activeFile) {
+      return enterEdit()
+    }
+
+    if (ch === 'a') {
+      return askAgent()
     }
 
     if (tools.git && ch === 'p') {
@@ -609,17 +763,49 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
     )
   }
 
+  // Edit-mode source editor: window the lines around the cursor, draw a block
+  // caret on the cursor line.
+  const editLines = editText.split('\n')
+  const before = editText.slice(0, editCursor)
+  const curLine = before.split('\n').length - 1
+  const curCol = editCursor - (before.lastIndexOf('\n') + 1)
+  const editStart = Math.max(0, Math.min(curLine - Math.floor(readerRows / 2), editLines.length - readerRows))
+  const editWindow = editLines.slice(editStart, editStart + readerRows)
+
   const reader = (
     <Box flexDirection="column" flexShrink={0} height={contentHeight} marginLeft={1} minWidth={0} overflow="hidden" width={readerW}>
-      <Text bold color={readerFocused ? t.color.accent : t.color.label} wrap="truncate-end">
-        {readerFocused ? '▸ ' : ''}
+      <Text bold color={readerFocused || editing ? t.color.accent : t.color.label} wrap="truncate-end">
+        {editing ? '✎ ' : readerFocused ? '▸ ' : ''}
         {activeFile ? activeFile.rel : 'READER'}
-        {blocks.length && scroll > 0 ? <Text color={t.color.muted}>{`  ↑ ${readStart}`}</Text> : null}
+        {editing ? <Text color={dirty ? sem.star : t.color.muted}>{dirty ? '  ● editing' : '  editing'}</Text> : null}
+        {!editing && blocks.length && scroll > 0 ? <Text color={t.color.muted}>{`  ↑ ${readStart}`}</Text> : null}
       </Text>
       <Box flexDirection="column" marginTop={1} minHeight={0} overflow="hidden">
-        {windowBlocks.length === 0 ? (
+        {editing ? (
+          editWindow.map((line, i) => {
+            const gi = editStart + i
+
+            if (gi !== curLine) {
+              return (
+                <Text color={t.color.text} key={`e${gi}`} wrap="truncate-end">
+                  {line || ' '}
+                </Text>
+              )
+            }
+
+            return (
+              <Text key={`e${gi}`} wrap="truncate-end">
+                <Text color={t.color.text}>{line.slice(0, curCol)}</Text>
+                <Text color={t.color.text} inverse>
+                  {line[curCol] ?? ' '}
+                </Text>
+                <Text color={t.color.text}>{line.slice(curCol + 1)}</Text>
+              </Text>
+            )
+          })
+        ) : windowBlocks.length === 0 ? (
           <Text color={t.color.muted} wrap="wrap">
-            {activeFile ? 'Empty document.' : 'Select a .tex file to read it here.'}
+            {activeFile ? 'Empty document — press e to edit.' : 'Select a .tex file to read it here.'}
           </Text>
         ) : (
           windowBlocks.map((b, i) => renderBlock(b, i))
@@ -628,16 +814,21 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
     </Box>
   )
 
-  const chips: FooterChip[] = [
-    { k: '↑↓', label: readerFocused ? 'Scroll' : 'Docs' },
-    { k: '⏎', label: 'Read', run: () => activeFile && setFocus('reader') },
-    { k: 'n', label: 'New', run: () => setPrompt({ mode: 'newdoc', value: '' }) },
-    { k: '/', label: 'Search', run: () => setSearching(true) },
-    ...(tools.git ? [{ k: 'p', label: 'Pull', run: () => runSync('pull', () => gitPull(dir)) }] : []),
-    ...(tools.git ? [{ k: 'P', label: 'Push', run: () => runSync('commit + push', () => gitCommitPush(dir, 'LaTeX docs sync from Outrider')) }] : []),
-    ...(tools.olcli ? [{ k: 'o', label: 'Overleaf', run: () => runSync('overleaf pull', () => overleaf(dir, ['pull'])) }] : []),
-    { k: 'q', label: 'Close', run: onClose }
-  ]
+  const chips: FooterChip[] = editing
+    ? [
+        { k: '⎋', label: dirty ? 'Save & exit' : 'Exit' },
+        { k: '^S', label: 'Save' }
+      ]
+    : [
+        { k: '↑↓', label: readerFocused ? 'Scroll' : 'Docs' },
+        { k: '⏎', label: 'Read', run: () => activeFile && setFocus('reader') },
+        { k: 'e', label: 'Edit', run: () => activeFile && enterEdit() },
+        { k: 'a', label: 'Ask agent', run: askAgent },
+        { k: 'n', label: 'New', run: () => setPrompt({ mode: 'newdoc', value: '' }) },
+        { k: '/', label: 'Search', run: () => setSearching(true) },
+        ...(tools.git ? [{ k: 'P', label: 'Push', run: () => runSync('commit + push', () => gitCommitPush(dir, 'LaTeX docs sync from Outrider')) }] : []),
+        { k: 'q', label: 'Close', run: onClose }
+      ]
 
   return (
     <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
@@ -647,17 +838,19 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
         {reader}
       </Box>
       <Box flexDirection="column" flexShrink={0} marginTop={1}>
-        {kindTabs}
+        {editing ? null : kindTabs}
         {prompt ? promptLine : <FooterChips chips={chips} t={t} />}
         <Text color={t.color.muted} wrap="truncate-end">
           {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-          {prompt
-            ? '⏎ confirm · Esc cancel'
-            : searching
-              ? 'type to filter · ⏎/Esc done'
-              : readerFocused
-                ? '↑↓ scroll · Esc/← back · / search · q close'
-                : `↑↓ docs · ⏎/→ read · n new · O Overleaf/GitHub · /${tools.git ? ' · p pull · P push' : ''}${tools.olcli ? ' · o overleaf' : ''} · r refresh · q`}
+          {editing
+            ? 'type to edit · arrows move · ⏎ newline · ⌃S save · Esc save & exit'
+            : prompt
+              ? '⏎ confirm · Esc cancel'
+              : searching
+                ? 'type to filter · ⏎/Esc done'
+                : readerFocused
+                  ? '↑↓ scroll · e edit · a ask agent · Esc/← back · q close'
+                  : `↑↓ docs · ⏎/→ read · e edit · a ask agent · n new · / search${tools.git ? ' · P push' : ''} · r refresh · q`}
         </Text>
       </Box>
     </Box>

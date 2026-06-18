@@ -46,7 +46,7 @@ export function DocsView({ gw, onClose, onDraft, sid, t }: DocsViewProps) {
   }
 
   if (kind === 'latex') {
-    return <LatexDocsView docKind="latex" onClose={onClose} onSelectKind={setKind} t={t} />
+    return <LatexDocsView docKind="latex" onClose={onClose} onDraft={onDraft} onSelectKind={setKind} t={t} />
   }
 
   return (

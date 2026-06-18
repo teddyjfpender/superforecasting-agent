@@ -230,6 +230,20 @@ export const readTexFile = (dir: string, rel: string): string => {
   }
 }
 
+export const writeTexFile = (dir: string, rel: string, content: string): { error: null | string } => {
+  if (rel.includes('..')) {
+    return { error: 'invalid path' }
+  }
+
+  try {
+    writeFileSync(join(dir, rel), content)
+
+    return { error: null }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'write failed' }
+  }
+}
+
 export const ensureLatexDir = (dir: string): boolean => {
   try {
     if (!existsSync(dir)) {
