@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { patchOverlayState } from '../app/overlayStore.js'
 import { DEFAULT_SERIES, MARKET_CATEGORIES, type MarketSeries } from '../content/marketProviders.js'
-import { fetchQuotes } from '../lib/marketFetch.js'
+import { fetchQuotes, type MarketQuote } from '../lib/marketFetch.js'
 import { getProviderKey } from '../lib/marketKeys.js'
 import {
   loadMarketConfig,
@@ -15,7 +15,7 @@ import {
   saveQuoteCache
 } from '../lib/marketStore.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
-import { sparkline } from '../lib/sparkline.js'
+import { blockChart, sparkline } from '../lib/sparkline.js'
 import type { Theme } from '../theme.js'
 
 import { AddProviderModal } from './addProviderModal.js'
@@ -109,16 +109,6 @@ const pad = (value: string, width: number, align: 'left' | 'right'): string => {
   return align === 'right' ? v.padStart(width) : v.padEnd(width)
 }
 
-// A low ──●── high position bar showing where `value` sits in [lo, hi].
-const rangeBar = (value: null | number, lo: null | number | undefined, hi: null | number | undefined, width: number): string => {
-  if (value === null || lo === null || lo === undefined || hi === null || hi === undefined || hi <= lo) {
-    return '─'.repeat(width)
-  }
-
-  const pos = Math.min(width - 1, Math.max(0, Math.round(((value - lo) / (hi - lo)) * (width - 1))))
-
-  return `${'─'.repeat(pos)}●${'─'.repeat(width - 1 - pos)}`
-}
 
 const sameSeries = (a: MarketSeries, b: MarketSeries): boolean =>
   a.provider === b.provider && a.symbol.toLowerCase() === b.symbol.toLowerCase()
@@ -422,18 +412,76 @@ export function MarketsView({ onClose, t }: MarketsViewProps) {
     </NoSelect>
   )
 
-  // ---- left: selectable quote table ---------------------------------------
-  const detailWidth = Math.min(46, Math.max(34, Math.floor(width * 0.4)))
-  const tableWidth = Math.max(24, width - detailWidth - 2)
-  const pctW = 9
-  const lastW = 12
-  const nameW = Math.max(10, tableWidth - 2 - lastW - pctW - 3)
-  const listRows = Math.max(3, contentHeight - 1)
+  // ---- left: dense, selectable quote table -------------------------------
+  // Reserve room for the table's core columns; only give the detail pane the
+  // slack beyond that (capped), so a narrower terminal keeps NAME/LAST/CHG%.
+  const detailWidth = Math.max(30, Math.min(44, width - 54))
+  const tableWidth = Math.max(28, width - detailWidth - 2)
+  const avail = Math.max(20, tableWidth - 2) // inside border + paddingRight
+  const listRows = Math.max(3, contentHeight - 2)
   const listStart = Math.max(0, Math.min(clampedSel - Math.floor(listRows / 2), rows.length - listRows))
   const windowed = rows.slice(Math.max(0, listStart), Math.max(0, listStart) + listRows)
 
   const cellColor = (v: null | number | undefined): string =>
     v === null || v === undefined || v === 0 ? t.color.muted : v > 0 ? t.color.ok : t.color.error
+
+  // Fixed columns packed from the left; the 1-month trend sparkline fills the
+  // leftover width so each row saturates the pane (overflow clips the trend,
+  // never the numbers, since the trend is last).
+  const COLS: { align: 'left' | 'right'; key: string; label: string; w: number }[] = [
+    { align: 'left', key: 'sym', label: 'SYMBOL', w: 9 },
+    { align: 'left', key: 'name', label: 'NAME', w: 24 },
+    { align: 'right', key: 'last', label: 'LAST', w: 12 },
+    { align: 'right', key: 'chg', label: 'CHG', w: 11 },
+    { align: 'right', key: 'pct', label: 'CHG%', w: 9 },
+    { align: 'right', key: 'vol', label: 'VOL', w: 10 }
+  ]
+
+  // Keep columns by PRIORITY when the pane is tight (NAME/LAST/CHG% matter most),
+  // but render them in display order. So a narrow table still shows the essentials
+  // rather than just SYMBOL + LAST.
+  const PRIORITY = ['name', 'last', 'pct', 'chg', 'sym', 'vol']
+  const keep = new Set<string>()
+  let usedW = 2 // marker
+
+  for (const key of PRIORITY) {
+    const c = COLS.find(col => col.key === key)
+
+    if (c && usedW + c.w + 1 <= avail) {
+      keep.add(key)
+      usedW += c.w + 1
+    }
+  }
+
+  const keptCols = COLS.filter(c => keep.has(c.key))
+
+  const trendW = Math.max(0, avail - usedW)
+  const showTrend = trendW >= 10
+
+  const cellText = (key: string, q: MarketQuote | undefined, ser: MarketSeries): { color: string; text: string } => {
+    switch (key) {
+      case 'chg':
+        return { color: cellColor(q?.change ?? null), text: q ? fmtSigned(q.change) : '—' }
+
+      case 'last':
+        return { color: t.color.text, text: fmtNum(q?.value, ser.unit) }
+
+      case 'name':
+        return { color: t.color.label, text: q?.name || ser.name }
+
+      case 'pct':
+        return { color: cellColor(q?.changePct ?? null), text: q ? fmtPct(q.changePct) : '—' }
+
+      case 'sym':
+        return { color: t.color.muted, text: ser.symbol }
+
+      case 'vol':
+        return { color: t.color.muted, text: q ? fmtVol(q.volume) : '—' }
+
+      default:
+        return { color: t.color.text, text: '' }
+    }
+  }
 
   const table = (
     <Box
@@ -450,9 +498,11 @@ export function MarketsView({ onClose, t }: MarketsViewProps) {
       width={tableWidth}
     >
       <Text bold color={t.color.label} wrap="truncate-end">
-        {pad('NAME', nameW + 2, 'left')}
-        {pad('LAST', lastW, 'right')} {pad('CHG%', pctW, 'right')}
+        {'  '}
+        {keptCols.map(c => `${pad(c.label, c.w, c.align)} `).join('')}
+        {showTrend ? pad('1MO', trendW, 'left') : ''}
       </Text>
+      <Text color={t.color.border}>{'─'.repeat(avail)}</Text>
       <Box flexDirection="column">
         {rows.length === 0 ? (
           <Text color={t.color.muted} wrap="wrap">
@@ -462,16 +512,23 @@ export function MarketsView({ onClose, t }: MarketsViewProps) {
           windowed.map(({ quote, series }, i) => {
             const idx = listStart + i
             const on = idx === clampedSel
+            const trend = showTrend && quote?.history ? sparkline(quote.history, trendW) : ''
 
             return (
               <Box key={`${series.provider}:${series.symbol}`} onClick={() => setSel(idx)} width="100%">
                 <Text wrap="truncate-end">
                   <Text color={on ? t.color.accent : t.color.border}>{on ? '▸ ' : '  '}</Text>
-                  <Text bold={on} color={on ? t.color.text : t.color.label}>
-                    {pad(quote?.name || series.name, nameW, 'left')}
-                  </Text>
-                  <Text color={on ? t.color.text : t.color.label}> {pad(fmtNum(quote?.value, series.unit), lastW, 'right')}</Text>
-                  <Text color={cellColor(quote?.changePct ?? null)}> {pad(quote ? fmtPct(quote.changePct) : '—', pctW, 'right')}</Text>
+                  {keptCols.map(c => {
+                    const cell = cellText(c.key, quote, series)
+                    const highlight = on && (c.key === 'name' || c.key === 'last')
+
+                    return (
+                      <Text bold={on && c.key === 'name'} color={highlight ? t.color.text : cell.color} key={c.key}>
+                        {`${pad(cell.text, c.w, c.align)} `}
+                      </Text>
+                    )
+                  })}
+                  {showTrend ? <Text color={(quote?.changePct ?? 0) >= 0 ? t.color.ok : t.color.error}>{trend}</Text> : null}
                 </Text>
               </Box>
             )
@@ -481,12 +538,24 @@ export function MarketsView({ onClose, t }: MarketsViewProps) {
     </Box>
   )
 
-  // ---- right: detail pane --------------------------------------------------
+  // ---- right: security detail card ----------------------------------------
   const q = selectedRow?.quote
   const s = selectedRow?.series
-  const spark = q?.history ? sparkline(q.history, detailWidth - 2) : ''
+  const chartW = Math.max(12, detailWidth - 2)
+  const chart = q?.history ? blockChart(q.history, chartW, 7) : []
   const fromHigh = q?.value != null && q.week52High ? ((q.value - q.week52High) / q.week52High) * 100 : null
-  const barW = Math.max(10, detailWidth - 14)
+  const fromLow = q?.value != null && q.week52Low ? ((q.value - q.week52Low) / q.week52Low) * 100 : null
+  const trendColor = (q?.changePct ?? 0) >= 0 ? t.color.ok : t.color.error
+  const colW = Math.max(10, Math.floor(detailWidth / 2) - 8)
+
+  const statRow = (l1: string, v1: string, l2: string, v2: string, c1?: string, c2?: string) => (
+    <Text wrap="truncate-end">
+      <Text color={t.color.label}>{l1.padEnd(8)}</Text>
+      <Text color={c1 ?? t.color.text}>{v1.padEnd(colW)}</Text>
+      <Text color={t.color.label}>{l2.padEnd(8)}</Text>
+      <Text color={c2 ?? t.color.text}>{v2}</Text>
+    </Text>
+  )
 
   const detail = (
     <Box flexDirection="column" flexShrink={0} height={contentHeight} marginLeft={1} overflow="hidden" width={detailWidth}>
@@ -507,62 +576,45 @@ export function MarketsView({ onClose, t }: MarketsViewProps) {
             </Text>
             <Text color={cellColor(q?.change ?? null)}>
               {'   '}
-              {q ? fmtSigned(q.change) : '—'} ({q ? fmtPct(q.changePct) : '—'})
+              {q ? fmtSigned(q.change) : '—'}  {q ? fmtPct(q.changePct) : '—'}
             </Text>
           </Box>
 
-          {spark ? (
-            <Box marginTop={1}>
-              <Text color={(q?.changePct ?? 0) >= 0 ? t.color.ok : t.color.error}>{spark}</Text>
+          {chart.length ? (
+            <Box flexDirection="column" marginTop={1}>
+              {chart.map((line, i) => (
+                <Text color={trendColor} key={i}>
+                  {line}
+                </Text>
+              ))}
+              <Text color={t.color.muted}>1-month</Text>
             </Box>
           ) : null}
 
-          <Box flexDirection="column" marginTop={1}>
-            {q?.dayLow != null && q?.dayHigh != null ? (
-              <Text color={t.color.muted} wrap="truncate-end">
-                <Text color={t.color.label}>{'Day  '}</Text>
-                {fmtNum(q.dayLow)} <Text color={t.color.border}>{rangeBar(q.value, q.dayLow, q.dayHigh, barW)}</Text> {fmtNum(q.dayHigh)}
-              </Text>
-            ) : null}
-            {q?.week52Low != null && q?.week52High != null ? (
-              <Text color={t.color.muted} wrap="truncate-end">
-                <Text color={t.color.label}>{'52w  '}</Text>
-                {fmtNum(q.week52Low)} <Text color={t.color.border}>{rangeBar(q.value, q.week52Low, q.week52High, barW)}</Text> {fmtNum(q.week52High)}
-              </Text>
-            ) : null}
-            {fromHigh != null ? (
-              <Text color={cellColor(fromHigh)} wrap="truncate-end">
-                {`${fmtPct(fromHigh)} from 52-week high`}
-              </Text>
-            ) : null}
+          <Box flexShrink={0} marginTop={1}>
+            <Text color={t.color.border}>{'─'.repeat(chartW)}</Text>
+          </Box>
+          <Box flexDirection="column">
+            {statRow('Last', fmtNum(q?.value ?? null, s.unit), 'Prev', fmtNum(q?.prevClose ?? null))}
+            {statRow('Day Hi', fmtNum(q?.dayHigh ?? null), 'Day Lo', fmtNum(q?.dayLow ?? null))}
+            {statRow('52w Hi', fmtNum(q?.week52High ?? null), '52w Lo', fmtNum(q?.week52Low ?? null))}
+            {statRow(
+              '% Hi',
+              fromHigh != null ? fmtPct(fromHigh) : '—',
+              '% Lo',
+              fromLow != null ? fmtPct(fromLow) : '—',
+              fromHigh != null ? cellColor(fromHigh) : undefined,
+              fromLow != null ? cellColor(fromLow) : undefined
+            )}
+            {statRow('Volume', q ? fmtVol(q.volume) : '—', 'Updated', q ? relTime(q.asOf) : '—')}
           </Box>
 
-          <Box flexDirection="column" marginTop={1}>
-            {q?.prevClose != null ? (
-              <Text color={t.color.muted}>
-                <Text color={t.color.label}>Prev close </Text>
-                {fmtNum(q.prevClose)}
-              </Text>
-            ) : null}
-            {q?.volume != null ? (
-              <Text color={t.color.muted}>
-                <Text color={t.color.label}>Volume     </Text>
-                {fmtVol(q.volume)}
-              </Text>
-            ) : null}
-            <Text color={t.color.muted}>
-              <Text color={t.color.label}>Updated    </Text>
-              {q ? relTime(q.asOf) : '—'} · {s.provider}
+          <Box flexShrink={0} marginTop={1}>
+            <Text color={t.color.muted} wrap="truncate-end">
+              {s.provider}
+              {s.provider === 'yahoo' ? ' · ⏎ open on Yahoo Finance' : ''}
             </Text>
           </Box>
-
-          {s.provider === 'yahoo' ? (
-            <Box marginTop={1}>
-              <Text color={t.color.muted} wrap="wrap">
-                Press Enter to open {s.symbol} on Yahoo Finance.
-              </Text>
-            </Box>
-          ) : null}
         </Box>
       ) : (
         <Text color={t.color.muted}>Select a row to see details.</Text>

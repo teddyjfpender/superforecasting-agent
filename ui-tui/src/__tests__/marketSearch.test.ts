@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { parseYahooSearch, searchCatalog, yahooTypeToCategory } from '../lib/marketSearch.js'
-import { sparkline } from '../lib/sparkline.js'
+import { blockChart, sparkline } from '../lib/sparkline.js'
 
 describe('sparkline', () => {
   it('maps a series onto block ticks, low→high', () => {
@@ -15,6 +15,22 @@ describe('sparkline', () => {
   it('returns empty for <2 points and honours maxPoints', () => {
     expect(sparkline([5])).toBe('')
     expect(sparkline([1, 2, 3, 4, 5], 3).length).toBe(3)
+  })
+})
+
+describe('blockChart', () => {
+  it('renders a height×width filled area chart, top→bottom', () => {
+    const lines = blockChart([1, 2, 3, 4, 5, 6], 6, 4)
+    expect(lines).toHaveLength(4)
+    expect(new Set(lines.map(l => l.length))).toEqual(new Set([6]))
+    // top row mostly empty, bottom row mostly filled
+    expect(lines[lines.length - 1]).toMatch(/█/u)
+    expect(lines.join('')).toMatch(/^[ ▁▂▃▄▅▆▇█]+$/u)
+  })
+
+  it('returns [] for <2 points or zero height', () => {
+    expect(blockChart([1], 10, 4)).toEqual([])
+    expect(blockChart([1, 2, 3], 10, 0)).toEqual([])
   })
 })
 
