@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { patchOverlayState } from '../app/overlayStore.js'
 import type { CatalogFeed } from '../content/newsFeedCatalog.js'
 import { FEED_CATEGORIES } from '../content/newsFeedCatalog.js'
-import { type ArticleCache, loadArticleCache, saveArticleCache } from '../lib/newsFeedCache.js'
+import { type ArticleCache, loadArticleCache, pruneArticleCache, saveArticleCache } from '../lib/newsFeedCache.js'
 import { type Article, fetchFeeds } from '../lib/newsFeedFetch.js'
 import { ALL_CATEGORY, searchFeeds } from '../lib/newsFeedSearch.js'
 import {
@@ -228,9 +228,13 @@ export function NewsView({ onClose, t }: NewsViewProps) {
     }
   }
 
-  // Rebuild from cache immediately, then refresh, whenever the subscription set
-  // changes (covers first mount and every add/remove → auto-refresh).
+  // Whenever the subscription set changes (and on first mount): prune cached
+  // articles for feeds you no longer follow so the cache can't grow without
+  // bound, then rebuild + refresh.
   useEffect(() => {
+    const keep = new Set(subscribed.map(f => normalizeFeedUrl(f.url)))
+    cacheRef.current = pruneArticleCache(cacheRef.current, { keep, maxAgeMs: 30 * 24 * 60 * 60 * 1000 })
+    saveArticleCache(cacheRef.current)
     rebuild()
     void refresh(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps

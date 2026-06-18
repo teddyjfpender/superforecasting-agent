@@ -19,9 +19,51 @@ export type ArticleCache = Record<string, CachedFeed>
 
 const cacheFile = (dir = forecastHomeDir()) => join(dir, 'news_cache.json')
 
-// Drop the oldest 200 articles per feed and the whole entry if empty so the
-// file can't grow without bound.
+// Bounds so the cache can't grow without limit: at most 200 articles per feed,
+// at most 400 feeds total, and (optionally) drop entries older than a TTL.
 const MAX_PER_FEED = 200
+const MAX_FEEDS = 400
+
+export interface PruneOptions {
+  keep?: Set<string> // normalized feed URLs to retain — others are dropped (e.g. unsubscribed)
+  maxAgeMs?: number // drop entries last fetched longer ago than this (0 = no age limit)
+  maxFeeds?: number
+  maxPerFeed?: number
+  now?: number
+}
+
+// Prune the cache: drop feeds that aren't in `keep` (unsubscribed), drop entries
+// past the age limit, cap articles per feed, and cap total feeds (keeping the
+// most-recently-fetched). Pure — returns a new cache.
+export const pruneArticleCache = (cache: ArticleCache, options: PruneOptions = {}): ArticleCache => {
+  const { keep, maxAgeMs = 0, maxFeeds = MAX_FEEDS, maxPerFeed = MAX_PER_FEED, now = Date.now() } = options
+
+  let entries = Object.entries(cache)
+    .map(([url, entry]) => [normalizeFeedUrl(url), entry] as const)
+    .filter(([url, entry]) => {
+      if (keep && !keep.has(url)) {
+        return false
+      }
+
+      if (maxAgeMs > 0 && now - (entry.fetchedAt || 0) > maxAgeMs) {
+        return false
+      }
+
+      return Boolean(entry) && Array.isArray(entry.articles)
+    })
+
+  if (entries.length > maxFeeds) {
+    entries = [...entries].sort((a, b) => (b[1].fetchedAt || 0) - (a[1].fetchedAt || 0)).slice(0, maxFeeds)
+  }
+
+  const out: ArticleCache = {}
+
+  for (const [url, entry] of entries) {
+    out[url] = { ...entry, articles: entry.articles.slice(0, maxPerFeed) }
+  }
+
+  return out
+}
 
 export const loadArticleCache = (file = cacheFile()): ArticleCache => {
   try {
@@ -45,13 +87,9 @@ export const saveArticleCache = (cache: ArticleCache, file = cacheFile()): boole
       mkdirSync(dir, { recursive: true })
     }
 
-    const trimmed: ArticleCache = {}
-
-    for (const [url, entry] of Object.entries(cache)) {
-      trimmed[normalizeFeedUrl(url)] = { ...entry, articles: entry.articles.slice(0, MAX_PER_FEED) }
-    }
-
-    writeFileSync(file, JSON.stringify(trimmed), { mode: 0o600 })
+    // Always enforce the per-feed + total-feed caps on write, even if the
+    // caller didn't prune.
+    writeFileSync(file, JSON.stringify(pruneArticleCache(cache)), { mode: 0o600 })
 
     return true
   } catch {
