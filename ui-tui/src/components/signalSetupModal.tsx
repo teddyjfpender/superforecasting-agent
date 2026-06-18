@@ -368,11 +368,15 @@ export function SignalSetupModal({ cols, onCancel, onConnected, rows, t }: Signa
     body = (
       <Box flexDirection="column">
         {linkUri ? (
-          <>
-            <Text color={t.color.label}>Open Signal on your phone → Settings → Linked devices → + → scan:</Text>
+          <Box alignItems="center" flexDirection="column">
+            <Text color={t.color.label} wrap="truncate-end">
+              Open Signal on your phone → Settings → Linked devices → + → scan:
+            </Text>
+            {/* Centered, on-theme (cream field + near-black modules) but still
+                high-contrast so the scanner reads it cleanly. */}
             <Box flexDirection="column" marginTop={1}>
               {qrLines(linkUri).map((line, i) => (
-                <Text backgroundColor="#ffffff" color="#000000" key={i}>
+                <Text backgroundColor={t.color.text} color={t.color.statusBg} key={i}>
                   {line}
                 </Text>
               ))}
@@ -380,7 +384,7 @@ export function SignalSetupModal({ cols, onCancel, onConnected, rows, t }: Signa
             <Box marginTop={1}>
               <Text color={t.color.muted}>Waiting for your phone to confirm…</Text>
             </Box>
-          </>
+          </Box>
         ) : (
           <Text color={t.color.muted}>Generating a device-link code…</Text>
         )}
