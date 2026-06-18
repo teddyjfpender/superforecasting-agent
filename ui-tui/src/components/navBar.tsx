@@ -23,7 +23,7 @@ const NAV_TABS: NavTab[] = [
   { key: 'calendar', label: 'Calendar' },
   { key: 'warnings', label: 'Warnings' },
   { key: 'calibration', label: 'Calibration' },
-  { key: 'obsidian', label: 'Obsidian' },
+  { key: 'obsidian', label: 'Docs' },
   { key: 'agents', label: 'Agents' },
   { key: 'help', label: 'Help' }
 ]

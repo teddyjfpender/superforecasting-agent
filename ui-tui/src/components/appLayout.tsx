@@ -24,6 +24,7 @@ import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { HomeHero, Panel, SessionPanel } from './branding.js'
 import { CalendarView } from './calendarView.js'
 import { CalibrationView } from './calibrationView.js'
+import { DocsView } from './docsView.js'
 import { ForecastsWorkspace } from './forecastsWorkspace.js'
 import { FpsOverlay } from './fpsOverlay.js'
 import { HelpHint } from './helpHint.js'
@@ -33,7 +34,6 @@ import { MessageLine } from './messageLine.js'
 import { MessagingView } from './messagingView.js'
 import { NavBar } from './navBar.js'
 import { NewsView } from './newsView.js'
-import { ObsidianView } from './obsidianView.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
@@ -410,12 +410,12 @@ const CalendarViewPane = memo(function CalendarViewPane() {
   return <CalendarView gw={gw} onClose={() => patchOverlayState({ calendar: false })} t={ui.theme} />
 })
 
-const ObsidianViewPane = memo(function ObsidianViewPane({ onDraft }: { onDraft: (command: string) => void }) {
+const DocsViewPane = memo(function DocsViewPane({ onDraft }: { onDraft: (command: string) => void }) {
   const { gw } = useGateway()
   const ui = useStore($uiState)
 
   return (
-    <ObsidianView
+    <DocsView
       gw={gw}
       onClose={() => patchOverlayState({ obsidian: false })}
       onDraft={onDraft}
@@ -582,8 +582,8 @@ export const AppLayout = memo(function AppLayout({
                 <CalendarViewPane />
               </PerfPane>
             ) : overlay.obsidian ? (
-              <PerfPane id="obsidian">
-                <ObsidianViewPane onDraft={actions.draftCommand} />
+              <PerfPane id="docs">
+                <DocsViewPane onDraft={actions.draftCommand} />
               </PerfPane>
             ) : (
               <PerfPane id="agents">

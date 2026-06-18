@@ -1,0 +1,477 @@
+import { Box, Text, useInput, useStdout } from '@hermes/ink'
+import { useEffect, useMemo, useRef, useState } from 'react'
+
+import { commandExists, gitCommitPush, gitPull, type GitStatus, gitStatus, isGitRepo, overleaf } from '../lib/docsCli.js'
+import { statusGlyph } from '../lib/icons.js'
+import { ensureLatexDir, latexDocsDir, listTexFiles, readTexFile, type TexFile } from '../lib/latexDocs.js'
+import { type LatexBlock, renderLatex } from '../lib/latexRender.js'
+import { semantics } from '../lib/visualSemantics.js'
+import type { Theme } from '../theme.js'
+
+import { type FooterChip, FooterChips } from './footerChips.js'
+
+// LaTeX side of Docs: browse local .tex files, render them readably, and sync
+// the directory with git (commit/push/pull — Overleaf projects are git-backed)
+// or Overleaf's olcli. Two panes split by a vertical rule, like News/Markets.
+
+const truncate = (value: string, max: number): string =>
+  value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value
+
+interface LatexDocsViewProps {
+  docKind?: 'latex' | 'markdown'
+  onClose: () => void
+  onSelectKind?: (kind: 'latex' | 'markdown') => void
+  t: Theme
+}
+
+export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsViewProps) {
+  const { stdout } = useStdout()
+  const cols = stdout?.columns ?? 80
+  const termRows = stdout?.rows ?? 24
+  const sem = semantics(t)
+
+  const dirRef = useRef(latexDocsDir())
+  const dir = dirRef.current
+
+  const [files, setFiles] = useState<TexFile[]>([])
+  const [sel, setSel] = useState(0)
+  const [focus, setFocus] = useState<'list' | 'reader'>('list')
+  const [query, setQuery] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [content, setContent] = useState('')
+  const [scroll, setScroll] = useState(0)
+  const [git, setGit] = useState<GitStatus | null>(null)
+  const [repo, setRepo] = useState(false)
+  const [tools, setTools] = useState({ git: false, olcli: false })
+  const [busy, setBusy] = useState(false)
+  const [flash, setFlash] = useState('')
+  const [tick, setTick] = useState(0)
+  const aliveRef = useRef(true)
+
+  useEffect(() => {
+    aliveRef.current = true
+    const id = setInterval(() => setTick(v => v + 1), 600)
+
+    return () => {
+      aliveRef.current = false
+      clearInterval(id)
+    }
+  }, [])
+
+  useEffect(() => {
+    stdout?.write('\x1b[?25l')
+
+    return () => {
+      stdout?.write('\x1b[?25h')
+    }
+  }, [stdout])
+
+  const refreshGit = async () => {
+    const isRepo = await isGitRepo(dir)
+
+    if (!aliveRef.current) {
+      return
+    }
+
+    setRepo(isRepo)
+    setGit(isRepo ? await gitStatus(dir) : null)
+  }
+
+  const reload = () => {
+    ensureLatexDir(dir)
+    setFiles(listTexFiles(dir))
+  }
+
+  useEffect(() => {
+    reload()
+    setTools({ git: commandExists('git'), olcli: commandExists('olcli') })
+    void refreshGit()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+
+    return q ? files.filter(f => f.rel.toLowerCase().includes(q)) : files
+     
+  }, [files, query])
+
+  const clampedSel = Math.min(sel, Math.max(0, filtered.length - 1))
+  const activeFile = filtered[clampedSel]
+
+  // Read the selected file's source.
+  useEffect(() => {
+    setContent(activeFile ? readTexFile(dir, activeFile.rel) : '')
+    setScroll(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFile?.rel])
+
+  const blocks = useMemo<LatexBlock[]>(() => (content ? renderLatex(content) : []), [content])
+
+  const runSync = (label: string, op: () => Promise<{ error: null | string }>) => {
+    if (busy) {
+      return
+    }
+
+    setBusy(true)
+    setFlash(`${label}…`)
+
+    void (async () => {
+      const { error } = await op()
+
+      if (!aliveRef.current) {
+        return
+      }
+
+      setBusy(false)
+      setFlash(error ? `${label} failed: ${truncate(error, 60)}` : `${label} done`)
+      await refreshGit()
+    })()
+  }
+
+  const width = Math.max(48, cols - 4)
+  const contentHeight = Math.max(8, termRows - 8)
+  const listW = Math.min(40, Math.max(24, Math.floor(width * 0.32)))
+  const readerW = Math.max(20, width - listW - 2)
+  const listRows = Math.max(3, contentHeight - 2)
+  const readerRows = Math.max(3, contentHeight - 1)
+
+  useInput((ch, key) => {
+    if (searching) {
+      if (key.escape || key.return) {
+        return setSearching(false)
+      }
+
+      if (key.backspace || key.delete) {
+        return setQuery(s => s.slice(0, -1))
+      }
+
+      if (ch && !key.ctrl && !key.meta) {
+        const printable = [...ch].filter(c => c >= ' ').join('')
+
+        if (printable) {
+          setSel(0)
+          setQuery(s => s + printable)
+        }
+      }
+
+      return
+    }
+
+    if (ch === 'q') {
+      return onClose()
+    }
+
+    // Docs kind tabs: 1 Markdown · 2 LaTeX (this view).
+    if (onSelectKind && (ch === '1' || ch === '2')) {
+      return onSelectKind(ch === '2' ? 'latex' : 'markdown')
+    }
+
+    if (ch === '/') {
+      return setSearching(true)
+    }
+
+    if (ch === 'r') {
+      reload()
+      void refreshGit()
+      setFlash('refreshed')
+
+      return
+    }
+
+    if (tools.git && ch === 'p') {
+      return runSync('pull', () => gitPull(dir))
+    }
+
+    if (tools.git && ch === 'P') {
+      return runSync('commit + push', () => gitCommitPush(dir, 'LaTeX docs sync from Outrider'))
+    }
+
+    if (tools.olcli && ch === 'o') {
+      return runSync('overleaf pull', () => overleaf(dir, ['pull']))
+    }
+
+    if (focus === 'reader') {
+      if (key.escape || key.leftArrow || ch === 'h') {
+        return setFocus('list')
+      }
+
+      if (key.upArrow || ch === 'k' || key.wheelUp) {
+        return setScroll(s => Math.max(0, s - 1))
+      }
+
+      if (key.downArrow || ch === 'j' || key.wheelDown) {
+        return setScroll(s => Math.min(Math.max(0, blocks.length - 1), s + 1))
+      }
+
+      return
+    }
+
+    // list focus
+    if (key.escape) {
+      return onClose()
+    }
+
+    if (key.upArrow || ch === 'k' || key.wheelUp) {
+      return setSel(i => Math.max(0, i - 1))
+    }
+
+    if (key.downArrow || ch === 'j' || key.wheelDown) {
+      return setSel(i => Math.min(Math.max(0, filtered.length - 1), i + 1))
+    }
+
+    if ((key.return || key.rightArrow || ch === 'l') && activeFile) {
+      setScroll(0)
+
+      return setFocus('reader')
+    }
+  })
+
+  // ── status ────────────────────────────────────────────────────────────────
+  const statusKind = busy ? 'busy' : repo ? 'live' : 'idle'
+
+  const statusWord = busy
+    ? 'syncing…'
+    : !tools.git
+      ? 'git not found'
+      : !repo
+        ? 'not a git repo'
+        : git
+          ? `${git.branch}${git.dirty ? ` · ${git.dirty} changed` : ' · clean'}${git.behind ? ` · ↓${git.behind}` : ''}${git.ahead ? ` · ↑${git.ahead}` : ''}`
+          : 'git ready'
+
+  const header = (
+    <Box flexDirection="column" flexShrink={0} marginBottom={1}>
+      <Text wrap="truncate-end">
+        <Text bold color={t.color.primary}>
+          LATEX
+        </Text>
+        <Text color={t.color.muted}>{'   '}</Text>
+        <Text color={busy ? sem.star : repo ? sem.up : sem.subtle}>{statusGlyph(statusKind, tick)}</Text>
+        <Text color={t.color.muted}> {statusWord} · </Text>
+        <Text color={t.color.text}>{`${files.length} docs`}</Text>
+        <Text color={t.color.muted} wrap="truncate-end">{`  ${dir}`}</Text>
+      </Text>
+    </Box>
+  )
+
+  // Empty state.
+  if (files.length === 0 && !searching) {
+    return (
+      <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
+        {header}
+        <Box alignItems="center" flexGrow={1} justifyContent="center">
+          <Box flexDirection="column" width={Math.min(74, width)}>
+            <Text bold color={t.color.text}>
+              No LaTeX documents yet.
+            </Text>
+            <Box marginTop={1}>
+              <Text color={t.color.muted} wrap="wrap">
+                Put .tex files in <Text color={t.color.accent}>{dir}</Text> (set LATEX_DOCS_PATH / OVERLEAF_DIR to point
+                elsewhere) — clone an Overleaf or GitHub project there with {tools.olcli ? 'olcli or git' : 'git'}, then
+                press r to refresh.
+              </Text>
+            </Box>
+            <Box marginTop={1}>
+              <Text color={t.color.muted} wrap="truncate-end">
+                {`git ${tools.git ? '✓' : '✗ (install to sync)'}  ·  olcli ${tools.olcli ? '✓' : '✗ (Overleaf CLI)'}`}
+              </Text>
+            </Box>
+          </Box>
+        </Box>
+        <Box flexShrink={0} marginTop={1}>
+          <Text color={t.color.muted} wrap="truncate-end">
+            {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
+            r refresh · Esc/q close
+          </Text>
+        </Box>
+      </Box>
+    )
+  }
+
+  // ── file list (left) ───────────────────────────────────────────────────────
+  const listStart = Math.max(0, Math.min(clampedSel - Math.floor(listRows / 2), filtered.length - listRows))
+  const windowed = filtered.slice(Math.max(0, listStart), Math.max(0, listStart) + listRows)
+  const listFocused = focus === 'list'
+
+  const list = (
+    <Box
+      borderBottom={false}
+      borderColor={listFocused ? t.color.accent : t.color.border}
+      borderLeft={false}
+      borderStyle="single"
+      borderTop={false}
+      flexDirection="column"
+      flexShrink={0}
+      height={contentHeight}
+      overflow="hidden"
+      paddingRight={1}
+      width={listW}
+    >
+      {searching ? (
+        <Text wrap="truncate-end">
+          <Text bold color={sem.cursor}>{'⌕ '}</Text>
+          <Text color={t.color.text}>{query}</Text>
+          <Text color={t.color.text} inverse>
+            {' '}
+          </Text>
+        </Text>
+      ) : (
+        <Text bold color={listFocused ? t.color.accent : t.color.label} wrap="truncate-end">
+          DOCS{query ? <Text color={t.color.muted}>{`  /${query}`}</Text> : null}
+        </Text>
+      )}
+      <Box flexDirection="column" marginTop={1}>
+        {filtered.length === 0 ? (
+          <Text color={t.color.muted} wrap="wrap">
+            No match for “{query}”.
+          </Text>
+        ) : (
+          windowed.map((f, i) => {
+            const idx = listStart + i
+            const on = idx === clampedSel
+            const name = f.rel.replace(/\.tex$/i, '')
+
+            return (
+              <Box key={f.rel} onClick={() => { setSel(idx); setScroll(0); setFocus('reader') }} width="100%">
+                <Text wrap="truncate-end">
+                  <Text color={on ? t.color.accent : t.color.border}>{on ? '▸ ' : '  '}</Text>
+                  <Text bold={on} color={on ? t.color.text : t.color.label}>
+                    {truncate(name, listW - 4)}
+                  </Text>
+                </Text>
+              </Box>
+            )
+          })
+        )}
+      </Box>
+    </Box>
+  )
+
+  // ── reader (right) ───────────────────────────────────────────────────────
+  const readerFocused = focus === 'reader'
+  const readStart = Math.min(scroll, Math.max(0, blocks.length - 1))
+  const windowBlocks = blocks.slice(readStart, readStart + readerRows)
+
+  const renderBlock = (b: LatexBlock, i: number) => {
+    const key = `${readStart + i}`
+
+    if (b.kind === 'blank') {
+      return <Text key={key}> </Text>
+    }
+
+    if (b.kind === 'rule') {
+      return <Text color={sem.rule} key={key}>{'─'.repeat(Math.max(4, readerW - 2))}</Text>
+    }
+
+    if (b.kind === 'heading') {
+      const lvl = b.level ?? 1
+      const color = lvl === 0 ? t.color.primary : lvl === 1 ? t.color.accent : t.color.label
+
+      return (
+        <Text bold color={color} key={key} wrap="truncate-end">
+          {lvl >= 2 ? `${'  '.repeat(lvl - 1)}` : ''}
+          {b.text}
+        </Text>
+      )
+    }
+
+    if (b.kind === 'item') {
+      return (
+        <Text color={t.color.text} key={key} wrap="wrap">
+          {`${'  '.repeat(b.level ?? 1)}• `}
+          {b.text}
+        </Text>
+      )
+    }
+
+    if (b.kind === 'math') {
+      return (
+        <Text color={sem.badge} key={key} wrap="wrap">
+          {'    '}
+          {b.text}
+        </Text>
+      )
+    }
+
+    if (b.kind === 'verbatim') {
+      return (
+        <Text color={t.color.muted} key={key} wrap="truncate-end">
+          {`  ${b.text}`}
+        </Text>
+      )
+    }
+
+    return (
+      <Text color={t.color.text} key={key} wrap="wrap">
+        {b.text}
+      </Text>
+    )
+  }
+
+  const reader = (
+    <Box flexDirection="column" flexShrink={0} height={contentHeight} marginLeft={1} minWidth={0} overflow="hidden" width={readerW}>
+      <Text bold color={readerFocused ? t.color.accent : t.color.label} wrap="truncate-end">
+        {readerFocused ? '▸ ' : ''}
+        {activeFile ? activeFile.rel : 'READER'}
+        {blocks.length && scroll > 0 ? <Text color={t.color.muted}>{`  ↑ ${readStart}`}</Text> : null}
+      </Text>
+      <Box flexDirection="column" marginTop={1} minHeight={0} overflow="hidden">
+        {windowBlocks.length === 0 ? (
+          <Text color={t.color.muted} wrap="wrap">
+            {activeFile ? 'Empty document.' : 'Select a .tex file to read it here.'}
+          </Text>
+        ) : (
+          windowBlocks.map((b, i) => renderBlock(b, i))
+        )}
+      </Box>
+    </Box>
+  )
+
+  const chips: FooterChip[] = [
+    { k: '↑↓', label: readerFocused ? 'Scroll' : 'Docs' },
+    { k: '⏎', label: 'Read', run: () => activeFile && setFocus('reader') },
+    { k: '/', label: 'Search', run: () => setSearching(true) },
+    ...(tools.git ? [{ k: 'p', label: 'Pull', run: () => runSync('pull', () => gitPull(dir)) }] : []),
+    ...(tools.git ? [{ k: 'P', label: 'Push', run: () => runSync('commit + push', () => gitCommitPush(dir, 'LaTeX docs sync from Outrider')) }] : []),
+    ...(tools.olcli ? [{ k: 'o', label: 'Overleaf', run: () => runSync('overleaf pull', () => overleaf(dir, ['pull'])) }] : []),
+    { k: 'q', label: 'Close', run: onClose }
+  ]
+
+  return (
+    <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
+      {header}
+      <Box flexDirection="row" flexShrink={0} height={contentHeight}>
+        {list}
+        {reader}
+      </Box>
+      <Box flexDirection="column" flexShrink={0} marginTop={1}>
+        {onSelectKind ? (
+          <Box marginBottom={1}>
+            <Text color={t.color.muted}>DOCS </Text>
+            <Box onClick={() => onSelectKind('markdown')}>
+              <Text bold={docKind !== 'latex'} color={docKind !== 'latex' ? t.color.accent : t.color.muted}>
+                {docKind !== 'latex' ? '▸ 1 Markdown' : '  1 Markdown'}
+              </Text>
+            </Box>
+            <Text color={t.color.border}>{'   ·   '}</Text>
+            <Box onClick={() => onSelectKind('latex')}>
+              <Text bold={docKind === 'latex'} color={docKind === 'latex' ? t.color.accent : t.color.muted}>
+                {docKind === 'latex' ? '▸ 2 LaTeX' : '  2 LaTeX'}
+              </Text>
+            </Box>
+          </Box>
+        ) : null}
+        <FooterChips chips={chips} t={t} />
+        <Text color={t.color.muted} wrap="truncate-end">
+          {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
+          {searching
+            ? 'type to filter · ⏎/Esc done'
+            : readerFocused
+              ? '↑↓ scroll · Esc/← back · / search · q close'
+              : `↑↓ docs · ⏎/→ read · / search${tools.git ? ' · p pull · P push' : ''}${tools.olcli ? ' · o overleaf' : ''} · r refresh · q close`}
+        </Text>
+      </Box>
+    </Box>
+  )
+}

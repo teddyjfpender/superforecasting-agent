@@ -299,9 +299,11 @@ export const addComment = (fullContent: string, anchor: string, text: string): s
 type PromptMode = 'comment' | 'create'
 
 interface ObsidianViewProps {
+  docKind?: 'latex' | 'markdown' // when inside the Docs view: which kind tab is active
   gw: GatewayClient
   onClose: () => void
   onDraft?: (command: string) => void
+  onSelectKind?: (kind: 'latex' | 'markdown') => void // switch Docs kind (Markdown↔LaTeX)
   sid?: null | string
   t: Theme
 }
@@ -331,7 +333,7 @@ interface ChatState {
 const THINKING_WORDS = ['thinking', 'pondering', 'reasoning', 'mulling', 'cooking', 'scheming', 'noodling']
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
-export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps) {
+export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid, t }: ObsidianViewProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
@@ -1098,6 +1100,12 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
 
     if (ch === 'q' || key.escape) {
       return onClose()
+    }
+
+    // Docs kind tabs: 1 Markdown (this view) · 2 LaTeX. Only in nav mode (the
+    // edit/chat/search/prompt guards above already returned).
+    if (onSelectKind && (ch === '1' || ch === '2')) {
+      return onSelectKind(ch === '2' ? 'latex' : 'markdown')
     }
 
     if (!hasVault) {
@@ -1985,6 +1993,22 @@ export function ObsidianView({ gw, onClose, onDraft, sid, t }: ObsidianViewProps
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
+      {onSelectKind ? (
+        <Box marginBottom={1}>
+          <Text color={t.color.muted}>DOCS </Text>
+          <Box onClick={() => onSelectKind('markdown')}>
+            <Text bold={docKind !== 'latex'} color={docKind !== 'latex' ? t.color.accent : t.color.muted}>
+              {docKind !== 'latex' ? '▸ 1 Markdown' : '  1 Markdown'}
+            </Text>
+          </Box>
+          <Text color={t.color.border}>{'   ·   '}</Text>
+          <Box onClick={() => onSelectKind('latex')}>
+            <Text bold={docKind === 'latex'} color={docKind === 'latex' ? t.color.accent : t.color.muted}>
+              {docKind === 'latex' ? '▸ 2 LaTeX' : '  2 LaTeX'}
+            </Text>
+          </Box>
+        </Box>
+      ) : null}
       {editing ? (
         <>
           <Box>

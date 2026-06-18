@@ -919,6 +919,13 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
+    aliases: ['obsidian', 'latex', 'notes'],
+    help: 'open Docs — Markdown (Obsidian) + LaTeX',
+    name: 'docs',
+    run: () => patchOverlayState({ obsidian: true })
+  },
+
+  {
     // The AGENT-SIDE bridge — deployers letting people message the SYSTEM to
     // invoke it. Deliberately named apart from /messaging (your personal Signal
     // client) so the two concepts don't blur.

@@ -133,6 +133,7 @@ const writeStream = (columns: number, rows: number, isTTY = false) => {
     setRawMode?: (mode: boolean) => void
     unref?: () => PassThrough
   }
+
   let output = ''
 
   Object.assign(stream, {
@@ -188,6 +189,7 @@ const renderForecastDesk = async (columns: number, { landing = false }: { landin
 
   const response = forecastFixture()
   const panelSections = forecastDashboardSections(response)
+
   const historyItems: Msg[] = [
     {
       info: {
@@ -209,6 +211,7 @@ const renderForecastDesk = async (columns: number, { landing = false }: { landin
       ? []
       : [{ kind: 'panel', panelData: { sections: panelSections, title: 'Forecast Desk' }, role: 'system', text: '' } as Msg])
   ]
+
   const virtualRows = historyItems.map((msg, index) => ({ index, key: `row-${index}`, msg }))
   const stdout = writeStream(columns, 32)
   const stdin = writeStream(columns, 32, true)
@@ -224,6 +227,7 @@ const renderForecastDesk = async (columns: number, { landing = false }: { landin
   })
 
   const noop = () => undefined
+
   const props: AppLayoutProps = {
     actions: {
       answerApproval: noop,
@@ -357,7 +361,7 @@ describe('forecast desk Ink render', () => {
     const output = await renderForecastDesk(150, { landing: true })
     const compact = output.replace(/\s+/g, '')
 
-    for (const label of ['Home', 'Desk', 'Calendar', 'Warnings', 'Calibration', 'Obsidian', 'Agents', 'Help']) {
+    for (const label of ['Home', 'Desk', 'Calendar', 'Warnings', 'Calibration', 'Docs', 'Agents', 'Help']) {
       expect(compact).toContain(label)
     }
   })
