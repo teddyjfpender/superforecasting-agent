@@ -24,13 +24,63 @@ export interface SignalGroup {
   name: string
 }
 
+export interface AttachmentInfo {
+  name?: string
+  type?: string // MIME content-type
+}
+
 export interface SignalMessage {
-  attachments: number
+  attachments: number // count (kept for back-compat with older caches)
   author: string // sender id (number/uuid) or 'me'
   chatId: string // contact id, or `group:<id>`
+  files?: AttachmentInfo[] // per-attachment metadata (filename + content-type)
   fromMe: boolean
   text: string
   timestamp: number // epoch ms
+}
+
+// A font-safe, informative attachment label: the kind in brackets (renders in
+// any terminal font — no emoji/dingbats to tofu) plus the filename when known.
+const kindOf = (type?: string): string => {
+  const ct = (type ?? '').toLowerCase()
+
+  if (ct.startsWith('image/')) {
+    return 'image'
+  }
+
+  if (ct.startsWith('video/')) {
+    return 'video'
+  }
+
+  if (ct.startsWith('audio/')) {
+    return 'audio'
+  }
+
+  if (ct.includes('pdf')) {
+    return 'pdf'
+  }
+
+  if (ct.startsWith('text/')) {
+    return 'text'
+  }
+
+  return 'file'
+}
+
+export const attachmentLabel = (msg: Pick<SignalMessage, 'attachments' | 'files'>): string => {
+  const files = msg.files ?? []
+
+  if (files.length === 0) {
+    return msg.attachments > 0 ? `[${msg.attachments} attachment${msg.attachments > 1 ? 's' : ''}]` : ''
+  }
+
+  if (files.length === 1) {
+    const f = files[0]
+
+    return f.name ? `[${kindOf(f.type)}] ${f.name}` : `[${kindOf(f.type)}]`
+  }
+
+  return `[${files.length} files]`
 }
 
 // ---------------------------------------------------------------------------
@@ -114,8 +164,15 @@ const groupIdOf = (dataMessage: Record<string, unknown>): string => {
   return str(v2?.id) || str(v1?.groupId)
 }
 
-const attachmentCount = (dataMessage: Record<string, unknown>): number =>
-  Array.isArray(dataMessage.attachments) ? dataMessage.attachments.length : 0
+const attachmentList = (dataMessage: Record<string, unknown>): AttachmentInfo[] => {
+  const arr = Array.isArray(dataMessage.attachments) ? dataMessage.attachments : []
+
+  return arr.map(a => {
+    const o = (a && typeof a === 'object' ? a : {}) as Record<string, unknown>
+
+    return { name: str(o.filename) || undefined, type: str(o.contentType) || undefined }
+  })
+}
 
 // Turn a signal-cli SSE envelope into a SignalMessage, or null if it carries no
 // displayable text/attachment (receipts, typing, empty syncs, etc.). Captures
@@ -139,13 +196,14 @@ export const parseEnvelope = (raw: unknown, selfId = ''): null | SignalMessage =
     const dest = str(sent.destinationNumber) || str(sent.destination)
     const chatId = gid ? `group:${gid}` : dest
     const text = str(sent.message)
-    const att = attachmentCount(sent)
+    const files = attachmentList(sent)
 
-    if (chatId && (text || att)) {
+    if (chatId && (text || files.length)) {
       return {
-        attachments: att,
+        attachments: files.length,
         author: 'me',
         chatId,
+        files,
         fromMe: true,
         text,
         timestamp: Number(sent.timestamp) || Number(env.timestamp) || 0
@@ -171,16 +229,17 @@ export const parseEnvelope = (raw: unknown, selfId = ''): null | SignalMessage =
   const gid = groupIdOf(data)
   const chatId = gid ? `group:${gid}` : sender
   const text = str(data.message)
-  const att = attachmentCount(data)
+  const files = attachmentList(data)
 
-  if (!text && !att) {
+  if (!text && !files.length) {
     return null
   }
 
   return {
-    attachments: att,
+    attachments: files.length,
     author: sender,
     chatId,
+    files,
     fromMe: Boolean(self) && sender === self,
     text,
     timestamp: Number(data.timestamp) || Number(env.timestamp) || 0

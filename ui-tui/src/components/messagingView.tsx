@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { patchOverlayState } from '../app/overlayStore.js'
 import { ICON, statusGlyph, type StatusKind } from '../lib/icons.js'
 import {
+  attachmentLabel,
   checkHealth,
   createGroup,
   listContacts,
@@ -320,7 +321,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     const list: Conversation[] = [...ids].map(chatId => {
       const msgs = cache[chatId] ?? []
       const last = msgs[msgs.length - 1]
-      const preview = last ? `${last.fromMe ? 'You: ' : ''}${last.text || (last.attachments ? `${ICON.attach} attachment` : '')}` : ''
+      const preview = last ? `${last.fromMe ? 'You: ' : ''}${last.text || attachmentLabel(last)}` : ''
 
       return {
         chatId,
@@ -1124,9 +1125,16 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
                       <Text color={t.color.muted}>{`  ${clock(m.timestamp)}`}</Text>
                     </Text>
                   ) : null}
-                  <Text color={t.color.text} wrap="wrap">
-                    {m.text || (m.attachments ? `${ICON.attach} attachment` : '')}
-                  </Text>
+                  {m.text ? (
+                    <Text color={t.color.text} wrap="wrap">
+                      {m.text}
+                    </Text>
+                  ) : null}
+                  {m.attachments > 0 ? (
+                    <Text color={t.color.accent} wrap="truncate-end">
+                      {attachmentLabel(m)}
+                    </Text>
+                  ) : null}
                 </Box>
               )
             })

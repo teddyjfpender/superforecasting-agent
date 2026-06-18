@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseContacts, parseEnvelope, parseGroups } from '../lib/signalClient.js'
+import { attachmentLabel, parseContacts, parseEnvelope, parseGroups } from '../lib/signalClient.js'
+
+describe('attachmentLabel', () => {
+  it('labels a single attachment by kind + filename (font-safe, no emoji)', () => {
+    expect(attachmentLabel({ attachments: 1, files: [{ name: 'sunset.jpg', type: 'image/jpeg' }] })).toBe('[image] sunset.jpg')
+    expect(attachmentLabel({ attachments: 1, files: [{ type: 'video/mp4' }] })).toBe('[video]')
+    expect(attachmentLabel({ attachments: 1, files: [{ name: 'doc.pdf', type: 'application/pdf' }] })).toBe('[pdf] doc.pdf')
+    expect(attachmentLabel({ attachments: 1, files: [{ name: 'x.bin' }] })).toBe('[file] x.bin')
+  })
+
+  it('summarizes multiple files and falls back to the count for old caches', () => {
+    expect(attachmentLabel({ attachments: 3, files: [{}, {}, {}] })).toBe('[3 files]')
+    expect(attachmentLabel({ attachments: 2 })).toBe('[2 attachments]') // no metadata (legacy cache)
+    expect(attachmentLabel({ attachments: 0 })).toBe('')
+  })
+})
 
 describe('parseContacts', () => {
   it('extracts id + best-effort name and skips self/unidentifiable', () => {
@@ -58,6 +73,7 @@ describe('parseEnvelope', () => {
       attachments: 0,
       author: '+15551112222',
       chatId: '+15551112222',
+      files: [],
       fromMe: false,
       text: 'hey there',
       timestamp: 1700000000000
@@ -89,18 +105,27 @@ describe('parseEnvelope', () => {
       attachments: 0,
       author: 'me',
       chatId: '+15553334444',
+      files: [],
       fromMe: true,
       text: 'sent from phone',
       timestamp: 9
     })
   })
 
-  it('counts attachments and tolerates empty text', () => {
+  it('captures attachment filename + content-type and tolerates empty text', () => {
     const msg = parseEnvelope({
-      envelope: { dataMessage: { attachments: [{}, {}], message: '', timestamp: 1 }, sourceNumber: '+1555' }
+      envelope: {
+        dataMessage: {
+          attachments: [{ contentType: 'image/jpeg', filename: 'sunset.jpg' }, { contentType: 'application/pdf' }],
+          message: '',
+          timestamp: 1
+        },
+        sourceNumber: '+1555'
+      }
     })
 
     expect(msg?.attachments).toBe(2)
+    expect(msg?.files).toEqual([{ name: 'sunset.jpg', type: 'image/jpeg' }, { name: undefined, type: 'application/pdf' }])
     expect(msg?.text).toBe('')
   })
 
