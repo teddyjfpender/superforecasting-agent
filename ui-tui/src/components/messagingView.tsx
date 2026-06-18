@@ -13,6 +13,14 @@ import {
   type SignalGroup
 } from '../lib/signalClient.js'
 import {
+  type ContactBook,
+  isValidNumber,
+  loadContactBook,
+  normalizeNumber,
+  saveContactBook,
+  upsertContact
+} from '../lib/signalContacts.js'
+import {
   appendMessage,
   loadSignalCache,
   resolveSignalConfig,
@@ -134,6 +142,14 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const [composing, setComposing] = useState(false)
   const [draft, setDraft] = useState('')
 
+  // Persisted address book (names/numbers) + the "new message" composer.
+  const [contactBook, setContactBook] = useState<ContactBook>(() => loadContactBook())
+  const [newChat, setNewChat] = useState(false)
+  const [newNumber, setNewNumber] = useState('')
+  const [newName, setNewName] = useState('')
+  const [newField, setNewField] = useState<'name' | 'number'>('number')
+  const [pendingChatId, setPendingChatId] = useState<null | string>(null)
+
   const cacheRef = useRef<SignalCache>(loadSignalCache())
   const [cacheVersion, setCacheVersion] = useState(0)
   const aliveRef = useRef(true)
@@ -184,6 +200,29 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
       setContacts(cs)
       setGroups(gs)
+      setContactBook(prev => {
+        let book = prev
+
+        for (const c of cs) {
+          // Skip when the daemon's "name" is just the id/number — don't let it
+          // clobber a real name you've saved.
+          if (c.name?.trim() && c.name.trim() !== c.id) {
+            book = upsertContact(book, { chatId: c.id, name: c.name })
+          }
+        }
+
+        for (const g of gs) {
+          if (g.name?.trim()) {
+            book = upsertContact(book, { chatId: `group:${g.id}`, name: g.name })
+          }
+        }
+
+        if (book !== prev) {
+          saveContactBook(book)
+        }
+
+        return book
+      })
       stop = openReceiveStream(
         cfg,
         msg => {
@@ -217,9 +256,18 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       nameById.set(`group:${g.id}`, g.name)
     }
 
+    // The persisted book fills in names the live daemon didn't resolve (and
+    // surfaces chats — e.g. a number you just started — that have no history).
+    for (const [id, c] of Object.entries(contactBook)) {
+      if (c.name && !nameById.get(id)?.trim()) {
+        nameById.set(id, c.name)
+      }
+    }
+
     const ids = new Set<string>([
       ...contacts.map(c => c.id),
       ...groups.map(g => `group:${g.id}`),
+      ...Object.keys(contactBook),
       ...Object.keys(cache)
     ])
 
@@ -241,11 +289,50 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
     return list
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contacts, groups, cacheVersion])
+  }, [contacts, groups, contactBook, cacheVersion])
 
   const clampedSel = Math.min(sel, Math.max(0, conversations.length - 1))
   const activeConv = conversations[clampedSel]
   const threadMessages = activeConv ? cacheRef.current[activeConv.chatId] ?? [] : []
+
+  // After creating a new chat, select it once it appears in the list and drop
+  // straight into the composer.
+  useEffect(() => {
+    if (!pendingChatId) {
+      return
+    }
+
+    const i = conversations.findIndex(c => c.chatId === pendingChatId)
+
+    if (i >= 0) {
+      setSel(i)
+      setDraft('')
+      setComposing(true)
+      setPendingChatId(null)
+    }
+  }, [conversations, pendingChatId])
+
+  // Start a conversation with a typed number: validate, save it to the address
+  // book (so the name persists), then select + compose.
+  const createNewChat = () => {
+    const number = normalizeNumber(newNumber)
+
+    if (!isValidNumber(number)) {
+      setFlash('enter a valid number, e.g. +12674553945')
+
+      return
+    }
+
+    const book = upsertContact(contactBook, { chatId: number, name: newName, number })
+    setContactBook(book)
+    saveContactBook(book)
+    setNewChat(false)
+    setNewNumber('')
+    setNewName('')
+    setNewField('number')
+    setPendingChatId(number)
+    setFlash(`new chat · ${newName.trim() || number}`)
+  }
 
   const sendDraft = () => {
     const text = draft.trim()
@@ -307,6 +394,27 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         if (aliveRef.current) {
           setContacts(cs)
           setGroups(gs)
+          setContactBook(prev => {
+            let book = prev
+
+            for (const c of cs) {
+              if (c.name?.trim()) {
+                book = upsertContact(book, { chatId: c.id, name: c.name })
+              }
+            }
+
+            for (const g of gs) {
+              if (g.name?.trim()) {
+                book = upsertContact(book, { chatId: `group:${g.id}`, name: g.name })
+              }
+            }
+
+            if (book !== prev) {
+              saveContactBook(book)
+            }
+
+            return book
+          })
           setFlash('refreshed')
         }
       }
@@ -327,6 +435,35 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   useInput((ch, key) => {
     // While the setup modal is open it owns all input.
     if (setup) {
+      return
+    }
+
+    // New-message composer: number + optional name, Tab switches field.
+    if (newChat) {
+      if (key.escape) {
+        return setNewChat(false)
+      }
+
+      if (key.return) {
+        return createNewChat()
+      }
+
+      if (key.tab) {
+        return setNewField(f => (f === 'number' ? 'name' : 'number'))
+      }
+
+      if (key.backspace || key.delete) {
+        return newField === 'number' ? setNewNumber(s => s.slice(0, -1)) : setNewName(s => s.slice(0, -1))
+      }
+
+      if (ch && !key.ctrl && !key.meta) {
+        const printable = [...ch].filter(c => c >= ' ').join('')
+
+        if (printable) {
+          return newField === 'number' ? setNewNumber(s => s + printable) : setNewName(s => s + printable)
+        }
+      }
+
       return
     }
 
@@ -367,6 +504,14 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
     if (ch === 'r') {
       return reconnect()
+    }
+
+    if (ch === 'n') {
+      setNewNumber('')
+      setNewName('')
+      setNewField('number')
+
+      return setNewChat(true)
     }
 
     if (!connected) {
@@ -446,6 +591,62 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           rows={termRows}
           t={t}
         />
+      </Box>
+    )
+  }
+
+  // ---- New-message composer (press n) -------------------------------------
+  if (newChat) {
+    const modalW = Math.max(40, Math.min(cols - 4, 66))
+    const valid = isValidNumber(newNumber)
+
+    const field = (label: string, value: string, active: boolean, placeholder: string) => (
+      <Box>
+        <Text bold={active} color={active ? t.color.accent : t.color.label}>
+          {label.padEnd(8)}
+        </Text>
+        <Text color={t.color.muted}>{'› '}</Text>
+        <Text color={t.color.text}>{value}</Text>
+        {active ? (
+          <Text color={t.color.text} inverse>
+            {' '}
+          </Text>
+        ) : null}
+        {!value ? <Text color={t.color.muted}> {placeholder}</Text> : null}
+      </Box>
+    )
+
+    return (
+      <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
+        {header}
+        <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
+          <Box borderColor={t.color.accent} borderStyle="round" flexDirection="column" paddingX={2} paddingY={1} width={modalW}>
+            <Text bold color={t.color.primary}>
+              New message
+            </Text>
+            <Box marginTop={1}>
+              <Text color={t.color.border}>{'─'.repeat(modalW - 6)}</Text>
+            </Box>
+            <Box flexDirection="column" marginTop={1}>
+              {field('Number', newNumber, newField === 'number', '+12674553945')}
+              {field('Name', newName, newField === 'name', 'optional')}
+            </Box>
+            <Box marginTop={1}>
+              <Text color={newNumber ? (valid ? t.color.ok : t.color.error) : t.color.muted} wrap="truncate-end">
+                {newNumber
+                  ? valid
+                    ? `${ICON.ok} valid Signal number`
+                    : 'needs E.164 format, e.g. +12674553945'
+                  : 'Enter a phone number in E.164 format (with country code).'}
+              </Text>
+            </Box>
+            <Box marginTop={1}>
+              <Text color={t.color.muted} wrap="truncate-end">
+                ⏎ start chat · Tab switch field · Esc cancel
+              </Text>
+            </Box>
+          </Box>
+        </Box>
       </Box>
     )
   }
@@ -609,6 +810,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     : [
         { k: '↑↓', label: 'Chats' },
         { k: 'i', label: 'Write', run: () => activeConv && setComposing(true) },
+        { k: 'n', label: 'New message', run: () => { setNewNumber(''); setNewName(''); setNewField('number'); setNewChat(true) } },
         { k: 'r', label: 'Reconnect', run: reconnect },
         { k: 'q', label: 'Close', run: onClose }
       ]
@@ -618,7 +820,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       <FooterChips chips={chips} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-        {composing ? '⏎ send · Esc cancel' : '↑↓/jk chats · i/⏎ write · r reconnect · Esc/q close'}
+        {composing ? '⏎ send · Esc cancel' : '↑↓/jk chats · i/⏎ write · n new message · r reconnect · Esc/q close'}
       </Text>
     </Box>
   )

@@ -1,8 +1,22 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { forecastHomeDir } from './forecastHome.js'
 import type { SignalConfig, SignalMessage } from './signalClient.js'
+
+// Owner-only (0600), atomic write: a crash mid-write can't corrupt the file
+// (write a temp sibling, then rename over the target).
+const writeSecure = (file: string, text: string): void => {
+  const dir = forecastHomeDir()
+
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true })
+  }
+
+  const tmp = `${file}.${process.pid}.tmp`
+  writeFileSync(tmp, text, { mode: 0o600 })
+  renameSync(tmp, file)
+}
 
 // Config + persisted message cache for the personal Signal client.
 //
@@ -50,13 +64,7 @@ export const resolveSignalConfig = (): null | SignalConfig => {
 
 export const saveSignalConfig = (cfg: SignalConfig, file = signalConfigFile()): boolean => {
   try {
-    const dir = forecastHomeDir()
-
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true })
-    }
-
-    writeFileSync(file, `${JSON.stringify(cfg, null, 2)}\n`, { mode: 0o600 })
+    writeSecure(file, `${JSON.stringify(cfg, null, 2)}\n`)
 
     return true
   } catch {
@@ -82,19 +90,13 @@ export const loadSignalCache = (file = cacheFile()): SignalCache => {
 
 export const saveSignalCache = (cache: SignalCache, file = cacheFile()): boolean => {
   try {
-    const dir = forecastHomeDir()
-
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true })
-    }
-
     const trimmed: SignalCache = {}
 
     for (const [chatId, msgs] of Object.entries(cache)) {
       trimmed[chatId] = msgs.slice(-MAX_PER_CHAT)
     }
 
-    writeFileSync(file, JSON.stringify(trimmed), { mode: 0o600 })
+    writeSecure(file, JSON.stringify(trimmed))
 
     return true
   } catch {
