@@ -25,6 +25,7 @@ export interface SignalGroup {
 }
 
 export interface AttachmentInfo {
+  id?: string // signal-cli's stored filename (used to open the saved file)
   name?: string
   type?: string // MIME content-type
 }
@@ -170,7 +171,7 @@ const attachmentList = (dataMessage: Record<string, unknown>): AttachmentInfo[] 
   return arr.map(a => {
     const o = (a && typeof a === 'object' ? a : {}) as Record<string, unknown>
 
-    return { name: str(o.filename) || undefined, type: str(o.contentType) || undefined }
+    return { id: str(o.id) || undefined, name: str(o.filename) || undefined, type: str(o.contentType) || undefined }
   })
 }
 

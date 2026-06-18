@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { patchOverlayState } from '../app/overlayStore.js'
 import { ICON, statusGlyph, type StatusKind } from '../lib/icons.js'
+import { openAttachment } from '../lib/openAttachment.js'
 import {
   attachmentLabel,
   checkHealth,
@@ -12,7 +13,8 @@ import {
   openReceiveStream,
   sendSignalMessage,
   type SignalContact,
-  type SignalGroup
+  type SignalGroup,
+  type SignalMessage
 } from '../lib/signalClient.js'
 import {
   type ContactBook,
@@ -506,6 +508,31 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     setContactView(false)
   }
 
+  // Open a message's first attachment in the OS default app (signal-cli saved
+  // it on receive). Clickable in the thread; Ctrl+O opens the latest.
+  const openMessageAttachment = (m: SignalMessage) => {
+    const file = (m.files ?? []).find(f => f.id)
+
+    if (!file?.id) {
+      setFlash('attachment not available to open')
+
+      return
+    }
+
+    const { error } = openAttachment(file.id)
+    setFlash(error ? `open failed: ${error}` : `opening ${file.name || 'attachment'}…`)
+  }
+
+  const openLatestAttachment = () => {
+    for (let i = threadMessages.length - 1; i >= 0; i--) {
+      if ((threadMessages[i].files ?? []).some(f => f.id)) {
+        return openMessageAttachment(threadMessages[i])
+      }
+    }
+
+    setFlash('no attachments in this chat')
+  }
+
   const sendDraft = () => {
     const text = draft.trim()
     setDraft('') // clear, but stay in the thread so you can keep typing
@@ -708,6 +735,12 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
       if (key.downArrow || key.wheelDown) {
         return setThreadScroll(s => Math.max(0, s - 1))
+      }
+
+      // Ctrl+O opens the latest attachment (it's a control key, so it doesn't
+      // type into the draft).
+      if (key.ctrl && (ch === 'o' || ch === 'O')) {
+        return openLatestAttachment()
       }
 
       if (key.backspace || key.delete) {
@@ -1131,9 +1164,12 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
                     </Text>
                   ) : null}
                   {m.attachments > 0 ? (
-                    <Text color={t.color.accent} wrap="truncate-end">
-                      {attachmentLabel(m)}
-                    </Text>
+                    <Box onClick={() => openMessageAttachment(m)}>
+                      <Text color={t.color.accent} wrap="truncate-end">
+                        {attachmentLabel(m)}
+                        {(m.files ?? []).some(f => f.id) ? <Text color={t.color.muted}> · open</Text> : null}
+                      </Text>
+                    </Box>
                   ) : null}
                 </Box>
               )
@@ -1181,7 +1217,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       <Text color={t.color.muted} wrap="truncate-end">
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
         {composing
-          ? 'type to write · ⏎ send · ↑↓/wheel scroll history · Esc back to chats'
+          ? 'type · ⏎ send · ↑↓ scroll · ^O open attachment · Esc back'
           : `↑↓/jk chats · ⏎/→ open & write · c contact · n new · r reconnect${connected ? '' : ' · s set up'} · Esc/q close`}
       </Text>
     </Box>
