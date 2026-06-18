@@ -2,6 +2,7 @@ import { Box, Text, useInput, useStdout } from '@hermes/ink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { patchOverlayState } from '../app/overlayStore.js'
+import { ICON, statusGlyph, type StatusKind } from '../lib/icons.js'
 import {
   checkHealth,
   listContacts,
@@ -204,7 +205,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     const list: Conversation[] = [...ids].map(chatId => {
       const msgs = cache[chatId] ?? []
       const last = msgs[msgs.length - 1]
-      const preview = last ? `${last.fromMe ? 'You: ' : ''}${last.text || (last.attachments ? '📎 attachment' : '')}` : ''
+      const preview = last ? `${last.fromMe ? 'You: ' : ''}${last.text || (last.attachments ? `${ICON.attach} attachment` : '')}` : ''
 
       return {
         chatId,
@@ -394,6 +395,8 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           : 'connected'
         : 'unreachable'
 
+  const statusKind: StatusKind = !cfg ? 'idle' : reachable === null ? 'busy' : connected ? 'live' : 'error'
+
   const header = (
     <Box flexShrink={0} marginBottom={1}>
       <Text wrap="truncate-end">
@@ -401,7 +404,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           MESSAGING
         </Text>
         <Text color={t.color.muted}>{'   '}</Text>
-        <Text color={statusDot}>●</Text>
+        <Text color={statusDot}>{statusGlyph(statusKind, tick)}</Text>
         <Text color={t.color.muted}> {statusWord} · </Text>
         <Text color={connected ? t.color.accent : t.color.text}>Signal</Text>
         <Text color={t.color.muted}> · Telegram (soon)</Text>
@@ -557,7 +560,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
                     <Text color={t.color.muted}>{`  ${clock(m.timestamp)}`}</Text>
                   </Text>
                   <Text color={t.color.text} wrap="wrap">
-                    {m.text || (m.attachments ? '📎 attachment' : '')}
+                    {m.text || (m.attachments ? `${ICON.attach} attachment` : '')}
                   </Text>
                 </Box>
               )

@@ -2,7 +2,9 @@ import { Box, Text, useInput } from '@hermes/ink'
 import { useEffect, useRef, useState } from 'react'
 
 import type { MarketSeries } from '../content/marketProviders.js'
+import { ICON, spinnerFrame } from '../lib/icons.js'
 import { searchCatalog, searchYahoo } from '../lib/marketSearch.js'
+import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
 // Search the market catalog + Yahoo's symbol lookup to find any ticker / line
@@ -49,18 +51,22 @@ export function MarketSearchModal({
   rows,
   t
 }: MarketSearchModalProps) {
+  const sem = semantics(t)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<MarketSeries[]>([])
   const [sel, setSel] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [tick, setTick] = useState(0)
   const seqRef = useRef(0)
   const aliveRef = useRef(true)
 
   useEffect(() => {
     aliveRef.current = true
+    const id = setInterval(() => setTick(v => v + 1), 220)
 
     return () => {
       aliveRef.current = false
+      clearInterval(id)
     }
   }, [])
 
@@ -166,13 +172,13 @@ export function MarketSearchModal({
           <Text bold color={t.color.primary}>
             Search markets
           </Text>
-          <Text color={t.color.muted}>
-            {loading ? 'searching…' : `${results.length} ${results.length === 1 ? 'match' : 'matches'}`}
+          <Text color={loading ? sem.star : t.color.muted}>
+            {loading ? `${spinnerFrame(tick)} searching…` : `${results.length} ${results.length === 1 ? 'match' : 'matches'}`}
           </Text>
         </Box>
 
         <Box flexShrink={0} marginTop={1}>
-          <Text color={t.color.muted}>{'🔎 '}</Text>
+          <Text bold color={sem.cursor}>{`${ICON.search} `}</Text>
           <Text color={t.color.text}>{query}</Text>
           <Text color={t.color.text} inverse>
             {' '}
@@ -181,7 +187,7 @@ export function MarketSearchModal({
         </Box>
 
         <Box flexShrink={0} marginTop={1}>
-          <Text color={t.color.border}>{'─'.repeat(inner)}</Text>
+          <Text color={sem.rule}>{'─'.repeat(inner)}</Text>
         </Box>
 
         <Box flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden">
@@ -199,14 +205,14 @@ export function MarketSearchModal({
               return (
                 <Box key={`${s.provider}:${s.symbol}:${idx}`} width="100%">
                   <Text wrap="truncate-end">
-                    <Text color={on ? t.color.primary : t.color.border}>{on ? '▸ ' : '  '}</Text>
-                    <Text bold color={added ? t.color.ok : t.color.muted}>
+                    <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
+                    <Text bold color={added ? sem.up : sem.subtle}>
                       {added ? '[✓]' : '[+]'}
                     </Text>
-                    <Text color={watched ? t.color.warn : t.color.border}>{watched ? '★' : ' '}</Text>
+                    <Text color={watched ? sem.star : sem.faint}>{watched ? '★' : ' '}</Text>
                     <Text color={t.color.accent}> {s.symbol.padEnd(10)}</Text>
-                    <Text color={on ? t.color.text : t.color.label}> {truncate(s.name, inner - 32)}</Text>
-                    <Text color={t.color.muted}> {s.category}</Text>
+                    <Text color={on ? sem.selectionFg : t.color.label}> {truncate(s.name, inner - 32)}</Text>
+                    <Text color={sem.badge}> {s.category}</Text>
                   </Text>
                 </Box>
               )

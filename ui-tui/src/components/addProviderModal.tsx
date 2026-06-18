@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { MARKET_CATEGORIES, MARKET_PROVIDERS, providerByKey } from '../content/marketProviders.js'
 import { getProviderKey, saveProviderKey } from '../lib/marketKeys.js'
 import { type MarketConfig, saveMarketConfig } from '../lib/marketStore.js'
+import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
 // Markets onboarding (press `a`): enable data providers (entering + securely
@@ -30,6 +31,7 @@ interface AddProviderModalProps {
 }
 
 export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: AddProviderModalProps) {
+  const sem = semantics(t)
   const [providers, setProviders] = useState<Set<string>>(() => new Set(initial.providers))
 
   const [categories, setCategories] = useState<Set<string>>(
@@ -248,7 +250,7 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
         <Box flexDirection="row" flexShrink={0} height={bodyRows} marginTop={1}>
           {/* Providers */}
           <Box {...RIGHT_RULE} borderColor={t.color.border} flexDirection="column" flexShrink={0} height={bodyRows} overflow="hidden" paddingRight={1} width={railWidth}>
-            <Text bold color={focus === 'providers' ? t.color.accent : t.color.label}>
+            <Text bold color={focus === 'providers' ? sem.cursor : sem.heading}>
               PROVIDERS
             </Text>
             {MARKET_PROVIDERS.map((p, i) => {
@@ -259,12 +261,12 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
               return (
                 <Box key={p.key} onClick={() => { setFocus('providers'); setProvIdx(i) }} width="100%">
                   <Text wrap="truncate-end">
-                    <Text color={on ? t.color.primary : t.color.border}>{on ? '▸ ' : '  '}</Text>
-                    <Text bold color={enabled ? t.color.ok : t.color.muted}>
+                    <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
+                    <Text bold color={enabled ? sem.up : sem.subtle}>
                       {enabled ? '[✓]' : '[ ]'}
                     </Text>
-                    <Text color={on ? t.color.text : t.color.label}> {truncate(p.name, railWidth - 10)}</Text>
-                    {needsKey ? <Text color={t.color.warn}> key</Text> : null}
+                    <Text color={on ? sem.selectionFg : t.color.label}> {truncate(p.name, railWidth - 10)}</Text>
+                    {needsKey ? <Text color={sem.star}> key</Text> : null}
                   </Text>
                 </Box>
               )
@@ -273,7 +275,7 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
 
           {/* Categories */}
           <Box flexDirection="column" flexGrow={1} height={bodyRows} marginLeft={1} minWidth={0} overflow="hidden">
-            <Text bold color={focus === 'categories' ? t.color.accent : t.color.label}>
+            <Text bold color={focus === 'categories' ? sem.cursor : sem.heading}>
               CATEGORIES
             </Text>
             {MARKET_CATEGORIES.map((c, i) => {
@@ -283,11 +285,11 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
               return (
                 <Box key={c} onClick={() => { setFocus('categories'); setCatIdx(i) }} width="100%">
                   <Text wrap="truncate-end">
-                    <Text color={on ? t.color.primary : t.color.border}>{on ? '▸ ' : '  '}</Text>
-                    <Text bold color={sel ? t.color.ok : t.color.muted}>
+                    <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
+                    <Text bold color={sel ? sem.up : sem.subtle}>
                       {sel ? '[✓]' : '[ ]'}
                     </Text>
-                    <Text color={on ? t.color.text : t.color.label}> {c}</Text>
+                    <Text color={on ? sem.selectionFg : t.color.label}> {c}</Text>
                   </Text>
                 </Box>
               )
@@ -296,7 +298,7 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
         </Box>
 
         <Box flexShrink={0}>
-          <Text color={t.color.border}>{'─'.repeat(inner)}</Text>
+          <Text color={sem.rule}>{'─'.repeat(inner)}</Text>
         </Box>
         <Box flexShrink={0} minHeight={3}>
           {bodyBottom}

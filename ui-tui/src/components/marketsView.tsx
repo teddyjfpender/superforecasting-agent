@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { patchOverlayState } from '../app/overlayStore.js'
 import { DEFAULT_SERIES, MARKET_CATEGORIES, type MarketSeries } from '../content/marketProviders.js'
+import { statusGlyph } from '../lib/icons.js'
 import { fetchQuotes, type MarketQuote } from '../lib/marketFetch.js'
 import { getProviderKey } from '../lib/marketKeys.js'
 import {
@@ -16,6 +17,7 @@ import {
 } from '../lib/marketStore.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
 import { blockChart, sparkline } from '../lib/sparkline.js'
+import { dirColor, dirGlyph, semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
 import { AddProviderModal } from './addProviderModal.js'
@@ -27,7 +29,7 @@ export const closeMarketsView = () => patchOverlayState({ markets: false })
 
 // Markets — a live tape backed by user-chosen providers, with a searchable
 // universe and a rich per-line-item detail pane (sparkline + day/52-week ranges
-// + heuristics). `a` adds providers/categories, `/` searches for any ticker.
+// + heuristics). `d` adds providers/categories, `/` searches, `a` asks the agent.
 
 const STALE_MS = 60_000
 const WATCHLIST = 'Watchlist'
@@ -135,6 +137,7 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
+  const sem = semantics(t)
 
   const [config, setConfig] = useState<MarketConfig>(() => loadMarketConfig())
   const [active, setActive] = useState(0)
@@ -377,7 +380,6 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
   })
 
   const width = Math.max(40, cols - 4)
-  const live = tick % 2 === 0
   const hasContent = providers.size > 0 || watchlist.length > 0
   const contentHeight = Math.max(8, termRows - 8)
 
@@ -388,7 +390,9 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
           MARKETS
         </Text>
         <Text color={t.color.muted}>{'   '}</Text>
-        <Text color={fetching ? (live ? t.color.warn : t.color.muted) : hasContent ? t.color.ok : t.color.muted}>●</Text>
+        <Text color={fetching ? sem.star : hasContent ? sem.up : sem.subtle}>
+          {statusGlyph(fetching ? 'busy' : hasContent ? 'live' : 'idle', tick)}
+        </Text>
         <Text color={t.color.muted}> {fetching ? 'updating…' : hasContent ? 'live quotes' : 'no providers'} · </Text>
         <Text color={t.color.text}>
           {hasContent ? `${config.providers.length} providers · ${watchlist.length} watched` : 'press a to add data'}
@@ -487,18 +491,18 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
   const listStart = Math.max(0, Math.min(clampedSel - Math.floor(listRows / 2), rows.length - listRows))
   const windowed = rows.slice(Math.max(0, listStart), Math.max(0, listStart) + listRows)
 
-  const cellColor = (v: null | number | undefined): string =>
-    v === null || v === undefined || v === 0 ? t.color.muted : v > 0 ? t.color.ok : t.color.error
+  const cellColor = (v: null | number | undefined): string => dirColor(sem, v)
 
   // Fixed columns packed from the left; the 1-month trend sparkline fills the
   // leftover width so each row saturates the pane (overflow clips the trend,
-  // never the numbers, since the trend is last).
+  // never the numbers, since the trend is last). CHG% leads with a ▲/▼ so
+  // direction reads without colour too.
   const COLS: { align: 'left' | 'right'; key: string; label: string; w: number }[] = [
     { align: 'left', key: 'sym', label: 'SYMBOL', w: 9 },
     { align: 'left', key: 'name', label: 'NAME', w: 24 },
     { align: 'right', key: 'last', label: 'LAST', w: 12 },
     { align: 'right', key: 'chg', label: 'CHG', w: 11 },
-    { align: 'right', key: 'pct', label: 'CHG%', w: 9 },
+    { align: 'right', key: 'pct', label: 'CHG%', w: 10 },
     { align: 'right', key: 'vol', label: 'VOL', w: 10 }
   ]
 
@@ -535,13 +539,13 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
         return { color: t.color.label, text: q?.name || ser.name }
 
       case 'pct':
-        return { color: cellColor(q?.changePct ?? null), text: q ? fmtPct(q.changePct) : '—' }
+        return { color: cellColor(q?.changePct ?? null), text: q ? `${dirGlyph(q.changePct)} ${fmtPct(q.changePct)}` : '—' }
 
       case 'sym':
-        return { color: t.color.muted, text: ser.symbol }
+        return { color: sem.subtle, text: ser.symbol }
 
       case 'vol':
-        return { color: t.color.muted, text: q ? fmtVol(q.volume) : '—' }
+        return { color: sem.subtle, text: q ? fmtVol(q.volume) : '—' }
 
       default:
         return { color: t.color.text, text: '' }
@@ -562,16 +566,16 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
       paddingRight={1}
       width={tableWidth}
     >
-      <Text bold color={t.color.label} wrap="truncate-end">
+      <Text bold color={sem.heading} wrap="truncate-end">
         {'  '}
         {keptCols.map(c => `${pad(c.label, c.w, c.align)} `).join('')}
         {showTrend ? pad('1MO', trendW, 'left') : ''}
       </Text>
-      <Text color={t.color.border}>{'─'.repeat(avail)}</Text>
+      <Text color={sem.rule}>{'─'.repeat(avail)}</Text>
       <Box flexDirection="column">
         {rows.length === 0 ? (
           <Text color={t.color.muted} wrap="wrap">
-            {fetching ? 'Fetching…' : `No ${activeCategory ?? ''} series. Press a to add a provider, or / to search.`}
+            {fetching ? 'Fetching…' : `No ${activeCategory ?? ''} series. Press d to add a provider, or / to search.`}
           </Text>
         ) : (
           windowed.map(({ quote, series }, i) => {
@@ -582,18 +586,18 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
             return (
               <Box key={`${series.provider}:${series.symbol}`} onClick={() => setSel(idx)} width="100%">
                 <Text wrap="truncate-end">
-                  <Text color={on ? t.color.accent : t.color.border}>{on ? '▸ ' : '  '}</Text>
+                  <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
                   {keptCols.map(c => {
                     const cell = cellText(c.key, quote, series)
                     const highlight = on && (c.key === 'name' || c.key === 'last')
 
                     return (
-                      <Text bold={on && c.key === 'name'} color={highlight ? t.color.text : cell.color} key={c.key}>
+                      <Text bold={on && c.key === 'name'} color={highlight ? sem.selectionFg : cell.color} key={c.key}>
                         {`${pad(cell.text, c.w, c.align)} `}
                       </Text>
                     )
                   })}
-                  {showTrend ? <Text color={(quote?.changePct ?? 0) >= 0 ? t.color.ok : t.color.error}>{trend}</Text> : null}
+                  {showTrend ? <Text color={dirColor(sem, quote?.changePct)}>{trend}</Text> : null}
                 </Text>
               </Box>
             )
@@ -610,14 +614,14 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
   const chart = q?.history ? blockChart(q.history, chartW, 7) : []
   const fromHigh = q?.value != null && q.week52High ? ((q.value - q.week52High) / q.week52High) * 100 : null
   const fromLow = q?.value != null && q.week52Low ? ((q.value - q.week52Low) / q.week52Low) * 100 : null
-  const trendColor = (q?.changePct ?? 0) >= 0 ? t.color.ok : t.color.error
+  const trendColor = dirColor(sem, q?.changePct)
   const colW = Math.max(10, Math.floor(detailWidth / 2) - 8)
 
   const statRow = (l1: string, v1: string, l2: string, v2: string, c1?: string, c2?: string) => (
     <Text wrap="truncate-end">
-      <Text color={t.color.label}>{l1.padEnd(8)}</Text>
+      <Text color={sem.heading}>{l1.padEnd(8)}</Text>
       <Text color={c1 ?? t.color.text}>{v1.padEnd(colW)}</Text>
-      <Text color={t.color.label}>{l2.padEnd(8)}</Text>
+      <Text color={sem.heading}>{l2.padEnd(8)}</Text>
       <Text color={c2 ?? t.color.text}>{v2}</Text>
     </Text>
   )
@@ -629,7 +633,7 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
           <Text bold color={t.color.text} wrap="truncate-end">
             {q?.name || s.name}
           </Text>
-          <Text color={t.color.muted} wrap="truncate-end">
+          <Text color={sem.subtle} wrap="truncate-end">
             {s.symbol}
             {q?.exchange ? ` · ${q.exchange}` : ''} · {s.category}
             {q?.currency ? ` · ${q.currency}` : ''}
@@ -639,9 +643,9 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
             <Text bold color={t.color.text}>
               {fmtNum(q?.value ?? null, s.unit)}
             </Text>
-            <Text color={cellColor(q?.change ?? null)}>
+            <Text color={dirColor(sem, q?.change)}>
               {'   '}
-              {q ? fmtSigned(q.change) : '—'}  {q ? fmtPct(q.changePct) : '—'}
+              {q ? `${dirGlyph(q.change)} ${fmtSigned(q.change)}  ${fmtPct(q.changePct)}` : '—'}
             </Text>
           </Box>
 
@@ -652,12 +656,12 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
                   {line}
                 </Text>
               ))}
-              <Text color={t.color.muted}>1-month</Text>
+              <Text color={sem.subtle}>1-month</Text>
             </Box>
           ) : null}
 
           <Box flexShrink={0} marginTop={1}>
-            <Text color={t.color.border}>{'─'.repeat(chartW)}</Text>
+            <Text color={sem.rule}>{'─'.repeat(chartW)}</Text>
           </Box>
           <Box flexDirection="column">
             {statRow('Last', fmtNum(q?.value ?? null, s.unit), 'Prev', fmtNum(q?.prevClose ?? null))}
@@ -675,14 +679,14 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
           </Box>
 
           <Box flexShrink={0} marginTop={1}>
-            <Text color={t.color.muted} wrap="truncate-end">
+            <Text color={sem.subtle} wrap="truncate-end">
               {s.provider}
               {s.provider === 'yahoo' ? ' · ⏎ open on Yahoo Finance' : ''}
             </Text>
           </Box>
         </Box>
       ) : (
-        <Text color={t.color.muted}>Select a row to see details.</Text>
+        <Text color={sem.subtle}>Select a row to see details.</Text>
       )}
     </Box>
   )

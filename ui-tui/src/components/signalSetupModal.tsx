@@ -19,6 +19,7 @@ import {
   runLink,
   verifyNumber
 } from '../lib/signalOnboard.js'
+import { qrColors } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
 // In-TUI Signal onboarding wizard, painted over the Messaging view (press `s`).
@@ -46,6 +47,7 @@ interface SignalSetupModalProps {
 const tail = (lines: string[], n: number) => lines.slice(-n)
 
 export function SignalSetupModal({ cols, onCancel, onConnected, rows, t }: SignalSetupModalProps) {
+  const qr = qrColors(t)
   const [step, setStep] = useState<Step>('menu')
   const [cli, setCli] = useState<BinaryStatus>({ found: false, path: '', version: '' })
   const [java, setJava] = useState<BinaryStatus>({ found: false, path: '', version: '' })
@@ -372,11 +374,11 @@ export function SignalSetupModal({ cols, onCancel, onConnected, rows, t }: Signa
             <Text color={t.color.label} wrap="truncate-end">
               Open Signal on your phone → Settings → Linked devices → + → scan:
             </Text>
-            {/* Centered, on-theme (cream field + near-black modules) but still
-                high-contrast so the scanner reads it cleanly. */}
+            {/* Always a light field + dark modules (theme-aware via luminance)
+                so it scans in BOTH light and dark themes — not inverted. */}
             <Box flexDirection="column" marginTop={1}>
               {qrLines(linkUri).map((line, i) => (
-                <Text backgroundColor={t.color.text} color={t.color.statusBg} key={i}>
+                <Text backgroundColor={qr.bg} color={qr.fg} key={i}>
                   {line}
                 </Text>
               ))}

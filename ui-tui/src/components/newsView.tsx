@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { patchOverlayState } from '../app/overlayStore.js'
 import type { CatalogFeed } from '../content/newsFeedCatalog.js'
 import { FEED_CATEGORIES } from '../content/newsFeedCatalog.js'
+import { statusGlyph } from '../lib/icons.js'
 import { type ArticleCache, loadArticleCache, pruneArticleCache, saveArticleCache } from '../lib/newsFeedCache.js'
 import { type Article, fetchFeeds } from '../lib/newsFeedFetch.js'
 import { ALL_CATEGORY, searchFeeds } from '../lib/newsFeedSearch.js'
@@ -17,6 +18,7 @@ import {
   type SubscribedFeed
 } from '../lib/newsFeedStore.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
+import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
 import { AddFeedModal } from './addFeedModal.js'
@@ -412,7 +414,7 @@ export function NewsView({ onClose, t }: NewsViewProps) {
 
   const width = Math.max(48, cols - 4)
   const contentHeight = Math.max(8, termRows - 7)
-  const live = tick % 2 === 0
+  const sem = semantics(t)
   const hasFeeds = subscribed.length > 0
   const railWidth = Math.min(26, Math.max(20, Math.floor(width * 0.2)))
   // One screen row per article (single-line rows) below the pane label + gap.
@@ -433,7 +435,9 @@ export function NewsView({ onClose, t }: NewsViewProps) {
           NEWS
         </Text>
         <Text color={t.color.muted}>{'   '}</Text>
-        <Text color={fetching ? (live ? t.color.warn : t.color.muted) : t.color.ok}>●</Text>
+        <Text color={fetching ? sem.star : hasFeeds ? sem.up : sem.subtle}>
+          {statusGlyph(fetching ? 'busy' : hasFeeds ? 'live' : 'idle', tick)}
+        </Text>
         <Text color={t.color.muted}> {statusWord} · </Text>
         <Text color={t.color.text}>live RSS feeds</Text>
         <Text color={t.color.muted}>
@@ -525,10 +529,10 @@ export function NewsView({ onClose, t }: NewsViewProps) {
             return (
               <Box key={`${article.feedUrl}:${idx}`} onClick={() => setSel(idx)} width="100%">
                 <Text wrap="truncate-end">
-                  <Text color={on ? t.color.accent : t.color.border}>{on ? '▸ ' : '  '}</Text>
-                  <Text color={t.color.muted}>{when} </Text>
-                  <Text color={t.color.info}>{provider} </Text>
-                  <Text bold={on} color={on ? t.color.text : t.color.label}>
+                  <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
+                  <Text color={sem.subtle}>{when} </Text>
+                  <Text color={sem.badge}>{provider} </Text>
+                  <Text bold={on} color={on ? sem.selectionFg : t.color.label}>
                     {article.title}
                   </Text>
                 </Text>
