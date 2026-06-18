@@ -157,17 +157,20 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const [streaming, setStreaming] = useState(false)
   const [contacts, setContacts] = useState<SignalContact[]>([])
   const [groups, setGroups] = useState<SignalGroup[]>([])
-  const [sel, setSel] = useState(0)
+  // Selection is by chatId (stable), not list index — the list re-sorts by
+  // recency when you send/receive, so an index would jump to another chat.
+  const [selectedChatId, setSelectedChatId] = useState<null | string>(null)
   const [tick, setTick] = useState(0)
   const [flash, setFlash] = useState('')
-  const [composing, setComposing] = useState(false)
   const [draft, setDraft] = useState('')
 
-  // Focus: the chat LIST, or a single THREAD (read mode — scrolling moves the
-  // message history, not the conversation list). `threadScroll` counts messages
-  // scrolled up from the latest.
+  // Focus: the chat LIST, or an open THREAD. In a thread the composer is ALWAYS
+  // active (you can type the moment you open a chat — no extra keystroke), and
+  // arrows/wheel scroll the history. `threadScroll` counts messages scrolled up
+  // from the latest.
   const [focus, setFocus] = useState<'list' | 'thread'>('list')
   const [threadScroll, setThreadScroll] = useState(0)
+  const composing = focus === 'thread'
 
   // Persisted address book (names/numbers) + the "new message" composer.
   const [contactBook, setContactBook] = useState<ContactBook>(() => loadContactBook())
@@ -175,7 +178,6 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const [newNumber, setNewNumber] = useState('')
   const [newName, setNewName] = useState('')
   const [newField, setNewField] = useState<'name' | 'number'>('number')
-  const [pendingChatId, setPendingChatId] = useState<null | string>(null)
 
   const cacheRef = useRef<SignalCache>(loadSignalCache())
   const [cacheVersion, setCacheVersion] = useState(0)
@@ -318,7 +320,8 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contacts, groups, contactBook, cacheVersion])
 
-  const clampedSel = Math.min(sel, Math.max(0, conversations.length - 1))
+  const foundIndex = conversations.findIndex(c => c.chatId === selectedChatId)
+  const clampedSel = foundIndex >= 0 ? foundIndex : 0
   const activeConv = conversations[clampedSel]
   const threadMessages = activeConv ? cacheRef.current[activeConv.chatId] ?? [] : []
 
@@ -340,25 +343,9 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     setThreadScroll(0)
   }, [activeConv?.chatId])
 
-  // After creating a new chat, select it once it appears in the list and drop
-  // straight into the composer.
-  useEffect(() => {
-    if (!pendingChatId) {
-      return
-    }
-
-    const i = conversations.findIndex(c => c.chatId === pendingChatId)
-
-    if (i >= 0) {
-      setSel(i)
-      setDraft('')
-      setComposing(true)
-      setPendingChatId(null)
-    }
-  }, [conversations, pendingChatId])
-
   // Start a conversation with a typed number: validate, save it to the address
-  // book (so the name persists), then select + compose.
+  // book (so the name persists), then select + open it (chatId selection means
+  // it resolves as soon as the book update lands it in the list).
   const createNewChat = () => {
     const number = normalizeNumber(newNumber)
 
@@ -375,14 +362,16 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     setNewNumber('')
     setNewName('')
     setNewField('number')
-    setPendingChatId(number)
+    setSelectedChatId(number)
+    setThreadScroll(0)
+    setFocus('thread')
     setFlash(`new chat · ${newName.trim() || number}`)
   }
 
   const sendDraft = () => {
     const text = draft.trim()
-    setComposing(false)
-    setDraft('')
+    setDraft('') // clear, but stay in the thread so you can keep typing
+    setThreadScroll(0) // jump to the latest so the sent message is visible
 
     if (!text || !activeConv || !cfg) {
       return
@@ -512,16 +501,27 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       return
     }
 
-    if (composing) {
+    // Open thread: the composer is always active here (type immediately).
+    // Enter sends, arrows/wheel scroll history, Esc returns to the list. All
+    // other printable keys (incl. q/s/r/n) go into the draft — no global
+    // shortcuts while typing.
+    if (focus === 'thread') {
       if (key.escape) {
-        setComposing(false)
         setDraft('')
 
-        return
+        return setFocus('list')
       }
 
       if (key.return) {
         return sendDraft()
+      }
+
+      if (key.upArrow || key.wheelUp) {
+        return setThreadScroll(s => Math.min(maxThreadScroll, s + 1))
+      }
+
+      if (key.downArrow || key.wheelDown) {
+        return setThreadScroll(s => Math.max(0, s - 1))
       }
 
       if (key.backspace || key.delete) {
@@ -539,7 +539,8 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       return
     }
 
-    if (ch === 'q') {
+    // List focus.
+    if (ch === 'q' || key.escape) {
       return onClose()
     }
 
@@ -559,50 +560,17 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       return setNewChat(true)
     }
 
-    // Thread focus: ↑↓/wheel scroll the message history (not the chat list).
-    if (focus === 'thread') {
-      if (key.escape || key.leftArrow || ch === 'h') {
-        return setFocus('list')
-      }
-
-      if (ch === 'i' || key.return) {
-        setDraft('')
-
-        return setComposing(true)
-      }
-
-      if (key.upArrow || ch === 'k' || key.wheelUp) {
-        return setThreadScroll(s => Math.min(maxThreadScroll, s + 1))
-      }
-
-      if (key.downArrow || ch === 'j' || key.wheelDown) {
-        return setThreadScroll(s => Math.max(0, s - 1))
-      }
-
-      return
-    }
-
-    // List focus.
-    if (key.escape) {
-      return onClose()
-    }
-
     if (key.upArrow || ch === 'k' || key.wheelUp) {
-      return setSel(i => Math.max(0, i - 1))
+      return setSelectedChatId(conversations[Math.max(0, clampedSel - 1)]?.chatId ?? null)
     }
 
     if (key.downArrow || ch === 'j' || key.wheelDown) {
-      return setSel(i => Math.min(Math.max(0, conversations.length - 1), i + 1))
+      return setSelectedChatId(conversations[Math.min(conversations.length - 1, clampedSel + 1)]?.chatId ?? null)
     }
 
-    // Enter / → opens the highlighted chat in focused read mode; i writes.
-    if (ch === 'i' && activeConv) {
-      setDraft('')
-
-      return setComposing(true)
-    }
-
-    if ((key.return || key.rightArrow || ch === 'l') && activeConv) {
+    // Enter / → / i open the highlighted chat — composer ready immediately.
+    if ((key.return || key.rightArrow || ch === 'l' || ch === 'i') && activeConv) {
+      setSelectedChatId(activeConv.chatId)
       setThreadScroll(0)
 
       return setFocus('thread')
@@ -793,7 +761,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
             const nameW = Math.max(6, railWidth - 4 - time.length)
 
             return (
-              <Box key={conv.chatId} onClick={() => setSel(idx)} width="100%">
+              <Box key={conv.chatId} onClick={() => { setSelectedChatId(conv.chatId); setThreadScroll(0); setFocus('thread') }} width="100%">
                 <Text wrap="truncate-end">
                   <Text color={on ? t.color.accent : t.color.border}>{on ? '▸ ' : '  '}</Text>
                   <Text bold={on} color={on ? t.color.text : t.color.label}>
@@ -898,22 +866,16 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const chips: FooterChip[] = composing
     ? [
         { k: '⏎', label: 'Send' },
-        { k: '⎋', label: 'Cancel' }
+        { k: '↑↓', label: 'Scroll' },
+        { k: '⎋', label: 'Back', run: () => setFocus('list') }
       ]
-    : threadFocused
-      ? [
-          { k: '↑↓', label: 'Scroll' },
-          { k: 'i', label: 'Write', run: () => activeConv && setComposing(true) },
-          { k: '⎋', label: 'Back', run: () => setFocus('list') },
-          { k: 'q', label: 'Close', run: onClose }
-        ]
-      : [
-          { k: '↑↓', label: 'Chats' },
-          { k: '⏎', label: 'Open', run: () => activeConv && setFocus('thread') },
-          { k: 'i', label: 'Write', run: () => activeConv && setComposing(true) },
-          { k: 'n', label: 'New message', run: () => { setNewNumber(''); setNewName(''); setNewField('number'); setNewChat(true) } },
-          { k: 'q', label: 'Close', run: onClose }
-        ]
+    : [
+        { k: '↑↓', label: 'Chats' },
+        { k: '⏎', label: 'Open', run: () => activeConv && setFocus('thread') },
+        { k: 'n', label: 'New message', run: () => { setNewNumber(''); setNewName(''); setNewField('number'); setNewChat(true) } },
+        { k: 'r', label: 'Reconnect', run: reconnect },
+        { k: 'q', label: 'Close', run: onClose }
+      ]
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
@@ -921,10 +883,8 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       <Text color={t.color.muted} wrap="truncate-end">
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
         {composing
-          ? '⏎ send · Esc cancel'
-          : threadFocused
-            ? '↑↓/jk scroll history · i write · Esc/← back to chats · q close'
-            : '↑↓/jk chats · ⏎/→ open · i write · n new message · r reconnect · Esc/q close'}
+          ? 'type to write · ⏎ send · ↑↓/wheel scroll history · Esc back to chats'
+          : '↑↓/jk chats · ⏎/→ open & write · n new message · r reconnect · Esc/q close'}
       </Text>
     </Box>
   )
