@@ -680,9 +680,13 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         <Text color={t.color.muted}>{'› '}</Text>
         <Text color={t.color.text}>{value}</Text>
         {active ? (
-          <Text color={t.color.text} inverse>
-            {' '}
-          </Text>
+          live ? (
+            <Text color={t.color.text} inverse>
+              {' '}
+            </Text>
+          ) : (
+            <Text>{' '}</Text>
+          )
         ) : null}
         {!value ? <Text color={t.color.muted}> {placeholder}</Text> : null}
       </Box>
@@ -877,9 +881,15 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         <Box borderColor={t.color.accent} borderStyle="round" flexShrink={0} paddingX={1}>
           <Text color={t.color.muted}>{'› '}</Text>
           <Text color={t.color.text}>{draft}</Text>
-          <Text color={t.color.text} inverse>
-            {' '}
-          </Text>
+          {/* Blinking block caret (toggles with the 600ms tick) so it reads as a
+              live text field; the off-frame is a plain space to hold the width. */}
+          {live ? (
+            <Text color={t.color.text} inverse>
+              {' '}
+            </Text>
+          ) : (
+            <Text>{' '}</Text>
+          )}
         </Box>
       ) : null}
     </Box>
