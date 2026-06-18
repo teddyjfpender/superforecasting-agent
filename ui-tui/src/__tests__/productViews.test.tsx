@@ -83,26 +83,140 @@ afterEach(() => {
   delete process.env.FORECAST_TUI_INLINE
 })
 
-describe('MarketsView scaffold', () => {
-  it('renders the title, category tabs, quote table header, and an awaiting-feed hint', async () => {
+describe('MarketsView', () => {
+  // Isolate to a temp home with no markets config so the view renders its
+  // no-providers state deterministically.
+  let prevHome: string | undefined
+  let home: string
+
+  beforeAll(async () => {
+    const { mkdtempSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    home = mkdtempSync(join(tmpdir(), 'markets-view-'))
+    prevHome = process.env.SUPERFORECASTING_AGENT_HOME
+    process.env.SUPERFORECASTING_AGENT_HOME = home
+  })
+
+  afterAll(async () => {
+    const { rmSync } = await import('node:fs')
+    rmSync(home, { force: true, recursive: true })
+
+    if (prevHome === undefined) {
+      delete process.env.SUPERFORECASTING_AGENT_HOME
+    } else {
+      process.env.SUPERFORECASTING_AGENT_HOME = prevHome
+    }
+  })
+
+  const renderMarkets = async () => {
+    process.env.FORECAST_TUI_INLINE = '1'
+
+    const [{ render }, { MarketsView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/marketsView.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const stdout = writeStream(120, 36)
+    const stdin = writeStream(120, 36, true)
+
+    const instance = render(React.createElement(MarketsView, { onClose: () => undefined, t: DARK_THEME }), {
+      exitOnCtrlC: false,
+      patchConsole: false,
+      stdin: stdin.stream,
+      stdout: stdout.stream
+    })
+
+    await tick(40)
+
+    return {
+      cleanup: () => {
+        instance.unmount?.()
+        instance.cleanup?.()
+      },
+      press: async (keys: string) => {
+        stdin.stream.write(keys)
+        await tick(60)
+      },
+      text: () => normalize(stdout.text(), stripAnsi)
+    }
+  }
+
+  it('prompts to add data when no providers are configured', async () => {
     const { MarketsView } = await import('../components/marketsView.js')
     const text = await renderComponent(MarketsView)
 
     expect(text).toContain('MARKETS')
-    expect(text).toContain('live quotes')
-    // category tabs
-    expect(text).toContain('Watchlist')
-    expect(text).toContain('Crypto')
-    // quote table column headers
-    expect(text).toContain('SYMBOL')
-    expect(text).toContain('LAST')
-    expect(text).toContain('CHG%')
-    // honest empty state + footer keys
-    expect(text).toContain('Awaiting market feed')
+    expect(text).toContain('no providers')
+    expect(text).toContain('Press a')
+    expect(text).toContain('add market data')
     expect(text).toContain('Esc/q close')
-    // bracketed keybinding chip layer (parity with Obsidian)
-    expect(text).toContain('[⇥ Category]')
-    expect(text).toContain('[q Close]')
+  })
+
+  it('opens the add-data modal on a', async () => {
+    const m = await renderMarkets()
+    await m.press('a')
+    const text = m.text()
+    m.cleanup()
+
+    expect(text).toContain('Add market data')
+    expect(text).toContain('PROVIDERS')
+    expect(text).toContain('Yahoo Finance')
+    expect(text).toContain('CATEGORIES')
+  })
+})
+
+describe('AddProviderModal', () => {
+  const renderModal = async (initial: { categories: string[]; providers: string[] }) => {
+    process.env.FORECAST_TUI_INLINE = '1'
+
+    const [{ render }, { AddProviderModal }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/addProviderModal.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const stdout = writeStream(120, 32)
+    const stdin = writeStream(120, 32, true)
+
+    const instance = render(
+      React.createElement(AddProviderModal, {
+        cols: 120,
+        initial,
+        onCancel: () => undefined,
+        onSaved: () => undefined,
+        rows: 32,
+        t: DARK_THEME
+      }),
+      { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
+    )
+
+    await tick(50)
+    const text = normalize(stdout.text(), stripAnsi)
+    instance.unmount?.()
+    instance.cleanup?.()
+
+    return text
+  }
+
+  it('lists every provider and the full breadth of categories', async () => {
+    const text = await renderModal({ categories: [], providers: [] })
+
+    // all providers
+    for (const p of ['Yahoo Finance', 'Frankfurter', 'CoinGecko', 'FRED', 'BLS', 'BEA']) {
+      expect(text).toContain(p)
+    }
+
+    // full category breadth (not just Indices/FX/Crypto/Commodities)
+    for (const c of ['Indices', 'Commodities', 'Rates', 'Inflation', 'Employment', 'GDP', 'Trade']) {
+      expect(text).toContain(c)
+    }
+
+    // keyed providers are flagged
+    expect(text).toContain('key')
   })
 })
 
