@@ -4,9 +4,10 @@ import { join } from 'node:path'
 
 import { afterAll, describe, expect, it } from 'vitest'
 
-import { createTexFile, docsDir, listTexFiles, readTexFile } from '../lib/latexDocs.js'
+import { createTexFile, docsDir, ensureWorkspaceDirs, listTexFiles, readTexFile } from '../lib/latexDocs.js'
 
 const dirs: string[] = []
+
 const freshDir = () => {
   const d = mkdtempSync(join(tmpdir(), 'latex-'))
   dirs.push(d)
@@ -23,6 +24,7 @@ describe('docsDir', () => {
     const prev = process.env.SUPERFORECASTING_AGENT_HOME
     process.env.SUPERFORECASTING_AGENT_HOME = '/h'
     expect(docsDir({})).toBe(join('/h', 'docs'))
+
     if (prev === undefined) {
       delete process.env.SUPERFORECASTING_AGENT_HOME
     } else {
@@ -65,5 +67,20 @@ describe('createTexFile', () => {
     createTexFile(tmp, 'dup.tex')
     expect(createTexFile(tmp, 'dup.tex').error).toBe('already exists')
     expect(createTexFile(tmp, '../escape.tex').error).toBe('invalid path')
+  })
+})
+
+describe('ensureWorkspaceDirs', () => {
+  it('creates docs/vault/latex + README + .gitignore (idempotently)', async () => {
+    const { existsSync } = await import('node:fs')
+    const root = freshDir() // acts as the docs root via the override below
+    const env = { LATEX_DOCS_PATH: root }
+    const dirs = ensureWorkspaceDirs(env)
+    expect(dirs.root).toBe(root)
+    expect(existsSync(join(root, 'vault'))).toBe(true)
+    expect(existsSync(join(root, 'latex'))).toBe(true)
+    expect(existsSync(join(root, 'README.md'))).toBe(true)
+    expect(existsSync(join(root, '.gitignore'))).toBe(true)
+    expect(() => ensureWorkspaceDirs(env)).not.toThrow() // idempotent
   })
 })

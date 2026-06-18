@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   commandExists,
+  ghAuthStatus,
+  ghCreateRepo,
   gitClone,
   gitCommitPush,
   gitInit,
@@ -53,12 +55,12 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
   const [scroll, setScroll] = useState(0)
   const [git, setGit] = useState<GitStatus | null>(null)
   const [repo, setRepo] = useState(false)
-  const [tools, setTools] = useState({ git: false, olcli: false })
+  const [tools, setTools] = useState({ gh: false, git: false, olcli: false })
   const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState('')
   const [tick, setTick] = useState(0)
   // Inline prompt for onboarding actions: name a new doc, or paste a remote URL.
-  const [prompt, setPrompt] = useState<null | { mode: 'newdoc' | 'remote'; value: string }>(null)
+  const [prompt, setPrompt] = useState<null | { mode: 'github' | 'newdoc' | 'remote'; value: string }>(null)
   const aliveRef = useRef(true)
 
   useEffect(() => {
@@ -97,7 +99,7 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
 
   useEffect(() => {
     reload()
-    setTools({ git: commandExists('git'), olcli: commandExists('olcli') })
+    setTools({ gh: commandExists('gh'), git: commandExists('git'), olcli: commandExists('olcli') })
     void refreshGit()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -179,6 +181,26 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
       }
 
       setFlash(`created ${rel}`)
+
+      return
+    }
+
+    if (mode === 'github') {
+      // Create a private GitHub repo from this workspace and push it.
+      ensureLatexDir(dir)
+      runSync('GitHub repo', async () => {
+        if (!(await ghAuthStatus())) {
+          return { error: 'gh not signed in — run:  ! gh auth login' }
+        }
+
+        const init = await gitInit(dir) // ensures a repo + a commit to push
+
+        if (init.error && !repo) {
+          return init
+        }
+
+        return ghCreateRepo(dir, value, true)
+      })
 
       return
     }
@@ -267,6 +289,10 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
 
     if (ch === 'g' && tools.git) {
       return runSync('git init', () => gitInit(dir))
+    }
+
+    if (ch === 'G' && tools.gh) {
+      return setPrompt({ mode: 'github', value: dir.split('/').filter(Boolean).pop() || 'docs' })
     }
 
     if (ch === 'O' && tools.git) {
@@ -361,27 +387,34 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
     </Box>
   )
 
-  // Inline prompt (shared by both states): name a doc, or paste a remote URL.
+  // Inline prompt (shared by both states): name a doc, paste a remote URL, or
+  // name a new GitHub repo.
+  const promptLabel = prompt?.mode === 'newdoc' ? 'New doc  ' : prompt?.mode === 'github' ? 'GH repo  ' : 'Remote   '
+
+  const promptHint =
+    prompt?.mode === 'newdoc'
+      ? ' name, e.g. latex/intro.tex'
+      : prompt?.mode === 'github'
+        ? ' repo name (created private + pushed)'
+        : ' git URL — GitHub or https://git.overleaf.com/…'
+
   const promptLine = prompt ? (
     <Box flexShrink={0}>
-      <Text bold color={t.color.accent}>{prompt.mode === 'newdoc' ? 'New doc  ' : 'Remote   '}</Text>
+      <Text bold color={t.color.accent}>{promptLabel}</Text>
       <Text color={t.color.muted}>{'› '}</Text>
       <Text color={t.color.text}>{prompt.value}</Text>
       <Text color={t.color.text} inverse>
         {' '}
       </Text>
-      {!prompt.value ? (
-        <Text color={t.color.muted}>
-          {prompt.mode === 'newdoc' ? ' name, e.g. papers/intro.tex' : ' git URL — GitHub or https://git.overleaf.com/…'}
-        </Text>
-      ) : null}
+      {!prompt.value ? <Text color={t.color.muted}>{promptHint}</Text> : null}
     </Box>
   ) : null
 
   const onboardChips: FooterChip[] = [
     { k: 'n', label: 'New doc', run: () => setPrompt({ mode: 'newdoc', value: '' }) },
     ...(tools.git ? [{ k: 'g', label: 'Init git', run: () => runSync('git init', () => gitInit(dir)) }] : []),
-    ...(tools.git ? [{ k: 'O', label: 'Overleaf / GitHub', run: () => setPrompt({ mode: 'remote', value: '' }) }] : []),
+    ...(tools.gh ? [{ k: 'G', label: 'GitHub repo', run: () => setPrompt({ mode: 'github', value: dir.split('/').filter(Boolean).pop() || 'docs' }) }] : []),
+    ...(tools.git ? [{ k: 'O', label: 'Connect remote', run: () => setPrompt({ mode: 'remote', value: '' }) }] : []),
     { k: 'r', label: 'Refresh', run: () => { reload(); void refreshGit(); setFlash('refreshed') } },
     { k: 'q', label: 'Close', run: onClose }
   ]
@@ -410,12 +443,15 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
                 <Text bold color={t.color.accent}>g</Text> initialise the git repo {tools.git ? '' : '— install git first'}
               </Text>
               <Text color={t.color.text}>
-                <Text bold color={t.color.accent}>O</Text> connect Overleaf / GitHub (paste the project's git URL)
+                <Text bold color={t.color.accent}>G</Text> create a private GitHub repo + push {tools.gh ? '' : '— install gh first'}
+              </Text>
+              <Text color={t.color.text}>
+                <Text bold color={t.color.accent}>O</Text> connect an existing remote (Overleaf or GitHub git URL)
               </Text>
             </Box>
             <Box marginTop={1}>
               <Text color={t.color.muted} wrap="truncate-end">
-                {`git ${tools.git ? '✓' : '✗ install to sync'}  ·  olcli ${tools.olcli ? '✓ Overleaf CLI ready' : '✗ optional — git URL works without it'}`}
+                {`git ${tools.git ? '✓' : '✗'}  ·  gh ${tools.gh ? '✓' : '✗ (GitHub CLI)'}  ·  olcli ${tools.olcli ? '✓' : '✗ optional — git URL works without it'}`}
               </Text>
             </Box>
           </Box>
@@ -424,7 +460,7 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
           {prompt ? promptLine : <FooterChips chips={onboardChips} t={t} />}
           <Text color={t.color.muted} wrap="truncate-end">
             {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-            {prompt ? '⏎ confirm · Esc cancel' : 'n new doc · g init git · O Overleaf/GitHub · r refresh · q close'}
+            {prompt ? '⏎ confirm · Esc cancel' : `n new doc${tools.git ? ' · g init git' : ''}${tools.gh ? ' · G GitHub repo' : ''} · O connect remote · r refresh · q close`}
           </Text>
         </Box>
       </Box>

@@ -135,6 +135,20 @@ export const gitSetRemote = async (dir: string, url: string): Promise<RunResult>
 export const gitClone = (url: string, dir: string): Promise<RunResult> =>
   runCli('git', ['clone', url, dir], '.', 120_000)
 
+// ── GitHub (gh) ──────────────────────────────────────────────────────────────
+
+// Is the GitHub CLI signed in? (gh auth status exits 0 when authenticated.)
+export const ghAuthStatus = async (): Promise<boolean> => {
+  const r = await runCli('gh', ['auth', 'status'], '.', 8000)
+
+  return r.code === 0
+}
+
+// Create a GitHub repo from a local dir and push it. The dir must already be a
+// git repo with at least one commit (gitInit handles that).
+export const ghCreateRepo = (dir: string, name: string, isPrivate = true): Promise<RunResult> =>
+  runCli('gh', ['repo', 'create', name, isPrivate ? '--private' : '--public', '--source', dir, '--remote', 'origin', '--push'], dir, 120_000)
+
 // ── Overleaf (olcli) ─────────────────────────────────────────────────────────
 
 export const overleaf = (dir: string, args: string[]): Promise<RunResult> => runCli('olcli', args, dir, 90_000)

@@ -15,6 +15,71 @@ export const docsDir = (env: NodeJS.ProcessEnv = process.env, _home = homedir())
   return override || join(forecastHomeDir(), 'docs')
 }
 
+// Subdirectories of the workspace: the Markdown (Obsidian) vault and LaTeX.
+export const vaultDir = (env: NodeJS.ProcessEnv = process.env): string => join(docsDir(env), 'vault')
+export const latexSubdir = (env: NodeJS.ProcessEnv = process.env): string => join(docsDir(env), 'latex')
+
+export const docsRootExists = (env: NodeJS.ProcessEnv = process.env): boolean => {
+  try {
+    return existsSync(docsDir(env))
+  } catch {
+    return false
+  }
+}
+
+const README = `# Docs workspace
+
+One git repository for everything, synced to a single remote.
+
+- \`vault/\`  — Markdown notes (the Obsidian vault).
+- \`latex/\`  — LaTeX documents (.tex), Overleaf/GitHub-synced.
+
+Managed by the Outrider TUI's Docs view.
+`
+
+const GITIGNORE = `# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+*.bbl
+*.blg
+.DS_Store
+`
+
+// Create the unified workspace: docs/ + docs/vault/ + docs/latex/, plus a
+// README and .gitignore so the first commit isn't empty. Idempotent.
+export const ensureWorkspaceDirs = (
+  env: NodeJS.ProcessEnv = process.env
+): { latex: string; root: string; vault: string } => {
+  const root = docsDir(env)
+  const vault = vaultDir(env)
+  const latex = latexSubdir(env)
+
+  for (const d of [root, vault, latex]) {
+    if (!existsSync(d)) {
+      mkdirSync(d, { recursive: true })
+    }
+  }
+
+  const readme = join(root, 'README.md')
+
+  if (!existsSync(readme)) {
+    writeFileSync(readme, README)
+  }
+
+  const gitignore = join(root, '.gitignore')
+
+  if (!existsSync(gitignore)) {
+    writeFileSync(gitignore, GITIGNORE)
+  }
+
+  return { latex, root, vault }
+}
+
 // Starter document for a brand-new .tex file.
 export const newTexTemplate = (title: string): string =>
   `\\documentclass{article}\n\\title{${title}}\n\\author{}\n\\date{\\today}\n\n\\begin{document}\n\\maketitle\n\n\\section{Introduction}\n\n\\end{document}\n`
