@@ -113,12 +113,25 @@ const pad = (value: string, width: number, align: 'left' | 'right'): string => {
 const sameSeries = (a: MarketSeries, b: MarketSeries): boolean =>
   a.provider === b.provider && a.symbol.toLowerCase() === b.symbol.toLowerCase()
 
+const dedupeSeries = (list: MarketSeries[]): MarketSeries[] => {
+  const out: MarketSeries[] = []
+
+  for (const s of list) {
+    if (!out.some(o => sameSeries(o, s))) {
+      out.push(s)
+    }
+  }
+
+  return out
+}
+
 interface MarketsViewProps {
+  onAsk?: (question: string) => void
   onClose: () => void
   t: Theme
 }
 
-export function MarketsView({ onClose, t }: MarketsViewProps) {
+export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
@@ -156,6 +169,7 @@ export function MarketsView({ onClose, t }: MarketsViewProps) {
 
   const providers = useMemo(() => new Set(config.providers), [config])
   const watchlist = config.watchlist
+  const custom = config.custom
 
   // Tabs: a Watchlist tab (if any) plus the selected provider categories.
   const categories = useMemo(() => {
@@ -175,13 +189,23 @@ export function MarketsView({ onClose, t }: MarketsViewProps) {
       return watchlist
     }
 
-    return DEFAULT_SERIES.filter(s => providers.has(s.provider) && s.category === category)
+    // Curated provider series + the user's own additions in this category.
+    return dedupeSeries([
+      ...DEFAULT_SERIES.filter(s => providers.has(s.provider) && s.category === category),
+      ...custom.filter(s => s.category === category)
+    ])
   }
 
-  // Everything we fetch: the watchlist + enabled-provider series in selected cats.
+  // Everything we fetch: watchlist + custom + enabled-provider series in
+  // selected categories.
   const allSeries = useMemo(
-    () => [...watchlist, ...DEFAULT_SERIES.filter(s => providers.has(s.provider) && config.categories.includes(s.category))],
-    [watchlist, providers, config]
+    () =>
+      dedupeSeries([
+        ...watchlist,
+        ...custom,
+        ...DEFAULT_SERIES.filter(s => providers.has(s.provider) && config.categories.includes(s.category))
+      ]),
+    [watchlist, custom, providers, config]
   )
 
   const refresh = async (force: boolean) => {
@@ -239,27 +263,62 @@ export function MarketsView({ onClose, t }: MarketsViewProps) {
 
   const onProvidersSaved = (next: MarketConfig) => {
     setModal('')
-    persist({ ...next, watchlist })
+    persist({ ...next, custom, watchlist })
     setActive(0)
     setFlash('saved')
   }
 
-  // Toggle a searched symbol in the watchlist (and ensure Yahoo is enabled).
+  const withProvider = (key: string): string[] =>
+    providers.has(key) ? config.providers : [...config.providers, key]
+
+  const isAdded = (s: MarketSeries): boolean => custom.some(c => sameSeries(c, s))
+  const isWatched = (s: MarketSeries): boolean => watchlist.some(w => sameSeries(w, s))
+
+  // Default add: put the item in its own category (and surface that category +
+  // its provider so it shows + fetches).
+  const toggleCategory = (s: MarketSeries) => {
+    const exists = isAdded(s)
+    const nextCustom = exists ? custom.filter(c => !sameSeries(c, s)) : [...custom, s]
+    const nextCategories = exists || config.categories.includes(s.category) ? config.categories : [...config.categories, s.category]
+    persist({ ...config, categories: nextCategories, custom: nextCustom, providers: exists ? config.providers : withProvider(s.provider) })
+    setFlash(exists ? `removed ${s.symbol}` : `added ${s.symbol} to ${s.category}`)
+  }
+
+  // Opt-in: add a symbol to the explicit watchlist.
   const toggleWatch = (s: MarketSeries) => {
-    const exists = watchlist.some(w => sameSeries(w, s))
+    const exists = isWatched(s)
     const nextWatch = exists ? watchlist.filter(w => !sameSeries(w, s)) : [...watchlist, s]
-    const nextProviders = exists || providers.has(s.provider) ? config.providers : [...config.providers, s.provider]
-    persist({ ...config, providers: nextProviders, watchlist: nextWatch })
-    setFlash(exists ? `removed ${s.symbol}` : `added ${s.symbol}`)
+    persist({ ...config, providers: exists ? config.providers : withProvider(s.provider), watchlist: nextWatch })
+    setFlash(exists ? `unwatched ${s.symbol}` : `watching ${s.symbol}`)
   }
 
   const rows = useMemo(() => {
     return seriesFor(activeCategory).map(s => ({ quote: cacheRef.current[quoteKey(s.provider, s.symbol)], series: s }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCategory, providers, watchlist, cacheVersion])
+  }, [activeCategory, providers, watchlist, custom, cacheVersion])
 
   const clampedSel = Math.min(sel, Math.max(0, rows.length - 1))
   const selectedRow = rows[clampedSel]
+
+  // Hand the highlighted line item to the agent as a ready-to-send question.
+  const askAgent = () => {
+    if (!onAsk || !selectedRow) {
+      return
+    }
+
+    const { quote: qq, series: ss } = selectedRow
+
+    const facts = [
+      `${ss.name} (${ss.symbol})`,
+      qq?.value != null ? `last ${fmtNum(qq.value, ss.unit)}${qq.currency ? ` ${qq.currency}` : ''}` : '',
+      qq?.changePct != null ? `${fmtPct(qq.changePct)} today` : ''
+    ]
+      .filter(Boolean)
+      .join(', ')
+
+    onAsk(`Give me a brief, current read on ${facts}. What's notable, what's driving it, and what should I watch?`)
+    setFlash('asked agent')
+  }
 
   useInput((ch, key) => {
     if (modal) {
@@ -271,6 +330,10 @@ export function MarketsView({ onClose, t }: MarketsViewProps) {
     }
 
     if (ch === 'a') {
+      return askAgent()
+    }
+
+    if (ch === 'd') {
       return setModal('providers')
     }
 
@@ -352,7 +415,7 @@ export function MarketsView({ onClose, t }: MarketsViewProps) {
             </Box>
             <Box marginTop={1}>
               <Text bold color={t.color.accent}>
-                Press a
+                Press d
               </Text>
               <Text color={t.color.text}> to add providers · </Text>
               <Text bold color={t.color.accent}>
@@ -363,9 +426,9 @@ export function MarketsView({ onClose, t }: MarketsViewProps) {
           </Box>
         </Box>
         <Box flexDirection="column" flexShrink={0} marginTop={1}>
-          <FooterChips chips={[{ k: 'a', label: 'Add data', run: () => setModal('providers') }, { k: '/', label: 'Search', run: () => setModal('search') }, { k: 'q', label: 'Close', run: onClose }]} t={t} />
+          <FooterChips chips={[{ k: 'd', label: 'Add data', run: () => setModal('providers') }, { k: '/', label: 'Search', run: () => setModal('search') }, { k: 'q', label: 'Close', run: onClose }]} t={t} />
           <Text color={t.color.muted} wrap="truncate-end">
-            a add providers · / search · Esc/q close
+            d add providers · / search · Esc/q close
           </Text>
         </Box>
       </Box>
@@ -387,9 +450,11 @@ export function MarketsView({ onClose, t }: MarketsViewProps) {
         {header}
         <MarketSearchModal
           cols={cols}
-          isWatched={s => watchlist.some(w => sameSeries(w, s))}
-          onAdd={toggleWatch}
+          isAdded={isAdded}
+          isWatched={isWatched}
           onClose={() => setModal('')}
+          onToggleCategory={toggleCategory}
+          onToggleWatch={toggleWatch}
           rows={termRows}
           t={t}
         />
@@ -625,8 +690,9 @@ export function MarketsView({ onClose, t }: MarketsViewProps) {
   const chips: FooterChip[] = [
     { k: '↑↓', label: 'Select' },
     { k: '⇥', label: 'Category', run: () => { setSel(0); setActive(i => (i + 1) % Math.max(1, categories.length)) } },
+    { k: 'a', label: 'Ask agent', run: askAgent },
     { k: '/', label: 'Search', run: () => setModal('search') },
-    { k: 'a', label: 'Add data', run: () => setModal('providers') },
+    { k: 'd', label: 'Add data', run: () => setModal('providers') },
     { k: 'r', label: 'Refresh', run: () => { setFlash('refreshing…'); void refresh(true) } },
     { k: 'q', label: 'Close', run: onClose }
   ]
@@ -636,7 +702,7 @@ export function MarketsView({ onClose, t }: MarketsViewProps) {
       <FooterChips chips={chips} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-        ↑↓/jk select · Tab/←→ category · ⏎ open · / search · a add data · r refresh · Esc/q close
+        ↑↓/jk select · Tab/←→ category · a ask agent · ⏎ open · / search · d add data · r refresh · Esc/q close
       </Text>
     </Box>
   )

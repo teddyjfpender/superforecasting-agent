@@ -13,6 +13,9 @@ import type { MarketQuote } from './marketFetch.js'
 
 export interface MarketConfig {
   categories: string[]
+  // User-added line items that live in their own category (the default when you
+  // add a searched ticker), distinct from the explicit watchlist.
+  custom: MarketSeries[]
   providers: string[]
   watchlist: MarketSeries[]
 }
@@ -23,15 +26,17 @@ export const loadMarketConfig = (file = marketConfigFile()): MarketConfig => {
   try {
     const data = JSON.parse(readFileSync(file, 'utf8')) as Partial<MarketConfig>
 
+    const seriesList = (v: unknown): MarketSeries[] =>
+      Array.isArray(v) ? v.filter((x): x is MarketSeries => Boolean(x) && typeof (x as MarketSeries).symbol === 'string') : []
+
     return {
       categories: Array.isArray(data.categories) ? data.categories.filter(c => typeof c === 'string') : [],
+      custom: seriesList(data.custom),
       providers: Array.isArray(data.providers) ? data.providers.filter(p => typeof p === 'string') : [],
-      watchlist: Array.isArray(data.watchlist)
-        ? data.watchlist.filter((w): w is MarketSeries => Boolean(w) && typeof (w as MarketSeries).symbol === 'string')
-        : []
+      watchlist: seriesList(data.watchlist)
     }
   } catch {
-    return { categories: [], providers: [], watchlist: [] }
+    return { categories: [], custom: [], providers: [], watchlist: [] }
   }
 }
 

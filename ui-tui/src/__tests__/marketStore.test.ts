@@ -72,6 +72,6 @@ describe('market config', () => {
   })
 
   it('returns empty config when the file is missing', () => {
-    expect(loadMarketConfig(join(tmp, 'nope.json'))).toEqual({ categories: [], providers: [], watchlist: [] })
+    expect(loadMarketConfig(join(tmp, 'nope.json'))).toEqual({ categories: [], custom: [], providers: [], watchlist: [] })
   })
 })

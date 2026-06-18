@@ -30,14 +30,25 @@ const dedupe = (items: MarketSeries[]): MarketSeries[] => {
 
 interface MarketSearchModalProps {
   cols: number
+  isAdded: (s: MarketSeries) => boolean
   isWatched: (s: MarketSeries) => boolean
-  onAdd: (s: MarketSeries) => void
   onClose: () => void
+  onToggleCategory: (s: MarketSeries) => void
+  onToggleWatch: (s: MarketSeries) => void
   rows: number
   t: Theme
 }
 
-export function MarketSearchModal({ cols, isWatched, onAdd, onClose, rows, t }: MarketSearchModalProps) {
+export function MarketSearchModal({
+  cols,
+  isAdded,
+  isWatched,
+  onClose,
+  onToggleCategory,
+  onToggleWatch,
+  rows,
+  t
+}: MarketSearchModalProps) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<MarketSeries[]>([])
   const [sel, setSel] = useState(0)
@@ -100,7 +111,17 @@ export function MarketSearchModal({ cols, isWatched, onAdd, onClose, rows, t }: 
       const pick = results[sel]
 
       if (pick) {
-        onAdd(pick)
+        onToggleCategory(pick) // default: add to its own category
+      }
+
+      return
+    }
+
+    if (key.tab) {
+      const pick = results[sel]
+
+      if (pick) {
+        onToggleWatch(pick) // opt-in: add to the watchlist instead
       }
 
       return
@@ -172,17 +193,19 @@ export function MarketSearchModal({ cols, isWatched, onAdd, onClose, rows, t }: 
             windowed.map((s, i) => {
               const idx = start + i
               const on = idx === sel
+              const added = isAdded(s)
               const watched = isWatched(s)
 
               return (
                 <Box key={`${s.provider}:${s.symbol}:${idx}`} width="100%">
                   <Text wrap="truncate-end">
                     <Text color={on ? t.color.primary : t.color.border}>{on ? '▸ ' : '  '}</Text>
-                    <Text bold color={watched ? t.color.ok : t.color.muted}>
-                      {watched ? '[✓]' : '[+]'}
+                    <Text bold color={added ? t.color.ok : t.color.muted}>
+                      {added ? '[✓]' : '[+]'}
                     </Text>
+                    <Text color={watched ? t.color.warn : t.color.border}>{watched ? '★' : ' '}</Text>
                     <Text color={t.color.accent}> {s.symbol.padEnd(10)}</Text>
-                    <Text color={on ? t.color.text : t.color.label}> {truncate(s.name, inner - 30)}</Text>
+                    <Text color={on ? t.color.text : t.color.label}> {truncate(s.name, inner - 32)}</Text>
                     <Text color={t.color.muted}> {s.category}</Text>
                   </Text>
                 </Box>
@@ -193,7 +216,7 @@ export function MarketSearchModal({ cols, isWatched, onAdd, onClose, rows, t }: 
 
         <Box flexShrink={0} marginTop={1}>
           <Text color={t.color.muted} wrap="truncate-end">
-            type to search · ↑↓ move · ⏎ add to watchlist · Esc close
+            type to search · ↑↓ move · ⏎ add to category · Tab ★ watchlist · Esc close
           </Text>
         </Box>
       </Box>

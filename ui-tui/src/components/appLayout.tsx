@@ -385,10 +385,10 @@ const HelpViewPane = memo(function HelpViewPane() {
   return <HelpView onClose={() => patchOverlayState({ help: false })} t={ui.theme} />
 })
 
-const MarketsViewPane = memo(function MarketsViewPane() {
+const MarketsViewPane = memo(function MarketsViewPane({ onAsk }: { onAsk: (question: string) => void }) {
   const ui = useStore($uiState)
 
-  return <MarketsView onClose={() => patchOverlayState({ markets: false })} t={ui.theme} />
+  return <MarketsView onAsk={onAsk} onClose={() => patchOverlayState({ markets: false })} t={ui.theme} />
 })
 
 const NewsViewPane = memo(function NewsViewPane() {
@@ -562,7 +562,12 @@ export const AppLayout = memo(function AppLayout({
               </PerfPane>
             ) : overlay.markets ? (
               <PerfPane id="markets">
-                <MarketsViewPane />
+                <MarketsViewPane
+                  onAsk={question => {
+                    patchOverlayState({ markets: false })
+                    actions.draftCommand(question)
+                  }}
+                />
               </PerfPane>
             ) : overlay.news ? (
               <PerfPane id="news">

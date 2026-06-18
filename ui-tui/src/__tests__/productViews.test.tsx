@@ -150,15 +150,15 @@ describe('MarketsView', () => {
 
     expect(text).toContain('MARKETS')
     expect(text).toContain('no providers')
-    expect(text).toContain('Press a')
+    expect(text).toContain('Press d')
     expect(text).toContain('add providers')
     expect(text).toContain('search')
     expect(text).toContain('Esc/q close')
   })
 
-  it('opens the add-data modal on a', async () => {
+  it('opens the add-data modal on d', async () => {
     const m = await renderMarkets()
-    await m.press('a')
+    await m.press('d')
     const text = m.text()
     m.cleanup()
 
@@ -170,7 +170,7 @@ describe('MarketsView', () => {
 })
 
 describe('AddProviderModal', () => {
-  const renderModal = async (initial: { categories: string[]; providers: string[]; watchlist: never[] }) => {
+  const renderModal = async (initial: { categories: string[]; custom: never[]; providers: string[]; watchlist: never[] }) => {
     process.env.FORECAST_TUI_INLINE = '1'
 
     const [{ render }, { AddProviderModal }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
@@ -204,7 +204,7 @@ describe('AddProviderModal', () => {
   }
 
   it('lists every provider and the full breadth of categories', async () => {
-    const text = await renderModal({ categories: [], providers: [], watchlist: [] })
+    const text = await renderModal({ categories: [], custom: [], providers: [], watchlist: [] })
 
     // all providers
     for (const p of ['Yahoo Finance', 'Frankfurter', 'CoinGecko', 'FRED', 'BLS', 'BEA']) {
@@ -218,6 +218,50 @@ describe('AddProviderModal', () => {
 
     // keyed providers are flagged
     expect(text).toContain('key')
+  })
+})
+
+describe('MarketSearchModal', () => {
+  it('Enter adds to the item category; Tab adds to the watchlist', async () => {
+    process.env.FORECAST_TUI_INLINE = '1'
+
+    const [{ render }, { MarketSearchModal }, { DARK_THEME }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/marketSearchModal.js'),
+      import('../theme.js')
+    ])
+
+    const stdout = writeStream(120, 28)
+    const stdin = writeStream(120, 28, true)
+    const toCategory: string[] = []
+    const toWatch: string[] = []
+
+    const instance = render(
+      React.createElement(MarketSearchModal, {
+        cols: 120,
+        isAdded: () => false,
+        isWatched: () => false,
+        onClose: () => undefined,
+        onToggleCategory: (s: { symbol: string }) => toCategory.push(s.symbol),
+        onToggleWatch: (s: { symbol: string }) => toWatch.push(s.symbol),
+        rows: 28,
+        t: DARK_THEME
+      }),
+      { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
+    )
+
+    await tick(30)
+    stdin.stream.write('nvda') // catalog match, no network needed
+    await tick(40)
+    stdin.stream.write('\r') // Enter → category
+    await tick(20)
+    stdin.stream.write('\t') // Tab → watchlist
+    await tick(20)
+    instance.unmount?.()
+    instance.cleanup?.()
+
+    expect(toCategory).toContain('NVDA')
+    expect(toWatch).toContain('NVDA')
   })
 })
 
