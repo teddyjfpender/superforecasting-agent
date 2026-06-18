@@ -17,6 +17,8 @@ import {
   saveSubscribedFeeds,
   type SubscribedFeed
 } from '../lib/newsFeedStore.js'
+import { nextProviderColor, providerColor } from '../lib/newsProviderColor.js'
+import { loadProviderColors, type ProviderColors, saveProviderColors } from '../lib/newsProviderColorStore.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
 import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
@@ -115,6 +117,7 @@ export function NewsView({ onClose, t }: NewsViewProps) {
 
   // Add-feed modal state.
   const [adding, setAdding] = useState(false)
+  const [providerColors, setProviderColors] = useState<ProviderColors>(() => loadProviderColors())
   const [query, setQuery] = useState('')
   const [modalCat, setModalCat] = useState(ALL_CATEGORY)
   const [modalSel, setModalSel] = useState(0)
@@ -297,6 +300,25 @@ export function NewsView({ onClose, t }: NewsViewProps) {
     setModalSel(0)
   }
 
+  // Per-source colour: resolve, and cycle the highlighted feed's provider hue.
+  const colorFor = (feedTitle: string) => providerColor(providerName(feedTitle), t, providerColors)
+
+  const cycleColorFor = (feedTitle: string) => {
+    const name = providerName(feedTitle)
+    const next = { ...providerColors, [providerName(feedTitle).trim().toLowerCase()]: nextProviderColor(name, t, colorFor(feedTitle)) }
+    setProviderColors(next)
+    saveProviderColors(next)
+    setFlash(`colour set · ${name.trim()}`)
+  }
+
+  const cycleSelectedColor = () => {
+    const feed = results[modalSel]
+
+    if (feed) {
+      cycleColorFor(feed.title)
+    }
+  }
+
   const visibleArticles = useMemo(() => {
     if (activeSource === ALL_FEEDS) {
       return articles
@@ -330,6 +352,12 @@ export function NewsView({ onClose, t }: NewsViewProps) {
         }
 
         return
+      }
+
+      // Shift+Tab recolours the highlighted feed's provider (before plain Tab,
+      // which switches category).
+      if (key.tab && key.shift) {
+        return cycleSelectedColor()
       }
 
       if (key.tab || key.rightArrow) {
@@ -531,7 +559,7 @@ export function NewsView({ onClose, t }: NewsViewProps) {
                 <Text wrap="truncate-end">
                   <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
                   <Text color={sem.subtle}>{when} </Text>
-                  <Text color={sem.badge}>{provider} </Text>
+                  <Text color={providerColor(provider, t, providerColors)}>{provider} </Text>
                   <Text bold={on} color={on ? sem.selectionFg : t.color.label}>
                     {article.title}
                   </Text>
@@ -657,11 +685,13 @@ export function NewsView({ onClose, t }: NewsViewProps) {
           isSubscribed={isSubscribed}
           isUrlQuery={isUrlQuery}
           onAddUrl={addUrlFeed}
+          onCycleColor={feed => cycleColorFor(feed.title)}
           onPickCategory={cat => {
             setModalCat(cat)
             setModalSel(0)
           }}
           onToggle={toggleFeed}
+          providerColorFor={feed => colorFor(feed.title)}
           query={query}
           results={results}
           resultSel={modalSel}

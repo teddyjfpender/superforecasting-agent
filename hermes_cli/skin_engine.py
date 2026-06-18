@@ -100,6 +100,8 @@ BUILT-IN SKINS
 ==============
 
 - ``default`` — Standard clean modern dark (neutral slate + calm blue accent)
+- ``medium-contrast`` — Standard with a bit more contrast
+- ``high-contrast`` — Standard maxed for legibility (accessible)
 - ``gold``    — Classic forecast gold (the former default)
 - ``forecast`` — Forecasting desk styling with a neutral research-terminal feel
 - ``ares``    — Crimson/bronze war-god theme with custom spinner wings
@@ -224,6 +226,72 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
         "spinner": {
             # Empty = use hardcoded defaults in display.py
         },
+        "branding": {
+            "agent_name": "Superforecasting Agent",
+            "welcome": "Welcome to Superforecasting Agent. Type /forecast to inspect the desk or /help for commands.",
+            "goodbye": "Goodbye.",
+            "response_label": " Forecast ",
+            "prompt_symbol": "❯",
+            "help_header": "Forecast Desk Commands",
+        },
+        "tool_prefix": "┊",
+    },
+    "medium-contrast": {
+        "name": "medium-contrast",
+        "description": "Standard — medium contrast",
+        "colors": {
+            "banner_border": "#3D444D",
+            "banner_title": "#EDF1F5",
+            "banner_accent": "#6CB6FF",
+            "banner_dim": "#9BA7B4",
+            "banner_text": "#EDF1F5",
+            "ui_accent": "#6CB6FF",
+            "ui_label": "#B4BECA",
+            "ui_info": "#4FD4DE",
+            "ui_ok": "#46C95A",
+            "ui_error": "#FB6A63",
+            "ui_warn": "#DDA92B",
+            "prompt": "#EDF1F5",
+            "input_rule": "#3D444D",
+            "response_border": "#6CB6FF",
+            "status_bar_bg": "#010409",
+            "session_label": "#9BA7B4",
+            "session_border": "#3D444D",
+        },
+        "spinner": {},
+        "branding": {
+            "agent_name": "Superforecasting Agent",
+            "welcome": "Welcome to Superforecasting Agent. Type /forecast to inspect the desk or /help for commands.",
+            "goodbye": "Goodbye.",
+            "response_label": " Forecast ",
+            "prompt_symbol": "❯",
+            "help_header": "Forecast Desk Commands",
+        },
+        "tool_prefix": "┊",
+    },
+    "high-contrast": {
+        "name": "high-contrast",
+        "description": "Standard — high contrast (accessible)",
+        "colors": {
+            "banner_border": "#9DA7B3",
+            "banner_title": "#FFFFFF",
+            "banner_accent": "#8CC8FF",
+            "banner_dim": "#C9D1D9",
+            "banner_text": "#FFFFFF",
+            "ui_accent": "#8CC8FF",
+            "ui_label": "#E6EDF3",
+            "ui_info": "#5EE6F0",
+            "ui_ok": "#5CE06A",
+            "ui_error": "#FF6A60",
+            "ui_warn": "#FFD400",
+            "prompt": "#FFFFFF",
+            "input_rule": "#9DA7B3",
+            "response_border": "#8CC8FF",
+            "status_bar_bg": "#000000",
+            "session_label": "#C9D1D9",
+            "session_border": "#9DA7B3",
+        },
+        "spinner": {},
         "branding": {
             "agent_name": "Superforecasting Agent",
             "welcome": "Welcome to Superforecasting Agent. Type /forecast to inspect the desk or /help for commands.",

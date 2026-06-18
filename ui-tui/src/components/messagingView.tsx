@@ -75,6 +75,27 @@ const relTime = (ms: number): string => {
 const clock = (ms: number): string =>
   ms ? new Date(ms).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''
 
+// Human label for a conversation: the resolved contact/group name when we have
+// one, otherwise a tidy fallback — a phone number as-is, a group placeholder, or
+// a shortened opaque id (so a raw UUID doesn't dominate the rail).
+const displayName = (chatId: string, resolved?: string): string => {
+  const name = resolved?.trim()
+
+  if (name) {
+    return name
+  }
+
+  if (chatId.startsWith('group:')) {
+    return 'Signal group'
+  }
+
+  if (/^\+\d{6,}$/.test(chatId)) {
+    return chatId
+  }
+
+  return chatId.length > 16 ? `${chatId.slice(0, 13)}…` : chatId
+}
+
 const RIGHT_RULE = {
   borderBottom: false,
   borderLeft: false,
@@ -212,7 +233,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         hasMessages: msgs.length > 0,
         lastText: preview,
         lastTs: last?.timestamp ?? 0,
-        name: nameById.get(chatId) || (chatId.startsWith('group:') ? 'Signal group' : chatId)
+        name: displayName(chatId, nameById.get(chatId))
       }
     })
 
@@ -370,7 +391,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const width = Math.max(48, cols - 4)
   const contentHeight = Math.max(8, termRows - 7)
   const live = tick % 2 === 0
-  const railWidth = Math.min(32, Math.max(24, Math.floor(width * 0.32)))
+  const railWidth = Math.min(40, Math.max(26, Math.floor(width * 0.34)))
   const railRows = Math.max(3, contentHeight - 2)
 
   const statusDot = !cfg
@@ -484,24 +505,22 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       </Text>
       <Box flexDirection="column" marginTop={1}>
         {windowedConvs.length > 0 ? (
+          // Single line per chat — name + relative time. Two-line rows desync
+          // the fixed-height window on scroll and ghost over each other.
           windowedConvs.map((conv, i) => {
             const idx = listStart + i
             const on = idx === clampedSel
+            const time = relTime(conv.lastTs)
+            const nameW = Math.max(6, railWidth - 4 - time.length)
 
             return (
-              <Box flexDirection="column" key={conv.chatId} marginBottom={1} onClick={() => setSel(idx)}>
-                <Box justifyContent="space-between" width="100%">
-                  <Box>
-                    <Text color={on ? t.color.accent : t.color.muted}>{on ? '▸ ' : '  '}</Text>
-                    <Text bold={on} color={on ? t.color.text : t.color.label} wrap="truncate-end">
-                      {truncate(conv.name, railWidth - 10)}
-                    </Text>
-                  </Box>
-                  <Text color={t.color.border}>{relTime(conv.lastTs)}</Text>
-                </Box>
-                <Text color={t.color.muted} wrap="truncate-end">
-                  {'     '}
-                  {conv.lastText || '—'}
+              <Box key={conv.chatId} onClick={() => setSel(idx)} width="100%">
+                <Text wrap="truncate-end">
+                  <Text color={on ? t.color.accent : t.color.border}>{on ? '▸ ' : '  '}</Text>
+                  <Text bold={on} color={on ? t.color.text : t.color.label}>
+                    {truncate(conv.name, nameW).padEnd(nameW)}
+                  </Text>
+                  <Text color={t.color.border}> {time}</Text>
                 </Text>
               </Box>
             )

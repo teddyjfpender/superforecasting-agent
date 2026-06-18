@@ -1,6 +1,7 @@
 import { Box, Text } from '@hermes/ink'
 
 import type { CatalogFeed } from '../content/newsFeedCatalog.js'
+import { ICON } from '../lib/icons.js'
 import { ensureFeedUrlScheme, feedHost } from '../lib/newsFeedStore.js'
 import type { Theme } from '../theme.js'
 
@@ -38,8 +39,10 @@ export interface AddFeedModalProps {
   isSubscribed: (url: string) => boolean
   isUrlQuery: boolean
   onAddUrl: () => void
+  onCycleColor: (feed: CatalogFeed) => void
   onPickCategory: (category: string) => void
   onToggle: (feed: CatalogFeed) => void
+  providerColorFor: (feed: CatalogFeed) => string
   query: string
   resultSel: number
   results: CatalogFeed[]
@@ -55,8 +58,10 @@ export function AddFeedModal({
   isSubscribed,
   isUrlQuery,
   onAddUrl,
+  onCycleColor,
   onPickCategory,
   onToggle,
+  providerColorFor,
   query,
   resultSel,
   results,
@@ -116,7 +121,7 @@ export function AddFeedModal({
 
         {/* Search line */}
         <Box flexShrink={0} marginTop={1}>
-          <Text color={t.color.muted}>{'🔎 '}</Text>
+          <Text bold color={t.color.accent}>{`${ICON.search} `}</Text>
           <Text color={t.color.text}>{query}</Text>
           <Text color={t.color.text} inverse>
             {' '}
@@ -163,15 +168,19 @@ export function AddFeedModal({
                 const on = idx === resultSel
                 const subscribed = isSubscribed(feed.url)
                 const tag = truncate(feed.category, 11).padEnd(11)
-                // marker(2) + checkbox(3) + space + title + space + tag(11) +
-                // space + host(≤14) must stay < resultWidth or the row wraps.
-                const titleRoom = Math.max(10, resultWidth - 11 - 14 - 8)
+                // marker(2) + checkbox(3) + swatch(2) + space + title + space +
+                // tag(11) + space + host(≤14) must stay < resultWidth.
+                const titleRoom = Math.max(10, resultWidth - 11 - 14 - 10)
 
                 return (
                   <Box key={`${feed.url}:${idx}`} onClick={click(() => onToggle(feed))} width="100%">
                     <Text color={on ? t.color.primary : t.color.border}>{on ? '▸ ' : '  '}</Text>
                     <Text bold color={subscribed ? t.color.ok : t.color.muted}>
                       {subscribed ? '[✓]' : '[ ]'}
+                    </Text>
+                    {/* Per-source colour swatch — click to cycle the hue. */}
+                    <Text color={providerColorFor(feed)} onClick={click(() => onCycleColor(feed))}>
+                      {' ●'}
                     </Text>
                     <Text color={on ? t.color.text : t.color.label}>
                       {' '}
@@ -206,7 +215,7 @@ export function AddFeedModal({
         {/* Footer keys */}
         <Box flexShrink={0} marginTop={1}>
           <Text color={t.color.muted} wrap="truncate-end">
-            type to search · ↑↓ move · ⏎ {isUrlQuery ? 'add URL' : 'subscribe/unsubscribe'} · Tab/←→ category · Esc done
+            type to search · ↑↓ move · ⏎ {isUrlQuery ? 'add URL' : 'subscribe'} · Tab/←→ category · ⇧⇥/click ● colour · Esc done
           </Text>
         </Box>
       </Box>
