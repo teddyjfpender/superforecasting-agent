@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { commandExists, gitInit } from '../lib/docsCli.js'
 import { docsDir, ensureWorkspaceDirs, vaultDir } from '../lib/latexDocs.js'
+import { seedLatexExamples } from '../lib/latexExamples.js'
 import { saveProviderKey } from '../lib/marketKeys.js'
 import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
@@ -49,9 +50,10 @@ export function DocsSetup({ onClose, onReady, t }: DocsSetupProps) {
     setBusy(true)
     setFlash('creating workspace…')
 
-    // Create docs/ + vault/ + latex/, and persist the vault path so the
-    // gateway's Obsidian tools use the unified location on next start.
-    ensureWorkspaceDirs()
+    // Create docs/ + vault/ + latex/, seed example LaTeX docs, and persist the
+    // vault path so the gateway's Obsidian tools use the unified location.
+    const { latex } = ensureWorkspaceDirs()
+    seedLatexExamples(latex)
     saveProviderKey('OBSIDIAN_VAULT_PATH', vault)
     process.env.OBSIDIAN_VAULT_PATH = vault
 

@@ -16,7 +16,8 @@ import {
   overleaf
 } from '../lib/docsCli.js'
 import { statusGlyph } from '../lib/icons.js'
-import { createTexFile, docsDir, ensureLatexDir, listTexFiles, readTexFile, type TexFile } from '../lib/latexDocs.js'
+import { createTexFile, docsDir, ensureLatexDir, latexSubdir, listTexFiles, readTexFile, type TexFile } from '../lib/latexDocs.js'
+import { seedLatexExamples } from '../lib/latexExamples.js'
 import { type LatexBlock, renderLatex } from '../lib/latexRender.js'
 import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
@@ -98,6 +99,7 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
   }
 
   useEffect(() => {
+    seedLatexExamples(latexSubdir()) // one-time: populate examples/ + templates/
     reload()
     setTools({ gh: commandExists('gh'), git: commandExists('git'), olcli: commandExists('olcli') })
     void refreshGit()
@@ -410,6 +412,25 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
     </Box>
   ) : null
 
+  // DOCS kind tabs — shown in every footer (onboarding + populated) so it's
+  // always clear how to switch back to Markdown.
+  const kindTabs = onSelectKind ? (
+    <Box marginBottom={1}>
+      <Text color={t.color.muted}>DOCS </Text>
+      <Box onClick={() => onSelectKind('markdown')}>
+        <Text bold={docKind !== 'latex'} color={docKind !== 'latex' ? t.color.accent : t.color.muted}>
+          {docKind !== 'latex' ? '▸ 1 Markdown' : '  1 Markdown'}
+        </Text>
+      </Box>
+      <Text color={t.color.border}>{'   ·   '}</Text>
+      <Box onClick={() => onSelectKind('latex')}>
+        <Text bold={docKind === 'latex'} color={docKind === 'latex' ? t.color.accent : t.color.muted}>
+          {docKind === 'latex' ? '▸ 2 LaTeX' : '  2 LaTeX'}
+        </Text>
+      </Box>
+    </Box>
+  ) : null
+
   const onboardChips: FooterChip[] = [
     { k: 'n', label: 'New doc', run: () => setPrompt({ mode: 'newdoc', value: '' }) },
     ...(tools.git ? [{ k: 'g', label: 'Init git', run: () => runSync('git init', () => gitInit(dir)) }] : []),
@@ -457,10 +478,11 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
           </Box>
         </Box>
         <Box flexDirection="column" flexShrink={0} marginTop={1}>
+          {kindTabs}
           {prompt ? promptLine : <FooterChips chips={onboardChips} t={t} />}
           <Text color={t.color.muted} wrap="truncate-end">
             {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-            {prompt ? '⏎ confirm · Esc cancel' : `n new doc${tools.git ? ' · g init git' : ''}${tools.gh ? ' · G GitHub repo' : ''} · O connect remote · r refresh · q close`}
+            {prompt ? '⏎ confirm · Esc cancel' : `1/2 switch · n new doc${tools.git ? ' · g init git' : ''}${tools.gh ? ' · G GitHub repo' : ''} · O connect · r refresh · q close`}
           </Text>
         </Box>
       </Box>
@@ -625,22 +647,7 @@ export function LatexDocsView({ docKind, onClose, onSelectKind, t }: LatexDocsVi
         {reader}
       </Box>
       <Box flexDirection="column" flexShrink={0} marginTop={1}>
-        {onSelectKind ? (
-          <Box marginBottom={1}>
-            <Text color={t.color.muted}>DOCS </Text>
-            <Box onClick={() => onSelectKind('markdown')}>
-              <Text bold={docKind !== 'latex'} color={docKind !== 'latex' ? t.color.accent : t.color.muted}>
-                {docKind !== 'latex' ? '▸ 1 Markdown' : '  1 Markdown'}
-              </Text>
-            </Box>
-            <Text color={t.color.border}>{'   ·   '}</Text>
-            <Box onClick={() => onSelectKind('latex')}>
-              <Text bold={docKind === 'latex'} color={docKind === 'latex' ? t.color.accent : t.color.muted}>
-                {docKind === 'latex' ? '▸ 2 LaTeX' : '  2 LaTeX'}
-              </Text>
-            </Box>
-          </Box>
-        ) : null}
+        {kindTabs}
         {prompt ? promptLine : <FooterChips chips={chips} t={t} />}
         <Text color={t.color.muted} wrap="truncate-end">
           {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
