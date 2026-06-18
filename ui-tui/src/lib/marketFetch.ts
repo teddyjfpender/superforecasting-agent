@@ -10,12 +10,21 @@ export interface MarketQuote {
   category: string
   change: null | number
   changePct: null | number
+  currency?: string
+  dayHigh?: null | number
+  dayLow?: null | number
+  exchange?: string
+  // Recent closes (oldest→newest) for a sparkline in the detail pane.
+  history?: number[]
   name: string
+  prevClose?: null | number
   provider: string
   symbol: string
   unit?: string
   value: null | number
   volume?: null | number
+  week52High?: null | number
+  week52Low?: null | number
 }
 
 const num = (v: unknown): null | number => {
@@ -39,23 +48,37 @@ const withChange = (value: null | number, prev: null | number): { change: null |
 // ---- pure parsers --------------------------------------------------------
 
 export const parseYahoo = (chart: unknown, series: MarketSeries): MarketQuote => {
-  const result = (chart as { chart?: { result?: unknown[] } })?.chart?.result?.[0] as { meta?: Record<string, unknown> }
+  const result = (chart as { chart?: { result?: { indicators?: { quote?: { close?: unknown[] }[] }; meta?: Record<string, unknown> }[] } })
+    ?.chart?.result?.[0]
+
   const meta = result?.meta ?? {}
   const value = num(meta.regularMarketPrice)
   const prev = num(meta.chartPreviousClose) ?? num(meta.previousClose)
   const { change, changePct } = withChange(value, prev)
+
+  const history = (result?.indicators?.quote?.[0]?.close ?? [])
+    .map(c => num(c))
+    .filter((c): c is number => c !== null)
 
   return {
     asOf: (num(meta.regularMarketTime) ?? 0) * 1000,
     category: series.category,
     change,
     changePct,
+    currency: str(meta.currency) || undefined,
+    dayHigh: num(meta.regularMarketDayHigh),
+    dayLow: num(meta.regularMarketDayLow),
+    exchange: str(meta.fullExchangeName) || str(meta.exchangeName) || undefined,
+    history: history.length > 1 ? history.slice(-40) : undefined,
     name: str(meta.shortName) || str(meta.longName) || series.name,
+    prevClose: prev,
     provider: 'yahoo',
     symbol: series.symbol,
     unit: series.unit,
     value,
-    volume: num(meta.regularMarketVolume)
+    volume: num(meta.regularMarketVolume),
+    week52High: num(meta.fiftyTwoWeekHigh),
+    week52Low: num(meta.fiftyTwoWeekLow)
   }
 }
 
@@ -227,7 +250,7 @@ export const fetchQuotes = async (seriesList: MarketSeries[], opts: FetchOpts): 
     jobs.push(
       pool(yahoo, 6, async s => {
         const json = await getJson(
-          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s.symbol)}?range=1d&interval=1d`
+          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s.symbol)}?range=1mo&interval=1d`
         )
 
         if (json) {

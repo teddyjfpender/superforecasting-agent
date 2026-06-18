@@ -1,16 +1,20 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import type { MarketSeries } from '../content/marketProviders.js'
+
 import { forecastHomeDir } from './forecastHome.js'
 import type { MarketQuote } from './marketFetch.js'
 
-// What the user has enabled: which providers, and which categories to watch.
-// Persisted to ~/.superforecasting-agent/markets.json. Quote values are cached
-// separately so the table paints instantly on reopen, then refreshes.
+// What the user has enabled: which providers, which categories to watch, and a
+// personal watchlist of searched tickers. Persisted to
+// ~/.superforecasting-agent/markets.json. Quote values are cached separately so
+// the table paints instantly on reopen, then refreshes.
 
 export interface MarketConfig {
   categories: string[]
   providers: string[]
+  watchlist: MarketSeries[]
 }
 
 export const marketConfigFile = (dir = forecastHomeDir()) => join(dir, 'markets.json')
@@ -21,10 +25,13 @@ export const loadMarketConfig = (file = marketConfigFile()): MarketConfig => {
 
     return {
       categories: Array.isArray(data.categories) ? data.categories.filter(c => typeof c === 'string') : [],
-      providers: Array.isArray(data.providers) ? data.providers.filter(p => typeof p === 'string') : []
+      providers: Array.isArray(data.providers) ? data.providers.filter(p => typeof p === 'string') : [],
+      watchlist: Array.isArray(data.watchlist)
+        ? data.watchlist.filter((w): w is MarketSeries => Boolean(w) && typeof (w as MarketSeries).symbol === 'string')
+        : []
     }
   } catch {
-    return { categories: [], providers: [] }
+    return { categories: [], providers: [], watchlist: [] }
   }
 }
 

@@ -53,7 +53,7 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
   }
 
   const commit = () => {
-    const config: MarketConfig = { categories: [...categories], providers: [...providers] }
+    const config: MarketConfig = { categories: [...categories], providers: [...providers], watchlist: initial.watchlist }
     saveMarketConfig(config)
     onSaved(config)
   }
@@ -162,6 +162,7 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
 
       const cat = MARKET_CATEGORIES[catIdx]
       const next = new Set(categories)
+
       if (next.has(cat)) {
         next.delete(cat)
       } else {

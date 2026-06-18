@@ -151,7 +151,8 @@ describe('MarketsView', () => {
     expect(text).toContain('MARKETS')
     expect(text).toContain('no providers')
     expect(text).toContain('Press a')
-    expect(text).toContain('add market data')
+    expect(text).toContain('add providers')
+    expect(text).toContain('search')
     expect(text).toContain('Esc/q close')
   })
 
@@ -169,7 +170,7 @@ describe('MarketsView', () => {
 })
 
 describe('AddProviderModal', () => {
-  const renderModal = async (initial: { categories: string[]; providers: string[] }) => {
+  const renderModal = async (initial: { categories: string[]; providers: string[]; watchlist: never[] }) => {
     process.env.FORECAST_TUI_INLINE = '1'
 
     const [{ render }, { AddProviderModal }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
@@ -203,7 +204,7 @@ describe('AddProviderModal', () => {
   }
 
   it('lists every provider and the full breadth of categories', async () => {
-    const text = await renderModal({ categories: [], providers: [] })
+    const text = await renderModal({ categories: [], providers: [], watchlist: [] })
 
     // all providers
     for (const p of ['Yahoo Finance', 'Frankfurter', 'CoinGecko', 'FRED', 'BLS', 'BEA']) {

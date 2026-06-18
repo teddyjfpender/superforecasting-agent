@@ -61,15 +61,17 @@ describe('saveProviderKey / loadEnvKeys', () => {
 })
 
 describe('market config', () => {
-  it('round-trips enabled providers + selected categories', () => {
+  it('round-trips providers, categories + watchlist', () => {
     const file = join(tmp, 'markets.json')
-    saveMarketConfig({ categories: ['Indices', 'Crypto'], providers: ['yahoo', 'coingecko'] }, file)
+    const watch = [{ category: 'Stocks', name: 'Nvidia', provider: 'yahoo', symbol: 'NVDA' }]
+    saveMarketConfig({ categories: ['Indices', 'Crypto'], providers: ['yahoo', 'coingecko'], watchlist: watch }, file)
     const loaded = loadMarketConfig(file)
     expect(loaded.providers).toEqual(['yahoo', 'coingecko'])
     expect(loaded.categories).toEqual(['Indices', 'Crypto'])
+    expect(loaded.watchlist).toEqual(watch)
   })
 
   it('returns empty config when the file is missing', () => {
-    expect(loadMarketConfig(join(tmp, 'nope.json'))).toEqual({ categories: [], providers: [] })
+    expect(loadMarketConfig(join(tmp, 'nope.json'))).toEqual({ categories: [], providers: [], watchlist: [] })
   })
 })
