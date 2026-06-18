@@ -361,49 +361,46 @@ const cleanPromptSymbol = (s: string | undefined, fallback: string) => {
   return cleaned || fallback
 }
 
+// Standard dark palette: a clean, neutral slate ink with a calm blue accent and
+// a distinct teal for tags/badges. Replaces the old gold default (still shipped
+// as the `gold` skin). Semantic greens/ambers/reds are tuned for legibility on
+// a dark terminal; everything here is the single source of truth that the
+// `default` skin mirrors, so the picker preview matches the live UI.
 export const DARK_THEME: Theme = {
   color: {
-    primary: '#FFD700',
-    accent: '#FFBF00',
-    border: '#CD7F32',
-    text: '#FFF8DC',
-    muted: '#CC9B1F',
-    // Bumped from the old `#B8860B` darkgoldenrod (~53% luminance) which
-    // read as barely-visible on dark terminals for long body text.  The
-    // new value sits ~60% luminance — readable without losing the "muted /
-    // secondary" semantic.  Field labels still use `label` (65%) which
-    // stays brighter so hierarchy holds.
-    completionBg: '#1a1a2e',
-    completionCurrentBg: '#333355',
-    completionMetaBg: '#1a1a2e',
-    completionMetaCurrentBg: '#333355',
+    primary: '#E6EDF3',
+    accent: '#58A6FF',
+    border: '#30363D',
+    text: '#E6EDF3',
+    muted: '#8B949E',
+    completionBg: '#161B22',
+    completionCurrentBg: '#21314D',
+    completionMetaBg: '#161B22',
+    completionMetaCurrentBg: '#21314D',
 
-    label: '#DAA520',
-    ok: '#4caf50',
-    error: '#ef5350',
-    warn: '#ffa726',
-    info: '#64B5F6',
+    label: '#9DA7B3',
+    ok: '#3FB950',
+    error: '#F85149',
+    warn: '#D29922',
+    info: '#39C5CF',
 
-    prompt: '#FFF8DC',
-    // sessionLabel/sessionBorder intentionally track the `dim` value — they
-    // are "same role, same colour" by design.  fromSkin's banner_dim fallback
-    // relies on this pairing (#11300).
-    sessionLabel: '#CC9B1F',
-    sessionBorder: '#CC9B1F',
+    prompt: '#E6EDF3',
+    sessionLabel: '#8B949E',
+    sessionBorder: '#8B949E',
 
-    statusBg: '#1a1a2e',
-    statusFg: '#C0C0C0',
-    statusGood: '#8FBC8F',
-    statusWarn: '#FFD700',
-    statusBad: '#FF8C00',
-    statusCritical: '#FF6B6B',
-    selectionBg: '#3a3a55',
+    statusBg: '#0D1117',
+    statusFg: '#C9D1D9',
+    statusGood: '#3FB950',
+    statusWarn: '#D29922',
+    statusBad: '#F0883E',
+    statusCritical: '#F85149',
+    selectionBg: '#21314D',
 
     diffAdded: 'rgb(220,255,220)',
     diffRemoved: 'rgb(255,220,220)',
-    diffAddedWord: 'rgb(36,138,61)',
-    diffRemovedWord: 'rgb(207,34,46)',
-    shellDollar: '#4dabf7'
+    diffAddedWord: 'rgb(63,185,80)',
+    diffRemovedWord: 'rgb(248,81,73)',
+    shellDollar: '#58A6FF'
   },
 
   brand: BRAND,
@@ -417,39 +414,39 @@ export const DARK_THEME: Theme = {
 // cleanly (#11300).
 export const LIGHT_THEME: Theme = {
   color: {
-    primary: '#8B6914',
-    accent: '#A0651C',
-    border: '#7A4F1F',
-    text: '#3D2F13',
-    muted: '#7A5A0F',
-    completionBg: '#F5F5F5',
-    completionCurrentBg: mix('#F5F5F5', '#A0651C', 0.25),
-    completionMetaBg: '#F5F5F5',
-    completionMetaCurrentBg: mix('#F5F5F5', '#A0651C', 0.25),
+    primary: '#1F2328',
+    accent: '#0969DA',
+    border: '#D0D7DE',
+    text: '#1F2328',
+    muted: '#656D76',
+    completionBg: '#F6F8FA',
+    completionCurrentBg: mix('#F6F8FA', '#0969DA', 0.18),
+    completionMetaBg: '#F6F8FA',
+    completionMetaCurrentBg: mix('#F6F8FA', '#0969DA', 0.18),
 
-    label: '#7A5A0F',
-    ok: '#2E7D32',
-    error: '#C62828',
-    warn: '#E65100',
-    info: '#01579B',
+    label: '#57606A',
+    ok: '#1A7F37',
+    error: '#CF222E',
+    warn: '#9A6700',
+    info: '#0E7490',
 
-    prompt: '#2B2014',
-    sessionLabel: '#7A5A0F',
-    sessionBorder: '#7A5A0F',
+    prompt: '#1F2328',
+    sessionLabel: '#656D76',
+    sessionBorder: '#656D76',
 
-    statusBg: '#F5F5F5',
-    statusFg: '#333333',
-    statusGood: '#2E7D32',
-    statusWarn: '#8B6914',
-    statusBad: '#D84315',
-    statusCritical: '#B71C1C',
-    selectionBg: '#D4E4F7',
+    statusBg: '#F6F8FA',
+    statusFg: '#1F2328',
+    statusGood: '#1A7F37',
+    statusWarn: '#9A6700',
+    statusBad: '#BC4C00',
+    statusCritical: '#CF222E',
+    selectionBg: '#DDEBFB',
 
     diffAdded: 'rgb(200,240,200)',
     diffRemoved: 'rgb(240,200,200)',
-    diffAddedWord: 'rgb(27,94,32)',
-    diffRemovedWord: 'rgb(183,28,28)',
-    shellDollar: '#1565C0'
+    diffAddedWord: 'rgb(26,127,55)',
+    diffRemovedWord: 'rgb(207,34,46)',
+    shellDollar: '#0969DA'
   },
 
   brand: BRAND,

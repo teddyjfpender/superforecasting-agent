@@ -99,8 +99,9 @@ USAGE
 BUILT-IN SKINS
 ==============
 
-- ``default`` — Classic forecast gold compatibility skin
-- ``forecast`` — Forecasting desk runtime default with neutral research-terminal styling
+- ``default`` — Standard clean modern dark (neutral slate + calm blue accent)
+- ``gold``    — Classic forecast gold (the former default)
+- ``forecast`` — Forecasting desk styling with a neutral research-terminal feel
 - ``ares``    — Crimson/bronze war-god theme with custom spinner wings
 - ``mono``    — Clean grayscale monochrome
 - ``slate``   — Cool blue developer-focused theme
@@ -166,6 +167,41 @@ class SkinConfig:
 _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
     "default": {
         "name": "default",
+        "description": "Standard — clean modern dark",
+        "colors": {
+            "banner_border": "#30363D",
+            "banner_title": "#E6EDF3",
+            "banner_accent": "#58A6FF",
+            "banner_dim": "#8B949E",
+            "banner_text": "#E6EDF3",
+            "ui_accent": "#58A6FF",
+            "ui_label": "#9DA7B3",
+            "ui_info": "#39C5CF",
+            "ui_ok": "#3FB950",
+            "ui_error": "#F85149",
+            "ui_warn": "#D29922",
+            "prompt": "#E6EDF3",
+            "input_rule": "#30363D",
+            "response_border": "#58A6FF",
+            "status_bar_bg": "#0D1117",
+            "session_label": "#8B949E",
+            "session_border": "#30363D",
+        },
+        "spinner": {
+            # Empty = use hardcoded defaults in display.py
+        },
+        "branding": {
+            "agent_name": "Superforecasting Agent",
+            "welcome": "Welcome to Superforecasting Agent. Type /forecast to inspect the desk or /help for commands.",
+            "goodbye": "Goodbye.",
+            "response_label": " Forecast ",
+            "prompt_symbol": "❯",
+            "help_header": "Forecast Desk Commands",
+        },
+        "tool_prefix": "┊",
+    },
+    "gold": {
+        "name": "gold",
         "description": "Classic forecast — gold",
         "colors": {
             "banner_border": "#CD7F32",
