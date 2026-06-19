@@ -544,6 +544,19 @@ export const AppLayout = memo(function AppLayout({
   // the landing — rendered under the prompt rather than lost behind it.
   const landingNotices = landing ? transcript.historyItems.filter(msg => msg.kind !== 'intro') : []
 
+  // Home is a persistent two-pane layout on wide terminals: a recent-conversations
+  // rail on the left (kept whether you're on a new chat or reading one), and the
+  // hero or the live transcript on the right. The transcript does hard width math
+  // off `cols`, so when the rail is shown it gets a reduced `cols` matching its
+  // narrower column.
+  const RAIL_WIDTH = 30
+  const showRail = !fullscreen && composer.cols >= 84
+
+  const contentComposer = useMemo(
+    () => (showRail ? { ...composer, cols: Math.max(48, composer.cols - RAIL_WIDTH - 2) } : composer),
+    [composer, showRail]
+  )
+
   // Inline mode skips AlternateScreen so the host terminal's native
   // scrollback captures rows scrolled off the top; composer + progress
   // stay anchored via normal flex-column flow.
@@ -638,43 +651,43 @@ export const AppLayout = memo(function AppLayout({
           </Box>
         ) : (
           <>
+            {/* Home: a persistent ChatGPT-style rail of recent conversations on
+                the left (wide terminals), with the Outrider hero (new chat) OR
+                the live transcript (an open conversation) on the right. Clicking
+                a chat keeps the rail and loads the conversation beside it. */}
             <Box flexDirection="row" flexGrow={1}>
-              {landing ? (
-                // Home: a ChatGPT-style rail of recent conversations on the left
-                // (wide terminals), with the Outrider hero centred in the
-                // remaining space. New chat keeps the hero; the input stays
-                // pinned to the bottom (promptBar).
-                <Box flexDirection="row" flexGrow={1}>
-                  {composer.cols >= 84 ? (
-                    <ConversationsRailPane onNewChat={() => actions.runCommand('/new')} onSelect={actions.resumeById} />
-                  ) : null}
-                  <Box flexDirection="column" flexGrow={1}>
+              {showRail ? (
+                <ConversationsRailPane onNewChat={() => actions.runCommand('/new')} onSelect={actions.resumeById} />
+              ) : null}
+              <Box flexDirection="column" flexGrow={1} minWidth={0}>
+                {landing ? (
+                  <>
                     <Box flexGrow={1} />
                     <HomeHero info={ui.info ?? undefined} t={ui.theme} />
-                  {landingNotices.length > 0 && (
-                    <NoSelect flexDirection="column" marginTop={1} paddingX={1}>
-                      {landingNotices.map((msg, index) => (
-                        <MessageLine
-                          cols={composer.cols}
-                          compact={ui.compact}
-                          detailsMode={ui.detailsMode}
-                          detailsModeCommandOverride={ui.detailsModeCommandOverride}
-                          key={index}
-                          msg={msg}
-                          sections={ui.sections}
-                          t={ui.theme}
-                        />
-                      ))}
-                    </NoSelect>
-                  )}
+                    {landingNotices.length > 0 && (
+                      <NoSelect flexDirection="column" marginTop={1} paddingX={1}>
+                        {landingNotices.map((msg, index) => (
+                          <MessageLine
+                            cols={contentComposer.cols}
+                            compact={ui.compact}
+                            detailsMode={ui.detailsMode}
+                            detailsModeCommandOverride={ui.detailsModeCommandOverride}
+                            key={index}
+                            msg={msg}
+                            sections={ui.sections}
+                            t={ui.theme}
+                          />
+                        ))}
+                      </NoSelect>
+                    )}
                     <Box flexGrow={1} />
-                  </Box>
-                </Box>
-              ) : (
-                <PerfPane id="transcript">
-                  <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
-                </PerfPane>
-              )}
+                  </>
+                ) : (
+                  <PerfPane id="transcript">
+                    <TranscriptPane actions={actions} composer={contentComposer} progress={progress} transcript={transcript} />
+                  </PerfPane>
+                )}
+              </Box>
             </Box>
             {promptBar}
           </>
