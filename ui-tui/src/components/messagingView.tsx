@@ -24,6 +24,7 @@ import {
   saveContactBook,
   upsertContact
 } from '../lib/signalContacts.js'
+import { restartDaemon } from '../lib/signalDaemon.js'
 import {
   appendMessage,
   loadSignalCache,
@@ -571,6 +572,36 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     })()
   }
 
+  // Force-restart the daemon: recovers a stalled receiver that still answers
+  // /api/v1/check (so `r` reconnect alone can't fix it) — the common "stopped
+  // receiving" cause. Re-resolves cfg afterwards so the receive stream re-opens
+  // against the fresh daemon.
+  const restartDaemonAndReconnect = () => {
+    if (!cfg) {
+      return
+    }
+
+    setFlash('restarting daemon…')
+
+    void (async () => {
+      const { error } = await restartDaemon(cfg.account)
+
+      if (!aliveRef.current) {
+        return
+      }
+
+      if (error) {
+        setFlash(`restart failed: ${error}`)
+
+        return
+      }
+
+      setFlash('daemon restarted — reconnecting')
+      setReachable(null)
+      setCfg(resolveSignalConfig())
+    })()
+  }
+
   const reconnect = () => {
     if (!cfg) {
       return
@@ -771,6 +802,10 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
     if (ch === 'r') {
       return reconnect()
+    }
+
+    if (ch === 'R') {
+      return restartDaemonAndReconnect()
     }
 
     if (ch === 'c' && activeConv) {
@@ -1218,7 +1253,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
         {composing
           ? 'type · ⏎ send · ↑↓ scroll · ^O open attachment · Esc back'
-          : `↑↓/jk chats · ⏎/→ open & write · c contact · n new · r reconnect${connected ? '' : ' · s set up'} · Esc/q close`}
+          : `↑↓/jk chats · ⏎/→ open & write · c contact · n new · r reconnect · R restart daemon${connected ? '' : ' · s set up'} · Esc/q close`}
       </Text>
     </Box>
   )

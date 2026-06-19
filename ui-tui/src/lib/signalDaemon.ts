@@ -309,3 +309,25 @@ export const stopDaemon = (file = daemonFile()): boolean => {
     return false
   }
 }
+
+// Force a FRESH daemon even if the current one still answers /api/v1/check:
+// signal-cli's upstream receive websocket can stall while the local HTTP API
+// stays responsive, so reuse-if-healthy (startDaemon) cannot recover it. Kill
+// the recorded daemon, wait for the pid to exit so startDaemon won't reuse it,
+// then start clean. Returns the new StartResult.
+export const restartDaemon = async (account: string, timeoutMs = 25000): Promise<StartResult> => {
+  const info = readDaemonInfo()
+  stopDaemon()
+
+  // Wait (briefly) for the old process to actually exit so reuseRunningDaemon
+  // sees a dead pid and spawns fresh instead of reattaching to the stalled one.
+  for (let i = 0; i < 30; i += 1) {
+    if (!info || !pidAlive(info.pid)) {
+      break
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 150))
+  }
+
+  return startDaemon(account, timeoutMs)
+}
