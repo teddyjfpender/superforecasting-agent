@@ -569,7 +569,7 @@ export const AppLayout = memo(function AppLayout({
     <>
       <PerfPane id="prompt">
         <PromptZone
-          cols={contentComposer.cols}
+          cols={composer.cols}
           onApprovalChoice={actions.answerApproval}
           onClarifyAnswer={actions.answerClarify}
           onSecretSubmit={actions.answerSecret}
@@ -578,7 +578,7 @@ export const AppLayout = memo(function AppLayout({
       </PerfPane>
 
       <PerfPane id="composer">
-        <ComposerPane actions={actions} composer={contentComposer} status={status} />
+        <ComposerPane actions={actions} composer={composer} status={status} />
       </PerfPane>
 
       {SHOW_FPS && (
@@ -651,52 +651,46 @@ export const AppLayout = memo(function AppLayout({
           </Box>
         ) : (
           <>
-            {/* Home: a persistent ChatGPT-style rail of recent conversations on
-                the left (wide terminals), with the Outrider hero (new chat) OR
-                the live transcript (an open conversation) on the right, and the
-                composer pinned under the conversation — not under the rail.
-                Clicking a chat keeps the rail and loads it beside it. */}
-            <Box flexDirection="row" flexGrow={1}>
+            {/* Home two-pane: a fixed conversations rail on the left (wide
+                terminals) + the Outrider hero (new chat) OR the live transcript
+                (an open conversation) on the right. The transcript is a DIRECT
+                child of this flex-grow row — same as the proven single-pane
+                layout — so its ScrollBox gets a clean bounded height and scrolls
+                on its own; the rail is just a fixed sibling and stays put. The
+                prompt spans the bottom (below both panes). */}
+            <Box flexDirection="row" flexGrow={1} minHeight={0}>
               {showRail ? (
                 <ConversationsRailPane onNewChat={() => actions.runCommand('/new')} onSelect={actions.resumeById} />
               ) : null}
-              <Box flexDirection="column" flexGrow={1} minHeight={0} minWidth={0}>
-                {landing ? (
-                  <Box flexDirection="column" flexGrow={1} minWidth={0}>
-                    <Box flexGrow={1} />
-                    <HomeHero info={ui.info ?? undefined} maxCols={contentComposer.cols} t={ui.theme} />
-                    {landingNotices.length > 0 && (
-                      <NoSelect flexDirection="column" marginTop={1} paddingX={1}>
-                        {landingNotices.map((msg, index) => (
-                          <MessageLine
-                            cols={contentComposer.cols}
-                            compact={ui.compact}
-                            detailsMode={ui.detailsMode}
-                            detailsModeCommandOverride={ui.detailsModeCommandOverride}
-                            key={index}
-                            msg={msg}
-                            sections={ui.sections}
-                            t={ui.theme}
-                          />
-                        ))}
-                      </NoSelect>
-                    )}
-                    <Box flexGrow={1} />
-                  </Box>
-                ) : (
-                  // A row so the transcript's scroll area + right scrollbar lay
-                  // out horizontally (the TranscriptPane returns that pair).
-                  // minHeight=0 lets it shrink so the ScrollBox clips + scrolls
-                  // internally instead of the whole layout growing past the screen.
-                  <Box flexDirection="row" flexGrow={1} minHeight={0} minWidth={0}>
-                    <PerfPane id="transcript">
-                      <TranscriptPane actions={actions} composer={contentComposer} progress={progress} transcript={transcript} />
-                    </PerfPane>
-                  </Box>
-                )}
-                {promptBar}
-              </Box>
+              {landing ? (
+                <Box flexDirection="column" flexGrow={1} minWidth={0}>
+                  <Box flexGrow={1} />
+                  <HomeHero info={ui.info ?? undefined} maxCols={contentComposer.cols} t={ui.theme} />
+                  {landingNotices.length > 0 && (
+                    <NoSelect flexDirection="column" marginTop={1} paddingX={1}>
+                      {landingNotices.map((msg, index) => (
+                        <MessageLine
+                          cols={contentComposer.cols}
+                          compact={ui.compact}
+                          detailsMode={ui.detailsMode}
+                          detailsModeCommandOverride={ui.detailsModeCommandOverride}
+                          key={index}
+                          msg={msg}
+                          sections={ui.sections}
+                          t={ui.theme}
+                        />
+                      ))}
+                    </NoSelect>
+                  )}
+                  <Box flexGrow={1} />
+                </Box>
+              ) : (
+                <PerfPane id="transcript">
+                  <TranscriptPane actions={actions} composer={contentComposer} progress={progress} transcript={transcript} />
+                </PerfPane>
+              )}
             </Box>
+            {promptBar}
           </>
         )}
       </Box>
