@@ -4625,7 +4625,10 @@ def test_workflow_report_aggregates_question_activity(tmp_path):
     _reasons = {"reasons_up": ["up"], "reasons_down": ["down"], "change_my_mind": ["new data"]}
     forecast_ledger_tool({"action": "update_forecast", "require_components": False, "db": db, "question_id": qid,
                           "probability": 0.55, "rationale": "first", **_reasons})
-    forecast_ledger_tool({"action": "update_forecast", "require_components": False, "db": db, "question_id": qid,
+    # Second snapshot has no new evidence since the first; this test exercises
+    # report aggregation, not the re-run freshness gate, so opt out of it.
+    forecast_ledger_tool({"action": "update_forecast", "require_components": False,
+                          "require_fresh_evidence": False, "db": db, "question_id": qid,
                           "probability": 0.6, "rationale": "second", **_reasons})
 
     out = json.loads(forecast_ledger_tool({"action": "workflow_report", "db": db, "question_id": qid}))
@@ -5138,3 +5141,41 @@ def test_forecast_ledger_tool_requires_components_by_default_for_live(tmp_path):
         "probability": 0.6, "rationale": "scratch", "forecast_origin": "exploratory",
     }))
     assert explore["success"] is True
+
+
+def test_update_forecast_blocks_stale_rerun(tmp_path):
+    # The re-run freshness gate: a second live snapshot is refused unless new
+    # evidence was collected since the prior one. Tie-proof via evidence count.
+    db = str(tmp_path / "rerun.db")
+    qid = json.loads(forecast_ledger_tool({
+        "action": "create_question", "db": db, "title": "Rerun gate",
+        "resolution_criteria": "Resolves yes if the indicator exceeds target by close; otherwise no.",
+    }))["question"]["id"]
+    reasons = {"reasons_up": ["up"], "reasons_down": ["down"], "change_my_mind": ["new data"]}
+    base = {"action": "update_forecast", "require_components": False, "db": db, "question_id": qid, **reasons}
+
+    forecast_ledger_tool({"action": "add_evidence", "db": db, "question_id": qid,
+                          "source_or_note": "n0", "claim": "c0"})
+    first = json.loads(forecast_ledger_tool({**base, "probability": 0.5, "rationale": "first"}))
+    assert first["success"] is True
+
+    # No new evidence since the first snapshot -> blocked.
+    blocked = json.loads(forecast_ledger_tool({**base, "probability": 0.6, "rationale": "second"}))
+    assert blocked["success"] is False
+    assert "re-run blocked" in blocked["error"].lower()
+
+    # Collect fresh evidence -> the re-run is allowed.
+    forecast_ledger_tool({"action": "add_evidence", "db": db, "question_id": qid,
+                          "source_or_note": "n1", "claim": "fresh reading"})
+    ok = json.loads(forecast_ledger_tool({**base, "probability": 0.6, "rationale": "second"}))
+    assert ok["success"] is True
+
+    # Acknowledging staleness also unblocks (no new evidence since the second).
+    ack = json.loads(forecast_ledger_tool({**base, "ack_stale_evidence": True,
+                                           "probability": 0.62, "rationale": "third"}))
+    assert ack["success"] is True
+
+    # An explicit opt-out (require_fresh_evidence=false) unblocks too.
+    optout = json.loads(forecast_ledger_tool({**base, "require_fresh_evidence": False,
+                                              "probability": 0.63, "rationale": "fourth"}))
+    assert optout["success"] is True

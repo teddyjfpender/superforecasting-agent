@@ -1429,6 +1429,7 @@ class ForecastLedger:
         require_decision_readiness: bool = False,
         require_structured_reasoning: bool = False,
         require_components: bool = False,
+        require_fresh_evidence: bool = False,
         require_panel: bool = False,
         panel_run_ref: str | None = None,
         panel_skipped_reason: str | None = None,
@@ -1491,6 +1492,39 @@ class ForecastLedger:
                     "forecast_origin='exploratory'."
                 )
 
+        # Re-run discipline: a re-run is not a retrieval. When asked (the agent's
+        # update path sets this by default), refuse to commit a new live snapshot
+        # if a prior forecast exists and NO fresh evidence was collected since it
+        # — stopping the agent from re-estimating off stale ledger evidence and
+        # perpetuating a hedge. "Fresh" is measured tie-proof by the evidence
+        # count recorded on the prior snapshot (timestamp fallback for snapshots
+        # predating this field). The deterministic `forecast refresh` path imports
+        # fresh readings first and does not set this; a genuine no-change re-run
+        # can acknowledge_stale_evidence or record forecast_origin='exploratory'.
+        evidence_count_at_commit: int | None = None
+        if require_fresh_evidence and forecast_origin == "live":
+            evidence_now = self.list_evidence(question_id)
+            evidence_count_at_commit = len(evidence_now)
+            if not acknowledge_stale_evidence:
+                prior = self.get_current_snapshot(question_id)
+                if prior is not None:
+                    prior_count = (prior.metadata or {}).get("evidence_count_at_commit")
+                    if isinstance(prior_count, int):
+                        has_fresh = evidence_count_at_commit > prior_count
+                    else:
+                        prior_ts = prior.created_at or prior.as_of or ""
+                        has_fresh = any((item.captured_at or "") > prior_ts for item in evidence_now)
+                    if not has_fresh:
+                        raise ValidationError(
+                            "re-run blocked: no fresh evidence collected since the prior forecast "
+                            f"({prior.forecast_id}, as_of {prior.as_of}). Re-running a forecast must "
+                            "start from fresh readings — run `forecast refresh <id>` (re-fetches "
+                            "watched sources and re-pools) or import_source_evidence for each driver "
+                            "to pull the latest data, THEN update. If you have genuinely checked and "
+                            "nothing has changed, set acknowledge_stale_evidence=true (CLI "
+                            "--ack-stale-evidence), or record it as forecast_origin='exploratory'."
+                        )
+
         if require_decision_readiness and forecast_origin == "live":
             readiness_issues = question_decision_readiness_issues(question)
             if readiness_issues:
@@ -1507,6 +1541,9 @@ class ForecastLedger:
         effective_cutoff = cutoff_ts or as_of_ts
         self._validate_evidence_refs(question_id, evidence_refs or [], effective_cutoff)
         snapshot_metadata = dict(metadata or {})
+        # Baseline for the next re-run's fresh-evidence gate (tie-proof count).
+        if evidence_count_at_commit is not None:
+            snapshot_metadata.setdefault("evidence_count_at_commit", evidence_count_at_commit)
 
         # Panel formality. A deliberative panel — independent multi-perspective
         # estimates aggregated into a spread — is *indicated* for high-impact

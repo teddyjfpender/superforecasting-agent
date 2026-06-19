@@ -1323,6 +1323,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 change_my_mind=args.get("change_my_mind"),
                 require_structured_reasoning=bool(args.get("require_structured_reasoning", True)),
                 require_components=bool(args.get("require_components", True)),
+                require_fresh_evidence=bool(args.get("require_fresh_evidence", True)),
                 require_decision_readiness=bool(args.get("require_decision_readiness", False)),
                 require_panel=bool(args.get("require_panel", True)),
                 panel_run_ref=args.get("panel_run_ref"),
