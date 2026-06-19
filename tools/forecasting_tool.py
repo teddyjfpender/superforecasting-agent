@@ -1053,10 +1053,26 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             source = _required(args, "source")
             dedupe = bool(args.get("dedupe", True))
             seen_keys = ledger.existing_evidence_keys(question_id) if dedupe else set()
+            # Inherit the per-source reliability prior set during onboarding when
+            # the caller didn't pass an explicit rating, so imported readings
+            # carry the user's stated confidence in that source.
+            _watch_type = adapter.removeprefix("adapter:").strip().lower()
+            _default_prior: float | None = None
+            try:
+                for _w in ledger.list_watched_sources(scope_type="question", scope_ref=question_id, status="active"):
+                    if _w.get("source") == source and (_w.get("source_type") or "").lower() == _watch_type:
+                        _prior = (_w.get("metadata") or {}).get("reliability_prior")
+                        if isinstance(_prior, (int, float)):
+                            _default_prior = float(_prior)
+                        break
+            except Exception:
+                _default_prior = None
             imported = []
             skipped_duplicates = 0
             for item in _load_source_adapter_items(adapter, source, args):
                 evidence_payload = _source_adapter_evidence_payload(adapter, source, item, args)
+                if _default_prior is not None and evidence_payload.get("reliability_rating") is None:
+                    evidence_payload["reliability_rating"] = _default_prior
                 # Skip a structured reading already imported for this question
                 # (same source_type + entry_id) so repeated refreshes don't bloat
                 # the evidence table with identical observations.

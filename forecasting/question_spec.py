@@ -381,6 +381,26 @@ class QuestionSpec:
         }
 
 
+# ── onboarding settings (read at run/re-run time) ────────────────────────────
+ONBOARDING_DEFAULTS = {"allow_evidence_gathering": True, "panel_by_default": False, "autonomy": "ask"}
+
+
+def onboarding_settings(question_metadata: dict[str, Any] | None) -> dict[str, Any]:
+    """Extract the onboarding toggles from a question's metadata, with defaults.
+
+    These were stashed under ``metadata['onboarding']`` at commit time and are
+    consumed by the run/re-run paths (evidence permission, panel default, the
+    clarify-autonomy level).
+    """
+    raw = (question_metadata or {}).get("onboarding") or {}
+
+    return {
+        "allow_evidence_gathering": bool(raw.get("allow_evidence_gathering", ONBOARDING_DEFAULTS["allow_evidence_gathering"])),
+        "panel_by_default": bool(raw.get("panel_by_default", ONBOARDING_DEFAULTS["panel_by_default"])),
+        "autonomy": raw.get("autonomy") or ONBOARDING_DEFAULTS["autonomy"],
+    }
+
+
 # ── recommended clarifications (drives the curation dialog) ──────────────────
 def recommended_clarifications(spec: QuestionSpec) -> list[dict[str, Any]]:
     """Ready-to-fire clarify prompts in the §2 priority order.

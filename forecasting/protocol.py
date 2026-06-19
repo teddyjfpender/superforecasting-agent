@@ -335,9 +335,29 @@ def build_context_packet(
         f"action_threshold: {question.action_threshold or '-'}",
         f"update_triggers: {triggers_render}",
         f"decision_readiness_issues: {', '.join(readiness_issues) if readiness_issues else 'none'}",
-        "",
-        "## Current Forecast",
     ]
+    # Onboarding preferences set when the question was curated — the agent must
+    # honor them: whether it may autonomously fetch evidence, whether to run a
+    # panel by default, and how freely it may act vs. ask.
+    from forecasting.question_spec import onboarding_settings  # local import avoids cycle
+
+    onboarding = onboarding_settings(getattr(question, "metadata", None))
+    lines.extend(
+        [
+            "",
+            "## Onboarding Preferences",
+            "evidence_gathering: "
+            + (
+                "permitted — fetch autonomously"
+                if onboarding["allow_evidence_gathering"]
+                else "MANUAL ONLY — do not autonomously fetch; use only evidence the user adds"
+            ),
+            f"panel_by_default: {onboarding['panel_by_default']}",
+            f"autonomy: {onboarding['autonomy']}",
+            "",
+            "## Current Forecast",
+        ]
+    )
     if snapshot:
         lines.extend(
             [
