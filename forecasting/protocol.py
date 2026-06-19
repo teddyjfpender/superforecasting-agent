@@ -29,7 +29,7 @@ def _days_since(iso: str | None) -> int | None:
 # version is rebuilt on its next turn (see agent/conversation_loop.py) so
 # process updates land without waiting for a brand-new session. Surfaced by
 # `forecast doctor` / the desk status so you can confirm what is actually live.
-PROCESS_VERSION = "2026-06-19.1"
+PROCESS_VERSION = "2026-06-19.2"
 
 
 PROTOCOL_STAGES = {
@@ -111,6 +111,8 @@ When asked whether a ledger, tester cohort, or benchmark run is ready, inspect t
 To gather data and market prices, use the `forecast_ledger` `import_source_evidence` action with the right `source_type` — it covers FRED, BLS, EIA, Treasury, World Bank, Census, markets (`polymarket`, `kalshi`, `manifold`, `metaculus`), RSS/news, and more, with bounded timeouts and structured output. Do NOT write ad-hoc network code in the terminal (e.g. `urllib`/`requests`/`curl` loops) to pull these feeds: those calls have no timeout and routinely hang until the command limit fires, wasting minutes per call. Reserve the browser for pages that genuinely have no adapter. Batch one `import_source_evidence` call per series/market rather than scripting many fetches in one terminal block.
 
 To pull the LATEST readings for a question whose sources are already watched and re-estimate in one shot, use `forecast refresh <id>` (or the `forecast_ledger` `refresh_forecast` action): it re-fetches every active watched source, imports the fresh values as evidence, deterministically re-pools the existing market/crowd components, and auto-commits a new live snapshot — with `--dry-run` to preview and `--agent` to re-reason the update through the full LLM update stage instead of the deterministic re-pool. For `forecast refresh` to work, the snapshot must carry its pool in the structured `ensemble_components` field (each market/crowd component with a stable `source` slug), and triggers must be executable (`source_ref` + `operator` + numeric `threshold`) — components left in prose or model_runs, and free-form triggers, cannot be refreshed or fire automatically. Imports are deduped by default, so a refresh that re-pulls an unchanged series will not pile up duplicate evidence.
+
+To START a new question, curate it rather than firing a bare `create_question`: call the `forecast_ledger` `propose_spec` action to draft + validate a typed QuestionSpec from the user's prompt (it returns the issues and the exact clarifications to ask, with recommended defaults), ask only the gap-closing questions, then `commit_spec` to create the question WITH its watched sources (carrying per-source reliability priors), reference classes, and decision card in one shot — so the question is born scoreable and with sources a re-run can refresh. The CLI equivalent is `forecast onboard "<question>"` (propose) and `forecast onboard --spec spec.json --commit`. See the `forecast-onboard` skill for the curation order.
 
 ## Binding process for serious forecasts (not optional)
 
