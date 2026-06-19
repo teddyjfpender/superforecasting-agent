@@ -599,6 +599,20 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     )
     new_parser.set_defaults(_forecast_handler=_cmd_new)
 
+    onboard_parser = forecast_sub.add_parser(
+        "onboard",
+        help="Curate a new question as a typed QuestionSpec — propose + validate, then commit the full fan-out",
+    )
+    onboard_parser.add_argument("prompt", nargs="?", help="Plain-language question to seed a draft spec")
+    onboard_parser.add_argument("--spec", help="Path to a QuestionSpec JSON file (from a prior --json proposal, edited)")
+    onboard_parser.add_argument(
+        "--commit",
+        action="store_true",
+        help="Validate and commit the --spec (refuses on error-severity issues)",
+    )
+    onboard_parser.add_argument("--json", action="store_true", help="Emit the proposed spec + issues + clarifications as JSON")
+    onboard_parser.set_defaults(_forecast_handler=_cmd_onboard)
+
     list_parser = forecast_sub.add_parser("list", help="List forecast questions")
     list_parser.add_argument("--status", choices=["active", "closed", "resolved", "archived"])
     list_parser.add_argument("--domain")
@@ -3063,6 +3077,67 @@ def _cmd_new(args: argparse.Namespace) -> None:
     if args.source_plan or args.apply_source_plan:
         print("")
         _print_source_plan(ledger, question, apply_watch=args.apply_source_plan, limit=12)
+
+
+def _cmd_onboard(args: argparse.Namespace) -> None:
+    from forecasting.question_spec import recommended_clarifications, spec_from_dict
+
+    ledger = _ledger(args)
+    if args.spec:
+        with open(args.spec, encoding="utf-8") as fh:
+            raw = json.load(fh)
+    elif args.prompt:
+        raw = {"title": args.prompt, "resolution_criteria": ""}
+    else:
+        raise SystemExit("forecast onboard needs a prompt or --spec FILE")
+
+    spec = spec_from_dict(raw)
+    issues = spec.validate()
+
+    if args.commit:
+        errs = [i for i in issues if i.severity == "error"]
+        if errs:
+            print("cannot commit — fix these first:")
+            for e in errs:
+                print(f"  [error] {e.field}: {e.message}" + (f"  ({e.fix})" if e.fix else ""))
+            raise SystemExit(1)
+        result = spec.commit(ledger)
+        print(f"created forecast question {result['question_id']}")
+        print(f"  watched_sources: {len(result['watched_sources'])}")
+        print(f"  reference_classes: {len(result['reference_classes'])}")
+        if result["readiness_gaps"]:
+            print(f"  readiness gaps (waived): {', '.join(g['field'] for g in result['readiness_gaps'])}")
+        return
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "spec": spec.to_dict(),
+                    "issues": [i.to_dict() for i in issues],
+                    "recommended_clarifications": recommended_clarifications(spec),
+                    "committable": spec.is_committable(),
+                },
+                indent=2,
+            )
+        )
+        return
+
+    # Human-readable proposal: the draft, its issues, and the clarifications to ask.
+    print(f"proposed forecast question: {spec.title or '(untitled)'}")
+    print(f"  outcome: {spec.outcome_type}   committable: {spec.is_committable()}")
+    for label in ("error", "gap", "warn"):
+        for i in (x for x in issues if x.severity == label):
+            print(f"  [{label}] {i.field}: {i.message}")
+    clarifications = recommended_clarifications(spec)
+    if clarifications:
+        print("clarify with the user:")
+        for c in clarifications:
+            choices = f"  [{' / '.join(c['choices'])}]" if c["choices"] else "  (free text)"
+            print(f"  - {c['question']}{choices}")
+    print("")
+    print("then edit a spec JSON and commit:  forecast onboard --spec spec.json --commit")
+    print("(get the JSON skeleton with:  forecast onboard \"<your question>\" --json)")
 
 
 def _parse_update_trigger_args(values: list[str]) -> list[Any]:

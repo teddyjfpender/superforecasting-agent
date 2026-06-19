@@ -15504,3 +15504,38 @@ def test_forecast_cli_postmortem_records_failure_class(tmp_path, capsys):
     ledger = ForecastLedger(db_path=db)
     pms = ledger.list_postmortems(question_id=qid)
     assert pms[0]["failure_class"] == "inside_view"
+
+
+def test_forecast_onboard_propose_and_commit(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "onboard.db")
+
+    # Propose mode: prints issues + clarifications, writes nothing.
+    _run(parser, ["forecast", "--db", db, "onboard", "forecast"])
+    out = capsys.readouterr().out
+    assert "proposed forecast question" in out
+    assert "committable: False" in out
+    assert "clarify with the user" in out
+
+    # A bad spec refuses to commit (exit 1) and writes nothing.
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({"title": "x", "resolution_criteria": "tbd"}))
+    with pytest.raises(SystemExit):
+        _run(parser, ["forecast", "--db", db, "onboard", "--spec", str(bad), "--commit"])
+
+    # A good spec commits the full fan-out.
+    good = tmp_path / "good.json"
+    good.write_text(json.dumps({
+        "title": "US CPI YoY for the June 2026 print",
+        "resolution_criteria": "Resolves yes if BLS June 2026 CPI YoY exceeds 3.0 percent.",
+        "decision_owner": "me",
+        "action_threshold": ">=70% act",
+        "update_triggers": [{"mechanism": "CPI print", "operator": ">", "threshold": 3.0, "source_ref": "fred:CPIAUCSL"}],
+        "watched_sources": [{"source": "fred:CPIAUCSL", "source_type": "fred", "reliability_prior": 0.9}],
+        "reference_classes": [{"name": "recent CPI prints", "inclusion_criteria": "monthly CPI since 2015", "base_rate": 0.4}],
+    }))
+    _run(parser, ["forecast", "--db", db, "onboard", "--spec", str(good), "--commit"])
+    commit_out = capsys.readouterr().out
+    assert "created forecast question" in commit_out
+    assert "watched_sources: 1" in commit_out
+    assert "reference_classes: 1" in commit_out
