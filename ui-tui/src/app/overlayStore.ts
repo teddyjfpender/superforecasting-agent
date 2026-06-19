@@ -19,6 +19,7 @@ const buildOverlayState = (): OverlayState => ({
   modelPicker: false,
   news: false,
   obsidian: false,
+  onboard: false,
   pager: null,
   picker: false,
   secret: null,
@@ -46,6 +47,7 @@ export const $isBlocked = computed(
     modelPicker,
     news,
     obsidian,
+    onboard,
     pager,
     picker,
     secret,
@@ -68,6 +70,7 @@ export const $isBlocked = computed(
         modelPicker ||
         news ||
         obsidian ||
+        onboard ||
         pager ||
         picker ||
         secret ||
@@ -111,6 +114,7 @@ export const resetFlowOverlays = () =>
     modelPicker: $overlayState.get().modelPicker,
     news: $overlayState.get().news,
     obsidian: $overlayState.get().obsidian,
+    onboard: $overlayState.get().onboard,
     picker: $overlayState.get().picker,
     skillsHub: $overlayState.get().skillsHub,
     themePicker: $overlayState.get().themePicker

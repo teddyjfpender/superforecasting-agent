@@ -926,6 +926,13 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
+    aliases: ['new-question', 'onboard-forecast'],
+    help: 'guided onboarding for a new forecast question',
+    name: 'onboard',
+    run: () => patchOverlayState({ onboard: true })
+  },
+
+  {
     // The AGENT-SIDE bridge — deployers letting people message the SYSTEM to
     // invoke it. Deliberately named apart from /messaging (your personal Signal
     // client) so the two concepts don't blur.

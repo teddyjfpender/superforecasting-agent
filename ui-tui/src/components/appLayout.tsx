@@ -36,6 +36,7 @@ import { MessageLine } from './messageLine.js'
 import { MessagingView } from './messagingView.js'
 import { NavBar } from './navBar.js'
 import { NewsView } from './newsView.js'
+import { QuestionOnboardModal } from './questionOnboardModal.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
@@ -412,6 +413,13 @@ const CalendarViewPane = memo(function CalendarViewPane() {
   return <CalendarView gw={gw} onClose={() => patchOverlayState({ calendar: false })} t={ui.theme} />
 })
 
+const QuestionOnboardPane = memo(function QuestionOnboardPane() {
+  const { gw } = useGateway()
+  const ui = useStore($uiState)
+
+  return <QuestionOnboardModal gw={gw} onClose={() => patchOverlayState({ onboard: false })} t={ui.theme} />
+})
+
 const DocsViewPane = memo(function DocsViewPane({ onDraft }: { onDraft: (command: string) => void }) {
   const { gw } = useGateway()
   const ui = useStore($uiState)
@@ -495,7 +503,8 @@ export const AppLayout = memo(function AppLayout({
     overlay.markets ||
     overlay.news ||
     overlay.messaging ||
-    overlay.obsidian
+    overlay.obsidian ||
+    overlay.onboard
 
   // Landing = the first-run screen, before any real interaction. We hold it
   // through gateway connect / startup notices and only leave once a turn or a
@@ -593,6 +602,10 @@ export const AppLayout = memo(function AppLayout({
             ) : overlay.obsidian ? (
               <PerfPane id="docs">
                 <DocsViewPane onDraft={actions.draftCommand} />
+              </PerfPane>
+            ) : overlay.onboard ? (
+              <PerfPane id="onboard">
+                <QuestionOnboardPane />
               </PerfPane>
             ) : (
               <PerfPane id="agents">

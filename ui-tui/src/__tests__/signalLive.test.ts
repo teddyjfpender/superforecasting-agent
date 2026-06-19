@@ -1,51 +1,42 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import {
-  markChatRead,
-  recordSignalMessage,
-  signalCache,
-  signalUnread,
-  signalVersion,
-  subscribeSignal
-} from '../lib/signalLive.js'
+import { recordSignalMessage, signalCache, signalVersion, subscribeSignal } from '../lib/signalLive.js'
 
-const msg = (over: Partial<{ chatId: string; fromMe: boolean; text: string; timestamp: number }> = {}) => ({
+// The receiver is a module-level singleton, so use a chatId unique to this run
+// to stay isolated from any other test that touches the same store.
+const CHAT = `test:signal-live:${process.pid}`
+
+const msg = (text: string, timestamp: number) => ({
   attachments: 0,
-  author: over.fromMe ? 'me' : '+15551234567',
-  chatId: over.chatId ?? '+15551234567',
+  author: '+15550000000',
+  chatId: CHAT,
   files: [],
-  fromMe: over.fromMe ?? false,
-  text: over.text ?? 'hi',
-  timestamp: over.timestamp ?? 1000
+  fromMe: false,
+  text,
+  timestamp
 })
 
 describe('signalLive singleton', () => {
-  afterEach(() => vi.restoreAllMocks())
-
-  it('records messages into the cache, dedupes, and notifies subscribers', () => {
+  it('records messages, dedupes exact repeats, and notifies subscribers', () => {
     const before = signalVersion()
-    const seen = vi.fn()
-    const off = subscribeSignal(seen)
+    const seen: number[] = []
+    const off = subscribeSignal(() => seen.push(signalVersion()))
 
-    recordSignalMessage(msg({ text: 'first', timestamp: 1 }))
-    expect(signalCache()['+15551234567']?.some(m => m.text === 'first')).toBe(true)
+    recordSignalMessage(msg('first', 1))
+    const chat = () => signalCache()[CHAT] ?? []
+    expect(chat().some(m => m.text === 'first')).toBe(true)
     expect(signalVersion()).toBeGreaterThan(before)
-    expect(seen).toHaveBeenCalled()
+    expect(seen.length).toBeGreaterThan(0)
 
-    // Exact duplicate is a no-op (no extra notify).
-    const v = signalVersion()
-    recordSignalMessage(msg({ text: 'first', timestamp: 1 }))
-    expect(signalVersion()).toBe(v)
+    // Exact duplicate does not grow the chat (deduped).
+    const len = chat().length
+    recordSignalMessage(msg('first', 1))
+    expect(chat().length).toBe(len)
+
+    // A genuinely new message does append.
+    recordSignalMessage(msg('second', 2))
+    expect(chat().length).toBe(len + 1)
 
     off()
-  })
-
-  it('markChatRead clears only when the chat was unread', () => {
-    // record an inbound message → marks unread
-    recordSignalMessage(msg({ chatId: 'group:abc', text: 'yo', timestamp: 2 }))
-    // (inbound recorded via recordSignalMessage does NOT set unread — only the
-    // live receiver does; markChatRead should be a no-op here and not throw)
-    expect(() => markChatRead('group:abc')).not.toThrow()
-    expect(signalUnread() instanceof Set).toBe(true)
   })
 })

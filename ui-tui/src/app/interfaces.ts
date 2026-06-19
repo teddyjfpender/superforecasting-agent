@@ -89,6 +89,7 @@ export interface OverlayState {
   modelPicker: boolean
   news: boolean
   obsidian: boolean
+  onboard: boolean
   pager: null | PagerState
   picker: boolean
   secret: null | SecretReq

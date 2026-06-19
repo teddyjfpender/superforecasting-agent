@@ -208,6 +208,7 @@ _LONG_HANDLERS = frozenset(
         "cli.exec",
         "forecast.calibration",
         "forecast.command",
+        "forecast.onboard_commit",
         "forecast.workspace",
         "session.branch",
         "session.compress",
@@ -2665,6 +2666,60 @@ def _(rid, params: dict) -> dict:
         limit = int(params.get("limit") or 1000)
         payload = build_workspace_payload(limit=limit)
         return _ok(rid, payload)
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("forecast.onboard_propose")
+def _(rid, params: dict) -> dict:
+    """Validate a draft QuestionSpec and return issues + the clarifications to ask.
+
+    Backs the TUI onboarding modal: the client sends whatever fields it has so
+    far (or just a prompt) and gets back the normalized spec, its error/gap/warn
+    issues, and the ordered, recommended-marked clarifications to surface next.
+    Deterministic — no model call.
+    """
+    try:
+        from forecasting.question_spec import recommended_clarifications, spec_from_dict
+
+        raw = dict(params.get("spec") or {})
+        if not raw.get("title") and params.get("prompt"):
+            raw["title"] = str(params.get("prompt"))
+        spec = spec_from_dict(raw)
+        issues = [issue.to_dict() for issue in spec.validate()]
+        return _ok(
+            rid,
+            {
+                "spec": spec.to_dict(),
+                "issues": issues,
+                "errors": [i for i in issues if i["severity"] == "error"],
+                "readiness_gaps": [i for i in issues if i["severity"] == "gap"],
+                "recommended_clarifications": recommended_clarifications(spec),
+                "committable": spec.is_committable(),
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("forecast.onboard_commit")
+def _(rid, params: dict) -> dict:
+    """Validate a finalized QuestionSpec and commit the full fan-out.
+
+    Refuses on error-severity issues (returns committed=false + the issues,
+    writing nothing); otherwise creates the question + watched sources +
+    reference classes + decision card via QuestionSpec.commit.
+    """
+    try:
+        from forecasting.ledger import ForecastLedger
+        from forecasting.question_spec import spec_from_dict
+
+        spec = spec_from_dict(params.get("spec") or {})
+        errs = [issue.to_dict() for issue in spec.errors()]
+        if errs:
+            return _ok(rid, {"committed": False, "issues": errs})
+        result = spec.commit(ForecastLedger())
+        return _ok(rid, {"committed": True, **result})
     except Exception as e:
         return _err(rid, 5008, str(e))
 
