@@ -88,6 +88,7 @@ export function ConversationsRail({ currentSid, gw, onNewChat, onSelect, refresh
       borderTop={false}
       flexDirection="column"
       flexShrink={0}
+      minHeight={0}
       paddingRight={1}
       width={width}
     >
@@ -107,7 +108,7 @@ export function ConversationsRail({ currentSid, gw, onNewChat, onSelect, refresh
         <Text color={t.color.muted}>Recent</Text>
       </Box>
 
-      <Box flexDirection="column" marginTop={0} minHeight={0} overflow="hidden">
+      <Box flexDirection="column" flexGrow={1} flexShrink={1} marginTop={0} minHeight={0} overflow="hidden">
         {shown.length === 0 ? (
           <Text color={t.color.muted} wrap="wrap">
             No conversations yet.

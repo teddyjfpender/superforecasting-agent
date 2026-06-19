@@ -660,7 +660,7 @@ export const AppLayout = memo(function AppLayout({
               {showRail ? (
                 <ConversationsRailPane onNewChat={() => actions.runCommand('/new')} onSelect={actions.resumeById} />
               ) : null}
-              <Box flexDirection="column" flexGrow={1} minWidth={0}>
+              <Box flexDirection="column" flexGrow={1} minHeight={0} minWidth={0}>
                 {landing ? (
                   <Box flexDirection="column" flexGrow={1} minWidth={0}>
                     <Box flexGrow={1} />
@@ -686,7 +686,9 @@ export const AppLayout = memo(function AppLayout({
                 ) : (
                   // A row so the transcript's scroll area + right scrollbar lay
                   // out horizontally (the TranscriptPane returns that pair).
-                  <Box flexDirection="row" flexGrow={1} minWidth={0}>
+                  // minHeight=0 lets it shrink so the ScrollBox clips + scrolls
+                  // internally instead of the whole layout growing past the screen.
+                  <Box flexDirection="row" flexGrow={1} minHeight={0} minWidth={0}>
                     <PerfPane id="transcript">
                       <TranscriptPane actions={actions} composer={contentComposer} progress={progress} transcript={transcript} />
                     </PerfPane>
