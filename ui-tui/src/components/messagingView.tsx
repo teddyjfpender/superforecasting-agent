@@ -10,7 +10,6 @@ import {
   createGroup,
   listContacts,
   listGroups,
-  openReceiveStream,
   sendSignalMessage,
   type SignalContact,
   type SignalGroup,
@@ -26,12 +25,16 @@ import {
 } from '../lib/signalContacts.js'
 import { restartDaemon } from '../lib/signalDaemon.js'
 import {
-  appendMessage,
-  loadSignalCache,
-  resolveSignalConfig,
-  saveSignalCache,
-  type SignalCache
-} from '../lib/signalStore.js'
+  markChatRead,
+  recordSignalMessage,
+  signalCache,
+  signalConnected,
+  signalUnread,
+  signalVersion,
+  startSignalReceiver,
+  subscribeSignal
+} from '../lib/signalLive.js'
+import { resolveSignalConfig } from '../lib/signalStore.js'
 import type { Theme } from '../theme.js'
 
 import { type FooterChip, FooterChips } from './footerChips.js'
@@ -159,7 +162,6 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const [setup, setSetup] = useState(false)
 
   const [reachable, setReachable] = useState<boolean | null>(cfg ? null : false)
-  const [streaming, setStreaming] = useState(false)
   const [contacts, setContacts] = useState<SignalContact[]>([])
   const [groups, setGroups] = useState<SignalGroup[]>([])
   // Selection is by chatId (stable), not list index — the list re-sorts by
@@ -188,15 +190,19 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const [newField, setNewField] = useState<'name' | 'number'>('number')
   const [groupMembers, setGroupMembers] = useState<string[]>([])
 
-  // Chats with an incoming message you haven't opened yet (unread heuristic).
-  const [unread, setUnread] = useState<Set<string>>(() => new Set())
   // Contact card (press c): view + rename the highlighted chat's contact.
   const [contactView, setContactView] = useState(false)
   const [editName, setEditName] = useState('')
 
-  const cacheRef = useRef<SignalCache>(loadSignalCache())
-  const [cacheVersion, setCacheVersion] = useState(0)
+  // The message cache + unread set live in the app-level singleton receiver
+  // (so nothing is lost when this view is closed). Mirror its version into local
+  // state so this view re-renders when a message lands while it's open.
+  const [cacheVersion, setCacheVersion] = useState(signalVersion())
+  const streaming = signalConnected()
+  const unread = signalUnread()
   const aliveRef = useRef(true)
+
+  useEffect(() => subscribeSignal(() => setCacheVersion(signalVersion())), [])
 
   useEffect(() => {
     aliveRef.current = true
@@ -216,13 +222,13 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     }
   }, [stdout])
 
-  // Connect: health check → load contacts/groups → open the receive stream.
+  // Connect: health check → load contacts/groups → ensure the app-level receiver
+  // is streaming from this daemon (idempotent; it keeps running when this view
+  // closes, so messages are captured app-wide).
   useEffect(() => {
     if (!cfg) {
       return
     }
-
-    let stop = () => {}
     void (async () => {
       const ok = await checkHealth(cfg)
 
@@ -267,35 +273,12 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
         return book
       })
-      stop = openReceiveStream(
-        cfg,
-        msg => {
-          cacheRef.current = appendMessage(cacheRef.current, msg)
-          saveSignalCache(cacheRef.current)
-
-          if (aliveRef.current) {
-            setCacheVersion(v => v + 1)
-
-            // Flag the chat unread (the open-chat effect clears it if you're
-            // already looking at it).
-            if (!msg.fromMe) {
-              setUnread(prev => (prev.has(msg.chatId) ? prev : new Set(prev).add(msg.chatId)))
-            }
-          }
-        },
-        connected => {
-          if (aliveRef.current) {
-            setStreaming(connected)
-          }
-        }
-      )
+      startSignalReceiver(cfg)
     })()
-
-    return () => stop()
   }, [cfg])
 
   const conversations = useMemo<Conversation[]>(() => {
-    const cache = cacheRef.current
+    const cache = signalCache()
     const nameById = new Map<string, string>()
 
     for (const c of contacts) {
@@ -344,7 +327,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const foundIndex = conversations.findIndex(c => c.chatId === selectedChatId)
   const clampedSel = foundIndex >= 0 ? foundIndex : 0
   const activeConv = conversations[clampedSel]
-  const threadMessages = activeConv ? cacheRef.current[activeConv.chatId] ?? [] : []
+  const threadMessages = activeConv ? signalCache()[activeConv.chatId] ?? [] : []
 
   // Layout + thread-window geometry (needed by both the key handler and render).
   const width = Math.max(48, cols - 4)
@@ -371,16 +354,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       return
     }
 
-    setUnread(prev => {
-      if (!prev.has(activeConv.chatId)) {
-        return prev
-      }
-
-      const next = new Set(prev)
-      next.delete(activeConv.chatId)
-
-      return next
-    })
+    markChatRead(activeConv.chatId)
   }, [focus, activeConv?.chatId, cacheVersion])
 
   // Start a conversation with a typed number: validate, save it to the address
@@ -558,16 +532,15 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         return
       }
 
-      cacheRef.current = appendMessage(cacheRef.current, {
+      recordSignalMessage({
         attachments: 0,
         author: 'me',
         chatId: activeConv.chatId,
+        files: [],
         fromMe: true,
         text,
         timestamp: timestamp || Date.now()
       })
-      saveSignalCache(cacheRef.current)
-      setCacheVersion(v => v + 1)
       setFlash('sent')
     })()
   }

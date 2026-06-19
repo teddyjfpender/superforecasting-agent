@@ -1,6 +1,6 @@
 import { AlternateScreen, Box, NoSelect, ScrollBox, Text } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
-import { Fragment, memo, useMemo, useRef } from 'react'
+import { Fragment, memo, useEffect, useMemo, useRef } from 'react'
 
 import { useGateway } from '../app/gatewayContext.js'
 import type { AppLayoutProps } from '../app/interfaces.js'
@@ -16,6 +16,8 @@ import {
 } from '../lib/inputMetrics.js'
 import { PerfPane } from '../lib/perfPane.js'
 import { composerPromptText } from '../lib/prompt.js'
+import { startSignalReceiver } from '../lib/signalLive.js'
+import { resolveSignalConfig } from '../lib/signalStore.js'
 
 import { AgentsOverlay } from './agentsOverlay.js'
 import { AlertsView } from './alertsView.js'
@@ -471,6 +473,13 @@ export const AppLayout = memo(function AppLayout({
 }: AppLayoutProps) {
   const overlay = useStore($overlayState)
   const ui = useStore($uiState)
+
+  // Keep the Signal receiver running app-wide — not just while the Messaging
+  // view is open — so inbound messages are captured and cached even when you're
+  // on another screen (signal-cli delivers each message once, then ACKs it).
+  useEffect(() => {
+    startSignalReceiver(resolveSignalConfig())
+  }, [])
 
   // A full-screen overlay (spawn tree, forecasts workspace, or calibration
   // view) takes over the viewport — hide the transcript while one is open.
