@@ -366,13 +366,85 @@ class QuestionSpec:
                 )
             )
 
+        question_dict = dict(question.__dict__) if hasattr(question, "__dict__") else dict(question)
+        # OutcomeSpace is the one non-JSON-serializable field on the question.
+        outcome = question_dict.get("outcome_space")
+        if hasattr(outcome, "to_dict"):
+            question_dict["outcome_space"] = outcome.to_dict()
+
         return {
             "question_id": question_id,
-            "question": question.__dict__ if hasattr(question, "__dict__") else question,
+            "question": question_dict,
             "watched_sources": watched,
             "reference_classes": ref_classes,
             "readiness_gaps": [g.to_dict() for g in gaps],
         }
+
+
+# ── recommended clarifications (drives the curation dialog) ──────────────────
+def recommended_clarifications(spec: QuestionSpec) -> list[dict[str, Any]]:
+    """Ready-to-fire clarify prompts in the §2 priority order.
+
+    Each item is ``{field, question, choices}`` where ``choices`` are plain
+    strings (the clarify tool auto-appends "Other"); the first choice carries a
+    "(recommended)" marker so the user can one-key accept. Issue-derived prompts
+    only appear when that field is an actual error/gap/warn; the two preference
+    prompts (evidence permission, panel) always appear so the user sets them.
+    """
+    issues = spec.validate()
+    by_field = {i.field.split("[")[0]: i for i in issues}
+    out: list[dict[str, Any]] = []
+
+    if "outcome_type" in by_field or "choices" in by_field or "units" in by_field:
+        out.append({
+            "field": "outcome_type",
+            "question": "How should this question resolve?",
+            "choices": ["Yes/No binary (recommended)", "Numeric value with units", "Categorical buckets", "Distribution"],
+        })
+    if "resolution_criteria" in by_field or "title" in by_field:
+        out.append({
+            "field": "resolution_criteria",
+            "question": "The criteria are too vague to score — what measurable condition + source resolves this?",
+            "choices": [],  # free text
+        })
+    if "decision_owner" in by_field:
+        out.append({
+            "field": "decision_owner",
+            "question": "Who owns the decision this forecast informs?",
+            "choices": ["You (recommended)", "Team/desk", "No owner — track only"],
+        })
+    if "action_threshold" in by_field:
+        out.append({
+            "field": "action_threshold",
+            "question": "At what probability does this change your action?",
+            "choices": [">=70% act (recommended)", ">=50%", "Custom threshold", "No action threshold"],
+        })
+    if "update_triggers" in by_field:
+        out.append({
+            "field": "update_triggers",
+            "question": "What observation should force a re-look (an executable source + threshold)?",
+            "choices": [],  # free text
+        })
+
+    # Standing preference prompts (not validation-derived).
+    out.append({
+        "field": "allow_evidence_gathering",
+        "question": "May I autonomously fetch evidence from the web/data feeds on each run?",
+        "choices": ["Yes — auto-fetch (recommended)", "Yes, but ask before each fetch", "No — I'll add evidence manually"],
+    })
+    if "watched_sources" in by_field:
+        out.append({
+            "field": "watched_sources",
+            "question": "No watched sources yet — re-runs need something to refresh. Add the sources I propose?",
+            "choices": ["Add all (recommended)", "Let me pick", "Add none"],
+        })
+    out.append({
+        "field": "panel_by_default",
+        "question": "Run a multi-model panel on this question by default? (slower, higher quality)",
+        "choices": ["No — single model (recommended)", "Yes, first run only", "Yes, every scheduled run"],
+    })
+
+    return out
 
 
 # ── dict round-trip (transport for CLI/gateway/TUI) ──────────────────────────

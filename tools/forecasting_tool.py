@@ -106,6 +106,8 @@ FORECAST_LEDGER_SCHEMA = {
                 "type": "string",
                 "enum": [
                     "create_question",
+                    "propose_spec",
+                    "commit_spec",
                     "set_decision",
                     "list_questions",
                     "search_questions",
@@ -886,6 +888,47 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 question=_question_dict(question),
                 decision_readiness_issues=ledger.decision_readiness_issues(question),
             )
+
+        if action == "propose_spec":
+            # Structure + validate a draft QuestionSpec the agent inferred from
+            # the user's prompt, and hand back the exact clarifications to fire.
+            # The agent supplies the content (it's the LLM); this stays
+            # deterministic — no model call here.
+            from forecasting.question_spec import recommended_clarifications, spec_from_dict
+
+            raw = dict(args.get("spec") or {})
+            if not raw.get("title") and args.get("prompt"):
+                raw["title"] = str(args.get("prompt"))
+            spec = spec_from_dict(raw)
+            issues = [issue.to_dict() for issue in spec.validate()]
+
+            return tool_result(
+                success=True,
+                spec=spec.to_dict(),
+                issues=issues,
+                errors=[i for i in issues if i["severity"] == "error"],
+                readiness_gaps=[i for i in issues if i["severity"] == "gap"],
+                recommended_clarifications=recommended_clarifications(spec),
+                committable=spec.is_committable(),
+            )
+
+        if action == "commit_spec":
+            # Validate a finalized spec and commit the whole fan-out in one shot
+            # (question + watched sources + reference classes + decision card).
+            from forecasting.question_spec import spec_from_dict
+
+            spec = spec_from_dict(args.get("spec") or {})
+            errs = [issue.to_dict() for issue in spec.errors()]
+            if errs:
+                return tool_error(
+                    "question spec is not committable: "
+                    + "; ".join(f"{e['field']}: {e['message']}" for e in errs),
+                    success=False,
+                    issues=errs,
+                )
+            result = spec.commit(ledger)
+
+            return tool_result(success=True, **result)
 
         if action == "set_decision":
             question_id = _required(args, "question_id")
