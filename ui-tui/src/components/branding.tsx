@@ -120,10 +120,13 @@ function shortenHomePath(value?: string): string {
   return home && value.startsWith(home) ? `~${value.slice(home.length)}` : value
 }
 
-export function HomeHero({ info, t }: { info?: SessionInfo; t: Theme }) {
+export function HomeHero({ info, maxCols, t }: { info?: SessionInfo; maxCols?: number; t: Theme }) {
   const out = useStdout().stdout
   const rows = out?.rows ?? 24
-  const cols = out?.columns ?? 80
+  // In the two-pane Home the hero lives in the conversation column, not the
+  // whole terminal — size + gate the orb to that width so it never overflows
+  // the column (which would hide the conversations rail).
+  const cols = Math.min(out?.columns ?? 80, maxCols ?? out?.columns ?? 80)
   // Only float the header when there's genuine room for it; otherwise the
   // wordmark alone carries the identity so the prompt stays in view. The
   // outrider scales to fit, so the gate just needs basic breathing room.
@@ -134,7 +137,7 @@ export function HomeHero({ info, t }: { info?: SessionInfo; t: Theme }) {
     <Box alignItems="center" flexDirection="column" marginTop={showOrb ? 1 : 1}>
       {showOrb ? (
         <Box flexShrink={0} marginBottom={1}>
-          <OutriderHeader t={t} />
+          <OutriderHeader maxCols={maxCols} t={t} />
         </Box>
       ) : null}
 

@@ -113,9 +113,12 @@ interface Span {
 // bright (foreground) group and a dim (background) group, and the glyph whose
 // mask matches the bright group is drawn. Dim groups below THRESHOLD render
 // transparent so the figure floats on the terminal background in any theme.
-export function OutriderHeader({ t }: { t: Theme }) {
+export function OutriderHeader({ maxCols, t }: { maxCols?: number; t: Theme }) {
   const out = useStdout().stdout
-  const cols = out?.columns ?? 80
+  // Bound the orb by the available column (the two-pane Home gives it less than
+  // the full terminal), not the whole terminal — otherwise it overflows the
+  // conversation column and clobbers the rail.
+  const cols = Math.min(out?.columns ?? 80, maxCols ?? out?.columns ?? 80)
   const termRows = out?.rows ?? 24
   const primary = t.color.primary
 

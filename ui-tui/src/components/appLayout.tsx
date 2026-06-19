@@ -125,7 +125,7 @@ const TranscriptPane = memo(function TranscriptPane({
               )}
 
               {row.msg.kind === 'intro' ? (
-                <HomeHero info={row.msg.info} t={ui.theme} />
+                <HomeHero info={row.msg.info} maxCols={composer.cols} t={ui.theme} />
               ) : row.msg.kind === 'session' && row.msg.info ? (
                 <SessionPanel info={row.msg.info} sid={ui.sid} t={ui.theme} />
               ) : row.msg.kind === 'panel' && row.msg.panelData ? (
@@ -664,7 +664,7 @@ export const AppLayout = memo(function AppLayout({
                 {landing ? (
                   <Box flexDirection="column" flexGrow={1} minWidth={0}>
                     <Box flexGrow={1} />
-                    <HomeHero info={ui.info ?? undefined} t={ui.theme} />
+                    <HomeHero info={ui.info ?? undefined} maxCols={contentComposer.cols} t={ui.theme} />
                     {landingNotices.length > 0 && (
                       <NoSelect flexDirection="column" marginTop={1} paddingX={1}>
                         {landingNotices.map((msg, index) => (
