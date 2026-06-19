@@ -26,6 +26,7 @@ import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { HomeHero, Panel, SessionPanel } from './branding.js'
 import { CalendarView } from './calendarView.js'
 import { CalibrationView } from './calibrationView.js'
+import { ConversationsRail } from './conversationsRail.js'
 import { DocsView } from './docsView.js'
 import { ForecastsWorkspace } from './forecastsWorkspace.js'
 import { FpsOverlay } from './fpsOverlay.js'
@@ -420,6 +421,28 @@ const QuestionOnboardPane = memo(function QuestionOnboardPane() {
   return <QuestionOnboardModal gw={gw} onClose={() => patchOverlayState({ onboard: false })} t={ui.theme} />
 })
 
+const ConversationsRailPane = memo(function ConversationsRailPane({
+  onNewChat,
+  onSelect
+}: {
+  onNewChat: () => void
+  onSelect: (id: string) => void
+}) {
+  const { gw } = useGateway()
+  const ui = useStore($uiState)
+
+  return (
+    <ConversationsRail
+      currentSid={ui.sid}
+      gw={gw}
+      onNewChat={onNewChat}
+      onSelect={onSelect}
+      refreshKey={ui.sid ?? ''}
+      t={ui.theme}
+    />
+  )
+})
+
 const DocsViewPane = memo(function DocsViewPane({ onDraft }: { onDraft: (command: string) => void }) {
   const { gw } = useGateway()
   const ui = useStore($uiState)
@@ -617,12 +640,17 @@ export const AppLayout = memo(function AppLayout({
           <>
             <Box flexDirection="row" flexGrow={1}>
               {landing ? (
-                // First run: the hero sits centred in the empty space above the
-                // prompt; any startup notices render just below it. The input
-                // stays where it always is — pinned to the bottom (promptBar).
-                <Box flexDirection="column" flexGrow={1}>
-                  <Box flexGrow={1} />
-                  <HomeHero info={ui.info ?? undefined} t={ui.theme} />
+                // Home: a ChatGPT-style rail of recent conversations on the left
+                // (wide terminals), with the Outrider hero centred in the
+                // remaining space. New chat keeps the hero; the input stays
+                // pinned to the bottom (promptBar).
+                <Box flexDirection="row" flexGrow={1}>
+                  {composer.cols >= 84 ? (
+                    <ConversationsRailPane onNewChat={() => actions.runCommand('/new')} onSelect={actions.resumeById} />
+                  ) : null}
+                  <Box flexDirection="column" flexGrow={1}>
+                    <Box flexGrow={1} />
+                    <HomeHero info={ui.info ?? undefined} t={ui.theme} />
                   {landingNotices.length > 0 && (
                     <NoSelect flexDirection="column" marginTop={1} paddingX={1}>
                       {landingNotices.map((msg, index) => (
@@ -639,7 +667,8 @@ export const AppLayout = memo(function AppLayout({
                       ))}
                     </NoSelect>
                   )}
-                  <Box flexGrow={1} />
+                    <Box flexGrow={1} />
+                  </Box>
                 </Box>
               ) : (
                 <PerfPane id="transcript">
