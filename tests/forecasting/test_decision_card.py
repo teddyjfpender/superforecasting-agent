@@ -368,6 +368,23 @@ def test_context_packet_flags_missing_decision_card(tmp_path):
     assert "decision_readiness_issues: missing decision_owner" in packet
 
 
+def test_context_packet_rerun_banner_when_snapshot_exists(tmp_path):
+    # A committed snapshot => re-run: the packet must mandate refreshing evidence
+    # before re-estimating, and push toward concentration as the horizon shortens.
+    ledger = _make_ledger(tmp_path)
+    q = _make_question(ledger)
+    snap = ledger.create_snapshot(question_id=q.id, probability_or_distribution=0.4, rationale="prior")
+
+    rerun = build_context_packet(ledger, q, snap)
+    assert "Re-run — refresh evidence before you re-estimate" in rerun
+    assert "forecast refresh" in rerun
+    assert "CONCENTRATE" in rerun
+
+    # A fresh forecast (no snapshot) must NOT show the re-run banner.
+    fresh = build_context_packet(ledger, q, None)
+    assert "Re-run — refresh evidence" not in fresh
+
+
 # ---------- postmortem failure_class ----------
 
 

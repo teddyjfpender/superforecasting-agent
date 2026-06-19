@@ -3,10 +3,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from forecasting.ledger import ForecastLedger
 from forecasting.models import ForecastQuestion, ForecastSnapshot
+
+
+def _days_since(iso: str | None) -> int | None:
+    """Whole days between an ISO timestamp and now (UTC); None if unparseable."""
+    if not iso:
+        return None
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return max(0, (datetime.now(timezone.utc) - dt).days)
+    except Exception:
+        return None
 
 
 # Bump whenever the code-owned forecasting process below changes in a way that
@@ -15,7 +29,7 @@ from forecasting.models import ForecastQuestion, ForecastSnapshot
 # version is rebuilt on its next turn (see agent/conversation_loop.py) so
 # process updates land without waiting for a brand-new session. Surfaced by
 # `forecast doctor` / the desk status so you can confirm what is actually live.
-PROCESS_VERSION = "2026-06-15.2"
+PROCESS_VERSION = "2026-06-19.1"
 
 
 PROTOCOL_STAGES = {
@@ -76,7 +90,7 @@ _PIPELINE_PREREQ_HINTS = {
 
 SYSTEM_PROMPT = """You are a forecasting desk and a quantitative researcher, not a general assistant.
 
-Operate on scoreable forecasts. Think like a fox: outside view first (anchor on a base rate / reference class before the case-specific story), decompose into drivers, update on likelihood ratios in log-odds, and seek the disconfirming view before committing. Anchor on the status quo and the horizon: the world changes slowly, so weight the persistence outcome and weight it more the shorter the time to resolution — move off it only as far as a concrete mechanism and the evidence justify. Reason along PATHS, not vibes: trace the causal path to each outcome and price the links (name the path to YES and the path to NO); the probability is the weight of the path that must actually occur, and a path with one weak link cannot carry heavy mass. Forecast from the information frontier — reason only from what was knowable at your as-of cutoff, and guard against hindsight and recency salience. Calibration cuts BOTH ways — red-team your uncertainty as hard as your point estimate: chronic under-confidence (probability mass on outcomes with no credible path, a leader held below what the evidence supports, a forecast that merely mirrors the market) is a scored failure exactly like overconfidence. Form your own view and commit to it with conviction when the evidence earns a sharp answer; markets and crowds are evidence to weigh, not a verdict to copy, and a forecast that only echoes the market is reliably less sharp than the market itself. Separate evidence from interpretation, preserve timestamps, avoid stale data, and make probability updates auditable. Treat any single number — including your own first instinct — as a prior to be checked and sharpened, not as the answer and not as a reason to hedge. Do not silently change probabilities; recommend an update unless the caller explicitly asks you to create a new forecast snapshot.
+Operate on scoreable forecasts. Think like a fox: outside view first (anchor on a base rate / reference class before the case-specific story), decompose into drivers, update on likelihood ratios in log-odds, and seek the disconfirming view before committing. Anchor on the status quo and the horizon: the world changes slowly, so weight the persistence outcome and weight it more the shorter the time to resolution — move off it only as far as a concrete mechanism and the evidence justify. Reason along PATHS, not vibes: trace the causal path to each outcome and price the links (name the path to YES and the path to NO); the probability is the weight of the path that must actually occur, and a path with one weak link cannot carry heavy mass. Forecast from the information frontier — reason only from what was knowable at your as-of cutoff, and guard against hindsight and recency salience. Calibration cuts BOTH ways — red-team your uncertainty as hard as your point estimate: chronic under-confidence (probability mass on outcomes with no credible path, a leader held below what the evidence supports, a forecast that merely mirrors the market) is a scored failure exactly like overconfidence. Form your own view and commit to it with conviction when the evidence earns a sharp answer; markets and crowds are evidence to weigh, not a verdict to copy, and a forecast that only echoes the market is reliably less sharp than the market itself. Separate evidence from interpretation, preserve timestamps, avoid stale data, and make probability updates auditable. When re-running an existing forecast, RE-COLLECT FRESH EVIDENCE first — refresh the watched sources / re-import the key series before you re-estimate, never reason off the stale evidence already in the ledger; and as the horizon shortens and evidence accumulates, let conviction rise and the distribution concentrate rather than carrying forward an old hedge. Treat any single number — including your own first instinct — as a prior to be checked and sharpened, not as the answer and not as a reason to hedge. Do not silently change probabilities; recommend an update unless the caller explicitly asks you to create a new forecast snapshot.
 """
 
 
@@ -108,7 +122,7 @@ These steps bind any forecast you treat as real (anything you would let someone 
 
 3. A substantive challenge is a reforecast trigger, not a debate. When the user pushes back on a committed number ("that seems too high/low", "you ignored X", "why isn't this 70%"), DO NOT defend the stored number. Re-open the path model: re-state the components, ask which one the objection targets, re-decompose, and recommend an updated snapshot if the evidence has moved. Treat the objection as new evidence to be priced, not an argument to be won.
 
-4. Retrieving a stored forecast is not forecasting it. When asked for "the forecast", read the ledger — but if the stored snapshot is stale, thinly decomposed, or you are about to reason about it substantively, re-run the components rather than presenting a compressed historical number as if it were a fresh analysis.
+4. Retrieving a stored forecast is not forecasting it, and re-running it is not retrieving it either. When asked for "the forecast", read the ledger — but if the stored snapshot is stale, thinly decomposed, or you are about to reason about it substantively, RE-RUN it: first re-collect fresh evidence (`forecast refresh <id>`, or re-import the key series with `import_source_evidence`) before re-estimating — do not reason off the stale evidence already in the ledger. Then re-audit the components and tails against the fresh readings, and as the horizon shortens let conviction rise and the distribution concentrate rather than presenting (or perpetuating) a compressed, hedged historical number as if it were a fresh analysis.
 
 Parallelize slow legwork with background subagents. For open-ended research that shouldn't block the conversation — building a reference class, digging into a mechanism or a single driver, pulling and synthesising sources, or working several questions at once — dispatch a background subagent with `delegate_task(background=true)`. You keep reasoning with the user while it runs, and its result (carrying the original goal) re-enters the chat when ready, to fold into your evidence and `ensemble_components`. Use it for legwork, not for the verdict: the structured ensemble still comes from the decomposition panel or a model `quorum` (which enforce trimmed-geomean aggregation and attach the panel artifact) — do not reinvent those with raw delegations.
 
@@ -339,6 +353,25 @@ def build_context_packet(
                 f"change_my_mind: {'; '.join(snapshot.change_my_mind) if snapshot.change_my_mind else '-'}",
             ]
         )
+        # Re-run discipline: a committed snapshot already exists, so this turn is
+        # a RE-RUN, not a fresh forecast. Mandate re-collecting evidence before
+        # re-estimating, and push toward concentration as the horizon shortens.
+        age = _days_since(snapshot.as_of)
+        age_text = f"~{age}d old" if age is not None else "see as_of above"
+        lines.extend(
+            [
+                "",
+                "## Re-run — refresh evidence before you re-estimate",
+                f"A committed forecast already exists ({age_text}). A re-run is NOT a retrieval. "
+                "FIRST re-collect fresh evidence — refresh the watched sources / re-import the key "
+                "series (`forecast refresh <id>`, or `import_source_evidence` per driver) — THEN "
+                "re-audit the components and tails against the FRESH readings. Treat the prior "
+                "probability and its tails as a prior to re-check, not a number to carry forward. "
+                "As the horizon shortens and evidence accumulates, conviction should generally RISE "
+                "and the distribution CONCENTRATE toward the path the evidence supports — do not "
+                "inherit the prior's hedge or keep mass on tails the new evidence no longer earns.",
+            ]
+        )
     else:
         lines.append("none")
 
@@ -378,10 +411,20 @@ def build_context_packet(
 
     lines.extend(["", "## Evidence"])
     if evidence:
-        for item in evidence[-10:]:
-            source = item.source_url or item.source_name or item.source_type
+        # Show more history on a re-run so the agent can audit what has/hasn't
+        # moved — but the latest readings come from a fresh refresh, not this list.
+        limit = 20 if snapshot else 10
+        if len(evidence) > limit:
             lines.append(
-                f"- {item.id} available_at={item.available_at} stance={item.stance} "
+                f"({len(evidence)} items total; latest {limit} shown — re-collect fresh "
+                "readings rather than relying only on these.)"
+            )
+        for item in evidence[-limit:]:
+            source = item.source_url or item.source_name or item.source_type
+            age = _days_since(item.available_at)
+            stale = " [stale >14d]" if (age is not None and age > 14) else ""
+            lines.append(
+                f"- {item.id} available_at={item.available_at}{stale} stance={item.stance} "
                 f"claim_type={item.claim_type} "
                 f"reliability={item.reliability_rating} relevance={item.relevance_rating} "
                 f"source={source} claim={item.claim or item.summary}"
@@ -412,9 +455,24 @@ def build_context_packet(
     lines.extend(["", "## Watched Sources"])
     if watched_sources:
         for item in watched_sources:
-            lines.append(f"- {item['id']} type={item['source_type']} source={item['source']} checked={item['last_checked_at'] or '-'}")
+            checked = item.get("last_checked_at")
+            age = _days_since(checked)
+            flag = (
+                " [STALE >7d — refresh]"
+                if (age is not None and age > 7)
+                else ("" if checked else " [never checked — refresh]")
+            )
+            lines.append(
+                f"- {item['id']} type={item['source_type']} source={item['source']} "
+                f"checked={checked or '-'}{flag}"
+            )
     else:
-        lines.append("- none")
+        suffix = (
+            " — add watched sources for the key series (`forecast watch add`) so re-runs refresh automatically."
+            if snapshot
+            else ""
+        )
+        lines.append(f"- none{suffix}")
 
     lines.extend(["", "## Open Alerts"])
     if open_alerts:
@@ -503,6 +561,16 @@ def _stage_task(stage: str) -> str:
             "avoid double-counting sources that trace back to one signal."
         ),
         "update": (
+            "RE-RUN FIRST STEP (when a committed snapshot already exists — see 'Current Forecast' / "
+            "'Re-run' in context): your MANDATORY first action is to RE-COLLECT FRESH EVIDENCE before "
+            "re-estimating. Run `forecast refresh <id>` (re-fetches every watched source, imports the "
+            "fresh values, re-pools, auto-commits) or `forecast refresh <id> --agent` for full "
+            "re-reasoning. If the question has no watched sources yet, add them for the key data series "
+            "(`forecast watch add`) and refresh, or do a fresh research pass (one `import_source_evidence` "
+            "per driver). Do NOT re-estimate off the stale evidence already in the ledger, and do NOT "
+            "carry the prior's components/tails forward unchanged — imports are deduped, so re-pulling an "
+            "unchanged series is a no-op. (Skip this only for a genuinely first forecast with no prior "
+            "snapshot.) THEN: "
             "Prepare a forecast update preview. Show previous probability, proposed probability, "
             "delta, component weights, key evidence, assumptions, calibration lessons used, and an "
             "as-of timestamp. Combine disagreeing sources with the Bayesian toolkit rather than a "
@@ -581,7 +649,11 @@ def _stage_task(stage: str) -> str:
             "genuinely low because the evidence is thin, do NOT diffuse the distribution to hedge — "
             "go back to the research stage and GET evidence (search for expert opinion/analysis, "
             "reason from base rates and analogous past episodes) until the real uncertainty is "
-            "isolated. Sharpen, then commit with conviction."
+            "isolated. On a RE-RUN specifically, re-audit the PRIOR's tails against the FRESH evidence "
+            "and the now-shorter time-to-close — do not inherit a hedge you set when the evidence was "
+            "thinner; as resolution nears and evidence accumulates, conviction should generally RISE "
+            "and the distribution CONCENTRATE, not perpetuate stale tail mass. Sharpen, then commit "
+            "with conviction."
         ),
         "resolve": (
             "Check whether the resolution criteria are satisfied. Propose resolution status, source snapshot needs, "
