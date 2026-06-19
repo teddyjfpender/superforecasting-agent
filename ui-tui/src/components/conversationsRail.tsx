@@ -40,6 +40,20 @@ export function ConversationsRail({ currentSid, gw, onNewChat, onSelect, refresh
   const { stdout } = useStdout()
   const rows = stdout?.rows ?? 24
   const [items, setItems] = useState<SessionListItem[]>([])
+  // Track the row the user clicked: resuming a session mints a NEW sid that
+  // won't match the list id, so the parent's currentSid can't mark the active
+  // chat — this can. Cleared on "New chat".
+  const [clickedId, setClickedId] = useState<null | string>(null)
+
+  const openChat = (id: string) => {
+    setClickedId(id)
+    onSelect(id)
+  }
+
+  const startNewChat = () => {
+    setClickedId(null)
+    onNewChat()
+  }
 
   useEffect(() => {
     let alive = true
@@ -83,9 +97,9 @@ export function ConversationsRail({ currentSid, gw, onNewChat, onSelect, refresh
         </Text>
       </Box>
 
-      <Box flexShrink={0} onClick={onNewChat}>
-        <Text bold color={t.color.accent}>
-          {'✎ New chat'}
+      <Box flexShrink={0} onClick={startNewChat}>
+        <Text bold color={clickedId === null ? t.color.accent : t.color.muted}>
+          {clickedId === null ? '▸ ✎ New chat' : '  ✎ New chat'}
         </Text>
       </Box>
 
@@ -100,11 +114,11 @@ export function ConversationsRail({ currentSid, gw, onNewChat, onSelect, refresh
           </Text>
         ) : (
           shown.map(s => {
-            const on = currentSid !== null && s.id === currentSid
+            const on = clickedId !== null ? s.id === clickedId : currentSid !== null && s.id === currentSid
 
             return (
-              <Box flexShrink={0} key={s.id} onClick={() => onSelect(s.id)} width="100%">
-                <Text color={on ? t.color.accent : t.color.text} wrap="truncate-end">
+              <Box flexShrink={0} key={s.id} onClick={() => openChat(s.id)} width="100%">
+                <Text bold={on} color={on ? t.color.accent : t.color.text} wrap="truncate-end">
                   {on ? '▸ ' : '  '}
                   {cleanLabel(s.title, s.preview)}
                 </Text>

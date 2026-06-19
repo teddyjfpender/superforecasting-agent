@@ -569,7 +569,7 @@ export const AppLayout = memo(function AppLayout({
     <>
       <PerfPane id="prompt">
         <PromptZone
-          cols={composer.cols}
+          cols={contentComposer.cols}
           onApprovalChoice={actions.answerApproval}
           onClarifyAnswer={actions.answerClarify}
           onSecretSubmit={actions.answerSecret}
@@ -578,7 +578,7 @@ export const AppLayout = memo(function AppLayout({
       </PerfPane>
 
       <PerfPane id="composer">
-        <ComposerPane actions={actions} composer={composer} status={status} />
+        <ComposerPane actions={actions} composer={contentComposer} status={status} />
       </PerfPane>
 
       {SHOW_FPS && (
@@ -653,15 +653,16 @@ export const AppLayout = memo(function AppLayout({
           <>
             {/* Home: a persistent ChatGPT-style rail of recent conversations on
                 the left (wide terminals), with the Outrider hero (new chat) OR
-                the live transcript (an open conversation) on the right. Clicking
-                a chat keeps the rail and loads the conversation beside it. */}
+                the live transcript (an open conversation) on the right, and the
+                composer pinned under the conversation — not under the rail.
+                Clicking a chat keeps the rail and loads it beside it. */}
             <Box flexDirection="row" flexGrow={1}>
               {showRail ? (
                 <ConversationsRailPane onNewChat={() => actions.runCommand('/new')} onSelect={actions.resumeById} />
               ) : null}
               <Box flexDirection="column" flexGrow={1} minWidth={0}>
                 {landing ? (
-                  <>
+                  <Box flexDirection="column" flexGrow={1} minWidth={0}>
                     <Box flexGrow={1} />
                     <HomeHero info={ui.info ?? undefined} t={ui.theme} />
                     {landingNotices.length > 0 && (
@@ -681,15 +682,19 @@ export const AppLayout = memo(function AppLayout({
                       </NoSelect>
                     )}
                     <Box flexGrow={1} />
-                  </>
+                  </Box>
                 ) : (
-                  <PerfPane id="transcript">
-                    <TranscriptPane actions={actions} composer={contentComposer} progress={progress} transcript={transcript} />
-                  </PerfPane>
+                  // A row so the transcript's scroll area + right scrollbar lay
+                  // out horizontally (the TranscriptPane returns that pair).
+                  <Box flexDirection="row" flexGrow={1} minWidth={0}>
+                    <PerfPane id="transcript">
+                      <TranscriptPane actions={actions} composer={contentComposer} progress={progress} transcript={transcript} />
+                    </PerfPane>
+                  </Box>
                 )}
+                {promptBar}
               </Box>
             </Box>
-            {promptBar}
           </>
         )}
       </Box>
