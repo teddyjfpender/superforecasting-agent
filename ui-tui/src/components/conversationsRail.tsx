@@ -12,18 +12,17 @@ import type { Theme } from '../theme.js'
 // composer keeps keyboard focus on the landing screen, and the full keyboard
 // session browser stays available via /sessions.
 
-const age = (ts: number): string => {
-  const d = (Date.now() / 1000 - ts) / 86_400
+// A one-line conversation label: prefer the title, else the first-message
+// preview; collapse whitespace and strip a leading injected system-reminder
+// block (e.g. "[IMPORTANT: ...]", often unclosed in a truncated preview) so the
+// rail shows the real conversation, not prompt scaffolding.
+const cleanLabel = (title?: string, preview?: string): string => {
+  const s = (title?.trim() || preview?.trim() || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^\[[^\]]*\]?\s*/, '')
+    .trim()
 
-  if (d < 1) {
-    return 'today'
-  }
-
-  if (d < 2) {
-    return 'yesterday'
-  }
-
-  return `${Math.floor(d)}d`
+  return s || '(untitled)'
 }
 
 interface ConversationsRailProps {
@@ -102,15 +101,13 @@ export function ConversationsRail({ currentSid, gw, onNewChat, onSelect, refresh
         ) : (
           shown.map(s => {
             const on = currentSid !== null && s.id === currentSid
-            const label = s.title?.trim() || s.preview?.trim() || '(untitled)'
 
             return (
               <Box flexShrink={0} key={s.id} onClick={() => onSelect(s.id)} width="100%">
                 <Text color={on ? t.color.accent : t.color.text} wrap="truncate-end">
                   {on ? '▸ ' : '  '}
-                  {label}
+                  {cleanLabel(s.title, s.preview)}
                 </Text>
-                <Text color={t.color.muted}>{` ${age(s.started_at)}`}</Text>
               </Box>
             )
           })

@@ -2960,3 +2960,23 @@ class TestFTS5ToolCallMigration:
         finally:
             session_db.close()
 
+
+
+class TestSessionPreview:
+    def test_preview_skips_leading_injected_reminder(self, db):
+        # A session whose FIRST user message is an injected system reminder
+        # should preview the first REAL user message, not the scaffolding.
+        db.create_session(session_id="s1", source="tui")
+        db.append_message("s1", role="user", content="[IMPORTANT: You are responsible for ...]")
+        db.append_message("s1", role="assistant", content="ok")
+        db.append_message("s1", role="user", content="Will the Fed cut rates in September?")
+
+        rich = {s["id"]: s for s in db.list_sessions_rich(limit=10)}
+        assert rich["s1"]["preview"].startswith("Will the Fed cut rates")
+
+    def test_preview_falls_back_when_only_injected(self, db):
+        # If every user message is bracketed, fall back to it (don't go blank).
+        db.create_session(session_id="s2", source="tui")
+        db.append_message("s2", role="user", content="[IMPORTANT: system only]")
+        rich = {s["id"]: s for s in db.list_sessions_rich(limit=10)}
+        assert rich["s2"]["preview"].startswith("[IMPORTANT")
