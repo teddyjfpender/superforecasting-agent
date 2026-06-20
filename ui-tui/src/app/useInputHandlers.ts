@@ -11,10 +11,12 @@ import type {
   VoiceRecordResponse
 } from '../gatewayTypes.js'
 import { forecastFindDraft, forecastShortcutForKey } from '../lib/forecastShortcuts.js'
+import { RAIL_WIDTH } from '../lib/homeLayout.js'
 import { isAction, isCopyShortcut, isMac, isVoiceToggleKey } from '../lib/platform.js'
 import { computePrecisionWheelStep, initPrecisionWheel } from '../lib/precisionWheel.js'
 import { computeWheelStep, initWheelAccelForHost } from '../lib/wheelAccel.js'
 
+import { getHomeFocus, setHomePane } from './homeFocusStore.js'
 import { getInputSelection } from './inputSelectionStore.js'
 import type { InputHandlerContext, InputHandlerResult } from './interfaces.js'
 import { $isBlocked, $overlayState, patchOverlayState } from './overlayStore.js'
@@ -366,6 +368,35 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       }
     }
 
+    // --- Home conversations rail: keyboard focus switching ---
+    // railScrollRef.current is attached only while the rail is shown (wide
+    // two-pane Home, no overlay), so it doubles as "rail is available". While
+    // the rail holds focus, swallow keyboard input here — the rail's own
+    // handler drives ↑↓/Enter — but let wheel/trackpad scroll keep flowing to
+    // the pointer-routed handlers below.
+    const railAvailable = terminal.railScrollRef.current != null
+
+    if (railAvailable && getHomeFocus().pane === 'rail') {
+      if (key.tab || key.escape || key.rightArrow) {
+        setHomePane('conversation')
+      }
+
+      if (!key.wheelUp && !key.wheelDown) {
+        return
+      }
+    } else if (
+      railAvailable &&
+      !cState.completions.length &&
+      (key.tab || (key.leftArrow && !cState.input && !cState.inputBuf.length))
+    ) {
+      // Tab (or ← on an empty composer) hands the keyboard to the rail. The
+      // composer ignores Tab and a no-op empty-input ← anyway, so there's
+      // nothing to suppress on the still-active TextInput this frame.
+      setHomePane('rail')
+
+      return
+    }
+
     if (cState.completions.length && cState.input && cState.historyIdx === null && (key.upArrow || key.downArrow)) {
       const len = cState.completions.length
 
@@ -377,6 +408,30 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     if (key.wheelUp || key.wheelDown) {
       const dir: -1 | 1 = key.wheelUp ? -1 : 1
       const now = Date.now()
+      // Route the wheel to whichever Home pane sits under the pointer. The rail
+      // carries its own scroll handle; when the pointer is over it (and it's
+      // actually mounted), scroll the rail instead of the transcript. The
+      // null-check makes overlays / narrow terminals fall back automatically.
+      // Rail scroll needs no selection tracking, so it bypasses scrollTranscript.
+      // railScrollRef.current is non-null only in the wide two-pane Home, so it
+      // is the authoritative "rail is shown" signal — no need to re-derive the
+      // width from stdout (which can disagree with the app's column math and
+      // wrongly suppress rail scrolling). mouseCol is 1-indexed; the rail spans
+      // columns 1..RAIL_WIDTH.
+      const mouseCol = key.mouseCol
+
+      const overRail = mouseCol != null && mouseCol <= RAIL_WIDTH && terminal.railScrollRef.current != null
+
+      const applyWheel = (delta: number) => {
+        if (overRail) {
+          terminal.railScrollRef.current?.scrollBy(delta)
+
+          return
+        }
+
+        scrollTranscript(delta)
+      }
+
       // Modifier-held wheel = precision mode: one row per frame, no accel.
       // Smooth mice / trackpads emit tiny same-frame bursts; coalesce those
       // without the old 80ms throttle that made opt-scroll feel stepped.
@@ -394,13 +449,13 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
           wheelAccelRef.current = initWheelAccelForHost()
         }
 
-        return precision.rows ? scrollTranscript(dir * wheelStep) : undefined
+        return precision.rows ? applyWheel(dir * wheelStep) : undefined
       }
 
       // 0 = direction-flip bounce deferred; skip the no-op scroll.
       const rows = computeWheelStep(wheelAccelRef.current, dir, now)
 
-      return rows ? scrollTranscript(dir * rows * wheelStep) : undefined
+      return rows ? applyWheel(dir * rows * wheelStep) : undefined
     }
 
     if (key.shift && key.upArrow) {
@@ -526,12 +581,14 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     const forecastShortcut = cState.inputBuf.length
       ? null
       : forecastShortcutForKey(ch, key, cState.input, event.keypress.raw)
+
     if (forecastShortcut) {
       cActions.setHistoryIdx(null)
       cActions.setQueueEdit(null)
 
       if (forecastShortcut.mode === 'prefill') {
         cActions.setInput(forecastFindDraft(cState.input))
+
         return
       }
 

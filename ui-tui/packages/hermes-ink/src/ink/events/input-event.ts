@@ -26,6 +26,10 @@ export type Key = {
   delete: boolean
   meta: boolean
   super: boolean
+  /** 1-indexed pointer cell for wheel events; undefined otherwise. Used to
+   *  route wheel scroll to the pane under the cursor. */
+  mouseCol?: number
+  mouseRow?: number
 }
 
 function parseKey(keypress: ParsedKey): [Key, string] {
@@ -56,7 +60,10 @@ function parseKey(keypress: ParsedKey): [Key, string] {
     // Super (Cmd on macOS / Win key) — only arrives via kitty keyboard
     // protocol CSI u sequences. Distinct from meta (Alt/Option) so
     // bindings like cmd+c can be expressed separately from opt+c.
-    super: keypress.super
+    super: keypress.super,
+    // Pointer cell for wheel events, so scroll can target the hovered pane.
+    mouseCol: keypress.mouseCol,
+    mouseRow: keypress.mouseRow
   }
 
   let input = keypress.ctrl ? keypress.name : keypress.sequence

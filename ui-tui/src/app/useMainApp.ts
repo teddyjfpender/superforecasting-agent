@@ -131,6 +131,9 @@ export function useMainApp(gw: GatewayClient) {
   const slashRef = useRef<(cmd: string) => boolean>(() => false)
   const colsRef = useRef(cols)
   const scrollRef = useRef<null | ScrollBoxHandle>(null)
+  // The Home conversations rail's scroll handle. Lives here (not just in the
+  // rail) so the wheel router can scroll it when the pointer is over the rail.
+  const railScrollRef = useRef<null | ScrollBoxHandle>(null)
   const onEventRef = useRef<(ev: GatewayEvent) => void>(() => {})
   const clipboardPasteRef = useRef<(quiet?: boolean) => Promise<void> | void>(() => {})
   const submitRef = useRef<(value: string) => void>(() => {})
@@ -549,7 +552,7 @@ export function useMainApp(gw: GatewayClient) {
     },
     composer: { actions: composerActions, refs: composerRefs, state: composerState },
     gateway,
-    terminal: { hasSelection, scrollRef, scrollWithSelection, selection, stdout },
+    terminal: { hasSelection, railScrollRef, scrollRef, scrollWithSelection, selection, stdout },
     voice: {
       enabled: voiceEnabled,
       recordKey: voiceRecordKey,
@@ -867,7 +870,7 @@ export function useMainApp(gw: GatewayClient) {
   )
 
   const appTranscript = useMemo(
-    () => ({ historyItems, scrollRef, virtualHistory, virtualRows }),
+    () => ({ historyItems, railScrollRef, scrollRef, virtualHistory, virtualRows }),
     [historyItems, virtualHistory, virtualRows]
   )
 

@@ -269,6 +269,7 @@ const renderForecastDesk = async (columns: number, { landing = false }: { landin
     },
     transcript: {
       historyItems,
+      railScrollRef: React.createRef(),
       scrollRef: React.createRef(),
       virtualHistory: {
         bottomSpacer: 0,

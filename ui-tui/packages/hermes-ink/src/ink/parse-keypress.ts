@@ -561,6 +561,11 @@ export type ParsedKey = {
   sequence: string | undefined
   raw: string | undefined
   code?: string
+  /** 1-indexed terminal column/row of a wheel event (parsed from the SGR/X10
+   *  mouse sequence). undefined for every non-wheel key. Lets consumers route
+   *  wheel scroll to whichever pane sits under the pointer. */
+  mouseCol?: number
+  mouseRow?: number
   isPasted: boolean
 }
 
@@ -639,6 +644,7 @@ function normalizeSgrMouseFragment(fragment: string): string {
 
 function parseSgrMouseFragment(fragment: string): ParsedInput {
   const sequence = normalizeSgrMouseFragment(fragment)
+
   return parseMouseEvent(sequence) ?? parseKeypress(sequence)
 }
 
@@ -646,6 +652,7 @@ function parseTextWithSgrMouseFragments(text: string): ParsedInput[] | null {
   SGR_MOUSE_FRAGMENT_RE.lastIndex = 0
 
   const matches = [...text.matchAll(SGR_MOUSE_FRAGMENT_RE)]
+
   if (matches.length === 0) {
     return null
   }
@@ -907,7 +914,27 @@ function createNavKey(s: string, name: string, ctrl: boolean): ParsedKey {
   }
 }
 
+// Recover the 1-indexed pointer cell from a wheel sequence so callers can
+// route the scroll to the pane under the cursor. SGR (CSI<btn;col;row M) and
+// legacy X10 (CSI M + 3 offset-by-32 bytes) both carry it; other encodings
+// leave it undefined and callers fall back to the focused pane.
+function parseWheelCoords(s: string): { col?: number; row?: number } {
+  const m = SGR_MOUSE_RE.exec(s)
+
+  if (m) {
+    return { col: parseInt(m[2]!, 10), row: parseInt(m[3]!, 10) }
+  }
+
+  if (s.length === 6 && s.startsWith('\x1b[M')) {
+    return { col: s.charCodeAt(4) - 32, row: s.charCodeAt(5) - 32 }
+  }
+
+  return {}
+}
+
 function createWheelKey(s: string, name: 'wheelup' | 'wheeldown', button: number): ParsedKey {
+  const { col, row } = parseWheelCoords(s)
+
   return {
     kind: 'key',
     name,
@@ -919,6 +946,8 @@ function createWheelKey(s: string, name: 'wheelup' | 'wheeldown', button: number
     fn: false,
     sequence: s,
     raw: s,
+    mouseCol: col,
+    mouseRow: row,
     isPasted: false
   }
 }

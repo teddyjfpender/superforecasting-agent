@@ -97,6 +97,30 @@ describe('mouse wheel modifier decoding', () => {
   })
 })
 
+describe('mouse wheel pointer coordinates', () => {
+  // Wheel events carry the 1-indexed pointer cell so scroll can be routed to
+  // the pane under the cursor (left rail vs. right conversation).
+  it('exposes the SGR column/row on a wheel event', () => {
+    const [[key]] = parseMultipleKeypresses(INITIAL_STATE, `\x1b[<64;7;21M`)
+
+    expect(key).toMatchObject({ name: 'wheelup', mouseCol: 7, mouseRow: 21 })
+  })
+
+  it('exposes a far-right column distinct from a rail column', () => {
+    const [[key]] = parseMultipleKeypresses(INITIAL_STATE, `\x1b[<65;140;3M`)
+
+    expect(key).toMatchObject({ name: 'wheeldown', mouseCol: 140, mouseRow: 3 })
+  })
+
+  it('exposes the column/row on the legacy X10 encoding', () => {
+    // X10: ESC [ M Cb Cx Cy where each byte is value+32.
+    const x10 = `\x1b[M${String.fromCharCode(0x40 + 32)}${String.fromCharCode(5 + 32)}${String.fromCharCode(9 + 32)}`
+    const [[key]] = parseMultipleKeypresses(INITIAL_STATE, x10)
+
+    expect(key).toMatchObject({ name: 'wheelup', mouseCol: 5, mouseRow: 9 })
+  })
+})
+
 describe('fragmented SGR mouse recovery', () => {
   it('re-synthesizes bracket-only SGR mouse tails as mouse events', () => {
     const [[mouse]] = parseMultipleKeypresses(INITIAL_STATE, '[<35;159;11M')

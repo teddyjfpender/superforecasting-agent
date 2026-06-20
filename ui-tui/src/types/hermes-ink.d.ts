@@ -22,7 +22,11 @@ declare module '@hermes/ink' {
     readonly wheelDown: boolean
     readonly home: boolean
     readonly end: boolean
-    readonly [key: string]: boolean
+    // 1-indexed pointer cell for wheel events; undefined otherwise. Lets
+    // scroll be routed to the pane under the cursor.
+    readonly mouseCol?: number
+    readonly mouseRow?: number
+    readonly [key: string]: boolean | number | undefined
   }
 
   export type InputEvent = {

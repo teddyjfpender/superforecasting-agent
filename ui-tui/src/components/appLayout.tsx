@@ -1,13 +1,15 @@
-import { AlternateScreen, Box, NoSelect, ScrollBox, Text } from '@hermes/ink'
+import { AlternateScreen, Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
-import { Fragment, memo, useEffect, useMemo, useRef } from 'react'
+import { Fragment, memo, type RefObject, useEffect, useMemo, useRef } from 'react'
 
 import { useGateway } from '../app/gatewayContext.js'
+import { $homeFocus, setHomePane } from '../app/homeFocusStore.js'
 import type { AppLayoutProps } from '../app/interfaces.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../app/overlayStore.js'
 import { $uiState } from '../app/uiStore.js'
 import { INLINE_MODE, SHOW_FPS } from '../config/env.js'
 import { PLACEHOLDER } from '../content/placeholders.js'
+import { RAIL_WIDTH, showRailFor } from '../lib/homeLayout.js'
 import {
   COMPOSER_PROMPT_GAP_WIDTH,
   composerPromptWidth,
@@ -70,9 +72,10 @@ const PromptPrefix = memo(function PromptPrefix({
 const TranscriptPane = memo(function TranscriptPane({
   actions,
   composer,
+  decstbm = true,
   progress,
   transcript
-}: Pick<AppLayoutProps, 'actions' | 'composer' | 'progress' | 'transcript'>) {
+}: Pick<AppLayoutProps, 'actions' | 'composer' | 'progress' | 'transcript'> & { decstbm?: boolean }) {
   const ui = useStore($uiState)
 
   // LiveTodoPanel rides as a child of the latest user-message row so it
@@ -102,6 +105,13 @@ const TranscriptPane = memo(function TranscriptPane({
   return (
     <>
       <ScrollBox
+        // decstbm={false} only in the two-pane Home, where the conversation sits
+        // beside the rail and its full-width hardware scroll would move the rail's
+        // rows. Single-pane keeps the fast path (decstbm defaults true). The box
+        // stays a DIRECT child of the flex-grow row so it gets a clean bounded
+        // height — burying it deeper collapses the measured viewport and makes
+        // scroll stick to the top/bottom.
+        decstbm={decstbm}
         flexDirection="column"
         flexGrow={1}
         flexShrink={1}
@@ -182,10 +192,14 @@ const TranscriptPane = memo(function TranscriptPane({
 const ComposerPane = memo(function ComposerPane({
   actions,
   composer,
+  confined = false,
   status
-}: Pick<AppLayoutProps, 'actions' | 'composer' | 'status'>) {
+}: Pick<AppLayoutProps, 'actions' | 'composer' | 'status'> & { confined?: boolean }) {
   const ui = useStore($uiState)
   const isBlocked = useStore($isBlocked)
+  // When the conversations rail holds focus, the composer goes inactive so its
+  // keystrokes/cursor don't compete with rail navigation.
+  const railFocused = useStore($homeFocus).pane === 'rail'
   const sh = (composer.inputBuf[0] ?? composer.input).startsWith('!')
   const promptText = composerPromptText(ui.theme.brand.prompt, ui.info?.profile_name, sh)
   const promptWidth = composerPromptWidth(promptText)
@@ -232,7 +246,9 @@ const ComposerPane = memo(function ComposerPane({
     <NoSelect
       flexDirection="column"
       flexShrink={0}
-      fromLeftEdge
+      // fromLeftEdge spans the whole terminal width; off when the composer is
+      // confined to the Home right pane so it stays inside that column.
+      fromLeftEdge={!confined}
       onClick={(e: { cellIsBlank?: boolean }) => {
         if (e.cellIsBlank) {
           actions.clearSelection()
@@ -314,6 +330,7 @@ const ComposerPane = memo(function ComposerPane({
                 {/* Reserve the transcript scrollbar gutter too so typing never rewraps when the scrollbar column repaints. */}
                 <TextInput
                   columns={inputColumns}
+                  focus={!railFocused}
                   mouseApiRef={inputMouseRef}
                   onChange={composer.updateInput}
                   onPaste={composer.handleTextPaste}
@@ -423,21 +440,27 @@ const QuestionOnboardPane = memo(function QuestionOnboardPane() {
 
 const ConversationsRailPane = memo(function ConversationsRailPane({
   onNewChat,
-  onSelect
+  onSelect,
+  scrollRef
 }: {
   onNewChat: () => void
   onSelect: (id: string) => void
+  scrollRef: RefObject<null | ScrollBoxHandle>
 }) {
   const { gw } = useGateway()
   const ui = useStore($uiState)
+  const homeFocus = useStore($homeFocus)
 
   return (
     <ConversationsRail
       currentSid={ui.sid}
+      focused={homeFocus.pane === 'rail'}
       gw={gw}
+      onExitFocus={() => setHomePane('conversation')}
       onNewChat={onNewChat}
       onSelect={onSelect}
       refreshKey={ui.sid ?? ''}
+      scrollRef={scrollRef}
       t={ui.theme}
     />
   )
@@ -546,16 +569,24 @@ export const AppLayout = memo(function AppLayout({
 
   // Home is a persistent two-pane layout on wide terminals: a recent-conversations
   // rail on the left (kept whether you're on a new chat or reading one), and the
-  // hero or the live transcript on the right. The transcript does hard width math
-  // off `cols`, so when the rail is shown it gets a reduced `cols` matching its
-  // narrower column.
-  const RAIL_WIDTH = 30
-  const showRail = !fullscreen && composer.cols >= 84
+  // hero or the live transcript + composer on the right. The right pane does hard
+  // width math off `cols`, so when the rail is shown it gets a reduced `cols`
+  // matching its narrower column.
+  const showRail = !fullscreen && showRailFor(composer.cols)
 
   const contentComposer = useMemo(
     () => (showRail ? { ...composer, cols: Math.max(48, composer.cols - RAIL_WIDTH - 2) } : composer),
     [composer, showRail]
   )
+
+  // The rail can only hold focus while it's shown — when it hides (narrow
+  // terminal / fullscreen overlay), snap focus back so the composer never stays
+  // inert.
+  useEffect(() => {
+    if (!showRail) {
+      setHomePane('conversation')
+    }
+  }, [showRail])
 
   // Inline mode skips AlternateScreen so the host terminal's native
   // scrollback captures rows scrolled off the top; composer + progress
@@ -563,13 +594,14 @@ export const AppLayout = memo(function AppLayout({
   const Shell = INLINE_MODE ? Fragment : AlternateScreen
   const shellProps = INLINE_MODE ? {} : { mouseTracking }
 
-  // The prompt + input + status bar, pinned to the bottom in both the landing
-  // and active layouts.
-  const promptBar = (
+  // The prompt + input + status bar, pinned to the bottom. `confined` narrows it
+  // to the Home right pane (two-pane wide layout); otherwise it spans the full
+  // terminal width (single-pane / narrow). `bar` carries the matching `cols`.
+  const renderPromptBar = (bar: typeof composer, confined: boolean) => (
     <>
       <PerfPane id="prompt">
         <PromptZone
-          cols={composer.cols}
+          cols={bar.cols}
           onApprovalChoice={actions.answerApproval}
           onClarifyAnswer={actions.answerClarify}
           onSecretSubmit={actions.answerSecret}
@@ -578,7 +610,7 @@ export const AppLayout = memo(function AppLayout({
       </PerfPane>
 
       <PerfPane id="composer">
-        <ComposerPane actions={actions} composer={composer} status={status} />
+        <ComposerPane actions={actions} composer={bar} confined={confined} status={status} />
       </PerfPane>
 
       {SHOW_FPS && (
@@ -587,6 +619,32 @@ export const AppLayout = memo(function AppLayout({
         </Box>
       )}
     </>
+  )
+
+  // The centred Outrider hero (new-chat screen) plus any startup notices, sized
+  // to `heroCols` (the right-pane width when the rail is shown, else full width).
+  const renderHero = (heroCols: number) => (
+    <Box flexDirection="column" flexGrow={1} minHeight={0} minWidth={0}>
+      <Box flexGrow={1} />
+      <HomeHero info={ui.info ?? undefined} maxCols={heroCols} t={ui.theme} />
+      {landingNotices.length > 0 && (
+        <NoSelect flexDirection="column" marginTop={1} paddingX={1}>
+          {landingNotices.map((msg, index) => (
+            <MessageLine
+              cols={heroCols}
+              compact={ui.compact}
+              detailsMode={ui.detailsMode}
+              detailsModeCommandOverride={ui.detailsModeCommandOverride}
+              key={index}
+              msg={msg}
+              sections={ui.sections}
+              t={ui.theme}
+            />
+          ))}
+        </NoSelect>
+      )}
+      <Box flexGrow={1} />
+    </Box>
   )
 
   return (
@@ -649,48 +707,65 @@ export const AppLayout = memo(function AppLayout({
               </PerfPane>
             )}
           </Box>
-        ) : (
+        ) : showRail ? (
+          // Home two-pane (wide terminals): a fixed conversations rail on the
+          // left + the conversation on the right. The transcript ScrollBox stays
+          // a DIRECT child of this flex-grow row — the proven structure that
+          // scrolls cleanly. The composer rides a footer row below, indented past
+          // the rail (whose border continues full height) so it sits under the
+          // conversation WITHOUT burying the ScrollBox in an extra column (which
+          // collapses its measured viewport and sticks scroll to the top/bottom).
           <>
-            {/* Home two-pane: a fixed conversations rail on the left (wide
-                terminals) + the Outrider hero (new chat) OR the live transcript
-                (an open conversation) on the right. The transcript is a DIRECT
-                child of this flex-grow row — same as the proven single-pane
-                layout — so its ScrollBox gets a clean bounded height and scrolls
-                on its own; the rail is just a fixed sibling and stays put. The
-                prompt spans the bottom (below both panes). */}
             <Box flexDirection="row" flexGrow={1} minHeight={0}>
-              {showRail ? (
-                <ConversationsRailPane onNewChat={() => actions.runCommand('/new')} onSelect={actions.resumeById} />
-              ) : null}
+              <ConversationsRailPane
+                onNewChat={() => actions.runCommand('/new')}
+                onSelect={actions.resumeById}
+                scrollRef={transcript.railScrollRef}
+              />
               {landing ? (
-                <Box flexDirection="column" flexGrow={1} minWidth={0}>
-                  <Box flexGrow={1} />
-                  <HomeHero info={ui.info ?? undefined} maxCols={contentComposer.cols} t={ui.theme} />
-                  {landingNotices.length > 0 && (
-                    <NoSelect flexDirection="column" marginTop={1} paddingX={1}>
-                      {landingNotices.map((msg, index) => (
-                        <MessageLine
-                          cols={contentComposer.cols}
-                          compact={ui.compact}
-                          detailsMode={ui.detailsMode}
-                          detailsModeCommandOverride={ui.detailsModeCommandOverride}
-                          key={index}
-                          msg={msg}
-                          sections={ui.sections}
-                          t={ui.theme}
-                        />
-                      ))}
-                    </NoSelect>
-                  )}
-                  <Box flexGrow={1} />
-                </Box>
+                renderHero(contentComposer.cols)
               ) : (
                 <PerfPane id="transcript">
-                  <TranscriptPane actions={actions} composer={contentComposer} progress={progress} transcript={transcript} />
+                  <TranscriptPane
+                    actions={actions}
+                    composer={contentComposer}
+                    decstbm={false}
+                    progress={progress}
+                    transcript={transcript}
+                  />
                 </PerfPane>
               )}
             </Box>
-            {promptBar}
+            <Box flexDirection="row" flexShrink={0}>
+              <Box
+                borderBottom={false}
+                borderColor={ui.theme.color.border}
+                borderLeft={false}
+                borderRight
+                borderStyle="single"
+                borderTop={false}
+                flexShrink={0}
+                width={RAIL_WIDTH}
+              />
+              <Box flexDirection="column" flexGrow={1} minWidth={0}>
+                {renderPromptBar(contentComposer, true)}
+              </Box>
+            </Box>
+          </>
+        ) : (
+          // Single-pane (rail hidden on narrow terminals): the proven full-width
+          // layout — transcript (or hero) fills the row, prompt spans the bottom.
+          <>
+            <Box flexDirection="row" flexGrow={1} minHeight={0}>
+              {landing ? (
+                renderHero(composer.cols)
+              ) : (
+                <PerfPane id="transcript">
+                  <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
+                </PerfPane>
+              )}
+            </Box>
+            {renderPromptBar(composer, false)}
           </>
         )}
       </Box>

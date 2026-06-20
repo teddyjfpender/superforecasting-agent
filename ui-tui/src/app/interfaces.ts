@@ -221,6 +221,10 @@ export interface InputHandlerContext {
   gateway: GatewayServices
   terminal: {
     hasSelection: boolean
+    // The conversations rail's own scroll handle (Home view); null when the
+    // rail is unmounted. Wheel events over the rail target this instead of the
+    // transcript.
+    railScrollRef: RefObject<null | ScrollBoxHandle>
     scrollRef: RefObject<null | ScrollBoxHandle>
     scrollWithSelection: (delta: number) => void
     selection: SelectionApi
@@ -362,6 +366,9 @@ export interface AppLayoutStatusProps {
 
 export interface AppLayoutTranscriptProps {
   historyItems: Msg[]
+  // Scroll handle for the Home conversations rail; the rail attaches it so
+  // wheel-over-rail can scroll it independently of the transcript.
+  railScrollRef: RefObject<null | ScrollBoxHandle>
   scrollRef: RefObject<null | ScrollBoxHandle>
   virtualHistory: VirtualHistoryState
   virtualRows: TranscriptRow[]
