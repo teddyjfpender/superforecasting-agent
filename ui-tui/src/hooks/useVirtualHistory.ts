@@ -44,10 +44,15 @@ const FREEZE_RENDERS = 2
 // a single PageUp into unmeasured territory mounts ~190 rows with
 // PESSIMISTIC=1 coverage — each row running marked lexer + syntax
 // highlighting for ~3ms = ~600ms sync block. Sliding toward the target
-// over several commits keeps per-commit mount cost bounded.  Tightened
-// from 25 → 12: each new item adds ~100 fibers / Yoga nodes, and a
-// 25-item commit was the dominant contributor to the 100ms+ p99 frames.
-const SLIDE_STEP = 12
+// over several commits keeps per-commit mount cost bounded.
+//
+// Raised 12 → 24: in the two-pane Home the transcript runs decstbm={false}
+// (it sits beside the rail), which forces a full repaint per scroll frame and
+// removes the hardware-scroll fast-path that the tight cap relied on to show
+// intermediate frames. With the tight cap the mount window lagged scrollTop and
+// the viewport skipped whole sections. A larger step lets the mount keep up so
+// no content is skipped, at a modest per-commit cost.
+const SLIDE_STEP = 24
 
 const NOOP = () => {}
 
@@ -333,7 +338,11 @@ export function useVirtualHistory(
   if (!frozenRange && prevRange.current && vp > 0) {
     const velocity = Math.abs(top - lastScrollTopRef.current) + Math.abs(pendingDelta)
 
-    if (velocity > vp * 2) {
+    // Only throttle on genuinely fast scroll (> 3 viewports). At vp*2 the cap
+    // engaged on ordinary wheel scrolling, which — combined with the
+    // decstbm={false} full-repaint path in two-pane Home — made the viewport
+    // skip sections instead of sliding through them.
+    if (velocity > vp * 3) {
       const [pS, pE] = prevRange.current
 
       start = Math.max(start, pS - SLIDE_STEP)

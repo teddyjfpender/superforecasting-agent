@@ -69,6 +69,7 @@ from forecasting.source_adapters import (
     load_reliefweb_reports,
     load_sec_company_facts,
     load_sec_filings,
+    load_sec_full_text_search,
     load_socrata_records,
     load_stooq_prices,
     load_treasury_records,
@@ -488,6 +489,10 @@ FORECAST_LEDGER_SCHEMA = {
             "concept": {"type": "string"},
             "taxonomy": {"type": "string"},
             "unit": {"type": "string"},
+            "forms": {
+                "type": "string",
+                "description": "For source_type=secsearch: comma-separated SEC form types to restrict the EDGAR full-text search (e.g. '8-K,10-Q').",
+            },
             "access": {"type": "string"},
             "agent": {"type": "string"},
             "format": {"type": "string", "enum": ["json", "markdown"]},
@@ -632,6 +637,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "yahoo",
                     "sec",
                     "secfacts",
+                    "secsearch",
                     "arxiv",
                     "openalex",
                     "crossref",
@@ -3043,6 +3049,11 @@ def _load_source_adapter_items(adapter: str, source: str, args: dict[str, Any]) 
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_sec_company_facts(source, **kwargs)
+    if adapter_name == "secsearch":
+        kwargs = {"limit": limit, "since": since, "forms": args.get("forms")}
+        if api_base_url:
+            kwargs["api_base_url"] = api_base_url
+        return load_sec_full_text_search(source, **kwargs)
     if adapter_name == "arxiv":
         kwargs = {"limit": limit, "since": since}
         if api_base_url:
@@ -3476,7 +3487,7 @@ def _adapter_claim(adapter: str, data: dict[str, Any]) -> str:
     if adapter == "yahoo":
         currency = f" {data.get('currency')}" if data.get("currency") else ""
         return f"Yahoo Finance {data.get('symbol')} close was {data.get('close_price')}{currency} at {data.get('observation_time')}"
-    if adapter == "sec":
+    if adapter in ("sec", "secsearch"):
         return f"SEC {data.get('form')} filing for {data.get('company_name') or data.get('cik')} on {data.get('filing_date')}"
     if adapter == "secfacts":
         label = data.get("label") or data.get("concept")

@@ -142,6 +142,38 @@ export const parseFred = (json: unknown, series: MarketSeries): MarketQuote => {
   }
 }
 
+// FRED's keyless public endpoint (fredgraph.csv) returns "DATE,VALUE" rows,
+// oldest→newest, with "." for missing values. We take the last two real values.
+export const parseFredCsv = (csv: string, series: MarketSeries): MarketQuote => {
+  const rows = csv
+    .trim()
+    .split(/\r?\n/)
+    .slice(1) // drop the header row
+    .map(line => {
+      const comma = line.indexOf(',')
+
+      return { date: line.slice(0, comma), value: num(line.slice(comma + 1)) }
+    })
+    .filter(r => r.value !== null)
+
+  const last = rows[rows.length - 1]
+  const prev = rows[rows.length - 2]
+  const value = last?.value ?? null
+  const { change, changePct } = withChange(value, prev?.value ?? null)
+
+  return {
+    asOf: last?.date ? Date.parse(last.date) : 0,
+    category: series.category,
+    change,
+    changePct,
+    name: series.name,
+    provider: 'fred',
+    symbol: series.symbol,
+    unit: series.unit,
+    value
+  }
+}
+
 export const parseBls = (json: unknown, series: MarketSeries): MarketQuote => {
   const seriesData = (json as { Results?: { series?: { data?: { period?: string; value?: string; year?: string }[] }[] } })
     ?.Results?.series?.[0]?.data ?? []
@@ -171,8 +203,19 @@ export const parseBea = (json: unknown, series: MarketSeries): MarketQuote => {
   const last = rows[rows.length - 1]
   const value = num((last?.DataValue || '').replace(/,/g, ''))
 
+  // BEA TimePeriod is "2024Q3" (quarterly) or "2024" (annual) — map to a date so
+  // the detail pane shows a real "updated" instead of "—".
+  const period = last?.TimePeriod || ''
+  const quarter = /^(\d{4})Q([1-4])$/.exec(period)
+
+  const asOf = quarter
+    ? Date.parse(`${quarter[1]}-${String((Number(quarter[2]) - 1) * 3 + 1).padStart(2, '0')}-01`)
+    : /^\d{4}$/.test(period)
+      ? Date.parse(`${period}-01-01`)
+      : 0
+
   return {
-    asOf: 0,
+    asOf: Number.isFinite(asOf) ? asOf : 0,
     category: series.category,
     change: null,
     changePct: null,
@@ -202,6 +245,25 @@ const getJson = async (url: string, init?: RequestInit, timeoutMs = 12000): Prom
     }
 
     return await r.json()
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+const getText = async (url: string, timeoutMs = 12000): Promise<null | string> => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const r = await fetch(url, { headers: { 'User-Agent': 'Outrider/1.0' }, signal: controller.signal })
+
+    if (!r.ok) {
+      return null
+    }
+
+    return await r.text()
   } catch {
     return null
   } finally {
@@ -296,15 +358,26 @@ export const fetchQuotes = async (seriesList: MarketSeries[], opts: FetchOpts): 
   const fred = byProvider.get('fred')
   const fredKey = opts.getKey('FRED_API_KEY')
 
-  if (fred?.length && fredKey) {
+  if (fred?.length) {
     jobs.push(
       pool(fred, 5, async s => {
-        const json = await getJson(
-          `https://api.stlouisfed.org/fred/series/observations?series_id=${s.symbol}&api_key=${fredKey}&file_type=json&sort_order=desc&limit=2`
-        )
+        if (fredKey) {
+          // Official JSON API (needs a key) — most reliable.
+          const json = await getJson(
+            `https://api.stlouisfed.org/fred/series/observations?series_id=${encodeURIComponent(s.symbol)}&api_key=${fredKey}&file_type=json&sort_order=desc&limit=2`
+          )
 
-        if (json) {
-          opts.onBatch([parseFred(json, s)])
+          if (json) {
+            opts.onBatch([parseFred(json, s)])
+          }
+        } else {
+          // Keyless public CSV endpoint — works without a key (the public CSV is
+          // occasionally flaky, which is why a key raises reliability).
+          const csv = await getText(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${encodeURIComponent(s.symbol)}`)
+
+          if (csv) {
+            opts.onBatch([parseFredCsv(csv, s)])
+          }
         }
       })
     )

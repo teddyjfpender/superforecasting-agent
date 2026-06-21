@@ -14,23 +14,44 @@ import re
 from pathlib import Path
 from typing import Any
 
-DEFAULT_VAULT = Path.home() / "Documents" / "Obsidian Vault"
-
 MANAGED_BEGIN = "<!-- superforecasting:begin -->"
 MANAGED_END = "<!-- superforecasting:end -->"
 
 
-def resolve_vault_path() -> Path | None:
-    """Resolve the vault root: ``OBSIDIAN_VAULT_PATH`` env var, else the
-    documented fallback ``~/Documents/Obsidian Vault`` (only when it exists).
+def managed_vault_path() -> Path:
+    """The managed workspace vault: ``<hermes-home>/docs/vault``.
 
-    Returns None when no vault can be located — callers surface a setup hint.
+    Honors the home override (SUPERFORECASTING_AGENT_HOME / FORECAST_HOME /
+    HERMES_HOME) via the canonical home helper, so the Python side stays in
+    lockstep with the TUI's ``vaultDir()``. This is the single place the agent
+    keeps its notes — we never auto-select the user's personal vault elsewhere
+    on the machine.
+    """
+    from hermes_constants import get_hermes_home
+
+    return get_hermes_home() / "docs" / "vault"
+
+
+def resolve_vault_path() -> Path | None:
+    """Resolve the vault root.
+
+    ``OBSIDIAN_VAULT_PATH`` wins when set (returns None if it points at a
+    non-directory — a user error to surface). Otherwise the managed workspace
+    vault ``<hermes-home>/docs/vault`` is used, created on first use so the
+    agent always has a vault. The personal ``~/Documents/Obsidian Vault`` is
+    never auto-selected.
     """
     configured = os.getenv("OBSIDIAN_VAULT_PATH", "").strip()
     if configured:
         path = Path(configured).expanduser()
         return path if path.is_dir() else None
-    return DEFAULT_VAULT if DEFAULT_VAULT.is_dir() else None
+
+    managed = managed_vault_path()
+    try:
+        managed.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    return managed if managed.is_dir() else None
 
 
 def safe_note_path(vault: Path, relative: str) -> Path:

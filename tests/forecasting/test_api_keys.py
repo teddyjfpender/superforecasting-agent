@@ -69,6 +69,13 @@ def test_lookup_resolves_friendly_name_env_var_and_aliases():
     assert api_keys.lookup_provider("brave-search").env_var == "BRAVE_API_KEY"
 
 
+def test_bls_is_a_known_addable_data_provider():
+    # BLS's optional registration key must be addable through the api-key flow.
+    assert any(p.env_var == "BLS_API_KEY" for p in api_keys.API_KEY_PROVIDERS)
+    assert api_keys.lookup_provider("bls").env_var == "BLS_API_KEY"
+    assert api_keys.lookup_provider("BLS_API_KEY").env_var == "BLS_API_KEY"
+
+
 def test_lookup_accepts_custom_uppercase_env_var():
     provider = api_keys.lookup_provider("MY_CUSTOM_KEY")
     assert provider.env_var == "MY_CUSTOM_KEY"

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { MarketSeries } from '../content/marketProviders.js'
-import { parseBls, parseCoingecko, parseFrankfurter, parseFred, parseYahoo } from '../lib/marketFetch.js'
+import { parseBea, parseBls, parseCoingecko, parseFrankfurter, parseFred, parseFredCsv, parseYahoo } from '../lib/marketFetch.js'
 
 const s = (over: Partial<MarketSeries>): MarketSeries => ({
   category: 'Indices',
@@ -87,5 +87,30 @@ describe('parseBls', () => {
     const q = parseBls(json, s({ category: 'Inflation', provider: 'bls', symbol: 'CUUR0000SA0' }))
     expect(q.value).toBeCloseTo(320.1)
     expect(q.change).toBeCloseTo(1.1, 5)
+  })
+})
+
+describe('parseFredCsv', () => {
+  it('takes the last two real rows from the keyless CSV (oldest→newest)', () => {
+    const csv = 'DATE,FEDFUNDS\n2026-03-01,5.30\n2026-04-01,.\n2026-05-01,5.10\n2026-06-01,4.90\n'
+    const q = parseFredCsv(csv, s({ category: 'Rates', provider: 'fred', symbol: 'FEDFUNDS', unit: '%' }))
+    expect(q.value).toBeCloseTo(4.9)
+    // prior real value is 5.10 (the "." row is skipped)
+    expect(q.change).toBeCloseTo(-0.2, 5)
+    expect(q.asOf).toBe(Date.parse('2026-06-01'))
+  })
+
+  it('returns null for an empty/headers-only CSV', () => {
+    expect(parseFredCsv('DATE,X\n', s({ provider: 'fred' })).value).toBeNull()
+  })
+})
+
+describe('parseBea', () => {
+  it('reads the last DataValue and maps a quarterly TimePeriod to a date', () => {
+    const json = { BEAAPI: { Results: { Data: [{ DataValue: '1,000.0', TimePeriod: '2026Q1' }, { DataValue: '28,500.5', TimePeriod: '2026Q2' }] } } }
+    const q = parseBea(json, s({ category: 'GDP', provider: 'bea', symbol: 'T10105', unit: '$B' }))
+    expect(q.value).toBeCloseTo(28500.5)
+    // 2026Q2 → April 1 (no longer the hardcoded 0)
+    expect(q.asOf).toBe(Date.parse('2026-04-01'))
   })
 })

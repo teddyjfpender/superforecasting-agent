@@ -1,8 +1,9 @@
-import { Box, NoSelect, Text, useInput, useStdout } from '@hermes/ink'
+import { Box, NoSelect, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { patchOverlayState } from '../app/overlayStore.js'
-import { DEFAULT_SERIES, MARKET_CATEGORIES, type MarketSeries } from '../content/marketProviders.js'
+import { DEFAULT_SERIES, MARKET_CATEGORIES, type MarketSeries, providerByKey } from '../content/marketProviders.js'
+import type { GatewayClient } from '../gatewayClient.js'
 import { statusGlyph } from '../lib/icons.js'
 import { fetchQuotes, type MarketQuote } from '../lib/marketFetch.js'
 import { getProviderKey } from '../lib/marketKeys.js'
@@ -15,14 +16,22 @@ import {
   saveMarketConfig,
   saveQuoteCache
 } from '../lib/marketStore.js'
+import { loadModelCatalog, saveModelCatalog } from '../lib/modelStore.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
+import { type MarketModelListItem, normalizeModelList, normalizePresentation, type Presentation } from '../lib/presentation.js'
+import { asRpcResult } from '../lib/rpc.js'
 import { blockChart, sparkline } from '../lib/sparkline.js'
 import { dirColor, dirGlyph, semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
 import { AddProviderModal } from './addProviderModal.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
+import { type InfoItem, InfoModal } from './infoModal.js'
 import { MarketSearchModal } from './marketSearchModal.js'
+import { type ChatMessage, ModelChat } from './modelChat.js'
+import { ModelsList } from './modelsList.js'
+import { NewModelModal, type NewModelParams } from './newModelModal.js'
+import { PresentationView } from './presentationView.js'
 
 export const openMarketsView = () => patchOverlayState({ markets: true })
 export const closeMarketsView = () => patchOverlayState({ markets: false })
@@ -128,12 +137,14 @@ const dedupeSeries = (list: MarketSeries[]): MarketSeries[] => {
 }
 
 interface MarketsViewProps {
+  gw?: GatewayClient
   onAsk?: (question: string) => void
   onClose: () => void
+  sessionId?: string
   t: Theme
 }
 
-export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
+export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsViewProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
@@ -144,8 +155,26 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
   const [sel, setSel] = useState(0)
   const [tick, setTick] = useState(0)
   const [fetching, setFetching] = useState(false)
-  const [modal, setModal] = useState<'' | 'providers' | 'search'>('')
+  const [modal, setModal] = useState<'' | 'help' | 'newModel' | 'providers' | 'search'>('')
   const [flash, setFlash] = useState('')
+
+  // ── Market Models mode ──────────────────────────────────────────────────
+  const [mode, setMode] = useState<'data' | 'models'>('data')
+  const [models, setModels] = useState<MarketModelListItem[]>(() => loadModelCatalog().models)
+  const [modelSel, setModelSel] = useState(0)
+  const [openModelId, setOpenModelId] = useState<null | string>(null)
+  const [openVersion, setOpenVersion] = useState<null | number>(null)
+  const [presentation, setPresentation] = useState<null | Presentation>(null)
+  const [versionCount, setVersionCount] = useState(0)
+  const [progressById, setProgressById] = useState<Record<string, string>>({})
+  const [chatOpen, setChatOpen] = useState(false)
+  // While the chat is open, focus is either the composer ('input') or the
+  // presentation reader ('reader'); Tab toggles so you can scroll the left pane.
+  const [chatFocus, setChatFocus] = useState<'input' | 'reader'>('input')
+  const [chatInput, setChatInput] = useState('')
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatBusy, setChatBusy] = useState(false)
+  const presScrollRef = useRef<null | ScrollBoxHandle>(null)
 
   const cacheRef = useRef<QuoteCache>(loadQuoteCache())
   const [cacheVersion, setCacheVersion] = useState(0)
@@ -171,6 +200,219 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
   }, [stdout])
 
   const providers = useMemo(() => new Set(config.providers), [config])
+
+  // Enabled providers that require (or strongly need) an API key but don't have
+  // one set — these fetch nothing, so warn instead of showing a silent blank.
+  const providersMissingKey = useMemo(
+    () =>
+      config.providers
+        .map(providerByKey)
+        .filter((p): p is NonNullable<typeof p> => Boolean((p?.needsKey || p?.keyRecommended) && p?.keyEnv && !getProviderKey(p.keyEnv)))
+        .map(p => p.key),
+    [config.providers]
+  )
+
+  // Detail behind the header [!], shown in the `i` Information modal so the
+  // header stays a single row (no footer-stealing second line).
+  const infoItems = useMemo<InfoItem[]>(
+    () =>
+      providersMissingKey.map(key => {
+        const p = providerByKey(key)
+
+        return {
+          detail: `${p?.keyUrl ? `Get a free key at ${p.keyUrl}. ` : ''}Add it under “Add data” (press d, highlight ${p?.name ?? key}, press k) or run /api-key set ${key}.`,
+          label: `${p?.name ?? key} series are blank without an API key`,
+          tone: 'warn'
+        }
+      }),
+    [providersMissingKey]
+  )
+
+  // ── Market Models data flow ────────────────────────────────────────────
+  const refreshModels = () => {
+    if (!gw) {
+      return
+    }
+
+    gw.request('markets.model.list', {})
+      .then(raw => {
+        if (!aliveRef.current) {
+          return
+        }
+
+        const list = normalizeModelList(asRpcResult<{ models: unknown[] }>(raw) ?? raw)
+        setModels(list)
+        saveModelCatalog({ models: list })
+      })
+      .catch(() => undefined)
+  }
+
+  const loadModel = (id: string, version?: number) => {
+    if (!gw) {
+      return
+    }
+
+    setOpenModelId(id)
+    setOpenVersion(version ?? null)
+    setChatOpen(false)
+    presScrollRef.current?.scrollTo?.(0)
+    gw.request('markets.model.get', { id, session_id: sessionId, version })
+      .then(raw => {
+        if (!aliveRef.current) {
+          return
+        }
+
+        const packet = (asRpcResult<{ packet: Record<string, unknown> }>(raw) ?? {}).packet ?? {}
+        const presRaw = (packet as Record<string, unknown>).presentation
+        const pres = normalizePresentation((presRaw as Record<string, unknown>)?.presentation ?? presRaw)
+        setPresentation(pres)
+        setVersionCount(Array.isArray((packet as Record<string, unknown>).versions) ? ((packet as Record<string, unknown>).versions as unknown[]).length : pres?.version ?? 0)
+        const msgs = Array.isArray((packet as Record<string, unknown>).messages) ? ((packet as Record<string, unknown>).messages as Record<string, unknown>[]) : []
+        setChatMessages(msgs.map(m => ({ content: String(m.content ?? ''), role: String(m.role ?? 'user') })))
+        setChatBusy(false)
+      })
+      .catch(() => undefined)
+  }
+
+  // Initial + on-enter-models catalog refresh from the gateway.
+  useEffect(() => {
+    if (mode === 'models') {
+      refreshModels()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode])
+
+  // Subscribe to background build/refresh events.
+  useEffect(() => {
+    if (!gw?.on) {
+      return
+    }
+
+    const onProgress = (p: { id?: string; message?: string; phase?: string }) => {
+      if (!aliveRef.current || !p?.id) {
+        return
+      }
+
+      setProgressById(prev => ({ ...prev, [p.id!]: p.message || p.phase || 'working' }))
+    }
+
+    const onComplete = (p: { id?: string; version?: number }) => {
+      if (!aliveRef.current || !p?.id) {
+        return
+      }
+
+      setProgressById(prev => {
+        const next = { ...prev }
+        delete next[p.id!]
+
+        return next
+      })
+      setChatBusy(false)
+      refreshModels()
+
+      if (p.id === openModelId) {
+        loadModel(p.id, p.version)
+      } else {
+        setFlash('model ready')
+      }
+    }
+
+    const onRefreshed = (p: { id?: string; presentation?: unknown }) => {
+      if (!aliveRef.current || p?.id !== openModelId) {
+        return
+      }
+
+      const pres = normalizePresentation(p.presentation)
+
+      if (pres) {
+        setPresentation(pres)
+      }
+    }
+
+    const onError = (p: { id?: string; message?: string }) => {
+      if (!aliveRef.current) {
+        return
+      }
+
+      setProgressById(prev => {
+        const next = { ...prev }
+
+        if (p?.id) {
+          delete next[p.id]
+        }
+
+        return next
+      })
+      setChatBusy(false)
+      setFlash(`model error: ${p?.message ?? 'failed'}`)
+      refreshModels()
+    }
+
+    gw.on('markets.model.progress', onProgress)
+    gw.on('markets.model.complete', onComplete)
+    gw.on('markets.model.refreshed', onRefreshed)
+    gw.on('markets.model.error', onError)
+
+    return () => {
+      gw.off?.('markets.model.progress', onProgress)
+      gw.off?.('markets.model.complete', onComplete)
+      gw.off?.('markets.model.refreshed', onRefreshed)
+      gw.off?.('markets.model.error', onError)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gw, openModelId])
+
+  // Poll the catalog while any model is still building, so a missed completion
+  // event can never leave a row stuck on "building" (server-truth reconcile).
+  const buildingCount = models.filter(m => (m.current_version ?? 0) < 1 && m.status !== 'error').length
+  useEffect(() => {
+    if (mode !== 'models' || buildingCount === 0) {
+      return
+    }
+
+    const id = setInterval(() => refreshModels(), 4000)
+
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, buildingCount])
+
+  const submitNewModel = (params: NewModelParams) => {
+    setModal('')
+
+    if (!gw) {
+      return setFlash('models need the gateway')
+    }
+
+    setMode('models')
+    gw.request('markets.model.create', { params, question: params.question, session_id: sessionId })
+      .then(raw => {
+        const res = asRpcResult<{ model_id?: string }>(raw)
+
+        if (res?.model_id && aliveRef.current) {
+          setProgressById(prev => ({ ...prev, [res.model_id!]: 'starting' }))
+          refreshModels()
+        }
+      })
+      .catch(() => setFlash('create failed'))
+  }
+
+  const sendChat = () => {
+    const msg = chatInput.trim()
+
+    if (!gw || !openModelId || !msg) {
+      return
+    }
+
+    setChatMessages(prev => [...prev, { content: msg, role: 'user' }])
+    setChatInput('')
+    setChatBusy(true)
+    setProgressById(prev => ({ ...prev, [openModelId]: 'refining' }))
+    gw.request('markets.model.chat', { id: openModelId, message: msg, session_id: sessionId }).catch(() => {
+      setChatBusy(false)
+      setFlash('refine failed')
+    })
+  }
+
   const watchlist = config.watchlist
   const custom = config.custom
 
@@ -323,11 +565,227 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
     setFlash('asked agent')
   }
 
+  const navVersion = (delta: number) => {
+    if (!openModelId || versionCount <= 1) {
+      return
+    }
+
+    const cur = openVersion ?? versionCount
+    const target = Math.max(1, Math.min(versionCount, cur + delta))
+
+    if (target !== cur) {
+      loadModel(openModelId, target)
+    }
+  }
+
   useInput((ch, key) => {
     if (modal) {
       return
     }
 
+    // While the model chat is open it captures input FIRST (so single-letter
+    // shortcuts can be typed into the message). Tab toggles focus between the
+    // composer and the presentation reader so the left pane stays scrollable;
+    // the mouse wheel always scrolls the reader regardless of focus.
+    if (mode === 'models' && chatOpen) {
+      if (key.tab) {
+        return setChatFocus(f => (f === 'input' ? 'reader' : 'input'))
+      }
+
+      if (key.escape) {
+        setChatFocus('input')
+
+        return setChatOpen(false)
+      }
+
+      // Wheel scrolls the reader from either focus (single-line composer has no
+      // use for it).
+      if (key.wheelUp) {
+        return presScrollRef.current?.scrollBy?.(-2)
+      }
+
+      if (key.wheelDown) {
+        return presScrollRef.current?.scrollBy?.(2)
+      }
+
+      if (chatFocus === 'reader') {
+        // Reader focus: scroll the presentation; Enter/printable jumps back to the
+        // composer so typing is never "stuck".
+        if (key.upArrow || ch === 'k') {
+          return presScrollRef.current?.scrollBy?.(-2)
+        }
+
+        if (key.downArrow || ch === 'j') {
+          return presScrollRef.current?.scrollBy?.(2)
+        }
+
+        if (key.pageUp) {
+          return presScrollRef.current?.scrollBy?.(-(10))
+        }
+
+        if (key.pageDown) {
+          return presScrollRef.current?.scrollBy?.(10)
+        }
+
+        if (ch === 'g') {
+          return presScrollRef.current?.scrollTo?.(0)
+        }
+
+        if (ch === 'G') {
+          return presScrollRef.current?.scrollToBottom?.()
+        }
+
+        if (key.return) {
+          return setChatFocus('input')
+        }
+
+        return
+      }
+
+      // Composer focus: type the message.
+      if (key.return) {
+        return sendChat()
+      }
+
+      if (key.backspace || key.delete) {
+        return setChatInput(s => s.slice(0, -1))
+      }
+
+      if (ch && !key.ctrl && !key.meta) {
+        const printable = [...ch].filter(c => c >= ' ').join('')
+
+        if (printable) {
+          setChatInput(s => s + printable)
+        }
+      }
+
+      return
+    }
+
+    // `m` toggles Data | Models; `h` opens Help — both available everywhere.
+    if (ch === 'm') {
+      setSel(0)
+      setModelSel(0)
+
+      return setMode(p => (p === 'data' ? 'models' : 'data'))
+    }
+
+    if (ch === 'h') {
+      return setModal('help')
+    }
+
+    if (mode === 'models') {
+      // (Chat-open input is captured at the top of useInput, before shortcuts.)
+      // An open presentation.
+      if (openModelId) {
+        if (key.escape || ch === 'q') {
+          setOpenModelId(null)
+          setPresentation(null)
+
+          return
+        }
+
+        if (ch === 'c') {
+          setChatFocus('input')
+
+          return setChatOpen(true)
+        }
+
+        if (ch === 'w') {
+          setFlash('rewriting…')
+          gw?.request('markets.model.renarrate', { id: openModelId })
+            .then(() => loadModel(openModelId))
+            .catch(() => setFlash('rewrite failed'))
+
+          return
+        }
+
+        if (ch === 'e') {
+          gw?.request('markets.model.export', { id: openModelId })
+            .then(raw => {
+              const r = asRpcResult<{ path?: string }>(raw)
+              setFlash(r?.path ? `exported → ${r.path}` : 'export failed')
+            })
+            .catch(() => setFlash('export failed'))
+
+          return
+        }
+
+        if (ch === 'F') {
+          gw?.request('markets.model.to_forecast', { id: openModelId })
+            .then(() => setFlash('forecast seed created'))
+            .catch(() => setFlash('failed'))
+
+          return
+        }
+
+        if (key.leftArrow) {
+          return navVersion(-1)
+        }
+
+        if (key.rightArrow) {
+          return navVersion(1)
+        }
+
+        if (key.upArrow || ch === 'k' || key.wheelUp) {
+          return presScrollRef.current?.scrollBy?.(-2)
+        }
+
+        if (key.downArrow || ch === 'j' || key.wheelDown) {
+          return presScrollRef.current?.scrollBy?.(2)
+        }
+
+        return
+      }
+
+      // The models list.
+      if (key.escape || ch === 'q') {
+        return onClose()
+      }
+
+      if (ch === 'n') {
+        return setModal('newModel')
+      }
+
+      if (ch === 'r') {
+        setFlash('refreshing…')
+
+        return refreshModels()
+      }
+
+      if (key.return) {
+        const m = models[modelSel]
+
+        if (m) {
+          return loadModel(m.id)
+        }
+
+        return
+      }
+
+      if (ch === 'x') {
+        const m = models[modelSel]
+
+        if (m && gw) {
+          gw.request('markets.model.delete', { id: m.id }).then(() => refreshModels()).catch(() => undefined)
+          setFlash(`deleted ${m.title}`)
+        }
+
+        return
+      }
+
+      if (key.upArrow || ch === 'k' || key.wheelUp) {
+        return setModelSel(i => Math.max(0, i - 1))
+      }
+
+      if (key.downArrow || ch === 'j' || key.wheelDown) {
+        return setModelSel(i => Math.min(Math.max(0, models.length - 1), i + 1))
+      }
+
+      return
+    }
+
+    // ── Data mode ──────────────────────────────────────────────────────────
     if (ch === 'q' || key.escape) {
       return onClose()
     }
@@ -383,26 +841,50 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
   const hasContent = providers.size > 0 || watchlist.length > 0
   const contentHeight = Math.max(8, termRows - 8)
 
+  // Header is a single row: title · Data|Models toggle (m) · status · key-warning.
+  // Folding the mode toggle here (rather than its own strip) keeps the footer on
+  // screen.
   const header = (
-    <Box flexDirection="column" flexShrink={0} marginBottom={1}>
+    <Box flexShrink={0} marginBottom={1}>
       <Text wrap="truncate-end">
         <Text bold color={t.color.primary}>
           MARKETS
         </Text>
         <Text color={t.color.muted}>{'   '}</Text>
+        <Text bold={mode === 'data'} color={mode === 'data' ? t.color.primary : t.color.muted}>
+          {mode === 'data' ? '[Data]' : 'Data'}
+        </Text>
+        <Text color={t.color.muted}>{'  '}</Text>
+        <Text bold={mode === 'models'} color={mode === 'models' ? t.color.primary : t.color.muted}>
+          {mode === 'models' ? '[Models]' : 'Models'}
+        </Text>
+        <Text color={t.color.muted}>{'   ·   '}</Text>
         <Text color={fetching ? sem.star : hasContent ? sem.up : sem.subtle}>
           {statusGlyph(fetching ? 'busy' : hasContent ? 'live' : 'idle', tick)}
         </Text>
-        <Text color={t.color.muted}> {fetching ? 'updating…' : hasContent ? 'live quotes' : 'no providers'} · </Text>
-        <Text color={t.color.text}>
-          {hasContent ? `${config.providers.length} providers · ${watchlist.length} watched` : 'press a to add data'}
-        </Text>
+        {mode === 'models' ? (
+          <Text color={t.color.muted}> {`${models.length} model${models.length === 1 ? '' : 's'}${buildingCount ? ` · ${buildingCount} building` : ''}`}</Text>
+        ) : (
+          <>
+            <Text color={t.color.muted}> {fetching ? 'updating…' : hasContent ? 'live quotes' : 'no providers'} · </Text>
+            <Text color={t.color.text}>
+              {hasContent ? `${config.providers.length} providers · ${watchlist.length} watched` : 'press a to add data'}
+            </Text>
+          </>
+        )}
+        {providersMissingKey.length ? (
+          <Text color={sem.star}>
+            {'   [!] '}
+            <Text color={t.color.muted}>press </Text>
+            <Text color={sem.star}>h</Text>
+          </Text>
+        ) : null}
       </Text>
     </Box>
   )
 
-  // Empty: no providers and no watchlist.
-  if (!hasContent && !modal) {
+  // Empty (Data mode only): no providers and no watchlist.
+  if (mode === 'data' && !hasContent && !modal) {
     return (
       <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
         {header}
@@ -413,8 +895,8 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
             </Text>
             <Box marginTop={1}>
               <Text color={t.color.muted} wrap="wrap">
-                Enable data providers (Yahoo, Frankfurter and CoinGecko need no key; FRED/BLS/BEA use a free key) and
-                pick categories — or search for any ticker and add it to your watchlist.
+                Enable data providers (Yahoo, Frankfurter, CoinGecko and FRED need no key; BLS optional; BEA uses a
+                free key) and pick categories — or search for any ticker and add it to your watchlist.
               </Text>
             </Box>
             <Box marginTop={1}>
@@ -444,6 +926,45 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
       <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
         {header}
         <AddProviderModal cols={cols} initial={config} onCancel={() => setModal('')} onSaved={onProvidersSaved} rows={termRows} t={t} />
+      </Box>
+    )
+  }
+
+  if (modal === 'help') {
+    const helpItems: InfoItem[] = [
+      { detail: 'Two modes: Data (live quotes by category) and Models (agentic quant-research). Press m to switch.', label: 'Markets', tone: 'info' },
+      { detail: 'Define a quant question (n). The desk researches data + the web, computes a real model, and presents findings. Open one to read it; c to chat/refine; w to rewrite the writeup on fresh data; e to export the data as JSON; ←/→ for versions; F to spin off a Desk forecast.', label: 'Market Models', tone: 'info' },
+      ...infoItems,
+    ]
+
+    return (
+      <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
+        {header}
+        <InfoModal
+          cols={cols}
+          items={helpItems}
+          onClose={() => setModal('')}
+          rows={termRows}
+          subtitle="What this view does, the keys, and how to fix anything that's blank."
+          t={t}
+          title="Markets · Help"
+        />
+      </Box>
+    )
+  }
+
+  if (modal === 'newModel') {
+    return (
+      <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
+        {header}
+        <NewModelModal
+          cols={cols}
+          initialAsset={mode === 'data' ? selectedRow?.series.symbol ?? '' : ''}
+          onCancel={() => setModal('')}
+          onSubmit={submitNewModel}
+          rows={termRows}
+          t={t}
+        />
       </Box>
     )
   }
@@ -617,6 +1138,24 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
   const trendColor = dirColor(sem, q?.changePct)
   const colW = Math.max(10, Math.floor(detailWidth / 2) - 8)
 
+  // If the selected series' provider needs (or benefits from) an API key that
+  // isn't set, tell the user how to add it — otherwise the value is silently "—".
+  const detailKeyHint = ((): null | { required: boolean; text: string } => {
+    if (!s) {
+      return null
+    }
+
+    const prov = providerByKey(s.provider)
+
+    if (!prov?.keyEnv || getProviderKey(prov.keyEnv)) {
+      return null
+    }
+
+    return prov.needsKey || prov.keyRecommended
+      ? { required: true, text: `Needs an API key — run /api-key set ${prov.key}${prov.keyUrl ? ` (free: ${prov.keyUrl})` : ''}` }
+      : { required: false, text: `No API key — /api-key set ${prov.key} raises rate limits${prov.keyUrl ? ` (free: ${prov.keyUrl})` : ''}` }
+  })()
+
   const statRow = (l1: string, v1: string, l2: string, v2: string, c1?: string, c2?: string) => (
     <Text wrap="truncate-end">
       <Text color={sem.heading}>{l1.padEnd(8)}</Text>
@@ -684,6 +1223,14 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
               {s.provider === 'yahoo' ? ' · ⏎ open on Yahoo Finance' : ''}
             </Text>
           </Box>
+
+          {detailKeyHint ? (
+            <Box flexShrink={0} marginTop={1}>
+              <Text color={detailKeyHint.required ? sem.down : sem.subtle} wrap="wrap">
+                {detailKeyHint.text}
+              </Text>
+            </Box>
+          ) : null}
         </Box>
       ) : (
         <Text color={sem.subtle}>Select a row to see details.</Text>
@@ -691,34 +1238,112 @@ export function MarketsView({ onAsk, onClose, t }: MarketsViewProps) {
     </Box>
   )
 
-  const chips: FooterChip[] = [
+  const dataChips: FooterChip[] = [
     { k: '↑↓', label: 'Select' },
     { k: '⇥', label: 'Category', run: () => { setSel(0); setActive(i => (i + 1) % Math.max(1, categories.length)) } },
     { k: 'a', label: 'Ask agent', run: askAgent },
+    { k: 'm', label: 'Models', run: () => { setSel(0); setMode('models') } },
     { k: '/', label: 'Search', run: () => setModal('search') },
     { k: 'd', label: 'Add data', run: () => setModal('providers') },
-    { k: 'r', label: 'Refresh', run: () => { setFlash('refreshing…'); void refresh(true) } },
+    { k: 'h', label: 'Help', run: () => setModal('help') },
     { k: 'q', label: 'Close', run: onClose }
   ]
+
+  const modelsListChips: FooterChip[] = [
+    { k: '↑↓', label: 'Select' },
+    { k: '⏎', label: 'Open' },
+    { k: 'n', label: 'New model', run: () => setModal('newModel') },
+    { k: 'x', label: 'Delete' },
+    { k: 'm', label: 'Data', run: () => setMode('data') },
+    { k: 'h', label: 'Help', run: () => setModal('help') },
+    { k: 'q', label: 'Close', run: onClose }
+  ]
+
+  const modelOpenChips: FooterChip[] = [
+    { k: 'c', label: 'Chat' },
+    { k: 'w', label: 'Rewrite' },
+    { k: 'e', label: 'Export' },
+    { k: 'F', label: 'Forecast' },
+    { k: '←→', label: 'Version' },
+    { k: 'Esc', label: 'Back' }
+  ]
+
+  const chips = mode === 'data' ? dataChips : openModelId ? modelOpenChips : modelsListChips
+
+  const footerHint =
+    mode === 'data'
+      ? '↑↓/jk select · Tab/←→ category · a ask agent · m models · / search · d add data · h help · q close'
+      : openModelId
+        ? chatOpen
+          ? chatFocus === 'input'
+            ? '⏎ send · Tab focus reader · wheel scrolls · Esc close chat'
+            : '↑↓/jk/PgUp/PgDn/g/G scroll · Tab focus chat · Esc close chat'
+          : 'c chat · w rewrite writeup · e export json · F → forecast · ←→ version · ↑↓ scroll · Esc back'
+        : 'n new model · ⏎ open · x delete · ↑↓ select · m data · h help · q close'
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
       <FooterChips chips={chips} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-        ↑↓/jk select · Tab/←→ category · a ask agent · ⏎ open · / search · d add data · r refresh · Esc/q close
+        {footerHint}
       </Text>
     </Box>
   )
 
+  const modelsBody =
+    openModelId && presentation ? (
+      <Box flexDirection="row" flexShrink={0} height={contentHeight}>
+        <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+          <PresentationView
+            height={contentHeight}
+            now={tick}
+            presentation={presentation}
+            scrollRef={presScrollRef}
+            t={t}
+            versionLabel={versionCount > 1 ? `v${openVersion ?? versionCount}/${versionCount}` : undefined}
+            width={chatOpen ? Math.floor(width * 0.6) : width}
+          />
+        </Box>
+        {chatOpen ? (
+          <Box flexShrink={0} height={contentHeight} marginLeft={2} width={Math.floor(width * 0.38)}>
+            <ModelChat
+              busy={chatBusy}
+              focused={chatFocus === 'input'}
+              input={chatInput}
+              messages={chatMessages}
+              status={openModelId ? progressById[openModelId] : ''}
+              t={t}
+              tick={tick}
+              width={Math.floor(width * 0.38)}
+            />
+          </Box>
+        ) : null}
+      </Box>
+    ) : openModelId ? (
+      <Box alignItems="center" height={contentHeight} justifyContent="center">
+        <Text color={t.color.muted}>
+          {statusGlyph('busy', tick)} {progressById[openModelId] || 'building the analysis…'}
+        </Text>
+      </Box>
+    ) : (
+      <ModelsList height={contentHeight} models={models} progressById={progressById} sel={modelSel} t={t} tick={tick} width={width} />
+    )
+
   return (
     <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
       {header}
-      {tabs}
-      <Box flexDirection="row" flexShrink={0} height={contentHeight}>
-        {table}
-        {detail}
-      </Box>
+      {mode === 'data' ? (
+        <>
+          {tabs}
+          <Box flexDirection="row" flexShrink={0} height={contentHeight}>
+            {table}
+            {detail}
+          </Box>
+        </>
+      ) : (
+        modelsBody
+      )}
       {footer}
     </Box>
   )

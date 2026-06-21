@@ -9,7 +9,8 @@ Tools:
                             dossiers, index) into the vault
 
 All handlers return JSON strings. Paths are vault-relative and traversal-safe;
-the vault root comes from OBSIDIAN_VAULT_PATH or ~/Documents/Obsidian Vault.
+the vault root comes from OBSIDIAN_VAULT_PATH, else the managed workspace vault
+~/.superforecasting-agent/docs/vault (created on first use).
 """
 
 from __future__ import annotations
@@ -46,9 +47,10 @@ def _vault_or_error() -> tuple[Path | None, str | None]:
     vault = resolve_vault_path()
     if vault is None:
         return None, (
-            "no Obsidian vault found — set OBSIDIAN_VAULT_PATH to your vault "
-            "directory (e.g. in ~/.superforecasting-agent/.env) or create "
-            "~/Documents/Obsidian Vault"
+            "OBSIDIAN_VAULT_PATH points at a path that isn't a directory — "
+            "unset it to use the managed workspace vault "
+            "(~/.superforecasting-agent/docs/vault), or point it at a real "
+            "vault directory (e.g. in ~/.superforecasting-agent/.env)"
         )
     return vault, None
 

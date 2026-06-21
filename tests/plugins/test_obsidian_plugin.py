@@ -19,6 +19,7 @@ from plugins.obsidian.tools import (
 from plugins.obsidian.vault import (
     MANAGED_BEGIN,
     MANAGED_END,
+    managed_vault_path,
     render_frontmatter,
     resolve_vault_path,
     safe_note_path,
@@ -55,6 +56,21 @@ class TestVaultPrimitives:
     def test_resolve_vault_path_missing(self, tmp_path, monkeypatch):
         monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "nope"))
         assert resolve_vault_path() is None
+
+    def test_resolve_vault_path_managed_default(self, tmp_path, monkeypatch):
+        """With no OBSIDIAN_VAULT_PATH, resolve to (and create) the managed
+        workspace vault under the agent home — never the personal
+        ~/Documents/Obsidian Vault."""
+        monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path / "home"))
+
+        expected = tmp_path / "home" / "docs" / "vault"
+        assert managed_vault_path() == expected
+
+        resolved = resolve_vault_path()
+        assert resolved == expected
+        assert resolved.is_dir()  # created on first use
+        assert "Documents/Obsidian Vault" not in str(resolved)
 
     def test_safe_note_path_adds_md(self, vault):
         assert safe_note_path(vault, "Notes/idea").suffix == ".md"

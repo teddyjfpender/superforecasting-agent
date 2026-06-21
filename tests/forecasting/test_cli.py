@@ -2421,7 +2421,7 @@ def test_forecast_cli_data_import_adds_csv_rows_as_evidence(tmp_path, capsys):
 def test_gdelt_adapter_builds_article_list_query(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -2708,7 +2708,7 @@ def test_forecast_cli_fivethirtyeight_import_captures_polls_as_evidence(tmp_path
 def test_github_adapter_loads_repository_releases(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return [
@@ -2836,7 +2836,7 @@ def test_forecast_cli_github_import_captures_releases_as_evidence(tmp_path, caps
 def test_githubrepo_adapter_loads_repository_snapshot(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -2986,7 +2986,7 @@ def test_forecast_cli_githubrepo_import_captures_repository_snapshot_as_evidence
 def test_githubissues_adapter_loads_repository_issues(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return [
@@ -3131,7 +3131,7 @@ def test_forecast_cli_githubissues_import_captures_issues_as_evidence(tmp_path, 
 def test_githubcommits_adapter_loads_repository_commits(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return [
@@ -3266,7 +3266,7 @@ def test_forecast_cli_githubcommits_import_captures_commits_as_evidence(tmp_path
 def test_githubactions_adapter_loads_workflow_runs(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -3422,7 +3422,7 @@ def test_forecast_cli_githubactions_import_captures_runs_as_evidence(tmp_path, c
 def test_coingecko_adapter_loads_market_snapshots(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return [
@@ -3559,7 +3559,7 @@ def test_forecast_cli_coingecko_import_captures_snapshots_as_evidence(tmp_path, 
 def test_pypi_adapter_loads_package_releases(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -3720,7 +3720,7 @@ def test_forecast_cli_pypi_import_captures_releases_as_evidence(tmp_path, capsys
 def test_npm_adapter_loads_package_versions(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -3871,7 +3871,7 @@ def test_forecast_cli_npm_import_captures_versions_as_evidence(tmp_path, capsys,
 def test_hackernews_adapter_loads_search_results(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -4009,7 +4009,7 @@ def test_forecast_cli_hackernews_import_captures_items_as_evidence(tmp_path, cap
 def test_reddit_adapter_loads_search_results(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -4155,7 +4155,7 @@ def test_forecast_cli_reddit_import_captures_posts_as_evidence(tmp_path, capsys,
 def test_bluesky_adapter_loads_search_results(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -4330,7 +4330,7 @@ def test_forecast_cli_bluesky_import_captures_posts_as_evidence(tmp_path, capsys
 def test_mastodon_adapter_loads_hashtag_timeline(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return [
@@ -4492,7 +4492,7 @@ def test_forecast_cli_mastodon_import_captures_statuses_as_evidence(tmp_path, ca
 def test_reliefweb_adapter_loads_reports(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -4647,7 +4647,7 @@ def test_forecast_cli_reliefweb_import_captures_reports_as_evidence(tmp_path, ca
 def test_federalregister_adapter_loads_documents(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -4778,7 +4778,7 @@ def test_forecast_cli_federalregister_import_captures_documents_as_evidence(
 def test_courtlistener_adapter_loads_search_results(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -4923,7 +4923,7 @@ def test_forecast_cli_courtlistener_import_captures_results_as_evidence(
 def test_nvd_adapter_loads_cves(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -5079,7 +5079,7 @@ def test_forecast_cli_nvd_import_captures_cves_as_evidence(tmp_path, capsys, mon
 def test_cisa_kev_adapter_loads_known_exploited_vulnerabilities(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -5227,7 +5227,7 @@ def test_forecast_cli_cisa_kev_import_captures_vulnerabilities_as_evidence(
 def test_openmeteo_adapter_loads_daily_forecasts(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -5357,7 +5357,7 @@ def test_forecast_cli_openmeteo_import_captures_forecasts_as_evidence(
 def test_airquality_adapter_loads_hourly_forecasts(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -5498,7 +5498,7 @@ def test_forecast_cli_airquality_import_captures_forecasts_as_evidence(
 def test_weatherhistory_adapter_loads_daily_observations(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -5630,7 +5630,7 @@ def test_forecast_cli_weatherhistory_import_captures_observations_as_evidence(
 def test_usgs_adapter_loads_earthquake_events(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -5789,7 +5789,7 @@ def test_forecast_cli_usgs_import_captures_events_as_evidence(
 def test_eonet_adapter_loads_natural_events(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -5937,7 +5937,7 @@ def test_forecast_cli_eonet_import_captures_events_as_evidence(
 def test_nws_adapter_loads_weather_alerts(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -6097,7 +6097,7 @@ def test_forecast_cli_nws_import_captures_alerts_as_evidence(
 def test_clinicaltrials_adapter_loads_study_rows(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -6257,7 +6257,7 @@ def test_forecast_cli_clinicaltrials_import_captures_studies_as_evidence(
 def test_openfda_adapter_loads_drug_application_rows(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -6417,7 +6417,7 @@ def test_forecast_cli_openfda_import_captures_applications_as_evidence(
 def test_pubmed_adapter_loads_article_rows(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["search_endpoint"] = endpoint
         captured["search_label"] = label
         return {"esearchresult": {"idlist": ["12345678"]}}
@@ -6704,7 +6704,7 @@ def test_forecast_cli_owid_import_captures_observations_as_evidence(
 def test_who_gho_adapter_loads_indicator_rows(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -6849,7 +6849,7 @@ def test_forecast_cli_who_gho_import_captures_observations_as_evidence(
 def test_fema_adapter_loads_disaster_declaration_rows(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -7121,7 +7121,7 @@ def test_forecast_cli_fred_import_captures_observations_as_evidence(tmp_path, ca
 def test_eia_adapter_loads_energy_series_observations(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -7252,7 +7252,7 @@ def test_forecast_cli_eia_import_captures_observations_as_evidence(tmp_path, cap
 def test_treasury_adapter_loads_fiscal_data_records(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -7392,7 +7392,7 @@ def test_forecast_cli_treasury_import_captures_records_as_evidence(tmp_path, cap
 def test_bls_adapter_loads_public_api_observations(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -7413,6 +7413,7 @@ def test_bls_adapter_loads_public_api_observations(monkeypatch):
         }
 
     monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+    monkeypatch.delenv("BLS_API_KEY", raising=False)
 
     observations = source_adapters.load_bls_observations(
         "LNS14000000",
@@ -7430,12 +7431,30 @@ def test_bls_adapter_loads_public_api_observations(monkeypatch):
     assert parsed.path.endswith("/LNS14000000")
     assert params["startyear"] == ["2026"]
     assert params["endyear"] == ["2026"]
+    # No key configured → no registrationkey (BLS still works at the lower limit).
+    assert "registrationkey" not in params
     assert len(observations) == 1
     assert observations[0].series_id == "LNS14000000"
     assert observations[0].observation_date == "2026-03-01"
     assert observations[0].published_at == "2026-03-01T00:00:00Z"
     assert observations[0].period == "M03"
     assert observations[0].value == 4.2
+
+
+def test_bls_adapter_uses_optional_registration_key(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
+        captured["endpoint"] = endpoint
+        return {"status": "REQUEST_SUCCEEDED", "Results": {"series": []}}
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+    monkeypatch.setenv("BLS_API_KEY", "SECRET-KEY-123")
+
+    source_adapters.load_bls_observations("LNS14000000", limit=1)
+
+    params = parse_qs(urlparse(captured["endpoint"]).query)
+    assert params["registrationkey"] == ["SECRET-KEY-123"]
 
 
 def test_forecast_cli_bls_import_captures_observations_as_evidence(tmp_path, capsys, monkeypatch):
@@ -7531,7 +7550,7 @@ def test_forecast_cli_bls_import_captures_observations_as_evidence(tmp_path, cap
 def test_worldbank_adapter_loads_indicator_observations(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return [
@@ -7677,7 +7696,7 @@ def test_forecast_cli_worldbank_import_captures_observations_as_evidence(
 def test_imf_datamapper_adapter_loads_indicator_observations(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -7811,7 +7830,7 @@ def test_forecast_cli_imf_import_captures_observations_as_evidence(
 def test_census_adapter_loads_api_rows(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return [
@@ -7939,7 +7958,7 @@ def test_forecast_cli_census_import_captures_records_as_evidence(tmp_path, capsy
 def test_socrata_adapter_loads_open_data_rows(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return [
@@ -8065,7 +8084,7 @@ def test_forecast_cli_socrata_import_captures_records_as_evidence(tmp_path, caps
 def test_ckan_adapter_loads_open_data_package_metadata(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -8262,7 +8281,7 @@ def test_stooq_adapter_loads_recent_price_observations(monkeypatch):
 def test_yahoo_adapter_loads_chart_observations(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -8518,7 +8537,7 @@ def test_forecast_cli_yahoo_import_captures_observations_as_evidence(
 def test_sec_adapter_loads_recent_company_filings(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -8652,7 +8671,7 @@ def test_forecast_cli_sec_import_captures_filings_as_evidence(tmp_path, capsys, 
 def test_sec_company_facts_adapter_loads_xbrl_observations(monkeypatch):
     captured = {}
 
-    def fake_read_json_endpoint(endpoint: str, label: str):
+    def fake_read_json_endpoint(endpoint: str, label: str, **kwargs):
         captured["endpoint"] = endpoint
         captured["label"] = label
         return {
@@ -8826,6 +8845,117 @@ def test_forecast_cli_secfacts_import_captures_observations_as_evidence(tmp_path
     assert evidence[0].metadata["concept"] == "Revenues"
     assert evidence[0].metadata["unit"] == "USD"
     assert evidence[0].metadata["value"] == 391035000000
+
+
+def test_sec_user_agent_is_honest_and_configurable(monkeypatch):
+    for name in ("SEC_CONTACT_EMAIL", "SUPERFORECASTING_AGENT_CONTACT", "FORECAST_CONTACT_EMAIL", "HERMES_CONTACT_EMAIL"):
+        monkeypatch.delenv(name, raising=False)
+    # Honest declared UA — never a spoofed browser string SEC blocks, and (per
+    # SEC's WAF) NOT the parenthetical/URL form that 403s.
+    default_ua = source_adapters._sec_user_agent()
+    assert "Mozilla" not in default_ua
+    assert "(" not in default_ua and "http" not in default_ua
+    assert default_ua == "Superforecasting Agent/1.0"
+    # A configured contact uses SEC's prescribed "<name> <email>" form, no parens.
+    monkeypatch.setenv("SEC_CONTACT_EMAIL", "ops@example.com")
+    assert source_adapters._sec_user_agent() == "Superforecasting Agent ops@example.com"
+    # A CR/LF in the env var is stripped so it can't corrupt the header.
+    monkeypatch.setenv("SEC_CONTACT_EMAIL", "ops@example.com\r\nX-Injected: 1")
+    assert "\n" not in source_adapters._sec_user_agent() and "\r" not in source_adapters._sec_user_agent()
+
+
+def test_sec_cik_resolves_ticker_and_company(monkeypatch):
+    tickers = {
+        "0": {"cik_str": 1664703, "ticker": "BE", "title": "Bloom Energy Corp"},
+        "1": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."},
+        "2": {"cik_str": 880640, "ticker": "CIK", "title": "Credit Suisse Asset Mgmt Income Fund"},
+    }
+    monkeypatch.setattr(source_adapters, "_load_sec_company_tickers", lambda: tickers)
+
+    assert source_adapters._sec_cik("0000320193") == "0000320193"  # numeric CIK passes through
+    assert source_adapters._sec_cik("be") == "0001664703"  # case-insensitive ticker
+    assert source_adapters._sec_cik("Apple Inc.") == "0000320193"  # exact company name
+
+    # A real "CIK<digits>" literal is stripped; a ticker that merely starts with
+    # CIK is NOT blindly chopped (regression for the wrong-company bug).
+    assert source_adapters._sec_cik("CIK0000320193") == "0000320193"
+    assert source_adapters._sec_cik("CIK 320193") == "0000320193"
+    assert source_adapters._sec_cik("CIK") == "0000880640"  # the real ticker, not chopped to ""
+
+    # Overlong digit strings are rejected, not zero-padded into a bad URL.
+    with pytest.raises(source_adapters.ValidationError):
+        source_adapters._sec_cik("99999999999999")
+    with pytest.raises(source_adapters.ValidationError):
+        source_adapters._sec_cik("NoSuchCo")
+
+
+def test_sec_full_text_search_parses_efts_hits(monkeypatch):
+    captured = {}
+
+    def fake_read_json_endpoint(url: str, label: str, **kwargs):
+        captured["url"] = url
+        captured["headers"] = kwargs.get("headers")
+        return {
+            "hits": {
+                "hits": [
+                    {
+                        "_id": "0001664703-26-000045:bloom8k.htm",
+                        "_source": {
+                            "root_form": "8-K",
+                            "file_date": "2026-03-10",
+                            "ciks": ["0001664703"],
+                            "display_names": ["BLOOM ENERGY CORP  (BE)  (CIK 0001664703)"],
+                            "file_description": "data center power deal",
+                        },
+                    }
+                ]
+            }
+        }
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    rows = source_adapters.load_sec_full_text_search(
+        "Bloom Energy data center", forms="8-K", limit=5, api_base_url="https://efts.test/LATEST/search-index"
+    )
+
+    assert "q=Bloom+Energy+data+center" in captured["url"]
+    assert "forms=8-K" in captured["url"]
+    # SEC fair-access UA is used, not the generic browser UA.
+    assert "Mozilla" not in (captured["headers"] or {}).get("User-Agent", "")
+    assert len(rows) == 1
+    hit = rows[0]
+    assert hit.cik == "0001664703"
+    assert hit.ticker == "BE"
+    assert hit.company_name == "BLOOM ENERGY CORP"
+    assert hit.form == "8-K"
+    assert hit.accession_number == "0001664703-26-000045"
+    assert hit.primary_document == "bloom8k.htm"
+    assert "1664703" in (hit.source_url or "") and "bloom8k.htm" in (hit.source_url or "")
+    assert hit.source_name == "SEC EDGAR Full-Text Search"
+    # entry_id is document-specific so distinct exhibits from one accession
+    # aren't deduped away on import.
+    assert hit.entry_id == "0001664703:0001664703-26-000045:bloom8k.htm"
+
+
+def test_sec_full_text_search_keeps_distinct_documents_from_one_accession(monkeypatch):
+    def fake_read_json_endpoint(url: str, label: str, **kwargs):
+        acc = "0001213900-22-079095"
+        return {
+            "hits": {
+                "hits": [
+                    {"_id": f"{acc}:ea_ex99e.htm", "_source": {"form": "8-K", "file_date": "2022-09-01", "ciks": ["0001664703"]}},
+                    {"_id": f"{acc}:ea_ex99f.htm", "_source": {"form": "8-K", "file_date": "2022-09-01", "ciks": ["0001664703"]}},
+                ]
+            }
+        }
+
+    monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
+
+    rows = source_adapters.load_sec_full_text_search("Bloom Energy", limit=10)
+    assert len(rows) == 2
+    # Same accession, two documents → two DISTINCT entry_ids (no dedup collision).
+    assert rows[0].entry_id != rows[1].entry_id
+    assert len({r.entry_id for r in rows}) == 2
 
 
 def test_arxiv_adapter_loads_atom_papers(monkeypatch):

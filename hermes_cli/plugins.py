@@ -913,6 +913,15 @@ class PluginManager:
                 logger.debug("Skipping disabled plugin '%s'", lookup_key)
                 continue
 
+            # The bundled Obsidian vault is core to the agent's workspace — it
+            # holds all notes/research under ~/.superforecasting-agent/docs/vault.
+            # Auto-load it so the agent always has scoped, vault-locked note tools
+            # without an opt-in step; an explicit ``plugins.disabled: [obsidian]``
+            # still turns it off (handled by the check above).
+            if manifest.source == "bundled" and manifest.name == "obsidian":
+                self._load_plugin(manifest)
+                continue
+
             # Exclusive plugins (memory providers) have their own
             # discovery/activation path. The general loader records the
             # manifest for introspection but does not load the module.

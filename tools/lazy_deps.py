@@ -96,6 +96,13 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     # first use so the agent gets the industry-standard numerics.
     "forecast.bayes": ("numpy==2.4.3", "scipy==1.16.2"),
 
+    # ─── Market Models econometrics ─────────────────────────────────────────
+    # statsmodels powers the advanced families in forecasting/market_compute.py
+    # (cointegration, event-study, ARIMA, backtests). numpy/scipy come from
+    # forecast.bayes; the compute engine degrades to typed 'degraded' blocks for
+    # advanced models when statsmodels is absent, and provisions it on first use.
+    "market.econometrics": ("statsmodels==0.14.5",),
+
     # ─── Web search backends ───────────────────────────────────────────────
     # ddgs (DuckDuckGo) is the free, keyless default web-search backend for the
     # forecasting desk — it self-installs on first use so a fresh agent can

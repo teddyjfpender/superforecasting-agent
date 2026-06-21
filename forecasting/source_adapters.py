@@ -6,8 +6,10 @@ import csv
 from dataclasses import dataclass
 from html import unescape
 import json
+import logging
 import os
 import re
+import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -18,6 +20,8 @@ from typing import Any
 from xml.etree import ElementTree
 
 from forecasting.models import OutcomeSpace, ValidationError, parse_timestamp, timestamp_to_datetime
+
+logger = logging.getLogger(__name__)
 
 
 _SOURCE_ADAPTER_USER_AGENT = (
@@ -1722,7 +1726,14 @@ def load_bls_observations(
     if start_year is not None and end_year is not None and start_year > end_year:
         raise ValidationError("bls import --start-year cannot be after --end-year")
     since_date = _fred_date(since, field_name="since") if since else None
-    endpoint = _bls_endpoint(normalized_series, api_base_url=api_base_url, start_year=start_year, end_year=end_year)
+    api_key = os.environ.get("BLS_API_KEY", "").strip() or None
+    endpoint = _bls_endpoint(
+        normalized_series,
+        api_base_url=api_base_url,
+        start_year=start_year,
+        end_year=end_year,
+        api_key=api_key,
+    )
     payload = _read_json_endpoint(endpoint, "bls observations")
     if not isinstance(payload, dict):
         raise ValidationError("bls observations response must be a JSON object")
@@ -2223,7 +2234,7 @@ def load_sec_filings(
         raise ValidationError("sec import --limit must be positive")
     since_dt = timestamp_to_datetime(parse_timestamp(since, field_name="since")) if since else None
     endpoint = _sec_submissions_endpoint(cik, api_base_url=api_base_url)
-    payload = _read_json_endpoint(endpoint, "sec submissions")
+    payload = _read_json_endpoint(endpoint, "sec submissions", headers=_sec_request_headers())
     if not isinstance(payload, dict):
         raise ValidationError("sec submissions response must be a JSON object")
     filings = payload.get("filings")
@@ -2307,7 +2318,7 @@ def load_sec_company_facts(
         raise ValidationError("secfacts import --limit must be positive")
     since_dt = timestamp_to_datetime(parse_timestamp(since, field_name="since")) if since else None
     endpoint = _sec_submissions_endpoint(cik, api_base_url=api_base_url)
-    payload = _read_json_endpoint(endpoint, "sec company facts")
+    payload = _read_json_endpoint(endpoint, "sec company facts", headers=_sec_request_headers())
     if not isinstance(payload, dict):
         raise ValidationError("sec company facts response must be a JSON object")
     facts = payload.get("facts")
@@ -2386,6 +2397,124 @@ def load_sec_company_facts(
         )
     )
     return rows[-limit:]
+
+
+def _sec_search_cik(src: dict) -> str | None:
+    ciks = src.get("ciks")
+    if isinstance(ciks, list) and ciks:
+        digits = "".join(ch for ch in str(ciks[0]) if ch.isdigit())
+        if digits:
+            return digits.zfill(10)
+    names = src.get("display_names")
+    if isinstance(names, list) and names:
+        m = re.search(r"CIK\s*(\d{4,10})", str(names[0]))
+        if m:
+            return m.group(1).zfill(10)
+    return None
+
+
+def _sec_search_company(src: dict) -> str | None:
+    names = src.get("display_names")
+    if isinstance(names, list) and names:
+        # "BLOOM ENERGY CORP  (BE)  (CIK 0001664703)" → strip the trailing tags.
+        return re.sub(r"\s*\((?:CIK\s*\d+|[A-Z.\-]+)\)\s*", "", str(names[0])).strip() or None
+    return None
+
+
+def _sec_search_ticker(src: dict) -> str | None:
+    names = src.get("display_names")
+    if isinstance(names, list) and names:
+        m = re.search(r"\(([A-Z][A-Z.\-]{0,6})\)", str(names[0]))
+        if m:
+            return m.group(1)
+    return None
+
+
+def load_sec_full_text_search(
+    source: str,
+    *,
+    forms: str | None = None,
+    limit: int = 10,
+    since: str | None = None,
+    api_base_url: str = "https://efts.sec.gov/LATEST/search-index",
+) -> list[SecFiling]:
+    """Search EDGAR full-text (EFTS) for filings matching a query.
+
+    ``source`` is the search query (a deal name, product, dollar figure, …).
+    Returns SecFiling rows pointing at the matching primary documents so the
+    agent can open the primary source to confirm a value that XBRL/company-facts
+    do not expose. ``forms`` optionally restricts to comma-separated form types
+    (e.g. ``8-K,10-Q``).
+    """
+    query = source.strip()
+    for prefix in ("sec_search:", "secsearch:", "sec-search:"):
+        if query.lower().startswith(prefix):
+            query = query[len(prefix):].strip()
+            break
+    if not query:
+        raise ValidationError("sec_search source must be a non-empty query")
+    if limit <= 0:
+        raise ValidationError("sec_search import --limit must be positive")
+
+    params: dict[str, str] = {"q": query}
+    if forms and forms.strip():
+        params["forms"] = forms.strip()
+    if since:
+        since_dt = timestamp_to_datetime(parse_timestamp(since, field_name="since"))
+        if since_dt is not None:
+            params["startdt"] = since_dt.date().isoformat()
+            params["enddt"] = datetime.now(timezone.utc).date().isoformat()
+
+    url = f"{api_base_url.rstrip('/')}?{urlencode(params)}"
+    payload = _read_json_endpoint(url, "sec full-text search", headers=_sec_request_headers())
+    if not isinstance(payload, dict):
+        raise ValidationError("sec full-text search response must be a JSON object")
+    hits = payload.get("hits")
+    hit_rows = hits.get("hits") if isinstance(hits, dict) else None
+    if not isinstance(hit_rows, list):
+        raise ValidationError("sec full-text search response must contain hits.hits")
+
+    rows: list[SecFiling] = []
+    for hit in hit_rows:
+        if not isinstance(hit, dict):
+            continue
+        sec_id = _optional_str(hit.get("_id")) or ""
+        accession, _, document = sec_id.partition(":")
+        src = hit.get("_source") if isinstance(hit.get("_source"), dict) else {}
+        cik = _sec_search_cik(src)
+        if not cik or not accession:
+            continue
+        form = _optional_str(src.get("root_form")) or _optional_str(src.get("form")) or "UNKNOWN"
+        filing_date = _optional_str(src.get("file_date")) or ""
+        if not filing_date:
+            continue
+        published_at = _sec_filing_timestamp(None, filing_date)
+        rows.append(
+            SecFiling(
+                cik=cik,
+                company_name=_sec_search_company(src),
+                ticker=_sec_search_ticker(src),
+                form=form,
+                filing_date=filing_date,
+                report_date=None,
+                acceptance_time=None,
+                published_at=published_at,
+                accession_number=accession,
+                primary_document=document or None,
+                description=_optional_str(src.get("file_description")) or _optional_str(src.get("file_type")),
+                source_url=_sec_filing_url(cik, accession, document or None),
+                source_name="SEC EDGAR Full-Text Search",
+                # Document-specific: one accession can return several matching
+                # exhibits (distinct documents), each a different primary source.
+                # Keying on accession alone would dedupe them away on import.
+                entry_id=f"{cik}:{sec_id}",
+                raw={"query": query, "hit": hit},
+            )
+        )
+    # Preserve EFTS relevance order (most relevant first) — the point of full-
+    # text search is to surface the filing that best matches the query, not the
+    # most recent. Truncate after collecting the full page.
+    return rows[:limit]
 
 
 def load_arxiv_papers(
@@ -5823,17 +5952,26 @@ def _http_fetch_error(label: str, url: str, exc: HTTPError) -> str:
     host = parsed.netloc or url
     message = f"{label} fetch failed for {host}: HTTP {status or exc}"
     if status == 403:
-        message += (
-            "; the source denied this runtime after a browser-compatible request. "
-            "Keep the forecast probability unchanged, try the official structured adapter if available, "
-            "or rerun from a network allowed by the source."
-        )
+        if host.lower().endswith("sec.gov"):
+            message += (
+                "; SEC EDGAR enforces its fair-access policy and rejects requests without a valid "
+                "contact in the User-Agent. Set SEC_CONTACT_EMAIL (or SUPERFORECASTING_AGENT_CONTACT / "
+                "FORECAST_CONTACT_EMAIL / HERMES_CONTACT_EMAIL) to a real email and retry."
+            )
+        else:
+            message += (
+                "; the source denied this runtime after a browser-compatible request. "
+                "Keep the forecast probability unchanged, try the official structured adapter if available, "
+                "or rerun from a network allowed by the source."
+            )
     return message
 
 
-def _read_json_endpoint(url: str, label: str, *, timeout: float | None = None) -> object:
+def _read_json_endpoint(
+    url: str, label: str, *, timeout: float | None = None, headers: dict[str, str] | None = None
+) -> object:
     try:
-        request = Request(url, headers=_source_request_headers(url, accept=_JSON_ACCEPT_HEADER))
+        request = Request(url, headers=headers or _source_request_headers(url, accept=_JSON_ACCEPT_HEADER))
         with urlopen(request, timeout=timeout or _source_fetch_timeout()) as response:
             data = response.read(2 * 1024 * 1024)
     except HTTPError as exc:
@@ -6283,17 +6421,23 @@ def _bls_endpoint(
     api_base_url: str,
     start_year: int | None,
     end_year: int | None,
+    api_key: str | None = None,
 ) -> str:
     endpoint_base = api_base_url.rstrip("/")
     if endpoint_base.endswith(f"/{quote(series_id)}"):
         endpoint = endpoint_base
     else:
         endpoint = f"{endpoint_base}/{quote(series_id)}"
-    params: dict[str, int] = {}
+    params: dict[str, int | str] = {}
     if start_year is not None:
         params["startyear"] = start_year
     if end_year is not None:
         params["endyear"] = end_year
+    # Optional BLS registration key: lifts the public-API daily limit (25→500
+    # queries/day) and unlocks longer history. The v2 GET endpoint accepts it as
+    # a query parameter; without it, BLS still works at the lower limit.
+    if api_key:
+        params["registrationkey"] = api_key
     if params:
         endpoint = f"{endpoint}?{urlencode(params)}"
     return endpoint
@@ -6972,16 +7116,147 @@ def _stooq_optional_number(value: object) -> float | int | str | None:
     return number
 
 
+# --- SEC EDGAR fair-access identity + ticker/company → CIK resolution ------
+
+_SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
+_SEC_TICKERS_TTL_SECONDS = 7 * 24 * 3600
+
+
+def _sec_user_agent() -> str:
+    """SEC EDGAR fair-access User-Agent.
+
+    SEC requires an honest, identifying User-Agent (declared name + a contact)
+    and actively blocks generic browser-spoofing strings. We declare the app
+    and a contact taken from a configurable env var so operators can set their
+    own per SEC's fair-access policy; the default carries the project URL.
+    """
+    for name in (
+        "SEC_CONTACT_EMAIL",
+        "SUPERFORECASTING_AGENT_CONTACT",
+        "FORECAST_CONTACT_EMAIL",
+        "HERMES_CONTACT_EMAIL",
+    ):
+        # Drop control/non-printable chars so a stray CR/LF in the env var can't
+        # corrupt the header (it would otherwise crash the fetch at send time).
+        contact = "".join(ch for ch in os.environ.get(name, "").strip() if ch.isprintable())
+        if contact:
+            # SEC's prescribed fair-access form is "<name> <contact>", space-
+            # separated with a bare email — its WAF 403s the parenthetical "(...)"
+            # and "+url" forms, so do NOT wrap the contact in parentheses.
+            return f"Superforecasting Agent {contact}"
+    # No contact configured: a bare declared UA SEC accepts (verified). Set one of
+    # the *_CONTACT_EMAIL env vars to a real email for full fair-access compliance.
+    return "Superforecasting Agent/1.0"
+
+
+def _sec_request_headers(*, accept: str = _JSON_ACCEPT_HEADER) -> dict[str, str]:
+    """Headers for SEC endpoints — uses the fair-access User-Agent, not the
+    generic browser-compatible one (which SEC 403s)."""
+    return {
+        "User-Agent": _sec_user_agent(),
+        "Accept": accept,
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+
+def _sec_tickers_cache_path() -> Path | None:
+    try:
+        from hermes_constants import get_hermes_home
+
+        cache_dir = get_hermes_home() / "cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir / "sec_company_tickers.json"
+    except Exception:
+        return None
+
+
+def _load_sec_company_tickers() -> dict:
+    """SEC's ticker→CIK→title map, cached on disk with a 7-day TTL."""
+    cache = _sec_tickers_cache_path()
+    if cache and cache.is_file():
+        try:
+            if time.time() - cache.stat().st_mtime < _SEC_TICKERS_TTL_SECONDS:
+                data = json.loads(cache.read_text("utf-8"))
+                # Validate the cached shape too — a corrupt/poisoned non-dict
+                # must fall through to a refetch, not crash the resolver.
+                if isinstance(data, dict):
+                    return data
+        except (OSError, ValueError):  # ValueError covers JSONDecodeError
+            pass
+    payload = _read_json_endpoint(_SEC_TICKERS_URL, "sec company tickers", headers=_sec_request_headers())
+    if not isinstance(payload, dict):
+        raise ValidationError("sec company_tickers response must be a JSON object")
+    if cache:
+        # Write atomically so concurrent imports never see a half-written file
+        # and an interrupted write can't reset the TTL on corrupt content.
+        try:
+            tmp = cache.with_name(f"{cache.name}.tmp.{os.getpid()}")
+            tmp.write_text(json.dumps(payload), "utf-8")
+            os.replace(tmp, cache)
+        except OSError:
+            try:
+                cache.with_name(f"{cache.name}.tmp.{os.getpid()}").unlink(missing_ok=True)
+            except OSError:
+                pass
+    return payload
+
+
+def _resolve_sec_cik(raw: str) -> str:
+    """Resolve a ticker (preferred) or company name to a 10-digit CIK."""
+    needle = raw.strip()
+    if not needle:
+        raise ValidationError("sec source must be a CIK, ticker, or company name")
+    rows = [row for row in _load_sec_company_tickers().values() if isinstance(row, dict)]
+    upper = needle.upper()
+    lower = needle.lower()
+
+    for row in rows:  # 1) exact ticker — most precise
+        if str(row.get("ticker", "")).upper() == upper:
+            return str(row.get("cik_str", "")).zfill(10)
+
+    exact = [row for row in rows if str(row.get("title", "")).lower() == lower]
+    matches = exact or [row for row in rows if lower in str(row.get("title", "")).lower()]
+    if len(matches) == 1:
+        row = matches[0]
+        if not exact:
+            # Resolved by a non-exact substring match — surface it so a wrong
+            # single-container match is debuggable (exact ticker/title win first).
+            logger.info(
+                "sec source %r fuzzy-matched company %r (CIK %s); pass the ticker or numeric CIK to disambiguate",
+                raw,
+                row.get("title"),
+                str(row.get("cik_str", "")).zfill(10),
+            )
+        return str(row.get("cik_str", "")).zfill(10)
+    if len(matches) > 1:
+        sample = ", ".join(str(r.get("ticker") or r.get("title")) for r in matches[:5])
+        raise ValidationError(
+            f"sec source {raw!r} is ambiguous ({len(matches)} matches: {sample}); use the ticker or a numeric CIK"
+        )
+    raise ValidationError(
+        f"sec source {raw!r} did not match a ticker or company; use a numeric CIK (e.g. 0000320193)"
+    )
+
+
 def _sec_cik(source: str) -> str:
     raw = source.strip()
     if raw.startswith("sec:"):
         raw = raw.split(":", 1)[1].strip()
-    if raw.upper().startswith("CIK"):
-        raw = raw[3:]
-    digits = "".join(ch for ch in raw if ch.isdigit())
-    if not digits:
-        raise ValidationError("sec source must be a numeric CIK, e.g. 0000320193")
-    return digits.zfill(10)
+    if not raw:
+        raise ValidationError("sec source must be a CIK, ticker, or company name")
+    # Strip an explicit CIK literal (CIK0000320193 / CIK 320193 / cik-320193)
+    # ONLY when it is "CIK" followed by digits — never blindly chop a 3-char
+    # prefix, which would mangle real tickers/names beginning with "CIK".
+    cik_literal = re.match(r"(?i)^cik[-\s]*(\d+)$", raw)
+    if cik_literal:
+        raw = cik_literal.group(1)
+    # A bare numeric value is a CIK; anything else is a ticker or company name
+    # to resolve through SEC's company_tickers map.
+    if raw.isdigit():
+        if not 0 < int(raw) <= 9_999_999_999:
+            raise ValidationError("sec CIK must be a positive number with at most 10 digits")
+        return raw.zfill(10)
+    return _resolve_sec_cik(raw)
 
 
 def _sec_submissions_endpoint(cik: str, *, api_base_url: str) -> str:

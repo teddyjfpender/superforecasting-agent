@@ -906,9 +906,9 @@ export const coreCommands: SlashCommand[] = [
 
   {
     aliases: ['feeds', 'rss'],
-    help: 'open the live news feed reader',
+    help: 'open the news feed reader; `/news <query>` semantically searches the feeds',
     name: 'news',
-    run: () => patchOverlayState({ news: true })
+    run: (arg: string) => patchOverlayState({ news: true, newsInitialQuery: arg.trim() || null })
   },
 
   {

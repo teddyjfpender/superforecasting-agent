@@ -364,6 +364,21 @@ TOOLSETS = {
         ],
     },
 
+    "market-models": {
+        "description": "Agentic quant-research for Market Models: research data, compute deterministic stats/models, and emit a structured presentation",
+        # Deliberately excludes approval-gated tools (terminal/browser/code_execution):
+        # the build runs as a HEADLESS background agent with no approval callback, so
+        # those would stall or be denied. All math goes through the pure market_compute
+        # tool; research uses read-only data (forecasting) + web. Keeps builds robust.
+        "tools": ["market_compute", "emit_market_presentation", "read_desk_forecast"],
+        "includes": [
+            "forecasting",
+            "web",
+            "todo",
+            "delegation",
+        ],
+    },
+
     "forecast-messaging": {
         "description": "Forecast-scoped messaging runtime tools for platform conversations and review alerts",
         "tools": [],

@@ -59,6 +59,12 @@ API_KEY_PROVIDERS: tuple[ApiKeyProvider, ...] = (
         signup_url="https://www.eia.gov/opendata/register.php",
     ),
     ApiKeyProvider(
+        name="bls",
+        env_var="BLS_API_KEY",
+        description="BLS — US Bureau of Labor Statistics (CPI, employment, wages). Optional: registering lifts the public-API limit from 25 to 500 queries/day and unlocks longer history. BLS works without it at the lower limit.",
+        signup_url="https://data.bls.gov/registrationEngine/",
+    ),
+    ApiKeyProvider(
         name="firecrawl",
         env_var="FIRECRAWL_API_KEY",
         description="Firecrawl — paid web search + page-content extract backend. Optional; the free ddgs backend covers search-only.",

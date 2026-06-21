@@ -6003,6 +6003,20 @@ def test_forecast_chat_system_prompt_scopes_general_chat_to_forecasting():
     assert "Use a concise style." in prompt
 
 
+def test_forecast_chat_system_prompt_anchors_workspace():
+    """The agent is told about its managed workspace (docs/vault + LaTeX) and
+    instructed to keep all work there rather than straying onto the machine."""
+    prompt = build_forecast_chat_system_prompt()
+
+    assert "## Your workspace" in prompt
+    assert "~/.superforecasting-agent/" in prompt
+    assert "docs/vault" in prompt
+    assert "docs/latex" in prompt
+    # Uses the scoped vault tools rather than raw writes to a stray vault.
+    assert "obsidian_write_note" in prompt
+    assert "other obsidian vault" in prompt.lower()
+
+
 def test_protocol_messages_include_forecast_context_and_stage_task(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     question = ledger.create_question(

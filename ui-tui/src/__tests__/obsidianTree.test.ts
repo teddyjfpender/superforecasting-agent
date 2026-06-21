@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildNoteRows } from '../components/obsidianView.js'
+import { allFolderPaths, buildNoteRows } from '../components/obsidianView.js'
 import type { ObsidianNote } from '../gatewayTypes.js'
 
 const notes: ObsidianNote[] = [
@@ -39,5 +39,14 @@ describe('buildNoteRows (directory tree)', () => {
     // Knowledge's two notes are hidden, but the Index note stays.
     expect(collapsedKnowledge.some(r => r.name === 'Bayesian Updating')).toBe(false)
     expect(collapsedKnowledge.some(r => r.name === 'Forecasting Desk')).toBe(true)
+  })
+
+  it('allFolderPaths enumerates every folder so the tree can start collapsed', () => {
+    expect(new Set(allFolderPaths(notes))).toEqual(new Set(['Forecasting', 'Forecasting/Knowledge']))
+
+    // Collapsing every folder path leaves only the top-level folder row.
+    const rows = buildNoteRows(notes, new Set(allFolderPaths(notes)))
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ depth: 0, expanded: false, kind: 'folder', name: 'Forecasting' })
   })
 })

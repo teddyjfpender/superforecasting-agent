@@ -407,15 +407,25 @@ const HelpViewPane = memo(function HelpViewPane() {
 })
 
 const MarketsViewPane = memo(function MarketsViewPane({ onAsk }: { onAsk: (question: string) => void }) {
+  const { gw } = useGateway()
   const ui = useStore($uiState)
 
-  return <MarketsView onAsk={onAsk} onClose={() => patchOverlayState({ markets: false })} t={ui.theme} />
+  return <MarketsView gw={gw} onAsk={onAsk} onClose={() => patchOverlayState({ markets: false })} sessionId={ui.sid ?? ''} t={ui.theme} />
 })
 
 const NewsViewPane = memo(function NewsViewPane() {
+  const { gw } = useGateway()
   const ui = useStore($uiState)
+  const overlay = useStore($overlayState)
 
-  return <NewsView onClose={() => patchOverlayState({ news: false })} t={ui.theme} />
+  return (
+    <NewsView
+      gw={gw}
+      initialQuery={overlay.newsInitialQuery}
+      onClose={() => patchOverlayState({ news: false, newsInitialQuery: null })}
+      t={ui.theme}
+    />
+  )
 })
 
 const MessagingViewPane = memo(function MessagingViewPane() {

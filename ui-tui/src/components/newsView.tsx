@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { patchOverlayState } from '../app/overlayStore.js'
 import type { CatalogFeed } from '../content/newsFeedCatalog.js'
 import { FEED_CATEGORIES } from '../content/newsFeedCatalog.js'
+import type { GatewayClient } from '../gatewayClient.js'
 import { statusGlyph } from '../lib/icons.js'
 import { type ArticleCache, loadArticleCache, pruneArticleCache, saveArticleCache } from '../lib/newsFeedCache.js'
 import { type Article, fetchFeeds } from '../lib/newsFeedFetch.js'
@@ -20,6 +21,7 @@ import {
 import { nextProviderColor, providerColor } from '../lib/newsProviderColor.js'
 import { loadProviderColors, type ProviderColors, saveProviderColors } from '../lib/newsProviderColorStore.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
+import { asRpcResult } from '../lib/rpc.js'
 import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
@@ -99,11 +101,21 @@ const relTime = (ms: number): string => {
 }
 
 interface NewsViewProps {
+  // Gateway client for the semantic-search RPC. Optional so the view renders
+  // standalone (e.g. in tests) — search is simply disabled when absent.
+  gw?: GatewayClient
+  // A `/news <query>` argument: run this semantic search once articles load.
+  initialQuery?: null | string
   onClose: () => void
   t: Theme
 }
 
-export function NewsView({ onClose, t }: NewsViewProps) {
+interface NewsSearchResponse {
+  engine: 'lexical' | 'llm' | 'none'
+  results: { index: number; score: number }[]
+}
+
+export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
@@ -122,6 +134,17 @@ export function NewsView({ onClose, t }: NewsViewProps) {
   const [modalCat, setModalCat] = useState(ALL_CATEGORY)
   const [modalSel, setModalSel] = useState(0)
   const [flash, setFlash] = useState('')
+
+  // Semantic search over the loaded articles: `/` (or `/news <query>`) types a
+  // query that the backend ranks by meaning (LLM rerank, lexical fallback).
+  const [searchMode, setSearchMode] = useState(false)
+  const [searchInput, setSearchInput] = useState('')
+  const [searchActive, setSearchActive] = useState('')
+  const [searchEngine, setSearchEngine] = useState('')
+  const [searchResults, setSearchResults] = useState<Article[] | null>(null)
+  const [searching, setSearching] = useState(false)
+  const searchSeqRef = useRef(0)
+  const initialRanRef = useRef(false)
 
   const cacheRef = useRef<ArticleCache>(loadArticleCache())
   const inflightRef = useRef(false)
@@ -319,13 +342,101 @@ export function NewsView({ onClose, t }: NewsViewProps) {
     }
   }
 
-  const visibleArticles = useMemo(() => {
+  const feedArticles = useMemo(() => {
     if (activeSource === ALL_FEEDS) {
       return articles
     }
 
     return articles.filter(a => categoryByUrl.get(normalizeFeedUrl(a.feedUrl)) === activeSource)
   }, [articles, activeSource, categoryByUrl])
+
+  // When a semantic search is active, the ranked results replace the feed list.
+  const visibleArticles = searchActive && searchResults ? searchResults : feedArticles
+
+  const clearSearch = () => {
+    searchSeqRef.current += 1
+    setSearchMode(false)
+    setSearchInput('')
+    setSearchActive('')
+    setSearchEngine('')
+    setSearchResults(null)
+    setSearching(false)
+    setSel(0)
+  }
+
+  // Rank the loaded articles by semantic relevance to `q` via the gateway
+  // (LLM rerank, lexical fallback) and show the ranked subset inline.
+  const runSearch = (q: string) => {
+    const query = q.trim()
+
+    if (!query) {
+      return clearSearch()
+    }
+
+    if (!gw) {
+      setFlash('search unavailable')
+
+      return
+    }
+
+    const pool = articles
+
+    if (!pool.length) {
+      setFlash('no articles loaded yet — press r to refresh')
+
+      return
+    }
+
+    const seq = ++searchSeqRef.current
+    setSearchMode(false)
+    setSearchActive(query)
+    setSearching(true)
+    setSel(0)
+
+    gw.request<NewsSearchResponse>('news.search', {
+      articles: pool.map(a => ({ source: providerName(a.feedTitle).trim(), summary: a.summary, title: a.title })),
+      limit: 30,
+      query
+    })
+      .then(raw => {
+        if (!aliveRef.current || seq !== searchSeqRef.current) {
+          return
+        }
+
+        const r = asRpcResult<NewsSearchResponse>(raw)
+
+        const ranked = (r?.results ?? [])
+          .map(item => pool[item.index])
+          .filter((a): a is Article => Boolean(a))
+
+        setSearchResults(ranked)
+        setSearchEngine(r?.engine === 'llm' ? 'semantic' : r?.engine === 'lexical' ? 'keyword' : '')
+        setSearching(false)
+        setSel(0)
+      })
+      .catch(() => {
+        if (!aliveRef.current || seq !== searchSeqRef.current) {
+          return
+        }
+
+        setSearchResults([])
+        setSearchEngine('')
+        setSearching(false)
+        setFlash('search failed')
+      })
+  }
+
+  // `/news <query>` (or a query carried into the view) auto-runs once articles
+  // are available — run it a single time per provided query.
+  useEffect(() => {
+    const q = (initialQuery ?? '').trim()
+
+    if (q && !initialRanRef.current && articles.length > 0) {
+      initialRanRef.current = true
+      runSearch(q)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuery, articles.length])
 
   const openModal = () => {
     setAdding(true)
@@ -394,8 +505,53 @@ export function NewsView({ onClose, t }: NewsViewProps) {
       return
     }
 
-    if (ch === 'q' || key.escape) {
+    // Typing a semantic search query.
+    if (searchMode) {
+      if (key.escape) {
+        setSearchMode(false)
+        setSearchInput('')
+
+        return
+      }
+
+      if (key.return) {
+        return runSearch(searchInput)
+      }
+
+      if (key.backspace || key.delete) {
+        return setSearchInput(s => s.slice(0, -1))
+      }
+
+      if (ch && !key.ctrl && !key.meta) {
+        const printable = [...ch].filter(c => c >= ' ').join('')
+
+        if (printable) {
+          setSearchInput(s => s + printable)
+        }
+      }
+
+      return
+    }
+
+    if (ch === 'q') {
       return onClose()
+    }
+
+    if (key.escape) {
+      // Esc backs out of an active search first, then leaves the view.
+      if (searchActive) {
+        return clearSearch()
+      }
+
+      return onClose()
+    }
+
+    // `/` opens semantic search over the loaded feeds (prefilled to refine).
+    if (ch === '/') {
+      setSearchMode(true)
+      setSearchInput(searchActive)
+
+      return
     }
 
     if (ch === 'a') {
@@ -456,23 +612,53 @@ export function NewsView({ onClose, t }: NewsViewProps) {
 
   const statusWord = fetching ? 'fetching…' : hasFeeds ? 'idle' : 'no feeds'
 
+  // Header is a single row. While typing a search the row becomes the input;
+  // with an active search it appends a compact result indicator — neither adds a
+  // line, so the footer/shortcuts never get pushed off-screen.
   const header = (
     <Box flexShrink={0} marginBottom={1}>
-      <Text wrap="truncate-end">
-        <Text bold color={t.color.primary}>
-          NEWS
+      {searchMode ? (
+        <Text wrap="truncate-end">
+          <Text bold color={t.color.primary}>
+            NEWS
+          </Text>
+          <Text color={t.color.muted}>{'   '}</Text>
+          <Text color={t.color.primary}>{'⌕ '}</Text>
+          <Text color={t.color.text}>{searchInput}</Text>
+          <Text color={t.color.primary} inverse>
+            {' '}
+          </Text>
+          <Text color={t.color.muted}>{'   ⏎ search · Esc cancel'}</Text>
         </Text>
-        <Text color={t.color.muted}>{'   '}</Text>
-        <Text color={fetching ? sem.star : hasFeeds ? sem.up : sem.subtle}>
-          {statusGlyph(fetching ? 'busy' : hasFeeds ? 'live' : 'idle', tick)}
+      ) : (
+        <Text wrap="truncate-end">
+          <Text bold color={t.color.primary}>
+            NEWS
+          </Text>
+          <Text color={t.color.muted}>{'   '}</Text>
+          <Text color={fetching ? sem.star : hasFeeds ? sem.up : sem.subtle}>
+            {statusGlyph(fetching ? 'busy' : hasFeeds ? 'live' : 'idle', tick)}
+          </Text>
+          <Text color={t.color.muted}> {statusWord} · </Text>
+          <Text color={t.color.text}>live RSS feeds</Text>
+          <Text color={t.color.muted}>
+            {' · '}
+            {hasFeeds ? `${subscribed.length} feeds · ${articles.length} articles` : 'press a to add feeds'}
+          </Text>
+          {searchActive ? (
+            <Text>
+              <Text color={t.color.muted}>{'  ·  '}</Text>
+              <Text color={t.color.primary}>{'⌕ '}</Text>
+              <Text bold color={t.color.text}>
+                {truncate(searchActive, 28)}
+              </Text>
+              <Text color={t.color.muted}>
+                {searching ? ' · …' : ` · ${searchEngine || 'results'} · ${visibleArticles.length}/${articles.length} · Esc clear`}
+              </Text>
+            </Text>
+          ) : null}
         </Text>
-        <Text color={t.color.muted}> {statusWord} · </Text>
-        <Text color={t.color.text}>live RSS feeds</Text>
-        <Text color={t.color.muted}>
-          {' · '}
-          {hasFeeds ? `${subscribed.length} feeds · ${articles.length} articles` : 'press a to add feeds'}
-        </Text>
-      </Text>
+      )}
     </Box>
   )
 
@@ -567,6 +753,12 @@ export function NewsView({ onClose, t }: NewsViewProps) {
               </Box>
             )
           })
+        ) : searchActive && searchResults ? (
+          <Text color={t.color.muted} wrap="wrap">
+            {searching
+              ? 'Searching…'
+              : `No articles match “${truncate(searchActive, 40)}” — press Esc to clear or / to refine.`}
+          </Text>
         ) : hasFeeds ? (
           <Text color={t.color.muted} wrap="wrap">
             {fetching
@@ -657,6 +849,7 @@ export function NewsView({ onClose, t }: NewsViewProps) {
 
   const chips: FooterChip[] = [
     { k: '↑↓', label: 'Browse' },
+    { k: '/', label: 'Search', run: () => { setSearchMode(true); setSearchInput(searchActive) } },
     { k: '⇥', label: 'Source', run: () => { setSel(0); setSource(i => (i + 1) % sources.length) } },
     { k: '⏎', label: 'Open' },
     { k: 'a', label: 'Add feed', run: openModal },
@@ -669,7 +862,7 @@ export function NewsView({ onClose, t }: NewsViewProps) {
       <FooterChips chips={chips} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-        ↑↓/jk browse · Tab/←→ source · Enter open · a add feed · r refresh · Esc/q close
+        ↑↓/jk browse · / search · Tab/←→ source · Enter open · a add feed · r refresh · Esc/q close
       </Text>
     </Box>
   )

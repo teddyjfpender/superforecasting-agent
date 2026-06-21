@@ -102,6 +102,44 @@ class TestPluginDiscovery:
         assert "hello_plugin" in mgr._plugins
         assert mgr._plugins["hello_plugin"].enabled
 
+    def test_bundled_obsidian_enabled_by_default(self, tmp_path, monkeypatch):
+        """The bundled obsidian vault plugin auto-loads with no opt-in — it's
+        core to the agent's managed workspace."""
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_HOME", raising=False)
+        monkeypatch.delenv("FORECAST_HOME", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))  # no plugins.enabled
+
+        mgr = PluginManager()
+        mgr.discover_and_load()
+
+        assert "obsidian" in mgr._plugins
+        assert mgr._plugins["obsidian"].enabled
+
+        # And being enabled, its toolset is auto-added to the CLI platform tools
+        # (the path the gateway uses to build the agent's enabled_toolsets), so
+        # the scoped vault tools actually reach the forecasting agent.
+        from hermes_cli.tools_config import _get_platform_tools
+
+        cli = _get_platform_tools({"platform_toolsets": {"cli": ["forecast-desk"]}}, "cli")
+        assert "obsidian" in cli
+
+    def test_bundled_obsidian_respects_explicit_disable(self, tmp_path, monkeypatch):
+        """`plugins.disabled: [obsidian]` still turns the core vault plugin off."""
+        home = tmp_path / "home"
+        home.mkdir(parents=True, exist_ok=True)
+        (home / "config.yaml").write_text(
+            yaml.safe_dump({"plugins": {"disabled": ["obsidian"]}})
+        )
+        monkeypatch.delenv("SUPERFORECASTING_AGENT_HOME", raising=False)
+        monkeypatch.delenv("FORECAST_HOME", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(home))
+
+        mgr = PluginManager()
+        mgr.discover_and_load()
+
+        assert "obsidian" in mgr._plugins
+        assert not mgr._plugins["obsidian"].enabled
+
     def test_bundled_plugins_dir_prefers_forecast_env_alias(self, tmp_path, monkeypatch):
         """Bundled plugin discovery accepts fork-native package env aliases."""
         bundled_dir = tmp_path / "bundled_plugins"

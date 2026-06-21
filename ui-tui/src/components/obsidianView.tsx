@@ -234,6 +234,24 @@ export const buildNoteRows = (notes: ObsidianNote[], collapsed: Set<string>): Tr
   return rows
 }
 
+// Every folder path in the vault (each directory prefix of a note's rel_path).
+// Used to start the tree fully collapsed so the vault is easy to navigate.
+export const allFolderPaths = (notes: ObsidianNote[]): string[] => {
+  const set = new Set<string>()
+
+  for (const note of notes) {
+    const parts = (note.rel_path ?? '').split('/').filter(Boolean)
+    let acc = ''
+
+    for (let d = 0; d < parts.length - 1; d++) {
+      acc = acc ? `${acc}/${parts[d]}` : parts[d]!
+      set.add(acc)
+    }
+  }
+
+  return [...set]
+}
+
 // Comments live in a managed block at the foot of the note (kept out of the
 // prose) and are shown in a right-hand rail, each anchored to a section so it
 // reads like a margin note linked to that part of the doc.
@@ -366,6 +384,12 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   // Collapsed folder paths in the notes tree, and the tree cursor row.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [listIdx, setListIdx] = useState(0)
+  // Start the tree fully collapsed (once, on first load) so the vault is easy
+  // to navigate; later user expansions persist.
+  const collapsedInit = useRef(false)
+  // Debounce list-cursor previews: arrowing through Notes shouldn't reload +
+  // repaint the doc on every step (that flashes) — only after the cursor settles.
+  const previewTimer = useRef<null | ReturnType<typeof setTimeout>>(null)
 
   const [search, setSearch] = useState<null | {
     loading: boolean
@@ -392,6 +416,22 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   const hasVault = Boolean(data?.exists && data?.vault)
   const currentRel = notes[selected]?.rel_path
 
+  // Collapse every folder on the first load so the vault opens as a tidy list
+  // of top-level directories to drill into, not a fully-expanded dump.
+  useEffect(() => {
+    if (!collapsedInit.current && notes.length) {
+      collapsedInit.current = true
+      setCollapsed(new Set(allFolderPaths(notes)))
+    }
+  }, [notes])
+
+  // Clear any pending preview load when the view unmounts.
+  useEffect(() => () => {
+    if (previewTimer.current) {
+      clearTimeout(previewTimer.current)
+    }
+  }, [])
+
   // The notes pane as a directory tree (folders collapse/expand).
   const noteRows = buildNoteRows(notes, collapsed)
 
@@ -404,13 +444,32 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
     })
 
   // Move the tree cursor (list focus). Folders just highlight; Enter toggles
-  // them, Enter on a note opens it.
+  // them, Enter on a note opens it. Moving onto a note also live-previews it so
+  // the doc viewer AND the Outline pane follow the cursor — but the load is
+  // debounced (only after the cursor settles) so holding ↓ doesn't reload and
+  // repaint the doc on every step, which flashes.
   const listMove = (dir: -1 | 1) => {
     if (!noteRows.length) {
       return
     }
 
-    setListIdx(i => Math.max(0, Math.min(noteRows.length - 1, i + dir)))
+    const next = Math.max(0, Math.min(noteRows.length - 1, listIdx + dir))
+
+    setListIdx(next)
+
+    const row = noteRows[next]
+
+    if (previewTimer.current) {
+      clearTimeout(previewTimer.current)
+      previewTimer.current = null
+    }
+
+    if (row && row.kind !== 'folder') {
+      previewTimer.current = setTimeout(() => {
+        previewTimer.current = null
+        setSelected(row.noteIndex)
+      }, 120)
+    }
   }
 
   const listActivate = () => {
@@ -418,6 +477,12 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
 
     if (!row) {
       return
+    }
+
+    // Cancel a pending debounced preview — Enter is an explicit, immediate open.
+    if (previewTimer.current) {
+      clearTimeout(previewTimer.current)
+      previewTimer.current = null
     }
 
     if (row.kind === 'folder') {
@@ -1761,7 +1826,11 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                   </Box>
                 ) : (
                   <>
-                {docLoading ? (
+                {docLoading && !docBody ? (
+                  // Only show the spinner on a cold load. While previewing
+                  // through the list, keep the current doc on screen until the
+                  // next one arrives so the reader swaps cleanly without a
+                  // "Loading…" blink on every cursor move.
                   <Text color={t.color.muted}>Loading…</Text>
                 ) : docError ? (
                   <Text color={t.color.error} wrap="wrap">
@@ -1805,7 +1874,12 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                         <Text bold={onCursor} color={onCursor ? t.color.primary : t.color.muted}>
                           {onCursor ? '▌ ' : '  '}
                         </Text>
-                        <Box flexGrow={1} flexShrink={1} minWidth={0}>
+                        {/* Definite width + clip: Md wraps paragraphs at the
+                            parent box width (it only honors `cols` for tables),
+                            and the doc ScrollBox doesn't clip horizontally — so
+                            without a hard width the body bled into the Comments
+                            column. */}
+                        <Box flexShrink={0} overflow="hidden" width={Math.max(10, docWidth - 2)}>
                           <Md
                             activeWikiLink={
                               focusedLink >= 0 && docLinks[focusedLink]?.block === i

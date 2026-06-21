@@ -35,6 +35,20 @@ load_forecast_dotenv(
     hermes_home=_hermes_home, project_env=Path(__file__).parent.parent / ".env"
 )
 
+# Anchor the agent's workspace to its home directory. Ensure the docs vault +
+# latex dirs exist (so the scoped vault tools resolve and the agent always has
+# somewhere to write), and default TERMINAL_CWD to the home so the agent's
+# file/terminal tools and relative paths land in ~/.superforecasting-agent/
+# instead of wherever the gateway happened to start — keeping all of its notes,
+# documents, and scratch work aggregated in one place. setdefault honors an
+# explicit override.
+for _workspace_subdir in ("docs/vault", "docs/latex"):
+    try:
+        (_hermes_home / _workspace_subdir).mkdir(parents=True, exist_ok=True)
+    except OSError:
+        logger.debug("could not create workspace dir %s", _workspace_subdir)
+os.environ.setdefault("TERMINAL_CWD", str(_hermes_home))
+
 
 def _tui_env(name: str, default: str = "") -> str:
     """Read a TUI env var, preferring fork-native aliases over legacy names."""
@@ -210,6 +224,8 @@ _LONG_HANDLERS = frozenset(
         "forecast.command",
         "forecast.onboard_commit",
         "forecast.workspace",
+        "markets.model.renarrate",
+        "news.search",
         "session.branch",
         "session.compress",
         "session.resume",
@@ -2038,6 +2054,38 @@ def _reset_session_agent(sid: str, session: dict) -> dict:
     return info
 
 
+def _session_runtime(sid: str) -> dict:
+    """Resolve provider credentials for a session's Market Model build agent so it
+    authenticates EXACTLY like the live session — a fresh config-resolved agent can
+    land on a different/unconfigured provider and get an HTML auth page. Uses the
+    same resolve_runtime_provider path as _make_agent (carries OAuth credential
+    pools, not just API keys), seeded by the session's CURRENT provider/model."""
+    sess = _sessions.get(sid) or {}
+    agent = sess.get("agent")
+    try:
+        from hermes_cli.runtime_provider import resolve_runtime_provider
+
+        if agent is not None:
+            model = getattr(agent, "model", "") or ""
+            requested = getattr(agent, "provider", None)
+        else:
+            model, requested = _resolve_startup_runtime()
+        rt = resolve_runtime_provider(requested=requested, target_model=model or None)
+        return {
+            "model": model, "provider": rt.get("provider"), "base_url": rt.get("base_url"),
+            "api_key": rt.get("api_key"), "api_mode": rt.get("api_mode"),
+            "credential_pool": rt.get("credential_pool"), "command": rt.get("command"), "args": rt.get("args"),
+        }
+    except Exception:
+        if agent is not None:
+            return {
+                "model": getattr(agent, "model", "") or "", "provider": getattr(agent, "provider", None),
+                "base_url": getattr(agent, "base_url", None), "api_key": getattr(agent, "api_key", None),
+                "api_mode": getattr(agent, "api_mode", None),
+            }
+        return {}
+
+
 def _make_agent(sid: str, key: str, session_id: str | None = None):
     from run_agent import AIAgent
     from hermes_cli.runtime_provider import resolve_runtime_provider
@@ -2656,6 +2704,236 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
+@method("news.search")
+def _(rid, params: dict) -> dict:
+    """Semantically rank the caller's RSS articles against a query.
+
+    The TUI sends its loaded articles ({title, summary, source}); we return the
+    ranked indices so the view can reorder its own list. Slow (LLM call) — listed
+    in _LONG_HANDLERS. Falls back to lexical ranking if the model is unavailable.
+    """
+    try:
+        from forecasting.news_search import rank_news_articles
+
+        query = str(params.get("query") or "").strip()
+        raw = params.get("articles")
+        limit = max(1, min(100, int(params.get("limit") or 25)))
+        if not query or not isinstance(raw, list):
+            return _ok(rid, {"results": [], "engine": "none"})
+
+        # Bound + sanitize what we forward to the model.
+        articles = [
+            {
+                "title": str(a.get("title", ""))[:300],
+                "summary": str(a.get("summary", ""))[:600],
+                "source": str(a.get("source", ""))[:80],
+            }
+            for a in raw[:300]
+            if isinstance(a, dict)
+        ]
+        return _ok(rid, rank_news_articles(query, articles, limit=limit))
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+# ── Market Models ─────────────────────────────────────────────────────────────
+# Agentic quant-research builds run in the BACKGROUND (a daemon thread with the
+# request's transport context snapshotted) so the create/chat RPCs return an id
+# immediately and the TUI watches progress events or gets notified on completion.
+
+
+def _spawn_market_job(sid: str, model_id: str, job) -> None:
+    """Run a market-model build/refine on a daemon thread, routing events back."""
+    ctx = contextvars.copy_context()
+
+    def _run():
+        try:
+            job()
+        except Exception as e:  # never lose the model; surface the failure
+            _emit("markets.model.error", sid, {"id": model_id, "message": str(e)})
+
+    threading.Thread(target=lambda: ctx.run(_run), daemon=True).start()
+
+
+@method("markets.model.create")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting import market_model as MM
+        from forecasting.ledger import ForecastLedger
+
+        sid = str(params.get("session_id") or "")
+        question = str(params.get("question") or "").strip()
+        if not question:
+            return _err(rid, 5008, "question is required")
+        mparams = params.get("params") if isinstance(params.get("params"), dict) else {}
+        depth = mparams.get("depth") if mparams.get("depth") in MM.DEPTH_PRESETS else MM.DEFAULT_DEPTH
+        ledger = ForecastLedger()
+        model = ledger.create_market_model(
+            title=(mparams.get("title") or question)[:120], question=question, depth=depth,
+            spec={}, tags=mparams.get("tags") or [],
+        )
+        mid = model["id"]
+        runtime = _session_runtime(sid)
+
+        def _job():
+            _emit("markets.model.progress", sid, {"id": mid, "phase": "starting", "message": "starting"})
+            out = MM.build_market_model(
+                question, mparams, ledger=ForecastLedger(), model_id=mid, runtime=runtime,
+                progress=lambda m: _emit("markets.model.progress", sid, {"id": mid, "message": m}),
+            )
+            _emit("markets.model.complete", sid, {"id": mid, "version": out.get("version"), "status": out.get("status")})
+
+        _spawn_market_job(sid, mid, _job)
+        return _ok(rid, {"model_id": mid, "version": 0, "status": "building"})
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("markets.model.chat")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting import market_model as MM
+        from forecasting.ledger import ForecastLedger
+
+        sid = str(params.get("session_id") or "")
+        mid = str(params.get("id") or "").strip()
+        message = str(params.get("message") or "").strip()
+        if not mid or not message:
+            return _err(rid, 5008, "id and message are required")
+        mparams = params.get("params") if isinstance(params.get("params"), dict) else {}
+        runtime = _session_runtime(sid)
+
+        def _job():
+            _emit("markets.model.progress", sid, {"id": mid, "phase": "refining", "message": "refining"})
+            out = MM.chat_market_model(
+                mid, message, ledger=ForecastLedger(), params=mparams, runtime=runtime,
+                progress=lambda m: _emit("markets.model.progress", sid, {"id": mid, "message": m}),
+            )
+            _emit("markets.model.complete", sid, {"id": mid, "version": out.get("version"), "status": out.get("status")})
+
+        _spawn_market_job(sid, mid, _job)
+        return _ok(rid, {"model_id": mid, "status": "building"})
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("markets.model.list")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.ledger import ForecastLedger
+
+        ledger = ForecastLedger()
+        status = params.get("status", "active")
+        limit = int(params.get("limit") or 200)
+        models = ledger.list_market_models(status=status if status else None, limit=limit)
+        rows = [
+            {
+                "id": m["id"], "title": m["title"], "question": m["question"], "depth": m.get("depth"),
+                "status": m.get("status"), "last_status": m.get("last_status"),
+                "current_version": m.get("current_version"),
+                "updated_at": m.get("updated_at"), "tags": m.get("tags") or [],
+            }
+            for m in models
+        ]
+        return _ok(rid, {"models": rows})
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("markets.model.get")
+def _(rid, params: dict) -> dict:
+    """Return the stored presentation immediately, then re-pull+recompute in the
+    background and emit ``markets.model.refreshed`` with the fresh version."""
+    try:
+        from forecasting import market_model as MM
+        from forecasting.ledger import ForecastLedger
+
+        sid = str(params.get("session_id") or "")
+        mid = str(params.get("id") or "").strip()
+        version = params.get("version")
+        ledger = ForecastLedger()
+        packet = ledger.export_market_model(mid)
+        if version is not None:
+            try:
+                packet["presentation"] = ledger.get_market_presentation(mid, version=int(version))
+            except Exception:
+                pass
+
+        # Background refresh (re-pull live data + recompute) for the current version only.
+        if version is None:
+            def _job():
+                opened = MM.open_market_model(mid, ledger=ForecastLedger())
+                if opened.get("refreshed"):
+                    _emit("markets.model.refreshed", sid, {"id": mid, "presentation": opened.get("presentation")})
+
+            _spawn_market_job(sid, mid, _job)
+        return _ok(rid, {"packet": packet})
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("markets.model.renarrate")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting import market_model as MM
+        from forecasting.ledger import ForecastLedger
+
+        mid = str(params.get("id") or "").strip()
+        out = MM.renarrate_market_model(mid, ledger=ForecastLedger())
+        return _ok(rid, out)
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("markets.model.export")
+def _(rid, params: dict) -> dict:
+    """Write a full JSON data packet to the workspace exports dir; return the path."""
+    try:
+        import json as _json
+        import re as _re
+        from pathlib import Path
+
+        from forecasting.ledger import ForecastLedger
+        from hermes_cli.config import get_hermes_home
+
+        mid = str(params.get("id") or "").strip()
+        ledger = ForecastLedger()
+        packet = ledger.export_market_model(mid)
+        title = (packet.get("model") or {}).get("title") or mid
+        slug = _re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:48] or mid
+        exports = Path(get_hermes_home()) / "exports"
+        exports.mkdir(parents=True, exist_ok=True)
+        path = exports / f"market-model-{slug}-{mid}.json"
+        path.write_text(_json.dumps(packet, indent=2, default=str), encoding="utf-8")
+        return _ok(rid, {"path": str(path), "bytes": path.stat().st_size})
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("markets.model.to_forecast")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting import market_model as MM
+        from forecasting.ledger import ForecastLedger
+
+        mid = str(params.get("id") or "").strip()
+        return _ok(rid, MM.model_to_forecast(mid, ledger=ForecastLedger()))
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("markets.model.delete")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.ledger import ForecastLedger
+
+        mid = str(params.get("id") or "").strip()
+        deleted = ForecastLedger().delete_market_model(mid)
+        return _ok(rid, {"deleted": bool(deleted)})
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
 @method("forecast.workspace")
 def _(rid, params: dict) -> dict:
     try:
@@ -2815,15 +3093,16 @@ def _(rid, params: dict) -> dict:
 def _(rid, params: dict) -> dict:
     """Create the vault (if needed) and seed the starter forecasting wiki.
 
-    Targets OBSIDIAN_VAULT_PATH when set, else ~/Documents/Obsidian Vault.
-    Seeding never overwrites existing notes, so this is safe to run repeatedly.
+    Targets OBSIDIAN_VAULT_PATH when set, else the managed workspace vault
+    (~/.superforecasting-agent/docs/vault). Seeding never overwrites existing
+    notes, so this is safe to run repeatedly.
     """
     try:
         from plugins.obsidian.starter import seed_starter_vault
-        from plugins.obsidian.vault import DEFAULT_VAULT
+        from plugins.obsidian.vault import managed_vault_path
 
         configured = os.getenv("OBSIDIAN_VAULT_PATH", "").strip()
-        target = Path(configured).expanduser() if configured else DEFAULT_VAULT
+        target = Path(configured).expanduser() if configured else managed_vault_path()
         target.mkdir(parents=True, exist_ok=True)
         result = seed_starter_vault(target)
         return _ok(

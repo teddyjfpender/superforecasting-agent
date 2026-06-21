@@ -88,6 +88,9 @@ export interface OverlayState {
   messaging: boolean
   modelPicker: boolean
   news: boolean
+  // A `/news <query>` argument: opens the news view with this semantic search
+  // pre-run. null when opened plain.
+  newsInitialQuery: null | string
   obsidian: boolean
   onboard: boolean
   pager: null | PagerState

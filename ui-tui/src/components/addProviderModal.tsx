@@ -150,16 +150,31 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
       return setFocus(f => (f === 'providers' ? 'categories' : 'providers'))
     }
 
-    if (key.upArrow || ch === 'k') {
+    if (key.upArrow) {
       return focus === 'providers'
         ? setProvIdx(i => Math.max(0, i - 1))
         : setCatIdx(i => Math.max(0, i - 1))
     }
 
-    if (key.downArrow || ch === 'j') {
+    if (key.downArrow) {
       return focus === 'providers'
         ? setProvIdx(i => Math.min(MARKET_PROVIDERS.length - 1, i + 1))
         : setCatIdx(i => Math.min(MARKET_CATEGORIES.length - 1, i + 1))
+    }
+
+    // `k` adds or replaces the highlighted provider's API key — for ANY provider
+    // that supports one (FRED/BLS/BEA), whether or not a key already exists.
+    if (ch === 'k' && focus === 'providers') {
+      const provider = MARKET_PROVIDERS[provIdx]
+
+      if (!provider?.keyEnv) {
+        return setFlash(`${provider?.name ?? 'this provider'} needs no API key`)
+      }
+
+      setKeyProvider(provider.key)
+      setKeyInput('')
+
+      return setFocus('key')
     }
 
     // Enter toggles the highlighted item in the focused pane.
@@ -189,6 +204,7 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
 
   const selectedProvider = MARKET_PROVIDERS[provIdx]
   const keyHintProvider = providerByKey(keyProvider)
+  const keyHintExists = keyHintProvider?.keyEnv ? Boolean(getProviderKey(keyHintProvider.keyEnv)) : false
 
   let bodyBottom: React.ReactNode
 
@@ -196,7 +212,7 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
     bodyBottom = (
       <Box flexDirection="column">
         <Text color={t.color.label} wrap="wrap">
-          {keyHintProvider.name} needs a free API key.
+          {keyHintExists ? `Replace the ${keyHintProvider.name} API key (one is already saved).` : `Add a free ${keyHintProvider.name} API key.`}
         </Text>
         {keyHintProvider.keyUrl ? (
           <Text color={t.color.accent} wrap="truncate-end">
@@ -209,7 +225,7 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
           <Text color={t.color.text} inverse>
             {' '}
           </Text>
-          {!keyInput ? <Text color={t.color.muted}> paste your key</Text> : null}
+          {!keyInput ? <Text color={t.color.muted}> {keyHintExists ? 'paste a new key to replace it' : 'paste your key'}</Text> : null}
         </Box>
       </Box>
     )
@@ -221,10 +237,12 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
     )
   }
 
+  const keyAction = focus === 'providers' && selectedProvider?.keyEnv ? ` · k ${hasKey(selectedProvider.key) ? 'change' : 'add'} key` : ''
+
   const footer =
     focus === 'key'
       ? '⏎ save key · Esc back'
-      : 'Tab/←→ switch · ↑↓ move · ⏎ toggle · Esc save & close'
+      : `Tab/←→ switch · ↑↓ move · ⏎ toggle${keyAction} · Esc save & close`
 
   return (
     <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
@@ -256,7 +274,10 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
             {MARKET_PROVIDERS.map((p, i) => {
               const on = focus === 'providers' && i === provIdx
               const enabled = providers.has(p.key)
-              const needsKey = p.needsKey && !hasKey(p.key)
+              // Key status for providers that support one: ✓ set, ! missing-and-
+              // wanted (required or recommended), · supported-but-optional.
+              const keySet = p.keyEnv ? hasKey(p.key) : false
+              const keyWanted = p.needsKey || p.keyRecommended
 
               return (
                 <Box key={p.key} onClick={() => { setFocus('providers'); setProvIdx(i) }} width="100%">
@@ -265,8 +286,10 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
                     <Text bold color={enabled ? sem.up : sem.subtle}>
                       {enabled ? '[✓]' : '[ ]'}
                     </Text>
-                    <Text color={on ? sem.selectionFg : t.color.label}> {truncate(p.name, railWidth - 10)}</Text>
-                    {needsKey ? <Text color={sem.star}> key</Text> : null}
+                    <Text color={on ? sem.selectionFg : t.color.label}> {truncate(p.name, railWidth - 11)}</Text>
+                    {p.keyEnv ? (
+                      <Text color={keySet ? sem.up : keyWanted ? sem.star : sem.faint}>{keySet ? ' key✓' : keyWanted ? ' key!' : ' key'}</Text>
+                    ) : null}
                   </Text>
                 </Box>
               )

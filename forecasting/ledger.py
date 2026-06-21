@@ -1179,6 +1179,75 @@ class ForecastLedger:
                     recommended_adjustments TEXT NOT NULL DEFAULT '[]',
                     updated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS market_models (
+                    id TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    question TEXT NOT NULL,
+                    depth TEXT NOT NULL DEFAULT 'standard',
+                    spec TEXT NOT NULL DEFAULT '{}',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    current_version INTEGER NOT NULL DEFAULT 0,
+                    tags TEXT NOT NULL DEFAULT '[]',
+                    agent_model TEXT,
+                    prompt_version TEXT,
+                    metadata TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_market_models_updated
+                    ON market_models(updated_at DESC);
+
+                CREATE TABLE IF NOT EXISTS market_model_presentations (
+                    id TEXT PRIMARY KEY,
+                    model_id TEXT NOT NULL REFERENCES market_models(id) ON DELETE CASCADE,
+                    version INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    as_of_analysis TEXT,
+                    as_of_data TEXT,
+                    schema_version TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'complete',
+                    summary TEXT NOT NULL DEFAULT '',
+                    presentation TEXT NOT NULL DEFAULT '{}',
+                    refine_instruction TEXT,
+                    diagnostics TEXT NOT NULL DEFAULT '{}',
+                    agent_model TEXT,
+                    prompt_version TEXT
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_mmp_version
+                    ON market_model_presentations(model_id, version);
+
+                CREATE TABLE IF NOT EXISTS market_model_messages (
+                    id TEXT PRIMARY KEY,
+                    model_id TEXT NOT NULL REFERENCES market_models(id) ON DELETE CASCADE,
+                    role TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    content TEXT NOT NULL DEFAULT '',
+                    version_ref INTEGER,
+                    metadata TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_mmm_model
+                    ON market_model_messages(model_id, created_at ASC);
+
+                CREATE TABLE IF NOT EXISTS market_data_series (
+                    id TEXT PRIMARY KEY,
+                    model_id TEXT NOT NULL REFERENCES market_models(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    source_type TEXT,
+                    source TEXT,
+                    unit TEXT,
+                    points TEXT NOT NULL DEFAULT '[]',
+                    as_of TEXT,
+                    evidence_refs TEXT NOT NULL DEFAULT '[]',
+                    metadata TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_mds_model
+                    ON market_data_series(model_id);
                 """
             )
             self._ensure_column(conn, "model_runs", "status", "TEXT NOT NULL DEFAULT 'success'")
@@ -1205,6 +1274,7 @@ class ForecastLedger:
             self._ensure_column(conn, "forecast_snapshots", "reasons_down", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column(conn, "forecast_snapshots", "change_my_mind", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column(conn, "postmortems", "failure_class", "TEXT")
+            self._ensure_column(conn, "model_runs", "market_model_id", "TEXT")
 
     def _ensure_column(
         self,
@@ -3392,6 +3462,282 @@ class ForecastLedger:
         data = dict(row)
         data["metadata"] = json_loads(data.get("metadata"), {})
         return data
+
+    # ── Market Models ────────────────────────────────────────────────────────
+    # A Market Model is an agentic quant-research artifact: a re-runnable spec
+    # (which series + which computation), an append-only series of versioned
+    # presentations, a chat thread, and the data series it imported. CRUD mirrors
+    # the analyst-note pattern (append-only, JSON columns, row→dict helpers).
+
+    def create_market_model(
+        self,
+        *,
+        title: str,
+        question: str,
+        depth: str = "standard",
+        spec: dict[str, Any] | None = None,
+        tags: list[str] | None = None,
+        agent_model: str | None = None,
+        prompt_version: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if not (title or "").strip():
+            raise ValidationError("market model title is required")
+        if not (question or "").strip():
+            raise ValidationError("market model question is required")
+        now = utc_now_iso()
+        model_id = f"mm_{uuid.uuid4().hex[:12]}"
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO market_models (
+                    id, created_at, updated_at, title, question, depth, spec,
+                    status, current_version, tags, agent_model, prompt_version, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, ?, ?, ?)
+                """,
+                (
+                    model_id, now, now, title.strip(), question.strip(), depth,
+                    json_dumps(dict(spec or {})), json_dumps(list(tags or [])),
+                    agent_model, prompt_version, json_dumps(dict(metadata or {})),
+                ),
+            )
+        return self.get_market_model(model_id)
+
+    def update_market_model_spec(self, model_id: str, spec: dict[str, Any]) -> dict[str, Any]:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE market_models SET spec = ?, updated_at = ? WHERE id = ?",
+                (json_dumps(dict(spec or {})), utc_now_iso(), model_id),
+            )
+            if cur.rowcount == 0:
+                raise LedgerNotFoundError(f"market model not found: {model_id}")
+        return self.get_market_model(model_id)
+
+    def get_market_model(self, model_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM market_models WHERE id = ?", (model_id,)).fetchone()
+        if row is None:
+            raise LedgerNotFoundError(f"market model not found: {model_id}")
+        return self._market_model_to_dict(row)
+
+    def list_market_models(self, *, status: str | None = "active", limit: int | None = None) -> list[dict[str, Any]]:
+        # Join the latest presentation's build status (complete/partial/failed) so
+        # the list can show a failure/ready icon without an N+1 per-row fetch.
+        sql = (
+            "SELECT mm.*, ("
+            " SELECT p.status FROM market_model_presentations p"
+            " WHERE p.model_id = mm.id ORDER BY p.version DESC LIMIT 1"
+            ") AS last_status FROM market_models mm"
+        )
+        params: list[Any] = []
+        if status is not None:
+            sql += " WHERE mm.status = ?"
+            params.append(status)
+        sql += " ORDER BY updated_at DESC, rowid DESC"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(int(limit))
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._market_model_to_dict(r) for r in rows]
+
+    def delete_market_model(self, model_id: str) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute("DELETE FROM market_models WHERE id = ?", (model_id,))
+        return cur.rowcount > 0
+
+    def add_market_presentation(
+        self,
+        *,
+        model_id: str,
+        presentation: dict[str, Any],
+        status: str = "complete",
+        summary: str = "",
+        as_of_analysis: str | None = None,
+        as_of_data: str | None = None,
+        refine_instruction: str | None = None,
+        diagnostics: dict[str, Any] | None = None,
+        agent_model: str | None = None,
+        prompt_version: str | None = None,
+    ) -> dict[str, Any]:
+        """Append a new presentation version and advance the model's current_version."""
+        self.get_market_model(model_id)
+        now = utc_now_iso()
+        pres_id = f"mmp_{uuid.uuid4().hex[:12]}"
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(version), 0) AS v FROM market_model_presentations WHERE model_id = ?",
+                (model_id,),
+            ).fetchone()
+            version = int(row["v"]) + 1
+            pres = dict(presentation or {})
+            pres["version"] = version
+            pres["model_id"] = model_id
+            conn.execute(
+                """
+                INSERT INTO market_model_presentations (
+                    id, model_id, version, created_at, as_of_analysis, as_of_data,
+                    schema_version, status, summary, presentation, refine_instruction,
+                    diagnostics, agent_model, prompt_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    pres_id, model_id, version, now, as_of_analysis or now, as_of_data or now,
+                    str(pres.get("schema_version") or ""), status, summary,
+                    json_dumps(pres), refine_instruction, json_dumps(dict(diagnostics or {})),
+                    agent_model, prompt_version,
+                ),
+            )
+            conn.execute(
+                "UPDATE market_models SET current_version = ?, updated_at = ? WHERE id = ?",
+                (version, now, model_id),
+            )
+        return self.get_market_presentation(model_id, version=version)
+
+    def get_market_presentation(self, model_id: str, *, version: int | None = None) -> dict[str, Any]:
+        with self._connect() as conn:
+            if version is None:
+                row = conn.execute(
+                    "SELECT * FROM market_model_presentations WHERE model_id = ? ORDER BY version DESC LIMIT 1",
+                    (model_id,),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM market_model_presentations WHERE model_id = ? AND version = ?",
+                    (model_id, int(version)),
+                ).fetchone()
+        if row is None:
+            raise LedgerNotFoundError(f"no presentation for market model {model_id} (version={version})")
+        return self._market_presentation_to_dict(row)
+
+    def list_market_presentations(self, model_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM market_model_presentations WHERE model_id = ? ORDER BY version ASC",
+                (model_id,),
+            ).fetchall()
+        return [self._market_presentation_to_dict(r) for r in rows]
+
+    def add_market_message(
+        self, *, model_id: str, role: str, content: str, version_ref: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self.get_market_model(model_id)
+        now = utc_now_iso()
+        msg_id = f"mmsg_{uuid.uuid4().hex[:12]}"
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO market_model_messages (id, model_id, role, created_at, content, version_ref, metadata)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (msg_id, model_id, role, now, content, version_ref, json_dumps(dict(metadata or {}))),
+            )
+        with self._connect() as conn:
+            r = conn.execute("SELECT * FROM market_model_messages WHERE id = ?", (msg_id,)).fetchone()
+        return self._market_message_to_dict(r)
+
+    def list_market_messages(self, model_id: str, *, limit: int | None = None) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM market_model_messages WHERE model_id = ? ORDER BY created_at ASC, rowid ASC"
+        params: list[Any] = [model_id]
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(int(limit))
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._market_message_to_dict(r) for r in rows]
+
+    def add_market_data_series(
+        self, *, model_id: str, name: str, points: list[Any], source_type: str | None = None,
+        source: str | None = None, unit: str | None = None, as_of: str | None = None,
+        evidence_refs: list[str] | None = None, metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self.get_market_model(model_id)
+        now = utc_now_iso()
+        series_id = f"mds_{uuid.uuid4().hex[:12]}"
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO market_data_series (
+                    id, model_id, created_at, name, source_type, source, unit, points,
+                    as_of, evidence_refs, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    series_id, model_id, now, name, source_type, source, unit,
+                    json_dumps(list(points or [])), as_of or now,
+                    json_dumps(list(evidence_refs or [])), json_dumps(dict(metadata or {})),
+                ),
+            )
+        with self._connect() as conn:
+            r = conn.execute("SELECT * FROM market_data_series WHERE id = ?", (series_id,)).fetchone()
+        return self._market_series_to_dict(r)
+
+    def list_market_data_series(self, model_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM market_data_series WHERE model_id = ? ORDER BY created_at ASC, rowid ASC",
+                (model_id,),
+            ).fetchall()
+        return [self._market_series_to_dict(r) for r in rows]
+
+    def replace_market_data_series(self, model_id: str, series: list[dict[str, Any]]) -> None:
+        """Replace all stored series for a model (used by re-pull on open)."""
+        self.get_market_model(model_id)
+        now = utc_now_iso()
+        with self._connect() as conn:
+            conn.execute("DELETE FROM market_data_series WHERE model_id = ?", (model_id,))
+            for s in series or []:
+                conn.execute(
+                    """INSERT INTO market_data_series (
+                        id, model_id, created_at, name, source_type, source, unit, points,
+                        as_of, evidence_refs, metadata
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        f"mds_{uuid.uuid4().hex[:12]}", model_id, now, str(s.get("name") or ""),
+                        s.get("source_type"), s.get("source"), s.get("unit"),
+                        json_dumps(list(s.get("points") or [])), s.get("as_of") or now,
+                        json_dumps(list(s.get("evidence_refs") or [])), json_dumps(dict(s.get("metadata") or {})),
+                    ),
+                )
+
+    def export_market_model(self, model_id: str, *, fmt: str = "json") -> dict[str, Any]:
+        """Full packet: model + current presentation + all versions + series + thread."""
+        model = self.get_market_model(model_id)
+        try:
+            current = self.get_market_presentation(model_id)
+        except LedgerNotFoundError:
+            current = None
+        return {
+            "product": "market-models",
+            "generated_at": utc_now_iso(),
+            "model": model,
+            "presentation": current,
+            "versions": self.list_market_presentations(model_id),
+            "series": self.list_market_data_series(model_id),
+            "messages": self.list_market_messages(model_id),
+        }
+
+    def _market_model_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        d["spec"] = json_loads(d.get("spec"), {})
+        d["tags"] = json_loads(d.get("tags"), [])
+        d["metadata"] = json_loads(d.get("metadata"), {})
+        return d
+
+    def _market_presentation_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        d["presentation"] = json_loads(d.get("presentation"), {})
+        d["diagnostics"] = json_loads(d.get("diagnostics"), {})
+        return d
+
+    def _market_message_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        d["metadata"] = json_loads(d.get("metadata"), {})
+        return d
+
+    def _market_series_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        d["points"] = json_loads(d.get("points"), [])
+        d["evidence_refs"] = json_loads(d.get("evidence_refs"), [])
+        d["metadata"] = json_loads(d.get("metadata"), {})
+        return d
 
     def create_calibration_lesson(
         self,
