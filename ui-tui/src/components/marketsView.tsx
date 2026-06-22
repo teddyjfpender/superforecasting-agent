@@ -1,6 +1,8 @@
 import { Box, NoSelect, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { $marketJobs, pruneStaleMarketJobs, setMarketJob, STALE_MARKET_JOB_MS } from '../app/marketJobsStore.js'
 import { patchOverlayState } from '../app/overlayStore.js'
 import { DEFAULT_SERIES, MARKET_CATEGORIES, type MarketSeries, providerByKey } from '../content/marketProviders.js'
 import type { GatewayClient } from '../gatewayClient.js'
@@ -176,6 +178,34 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const [chatBusy, setChatBusy] = useState(false)
   const presScrollRef = useRef<null | ScrollBoxHandle>(null)
 
+  // App-level job tracking (survives leaving/returning the view). Merge its live
+  // status into the local progress map so a refine you walked away from still
+  // shows as "refining" on return, and the list/chat indicators stay correct.
+  const marketJobs = useStore($marketJobs)
+
+  // A job with no progress update for longer than the stale window is presumed
+  // dead (missed terminal event — e.g. a gateway restart killed the daemon
+  // thread), so it reads as inactive and a model never sticks on "refining…".
+  // The periodic sweep below removes the dead entry from the store.
+  const liveJob = (job: { at: number; status: string } | undefined, now: number): boolean =>
+    Boolean(job && (job.status === 'building' || job.status === 'refining') && now - job.at < STALE_MARKET_JOB_MS)
+
+  const progress = useMemo(() => {
+    const now = Date.now()
+    const merged: Record<string, string> = { ...progressById }
+
+    for (const [id, job] of Object.entries(marketJobs)) {
+      if (liveJob(job, now)) {
+        merged[id] = job.message || job.status
+      }
+    }
+
+    return merged
+     
+  }, [progressById, marketJobs])
+
+  const jobActive = (id: null | string): boolean => liveJob(id ? marketJobs[id] : undefined, Date.now())
+
   const cacheRef = useRef<QuoteCache>(loadQuoteCache())
   const [cacheVersion, setCacheVersion] = useState(0)
   const inflightRef = useRef(false)
@@ -184,10 +214,15 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   useEffect(() => {
     aliveRef.current = true
     const id = setInterval(() => setTick(v => v + 1), 600)
+    // Sweep dead jobs (missed terminal events) every ~30s so the store + header
+    // count reconcile with reality and rows can't stick on "refining…".
+    const sweep = setInterval(() => pruneStaleMarketJobs(), 30_000)
+    pruneStaleMarketJobs()
 
     return () => {
       aliveRef.current = false
       clearInterval(id)
+      clearInterval(sweep)
     }
   }, [])
 
@@ -243,8 +278,42 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         const list = normalizeModelList(asRpcResult<{ models: unknown[] }>(raw) ?? raw)
         setModels(list)
         saveModelCatalog({ models: list })
+        // Reconcile the optimistic job store against server truth: if the model
+        // was updated AFTER its tracked job last reported progress, the job has
+        // settled (a new version landed) even if we missed its complete event —
+        // clear it so the row reflects the real, finished state.
+        const jobs = $marketJobs.get()
+
+        for (const m of list) {
+          const job = jobs[m.id]
+
+          if (job && (job.status === 'building' || job.status === 'refining')) {
+            const updated = Date.parse(m.updated_at ?? '')
+
+            if (Number.isFinite(updated) && updated > job.at) {
+              setMarketJob(m.id, { status: 'done', version: m.current_version })
+            }
+          }
+        }
       })
       .catch(() => undefined)
+  }
+
+  // Re-run a model's build (reusing its stored question + depth) — for a failed
+  // or partial model, so the user never has to re-prompt. Progress flows through
+  // the existing event subscription + the app-level job store.
+  const retryModel = (id: null | string) => {
+    if (!gw || !id) {
+      return
+    }
+
+    setFlash('retrying…')
+    // Seed the app-level store immediately so the job is tracked even if you Esc
+    // away before the first progress event lands (it keeps running regardless).
+    setMarketJob(id, { message: 'retrying…', status: 'building' })
+    gw.request('markets.model.retry', { id, session_id: sessionId })
+      .then(() => refreshModels())
+      .catch(() => setFlash('retry failed'))
   }
 
   const loadModel = (id: string, version?: number) => {
@@ -362,9 +431,24 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gw, openModelId])
 
-  // Poll the catalog while any model is still building, so a missed completion
-  // event can never leave a row stuck on "building" (server-truth reconcile).
-  const buildingCount = models.filter(m => (m.current_version ?? 0) < 1 && m.status !== 'error').length
+  // Reopen the active model when ITS background job finishes — covers returning
+  // to a refine you walked away from (the completion event fired while unmounted).
+  useEffect(() => {
+    const j = openModelId ? marketJobs[openModelId] : undefined
+
+    if (j?.status === 'done' && (j.version ?? 0) !== (openVersion ?? -1)) {
+      loadModel(openModelId!, j.version)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marketJobs, openModelId])
+
+  // Poll the catalog while any model is still building OR has an in-flight job
+  // (incl. refines of already-built models), so a missed completion event can
+  // never leave a row stuck (server-truth reconcile).
+  const buildingCount = models.filter(
+    m => ((m.current_version ?? 0) < 1 && m.status !== 'error') || jobActive(m.id)
+  ).length
+
   useEffect(() => {
     if (mode !== 'models' || buildingCount === 0) {
       return
@@ -388,9 +472,13 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       .then(raw => {
         const res = asRpcResult<{ model_id?: string }>(raw)
 
-        if (res?.model_id && aliveRef.current) {
-          setProgressById(prev => ({ ...prev, [res.model_id!]: 'starting' }))
-          refreshModels()
+        if (res?.model_id) {
+          setMarketJob(res.model_id, { message: 'starting', status: 'building' })
+
+          if (aliveRef.current) {
+            setProgressById(prev => ({ ...prev, [res.model_id!]: 'starting' }))
+            refreshModels()
+          }
         }
       })
       .catch(() => setFlash('create failed'))
@@ -407,6 +495,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     setChatInput('')
     setChatBusy(true)
     setProgressById(prev => ({ ...prev, [openModelId]: 'refining' }))
+    setMarketJob(openModelId, { message: 'refining…', status: 'refining' })
     gw.request('markets.model.chat', { id: openModelId, message: msg, session_id: sessionId }).catch(() => {
       setChatBusy(false)
       setFlash('refine failed')
@@ -719,6 +808,10 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
           return
         }
 
+        if (ch === 'R') {
+          return retryModel(openModelId)
+        }
+
         if (key.leftArrow) {
           return navVersion(-1)
         }
@@ -751,6 +844,16 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         setFlash('refreshing…')
 
         return refreshModels()
+      }
+
+      if (ch === 'R') {
+        const m = models[modelSel]
+
+        if (m) {
+          return retryModel(m.id)
+        }
+
+        return
       }
 
       if (key.return) {
@@ -1253,6 +1356,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     { k: '↑↓', label: 'Select' },
     { k: '⏎', label: 'Open' },
     { k: 'n', label: 'New model', run: () => setModal('newModel') },
+    { k: 'R', label: 'Retry', run: () => retryModel(models[modelSel]?.id ?? null) },
     { k: 'x', label: 'Delete' },
     { k: 'm', label: 'Data', run: () => setMode('data') },
     { k: 'h', label: 'Help', run: () => setModal('help') },
@@ -1262,6 +1366,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const modelOpenChips: FooterChip[] = [
     { k: 'c', label: 'Chat' },
     { k: 'w', label: 'Rewrite' },
+    { k: 'R', label: 'Retry', run: () => retryModel(openModelId) },
     { k: 'e', label: 'Export' },
     { k: 'F', label: 'Forecast' },
     { k: '←→', label: 'Version' },
@@ -1278,8 +1383,8 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
           ? chatFocus === 'input'
             ? '⏎ send · Tab focus reader · wheel scrolls · Esc close chat'
             : '↑↓/jk/PgUp/PgDn/g/G scroll · Tab focus chat · Esc close chat'
-          : 'c chat · w rewrite writeup · e export json · F → forecast · ←→ version · ↑↓ scroll · Esc back'
-        : 'n new model · ⏎ open · x delete · ↑↓ select · m data · h help · q close'
+          : 'c chat · w rewrite · R retry · e export json · F → forecast · ←→ version · ↑↓ scroll · Esc back'
+        : 'n new model · ⏎ open · R retry · x delete · ↑↓ select · m data · h help · q close'
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
@@ -1308,11 +1413,11 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         {chatOpen ? (
           <Box flexShrink={0} height={contentHeight} marginLeft={2} width={Math.floor(width * 0.38)}>
             <ModelChat
-              busy={chatBusy}
+              busy={chatBusy || jobActive(openModelId)}
               focused={chatFocus === 'input'}
               input={chatInput}
               messages={chatMessages}
-              status={openModelId ? progressById[openModelId] : ''}
+              status={openModelId ? progress[openModelId] : ''}
               t={t}
               tick={tick}
               width={Math.floor(width * 0.38)}
@@ -1323,11 +1428,11 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     ) : openModelId ? (
       <Box alignItems="center" height={contentHeight} justifyContent="center">
         <Text color={t.color.muted}>
-          {statusGlyph('busy', tick)} {progressById[openModelId] || 'building the analysis…'}
+          {statusGlyph('busy', tick)} {progress[openModelId] || 'building the analysis…'}
         </Text>
       </Box>
     ) : (
-      <ModelsList height={contentHeight} models={models} progressById={progressById} sel={modelSel} t={t} tick={tick} width={width} />
+      <ModelsList height={contentHeight} models={models} progressById={progress} sel={modelSel} t={t} tick={tick} width={width} />
     )
 
   return (

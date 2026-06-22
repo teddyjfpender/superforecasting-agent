@@ -32,6 +32,14 @@ BLOCK_TYPES: frozenset[str] = frozenset(
         "scenario",
         "assumptions",
         "sources",
+        # High-fidelity charts rendered by the @hermes/viz engine (cell-glyph
+        # backends). heatmap + fan(+paths) render in v1; the rest tolerant-default
+        # until their Phase-2 renderers land.
+        "heatmap",
+        "distribution",
+        "candles",
+        "depth",
+        "sparkgrid",
     }
 )
 
@@ -52,6 +60,13 @@ _REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "scenario": ("scenarios",),
     "assumptions": ("items",),
     "sources": ("items",),
+    # Each requires only the single irreducible field the renderer cannot invent;
+    # `fan` is unchanged (x+median already required, optional `paths` upgrades it).
+    "heatmap": ("matrix",),
+    "distribution": ("support", "pdf"),
+    "candles": ("candles",),
+    "depth": ("bids", "asks"),
+    "sparkgrid": ("cells",),
 }
 
 

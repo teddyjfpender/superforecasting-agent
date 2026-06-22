@@ -379,6 +379,25 @@ TOOLSETS = {
         ],
     },
 
+    "market-models-interactive": {
+        "description": "Market Models with the sandboxed code_execution + browser tools added, for richer custom quant pipelines and multi-step web research",
+        # Opt-in (HERMES_MARKET_INTERACTIVE=1) variant. Adds code_execution (a
+        # custom-Python sandbox beyond the fixed market_compute menu) + browser
+        # (multi-step research). It runs with a thread-local auto-approve for the
+        # SANDBOXED tools only (no host terminal / file-write here), so it does not
+        # stall headless. Default builds use the plain "market-models" preset.
+        "tools": ["market_compute", "emit_market_presentation", "read_desk_forecast"],
+        "includes": [
+            "forecasting",
+            "web",
+            "browser",
+            "code_execution",
+            "todo",
+            "delegation",
+            "clarify",
+        ],
+    },
+
     "forecast-messaging": {
         "description": "Forecast-scoped messaging runtime tools for platform conversations and review alerts",
         "tools": [],

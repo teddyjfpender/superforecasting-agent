@@ -416,7 +416,11 @@ def test_panel_recommended_note_on_first_low_impact_forecast(tmp_path):
     assert snap.metadata.get("panel_recommended") is True
 
 
-def test_panel_not_indicated_on_routine_follow_up_update(tmp_path):
+def test_routine_follow_up_must_record_panel_skip(tmp_path):
+    # A re-commitment of an existing live forecast now binds the decomposition
+    # panel (the highest-risk path for inheriting the prior's biases), so a
+    # routine follow-up either runs a panel or records an explicit skip reason —
+    # it can no longer silently re-commit with neither.
     ledger = _ledger(tmp_path)
     q = _question(ledger)  # non-high impact
     ledger.create_snapshot(
@@ -425,13 +429,22 @@ def test_panel_not_indicated_on_routine_follow_up_update(tmp_path):
         rationale="first forecast",
         require_panel=True,
     )
+    with pytest.raises(ValidationError, match="re-committed"):
+        ledger.create_snapshot(
+            question_id=q.id,
+            probability_or_distribution=0.62,
+            rationale="routine revision, no panel",
+            require_panel=True,
+        )
     follow_up = ledger.create_snapshot(
         question_id=q.id,
         probability_or_distribution=0.62,
-        rationale="routine revision; no panel indicated",
+        rationale="routine revision; evidence unchanged",
         require_panel=True,
+        panel_skipped_reason="routine revision, evidence unchanged since prior",
     )
     assert "panel_recommended" not in follow_up.metadata
+    assert follow_up.metadata.get("panel_skipped_reason")
 
 
 def test_panel_run_ref_must_match_question(tmp_path):

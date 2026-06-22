@@ -27,40 +27,70 @@ from forecasting.models import utc_now_iso
 # Depth presets: escalating research effort + presentation structure, each with
 # a hard iteration cap. Hints are injected into the prompt; max_iterations bounds
 # the agent loop.
+# Each preset also sizes the agent's runtime: max_tokens (so big multi-block
+# presentations don't truncate), reasoning effort (quality vs latency/cost),
+# `required` block types the build must include (enforced via the user prompt's
+# self-check), and whether to persist a trajectory + checkpoints for resumability.
 DEPTH_PRESETS: dict[str, dict[str, Any]] = {
     "quick": {
         "max_iterations": 18,
+        "max_tokens": 4000,
+        "reasoning": None,
         "goal": "a fast, focused read: one primary model + a couple of charts + the key findings.",
         "structure": "summary, 1 primary chart, 2-4 findings.",
+        "required": ("summary", "1 primary model/chart", "2+ findings"),
     },
     "standard": {
         "max_iterations": 32,
+        "max_tokens": 6000,
+        "reasoning": "medium",
         "goal": "a solid analysis: the requested model, supporting data, diagnostics, and clear findings.",
         "structure": "summary, the model (regression/timeseries), supporting charts, findings, assumptions, sources.",
+        "required": ("summary", "primary model", "supporting chart", "3+ findings", "assumptions", "sources"),
     },
     "deep": {
         "max_iterations": 55,
+        "max_tokens": 9000,
+        "reasoning": "medium",
         "goal": "a deep analysis: broad data + web/supply-chain research, the model plus diagnostics and a sensitivity or scenario view.",
         "structure": "summary, primary model + diagnostics, sensitivity/scenario, supporting charts/tables, findings, assumptions, sources.",
+        "required": ("summary", "primary model + diagnostics", "sensitivity or scenario", "4+ findings", "assumptions", "sources"),
     },
     "ultra": {
         "max_iterations": 90,
+        "max_tokens": 16000,
+        "reasoning": "high",
         "goal": "an exhaustive, highly structured study: competing models, robustness/sensitivity, scenario fan, extensive sourcing.",
         "structure": "executive summary, multiple models, robustness/sensitivity, scenario/simulation fan, detailed tables, findings, assumptions, full sources.",
+        "required": ("executive summary", "2+ competing models", "robustness/sensitivity", "scenario or simulation fan", "5+ findings", "assumptions", "full sources"),
     },
 }
 DEFAULT_DEPTH = "standard"
 
-MARKET_MODEL_SYSTEM_PROMPT = """You are a quantitative markets researcher building a saved, reproducible "Market Model" for a forecasting desk. Think like a sharp quant: decompose the question into measurable drivers, gather REAL data, compute every number deterministically, and present formal findings.
+MARKET_MODEL_SYSTEM_PROMPT = """You are a quantitative markets researcher building a saved, reproducible "Market Model" for a forecasting desk. Think like a sharp quant AND a calibrated superforecaster: anchor on an outside view before the case-specific story, decompose into measurable drivers, gather REAL data, compute every number deterministically, stress-test your own estimates, and present formal findings.
+
+Forecasting discipline (this is a scoreable forecasting artifact, not just a chart):
+- Outside view first: anchor on a base rate / reference class ("how often do things of this sort happen in situations of this sort?") before the inside-view narrative. Anchor on the status quo and the horizon — weight the persistence (no-change) outcome more the shorter the horizon, and move off it only as far as a concrete mechanism + the evidence justify.
+- Reason along PATHS, not vibes: trace the causal path to each outcome and price the links; a path with one weak link cannot carry heavy probability mass.
+- Forecast from the information frontier: reason only from what was knowable at the as-of cutoff; guard against hindsight and recency salience.
+- Calibrate in BOTH directions: under-confidence is a scored failure too. Every chunk of probability mass needs a credible path; concentrate the distribution when the evidence earns it. Markets/crowds are evidence to weigh, not a verdict to copy.
 
 Rules:
-1. Gather data from adapters with `import_source_evidence` / `import_source_evidence_batch` (fred, bls, yahoo, stooq, sec/secsearch, coingecko, worldbank, markets, rss, ...) and the web (`web_search`/`web_extract`) for context/supply-chain. NEVER invent numbers or sources.
-2. Compute EVERY statistic (regression, correlation, trend/extrapolation, Monte-Carlo, cointegration, event-study, ARIMA, backtest) by calling the `market_compute` tool. Do NOT hand-derive coefficients, R^2, percentiles, or projections.
-3. Build the answer from the standardized presentation block library and call `emit_market_presentation` EXACTLY ONCE with the assembled Presentation. Cite imported evidence in findings (`evidence_refs`) and a `sources` block.
-4. Also pass a `spec` to `emit_market_presentation` describing the re-runnable recipe: the data series you used (name + source_type + source) and the compute steps (model_type + which series map to inputs + params), so the model can re-pull fresh data and recompute later.
-5. House style: plain, probability-literate, decisive but hedged; NO em-dashes.
+1. Gather REAL data — never invent numbers or sources. Use `import_source_evidence` / `import_source_evidence_batch` with the right adapter: equities/FX/commodities → yahoo or stooq; US macro → fred / bls / eia / treasury; crypto → coingecko; prediction markets → polymarket / kalshi / manifold; company filings → sec / secsearch; global/development → worldbank / imf / owid; news/feeds → rss / gdelt; plus `web_search` / `web_extract` for context + supply-chain. Call `read_desk_forecast` to reuse an existing desk forecast as an input or comparison when one is relevant.
+2. Compute EVERY statistic (regression, correlation, trend/extrapolation, Monte-Carlo, cointegration, event-study, ARIMA, backtest) via the `market_compute` tool — never hand-derive coefficients, R^2, percentiles, or projections. Then SELF-VERIFY before emitting: re-read your key numbers (fit/R^2, extrapolation endpoints, tail percentiles) against the raw series and fix anything that does not reconcile.
+3. Delegation: do the data imports + `market_compute` YOURSELF (they are fast and must stay auditable). Delegate ONLY open-ended research legwork — a driver deep-dive, a reference class, supply-chain digging — with `delegate_task(background=true)` so your loop keeps computing while it runs; cap at ~2 parallel subagents and fold their results into evidence / findings / sources, NEVER into the computed numbers.
+4. Build the answer from the standardized presentation block library and call `emit_market_presentation` EXACTLY ONCE with the assembled Presentation. Cite the imported evidence that backs each finding via `evidence_refs` (the evidence ids you imported) and include a `sources` block.
+5. Also pass a `spec` to `emit_market_presentation` describing the re-runnable recipe: each data series (name + source_type + source) and the compute steps (model_type + which series map to inputs + params). This is REQUIRED — a series without `source_type` + `source` cannot be refreshed on reopen.
+6. House style: plain, probability-literate, decisive but hedged; NO em-dashes.
 
-Block types: narrative, finding, metric, timeseries, scatter, regression, bars, table, fan (simulation), scenario, assumptions, sources. The presentation header needs a title + summary; status defaults to complete."""
+Block types: narrative, finding, metric, timeseries, scatter, regression, bars, table, fan (simulation), scenario, assumptions, sources. High-fidelity charts (rendered by the terminal viz engine):
+- `heatmap` {matrix:[[..]], rowLabels?, colLabels?, diverging?:true for correlation} — truecolor cell heatmap; use for correlation / covariance / liquidity matrices.
+- `fan` with optional `paths:[[..]]` (sample simulated trajectories) — Monte-Carlo cone (median + spaghetti + band); include paths when you ran a simulation.
+- `distribution` {support:[..], pdf:[..], cdf?:[..], mean?, median?, intervals?:[{lo,hi,p}]} — a probability density with optional CDF + credible-interval bands; use for posteriors / forecast distributions.
+- `candles` {candles:[{o,h,l,c,t?}], volume?:[..], ma?:[..]} — OHLC candlesticks with optional volume + moving average.
+- `depth` {bids:[{price,size}], asks:[{price,size}], mid?} — order-book cumulative depth curve.
+- `sparkgrid` {cells:[{label, values?:[..], value?, delta?, unit?}], columns?} — a dashboard grid of mini-sparklines for a watchlist/portfolio.
+The presentation header needs a title + summary; status defaults to complete."""
 
 
 # ── injectable seams (monkeypatched in tests) ─────────────────────────────────
@@ -81,6 +111,13 @@ _TOOL_LABELS = {
 }
 
 
+def _market_toolset(rt: dict) -> str:
+    """Pick the toolset preset. Interactive runtimes (an approval callback exists,
+    e.g. a foreground CLI/ACP session) get the richer code_execution + browser
+    variant; headless background builds keep the safe, non-approval-gated set."""
+    return "market-models-interactive" if rt.get("interactive") else "market-models"
+
+
 def _run_market_agent(
     *,
     system: str,
@@ -88,6 +125,8 @@ def _run_market_agent(
     max_iterations: int,
     model: str | None,
     provider: str | None,
+    depth: str = DEFAULT_DEPTH,
+    preset: dict | None = None,
     main_runtime: dict | None = None,
     runtime: dict | None = None,
     progress: Callable[[str], None] | None = None,
@@ -97,17 +136,21 @@ def _run_market_agent(
     ``runtime`` carries the SESSION's resolved credentials (provider / base_url /
     api_key / api_mode / model) so the background agent authenticates exactly like
     the live session — a fresh AIAgent that re-resolves from config can land on a
-    different/unconfigured provider and get an HTML auth/error page. ``main_runtime``
-    is unused here (it belongs to the auxiliary call_llm).
+    different/unconfigured provider and get an HTML auth/error page. It may also
+    carry ``fallback_model`` (provider failover) + ``parent_session_id`` (lineage).
+    ``main_runtime`` is unused here (it belongs to the auxiliary call_llm).
     """
     from run_agent import AIAgent
 
     rt = runtime or {}
+    preset = preset or DEPTH_PRESETS.get(depth, DEPTH_PRESETS[DEFAULT_DEPTH])
+    deep = max_iterations >= 55
+
     kwargs: dict[str, Any] = {
         "model": rt.get("model") or model or "",
         "provider": rt.get("provider") or provider,
         "max_iterations": max_iterations,
-        "enabled_toolsets": ["market-models"],
+        "enabled_toolsets": [_market_toolset(rt)],
         "platform": "cli",
     }
     # Forward the session's resolved credentials (only when present, so we never
@@ -115,9 +158,33 @@ def _run_market_agent(
     for src, dst in (
         ("base_url", "base_url"), ("api_key", "api_key"), ("api_mode", "api_mode"),
         ("credential_pool", "credential_pool"), ("command", "acp_command"), ("args", "acp_args"),
+        ("fallback_model", "fallback_model"), ("parent_session_id", "parent_session_id"),
     ):
         if rt.get(src) is not None:
             kwargs[dst] = rt[src]
+
+    # Depth-scaled output budget + reasoning effort. Big ultra presentations
+    # (heatmap + fan + distribution + tables) truncate at the default token cap;
+    # quick runs disable thinking for latency.
+    if preset.get("max_tokens"):
+        kwargs["max_tokens"] = preset["max_tokens"]
+    effort = preset.get("reasoning")
+    kwargs["reasoning_config"] = {"enabled": True, "effort": effort} if effort else {"enabled": False}
+
+    # Deep/ultra runs are long + valuable: persist a trajectory (debuggable on
+    # failure) + checkpoints (resumable if interrupted).
+    if deep:
+        kwargs["save_trajectories"] = True
+        kwargs["checkpoints_enabled"] = True
+
+    # One iteration budget shared across the whole agent tree, so a delegating
+    # deep run can't blow past its cap via subagents.
+    try:
+        from agent.iteration_budget import IterationBudget
+
+        kwargs["iteration_budget"] = IterationBudget(max_iterations)
+    except Exception:
+        pass
 
     # Stream a live label per tool call so the UI shows what the agent is doing
     # (system visibility), not a static spinner. Best-effort, never throws.
@@ -130,8 +197,41 @@ def _run_market_agent(
 
         kwargs["tool_start_callback"] = _on_tool_start
 
+    # Interactive variant: the toolset's sandboxed code_execution + browser are
+    # approval-gated and would hang in a headless build, so install a THREAD-LOCAL
+    # auto-approve (this job runs on its own daemon thread; the callback is
+    # thread-local and propagates to tool workers, never leaking to other gateway
+    # agents). The interactive preset excludes host terminal/file-write, so this
+    # only ever greenlights the sandbox + browser.
+    if rt.get("interactive"):
+        try:
+            from tools.terminal_tool import set_approval_callback
+
+            set_approval_callback(lambda _cmd, _desc, allow_permanent=True: "session")
+        except Exception:
+            pass
+
     agent = AIAgent(**kwargs)
-    return agent.run_conversation(user, system_message=system)
+    # Background research runs (no user waiting on first byte) can legitimately
+    # take minutes for a deep synthesis call after multi-step research, so a 90s
+    # non-stream time-to-first-byte ceiling kills them prematurely. Give a
+    # generous, depth-scaled stale timeout (instance-scoped; see
+    # AIAgent._resolved_api_call_stale_timeout_base). fallback_model is the real
+    # resilience fix — this just stops a single slow byte from aborting.
+    timeout_override = 600.0 if deep else 360.0
+    agent._api_call_stale_timeout_override = timeout_override
+    result = agent.run_conversation(user, system_message=system)
+    # Stash runtime facts so diagnostics can surface them (no agent handle there).
+    if isinstance(result, dict):
+        result["_market_runtime"] = {
+            "fallback": bool(kwargs.get("fallback_model")),
+            "max_tokens": preset.get("max_tokens"),
+            "reasoning": effort or "off",
+            "timeout_override": timeout_override,
+            "toolset": kwargs["enabled_toolsets"][0],
+            "trajectory_session_id": getattr(agent, "session_id", None) if deep else None,
+        }
+    return result
 
 
 def _aux_llm(messages: list[dict], *, max_tokens: int = 900, temperature: float = 0.5, main_runtime: dict | None = None) -> str:
@@ -146,20 +246,28 @@ def _aux_llm(messages: list[dict], *, max_tokens: int = 900, temperature: float 
         return ""
 
 
-def _repull_series(spec: dict) -> list[dict] | None:
+def _repull_series(spec: dict) -> tuple[list[dict], list[str]]:
     """Best-effort re-pull of a spec's data series via import_source_evidence.
 
-    Returns refreshed series dicts ([{name,source_type,source,unit,points,as_of}]),
-    or None if the spec has no re-runnable series / re-pull is unavailable.
+    Returns ``(refreshed_series, reasons)`` — the refreshed series dicts
+    ([{name,source_type,source,unit,points,as_of}]) plus human-readable reasons
+    any series could NOT be refreshed, so ``open`` can surface "FRED id 404'd"
+    instead of a silent false.
     """
+    reasons: list[str] = []
     series_defs = [s for s in (spec or {}).get("series", []) if isinstance(s, dict)]
+    missing = [str(s.get("name") or "?") for s in series_defs if not (s.get("source_type") and s.get("source"))]
+    if missing:
+        reasons.append(f"{len(missing)} series lack source_type/source (not refreshable): {', '.join(missing[:5])}")
     runnable = [s for s in series_defs if s.get("source_type") and s.get("source")]
     if not runnable:
-        return None
+        if not series_defs:
+            reasons.append("spec has no data series")
+        return [], reasons
     try:
         from tools.forecasting_tool import _load_source_adapter_items  # type: ignore
     except Exception:
-        return None
+        return [], reasons + ["data-adapter layer unavailable in this build"]
 
     def _attr(item: Any, *names: str) -> Any:
         for n in names:
@@ -174,9 +282,11 @@ def _repull_series(spec: dict) -> list[dict] | None:
 
     refreshed: list[dict] = []
     for s in runnable:
+        tag = f"{s['source_type']}:{s['source']}"
         try:
             items = _load_source_adapter_items(s["source_type"], s["source"], {"limit": int(s.get("limit") or 60)})
-        except Exception:
+        except Exception as e:
+            reasons.append(f"{tag} fetch error: {_clean_text(str(e), limit=80)}")
             continue
         points = []
         for it in items or []:
@@ -189,7 +299,9 @@ def _repull_series(spec: dict) -> list[dict] | None:
                 "name": s.get("name") or s["source"], "source_type": s["source_type"],
                 "source": s["source"], "unit": s.get("unit"), "points": points, "as_of": utc_now_iso(),
             })
-    return refreshed or None
+        else:
+            reasons.append(f"{tag} returned no usable points")
+    return refreshed, reasons
 
 
 # ── presentation extraction from an agent run ─────────────────────────────────
@@ -364,6 +476,7 @@ def build_market_model(
             system=MARKET_MODEL_SYSTEM_PROMPT, user=user,
             max_iterations=int(params.get("max_iterations") or preset["max_iterations"]),
             model=params.get("model"), provider=params.get("provider"),
+            depth=depth, preset=preset,
             main_runtime=main_runtime, runtime=runtime, progress=progress,
         )
     except Exception as e:  # hard failure → persist a failed presentation, never raise
@@ -387,10 +500,19 @@ def _build_user_prompt(question: str, params: dict, preset: dict) -> str:
         extras.append(f"Extrapolate toward: {params['target_year']}.")
     if params.get("assumptions"):
         extras.append(f"User assumptions: {params['assumptions']}.")
+    required = preset.get("required") or ()
+    scaffold = (
+        f"Required for this depth — the presentation MUST include: {', '.join(required)}.\n"
+        "Before you call emit_market_presentation, self-check that every required element is present "
+        "and that your computed numbers reconcile with the raw data; if not, keep working.\n"
+        if required
+        else ""
+    )
     return (
         f"Quant question:\n{question}\n\n"
         f"Depth: {params.get('depth') or DEFAULT_DEPTH} — aim for {preset['goal']}\n"
         f"Suggested structure: {preset['structure']}\n"
+        + scaffold
         + ("\n".join(extras) + "\n" if extras else "")
         + "\nResearch, compute via market_compute, then call emit_market_presentation once with the presentation + a re-runnable spec."
     )
@@ -408,6 +530,7 @@ def _run_diagnostics(result: dict | None) -> dict[str, Any]:
                 if isinstance(fn, dict) and fn.get("name"):
                     tool_names.append(fn["name"])
     err = result.get("error")
+    rt = result.get("_market_runtime") or {}
     return {
         "api_calls": result.get("api_calls"),
         "completed": result.get("completed"),
@@ -416,6 +539,14 @@ def _run_diagnostics(result: dict | None) -> dict[str, Any]:
         "messages": len(msgs),
         "tool_calls": tool_names,
         "emitted": "emit_market_presentation" in tool_names,
+        # Runtime facts so a failure isn't opaque (was research allowed enough
+        # time? was failover available? is there a trajectory to replay?).
+        "timeout_override": rt.get("timeout_override"),
+        "fallback_available": rt.get("fallback"),
+        "max_tokens": rt.get("max_tokens"),
+        "reasoning": rt.get("reasoning"),
+        "toolset": rt.get("toolset"),
+        "trajectory_session_id": rt.get("trajectory_session_id"),
     }
 
 
@@ -530,9 +661,10 @@ def open_market_model(model_id: str, *, ledger) -> dict[str, Any]:
     pres = dict(current["presentation"])
     spec = model.get("spec") or {}
 
-    refreshed_series = _repull_series(spec)
+    refreshed_series, reasons = _repull_series(spec)
+    note = "; ".join(reasons) or None
     if not refreshed_series:
-        return {"model_id": model_id, "presentation": pres, "refreshed": False}
+        return {"model_id": model_id, "presentation": pres, "refreshed": False, "refresh_note": note}
 
     try:
         ledger.replace_market_data_series(model_id, refreshed_series)
@@ -542,7 +674,7 @@ def open_market_model(model_id: str, *, ledger) -> dict[str, Any]:
     recomputed = _recompute_blocks(pres.get("blocks", []), spec, by_name)
     pres["blocks"] = recomputed
     pres["as_of_data"] = utc_now_iso()
-    return {"model_id": model_id, "presentation": pres, "refreshed": True}
+    return {"model_id": model_id, "presentation": pres, "refreshed": True, "refresh_note": note}
 
 
 def _recompute_blocks(blocks: list, spec: dict, by_name: dict) -> list:
@@ -609,6 +741,10 @@ def renarrate_market_model(model_id: str, *, ledger, main_runtime: dict | None =
     content = _aux_llm([{"role": "system", "content": MARKET_MODEL_SYSTEM_PROMPT},
                         {"role": "user", "content": prompt}], main_runtime=main_runtime)
     obj = _extract_json_object(content) or {}
+    # Guard: if the aux call produced no usable prose, keep the prior presentation
+    # unchanged rather than persisting a version that dropped its narrative/findings.
+    if not obj.get("narrative") and not (obj.get("findings")):
+        return {"model_id": model_id, "version": pres.get("version"), "status": "complete", "presentation": pres, "renarrated": False}
     # Rebuild prose blocks from the response; keep all non-prose blocks.
     kept = [b for b in pres.get("blocks", []) if isinstance(b, dict) and b.get("type") not in ("narrative", "finding")]
     prose_blocks: list[dict] = []
@@ -665,6 +801,7 @@ def chat_market_model(
             system=MARKET_MODEL_SYSTEM_PROMPT, user=user,
             max_iterations=int(params.get("max_iterations") or preset["max_iterations"]),
             model=params.get("model"), provider=params.get("provider"),
+            depth=depth, preset=preset,
             main_runtime=main_runtime, runtime=runtime, progress=progress,
         )
     except Exception as e:
@@ -700,7 +837,32 @@ def model_to_forecast(model_id: str, *, ledger) -> dict[str, Any]:
         + (f"\n\nModel projection: {proj}" if proj else ""),
         "source_market_model": model_id,
     }
-    return {"model_id": model_id, "seed": seed}
+    # Actually create the linked Desk forecast (previously the seed went nowhere)
+    # and record the edge BOTH ways: source_market_model on the question + the
+    # spawned question id back on the model's spec. Best-effort, never raises.
+    question_id = None
+    try:
+        q = ledger.create_question(
+            title=seed["title"][:200],
+            resolution_criteria=(
+                f"Resolves by comparing the realized outcome against this market model's projection"
+                + (f" ({proj})" if proj else "") + ". Re-run the model on fresh data to score."
+            ),
+            description=seed["description"],
+            tags=["market-model"],
+            metadata={"source_market_model": model_id},
+        )
+        question_id = getattr(q, "id", None) or (q.get("id") if isinstance(q, dict) else None)
+        if question_id:
+            spec = dict(model.get("spec") or {})
+            spec["forecast_question_id"] = question_id
+            try:
+                ledger.update_market_model_spec(model_id, spec)
+            except Exception:
+                pass
+    except Exception:
+        question_id = None
+    return {"model_id": model_id, "question_id": question_id, "seed": seed}
 
 
 def _extrapolation_summary(pres: dict) -> str:

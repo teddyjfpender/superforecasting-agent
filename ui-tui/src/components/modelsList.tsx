@@ -93,10 +93,13 @@ export function ModelsList({
         // the live progress label (from events) is just a nicety on top.
         const hasPresentation = (m.current_version ?? 0) >= 1
         const building = !hasPresentation && m.status !== 'error'
+        // An already-built model with a live progress label is being refined.
+        const refining = !building && Boolean(progressById[m.id])
         const failed = hasPresentation && (m.last_status === 'failed' || m.status === 'error')
-        const glyph = building ? spinnerFrame(tick) : failed ? statusGlyph('error') : statusGlyph('live', tick)
-        const glyphColor = building ? sem.star : failed ? sem.down : sem.up
-        const label = building ? trunc(progressById[m.id] || 'building…', titleW) : trunc(m.title, titleW)
+        const active = building || refining
+        const glyph = active ? spinnerFrame(tick) : failed ? statusGlyph('error') : statusGlyph('live', tick)
+        const glyphColor = active ? sem.star : failed ? sem.down : sem.up
+        const label = active ? trunc(progressById[m.id] || (refining ? 'refining…' : 'building…'), titleW) : trunc(m.title, titleW)
 
         return (
           <Text key={m.id} wrap="truncate-end">

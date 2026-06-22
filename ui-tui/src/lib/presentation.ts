@@ -17,6 +17,26 @@ export interface Band {
   upper: number[]
 }
 
+// Optional typed helpers for the @hermes/viz-rendered block types (DX only — the
+// renderer reads from the loose PresentationBlock and never requires these).
+export interface HeatmapBlock {
+  colLabels?: string[]
+  diverging?: boolean
+  matrix: number[][]
+  max?: number
+  min?: number
+  rowLabels?: string[]
+  type: 'heatmap'
+}
+
+export interface FanBlock {
+  bands?: { lower: number[]; p_hi?: number; p_lo?: number; upper: number[] }[]
+  median: number[]
+  paths?: number[][]
+  type: 'fan'
+  x?: number[]
+}
+
 // Blocks are intentionally loose: `type` is a string and fields are optional, so
 // the renderer degrades gracefully on partial/extended payloads.
 export interface PresentationBlock {

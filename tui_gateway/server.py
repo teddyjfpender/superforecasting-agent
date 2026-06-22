@@ -2071,11 +2071,27 @@ def _session_runtime(sid: str) -> dict:
         else:
             model, requested = _resolve_startup_runtime()
         rt = resolve_runtime_provider(requested=requested, target_model=model or None)
-        return {
+        out = {
             "model": model, "provider": rt.get("provider"), "base_url": rt.get("base_url"),
             "api_key": rt.get("api_key"), "api_mode": rt.get("api_mode"),
             "credential_pool": rt.get("credential_pool"), "command": rt.get("command"), "args": rt.get("args"),
+            "parent_session_id": sid or None,
+            # Opt-in: the sandboxed code_execution + browser toolset variant. Off
+            # by default (plain market-models); enable for richer custom pipelines.
+            "interactive": str(os.environ.get("HERMES_MARKET_INTERACTIVE", "")).strip().lower() in ("1", "true", "yes", "on"),
         }
+        # Provider failover chain from config — the real resilience fix for a
+        # stalled/erroring upstream provider (the timeout band-aid only delays).
+        try:
+            from hermes_cli.config import load_config_readonly
+            from hermes_cli.fallback_cmd import _read_chain
+
+            chain = _read_chain(load_config_readonly())
+            if chain:
+                out["fallback_model"] = chain
+        except Exception:
+            pass
+        return out
     except Exception:
         if agent is not None:
             return {
@@ -2807,6 +2823,42 @@ def _(rid, params: dict) -> dict:
             _emit("markets.model.progress", sid, {"id": mid, "phase": "refining", "message": "refining"})
             out = MM.chat_market_model(
                 mid, message, ledger=ForecastLedger(), params=mparams, runtime=runtime,
+                progress=lambda m: _emit("markets.model.progress", sid, {"id": mid, "message": m}),
+            )
+            _emit("markets.model.complete", sid, {"id": mid, "version": out.get("version"), "status": out.get("status")})
+
+        _spawn_market_job(sid, mid, _job)
+        return _ok(rid, {"model_id": mid, "status": "building"})
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("markets.model.retry")
+def _(rid, params: dict) -> dict:
+    """Re-run a model's build using its stored question + depth (same id), so a
+    failed/partial model can be retried without the user re-prompting."""
+    try:
+        from forecasting import market_model as MM
+        from forecasting.ledger import ForecastLedger
+
+        sid = str(params.get("session_id") or "")
+        mid = str(params.get("id") or "").strip()
+        if not mid:
+            return _err(rid, 5008, "id is required")
+        ledger = ForecastLedger()
+        model = ledger.get_market_model(mid)
+        if not model:
+            return _err(rid, 5008, "model not found")
+        question = str(model.get("question") or "").strip()
+        if not question:
+            return _err(rid, 5008, "model has no stored question to retry")
+        mparams = {"depth": model.get("depth") if model.get("depth") in MM.DEPTH_PRESETS else MM.DEFAULT_DEPTH}
+        runtime = _session_runtime(sid)
+
+        def _job():
+            _emit("markets.model.progress", sid, {"id": mid, "phase": "starting", "message": "retrying"})
+            out = MM.build_market_model(
+                question, mparams, ledger=ForecastLedger(), model_id=mid, runtime=runtime,
                 progress=lambda m: _emit("markets.model.progress", sid, {"id": mid, "message": m}),
             )
             _emit("markets.model.complete", sid, {"id": mid, "version": out.get("version"), "status": out.get("status")})

@@ -2,7 +2,7 @@ import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text } from '@hermes/in
 import type { ReactNode, RefObject } from 'react'
 
 import { bandChart, type BandPoint, compactNumber, histogram, pct } from '../lib/forecastCharts.js'
-import { asciiTable, scatterPlot } from '../lib/marketCharts.js'
+import { asciiTable } from '../lib/marketCharts.js'
 import type { Presentation, PresentationBlock } from '../lib/presentation.js'
 import { blockChart } from '../lib/sparkline.js'
 import { dirColor, semantics } from '../lib/visualSemantics.js'
@@ -10,6 +10,7 @@ import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
 import { Rule, SectionTitle, WrapText } from './textBlocks.js'
+import { Chart as VizChart } from './viz/Chart.js'
 
 const numbers = (arr: unknown): number[] =>
   Array.isArray(arr) ? arr.map(v => (typeof v === 'number' ? v : Number(v))).filter(n => Number.isFinite(n)) : []
@@ -73,6 +74,8 @@ function renderBlock(block: PresentationBlock, t: Theme, width: number): ReactNo
     case 'finding': {
       const conf = String(block.confidence ?? 'medium')
       const tone = block.direction === 'up' ? sem.up : block.direction === 'down' ? sem.down : sem.star
+      // Provenance: the evidence ids backing this claim (was persisted but never shown).
+      const refs = Array.isArray(block.evidence_refs) ? block.evidence_refs.map(r => String(r).trim()).filter(Boolean) : []
 
       return (
         <Box flexDirection="column">
@@ -91,6 +94,13 @@ function renderBlock(block: PresentationBlock, t: Theme, width: number): ReactNo
             <Box marginLeft={2} width={Math.max(8, width - 2)}>
               <Text color={t.color.muted} wrap="wrap">
                 {note}
+              </Text>
+            </Box>
+          ) : null}
+          {refs.length ? (
+            <Box marginLeft={2} width={Math.max(8, width - 2)}>
+              <Text color={t.color.muted} wrap="truncate-end">
+                {`↳ ${refs.length === 1 ? 'evidence' : `${refs.length} evidence`}: ${refs.slice(0, 4).join(', ')}`}
               </Text>
             </Box>
           ) : null}
@@ -135,20 +145,14 @@ function renderBlock(block: PresentationBlock, t: Theme, width: number): ReactNo
       )
     }
 
-    case 'scatter': {
-      const { axis, rows } = scatterPlot(xyPoints(block.points), undefined, { width: chartW })
-
+    case 'scatter':
       return (
         <Box flexDirection="column">
           {title ? <SectionTitle t={t}>{title}</SectionTitle> : null}
-          <Chart color={t.color.text} lines={rows} />
-          {axis.bottom ? <Text color={t.color.muted}>{axis.bottom}</Text> : null}
+          <VizChart data={{ markers: block.markers, points: block.points }} kind="scatter" t={t} width={chartW} />
         </Box>
       )
-    }
-
     case 'regression': {
-      const { axis, rows } = scatterPlot(xyPoints(block.points), xyPoints(block.fit_line), { width: chartW })
       const r2 = typeof block.r2 === 'number' ? block.r2.toFixed(3) : '—'
       const coeffs = Array.isArray(block.coeffs) ? block.coeffs : []
 
@@ -162,8 +166,7 @@ function renderBlock(block: PresentationBlock, t: Theme, width: number): ReactNo
       return (
         <Box flexDirection="column">
           <SectionTitle t={t}>{title || (yl && xl ? `${yl} vs ${xl}` : 'Regression')}</SectionTitle>
-          <Chart color={sem.up} lines={rows} />
-          {axis.bottom ? <Text color={t.color.muted}>{axis.bottom}</Text> : null}
+          <VizChart data={{ fitLine: block.fit_line, markers: block.markers, points: block.points }} kind="scatter" t={t} width={chartW} />
           <WrapText color={t.color.muted} t={t} width={width}>
             {`R² ${r2}${stat ? ` · ${stat}` : ''}${typeof block.n === 'number' ? ` · n=${block.n}` : ''}`}
           </WrapText>
@@ -206,6 +209,21 @@ function renderBlock(block: PresentationBlock, t: Theme, width: number): ReactNo
       const median = numbers(block.median)
       const bands = Array.isArray(block.bands) ? block.bands : []
       const band0 = bands[0] as Record<string, unknown> | undefined
+      // Monte-Carlo upgrade: when the block carries simulated `paths`, render the
+      // braille cone (median + spaghetti + band) via the viz engine. Otherwise the
+      // existing bandChart path renders byte-identically (back-compat).
+      const hasPaths = Array.isArray(block.paths) && (block.paths as unknown[]).some(p => Array.isArray(p) && p.length)
+
+      if (hasPaths) {
+        return (
+          <Box flexDirection="column">
+            <SectionTitle t={t}>{title || 'Simulation'}</SectionTitle>
+            <VizChart data={block} height={9} kind="fan" t={t} width={chartW} />
+            {band0 ? <Text color={t.color.muted}>{`P${band0.p_lo}–P${band0.p_hi}${typeof block.n_paths === 'number' && block.n_paths ? ` · ${block.n_paths} paths` : ''}`}</Text> : null}
+          </Box>
+        )
+      }
+
       const lower = numbers(band0?.lower)
       const upper = numbers(band0?.upper)
       const points: BandPoint[] = median.map((y, i) => ({ hi: upper[i] ?? null, lo: lower[i] ?? null, y }))
@@ -221,6 +239,32 @@ function renderBlock(block: PresentationBlock, t: Theme, width: number): ReactNo
       )
     }
 
+    case 'heatmap':
+
+    case 'distribution':
+
+    case 'candles':
+
+    case 'depth':
+
+    case 'sparkgrid':
+      return (
+        <Box flexDirection="column">
+          {title ? <SectionTitle t={t}>{title}</SectionTitle> : null}
+          <VizChart
+            data={block}
+            height={block.type === 'sparkgrid' ? undefined : 10}
+            kind={block.type as 'candles' | 'depth' | 'distribution' | 'heatmap' | 'sparkgrid'}
+            t={t}
+            width={chartW}
+          />
+          {note ? (
+            <WrapText color={t.color.muted} t={t} width={width}>
+              {note}
+            </WrapText>
+          ) : null}
+        </Box>
+      )
     case 'scenario': {
       const scen = Array.isArray(block.scenarios) ? (block.scenarios as Record<string, unknown>[]) : []
 

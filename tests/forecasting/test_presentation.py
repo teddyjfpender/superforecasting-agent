@@ -48,13 +48,37 @@ def test_validate_flags_missing_required_fields_and_bad_status():
     assert any("missing required field 'value'" in e for e in errors)
 
 
+def test_viz_block_types_are_known_and_validated():
+    # The high-fidelity chart block types are additive + known (not fallback).
+    for bt in ("heatmap", "distribution", "candles", "depth", "sparkgrid"):
+        assert bt in P.BLOCK_TYPES
+    # Each new type hard-fails when its single required field is missing.
+    for bt, field in (("heatmap", "matrix"), ("distribution", "support"), ("candles", "candles"), ("depth", "bids"), ("sparkgrid", "cells")):
+        ok_x, err_x = P.validate_presentation({"title": "t", "blocks": [{"type": bt}]})
+        assert not ok_x and any(field in e for e in err_x), bt
+    # heatmap requires `matrix`; missing it is a hard fail (known type).
+    ok, errors = P.validate_presentation({"title": "t", "blocks": [{"type": "heatmap"}]})
+    assert not ok and any("matrix" in e for e in errors)
+    # a well-formed heatmap + a paths-bearing fan both validate.
+    ok2, _ = P.validate_presentation(
+        {
+            "title": "t",
+            "blocks": [
+                {"type": "heatmap", "matrix": [[1, 0], [0, 1]], "diverging": True},
+                {"type": "fan", "x": [1, 2], "median": [0.4, 0.5], "paths": [[0.4, 0.5], [0.3, 0.6]]},
+            ],
+        }
+    )
+    assert ok2
+
+
 def test_unknown_block_type_is_a_fallback_not_a_hard_failure():
     pres = P.build_presentation(
         model_id="mm_2",
         version=1,
         title="t",
         question="q",
-        blocks=[{"type": "heatmap", "data": [[1, 2]]}],  # not a known type
+        blocks=[{"type": "sankey", "data": [[1, 2]]}],  # not a known type
     )
     ok, errors = P.validate_presentation(pres)
     # unknown types are allowed (renderer falls back) → still ok

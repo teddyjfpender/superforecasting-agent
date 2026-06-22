@@ -81,6 +81,7 @@ export interface OverlayState {
   calibration: boolean
   clarify: ClarifyReq | null
   confirm: ConfirmReq | null
+  demoViz: boolean
   forecasts: boolean
   forecastsInitialId: null | string
   help: boolean

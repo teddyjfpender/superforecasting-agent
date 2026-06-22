@@ -1,4 +1,5 @@
 import { Box, Text } from '@hermes/ink'
+import { useRef } from 'react'
 
 import { spinnerFrame } from '../lib/icons.js'
 import { semantics } from '../lib/visualSemantics.js'
@@ -34,6 +35,23 @@ export function ModelChat({
   const recent = messages.slice(-8)
   const innerW = Math.max(20, width - 2)
 
+  // Elapsed seconds since the refine started (tick advances every 600ms) — a
+  // reassurance the long agentic run is alive.
+  const startTick = useRef<null | number>(null)
+
+  if (busy) {
+    if (startTick.current === null) {
+      startTick.current = tick
+    }
+  } else {
+    startTick.current = null
+  }
+
+  const elapsed = busy && startTick.current !== null ? Math.max(0, Math.round((tick - startTick.current) * 0.6)) : 0
+  // Live step from the agent's tool calls; the generic 'refining' phase reads as
+  // "thinking…" so it doesn't echo the "Refining the model" header.
+  const step = status && status.trim() && status.trim() !== 'refining' ? status.trim() : 'thinking…'
+
   return (
     <Box flexDirection="column" flexShrink={0} width={innerW}>
       <Text bold color={focused ? t.color.accent : t.color.muted} wrap="truncate-end">
@@ -55,11 +73,17 @@ export function ModelChat({
         ))
       )}
       {busy ? (
-        <Box marginTop={1}>
-          <Text color={sem.star}>{`${spinnerFrame(tick)} `}</Text>
-          <Box width={Math.max(8, innerW - 2)}>
+        <Box flexDirection="column" marginTop={1}>
+          <Box>
+            <Text color={sem.star}>{`${spinnerFrame(tick)} `}</Text>
+            <Text bold color={t.color.text}>
+              Refining the model
+            </Text>
+            <Text color={t.color.muted}>{`  ${elapsed}s`}</Text>
+          </Box>
+          <Box marginLeft={2} width={Math.max(8, innerW - 2)}>
             <Text color={t.color.muted} wrap="truncate-end">
-              {status?.trim() || 'working…'}
+              {step}
             </Text>
           </Box>
         </Box>
@@ -73,7 +97,7 @@ export function ModelChat({
         </Box>
       )}
       <Text color={t.color.muted} wrap="truncate-end">
-        {busy ? 'refining…' : '⏎ send · Esc close chat'}
+        {busy ? 'researching + recomputing — this can take a minute' : '⏎ send · Esc close chat'}
       </Text>
     </Box>
   )

@@ -29,6 +29,7 @@ import { HomeHero, Panel, SessionPanel } from './branding.js'
 import { CalendarView } from './calendarView.js'
 import { CalibrationView } from './calibrationView.js'
 import { ConversationsRail } from './conversationsRail.js'
+import { DemoVizView } from './demoVizView.js'
 import { DocsView } from './docsView.js'
 import { ForecastsWorkspace } from './forecastsWorkspace.js'
 import { FpsOverlay } from './fpsOverlay.js'
@@ -406,6 +407,12 @@ const HelpViewPane = memo(function HelpViewPane() {
   return <HelpView onClose={() => patchOverlayState({ help: false })} t={ui.theme} />
 })
 
+const DemoVizViewPane = memo(function DemoVizViewPane() {
+  const ui = useStore($uiState)
+
+  return <DemoVizView onClose={() => patchOverlayState({ demoViz: false })} t={ui.theme} />
+})
+
 const MarketsViewPane = memo(function MarketsViewPane({ onAsk }: { onAsk: (question: string) => void }) {
   const { gw } = useGateway()
   const ui = useStore($uiState)
@@ -556,6 +563,7 @@ export const AppLayout = memo(function AppLayout({
     overlay.alerts ||
     overlay.help ||
     overlay.calendar ||
+    overlay.demoViz ||
     overlay.markets ||
     overlay.news ||
     overlay.messaging ||
@@ -681,6 +689,10 @@ export const AppLayout = memo(function AppLayout({
             ) : overlay.help ? (
               <PerfPane id="help">
                 <HelpViewPane />
+              </PerfPane>
+            ) : overlay.demoViz ? (
+              <PerfPane id="demoViz">
+                <DemoVizViewPane />
               </PerfPane>
             ) : overlay.markets ? (
               <PerfPane id="markets">

@@ -18,7 +18,9 @@ import { useGitBranch } from '../hooks/useGitBranch.js'
 import { useVirtualHistory } from '../hooks/useVirtualHistory.js'
 import { composerPromptWidth } from '../lib/inputMetrics.js'
 import { appendTranscriptMessage } from '../lib/messages.js'
+import { saveModelCatalog } from '../lib/modelStore.js'
 import { DEFAULT_VOICE_RECORD_KEY, isMac, type ParsedVoiceRecordKey } from '../lib/platform.js'
+import { normalizeModelList } from '../lib/presentation.js'
 import { asRpcResult, rpcErrorMessage } from '../lib/rpc.js'
 import { runtimeEnvValue } from '../lib/runtimeEnv.js'
 import { terminalParityHints } from '../lib/terminalParity.js'
@@ -30,6 +32,7 @@ import { createGatewayEventHandler } from './createGatewayEventHandler.js'
 import { createSlashHandler } from './createSlashHandler.js'
 import { getInputSelection } from './inputSelectionStore.js'
 import { type GatewayRpc, type TranscriptRow } from './interfaces.js'
+import { clearMarketJob, setMarketJob } from './marketJobsStore.js'
 import { $overlayState, patchOverlayState } from './overlayStore.js'
 import { scrollWithSelectionBy } from './scroll.js'
 import { turnController } from './turnController.js'
@@ -617,14 +620,66 @@ export function useMainApp(gw: GatewayClient) {
       sys('error: gateway exited')
     }
 
+    // Market-model build/refine jobs run as detached gateway daemon threads.
+    // Track them app-wide here (always mounted) so they keep being reported when
+    // you leave the Markets view, and so completion surfaces a notification even
+    // when you've navigated away — the way home-route turns survive navigation.
+    const refreshMarketCatalog = () =>
+      gw
+        .request('markets.model.list', {})
+        .then(raw => saveModelCatalog({ models: normalizeModelList(asRpcResult<{ models: unknown[] }>(raw) ?? raw) }))
+        .catch(() => undefined)
+
+    const onMarketProgress = (p: { id?: string; message?: string; phase?: string }) => {
+      if (p?.id) {
+        setMarketJob(p.id, { message: p.message || p.phase || 'working', status: p.phase === 'refining' ? 'refining' : 'building' })
+      }
+    }
+
+    const onMarketComplete = (p: { id?: string; version?: number }) => {
+      if (!p?.id) {
+        return
+      }
+
+      setMarketJob(p.id, { status: 'done', version: p.version })
+      refreshMarketCatalog()
+
+      if (!$overlayState.get().markets) {
+        sys('market model ready · open Markets → Models to view')
+      }
+
+      setTimeout(() => clearMarketJob(p.id!), 8000)
+    }
+
+    const onMarketError = (p: { id?: string; message?: string }) => {
+      if (!p?.id) {
+        return
+      }
+
+      setMarketJob(p.id, { message: p.message || 'failed', status: 'error' })
+      refreshMarketCatalog()
+
+      if (!$overlayState.get().markets) {
+        sys(`market model failed: ${p?.message ?? 'unknown error'}`)
+      }
+
+      setTimeout(() => clearMarketJob(p.id!), 10000)
+    }
+
     gw.on('event', handler)
     gw.on('exit', exitHandler)
+    gw.on('markets.model.progress', onMarketProgress)
+    gw.on('markets.model.complete', onMarketComplete)
+    gw.on('markets.model.error', onMarketError)
     gw.drain()
 
     // entry.tsx's setupGracefulExit handles process cleanup on real exit.
     return () => {
       gw.off('event', handler)
       gw.off('exit', exitHandler)
+      gw.off?.('markets.model.progress', onMarketProgress)
+      gw.off?.('markets.model.complete', onMarketComplete)
+      gw.off?.('markets.model.error', onMarketError)
     }
   }, [gw, sys])
 
@@ -750,10 +805,13 @@ export function useMainApp(gw: GatewayClient) {
   const anyPanelVisible = SECTION_NAMES.some(
     s => sectionMode(s, ui.detailsMode, ui.sections, ui.detailsModeCommandOverride) !== 'hidden'
   )
+
   const thinkingPanelVisible =
     sectionMode('thinking', ui.detailsMode, ui.sections, ui.detailsModeCommandOverride) !== 'hidden'
+
   const toolsPanelVisible =
     sectionMode('tools', ui.detailsMode, ui.sections, ui.detailsModeCommandOverride) !== 'hidden'
+
   const activityPanelVisible =
     sectionMode('activity', ui.detailsMode, ui.sections, ui.detailsModeCommandOverride) !== 'hidden'
 

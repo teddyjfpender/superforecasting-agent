@@ -4626,9 +4626,9 @@ def test_workflow_report_aggregates_question_activity(tmp_path):
     forecast_ledger_tool({"action": "update_forecast", "require_components": False, "db": db, "question_id": qid,
                           "probability": 0.55, "rationale": "first", **_reasons})
     # Second snapshot has no new evidence since the first; this test exercises
-    # report aggregation, not the re-run freshness gate, so opt out of it.
+    # report aggregation, not the re-run freshness or panel gates, so opt out.
     forecast_ledger_tool({"action": "update_forecast", "require_components": False,
-                          "require_fresh_evidence": False, "db": db, "question_id": qid,
+                          "require_fresh_evidence": False, "require_panel": False, "db": db, "question_id": qid,
                           "probability": 0.6, "rationale": "second", **_reasons})
 
     out = json.loads(forecast_ledger_tool({"action": "workflow_report", "db": db, "question_id": qid}))
@@ -5152,7 +5152,9 @@ def test_update_forecast_blocks_stale_rerun(tmp_path):
         "resolution_criteria": "Resolves yes if the indicator exceeds target by close; otherwise no.",
     }))["question"]["id"]
     reasons = {"reasons_up": ["up"], "reasons_down": ["down"], "change_my_mind": ["new data"]}
-    base = {"action": "update_forecast", "require_components": False, "db": db, "question_id": qid, **reasons}
+    # This test isolates the re-run freshness gate; opt out of the panel gate
+    # (which now also binds re-commits) so it doesn't mask the evidence checks.
+    base = {"action": "update_forecast", "require_components": False, "require_panel": False, "db": db, "question_id": qid, **reasons}
 
     forecast_ledger_tool({"action": "add_evidence", "db": db, "question_id": qid,
                           "source_or_note": "n0", "claim": "c0"})

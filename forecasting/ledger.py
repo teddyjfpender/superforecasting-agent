@@ -1632,15 +1632,25 @@ class ForecastLedger:
                 if linked_panel["question_id"] != question_id:
                     raise ValidationError("panel_run_ref belongs to a different question")
             panel_skip = (panel_skipped_reason or "").strip()
+            high_impact = (question.impact or "").strip().lower() == "high"
+            has_prior = bool(question.current_forecast_id)
             panel_indicated = should_run_panel(
                 impact=question.impact,
-                has_prior_snapshot=bool(question.current_forecast_id),
+                has_prior_snapshot=has_prior,
             )
-            high_impact = (question.impact or "").strip().lower() == "high"
-            if panel_indicated and not panel_run_ref and not panel_skip:
-                if require_panel and high_impact:
+            # A re-commitment of an existing live forecast is the highest-risk
+            # path for silently inheriting the prior's biases, so it binds the
+            # panel just like a high-impact forecast — even though should_run_panel
+            # treats a non-high-impact re-run as not-indicated (its rationale is the
+            # first-forecast baseline). Scoped to callers that opt into require_panel
+            # (the agent's update_forecast tool defaults it True); programmatic
+            # re-pools pass a panel_skipped_reason and are exempt below.
+            panel_required_here = require_panel and (high_impact or has_prior)
+            if (panel_indicated or panel_required_here) and not panel_run_ref and not panel_skip:
+                if panel_required_here:
+                    why = "high-impact" if high_impact else "re-committed (a prior live snapshot exists)"
                     raise ValidationError(
-                        "high-impact live forecast requires a deliberative panel: run a "
+                        f"{why} live forecast requires a deliberative panel: run a "
                         "panel or quorum and pass panel_run_ref, record why you skipped it "
                         "with panel_skipped_reason, rerun with require_panel=false, or record "
                         "it as forecast_origin='exploratory'."
@@ -6904,9 +6914,18 @@ class ForecastLedger:
             return {
                 "status": "no_watched_sources",
                 "committed": None,
+                # NOT a completed update: a deterministic re-pool cannot collect
+                # evidence, so a sourceless question gets none. The caller owns
+                # closing this gap (import_source_evidence per driver, or re-run
+                # with --agent so the LLM update stage gathers it) — never treat
+                # this as "refreshed" or borrow a linked forecast's evidence.
+                "evidence_required": True,
                 "message": (
-                    "no active watched sources — add one with `forecast watch add`, "
-                    "or re-run with --agent to collect evidence via the LLM update stage."
+                    "NO active watched sources — this is NOT a completed update. Collect "
+                    "evidence for THIS question (import_source_evidence per driver, then "
+                    "`forecast watch add` so it can refresh next time), or re-run with --agent "
+                    "to collect evidence via the LLM update stage. Do not borrow another "
+                    "forecast's evidence as a substitute."
                 ),
             }
 

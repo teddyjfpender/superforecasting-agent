@@ -138,11 +138,12 @@ def test_open_recomputes_when_spec_runnable(ledger, monkeypatch):
     out = MM.build_market_model("q", {}, ledger=ledger)
     mid = out["model_id"]
 
-    # fresh data: y = 3x → slope should become 3 after re-pull
-    monkeypatch.setattr(MM, "_repull_series", lambda spec: [
+    # fresh data: y = 3x → slope should become 3 after re-pull.
+    # _repull_series now returns (refreshed_series, reasons).
+    monkeypatch.setattr(MM, "_repull_series", lambda spec: ([
         {"name": "rev", "source_type": "sec", "source": "NVDA",
          "points": [{"x": 1, "y": 3}, {"x": 2, "y": 6}, {"x": 3, "y": 9}], "as_of": "now"}
-    ])
+    ], []))
     opened = MM.open_market_model(mid, ledger=ledger)
     assert opened["refreshed"] is True
     reg = next(b for b in opened["presentation"]["blocks"] if b.get("id") == "reg1")
@@ -177,9 +178,86 @@ def test_depth_presets_have_caps():
     assert MM.DEPTH_PRESETS["ultra"]["max_iterations"] >= MM.DEPTH_PRESETS["quick"]["max_iterations"]
 
 
-def test_model_to_forecast_seed(ledger, monkeypatch):
+def test_model_to_forecast_creates_linked_question(ledger, monkeypatch):
     monkeypatch.setattr(MM, "_run_market_agent", lambda **k: _agent_result_with_emit(_good_presentation(), {}))
     out = MM.build_market_model("q", {}, ledger=ledger)
-    seed = MM.model_to_forecast(out["model_id"], ledger=ledger)
-    assert seed["seed"]["source_market_model"] == out["model_id"]
-    assert "projection" in seed["seed"]["description"].lower() or seed["seed"]["title"]
+    res = MM.model_to_forecast(out["model_id"], ledger=ledger)
+    assert res["seed"]["source_market_model"] == out["model_id"]
+    # The forecast is actually created + cross-linked both ways (was a dead seed).
+    qid = res["question_id"]
+    assert qid
+    q = ledger.get_question(qid)
+    meta = getattr(q, "metadata", None) or (q.get("metadata") if isinstance(q, dict) else {})
+    assert (meta or {}).get("source_market_model") == out["model_id"]
+    assert (ledger.get_market_model(out["model_id"]).get("spec") or {}).get("forecast_question_id") == qid
+
+
+class _FakeAgent:
+    last_kwargs: dict = {}
+
+    def __init__(self, **kw):
+        _FakeAgent.last_kwargs = kw
+        self.session_id = "sess-123"
+
+    def run_conversation(self, user, system_message=None):
+        return {"completed": True, "messages": [], "api_calls": 1}
+
+
+def test_run_market_agent_wires_runtime_knobs(monkeypatch):
+    monkeypatch.setattr("run_agent.AIAgent", _FakeAgent)
+    rt = {
+        "model": "m", "provider": "p",
+        "fallback_model": [{"provider": "x", "model": "y"}],
+        "parent_session_id": "sid-1",
+    }
+    res = MM._run_market_agent(
+        system="s", user="u", max_iterations=55, model="m", provider="p",
+        depth="deep", preset=MM.DEPTH_PRESETS["deep"], runtime=rt,
+    )
+    kw = _FakeAgent.last_kwargs
+    assert kw["fallback_model"] == [{"provider": "x", "model": "y"}]
+    assert kw["max_tokens"] == MM.DEPTH_PRESETS["deep"]["max_tokens"]
+    assert kw["reasoning_config"] == {"enabled": True, "effort": "medium"}
+    assert kw["save_trajectories"] is True and kw["checkpoints_enabled"] is True
+    assert kw["parent_session_id"] == "sid-1"
+    assert kw["enabled_toolsets"] == ["market-models"]
+    assert res["_market_runtime"]["fallback"] is True
+    assert res["_market_runtime"]["timeout_override"] == 600.0
+    assert res["_market_runtime"]["trajectory_session_id"] == "sess-123"
+
+
+def test_run_market_agent_quick_disables_reasoning(monkeypatch):
+    monkeypatch.setattr("run_agent.AIAgent", _FakeAgent)
+    MM._run_market_agent(system="s", user="u", max_iterations=18, model="m", provider="p",
+                         depth="quick", preset=MM.DEPTH_PRESETS["quick"], runtime={"model": "m"})
+    kw = _FakeAgent.last_kwargs
+    assert kw["reasoning_config"] == {"enabled": False}
+    assert "save_trajectories" not in kw  # not a deep run
+
+
+def test_run_market_agent_interactive_toolset(monkeypatch):
+    monkeypatch.setattr("run_agent.AIAgent", _FakeAgent)
+    approved = {}
+    import tools.terminal_tool as TT
+    monkeypatch.setattr(TT, "set_approval_callback", lambda cb: approved.setdefault("cb", cb))
+    MM._run_market_agent(system="s", user="u", max_iterations=32, model="m", provider="p",
+                         depth="standard", preset=MM.DEPTH_PRESETS["standard"], runtime={"model": "m", "interactive": True})
+    assert _FakeAgent.last_kwargs["enabled_toolsets"] == ["market-models-interactive"]
+    # an auto-approve was installed for the sandboxed tools
+    assert approved.get("cb") is not None
+    assert approved["cb"]("x", "y") == "session"
+
+
+def test_repull_series_reports_reasons():
+    refreshed, reasons = MM._repull_series({"series": [{"name": "rev", "points": [{"x": 1, "y": 2}]}]})
+    assert refreshed == []
+    assert any("source_type" in r for r in reasons)  # explains WHY it can't refresh
+
+
+def test_renarrate_keeps_prior_when_aux_empty(ledger, monkeypatch):
+    monkeypatch.setattr(MM, "_run_market_agent", lambda **k: _agent_result_with_emit(_good_presentation(), {}))
+    out = MM.build_market_model("q", {}, ledger=ledger)
+    monkeypatch.setattr(MM, "_aux_llm", lambda *a, **k: "")  # aux yields nothing usable
+    res = MM.renarrate_market_model(out["model_id"], ledger=ledger)
+    assert res.get("renarrated") is False
+    assert res["presentation"]["blocks"]  # prior presentation kept intact

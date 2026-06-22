@@ -56,7 +56,12 @@ EMIT_MARKET_PRESENTATION_SCHEMA = {
                 "description": (
                     "The presentation: {title, summary, status?, blocks:[...]} where each block has a "
                     "type (narrative, finding, metric, timeseries, scatter, regression, bars, table, "
-                    "fan, scenario, assumptions, sources) and its fields."
+                    "fan, scenario, assumptions, sources, heatmap, distribution, candles, depth, sparkgrid) and its fields. "
+                    "heatmap {matrix:[[..]], rowLabels?, colLabels?, diverging?} → truecolor correlation/matrix heatmap; "
+                    "fan may include paths:[[..]] (simulated trajectories) → Monte-Carlo cone; "
+                    "distribution {support, pdf, cdf?, mean?, median?, intervals?} → density + CDF + interval bands; "
+                    "candles {candles:[{o,h,l,c}], volume?, ma?} → OHLC; depth {bids:[{price,size}], asks, mid?} → order-book depth; "
+                    "sparkgrid {cells:[{label, values?, value?, delta?}], columns?} → mini-chart dashboard."
                 ),
             },
             "spec": {

@@ -996,6 +996,14 @@ class AIAgent:
         explicitly configured a stale timeout, such as auto-disabling the
         detector for local endpoints.
         """
+        # Instance override (set by long-running background runs like Market
+        # Models, where a 90s time-to-first-byte ceiling is too aggressive for a
+        # deep synthesis call after multi-step research / delegation). Treated as
+        # explicit so the local-endpoint auto-disable still does not apply.
+        override = getattr(self, "_api_call_stale_timeout_override", None)
+        if override is not None and float(override) > 0:
+            return float(override), False
+
         cfg = get_provider_stale_timeout(self.provider, self.model)
         if cfg is not None:
             return cfg, False
