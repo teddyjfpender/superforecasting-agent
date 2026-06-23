@@ -53,7 +53,7 @@ def test_thesis_is_first_class_question(tmp_path):
 
 def test_add_member_idempotent_and_signed(tmp_path):
     ledger, capex, _dist, _ob, thesis = _seed(tmp_path)
-    ledger.add_thesis_member(thesis.id, capex.id, direction="support", weight=3.0, role="capex")
+    ledger.add_thesis_member(thesis.id, capex.id, direction="support", weight=3.0, role="leading_indicator")
     # re-tag updates rather than duplicating
     ledger.add_thesis_member(thesis.id, capex.id, direction="inverted", weight=1.0)
     members = ledger.list_thesis_members(thesis.id)

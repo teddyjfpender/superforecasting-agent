@@ -134,6 +134,17 @@ WATCH_SOURCE_ROLES = {
 # evidence" — the desk focuses gathering on what moves the answer.
 CRUX_MATERIALITY = {"low", "medium", "high"}
 CRUX_STATUS = {"missing", "stale", "current", "contradictory"}
+
+# Semantic roles a thesis member plays in the aggregate — so a thesis reads as
+# decision intelligence (which signal LEADS, which is the BOTTLENECK, which is
+# market VALIDATION) rather than an undifferentiated weighted pool.
+THESIS_MEMBER_ROLES = {
+    "leading_indicator",   # moves early, before the thesis resolves
+    "confirming_signal",   # corroborates the thesis once underway
+    "bottleneck_signal",   # a gating constraint the thesis depends on
+    "market_validation",   # a market/price signal validating the thesis
+    "disconfirming_signal",  # would cut against the thesis if it moves
+}
 AUTOPILOT_MODES = {"propose", "auto_commit", "alert_only"}
 AUTOPILOT_PROPOSAL_STATUSES = {"pending", "approved", "rejected", "expired", "auto_committed"}
 WATCH_SOURCE_TYPES = {
@@ -6305,6 +6316,8 @@ class ForecastLedger:
             raise ValidationError("a thesis cannot be a member of itself")
         if direction not in {"support", "inverted"}:
             raise ValidationError("direction must be 'support' or 'inverted'")
+        if role is not None and role.strip() and role not in THESIS_MEMBER_ROLES:
+            raise ValidationError("role must be one of: " + ", ".join(sorted(THESIS_MEMBER_ROLES)))
         if weight < 0:
             raise ValidationError("weight must be non-negative")
         with self._connect() as conn:

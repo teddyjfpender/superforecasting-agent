@@ -16,7 +16,7 @@ def test_membership_and_entities_round_trip(tmp_path):
     power = src.create_question(title="Power binding constraint?", resolution_criteria=CRITERIA, domain="macro")
     src.create_snapshot(question_id=power.id, probability_or_distribution=0.6, rationale="x")
     thesis = src.create_question(title="AI infra scarcity thesis", resolution_criteria=THESIS_CRITERIA, domain="macro", outcome_space=OutcomeSpace(type="thesis"))
-    src.add_thesis_member(thesis.id, power.id, direction="support", weight=2.0, role="power", hi_is_good=True)
+    src.add_thesis_member(thesis.id, power.id, direction="support", weight=2.0, role="bottleneck_signal", hi_is_good=True)
     src.add_thesis_entity(thesis.id, "BE", kind="equity", weights=[{"member_id": power.id, "weight": 0.6, "direction": "support"}])
 
     pkt_power = json.loads(src.export_question(power.id, fmt="json"))
@@ -34,7 +34,7 @@ def test_membership_and_entities_round_trip(tmp_path):
     assert members[0]["member_question_id"] == power.id
     assert members[0]["weight"] == 2.0
     assert members[0]["hi_is_good"] is True
-    assert members[0]["role"] == "power"
+    assert members[0]["role"] == "bottleneck_signal"
     entities = dst.list_thesis_entities(thesis.id)
     assert entities[0]["name"] == "BE"
     assert entities[0]["weights"][0]["member_id"] == power.id
