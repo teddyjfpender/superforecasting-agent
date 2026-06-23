@@ -131,6 +131,20 @@ def test_commit_creates_question_sources_refclass_and_metadata(tmp_path):
     assert refs[0]["name"] == "recent CPI prints"
 
 
+def test_commit_auto_schedules_review_for_loop_coverage(tmp_path):
+    # A lazy prompter shouldn't have to remember to schedule a review: committing a
+    # serious question puts it on the cycle automatically (auto-scored + auto-
+    # postmortemed), so "scheduled review runs = 0" can't happen for onboarded
+    # questions. The schedule is created exactly once (idempotent), not duplicated.
+    ledger = _make_ledger(tmp_path)
+    result = _good_spec().commit(ledger)
+    review = result["scheduled_review"]
+    assert review is not None
+    assert review["auto_score"] == 1 and review["auto_postmortem"] == 1
+    on_loop = [r for r in ledger.list_scheduled_reviews() if r["scope_ref"] == result["question_id"]]
+    assert len(on_loop) == 1
+
+
 def test_commit_refuses_unscoreable_spec(tmp_path):
     ledger = _make_ledger(tmp_path)
     spec = _good_spec(resolution_criteria="tbd")

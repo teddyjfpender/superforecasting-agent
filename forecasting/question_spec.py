@@ -366,6 +366,25 @@ class QuestionSpec:
                 )
             )
 
+        # Loop coverage: a committed (serious) question is put on the review cycle
+        # so it is actually re-checked + auto-scored/postmortemed without the
+        # operator remembering to schedule it (the "review runs = 0" pain). The spec
+        # only stored review_cadence on the question; nothing created the schedule
+        # row the cycle reads. Idempotent (schedule_review dedups), so a re-commit
+        # or an explicit schedule won't spawn a duplicate. Fail-open: a scheduling
+        # hiccup must never block the commit.
+        scheduled_review = None
+        try:
+            scheduled_review = ledger.schedule_review(
+                scope_type="question",
+                scope_ref=question_id,
+                cadence=(self.review_cadence or "weekly"),
+                auto_score=True,
+                auto_postmortem=True,
+            )
+        except Exception:
+            scheduled_review = None
+
         question_dict = dict(question.__dict__) if hasattr(question, "__dict__") else dict(question)
         # OutcomeSpace is the one non-JSON-serializable field on the question.
         outcome = question_dict.get("outcome_space")
@@ -377,6 +396,7 @@ class QuestionSpec:
             "question": question_dict,
             "watched_sources": watched,
             "reference_classes": ref_classes,
+            "scheduled_review": scheduled_review,
             "readiness_gaps": [g.to_dict() for g in gaps],
         }
 
