@@ -85,6 +85,7 @@ export interface OverlayState {
   forecasts: boolean
   forecastsInitialId: null | string
   help: boolean
+  hooks: boolean
   markets: boolean
   messaging: boolean
   modelPicker: boolean

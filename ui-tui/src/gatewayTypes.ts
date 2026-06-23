@@ -906,6 +906,7 @@ export interface ForecastThesis {
   rho?: null | number
   delta?: null | number
   member_count?: number
+  aggregate_stale?: boolean
   components?: ForecastThesisComponent[]
   spread?: Record<string, unknown> | null
   history?: ForecastThesisHistoryPoint[]
@@ -966,7 +967,9 @@ export interface ForecastFactor {
   n_eff?: null | number
   delta?: null | number
   member_count?: number
+  aggregate_stale?: boolean
   constituents?: ForecastFactorConstituent[]
+  question_ids?: string[]
   history?: ForecastFactorHistoryPoint[]
   analyst_note?: ForecastAnalystNote | null
   rationale?: null | string

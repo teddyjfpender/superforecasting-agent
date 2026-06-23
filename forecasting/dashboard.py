@@ -641,6 +641,41 @@ def _workspace_thesis(
 
     analyst_notes = ledger.list_analyst_notes(question.id)
 
+    # Aggregate freshness: stale when a member moved after the last aggregate (or
+    # the thesis has members but was never aggregated). The member-commit cascade
+    # normally keeps this False; the desk badges it so a lagging thesis is honest.
+    agg_as_of = current.as_of if current else None
+    newer_members = 0
+    for member_id, _m in members.items():
+        msnap = ledger.get_current_snapshot(member_id)
+        if msnap is not None and agg_as_of and (msnap.as_of or "") > (agg_as_of or ""):
+            newer_members += 1
+    aggregate_stale = newer_members > 0 or (current is None and bool(members))
+
+    # Never-aggregated (or empty-component) thesis: synthesize member rows from the
+    # live membership so the desk shows the members + their current beliefs instead
+    # of a blank table.
+    if not component_views and members:
+        for member_id, member in members.items():
+            msnap = ledger.get_current_snapshot(member_id)
+            belief = msnap.probability_or_distribution if msnap else None
+            ot = member.get("member_outcome_type")
+            h = _headline_numeric(belief) if belief is not None else None
+            disp = "-" if h is None else (f"{h:.0%}" if ot in {"binary", "categorical"} else f"μ{h:g}")
+            component_views.append({
+                "id": member_id,
+                "title": member.get("member_title"),
+                "direction": member.get("direction"),
+                "role": member.get("role"),
+                "weight": member.get("weight"),
+                "status": "pending_aggregation",
+                "outcome_type": ot,
+                "latest_belief_display": disp,
+                "latest_headline": h,
+                "contribution_pts": None,
+                "s_i": None,
+            })
+
     return {
         "id": question.id,
         "title": question.title,
@@ -658,6 +693,7 @@ def _workspace_thesis(
         "rho": ensemble.get("rho"),
         "delta": delta,
         "member_count": len(members),
+        "aggregate_stale": aggregate_stale,
         "components": component_views,
         "spread": ensemble.get("spread"),
         "history": [_thesis_history_point(snap) for snap in snapshots[-history_limit:]],
@@ -674,6 +710,11 @@ def _workspace_thesis(
         # health-driver members.
         "question_ids": sorted(
             {comp["id"] for comp in component_views if comp.get("id")}
+            # The actual thesis membership (list_thesis_members) — the source of
+            # truth behind member_count. Without it the ecosystem collapsed to the
+            # snapshot's stored components, which are empty/stale until the thesis
+            # is re-aggregated, so the desk lens showed zero member questions.
+            | {mid for mid in members if mid}
             | {
                 contribution.get("member_id")
                 for entity in (meta.get("entities") or [])
@@ -746,6 +787,31 @@ def _workspace_factor(
 
     analyst_notes = ledger.list_analyst_notes(question.id)
 
+    # Aggregate freshness + live-constituent fallback (mirrors _workspace_thesis):
+    # stale when a constituent moved after the last aggregate; synthesize rows from
+    # live membership when the aggregate has none, so the desk is never blank.
+    agg_as_of = current.as_of if current else None
+    newer_members = 0
+    for member_id, _m in members.items():
+        msnap = ledger.get_current_snapshot(member_id)
+        if msnap is not None and agg_as_of and (msnap.as_of or "") > (agg_as_of or ""):
+            newer_members += 1
+    aggregate_stale = newer_members > 0 or (current is None and bool(members))
+    if not constituents and members:
+        for member_id, member in members.items():
+            msnap = ledger.get_current_snapshot(member_id)
+            belief = msnap.probability_or_distribution if msnap else None
+            view = _distribution_view(belief) if isinstance(belief, dict) else None
+            constituents.append({
+                "id": member_id,
+                "title": member.get("member_title"),
+                "direction": "short" if member.get("direction") == "inverted" else "long",
+                "weight": member.get("weight"),
+                "mean": (view or {}).get("mean") if view else (float(belief) if isinstance(belief, (int, float)) else None),
+                "sd": (view or {}).get("sd") if view else None,
+                "status": "pending_aggregation",
+            })
+
     return {
         "id": question.id,
         "title": question.title,
@@ -766,7 +832,15 @@ def _workspace_factor(
         "n_eff": payload.get("n_eff"),
         "delta": delta,
         "member_count": len(members),
+        "aggregate_stale": aggregate_stale,
         "constituents": constituents,
+        # The real membership (list_thesis_members) unioned with the snapshot's
+        # stored constituents, so the desk lens filters to every constituent even
+        # when the factor's snapshot components are empty/stale (same fix as the
+        # thesis ecosystem).
+        "question_ids": sorted(
+            {c["id"] for c in constituents if c.get("id")} | {mid for mid in members if mid}
+        ),
         "history": [_factor_history_point(snap) for snap in snapshots[-history_limit:]],
         "analyst_note": _workspace_analyst_note(analyst_notes[-1]) if analyst_notes else None,
         "rationale": current.rationale if current else None,

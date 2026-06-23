@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import sqlite3
+import threading
 import uuid
 from collections import Counter, defaultdict
 from datetime import timedelta
@@ -63,6 +64,13 @@ from forecasting.models import (
 
 
 logger = logging.getLogger(__name__)
+
+# Thread-local visited-set for the thesis/factor re-aggregate cascade. Module-
+# level + thread-local so concurrent member commits (e.g. a shared ForecastLedger
+# across the gateway's RPC thread pool) each get their OWN cycle guard, while the
+# synchronous recursion within one commit still shares it. Avoids the race a plain
+# instance attribute would have if a ledger were ever shared across threads.
+_CASCADE_TLS = threading.local()
 
 FORECASTING_PROTOCOL_VERSION = "forecasting-ledger-v1"
 
@@ -1505,8 +1513,20 @@ class ForecastLedger:
         panel_skipped_reason: str | None = None,
         outcome_paths: dict[str, Any] | None = None,
         require_outcome_paths: bool = False,
+        style_autofix: bool = False,
+        require_style: bool = True,
+        reasoning_methods: list[str] | None = None,
+        require_output_structure: bool = True,
+        distribution_autofix: bool = False,
     ) -> ForecastSnapshot:
         question = self.get_question(question_id)
+        # Forecast hooks: saturation/style gates raise SaturationBlocked (a
+        # ValidationError subclass with a byte-identical message) so the report —
+        # the failing rule + its remediation — propagates to the interactive tool
+        # and the programmatic escalator. Non-saturation ValidationErrors stay plain.
+        from forecasting.hooks import SaturationBlocked, single_block
+        from forecasting.hooks.spec import Category as _HookCategory
+
         if forecast_origin not in FORECAST_ORIGINS:
             raise ValidationError(f"forecast_origin must be one of {', '.join(sorted(FORECAST_ORIGINS))}")
         # Exploratory forecasts are scratchpad thinking — never scored, and
@@ -1534,12 +1554,14 @@ class ForecastLedger:
             if not change_my_mind_list:
                 missing_reasoning.append("change_my_mind")
             if missing_reasoning:
-                raise ValidationError(
+                raise single_block(
+                    "require_structured_reasoning",
                     "live forecast requires structured reasoning fields: "
                     + ", ".join(missing_reasoning)
                     + ". Provide reasons_up/reasons_down/change_my_mind, rerun with "
                     "require_structured_reasoning=false, or record it as "
-                    "forecast_origin='exploratory'."
+                    "forecast_origin='exploratory'.",
+                    action="decompose",
                 )
         if require_components and forecast_origin == "live":
             # A serious live forecast must show its work: the pooled drivers
@@ -1554,12 +1576,14 @@ class ForecastLedger:
                 len(component_rows) > 0 if isinstance(component_rows, (list, dict)) else False
             )
             if not has_components:
-                raise ValidationError(
+                raise single_block(
+                    "require_components",
                     "live forecast requires ensemble_components: decompose the estimate "
                     "into pooled drivers (base rate, mechanism, market/crowd, case-specific "
                     "factors), each with a stable source slug. Provide ensemble_components, "
                     "rerun with require_components=false, or record it as "
-                    "forecast_origin='exploratory'."
+                    "forecast_origin='exploratory'.",
+                    action="decompose",
                 )
 
         # Re-run discipline: a re-run is not a retrieval. When asked (the agent's
@@ -1585,24 +1609,28 @@ class ForecastLedger:
                         prior_ts = prior.created_at or prior.as_of or ""
                         has_fresh = any((item.captured_at or "") > prior_ts for item in evidence_now)
                     if not has_fresh:
-                        raise ValidationError(
+                        raise single_block(
+                            "require_fresh_evidence",
                             "re-run blocked: no fresh evidence collected since the prior forecast "
                             f"({prior.forecast_id}, as_of {prior.as_of}). Re-running a forecast must "
                             "start from fresh readings — run `forecast refresh <id>` (re-fetches "
                             "watched sources and re-pools) or import_source_evidence for each driver "
                             "to pull the latest data, THEN update. If you have genuinely checked and "
                             "nothing has changed, set acknowledge_stale_evidence=true (CLI "
-                            "--ack-stale-evidence), or record it as forecast_origin='exploratory'."
+                            "--ack-stale-evidence), or record it as forecast_origin='exploratory'.",
+                            action="collect_evidence",
                         )
 
         if require_decision_readiness and forecast_origin == "live":
             readiness_issues = question_decision_readiness_issues(question)
             if readiness_issues:
-                raise ValidationError(
+                raise single_block(
+                    "require_decision_readiness",
                     "forecast update blocked by missing decision context: "
                     + "; ".join(readiness_issues)
                     + ". Set decision_owner, action_threshold, and update_triggers "
-                    "on the question, or rerun without require_decision_readiness."
+                    "on the question, or rerun without require_decision_readiness.",
+                    category=_HookCategory.DECISION,
                 )
 
         now = utc_now_iso()
@@ -1649,11 +1677,13 @@ class ForecastLedger:
             if (panel_indicated or panel_required_here) and not panel_run_ref and not panel_skip:
                 if panel_required_here:
                     why = "high-impact" if high_impact else "re-committed (a prior live snapshot exists)"
-                    raise ValidationError(
+                    raise single_block(
+                        "require_panel",
                         f"{why} live forecast requires a deliberative panel: run a "
                         "panel or quorum and pass panel_run_ref, record why you skipped it "
                         "with panel_skipped_reason, rerun with require_panel=false, or record "
-                        "it as forecast_origin='exploratory'."
+                        "it as forecast_origin='exploratory'.",
+                        action="run_panel",
                     )
                 # First-forecast panels on lower-impact questions are recommended,
                 # not required — leave a note the agent/guidance can surface.
@@ -1671,9 +1701,11 @@ class ForecastLedger:
                 *(calibration_lesson_refs or []),
             ]
             if not citation_refs:
-                raise ValidationError(
+                raise single_block(
+                    "require_citations",
                     "live forecast requires citations: add evidence/model/reference/source refs, "
-                    "rerun with require_citations=false, or record it as forecast_origin='exploratory'"
+                    "rerun with require_citations=false, or record it as forecast_origin='exploratory'",
+                    action="collect_evidence",
                 )
             snapshot_metadata["citation_policy"] = "required"
         # Probability-mass audit for CATEGORICAL forecasts: route every
@@ -1688,13 +1720,15 @@ class ForecastLedger:
             snapshot_metadata["tail_audit"] = audit.to_dict()
             if require_outcome_paths and forecast_origin == "live" and not audit.passes:
                 offenders = [v.name for v in audit.verdicts if v.unearned]
-                raise ValidationError(
+                raise single_block(
+                    "require_outcome_paths",
                     "live categorical forecast has unearned tail mass "
                     f"({audit.unearned_mass:.1%}) on outcomes with no named path: "
                     f"{', '.join(offenders)}. Name the mechanism for each (pass "
                     "outcome_paths / --outcome-path), compress the mass onto outcomes "
                     "with a live path, rerun with require_outcome_paths=false, or record "
-                    "it as forecast_origin='exploratory'."
+                    "it as forecast_origin='exploratory'.",
+                    action="compress_tails",
                 )
         if stale_evidence_days is not None and evidence_refs:
             stale_refs = self.find_stale_evidence_refs(
@@ -1726,6 +1760,249 @@ class ForecastLedger:
             lesson = self.get_calibration_lesson(lesson_id)
             if lesson["status"] != "active" or lesson.get("invalidated_by_correction_id"):
                 raise ValidationError("calibration lesson refs must be active and non-invalidated")
+
+        # Style gate (Phase 2): a live forecast's prose must be house-clean (no
+        # em-dashes / formatting). The interactive AGENT path BLOCKS so the agent
+        # rewrites to conform (the user's choice). PROGRAMMATIC system paths
+        # (refresh / autopilot / aggregates) pass style_autofix=True: they have no
+        # agent to rewrite their generated prose, so the hook mechanically cleans
+        # it (the "auto-orchestrate remediation" choice) rather than break
+        # automation. Exploratory/backtest/imported work is exempt (not "live").
+        if forecast_origin == "live":
+            from forecasting.hooks import style_clean_for_rationale, style_message
+
+            _style_ok, _style_offenders = style_clean_for_rationale(rationale)
+            if not _style_ok:
+                if style_autofix:
+                    from forecasting.writeup import sanitize_writeup_text
+
+                    rationale = sanitize_writeup_text(rationale)
+                elif require_style:
+                    raise single_block(
+                        "style_clean",
+                        style_message(_style_offenders),
+                        action="sanitize_style",
+                        category=_HookCategory.STYLE,
+                        weight=5.0,
+                    )
+                # else: style downgraded to warn/off via config — leave the prose;
+                # the observe-mode report still records the style verdict.
+
+        # Record the agent's declared reasoning methods (normalized to the taxonomy)
+        # in metadata, so the reasoning-composition hook + lint can read them.
+        if reasoning_methods:
+            from forecasting.hooks.reasoning import normalize_methods as _norm_methods
+
+            _rm, _ = _norm_methods(reasoning_methods)
+            if _rm:
+                snapshot_metadata["reasoning_methods"] = _rm
+
+        # Distribution structure gate (v2): a live distribution/numeric forecast must
+        # be RENDERABLE + WELL-FORMED (ordered / nested / in-bounds), so the Desk chart
+        # never draws absurd bounds. The agent path BLOCKS (fix the distribution); a
+        # programmatic system path AUTO-FIXES (reorder / clamp / nest / derive). Binary
+        # and plain categorical payloads are unaffected (assess returns None).
+        if forecast_origin == "live":
+            from forecasting.hooks.distribution import assess_distribution, autofix_distribution
+
+            _osp = question.outcome_space
+            _bounds = getattr(_osp, "bounds", None)
+            _da = assess_distribution(probability_or_distribution, outcome_type=_osp.type, bounds=_bounds, units=getattr(_osp, "units", None))
+            if _da and (not _da.renderable or not _da.well_formed or not _da.in_range):
+                if distribution_autofix:
+                    _fixed, _fxs = autofix_distribution(probability_or_distribution, bounds=_bounds)
+                    if _fxs:
+                        probability_or_distribution = _fixed
+                        payload = self._validate_probability_payload(_fixed, _osp)
+                        snapshot_metadata["distribution_autofixed"] = _fxs
+                        # Re-assess: a clamp can still leave a degenerate/edge interval.
+                        # Record what the mechanical fix could not resolve (observability)
+                        # rather than silently committing a still-malformed band.
+                        _da2 = assess_distribution(_fixed, outcome_type=_osp.type, bounds=_bounds, units=getattr(_osp, "units", None))
+                        if _da2 and (not _da2.well_formed or not _da2.renderable):
+                            snapshot_metadata["distribution_autofix_incomplete"] = list(_da2.issues)
+                elif require_output_structure:
+                    if not _da.renderable:
+                        raise single_block(
+                            "output_renderable",
+                            "distribution forecast is not renderable: it needs a central tendency "
+                            "(median or mean) AND at least one ordered interval (ci90 or quantiles) "
+                            "so the Desk chart can draw a band. Provide them, or record "
+                            "forecast_origin='exploratory'.",
+                            action="fix_distribution", category=_HookCategory.OUTPUT, weight=12.0,
+                        )
+                    raise single_block(
+                        "uncertainty_well_formed",
+                        "forecast uncertainty bounds are malformed: " + ("; ".join(_da.issues) or "ordering/nesting/range")
+                        + ". Intervals must be ordered (lo<=hi), nested (ci50 inside ci90), finite, "
+                        "non-degenerate, and within the question bounds. Fix the distribution, or "
+                        "record forecast_origin='exploratory'.",
+                        action="fix_distribution", category=_HookCategory.OUTPUT, weight=12.0,
+                    )
+
+        # User-defined rule enforcement (Phase 5). Only runs when the desk has
+        # authored custom rules (zero overhead otherwise). A buggy rule engine must
+        # never brick a commit (fail-OPEN on evaluation errors), but a legitimately
+        # failing error-severity user rule DOES block (that is the point).
+        if forecast_origin == "live":
+            try:
+                import dataclasses as _dc
+
+                from forecasting.hooks import build_commit_context, resolve_severities, run_hooks
+                from forecasting.hooks.engine import load_hook_config
+                from forecasting.hooks.loader import load_user_rules
+
+                _hcfg = load_hook_config()
+                _user_rules = load_user_rules(_hcfg)
+            except Exception:
+                _user_rules = []
+                _hcfg = {}
+            if _user_rules:
+                _ublocked = None
+                try:
+                    _ucomp = ensemble_components
+                    if isinstance(_ucomp, dict):
+                        _ucomp = _ucomp.get("components", _ucomp)
+                    _ctx = build_commit_context(
+                        question_id=question_id, forecast_origin=forecast_origin, event="update",
+                        impact=question.impact, has_prior=bool(question.current_forecast_id),
+                        is_categorical=(question.outcome_space.type == "categorical"),
+                        reasons_up=reasons_up_list, reasons_down=reasons_down_list, change_my_mind=change_my_mind_list,
+                        has_components=bool(_ucomp), component_count=(len(_ucomp) if isinstance(_ucomp, (list, dict)) else 0),
+                        citation_refs=[*(evidence_refs or []), *(model_run_refs or [])],
+                        panel_run_ref=panel_run_ref, panel_skipped_reason=panel_skipped_reason,
+                        has_fresh_evidence=True, acknowledge_stale_evidence=acknowledge_stale_evidence,
+                        evidence_count=len(evidence_refs or []), prior_forecast_id=None, prior_as_of=None,
+                        decision_gaps=question_decision_readiness_issues(question),
+                        tail_audit_passes=((snapshot_metadata.get("tail_audit") or {}).get("passes")),
+                        tail_unearned_mass=float((snapshot_metadata.get("tail_audit") or {}).get("unearned_mass") or 0.0),
+                        tail_offenders=[], rationale=rationale,
+                        domain=getattr(question, "domain", None), outcome_type=question.outcome_space.type,
+                    )
+                    # Augment with the signals user rules may test that the candidate
+                    # context does not carry (only fetched when user rules exist) —
+                    # including the v2 output/uncertainty/confidence/reasoning signals,
+                    # so a user rule that references e.g. bounds.well_formed or
+                    # reasoning.method_count enforces against real values, not defaults.
+                    from forecasting.hooks.distribution import assess_distribution as _u_assess
+                    from forecasting.hooks.profiles import resolve_reasoning_requirement as _u_rrr
+
+                    _uosp = question.outcome_space
+                    _uda = _u_assess(probability_or_distribution, outcome_type=_uosp.type, bounds=getattr(_uosp, "bounds", None), units=getattr(_uosp, "units", None))
+                    try:
+                        _ush = self._sharpness(probability_or_distribution)
+                    except Exception:
+                        _ush = None
+                    _uprof = ((question.metadata or {}).get("forecast_hooks") or {}).get("profile") or _hcfg.get("profile") or "standard"
+                    _urq, _umin = _u_rrr(_uprof)
+                    _uuc = False
+                    try:
+                        _ub = self.calibration_bias(domain=getattr(question, "domain", None))
+                        _uuc = (_ub.get("status") not in (None, "insufficient_evidence")) and _ub.get("direction") == "under"
+                    except Exception:
+                        _uuc = False
+                    _utd = snapshot_metadata.get("tail_audit") or {}
+                    _ctx = _dc.replace(
+                        _ctx,
+                        reference_class_count=len(self.list_reference_classes(question_id)),
+                        watched_source_count=len(self.list_watched_sources(scope_type="question", scope_ref=question_id, status="active")),
+                        panel_run_count=len(self.list_panel_runs(question_id)),
+                        reasoning_methods=tuple(snapshot_metadata.get("reasoning_methods") or ()),
+                        required_reasoning_methods=tuple(_urq), min_reasoning_methods=_umin,
+                        is_distribution=bool(_uda and _uda.is_distribution),
+                        distribution_renderable=(_uda.renderable if _uda else True),
+                        bounds_well_formed=(_uda.well_formed if _uda else True),
+                        bounds_in_range=(_uda.in_range if _uda else True),
+                        interval_width_ratio=(_uda.width_ratio if _uda else None),
+                        sharpness=_ush,
+                        calibration_under_confident=_uuc,
+                        tail_null_excess=float(((_utd.get("null_model") or {}).get("excess_tail")) or 0.0),
+                    )
+                    _upolicy = resolve_severities(question, forecast_origin=forecast_origin, hooks_config=_hcfg)
+                    _ureport = run_hooks(_ctx, _upolicy, rules=tuple(_user_rules))
+                    if not _ureport.passed:
+                        _ublocked = _ureport
+                except Exception:
+                    logger.debug("forecast-hooks user-rule eval failed (non-fatal, fail-open)", exc_info=True)
+                if _ublocked is not None:
+                    raise SaturationBlocked(_ublocked)
+
+        # Forecast hooks (Phase 1, OBSERVE mode): compute a saturation score +
+        # per-rule report and record it on the snapshot. The inline gates above
+        # remain the enforcement; this runs read-only and must never break a
+        # commit, so it is fully guarded. Phase 1b flips enforcement to the engine
+        # once the parity test confirms identical verdicts.
+        try:
+            from forecasting.hooks import build_commit_context, policy_from_require_flags, run_hooks
+
+            _comp = ensemble_components
+            if isinstance(_comp, dict):
+                _comp = _comp.get("components", _comp)
+            _has_comp = bool(_comp) and (len(_comp) > 0 if isinstance(_comp, (list, dict)) else False)
+            _comp_n = len(_comp) if isinstance(_comp, (list, dict)) else 0
+            _cite_refs = [
+                *(evidence_refs or []), *(model_run_refs or []), *(reference_class_refs or []),
+                *(source_snapshot_refs or []), *(assumption_refs or []), *(calibration_lesson_refs or []),
+            ]
+            _td = snapshot_metadata.get("tail_audit") or {}
+            # v2 signals for the observe score
+            from forecasting.hooks.distribution import assess_distribution as _assess_dist
+            from forecasting.hooks.profiles import resolve_reasoning_requirement as _resolve_rr
+
+            _osp2 = question.outcome_space
+            _oda = _assess_dist(probability_or_distribution, outcome_type=_osp2.type, bounds=getattr(_osp2, "bounds", None), units=getattr(_osp2, "units", None))
+            try:
+                _osharp = self._sharpness(probability_or_distribution)
+            except Exception:
+                _osharp = None
+            try:
+                _oprof = ((question.metadata or {}).get("forecast_hooks") or {}).get("profile") or "standard"
+                _orq, _omin = _resolve_rr(_oprof)
+            except Exception:
+                _orq, _omin = (), 0
+            _hook_ctx = build_commit_context(
+                question_id=question_id, forecast_origin=forecast_origin, event="update",
+                impact=question.impact, has_prior=bool(question.current_forecast_id),
+                is_categorical=(question.outcome_space.type == "categorical"),
+                reasons_up=reasons_up_list, reasons_down=reasons_down_list, change_my_mind=change_my_mind_list,
+                has_components=_has_comp, component_count=_comp_n, citation_refs=_cite_refs,
+                panel_run_ref=panel_run_ref, panel_skipped_reason=panel_skipped_reason,
+                # Freshness is treated as satisfied for the advisory SCORE: when the
+                # fresh-evidence rule is enforced, a stale re-run is blocked by the
+                # gate above and never reaches here; when it is not enforced, the
+                # score should not penalize freshness. So a recorded saturation
+                # score never reflects a freshness failure (the gate owns that).
+                has_fresh_evidence=True, acknowledge_stale_evidence=acknowledge_stale_evidence,
+                evidence_count=(evidence_count_at_commit or 0),
+                prior_forecast_id=None, prior_as_of=None,
+                decision_gaps=question_decision_readiness_issues(question),
+                tail_audit_passes=(_td.get("passes") if _td else None),
+                tail_unearned_mass=float(_td.get("unearned_mass") or 0.0),
+                tail_offenders=[v.get("name") for v in (_td.get("verdicts") or []) if v.get("unearned")],
+                rationale=rationale,
+                domain=getattr(question, "domain", None),
+                outcome_type=question.outcome_space.type,
+                reasoning_methods=snapshot_metadata.get("reasoning_methods") or [],
+                required_reasoning_methods=tuple(_orq), min_reasoning_methods=_omin,
+                is_distribution=bool(_oda and _oda.is_distribution),
+                distribution_renderable=(_oda.renderable if _oda else True),
+                bounds_well_formed=(_oda.well_formed if _oda else True),
+                bounds_in_range=(_oda.in_range if _oda else True),
+                interval_width_ratio=(_oda.width_ratio if _oda else None),
+                sharpness=_osharp,
+                panel_run_count=len(self.list_panel_runs(question_id)),
+            )
+            _hook_policy = policy_from_require_flags(
+                forecast_origin=forecast_origin,
+                require_structured_reasoning=require_structured_reasoning,
+                require_components=require_components, require_fresh_evidence=require_fresh_evidence,
+                require_decision_readiness=require_decision_readiness, require_panel=require_panel,
+                require_citations=require_citations, require_outcome_paths=require_outcome_paths,
+            )
+            snapshot_metadata["saturation"] = run_hooks(_hook_ctx, _hook_policy).to_dict()
+        except Exception:  # observe-mode is best-effort and must NEVER break a commit
+            logger.debug("forecast-hooks observe-mode failed (non-fatal)", exc_info=True)
+
         forecast_id = f"fs_{uuid.uuid4().hex[:12]}"
         horizon_days = self._forecast_horizon_days(question.close_time, as_of_ts)
         parent_forecast_id = question.current_forecast_id
@@ -1787,7 +2064,65 @@ class ForecastLedger:
                 )
         if panel_run_ref:
             self.attach_panel_to_snapshot(panel_run_ref, forecast_id)
+        # A member commit re-freshens its parent thesis/factor aggregates so the
+        # desk never shows a thesis that "hasn't moved" while its members have.
+        # Runs POST-transaction (the `with conn` block above has closed) so the
+        # parent re-aggregate's writes never deadlock the just-committed member
+        # write; cycle-guarded + fail-open; a no-op (one indexed lookup) when the
+        # question has no parents — i.e. on the common forecast commit.
+        if set_current and forecast_origin == "live":
+            self._cascade_reaggregate_parents(question_id, as_of=as_of_ts)
         return self.get_snapshot(forecast_id)
+
+    def _thesis_auto_aggregate_enabled(self, thesis_id: str) -> bool:
+        """Per-thesis opt-out of the member-commit re-aggregate cascade
+        (metadata.forecast_hooks.auto_aggregate = false)."""
+        try:
+            q = self.get_question(thesis_id)
+            meta = (getattr(q, "metadata", None) or {}).get("forecast_hooks") or {}
+            return meta.get("auto_aggregate", True) is not False
+        except Exception:
+            return True
+
+    def _cascade_reaggregate_parents(self, member_id: str, *, as_of: str | None = None) -> None:
+        """Re-aggregate every parent thesis/factor of a just-committed member so
+        their stored member contributions + health track the live members
+        (``aggregate_thesis`` auto-dispatches to the factor portfolio math, so one
+        call covers both). Each parent's own aggregate commit re-enters this method
+        via ``create_snapshot``, freshening grandparents up the DAG; a
+        per-top-commit visited-set bounds the work and breaks cycles. Fail-open: a
+        cascade error never breaks the member commit. Disable globally with
+        ``FORECAST_DISABLE_THESIS_CASCADE``."""
+        if os.environ.get("FORECAST_DISABLE_THESIS_CASCADE", "").strip().lower() in {"1", "true", "yes", "on"}:
+            return
+        try:
+            parents = self.list_theses_for_member(member_id)
+        except Exception:
+            return
+        if not parents:
+            return
+        visited = getattr(_CASCADE_TLS, "visited", None)
+        top = visited is None
+        if top:
+            visited = set()
+            _CASCADE_TLS.visited = visited
+        try:
+            for parent in parents:
+                pid = parent.get("thesis_id")
+                if not pid or pid == member_id or pid in visited:
+                    continue
+                visited.add(pid)
+                if not self._thesis_auto_aggregate_enabled(pid):
+                    continue
+                try:
+                    # analyst_note=False: a member move must not spam the parent's
+                    # analyst log with a re-aggregation brief on every commit.
+                    self.aggregate_thesis(pid, now=as_of, analyst_note=False)
+                except Exception:
+                    logger.debug("thesis/factor cascade re-aggregate failed for parent %s", pid, exc_info=True)
+        finally:
+            if top:
+                _CASCADE_TLS.visited = None
 
     def get_snapshot(self, forecast_id: str) -> ForecastSnapshot:
         with self._connect() as conn:
@@ -6148,6 +6483,7 @@ class ForecastLedger:
         rho: float | str,
         now: str | None,
         commit: bool,
+        analyst_note: bool = True,
     ) -> dict[str, Any]:
         """Portfolio-aggregate a factor's constituent return distributions."""
 
@@ -6197,16 +6533,17 @@ class ForecastLedger:
         if not commit:
             return result
         if payload.get("factor_mean") is None:
-            note = self.add_analyst_note(
-                question_id=factor.id,
-                body="; ".join(agg.notes) or "withheld: no usable constituent",
-                kind="brief",
-                headline=f"{factor.title} — withheld (insufficient fresh constituents)",
-                be_aware="; ".join(agg.notes),
-                generator="factor_aggregate",
-                metadata={"coverage": agg.coverage, "member_count": len(members)},
-            )
-            result["analyst_note_id"] = note.get("id")
+            if analyst_note:
+                note = self.add_analyst_note(
+                    question_id=factor.id,
+                    body="; ".join(agg.notes) or "withheld: no usable constituent",
+                    kind="brief",
+                    headline=f"{factor.title} — withheld (insufficient fresh constituents)",
+                    be_aware="; ".join(agg.notes),
+                    generator="factor_aggregate",
+                    metadata={"coverage": agg.coverage, "member_count": len(members)},
+                )
+                result["analyst_note_id"] = note.get("id")
             return result
         rationale = (
             f"Portfolio aggregate of {len(members)} constituent return distribution(s) "
@@ -6220,6 +6557,8 @@ class ForecastLedger:
             as_of=as_of,
             confidence=round(max(0.0, min(1.0, agg.coverage)), 3),
             method="factor_aggregate",
+            style_autofix=True,  # deterministic fold: mechanically clean generated prose
+            distribution_autofix=True,  # programmatic: auto-fix malformed bounds rather than block
             ensemble_components={
                 "components": agg.components,
                 "rho": agg.rho,
@@ -6230,23 +6569,24 @@ class ForecastLedger:
             calibration_eligible=False,
             metadata={"factor_notes": agg.notes, "aggregation": "factor"},
         )
-        headline, how_it_thinks, looking_for, be_aware, body = _factor_narrative(factor, agg)
-        note = self.add_analyst_note(
-            question_id=factor.id,
-            body=body,
-            kind="brief",
-            headline=headline,
-            how_it_thinks=how_it_thinks,
-            looking_for=looking_for,
-            be_aware=be_aware,
-            forecast_id=snapshot.forecast_id,
-            probability_at_write=payload,
-            confidence_at_write=round(max(0.0, min(1.0, agg.coverage)), 3),
-            generator="factor_aggregate",
-            metadata={"coverage": agg.coverage, "n_eff": agg.n_eff, "rho": agg.rho},
-        )
         result["snapshot_id"] = snapshot.forecast_id
-        result["analyst_note_id"] = note.get("id")
+        if analyst_note:
+            headline, how_it_thinks, looking_for, be_aware, body = _factor_narrative(factor, agg)
+            note = self.add_analyst_note(
+                question_id=factor.id,
+                body=body,
+                kind="brief",
+                headline=headline,
+                how_it_thinks=how_it_thinks,
+                looking_for=looking_for,
+                be_aware=be_aware,
+                forecast_id=snapshot.forecast_id,
+                probability_at_write=payload,
+                confidence_at_write=round(max(0.0, min(1.0, agg.coverage)), 3),
+                generator="factor_aggregate",
+                metadata={"coverage": agg.coverage, "n_eff": agg.n_eff, "rho": agg.rho},
+            )
+            result["analyst_note_id"] = note.get("id")
         return result
 
     def aggregate_thesis(
@@ -6256,6 +6596,7 @@ class ForecastLedger:
         rho: float | str = 0.4,
         now: str | None = None,
         commit: bool = True,
+        analyst_note: bool = True,
     ) -> dict[str, Any]:
         """Deterministically aggregate a thesis's members into a fresh snapshot.
 
@@ -6273,7 +6614,7 @@ class ForecastLedger:
         if self.is_factor(thesis):
             # A factor aggregates a weighted basket of return distributions via
             # portfolio math, not the health-signal pool.
-            return self._aggregate_factor(thesis, rho=rho, now=now, commit=commit)
+            return self._aggregate_factor(thesis, rho=rho, now=now, commit=commit, analyst_note=analyst_note)
         members = self.list_thesis_members(thesis_id)
         beliefs = [self._thesis_member_belief(m) for m in members]
         as_of = now or utc_now_iso()
@@ -6318,16 +6659,17 @@ class ForecastLedger:
         if payload.get("health") is None:
             # No usable member signal: do not fabricate a number. Record the
             # withholding as an analyst note and skip the snapshot.
-            note = self.add_analyst_note(
-                question_id=thesis_id,
-                body="; ".join(agg.notes) or "withheld: no usable member signal",
-                kind="brief",
-                headline=f"{thesis.title} — withheld (insufficient fresh members)",
-                be_aware="; ".join(agg.notes),
-                generator="thesis_aggregate",
-                metadata={"coverage": agg.coverage, "member_count": len(members)},
-            )
-            result["analyst_note_id"] = note.get("id")
+            if analyst_note:
+                note = self.add_analyst_note(
+                    question_id=thesis_id,
+                    body="; ".join(agg.notes) or "withheld: no usable member signal",
+                    kind="brief",
+                    headline=f"{thesis.title} — withheld (insufficient fresh members)",
+                    be_aware="; ".join(agg.notes),
+                    generator="thesis_aggregate",
+                    metadata={"coverage": agg.coverage, "member_count": len(members)},
+                )
+                result["analyst_note_id"] = note.get("id")
             return result
 
         rationale = (
@@ -6342,6 +6684,8 @@ class ForecastLedger:
             as_of=as_of,
             confidence=round(max(0.0, min(1.0, agg.coverage)), 3),
             method="thesis_aggregate",
+            style_autofix=True,  # deterministic fold: mechanically clean generated prose
+            distribution_autofix=True,  # programmatic: auto-fix malformed bounds rather than block
             ensemble_components={
                 "components": agg.components,
                 "rho": agg.rho,
@@ -6360,23 +6704,24 @@ class ForecastLedger:
             reasons_up=_thesis_reason_lines(agg, "support"),
             reasons_down=_thesis_reason_lines(agg, "drag"),
         )
-        headline, how_it_thinks, looking_for, be_aware, body = _thesis_narrative(thesis, agg)
-        note = self.add_analyst_note(
-            question_id=thesis_id,
-            body=body,
-            kind="brief",
-            headline=headline,
-            how_it_thinks=how_it_thinks,
-            looking_for=looking_for,
-            be_aware=be_aware,
-            forecast_id=snapshot.forecast_id,
-            probability_at_write=payload,
-            confidence_at_write=round(max(0.0, min(1.0, agg.coverage)), 3),
-            generator="thesis_aggregate",
-            metadata={"coverage": agg.coverage, "n_eff": agg.n_eff, "rho": agg.rho},
-        )
         result["snapshot_id"] = snapshot.forecast_id
-        result["analyst_note_id"] = note.get("id")
+        if analyst_note:
+            headline, how_it_thinks, looking_for, be_aware, body = _thesis_narrative(thesis, agg)
+            note = self.add_analyst_note(
+                question_id=thesis_id,
+                body=body,
+                kind="brief",
+                headline=headline,
+                how_it_thinks=how_it_thinks,
+                looking_for=looking_for,
+                be_aware=be_aware,
+                forecast_id=snapshot.forecast_id,
+                probability_at_write=payload,
+                confidence_at_write=round(max(0.0, min(1.0, agg.coverage)), 3),
+                generator="thesis_aggregate",
+                metadata={"coverage": agg.coverage, "n_eff": agg.n_eff, "rho": agg.rho},
+            )
+            result["analyst_note_id"] = note.get("id")
         return result
 
     def aggregate_all_theses(
@@ -6794,6 +7139,8 @@ class ForecastLedger:
             probability_or_distribution=proposal["proposed_probability_or_distribution"],
             rationale=proposal["rationale"],
             method="autopilot",
+            style_autofix=True,  # autopilot auto-commit: no agent to rewrite, clean prose mechanically
+            distribution_autofix=True,  # programmatic: auto-fix malformed bounds rather than block
             evidence_refs=proposal["evidence_refs"],
             source_snapshot_refs=proposal["source_snapshot_refs"],
             model_run_refs=proposal["model_run_refs"],
@@ -7133,6 +7480,8 @@ class ForecastLedger:
             reasons_down=reasons_down or ["Counter-signals in the refreshed sources"],
             change_my_mind=change_my_mind,
             require_citations=True,
+            style_autofix=True,  # programmatic re-pool: mechanically clean generated prose, never block
+            distribution_autofix=True,  # programmatic: auto-fix malformed bounds rather than block
             panel_skipped_reason=(
                 "automated forecast refresh — deterministic re-pool of existing components; "
                 "panel not required for a programmatic re-estimate"

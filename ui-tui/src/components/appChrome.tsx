@@ -11,6 +11,7 @@ import { FACES } from '../content/faces.js'
 import { VERBS } from '../content/verbs.js'
 import { fmtDuration } from '../domain/messages.js'
 import { stickyPromptFromViewport } from '../domain/viewport.js'
+import { sweepColor, sweepStops } from '../lib/accentSweep.js'
 import { buildSubagentTree, treeTotals, widthByDepth } from '../lib/subagentTree.js'
 import { fmtK } from '../lib/text.js'
 import { useScrollbarSnapshot, useViewportSnapshot } from '../lib/viewportStore.js'
@@ -73,7 +74,7 @@ const renderIndicator = (style: IndicatorStyle, tick: number): IndicatorRender =
   return { frame, intervalMs: Math.max(SPINNER_TICK_MS, spinner.interval), showVerb: false }
 }
 
-function FaceTicker({ color, startedAt }: { color: string; startedAt?: null | number }) {
+function FaceTicker({ color, startedAt, t }: { color: string; startedAt?: null | number; t: Theme }) {
   const ui = useStore($uiState)
   const style = ui.indicatorStyle
   const [tick, setTick] = useState(() => Math.floor(Math.random() * 1000))
@@ -111,10 +112,13 @@ function FaceTicker({ color, startedAt }: { color: string; startedAt?: null | nu
   // IS shown, its trailing padding already provides the gap, so the extra
   // space is harmless.
   const durationSegment = startedAt ? ` · ${fmtDuration(now - startedAt)}` : ''
+  // The spinner glyph sweeps the brand accent family while busy; the verb +
+  // duration stay in the status colour so an error/warn state still reads.
+  const frameColor = sweepColor(sweepStops(t), tick)
 
   return (
     <Text color={color}>
-      {frame}
+      <Text color={frameColor}>{frame}</Text>
       {verbSegment}
       {durationSegment}
     </Text>
@@ -304,7 +308,7 @@ export function StatusRule({
         <Text color={t.color.border} wrap="truncate-end">
           {'─ '}
           {busy ? (
-            <FaceTicker color={statusColor} startedAt={turnStartedAt} />
+            <FaceTicker color={statusColor} startedAt={turnStartedAt} t={t} />
           ) : (
             <Text color={statusColor}>{status}</Text>
           )}
@@ -363,7 +367,7 @@ export function FloatBox({ children, color }: { children: ReactNode; color: stri
     <Box
       alignSelf="flex-start"
       borderColor={color}
-      borderStyle="double"
+      borderStyle="round"
       flexDirection="column"
       marginTop={1}
       opaque

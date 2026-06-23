@@ -17,6 +17,7 @@ from forecasting.backtesting import (
     build_forecasting_evidence_status,
 )
 from forecasting.ensembles import linear_trend_projection, weighted_binary_probability
+from forecasting.hooks import SaturationBlocked
 from forecasting.learning import apply_active_lesson_adjustments
 from forecasting.models import ForecastingError, OutcomeSpace, utc_now_iso
 from forecasting.protocol import build_protocol_messages
@@ -314,6 +315,19 @@ FORECAST_LEDGER_SCHEMA = {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": "Specific observations that would force a material update.",
+            },
+            "reasoning_methods": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "The named reasoning methods you actually used, from the taxonomy "
+                    "(outside_view, inside_view, base_rate, bayesian, decomposition, causality, "
+                    "analogy, comparative, fermi, conditional, trend_extrapolation, mean_reversion, "
+                    "extremizing, systems, game_theory, dialectics, calibration, disconfirmation, "
+                    "pre_mortem, steelmanning, deductive, inductive, abductive, reductive, "
+                    "question_framing). Serious forecasts compose several. The reasoning-composition "
+                    "hook checks these against the active profile."
+                ),
             },
             "require_structured_reasoning": {
                 "type": "boolean",
@@ -1349,6 +1363,22 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                     calibration_lesson_refs=calibration_lesson_refs,
                     calibration_adjustment=calibration_adjustment,
                 )
+            # Resolve the enforcement severity of each rule from config (profile +
+            # impact/origin scaling + overrides + per-question), so the gates are
+            # config-driven, not hardcoded. An explicit require_* arg still wins
+            # (tests / one-off overrides). The `standard` default profile equals
+            # the prior hardcoded defaults, so behaviour is unchanged out of the box.
+            from forecasting.hooks import Severity as _HookSeverity
+            from forecasting.hooks import resolve_severities as _resolve_sev
+
+            _hook_origin = args.get("forecast_origin") or "live"
+            _hook_sev = _resolve_sev(ledger.get_question(question_id), forecast_origin=_hook_origin)
+
+            def _require(arg_name: str, rule_id: str) -> bool:
+                if arg_name in args:
+                    return bool(args[arg_name])
+                return _hook_sev.get(rule_id) == _HookSeverity.ERROR
+
             snapshot = ledger.create_snapshot(
                 question_id=question_id,
                 probability_or_distribution=probability,
@@ -1374,7 +1404,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 calibration_weight=args.get("calibration_weight") if args.get("calibration_weight") is not None else 1.0,
                 stale_evidence_days=args.get("stale_evidence_days", 30),
                 acknowledge_stale_evidence=bool(args.get("ack_stale_evidence", False)),
-                require_citations=bool(args.get("require_citations", False)),
+                require_citations=_require("require_citations", "require_citations"),
                 calibration_lesson_refs=calibration_lesson_refs,
                 calibration_adjustment=calibration_adjustment,
                 # Stamp which related forecasts informed this one, server-side from
@@ -1386,15 +1416,22 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 reasons_up=args.get("reasons_up"),
                 reasons_down=args.get("reasons_down"),
                 change_my_mind=args.get("change_my_mind"),
-                require_structured_reasoning=bool(args.get("require_structured_reasoning", True)),
-                require_components=bool(args.get("require_components", True)),
-                require_fresh_evidence=bool(args.get("require_fresh_evidence", True)),
-                require_decision_readiness=bool(args.get("require_decision_readiness", False)),
-                require_panel=bool(args.get("require_panel", True)),
+                require_structured_reasoning=_require("require_structured_reasoning", "require_structured_reasoning"),
+                require_components=_require("require_components", "require_components"),
+                require_fresh_evidence=_require("require_fresh_evidence", "require_fresh_evidence"),
+                require_decision_readiness=_require("require_decision_readiness", "require_decision_readiness"),
+                require_panel=_require("require_panel", "require_panel"),
                 panel_run_ref=args.get("panel_run_ref"),
                 panel_skipped_reason=args.get("panel_skipped_reason"),
                 outcome_paths=args.get("outcome_paths"),
-                require_outcome_paths=bool(args.get("require_outcome_paths", False)),
+                require_outcome_paths=_require("require_outcome_paths", "require_outcome_paths"),
+                require_style=_require("require_style", "style_clean"),
+                reasoning_methods=args.get("reasoning_methods"),
+                require_output_structure=(
+                    bool(args["require_output_structure"]) if "require_output_structure" in args
+                    else (_hook_sev.get("output_renderable") == _HookSeverity.ERROR
+                          or _hook_sev.get("uncertainty_well_formed") == _HookSeverity.ERROR)
+                ),
             )
             try:
                 from forecasting.writeup import write_brief
@@ -2116,6 +2153,37 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             return tool_result(success=True, panel_runs=rows)
 
         return tool_error(f"unknown forecast_ledger action: {action}", success=False)
+    except SaturationBlocked as blocked:
+        # A commit was refused by the forecast hooks. Instead of a bare error,
+        # hand the agent a precise, machine-checked to-do list so it self-remediates
+        # (collect evidence / run a panel / decompose / compress tails / rewrite
+        # prose) WITHOUT the user re-prompting, then re-calls update_forecast.
+        rep = blocked.report
+        failing = [
+            {
+                "rule_id": v.rule_id,
+                "message": v.message,
+                "remediation": (v.remediation.action if v.remediation else "none"),
+                "directive": (v.remediation.directive if v.remediation else ""),
+                "stage": (v.remediation.target_stage if v.remediation else None),
+            }
+            for v in rep.blocking_failures()
+        ]
+        return tool_result(
+            success=False,
+            error=str(blocked),
+            saturation_block={
+                "blocked": True,
+                "failing_rules": failing,
+                "next_actions": [r.action for r in rep.remediations()],
+                "guidance": (
+                    "This forecast is under-saturated. You own saturating it: perform the "
+                    "remediation(s) above (collect fresh evidence, run the decomposition panel, "
+                    "decompose into components, name a path for tail mass, or rewrite the prose "
+                    "in house style), then call update_forecast again. Do not ask the user."
+                ),
+            },
+        )
     except ForecastingError as exc:
         return tool_error(str(exc), success=False)
     except ValueError as exc:

@@ -527,6 +527,74 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     doctor_parser.add_argument("--json", action="store_true", help="Emit machine-readable doctor JSON")
     doctor_parser.set_defaults(_forecast_handler=_cmd_doctor)
 
+    lint_parser = forecast_sub.add_parser(
+        "lint", help="Saturation report for a forecast: 0-100 score + per-rule verdicts (style + completeness)"
+    )
+    lint_parser.add_argument("question_id", nargs="?", help="Question id to lint")
+    lint_parser.add_argument("--all", action="store_true", help="Lint every active question and summarize (finish sweep)")
+    lint_parser.add_argument("--json", action="store_true", help="Emit machine-readable output")
+    lint_parser.set_defaults(_forecast_handler=_cmd_lint)
+
+    hooks_parser = forecast_sub.add_parser(
+        "hooks", help="Inspect / tune / author the saturation + style hook rules"
+    )
+    hooks_sub = hooks_parser.add_subparsers(dest="hooks_command")
+
+    hooks_list = hooks_sub.add_parser("list", help="Show the active rules + their resolved severity (and why)")
+    hooks_list.add_argument("--question", dest="question_id", help="Resolve severities for a specific question")
+    hooks_list.add_argument("--json", action="store_true")
+    hooks_list.set_defaults(_forecast_handler=_cmd_hooks_list)
+
+    hooks_profiles = hooks_sub.add_parser("profiles", help="List the curated profiles + their rule severities")
+    hooks_profiles.set_defaults(_forecast_handler=_cmd_hooks_profiles)
+
+    hooks_explain = hooks_sub.add_parser("explain", help="Explain a signal (or list every signal the DSL exposes)")
+    hooks_explain.add_argument("signal", nargs="?", help="Signal name; omit to list all")
+    hooks_explain.set_defaults(_forecast_handler=_cmd_hooks_explain)
+
+    hooks_lint = hooks_sub.add_parser("lint", help="Validate the configured user-defined rules (teaching errors)")
+    hooks_lint.set_defaults(_forecast_handler=_cmd_hooks_lint)
+
+    hooks_methods = hooks_sub.add_parser("methods", help="List the reasoning-method taxonomy the reasoning hook checks")
+    hooks_methods.set_defaults(_forecast_handler=_cmd_hooks_methods)
+
+    hooks_preview = hooks_sub.add_parser(
+        "preview", help="Dry-run a candidate rule spec against the current ledger (which forecasts would it block?)"
+    )
+    hooks_preview.add_argument("--spec", required=True, help="Path to a YAML/JSON rule spec to preview")
+    hooks_preview.add_argument("--json", action="store_true")
+    hooks_preview.set_defaults(_forecast_handler=_cmd_hooks_preview)
+
+    hooks_set_sev = hooks_sub.add_parser("set-severity", help="Set a rule's severity override (off|warn|error)")
+    hooks_set_sev.add_argument("rule_id")
+    hooks_set_sev.add_argument("severity", choices=["off", "warn", "error"])
+    hooks_set_sev.set_defaults(_forecast_handler=_cmd_hooks_set_severity)
+
+    hooks_set_prof = hooks_sub.add_parser("set-profile", help="Set the active hook profile")
+    hooks_set_prof.add_argument("profile")
+    hooks_set_prof.set_defaults(_forecast_handler=_cmd_hooks_set_profile)
+
+    hooks_enable = hooks_sub.add_parser("enable", help="Enable a rule (revert to the profile's severity)")
+    hooks_enable.add_argument("rule_id")
+    hooks_enable.set_defaults(_forecast_handler=_cmd_hooks_enable)
+
+    hooks_disable = hooks_sub.add_parser("disable", help="Disable a rule (severity off)")
+    hooks_disable.add_argument("rule_id")
+    hooks_disable.set_defaults(_forecast_handler=_cmd_hooks_disable)
+
+    hooks_add = hooks_sub.add_parser("add", help="Validate + save a user rule from a spec file")
+    hooks_add.add_argument("--spec", required=True, help="Path to a YAML/JSON rule spec")
+    hooks_add.set_defaults(_forecast_handler=_cmd_hooks_add)
+
+    hooks_edit = hooks_sub.add_parser("edit", help="Validate + replace an existing user rule from a spec file")
+    hooks_edit.add_argument("rule_id")
+    hooks_edit.add_argument("--spec", required=True, help="Path to a YAML/JSON rule spec")
+    hooks_edit.set_defaults(_forecast_handler=_cmd_hooks_edit)
+
+    hooks_remove = hooks_sub.add_parser("remove", help="Remove a user rule by id")
+    hooks_remove.add_argument("rule_id")
+    hooks_remove.set_defaults(_forecast_handler=_cmd_hooks_remove)
+
     sources_parser = forecast_sub.add_parser("sources", help="List forecast evidence source adapters")
     sources_parser.add_argument("--question", dest="question_id", help="Plan sources for a forecast question")
     sources_parser.add_argument("--plan", action="store_true", help="Show forecast-aware source recommendations")
@@ -2948,6 +3016,250 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
             "readiness_gaps": readiness_gaps,
         },
     }
+
+
+def _cmd_lint(args: argparse.Namespace) -> None:
+    """Run the forecast saturation hooks read-only against a forecast (or all of
+    them) and print the score + per-rule verdict table."""
+    ledger = _ledger(args)
+    from forecasting.hooks import finish_sweep, lint_forecast
+
+    if args.all:
+        ids = [q.id for q in ledger.list_questions(status="active")]
+        summary = finish_sweep(ledger, ids)
+        if args.json:
+            print(json.dumps(summary, ensure_ascii=False))
+            return
+        print(f"saturation sweep: {summary['checked']} checked, {summary['clean']} clean, "
+              f"{len(summary['under_saturated'])} under-saturated")
+        for u in summary["under_saturated"]:
+            tags = []
+            if u["blocking"]:
+                tags.append("blocking=" + ",".join(u["blocking"]))
+            if u["warnings"]:
+                tags.append("warnings=" + ",".join(u["warnings"]))
+            print(f"  {u['question_id']}  {u['score']}/100  {'; '.join(tags)}")
+        return
+
+    qid = args.question_id
+    if not qid:
+        print("provide a question id, or --all to sweep every active forecast")
+        return
+    report = lint_forecast(ledger, qid)
+    if report is None:
+        print(f"{qid}: no committed snapshot to lint")
+        return
+    if args.json:
+        print(json.dumps(report.to_dict(), ensure_ascii=False))
+        return
+    d = report.to_dict()
+    print(f"saturation {d['score']}/100  {'PASS' if d['passed'] else 'BLOCK'}")
+    for v in report.verdicts:
+        mark = "ok " if v.passed else ("ERR" if v.severity.blocks else "warn")
+        line = f"  [{mark}] {v.rule_id}"
+        if not v.passed:
+            line += f"  -  {v.message[:90]}"
+        print(line)
+
+
+def _cmd_hooks_list(args: argparse.Namespace) -> None:
+    from forecasting.hooks import Severity, resolve_severities
+    ledger = _ledger(args)
+    question = ledger.get_question(args.question_id) if getattr(args, "question_id", None) else None
+    sev = resolve_severities(question, forecast_origin="live")
+    if getattr(args, "json", False):
+        print(json.dumps({k: v.value for k, v in sev.items()}, ensure_ascii=False))
+        return
+    print("active hook rules (resolved severity):")
+    for rid, s in sev.items():
+        print(f"  {s.value:5}  {rid}")
+
+
+def _cmd_hooks_profiles(args: argparse.Namespace) -> None:
+    from forecasting.hooks import HOOK_PROFILES
+    for name, sevs in HOOK_PROFILES.items():
+        print(f"{name}:")
+        for rid, s in sevs.items():
+            print(f"  {s.value:5}  {rid}")
+
+
+def _cmd_hooks_explain(args: argparse.Namespace) -> None:
+    from forecasting.hooks.dsl import signal_doc, signal_glossary
+    name = getattr(args, "signal", None)
+    if name:
+        doc = signal_doc(name)
+        if doc is None:
+            print(f"unknown signal {name!r}. Run `forecast hooks explain` to list them.")
+            return
+        print(f"{name}\n  {doc}")
+        return
+    print("signals a user rule can test (name : kind):")
+    for n, kind, doc in signal_glossary():
+        print(f"  {n}  ({kind})\n      {doc}")
+
+
+def _cmd_hooks_methods(args: argparse.Namespace) -> None:
+    from forecasting.hooks.reasoning import REASONING_METHODS
+    print("reasoning-method taxonomy (declare the ones you used in reasoning_methods):")
+    for name, doc in REASONING_METHODS.items():
+        print(f"  {name}\n      {doc}")
+
+
+def _hooks_spec_from_file(path: str) -> dict:
+    import os
+    if not os.path.exists(path):
+        raise SystemExit(f"spec file not found: {path}")
+    import yaml
+    with open(path, encoding="utf-8") as fh:
+        raw = yaml.safe_load(fh)
+    if isinstance(raw, list):
+        raw = raw[0] if raw else {}
+    return raw or {}
+
+
+def _cmd_hooks_set_severity(args: argparse.Namespace) -> None:
+    from forecasting.hooks import store
+    try:
+        store.set_severity(args.rule_id, args.severity)
+        print(f"{args.rule_id} -> {args.severity}")
+    except store.HookWriteError as e:
+        raise SystemExit(str(e))
+
+
+def _cmd_hooks_set_profile(args: argparse.Namespace) -> None:
+    from forecasting.hooks import store
+    try:
+        store.set_profile(args.profile)
+        print(f"profile -> {args.profile}")
+    except store.HookWriteError as e:
+        raise SystemExit(str(e))
+
+
+def _cmd_hooks_enable(args: argparse.Namespace) -> None:
+    from forecasting.hooks import store
+    try:
+        store.enable(args.rule_id)
+        print(f"{args.rule_id} enabled (reverted to profile severity)")
+    except store.HookWriteError as e:
+        raise SystemExit(str(e))
+
+
+def _cmd_hooks_disable(args: argparse.Namespace) -> None:
+    from forecasting.hooks import store
+    store.disable(args.rule_id)
+    print(f"{args.rule_id} disabled (off)")
+
+
+def _cmd_hooks_add(args: argparse.Namespace) -> None:
+    from forecasting.hooks import store
+    try:
+        res = store.save_rule(_hooks_spec_from_file(args.spec))
+        print(f"saved user rule {res['id']}")
+    except store.HookWriteError as e:
+        print(f"refused: {e}")
+        for i in e.issues:
+            print(f"    {i.severity}: {i.field}: {i.message}" + (f"  -> {i.fix}" if i.fix else ""))
+        raise SystemExit(1)
+
+
+def _cmd_hooks_edit(args: argparse.Namespace) -> None:
+    from forecasting.hooks import store
+    try:
+        store.edit_rule(args.rule_id, _hooks_spec_from_file(args.spec))
+        print(f"edited user rule {args.rule_id}")
+    except store.HookWriteError as e:
+        print(f"refused: {e}")
+        raise SystemExit(1)
+
+
+def _cmd_hooks_remove(args: argparse.Namespace) -> None:
+    from forecasting.hooks import store
+    try:
+        store.remove_rule(args.rule_id)
+        print(f"removed user rule {args.rule_id}")
+    except store.HookWriteError as e:
+        raise SystemExit(str(e))
+
+
+def _cmd_hooks_lint(args: argparse.Namespace) -> None:
+    from forecasting.hooks.dsl import RuleSpec, validate_rule
+    from forecasting.hooks.engine import load_hook_config
+    from forecasting.hooks.loader import load_user_rule_specs
+    specs = load_user_rule_specs(load_hook_config())
+    if not specs:
+        print("no user-defined rules configured (forecasting.hooks.rules / rules_file)")
+        return
+    known: set[str] = set()
+    bad = 0
+    for raw in specs:
+        spec = RuleSpec.from_dict(raw)
+        issues = validate_rule(spec, known_ids=known)
+        errs = [i for i in issues if i.severity == "error"]
+        if not errs:
+            known.add(spec.id)  # mirror the loader: only valid ids count for dedup
+        warns = [i for i in issues if i.severity != "error"]
+        status = "OK" if not errs else "INVALID"
+        if errs:
+            bad += 1
+        print(f"[{status}] {spec.id or '(no id)'}")
+        for i in errs + warns:
+            print(f"    {i.severity}: {i.field}: {i.message}" + (f"  -> {i.fix}" if i.fix else ""))
+    print(f"\n{len(specs)} rule(s), {bad} invalid")
+
+
+def _cmd_hooks_preview(args: argparse.Namespace) -> None:
+    import os
+
+    from forecasting.hooks.dsl import RuleSpec, compile_rule, validate_rule
+    from forecasting.hooks.engine import run_hooks
+    from forecasting.hooks.signals import build_context_from_ledger
+    from forecasting.hooks.spec import Severity
+    ledger = _ledger(args)
+    path = args.spec
+    if not os.path.exists(path):
+        print(f"spec file not found: {path}")
+        return
+    import yaml
+    with open(path, encoding="utf-8") as fh:
+        raw = yaml.safe_load(fh)
+    if isinstance(raw, list):
+        raw = raw[0] if raw else {}
+    spec = RuleSpec.from_dict(raw or {})
+    issues = validate_rule(spec)
+    errs = [i for i in issues if i.severity == "error"]
+    if errs:
+        print(f"rule {spec.id or '(no id)'} is INVALID:")
+        for i in errs:
+            print(f"    {i.field}: {i.message}" + (f"  -> {i.fix}" if i.fix else ""))
+        return
+    rule = compile_rule(spec)
+    would_pass = would_fail = n_a = 0
+    failing: list[str] = []
+    for q in ledger.list_questions(status="active"):
+        try:
+            if ledger.get_current_snapshot(q.id) is None:
+                continue
+            ctx = build_context_from_ledger(ledger, q.id, event="lint")
+        except Exception:
+            continue
+        if not rule.applies(ctx):
+            n_a += 1
+            continue
+        verdict = rule.evaluate(ctx, Severity(spec.severity) if spec.severity in ("off", "warn", "error") else Severity.WARN)
+        if verdict.passed:
+            would_pass += 1
+        else:
+            would_fail += 1
+            failing.append(q.id)
+    if getattr(args, "json", False):
+        print(json.dumps({"rule": spec.id, "would_pass": would_pass, "would_fail": would_fail,
+                          "not_applicable": n_a, "failing": failing}, ensure_ascii=False))
+        return
+    print(f"dry-run: {spec.id}  (severity: {spec.severity})")
+    print(f"  applies to {would_pass + would_fail} forecasts; WOULD PASS {would_pass}, WOULD "
+          f"{'BLOCK' if spec.severity == 'error' else 'WARN'} {would_fail}; n/a {n_a}")
+    for qid in failing[:10]:
+        print(f"    - {qid}")
 
 
 def _cmd_doctor(args: argparse.Namespace) -> None:
@@ -10623,6 +10935,10 @@ def _cmd_pilot_cohort(args: argparse.Namespace) -> None:
                 confidence=spec.get("confidence"),
                 method=spec.get("method") or "pilot_cohort_initial",
                 forecast_origin="live",
+                # Batch cohort setup from a manifest: mechanically clean manifest
+                # prose rather than block the whole cohort import on a stray em-dash.
+                style_autofix=True,
+                distribution_autofix=True,  # programmatic: auto-fix malformed bounds rather than block
                 metadata={
                     "pilot_cohort": True,
                     "pilot_cohort_source": args.manifest,

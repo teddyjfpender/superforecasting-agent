@@ -361,46 +361,60 @@ const cleanPromptSymbol = (s: string | undefined, fallback: string) => {
   return cleaned || fallback
 }
 
-// Standard dark palette: a clean, neutral slate ink with a calm blue accent and
-// a distinct teal for tags/badges. Replaces the old gold default (still shipped
-// as the `gold` skin). Semantic greens/ambers/reds are tuned for legibility on
-// a dark terminal; everything here is the single source of truth that the
-// `default` skin mirrors, so the picker preview matches the live UI.
+// The brand gradient — a blue → lavender-purple → rose-pink ramp (inspired by
+// the Gemini CLI's signature banner gradient), applied to the Outrider hero so
+// the wordmark glows across the spectrum. The stops echo the palette's own
+// info / accent / error accents so the gradient and the rest of the UI agree.
+export const BRAND_GRADIENT = ['#58A6FF', '#A98BFF', '#FF8FAB'] as const
+
+// Darker blue → violet → magenta for LIGHT terminals: the hero ramps
+// dark→colour→white, so on a white background the pastel dark gradient would
+// wash out — these saturated stops keep the figure crisp and readable on white.
+export const BRAND_GRADIENT_LIGHT = ['#2563EB', '#7C3AED', '#C2185B'] as const
+
+// Standard dark palette: a refined pastel-on-near-black system inspired by the
+// Gemini CLI's "professional" look — a lavender-purple accent, a calm soft-blue
+// for informational emphasis, and a rose family for alerts, all high-value /
+// low-saturation so they read crisp (not 1990s-ANSI bright) on a dark terminal.
+// Replaces the old slate/blue default (the gold heritage lives on as the `gold`
+// skin). This is the single source of truth the `default` skin mirrors, so the
+// picker preview matches the live UI. Every text-bearing foreground clears the
+// 4.5:1 dark-contrast floor on pure black, preserving DEFAULT_THEME === DARK_THEME.
 export const DARK_THEME: Theme = {
   color: {
-    primary: '#E6EDF3',
-    accent: '#58A6FF',
-    border: '#30363D',
-    text: '#E6EDF3',
-    muted: '#8B949E',
-    completionBg: '#161B22',
-    completionCurrentBg: '#21314D',
-    completionMetaBg: '#161B22',
-    completionMetaCurrentBg: '#21314D',
+    primary: '#E9E5F4',
+    accent: '#CBA6FF',
+    border: '#3A3350',
+    text: '#E9E5F4',
+    muted: '#9C95B5',
+    completionBg: '#1A1726',
+    completionCurrentBg: '#27232C',
+    completionMetaBg: '#1A1726',
+    completionMetaCurrentBg: '#27232C',
 
-    label: '#9DA7B3',
-    ok: '#3FB950',
-    error: '#F85149',
-    warn: '#D29922',
-    info: '#39C5CF',
+    label: '#B3AAD0',
+    ok: '#7FD99A',
+    error: '#FF7E9D',
+    warn: '#F0C674',
+    info: '#8FB8FF',
 
-    prompt: '#E6EDF3',
-    sessionLabel: '#8B949E',
-    sessionBorder: '#8B949E',
+    prompt: '#CBA6FF',
+    sessionLabel: '#9C95B5',
+    sessionBorder: '#9C95B5',
 
-    statusBg: '#0D1117',
-    statusFg: '#C9D1D9',
-    statusGood: '#3FB950',
-    statusWarn: '#D29922',
-    statusBad: '#F0883E',
-    statusCritical: '#F85149',
-    selectionBg: '#21314D',
+    statusBg: '#13111B',
+    statusFg: '#C9C3DB',
+    statusGood: '#7FD99A',
+    statusWarn: '#F0C674',
+    statusBad: '#FFA45C',
+    statusCritical: '#FF5C77',
+    selectionBg: '#27232C',
 
-    diffAdded: 'rgb(220,255,220)',
-    diffRemoved: 'rgb(255,220,220)',
-    diffAddedWord: 'rgb(63,185,80)',
-    diffRemovedWord: 'rgb(248,81,73)',
-    shellDollar: '#58A6FF'
+    diffAdded: 'rgb(214,247,222)',
+    diffRemoved: 'rgb(255,224,232)',
+    diffAddedWord: 'rgb(127,217,154)',
+    diffRemovedWord: 'rgb(255,126,157)',
+    shellDollar: '#8FB8FF'
   },
 
   brand: BRAND,
@@ -414,39 +428,39 @@ export const DARK_THEME: Theme = {
 // cleanly (#11300).
 export const LIGHT_THEME: Theme = {
   color: {
-    primary: '#1F2328',
-    accent: '#0969DA',
-    border: '#D0D7DE',
-    text: '#1F2328',
-    muted: '#656D76',
-    completionBg: '#F6F8FA',
-    completionCurrentBg: mix('#F6F8FA', '#0969DA', 0.18),
-    completionMetaBg: '#F6F8FA',
-    completionMetaCurrentBg: mix('#F6F8FA', '#0969DA', 0.18),
+    primary: '#241F33',
+    accent: '#7C3AED',
+    border: '#D9D3E6',
+    text: '#241F33',
+    muted: '#6B6480',
+    completionBg: '#F6F4FB',
+    completionCurrentBg: mix('#F6F4FB', '#7C3AED', 0.16),
+    completionMetaBg: '#F6F4FB',
+    completionMetaCurrentBg: mix('#F6F4FB', '#7C3AED', 0.16),
 
-    label: '#57606A',
-    ok: '#1A7F37',
-    error: '#CF222E',
-    warn: '#9A6700',
-    info: '#0E7490',
+    label: '#5A5470',
+    ok: '#15803D',
+    error: '#BE185D',
+    warn: '#B45309',
+    info: '#2563EB',
 
-    prompt: '#1F2328',
-    sessionLabel: '#656D76',
-    sessionBorder: '#656D76',
+    prompt: '#7C3AED',
+    sessionLabel: '#6B6480',
+    sessionBorder: '#6B6480',
 
-    statusBg: '#F6F8FA',
-    statusFg: '#1F2328',
-    statusGood: '#1A7F37',
-    statusWarn: '#9A6700',
-    statusBad: '#BC4C00',
-    statusCritical: '#CF222E',
-    selectionBg: '#DDEBFB',
+    statusBg: '#F6F4FB',
+    statusFg: '#241F33',
+    statusGood: '#15803D',
+    statusWarn: '#B45309',
+    statusBad: '#C2410C',
+    statusCritical: '#BE123C',
+    selectionBg: mix('#F6F4FB', '#7C3AED', 0.16),
 
-    diffAdded: 'rgb(200,240,200)',
-    diffRemoved: 'rgb(240,200,200)',
-    diffAddedWord: 'rgb(26,127,55)',
-    diffRemovedWord: 'rgb(207,34,46)',
-    shellDollar: '#0969DA'
+    diffAdded: 'rgb(214,240,222)',
+    diffRemoved: 'rgb(248,216,228)',
+    diffAddedWord: 'rgb(21,128,61)',
+    diffRemovedWord: 'rgb(190,24,93)',
+    shellDollar: '#2563EB'
   },
 
   brand: BRAND,

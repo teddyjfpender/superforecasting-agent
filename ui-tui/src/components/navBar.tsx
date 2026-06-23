@@ -26,6 +26,7 @@ const NAV_TABS: NavTab[] = [
   { key: 'obsidian', label: 'Docs' },
   { key: 'agents', label: 'Agents' },
   { key: 'demoViz', label: 'Demo Vis' },
+  { key: 'hooks', label: 'Hooks' },
   { key: 'help', label: 'Help' }
 ]
 
@@ -39,6 +40,7 @@ const HOME_PATCH = {
   forecasts: false,
   forecastsInitialId: null,
   help: false,
+  hooks: false,
   markets: false,
   messaging: false,
   news: false,
@@ -70,9 +72,11 @@ export function NavBar() {
                     ? 'agents'
                     : overlay.demoViz
                       ? 'demoViz'
-                      : overlay.help
-                        ? 'help'
-                        : 'home'
+                      : overlay.hooks
+                        ? 'hooks'
+                        : overlay.help
+                          ? 'help'
+                          : 'home'
 
   const select = (key: string) => {
     switch (key) {
@@ -108,6 +112,9 @@ export function NavBar() {
 
       case 'demoViz':
         return patchOverlayState({ ...HOME_PATCH, demoViz: true })
+
+      case 'hooks':
+        return patchOverlayState({ ...HOME_PATCH, hooks: true })
 
       case 'help':
         return patchOverlayState({ ...HOME_PATCH, help: true })

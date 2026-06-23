@@ -619,9 +619,9 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
     }
 
     if (activeFactor) {
-      const memberIds = new Set(
-        (activeFactor.constituents ?? []).map(constituent => constituent.id).filter((id): id is string => Boolean(id))
-      )
+      const ecosystem =
+        activeFactor.question_ids ?? (activeFactor.constituents ?? []).map(constituent => constituent.id ?? '')
+      const memberIds = new Set(ecosystem.filter((id): id is string => Boolean(id)))
 
       return items.filter(item => item.id != null && memberIds.has(item.id) && matchesFilter(item, query))
     }
@@ -705,9 +705,25 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
           ? `factor:${currentRow.factor.id}`
           : (currentRow?.kind ?? null)
 
+  // The detail packet (tail audit, ensemble, packet-tail sections) loads ASYNC
+  // and grows the pane AFTER selection, so a one-shot reset on identity change
+  // can fire before the tall content arrives and leave the question + header
+  // scrolled out of view on a fast/cached load. Pin to top on identity change,
+  // then re-pin once THIS entity's packet settles. Same-entity refreshes don't
+  // reset (pinnedDetail already matches), so the user's scroll is preserved.
+  const pinnedDetail = useRef<null | string>(null)
+
   useEffect(() => {
     detailScrollRef.current?.scrollTo(0)
+    pinnedDetail.current = null
   }, [detailIdentity])
+
+  useEffect(() => {
+    if (detailIdentity && packetId === selectedId && pinnedDetail.current !== detailIdentity) {
+      detailScrollRef.current?.scrollTo(0)
+      pinnedDetail.current = detailIdentity
+    }
+  }, [detailIdentity, packetId, selectedId])
 
   useEffect(() => {
     if (!selectedId) {
@@ -870,8 +886,28 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
       return
     }
 
-    // List focus. The cursor walks the union [ALL, …theses, …forecasts].
-    if (key.return || key.rightArrow || ch === 'l') {
+    // List focus. The cursor walks the union [ALL, …theses, …factors, …forecasts].
+    // → / l always jumps INTO the right pane to read + scroll it (the forecast
+    // detail, or the thesis/factor read — both are scrollable). Enter is the
+    // primary action: open a forecast, or DRILL a thesis/factor (collapse the
+    // book to its members). The ALL row has no scrollable read, so both clear
+    // the lens and jump to the first forecast.
+    if (key.rightArrow || ch === 'l') {
+      if (currentRow?.kind === 'all') {
+        setLensId(null)
+        setFactorLensId(null)
+
+        return setCursor(firstForecastRow)
+      }
+
+      if (currentRow) {
+        return setFocus('detail')
+      }
+
+      return
+    }
+
+    if (key.return) {
       if (currentRow?.kind === 'forecast') {
         return setFocus('detail')
       }
@@ -1045,13 +1081,11 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
                     />
                     <TailAuditChip audit={tailAudit} t={t} />
                     {selected.related?.informed_by?.length ? (
-                      <Box>
-                        <Text color={t.color.muted} wrap="truncate-end">
-                          {`informed by ${selected.related.informed_by.length} related forecast${
-                            selected.related.informed_by.length === 1 ? '' : 's'
-                          }: ${selected.related.informed_by.join(', ')}`}
-                        </Text>
-                      </Box>
+                      <WrapText color={t.color.muted} t={t}>
+                        {`informed by ${selected.related.informed_by.length} related forecast${
+                          selected.related.informed_by.length === 1 ? '' : 's'
+                        }: ${selected.related.informed_by.join(', ')}`}
+                      </WrapText>
                     ) : null}
                     <Rule t={t} width={detailW} />
                   </>
@@ -1110,9 +1144,9 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
   // ── Footer ──────────────────────────────────────────────────────────
   const listHint =
     currentRow?.kind === 'thesis'
-      ? `↑↓/jk move · Enter/→ lens this thesis · / filter · r refresh · Esc/q close`
+      ? `↑↓/jk move · Enter members · → read · / filter · r refresh · Esc/q close`
       : currentRow?.kind === 'factor'
-        ? `↑↓/jk move · Enter/→ lens this factor · / filter · r refresh · Esc/q close`
+        ? `↑↓/jk move · Enter constituents · → read · / filter · r refresh · Esc/q close`
         : currentRow?.kind === 'all'
           ? `↑↓/jk move · Enter/→ all forecasts · / filter · r refresh · Esc/q close`
           : `↑↓/jk move · Enter/→ focus detail · / filter${query ? ` (${filtered.length}/${items.length})` : ''} · r refresh · Esc/q close`
@@ -1808,9 +1842,7 @@ function TailAuditSection({ audit, t, width }: { audit: ForecastTailAudit | null
         </Text>
       ) : null}
       {(audit.issues ?? []).map((issue, i) => (
-        <Text color={t.color.warn} key={`issue${i}`} wrap="truncate-end">
-          {`  ⚠ ${issue}`}
-        </Text>
+        <WrapLine body={issue} bodyColor={t.color.warn} key={`issue${i}`} prefix="⚠ " prefixColor={t.color.warn} t={t} />
       ))}
     </>
   )
@@ -1894,10 +1926,7 @@ function ReasoningPaths({
             Path up
           </Text>
           {pathUp.map((link, i) => (
-            <Text color={t.color.text} key={`up${i}`} wrap="truncate-end">
-              <Text color={t.color.ok}>▲ </Text>
-              {link}
-            </Text>
+            <WrapLine body={link} key={`up${i}`} prefix="▲ " prefixColor={t.color.ok} t={t} />
           ))}
         </>
       ) : null}
@@ -1907,10 +1936,7 @@ function ReasoningPaths({
             Path down
           </Text>
           {pathDown.map((link, i) => (
-            <Text color={t.color.text} key={`dn${i}`} wrap="truncate-end">
-              <Text color={t.color.error}>▼ </Text>
-              {link}
-            </Text>
+            <WrapLine body={link} key={`dn${i}`} prefix="▼ " prefixColor={t.color.error} t={t} />
           ))}
         </>
       ) : null}
@@ -1920,10 +1946,7 @@ function ReasoningPaths({
             Breaks if
           </Text>
           {breaksIf.map((link, i) => (
-            <Text color={t.color.text} key={`brk${i}`} wrap="truncate-end">
-              <Text color={t.color.warn}>⟳ </Text>
-              {link}
-            </Text>
+            <WrapLine body={link} key={`brk${i}`} prefix="⟳ " prefixColor={t.color.warn} t={t} />
           ))}
         </>
       ) : null}
@@ -2175,6 +2198,43 @@ function WrapText({ bold = false, children, color, t }: { bold?: boolean; childr
   )
 }
 
+// A wrapping line with an optional colored prefix (a glyph like "▲ " or a
+// padEnd'd key label) that keeps its own color while the body wraps as a hanging
+// indent. Same proven mechanism as WrapText: paddingLeft on a plain column Box
+// wraps at (boxWidth - pad) deterministically, so substantive detail-pane content
+// (causal paths, audit issues, decision triggers) reads in full instead of being
+// cut with a trailing "...". For label-aligned key:value rows pass pad={0} and a
+// padEnd'd prefix so the label itself provides the gutter.
+function WrapLine({
+  body,
+  bodyColor,
+  pad = 2,
+  prefix,
+  prefixColor,
+  suffix,
+  suffixColor,
+  t
+}: {
+  body: string
+  bodyColor?: string
+  pad?: number
+  prefix?: string
+  prefixColor?: string
+  suffix?: string
+  suffixColor?: string
+  t: Theme
+}) {
+  return (
+    <Box paddingLeft={pad}>
+      <Text color={bodyColor ?? t.color.text} wrap="wrap">
+        {prefix ? <Text color={prefixColor ?? t.color.label}>{prefix}</Text> : null}
+        {body}
+        {suffix ? <Text color={suffixColor ?? t.color.label}>{suffix}</Text> : null}
+      </Text>
+    </Box>
+  )
+}
+
 const ANALYST_ANGLES: { key: 'be_aware' | 'how_it_feels' | 'how_it_thinks' | 'looking_for'; label: string; warn?: boolean }[] = [
   { key: 'how_it_feels', label: 'how it feels' },
   { key: 'how_it_thinks', label: 'how it thinks' },
@@ -2366,17 +2426,26 @@ function DecisionCard({ item, t }: { item: ForecastWorkspaceItem; t: Theme }) {
       <KV k="deadline" t={t} v={shortDate(item.decision_deadline)} />
       <KV k="action" t={t} v={item.action_threshold || '—'} />
       {(item.update_triggers ?? []).slice(0, 4).map((trigger, i) => (
-        <Text color={t.color.text} key={i} wrap="truncate-end">
-          <Text color={t.color.label}>{(i === 0 ? 'triggers' : '').padEnd(13)}</Text>
-          {trigger.mechanism ?? '—'}
-          {trigger.threshold ? <Text color={t.color.label}>{` [${trigger.threshold}]`}</Text> : null}
-        </Text>
+        <WrapLine
+          body={trigger.mechanism ?? '—'}
+          key={i}
+          pad={0}
+          prefix={(i === 0 ? 'triggers' : '').padEnd(13)}
+          prefixColor={t.color.label}
+          suffix={trigger.threshold ? ` [${trigger.threshold}]` : undefined}
+          suffixColor={t.color.label}
+          t={t}
+        />
       ))}
       {issues.length ? (
-        <Text color={t.color.warn} wrap="truncate-end">
-          {'readiness'.padEnd(13)}
-          {issues.join(' · ')}
-        </Text>
+        <WrapLine
+          body={issues.join(' · ')}
+          bodyColor={t.color.warn}
+          pad={0}
+          prefix={'readiness'.padEnd(13)}
+          prefixColor={t.color.warn}
+          t={t}
+        />
       ) : null}
     </>
   )
@@ -2620,6 +2689,11 @@ export function ThesisDeskRead({ thesis, t, width }: { thesis: ForecastThesis; t
         <Text color={t.color.muted}>{`${thesis.domain || thesis.status ? ' · ' : ''}${members} member${members === 1 ? '' : 's'}`}</Text>
         {topics ? <Text color={t.color.muted}> · {topics}</Text> : null}
       </Text>
+      {thesis.aggregate_stale ? (
+        <Text color={t.color.warn} wrap="truncate-end">
+          ⚠ stale — a member moved since the last aggregate; health + contributions are catching up
+        </Text>
+      ) : null}
 
       <Box marginTop={1}>
         <ThesisTrendBlock t={t} thesis={thesis} width={width} />
@@ -2816,6 +2890,11 @@ export function FactorDeskRead({ factor, t, width }: { factor: ForecastFactor; t
         {factor.units ? <Text color={t.color.muted}> · {factor.units}</Text> : null}
         {topics ? <Text color={t.color.muted}> · {topics}</Text> : null}
       </Text>
+      {factor.aggregate_stale ? (
+        <Text color={t.color.warn} wrap="truncate-end">
+          ⚠ stale — a constituent moved since the last aggregate; the portfolio read is catching up
+        </Text>
+      ) : null}
 
       <Box marginTop={1}>
         <FactorTrendBlock factor={factor} t={t} width={width} />

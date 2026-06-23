@@ -3,7 +3,7 @@ import { useMemo } from 'react'
 
 import { OUTRIDER_HEADER } from '../content/outriderHeader.js'
 import { type GlyphFamily, glyphTable } from '../lib/subcellGlyphs.js'
-import type { Theme } from '../theme.js'
+import { BRAND_GRADIENT, BRAND_GRADIENT_LIGHT, detectLightMode, type Theme } from '../theme.js'
 
 // Off-switch: any TUI alias triple set falsey disables the desk header.
 const DISABLED = (() => {
@@ -98,6 +98,31 @@ const buildRamp = (hue: [number, number, number]): string[] => {
   return ramp
 }
 
+// Brand gradient stops parsed once. `gradientAt(frac)` linearly interpolates
+// the blue→purple→pink ramp at a 0..1 horizontal position, so the hero's hue
+// sweeps across the figure (each column gets its own luminance ramp built from
+// its gradient colour).
+// On a LIGHT terminal the figure floats on white, so use the saturated
+// light-mode gradient (the pastel dark gradient would wash out). Resolved once
+// at module load, matching how theme.ts derives DEFAULT_LIGHT_MODE.
+const GRAD_STOPS: [number, number, number][] = (detectLightMode() ? BRAND_GRADIENT_LIGHT : BRAND_GRADIENT).map(parseHex)
+
+const gradientAt = (frac: number): [number, number, number] => {
+  const segs = GRAD_STOPS.length - 1
+
+  if (segs <= 0) {
+    return GRAD_STOPS[0] ?? [255, 255, 255]
+  }
+
+  const pos = Math.max(0, Math.min(1, frac)) * segs
+  const i = Math.min(segs - 1, Math.floor(pos))
+  const f = pos - i
+  const a = GRAD_STOPS[i]!
+  const b = GRAD_STOPS[i + 1]!
+
+  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f]
+}
+
 interface Span {
   b?: string
   c?: string
@@ -113,14 +138,13 @@ interface Span {
 // bright (foreground) group and a dim (background) group, and the glyph whose
 // mask matches the bright group is drawn. Dim groups below THRESHOLD render
 // transparent so the figure floats on the terminal background in any theme.
-export function OutriderHeader({ maxCols, t }: { maxCols?: number; t: Theme }) {
+export function OutriderHeader({ maxCols }: { maxCols?: number; t?: Theme }) {
   const out = useStdout().stdout
   // Bound the orb by the available column (the two-pane Home gives it less than
   // the full terminal), not the whole terminal — otherwise it overflows the
   // conversation column and clobbers the rail.
   const cols = Math.min(out?.columns ?? 80, maxCols ?? out?.columns ?? 80)
   const termRows = out?.rows ?? 24
-  const primary = t.color.primary
 
   const lines = useMemo(() => {
     const { cellW, cellH, glyphs } = glyphTable(GLYPH_FAMILY)
@@ -143,7 +167,12 @@ export function OutriderHeader({ maxCols, t }: { maxCols?: number; t: Theme }) {
 
     const subW = outCols * cellW
     const subH = outRows * cellH
-    const ramp = buildRamp(parseHex(primary))
+
+    // One luminance ramp per column, each built from the brand gradient's colour
+    // at that horizontal position — so the hero sweeps blue → purple → pink.
+    const ramps = Array.from({ length: outCols }, (_, cx) =>
+      buildRamp(gradientAt(outCols <= 1 ? 0 : cx / (outCols - 1)))
+    )
 
     // Box-average the native luminance grid for sub-pixel (sx, sy); below
     // THRESHOLD reads as 0 (transparent black) so edges stay crisp.
@@ -254,6 +283,7 @@ export function OutriderHeader({ maxCols, t }: { maxCols?: number; t: Theme }) {
           continue
         }
 
+        const ramp = ramps[cx]!
         const fg = ramp[Math.round(fgMean)]
         const bg = bgMean >= THRESHOLD ? ramp[Math.round(bgMean)] : undefined
         push(glyphs[mask]!, fg, bg)
@@ -263,7 +293,7 @@ export function OutriderHeader({ maxCols, t }: { maxCols?: number; t: Theme }) {
     }
 
     return result
-  }, [cols, termRows, primary])
+  }, [cols, termRows])
 
   if (DISABLED) {
     return null

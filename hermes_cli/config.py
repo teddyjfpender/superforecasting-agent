@@ -685,6 +685,33 @@ DEFAULT_CONFIG = {
         "model_timeout": 300,
         "max_iterations": 30,
     },
+    "forecasting": {
+        # Forecast saturation + style HOOKS: commit-time checks that block or warn
+        # when a forecast is under-saturated (no decomposition, stale evidence, no
+        # panel, missing citations, unjustified tail mass) or violates house style.
+        # See `forecast hooks ...` to inspect / tune / author rules.
+        "hooks": {
+            # Master switch. False -> every rule is advisory (nothing blocks).
+            "enabled": True,
+            # Baseline profile: exploratory-lenient | standard | strict.
+            # "standard" equals the system's prior enforcement (no behavior change).
+            "profile": "standard",
+            # Bump a question up/down the strictness ladder by its impact, with no
+            # per-question config (ladder: exploratory-lenient < standard < strict).
+            # Default 0 = no auto-bump (high-impact already hard-requires a panel via
+            # the panel gate). Set high.delta=1 to opt a desk into FULL strictness on
+            # high-impact forecasts (also require citations, decision card, tail paths).
+            "impact_scaling": {"high": {"delta": 0}, "medium": {"delta": 0}, "low": {"delta": 0}},
+            # Non-live origins never block (advisory only); "inherit" keeps the profile.
+            "origin_scaling": {"exploratory": "off", "backtest": "off", "imported_baseline": "off", "live": "inherit"},
+            # Per-rule severity overrides (off | warn | error), applied after the
+            # profile. Keys are built-in rule ids or user-rule ids.
+            "overrides": {},
+            # User-defined rules: a workspace file of declarative rule specs (Phase 5).
+            "rules_file": "hooks/rules.yaml",
+            "rules": [],
+        },
+    },
     "agent": {
         "max_turns": 90,
         # Inactivity timeout for gateway agent execution (seconds).

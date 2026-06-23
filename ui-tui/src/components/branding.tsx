@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import unicodeSpinners from 'unicode-animations'
 
 import { artWidth, FORECAST_HERO_WIDTH, forecastHero } from '../banner.js'
+import { sweepColor, sweepStops } from '../lib/accentSweep.js'
 import { flat } from '../lib/text.js'
 import type { Theme } from '../theme.js'
 import type { PanelRow, PanelSection, SessionInfo } from '../types.js'
@@ -78,7 +79,7 @@ function InlineLoader({ label, t }: { label: string; t: Theme }) {
 
   return (
     <Text color={t.color.muted} wrap="truncate">
-      <Text color={t.color.accent}>{frame}</Text> {label}
+      <Text color={sweepColor(sweepStops(t), tick)}>{frame}</Text> {label}
     </Text>
   )
 }

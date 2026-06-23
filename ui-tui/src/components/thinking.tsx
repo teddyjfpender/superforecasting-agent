@@ -4,6 +4,7 @@ import spinners, { type BrailleSpinnerName } from 'unicode-animations'
 
 import { THINKING_COT_MAX } from '../config/limits.js'
 import { sectionMode } from '../domain/details.js'
+import { sweepColor, sweepStops } from '../lib/accentSweep.js'
 import {
   buildSubagentTree,
   fmtCost,
@@ -151,7 +152,7 @@ function TreeNode({
   )
 }
 
-export function Spinner({ color, variant = 'think' }: { color: string; variant?: 'think' | 'tool' }) {
+export function Spinner({ color, sweep, variant = 'think' }: { color: string; sweep?: string[]; variant?: 'think' | 'tool' }) {
   const spin = useMemo(() => {
     const raw = spinners[pick(variant === 'tool' ? TOOL : THINK)]
 
@@ -170,7 +171,11 @@ export function Spinner({ color, variant = 'think' }: { color: string; variant?:
     return () => clearInterval(id)
   }, [spin])
 
-  return <Text color={color}>{spin.frames[frame]}</Text>
+  // A single prominent spinner can sweep the brand accent family (pass `sweep`);
+  // the many per-tool spinners stay a flat colour to avoid a wall of flicker.
+  const tint = sweep && sweep.length ? sweepColor(sweep, frame) : color
+
+  return <Text color={tint}>{spin.frames[frame]}</Text>
 }
 
 interface DetailRow {
@@ -836,7 +841,7 @@ export const ToolTrail = memo(function ToolTrail({
         key: `tr-${i}`,
         content: groups.length ? (
           <>
-            <Spinner color={t.color.accent} variant="think" /> {line}
+            <Spinner color={t.color.accent} sweep={sweepStops(t)} variant="think" /> {line}
           </>
         ) : (
           line

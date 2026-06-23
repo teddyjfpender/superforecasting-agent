@@ -32,7 +32,8 @@ Legacy `~/.hermes/config.yaml` remains readable during migration.
 
 | Skin | Description | Default branding |
 |------|-------------|------------------|
-| `default` | Classic forecast gold | Superforecasting Agent |
+| `default` | Aurora — lavender + rose on near-black | Superforecasting Agent |
+| `gold` | Classic forecast gold (the former default) | Superforecasting Agent |
 | `mono` | Clean grayscale terminal | Superforecasting Agent |
 | `slate` | Cool blue terminal theme | Superforecasting Agent |
 | `daylight` | Light theme for bright terminals | Superforecasting Agent |

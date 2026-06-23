@@ -3453,6 +3453,176 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
+@method("forecast.hooks")
+def _(rid, params: dict) -> dict:
+    """Forecast saturation/style hooks summary for the TUI Hooks view: the
+    resolved rule severities, the signal glossary, the curated profiles, and the
+    lint status of any user-defined rules."""
+    try:
+        from forecasting.hooks import HOOK_PROFILES, resolve_severities
+        from forecasting.hooks.builtins import builtin_rule_meta
+        from forecasting.hooks.dsl import RuleSpec, signal_glossary, validate_rule
+        from forecasting.hooks.engine import load_hook_config
+        from forecasting.hooks.loader import load_user_rule_specs
+        from forecasting.hooks.reasoning import REASONING_METHODS
+        from forecasting.ledger import ForecastLedger
+
+        qid = params.get("question_id") or None
+        question = ForecastLedger().get_question(qid) if qid else None
+        sev = resolve_severities(question, forecast_origin="live")
+        cfg = load_hook_config()
+        overrides = cfg.get("overrides") or {}
+
+        known: set = set()
+        user_rules = []
+        user_by_id: dict = {}
+        for raw in load_user_rule_specs(cfg):
+            spec = RuleSpec.from_dict(raw)
+            issues = validate_rule(spec, known_ids=known)
+            known.add(spec.id)
+            entry = {
+                "id": spec.id or "(no id)",
+                "category": spec.category,
+                "severity": spec.severity,
+                "description": spec.description,
+                "check": spec.check,
+                "remediation": spec.remediation_hint,
+                "applies_to": spec.applies_to,
+                "valid": not any(i.severity == "error" for i in issues),
+                "issues": [{"field": i.field, "severity": i.severity, "message": i.message, "fix": i.fix} for i in issues],
+            }
+            user_rules.append(entry)
+            user_by_id[spec.id] = entry
+
+        # Unified rule list for the manager: resolved severity + WHY (override /
+        # profile / user) + static metadata (category, default, doc, remediation).
+        rules = []
+        for rule_id, sev_obj in sev.items():
+            is_user = rule_id in user_by_id
+            entry = {
+                "id": rule_id,
+                "severity": sev_obj.value,
+                "is_user": is_user,
+                "source": "override" if rule_id in overrides else ("user" if is_user else "profile"),
+                "blocks": sev_obj.value == "error",
+            }
+            meta = builtin_rule_meta(rule_id)
+            if meta:
+                entry.update(meta)  # category, default, remediation, doc
+            if is_user:
+                u = user_by_id[rule_id]
+                entry.update({"category": u["category"], "doc": u["description"],
+                              "remediation": u["remediation"], "check": u["check"],
+                              "valid": u["valid"], "issues": u["issues"]})
+            rules.append(entry)
+
+        return _ok(rid, {
+            "enabled": bool(cfg.get("enabled", True)),
+            "profile": cfg.get("profile", "standard"),
+            "resolved": {k: v.value for k, v in sev.items()},
+            "overrides": dict(overrides),
+            "rules": rules,
+            "glossary": [{"name": n, "kind": k, "doc": d} for n, k, d in signal_glossary()],
+            "operators": ["==", "!=", ">", ">=", "<", "<=", "in", "not_in", "is_true", "is_false"],
+            "profiles": list(HOOK_PROFILES.keys()),
+            "reasoning_methods": [{"name": n, "doc": d} for n, d in REASONING_METHODS.items()],
+            "user_rules": user_rules,
+        })
+    except Exception as e:
+        return _err(rid, 4003, str(e))
+
+
+@method("forecast.hooks.set")
+def _(rid, params: dict) -> dict:
+    """Write a hook policy change: target=profile|enabled|severity|enable|disable."""
+    try:
+        from forecasting.hooks import store
+
+        target = (params.get("target") or "").strip()
+        if target == "profile":
+            return _ok(rid, store.set_profile(str(params.get("value"))))
+        if target == "enabled":
+            return _ok(rid, store.set_enabled(bool(params.get("value"))))
+        if target == "severity":
+            return _ok(rid, store.set_severity(str(params.get("rule_id")), str(params.get("value"))))
+        if target == "enable":
+            return _ok(rid, store.enable(str(params.get("rule_id"))))
+        if target == "disable":
+            return _ok(rid, store.disable(str(params.get("rule_id"))))
+        return _err(rid, 4004, f"unknown target {target!r}")
+    except Exception as e:
+        return _err(rid, 4004, str(e))
+
+
+@method("forecast.hooks.save_rule")
+def _(rid, params: dict) -> dict:
+    """Validate + save a user rule. params.rule is the spec; params.edit_id edits
+    an existing rule instead of adding. Returns issues on a validation refusal."""
+    try:
+        from forecasting.hooks import store
+        from forecasting.hooks.store import HookWriteError
+
+        rule = params.get("rule") or {}
+        edit_id = params.get("edit_id")
+        try:
+            res = store.edit_rule(str(edit_id), rule) if edit_id else store.save_rule(rule)
+            return _ok(rid, res)
+        except HookWriteError as e:
+            return _ok(rid, {"ok": False, "error": str(e),
+                             "issues": [{"field": i.field, "severity": i.severity, "message": i.message, "fix": i.fix} for i in e.issues]})
+    except Exception as e:
+        return _err(rid, 4005, str(e))
+
+
+@method("forecast.hooks.remove_rule")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.hooks import store
+
+        return _ok(rid, store.remove_rule(str(params.get("id"))))
+    except Exception as e:
+        return _err(rid, 4006, str(e))
+
+
+@method("forecast.hooks.preview")
+def _(rid, params: dict) -> dict:
+    """Dry-run a candidate rule spec against the active questions: how many it
+    applies to, how many it would block, and a few failing ids. Validates first."""
+    try:
+        from forecasting.hooks.dsl import RuleSpec, compile_rule, validate_rule
+        from forecasting.hooks.signals import build_context_from_ledger
+        from forecasting.ledger import ForecastLedger
+
+        rule = params.get("rule") or {}
+        spec = RuleSpec.from_dict(rule)
+        issues = validate_rule(spec, known_ids=set())
+        errs = [{"field": i.field, "severity": i.severity, "message": i.message, "fix": i.fix} for i in issues if i.severity == "error"]
+        if errs:
+            return _ok(rid, {"valid": False, "issues": errs})
+        compiled = compile_rule(spec)
+        ledger = ForecastLedger()
+        applies = would_block = 0
+        failing: list = []
+        for q in ledger.list_questions(status="active"):
+            try:
+                if ledger.get_current_snapshot(q.id) is None:
+                    continue
+                ctx = build_context_from_ledger(ledger, q.id, event="lint")
+            except Exception:
+                continue
+            if not compiled.applies(ctx):
+                continue
+            applies += 1
+            verdict = compiled.evaluate(ctx, compiled.default_severity)
+            if not verdict.passed:
+                would_block += 1
+                if len(failing) < 8:
+                    failing.append(q.id)
+        return _ok(rid, {"valid": True, "applies": applies, "would_block": would_block, "failing": failing})
+    except Exception as e:
+        return _err(rid, 4007, str(e))
+
+
 @method("forecast.command")
 def _(rid, params: dict) -> dict:
     raw_arg = params.get("arg", "")

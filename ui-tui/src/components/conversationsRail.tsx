@@ -93,11 +93,23 @@ export function ConversationsRail({
   const positioned = useRef(false)
 
   useEffect(() => {
-    if (!positioned.current && items.length) {
-      positioned.current = true
-      setCursor(1)
+    if (positioned.current || !items.length) {
+      return
     }
-  }, [items.length])
+
+    positioned.current = true
+    setCursor(1)
+    // The ScrollBox auto-follows the bottom when content grows from an at-max
+    // state, and the empty placeholder → loaded list is exactly that, so Recents
+    // opened scrolled to the OLDEST chat. Pinning to the top on THIS tick loses
+    // to that grow (the stick layout pass runs after this effect); pin on the
+    // NEXT tick instead — by then the content height is settled (prevMaxScroll >
+    // 0) so scrollTo(0) holds. (The ScrollBox is also remounted via `key` on the
+    // empty→loaded flip, so the common case never sticks in the first place.)
+    const id = setTimeout(() => scrollRef.current?.scrollTo(0), 0)
+
+    return () => clearTimeout(id)
+  }, [items.length, scrollRef])
 
   // Keep the selected conversation visible inside the list's ScrollBox (each
   // row is a single line, so the cursor index maps directly to a scroll line).
@@ -200,6 +212,14 @@ export function ConversationsRail({
         flexDirection="column"
         flexGrow={1}
         flexShrink={1}
+        // Remount once when the list goes empty→loaded. The ScrollBox auto-
+        // follows the bottom when content GROWS from an at-max state, and the
+        // empty placeholder (1 line, max 0) → tall list is exactly that, so the
+        // rail opened scrolled to the oldest chat. A fresh instance renders the
+        // full list in its FIRST measurement (prevScrollHeight == scrollHeight ⇒
+        // not at-bottom), so it starts at the top. Keyed on the boolean, not the
+        // count, so adding a chat later doesn't remount / lose scroll position.
+        key={items.length > 0 ? 'loaded' : 'empty'}
         minHeight={0}
         ref={scrollRef}
       >

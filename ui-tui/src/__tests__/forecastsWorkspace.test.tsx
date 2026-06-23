@@ -647,6 +647,32 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('recent evidence')
   })
 
+  it('wraps long causal-path text in a narrow pane instead of cutting it with a trailing ellipsis', async () => {
+    const [{ Box, renderSync }, { ForecastDetail }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/forecastsWorkspace.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+    const item = texasItem()
+    // A causal-path link (reasons_up) long enough that a narrow detail pane MUST
+    // wrap it. The tail token survives in the output only if the line wrapped,
+    // not if it was cut with a trailing ellipsis (the old truncate-end bug).
+    item.reasons_up = [
+      'early-vote composition shifted decisively toward suburban precincts that historically resist the incumbent WRAPTAILUP'
+    ]
+    // Bound the detail to a narrow column so the wrap boundary actually bites
+    // (ForecastDetail renders text into its container width).
+    const stdout = writeStream(120, 60)
+    renderSync(
+      React.createElement(Box, { width: 44 }, React.createElement(ForecastDetail, { item, t: DARK_THEME, width: 44 })),
+      { exitOnCtrlC: false, patchConsole: false, stdout: stdout.stream } as never
+    )
+    const text = normalize(stdout.text(), stripAnsi)
+    expect(text).toContain('Path up')
+    expect(text).toContain('WRAPTAILUP')
+  })
+
   it('panel section shows each perspective vs the aggregate with rail, delta, and trim note', async () => {
     const text = await renderDetail(texasItem())
     expect(text).toContain('panel (3 perspectives)')

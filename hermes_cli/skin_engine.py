@@ -169,25 +169,29 @@ class SkinConfig:
 _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
     "default": {
         "name": "default",
-        "description": "Standard — clean modern dark",
+        "description": "Standard — Aurora (lavender + rose)",
         "colors": {
-            "banner_border": "#30363D",
-            "banner_title": "#E6EDF3",
-            "banner_accent": "#58A6FF",
-            "banner_dim": "#8B949E",
-            "banner_text": "#E6EDF3",
-            "ui_accent": "#58A6FF",
-            "ui_label": "#9DA7B3",
-            "ui_info": "#39C5CF",
-            "ui_ok": "#3FB950",
-            "ui_error": "#F85149",
-            "ui_warn": "#D29922",
-            "prompt": "#E6EDF3",
-            "input_rule": "#30363D",
-            "response_border": "#58A6FF",
-            "status_bar_bg": "#0D1117",
-            "session_label": "#8B949E",
-            "session_border": "#30363D",
+            "banner_border": "#3A3350",
+            "banner_title": "#E9E5F4",
+            "banner_accent": "#CBA6FF",
+            "banner_dim": "#9C95B5",
+            "banner_text": "#E9E5F4",
+            "ui_accent": "#CBA6FF",
+            "ui_label": "#B3AAD0",
+            "ui_info": "#8FB8FF",
+            "ui_ok": "#7FD99A",
+            "ui_error": "#FF7E9D",
+            "ui_warn": "#F0C674",
+            "prompt": "#CBA6FF",
+            "input_rule": "#3A3350",
+            "response_border": "#CBA6FF",
+            "status_bar_bg": "#13111B",
+            "session_label": "#9C95B5",
+            "session_border": "#9C95B5",
+            # A near-neutral dark selection (not the light-lavender mix fromSkin
+            # would otherwise derive, which left rose text low-contrast on the
+            # selected row). Sets both the completion-current + selection highlight.
+            "completion_menu_current_bg": "#27232C",
         },
         "spinner": {
             # Empty = use hardcoded defaults in display.py

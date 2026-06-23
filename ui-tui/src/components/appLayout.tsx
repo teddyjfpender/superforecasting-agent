@@ -35,6 +35,7 @@ import { ForecastsWorkspace } from './forecastsWorkspace.js'
 import { FpsOverlay } from './fpsOverlay.js'
 import { HelpHint } from './helpHint.js'
 import { HelpView } from './helpView.js'
+import { HooksView } from './hooksView.js'
 import { MarketsView } from './marketsView.js'
 import { MessageLine } from './messageLine.js'
 import { MessagingView } from './messagingView.js'
@@ -413,6 +414,13 @@ const DemoVizViewPane = memo(function DemoVizViewPane() {
   return <DemoVizView onClose={() => patchOverlayState({ demoViz: false })} t={ui.theme} />
 })
 
+const HooksViewPane = memo(function HooksViewPane() {
+  const { gw } = useGateway()
+  const ui = useStore($uiState)
+
+  return <HooksView gw={gw} onClose={() => patchOverlayState({ hooks: false })} t={ui.theme} />
+})
+
 const MarketsViewPane = memo(function MarketsViewPane({ onAsk }: { onAsk: (question: string) => void }) {
   const { gw } = useGateway()
   const ui = useStore($uiState)
@@ -564,6 +572,7 @@ export const AppLayout = memo(function AppLayout({
     overlay.help ||
     overlay.calendar ||
     overlay.demoViz ||
+    overlay.hooks ||
     overlay.markets ||
     overlay.news ||
     overlay.messaging ||
@@ -693,6 +702,10 @@ export const AppLayout = memo(function AppLayout({
             ) : overlay.demoViz ? (
               <PerfPane id="demoViz">
                 <DemoVizViewPane />
+              </PerfPane>
+            ) : overlay.hooks ? (
+              <PerfPane id="hooks">
+                <HooksViewPane />
               </PerfPane>
             ) : overlay.markets ? (
               <PerfPane id="markets">

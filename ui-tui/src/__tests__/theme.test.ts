@@ -57,8 +57,8 @@ describe('DEFAULT_THEME', () => {
   it('has color palette', async () => {
     const { DEFAULT_THEME } = await importThemeWithCleanEnv()
 
-    expect(DEFAULT_THEME.color.primary).toBe('#E6EDF3')
-    expect(DEFAULT_THEME.color.error).toBe('#F85149')
+    expect(DEFAULT_THEME.color.primary).toBe('#E9E5F4')
+    expect(DEFAULT_THEME.color.error).toBe('#FF7E9D')
   })
 })
 

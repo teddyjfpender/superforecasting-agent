@@ -84,15 +84,20 @@ def test_signal_move_fires_trade_trigger(tmp_path):
     ledger.add_thesis_entity(thesis.id, "BE", weights=[{"member_id": power.id, "weight": 0.8, "direction": "support"}])
     ledger.add_thesis_entity(thesis.id, "IREN", weights=[{"member_id": power.id, "weight": 0.6, "direction": "support"}])
     ledger.aggregate_thesis(thesis.id)  # baseline
+    # Committing a moved member now AUTO-re-aggregates the parent thesis (the
+    # member-commit cascade), so the trade trigger fires at this commit — read it
+    # off the thesis's freshly-cascaded snapshot, not a manual re-aggregate (which
+    # would see no further move and produce nothing).
     ledger.create_snapshot(question_id=power.id, probability_or_distribution=0.85, rationale="power tightening")
-    result = ledger.aggregate_thesis(thesis.id)
-    assert result["triggers"], "a large signal move should produce a trigger"
-    trig = result["triggers"][0]
+    meta = ledger.get_current_snapshot(thesis.id).metadata or {}
+    triggers = meta.get("triggers") or []
+    assert triggers, "a large signal move should produce a trigger"
+    trig = triggers[0]
     assert trig["direction"] == "up"
     assert set(trig["better"]) >= {"BE", "IREN"}
     assert "better suited" in trig["note"]
     # the entities' suitability rose
-    entities = {e["name"]: e for e in result["entities"]}
+    entities = {e["name"]: e for e in (meta.get("entities") or [])}
     assert entities["BE"]["delta"] > 0
 
 
