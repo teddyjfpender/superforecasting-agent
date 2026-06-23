@@ -116,6 +116,18 @@ ANALYST_NOTE_VERDICTS = {"right", "wrong", "close", "far"}
 # so a higher-level question and its granular children inform each other.
 FORECAST_LINK_TYPES = {"related", "component_of"}
 SCHEDULE_SCOPE_TYPES = {"question", "domain", "topic", "domain_topic", "portfolio", "horizon"}
+
+# Typed roles for a watched source — lets the desk distinguish resolution-critical
+# sources from background context so it can stop treating broad RSS the same as the
+# source that actually resolves/anchors the question.
+WATCH_SOURCE_ROLES = {
+    "resolver",            # the source the question RESOLVES against
+    "consensus",           # the consensus/estimate the question is measured vs
+    "official_primary",    # the authoritative primary record (filing, press release)
+    "leading_indicator",   # an early signal that moves before resolution
+    "market_price",        # a market/price signal (prediction market, ticker)
+    "background_context",  # broad context (general RSS/news); not resolution-critical
+}
 AUTOPILOT_MODES = {"propose", "auto_commit", "alert_only"}
 AUTOPILOT_PROPOSAL_STATUSES = {"pending", "approved", "rejected", "expired", "auto_committed"}
 WATCH_SOURCE_TYPES = {
@@ -1283,6 +1295,9 @@ class ForecastLedger:
             self._ensure_column(conn, "forecast_snapshots", "change_my_mind", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column(conn, "postmortems", "failure_class", "TEXT")
             self._ensure_column(conn, "model_runs", "market_model_id", "TEXT")
+            # Typed watched-source roles: distinguish resolution-critical sources
+            # (resolver/consensus/official_primary) from background context (RSS).
+            self._ensure_column(conn, "watched_sources", "role", "TEXT")
 
     def _ensure_column(
         self,
@@ -5753,12 +5768,17 @@ class ForecastLedger:
         scope_ref: str | None,
         source: str,
         source_type: str | None = None,
+        role: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self._validate_watch_scope(scope_type, scope_ref)
         source = source.strip()
         if not source:
             raise ValidationError("watched source is required")
+        if role is not None and role not in WATCH_SOURCE_ROLES:
+            raise ValidationError(
+                "role must be one of: " + ", ".join(sorted(WATCH_SOURCE_ROLES))
+            )
         inferred_type = source_type or self._infer_watch_source_type(source)
         if inferred_type == "manual_note":
             inferred_type = "manual"
@@ -5776,9 +5796,9 @@ class ForecastLedger:
                 """
                 INSERT INTO watched_sources (
                     id, scope_type, scope_ref, source, source_type, created_at,
-                    last_checked_at, last_seen_signature, status, metadata
+                    last_checked_at, last_seen_signature, status, metadata, role
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     watch_id,
@@ -5791,6 +5811,7 @@ class ForecastLedger:
                     signature,
                     "active",
                     json_dumps(metadata or {}),
+                    role,
                 ),
             )
         return self.get_watched_source(watch_id)

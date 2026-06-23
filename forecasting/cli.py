@@ -54,7 +54,7 @@ from forecasting.learning import (
     is_learning_review_reason,
     learned_error_profile_id,
 )
-from forecasting.ledger import FORECAST_LINK_TYPES, ForecastLedger, WATCH_SOURCE_TYPES
+from forecasting.ledger import FORECAST_LINK_TYPES, ForecastLedger, WATCH_SOURCE_ROLES, WATCH_SOURCE_TYPES
 from forecasting.models import (
     ASSUMPTION_STATUSES,
     CALIBRATION_LESSON_STATUSES,
@@ -2267,6 +2267,11 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     watch_add.add_argument("--materiality", choices=["low", "medium", "high"], help="Expected materiality when matching RSS/Atom items change")
     watch_add.add_argument("--direction", choices=["upward", "downward", "ambiguous"], help="Expected directional impact for matching RSS/Atom items")
     watch_add.add_argument("--affected-component", dest="affected_components", action="append", default=[], help="Forecast assumption or component affected by matching RSS/Atom items")
+    watch_add.add_argument(
+        "--role",
+        choices=sorted(WATCH_SOURCE_ROLES),
+        help="Source role: resolver/consensus/official_primary/leading_indicator/market_price/background_context",
+    )
     watch_add.add_argument("--metadata-json", default="{}")
     watch_add.set_defaults(_forecast_handler=_cmd_watch_add)
     watch_list = watch_sub.add_parser("list", help="List watched sources")
@@ -10108,11 +10113,14 @@ def _cmd_watch_add(args: argparse.Namespace) -> None:
         scope_ref=scope_ref,
         source=args.source,
         source_type=args.source_type,
+        role=getattr(args, "role", None),
         metadata=_watch_metadata_from_args(args),
     )
     print(f"watched source {row['id']}")
     print(f"scope: {_format_watch_scope(row)}")
     print(f"source_type: {row['source_type']}")
+    if row.get("role"):
+        print(f"role: {row['role']}")
     print(f"status: {row['status']}")
     filters = (row.get("metadata") or {}).get("relevance_filters") or {}
     if filters:
@@ -10129,11 +10137,11 @@ def _cmd_watch_list(args: argparse.Namespace) -> None:
     if not rows:
         print("No watched sources found.")
         return
-    print("ID             Scope                  Type    Status    Source")
+    print("ID             Scope                  Type    Role              Status    Source")
     for row in rows:
         print(
             f"{row['id']:<14} {_format_watch_scope(row):<22} "
-            f"{row['source_type']:<7} {row['status']:<9} {row['source']}"
+            f"{row['source_type']:<7} {(row.get('role') or '-'):<17} {row['status']:<9} {row['source']}"
         )
 
 
