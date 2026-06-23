@@ -128,6 +128,12 @@ WATCH_SOURCE_ROLES = {
     "market_price",        # a market/price signal (prediction market, ticker)
     "background_context",  # broad context (general RSS/news); not resolution-critical
 }
+
+# Per-forecast CRUX variables: the decisive inputs the resolution actually hinges
+# on. Tracking them (+ their evidence status) stops "lots of evidence but wrong
+# evidence" — the desk focuses gathering on what moves the answer.
+CRUX_MATERIALITY = {"low", "medium", "high"}
+CRUX_STATUS = {"missing", "stale", "current", "contradictory"}
 AUTOPILOT_MODES = {"propose", "auto_commit", "alert_only"}
 AUTOPILOT_PROPOSAL_STATUSES = {"pending", "approved", "rejected", "expired", "auto_committed"}
 WATCH_SOURCE_TYPES = {
@@ -735,6 +741,21 @@ class ForecastLedger:
                     check_cadence TEXT,
                     notes TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS question_cruxes (
+                    id TEXT PRIMARY KEY,
+                    question_id TEXT NOT NULL REFERENCES forecast_questions(id) ON DELETE CASCADE,
+                    crux_variable TEXT NOT NULL,
+                    preferred_roles TEXT NOT NULL DEFAULT '[]',
+                    materiality TEXT NOT NULL DEFAULT 'medium',
+                    status TEXT NOT NULL DEFAULT 'missing',
+                    notes TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_question_cruxes_question
+                    ON question_cruxes(question_id, materiality, status);
 
                 CREATE TABLE IF NOT EXISTS model_runs (
                     id TEXT PRIMARY KEY,
@@ -2700,6 +2721,114 @@ class ForecastLedger:
             data["source_refs"] = json_loads(data["source_refs"], [])
             result.append(data)
         return result
+
+    # ── crux evidence map ─────────────────────────────────────────────────────
+    def add_crux(
+        self,
+        *,
+        question_id: str,
+        crux_variable: str,
+        preferred_roles: list[str] | None = None,
+        materiality: str = "medium",
+        status: str = "missing",
+        notes: str | None = None,
+    ) -> dict[str, Any]:
+        """Register a decisive variable the resolution hinges on, with the source
+        roles that would satisfy it + its current evidence status. Idempotent on
+        (question_id, crux_variable): re-adding updates the existing crux."""
+        self.get_question(question_id)
+        crux_variable = crux_variable.strip()
+        if not crux_variable:
+            raise ValidationError("crux_variable is required")
+        if materiality not in CRUX_MATERIALITY:
+            raise ValidationError("materiality must be one of: " + ", ".join(sorted(CRUX_MATERIALITY)))
+        if status not in CRUX_STATUS:
+            raise ValidationError("status must be one of: " + ", ".join(sorted(CRUX_STATUS)))
+        roles = list(preferred_roles or [])
+        for role in roles:
+            if role not in WATCH_SOURCE_ROLES:
+                raise ValidationError("preferred_roles must be drawn from: " + ", ".join(sorted(WATCH_SOURCE_ROLES)))
+        now = utc_now_iso()
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT id FROM question_cruxes WHERE question_id = ? AND crux_variable = ?",
+                (question_id, crux_variable),
+            ).fetchone()
+            if existing is not None:
+                conn.execute(
+                    "UPDATE question_cruxes SET preferred_roles = ?, materiality = ?, status = ?, notes = ?, updated_at = ? WHERE id = ?",
+                    (json_dumps(roles), materiality, status, notes, now, existing["id"]),
+                )
+                crux_id = existing["id"]
+            else:
+                crux_id = f"cx_{uuid.uuid4().hex[:12]}"
+                conn.execute(
+                    "INSERT INTO question_cruxes (id, question_id, crux_variable, preferred_roles, materiality, status, notes, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (crux_id, question_id, crux_variable, json_dumps(roles), materiality, status, notes, now, now),
+                )
+        return self.get_crux(crux_id)
+
+    def get_crux(self, crux_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM question_cruxes WHERE id = ?", (crux_id,)).fetchone()
+        if row is None:
+            raise LedgerNotFoundError(f"crux not found: {crux_id}")
+        data = dict(row)
+        data["preferred_roles"] = json_loads(data["preferred_roles"], [])
+        return data
+
+    def list_cruxes(self, question_id: str) -> list[dict[str, Any]]:
+        self.get_question(question_id)
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM question_cruxes WHERE question_id = ? ORDER BY created_at ASC", (question_id,)
+            ).fetchall()
+        out = []
+        for row in rows:
+            data = dict(row)
+            data["preferred_roles"] = json_loads(data["preferred_roles"], [])
+            out.append(data)
+        return out
+
+    def set_crux_status(self, crux_id: str, status: str) -> dict[str, Any]:
+        if status not in CRUX_STATUS:
+            raise ValidationError("status must be one of: " + ", ".join(sorted(CRUX_STATUS)))
+        self.get_crux(crux_id)
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE question_cruxes SET status = ?, updated_at = ? WHERE id = ?",
+                (status, utc_now_iso(), crux_id),
+            )
+        return self.get_crux(crux_id)
+
+    def evidence_map(self, question_id: str) -> dict[str, Any]:
+        """Assemble the crux evidence map: each decisive variable, its materiality +
+        status, and whether the question actually watches a source in a role that
+        could satisfy it. Surfaces 'lots of evidence but the crux is missing' —
+        high-materiality cruxes that are missing/stale with no matching source."""
+        self.get_question(question_id)
+        cruxes = self.list_cruxes(question_id)
+        watched = self.list_watched_sources(scope_type="question", scope_ref=question_id, status=None)
+        watched_roles = {w.get("role") for w in watched if w.get("role")}
+
+        rank = {"high": 0, "medium": 1, "low": 2}
+        status_rank = {"missing": 0, "contradictory": 1, "stale": 2, "current": 3}
+        rows = []
+        for crux in cruxes:
+            preferred = crux.get("preferred_roles") or []
+            has_source = bool(set(preferred) & watched_roles) if preferred else bool(watched)
+            rows.append({
+                "id": crux["id"],
+                "crux_variable": crux["crux_variable"],
+                "materiality": crux["materiality"],
+                "status": crux["status"],
+                "preferred_roles": preferred,
+                "has_matching_source": has_source,
+            })
+        rows.sort(key=lambda r: (rank.get(r["materiality"], 1), status_rank.get(r["status"], 0)))
+        gaps = [r for r in rows if r["materiality"] == "high" and r["status"] in {"missing", "stale", "contradictory"}]
+        return {"question_id": question_id, "cruxes": rows, "high_materiality_gaps": gaps, "gap_count": len(gaps)}
 
     def record_model_run(
         self,

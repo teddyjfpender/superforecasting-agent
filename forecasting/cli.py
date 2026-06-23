@@ -54,7 +54,7 @@ from forecasting.learning import (
     is_learning_review_reason,
     learned_error_profile_id,
 )
-from forecasting.ledger import FORECAST_LINK_TYPES, ForecastLedger, WATCH_SOURCE_ROLES, WATCH_SOURCE_TYPES
+from forecasting.ledger import CRUX_MATERIALITY, CRUX_STATUS, FORECAST_LINK_TYPES, ForecastLedger, WATCH_SOURCE_ROLES, WATCH_SOURCE_TYPES
 from forecasting.models import (
     ASSUMPTION_STATUSES,
     CALIBRATION_LESSON_STATUSES,
@@ -1881,6 +1881,32 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     reference_status.add_argument("--check-cadence")
     reference_status.add_argument("--notes")
     reference_status.set_defaults(_forecast_handler=_cmd_reference_class_status)
+
+    crux_parser = forecast_sub.add_parser("crux", help="Manage per-forecast crux variables (the decisive inputs)")
+    crux_sub = crux_parser.add_subparsers(dest="crux_command")
+    crux_add = crux_sub.add_parser("add", help="Register a decisive crux variable for a forecast")
+    crux_add.add_argument("question", help="row number, id, or search words for the question")
+    crux_add.add_argument("--variable", required=True, help="the decisive variable the resolution hinges on")
+    crux_add.add_argument(
+        "--role", dest="roles", action="append", default=[], choices=sorted(WATCH_SOURCE_ROLES),
+        help="preferred source role that would satisfy this crux (repeatable)",
+    )
+    crux_add.add_argument("--materiality", choices=sorted(CRUX_MATERIALITY), default="medium")
+    crux_add.add_argument("--status", choices=sorted(CRUX_STATUS), default="missing")
+    crux_add.add_argument("--notes")
+    crux_add.set_defaults(_forecast_handler=_cmd_crux_add)
+    crux_list = crux_sub.add_parser("list", help="List a forecast's crux variables")
+    crux_list.add_argument("question")
+    crux_list.set_defaults(_forecast_handler=_cmd_crux_list)
+    crux_status_p = crux_sub.add_parser("status", help="Update a crux's evidence status")
+    crux_status_p.add_argument("crux_id")
+    crux_status_p.add_argument("status", choices=sorted(CRUX_STATUS))
+    crux_status_p.set_defaults(_forecast_handler=_cmd_crux_status)
+
+    evidence_map_parser = forecast_sub.add_parser("evidence-map", help="Show the crux evidence map for a forecast")
+    evidence_map_parser.add_argument("question", help="row number, id, or search words for the question")
+    evidence_map_parser.add_argument("--json", action="store_true")
+    evidence_map_parser.set_defaults(_forecast_handler=_cmd_evidence_map)
 
     evidence_parser = forecast_sub.add_parser("evidence", help="Manage evidence items")
     evidence_sub = evidence_parser.add_subparsers(dest="evidence_command")
@@ -10104,6 +10130,52 @@ def _order_theses(ledger: "ForecastLedger", theses: list[Any]) -> list[Any]:
         else:
             plain.append(thesis)
     return plain + nested
+
+
+def _cmd_crux_add(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    qid = _resolve_question_id(ledger, args.question)
+    crux = ledger.add_crux(
+        question_id=qid, crux_variable=args.variable, preferred_roles=args.roles or None,
+        materiality=args.materiality, status=args.status, notes=args.notes,
+    )
+    print(f"crux {crux['id']}  [{crux['materiality']}/{crux['status']}]  {crux['crux_variable']}")
+    if crux["preferred_roles"]:
+        print("  preferred roles: " + ", ".join(crux["preferred_roles"]))
+
+
+def _cmd_crux_list(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    rows = ledger.list_cruxes(_resolve_question_id(ledger, args.question))
+    if not rows:
+        print("No crux variables registered.")
+        return
+    for crux in rows:
+        roles = ", ".join(crux["preferred_roles"]) or "-"
+        print(f"{crux['id']:<15} [{crux['materiality']:<6}/{crux['status']:<13}] {crux['crux_variable']}  ({roles})")
+
+
+def _cmd_crux_status(args: argparse.Namespace) -> None:
+    crux = _ledger(args).set_crux_status(args.crux_id, args.status)
+    print(f"crux {crux['id']} -> {crux['status']}")
+
+
+def _cmd_evidence_map(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    result = ledger.evidence_map(_resolve_question_id(ledger, args.question))
+    if getattr(args, "json", False):
+        print(json.dumps(result, indent=2))
+        return
+    if not result["cruxes"]:
+        print("No crux variables registered. Add them with `forecast crux add <question> --variable ...`.")
+        return
+    print("Crux evidence status:")
+    for crux in result["cruxes"]:
+        mark = "OK " if crux["status"] == "current" else "!! "
+        src = "" if crux["has_matching_source"] else "  · NO matching source watched"
+        print(f"  [{crux['materiality'].upper():<6}] {mark}{crux['status']:<13} {crux['crux_variable']}{src}")
+    if result["gap_count"]:
+        print(f"\n{result['gap_count']} high-materiality crux gap(s) — the decisive evidence is missing/stale.")
 
 
 def _cmd_watch_add(args: argparse.Namespace) -> None:
