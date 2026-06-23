@@ -28,6 +28,15 @@ def _live(ctx: HookContext) -> bool:
     return ctx.is_live
 
 
+def _modeled(ctx: HookContext) -> bool:
+    # A "modeled" forecast = a live, LLM-reasoned forecast — NOT a deterministic
+    # thesis/factor aggregate. The aggregate's quality lives in its members + the
+    # aggregation math, so the LLM-forecast-quality rules (panel, quorum, structured
+    # reasoning, citations/evidence, outside-view anchor, renderable distribution)
+    # are noise on it. Type-aware gating: those rules apply to modeled forecasts only.
+    return ctx.is_live and not ctx.is_thesis_or_factor
+
+
 # ── structured reasoning ──────────────────────────────────────────────────────
 def _check_structured_reasoning(ctx: HookContext):
     missing = []
@@ -228,7 +237,7 @@ MAX_WIDTH_RATIO = 1.0       # an interval wider than the whole question range is
 MIN_SHARPNESS = 0.05        # binary: |p-0.5| >= 0.025; below = effectively a coin flip
 NULL_EXCESS_TOLERANCE = 0.05
 
-_dist = lambda c: c.is_live and c.is_distribution  # noqa: E731
+_dist = lambda c: c.is_live and c.is_distribution and not c.is_thesis_or_factor  # noqa: E731
 
 
 def _check_output_renderable(ctx: HookContext):
@@ -413,7 +422,7 @@ def _rem_reference_class(_ctx: HookContext) -> RemediationDescriptor:
 # additive rules.
 BUILTIN_RULES: tuple[SimpleRule, ...] = (
     SimpleRule("require_structured_reasoning", Category.SATURATION, Severity.ERROR, 15.0,
-               _check_structured_reasoning, _live, lambda c: RemediationDescriptor("agentic", "decompose", "Add reasons_up / reasons_down / change_my_mind.", target_stage="update")),
+               _check_structured_reasoning, _modeled, lambda c: RemediationDescriptor("agentic", "decompose", "Add reasons_up / reasons_down / change_my_mind.", target_stage="update")),
     SimpleRule("require_components", Category.SATURATION, Severity.ERROR, 15.0,
                _check_components, _live, _rem_decompose),
     SimpleRule("require_fresh_evidence", Category.SATURATION, Severity.ERROR, 15.0,
@@ -421,13 +430,13 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
     SimpleRule("require_decision_readiness", Category.DECISION, Severity.WARN, 6.0,
                _check_decision_readiness, _live),
     SimpleRule("require_panel", Category.SATURATION, Severity.ERROR, 12.0,
-               _check_panel, _live, _rem_run_panel),
+               _check_panel, _modeled, _rem_run_panel),
     SimpleRule("require_citations", Category.SATURATION, Severity.WARN, 8.0,
-               _check_citations, _live, _rem_collect),
+               _check_citations, _modeled, _rem_collect),
     SimpleRule("require_evidence", Category.SATURATION, Severity.ERROR, 16.0,
-               _check_require_evidence, _live, _rem_collect),
+               _check_require_evidence, _modeled, _rem_collect),
     SimpleRule("require_outside_view_anchor", Category.REASONING, Severity.WARN, 9.0,
-               _check_outside_view_anchor, _live, _rem_reference_class),
+               _check_outside_view_anchor, _modeled, _rem_reference_class),
     SimpleRule("require_outcome_paths", Category.SATURATION, Severity.WARN, 10.0,
                _check_tail_paths, lambda c: c.is_live and c.is_categorical, _rem_compress),
     SimpleRule("style_clean", Category.STYLE, Severity.ERROR, 5.0,
@@ -443,11 +452,11 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
                _check_uncertainty_width, _dist, _rem_fix_distribution),
     # v2 — quorum / panel participation
     SimpleRule("quorum_participation", Category.QUORUM, Severity.WARN, 8.0,
-               _check_quorum_participation, _live, _rem_run_quorum),
+               _check_quorum_participation, _modeled, _rem_run_quorum),
     SimpleRule("quorum_required", Category.QUORUM, Severity.WARN, 10.0,
-               _check_quorum_required, _live, _rem_run_quorum),
+               _check_quorum_required, _modeled, _rem_run_quorum),
     SimpleRule("quorum_judged", Category.QUORUM, Severity.WARN, 6.0,
-               _check_quorum_judged, _live, _rem_run_quorum),
+               _check_quorum_judged, _modeled, _rem_run_quorum),
     # v2 — confidence lean
     SimpleRule("tails_justified", Category.CONFIDENCE, Severity.WARN, 10.0,
                _check_tails_justified, lambda c: c.is_live and c.is_categorical, _rem_compress),
@@ -457,7 +466,7 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
                _check_confidence_committed, _live, _rem_sharpen),
     # v2 — reasoning composition
     SimpleRule("reasoning_composition", Category.REASONING, Severity.WARN, 8.0,
-               _check_reasoning_composition, _live, _rem_tag_reasoning),
+               _check_reasoning_composition, _modeled, _rem_tag_reasoning),
     # v3 — thesis/factor aggregate freshness (members moved since last aggregate)
     SimpleRule("thesis_aggregate_fresh", Category.SATURATION, Severity.WARN, 8.0,
                _check_thesis_fresh, lambda c: c.is_live and c.is_thesis_or_factor, _rem_run_aggregate),

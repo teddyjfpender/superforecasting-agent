@@ -1908,6 +1908,7 @@ class ForecastLedger:
                     _ctx = _dc.replace(
                         _ctx,
                         reference_class_count=len(self.list_reference_classes(question_id)),
+                        is_thesis_or_factor=self.is_thesis(question),
                         watched_source_count=len(self.list_watched_sources(scope_type="question", scope_ref=question_id, status="active")),
                         panel_run_count=len(self.list_panel_runs(question_id)),
                         reasoning_methods=tuple(snapshot_metadata.get("reasoning_methods") or ()),
@@ -1988,6 +1989,7 @@ class ForecastLedger:
                 reasoning_methods=snapshot_metadata.get("reasoning_methods") or [],
                 required_reasoning_methods=tuple(_orq), min_reasoning_methods=_omin,
                 reference_class_count=len(self.list_reference_classes(question_id)),
+                is_thesis_or_factor=self.is_thesis(question),
                 is_distribution=bool(_oda and _oda.is_distribution),
                 distribution_renderable=(_oda.renderable if _oda else True),
                 bounds_well_formed=(_oda.well_formed if _oda else True),
