@@ -11125,6 +11125,11 @@ def _cmd_pilot_cohort(args: argparse.Namespace) -> None:
                 next_run_at=args.schedule_next_run_at,
                 stale_days=args.schedule_stale_days,
                 trigger_reason="pilot_cohort_review",
+                # A pilot cohort exists to RESOLVE + SCORE (calibration), so its
+                # reviews auto-score + auto-postmortem — the loop closes itself and
+                # the "0 live scored forecasts" gap fills without manual follow-up.
+                auto_score=True,
+                auto_postmortem=True,
             )
             schedule_id = schedule["id"]
 
