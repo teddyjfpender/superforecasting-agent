@@ -30,6 +30,7 @@ import type { Msg, PanelSection, SlashCatalog } from '../types.js'
 
 import { createGatewayEventHandler } from './createGatewayEventHandler.js'
 import { createSlashHandler } from './createSlashHandler.js'
+import { forecastDeskRailSections, forecastDeskStatusLabel } from './forecastPanel.js'
 import { getInputSelection } from './inputSelectionStore.js'
 import { type GatewayRpc, type TranscriptRow } from './interfaces.js'
 import { clearMarketJob, setMarketJob } from './marketJobsStore.js'
@@ -370,6 +371,35 @@ export function useMainApp(gw: GatewayClient) {
   )
 
   const gateway = useMemo(() => ({ gw, rpc }), [gw, rpc])
+
+  // Keep the bottom status line's desk stats fresh. It was only fetched once at
+  // startup, so it showed stale counts forever (e.g. "142 forecasts" long after
+  // the ledger changed). Poll lightly; skip while busy so an active agent turn
+  // isn't perturbed — the next tick after the turn catches up.
+  useEffect(() => {
+    const refresh = () => {
+      if (getUiState().busy) {
+        return
+      }
+
+      rpc('forecast.dashboard', { limit: 8 })
+        .then((r: any) => {
+          if (!r || (!r.summary && !String(r.output || '').trim())) {
+            return
+          }
+
+          patchUiState({
+            forecastDeskRailSections: forecastDeskRailSections(r),
+            forecastDeskStatus: forecastDeskStatusLabel(r)
+          })
+        })
+        .catch(() => {})
+    }
+
+    const id = setInterval(refresh, 30_000)
+
+    return () => clearInterval(id)
+  }, [rpc])
 
   const die = useCallback(() => {
     gw.kill()

@@ -15,6 +15,7 @@ import {
   isGitRepo,
   overleaf
 } from '../lib/docsCli.js'
+import { type FieldSpec, filterRanked } from '../lib/fuzzyRank.js'
 import { statusGlyph } from '../lib/icons.js'
 import { createTexFile, docsDir, ensureLatexDir, latexSubdir, listTexFiles, readTexFile, type TexFile, writeTexFile } from '../lib/latexDocs.js'
 import { seedLatexExamples } from '../lib/latexExamples.js'
@@ -30,6 +31,9 @@ import { type FooterChip, FooterChips } from './footerChips.js'
 
 const truncate = (value: string, max: number): string =>
   value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value
+
+// Only the relative path is searchable on a TexFile.
+const LATEX_SEARCH_FIELDS: FieldSpec<TexFile>[] = [{ get: f => f.rel, weight: 1 }]
 
 interface LatexDocsViewProps {
   docKind?: 'latex' | 'markdown'
@@ -112,12 +116,9 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-
-    return q ? files.filter(f => f.rel.toLowerCase().includes(q)) : files
-     
-  }, [files, query])
+  // Ranked fuzzy filter over the file paths (same engine as news/markets/desk):
+  // best matches float up, non-matches drop out, empty query shows all.
+  const filtered = useMemo(() => filterRanked(files, query, LATEX_SEARCH_FIELDS), [files, query])
 
   const clampedSel = Math.min(sel, Math.max(0, filtered.length - 1))
   const activeFile = filtered[clampedSel]

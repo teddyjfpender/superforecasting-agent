@@ -26,11 +26,14 @@ interface AddProviderModalProps {
   initial: MarketConfig
   onCancel: () => void
   onSaved: (config: MarketConfig) => void
+  // Jump to the symbol search (find + add a specific series) — the other half of
+  // "Add data", reached with `/` from here.
+  onSearchSymbols?: () => void
   rows: number
   t: Theme
 }
 
-export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: AddProviderModalProps) {
+export function AddProviderModal({ cols, initial, onCancel, onSaved, onSearchSymbols, rows, t }: AddProviderModalProps) {
   const sem = semantics(t)
   const [providers, setProviders] = useState<Set<string>>(() => new Set(initial.providers))
 
@@ -140,6 +143,12 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
       return
     }
 
+    // `/` jumps to the symbol search — the find-and-add-a-specific-series half
+    // of Add data.
+    if (ch === '/' && onSearchSymbols) {
+      return onSearchSymbols()
+    }
+
     // Esc saves what's selected and closes (toggles applied incrementally) —
     // matches the News modal: ↑↓ move, Tab/←→ switch, Enter toggle, Esc done.
     if (key.escape) {
@@ -242,7 +251,7 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, rows, t }: 
   const footer =
     focus === 'key'
       ? '⏎ save key · Esc back'
-      : `Tab/←→ switch · ↑↓ move · ⏎ toggle${keyAction} · Esc save & close`
+      : `Tab/←→ switch · ↑↓ move · ⏎ toggle${keyAction}${onSearchSymbols ? ' · / search symbols' : ''} · Esc save & close`
 
   return (
     <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>

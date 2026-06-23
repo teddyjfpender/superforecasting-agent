@@ -6,10 +6,10 @@ import type { GatewayClient } from '../gatewayClient.js'
 import type {
   ObsidianNote,
   ObsidianNoteResponse,
-  ObsidianSearchResponse,
   ObsidianSearchResult,
   ObsidianStatusResponse
 } from '../gatewayTypes.js'
+import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { highlightMarkdownLine } from '../lib/markdownEditorHighlight.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
@@ -351,6 +351,15 @@ interface ChatState {
 const THINKING_WORDS = ['thinking', 'pondering', 'reasoning', 'mulling', 'cooking', 'scheming', 'noodling']
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
+// Field weights for the notes fuzzy filter: title dominates, then the path,
+// then the excerpt + folder so intent words still surface the right note.
+const OBSIDIAN_SEARCH_FIELDS: FieldSpec<ObsidianNote>[] = [
+  { get: n => n.title, weight: 1 },
+  { get: n => n.rel_path, weight: 0.6 },
+  { get: n => n.excerpt, weight: 0.3 },
+  { get: n => n.folder, weight: 0.4 }
+]
+
 export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid, t }: ObsidianViewProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
@@ -540,13 +549,17 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
     }
   }
 
+  // INSTANT client-side fuzzy search over the loaded notes (title > path >
+  // excerpt > folder) — no RPC, so results appear as you type instead of after a
+  // gateway round-trip / LLM rerank.
   const runSearch = (query: string) => {
-    gw.request<unknown>('obsidian.search', { limit: 30, query })
-      .then(raw => {
-        const res = asRpcResult<ObsidianSearchResponse>(raw)
-        setSearch(s => (s && s.query === query ? { ...s, loading: false, results: res?.results ?? [], sel: 0 } : s))
-      })
-      .catch(() => setSearch(s => (s ? { ...s, loading: false } : s)))
+    const results: ObsidianSearchResult[] = query.trim()
+      ? rankItems(notes, query, OBSIDIAN_SEARCH_FIELDS)
+          .slice(0, 50)
+          .map(r => ({ rel_path: r.item.rel_path, score: r.score, title: r.item.title }))
+      : []
+
+    setSearch(s => (s && s.query === query ? { ...s, loading: false, results, sel: 0 } : s))
   }
 
   const openSearchResult = (rel?: string) => {

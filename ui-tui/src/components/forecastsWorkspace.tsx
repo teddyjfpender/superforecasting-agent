@@ -48,6 +48,7 @@ import {
   type TailSeverity,
   unearnedHeadline
 } from '../lib/forecastTail.js'
+import { type FieldSpec, filterRanked, rankItems } from '../lib/fuzzyRank.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
@@ -175,20 +176,18 @@ const deltaLabel = (item: ForecastWorkspaceItem): string => {
 const truncate = (value: string, max: number): string =>
   value.length <= max ? value : `${value.slice(0, Math.max(0, max - 1))}…`
 
-export const matchesFilter = (item: ForecastWorkspaceItem, query: string): boolean => {
-  if (!query) {
-    return true
-  }
+// Field weights for the desk `/` filter: title dominates, then domain/topics,
+// then the id. Shared between the boolean test and the ranked list below so they
+// always agree on what matches.
+const FORECAST_SEARCH_FIELDS: FieldSpec<ForecastWorkspaceItem>[] = [
+  { get: i => i.title, weight: 1 },
+  { get: i => i.domain, weight: 0.6 },
+  { get: i => i.topics, weight: 0.5 },
+  { get: i => i.id, weight: 0.3 }
+]
 
-  const needle = query.toLowerCase()
-
-  const haystack = [item.title, item.domain, item.id, ...(item.topics ?? [])]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-
-  return haystack.includes(needle)
-}
+export const matchesFilter = (item: ForecastWorkspaceItem, query: string): boolean =>
+  !query.trim() || rankItems([item], query, FORECAST_SEARCH_FIELDS).length > 0
 
 /** Categorical / bucket distribution → sorted bars; null for scalar or mean/sd shapes. */
 export const distributionBars = (probability: ForecastWorkspaceItem['probability']): HistogramBar[] | null => {
@@ -615,18 +614,21 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
 
       const memberIds = new Set(ecosystem.filter((id): id is string => Boolean(id)))
 
-      return items.filter(item => item.id != null && memberIds.has(item.id) && matchesFilter(item, query))
+      // Scope to the lens FIRST, then rank by relevance within it (an empty query
+      // keeps the lens order). Ranking can't leak items from outside the lens.
+      return filterRanked(items.filter(item => item.id != null && memberIds.has(item.id)), query, FORECAST_SEARCH_FIELDS)
     }
 
     if (activeFactor) {
       const ecosystem =
         activeFactor.question_ids ?? (activeFactor.constituents ?? []).map(constituent => constituent.id ?? '')
+
       const memberIds = new Set(ecosystem.filter((id): id is string => Boolean(id)))
 
-      return items.filter(item => item.id != null && memberIds.has(item.id) && matchesFilter(item, query))
+      return filterRanked(items.filter(item => item.id != null && memberIds.has(item.id)), query, FORECAST_SEARCH_FIELDS)
     }
 
-    return items.filter(item => matchesFilter(item, query))
+    return filterRanked(items, query, FORECAST_SEARCH_FIELDS)
   }, [items, query, activeThesis, activeFactor])
 
   // The single navigable column is the union of the lens filter rows (ALL +

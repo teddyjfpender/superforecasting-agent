@@ -5,6 +5,7 @@ import { patchOverlayState } from '../app/overlayStore.js'
 import type { CatalogFeed } from '../content/newsFeedCatalog.js'
 import { FEED_CATEGORIES } from '../content/newsFeedCatalog.js'
 import type { GatewayClient } from '../gatewayClient.js'
+import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { statusGlyph } from '../lib/icons.js'
 import { type ArticleCache, loadArticleCache, pruneArticleCache, saveArticleCache } from '../lib/newsFeedCache.js'
 import { type Article, fetchFeeds } from '../lib/newsFeedFetch.js'
@@ -21,7 +22,6 @@ import {
 import { nextProviderColor, providerColor } from '../lib/newsProviderColor.js'
 import { loadProviderColors, type ProviderColors, saveProviderColors } from '../lib/newsProviderColorStore.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
-import { asRpcResult } from '../lib/rpc.js'
 import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
@@ -110,10 +110,13 @@ interface NewsViewProps {
   t: Theme
 }
 
-interface NewsSearchResponse {
-  engine: 'lexical' | 'llm' | 'none'
-  results: { index: number; score: number }[]
-}
+// Field weights for the article fuzzy filter: a title hit dominates a source or
+// summary hit, but all three contribute so intent words still surface articles.
+const NEWS_SEARCH_FIELDS: FieldSpec<Article>[] = [
+  { get: a => a.title, weight: 1 },
+  { get: a => a.feedTitle, weight: 0.5 },
+  { get: a => a.summary, weight: 0.3 }
+]
 
 export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
   const { stdout } = useStdout()
@@ -135,15 +138,13 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
   const [modalSel, setModalSel] = useState(0)
   const [flash, setFlash] = useState('')
 
-  // Semantic search over the loaded articles: `/` (or `/news <query>`) types a
-  // query that the backend ranks by meaning (LLM rerank, lexical fallback).
+  // INSTANT client-side fuzzy search over the loaded articles. `/` (or
+  // `/news <query>`) opens a top-row search bar that live-filters + ranks by
+  // relevance with NO RPC / NO LLM — so it's immediate (the old gateway rerank
+  // awaited a 25s-timeout LLM call on submit, which made search feel broken).
+  // `searchMode` just routes keystrokes to the bar; the filtered list is derived.
   const [searchMode, setSearchMode] = useState(false)
   const [searchInput, setSearchInput] = useState('')
-  const [searchActive, setSearchActive] = useState('')
-  const [searchEngine, setSearchEngine] = useState('')
-  const [searchResults, setSearchResults] = useState<Article[] | null>(null)
-  const [searching, setSearching] = useState(false)
-  const searchSeqRef = useRef(0)
   const initialRanRef = useRef(false)
 
   const cacheRef = useRef<ArticleCache>(loadArticleCache())
@@ -350,80 +351,24 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
     return articles.filter(a => categoryByUrl.get(normalizeFeedUrl(a.feedUrl)) === activeSource)
   }, [articles, activeSource, categoryByUrl])
 
-  // When a semantic search is active, the ranked results replace the feed list.
-  const visibleArticles = searchActive && searchResults ? searchResults : feedArticles
+  // The live query (trimmed). The filter is active whenever this is non-empty,
+  // whether or not the input bar still has focus (Enter commits + keeps it).
+  const searchActive = searchInput.trim()
+
+  // Ranked client-side filter over ALL loaded articles (not just the active
+  // source) so search finds anything; recomputed instantly per keystroke.
+  const searchResults = useMemo(
+    () => (searchActive ? rankItems(articles, searchActive, NEWS_SEARCH_FIELDS).map(r => r.item) : null),
+    [searchActive, articles]
+  )
+
+  // When a search is active, the ranked results replace the feed list.
+  const visibleArticles = searchResults ?? feedArticles
 
   const clearSearch = () => {
-    searchSeqRef.current += 1
     setSearchMode(false)
     setSearchInput('')
-    setSearchActive('')
-    setSearchEngine('')
-    setSearchResults(null)
-    setSearching(false)
     setSel(0)
-  }
-
-  // Rank the loaded articles by semantic relevance to `q` via the gateway
-  // (LLM rerank, lexical fallback) and show the ranked subset inline.
-  const runSearch = (q: string) => {
-    const query = q.trim()
-
-    if (!query) {
-      return clearSearch()
-    }
-
-    if (!gw) {
-      setFlash('search unavailable')
-
-      return
-    }
-
-    const pool = articles
-
-    if (!pool.length) {
-      setFlash('no articles loaded yet — press r to refresh')
-
-      return
-    }
-
-    const seq = ++searchSeqRef.current
-    setSearchMode(false)
-    setSearchActive(query)
-    setSearching(true)
-    setSel(0)
-
-    gw.request<NewsSearchResponse>('news.search', {
-      articles: pool.map(a => ({ source: providerName(a.feedTitle).trim(), summary: a.summary, title: a.title })),
-      limit: 30,
-      query
-    })
-      .then(raw => {
-        if (!aliveRef.current || seq !== searchSeqRef.current) {
-          return
-        }
-
-        const r = asRpcResult<NewsSearchResponse>(raw)
-
-        const ranked = (r?.results ?? [])
-          .map(item => pool[item.index])
-          .filter((a): a is Article => Boolean(a))
-
-        setSearchResults(ranked)
-        setSearchEngine(r?.engine === 'llm' ? 'semantic' : r?.engine === 'lexical' ? 'keyword' : '')
-        setSearching(false)
-        setSel(0)
-      })
-      .catch(() => {
-        if (!aliveRef.current || seq !== searchSeqRef.current) {
-          return
-        }
-
-        setSearchResults([])
-        setSearchEngine('')
-        setSearching(false)
-        setFlash('search failed')
-      })
   }
 
   // `/news <query>` (or a query carried into the view) auto-runs once articles
@@ -433,9 +378,9 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
     if (q && !initialRanRef.current && articles.length > 0) {
       initialRanRef.current = true
-      runSearch(q)
+      setSearchInput(q)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [initialQuery, articles.length])
 
   const openModal = () => {
@@ -515,10 +460,14 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
       }
 
       if (key.return) {
-        return runSearch(searchInput)
+        // Filtering is already live; Enter just drops focus so ↑↓ navigate the
+        // ranked results while the filter stays applied.
+        return setSearchMode(false)
       }
 
       if (key.backspace || key.delete) {
+        setSel(0)
+
         return setSearchInput(s => s.slice(0, -1))
       }
 
@@ -526,6 +475,8 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
         const printable = [...ch].filter(c => c >= ' ').join('')
 
         if (printable) {
+          // Reset the cursor to the top match as the ranking shifts under typing.
+          setSel(0)
           setSearchInput(s => s + printable)
         }
       }
@@ -546,12 +497,9 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
       return onClose()
     }
 
-    // `/` opens semantic search over the loaded feeds (prefilled to refine).
+    // `/` opens the instant fuzzy filter (keeps any current query to refine).
     if (ch === '/') {
-      setSearchMode(true)
-      setSearchInput(searchActive)
-
-      return
+      return setSearchMode(true)
     }
 
     if (ch === 'a') {
@@ -628,7 +576,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
           <Text color={t.color.primary} inverse>
             {' '}
           </Text>
-          <Text color={t.color.muted}>{'   ⏎ search · Esc cancel'}</Text>
+          <Text color={t.color.muted}>{`   ${searchActive ? `${visibleArticles.length} matches · ` : ''}⏎ done · Esc clear`}</Text>
         </Text>
       ) : (
         <Text wrap="truncate-end">
@@ -653,7 +601,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
                 {truncate(searchActive, 28)}
               </Text>
               <Text color={t.color.muted}>
-                {searching ? ' · …' : ` · ${searchEngine || 'results'} · ${visibleArticles.length}/${articles.length} · Esc clear`}
+                {` · ${visibleArticles.length}/${articles.length} · Esc clear`}
               </Text>
             </Text>
           ) : null}
@@ -755,9 +703,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
           })
         ) : searchActive && searchResults ? (
           <Text color={t.color.muted} wrap="wrap">
-            {searching
-              ? 'Searching…'
-              : `No articles match “${truncate(searchActive, 40)}” — press Esc to clear or / to refine.`}
+            {`No articles match “${truncate(searchActive, 40)}” — press Esc to clear or / to refine.`}
           </Text>
         ) : hasFeeds ? (
           <Text color={t.color.muted} wrap="wrap">

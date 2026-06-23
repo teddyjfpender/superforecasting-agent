@@ -6,6 +6,7 @@ import { $marketJobs, pruneStaleMarketJobs, setMarketJob, STALE_MARKET_JOB_MS } 
 import { patchOverlayState } from '../app/overlayStore.js'
 import { DEFAULT_SERIES, MARKET_CATEGORIES, type MarketSeries, providerByKey } from '../content/marketProviders.js'
 import type { GatewayClient } from '../gatewayClient.js'
+import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { statusGlyph } from '../lib/icons.js'
 import { fetchQuotes, type MarketQuote } from '../lib/marketFetch.js'
 import { getProviderKey } from '../lib/marketKeys.js'
@@ -146,6 +147,14 @@ interface MarketsViewProps {
   t: Theme
 }
 
+// Field weights for the `/` tape filter: symbol is the key, then name, then
+// category — so "tes" ranks TSLA first, "energy" surfaces the energy basket.
+const MARKET_SEARCH_FIELDS: FieldSpec<MarketSeries>[] = [
+  { get: s => s.symbol, weight: 1 },
+  { get: s => s.name, weight: 0.8 },
+  { get: s => s.category, weight: 0.5 }
+]
+
 export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsViewProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
@@ -159,6 +168,12 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const [fetching, setFetching] = useState(false)
   const [modal, setModal] = useState<'' | 'help' | 'newModel' | 'providers' | 'search'>('')
   const [flash, setFlash] = useState('')
+
+  // INSTANT inline `/` filter over the loaded tape (separate from `d` Add data,
+  // which adds new series). `searchMode` routes keystrokes to the bar; the
+  // visible rows are derived + ranked. No modal, no network.
+  const [searchMode, setSearchMode] = useState(false)
+  const [searchInput, setSearchInput] = useState('')
 
   // ── Market Models mode ──────────────────────────────────────────────────
   const [mode, setMode] = useState<'data' | 'models'>('data')
@@ -631,8 +646,28 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCategory, providers, watchlist, custom, cacheVersion])
 
-  const clampedSel = Math.min(sel, Math.max(0, rows.length - 1))
-  const selectedRow = rows[clampedSel]
+  // The `/` filter ranks the loaded series by relevance and hides non-matches;
+  // an empty query shows the full tape. Series identity is preserved through the
+  // ranker, so we re-order `rows` by the ranked positions.
+  const searchActive = searchInput.trim()
+
+  const visibleRows = useMemo(() => {
+    if (!searchActive) {
+      return rows
+    }
+
+    const rankOf = new Map<MarketSeries, number>()
+    rankItems(
+      rows.map(r => r.series),
+      searchActive,
+      MARKET_SEARCH_FIELDS
+    ).forEach((r, i) => rankOf.set(r.item, i))
+
+    return rows.filter(r => rankOf.has(r.series)).sort((a, b) => (rankOf.get(a.series) ?? 0) - (rankOf.get(b.series) ?? 0))
+  }, [rows, searchActive])
+
+  const clampedSel = Math.min(sel, Math.max(0, visibleRows.length - 1))
+  const selectedRow = visibleRows[clampedSel]
 
   // Hand the highlighted line item to the agent as a ready-to-send question.
   const askAgent = () => {
@@ -669,6 +704,36 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   useInput((ch, key) => {
     if (modal) {
+      return
+    }
+
+    // While the `/` filter bar is focused, keystrokes edit the query. Filtering
+    // is live; Enter drops focus so ↑↓ navigate matches, Esc clears + closes.
+    if (searchMode) {
+      if (key.escape) {
+        setSearchMode(false)
+        setSearchInput('')
+
+        return
+      }
+
+      if (key.return) {
+        return setSearchMode(false)
+      }
+
+      if (key.backspace || key.delete) {
+        return setSearchInput(s => s.slice(0, -1))
+      }
+
+      if (ch && !key.ctrl && !key.meta) {
+        const printable = [...ch].filter(c => c >= ' ').join('')
+
+        if (printable) {
+          setSearchInput(s => s + printable)
+          setSel(0)
+        }
+      }
+
       return
     }
 
@@ -890,6 +955,13 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
     // ── Data mode ──────────────────────────────────────────────────────────
     if (ch === 'q' || key.escape) {
+      // Esc backs out of an active `/` filter first, then leaves the view.
+      if (key.escape && searchActive) {
+        setSearchInput('')
+
+        return
+      }
+
       return onClose()
     }
 
@@ -902,7 +974,10 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     }
 
     if (ch === '/') {
-      return setModal('search')
+      setSearchMode(true)
+      setSel(0)
+
+      return
     }
 
     if (ch === 'r') {
@@ -936,7 +1011,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     }
 
     if (key.downArrow || ch === 'j' || key.wheelDown) {
-      return setSel(i => Math.min(Math.max(0, rows.length - 1), i + 1))
+      return setSel(i => Math.min(Math.max(0, visibleRows.length - 1), i + 1))
     }
   })
 
@@ -949,6 +1024,24 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   // screen.
   const header = (
     <Box flexShrink={0} marginBottom={1}>
+      {searchMode || searchActive ? (
+        <Text wrap="truncate-end">
+          <Text bold color={t.color.primary}>
+            MARKETS
+          </Text>
+          <Text color={t.color.muted}>{'   '}</Text>
+          <Text color={t.color.primary}>{'⌕ '}</Text>
+          <Text color={t.color.text}>{searchInput}</Text>
+          {searchMode ? (
+            <Text color={t.color.primary} inverse>
+              {' '}
+            </Text>
+          ) : null}
+          <Text color={t.color.muted}>
+            {`   ${searchActive ? `${visibleRows.length} matches · ` : ''}${searchMode ? '⏎ done · Esc clear' : '/ refine · Esc clear'}`}
+          </Text>
+        </Text>
+      ) : (
       <Text wrap="truncate-end">
         <Text bold color={t.color.primary}>
           MARKETS
@@ -983,6 +1076,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
           </Text>
         ) : null}
       </Text>
+      )}
     </Box>
   )
 
@@ -1015,7 +1109,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
           </Box>
         </Box>
         <Box flexDirection="column" flexShrink={0} marginTop={1}>
-          <FooterChips chips={[{ k: 'd', label: 'Add data', run: () => setModal('providers') }, { k: '/', label: 'Search', run: () => setModal('search') }, { k: 'q', label: 'Close', run: onClose }]} t={t} />
+          <FooterChips chips={[{ k: 'd', label: 'Add data', run: () => setModal('providers') }, { k: '/', label: 'Filter', run: () => { setSel(0); setSearchMode(true) } }, { k: 'q', label: 'Close', run: onClose }]} t={t} />
           <Text color={t.color.muted} wrap="truncate-end">
             d add providers · / search · Esc/q close
           </Text>
@@ -1028,7 +1122,15 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     return (
       <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
         {header}
-        <AddProviderModal cols={cols} initial={config} onCancel={() => setModal('')} onSaved={onProvidersSaved} rows={termRows} t={t} />
+        <AddProviderModal
+          cols={cols}
+          initial={config}
+          onCancel={() => setModal('')}
+          onSaved={onProvidersSaved}
+          onSearchSymbols={() => setModal('search')}
+          rows={termRows}
+          t={t}
+        />
       </Box>
     )
   }
@@ -1080,7 +1182,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
           cols={cols}
           isAdded={isAdded}
           isWatched={isWatched}
-          onClose={() => setModal('')}
+          onClose={() => setModal('providers')}
           onToggleCategory={toggleCategory}
           onToggleWatch={toggleWatch}
           rows={termRows}
@@ -1112,8 +1214,8 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const tableWidth = Math.max(28, width - detailWidth - 2)
   const avail = Math.max(20, tableWidth - 2) // inside border + paddingRight
   const listRows = Math.max(3, contentHeight - 2)
-  const listStart = Math.max(0, Math.min(clampedSel - Math.floor(listRows / 2), rows.length - listRows))
-  const windowed = rows.slice(Math.max(0, listStart), Math.max(0, listStart) + listRows)
+  const listStart = Math.max(0, Math.min(clampedSel - Math.floor(listRows / 2), visibleRows.length - listRows))
+  const windowed = visibleRows.slice(Math.max(0, listStart), Math.max(0, listStart) + listRows)
 
   const cellColor = (v: null | number | undefined): string => dirColor(sem, v)
 
@@ -1197,9 +1299,13 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       </Text>
       <Text color={sem.rule}>{'─'.repeat(avail)}</Text>
       <Box flexDirection="column">
-        {rows.length === 0 ? (
+        {visibleRows.length === 0 ? (
           <Text color={t.color.muted} wrap="wrap">
-            {fetching ? 'Fetching…' : `No ${activeCategory ?? ''} series. Press d to add a provider, or / to search.`}
+            {searchActive
+              ? `No matches for “${searchActive}” in the loaded tape — press d to add data and pull in what you're looking for.`
+              : fetching
+                ? 'Fetching…'
+                : `No ${activeCategory ?? ''} series. Press d to add data.`}
           </Text>
         ) : (
           windowed.map(({ quote, series }, i) => {
@@ -1346,7 +1452,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     { k: '⇥', label: 'Category', run: () => { setSel(0); setActive(i => (i + 1) % Math.max(1, categories.length)) } },
     { k: 'a', label: 'Ask agent', run: askAgent },
     { k: 'm', label: 'Models', run: () => { setSel(0); setMode('models') } },
-    { k: '/', label: 'Search', run: () => setModal('search') },
+    { k: '/', label: 'Filter', run: () => { setSel(0); setSearchMode(true) } },
     { k: 'd', label: 'Add data', run: () => setModal('providers') },
     { k: 'h', label: 'Help', run: () => setModal('help') },
     { k: 'q', label: 'Close', run: onClose }
@@ -1377,7 +1483,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   const footerHint =
     mode === 'data'
-      ? '↑↓/jk select · Tab/←→ category · a ask agent · m models · / search · d add data · h help · q close'
+      ? '↑↓/jk select · Tab/←→ category · a ask agent · m models · / filter · d add data · h help · q close'
       : openModelId
         ? chatOpen
           ? chatFocus === 'input'

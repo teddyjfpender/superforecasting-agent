@@ -1,12 +1,12 @@
 import { AlternateScreen, Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
-import { Fragment, memo, type RefObject, useEffect, useMemo, useRef } from 'react'
+import { Fragment, memo, type RefObject, useCallback, useEffect, useMemo, useRef } from 'react'
 
 import { useGateway } from '../app/gatewayContext.js'
 import { $homeFocus, setHomePane } from '../app/homeFocusStore.js'
 import type { AppLayoutProps } from '../app/interfaces.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../app/overlayStore.js'
-import { $uiState } from '../app/uiStore.js'
+import { $uiSessionId, $uiState, $uiTheme } from '../app/uiStore.js'
 import { INLINE_MODE, SHOW_FPS } from '../config/env.js'
 import { PLACEHOLDER } from '../content/placeholders.js'
 import { RAIL_WIDTH, showRailFor } from '../lib/homeLayout.js'
@@ -473,20 +473,27 @@ const ConversationsRailPane = memo(function ConversationsRailPane({
   scrollRef: RefObject<null | ScrollBoxHandle>
 }) {
   const { gw } = useGateway()
-  const ui = useStore($uiState)
+  // Subscribe ONLY to the sid + theme this rail actually uses — NOT the whole
+  // $uiState. Typing in the composer re-renders the app (composer text lives in
+  // useMainApp), and a broad $uiState subscription dragged the Recents rail (and
+  // its ScrollBox) into every keystroke, making it drift. These computed atoms
+  // only notify on a real sid/theme change, so the rail stays put while you type.
+  const sid = useStore($uiSessionId)
+  const t = useStore($uiTheme)
   const homeFocus = useStore($homeFocus)
+  const onExitFocus = useCallback(() => setHomePane('conversation'), [])
 
   return (
     <ConversationsRail
-      currentSid={ui.sid}
+      currentSid={sid}
       focused={homeFocus.pane === 'rail'}
       gw={gw}
-      onExitFocus={() => setHomePane('conversation')}
+      onExitFocus={onExitFocus}
       onNewChat={onNewChat}
       onSelect={onSelect}
-      refreshKey={ui.sid ?? ''}
+      refreshKey={sid ?? ''}
       scrollRef={scrollRef}
-      t={ui.theme}
+      t={t}
     />
   )
 })
@@ -605,6 +612,11 @@ export const AppLayout = memo(function AppLayout({
     () => (showRail ? { ...composer, cols: Math.max(48, composer.cols - RAIL_WIDTH - 2) } : composer),
     [composer, showRail]
   )
+
+  // Stable so the memo'd rail pane doesn't re-render on every keystroke: an inline
+  // arrow here would be a fresh function each render, breaking ConversationsRailPane's
+  // memo (`actions` is itself a useMemo, so this stays referentially stable).
+  const onRailNewChat = useCallback(() => actions.runCommand('/new'), [actions])
 
   // The rail can only hold focus while it's shown — when it hides (narrow
   // terminal / fullscreen overlay), snap focus back so the composer never stays
@@ -753,7 +765,7 @@ export const AppLayout = memo(function AppLayout({
           <>
             <Box flexDirection="row" flexGrow={1} minHeight={0}>
               <ConversationsRailPane
-                onNewChat={() => actions.runCommand('/new')}
+                onNewChat={onRailNewChat}
                 onSelect={actions.resumeById}
                 scrollRef={transcript.railScrollRef}
               />
