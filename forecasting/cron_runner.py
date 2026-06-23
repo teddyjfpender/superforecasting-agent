@@ -23,6 +23,7 @@ def run_due_reviews(
     thesis_aggregate: bool = False,
     synthesize_lessons: bool | None = None,
     obsidian_sync: bool = False,
+    reconcile_alerts: bool = True,
 ) -> str:
     """Run due forecast schedule rows and return a concise alert report.
 
@@ -80,7 +81,11 @@ def run_due_reviews(
     # Trailing thesis-aggregation phase: theses (+ their entity suitabilities)
     # re-aggregate after the member review sweep.
     if thesis_aggregate:
-        summary = ledger.aggregate_all_theses(now=now)
+        try:
+            summary = ledger.aggregate_all_theses(now=now)
+        except Exception as exc:  # never break the unattended sweep on aggregation
+            sections.append(f"Thesis aggregation\nERROR: {exc}\n")
+            summary = {"count": 0, "results": []}
         if summary["count"]:
             rows = summary["results"]
             ok = [row for row in rows if row.get("ok")]
@@ -161,6 +166,24 @@ def run_due_reviews(
                         f"published {summary['questions']} question dossier(s) and "
                         f"{summary['lessons']} lesson(s) -> {summary['vault']}\n"
                     )
+
+    # Trailing alert-reconciliation phase: auto-acknowledge alerts whose
+    # source-change has already been consumed (fresh evidence imported AND a
+    # forecast committed since the alert fired), so the autonomous loop closes the
+    # alert lifecycle instead of leaving the operator with stale, fatigue-inducing
+    # alerts. Conservative — only clearly-consumed alerts are touched.
+    if reconcile_alerts:
+        try:
+            recon = ledger.reconcile_alerts(now=now)
+        except Exception as exc:  # never break the sweep on reconciliation
+            sections.append(f"Alert reconciliation\nERROR: {exc}\n")
+        else:
+            if recon["reconciled_count"]:
+                sections.append(
+                    "Alert reconciliation\n"
+                    f"acknowledged {recon['reconciled_count']} consumed alert(s); "
+                    f"{len(recon['still_open'])} still open\n"
+                )
 
     return "\n".join(sections)
 

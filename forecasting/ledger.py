@@ -5591,6 +5591,52 @@ class ForecastLedger:
         )
         review_id = f"sr_{uuid.uuid4().hex[:12]}"
         with self._connect() as conn:
+            # Idempotent by (scope_type, scope_ref, cadence, trigger_reason): a
+            # schedule for the same scope + cadence + reason already covers this, so
+            # re-scheduling re-activates the existing row instead of spawning a
+            # duplicate. Without this, a lazy prompter (or the agent re-running an
+            # onboarding step) silently accumulates duplicate weekly reviews that
+            # each fire independently. scope_ref may be NULL, so match it explicitly.
+            existing = conn.execute(
+                """
+                SELECT id FROM scheduled_reviews
+                WHERE scope_type = ? AND cadence = ? AND trigger_reason = ?
+                  AND ((scope_ref IS NULL AND ? IS NULL) OR scope_ref = ?)
+                ORDER BY enabled DESC, next_run_at ASC
+                LIMIT 1
+                """,
+                (scope_type, cadence, trigger_reason, scope_ref, scope_ref),
+            ).fetchone()
+            if existing is not None:
+                # Idempotent UPSERT: a re-schedule for the same scope+cadence+reason
+                # must APPLY its new settings (stale_days, auto_*, filters), not be
+                # silently dropped — only the duplicate ROW is avoided. next_run_at is
+                # reset only when the caller passed one explicitly, so a plain
+                # re-schedule preserves the existing cadence position (no re-trigger).
+                set_clauses = [
+                    "enabled = ?",
+                    "stale_days = ?",
+                    "auto_score = ?",
+                    "auto_postmortem = ?",
+                    "confidence_below = ?",
+                    "confidence_above = ?",
+                    "large_delta_threshold = ?",
+                ]
+                params: list[Any] = [
+                    1 if enabled else 0,
+                    int(stale_days),
+                    1 if auto_score else 0,
+                    1 if auto_postmortem else 0,
+                    confidence_below,
+                    confidence_above,
+                    large_delta_threshold,
+                ]
+                if next_run_at is not None:
+                    set_clauses.append("next_run_at = ?")
+                    params.append(parse_timestamp(next_run_at, field_name="next_run_at") or utc_now_iso())
+                params.append(existing["id"])
+                conn.execute(f"UPDATE scheduled_reviews SET {', '.join(set_clauses)} WHERE id = ?", params)
+                return self.get_scheduled_review(existing["id"])
             conn.execute(
                 """
                 INSERT INTO scheduled_reviews (
@@ -5631,6 +5677,45 @@ class ForecastLedger:
                 "SELECT * FROM scheduled_reviews ORDER BY next_run_at ASC",
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def dedupe_scheduled_reviews(self) -> dict[str, Any]:
+        """Collapse pre-existing duplicate ENABLED schedules that share
+        (scope_type, scope_ref, cadence, trigger_reason). Keeps the most-established
+        one — the one that has run most recently, else the soonest next_run_at —
+        and disables the rest (so its run history is preserved, not deleted).
+        Idempotent: a deduped ledger is a no-op. Pairs with the idempotency guard
+        in schedule_review() which prevents NEW duplicates."""
+        groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+        for review in self.list_scheduled_reviews():
+            if not review.get("enabled"):
+                continue
+            key = (review["scope_type"], review["scope_ref"], review["cadence"], review["trigger_reason"])
+            groups.setdefault(key, []).append(review)
+
+        disabled: list[str] = []
+        kept: list[str] = []
+        for members in groups.values():
+            if len(members) < 2:
+                continue
+            ran = [m for m in members if m.get("last_run_at")]
+            keep = (
+                max(ran, key=lambda m: (m["last_run_at"], m["id"]))
+                if ran
+                else min(members, key=lambda m: (m.get("next_run_at") or "", m["id"]))
+            )
+            kept.append(keep["id"])
+            with self._connect() as conn:
+                for member in members:
+                    if member["id"] != keep["id"]:
+                        conn.execute("UPDATE scheduled_reviews SET enabled = 0 WHERE id = ?", (member["id"],))
+                        disabled.append(member["id"])
+
+        return {
+            "groups_collapsed": len(kept),
+            "kept": kept,
+            "disabled": disabled,
+            "disabled_count": len(disabled),
+        }
 
     def list_scheduled_review_runs(
         self,
@@ -8445,6 +8530,67 @@ class ForecastLedger:
                 (parse_timestamp(acknowledged_at, field_name="acknowledged_at") or utc_now_iso(), alert_id),
             )
         return self.get_alert(alert_id)
+
+    def reconcile_alerts(self, *, now: str | None = None, dry_run: bool = False) -> dict[str, Any]:
+        """Close the loop: source-changed -> evidence-imported -> forecast-updated
+        -> acknowledged. A question-scoped alert that fired BEFORE both fresh
+        evidence was imported AND a new forecast snapshot was committed has already
+        been consumed by the operator/agent — leaving it open is just alert fatigue,
+        so acknowledge it. Alerts still missing evidence or an update stay open with
+        an explicit reason. dry_run reports what WOULD be acknowledged without
+        mutating (so a cautious caller can preview). Idempotent.
+
+        Acking liberally (any fresh evidence + any forecast update after the alert,
+        not necessarily from the alert's exact source) is intentional + safe: it
+        clears the backlog the operator already worked past, and if the underlying
+        source is still dirty the next self_check re-raises a fresh alert — so a
+        genuinely-open signal is never lost."""
+        now_ts = parse_timestamp(now, field_name="now") or utc_now_iso()
+        reconciled: list[dict[str, Any]] = []
+        still_open: list[dict[str, Any]] = []
+
+        for alert in self.list_alerts(unresolved_only=True):
+            if alert.scope_type != "question":
+                still_open.append(
+                    {"id": alert.id, "reason": alert.reason, "open_because": "scope is not a single question"}
+                )
+                continue
+
+            question_id = alert.scope_ref
+            try:
+                evidence_after = any(
+                    (getattr(item, "captured_at", None) or getattr(item, "available_at", None) or "") > alert.created_at
+                    for item in self.list_evidence(question_id)
+                )
+            except Exception:
+                evidence_after = False
+
+            snapshot = None
+            try:
+                snapshot = self.get_current_snapshot(question_id)
+            except Exception:
+                snapshot = None
+            snapshot_ts = (getattr(snapshot, "created_at", None) or getattr(snapshot, "as_of", None) or "") if snapshot else ""
+            update_after = bool(snapshot_ts and snapshot_ts > alert.created_at)
+
+            if evidence_after and update_after:
+                if not dry_run:
+                    self.acknowledge_alert(alert.id, acknowledged_at=now_ts)
+                reconciled.append({"id": alert.id, "reason": alert.reason, "scope_ref": question_id})
+            else:
+                missing = []
+                if not evidence_after:
+                    missing.append("no fresh evidence imported since the alert")
+                if not update_after:
+                    missing.append("no forecast update committed since the alert")
+                still_open.append({"id": alert.id, "reason": alert.reason, "open_because": "; ".join(missing)})
+
+        return {
+            "reconciled": reconciled,
+            "reconciled_count": len(reconciled),
+            "still_open": still_open,
+            "dry_run": dry_run,
+        }
 
     def self_check(
         self,

@@ -2201,6 +2201,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     schedule_add.set_defaults(_forecast_handler=_cmd_schedule_add)
     schedule_list = schedule_sub.add_parser("list", help="List scheduled reviews")
     schedule_list.set_defaults(_forecast_handler=_cmd_schedule_list)
+    schedule_dedupe = schedule_sub.add_parser(
+        "dedupe",
+        help="Collapse duplicate scheduled reviews (keeps one per scope + cadence + reason)",
+    )
+    schedule_dedupe.add_argument("--json", action="store_true", help="Emit machine-readable dedupe summary")
+    schedule_dedupe.set_defaults(_forecast_handler=_cmd_schedule_dedupe)
     schedule_run = schedule_sub.add_parser("run", help="Run due scheduled self-checks")
     schedule_run.add_argument("--due", action="store_true", help="Run due reviews explicitly; this is the default")
     schedule_run.add_argument("--now")
@@ -2228,6 +2234,22 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         help="Re-aggregate all theses (+ entity suitabilities) after each member review sweep",
     )
     schedule_cron.set_defaults(_forecast_handler=_cmd_schedule_install_cron)
+
+    # `cycle`, not `desk` — `forecast desk` is the TUI desk launcher (a runtime
+    # passthrough); this is the headless closed-loop cycle.
+    cycle_parser = forecast_sub.add_parser("cycle", help="Run the closed-loop forecast cycle")
+    cycle_sub = cycle_parser.add_subparsers(dest="cycle_command")
+    cycle_run = cycle_sub.add_parser(
+        "run",
+        help="Run the full due cycle: reviews -> reconcile alerts -> re-aggregate theses -> synthesize lessons",
+    )
+    cycle_run.add_argument("--due", action="store_true", help="Run due reviews (the default)")
+    cycle_run.add_argument("--now")
+    cycle_run.add_argument("--no-thesis-aggregate", action="store_true", help="Skip re-aggregating theses")
+    cycle_run.add_argument("--no-reconcile", action="store_true", help="Skip alert reconciliation")
+    cycle_run.add_argument("--no-synthesize-lessons", action="store_true", help="Never synthesize lessons this run")
+    cycle_run.add_argument("--synthesize-lessons", action="store_true", help="Force lesson synthesis every run")
+    cycle_run.set_defaults(_forecast_handler=_cmd_cycle_run)
 
     watch_parser = forecast_sub.add_parser("watch", help="Manage watched sources for self-check alerts")
     watch_sub = watch_parser.add_subparsers(dest="watch_command")
@@ -2485,9 +2507,16 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     autopilot_reject.add_argument("--reviewed-by")
     autopilot_reject.set_defaults(_forecast_handler=_cmd_autopilot_reject)
 
-    alerts_parser = forecast_sub.add_parser("alerts", help="List forecast alerts")
+    alerts_parser = forecast_sub.add_parser("alerts", help="List + reconcile forecast alerts")
     alerts_parser.add_argument("--all", action="store_true")
     alerts_parser.add_argument("--ack", dest="ack_alert_id")
+    alerts_parser.add_argument(
+        "--reconcile",
+        action="store_true",
+        help="Auto-acknowledge alerts whose source-change has already been consumed (evidence imported + forecast updated since)",
+    )
+    alerts_parser.add_argument("--dry-run", action="store_true", help="With --reconcile, preview without acknowledging")
+    alerts_parser.add_argument("--json", action="store_true", help="Emit machine-readable output")
     alerts_parser.set_defaults(_forecast_handler=_cmd_alerts)
 
     self_check_parser = forecast_sub.add_parser("self-check", help="Create alerts for review work")
@@ -9376,6 +9405,22 @@ def _cmd_schedule_add(args: argparse.Namespace) -> None:
     print(f"next_run_at: {row['next_run_at']}")
 
 
+def _cmd_schedule_dedupe(args: argparse.Namespace) -> None:
+    result = _ledger(args).dedupe_scheduled_reviews()
+    if getattr(args, "json", False):
+        print(json.dumps(result, indent=2))
+        return
+    if result["disabled_count"] == 0:
+        print("No duplicate scheduled reviews found.")
+        return
+    print(
+        f"Collapsed {result['groups_collapsed']} duplicate group(s); "
+        f"disabled {result['disabled_count']} redundant review(s)."
+    )
+    for review_id in result["disabled"]:
+        print(f"  disabled {review_id}")
+
+
 def _cmd_schedule_list(args: argparse.Namespace) -> None:
     rows = _ledger(args).list_scheduled_reviews()
     if not rows:
@@ -9391,6 +9436,33 @@ def _cmd_schedule_list(args: argparse.Namespace) -> None:
             f"{row['id']:<14} {scope:<14} {row['cadence']:<12} {int(row.get('stale_days') or 7):<6} "
             f"{confidence:<14} {delta:<6} {row['next_run_at']:<20} {bool(row['enabled']):<7} {learning}"
         )
+
+
+def _cmd_cycle_run(args: argparse.Namespace) -> None:
+    # The single closed-loop entrypoint: reuses the cron cycle with full-cycle
+    # defaults so a lazy operator gets the whole loop in one command — due reviews
+    # (auto-scored + auto-postmortemed), alert reconciliation, thesis re-aggregation,
+    # and calibration-lesson synthesis. The autonomous --agent reforecast + push
+    # notifications are a further layer on top of this deterministic cycle.
+    from forecasting import cron_runner
+
+    synthesize: bool | None = None
+    if getattr(args, "synthesize_lessons", False):
+        synthesize = True
+    elif getattr(args, "no_synthesize_lessons", False):
+        synthesize = False
+
+    report = cron_runner.run_due_reviews(
+        db_path=str(_ledger(args).db_path),
+        now=args.now,
+        auto_score=True,
+        auto_postmortem=True,
+        thesis_aggregate=not getattr(args, "no_thesis_aggregate", False),
+        reconcile_alerts=not getattr(args, "no_reconcile", False),
+        synthesize_lessons=synthesize,
+    )
+    report = (report or "").strip()
+    print(report if report else "Forecast cycle complete — nothing was due.")
 
 
 def _cmd_schedule_run(args: argparse.Namespace) -> None:
@@ -10316,6 +10388,23 @@ def _cmd_autopilot_reject(args: argparse.Namespace) -> None:
 
 def _cmd_alerts(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
+    if getattr(args, "reconcile", False):
+        result = ledger.reconcile_alerts(dry_run=getattr(args, "dry_run", False))
+        if getattr(args, "json", False):
+            print(json.dumps(result, indent=2))
+            return
+        verb = "would acknowledge" if result["dry_run"] else "acknowledged"
+        if result["reconciled_count"] == 0:
+            print("No alerts to reconcile (none have both fresh evidence + a forecast update since they fired).")
+        else:
+            print(f"Reconciled {result['reconciled_count']} alert(s) — {verb} (source-change consumed):")
+            for entry in result["reconciled"]:
+                print(f"  {entry['id']}  {entry['reason']}")
+        if result["still_open"]:
+            print(f"\n{len(result['still_open'])} alert(s) still open:")
+            for entry in result["still_open"]:
+                print(f"  {entry['id']}  {entry['reason']} — {entry['open_because']}")
+        return
     if args.ack_alert_id:
         alert = ledger.acknowledge_alert(args.ack_alert_id)
         print(f"acknowledged alert {alert.id}")
