@@ -54,6 +54,7 @@ REMEDIATION_ACTIONS = (
     "run_quorum",
     "tag_reasoning",
     "run_aggregate",
+    "build_reference_class",
     "none",
 )
 
@@ -290,6 +291,7 @@ _REMEDIATION_KIND = {
     "run_quorum": ("agentic", "model"),
     "tag_reasoning": ("agentic", "update"),
     "run_aggregate": ("mechanical", None),
+    "build_reference_class": ("agentic", "research"),
     "none": ("mechanical", None),
 }
 

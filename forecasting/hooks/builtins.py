@@ -382,6 +382,32 @@ def _rem_run_aggregate(_ctx: HookContext) -> RemediationDescriptor:
     return RemediationDescriptor("mechanical", "run_aggregate", "Re-aggregate the thesis/factor from its current members.")
 
 
+# ── outside-view anchor (reference class) ─────────────────────────────────────
+def _check_outside_view_anchor(ctx: HookContext):
+    if ctx.reference_class_count >= 1:
+        return _OK
+    claims_outside = any(method in {"outside_view", "base_rate"} for method in ctx.reasoning_methods)
+    if claims_outside:
+        msg = (
+            "reasoning_methods claims outside_view/base_rate but NO reference class is attached — "
+            "build the base-rate anchor you're claiming to reason from (forecast base-rate / reference-class create)."
+        )
+    else:
+        msg = (
+            "serious live forecast has no outside-view anchor: attach at least one reference class / base rate so "
+            "the forecast isn't pure inside-view prose (forecast base-rate <id>)."
+        )
+    return False, msg, {"reference_class_count": ctx.reference_class_count}
+
+
+def _rem_reference_class(_ctx: HookContext) -> RemediationDescriptor:
+    return RemediationDescriptor(
+        "agentic", "build_reference_class",
+        "Build an outside-view reference class / base rate and attach it to the forecast.",
+        target_stage="research",
+    )
+
+
 # Ordered to match the legacy gate evaluation order (so the first blocking
 # failure yields the same message the inline gates raised first), then the two
 # additive rules.
@@ -400,6 +426,8 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
                _check_citations, _live, _rem_collect),
     SimpleRule("require_evidence", Category.SATURATION, Severity.ERROR, 16.0,
                _check_require_evidence, _live, _rem_collect),
+    SimpleRule("require_outside_view_anchor", Category.REASONING, Severity.WARN, 9.0,
+               _check_outside_view_anchor, _live, _rem_reference_class),
     SimpleRule("require_outcome_paths", Category.SATURATION, Severity.WARN, 10.0,
                _check_tail_paths, lambda c: c.is_live and c.is_categorical, _rem_compress),
     SimpleRule("style_clean", Category.STYLE, Severity.ERROR, 5.0,
@@ -446,6 +474,7 @@ RULE_DOCS: dict[str, str] = {
     "require_panel": "A deliberation panel must run (or record an explicit skip reason).",
     "require_citations": "The forecast should cite evidence / model runs.",
     "require_evidence": "A live forecast MUST carry at least one evidence record (hard requirement).",
+    "require_outside_view_anchor": "A serious live forecast should carry an outside-view anchor (reference class / base rate).",
     "require_outcome_paths": "Every material categorical outcome needs a named path (no unearned tails).",
     "style_clean": "Prose must be house-clean (no em-dashes / formatting issues).",
     "lessons_applied": "Active calibration lessons should be applied to the commit.",

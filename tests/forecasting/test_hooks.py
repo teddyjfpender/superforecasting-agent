@@ -47,6 +47,9 @@ def _saturated_live(**overrides) -> HookContext:
         panel_perspective_count=5,
         sharpness=1.0,
         reasoning_methods=("outside_view", "base_rate", "bayesian"),
+        # A genuinely-saturated forecast that claims outside_view/base_rate is
+        # backed by a real reference class (the require_outside_view_anchor rule).
+        reference_class_count=1,
     )
     base.update(overrides)
     return HookContext(**base)

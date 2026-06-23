@@ -42,6 +42,7 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "calibration_bias_applied": _O,
         "confidence_committed": _O,
         "reasoning_composition": _O,
+        "require_outside_view_anchor": _O,
         "thesis_aggregate_fresh": _O,
     },
     # == the pre-hooks enforcement (tool require_* defaults + Phase 2 style gate),
@@ -69,6 +70,7 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "calibration_bias_applied": _W,
         "confidence_committed": _W,
         "reasoning_composition": _W,
+        "require_outside_view_anchor": _W,
         "thesis_aggregate_fresh": _W,
     },
     # Everything blocking — for high-stakes desks that want full saturation.
@@ -94,6 +96,7 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "calibration_bias_applied": _E,
         "confidence_committed": _W,     # soft min-sharpness with escape; never a hard block
         "reasoning_composition": _E,
+        "require_outside_view_anchor": _E,
         "thesis_aggregate_fresh": _W,
     },
 }

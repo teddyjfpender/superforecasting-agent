@@ -1987,6 +1987,7 @@ class ForecastLedger:
                 outcome_type=question.outcome_space.type,
                 reasoning_methods=snapshot_metadata.get("reasoning_methods") or [],
                 required_reasoning_methods=tuple(_orq), min_reasoning_methods=_omin,
+                reference_class_count=len(self.list_reference_classes(question_id)),
                 is_distribution=bool(_oda and _oda.is_distribution),
                 distribution_renderable=(_oda.renderable if _oda else True),
                 bounds_well_formed=(_oda.well_formed if _oda else True),

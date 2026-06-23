@@ -253,6 +253,7 @@ def build_commit_context(
     sharpness: float | None = None,
     panel_run_count: int = 0,
     calibration_under_confident: bool = False,
+    reference_class_count: int = 0,
 ) -> HookContext:
     """Assemble a HookContext from the values create_snapshot already has in
     scope. Cheap: no ledger IO (the caller passes precomputed signals)."""
@@ -297,4 +298,5 @@ def build_commit_context(
         sharpness=sharpness,
         panel_run_count=panel_run_count,
         calibration_under_confident=calibration_under_confident,
+        reference_class_count=reference_class_count,
     )
