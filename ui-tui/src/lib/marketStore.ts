@@ -26,8 +26,29 @@ export const loadMarketConfig = (file = marketConfigFile()): MarketConfig => {
   try {
     const data = JSON.parse(readFileSync(file, 'utf8')) as Partial<MarketConfig>
 
+    // Normalize EVERY series into one with string symbol/provider/name/category
+    // and drop anything unusable. The agent (or a hand-edited file) can write
+    // partial entries or objects in the wrong fields; without this, a series with
+    // a missing `name` rendered an `undefined` cell and crashed the whole TUI.
+    const str = (v: unknown): string => (typeof v === 'string' ? v : '')
+
     const seriesList = (v: unknown): MarketSeries[] =>
-      Array.isArray(v) ? v.filter((x): x is MarketSeries => Boolean(x) && typeof (x as MarketSeries).symbol === 'string') : []
+      Array.isArray(v)
+        ? v
+            .filter((x): x is Record<string, unknown> => Boolean(x) && typeof x === 'object')
+            .map(x => {
+              const symbol = str(x.symbol)
+
+              return {
+                ...(x as unknown as MarketSeries),
+                category: str(x.category),
+                name: str(x.name) || symbol,
+                provider: str(x.provider),
+                symbol
+              }
+            })
+            .filter(s => s.symbol.length > 0 && s.provider.length > 0)
+        : []
 
     return {
       categories: Array.isArray(data.categories) ? data.categories.filter(c => typeof c === 'string') : [],

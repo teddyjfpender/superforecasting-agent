@@ -1596,10 +1596,13 @@ class ForecastLedger:
         # fresh readings first and does not set this; a genuine no-change re-run
         # can acknowledge_stale_evidence or record forecast_origin='exploratory'.
         evidence_count_at_commit: int | None = None
-        if require_fresh_evidence and forecast_origin == "live":
+        if forecast_origin == "live":
+            # Always count live evidence so the evidence-floor gate (require_evidence)
+            # sees the true count; the fresh-evidence RE-RUN check layers on top of it
+            # and only applies when require_fresh_evidence is set.
             evidence_now = self.list_evidence(question_id)
             evidence_count_at_commit = len(evidence_now)
-            if not acknowledge_stale_evidence:
+            if require_fresh_evidence and not acknowledge_stale_evidence:
                 prior = self.get_current_snapshot(question_id)
                 if prior is not None:
                     prior_count = (prior.metadata or {}).get("evidence_count_at_commit")

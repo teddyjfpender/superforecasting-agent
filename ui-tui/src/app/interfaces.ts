@@ -394,6 +394,7 @@ export interface AppOverlaysProps {
   completions: CompletionItem[]
   onApprovalChoice: (choice: string) => void
   onClarifyAnswer: (value: string) => void
+  onModelConnect: (slug: string) => void
   onModelSelect: (value: string) => void
   onPickerSelect: (sessionId: string) => void
   onSecretSubmit: (value: string) => void

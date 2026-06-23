@@ -25,15 +25,19 @@ const pagerLineColor = (
   theme: { color: { accent: string; muted: string; text: string } }
 ): string => {
   const trimmed = line.trim()
+
   if (!trimmed) {
     return theme.color.muted
   }
+
   if (/\bENV VAR\b|\bPROVIDER\b|VALUE \/ DESCRIPTION/.test(line) || /^[A-Z][A-Z /_]{3,}$/.test(trimmed)) {
     return theme.color.accent
   }
+
   if (/^get:/.test(trimmed) || /https?:\/\//.test(trimmed) || /\(not set\)/.test(trimmed)) {
     return theme.color.muted
   }
+
   return theme.color.text
 }
 
@@ -116,10 +120,11 @@ export function FloatingOverlays({
   cols,
   compIdx,
   completions,
+  onModelConnect,
   onModelSelect,
   onPickerSelect,
   pagerPageSize
-}: Pick<AppOverlaysProps, 'cols' | 'compIdx' | 'completions' | 'onModelSelect' | 'onPickerSelect' | 'pagerPageSize'>) {
+}: Pick<AppOverlaysProps, 'cols' | 'compIdx' | 'completions' | 'onModelConnect' | 'onModelSelect' | 'onPickerSelect' | 'pagerPageSize'>) {
   const { gw } = useGateway()
   const overlay = useStore($overlayState)
   const sid = useStore($uiSessionId)
@@ -162,6 +167,7 @@ export function FloatingOverlays({
           <ModelPicker
             gw={gw}
             onCancel={() => patchOverlayState({ modelPicker: false })}
+            onConnect={onModelConnect}
             onSelect={onModelSelect}
             sessionId={sid}
             t={theme}

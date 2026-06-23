@@ -128,6 +128,21 @@ def _check_citations(ctx: HookContext):
     return False, msg, {}
 
 
+# ── evidence floor (hard requirement) ─────────────────────────────────────────
+def _check_require_evidence(ctx: HookContext):
+    # The hard guarantee: a live forecast MUST carry at least one evidence record.
+    # We assume the operator is lazy, so this is a default ERROR rather than a
+    # nudge — an evidence-free forecast is not trustworthy and is not calibrated.
+    if ctx.evidence_count >= 1:
+        return _OK
+    msg = (
+        "live forecast has NO evidence attached — evidence is a hard requirement. "
+        "Collect at least one source / reference (the agent's research + record_evidence) "
+        "before committing; do not coast on the model's prior knowledge."
+    )
+    return False, msg, {"evidence_count": ctx.evidence_count}
+
+
 # ── tail paths (categorical) ──────────────────────────────────────────────────
 def _check_tail_paths(ctx: HookContext):
     # Only meaningful for categorical; tail_audit_passes is None for others.
@@ -383,6 +398,8 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
                _check_panel, _live, _rem_run_panel),
     SimpleRule("require_citations", Category.SATURATION, Severity.WARN, 8.0,
                _check_citations, _live, _rem_collect),
+    SimpleRule("require_evidence", Category.SATURATION, Severity.ERROR, 16.0,
+               _check_require_evidence, _live, _rem_collect),
     SimpleRule("require_outcome_paths", Category.SATURATION, Severity.WARN, 10.0,
                _check_tail_paths, lambda c: c.is_live and c.is_categorical, _rem_compress),
     SimpleRule("style_clean", Category.STYLE, Severity.ERROR, 5.0,
@@ -428,6 +445,7 @@ RULE_DOCS: dict[str, str] = {
     "require_decision_readiness": "The decision card should have no missing fields.",
     "require_panel": "A deliberation panel must run (or record an explicit skip reason).",
     "require_citations": "The forecast should cite evidence / model runs.",
+    "require_evidence": "A live forecast MUST carry at least one evidence record (hard requirement).",
     "require_outcome_paths": "Every material categorical outcome needs a named path (no unearned tails).",
     "style_clean": "Prose must be house-clean (no em-dashes / formatting issues).",
     "lessons_applied": "Active calibration lessons should be applied to the commit.",

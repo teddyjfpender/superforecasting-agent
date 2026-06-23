@@ -62,6 +62,10 @@ def test_style_autofix_sanitizes_for_programmatic_path(tmp_path):
 def test_clean_prose_commits_normally(tmp_path):
     lg = _ledger(tmp_path)
     q = _q(lg)
+    # Evidence is now a hard requirement (require_evidence is a default ERROR), so a
+    # properly-formed live forecast carries at least one source. Attach one, then
+    # the clean-prose commit passes saturation as before.
+    lg.add_evidence(question_id=q.id, source_or_note="quarterly rates report", claim="rates rose sharply")
     snap = lg.create_snapshot(
         question_id=q.id, probability_or_distribution=0.5,
         rationale="rates rose sharply this quarter", method="m",

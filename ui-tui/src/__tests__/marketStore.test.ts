@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -73,5 +73,33 @@ describe('market config', () => {
 
   it('returns empty config when the file is missing', () => {
     expect(loadMarketConfig(join(tmp, 'nope.json'))).toEqual({ categories: [], custom: [], providers: [], watchlist: [] })
+  })
+
+  it('sanitizes a malformed agent-written config so it can never crash the renderer', () => {
+    const file = join(tmp, 'bad.json')
+    // What a careless agent wrote: providers/categories as objects, and a
+    // watchlist entry missing `name` — the exact field whose undefined value
+    // crashed pad() and took down the whole TUI.
+    writeFileSync(
+      file,
+      JSON.stringify({
+        categories: [{ id: 'Stocks' }],
+        providers: [{ name: 'yahoo' }],
+        watchlist: [
+          { provider: 'yahoo', symbol: 'NVDA' }, // missing name + category
+          { provider: 'yahoo' }, // no symbol → dropped
+          'garbage' // not an object → dropped
+        ]
+      })
+    )
+    const loaded = loadMarketConfig(file)
+    expect(loaded.providers).toEqual([]) // objects are not strings → filtered
+    expect(loaded.categories).toEqual([])
+    expect(loaded.watchlist).toHaveLength(1) // only the repairable entry survives
+    const s = loaded.watchlist[0]
+    expect(s.symbol).toBe('NVDA')
+    expect(s.name).toBe('NVDA') // backfilled from symbol — never undefined
+    expect(typeof s.category).toBe('string')
+    expect(typeof s.provider).toBe('string')
   })
 })

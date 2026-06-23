@@ -16,7 +16,7 @@ const MAX_WIDTH = 90
 
 type Stage = 'provider' | 'key' | 'model' | 'disconnect'
 
-export function ModelPicker({ gw, onCancel, onSelect, sessionId, t }: ModelPickerProps) {
+export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }: ModelPickerProps) {
   const [providers, setProviders] = useState<ModelOptionProvider[]>([])
   const [currentModel, setCurrentModel] = useState('')
   const [err, setErr] = useState('')
@@ -175,7 +175,7 @@ export function ModelPicker({ gw, onCancel, onSelect, sessionId, t }: ModelPicke
               // Mark provider as unauthenticated in local state
               setProviders(prev =>
                 prev.map(p => p.slug === provider.slug
-                  ? { ...p, authenticated: false, models: [], total_models: 0, warning: p.key_env ? `paste ${p.key_env} to activate` : 'run `superforecasting-agent model` to configure' }
+                  ? { ...p, authenticated: false, models: [], total_models: 0, warning: p.key_env ? `paste ${p.key_env} to activate` : 'press ⏎ to sign in (device-code), or run /auth' }
                   : p
                 )
               )
@@ -229,9 +229,15 @@ export function ModelPicker({ gw, onCancel, onSelect, sessionId, t }: ModelPicke
             setStage('key')
             setKeyInput('')
             setKeyError('')
+
+            return
           }
 
-          // Other auth types: no-op (warning shown tells them to run the model command)
+          // OAuth providers (Codex, etc.): launch the in-TUI device-code sign-in.
+          if (onConnect) {
+            onConnect(provider.slug)
+          }
+
           return
         }
 
@@ -366,8 +372,9 @@ export function ModelPicker({ gw, onCancel, onSelect, sessionId, t }: ModelPicke
       (p, i) => {
         const authMark = p.authenticated === false ? '○' : p.is_current ? '*' : '●'
         const modelCount = p.total_models ?? p.models?.length ?? 0
+
         const suffix = p.authenticated === false
-          ? (p.auth_type === 'api_key' ? '(no key)' : '(needs setup)')
+          ? (p.auth_type === 'api_key' ? '(no key)' : '(⏎ to sign in)')
           : `${modelCount} models`
 
         return `${authMark} ${names[i]} · ${suffix}`
@@ -500,6 +507,10 @@ export function ModelPicker({ gw, onCancel, onSelect, sessionId, t }: ModelPicke
 interface ModelPickerProps {
   gw: GatewayClient
   onCancel: () => void
+  // Launch the in-TUI device-code sign-in for an OAuth provider (e.g. Codex):
+  // closes the picker and runs `/auth <slug>`. Optional so the picker still
+  // renders standalone (tests) — selecting an OAuth provider is then a no-op.
+  onConnect?: (slug: string) => void
   onSelect: (value: string) => void
   sessionId: string | null
   t: Theme

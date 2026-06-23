@@ -117,8 +117,10 @@ const relTime = (ms: number): string => {
   return new Date(ms).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
 }
 
-const pad = (value: string, width: number, align: 'left' | 'right'): string => {
-  const v = value.length > width ? `${value.slice(0, Math.max(0, width - 1))}…` : value
+const pad = (value: null | string | undefined, width: number, align: 'left' | 'right'): string => {
+  // Null-safe: a malformed series (missing field) must never crash the render.
+  const s = value == null ? '' : String(value)
+  const v = s.length > width ? `${s.slice(0, Math.max(0, width - 1))}…` : s
 
   return align === 'right' ? v.padStart(width) : v.padEnd(width)
 }
@@ -1262,7 +1264,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         return { color: t.color.text, text: fmtNum(q?.value, ser.unit) }
 
       case 'name':
-        return { color: t.color.label, text: q?.name || ser.name }
+        return { color: t.color.label, text: q?.name || ser.name || ser.symbol || '' }
 
       case 'pct':
         return { color: cellColor(q?.changePct ?? null), text: q ? `${dirGlyph(q.changePct)} ${fmtPct(q.changePct)}` : '—' }

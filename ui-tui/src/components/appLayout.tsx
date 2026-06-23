@@ -45,6 +45,7 @@ import { QuestionOnboardModal } from './questionOnboardModal.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
+import { type CrashReport, ViewErrorBoundary } from './viewErrorBoundary.js'
 
 const PromptPrefix = memo(function PromptPrefix({
   bold = false,
@@ -199,6 +200,17 @@ const ComposerPane = memo(function ComposerPane({
 }: Pick<AppLayoutProps, 'actions' | 'composer' | 'status'> & { confined?: boolean }) {
   const ui = useStore($uiState)
   const isBlocked = useStore($isBlocked)
+
+  // Guided OAuth connect from the model picker: close it and launch the in-TUI
+  // device-code sign-in (`/auth <slug>`), so connecting Codex never dead-ends.
+  const onModelConnect = useCallback(
+    (slug: string) => {
+      patchOverlayState({ modelPicker: false })
+      actions.runCommand(`/auth ${slug}`)
+    },
+    [actions]
+  )
+
   // When the conversations rail holds focus, the composer goes inactive so its
   // keystrokes/cursor don't compete with rail navigation.
   const railFocused = useStore($homeFocus).pane === 'rail'
@@ -288,6 +300,7 @@ const ComposerPane = memo(function ComposerPane({
           cols={composer.cols}
           compIdx={composer.compIdx}
           completions={composer.completions}
+          onModelConnect={onModelConnect}
           onModelSelect={actions.onModelSelect}
           onPickerSelect={actions.resumeById}
           pagerPageSize={composer.pagerPageSize}
@@ -618,6 +631,44 @@ export const AppLayout = memo(function AppLayout({
   // memo (`actions` is itself a useMemo, so this stays referentially stable).
   const onRailNewChat = useCallback(() => actions.runCommand('/new'), [actions])
 
+  // Crash recovery: when a fullscreen view throws, close every fullscreen overlay
+  // so we drop back to the safe home/chat (the crashed view can't re-throw).
+  const recoverFromCrash = useCallback(() => {
+    patchOverlayState({
+      agents: false,
+      alerts: false,
+      calendar: false,
+      calibration: false,
+      demoViz: false,
+      forecasts: false,
+      help: false,
+      hooks: false,
+      markets: false,
+      messaging: false,
+      news: false,
+      obsidian: false,
+      onboard: false
+    })
+  }, [])
+
+  // Load a ready-to-send crash report into the composer: the user presses Enter
+  // and the agent files the GitHub issue — the flow that already works when a
+  // user pastes an error into the chat, now one keypress away from the modal.
+  const reportCrash = useCallback(
+    (report: CrashReport) => {
+      actions.draftCommand(
+        'A view in the TUI just crashed and the error boundary caught it. Please open a GitHub issue on the fork ' +
+          'with `gh issue create --repo teddyjfpender/superforecasting-agent` — give it a clear, specific title, ' +
+          'summarize what I was likely doing, include the error + stack trace below verbatim, and propose a fix. ' +
+          'Then reply with the issue URL.\n\nError: ' +
+          report.message +
+          '\n\nStack:\n' +
+          report.stack
+      )
+    },
+    [actions]
+  )
+
   // The rail can only hold focus while it's shown — when it hides (narrow
   // terminal / fullscreen overlay), snap focus back so the composer never stays
   // inert.
@@ -694,6 +745,7 @@ export const AppLayout = memo(function AppLayout({
         </PerfPane>
 
         {fullscreen ? (
+          <ViewErrorBoundary onRecover={recoverFromCrash} onReport={reportCrash} t={ui.theme}>
           <Box flexDirection="row" flexGrow={1}>
             {overlay.forecasts ? (
               <PerfPane id="forecasts">
@@ -754,6 +806,7 @@ export const AppLayout = memo(function AppLayout({
               </PerfPane>
             )}
           </Box>
+          </ViewErrorBoundary>
         ) : showRail ? (
           // Home two-pane (wide terminals): a fixed conversations rail on the
           // left + the conversation on the right. The transcript ScrollBox stays
