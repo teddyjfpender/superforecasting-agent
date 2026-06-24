@@ -64,7 +64,6 @@ export const closeForecastsWorkspace = () =>
   patchOverlayState({ forecasts: false, forecastsInitialId: null })
 
 const WIDE_COLS = 100
-const CONF_BAND_K = 0.18
 
 // Packet sections rendered under the visual summary. Intentionally excludes the
 // header facts (question/Current Forecast/Ledger State), Recent Evidence, and
@@ -212,8 +211,6 @@ export const distributionBars = (probability: ForecastWorkspaceItem['probability
 
 /** Confidence/spread band for one history point. Latest point prefers the panel spread. */
 const bandForPoint = (
-  y: number,
-  confidence: null | number | undefined,
   isLatest: boolean,
   panel: ForecastWorkspacePanel | null | undefined
 ): { hi?: number; lo?: number } => {
@@ -221,13 +218,12 @@ const bandForPoint = (
     return { hi: panel.spread.max, lo: panel.spread.min }
   }
 
-  if (!finite(confidence)) {
-    return {}
-  }
-
-  const half = clamp01(1 - confidence) * CONF_BAND_K
-
-  return { hi: clamp01(y + half), lo: clamp01(y - half) }
+  // Never SYNTHESIZE a band from `confidence`. The old `clamp01(1 - confidence) * K`
+  // fallback assumed a 0-1 probability scale, so on a vote-share point (e.g. 44.7 on a
+  // 0-100 axis) it clamped to ~[0,1] and rendered the band detached at the bottom of
+  // the chart — disconnected from the point. A forecast's band must come from its OWN
+  // interval (distribution ci90) or a real panel spread; otherwise show no band.
+  return {}
 }
 
 export const historyToBandPoints = (item: ForecastWorkspaceItem): BandPoint[] => {
@@ -249,12 +245,7 @@ export const historyToBandPoints = (item: ForecastWorkspaceItem): BandPoint[] =>
 
     const isLatest = index === history.length - 1
 
-    const band = bandForPoint(
-      y,
-      point.confidence ?? item.confidence,
-      !isDistribution && isLatest,
-      isDistribution ? null : item.panel
-    )
+    const band = bandForPoint(!isDistribution && isLatest, isDistribution ? null : item.panel)
 
     return { hi: band.hi ?? null, lo: band.lo ?? null, y }
   })

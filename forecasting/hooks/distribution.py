@@ -54,13 +54,17 @@ class DistributionAssessment:
     finite: bool = True                   # all moments/interval bounds finite
     in_range: bool = True                 # all values within OutcomeSpace bounds
     degenerate: bool = False              # a present interval has zero width
+    central_within: bool = True           # the central tendency lies INSIDE its band
     has_units: bool = True                # units declared (charts need them)
     width_ratio: float | None = None      # widest interval width / question range
     issues: list[str] = field(default_factory=list)
 
     @property
     def well_formed(self) -> bool:
-        return self.ordered and self.nested and self.finite and self.in_range and not self.degenerate
+        return (
+            self.ordered and self.nested and self.finite and self.in_range
+            and not self.degenerate and self.central_within
+        )
 
 
 _DIST_TYPES = {"distribution", "numeric", "thesis"}
@@ -150,6 +154,18 @@ def assess_distribution(
         if lo50 < lo90 or hi50 > hi90:
             a.nested = False
             a.issues.append("ci50 is not nested inside ci90")
+
+    # central-in-band: the expected value MUST lie inside its own interval. A point
+    # outside its band is never a valid forecast — this is the disconnected-band bug
+    # (mean 44.7 with ci90 [-4.7, 5]); it was previously uncaught. Check against the
+    # widest present interval (ci90 preferred, else ci50).
+    if central is not None:
+        band = ci90 if (ci90 and all(_finite(v) for v in ci90)) else (ci50 if (ci50 and all(_finite(v) for v in ci50)) else None)
+        if band is not None:
+            blo, bhi = min(band), max(band)
+            if not (blo <= central <= bhi):
+                a.central_within = False
+                a.issues.append(f"central tendency {central} lies OUTSIDE its band [{blo}, {bhi}]")
 
     # width ratio (advisory): widest interval vs the question range
     widest = None

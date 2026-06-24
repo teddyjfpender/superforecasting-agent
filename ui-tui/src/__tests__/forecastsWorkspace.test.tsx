@@ -445,14 +445,15 @@ describe('ForecastsWorkspace pure transforms', () => {
     expect(distributionBars(null)).toBeNull()
   })
 
-  it('historyToBandPoints derives a confidence band and uses panel spread for the latest', async () => {
+  it('historyToBandPoints shows only REAL bands — no confidence-synthesized band', async () => {
     const { historyToBandPoints } = await import('../components/forecastsWorkspace.js')
     const points = historyToBandPoints(texasItem())
     expect(points).toHaveLength(3)
-    // earlier points: confidence-derived band straddles y
-    expect(points[0]!.lo).toBeLessThan(points[0]!.y as number)
-    expect(points[0]!.hi).toBeGreaterThan(points[0]!.y as number)
-    // latest point uses the panel spread (min 0.42 / max 0.58)
+    // earlier points: no real interval + no panel -> NO band (was a confidence-derived
+    // band on a 0-1 scale, which detached from non-probability points — the bug).
+    expect(points[0]!.lo).toBeNull()
+    expect(points[0]!.hi).toBeNull()
+    // latest point still uses the REAL panel spread (min 0.42 / max 0.58)
     expect(points[2]!.lo).toBeCloseTo(0.42, 5)
     expect(points[2]!.hi).toBeCloseTo(0.58, 5)
   })
