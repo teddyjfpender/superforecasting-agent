@@ -2435,6 +2435,9 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     thesis_list = thesis_sub.add_parser("list", help="List thesis questions")
     thesis_list.add_argument("--limit", type=int, default=None)
     thesis_list.set_defaults(_forecast_handler=_cmd_thesis_list)
+    thesis_dashboard = thesis_sub.add_parser("dashboard", help="Thesis master list (health / score / Δ / coverage / members) — the dedicated thesis dashboard")
+    thesis_dashboard.add_argument("--json", action="store_true", help="Emit machine-readable thesis dashboard JSON")
+    thesis_dashboard.set_defaults(_forecast_handler=_cmd_thesis_dashboard)
 
     # Entity suitability: register tradeable entities (equities, candidates,
     # currencies, sectors) under a thesis, weight them against member signals,
@@ -10071,6 +10074,38 @@ def _cmd_thesis_show(args: argparse.Namespace) -> None:
     if note and note.get("headline"):
         print("")
         print(f"latest note: {note['headline']}")
+
+
+def _cmd_thesis_dashboard(args: argparse.Namespace) -> None:
+    """The dedicated thesis dashboard: a master list of every active thesis (health /
+    score / Δ / coverage / members), reusing the same payload the gateway serves on
+    `forecast.theses` and the TUI lens renders."""
+    from forecasting.dashboard import build_thesis_summary
+
+    rows = build_thesis_summary(ledger=_ledger(args))
+    if args.json:
+        print(json.dumps(rows, indent=2, sort_keys=True))
+        return
+    if not rows:
+        print("No active theses. Create one with `forecast thesis create <title>`.")
+        return
+
+    def _num(value: Any, fmt: str, *, pct: bool = False) -> str:
+        if not isinstance(value, (int, float)):
+            return "-"
+        return format(value * 100 if pct else value, fmt)
+
+    print(f"{'thesis':<44} {'health':>7} {'score':>7} {'Δ':>6} {'cov':>5} {'n_eff':>6} {'mem':>4}  status")
+    for r in rows:
+        print(
+            f"{(r['title'] or '')[:44]:<44} "
+            f"{(r['health_display'] or '-'):>7} "
+            f"{_num(r.get('thesis_score'), '.1f'):>7} "
+            f"{(_num(r.get('delta'), '+.0f', pct=True) + 'pp') if isinstance(r.get('delta'), (int, float)) else '-':>6} "
+            f"{_num(r.get('coverage'), '.2f'):>5} "
+            f"{_num(r.get('n_eff'), '.1f'):>6} "
+            f"{r.get('member_count', 0):>4}  {r.get('status', '')}"
+        )
 
 
 def _cmd_thesis_list(args: argparse.Namespace) -> None:

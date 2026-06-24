@@ -145,6 +145,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "doctor_report",
                     "pilot_report",
                     "detect_templated_batches",
+                    "thesis_dashboard",
                     "add_watched_source",
                     "list_watched_sources",
                     "check_watched_sources",
@@ -1661,6 +1662,15 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                     window_days=int(args.get("window_days", 7) or 7),
                     min_cluster=int(args.get("min_cluster", 3) or 3),
                 ),
+            )
+
+        if action == "thesis_dashboard":
+            from forecasting.dashboard import build_factor_summary, build_thesis_summary
+
+            return tool_result(
+                success=True,
+                theses=build_thesis_summary(ledger=ledger),
+                factors=build_factor_summary(ledger=ledger),
             )
 
         if action == "add_watched_source":

@@ -3000,6 +3000,18 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
+@method("forecast.theses")
+def _(rid, params: dict) -> dict:
+    # Standalone thesis master list (health / score / delta / coverage / members) for a
+    # dedicated thesis dashboard — without shipping the whole forecast workspace.
+    try:
+        from forecasting.dashboard import build_factor_summary, build_thesis_summary
+
+        return _ok(rid, {"theses": build_thesis_summary(), "factors": build_factor_summary()})
+    except Exception as e:
+        return _err(rid, 5021, str(e))
+
+
 @method("forecast.onboard_propose")
 def _(rid, params: dict) -> dict:
     """Validate a draft QuestionSpec and return issues + the clarifications to ask.

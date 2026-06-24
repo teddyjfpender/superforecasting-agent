@@ -251,6 +251,21 @@ def test_forecast_workspace_is_routed_to_thread_pool():
     assert "forecast.workspace" in server._LONG_HANDLERS
 
 
+def test_forecast_theses_returns_standalone_thesis_list(monkeypatch):
+    import forecasting.dashboard as dashboard_module
+
+    monkeypatch.setattr(
+        dashboard_module, "build_thesis_summary",
+        lambda **_: [{"id": "fq_t", "title": "AI scarcity", "health_probability": 0.6, "health_display": "60%"}],
+    )
+    monkeypatch.setattr(dashboard_module, "build_factor_summary", lambda **_: [])
+
+    resp = server.handle_request({"id": "1", "method": "forecast.theses", "params": {}})
+
+    assert resp["result"]["theses"][0]["id"] == "fq_t"
+    assert resp["result"]["factors"] == []
+
+
 def _fake_calibration_ledger(*, bias_raises: bool = False):
     """A FakeLedger mirroring the ForecastLedger calibration surface."""
 
