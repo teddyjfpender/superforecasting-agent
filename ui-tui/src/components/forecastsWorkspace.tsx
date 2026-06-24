@@ -196,17 +196,26 @@ export const distributionBars = (probability: ForecastWorkspaceItem['probability
 
   const entries = Object.entries(probability).filter(([, value]) => finite(value)) as [string, number][]
 
-  if (entries.length < 2) {
+  // Drop distribution-summary fields (mean / median / sd / quantiles / intervals) so a
+  // HYBRID payload (candidate shares + a bolted-on leader distribution, e.g. from a
+  // vote-share repair) renders ONLY the candidate bars — never q05 / q25 / interval_*
+  // as spurious "candidates". Candidate labels are kept; stat keys are filtered.
+  const distributionalKeys = new Set([
+    'mean', 'mu', 'sd', 'sigma', 'std', 'stdev', 'variance', 'expected', 'value',
+    'median', 'mode', 'lower', 'upper', 'low', 'high', 'min', 'max',
+  ])
+  const isStatKey = (key: string): boolean => {
+    const k = key.toLowerCase()
+    return distributionalKeys.has(k) || /^[qp]\d/.test(k) || k.startsWith('ci') || k.startsWith('interval')
+  }
+
+  const bars = entries.filter(([key]) => !isStatKey(key))
+
+  if (bars.length < 2) {
     return null
   }
 
-  const distributionalKeys = new Set(['mean', 'mu', 'sd', 'sigma', 'std', 'stdev', 'variance', 'expected', 'value'])
-
-  if (entries.every(([key]) => distributionalKeys.has(key.toLowerCase()))) {
-    return null
-  }
-
-  return entries.map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
+  return bars.map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
 }
 
 /** Confidence/spread band for one history point. Latest point prefers the panel spread. */

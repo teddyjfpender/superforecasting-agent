@@ -443,6 +443,15 @@ describe('ForecastsWorkspace pure transforms', () => {
     expect(distributionBars(0.52)).toBeNull()
     expect(distributionBars({ mean: 3.1, sd: 0.4 })).toBeNull()
     expect(distributionBars(null)).toBeNull()
+    // hybrid payload (candidate shares + bolted-on leader distribution): show ONLY
+    // the candidate bars, never the quantile/interval fields as spurious candidates.
+    const hybrid = distributionBars({
+      'Andy Biggs': 64, 'David Schweikert': 27, Other: 9,
+      mean: 64, median: 63.36, q05: 43.29, q25: 55.35, q50: 63.36, q75: 70.6, q95: 79.32,
+      interval_90_low: 43.29, interval_90_high: 79.32, interval_50_low: 55.35, interval_50_high: 70.6,
+    })
+    expect(hybrid).not.toBeNull()
+    expect(hybrid!.map(b => b.label).sort()).toEqual(['Andy Biggs', 'David Schweikert', 'Other'])
   })
 
   it('historyToBandPoints shows only REAL bands — no confidence-synthesized band', async () => {
