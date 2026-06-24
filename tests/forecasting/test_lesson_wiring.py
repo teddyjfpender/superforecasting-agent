@@ -67,3 +67,31 @@ def test_domain_topic_authoring_requires_colon_scope_ref(tmp_path):
     lg = _ledger(tmp_path)
     with pytest.raises(ValidationError, match="domain:topic"):
         lg.create_calibration_lesson(scope_type="domain_topic", scope_ref="politics", lesson="bad", status="active")
+
+
+# ── Slice 4: vote-share forecasts are machine-scoreable (vector MAE/RMSE) ──
+def test_vote_share_dict_outcome_scored_as_vector_mae(tmp_path):
+    lg = _ledger(tmp_path)
+    osp = OutcomeSpace(type="distribution", choices=["Lasher", "Bores", "Other"], units="pct")
+    res = lg._score_forecast_payload({"Lasher": 0.42, "Bores": 0.33, "Other": 0.25}, {"Lasher": 39.2, "Bores": 35.0, "Other": 25.8}, osp)
+    assert res["score_rule"] == "vector_mae_percentage_points"
+    assert 0.0 <= res["proper_score"] <= 100.0 and res["proper_score"] > 90  # ~1.9pp MAE
+
+
+def test_vote_share_scored_end_to_end(tmp_path):
+    lg = _ledger(tmp_path)
+    osp = OutcomeSpace(type="distribution", choices=["A", "B", "Other"], units="pct")
+    q = lg.create_question(title="What certified vote percentages will the candidates receive?", resolution_criteria=VS_CRIT, domain="politics", topics=["vote share"], outcome_space=osp)
+    # exploratory commit bypasses the unrelated renderable-distribution gate.
+    lg.create_snapshot(question_id=q.id, probability_or_distribution={"A": 0.5, "B": 0.4, "Other": 0.1}, rationale="share forecast", forecast_origin="exploratory")
+    lg.resolve_question(question_id=q.id, outcome={"A": 52.0, "B": 38.0, "Other": 10.0}, resolution_status="confirmed", criteria_satisfied=True, auto_score=True)
+    sc = lg.score_question(q.id)
+    assert sc.score_rule == "vector_mae_percentage_points"
+
+
+def test_normal_distribution_still_routes_to_normal_score(tmp_path):
+    # Regression: a mean/sd distribution must NOT hit the vote-share branch.
+    lg = _ledger(tmp_path)
+    osp = OutcomeSpace(type="distribution", units="usd_billions")
+    res = lg._score_forecast_payload({"mean": 390.0, "sd": 85.0}, 400.0, osp)
+    assert res["score_rule"] != "vector_mae_percentage_points"

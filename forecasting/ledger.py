@@ -10794,6 +10794,17 @@ class ForecastLedger:
                 normal = self._normal_distribution_score(probability_or_distribution, outcome, outcome_space)
                 if normal is not None:
                     return normal
+                # Vote-share pattern: a candidate-SHARE dict forecast scored against a
+                # candidate-SHARE dict outcome (e.g. {"Lasher": .39, ...} vs certified
+                # {"Lasher": 39.2, ...}). The fallthrough below treats the dict OUTCOME
+                # as a categorical label, which mis-scores / fails — the bug behind the
+                # hand-rolled manual scores. Score it as a vector MAE/RMSE in
+                # percentage points so vote-share forecasts are machine-scoreable
+                # (lesson cl_ec9059c809ba). None -> no shared candidates -> fall through.
+                if isinstance(outcome, dict):
+                    vector = self._vote_share_vector_score(probability_or_distribution, outcome)
+                    if vector is not None:
+                        return vector
                 probability = self._probability_for_outcome(
                     probability_or_distribution,
                     outcome,
@@ -10893,6 +10904,40 @@ class ForecastLedger:
                 ratio = min(max((value - low) / (high - low), 0.0), 0.999999)
                 return self._probability_bucket(ratio)
         return "numeric"
+
+    def _vote_share_vector_score(self, forecast: dict[str, Any], outcome: dict[str, Any]) -> dict[str, Any] | None:
+        """Vector MAE/RMSE (percentage points) for a candidate-SHARE forecast scored
+        against a candidate-SHARE outcome. Forecast values may be probabilities (0-1,
+        auto-scaled to pp) or already pp; outcome values are pp (0-100). Returns None
+        when there are no shared numeric candidate keys, so the caller falls through
+        to the existing scorer. This is an ACCURACY metric (100 - MAE), not a strictly
+        proper score — labeled as such; it makes vote-share forecasts machine-scoreable
+        instead of mis-read as categorical labels (lesson cl_ec9059c809ba)."""
+        def _numeric_shares(raw: dict[str, Any]) -> dict[str, float]:
+            out: dict[str, float] = {}
+            for key, value in raw.items():
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    out[str(key).strip().lower()] = float(value)
+            return out
+
+        f_shares = _numeric_shares(forecast)
+        o_shares = _numeric_shares(outcome)
+        shared = sorted(set(f_shares) & set(o_shares))
+        if not shared:
+            return None
+        # Forecast in [0,1] -> scale to pp; if it already looks like pp, leave it.
+        scale = 100.0 if max(f_shares[k] for k in shared) <= 1.5 else 1.0
+        diffs = [abs(f_shares[k] * scale - o_shares[k]) for k in shared]
+        mae = sum(diffs) / len(diffs)
+        rmse = math.sqrt(sum(d * d for d in diffs) / len(diffs))
+        return {
+            "brier_score": None,
+            "log_score": None,
+            "proper_score": max(0.0, 100.0 - mae),
+            "score_rule": "vector_mae_percentage_points",
+            "calibration_bucket": None,
+            "notes": f"Vector accuracy across {len(shared)} candidate share(s): MAE={mae:.2f}pp, RMSE={rmse:.2f}pp (accuracy, not a proper score).",
+        }
 
     def _normal_distribution_score(
         self,
