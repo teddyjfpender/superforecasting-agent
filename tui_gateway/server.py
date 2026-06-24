@@ -2125,22 +2125,16 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
                 part for part in (system_prompt, skills_prompt) if part
             ).strip()
     model, requested_provider = _resolve_startup_runtime()
-    runtime = resolve_runtime_provider(
-        requested=requested_provider,
-        target_model=model or None,
-    )
+    from agent.agent_factory import build_agent
     from forecasting.protocol import build_forecast_chat_system_prompt
 
-    return AIAgent(
+    # Single resolve->construct path: build_agent resolves the runtime provider and
+    # maps provider/base_url/api_key/api_mode/acp_*/credential_pool onto the AIAgent
+    # kwargs (behaviour-identical to the hand-written mapping it replaces).
+    return build_agent(
         model=model,
+        requested_provider=requested_provider,
         max_iterations=_cfg_max_turns(cfg, 90),
-        provider=runtime.get("provider"),
-        base_url=runtime.get("base_url"),
-        api_key=runtime.get("api_key"),
-        api_mode=runtime.get("api_mode"),
-        acp_command=runtime.get("command"),
-        acp_args=runtime.get("args"),
-        credential_pool=runtime.get("credential_pool"),
         quiet_mode=True,
         verbose_logging=_load_tool_progress_mode() == "verbose",
         reasoning_config=_load_reasoning_config(),

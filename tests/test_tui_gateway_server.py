@@ -5071,7 +5071,9 @@ def _setup_make_agent_mocks(monkeypatch, cfg):
     )
     monkeypatch.setattr(
         "hermes_cli.runtime_provider.resolve_runtime_provider",
-        lambda requested=None, target_model=None: {
+        # build_agent() now resolves via this entry point and passes the credential-
+        # context kwargs (explicit_api_key/base_url) too — accept **kwargs.
+        lambda requested=None, target_model=None, **_kwargs: {
             "provider": None,
             "base_url": None,
             "api_key": None,
