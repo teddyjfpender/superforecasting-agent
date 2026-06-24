@@ -168,7 +168,13 @@ def lesson_scope_to_applies_to(lesson: dict[str, Any]) -> dict[str, Any]:
         # best-effort: match the domain prefix ("politics:elections:primaries" -> politics)
         return {"domain": [str(scope_ref).split(":", 1)[0]]}
     if scope_type == "question_type" and scope_ref:
-        return {"outcome_type": [scope_ref]}
+        # The canonical 'vote-share-distribution' sub-type maps to the REAL outcome
+        # type 'distribution' (a vote-share question's actual type) so the force-
+        # stamped applies_to matches the commit context's outcome_type. Retrieval has
+        # already scoped the lesson to candidate-share distributions, so a continuous
+        # distribution never retrieves it -> this never over-applies.
+        real_type = "distribution" if scope_ref == "vote-share-distribution" else scope_ref
+        return {"outcome_type": [real_type]}
     # global / topic: no DSL applies_to dimension — applies broadly; the rule's own
     # check predicate is responsible for self-limiting.
     return {}

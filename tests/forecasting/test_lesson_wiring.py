@@ -196,3 +196,20 @@ def test_vote_share_forecast_commits_live_and_lessons_engage(tmp_path):
     # the scoped lesson is now recorded as engaged on this live commit
     cov = {r["lesson_id"]: r for r in lg.lesson_coverage()}
     assert any(r["in_scope_count"] >= 1 for r in cov.values())
+
+
+def test_question_type_lesson_fires_at_error_on_live_vote_share(tmp_path):
+    # End-to-end: a question_type:vote-share-distribution lesson at ERROR must actually
+    # FIRE on a live vote-share commit whose shares aren't keyed to the candidates
+    # (renderable but not scoreable). Guards the applies_to canonical->real mapping.
+    lg = _ledger(tmp_path)
+    les = lg.create_calibration_lesson(scope_type="question_type", scope_ref="vote-share-distribution", lesson="scoreable", recommended_adjustment={"enforcement_pattern": "born_scoreable"}, status="active")
+    lg.apply_lesson(les["id"], severity="error")
+    osp = OutcomeSpace(type="distribution", choices=["A", "B", "Other"], units="pct")
+    ok = lg.create_question(title="What certified vote percentages will the candidates receive?", resolution_criteria=VS_CRIT, domain="politics", topics=["vote share"], outcome_space=osp)
+    # shares keyed to the candidates -> scoreable -> commits
+    assert lg.create_snapshot(question_id=ok.id, probability_or_distribution={"A": 44.0, "B": 43.5, "Other": 12.5}, rationale="ok", forecast_origin="live") is not None
+    bad = lg.create_question(title="What certified vote percentages will the others receive?", resolution_criteria=VS_CRIT, domain="politics", topics=["vote share"], outcome_space=osp)
+    # shares NOT keyed to the candidates -> renderable but not scoreable -> the ERROR rule blocks
+    with pytest.raises(Exception):
+        lg.create_snapshot(question_id=bad.id, probability_or_distribution={"X": 44.0, "Y": 43.5, "Z": 12.5}, rationale="unscoreable", forecast_origin="live")
