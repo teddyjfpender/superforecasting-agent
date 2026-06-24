@@ -4504,8 +4504,12 @@ class ForecastLedger:
         supersedes_lesson_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        if scope_type not in {"domain", "topic", "horizon", "question_type", "model_component", "global"}:
+        if scope_type not in {"domain", "topic", "domain_topic", "horizon", "question_type", "model_component", "global"}:
             raise ValidationError("invalid calibration lesson scope_type")
+        if scope_type == "domain_topic" and ":" not in (scope_ref or ""):
+            # Stored + matched colon-joined ("politics:nyc-primaries"), the form both
+            # active_lessons_for_question and lesson_scope_to_applies_to expect.
+            raise ValidationError("domain_topic calibration lessons require a 'domain:topic' scope_ref")
         if status not in CALIBRATION_LESSON_STATUSES:
             raise ValidationError(
                 f"calibration lesson status must be one of {', '.join(sorted(CALIBRATION_LESSON_STATUSES))}"

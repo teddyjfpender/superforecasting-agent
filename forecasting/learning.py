@@ -111,14 +111,35 @@ def apply_active_lesson_adjustments(
     return payload, refs, adjustment
 
 
+def _canonical_question_type(question: Any) -> str | None:
+    """A candidate-SHARE distribution (vote share) is the sub-type the share-
+    compression + scoreability lessons target. It is a `distribution` outcome that
+    carries named choices (candidates); a continuous numeric distribution has none.
+    Surfacing it as an extra question_type scope lets a lesson scoped
+    `question_type:vote-share-distribution` match a `distribution` vote-share
+    question — without matching continuous distributions."""
+    osp = getattr(question, "outcome_space", None)
+    if osp is not None and getattr(osp, "type", None) == "distribution" and getattr(osp, "choices", None):
+        return "vote-share-distribution"
+    return None
+
+
 def active_lessons_for_question(ledger: ForecastLedger, question: Any) -> list[dict[str, Any]]:
     scopes: list[tuple[str, str | None]] = [("global", None)]
     if question.domain:
         scopes.append(("domain", question.domain))
     for topic in question.topics:
         scopes.append(("topic", topic))
+        if question.domain:
+            # domain_topic lessons are stored colon-joined ("politics:nyc-primaries"),
+            # the form lesson_scope_to_applies_to parses — so a lesson scoped to a
+            # domain+topic matches a question carrying that domain AND that topic.
+            scopes.append(("domain_topic", f"{question.domain}:{topic}"))
     if question.outcome_space.type:
         scopes.append(("question_type", question.outcome_space.type))
+    _canonical = _canonical_question_type(question)
+    if _canonical:
+        scopes.append(("question_type", _canonical))
 
     lessons: list[dict[str, Any]] = []
     seen: set[str] = set()
