@@ -81,3 +81,28 @@ def test_fresh_rerun_never_triggers_the_warn(tmp_path):
     lg.add_evidence(question_id=q.id, source_or_note="fresh update", claim="new reading")
     snap = _commit(lg, q, 0.55, panel_skipped_reason="test re-commit")
     assert _verdict(snap, "stale_evidence_justified") is None
+
+
+def test_lint_reread_surfaces_unjustified_stale_ack(tmp_path):
+    # The WARN must also show on a later read-only re-read (build_context_from_ledger
+    # reconstructs the signal from the stored acknowledge marker + absent reason).
+    from forecasting.hooks.sweep import lint_forecast
+    lg = _ledger(tmp_path)
+    q = _q(lg)
+    _commit(lg, q, 0.5)
+    _commit(lg, q, 0.55, acknowledge_stale_evidence=True, panel_skipped_reason="test re-commit")
+    report = lint_forecast(lg, q.id)
+    verdicts = {v.get("rule_id"): v.get("passed") for v in (report.to_dict().get("verdicts") or [])}
+    assert verdicts.get("stale_evidence_justified") is False  # fires on re-read too
+
+
+def test_lint_reread_clean_when_reason_recorded(tmp_path):
+    from forecasting.hooks.sweep import lint_forecast
+    lg = _ledger(tmp_path)
+    q = _q(lg)
+    _commit(lg, q, 0.5)
+    _commit(lg, q, 0.55, acknowledge_stale_evidence=True, stale_evidence_reason="nothing changed",
+            panel_skipped_reason="test re-commit")
+    report = lint_forecast(lg, q.id)
+    verdicts = {v.get("rule_id"): v.get("passed") for v in (report.to_dict().get("verdicts") or [])}
+    assert verdicts.get("stale_evidence_justified") is not False

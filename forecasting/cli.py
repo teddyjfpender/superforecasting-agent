@@ -3091,6 +3091,12 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
 
     from forecasting.protocol import PROCESS_VERSION
 
+    # A heuristic, read-only detector must NEVER take down the doctor audit.
+    try:
+        templated_batches = ledger.detect_templated_batches()
+    except Exception:
+        templated_batches = []
+
     return {
         "product": PRODUCT_NAME,
         "process_version": PROCESS_VERSION,
@@ -3116,7 +3122,7 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         # Recent LIVE forecasts that look like a 'one template x N' batch (same method
         # + reasoning_methods + rationale tail) rather than per-question deliberation.
         # A heuristic flag for review, never a block — see skills/ledger-interaction.
-        "templated_batches": ledger.detect_templated_batches(),
+        "templated_batches": templated_batches,
     }
 
 

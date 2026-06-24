@@ -105,8 +105,8 @@ def _check_stale_evidence_justified(ctx: HookContext):
     # stale_evidence_acknowledged is True ONLY when acknowledged WITHOUT a reason,
     # so whenever this applies it is the WARN state.
     msg = (
-        "stale evidence was acknowledged to skip the fresh-evidence gate, but no "
-        "reason was recorded. Record WHY nothing material changed "
+        "stale evidence was acknowledged on this commit, but no reason was recorded. "
+        "Record WHY nothing material changed since the prior forecast "
         "(stale_evidence_reason=..., CLI --stale-evidence-reason) so the bypass is "
         "auditable — or collect fresh evidence with `forecast refresh <id>`."
     )

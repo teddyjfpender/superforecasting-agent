@@ -1746,45 +1746,58 @@ class ForecastLedger:
         skeleton — same method + reasoning_methods + a name-stripped rationale tail.
         That is the tell of a 'one template x N' batch (a script substituting a name
         into a fixed shell) rather than N individually-reasoned forecasts. Read-only;
-        a heuristic flag for REVIEW, never a block. See skills/ledger-interaction."""
+        a heuristic flag for REVIEW, never a block — a shared standardized footer can
+        also cluster, so the member titles let a human dismiss a false hit. Defensive:
+        never raises on malformed metadata/timestamps. See skills/ledger-interaction."""
         import hashlib
         import re
 
         def _skeleton(text: str) -> str:
-            # drop digits + Capitalized tokens (names/places/numbers) so two rationales
-            # that differ ONLY by a substituted name hash identically
+            # drop digits + Capitalized tokens (substituted names/places/numbers) so two
+            # rationales that differ ONLY by a name hash identically; fall back to the
+            # fully-lowercased tokens when stripping empties it (e.g. Title-Case prose)
+            # so distinct rationales don't all collapse to "" and falsely cluster.
             text = re.sub(r"\d+(?:\.\d+)?", "", text or "")
-            return " ".join(t.lower() for t in re.findall(r"[A-Za-z']+", text) if not t[:1].isupper())
+            words = re.findall(r"[A-Za-z']+", text)
+            stripped = [w.lower() for w in words if not w[:1].isupper()]
+            return " ".join(stripped if len(stripped) >= 6 else (w.lower() for w in words))
 
-        cutoff_dt = timestamp_to_datetime(utc_now_iso()) - timedelta(days=window_days)
+        window_days = max(1, int(window_days))
+        min_cluster = max(1, int(min_cluster))
+        limit = max(1, int(limit))
+        cutoff_iso = (timestamp_to_datetime(utc_now_iso()) - timedelta(days=window_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        # One bounded query: current snapshots of active questions, live + in-window,
+        # newest first, capped — no per-question N+1 and no unbounded scan.
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT s.forecast_id, s.question_id, s.method, s.rationale, s.metadata, "
+                "q.title FROM forecast_snapshots s "
+                "JOIN forecast_questions q ON q.current_forecast_id = s.forecast_id "
+                "WHERE q.status = 'active' AND s.forecast_origin = 'live' "
+                "AND s.created_at >= ? ORDER BY s.created_at DESC LIMIT ?",
+                (cutoff_iso, limit),
+            ).fetchall()
         clusters: dict[str, dict[str, Any]] = {}
-        scanned = 0
-        for question in self.list_questions(status="active"):
-            if scanned >= limit:
-                break
-            snap = self.get_current_snapshot(question.id)
-            if snap is None or snap.forecast_origin != "live":
-                continue
-            cdt = timestamp_to_datetime(snap.created_at)
-            if cdt is not None and cdt < cutoff_dt:
-                continue
-            scanned += 1
-            meta = snap.metadata or {}
-            methods = tuple(sorted(meta.get("reasoning_methods") or []))
-            method = (snap.method or "").strip().lower()
-            tail = _skeleton((snap.rationale or "")[-200:])
-            if not methods and len(tail.split()) < 6:
-                continue  # too thin to judge templating
+        for row in rows:
+            meta = json_loads(row["metadata"], {})
+            if not isinstance(meta, dict):
+                meta = {}  # a script may have written a non-dict metadata blob
+            raw = meta.get("reasoning_methods")
+            methods = tuple(sorted(str(m) for m in raw)) if isinstance(raw, list) else ()
+            method = (row["method"] or "").strip().lower()
+            tail = _skeleton((row["rationale"] or "")[-200:])
+            if len(tail.split()) < 6:
+                continue  # too thin to fingerprint reliably (avoids empty-skeleton clustering)
             key = hashlib.sha1(f"{method}|{methods}|{tail}".encode()).hexdigest()[:16]
             entry = clusters.setdefault(key, {
                 "fingerprint": key, "method": method,
                 "reasoning_methods": list(methods), "members": [],
             })
             entry["members"].append({
-                "question_id": question.id, "forecast_id": snap.forecast_id,
-                "title": (question.title or "")[:70],
+                "question_id": row["question_id"], "forecast_id": row["forecast_id"],
+                "title": (row["title"] or "")[:70],
             })
-        flagged = [dict(c, count=len(c["members"])) for c in clusters.values() if len(c["members"]) >= int(min_cluster)]
+        flagged = [dict(c, count=len(c["members"])) for c in clusters.values() if len(c["members"]) >= min_cluster]
         flagged.sort(key=lambda c: c["count"], reverse=True)
         return flagged
 

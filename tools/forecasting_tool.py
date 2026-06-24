@@ -1623,6 +1623,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                     "pilot_ready": pilot_ready,
                     "readiness_gaps": readiness_gaps,
                 },
+                templated_batches=_safe_templated_batches(ledger),
             )
 
         if action == "pilot_report":
@@ -2398,6 +2399,15 @@ def _forecast_readiness_payload(
         ),
     )
     return rows, summaries, evidence_status, last
+
+
+def _safe_templated_batches(ledger: ForecastLedger) -> list[dict[str, Any]]:
+    """detect_templated_batches() is a heuristic, read-only flag — it must never take
+    down a report. Swallow any error and return no clusters."""
+    try:
+        return ledger.detect_templated_batches()
+    except Exception:
+        return []
 
 
 def _forecast_operational_status(
