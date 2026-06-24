@@ -167,3 +167,32 @@ def test_born_scoreable_signal_flags_non_share_payload(tmp_path):
     assert lg._machine_scoreable_payload({"mean": 50, "sd": 10}, osp) is False  # not candidate shares
     # A continuous distribution (no candidate choices, as stored via from_dict) is N/A -> scoreable.
     assert lg._machine_scoreable_payload({"mean": 50}, OutcomeSpace(type="distribution", choices=[], units="usd")) is True
+
+
+# ── Candidate-share PMFs are first-class: renderable -> commit LIVE -> lessons engage ──
+def test_candidate_share_pmf_is_renderable(tmp_path):
+    from forecasting.hooks.distribution import assess_distribution
+    a = assess_distribution({"Espaillat": 44.0, "Chevalier": 43.5, "Other": 12.5}, outcome_type="distribution", units="pct")
+    assert a is not None and a.is_distribution and a.renderable is True
+    # probabilities (sum ~1) also recognized
+    b = assess_distribution({"A": 0.44, "B": 0.435, "Other": 0.125}, outcome_type="distribution")
+    assert b is not None and b.renderable is True
+
+
+def test_malformed_distribution_still_not_renderable(tmp_path):
+    # A single stray value (not a share PMF, not a continuous interval) stays blocked.
+    from forecasting.hooks.distribution import assess_distribution
+    a = assess_distribution({"foo": 1.0}, outcome_type="distribution")
+    assert a is not None and a.renderable is False
+
+
+def test_vote_share_forecast_commits_live_and_lessons_engage(tmp_path):
+    lg = _ledger(tmp_path)
+    lg.create_calibration_lesson(scope_type="question_type", scope_ref="vote-share-distribution", lesson="scoreable", recommended_adjustment={"enforcement_pattern": "born_scoreable"}, status="active")
+    q = _vote_share_q(lg, ["vote share"])
+    # the candidate-share dict now commits LIVE (was forced exploratory before)
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution={"A": 44.0, "B": 43.5, "Other": 12.5}, rationale="share", forecast_origin="live")
+    assert snap is not None
+    # the scoped lesson is now recorded as engaged on this live commit
+    cov = {r["lesson_id"]: r for r in lg.lesson_coverage()}
+    assert any(r["in_scope_count"] >= 1 for r in cov.values())

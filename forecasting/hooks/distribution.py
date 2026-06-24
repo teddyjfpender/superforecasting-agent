@@ -19,6 +19,32 @@ def _finite(x: Any) -> bool:
     return isinstance(x, (int, float)) and math.isfinite(x)
 
 
+# Distribution-summary keys (mean/sd/quantiles/intervals) — a payload whose numeric
+# keys are these is a continuous summary, NOT candidate shares.
+_DIST_STAT_KEYS = frozenset({
+    "mean", "median", "mode", "expected", "value", "point", "sd", "sigma", "stdev",
+    "std", "variance", "var", "q01", "q05", "q10", "q25", "q50", "q75", "q90", "q95", "q99",
+    "p05", "p10", "p25", "p50", "p75", "p90", "p95", "ci50", "ci80", "ci90", "ci95",
+    "lower", "upper", "low", "high", "min", "max",
+})
+
+
+def _is_candidate_share_pmf(payload: dict) -> bool:
+    """A candidate-SHARE PMF: at least two numeric NAMED shares (keys that are not
+    distribution-summary stats) summing to ~1 or ~100. Renderable as bars over the
+    candidates — the shape a vote-share forecast takes."""
+    numeric = {
+        str(key).strip().lower(): float(value)
+        for key, value in payload.items()
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+    }
+    shares = {key: value for key, value in numeric.items() if key not in _DIST_STAT_KEYS}
+    if len(shares) < 2:
+        return False
+    total = sum(shares.values())
+    return (0.9 <= total <= 1.1) or (90.0 <= total <= 110.0)
+
+
 @dataclass
 class DistributionAssessment:
     is_distribution: bool                 # payload parses as a continuous distribution
@@ -67,11 +93,24 @@ def assess_distribution(
         # Not parseable as a continuous distribution. Only flag it when the
         # QUESTION is distribution/numeric (a binary scalar is correctly None).
         if outcome_type in _DIST_TYPES and isinstance(payload, dict):
+            # A candidate-SHARE PMF (vote share: {candidate: share} over >=2 named
+            # candidates summing to ~1 or ~100) is RENDERABLE as bars over candidates
+            # — a categorical-style distribution, not a continuous one. Recognize it
+            # so a vote-share forecast commits LIVE (and engages its lessons) instead
+            # of being forced exploratory, which bypasses every gate.
+            if _is_candidate_share_pmf(payload):
+                return DistributionAssessment(is_distribution=True, renderable=True, has_units=bool(units))
             return DistributionAssessment(
                 is_distribution=True, renderable=False, has_units=bool(units),
                 issues=["distribution payload has no renderable central tendency + interval (charts use the same parser)"],
             )
         return None
+
+    # A parsed PMF (categorical-style candidate shares, e.g. probability-scale vote
+    # share) is renderable as bars over the outcomes — it is NOT a continuous band, so
+    # it does not need a central tendency + interval. Recognize it as renderable.
+    if view.get("pmf"):
+        return DistributionAssessment(is_distribution=True, renderable=True, has_units=bool(units))
 
     mean, median, sd = view.get("mean"), view.get("median"), view.get("sd")
     ci50, ci90 = view.get("ci50"), view.get("ci90")
