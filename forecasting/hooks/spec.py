@@ -110,6 +110,11 @@ class HookContext:
     decision_gaps: tuple[str, ...] = ()
     active_lessons_unapplied: int = 0
     calibration_bias_status: str | None = None
+    # committed winner probability (binary p / leading categorical mass) + whether a
+    # derived vote-share child forecast is linked — so a lesson can require a >X%
+    # winner call to be backed by a vote-share model (the NY-12 structural lesson).
+    committed_winner_prob: float | None = None
+    derived_child_present: bool = False
 
     # tail audit (categorical)
     tail_audit_passes: bool | None = None

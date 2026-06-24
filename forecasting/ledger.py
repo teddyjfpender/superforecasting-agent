@@ -1568,6 +1568,46 @@ class ForecastLedger:
                 unapplied += 1
         return unapplied
 
+    @staticmethod
+    def _committed_winner_prob(payload: Any, outcome_type: str | None = None) -> float | None:
+        """The committed winner probability — defined ONLY for binary (the p) and
+        categorical (the leading outcome's mass). For a distribution payload the
+        quantiles/mean are NOT probabilities, so this returns None (a vote-share
+        model must never be mistaken for a 0.62 'winner probability')."""
+        if outcome_type == "binary":
+            if isinstance(payload, (int, float)) and not isinstance(payload, bool):
+                return float(payload)
+            return None
+        if outcome_type == "categorical" and isinstance(payload, dict):
+            values = [v for v in payload.values() if isinstance(v, (int, float)) and not isinstance(v, bool)]
+            return max(values) if values else None
+        if outcome_type is None and isinstance(payload, (int, float)) and not isinstance(payload, bool):
+            return float(payload)  # back-compat: a bare scalar is binary-like
+        return None
+
+    def _derived_child_present(self, question_id: str) -> bool:
+        """Whether a derived component child (e.g. a vote-share model linked
+        ``component_of`` this question) is present, is a distribution, and has a
+        current snapshot — i.e. real downstream modeling actually backs this call.
+        (Qualified existence; semantic consistency of the child stays advisory.)"""
+        try:
+            links = self.list_forecast_links(question_id, link_type="component_of", direction="incoming")
+        except Exception:
+            return False
+        for link in links:
+            child_id = link.get("from_question_id")
+            if not child_id:
+                continue
+            try:
+                child = self.get_question(child_id)
+                if getattr(child.outcome_space, "type", None) != "distribution":
+                    continue
+                if self.get_current_snapshot(child_id) is not None:
+                    return True
+            except Exception:
+                continue
+        return False
+
     def create_snapshot(
         self,
         *,
@@ -1953,6 +1993,14 @@ class ForecastLedger:
             )
         except Exception:
             _active_unapplied = 0
+        # Structural-lesson signals (NY-12): the committed winner probability + whether
+        # a derived vote-share child model backs it. Fed into both contexts so a lesson
+        # rule can require ">X% winner -> a vote-share child exists". Best-effort.
+        _winner_prob = self._committed_winner_prob(probability_or_distribution, question.outcome_space.type)
+        try:
+            _has_child = self._derived_child_present(question_id)
+        except Exception:
+            _has_child = False
 
         # User-defined rule enforcement (Phase 5). Only runs when the desk has
         # authored custom rules (zero overhead otherwise). A buggy rule engine must
@@ -2042,6 +2090,8 @@ class ForecastLedger:
                         calibration_under_confident=_uuc,
                         tail_null_excess=float(((_utd.get("null_model") or {}).get("excess_tail")) or 0.0),
                         active_lessons_unapplied=_active_unapplied,
+                        committed_winner_prob=_winner_prob,
+                        derived_child_present=_has_child,
                     )
                     _upolicy = resolve_severities(question, forecast_origin=forecast_origin, hooks_config=_hcfg)
                     _ureport = run_hooks(_ctx, _upolicy, rules=tuple(_user_rules) + tuple(_lesson_rules))
@@ -2119,6 +2169,8 @@ class ForecastLedger:
                 sharpness=_osharp,
                 panel_run_count=len(self.list_panel_runs(question_id)),
                 active_lessons_unapplied=_active_unapplied,
+                committed_winner_prob=_winner_prob,
+                derived_child_present=_has_child,
             )
             _hook_policy = policy_from_require_flags(
                 forecast_origin=forecast_origin,

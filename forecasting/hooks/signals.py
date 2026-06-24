@@ -255,6 +255,8 @@ def build_commit_context(
     calibration_under_confident: bool = False,
     reference_class_count: int = 0,
     is_thesis_or_factor: bool = False,
+    committed_winner_prob: float | None = None,
+    derived_child_present: bool = False,
 ) -> HookContext:
     """Assemble a HookContext from the values create_snapshot already has in
     scope. Cheap: no ledger IO (the caller passes precomputed signals)."""
@@ -301,4 +303,6 @@ def build_commit_context(
         calibration_under_confident=calibration_under_confident,
         reference_class_count=reference_class_count,
         is_thesis_or_factor=is_thesis_or_factor,
+        committed_winner_prob=committed_winner_prob,
+        derived_child_present=derived_child_present,
     )

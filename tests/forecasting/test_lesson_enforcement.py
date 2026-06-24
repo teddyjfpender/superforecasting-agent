@@ -148,3 +148,69 @@ def test_invalid_lesson_rule_refused_at_authoring(tmp_path):
             scope_type="domain", scope_ref="politics", lesson="broken",
             recommended_adjustment={"rule": {"check": {"signal": "nonsense.signal", "op": ">=", "value": 1}}}, status="active",
         )
+
+
+# ── Slice 3: NY-12 structural rule via committed_winner_prob + derived_child_present ──
+_NY12_RULE = {
+    "category": "calibration", "severity": "error",
+    "message": "a >65% politics winner call needs a linked vote-share child (lesson)",
+    "check": {"any": [
+        {"signal": "confidence.winner_prob", "op": "<=", "value": 0.65},
+        {"signal": "links.derived_child_present", "op": "is_true"},
+    ]},
+}
+
+
+def _ny12_lesson(lg):
+    return lg.create_calibration_lesson(
+        scope_type="domain", scope_ref="politics",
+        lesson="Build vote-share first for confident primary winner calls.",
+        recommended_adjustment={"rule": _NY12_RULE}, status="active",
+    )
+
+
+def test_confident_winner_without_vote_share_child_is_blocked(tmp_path):
+    lg = _ledger(tmp_path)
+    _ny12_lesson(lg)
+    q = lg.create_question(title="Will candidate A win the primary?", resolution_criteria=CRIT, domain="politics")
+    with pytest.raises(Exception):
+        lg.create_snapshot(question_id=q.id, probability_or_distribution=0.70, rationale="confident, no vote-share model", forecast_origin="live")
+
+
+def test_capped_winner_is_allowed(tmp_path):
+    lg = _ledger(tmp_path)
+    _ny12_lesson(lg)
+    q = lg.create_question(title="Will candidate B win the primary?", resolution_criteria=CRIT, domain="politics")
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=0.60, rationale="capped below 65 without a model", forecast_origin="live")
+    assert snap is not None  # <=0.65 satisfies the rule
+
+
+def test_confident_winner_with_vote_share_child_is_allowed(tmp_path):
+    from forecasting.models import OutcomeSpace
+    lg = _ledger(tmp_path)
+    _ny12_lesson(lg)
+    q = lg.create_question(title="Will candidate C win the primary?", resolution_criteria=CRIT, domain="politics")
+    child = lg.create_question(
+        title="Certified vote share for candidate C?",
+        resolution_criteria="Resolves to the certified vote percentage the board reports for candidate C on the close date.",
+        domain="politics", outcome_space=OutcomeSpace(type="distribution", units="pct"),
+    )
+    lg.create_snapshot(question_id=child.id, probability_or_distribution={"mean": 52, "sd": 6, "q05": 42, "q50": 52, "q95": 62}, rationale="vote-share model")
+    lg.add_forecast_link(from_question_id=child.id, to_question_id=q.id, link_type="component_of")
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=0.70, rationale="confident, backed by the vote-share model", forecast_origin="live")
+    assert snap is not None  # the linked vote-share child satisfies the rule
+
+
+def test_distribution_payload_is_not_treated_as_a_winner_probability(tmp_path):
+    # A vote-share distribution's quantiles must NOT be read as a 0.62 "winner prob"
+    # (that bug would block every distribution commit under the NY-12 rule).
+    from forecasting.models import OutcomeSpace
+    lg = _ledger(tmp_path)
+    _ny12_lesson(lg)
+    q = lg.create_question(
+        title="Certified vote share for the leading candidate?",
+        resolution_criteria="Resolves to the certified vote percentage the board reports on the close date.",
+        domain="politics", outcome_space=OutcomeSpace(type="distribution", units="pct"),
+    )
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution={"mean": 52, "sd": 6, "q05": 42, "q50": 52, "q95": 62}, rationale="a vote-share model itself", forecast_origin="live")
+    assert snap is not None  # winner_prob is None for a distribution -> rule not triggered
