@@ -105,3 +105,27 @@ def slack_tool(args: dict[str, Any]) -> str:
     except Exception as exc:  # network / API transport failure
         return json.dumps({"success": False, "error": f"slack api call failed: {exc}"})
     return json.dumps({"success": bool(result.get("ok")), **result})
+
+
+def check_slack_tool_requirements() -> bool:
+    """Available when a bot token is resolvable — from SLACK_BOT_TOKEN or the
+    OAuth-written slack_tokens.json."""
+    return _resolve_bot_token() is not None
+
+
+# Self-register into the 'slack' toolset (best-effort: a minimal import context without
+# the registry just skips registration).
+try:
+    from tools.registry import registry
+
+    registry.register(
+        name="slack",
+        toolset="slack",
+        schema=SLACK_TOOL_SCHEMA,
+        handler=lambda args, **_kw: slack_tool(args),
+        check_fn=check_slack_tool_requirements,
+        requires_env=[],
+        description="Act as a Slack collaborator: post / reply in-thread, search history, react, pin, list channels.",
+    )
+except Exception:  # pragma: no cover
+    pass

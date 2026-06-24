@@ -317,15 +317,29 @@ def build_session_context_prompt(
 
     # Platform-specific behavioral notes
     if context.source.platform == Platform.SLACK:
+        # The disclaimer flips when a Slack bot token is configured (env or the
+        # OAuth-written slack_tokens.json): then the agent HAS the `slack` tool.
+        slack_api_available = False
+        try:
+            from tools.slack_tool import check_slack_tool_requirements
+
+            slack_api_available = check_slack_tool_requirements()
+        except Exception:
+            slack_api_available = False
         lines.append("")
-        lines.append(
-            "**Platform notes:** You are running inside Slack. "
-            "You do NOT have access to Slack-specific APIs — you cannot search "
-            "channel history, pin/unpin messages, manage channels, or list users. "
-            "Do not promise to perform these actions. The gateway may inline the "
-            "current message's Slack block/attachment payload when available, but "
-            "you still cannot call Slack APIs yourself."
-        )
+        if slack_api_available:
+            lines.append(
+                "**Platform notes:** You are running inside Slack and HAVE the `slack` tool — "
+                "use it to post / reply in-thread, search channel history, add reactions, pin "
+                "messages, and list channels. Prefer concise, in-thread, Slack-formatted replies."
+            )
+        else:
+            lines.append(
+                "**Platform notes:** You are running inside Slack but no Slack bot token is "
+                "configured, so you cannot call Slack APIs (search history, pin, manage channels). "
+                "Do not promise those actions. The gateway may inline the current message's Slack "
+                "block/attachment payload when available."
+            )
     elif context.source.platform == Platform.DISCORD:
         # Inject the Discord IDs block only when the agent actually has
         # Discord tools loaded this session — i.e. the user opted into
