@@ -1,0 +1,90 @@
+---
+name: ledger-interaction
+description: "How to read and write the forecast ledger correctly. WRITES (questions, forecasts, evidence, panels, lessons, resolutions) go through the forecast tool's gated, per-question flow — NOT through scripts that import ForecastLedger or hit its SQLite file. Scripting is for read-only audits and rare one-off migrations only. Invoke before any bulk or batch ledger work, or whenever you are tempted to write a Python script that touches the ledger, e.g. /ledger-interaction"
+version: 1.0.0
+author: Superforecasting Agent
+license: MIT
+platforms: [linux, macos, windows]
+aliases: [ledger-interaction, ledger-discipline, no-ledger-scripts]
+metadata:
+  hermes:
+    tags: [forecasting, ledger, discipline, tools, bulk, migration, superforecasting]
+    category: forecasting
+    related_skills: [forecasting-loop, apply-lesson, forecast-rerun]
+---
+
+# Interacting with the ledger — the tool writes, scripts only read
+
+The forecast ledger is the immutable record your forecasts are scored on. The
+fastest-looking path — a Python script that does `from forecasting.ledger import
+ForecastLedger` and loops `create_snapshot` — is the wrong one. It skips the
+deliberate, gated, one-question-at-a-time flow the desk is built around, and it
+collapses into a single template stamped across many questions. That looks
+productive and reads as faulty. This skill is the rule for staying on the gated path.
+
+## The read/write boundary (read once)
+
+- **WRITES go through the `forecast` tool / CLI**, never raw DB or a direct
+  `ForecastLedger` import. Use the actions, not the internals:
+  `create_question`, `update_forecast`, `record_panel` / `aggregate_panel`,
+  `add_evidence` / `import_source_evidence`, `add_reference_class`, `resolve`,
+  `score`, `postmortem`, `update_calibration_lesson`. Each runs the commit gates
+  (evidence, panel, freshness, structure, style, uncertainty, lessons) and records a
+  real deliberation.
+- **READS may use scripts** — analysis, audits, exports, sanity checks. A read-only
+  script that imports the ledger is fine. `ledger._connect()` and raw SQL are a smell
+  even for reads: prefer `search_questions`, `list_*`, `show_question`,
+  `calibration_summary`, `doctor_report`, `detect_templated_batches`.
+- **Never** reach into `_connect()` to mutate rows. There is no forecast you can
+  write correctly with raw SQL that the tool can't write better.
+
+## Don't script forecasts — the tells you're off the path
+
+If a script you're writing does any of these, stop and use the tool instead:
+
+- imports `ForecastLedger` and calls `create_snapshot` / `record_panel_run` / a
+  write method in a loop;
+- uses `ledger._connect()` to `INSERT` / `UPDATE` / `DELETE`;
+- hand-builds a panel as a fixed list of perspectives with the same rationale text
+  and only a name swapped — that is a fake panel, not a deliberation;
+- sets `acknowledge_stale_evidence=True` to get past the freshness gate without
+  having actually checked the drivers.
+
+The one legitimate write-script is a **rare, one-off migration** (e.g. a schema
+back-fill). Even then it calls the gated ledger methods, never raw SQL, and you say
+plainly that it's a migration.
+
+## Bulk work without templating
+
+Bulk is fine — many primaries, a whole tracker. The discipline is per-item, not
+batch:
+
+1. Find existing questions with `search_questions` (free-text / title); keep the ids
+   `create_question` returns. Do **not** re-derive ids with raw SQL by title.
+2. Forecast each question on its own substance: its own fresh evidence
+   (`import_source_evidence`), its own panel (real, distinct perspectives), its own
+   reasoning. Two races are never the same forecast with a name swapped.
+3. Self-check with `detect_templated_batches` (also in `forecast doctor`): it flags
+   clusters of recent live forecasts that share an identical method +
+   reasoning-methods + rationale skeleton — the "one template ×N" pattern. A cluster
+   there means redo those as real per-question forecasts.
+
+## Escape hatches are explained, not free
+
+The gates have audited exits — use them honestly, never to fake compliance:
+
+- **Stale evidence**: if you truly checked and nothing material changed, set
+  `stale_evidence_reason="…"` (CLI `--stale-evidence-reason`) alongside
+  `acknowledge_stale_evidence`. Acknowledging **without** a reason raises the
+  `stale_evidence_justified` WARN on the saturation report.
+- **Skipped panel**: record `panel_skipped_reason="…"` rather than silently omitting
+  a required panel.
+- **Genuinely exploratory**: record `forecast_origin=exploratory` — unscored, not
+  gated, the right home for scratch work and side models.
+
+## Bottom line
+
+Reads can be scripts; writes are the tool's. Bulk means many real forecasts, not one
+template ×N. If a gate is in your way, satisfy it or take an explicit, reasoned
+exit — never script around it. `forecast doctor` will show a templated batch if you
+slip; fix it by forecasting those questions for real.

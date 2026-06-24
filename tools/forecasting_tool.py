@@ -144,6 +144,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "evidence_readiness",
                     "doctor_report",
                     "pilot_report",
+                    "detect_templated_batches",
                     "add_watched_source",
                     "list_watched_sources",
                     "check_watched_sources",
@@ -731,6 +732,9 @@ FORECAST_LEDGER_SCHEMA = {
             "include_reviewed": {"type": "boolean"},
             "stale_evidence_days": {"type": "integer"},
             "ack_stale_evidence": {"type": "boolean"},
+            "stale_evidence_reason": {"type": "string", "description": "If ack_stale_evidence is set, WHY nothing material changed since the prior forecast. Recorded + clears the stale_evidence_justified WARN; otherwise the bypass is flagged."},
+            "window_days": {"type": "integer", "description": "detect_templated_batches: look-back window (default 7)."},
+            "min_cluster": {"type": "integer", "description": "detect_templated_batches: min forecasts sharing a template to flag a cluster (default 3)."},
             "require_citations": {"type": "boolean"},
             "evidence_cutoff": {"type": "string"},
             "backtest_run_id": {"type": "string"},
@@ -1404,6 +1408,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 calibration_weight=args.get("calibration_weight") if args.get("calibration_weight") is not None else 1.0,
                 stale_evidence_days=args.get("stale_evidence_days", 30),
                 acknowledge_stale_evidence=bool(args.get("ack_stale_evidence", False)),
+                stale_evidence_reason=args.get("stale_evidence_reason"),
                 require_citations=_require("require_citations", "require_citations"),
                 calibration_lesson_refs=calibration_lesson_refs,
                 calibration_adjustment=calibration_adjustment,
@@ -1632,6 +1637,15 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                     min_postmortems=int(args.get("min_postmortems", 1) or 0),
                     min_scheduled_reviews=int(args.get("min_scheduled_reviews", 1) or 0),
                     min_scheduled_review_runs=int(args.get("min_scheduled_review_runs", 1) or 0),
+                ),
+            )
+
+        if action == "detect_templated_batches":
+            return tool_result(
+                success=True,
+                templated_batches=ledger.detect_templated_batches(
+                    window_days=int(args.get("window_days", 7) or 7),
+                    min_cluster=int(args.get("min_cluster", 3) or 3),
                 ),
             )
 

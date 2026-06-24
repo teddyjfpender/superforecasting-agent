@@ -94,6 +94,25 @@ def _check_fresh_evidence(ctx: HookContext):
     return False, msg, {}
 
 
+# ── stale-evidence justification (the freshness bypass must be explained) ──────
+def _applies_stale_evidence_justified(ctx: HookContext) -> bool:
+    # Fires only when a live RE-RUN used the freshness bypass without a reason
+    # (the bypass is only meaningful when there is a prior to be stale against).
+    return ctx.is_live and ctx.has_prior and ctx.stale_evidence_acknowledged
+
+
+def _check_stale_evidence_justified(ctx: HookContext):
+    # stale_evidence_acknowledged is True ONLY when acknowledged WITHOUT a reason,
+    # so whenever this applies it is the WARN state.
+    msg = (
+        "stale evidence was acknowledged to skip the fresh-evidence gate, but no "
+        "reason was recorded. Record WHY nothing material changed "
+        "(stale_evidence_reason=..., CLI --stale-evidence-reason) so the bypass is "
+        "auditable — or collect fresh evidence with `forecast refresh <id>`."
+    )
+    return False, msg, {}
+
+
 # ── decision readiness ────────────────────────────────────────────────────────
 def _check_decision_readiness(ctx: HookContext):
     if not ctx.decision_gaps:
@@ -427,6 +446,8 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
                _check_components, _live, _rem_decompose),
     SimpleRule("require_fresh_evidence", Category.SATURATION, Severity.ERROR, 15.0,
                _check_fresh_evidence, _applies_fresh_evidence, _rem_collect),
+    SimpleRule("stale_evidence_justified", Category.SATURATION, Severity.WARN, 6.0,
+               _check_stale_evidence_justified, _applies_stale_evidence_justified, _rem_collect),
     SimpleRule("require_decision_readiness", Category.DECISION, Severity.WARN, 6.0,
                _check_decision_readiness, _live),
     SimpleRule("require_panel", Category.SATURATION, Severity.ERROR, 12.0,
@@ -479,6 +500,7 @@ RULE_DOCS: dict[str, str] = {
     "require_structured_reasoning": "Reasons up / down / change-my-mind must all be present.",
     "require_components": "The forecast must decompose into pooled ensemble components.",
     "require_fresh_evidence": "Evidence must be freshly collected for this commit (no stale re-run).",
+    "stale_evidence_justified": "If you acknowledge stale evidence to skip the freshness gate, record a reason.",
     "require_decision_readiness": "The decision card should have no missing fields.",
     "require_panel": "A deliberation panel must run (or record an explicit skip reason).",
     "require_citations": "The forecast should cite evidence / model runs.",

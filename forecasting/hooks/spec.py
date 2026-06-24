@@ -100,6 +100,7 @@ class HookContext:
     fresh_evidence_count: int = 0
     has_fresh_evidence: bool = True  # newer than prior (only meaningful when has_prior)
     acknowledge_stale_evidence: bool = False
+    stale_evidence_acknowledged: bool = False  # acknowledged WITHOUT a stale_evidence_reason
     stale_evidence_count: int = 0
     prior_forecast_id: str | None = None   # for the fresh-evidence message
     prior_as_of: str | None = None

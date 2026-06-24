@@ -775,6 +775,8 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     update_parser.add_argument("--evidence-ref", dest="evidence_refs", action="append", default=[])
     update_parser.add_argument("--stale-evidence-days", type=int, default=30)
     update_parser.add_argument("--ack-stale-evidence", action="store_true")
+    update_parser.add_argument("--stale-evidence-reason", default=None,
+                               help="Why committing on stale evidence is OK (records + clears the stale_evidence_justified WARN).")
     update_parser.add_argument(
         "--require-citations",
         action="store_true",
@@ -3111,6 +3113,10 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
             "pilot_ready": pilot_ready,
             "readiness_gaps": readiness_gaps,
         },
+        # Recent LIVE forecasts that look like a 'one template x N' batch (same method
+        # + reasoning_methods + rationale tail) rather than per-question deliberation.
+        # A heuristic flag for review, never a block — see skills/ledger-interaction.
+        "templated_batches": ledger.detect_templated_batches(),
     }
 
 
@@ -3404,6 +3410,13 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
         f"mean_brier={_format_metric(status['calibration_mean_brier'])}"
     )
     print(f"claim_live_superforecasting: {report['claim_live_superforecasting']}")
+
+    batches = report.get("templated_batches") or []
+    if batches:
+        flagged = sum(b["count"] for b in batches)
+        print(f"templated_batches: {len(batches)} cluster(s), {flagged} live forecasts share a template (review for real per-question reasoning)")
+        for b in batches[:5]:
+            print(f"  - x{b['count']} method={b['method'][:40] or '(none)'!r} e.g. {b['members'][0]['title']!r}")
 
     pilot_gaps = [check for check in pilot_report["checks"] if not check["passed"]]
     if pilot_gaps:
@@ -3944,6 +3957,7 @@ def _cmd_update(args: argparse.Namespace) -> None:
         evidence_refs=args.evidence_refs,
         stale_evidence_days=args.stale_evidence_days,
         acknowledge_stale_evidence=args.ack_stale_evidence,
+        stale_evidence_reason=args.stale_evidence_reason,
         require_citations=args.require_citations,
         model_run_refs=args.model_run_refs,
         forecast_origin=args.forecast_origin,

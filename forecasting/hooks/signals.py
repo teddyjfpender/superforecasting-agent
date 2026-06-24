@@ -176,6 +176,8 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
         panel_skipped=bool(meta.get("panel_skipped_reason")),
         panel_run_count=panel_run_count,
         evidence_count=evidence_count,
+        # acknowledged stale evidence WITHOUT a recorded reason -> WARN on re-read too
+        stale_evidence_acknowledged=bool(meta.get("acknowledge_stale_evidence")) and not bool(meta.get("stale_evidence_reason")),
         has_fresh_evidence=True,  # not a commit; re-run freshness is not assessed here
         reference_class_count=reference_class_count,
         watched_source_count=watched_source_count,
@@ -230,6 +232,7 @@ def build_commit_context(
     panel_skipped_reason: str | None,
     has_fresh_evidence: bool,
     acknowledge_stale_evidence: bool,
+    stale_evidence_reason: str | None = None,
     evidence_count: int,
     prior_forecast_id: str | None,
     prior_as_of: str | None,
@@ -280,6 +283,8 @@ def build_commit_context(
         evidence_count=evidence_count,
         has_fresh_evidence=has_fresh_evidence,
         acknowledge_stale_evidence=acknowledge_stale_evidence,
+        # acknowledged stale evidence but left no reason -> the WARN rule fires
+        stale_evidence_acknowledged=acknowledge_stale_evidence and not (stale_evidence_reason or "").strip(),
         prior_forecast_id=prior_forecast_id,
         prior_as_of=prior_as_of,
         decision_gaps=tuple(decision_gaps or ()),

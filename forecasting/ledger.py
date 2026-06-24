@@ -1739,6 +1739,55 @@ class ForecastLedger:
                 })
         return out
 
+    def detect_templated_batches(
+        self, *, window_days: int = 7, min_cluster: int = 3, limit: int = 500
+    ) -> list[dict[str, Any]]:
+        """Flag clusters of recent LIVE forecasts that share an identical structural
+        skeleton — same method + reasoning_methods + a name-stripped rationale tail.
+        That is the tell of a 'one template x N' batch (a script substituting a name
+        into a fixed shell) rather than N individually-reasoned forecasts. Read-only;
+        a heuristic flag for REVIEW, never a block. See skills/ledger-interaction."""
+        import hashlib
+        import re
+
+        def _skeleton(text: str) -> str:
+            # drop digits + Capitalized tokens (names/places/numbers) so two rationales
+            # that differ ONLY by a substituted name hash identically
+            text = re.sub(r"\d+(?:\.\d+)?", "", text or "")
+            return " ".join(t.lower() for t in re.findall(r"[A-Za-z']+", text) if not t[:1].isupper())
+
+        cutoff_dt = timestamp_to_datetime(utc_now_iso()) - timedelta(days=window_days)
+        clusters: dict[str, dict[str, Any]] = {}
+        scanned = 0
+        for question in self.list_questions(status="active"):
+            if scanned >= limit:
+                break
+            snap = self.get_current_snapshot(question.id)
+            if snap is None or snap.forecast_origin != "live":
+                continue
+            cdt = timestamp_to_datetime(snap.created_at)
+            if cdt is not None and cdt < cutoff_dt:
+                continue
+            scanned += 1
+            meta = snap.metadata or {}
+            methods = tuple(sorted(meta.get("reasoning_methods") or []))
+            method = (snap.method or "").strip().lower()
+            tail = _skeleton((snap.rationale or "")[-200:])
+            if not methods and len(tail.split()) < 6:
+                continue  # too thin to judge templating
+            key = hashlib.sha1(f"{method}|{methods}|{tail}".encode()).hexdigest()[:16]
+            entry = clusters.setdefault(key, {
+                "fingerprint": key, "method": method,
+                "reasoning_methods": list(methods), "members": [],
+            })
+            entry["members"].append({
+                "question_id": question.id, "forecast_id": snap.forecast_id,
+                "title": (question.title or "")[:70],
+            })
+        flagged = [dict(c, count=len(c["members"])) for c in clusters.values() if len(c["members"]) >= int(min_cluster)]
+        flagged.sort(key=lambda c: c["count"], reverse=True)
+        return flagged
+
     def create_snapshot(
         self,
         *,
@@ -1768,6 +1817,7 @@ class ForecastLedger:
         calibration_adjustment: dict[str, Any] | None = None,
         stale_evidence_days: int | None = None,
         acknowledge_stale_evidence: bool = False,
+        stale_evidence_reason: str | None = None,
         require_citations: bool = False,
         metadata: dict[str, Any] | None = None,
         set_current: bool = True,
@@ -1963,6 +2013,17 @@ class ForecastLedger:
                 snapshot_metadata["panel_recommended"] = True
             if panel_skip:
                 snapshot_metadata["panel_skipped_reason"] = panel_skip
+            # Mirror the panel-skip escape hatch for the freshness one: if a live
+            # forecast acknowledges stale evidence, record WHY so the bypass is
+            # explained + auditable (the stale_evidence_justified rule WARNs when
+            # acknowledged without a reason).
+            stale_reason = (stale_evidence_reason or "").strip()
+            if stale_reason:
+                snapshot_metadata["stale_evidence_reason"] = stale_reason
+            if acknowledge_stale_evidence and has_prior:
+                # mark the bypass so a later lint/doctor re-read can surface it even
+                # when no reason was given (the WARN state)
+                snapshot_metadata["acknowledge_stale_evidence"] = True
 
         if require_citations and forecast_origin == "live":
             citation_refs = [
@@ -2174,6 +2235,7 @@ class ForecastLedger:
                         has_components=bool(_ucomp), component_count=(len(_ucomp) if isinstance(_ucomp, (list, dict)) else 0),
                         citation_refs=[*(evidence_refs or []), *(model_run_refs or [])],
                         panel_run_ref=panel_run_ref, panel_skipped_reason=panel_skipped_reason,
+                        stale_evidence_reason=stale_evidence_reason,
                         has_fresh_evidence=True, acknowledge_stale_evidence=acknowledge_stale_evidence,
                         evidence_count=len(evidence_refs or []), prior_forecast_id=None, prior_as_of=None,
                         decision_gaps=question_decision_readiness_issues(question),
@@ -2275,6 +2337,7 @@ class ForecastLedger:
                 reasons_up=reasons_up_list, reasons_down=reasons_down_list, change_my_mind=change_my_mind_list,
                 has_components=_has_comp, component_count=_comp_n, citation_refs=_cite_refs,
                 panel_run_ref=panel_run_ref, panel_skipped_reason=panel_skipped_reason,
+                stale_evidence_reason=stale_evidence_reason,
                 # Freshness is treated as satisfied for the advisory SCORE: when the
                 # fresh-evidence rule is enforced, a stale re-run is blocked by the
                 # gate above and never reaches here; when it is not enforced, the
