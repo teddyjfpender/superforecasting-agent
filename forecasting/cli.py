@@ -2101,7 +2101,11 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     resolver_propose.add_argument("--json", action="store_true")
     resolver_propose.set_defaults(_forecast_handler=_cmd_resolver_propose)
 
-    calibration_parser = forecast_sub.add_parser("calibration", help="Show calibration summary")
+    calibration_parser = forecast_sub.add_parser("calibration", help="Show calibration summary (add `status` for the readiness cockpit)")
+    calibration_parser.add_argument(
+        "mode", nargs="?", choices=["summary", "status"], default="summary",
+        help="`status` = the readiness cockpit (calibration + live track record + readiness gaps + next actions)",
+    )
     calibration_parser.add_argument("--domain")
     calibration_parser.add_argument(
         "--origin",
@@ -2288,7 +2292,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     cycle_run.add_argument("--synthesize-lessons", action="store_true", help="Force lesson synthesis every run")
     cycle_run.set_defaults(_forecast_handler=_cmd_cycle_run)
 
-    watch_parser = forecast_sub.add_parser("watch", help="Manage watched sources for self-check alerts")
+    watch_parser = forecast_sub.add_parser("watch", aliases=["source"], help="Manage watched sources for self-check alerts")
     watch_sub = watch_parser.add_subparsers(dest="watch_command")
     watch_add = watch_sub.add_parser("add", help="Watch a source for a question, domain, topic, or portfolio")
     watch_add.add_argument("source")
@@ -9146,7 +9150,27 @@ def _cmd_track_record(args: argparse.Namespace) -> None:
     )
 
 
+def _print_calibration_cockpit(args: argparse.Namespace) -> None:
+    """The `forecast calibration status` cockpit: makes claim_live_superforecasting
+    ACTIONABLE in one view — the live track record + readiness requirements (passed
+    AND failing) + the concrete next actions/commands to close each gap."""
+    ledger = _ledger(args)
+    _rows, summaries = _recent_backtest_summaries(ledger, last=20, dataset=None)
+    evidence_status = build_forecasting_evidence_status(ledger, summaries)
+    verdict = evidence_status.get("verdict")
+    print("=== calibration / readiness cockpit ===")
+    print(f"claim_live_superforecasting: {'SUPPORTED' if verdict == 'pass' else 'NOT YET — see gaps below'}")
+    _print_evidence_status(evidence_status, include_passed=True)
+    if not evidence_status.get("gaps"):
+        print("\nAll readiness requirements met.")
+    else:
+        print("\nClose the next_actions above; `forecast readiness` shows the full backtest breakdown.")
+
+
 def _cmd_calibration(args: argparse.Namespace) -> None:
+    if getattr(args, "mode", "summary") == "status":
+        _print_calibration_cockpit(args)
+        return
     if getattr(args, "bias", False):
         _print_calibration_bias(args)
         return
