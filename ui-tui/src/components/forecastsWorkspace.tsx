@@ -1694,6 +1694,18 @@ export function ForecastDetail({
         </>
       ) : null}
 
+      {item.relevant_lessons?.length ? (
+        <>
+          <SectionTitle t={t}>active lessons (structuring this forecast)</SectionTitle>
+          {item.relevant_lessons.slice(0, 5).map((lesson, i) => (
+            <Text key={lesson.id ?? i} wrap="truncate-end">
+              <Text color={t.color.label}>{truncate(lesson.scope_ref || lesson.scope_type || 'lesson', 24)} </Text>
+              <Text color={t.color.text}>{truncate(lesson.lesson || '—', 64)}</Text>
+            </Text>
+          ))}
+        </>
+      ) : null}
+
       <DecisionCard item={item} t={t} />
 
       {item.scores || item.resolution ? (

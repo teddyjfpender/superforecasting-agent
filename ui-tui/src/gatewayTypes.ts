@@ -999,9 +999,11 @@ export interface ForecastWorkspaceItem {
   history?: ForecastWorkspaceHistoryPoint[]
   id?: string
   impact?: null | string
+  lessons_count?: number
   method?: null | string
   open_alert_count?: number
   outcome_choices?: unknown[]
+  relevant_lessons?: ForecastDashboardLesson[]
   outcome_type?: string
   panel?: ForecastWorkspacePanel | null
   probability?: null | number | Record<string, unknown> | string
