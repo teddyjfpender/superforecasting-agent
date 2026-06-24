@@ -56,6 +56,40 @@ def test_build_agent_explicit_kwarg_wins_over_runtime(monkeypatch):
     assert captured["api_key"] == "explicit-key"  # caller override beats the mapped runtime value
 
 
+def test_tenant_runtime_set_get_clear_isolated():
+    import agent.tenant_runtime as tr
+
+    assert tr.get_credential_context() is None  # unset = process-global default
+    token = tr.set_tenant_runtime(credential={"provider": "anthropic", "api_key": "k"}, toggles={"VOICE": "1"})
+    try:
+        assert tr.get_credential_context() == {"provider": "anthropic", "api_key": "k"}
+        assert tr.get_toggle("VOICE") == "1"
+        assert tr.get_toggle("MODEL", "fallback") == "fallback"
+    finally:
+        tr.clear_tenant_runtime(token)
+    assert tr.get_credential_context() is None and tr.get_toggle("VOICE") is None
+
+
+def test_build_agent_reads_tenant_runtime_credential(monkeypatch):
+    import agent.tenant_runtime as tr
+
+    captured = _fake_agent(monkeypatch)
+    calls = {}
+
+    def _fake_resolve(*, requested=None, explicit_api_key=None, explicit_base_url=None, target_model=None):
+        calls.update(requested=requested, explicit_api_key=explicit_api_key)
+        return {"provider": requested, "api_key": "resolved", "base_url": "b", "api_mode": "messages"}
+
+    monkeypatch.setattr("hermes_cli.runtime_provider.resolve_runtime_provider", _fake_resolve)
+    token = tr.set_tenant_runtime(credential={"provider": "anthropic", "api_key": "tenant-A-key"})
+    try:
+        af.build_agent(model="m")  # no explicit credential_context -> reads the contextvar
+    finally:
+        tr.clear_tenant_runtime(token)
+    assert calls["explicit_api_key"] == "tenant-A-key" and calls["requested"] == "anthropic"
+    assert captured["api_key"] == "resolved"
+
+
 def test_build_agent_resolves_when_runtime_none(monkeypatch):
     captured = _fake_agent(monkeypatch)
     calls = {}

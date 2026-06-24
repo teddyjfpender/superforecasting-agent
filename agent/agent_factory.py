@@ -82,6 +82,12 @@ def build_agent(
     only fills what the caller didn't specify — behaviour-identical to the hand-written
     sites it replaces.
     """
+    if credential_context is None:
+        # fall back to the per-tenant contextvar so a multi-tenant host's secrets
+        # resolve per session without an explicit hand-off (zero effect when unset).
+        from agent.tenant_runtime import get_credential_context
+
+        credential_context = get_credential_context()
     mapped = resolve_and_map_runtime(
         runtime,
         requested_provider=requested_provider,
