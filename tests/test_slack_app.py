@@ -90,3 +90,52 @@ def test_install_rejects_missing_token(tmp_path):
 
     out = asyncio.run(sa.install_from_oauth_code("c", "s", "x", path=tmp_path / "t.json", exchange=_no_token))
     assert out["ok"] is False and out["error"] == "missing_token_or_team"
+
+
+class _FakeReq:
+    def __init__(self, body: bytes, headers: dict, query: dict | None = None):
+        self._body = body
+        self.headers = headers
+        self.query = query or {}
+
+    async def read(self) -> bytes:
+        return self._body
+
+
+def _signed_req(secret: str, payload: dict) -> _FakeReq:
+    body = json.dumps(payload).encode()
+    ts = str(int(time.time()))
+    return _FakeReq(body, {"X-Slack-Request-Timestamp": ts, "X-Slack-Signature": _sign(secret, ts, body.decode())})
+
+
+def test_events_handler_rejects_bad_signature():
+    req = _FakeReq(b'{"type":"event_callback"}', {"X-Slack-Request-Timestamp": str(int(time.time())), "X-Slack-Signature": "v0=forged"})
+    resp = asyncio.run(sa.handle_events_request(req, signing_secret="shh"))
+    assert resp.status == 401
+
+
+def test_events_handler_answers_url_verification():
+    resp = asyncio.run(sa.handle_events_request(_signed_req("shh", {"type": "url_verification", "challenge": "cZ"}), signing_secret="shh"))
+    assert resp.status == 200 and "cZ" in resp.text
+
+
+def test_events_handler_dispatches_event_callback():
+    seen: list = []
+    resp = asyncio.run(
+        sa.handle_events_request(
+            _signed_req("shh", {"type": "event_callback", "event": {"type": "message", "text": "hi"}}),
+            signing_secret="shh", on_event=lambda p: seen.append(p),
+        )
+    )
+    assert resp.status == 200
+    assert seen and seen[0]["type"] == "event_callback"
+
+
+def test_events_handler_never_fails_ack_on_dispatch_error():
+    def _boom(_payload):
+        raise RuntimeError("dispatch blew up")
+
+    resp = asyncio.run(
+        sa.handle_events_request(_signed_req("shh", {"type": "event_callback", "event": {}}), signing_secret="shh", on_event=_boom)
+    )
+    assert resp.status == 200  # Slack still gets its ack (else it retries forever)

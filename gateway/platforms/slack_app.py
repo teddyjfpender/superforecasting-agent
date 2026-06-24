@@ -137,3 +137,60 @@ async def install_from_oauth_code(
         return {"ok": False, "error": "missing_token_or_team"}
     write_slack_token(team_id, token, team_name=team_name, path=path)
     return {"ok": True, "team_id": team_id, "team_name": team_name}
+
+
+# ── HTTP Events API transport (aiohttp) ───────────────────────────────────────
+
+async def handle_events_request(request, *, signing_secret, on_event=None):
+    """aiohttp handler for ``POST /slack/events``: verify the signature, answer the
+    url_verification challenge, hand an ``event_callback`` to ``on_event(payload)``,
+    and ack within Slack's 3s budget. A bad/absent signature -> 401 (fail closed)."""
+    from aiohttp import web
+
+    body = await request.read()
+    ts = request.headers.get("X-Slack-Request-Timestamp")
+    sig = request.headers.get("X-Slack-Signature")
+    if not verify_slack_signature(signing_secret, ts, body, sig):
+        return web.Response(status=401, text="invalid signature")
+    payload = parse_event_request(body)
+    challenge = url_verification_challenge(payload)
+    if challenge is not None:
+        return web.json_response({"challenge": challenge})
+    if payload.get("type") == "event_callback" and on_event is not None:
+        try:
+            maybe = on_event(payload)
+            if hasattr(maybe, "__await__"):
+                await maybe
+        except Exception:
+            pass  # never fail the ack on a dispatch error — Slack will retry otherwise
+    return web.Response(status=200, text="")
+
+
+async def handle_oauth_request(request, *, client_id, client_secret, redirect_uri=None):
+    """aiohttp handler for ``GET /slack/oauth/redirect``: exchange the code + persist the
+    workspace token (the install writer)."""
+    from aiohttp import web
+
+    code = request.query.get("code")
+    if not code:
+        return web.Response(status=400, text="missing 'code'")
+    result = await install_from_oauth_code(client_id, client_secret, code, redirect_uri)
+    if result.get("ok"):
+        return web.Response(status=200, text=f"Installed to {result.get('team_name')}. You can close this tab.")
+    return web.Response(status=400, text=f"install failed: {result.get('error')}")
+
+
+def register_slack_routes(app, *, signing_secret, client_id=None, client_secret=None, redirect_uri=None, on_event=None):
+    """Register the Slack HTTP routes on an existing aiohttp ``web.Application``:
+    ``POST /slack/events`` always; ``GET /slack/oauth/redirect`` when OAuth creds are
+    provided. Call this from the gateway HTTP server startup when SLACK_SIGNING_SECRET
+    is configured (Socket Mode and HTTP can coexist)."""
+    async def _events(request):
+        return await handle_events_request(request, signing_secret=signing_secret, on_event=on_event)
+
+    app.router.add_post("/slack/events", _events)
+    if client_id and client_secret:
+        async def _oauth(request):
+            return await handle_oauth_request(request, client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri)
+
+        app.router.add_get("/slack/oauth/redirect", _oauth)
