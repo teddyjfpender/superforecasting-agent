@@ -1516,6 +1516,58 @@ class ForecastLedger:
             question = self.get_question(question)
         return question_decision_readiness_issues(question)
 
+    def _audit_unapplied_lessons(
+        self,
+        question: Any,
+        committed_payload: Any,
+        calibration_adjustment: dict[str, Any] | None,
+    ) -> int:
+        """Count active in-scope NUMERIC calibration lessons the committed forecast
+        did NOT actually apply.
+
+        "Applied" means the committed number net-MOVED from the recorded pre-lesson
+        raw payload (the trusted marker ``apply_active_lesson_adjustments`` writes) —
+        NOT that a lesson ref was stapled on. So citation-stapling no longer satisfies
+        the gate, and an in-scope lesson the agent simply ignored is counted as
+        unapplied. Prose lessons (no numeric key) are not counted here; they are
+        enforced as compiled rules in a later slice. Best-effort: any failure returns
+        0 so the audit can never break a commit."""
+        try:
+            from forecasting.learning import active_lessons_for_question
+
+            active = active_lessons_for_question(self, question)
+        except Exception:
+            return 0
+        if not active:
+            return 0
+        adjustment = calibration_adjustment or {}
+        applied_ids = {
+            item.get("id")
+            for item in (adjustment.get("applied_active_lessons") or [])
+            if isinstance(item, dict)
+        }
+        raw = adjustment.get("raw_probability")
+        committed = (
+            committed_payload
+            if isinstance(committed_payload, (int, float)) and not isinstance(committed_payload, bool)
+            else None
+        )
+        unapplied = 0
+        for lesson in active:
+            recommended = lesson.get("recommended_adjustment") or {}
+            is_numeric = any(k in recommended for k in ("probability_delta", "logit_shift", "logit_scale"))
+            if not is_numeric:
+                continue
+            net_moved = (
+                lesson["id"] in applied_ids
+                and isinstance(raw, (int, float))
+                and committed is not None
+                and abs(committed - float(raw)) > 1e-9
+            )
+            if not net_moved:
+                unapplied += 1
+        return unapplied
+
     def create_snapshot(
         self,
         *,
@@ -1890,6 +1942,18 @@ class ForecastLedger:
                         action="fix_distribution", category=_HookCategory.OUTPUT, weight=12.0,
                     )
 
+        # Lesson-application audit (revives the previously-dead lessons_applied
+        # signal): count active in-scope NUMERIC lessons the committed forecast did
+        # not actually apply (net-movement, not citation-stapling). Fed into BOTH the
+        # user-rule context and the observe-mode score below so the gate can finally
+        # see a non-zero value. Best-effort.
+        try:
+            _active_unapplied = self._audit_unapplied_lessons(
+                question, probability_or_distribution, calibration_adjustment
+            )
+        except Exception:
+            _active_unapplied = 0
+
         # User-defined rule enforcement (Phase 5). Only runs when the desk has
         # authored custom rules (zero overhead otherwise). A buggy rule engine must
         # never brick a commit (fail-OPEN on evaluation errors), but a legitimately
@@ -1968,6 +2032,7 @@ class ForecastLedger:
                         sharpness=_ush,
                         calibration_under_confident=_uuc,
                         tail_null_excess=float(((_utd.get("null_model") or {}).get("excess_tail")) or 0.0),
+                        active_lessons_unapplied=_active_unapplied,
                     )
                     _upolicy = resolve_severities(question, forecast_origin=forecast_origin, hooks_config=_hcfg)
                     _ureport = run_hooks(_ctx, _upolicy, rules=tuple(_user_rules))
@@ -2044,6 +2109,7 @@ class ForecastLedger:
                 interval_width_ratio=(_oda.width_ratio if _oda else None),
                 sharpness=_osharp,
                 panel_run_count=len(self.list_panel_runs(question_id)),
+                active_lessons_unapplied=_active_unapplied,
             )
             _hook_policy = policy_from_require_flags(
                 forecast_origin=forecast_origin,
