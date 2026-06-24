@@ -131,6 +131,7 @@ def register_builtin_extensions() -> None:
         ("polymarket", "market", "Read Polymarket Gamma probabilities as baseline comparisons."),
         ("kalshi", "market", "Read Kalshi market probabilities as baseline comparisons."),
         ("manual-resolution", "resolver", "Manual user-confirmed resolution source."),
+        ("metric-threshold", "resolver", "Propose YES/NO by comparing an ingested source metric to a threshold."),
         ("base-rate", "model", "Reference-class base-rate model family."),
         ("bayesian-update", "model", "Binary Bayesian prior/likelihood update helper."),
         ("weighted-ensemble", "model", "Weighted component ensemble model family."),

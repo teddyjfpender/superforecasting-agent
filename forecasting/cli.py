@@ -2089,6 +2089,17 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     resolver_list.add_argument("--scope-type")
     resolver_list.add_argument("--enabled", action="store_true")
     resolver_list.set_defaults(_forecast_handler=_cmd_resolver_list)
+    resolver_rule = resolver_sub.add_parser("rule", help="Attach a metric-threshold resolution rule (propose from an ingested source metric)")
+    resolver_rule.add_argument("question", help="row number, id, or search words for the question")
+    resolver_rule.add_argument("--field", required=True, help="parsed source field to read (e.g. segment_revenue)")
+    resolver_rule.add_argument("--comparator", required=True, choices=[">=", ">", "<=", "<", "==", "!="])
+    resolver_rule.add_argument("--threshold", required=True, type=float)
+    resolver_rule.add_argument("--source-role", default="resolver", choices=sorted(WATCH_SOURCE_ROLES))
+    resolver_rule.set_defaults(_forecast_handler=_cmd_resolver_rule)
+    resolver_propose = resolver_sub.add_parser("propose", help="Propose a resolution from the latest ingested source value (no commit)")
+    resolver_propose.add_argument("question", help="row number, id, or search words for the question")
+    resolver_propose.add_argument("--json", action="store_true")
+    resolver_propose.set_defaults(_forecast_handler=_cmd_resolver_propose)
 
     calibration_parser = forecast_sub.add_parser("calibration", help="Show calibration summary")
     calibration_parser.add_argument("--domain")
@@ -8926,6 +8937,36 @@ def _cmd_resolver_list(args: argparse.Namespace) -> None:
     for policy in policies:
         scope = f"{policy['scope_type']}:{policy['scope_ref'] or '*'}"
         print(f"{policy['id']:<15} {policy['resolver_plugin']:<22} {scope:<17} {policy['enabled']}")
+
+
+def _cmd_resolver_rule(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    qid = _resolve_question_id(ledger, args.question)
+    rule = ledger.set_resolution_rule(
+        qid, field=args.field, comparator=args.comparator,
+        threshold=args.threshold, source_role=args.source_role,
+    )
+    print(f"resolution rule on {qid}:")
+    print(f"  propose YES when [{args.source_role}] {rule['field']} {rule['comparator']} {rule['threshold']}")
+    print("  run `forecast resolver propose` once the source reports the value.")
+
+
+def _cmd_resolver_propose(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    qid = _resolve_question_id(ledger, args.question)
+    proposal = ledger.propose_resolution(qid)
+    if getattr(args, "json", False):
+        print(json.dumps(proposal, indent=2))
+        return
+    if proposal is None:
+        print("No resolution rule on this question. Attach one with `forecast resolver rule`.")
+        return
+    if not proposal["determinable"]:
+        print(f"undetermined: {proposal['rationale']} (NOT resolving — nothing fabricated)")
+        return
+    print(f"PROPOSED resolution: {proposal['outcome'].upper()}")
+    print(f"  {proposal['rationale']}")
+    print(f"  confirm with: forecast resolve {qid} --outcome {proposal['outcome']}")
 
 
 def _cmd_lesson_synthesize(args: argparse.Namespace) -> None:

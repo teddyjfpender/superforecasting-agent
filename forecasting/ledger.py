@@ -7098,6 +7098,80 @@ class ForecastLedger:
             ).fetchall()
         return [self._row_to_source_snapshot(row) for row in rows]
 
+    # ── resolver framework (propose-only; never auto-commits) ─────────────────
+    def set_resolution_rule(
+        self,
+        question_id: str,
+        *,
+        field: str,
+        comparator: str,
+        threshold: float,
+        resolver: str = "metric_threshold",
+        source_role: str = "resolver",
+    ) -> dict[str, Any]:
+        """Attach a structured resolution rule so the desk can PROPOSE a resolution
+        from ingested source data instead of resolving by hand (feedback #9). The
+        rule is the generic shape behind the earnings/benchmark/infrastructure
+        resolvers: read ``field`` from a watched source in role ``source_role`` and
+        compare it to ``threshold``. Validated up front so a bad rule is refused."""
+        from forecasting.resolvers import RESOLVER_TYPES, validate_metric_threshold_rule
+
+        question = self.get_question(question_id)
+        if resolver not in RESOLVER_TYPES:
+            raise ValidationError("resolver must be one of: " + ", ".join(sorted(RESOLVER_TYPES)))
+        if source_role not in WATCH_SOURCE_ROLES:
+            raise ValidationError("source_role must be one of: " + ", ".join(sorted(WATCH_SOURCE_ROLES)))
+        rule = {
+            "resolver": resolver,
+            "field": str(field).strip(),
+            "comparator": comparator,
+            "threshold": float(threshold),
+            "source_role": source_role,
+        }
+        issues = validate_metric_threshold_rule(rule)
+        if issues:
+            raise ValidationError("; ".join(issues))
+        meta = dict(question.metadata) if isinstance(question.metadata, dict) else {}
+        meta["resolution_rule"] = rule
+        with self._connect() as conn:
+            conn.execute("UPDATE forecast_questions SET metadata = ? WHERE id = ?", (json_dumps(meta), question_id))
+        return rule
+
+    def propose_resolution(self, question_id: str) -> dict[str, Any] | None:
+        """Run the question's resolution rule against the latest ingested source
+        value and return a PROPOSED resolution (never committed — the user confirms
+        with ``forecast resolve``). None when the question has no rule. An
+        undetermined proposal (no observed value yet) is returned, never fabricated."""
+        from forecasting.resolvers import propose_metric_threshold
+
+        question = self.get_question(question_id)
+        meta = question.metadata if isinstance(question.metadata, dict) else {}
+        rule = meta.get("resolution_rule")
+        if not isinstance(rule, dict):
+            return None
+        if rule.get("resolver") != "metric_threshold":
+            return None
+        field = str(rule.get("field") or "")
+        source_role = rule.get("source_role") or "resolver"
+        observed: float | None = None
+        source_ref: str | None = None
+        watched = self.list_watched_sources(scope_type="question", scope_ref=question_id, status=None)
+        for source in watched:
+            if source.get("role") != source_role:
+                continue
+            snaps = self.list_source_snapshots(watched_source_id=source["id"], limit=1)
+            if not snaps:
+                continue
+            parsed = snaps[0].get("parsed_values") or {}
+            value = parsed.get(field)
+            if isinstance(value, (int, float)):
+                observed = float(value)
+                source_ref = source["id"]
+                break
+        return propose_metric_threshold(
+            question_id=question_id, rule=rule, observed_value=observed, source_ref=source_ref,
+        ).to_dict()
+
     def autopilot_readiness(
         self,
         question_id: str,
