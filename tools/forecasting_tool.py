@@ -735,6 +735,7 @@ FORECAST_LEDGER_SCHEMA = {
             "stale_evidence_reason": {"type": "string", "description": "If ack_stale_evidence is set, WHY nothing material changed since the prior forecast. Recorded + clears the stale_evidence_justified WARN; otherwise the bypass is flagged."},
             "window_days": {"type": "integer", "description": "detect_templated_batches: look-back window (default 7)."},
             "min_cluster": {"type": "integer", "description": "detect_templated_batches: min forecasts sharing a template to flag a cluster (default 3)."},
+            "run_safe_benchmarks": {"type": "boolean", "description": "evidence_readiness: first run the OFFLINE builtin benchmark suite (no network / no paid LLM) to advance readiness, then evaluate."},
             "require_citations": {"type": "boolean"},
             "evidence_cutoff": {"type": "string"},
             "backtest_run_id": {"type": "string"},
@@ -1564,12 +1565,24 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             return tool_result(success=True, backtest_performance=report)
 
         if action == "evidence_readiness":
+            benchmarks_ran = None
+            if bool(args.get("run_safe_benchmarks")):
+                # Advance readiness OFFLINE — run the builtin benchmark suite (no
+                # network / no paid LLM) before evaluating. Deferred import (cli is a
+                # heavy module + the call-time import sidesteps any cycle).
+                from forecasting.cli import _run_safe_benchmarks
+
+                source = args.get("probability_source") or "forecast-engine"
+                if source not in ("forecast-engine", "naive", "baseline-ensemble"):
+                    return tool_result(success=False, error="run_safe_benchmarks is OFFLINE only (forecast-engine / naive / baseline-ensemble); agent-protocol needs an LLM runner.")
+                benchmarks_ran = _run_safe_benchmarks(ledger, source)
             rows, summaries, evidence_status, _last = _forecast_readiness_payload(ledger, args)
             return tool_result(
                 success=True,
                 evidence_status=evidence_status,
                 backtest_summaries=summaries,
                 inspected_backtest_run_ids=[row["id"] for row in rows],
+                benchmarks_ran=benchmarks_ran,
             )
 
         if action == "doctor_report":

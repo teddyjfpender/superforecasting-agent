@@ -2721,6 +2721,22 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         action="store_true",
         help="Exit nonzero when readiness requirements still have gaps",
     )
+    readiness_parser.add_argument(
+        "--run-safe-benchmarks",
+        action="store_true",
+        help="First run the OFFLINE builtin benchmark suite (no network / no paid LLM), then re-evaluate readiness and report the gaps that closed",
+    )
+    readiness_parser.add_argument(
+        "--probability-source",
+        choices=["forecast-engine", "naive", "baseline-ensemble"],
+        default="forecast-engine",
+        help="Generated probability source for --run-safe-benchmarks (default forecast-engine; agent-protocol is not safe/offline)",
+    )
+    readiness_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="With --run-safe-benchmarks: list the benchmarks that would run, without running them",
+    )
     readiness_parser.add_argument("--json", action="store_true", help="Emit machine-readable readiness JSON")
     readiness_parser.set_defaults(_forecast_handler=_cmd_readiness)
 
@@ -11091,21 +11107,73 @@ def _print_live_performance_report(report: dict[str, Any]) -> None:
         print(f"  live claim {claim.get('verdict')}: {claim.get('message')}")
 
 
+def _run_safe_benchmarks(ledger: ForecastLedger, probability_source: str) -> dict[str, Any]:
+    """Run the OFFLINE builtin benchmark suite (no network / no paid LLM) via a
+    deterministic generated probability source, persisting one backtest run per
+    dataset so readiness evidence can advance unattended. Both external families
+    (manifold + kalshi) are in the builtin set, so the external-families gap can
+    close; the positive-edge gap is data-dependent (reported, not guaranteed)."""
+    runs = cases = scored = 0
+    results: list[dict[str, Any]] = []
+    for row in list_builtin_benchmarks():
+        dataset = f"builtin:{row['name']}"
+        prepared = _apply_backtest_probability_source(
+            _load_backtest_cases(dataset, ledger=ledger), probability_source,
+        )
+        run = ledger.run_backtest_dataset(dataset=dataset, cases=prepared)
+        summary = run["result_summary"]
+        runs += 1
+        cases += int(summary.get("case_count", 0) or 0)
+        scored += int(summary.get("scored_cases", 0) or 0)
+        results.append({
+            "dataset": dataset, "run_id": run["id"],
+            "case_count": summary.get("case_count"), "scored_cases": summary.get("scored_cases"),
+            "agent_mean_brier": summary.get("agent_mean_brier"), "leakage_checks_passed": run["leakage_checks_passed"],
+        })
+    return {"runs": runs, "cases": cases, "scored": scored, "results": results}
+
+
 def _cmd_readiness(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
-    rows, summaries = _recent_backtest_summaries(
-        ledger,
-        last=args.last,
-        dataset=getattr(args, "dataset", None),
-    )
-    evidence_status = build_forecasting_evidence_status(
-        ledger,
-        summaries,
-        min_live_scores=max(args.min_live_scores, 0),
-        min_agent_protocol_cases=max(args.min_agent_protocol_cases, 0),
-        min_external_source_families=max(args.min_external_source_families, 0),
-    )
+
+    def _status() -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+        rows, summaries = _recent_backtest_summaries(ledger, last=args.last, dataset=getattr(args, "dataset", None))
+        status = build_forecasting_evidence_status(
+            ledger, summaries,
+            min_live_scores=max(args.min_live_scores, 0),
+            min_agent_protocol_cases=max(args.min_agent_protocol_cases, 0),
+            min_external_source_families=max(args.min_external_source_families, 0),
+        )
+        return rows, summaries, status
+
+    improve_report: dict[str, Any] | None = None
+    if getattr(args, "run_safe_benchmarks", False):
+        source = getattr(args, "probability_source", "forecast-engine")
+        if source not in ("forecast-engine", "naive", "baseline-ensemble"):
+            raise SystemExit(
+                "--run-safe-benchmarks runs OFFLINE only (forecast-engine / naive / baseline-ensemble); "
+                "agent-protocol needs an LLM runner — use `forecast backtest --all-benchmarks "
+                "--probability-source agent-protocol`."
+            )
+        planned = [f"builtin:{row['name']}" for row in list_builtin_benchmarks()]
+        if getattr(args, "dry_run", False):
+            if args.json:
+                print(json.dumps({"dry_run": True, "probability_source": source, "would_run": planned}, indent=2, sort_keys=True))
+            else:
+                print(f"dry-run: would run {len(planned)} safe benchmark(s) via {source}:")
+                for name in planned:
+                    print(f"  - {name}")
+            return
+        pre_gaps = set(_status()[2].get("gaps") or [])
+        ran = _run_safe_benchmarks(ledger, source)
+        improve_report = {"probability_source": source, "pre_gaps": sorted(pre_gaps), **ran}
+
+    rows, summaries, evidence_status = _status()
     evidence_gaps = bool(evidence_status.get("gaps"))
+    if improve_report is not None:
+        post_gaps = set(evidence_status.get("gaps") or [])
+        improve_report["closed_gaps"] = sorted(set(improve_report["pre_gaps"]) - post_gaps)
+        improve_report["remaining_gaps"] = sorted(post_gaps)
 
     if args.json:
         print(
@@ -11116,6 +11184,7 @@ def _cmd_readiness(args: argparse.Namespace) -> None:
                     "run_count": len(summaries),
                     "inspected_backtest_run_ids": [row["id"] for row in rows],
                     "evidence_status": evidence_status,
+                    "benchmarks_improve": improve_report,
                 },
                 indent=2,
                 sort_keys=True,
@@ -11124,6 +11193,16 @@ def _cmd_readiness(args: argparse.Namespace) -> None:
         if args.require_evidence and evidence_gaps:
             raise SystemExit(1)
         return
+
+    if improve_report is not None:
+        print(
+            f"ran {improve_report['runs']} safe benchmark(s) via {improve_report['probability_source']}: "
+            f"cases={improve_report['cases']} scored={improve_report['scored']}"
+        )
+        for r in improve_report["results"]:
+            print(f"  {r['dataset']} run={r['run_id']} cases={r['case_count']} agent_mean_brier={_format_metric(r['agent_mean_brier'])} leakage={r['leakage_checks_passed']}")
+        closed = improve_report["closed_gaps"]
+        print(f"closed_gaps: {', '.join(closed) if closed else 'none'}")
 
     print(f"readiness {evidence_status.get('verdict')}: {evidence_status.get('message')}")
     print(f"claim_live_superforecasting: {evidence_status.get('can_claim_live_superforecasting')}")
