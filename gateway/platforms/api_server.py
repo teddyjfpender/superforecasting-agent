@@ -3432,6 +3432,27 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_post("/v1/responses", self._handle_responses)
             self._app.router.add_get("/v1/responses/{response_id}", self._handle_get_response)
             self._app.router.add_delete("/v1/responses/{response_id}", self._handle_delete_response)
+            # Slack HTTP Events + OAuth install — additive, gated on a signing secret,
+            # and coexists with Socket Mode. The endpoint verifies signatures, answers
+            # the url_verification handshake, and completes the OAuth install (writes
+            # slack_tokens.json). on_event is None for now: routing HTTP-delivered events
+            # into the agent turn loop is the bolt-adapter follow-on.
+            _slack_signing = os.getenv("SLACK_SIGNING_SECRET")
+            if _slack_signing:
+                try:
+                    from gateway.platforms.slack_app import register_slack_routes
+
+                    register_slack_routes(
+                        self._app,
+                        signing_secret=_slack_signing,
+                        client_id=os.getenv("SLACK_CLIENT_ID"),
+                        client_secret=os.getenv("SLACK_CLIENT_SECRET"),
+                        redirect_uri=os.getenv("SLACK_OAUTH_REDIRECT_URI"),
+                        on_event=None,
+                    )
+                    logger.info("[api_server] Slack HTTP routes registered (/slack/events, /slack/oauth/redirect)")
+                except Exception as exc:  # never block server startup on the optional Slack wiring
+                    logger.warning("[api_server] Slack route registration failed: %s", exc)
             # Cron jobs management API
             self._app.router.add_get("/api/jobs", self._handle_list_jobs)
             self._app.router.add_post("/api/jobs", self._handle_create_job)
