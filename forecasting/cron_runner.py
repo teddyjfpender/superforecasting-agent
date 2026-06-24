@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import os
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from forecasting.learning import is_learning_review_reason
 from forecasting.ledger import ForecastLedger
@@ -25,6 +27,7 @@ def run_due_reviews(
     obsidian_sync: bool = False,
     reconcile_alerts: bool = True,
     propose_resolutions: bool = True,
+    reforecast_runner: Callable[[list[str]], list[dict[str, Any]]] | None = None,
 ) -> str:
     """Run due forecast schedule rows and return a concise alert report.
 
@@ -78,6 +81,42 @@ def run_due_reviews(
             lines.append(f"- {alert.severity} {alert.scope_ref}: {alert.reason}")
             lines.append(f"  action: {alert.recommended_action}")
         sections.append("\n".join(lines) + "\n")
+
+    # Autonomous reforecast pass (opt-in via `cycle run --agent`): drive an LLM update
+    # over the questions this sweep flagged, BEFORE thesis aggregation + lesson
+    # synthesis so those phases reflect the fresh snapshots. The runner is INJECTED by
+    # the CLI layer — cron_runner/ledger never import run_agent (layer purity). It
+    # validates + gates each question itself and returns per-question result dicts.
+    if reforecast_runner is not None:
+        due_ids: list[str] = []
+        seen: set[str] = set()
+        for alert in alert_rows:
+            qid = getattr(alert, "scope_ref", None)
+            reason = getattr(alert, "reason", "") or ""
+            if not qid or qid in seen:
+                continue
+            if reason.startswith(("score_created:", "postmortem_created:")) or is_learning_review_reason(reason):
+                continue  # bookkeeping events, not reforecast triggers
+            seen.add(qid)
+            due_ids.append(qid)
+        if due_ids:
+            try:
+                ref_results = reforecast_runner(due_ids)
+            except Exception as exc:  # never break the sweep on the reforecast pass
+                sections.append(f"Autonomous reforecast\nERROR: {exc}\n")
+                ref_results = []
+            if ref_results:
+                by_status: dict[str, int] = {}
+                for r in ref_results:
+                    by_status[r.get("status", "?")] = by_status.get(r.get("status", "?"), 0) + 1
+                lines = [
+                    "Autonomous reforecast",
+                    "reforecast " + str(len(ref_results)) + ": " + ", ".join(f"{k} {v}" for k, v in sorted(by_status.items())),
+                    "",
+                ]
+                for r in ref_results:
+                    lines.append(f"- {r.get('status')} {r.get('question_id')}: {r.get('detail', '')}")
+                sections.append("\n".join(lines) + "\n")
 
     # Trailing thesis-aggregation phase: theses (+ their entity suitabilities)
     # re-aggregate after the member review sweep.

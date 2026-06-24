@@ -2303,6 +2303,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     cycle_run.add_argument("--no-reconcile", action="store_true", help="Skip alert reconciliation")
     cycle_run.add_argument("--no-synthesize-lessons", action="store_true", help="Never synthesize lessons this run")
     cycle_run.add_argument("--synthesize-lessons", action="store_true", help="Force lesson synthesis every run")
+    cycle_run.add_argument("--agent", action="store_true", help="Autonomously re-forecast the questions this sweep flags via the LLM update stage (runs before thesis + lesson phases so they see fresh snapshots)")
+    cycle_run.add_argument("--model", help="--agent: model id for the reforecast agent")
+    cycle_run.add_argument("--provider", help="--agent: provider for the reforecast agent")
+    cycle_run.add_argument("--max-iterations", type=int, default=12, help="--agent: max agent iterations per question")
+    cycle_run.add_argument("--max-questions", type=int, default=None, help="--agent: cap how many questions to reforecast in one sweep")
+    cycle_run.add_argument("--force", action="store_true", help="--agent: reforecast even when the pipeline update stage is gated")
     cycle_run.set_defaults(_forecast_handler=_cmd_cycle_run)
 
     watch_parser = forecast_sub.add_parser("watch", aliases=["source"], help="Manage watched sources for self-check alerts")
@@ -8189,10 +8195,38 @@ def _cmd_pipeline(args: argparse.Namespace) -> None:
         )
 
 
+def _run_update_agent(
+    ledger: ForecastLedger,
+    question_id: str,
+    *,
+    model: str | None,
+    provider: str | None,
+    max_iterations: int,
+    stage: str = "update",
+) -> dict[str, Any]:
+    """Run the LLM agent for one question's pipeline stage and RETURN the structured
+    result (no printing). The agent commits through the forecasting tool, whose commit
+    hook writes the analyst brief — so the loop closes. Shared by `forecast agent`,
+    `refresh --agent`, and the autonomous `cycle run --agent` sweep (run_agent is
+    imported lazily here so the ledger/cron layers never depend on it)."""
+    messages = build_protocol_messages(ledger, question_id, stage=stage)
+    enabled_toolsets = _toolsets_for_stage(stage)
+    from run_agent import AIAgent
+
+    agent = AIAgent(
+        model=model or "",
+        provider=provider,
+        max_iterations=max_iterations,
+        enabled_toolsets=enabled_toolsets,
+        platform="cli",
+    )
+    return agent.run_conversation(messages[1].content, system_message=messages[0].content)
+
+
 def _cmd_agent(args: argparse.Namespace) -> None:
-    messages = build_protocol_messages(_ledger(args), args.id, stage=args.stage)
-    enabled_toolsets = _toolsets_for_stage(args.stage)
     if args.dry_run:
+        messages = build_protocol_messages(_ledger(args), args.id, stage=args.stage)
+        enabled_toolsets = _toolsets_for_stage(args.stage)
         print(f"enabled_toolsets: {', '.join(enabled_toolsets)}")
         print()
         for message in messages:
@@ -8200,18 +8234,9 @@ def _cmd_agent(args: argparse.Namespace) -> None:
             print(message.content)
             print()
         return
-    from run_agent import AIAgent
-
-    agent = AIAgent(
-        model=args.model or "",
-        provider=args.provider,
-        max_iterations=args.max_iterations,
-        enabled_toolsets=enabled_toolsets,
-        platform="cli",
-    )
-    result = agent.run_conversation(
-        messages[1].content,
-        system_message=messages[0].content,
+    result = _run_update_agent(
+        _ledger(args), args.id,
+        model=args.model, provider=args.provider, max_iterations=args.max_iterations, stage=args.stage,
     )
     print(result.get("final_response") or result)
 
@@ -9661,6 +9686,8 @@ def _cmd_cycle_run(args: argparse.Namespace) -> None:
     elif getattr(args, "no_synthesize_lessons", False):
         synthesize = False
 
+    reforecast_runner = _build_cycle_reforecast_runner(args) if getattr(args, "agent", False) else None
+
     report = cron_runner.run_due_reviews(
         db_path=str(_ledger(args).db_path),
         now=args.now,
@@ -9669,9 +9696,60 @@ def _cmd_cycle_run(args: argparse.Namespace) -> None:
         thesis_aggregate=not getattr(args, "no_thesis_aggregate", False),
         reconcile_alerts=not getattr(args, "no_reconcile", False),
         synthesize_lessons=synthesize,
+        reforecast_runner=reforecast_runner,
     )
     report = (report or "").strip()
     print(report if report else "Forecast cycle complete — nothing was due.")
+
+
+def _build_cycle_reforecast_runner(args: argparse.Namespace):
+    """The CLI-layer callable the cron cycle invokes to autonomously re-forecast the
+    questions a sweep flagged. It validates each candidate is a LIVE question, honors
+    the pipeline update gate (skip + report blockers unless --force), caps the count
+    (--max-questions), runs the LLM update stage, and returns per-question result
+    dicts. Lives here so run_agent is never imported by cron_runner/ledger."""
+    ledger = _ledger(args)
+    model, provider = args.model, args.provider
+    max_iter = getattr(args, "max_iterations", 12) or 12
+    max_q = getattr(args, "max_questions", None)
+    force = getattr(args, "force", False)
+
+    def _runner(question_ids: list[str]) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        committed = 0
+        for qid in question_ids:
+            if max_q is not None and committed >= max_q:
+                results.append({"question_id": qid, "status": "skipped", "detail": f"--max-questions {max_q} reached"})
+                continue
+            try:
+                question = ledger.get_question(qid)
+            except Exception:
+                question = None
+            if question is None or getattr(question, "status", None) != "active":
+                results.append({"question_id": qid, "status": "skipped", "detail": "not an active question"})
+                continue
+            if not force:
+                pstatus = build_pipeline_status(ledger, qid)
+                if not pstatus.get("update_ready", True):
+                    blockers = ", ".join(pstatus.get("update_blockers") or []) or "prerequisites missing"
+                    results.append({"question_id": qid, "status": "skipped", "detail": f"update gated: {blockers}"})
+                    continue
+            prior = ledger.get_current_snapshot(qid)
+            try:
+                _run_update_agent(ledger, qid, model=model, provider=provider, max_iterations=max_iter)
+            except Exception as exc:  # one failure must not abort the sweep
+                results.append({"question_id": qid, "status": "error", "detail": str(exc)[:160]})
+                continue
+            post = ledger.get_current_snapshot(qid)
+            new_commit = post is not None and (prior is None or post.forecast_id != prior.forecast_id)
+            if new_commit:
+                committed += 1
+                results.append({"question_id": qid, "status": "committed", "detail": f"new snapshot {post.forecast_id}"})
+            else:
+                results.append({"question_id": qid, "status": "skipped", "detail": "agent committed no new snapshot"})
+        return results
+
+    return _runner
 
 
 def _cmd_schedule_run(args: argparse.Namespace) -> None:
