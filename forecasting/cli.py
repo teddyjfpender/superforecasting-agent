@@ -2100,6 +2100,9 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     resolver_propose.add_argument("question", help="row number, id, or search words for the question")
     resolver_propose.add_argument("--json", action="store_true")
     resolver_propose.set_defaults(_forecast_handler=_cmd_resolver_propose)
+    resolver_propose_due = resolver_sub.add_parser("propose-due", help="Run all resolution rules + raise confirm-me alerts for determinable resolutions (autonomy)")
+    resolver_propose_due.add_argument("--dry-run", action="store_true", help="Preview proposals without raising alerts")
+    resolver_propose_due.set_defaults(_forecast_handler=_cmd_resolver_propose_due)
 
     calibration_parser = forecast_sub.add_parser("calibration", help="Show calibration summary (add `status` for the readiness cockpit)")
     calibration_parser.add_argument(
@@ -8971,6 +8974,22 @@ def _cmd_resolver_propose(args: argparse.Namespace) -> None:
     print(f"PROPOSED resolution: {proposal['outcome'].upper()}")
     print(f"  {proposal['rationale']}")
     print(f"  confirm with: forecast resolve {qid} --outcome {proposal['outcome']}")
+
+
+def _cmd_resolver_propose_due(args: argparse.Namespace) -> None:
+    dry = getattr(args, "dry_run", False)
+    results = _ledger(args).propose_due_resolutions(dry_run=dry)
+    if not results:
+        print("No determinable resolutions to propose.")
+        return
+    for item in results:
+        if dry:
+            state = "would propose + alert"
+        elif item.get("alerted"):
+            state = "ALERTED for confirmation"
+        else:
+            state = "skipped (open proposal alert already exists)"
+        print(f"{item['question_id']}: {str(item['outcome']).upper()} — {state}")
 
 
 def _cmd_lesson_synthesize(args: argparse.Namespace) -> None:

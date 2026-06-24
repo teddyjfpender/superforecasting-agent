@@ -75,6 +75,30 @@ def test_propose_resolution_reads_ingested_value(tmp_path):
     assert lg.get_question(q.id).status != "resolved"  # propose-only
 
 
+def test_propose_due_resolutions_alerts_once_then_dedups(tmp_path):
+    lg = _ledger(tmp_path)
+    q = lg.create_question(title="Will the segment beat consensus?", resolution_criteria=CRIT)
+    ws = lg.add_watched_source(scope_type="question", scope_ref=q.id, source="https://x/e", source_type="rss", role="resolver")
+    lg.set_resolution_rule(q.id, field="segment_revenue", comparator=">=", threshold=5.0)
+
+    # No data yet -> nothing proposed.
+    assert lg.propose_due_resolutions() == []
+
+    _ingest_value(lg, q.id, ws["id"], "segment_revenue", 6.2)
+    first = lg.propose_due_resolutions()
+    assert len(first) == 1 and first[0]["outcome"] == "yes" and first[0]["alerted"] is True
+    # Exactly one confirm-me alert raised; the question is NOT auto-resolved.
+    open_alerts = [a for a in lg.list_alerts(unresolved_only=True) if "resolution proposed" in a.reason.lower()]
+    assert len(open_alerts) == 1
+    assert lg.get_question(q.id).status != "resolved"
+
+    # Second sweep dedups against the open alert (no re-alert spam).
+    second = lg.propose_due_resolutions()
+    assert second[0]["alerted"] is False
+    open_after = [a for a in lg.list_alerts(unresolved_only=True) if "resolution proposed" in a.reason.lower()]
+    assert len(open_after) == 1
+
+
 def test_no_rule_returns_none(tmp_path):
     lg = _ledger(tmp_path)
     q = lg.create_question(title="No rule here?", resolution_criteria=CRIT)

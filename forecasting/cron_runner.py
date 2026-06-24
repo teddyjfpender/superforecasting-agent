@@ -24,6 +24,7 @@ def run_due_reviews(
     synthesize_lessons: bool | None = None,
     obsidian_sync: bool = False,
     reconcile_alerts: bool = True,
+    propose_resolutions: bool = True,
 ) -> str:
     """Run due forecast schedule rows and return a concise alert report.
 
@@ -183,6 +184,23 @@ def run_due_reviews(
                     "Alert reconciliation\n"
                     f"acknowledged {recon['reconciled_count']} consumed alert(s); "
                     f"{len(recon['still_open'])} still open\n"
+                )
+
+    # Trailing resolver-proposal phase: run resolution rules + raise a confirm-me
+    # alert for any question now DETERMINABLY resolvable from ingested data. The
+    # resolver framework's autonomy — the desk surfaces "ready to resolve, YES"
+    # itself (propose-only; the operator confirms). Deduped, so no re-alert spam.
+    if propose_resolutions:
+        try:
+            proposed = ledger.propose_due_resolutions()
+        except Exception as exc:  # never break the sweep on proposal
+            sections.append(f"Resolution proposals\nERROR: {exc}\n")
+        else:
+            raised = [item for item in proposed if item.get("alerted")]
+            if raised:
+                sections.append(
+                    "Resolution proposals\n"
+                    f"proposed {len(raised)} resolution(s) for confirmation\n"
                 )
 
     return "\n".join(sections)

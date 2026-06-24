@@ -7172,6 +7172,43 @@ class ForecastLedger:
             question_id=question_id, rule=rule, observed_value=observed, source_ref=source_ref,
         ).to_dict()
 
+    def propose_due_resolutions(self, *, dry_run: bool = False) -> list[dict[str, Any]]:
+        """Autonomy layer for the resolver framework: run every ACTIVE question's
+        resolution rule and raise a confirm-me alert for each that now yields a
+        DETERMINABLE proposal — so the desk surfaces "this is ready to resolve, YES"
+        on its own instead of waiting for the operator to check. Propose-only (the
+        user confirms with ``forecast resolve``). Deduped against an existing open
+        proposal alert per question so it never re-alerts every cycle. ``dry_run``
+        previews without raising alerts."""
+        open_alerts = self.list_alerts(unresolved_only=True)
+        already = {
+            alert.scope_ref for alert in open_alerts
+            if alert.scope_type == "question" and "resolution proposed" in (alert.reason or "").lower()
+        }
+        results: list[dict[str, Any]] = []
+        for question in self.list_questions(status="active"):
+            meta = question.metadata if isinstance(question.metadata, dict) else {}
+            if not isinstance(meta.get("resolution_rule"), dict):
+                continue
+            proposal = self.propose_resolution(question.id)
+            if not proposal or not proposal.get("determinable"):
+                continue
+            if question.id in already:
+                results.append({"question_id": question.id, "outcome": proposal["outcome"], "alerted": False, "skipped": "open_alert"})
+                continue
+            alert_id = None
+            if not dry_run:
+                alert = self.create_alert(
+                    severity="warning",
+                    scope_type="question",
+                    scope_ref=question.id,
+                    reason=f"resolution proposed: {str(proposal['outcome']).upper()} — {proposal['rationale']}",
+                    recommended_action=f"confirm with: forecast resolve {question.id} --outcome {proposal['outcome']}",
+                )
+                alert_id = alert.id
+            results.append({"question_id": question.id, "outcome": proposal["outcome"], "alerted": not dry_run, "alert_id": alert_id})
+        return results
+
     def autopilot_readiness(
         self,
         question_id: str,
