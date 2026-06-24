@@ -88,6 +88,39 @@ def test_force_invokes_agent_past_the_gate(tmp_path, monkeypatch):
     assert res[0]["status"] == "skipped" and "no new snapshot" in res[0]["detail"]
 
 
+def test_cron_excludes_non_question_scoped_alerts(tmp_path, monkeypatch):
+    class _DomainAlert(_Alert):
+        def __init__(self, scope_ref, reason):
+            super().__init__(scope_ref, reason)
+            self.scope_type = "domain"
+
+    def fake_reviews(self, **kwargs):
+        return [{"run": {"id": "sr_1"}, "alerts": [_Alert("fq_q", "stale_forecast"), _DomainAlert("politics", "domain_drift")]}]
+
+    monkeypatch.setattr(ForecastLedger, "run_due_scheduled_reviews", fake_reviews)
+    captured = {}
+    cron_runner.run_due_reviews(
+        db_path=str(tmp_path / "c.db"),
+        reforecast_runner=lambda ids: (captured.__setitem__("ids", ids), [])[1],
+        thesis_aggregate=False, reconcile_alerts=False, propose_resolutions=False,
+    )
+    assert captured["ids"] == ["fq_q"]  # the domain-scoped alert is not a reforecast target
+
+
+def test_max_questions_caps_processed_runs_not_just_commits(tmp_path, monkeypatch):
+    import forecasting.cli as cli
+    lg = _ledger(tmp_path)
+    q1 = lg.create_question(title="First question that exceeds target by close?", resolution_criteria="Resolves yes if it exceeds target.")
+    q2 = lg.create_question(title="Second question that exceeds target by close?", resolution_criteria="Resolves yes if it exceeds target.")
+    calls: list[str] = []
+    # the stub commits nothing — under a commit-counted cap it would never bite
+    monkeypatch.setattr(cli, "_run_update_agent", lambda ledger, qid, **kw: calls.append(qid) or {})
+    runner = cli._build_cycle_reforecast_runner(_args(tmp_path, force=True, max_questions=1))
+    res = {r["question_id"]: r for r in runner([q1.id, q2.id])}
+    assert len(calls) == 1  # the cap bounds expensive LLM runs to 1, even with no commits
+    assert res[q2.id]["status"] == "skipped" and "max-questions" in res[q2.id]["detail"]
+
+
 def test_one_failure_does_not_abort_the_sweep(tmp_path, monkeypatch):
     import forecasting.cli as cli
     lg = _ledger(tmp_path)

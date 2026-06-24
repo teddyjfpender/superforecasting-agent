@@ -266,6 +266,11 @@ def test_forecast_theses_returns_standalone_thesis_list(monkeypatch):
     assert resp["result"]["factors"] == []
 
 
+def test_forecast_theses_is_routed_to_thread_pool():
+    # it aggregates per-thesis (N+1), so it must not block the dispatch thread
+    assert "forecast.theses" in server._LONG_HANDLERS
+
+
 def _fake_calibration_ledger(*, bias_raises: bool = False):
     """A FakeLedger mirroring the ForecastLedger calibration surface."""
 

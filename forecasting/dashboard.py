@@ -399,12 +399,30 @@ def _candidate_intervals(snapshot: Any) -> dict[str, dict[str, float]] | None:
     raw = meta.get("candidate_share_intervals_pp")
     if not isinstance(raw, dict):
         return None
+    # The intervals are stored in percentage POINTS (0-100). Render them on the SAME
+    # scale as the payload's candidate shares: a fraction-scale PMF (shares ~0-1) needs
+    # them divided by 100 so the bar value and its [lo-hi] suffix don't mismatch. Detect
+    # the scale by matching a candidate's payload share against its interval median.
+    payload = getattr(snapshot, "probability_or_distribution", None)
+    payload = payload if isinstance(payload, dict) else {}
+    scale = 1.0
+
+    def _num(value: Any) -> float | None:
+        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+    for candidate, interval in raw.items():
+        share = _num(payload.get(candidate))
+        median = _num(interval.get("median")) if isinstance(interval, dict) else None
+        if share is not None and median is not None and abs(share) <= 1.5 < abs(median):
+            scale = 0.01  # payload is fraction-scale, intervals are pp
+            break
+
     out: dict[str, dict[str, float]] = {}
     for candidate, interval in raw.items():
         if not isinstance(interval, dict):
             continue
         pairs = (("lo", interval.get("p05")), ("mid", interval.get("median", interval.get("p50"))), ("hi", interval.get("p95")))
-        vals = {k: float(v) for k, v in pairs if isinstance(v, (int, float)) and not isinstance(v, bool)}
+        vals = {k: round(_num(v) * scale, 6) for k, v in pairs if _num(v) is not None}
         if "lo" in vals and "hi" in vals and vals["lo"] <= vals["hi"]:
             out[str(candidate)] = vals
     return out or None

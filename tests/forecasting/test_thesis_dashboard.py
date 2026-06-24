@@ -53,7 +53,8 @@ def test_cli_thesis_dashboard_json(tmp_path, capsys):
     lg, th = _ledger_with_thesis(tmp_path)
     _cmd_thesis_dashboard(argparse.Namespace(db=str(tmp_path / "t.db"), json=True))
     data = json.loads(capsys.readouterr().out)
-    assert [r["id"] for r in data] == [th.id]
+    assert [r["id"] for r in data["theses"]] == [th.id]
+    assert "factors" in data
 
 
 def test_cli_thesis_dashboard_table_renders(tmp_path, capsys):

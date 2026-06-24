@@ -466,6 +466,15 @@ describe('ForecastsWorkspace pure transforms', () => {
     expect(byLabel.Other).toBeNull() // no interval supplied for this candidate
   })
 
+  it('intervalForLabel tolerates case/whitespace divergence between share + interval keys', async () => {
+    const { intervalForLabel } = await import('../components/forecastsWorkspace.js')
+    const intervals = { 'Chris Pappas': { lo: 50, hi: 85 } }
+    expect(intervalForLabel(intervals, 'Chris Pappas')).toEqual({ lo: 50, hi: 85 }) // exact
+    expect(intervalForLabel(intervals, 'chris pappas ')).toEqual({ lo: 50, hi: 85 }) // normalized
+    expect(intervalForLabel(intervals, 'Other')).toBeNull()
+    expect(intervalForLabel(undefined, 'x')).toBeNull()
+  })
+
   it('historyToBandPoints shows only REAL bands — no confidence-synthesized band', async () => {
     const { historyToBandPoints } = await import('../components/forecastsWorkspace.js')
     const points = historyToBandPoints(texasItem())

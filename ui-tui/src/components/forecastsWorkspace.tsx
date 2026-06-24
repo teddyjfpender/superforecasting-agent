@@ -189,6 +189,22 @@ export const matchesFilter = (item: ForecastWorkspaceItem, query: string): boole
   !query.trim() || rankItems([item], query, FORECAST_SEARCH_FIELDS).length > 0
 
 /** Categorical / bucket distribution → sorted bars; null for scalar or mean/sd shapes. */
+/** Per-candidate interval lookup that tolerates case/whitespace divergence between the
+ * share keys and the interval keys (the scorer + commit hook normalize candidate keys,
+ * so the dashboard must too — else an interval silently drops). */
+export const intervalForLabel = (
+  intervals: ForecastWorkspaceItem['candidate_intervals'] | undefined,
+  label: string
+): { hi: number; lo: number } | null => {
+  if (!intervals) return null
+  if (intervals[label]) return intervals[label]
+  const norm = label.trim().toLowerCase()
+  for (const key of Object.keys(intervals)) {
+    if (key.trim().toLowerCase() === norm) return intervals[key]
+  }
+  return null
+}
+
 export const distributionBars = (
   probability: ForecastWorkspaceItem['probability'],
   intervals?: ForecastWorkspaceItem['candidate_intervals']
@@ -219,7 +235,7 @@ export const distributionBars = (
   }
 
   return bars
-    .map(([label, value]) => ({ label, value, interval: (intervals && intervals[label]) || null }))
+    .map(([label, value]) => ({ label, value, interval: intervalForLabel(intervals, label) }))
     .sort((a, b) => b.value - a.value)
 }
 
@@ -1530,7 +1546,9 @@ export function ForecastDetail({
     const pmf = item.distribution?.pmf
 
     if (pmf && pmf.length) {
-      return pmf.map(row => ({ label: row.label, value: row.probability }))
+      // fraction-scale vote shares are classified as a PMF here, so intervals must
+      // attach on THIS branch too (not only the distributionBars fallback).
+      return pmf.map(row => ({ label: row.label, value: row.probability, interval: intervalForLabel(item.candidate_intervals, row.label) }))
     }
 
     return distributionBars(item.probability, item.candidate_intervals)

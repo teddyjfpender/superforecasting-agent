@@ -92,11 +92,14 @@ def run_due_reviews(
         seen: set[str] = set()
         for alert in alert_rows:
             qid = getattr(alert, "scope_ref", None)
-            reason = getattr(alert, "reason", "") or ""
-            if not qid or qid in seen:
+            # only QUESTION-scoped alerts are reforecast targets — a domain / topic /
+            # portfolio / global alert's scope_ref is not a question id.
+            if getattr(alert, "scope_type", None) != "question" or not qid or qid in seen:
                 continue
-            if reason.startswith(("score_created:", "postmortem_created:")) or is_learning_review_reason(reason):
-                continue  # bookkeeping events, not reforecast triggers
+            reason = getattr(alert, "reason", "") or ""
+            if reason.startswith(("score_created:", "postmortem_created:")):
+                continue  # bookkeeping events, not reforecast triggers (a question-
+                # scoped domain_error_profile_applies, by contrast, IS a real trigger)
             seen.add(qid)
             due_ids.append(qid)
         if due_ids:

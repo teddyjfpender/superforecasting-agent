@@ -223,6 +223,7 @@ _LONG_HANDLERS = frozenset(
         "forecast.calibration",
         "forecast.command",
         "forecast.onboard_commit",
+        "forecast.theses",
         "forecast.workspace",
         "markets.model.renarrate",
         "news.search",
@@ -3006,10 +3007,12 @@ def _(rid, params: dict) -> dict:
     # dedicated thesis dashboard — without shipping the whole forecast workspace.
     try:
         from forecasting.dashboard import build_factor_summary, build_thesis_summary
+        from forecasting.ledger import ForecastLedger
 
-        return _ok(rid, {"theses": build_thesis_summary(), "factors": build_factor_summary()})
+        ledger = ForecastLedger()  # one ledger for both scans (avoid a double schema-init)
+        return _ok(rid, {"theses": build_thesis_summary(ledger=ledger), "factors": build_factor_summary(ledger=ledger)})
     except Exception as e:
-        return _err(rid, 5021, str(e))
+        return _err(rid, 5008, str(e))
 
 
 @method("forecast.onboard_propose")

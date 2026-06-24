@@ -1574,9 +1574,12 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 from forecasting.cli import _run_safe_benchmarks
 
                 source = args.get("probability_source") or "forecast-engine"
-                if source not in ("forecast-engine", "naive", "baseline-ensemble"):
-                    return tool_result(success=False, error="run_safe_benchmarks is OFFLINE only (forecast-engine / naive / baseline-ensemble); agent-protocol needs an LLM runner.")
-                benchmarks_ran = _run_safe_benchmarks(ledger, source)
+                if source not in ("forecast-engine", "baseline-ensemble"):
+                    return tool_result(success=False, error="run_safe_benchmarks is OFFLINE only (forecast-engine / baseline-ensemble); agent-protocol needs an LLM runner.")
+                try:
+                    benchmarks_ran = _run_safe_benchmarks(ledger, source)
+                except Exception as exc:  # a mid-suite failure must not raise uncaught
+                    return tool_result(success=False, error=f"safe benchmark run failed: {exc}")
             rows, summaries, evidence_status, _last = _forecast_readiness_payload(ledger, args)
             return tool_result(
                 success=True,

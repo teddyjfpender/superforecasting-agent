@@ -2737,9 +2737,9 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     )
     readiness_parser.add_argument(
         "--probability-source",
-        choices=["forecast-engine", "naive", "baseline-ensemble"],
+        choices=["forecast-engine", "baseline-ensemble"],
         default="forecast-engine",
-        help="Generated probability source for --run-safe-benchmarks (default forecast-engine; agent-protocol is not safe/offline)",
+        help="Generated probability source for --run-safe-benchmarks (default forecast-engine; 'naive' can't beat baselines so it's excluded, and agent-protocol isn't offline)",
     )
     readiness_parser.add_argument(
         "--dry-run",
@@ -9713,15 +9713,16 @@ def _build_cycle_reforecast_runner(args: argparse.Namespace):
     dicts. Lives here so run_agent is never imported by cron_runner/ledger."""
     ledger = _ledger(args)
     model, provider = args.model, args.provider
-    max_iter = getattr(args, "max_iterations", 12) or 12
+    _mi = getattr(args, "max_iterations", None)
+    max_iter = 12 if _mi is None else _mi
     max_q = getattr(args, "max_questions", None)
     force = getattr(args, "force", False)
 
     def _runner(question_ids: list[str]) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
-        committed = 0
+        processed = 0  # questions an LLM run was actually started for (the expensive bit)
         for qid in question_ids:
-            if max_q is not None and committed >= max_q:
+            if max_q is not None and processed >= max_q:
                 results.append({"question_id": qid, "status": "skipped", "detail": f"--max-questions {max_q} reached"})
                 continue
             try:
@@ -9738,6 +9739,9 @@ def _build_cycle_reforecast_runner(args: argparse.Namespace):
                     results.append({"question_id": qid, "status": "skipped", "detail": f"update gated: {blockers}"})
                     continue
             prior = ledger.get_current_snapshot(qid)
+            # Count BEFORE the agent runs: the cap bounds expensive multi-minute LLM
+            # sessions, so a question that ran but declined to commit still counts.
+            processed += 1
             try:
                 _run_update_agent(ledger, qid, model=model, provider=provider, max_iterations=max_iter)
             except Exception as exc:  # one failure must not abort the sweep
@@ -9746,7 +9750,6 @@ def _build_cycle_reforecast_runner(args: argparse.Namespace):
             post = ledger.get_current_snapshot(qid)
             new_commit = post is not None and (prior is None or post.forecast_id != prior.forecast_id)
             if new_commit:
-                committed += 1
                 results.append({"question_id": qid, "status": "committed", "detail": f"new snapshot {post.forecast_id}"})
             else:
                 results.append({"question_id": qid, "status": "skipped", "detail": "agent committed no new snapshot"})
@@ -10080,32 +10083,41 @@ def _cmd_thesis_dashboard(args: argparse.Namespace) -> None:
     """The dedicated thesis dashboard: a master list of every active thesis (health /
     score / Δ / coverage / members), reusing the same payload the gateway serves on
     `forecast.theses` and the TUI lens renders."""
-    from forecasting.dashboard import build_thesis_summary
+    from forecasting.dashboard import build_factor_summary, build_thesis_summary
 
-    rows = build_thesis_summary(ledger=_ledger(args))
+    ledger = _ledger(args)
+    rows = build_thesis_summary(ledger=ledger)
+    factors = build_factor_summary(ledger=ledger)
     if args.json:
-        print(json.dumps(rows, indent=2, sort_keys=True))
+        print(json.dumps({"theses": rows, "factors": factors}, indent=2, sort_keys=True))
         return
-    if not rows:
+    if not rows and not factors:
         print("No active theses. Create one with `forecast thesis create <title>`.")
         return
 
     def _num(value: Any, fmt: str, *, pct: bool = False) -> str:
-        if not isinstance(value, (int, float)):
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
             return "-"
         return format(value * 100 if pct else value, fmt)
 
-    print(f"{'thesis':<44} {'health':>7} {'score':>7} {'Δ':>6} {'cov':>5} {'n_eff':>6} {'mem':>4}  status")
-    for r in rows:
-        print(
-            f"{(r['title'] or '')[:44]:<44} "
-            f"{(r['health_display'] or '-'):>7} "
-            f"{_num(r.get('thesis_score'), '.1f'):>7} "
-            f"{(_num(r.get('delta'), '+.0f', pct=True) + 'pp') if isinstance(r.get('delta'), (int, float)) else '-':>6} "
-            f"{_num(r.get('coverage'), '.2f'):>5} "
-            f"{_num(r.get('n_eff'), '.1f'):>6} "
-            f"{r.get('member_count', 0):>4}  {r.get('status', '')}"
-        )
+    if rows:
+        print(f"{'thesis':<44} {'health':>7} {'score':>7} {'Δ':>6} {'cov':>5} {'n_eff':>6} {'mem':>4}  status")
+        for r in rows:
+            delta = r.get("delta")
+            delta_txt = (_num(delta, "+.0f", pct=True) + "pp") if isinstance(delta, (int, float)) and not isinstance(delta, bool) else "-"
+            print(
+                f"{(r['title'] or '')[:44]:<44} "
+                f"{(r['health_display'] or '-'):>7} "
+                f"{_num(r.get('thesis_score'), '.1f'):>7} "
+                f"{delta_txt:>6} "
+                f"{_num(r.get('coverage'), '.2f'):>5} "
+                f"{_num(r.get('n_eff'), '.1f'):>6} "
+                f"{r.get('member_count', 0):>4}  {r.get('status', '')}"
+            )
+    if factors:
+        print(f"\n{'factor (basket)':<44} {'members':>7}  status")
+        for f in factors:
+            print(f"{(f.get('title') or '')[:44]:<44} {f.get('member_count', 0):>7}  {f.get('status', '')}")
 
 
 def _cmd_thesis_list(args: argparse.Namespace) -> None:
@@ -11248,9 +11260,17 @@ def _run_safe_benchmarks(ledger: ForecastLedger, probability_source: str) -> dic
 
 def _cmd_readiness(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
+    improve = getattr(args, "run_safe_benchmarks", False)
+    # When improving, evaluate over ALL runs (ignore the --last truncation AND the
+    # --dataset filter) so the freshly-run suite is visible and the closed/remaining
+    # gap diff is honest — otherwise the 5 new runs can evict older ones from a narrow
+    # --last window (a closed gap would look reopened) or a --dataset filter would hide
+    # the suite entirely and report zero closed gaps.
+    eval_last = 1_000_000 if improve else args.last
+    eval_dataset = None if improve else getattr(args, "dataset", None)
 
     def _status() -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
-        rows, summaries = _recent_backtest_summaries(ledger, last=args.last, dataset=getattr(args, "dataset", None))
+        rows, summaries = _recent_backtest_summaries(ledger, last=eval_last, dataset=eval_dataset)
         status = build_forecasting_evidence_status(
             ledger, summaries,
             min_live_scores=max(args.min_live_scores, 0),
@@ -11260,11 +11280,11 @@ def _cmd_readiness(args: argparse.Namespace) -> None:
         return rows, summaries, status
 
     improve_report: dict[str, Any] | None = None
-    if getattr(args, "run_safe_benchmarks", False):
+    if improve:
         source = getattr(args, "probability_source", "forecast-engine")
-        if source not in ("forecast-engine", "naive", "baseline-ensemble"):
+        if source not in ("forecast-engine", "baseline-ensemble"):
             raise SystemExit(
-                "--run-safe-benchmarks runs OFFLINE only (forecast-engine / naive / baseline-ensemble); "
+                "--run-safe-benchmarks runs OFFLINE only (forecast-engine / baseline-ensemble); "
                 "agent-protocol needs an LLM runner — use `forecast backtest --all-benchmarks "
                 "--probability-source agent-protocol`."
             )
