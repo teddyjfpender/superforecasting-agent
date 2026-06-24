@@ -442,6 +442,7 @@ def aggregate_thesis(
     *,
     rho: float | str = 0.4,
     now: str | None = None,
+    correlation_matrix: Mapping[Any, float] | None = None,
 ) -> ThesisAggregate:
     """Aggregate weighted member beliefs into a thesis-level health/score/band.
 
@@ -498,6 +499,33 @@ def aggregate_thesis(
     else:
         rho_val = _clamp(float(rho), 0.0, 0.95)
 
+    # Optional pairwise correlation MATRIX: members co-move UNEQUALLY (coding<->
+    # nvidia tighter than coding<->power), so a thesis can supply real pairwise
+    # correlations that override the scalar rho per pair (falling back to rho_val
+    # where a pair is unspecified). Keys accepted as {a,b} / (a,b) / "a:b" / "a|b".
+    norm_corr: dict[frozenset[str], float] = {}
+    if correlation_matrix:
+        for key, value in correlation_matrix.items():
+            if isinstance(key, (frozenset, set, tuple, list)):
+                ids = frozenset(str(k) for k in key)
+            elif isinstance(key, str) and ("|" in key or ":" in key):
+                ids = frozenset(key.split("|" if "|" in key else ":", 1))
+            else:
+                ids = frozenset()
+            if len(ids) == 2:
+                norm_corr[ids] = _clamp(float(value), 0.0, 0.95)
+        if norm_corr:
+            notes.append(f"pairwise correlation matrix applied ({len(norm_corr)} pair(s))")
+
+    def _pair_rho(i: int, j: int) -> float:
+        if i == j:
+            return 1.0
+        if norm_corr:
+            paired = norm_corr.get(frozenset({rows[i].member_id, rows[j].member_id}))
+            if paired is not None:
+                return paired
+        return rho_val
+
     # ── §2.4 health (log-odds pool) ──────────────────────────────────────────
     health = _pooled_health(rows, w_norm)
 
@@ -521,7 +549,7 @@ def aggregate_thesis(
             for j in range(len(rows)):
                 if rows[j].s_i is None:
                     continue
-                rho_ij = 1.0 if i == j else rho_val
+                rho_ij = _pair_rho(i, j)
                 var += w_norm[i] * w_norm[j] * rho_ij * sigmas[i] * sigmas[j]
         sd_score = 100.0 * math.sqrt(max(var, 0.0))
         q05 = _clamp(score - _Z90 * sd_score, 0.0, 100.0)
@@ -534,7 +562,7 @@ def aggregate_thesis(
     denom = 0.0
     for i in range(len(rows)):
         for j in range(len(rows)):
-            rho_ij = 1.0 if i == j else rho_val
+            rho_ij = _pair_rho(i, j)
             denom += rows[i].w_eff * rows[j].w_eff * rho_ij
     n_eff = (W * W / denom) if denom > 0 else 0.0
 

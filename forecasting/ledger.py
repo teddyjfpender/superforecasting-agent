@@ -6843,6 +6843,49 @@ class ForecastLedger:
             result["analyst_note_id"] = note.get("id")
         return result
 
+    def set_thesis_correlation(self, thesis_id: str, member_a: str, member_b: str, rho: float) -> dict[str, float]:
+        """Pin a pairwise correlation between two thesis members so the aggregate's
+        honest band + effective-N use real co-movement PER PAIR rather than one
+        scalar rho (members co-move unequally). Stored on the thesis metadata;
+        both ids must be members. Idempotent on the unordered pair. Returns the
+        full correlation map."""
+        thesis = self.get_question(thesis_id)
+        if not self.is_thesis(thesis):
+            raise ValidationError("set_thesis_correlation requires a question with outcome type 'thesis'")
+        if member_a == member_b:
+            raise ValidationError("a member cannot be correlated with itself")
+        member_ids = {m["member_question_id"] for m in self.list_thesis_members(thesis_id)}
+        for mid in (member_a, member_b):
+            if mid not in member_ids:
+                raise ValidationError(f"{mid} is not a member of this thesis")
+        rho_val = float(rho)
+        if not (0.0 <= rho_val <= 0.95):
+            raise ValidationError("correlation must be within [0, 0.95]")
+        meta = dict(thesis.metadata) if isinstance(thesis.metadata, dict) else {}
+        corr = dict(meta.get("thesis_correlations") or {})
+        corr["|".join(sorted([member_a, member_b]))] = rho_val
+        meta["thesis_correlations"] = corr
+        with self._connect() as conn:
+            conn.execute("UPDATE forecast_questions SET metadata = ? WHERE id = ?", (json_dumps(meta), thesis_id))
+        return corr
+
+    def _thesis_correlation_matrix(self, thesis: Any) -> dict[frozenset[str], float] | None:
+        """Load the stored pairwise correlations into the {member_a, member_b} ->
+        rho map the aggregation math consumes. None when none are pinned."""
+        meta = thesis.metadata if isinstance(thesis.metadata, dict) else {}
+        raw = meta.get("thesis_correlations")
+        if not isinstance(raw, dict) or not raw:
+            return None
+        out: dict[frozenset[str], float] = {}
+        for key, value in raw.items():
+            parts = str(key).split("|")
+            if len(parts) == 2:
+                try:
+                    out[frozenset(parts)] = float(value)
+                except (TypeError, ValueError):
+                    continue
+        return out or None
+
     def aggregate_thesis(
         self,
         thesis_id: str,
@@ -6872,7 +6915,10 @@ class ForecastLedger:
         members = self.list_thesis_members(thesis_id)
         beliefs = [self._thesis_member_belief(m) for m in members]
         as_of = now or utc_now_iso()
-        agg = thesis_math.aggregate_thesis(beliefs, rho=rho, now=as_of)
+        agg = thesis_math.aggregate_thesis(
+            beliefs, rho=rho, now=as_of,
+            correlation_matrix=self._thesis_correlation_matrix(thesis),
+        )
 
         # Entity suitability + trade triggers. Read the PRIOR snapshot first
         # (get_current_snapshot returns the latest before the new commit) so the

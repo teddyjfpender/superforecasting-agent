@@ -2384,6 +2384,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     thesis_aggregate.add_argument("thesis", help="row number, id, or search words for the thesis")
     thesis_aggregate.add_argument("--rho", type=float, default=0.4)
     thesis_aggregate.set_defaults(_forecast_handler=_cmd_thesis_aggregate)
+    thesis_corr = thesis_sub.add_parser("set-correlation", help="Pin a pairwise correlation between two thesis members (members co-move unequally)")
+    thesis_corr.add_argument("thesis", help="row number, id, or search words for the thesis")
+    thesis_corr.add_argument("member_a", help="member question id")
+    thesis_corr.add_argument("member_b", help="member question id")
+    thesis_corr.add_argument("rho", type=float, help="pairwise correlation in [0, 0.95]")
+    thesis_corr.set_defaults(_forecast_handler=_cmd_thesis_set_correlation)
     thesis_show = thesis_sub.add_parser("show", help="Show thesis health + per-member contributions (no commit)")
     thesis_show.add_argument("thesis", help="row number, id, or search words for the thesis")
     thesis_show.add_argument("--rho", type=float, default=0.4)
@@ -9694,6 +9700,16 @@ def _cmd_thesis_members(args: argparse.Namespace) -> None:
             f"{(member.get('member_outcome_type') or '-'):<13} "
             f"{member.get('member_title') or member.get('member_question_id')}"
         )
+
+
+def _cmd_thesis_set_correlation(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    thesis_id = _resolve_question_id(ledger, args.thesis)
+    corr = ledger.set_thesis_correlation(thesis_id, args.member_a, args.member_b, args.rho)
+    print(f"pinned pairwise correlations for thesis {thesis_id}:")
+    for pair, rho in sorted(corr.items()):
+        print(f"  {pair}: {rho}")
+    print("(applied on the next aggregate; unspecified pairs fall back to the scalar rho)")
 
 
 def _cmd_thesis_aggregate(args: argparse.Namespace) -> None:
