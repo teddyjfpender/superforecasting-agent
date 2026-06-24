@@ -4281,6 +4281,31 @@ def _(rid, params: dict) -> dict:
     return _ok(rid, {"status": "streaming"})
 
 
+# How many times a foreign async-delegation completion may bounce between session
+# pollers before the next poller takes it as an orphan (originating session gone) —
+# so a background result is routed to the right session, but NEVER silently lost.
+_MAX_ASYNC_ROUTE_ATTEMPTS = 200
+
+
+def _route_async_completion(evt: dict, my_session_key: str | None) -> str:
+    """Decide whether THIS session's poller should CONSUME an async-delegation
+    completion event or REQUEUE it for the originating session's poller. Pure +
+    unit-testable. An async event carries ``session_key`` (the session that dispatched
+    it); only that session's poller may consume it — otherwise a background subagent's
+    result surfaces in the WRONG session's chat on a multi-session gateway. A
+    session-less event (CLI single-session) or a non-async event is always consumed; a
+    foreign event that no live session claims after _MAX_ASYNC_ROUTE_ATTEMPTS bounces
+    is consumed as an orphan rather than dropped."""
+    if evt.get("type") != "async_delegation":
+        return "consume"
+    evt_key = evt.get("session_key") or ""
+    if not evt_key or evt_key == (my_session_key or ""):
+        return "consume"
+    attempts = int(evt.get("_route_attempts", 0) or 0) + 1
+    evt["_route_attempts"] = attempts
+    return "consume" if attempts > _MAX_ASYNC_ROUTE_ATTEMPTS else "requeue"
+
+
 def _notification_poller_loop(
     stop_event: threading.Event, sid: str, session: dict
 ) -> None:
@@ -4305,6 +4330,14 @@ def _notification_poller_loop(
 
         _evt_sid = evt.get("session_id", "")
         if evt.get("type") == "completion" and process_registry.is_completion_consumed(_evt_sid):
+            continue
+
+        # Route async-delegation completions back to the session that dispatched them
+        # (not first-poller-wins) so a background subagent's result can't surface in
+        # the wrong session's chat on a multi-session gateway.
+        if _route_async_completion(evt, session.get("session_key")) == "requeue":
+            process_registry.completion_queue.put(evt)
+            time.sleep(0.02)  # let the originating session's poller pick it up
             continue
 
         text = format_process_notification(evt)
