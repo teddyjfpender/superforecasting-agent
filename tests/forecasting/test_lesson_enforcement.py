@@ -243,3 +243,16 @@ def test_coverage_marks_prose_lesson_unenforceable(tmp_path):
     prose = lg.create_calibration_lesson(scope_type="domain", scope_ref="politics", lesson="build vote-share first", recommended_adjustment={"note": "prose only"}, status="active")
     cov = {r["lesson_id"]: r for r in lg.lesson_coverage()}
     assert cov[prose["id"]]["enforceable"] is False and cov[prose["id"]]["kind"] == "advisory"
+
+
+def test_prose_lesson_can_be_upgraded_to_an_enforced_rule(tmp_path):
+    # The exact path used to make the live NY-12 lesson bite: update an existing
+    # prose lesson to carry a validated rule, after which it enforces.
+    lg = _ledger(tmp_path)
+    les = lg.create_calibration_lesson(scope_type="domain", scope_ref="politics", lesson="build vote-share first", recommended_adjustment={"note": "prose"}, status="active")
+    lg.update_calibration_lesson(les["id"], recommended_adjustment={"note": "prose", "rule": _ANCHOR_RULE})
+    q = lg.create_question(title="Will the candidate win by close?", resolution_criteria=CRIT, domain="politics")
+    with pytest.raises(Exception):  # the upgraded lesson now blocks an unanchored politics commit
+        lg.create_snapshot(question_id=q.id, probability_or_distribution=0.5, rationale="no anchor", forecast_origin="live")
+    with pytest.raises(ValidationError, match="rule is invalid"):  # update also validates
+        lg.update_calibration_lesson(les["id"], recommended_adjustment={"rule": {"check": {"signal": "nope", "op": ">=", "value": 1}}})

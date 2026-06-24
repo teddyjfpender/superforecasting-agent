@@ -4584,6 +4584,16 @@ class ForecastLedger:
             )
         if confidence is not None and not (0 <= confidence <= 1):
             raise ValidationError("calibration lesson confidence must be between 0 and 1")
+        # Same authoring gate as create: a `rule` must compile, so an enforceable
+        # lesson can never be saved in a broken state that silently fails to bite.
+        _rule = (recommended_adjustment or {}).get("rule") if isinstance(recommended_adjustment, dict) else None
+        if isinstance(_rule, dict):
+            from forecasting.hooks.dsl import RuleSpec, validate_rule
+
+            _spec = RuleSpec.from_dict({**_rule, "id": "lesson:_validate", "applies_to": {}})
+            _rule_errs = [issue for issue in validate_rule(_spec) if issue.severity == "error"]
+            if _rule_errs:
+                raise ValidationError(f"calibration lesson rule is invalid: {_rule_errs[0].message}")
         if current.get("invalidated_by_correction_id") and new_status == "active":
             raise ValidationError("invalidated calibration lessons cannot be activated")
         if supersedes_lesson_id:
