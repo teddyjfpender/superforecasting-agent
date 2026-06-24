@@ -118,3 +118,52 @@ def test_workspace_payload_exposes_relevant_lessons(tmp_path):
     item = next(f for f in build_workspace_payload(ledger=lg)["forecasts"] if f["id"] == q.id)
     assert item["lessons_count"] >= 1
     assert any(l["id"] == les["id"] for l in item["relevant_lessons"])
+
+
+# ── Lesson apply: a learning auto-compiles to an enforceable hook (lazy operator) ──
+def test_recognized_lesson_auto_compiles_to_rule(tmp_path):
+    lg = _ledger(tmp_path)
+    les = lg.create_calibration_lesson(
+        scope_type="domain_topic", scope_ref="politics:nyc-primaries", lesson="top-two compression",
+        recommended_adjustment={"process_rule": "add_top_two_consolidation_layer", "candidate_tail_cap": "cap near 5-10%"}, status="active",
+    )
+    rule = (les["recommended_adjustment"] or {}).get("rule")
+    assert rule and rule["check"]["signal"] == "tails.null_excess"
+
+
+def test_scoreability_lesson_auto_compiles_to_born_scoreable(tmp_path):
+    lg = _ledger(tmp_path)
+    les = lg.create_calibration_lesson(
+        scope_type="question_type", scope_ref="vote-share-distribution", lesson="scoreable",
+        recommended_adjustment={"process_rule": "validate_vote_share_scoreability_before_commit"}, status="active",
+    )
+    assert (les["recommended_adjustment"]["rule"]["check"]["signal"]) == "outcome.machine_scoreable"
+
+
+def test_unrecognized_lesson_stays_advisory(tmp_path):
+    lg = _ledger(tmp_path)
+    les = lg.create_calibration_lesson(
+        scope_type="domain_topic", scope_ref="politics:movement-primaries", lesson="movement field",
+        recommended_adjustment={"process_rule": "price_movement_field_as_turnout_composition_shock"}, status="active",
+    )
+    assert "rule" not in (les["recommended_adjustment"] or {})
+
+
+def test_apply_lesson_compiles_prose_then_advisory_when_no_pattern(tmp_path):
+    lg = _ledger(tmp_path)
+    p = lg.create_calibration_lesson(scope_type="domain", scope_ref="politics", lesson="x", recommended_adjustment={"enforcement_pattern": "tail_cap"}, status="active")
+    lg.update_calibration_lesson(p["id"], recommended_adjustment={"enforcement_pattern": "tail_cap"})  # strip auto rule
+    assert lg.apply_lesson(p["id"])["applied"] is True
+    n = lg.create_calibration_lesson(scope_type="domain", scope_ref="weather", lesson="vague prose", recommended_adjustment={"note": "no pattern here"}, status="active")
+    assert lg.apply_lesson(n["id"])["applied"] is False
+
+
+def test_born_scoreable_signal_flags_non_share_payload(tmp_path):
+    # A choices-present (vote-share) question forecast that lacks numeric candidate
+    # shares is NOT machine-scoreable; a continuous one is unaffected.
+    lg = _ledger(tmp_path)
+    osp = OutcomeSpace(type="distribution", choices=["A", "B", "Other"], units="pct")
+    assert lg._machine_scoreable_payload({"A": 0.5, "B": 0.4, "Other": 0.1}, osp) is True
+    assert lg._machine_scoreable_payload({"mean": 50, "sd": 10}, osp) is False  # not candidate shares
+    # A continuous distribution (no candidate choices, as stored via from_dict) is N/A -> scoreable.
+    assert lg._machine_scoreable_payload({"mean": 50}, OutcomeSpace(type="distribution", choices=[], units="usd")) is True

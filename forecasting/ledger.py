@@ -1602,6 +1602,23 @@ class ForecastLedger:
             return float(payload)  # back-compat: a bare scalar is binary-like
         return None
 
+    @staticmethod
+    def _machine_scoreable_payload(payload: Any, outcome_space: OutcomeSpace) -> bool:
+        """A candidate-share (vote-share) forecast is born machine-scoreable when it
+        carries numeric shares keyed to the question's candidates (the vector scorer
+        can then grade it, not the operator by hand). Non-share questions always True."""
+        if getattr(outcome_space, "type", None) != "distribution" or not getattr(outcome_space, "choices", None):
+            return True
+        if not isinstance(payload, dict):
+            return False
+        choices = {str(c).strip().lower() for c in outcome_space.choices}
+        numeric_keys = {
+            str(key).strip().lower()
+            for key, value in payload.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
+        return bool(choices & numeric_keys)
+
     def _derived_child_present(self, question_id: str) -> bool:
         """Whether a derived component child (e.g. a vote-share model linked
         ``component_of`` this question) is present, is a distribution, and has a
@@ -2115,6 +2132,7 @@ class ForecastLedger:
             _has_child = self._derived_child_present(question_id)
         except Exception:
             _has_child = False
+        _scoreable = self._machine_scoreable_payload(probability_or_distribution, question.outcome_space)
 
         # User-defined rule enforcement (Phase 5). Only runs when the desk has
         # authored custom rules (zero overhead otherwise). A buggy rule engine must
@@ -2206,6 +2224,7 @@ class ForecastLedger:
                         active_lessons_unapplied=_active_unapplied,
                         committed_winner_prob=_winner_prob,
                         derived_child_present=_has_child,
+                        machine_scoreable=_scoreable,
                     )
                     _upolicy = resolve_severities(question, forecast_origin=forecast_origin, hooks_config=_hcfg)
                     _ureport = run_hooks(_ctx, _upolicy, rules=tuple(_user_rules) + tuple(_lesson_rules))
@@ -2285,6 +2304,7 @@ class ForecastLedger:
                 active_lessons_unapplied=_active_unapplied,
                 committed_winner_prob=_winner_prob,
                 derived_child_present=_has_child,
+                machine_scoreable=_scoreable,
             )
             _hook_policy = policy_from_require_flags(
                 forecast_origin=forecast_origin,
@@ -4518,6 +4538,16 @@ class ForecastLedger:
             raise ValidationError("calibration lesson text is required")
         if confidence is not None and not (0 <= confidence <= 1):
             raise ValidationError("calibration lesson confidence must be between 0 and 1")
+        # Lazy-operator hook: a lesson with a recognized enforcement pattern AUTO-
+        # compiles to a hook rule at creation (WARN — observe-then-flip), so a learning
+        # becomes strict, formal enforcement without anyone hand-authoring a RuleSpec.
+        # An explicit `rule` always wins; no recognized pattern leaves it advisory.
+        if isinstance(recommended_adjustment, dict) and "rule" not in recommended_adjustment:
+            from forecasting.lesson_templates import build_lesson_rule
+
+            _auto_rule = build_lesson_rule({"recommended_adjustment": recommended_adjustment}, severity="warn")
+            if _auto_rule is not None:
+                recommended_adjustment = {**recommended_adjustment, "rule": _auto_rule}
         # Authoring gate: a lesson that carries an enforceable `rule` must compile.
         # Refuse a broken rule at write time (so it can't silently fail to bite at
         # commit) — the rule's check predicate is validated against the signal DSL.
@@ -4623,6 +4653,26 @@ class ForecastLedger:
                 ),
             )
         return self.get_calibration_lesson(lesson_id)
+
+    def apply_lesson(self, lesson_id: str, *, severity: str = "warn") -> dict[str, Any]:
+        """Compile a calibration lesson into an enforceable hook rule — the lazy-
+        operator path: turn a learning into strict, formal enforcement WITHOUT
+        hand-authoring a RuleSpec. Resolves the lesson's enforcement pattern (declared
+        or inferred), attaches the built rule to recommended_adjustment['rule']
+        (re-validated on update), and returns a summary. No recognized pattern ->
+        the lesson stays advisory (reported, never silently no-op). Severity defaults
+        to WARN (observe-then-flip)."""
+        from forecasting.lesson_templates import build_lesson_rule, resolve_enforcement_pattern
+
+        lesson = self.get_calibration_lesson(lesson_id)
+        pattern = resolve_enforcement_pattern(lesson.get("recommended_adjustment"))
+        rule = build_lesson_rule(lesson, severity=severity)
+        if rule is None:
+            return {"lesson_id": lesson_id, "applied": False, "pattern": None, "reason": "no enforcement pattern — advisory"}
+        adjustment = dict(lesson.get("recommended_adjustment") or {})
+        adjustment["rule"] = rule
+        self.update_calibration_lesson(lesson_id, recommended_adjustment=adjustment)
+        return {"lesson_id": lesson_id, "applied": True, "pattern": pattern, "severity": severity, "check": rule["check"]}
 
     def list_calibration_lessons(
         self,

@@ -257,6 +257,7 @@ def build_commit_context(
     is_thesis_or_factor: bool = False,
     committed_winner_prob: float | None = None,
     derived_child_present: bool = False,
+    machine_scoreable: bool = True,
 ) -> HookContext:
     """Assemble a HookContext from the values create_snapshot already has in
     scope. Cheap: no ledger IO (the caller passes precomputed signals)."""
@@ -305,4 +306,5 @@ def build_commit_context(
         is_thesis_or_factor=is_thesis_or_factor,
         committed_winner_prob=committed_winner_prob,
         derived_child_present=derived_child_present,
+        machine_scoreable=machine_scoreable,
     )

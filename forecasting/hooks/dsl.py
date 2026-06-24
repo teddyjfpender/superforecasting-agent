@@ -48,6 +48,7 @@ _SIGNALS: dict[str, tuple[Callable[[HookContext], Any], str, str]] = {
     "calibration.lessons_unapplied": (lambda c: c.active_lessons_unapplied, "number", "Active calibration lessons not applied to this commit."),
     "confidence.winner_prob": (lambda c: c.committed_winner_prob if c.committed_winner_prob is not None else 0.0, "number", "Committed winner probability: binary p, or the leading categorical outcome's mass."),
     "links.derived_child_present": (lambda c: c.derived_child_present, "bool", "A derived component child forecast (e.g. a vote-share model linked component_of) is present, live, and has a current snapshot."),
+    "outcome.machine_scoreable": (lambda c: c.machine_scoreable, "bool", "A candidate-share (vote-share) forecast carries numeric shares keyed to the question's candidates, so it can be machine-scored (born scoreable)."),
     # v2 — output / uncertainty structure
     "distribution.renderable": (lambda c: c.distribution_renderable, "bool", "Distribution has a central tendency + >=1 ordered interval the charts can draw."),
     "bounds.well_formed": (lambda c: c.bounds_well_formed, "bool", "Intervals are ordered, nested (ci50 in ci90), finite, non-degenerate."),

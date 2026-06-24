@@ -115,6 +115,10 @@ class HookContext:
     # winner call to be backed by a vote-share model (the NY-12 structural lesson).
     committed_winner_prob: float | None = None
     derived_child_present: bool = False
+    # Whether a candidate-share (vote-share) forecast is born machine-scoreable —
+    # it carries numeric shares keyed to the question's candidates (so the vector
+    # scorer can grade it, not the agent by hand). True for non-share questions.
+    machine_scoreable: bool = True
 
     # tail audit (categorical)
     tail_audit_passes: bool | None = None

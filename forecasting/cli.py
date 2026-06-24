@@ -2054,6 +2054,10 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     lessons_audit = lessons_sub.add_parser("audit", help="Per-lesson coverage: is each learning actually being used? (in-scope / applied / dormant)")
     lessons_audit.add_argument("--json", action="store_true")
     lessons_audit.set_defaults(_forecast_handler=_cmd_lessons_audit)
+    lessons_apply = lessons_sub.add_parser("apply", help="Compile a lesson into an enforceable hook rule (auto-detects the enforcement pattern)")
+    lessons_apply.add_argument("lesson_id")
+    lessons_apply.add_argument("--severity", choices=["warn", "error"], default="warn", help="WARN (observe, default) or ERROR (blocks at commit)")
+    lessons_apply.set_defaults(_forecast_handler=_cmd_lessons_apply)
 
     correction_parser = forecast_sub.add_parser("correction", help="Record non-mutating corrections")
     correction_sub = correction_parser.add_subparsers(dest="correction_command")
@@ -9220,6 +9224,18 @@ def _cmd_lessons_audit(args: argparse.Namespace) -> None:
         print(f"\n{len(dormant)} DORMANT lesson(s) — never encountered an in-scope forecast; retire or re-scope.")
     if advisory:
         print(f"{len(advisory)} ADVISORY lesson(s) — prose only; compile to a `rule` so they enforce instead of decorate.")
+
+
+def _cmd_lessons_apply(args: argparse.Namespace) -> None:
+    result = _ledger(args).apply_lesson(args.lesson_id, severity=args.severity)
+    if not result["applied"]:
+        print(f"{args.lesson_id}: not applied — {result['reason']}.")
+        print("  Declare `enforcement_pattern` in the lesson's recommended_adjustment, or use a recognized process_rule.")
+        return
+    import json as _json
+
+    print(f"{args.lesson_id}: applied pattern '{result['pattern']}' at {result['severity'].upper()} — it now enforces at commit for its scope.")
+    print(f"  check: {_json.dumps(result['check'])}")
 
 
 def _cmd_calibration(args: argparse.Namespace) -> None:
