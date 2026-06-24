@@ -2050,6 +2050,10 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     lessons_parser.add_argument("--scope-ref")
     lessons_parser.add_argument("--active", action="store_true")
     lessons_parser.set_defaults(_forecast_handler=_cmd_lesson_list)
+    lessons_sub = lessons_parser.add_subparsers(dest="lessons_command")
+    lessons_audit = lessons_sub.add_parser("audit", help="Per-lesson coverage: is each learning actually being used? (in-scope / applied / dormant)")
+    lessons_audit.add_argument("--json", action="store_true")
+    lessons_audit.set_defaults(_forecast_handler=_cmd_lessons_audit)
 
     correction_parser = forecast_sub.add_parser("correction", help="Record non-mutating corrections")
     correction_sub = correction_parser.add_subparsers(dest="correction_command")
@@ -9188,6 +9192,34 @@ def _print_calibration_cockpit(args: argparse.Namespace) -> None:
         print("\nAll readiness requirements met.")
     else:
         print("\nClose the next_actions above; `forecast readiness` shows the full backtest breakdown.")
+
+
+def _cmd_lessons_audit(args: argparse.Namespace) -> None:
+    rows = _ledger(args).lesson_coverage()
+    if getattr(args, "json", False):
+        print(json.dumps(rows, indent=2))
+        return
+    if not rows:
+        print("No active calibration lessons.")
+        return
+    print("Lesson coverage — is each learning actually being used?")
+    print(f"{'Lesson':<15} {'Kind':<9} {'Scope':<22} {'InScope':<8} {'Applied':<8} Status")
+    for r in rows:
+        if r["dormant"]:
+            status = "DORMANT — never in scope since creation"
+        elif not r["enforceable"]:
+            status = "advisory — prose only, will NOT bite"
+        elif r["kind"] == "numeric" and r["application_rate"] < 1.0:
+            status = f"applied {r['application_rate'] * 100:.0f}% of in-scope commits"
+        else:
+            status = "enforced"
+        print(f"{r['lesson_id']:<15} {r['kind']:<9} {r['scope']:<22} {r['in_scope_count']:<8} {r['applied_count']:<8} {status}")
+    dormant = [r for r in rows if r["dormant"]]
+    advisory = [r for r in rows if not r["enforceable"]]
+    if dormant:
+        print(f"\n{len(dormant)} DORMANT lesson(s) — never encountered an in-scope forecast; retire or re-scope.")
+    if advisory:
+        print(f"{len(advisory)} ADVISORY lesson(s) — prose only; compile to a `rule` so they enforce instead of decorate.")
 
 
 def _cmd_calibration(args: argparse.Namespace) -> None:

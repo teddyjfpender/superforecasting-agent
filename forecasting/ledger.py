@@ -872,6 +872,23 @@ class ForecastLedger:
                     metadata TEXT NOT NULL DEFAULT '{}'
                 );
 
+                -- Coverage ledger: one row each time an active lesson was IN SCOPE at a
+                -- successful commit. Lets `forecast lessons audit` answer "is this
+                -- learning actually being used?" — a lesson with zero rows since its
+                -- creation is DORMANT (never even encountered), not silently trusted.
+                CREATE TABLE IF NOT EXISTS lesson_applications (
+                    id TEXT PRIMARY KEY,
+                    lesson_id TEXT NOT NULL,
+                    question_id TEXT NOT NULL,
+                    snapshot_id TEXT,
+                    kind TEXT NOT NULL DEFAULT 'advisory',
+                    applied INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_lesson_applications_lesson
+                    ON lesson_applications(lesson_id, created_at);
+
                 CREATE TABLE IF NOT EXISTS forecast_corrections (
                     id TEXT PRIMARY KEY,
                     target_type TEXT NOT NULL,
@@ -1608,6 +1625,103 @@ class ForecastLedger:
                 continue
         return False
 
+    def _record_lesson_applications(
+        self,
+        question: Any,
+        snapshot_id: str | None,
+        committed_payload: Any,
+        calibration_adjustment: dict[str, Any] | None,
+    ) -> None:
+        """Coverage ledger: one row per active in-scope lesson at a successful commit
+        (kind + whether it was applied). Best-effort — never raises into the commit."""
+        try:
+            from forecasting.learning import active_lessons_for_question
+
+            active = active_lessons_for_question(self, question)
+            if not active:
+                return
+            adjustment = calibration_adjustment or {}
+            applied_ids = {
+                item.get("id")
+                for item in (adjustment.get("applied_active_lessons") or [])
+                if isinstance(item, dict)
+            }
+            raw = adjustment.get("raw_probability")
+            committed = (
+                committed_payload
+                if isinstance(committed_payload, (int, float)) and not isinstance(committed_payload, bool)
+                else None
+            )
+            now = utc_now_iso()
+            rows = []
+            for lesson in active:
+                recommended = lesson.get("recommended_adjustment") or {}
+                if isinstance(recommended.get("rule"), dict):
+                    # The commit SUCCEEDED, so an error-severity lesson rule passed
+                    # (it would otherwise have blocked); recorded as applied.
+                    kind, applied = "rule", 1
+                elif any(k in recommended for k in ("probability_delta", "logit_shift", "logit_scale")):
+                    kind = "numeric"
+                    applied = 1 if (
+                        lesson["id"] in applied_ids
+                        and isinstance(raw, (int, float))
+                        and committed is not None
+                        and abs(committed - float(raw)) > 1e-9
+                    ) else 0
+                else:
+                    kind, applied = "advisory", 0
+                rows.append((f"la_{uuid.uuid4().hex[:12]}", lesson["id"], question.id, snapshot_id, kind, applied, now))
+            if rows:
+                with self._connect() as conn:
+                    conn.executemany(
+                        "INSERT INTO lesson_applications (id, lesson_id, question_id, snapshot_id, kind, applied, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        rows,
+                    )
+        except Exception:
+            logger.debug("lesson-application coverage recording failed (non-fatal)", exc_info=True)
+
+    def lesson_coverage(self) -> list[dict[str, Any]]:
+        """Per active lesson: how often it has been IN SCOPE at a commit since it was
+        created, how often applied, and whether it is DORMANT (never encountered) —
+        the honest answer to 'is this learning actually being used?'. A dormant or
+        rarely-applied lesson is a review trigger, not silently-trusted machinery."""
+        now = utc_now_iso()
+        out: list[dict[str, Any]] = []
+        with self._connect() as conn:
+            lessons = conn.execute(
+                "SELECT id, scope_type, scope_ref, lesson, created_at, recommended_adjustment "
+                "FROM calibration_lessons WHERE status = 'active' ORDER BY created_at"
+            ).fetchall()
+            for row in lessons:
+                apps = conn.execute(
+                    "SELECT applied, created_at FROM lesson_applications WHERE lesson_id = ? ORDER BY created_at",
+                    (row["id"],),
+                ).fetchall()
+                in_scope = len(apps)
+                applied = sum(int(a["applied"]) for a in apps)
+                last_seen = apps[-1]["created_at"] if apps else None
+                recommended = json_loads(row["recommended_adjustment"], {}) or {}
+                if isinstance(recommended.get("rule"), dict):
+                    kind = "rule"
+                elif any(k in recommended for k in ("probability_delta", "logit_shift", "logit_scale")):
+                    kind = "numeric"
+                else:
+                    kind = "advisory"
+                out.append({
+                    "lesson_id": row["id"],
+                    "scope": f"{row['scope_type']}:{row['scope_ref'] or '*'}",
+                    "kind": kind,
+                    "lesson": (row["lesson"] or "")[:90],
+                    "in_scope_count": in_scope,
+                    "applied_count": applied,
+                    "application_rate": (applied / in_scope) if in_scope else 0.0,
+                    "last_seen": last_seen,
+                    "dormant": in_scope == 0,
+                    "enforceable": kind in ("numeric", "rule"),
+                })
+        return out
+
     def create_snapshot(
         self,
         *,
@@ -2252,6 +2366,10 @@ class ForecastLedger:
         # question has no parents — i.e. on the common forecast commit.
         if set_current and forecast_origin == "live":
             self._cascade_reaggregate_parents(question_id, as_of=as_of_ts)
+        # Coverage ledger: record which active lessons were in scope at this live
+        # commit, so `forecast lessons audit` can show whether each is actually used.
+        if forecast_origin == "live":
+            self._record_lesson_applications(question, forecast_id, probability_or_distribution, calibration_adjustment)
         return self.get_snapshot(forecast_id)
 
     def _thesis_auto_aggregate_enabled(self, thesis_id: str) -> bool:

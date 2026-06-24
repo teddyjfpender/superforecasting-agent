@@ -214,3 +214,32 @@ def test_distribution_payload_is_not_treated_as_a_winner_probability(tmp_path):
     )
     snap = lg.create_snapshot(question_id=q.id, probability_or_distribution={"mean": 52, "sd": 6, "q05": 42, "q50": 52, "q95": 62}, rationale="a vote-share model itself", forecast_origin="live")
     assert snap is not None  # winner_prob is None for a distribution -> rule not triggered
+
+
+# ── Slice 3 (coverage audit): "is each learning actually being used?" ──
+def test_coverage_records_in_scope_and_applied(tmp_path):
+    lg = _ledger(tmp_path)
+    num = lg.create_calibration_lesson(scope_type="domain", scope_ref="politics", lesson="numeric bias", recommended_adjustment={"logit_shift": 0.3}, status="active")
+    q = lg.create_question(title="Will the candidate win the primary by close?", resolution_criteria=CRIT, domain="politics")
+    lg.create_snapshot(question_id=q.id, probability_or_distribution=0.5, rationale="ignored the lesson", forecast_origin="live")
+    lg.create_snapshot(question_id=q.id, probability_or_distribution=0.57, rationale="applied the lesson", forecast_origin="live", calibration_adjustment={"applied_active_lessons": [{"id": num["id"]}], "raw_probability": 0.5})
+    cov = {r["lesson_id"]: r for r in lg.lesson_coverage()}
+    assert cov[num["id"]]["in_scope_count"] == 2
+    assert cov[num["id"]]["applied_count"] == 1  # one ignored, one applied
+
+
+def test_coverage_flags_dormant_lesson(tmp_path):
+    lg = _ledger(tmp_path)
+    # a lesson scoped to a domain we never commit in
+    dormant = lg.create_calibration_lesson(scope_type="domain", scope_ref="space", lesson="never encountered", recommended_adjustment={"logit_shift": 0.1}, status="active")
+    q = lg.create_question(title="Will the politics metric clear the bar by close?", resolution_criteria=CRIT, domain="politics")
+    lg.create_snapshot(question_id=q.id, probability_or_distribution=0.5, rationale="out of the dormant lesson's scope", forecast_origin="live")
+    cov = {r["lesson_id"]: r for r in lg.lesson_coverage()}
+    assert cov[dormant["id"]]["dormant"] is True and cov[dormant["id"]]["in_scope_count"] == 0
+
+
+def test_coverage_marks_prose_lesson_unenforceable(tmp_path):
+    lg = _ledger(tmp_path)
+    prose = lg.create_calibration_lesson(scope_type="domain", scope_ref="politics", lesson="build vote-share first", recommended_adjustment={"note": "prose only"}, status="active")
+    cov = {r["lesson_id"]: r for r in lg.lesson_coverage()}
+    assert cov[prose["id"]]["enforceable"] is False and cov[prose["id"]]["kind"] == "advisory"
