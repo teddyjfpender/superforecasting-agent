@@ -6854,6 +6854,11 @@ class ForecastLedger:
             raise ValidationError("set_thesis_correlation requires a question with outcome type 'thesis'")
         if member_a == member_b:
             raise ValidationError("a member cannot be correlated with itself")
+        if "|" in member_a or "|" in member_b:
+            # The pair is stored as "a|b"; a literal '|' in an id would corrupt the
+            # key. System ids never contain it, but reject loudly rather than silently
+            # dropping the correlation at load time.
+            raise ValidationError("member ids must not contain '|'")
         member_ids = {m["member_question_id"] for m in self.list_thesis_members(thesis_id)}
         for mid in (member_a, member_b):
             if mid not in member_ids:
@@ -7181,10 +7186,17 @@ class ForecastLedger:
         proposal alert per question so it never re-alerts every cycle. ``dry_run``
         previews without raising alerts."""
         open_alerts = self.list_alerts(unresolved_only=True)
-        already = {
-            alert.scope_ref for alert in open_alerts
-            if alert.scope_type == "question" and "resolution proposed" in (alert.reason or "").lower()
-        }
+        # Dedup is OUTCOME-AWARE: an open alert suppresses re-alerting only for the
+        # SAME proposed outcome. If the data flips the proposal (e.g. NO -> YES) the
+        # operator must see the new one, so (scope_ref, outcome) is the key, not the
+        # question alone.
+        already: set[tuple[str, str]] = set()
+        for alert in open_alerts:
+            reason = (alert.reason or "").lower()
+            if alert.scope_type == "question" and "resolution proposed:" in reason:
+                tail = reason.split("resolution proposed:", 1)[1].strip()
+                outcome = "yes" if tail.startswith("yes") else ("no" if tail.startswith("no") else "")
+                already.add((alert.scope_ref, outcome))
         results: list[dict[str, Any]] = []
         for question in self.list_questions(status="active"):
             meta = question.metadata if isinstance(question.metadata, dict) else {}
@@ -7193,7 +7205,7 @@ class ForecastLedger:
             proposal = self.propose_resolution(question.id)
             if not proposal or not proposal.get("determinable"):
                 continue
-            if question.id in already:
+            if (question.id, proposal["outcome"]) in already:
                 results.append({"question_id": question.id, "outcome": proposal["outcome"], "alerted": False, "skipped": "open_alert"})
                 continue
             alert_id = None

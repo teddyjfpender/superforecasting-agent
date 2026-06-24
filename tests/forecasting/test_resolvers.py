@@ -35,6 +35,13 @@ def test_no_value_is_undetermined_never_fabricated():
     assert p.determinable is False and p.outcome is None
 
 
+def test_nan_and_inf_are_undetermined_not_fabricated():
+    # NaN/inf are garbage data, not observations — must never produce a YES/NO.
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        p = propose_metric_threshold(question_id="q", rule=RULE, observed_value=bad)
+        assert p.determinable is False and p.outcome is None
+
+
 def test_rule_validation_flags_problems():
     assert validate_metric_threshold_rule(RULE) == []
     assert validate_metric_threshold_rule({"comparator": "~", "threshold": "x", "field": ""})  # 3 problems
@@ -97,6 +104,27 @@ def test_propose_due_resolutions_alerts_once_then_dedups(tmp_path):
     assert second[0]["alerted"] is False
     open_after = [a for a in lg.list_alerts(unresolved_only=True) if "resolution proposed" in a.reason.lower()]
     assert len(open_after) == 1
+
+
+def test_flipped_outcome_re_alerts(tmp_path):
+    # If the data flips the proposal (YES -> NO), the operator MUST see the new one;
+    # the outcome-aware dedup must not suppress a changed outcome.
+    lg = _ledger(tmp_path)
+    q = lg.create_question(title="Will the segment beat consensus?", resolution_criteria=CRIT)
+    ws = lg.add_watched_source(scope_type="question", scope_ref=q.id, source="https://x/e", source_type="rss", role="resolver")
+    lg.set_resolution_rule(q.id, field="segment_revenue", comparator=">=", threshold=5.0)
+
+    _ingest_value(lg, q.id, ws["id"], "segment_revenue", 6.2)  # YES
+    assert lg.propose_due_resolutions()[0]["alerted"] is True
+    # A later, lower reading flips it to NO -> must raise a fresh alert (not skip).
+    with lg._connect() as conn:
+        conn.execute(
+            "INSERT INTO source_snapshots (id, question_id, watched_source_id, source_type, retrieved_at, parsed_values) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("ss_flip", q.id, ws["id"], "rss", "2999-01-01T00:00:00Z", json_dumps({"segment_revenue": 4.0})),
+        )
+    flipped = lg.propose_due_resolutions()
+    assert flipped[0]["outcome"] == "no" and flipped[0]["alerted"] is True
 
 
 def test_no_rule_returns_none(tmp_path):

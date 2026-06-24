@@ -17,6 +17,7 @@ without an observed value we return an UNDETERMINED proposal, never a guess.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Callable, Mapping
 
@@ -103,11 +104,17 @@ def propose_metric_threshold(
             confidence=0.0, rationale="rule is not evaluable (bad comparator/threshold)",
             source_ref=source_ref,
         )
-    if observed_value is None:
+    if observed_value is None or not math.isfinite(float(observed_value)):
+        # NaN/inf are NOT valid observations — they signal missing/garbage data, not
+        # a value that beats or misses the threshold. Treat as UNDETERMINED so a
+        # parse glitch can never fabricate a YES/NO (the "never fabricate" guarantee).
+        bad = observed_value is not None
         return ResolutionProposal(
             question_id=question_id, resolver="metric_threshold", determinable=False,
             outcome=None, observed_value=None, comparator=comparator, threshold=float(threshold),
-            confidence=0.0, rationale="no observed value yet from the resolver source; keep watching",
+            confidence=0.0,
+            rationale=("observed value is not finite (NaN/inf) — invalid data, not resolving"
+                       if bad else "no observed value yet from the resolver source; keep watching"),
             source_ref=source_ref,
         )
     hit = op(float(observed_value), float(threshold))

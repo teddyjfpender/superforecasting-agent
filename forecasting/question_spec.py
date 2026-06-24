@@ -374,6 +374,7 @@ class QuestionSpec:
         # or an explicit schedule won't spawn a duplicate. Fail-open: a scheduling
         # hiccup must never block the commit.
         scheduled_review = None
+        scheduled_review_error = None
         try:
             scheduled_review = ledger.schedule_review(
                 scope_type="question",
@@ -382,8 +383,12 @@ class QuestionSpec:
                 auto_score=True,
                 auto_postmortem=True,
             )
-        except Exception:
+        except Exception as exc:
+            # Fail-open: a scheduling hiccup must never block the commit. But record
+            # WHY rather than swallowing it silently, so a real misconfiguration
+            # (e.g. a bad cadence) surfaces in the commit result instead of vanishing.
             scheduled_review = None
+            scheduled_review_error = str(exc)
 
         question_dict = dict(question.__dict__) if hasattr(question, "__dict__") else dict(question)
         # OutcomeSpace is the one non-JSON-serializable field on the question.
@@ -397,6 +402,7 @@ class QuestionSpec:
             "watched_sources": watched,
             "reference_classes": ref_classes,
             "scheduled_review": scheduled_review,
+            "scheduled_review_error": scheduled_review_error,
             "readiness_gaps": [g.to_dict() for g in gaps],
         }
 

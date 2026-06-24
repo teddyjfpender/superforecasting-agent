@@ -89,3 +89,5 @@ def test_set_correlation_rejects_non_members_and_out_of_range(tmp_path):
         lg.set_thesis_correlation(th.id, a.id, stranger.id, 0.3)  # stranger not a member
     with pytest.raises(ValidationError):
         lg.set_thesis_correlation(th.id, a.id, b.id, 1.5)  # out of [0, 0.95]
+    with pytest.raises(ValidationError, match="must not contain"):
+        lg.set_thesis_correlation(th.id, "a|b", a.id, 0.3)  # '|' would corrupt the stored pair key
