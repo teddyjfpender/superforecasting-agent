@@ -981,6 +981,8 @@ export interface ForecastWorkspaceItem {
   analyst_note?: ForecastAnalystNote | null
   analyst_notes?: ForecastAnalystNote[]
   as_of?: null | string
+  // Per-candidate 90% intervals for a vote-share PMF (lo=p05, hi=p95) → error bars.
+  candidate_intervals?: null | Record<string, { hi: number; lo: number; mid?: number }>
   change_my_mind?: string[]
   close_time?: null | string
   closing_soon?: boolean

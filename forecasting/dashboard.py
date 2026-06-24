@@ -388,6 +388,28 @@ def build_factor_summary(
     return out
 
 
+def _candidate_intervals(snapshot: Any) -> dict[str, dict[str, float]] | None:
+    """Per-candidate 90% intervals for a vote-share PMF, read from the snapshot's
+    ``candidate_share_intervals_pp`` metadata and normalized to
+    ``{candidate: {lo, mid, hi}}`` (p05 / median / p95). Returns None when absent or
+    malformed — the TUI draws per-candidate error bars only when present."""
+    meta = getattr(snapshot, "metadata", None)
+    if not isinstance(meta, dict):
+        return None
+    raw = meta.get("candidate_share_intervals_pp")
+    if not isinstance(raw, dict):
+        return None
+    out: dict[str, dict[str, float]] = {}
+    for candidate, interval in raw.items():
+        if not isinstance(interval, dict):
+            continue
+        pairs = (("lo", interval.get("p05")), ("mid", interval.get("median", interval.get("p50"))), ("hi", interval.get("p95")))
+        vals = {k: float(v) for k, v in pairs if isinstance(v, (int, float)) and not isinstance(v, bool)}
+        if "lo" in vals and "hi" in vals and vals["lo"] <= vals["hi"]:
+            out[str(candidate)] = vals
+    return out or None
+
+
 def build_workspace_payload(
     *,
     ledger: ForecastLedger | None = None,
@@ -495,6 +517,9 @@ def build_workspace_payload(
                 "probability_display": format_probability(probability) if current else "-",
                 "headline_probability": _headline_numeric(probability) if current else None,
                 "distribution": distribution,
+                # Per-candidate 90% intervals for a vote-share PMF (from metadata) so
+                # the TUI can draw per-candidate error bars; None when not supplied.
+                "candidate_intervals": _candidate_intervals(current) if current else None,
                 # Movement of the headline value (probability for binary/categorical,
                 # mean for distribution) since the previous snapshot, in headline units.
                 "delta": _headline_delta(

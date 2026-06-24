@@ -232,6 +232,9 @@ export const bandChart = (
 export interface HistogramBar {
   label: string
   value: number
+  // Optional 90% interval (e.g. per-candidate vote-share p05/p95). When present the
+  // row appends ` [lo–hi]` so uncertainty is visible next to the point estimate.
+  interval?: { hi: number; lo: number } | null
 }
 
 /**
@@ -256,7 +259,10 @@ export const histogram = (
     // Probabilities and other fractional values get 2 decimals; whole counts
     // stay integer (so "1200" doesn't become "1200.00").
     const valueText = Number.isInteger(bar.value) ? String(bar.value) : bar.value.toFixed(2)
-    return `${label} ${'█'.repeat(fill)}${'░'.repeat(track - fill)} ${valueText}`
+    const iv = bar.interval
+    const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1))
+    const intervalText = iv && finite(iv.lo) && finite(iv.hi) ? ` [${fmt(iv.lo)}–${fmt(iv.hi)}]` : ''
+    return `${label} ${'█'.repeat(fill)}${'░'.repeat(track - fill)} ${valueText}${intervalText}`
   })
 }
 

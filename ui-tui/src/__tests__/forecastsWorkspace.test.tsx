@@ -454,6 +454,18 @@ describe('ForecastsWorkspace pure transforms', () => {
     expect(hybrid!.map(b => b.label).sort()).toEqual(['Andy Biggs', 'David Schweikert', 'Other'])
   })
 
+  it('distributionBars attaches per-candidate intervals by label', async () => {
+    const { distributionBars } = await import('../components/forecastsWorkspace.js')
+    const bars = distributionBars(
+      { Pappas: 72, Jarvis: 6, Other: 22 },
+      { Pappas: { lo: 50, hi: 85 }, Jarvis: { lo: 2, hi: 14 } }
+    )
+    const byLabel = Object.fromEntries((bars ?? []).map(b => [b.label, b.interval]))
+    expect(byLabel.Pappas).toEqual({ lo: 50, hi: 85 })
+    expect(byLabel.Jarvis).toEqual({ lo: 2, hi: 14 })
+    expect(byLabel.Other).toBeNull() // no interval supplied for this candidate
+  })
+
   it('historyToBandPoints shows only REAL bands — no confidence-synthesized band', async () => {
     const { historyToBandPoints } = await import('../components/forecastsWorkspace.js')
     const points = historyToBandPoints(texasItem())

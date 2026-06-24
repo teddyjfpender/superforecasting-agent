@@ -189,7 +189,10 @@ export const matchesFilter = (item: ForecastWorkspaceItem, query: string): boole
   !query.trim() || rankItems([item], query, FORECAST_SEARCH_FIELDS).length > 0
 
 /** Categorical / bucket distribution → sorted bars; null for scalar or mean/sd shapes. */
-export const distributionBars = (probability: ForecastWorkspaceItem['probability']): HistogramBar[] | null => {
+export const distributionBars = (
+  probability: ForecastWorkspaceItem['probability'],
+  intervals?: ForecastWorkspaceItem['candidate_intervals']
+): HistogramBar[] | null => {
   if (!probability || typeof probability !== 'object' || Array.isArray(probability)) {
     return null
   }
@@ -215,7 +218,9 @@ export const distributionBars = (probability: ForecastWorkspaceItem['probability
     return null
   }
 
-  return bars.map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
+  return bars
+    .map(([label, value]) => ({ label, value, interval: (intervals && intervals[label]) || null }))
+    .sort((a, b) => b.value - a.value)
 }
 
 /** Confidence/spread band for one history point. Latest point prefers the panel spread. */
@@ -1528,8 +1533,8 @@ export function ForecastDetail({
       return pmf.map(row => ({ label: row.label, value: row.probability }))
     }
 
-    return distributionBars(item.probability)
-  }, [item.distribution, item.probability])
+    return distributionBars(item.probability, item.candidate_intervals)
+  }, [item.distribution, item.probability, item.candidate_intervals])
 
   const dist = item.distribution
   const isDistribution = item.headline_kind === 'distribution'

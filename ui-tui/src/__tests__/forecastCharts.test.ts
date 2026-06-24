@@ -199,6 +199,18 @@ describe('histogram', () => {
     expect(histogram([])).toEqual([])
     expect(histogram([{ label: 'x', value: Number.NaN }])).toEqual([])
   })
+
+  it('appends a [lo–hi] interval suffix when a bar carries one', () => {
+    const rows = histogram(
+      [
+        { label: 'Pappas', value: 72, interval: { lo: 50, hi: 85 } },
+        { label: 'Jarvis', value: 6 },
+      ],
+      { width: 10, labelWidth: 8 }
+    )
+    expect(rows[0]).toContain('72 [50–85]')
+    expect(rows[1]!.includes('[')).toBe(false) // no interval -> no suffix
+  })
 })
 
 describe('boxWhisker', () => {
