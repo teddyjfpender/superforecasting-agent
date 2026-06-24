@@ -315,6 +315,50 @@ def handle_meet_transcript(args: Dict[str, Any], **_kw) -> str:
     return _json({"success": bool(res.get("ok")), **res})
 
 
+MEET_FOLLOWUP_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "node": {"type": "string", "description": "Optional remote node name (omit for the local bot)."},
+        "title": {"type": "string", "description": "Optional meeting title for the summary."},
+    },
+}
+
+
+def handle_meet_followup(args: Dict[str, Any], **_kw) -> str:
+    """Summarize the meeting transcript and GATHER the post-call TODO list.
+
+    Read-only by design: returns {summary, key_decisions, action_items, risks}. The
+    action_items ARE the post-call TODO list — the agent/user then files them
+    (kanban_create with an assignee; the kanban dispatcher auto-executes), schedules
+    them (cron), or dispatches them (delegate_task), keeping a human in the loop on what
+    actually gets actioned (a misread caption must not auto-spawn real work)."""
+    try:
+        client, node_name = _resolve_node_client(args.get("node"))
+    except RuntimeError as e:
+        return _err(str(e))
+    try:
+        res = client.transcript(last=None) if client is not None else pm.transcript(last=None)
+    except Exception as e:
+        return _err(f"transcript read failed: {e}", node=node_name)
+    if not res.get("ok"):
+        return _err(res.get("reason") or "no transcript available", node=node_name)
+    lines = res.get("lines") or []
+    transcript_text = "\n".join(lines) if isinstance(lines, list) else str(res.get("text") or "")
+    if not transcript_text.strip():
+        return _err("transcript is empty", node=node_name)
+
+    from plugins.meeting_common.summarize import summarize_transcript_sync
+
+    summary = summarize_transcript_sync(transcript_text, title=args.get("title") or "Google Meet call")
+    payload = summary.to_dict()
+    payload["next"] = (
+        "Review action_items, then file/assign them (kanban_create with an assignee — the "
+        "kanban dispatcher auto-executes), schedule them (cron), or dispatch now "
+        "(delegate_task). Keep a human in the loop on what gets actioned."
+    )
+    return _json({"success": True, "node": node_name, **payload})
+
+
 def handle_meet_leave(args: Dict[str, Any], **_kw) -> str:
     try:
         client, node_name = _resolve_node_client(args.get("node"))
