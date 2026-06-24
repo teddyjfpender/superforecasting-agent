@@ -2411,6 +2411,10 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     thesis_show = thesis_sub.add_parser("show", help="Show thesis health + per-member contributions (no commit)")
     thesis_show.add_argument("thesis", help="row number, id, or search words for the thesis")
     thesis_show.add_argument("--rho", type=float, default=0.4)
+    thesis_show.add_argument(
+        "--sensitivity", action="store_true",
+        help="Add the explainability view: biggest marginal movers, stale members, and how the band depends on the correlation assumption",
+    )
     thesis_show.set_defaults(_forecast_handler=_cmd_thesis_show)
     thesis_list = thesis_sub.add_parser("list", help="List thesis questions")
     thesis_list.add_argument("--limit", type=int, default=None)
@@ -9877,6 +9881,30 @@ def _cmd_thesis_show(args: argparse.Namespace) -> None:
             note_line = trigger.get("note")
             if note_line:
                 print(f"  {note_line}")
+    if getattr(args, "sensitivity", False) and agg.health is not None:
+        print("")
+        print("EXPLAINABILITY")
+        # Biggest marginal movers: which member swings thesis health most if dropped.
+        movers = sorted(agg.components, key=lambda c: abs(c.get("marginal_health_delta") or 0.0), reverse=True)
+        top_movers = [m for m in movers if (m.get("marginal_health_delta") or 0.0) != 0.0][:3]
+        if top_movers:
+            print("  biggest movers (leave-one-out health delta):")
+            for mover in top_movers:
+                label = mover.get("title") or mover.get("member_id")
+                print(f"    {label}: {float(mover.get('marginal_health_delta') or 0.0) * 100:+.1f} pp")
+        # Stale members: signal aging out (the thesis lags a member that stopped updating).
+        stale = [c for c in agg.components if (c.get("status") or "") == "stale"]
+        if stale:
+            print("  stale members: " + ", ".join((c.get("title") or c.get("member_id")) for c in stale))
+        # Correlation sensitivity: how much the honest band depends on the co-movement
+        # assumption (members co-move, so the band is only as trustworthy as rho).
+        print("  correlation sensitivity (band vs assumed rho):")
+        for assumed in (0.0, 0.2, 0.4, 0.6, 0.8):
+            swept = ledger.aggregate_thesis(thesis_id, rho=assumed, commit=False)["aggregate"]
+            if swept.band:
+                width = swept.band[2] - swept.band[0]
+                print(f"    rho={assumed:.1f}: band {_format_thesis_band(swept.band)}  width {width:.1f}  n_eff {swept.n_eff:.2f}")
+
     note = ledger.latest_analyst_note(thesis_id, kind="brief")
     if note and note.get("headline"):
         print("")
