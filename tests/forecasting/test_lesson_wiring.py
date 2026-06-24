@@ -95,3 +95,26 @@ def test_normal_distribution_still_routes_to_normal_score(tmp_path):
     osp = OutcomeSpace(type="distribution", units="usd_billions")
     res = lg._score_forecast_payload({"mean": 390.0, "sd": 85.0}, 400.0, osp)
     assert res["score_rule"] != "vector_mae_percentage_points"
+
+
+# ── Slice 3: scope-matched lessons reach the agent context + the TUI workspace ──
+def test_context_packet_surfaces_scope_matched_lesson(tmp_path):
+    from forecasting.protocol import build_context_packet
+    lg = _ledger(tmp_path)
+    les = lg.create_calibration_lesson(scope_type="domain_topic", scope_ref="politics:nyc-primaries", lesson="cap lower-tier candidate share near 5-10pp", status="active")
+    q = _vote_share_q(lg, ["nyc-primaries", "vote share"])
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution={"mean": 50, "sd": 10, "q05": 35, "q50": 50, "q95": 65}, rationale="x", forecast_origin="exploratory")
+    packet = build_context_packet(lg, lg.get_question(q.id), snap)
+    assert "cap lower-tier candidate share" in packet  # the domain_topic lesson now surfaces (was global/domain-only before)
+    assert les["id"] in packet or "lower-tier" in packet
+
+
+def test_workspace_payload_exposes_relevant_lessons(tmp_path):
+    from forecasting.dashboard import build_workspace_payload
+    lg = _ledger(tmp_path)
+    les = lg.create_calibration_lesson(scope_type="domain_topic", scope_ref="politics:nyc-primaries", lesson="top-two compression", status="active")
+    q = _vote_share_q(lg, ["nyc-primaries", "vote share"])
+    lg.create_snapshot(question_id=q.id, probability_or_distribution={"mean": 50, "sd": 10, "q05": 35, "q50": 50, "q95": 65}, rationale="x", forecast_origin="exploratory")
+    item = next(f for f in build_workspace_payload(ledger=lg)["forecasts"] if f["id"] == q.id)
+    assert item["lessons_count"] >= 1
+    assert any(l["id"] == les["id"] for l in item["relevant_lessons"])

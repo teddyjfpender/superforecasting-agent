@@ -314,19 +314,14 @@ def build_context_packet(
         for alert in ledger.list_alerts(unresolved_only=True)
         if alert.scope_type == "question" and alert.scope_ref == question.id
     ]
-    # Active calibration lessons that bear on this question: the domain-scoped
-    # ones plus any GLOBAL bias advisory (e.g. "running under-confident across
-    # the book"), so a system-wide tendency surfaces even on a fresh domain.
-    lessons = list(ledger.list_calibration_lessons(scope_type="global", scope_ref=None, active_only=True))
-    if question.domain:
-        seen = {lesson["id"] for lesson in lessons}
-        lessons.extend(
-            lesson
-            for lesson in ledger.list_calibration_lessons(
-                scope_type="domain", scope_ref=question.domain, active_only=True
-            )
-            if lesson["id"] not in seen
-        )
+    # Active calibration lessons that bear on this question — the SINGLE source of
+    # truth (global + domain + topic + domain_topic + question_type), the exact same
+    # retrieval compile_lesson_rules uses at commit. So what the agent reads in the
+    # context equals what enforces at commit (no global/domain-only blind spot that
+    # silently dropped the precisely-scoped NY-primary lessons).
+    from forecasting.learning import active_lessons_for_question
+
+    lessons = active_lessons_for_question(ledger, question)
     error_profiles = ledger.list_domain_error_profiles(domain=question.domain) if question.domain else []
 
     readiness_issues = ledger.decision_readiness_issues(question)

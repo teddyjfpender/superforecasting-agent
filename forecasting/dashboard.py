@@ -455,6 +455,27 @@ def build_workspace_payload(
         # in the outcome's units); binary/categorical track a probability.
         headline_kind = "distribution" if (outcome_type == "distribution" and distribution) else "probability"
 
+        # Lessons that should STRUCTURE this forecast (scope-matched: domain / topic /
+        # domain_topic / question_type) — the same retrieval the agent reads + that
+        # compiles to commit rules. This is "what shaped / should shape this forecast",
+        # distinct from the source-derived lessons this question's own miss produced.
+        relevant_lessons: list[dict[str, Any]] = []
+        try:
+            from forecasting.learning import active_lessons_for_question
+
+            relevant_lessons = [
+                {
+                    "id": lesson["id"],
+                    "lesson": (lesson.get("lesson") or "")[:200],
+                    "scope_type": lesson.get("scope_type"),
+                    "scope_ref": lesson.get("scope_ref"),
+                    "confidence": lesson.get("confidence"),
+                }
+                for lesson in active_lessons_for_question(ledger, question)
+            ]
+        except Exception:
+            relevant_lessons = []
+
         forecasts.append(
             {
                 "id": question.id,
@@ -495,6 +516,8 @@ def build_workspace_payload(
                 "decision_readiness_issues": ledger.decision_readiness_issues(question),
                 "evidence_count": len(evidence_items),
                 "open_alert_count": alert_counts.get(question.id, 0),
+                "relevant_lessons": relevant_lessons,
+                "lessons_count": len(relevant_lessons),
                 "snapshot_count": len(snapshots),
                 "freshness": format_freshness(current.as_of if current else None, now=now),
                 "closing_soon": closing,
