@@ -1971,7 +1971,16 @@ class ForecastLedger:
             except Exception:
                 _user_rules = []
                 _hcfg = {}
-            if _user_rules:
+            # Compile active in-scope calibration lessons that carry a `rule` into
+            # enforceable lesson:* rules — this is how a STRUCTURAL lesson (not just a
+            # numeric bias) bites at commit. Force-stamped scope; broken rules skipped.
+            try:
+                from forecasting.learning import compile_lesson_rules as _compile_lessons
+
+                _lesson_rules = _compile_lessons(self, question)
+            except Exception:
+                _lesson_rules = []
+            if _user_rules or _lesson_rules:
                 _ublocked = None
                 try:
                     _ucomp = ensemble_components
@@ -2035,7 +2044,7 @@ class ForecastLedger:
                         active_lessons_unapplied=_active_unapplied,
                     )
                     _upolicy = resolve_severities(question, forecast_origin=forecast_origin, hooks_config=_hcfg)
-                    _ureport = run_hooks(_ctx, _upolicy, rules=tuple(_user_rules))
+                    _ureport = run_hooks(_ctx, _upolicy, rules=tuple(_user_rules) + tuple(_lesson_rules))
                     if not _ureport.passed:
                         _ublocked = _ureport
                 except Exception:
@@ -4335,6 +4344,17 @@ class ForecastLedger:
             raise ValidationError("calibration lesson text is required")
         if confidence is not None and not (0 <= confidence <= 1):
             raise ValidationError("calibration lesson confidence must be between 0 and 1")
+        # Authoring gate: a lesson that carries an enforceable `rule` must compile.
+        # Refuse a broken rule at write time (so it can't silently fail to bite at
+        # commit) — the rule's check predicate is validated against the signal DSL.
+        _rule = (recommended_adjustment or {}).get("rule") if isinstance(recommended_adjustment, dict) else None
+        if isinstance(_rule, dict):
+            from forecasting.hooks.dsl import RuleSpec, validate_rule
+
+            _spec = RuleSpec.from_dict({**_rule, "id": "lesson:_validate", "applies_to": {}})
+            _rule_errs = [issue for issue in validate_rule(_spec) if issue.severity == "error"]
+            if _rule_errs:
+                raise ValidationError(f"calibration lesson rule is invalid: {_rule_errs[0].message}")
         now = utc_now_iso()
         lesson_id = f"cl_{uuid.uuid4().hex[:12]}"
         with self._connect() as conn:

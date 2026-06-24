@@ -6,9 +6,19 @@ next in-scope forecast instead of being silently ignored."""
 
 from __future__ import annotations
 
+import pytest
+
 from forecasting.ledger import ForecastLedger
+from forecasting.models import ValidationError
 
 CRIT = "Resolves yes if the official source reports the value exceeds the threshold at the close date."
+
+# A structural lesson rule: politics forecasts must carry an outside-view anchor.
+_ANCHOR_RULE = {
+    "category": "reasoning", "severity": "error",
+    "check": {"signal": "reference_classes.count", "op": ">=", "value": 1},
+    "message": "politics forecasts need an outside-view anchor (lesson)",
+}
 
 
 def _ledger(tmp_path) -> ForecastLedger:
@@ -84,3 +94,57 @@ def test_prose_only_lesson_is_not_counted_in_slice1(tmp_path):
     )
     snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=0.5, rationale="prose lesson present", forecast_origin="live")
     assert _verdict(snap, "lessons_applied") is True
+
+
+# ── Slice 2: structural lessons compile to lesson:* rules that bite at commit ──
+def _politics_lesson_rule(lg):
+    return lg.create_calibration_lesson(
+        scope_type="domain", scope_ref="politics", lesson="Anchor politics forecasts to a reference class.",
+        recommended_adjustment={"rule": _ANCHOR_RULE}, status="active",
+    )
+
+
+def test_structural_lesson_blocks_when_violated(tmp_path):
+    lg = _ledger(tmp_path)
+    _politics_lesson_rule(lg)
+    q = lg.create_question(title="Will the candidate win the primary by close?", resolution_criteria=CRIT, domain="politics")
+    with pytest.raises(Exception):  # SaturationBlocked — the lesson rule (error) fires (no reference class)
+        lg.create_snapshot(question_id=q.id, probability_or_distribution=0.5, rationale="no anchor", forecast_origin="live")
+
+
+def test_structural_lesson_passes_when_satisfied(tmp_path):
+    lg = _ledger(tmp_path)
+    _politics_lesson_rule(lg)
+    q = lg.create_question(title="Will the other candidate win by close?", resolution_criteria=CRIT, domain="politics")
+    lg.add_reference_class(question_id=q.id, name="recent comparable primaries", inclusion_criteria="same-type contested primaries")
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=0.5, rationale="anchored to a reference class", forecast_origin="live")
+    assert snap is not None  # the anchor satisfies the lesson rule -> commits
+
+
+def test_lesson_rule_scope_is_force_stamped(tmp_path):
+    # The same lesson is scoped domain:politics; an econ forecast must be unaffected.
+    lg = _ledger(tmp_path)
+    _politics_lesson_rule(lg)
+    q = lg.create_question(title="Will the econ metric clear the bar by close?", resolution_criteria=CRIT, domain="econ")
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=0.5, rationale="out of scope for the politics lesson", forecast_origin="live")
+    assert snap is not None
+
+
+def test_lesson_rule_override_cannot_demote(tmp_path):
+    lg = _ledger(tmp_path)
+    lesson = _politics_lesson_rule(lg)
+    q = lg.create_question(
+        title="Will the third candidate win by close?", resolution_criteria=CRIT, domain="politics",
+        metadata={"forecast_hooks": {"overrides": {f"lesson:{lesson['id']}": "off"}}},
+    )
+    with pytest.raises(Exception):  # the override must NOT demote a lesson:* rule
+        lg.create_snapshot(question_id=q.id, probability_or_distribution=0.5, rationale="tried to override the lesson off", forecast_origin="live")
+
+
+def test_invalid_lesson_rule_refused_at_authoring(tmp_path):
+    lg = _ledger(tmp_path)
+    with pytest.raises(ValidationError, match="rule is invalid"):
+        lg.create_calibration_lesson(
+            scope_type="domain", scope_ref="politics", lesson="broken",
+            recommended_adjustment={"rule": {"check": {"signal": "nonsense.signal", "op": ">=", "value": 1}}}, status="active",
+        )

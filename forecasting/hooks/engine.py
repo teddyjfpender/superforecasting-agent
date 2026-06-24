@@ -81,11 +81,16 @@ def resolve_severities(question, *, forecast_origin: str = "live", hooks_config:
     if str(origin_scaling.get(forecast_origin, "inherit")).strip().lower() == "off":
         return {rid: Severity.WARN for rid in sev}
 
+    # Override floor: a compiled calibration-lesson rule (id `lesson:*`) enforces a
+    # learning the desk already paid for in a miss; it must NOT be silently demotable
+    # by a per-question or global override (that would re-open the "acknowledge then
+    # ignore" hole at the config layer). Lesson rules carry + keep their own declared
+    # severity; everything else is overridable as before.
     for rid, s in (hooks_config.get("overrides") or {}).items():
-        if rid in sev:
+        if rid in sev and not rid.startswith("lesson:"):
             sev[rid] = _sev(s, sev[rid])
     for rid, s in (qmeta.get("overrides") or {}).items():
-        if rid in sev:
+        if rid in sev and not rid.startswith("lesson:"):
             sev[rid] = _sev(s, sev[rid])
     return sev
 

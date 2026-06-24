@@ -135,6 +135,56 @@ def active_lessons_for_question(ledger: ForecastLedger, question: Any) -> list[d
     return lessons
 
 
+def lesson_scope_to_applies_to(lesson: dict[str, Any]) -> dict[str, Any]:
+    """Force-stamp a lesson's enforcement scope from its OWN scope_type/scope_ref —
+    never from author-supplied applies_to — so a domain:politics lesson can only
+    ever match politics forecasts (no scope-widening attack)."""
+    scope_type = lesson.get("scope_type")
+    scope_ref = lesson.get("scope_ref")
+    if scope_type == "domain" and scope_ref:
+        return {"domain": [scope_ref]}
+    if scope_type == "domain_topic" and scope_ref:
+        # best-effort: match the domain prefix ("politics:elections:primaries" -> politics)
+        return {"domain": [str(scope_ref).split(":", 1)[0]]}
+    if scope_type == "question_type" and scope_ref:
+        return {"outcome_type": [scope_ref]}
+    # global / topic: no DSL applies_to dimension — applies broadly; the rule's own
+    # check predicate is responsible for self-limiting.
+    return {}
+
+
+def compile_lesson_rules(ledger: ForecastLedger, question: Any) -> list[Any]:
+    """Compile active in-scope calibration lessons that carry a ``rule`` (a RuleSpec
+    fragment under ``recommended_adjustment['rule']``) into enforceable SimpleRules.
+
+    This is what makes a STRUCTURAL/process lesson (not just a numeric bias) actually
+    bite at commit: the rule's check predicate is evaluated against the candidate
+    forecast's real signals. The rule id is namespaced ``lesson:<lesson_id>`` (so the
+    coverage audit can attribute firings and the override-floor can protect it) and
+    its ``applies_to`` is force-stamped from the lesson's own scope. A rule that fails
+    validation is skipped (a broken lesson must never brick a commit)."""
+    try:
+        from forecasting.hooks.dsl import RuleSpec, compile_rule, validate_rule
+    except Exception:
+        return []
+    compiled: list[Any] = []
+    known: set[str] = set()
+    for lesson in active_lessons_for_question(ledger, question):
+        recommended = lesson.get("recommended_adjustment") or {}
+        rule = recommended.get("rule")
+        if not isinstance(rule, dict) or not isinstance(rule.get("check"), dict):
+            continue
+        spec_dict = dict(rule)
+        spec_dict["id"] = f"lesson:{lesson['id']}"
+        spec_dict["applies_to"] = lesson_scope_to_applies_to(lesson)  # never author-supplied
+        spec = RuleSpec.from_dict(spec_dict)
+        if any(issue.severity == "error" for issue in validate_rule(spec, known_ids=known)):
+            continue
+        known.add(spec.id)
+        compiled.append(compile_rule(spec))
+    return compiled
+
+
 def _optional_float(value: Any) -> float | None:
     if isinstance(value, bool):
         return None
