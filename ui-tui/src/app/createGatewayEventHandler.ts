@@ -13,6 +13,7 @@ import type {
 } from '../gatewayTypes.js'
 import { rpcErrorMessage } from '../lib/rpc.js'
 import { topLevelSubagents } from '../lib/subagentTree.js'
+import { resolveVoiceSubmission } from '../lib/voiceIntent.js'
 import { formatToolCall, stripAnsi } from '../lib/text.js'
 import { fromSkin } from '../theme.js'
 import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
@@ -481,8 +482,12 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         // (React strict mode double-invokes it, duplicating the submit).
         // Just clear + defer submit so the cleared input is committed before
         // submit reads it.
+        // Map a spoken COMMAND (e.g. "voice off", "open markets") to its slash
+        // command so it dispatches instead of becoming an agent turn; dictation and
+        // unconfirmed-destructive intents submit verbatim (no risky auto-fire).
+        const { submit } = resolveVoiceSubmission(text)
         setInput('')
-        setTimeout(() => submitRef.current(text), 0)
+        setTimeout(() => submitRef.current(submit), 0)
 
         return
       }
