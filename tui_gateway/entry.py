@@ -1,5 +1,26 @@
+import atexit
 import os
 import sys
+
+
+def _stop_audio_playback() -> None:
+    """Best-effort, fast: terminate any in-flight TTS audio player + recorder so the
+    agent's voice and the mic can't outlive the gateway. The player (afplay/ffplay) is a
+    CHILD process that the kernel would otherwise orphan — it keeps speaking after the TUI
+    is gone. Safe from a signal handler or atexit: lazy imports are cache hits once voice
+    has run, and every error is swallowed."""
+    try:
+        from tools.voice_mode import stop_playback
+
+        stop_playback()
+    except Exception:
+        pass
+    try:
+        from hermes_cli.voice import stop_continuous
+
+        stop_continuous()
+    except Exception:
+        pass
 
 
 def _first_env(names: tuple[str, ...]) -> str:
@@ -108,6 +129,12 @@ def _log_signal(signum: int, frame) -> None:
     thread, and fall back to ``os._exit(0)`` so a wedged write/flush
     can never strand the process.
     """
+    # Kill any in-flight TTS playback IMMEDIATELY so the agent's voice can't outlive the
+    # gateway. Done synchronously here (not only via atexit) because the grace timer below
+    # may os._exit(0) and skip atexit entirely — by then the orphaned player would already
+    # be speaking on. Cheap + swallows errors, so it never blocks the shutdown path.
+    _stop_audio_playback()
+
     # SIGPIPE and SIGHUP don't exist on Windows — build the lookup
     # dict from attributes that actually exist on the current platform.
     _signal_names: dict[int, str] = {}
@@ -188,6 +215,11 @@ elif hasattr(signal, "SIGBREAK"):
     signal.signal(signal.SIGBREAK, _log_signal)
 if hasattr(signal, "SIGINT"):
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+# Clean stdin-EOF shutdown (TUI closed the pipe) raises no signal — the read loop just
+# returns and the interpreter exits. Register the same audio-cleanup on atexit so that
+# path also stops the player instead of orphaning it.
+atexit.register(_stop_audio_playback)
 
 
 def _log_exit(reason: str) -> None:
