@@ -1158,6 +1158,17 @@ DEFAULT_CONFIG = {
             "timeout": 30,
             "extra_body": {},
         },
+        # Gemini TTS expressive audio-tag rewrite (tts.gemini.audio_tags). Picks the
+        # model that inserts [whispers]/[excitedly]/... into the spoken script. "auto"
+        # uses the detected default; set a cheap capable model. Absent block => "auto".
+        "tts_audio_tags": {
+            "provider": "auto",
+            "model": "",
+            "base_url": "",
+            "api_key": "",
+            "timeout": 30,
+            "extra_body": {},
+        },
         # Triage specifier — flesh out a rough one-liner in the Kanban
         # Triage column into a concrete spec, then promote it to ``todo``.
         # Invoked by ``superforecasting-agent kanban specify`` (single id or --all). Set a
@@ -1361,6 +1372,10 @@ DEFAULT_CONFIG = {
             # {transcript} placeholder is substituted; otherwise it's appended under a
             # heading. Empty = plain transcript (default, no-op). Needs GEMINI_API_KEY.
             "persona_prompt_file": "",
+            # Expressive audio-tag rewrite ([whispers] / [excitedly] / ...). Only effective
+            # on gemini-3.1*-tts models and needs an auxiliary model (auxiliary.tts_audio_tags).
+            # False = off (default); the visible chat text is never changed.
+            "audio_tags": False,
         },
     },
 
