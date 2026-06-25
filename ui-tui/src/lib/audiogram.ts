@@ -22,7 +22,7 @@ export function audiogramFrame(frame: number, width = 7): string {
   return out
 }
 
-/** The status-bar label shown while the agent is speaking, e.g. "🔊 ▅▇▃▁▂▆█". */
-export function speakingLabel(frame: number, width = 7): string {
-  return `🔊 ${audiogramFrame(frame, width)}`
+/** The status-bar label shown while the agent is speaking, e.g. "🔊 Speaking ▅▇▃▁▂". */
+export function speakingLabel(frame: number, width = 5): string {
+  return `🔊 Speaking ${audiogramFrame(frame, width)}`
 }

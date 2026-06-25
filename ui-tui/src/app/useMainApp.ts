@@ -20,7 +20,7 @@ import { speakingLabel } from '../lib/audiogram.js'
 import { composerPromptWidth } from '../lib/inputMetrics.js'
 import { appendTranscriptMessage } from '../lib/messages.js'
 import { saveModelCatalog } from '../lib/modelStore.js'
-import { DEFAULT_VOICE_RECORD_KEY, isMac, type ParsedVoiceRecordKey } from '../lib/platform.js'
+import { DEFAULT_VOICE_RECORD_KEY, formatVoiceRecordKey, isMac, type ParsedVoiceRecordKey } from '../lib/platform.js'
 import { normalizeModelList } from '../lib/presentation.js'
 import { asRpcResult, rpcErrorMessage } from '../lib/rpc.js'
 import { runtimeEnvValue } from '../lib/runtimeEnv.js'
@@ -958,7 +958,7 @@ export function useMainApp(gw: GatewayClient) {
       // CLI parity: the classic prompt_toolkit status bar shows a red dot
       // on REC (cli.py:_get_voice_status_fragments line 2344).
       voiceLabel: voiceSpeaking
-        ? speakingLabel(voiceFrame)
+        ? `${speakingLabel(voiceFrame)} · ${formatVoiceRecordKey(voiceRecordKey)} to stop`
         : voiceRecording
           ? '● REC'
           : voiceProcessing
@@ -977,6 +977,7 @@ export function useMainApp(gw: GatewayClient) {
       voiceFrame,
       voiceProcessing,
       voiceRecording,
+      voiceRecordKey,
       voiceSpeaking
     ]
   )

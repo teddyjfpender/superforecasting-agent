@@ -15,8 +15,8 @@ describe('audiogram', () => {
     expect(new Set(frames).size).toBeGreaterThan(1) // the bars actually move
   })
 
-  it('speakingLabel prefixes the speaker glyph', () => {
-    expect(speakingLabel(0)).toMatch(/^🔊 /)
-    expect(speakingLabel(0)).toHaveLength('🔊 '.length + 7)
+  it('speakingLabel shows the speaker glyph + "Speaking" + bars', () => {
+    expect(speakingLabel(0)).toMatch(/^🔊 Speaking /)
+    expect([...speakingLabel(0, 5)].slice(-5).every((c) => '▁▂▃▄▅▆▇█'.includes(c))).toBe(true)
   })
 })
