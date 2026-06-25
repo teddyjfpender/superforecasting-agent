@@ -296,6 +296,13 @@ _continuous_recorder: Any = None
 # leak into the mic.
 _tts_playing = threading.Event()
 _tts_playing.set()  # initially "not playing"
+# Single-flight state for speak_text: exactly one utterance owns the speaker at a time.
+# Guards against the gateway re-firing the TTS trigger (goal continuations / async
+# notification follow-ups) and the voice.tts RPC racing it — overlap there is what made
+# the audio "jump back to the beginning".
+_tts_lock = threading.Lock()
+_tts_active_text: Optional[str] = None  # the reply currently owning the speaker (de-dup key)
+_tts_seq = 0  # monotonic; only the latest owner clears _tts_active_text on finish
 _continuous_on_transcript: Optional[Callable[[str], None]] = None
 _continuous_on_status: Optional[Callable[[str], None]] = None
 _continuous_on_silent_limit: Optional[Callable[[], None]] = None
@@ -758,6 +765,27 @@ def speak_text(text: str) -> None:
     import tempfile
     import time
 
+    # Single-flight + de-dup + cancel-in-flight: a reply must be spoken ONCE, start to
+    # finish. The gateway 'complete' trigger can re-fire (goal continuations, async
+    # notification follow-ups) and the voice.tts RPC can race it. Without this two
+    # speak_text calls overlap, and with second-resolution temp names they even shared
+    # one file — so call B rewrote + restarted call A's audio ("jumps back to start").
+    norm_text = text.strip()
+    global _tts_active_text, _tts_seq
+    with _tts_lock:
+        if norm_text == _tts_active_text:
+            _debug("speak_text: identical reply already speaking — skipping re-fire")
+            return
+        try:
+            from tools.voice_mode import stop_playback
+
+            stop_playback()  # supersede any in-flight utterance cleanly (latest wins)
+        except Exception:
+            pass
+        _tts_seq += 1
+        my_seq = _tts_seq
+        _tts_active_text = norm_text
+
     # Cancel any live capture before we open the speakers — otherwise the
     # last ~200ms of the user's turn tail + the first syllables of our TTS
     # both end up in the next recording window.  The continuous loop will
@@ -800,10 +828,12 @@ def speak_text(text: str) -> None:
         # when text_to_speech_tool auto-converts to OGG for messaging
         # platforms.  afplay's OGG support is flaky, MP3 always works.
         os.makedirs(os.path.join(tempfile.gettempdir(), "forecast_voice"), exist_ok=True)
+        # Unique per call (pid + monotonic seq) — a second-resolution timestamp collided
+        # when two calls landed in the same second, so they shared + clobbered one file.
         mp3_path = os.path.join(
             tempfile.gettempdir(),
             "forecast_voice",
-            f"tts_{time.strftime('%Y%m%d_%H%M%S')}.mp3",
+            f"tts_{os.getpid()}_{my_seq}.mp3",
         )
 
         _debug(f"speak_text: synthesizing {len(tts_text)} chars -> {mp3_path}")
@@ -827,6 +857,12 @@ def speak_text(text: str) -> None:
     finally:
         _tts_playing.set()
         _debug("speak_text: TTS done")
+
+        # Release single-flight ownership only if a newer utterance hasn't superseded us
+        # (a superseding call bumped _tts_seq; its own finally will clear the key).
+        with _tts_lock:
+            if _tts_seq == my_seq:
+                _tts_active_text = None
 
         # Re-arm the mic so the user can answer without pressing Ctrl+B.
         # Small delay lets the OS flush speaker output and afplay fully
