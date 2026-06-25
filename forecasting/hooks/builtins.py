@@ -296,9 +296,10 @@ def _check_quorum_participation(ctx: HookContext):
     if ctx.panel_perspective_count >= MIN_PERSPECTIVES or ctx.quorum_model_count >= MIN_PERSPECTIVES:
         return _OK
     return False, (
-        f"the deliberation had too few distinct perspectives/personas "
+        f"the deliberation had too few distinct viewpoints "
         f"(perspectives={ctx.panel_perspective_count}, models={ctx.quorum_model_count}; "
-        f"need >= {MIN_PERSPECTIVES}). Run a fuller panel or model quorum."
+        f"need >= {MIN_PERSPECTIVES} of EITHER — a fuller perspective panel OR a wider model quorum). "
+        "record_panel reports the distinct counts up front so this isn't a surprise."
     ), {"perspectives": ctx.panel_perspective_count, "models": ctx.quorum_model_count}
 
 

@@ -207,6 +207,7 @@ def execute_job(run_id: str) -> dict[str, Any]:
             trim=result.trim,
             snapshot_id=spec.get("attach_snapshot"),
             triggered_by=spec.get("triggered_by") or "quorum",
+            judge=result.judge.to_dict() if result.judge else None,
         )
         job["panel_run_id"] = panel_run["id"]
         job["result"] = result.to_dict()

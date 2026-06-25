@@ -150,12 +150,13 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
             is_quorum = (r.get("triggered_by") == "quorum")
             ests = r.get("estimates") or []
             quorum_models = len({(e.get("agent_model") or e.get("model")) for e in ests if (e.get("agent_model") or e.get("model"))})
-            # Judge presence: use it if the record carries judge info; if the run
-            # simply never stored a judge field, treat as indeterminate (pass) so a
-            # quorum is not penalized for a field the artifact does not record.
+            # Judge presence: a quorum is "judged" when a judge synthesis VALUE is stored
+            # (panel_runs.judge, persisted for runs from quorum_jobs). Value-based, so a
+            # genuinely-unjudged quorum is honestly flagged (the gate is live now that the
+            # judge is persisted), while a NULL judge on an old committed run is never
+            # re-gated (only re-read lint sees it, informational + non-blocking).
             _judge_field = (r.get("metadata") or {}).get("judge") or r.get("judge_model") or r.get("judge")
-            _has_judge_info = any(k in r or k in (r.get("metadata") or {}) for k in ("judge", "judge_model"))
-            quorum_judged = bool(_judge_field) if _has_judge_info else True
+            quorum_judged = bool(_judge_field)
     except Exception:
         pass
 

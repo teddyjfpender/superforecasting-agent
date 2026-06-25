@@ -315,6 +315,7 @@ _PACKET_JSON_FIELDS = {
         "perspectives",
         "spread_summary",
         "notes",
+        "judge",
     },
     "panel_estimates": {
         "reasons_up",
@@ -1121,7 +1122,8 @@ class ForecastLedger:
                     perspectives TEXT NOT NULL DEFAULT '[]',
                     spread_summary TEXT NOT NULL DEFAULT '{}',
                     notes TEXT NOT NULL DEFAULT '[]',
-                    triggered_by TEXT
+                    triggered_by TEXT,
+                    judge TEXT
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_panel_runs_question
@@ -1331,6 +1333,7 @@ class ForecastLedger:
             self._ensure_column(conn, "resolutions", "trusted_policy_id", "TEXT")
             self._ensure_column(conn, "reference_classes", "check_cadence", "TEXT")
             self._ensure_column(conn, "reference_classes", "sample_size", "INTEGER")
+            self._ensure_column(conn, "panel_runs", "judge", "TEXT")
             self._ensure_column(conn, "scheduled_reviews", "auto_score", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "scheduled_reviews", "auto_postmortem", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "scheduled_reviews", "stale_days", "INTEGER NOT NULL DEFAULT 7")
@@ -3914,8 +3917,13 @@ class ForecastLedger:
         snapshot_id: str | None = None,
         triggered_by: str | None = None,
         perspectives: list[str] | None = None,
+        judge: Any = None,
     ) -> dict[str, Any]:
         """Aggregate a panel of perspective estimates and persist the artifact.
+
+        ``judge`` (a JudgeSynthesis dict: consensus / contradictions / blind_spots /
+        judge_model) is stored so a quorum's judge synthesis has a durable home and the
+        quorum-judged gate can see it — instead of being dropped on the floor.
 
         Returns the panel-run record dict (including aggregate_probability,
         spread_summary, trimmed flags, and per-estimate ids). The caller
@@ -3946,9 +3954,9 @@ class ForecastLedger:
                 INSERT INTO panel_runs (
                     id, question_id, created_at, snapshot_id,
                     aggregation_method, trim, aggregate_probability,
-                    perspectives, spread_summary, notes, triggered_by
+                    perspectives, spread_summary, notes, triggered_by, judge
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -3962,6 +3970,7 @@ class ForecastLedger:
                     json_dumps(aggregation.spread),
                     json_dumps(aggregation.notes),
                     triggered_by,
+                    json_dumps(judge) if judge is not None else None,
                 ),
             )
             for row in aggregation.estimates:

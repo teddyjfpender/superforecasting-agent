@@ -2247,8 +2247,32 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 snapshot_id=args.get("snapshot_id"),
                 triggered_by=args.get("triggered_by"),
                 perspectives=args.get("perspectives"),
+                judge=args.get("judge"),
             )
-            return tool_result(success=True, panel_run=record)
+            # Upfront quorum feedback: the quorum_participation gate wants >= 3 DISTINCT
+            # perspectives OR >= 3 distinct models. Tell the agent NOW (not only at commit)
+            # when this panel won't satisfy it — the agent reported being surprised by a
+            # participation warning even though it had recorded a panel.
+            _min = 3
+            # Mirror the gate EXACTLY so the advisory can't fabricate or miss a warning:
+            # the gate uses panel_perspective_count = len(stored perspectives) [raw, incl.
+            # auto-named blanks/dupes] and quorum_model_count = distinct models.
+            _persp = len(record.get("perspectives") or [])
+            _models = len({(e.get("agent_model") or e.get("model") or "").strip() for e in estimates if (e.get("agent_model") or e.get("model") or "").strip()})
+            advisory = None
+            if _persp < _min and _models < _min:
+                advisory = (
+                    f"This panel has {_persp} distinct perspective(s) and {_models} distinct model(s); the "
+                    f"quorum_participation gate wants >= {_min} of EITHER. It will WARN at commit unless you "
+                    "record a fuller perspective panel or a wider model quorum."
+                )
+            return tool_result(
+                success=True,
+                panel_run=record,
+                distinct_perspectives=_persp,
+                distinct_models=_models,
+                quorum_advisory=advisory,
+            )
 
         if action == "show_panel":
             record = ledger.get_panel_run(_required(args, "panel_run_id"))
