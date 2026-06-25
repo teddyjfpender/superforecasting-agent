@@ -32,8 +32,12 @@ def test_split_oversized_unpunctuated_run_is_not_truncated():
     assert sum(c.count("word") for c in chunks) == 60
 
 
-def test_kokoro_not_available_in_this_env():
-    # kokoro-onnx isn't installed here -> availability check is False (drives the dispatch error)
+def test_check_kokoro_available_reflects_find_spec(monkeypatch):
+    import importlib.util
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object() if name == "kokoro_onnx" else None)
+    assert tts._check_kokoro_available() is True
+    monkeypatch.setattr(importlib.util, "find_spec", lambda _name: None)
     assert tts._check_kokoro_available() is False
 
 

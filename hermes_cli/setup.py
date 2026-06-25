@@ -1070,9 +1070,6 @@ def _install_neutts_deps() -> bool:
 
 def _install_kittentts_deps() -> bool:
     """Install KittenTTS dependencies with user approval. Returns True on success."""
-    import subprocess
-    import sys
-
     wheel_url = (
         "https://github.com/KittenML/KittenTTS/releases/download/"
         "0.8.1/kittentts-0.8.1-py3-none-any.whl"
@@ -1080,38 +1077,58 @@ def _install_kittentts_deps() -> bool:
     print()
     print_info("Installing kittentts Python package (~25-80MB model downloaded on first use)...")
     print()
-    try:
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-U", wheel_url, "soundfile", "--quiet"],
-            check=True, timeout=300,
-        )
+    if _run_pip_install([wheel_url, "soundfile"], timeout=300):
         print_success("kittentts installed successfully")
         return True
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-        print_error(f"Failed to install kittentts: {e}")
-        print_info(f"Try manually: python -m pip install -U '{wheel_url}' soundfile")
+    print_error("Failed to install kittentts.")
+    print_info(f"Try manually: uv pip install '{wheel_url}' soundfile   (or python -m pip install ...)")
+    return False
+
+
+def _run_pip_install(packages: list, *, timeout: int = 600) -> bool:
+    """Install packages into the CURRENT interpreter, working in BOTH pip and uv venvs.
+    uv-managed venvs ship no pip ('No module named pip'), so when 'python -m pip' fails we
+    retry via 'uv pip install --python <this-exe>' when uv is available."""
+    import shutil
+    import subprocess
+    import sys
+
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-U", *packages, "--quiet"],
+            check=True, timeout=timeout,
+        )
+        return True
+    except subprocess.TimeoutExpired:
+        print_error("Install timed out.")
         return False
+    except (subprocess.CalledProcessError, OSError):
+        uv = shutil.which("uv")
+        if not uv:
+            return False
+        print_info("pip unavailable in this venv — installing via uv...")
+        try:
+            subprocess.run(
+                [uv, "pip", "install", "--python", sys.executable, *packages],
+                check=True, timeout=timeout,
+            )
+            return True
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+            print_error(f"uv install failed: {e}")
+            return False
 
 
 def _install_kokoro_deps() -> bool:
     """Install Kokoro-82M (kokoro-onnx) with user approval. Returns True on success."""
-    import subprocess
-    import sys
-
     print()
     print_info("Installing kokoro-onnx (CPU, no torch, no system espeak-ng; ~120MB model on first use)...")
     print()
-    try:
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-U", "kokoro-onnx", "--quiet"],
-            check=True, timeout=600,
-        )
+    if _run_pip_install(["kokoro-onnx"]):
         print_success("kokoro-onnx installed successfully")
         return True
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-        print_error(f"Failed to install kokoro-onnx: {e}")
-        print_info("Try manually: python -m pip install -U kokoro-onnx")
-        return False
+    print_error("Failed to install kokoro-onnx.")
+    print_info("Try manually: uv pip install kokoro-onnx   (or: python -m pip install kokoro-onnx)")
+    return False
 
 
 def _xai_oauth_logged_in_for_setup() -> bool:

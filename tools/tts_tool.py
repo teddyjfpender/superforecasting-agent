@@ -2070,8 +2070,8 @@ def text_to_speech_tool(
         if not _KOKORO_FALLBACK_WARNED:
             logger.warning(
                 "tts.provider=kokoro but kokoro-onnx is not installed — using Edge TTS for now. "
-                "Install the better local voice: pip install kokoro-onnx "
-                "(or run '%s setup tts').",
+                "Install the better local voice: 'uv pip install kokoro-onnx' (or "
+                "'pip install kokoro-onnx', or run '%s setup tts').",
                 "superforecasting-agent",
             )
             _KOKORO_FALLBACK_WARNED = True
@@ -2232,8 +2232,8 @@ def text_to_speech_tool(
                     "success": False,
                     "error": "Kokoro provider selected but 'kokoro-onnx' is not installed. "
                              "Install it (no torch, no system espeak-ng required): "
-                             "pip install kokoro-onnx. The ~120MB model + voices download "
-                             "automatically on first use.",
+                             "'uv pip install kokoro-onnx' (or 'pip install kokoro-onnx'). "
+                             "The ~120MB model + voices download automatically on first use.",
                 }, ensure_ascii=False)
             logger.info("Generating speech with Kokoro-82M (local, offline)...")
             _generate_kokoro_tts(text, file_str, tts_config)
