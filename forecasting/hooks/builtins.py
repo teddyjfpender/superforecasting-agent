@@ -418,20 +418,20 @@ def _check_outside_view_anchor(ctx: HookContext):
     if claims_outside:
         msg = (
             "reasoning_methods claims outside_view/base_rate but NO reference class is attached — "
-            "build the base-rate anchor you're claiming to reason from (forecast base-rate / reference-class create)."
+            "anchor the base rate you're claiming to reason from: call the 'add_reference_class' action."
         )
     else:
         msg = (
-            "serious live forecast has no outside-view anchor: attach at least one reference class / base rate so "
-            "the forecast isn't pure inside-view prose (forecast base-rate <id>)."
+            "serious live forecast has no outside-view anchor: attach at least one reference class / base rate "
+            "(call 'add_reference_class') so the forecast isn't pure inside-view prose."
         )
     return False, msg, {"reference_class_count": ctx.reference_class_count}
 
 
 def _rem_reference_class(_ctx: HookContext) -> RemediationDescriptor:
     return RemediationDescriptor(
-        "agentic", "build_reference_class",
-        "Build an outside-view reference class / base rate and attach it to the forecast.",
+        "agentic", "add_reference_class",
+        "Call the 'add_reference_class' action to attach an outside-view reference class / base rate to the forecast.",
         target_stage="research",
     )
 

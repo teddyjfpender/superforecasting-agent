@@ -52,7 +52,7 @@ def _require_reference_class(lesson: dict[str, Any], severity: str) -> dict[str,
         "severity": severity,
         "message": f"Lesson {lesson.get('id', '?')}: attach an outside-view reference class before committing.",
         "check": {"signal": "reference_classes.count", "op": ">=", "value": 1},
-        "remediation_hint": "build_reference_class",
+        "remediation_hint": "add_reference_class",
     }
 
 
