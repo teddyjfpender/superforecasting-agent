@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildDeskTabs, forecastsForTab, forecastTheme } from '../lib/deskGroups.js'
+import { buildDeskTabs, forecastsForTab, forecastTheme, tabWindow } from '../lib/deskGroups.js'
 
 const item = (id: string, extra: Record<string, unknown> = {}) => ({ id, title: id, ...extra })
 
@@ -55,5 +55,22 @@ describe('deskGroups', () => {
     const t = buildDeskTabs({ forecasts: [] } as never)
     expect(t).toHaveLength(1)
     expect(t[0].kind).toBe('all')
+  })
+})
+
+describe('tabWindow', () => {
+  it('shows all tabs when they fit', () => {
+    expect(tabWindow([5, 5, 5], 0, 100)).toEqual({ start: 0, end: 3 })
+  })
+
+  it('keeps the active tab visible when the strip is narrow', () => {
+    const { start, end } = tabWindow([10, 10, 10, 10, 10], 4, 30)
+    expect(start).toBeLessThanOrEqual(4)
+    expect(end).toBeGreaterThan(4)
+    expect(end).toBe(5) // active sits at the right edge
+  })
+
+  it('empty -> {0,0}', () => {
+    expect(tabWindow([], 0, 50)).toEqual({ start: 0, end: 0 })
   })
 })

@@ -82,6 +82,34 @@ export function forecastsForTab(tab: DeskTab | undefined, forecasts: ForecastWor
   return tab.forecastIds.map((id) => byId.get(id)).filter((f): f is ForecastWorkspaceItem => !!f)
 }
 
+/** Pick the contiguous window of tab indices to render so `active` stays visible and the
+ *  strip fits `maxWidth`. Expands outward from active, preferring the right (later lenses).
+ *  Returns {start, end} (end exclusive). Pure — the variable Desk tab count needs this
+ *  (Markets gets away with rendering all ~10 hard-coded categories). */
+export function tabWindow(labelWidths: number[], active: number, maxWidth: number, sep = 3): { start: number; end: number } {
+  const n = labelWidths.length
+  if (n === 0) return { start: 0, end: 0 }
+  const a = Math.max(0, Math.min(active, n - 1))
+  const budget = Math.max(labelWidths[a], maxWidth - 4) // leave room for ‹ › overflow markers
+  let start = a
+  let end = a + 1
+  let used = labelWidths[a]
+  for (;;) {
+    const left = start > 0 ? used + sep + labelWidths[start - 1] : Number.POSITIVE_INFINITY
+    const right = end < n ? used + sep + labelWidths[end] : Number.POSITIVE_INFINITY
+    if (right <= budget && right <= left) {
+      used = right
+      end += 1
+    } else if (left <= budget) {
+      used = left
+      start -= 1
+    } else {
+      break
+    }
+  }
+  return { start, end }
+}
+
 /** The thesis/factor whose aggregate read heads the skinny panel for a lens tab. */
 export function tabRefThesis(tab: DeskTab | undefined, theses: ForecastThesis[] = []): ForecastThesis | undefined {
   if (!tab || tab.kind !== 'thesis') return undefined
