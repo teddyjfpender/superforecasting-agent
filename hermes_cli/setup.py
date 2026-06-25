@@ -512,6 +512,15 @@ def _print_setup_summary(config: dict, hermes_home):
             tool_status.append(("Text-to-Speech (KittenTTS local)", True, None))
         else:
             tool_status.append(("Text-to-Speech (KittenTTS — not installed)", False, f"run '{_PRIMARY_CLI} setup tts'"))
+    elif tts_provider == "kokoro":
+        try:
+            kokoro_ok = importlib.util.find_spec("kokoro_onnx") is not None
+        except Exception:
+            kokoro_ok = False
+        if kokoro_ok:
+            tool_status.append(("Text-to-Speech (Kokoro-82M local)", True, None))
+        else:
+            tool_status.append(("Text-to-Speech (Kokoro — not installed)", False, f"run '{_PRIMARY_CLI} setup tts'"))
     else:
         tool_status.append(("Text-to-Speech (Edge TTS)", True, None))
 
@@ -1084,6 +1093,27 @@ def _install_kittentts_deps() -> bool:
         return False
 
 
+def _install_kokoro_deps() -> bool:
+    """Install Kokoro-82M (kokoro-onnx) with user approval. Returns True on success."""
+    import subprocess
+    import sys
+
+    print()
+    print_info("Installing kokoro-onnx (CPU, no torch, no system espeak-ng; ~120MB model on first use)...")
+    print()
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-U", "kokoro-onnx", "--quiet"],
+            check=True, timeout=600,
+        )
+        print_success("kokoro-onnx installed successfully")
+        return True
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        print_error(f"Failed to install kokoro-onnx: {e}")
+        print_info("Try manually: python -m pip install -U kokoro-onnx")
+        return False
+
+
 def _xai_oauth_logged_in_for_setup() -> bool:
     """True iff xAI Grok OAuth credentials are already stored locally.
 
@@ -1150,6 +1180,7 @@ def _setup_tts_provider(config: dict):
         "minimax": "MiniMax TTS",
         "mistral": "Mistral Voxtral TTS",
         "gemini": "Google Gemini TTS",
+        "kokoro": "Kokoro-82M (local)",
         "neutts": "NeuTTS",
         "kittentts": "KittenTTS",
     }
@@ -1174,11 +1205,12 @@ def _setup_tts_provider(config: dict):
             "MiniMax TTS (high quality with voice cloning, needs API key)",
             "Mistral Voxtral TTS (multilingual, native Opus, needs API key)",
             "Google Gemini TTS (30 prebuilt voices, prompt-controllable, needs API key)",
+            "Kokoro-82M (local on-device, free, high-quality ~120MB — recommended)",
             "NeuTTS (local on-device, free, ~300MB model download)",
             "KittenTTS (local on-device, free, lightweight ~25-80MB ONNX)",
         ]
     )
-    providers.extend(["edge", "elevenlabs", "openai", "xai", "minimax", "mistral", "gemini", "neutts", "kittentts"])
+    providers.extend(["edge", "elevenlabs", "openai", "xai", "minimax", "mistral", "gemini", "kokoro", "neutts", "kittentts"])
     choices.append(f"Keep current ({current_label})")
     keep_current_idx = len(choices) - 1
     idx = prompt_choice("Select TTS provider:", choices, keep_current_idx)
@@ -1217,6 +1249,27 @@ def _setup_tts_provider(config: dict):
                     selected = "edge"
             else:
                 print_info("Skipping install. Set tts.provider to 'neutts' after installing manually.")
+                selected = "edge"
+
+    elif selected == "kokoro":
+        try:
+            already_installed = importlib.util.find_spec("kokoro_onnx") is not None
+        except Exception:
+            already_installed = False
+
+        if already_installed:
+            print_success("kokoro-onnx is already installed")
+        else:
+            print()
+            print_info("Kokoro-82M requires the 'kokoro-onnx' package (CPU, no torch, no system espeak-ng).")
+            print_info("The ~120MB model + voices download automatically on first use.")
+            print()
+            if prompt_yes_no("Install kokoro-onnx now?", True):
+                if not _install_kokoro_deps():
+                    print_warning("Kokoro installation incomplete. Falling back to Edge TTS.")
+                    selected = "edge"
+            else:
+                print_info("Skipping install. Set tts.provider to 'kokoro' after installing manually.")
                 selected = "edge"
 
     elif selected == "elevenlabs":
