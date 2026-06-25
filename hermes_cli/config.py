@@ -1321,7 +1321,7 @@ DEFAULT_CONFIG = {
     # limit (OpenAI 4096, xAI 15000, MiniMax 10000, ElevenLabs 5k-40k model-aware,
     # Gemini 5000, Edge 5000, Mistral 4000, NeuTTS/KittenTTS 2000).
     "tts": {
-        "provider": "edge",  # "edge" (free) | "elevenlabs" (premium) | "openai" | "xai" | "minimax" | "mistral" | "gemini" | "neutts" (local) | "kittentts" (local) | "piper" (local)
+        "provider": "edge",  # "edge" (free) | "elevenlabs" (premium) | "openai" | "xai" | "minimax" | "mistral" | "gemini" | "kokoro" (local, recommended) | "neutts" (local) | "kittentts" (local) | "piper" (local)
         "edge": {
             "voice": "en-US-AriaNeural",
             # Popular: AriaNeural, JennyNeural, AndrewNeural, BrianNeural, SoniaNeural
@@ -1376,6 +1376,17 @@ DEFAULT_CONFIG = {
             # on gemini-3.1*-tts models and needs an auxiliary model (auxiliary.tts_audio_tags).
             # False = off (default); the visible chat text is never changed.
             "audio_tags": False,
+        },
+        "kokoro": {
+            # Kokoro-82M — high-quality LOCAL/offline TTS (Apache-2.0), far more natural
+            # than Piper, CPU-only, no torch + no system espeak-ng. The model + voices
+            # auto-download on first use to <agent home>/cache/kokoro/.
+            # Install once: pip install kokoro-onnx
+            "model": "kokoro-v1.0.int8.onnx",  # ~92MB; "kokoro-v1.0.onnx" (~325MB) = max fidelity
+            "voice": "af_heart",  # see hexgrad/Kokoro-82M VOICES.md (af_bella, am_michael, bf_emma, ...)
+            "speed": 1.0,
+            "lang": "en-us",
+            # "model_dir": "",  # override the cache dir for the .onnx + voices.bin
         },
     },
 

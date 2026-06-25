@@ -1850,6 +1850,186 @@ def _generate_kittentts(text: str, output_path: str, tts_config: Dict[str, Any])
 
 
 # ===========================================================================
+# Provider: Kokoro-82M (local, offline, Apache-2.0 weights via kokoro-onnx)
+# ===========================================================================
+# High-quality local TTS — far more natural than Piper, runs on CPU, no torch and no
+# system espeak-ng (kokoro-onnx bundles espeak via espeakng-loader). The ONNX model +
+# voices file are fetched from the kokoro-onnx GitHub release on first use and cached.
+
+DEFAULT_KOKORO_VOICE = "af_heart"          # best-graded English voice (see VOICES.md)
+DEFAULT_KOKORO_MODEL = "kokoro-v1.0.int8.onnx"  # lean ~92MB; kokoro-v1.0.onnx (~325MB) = max fidelity
+DEFAULT_KOKORO_LANG = "en-us"
+KOKORO_SAMPLE_RATE = 24000
+_KOKORO_RELEASE_BASE = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
+_KOKORO_VOICES_FILE = "voices-v1.0.bin"
+# Known model filenames (bare name -> the release asset). An absolute path overrides this.
+_KOKORO_MODEL_ASSETS = {"kokoro-v1.0.onnx", "kokoro-v1.0.fp16.onnx", "kokoro-v1.0.int8.onnx"}
+_kokoro_model_cache: Dict[str, Any] = {}
+
+
+def _import_kokoro():
+    """Import kokoro_onnx.Kokoro, raising ImportError (with the package name) if absent."""
+    from kokoro_onnx import Kokoro  # type: ignore
+
+    return Kokoro
+
+
+def _check_kokoro_available() -> bool:
+    import importlib.util
+
+    return importlib.util.find_spec("kokoro_onnx") is not None
+
+
+def _get_kokoro_models_dir() -> Path:
+    try:
+        from hermes_constants import get_hermes_home
+
+        base = Path(get_hermes_home())
+    except Exception:
+        base = Path.home() / ".superforecasting-agent"
+    return base / "cache" / "kokoro"
+
+
+def _download_kokoro_file(url: str, dest: Path) -> None:
+    """Download a release asset to dest atomically (.part rename)."""
+    import urllib.request
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(dest.name + ".part")
+    logger.info("[Kokoro] downloading %s -> %s", url, dest.name)
+    with urllib.request.urlopen(url, timeout=180) as resp, open(tmp, "wb") as f:  # noqa: S310 (fixed github host)
+        shutil.copyfileobj(resp, f)
+    tmp.rename(dest)
+    logger.info("[Kokoro] downloaded %s (%d bytes)", dest.name, dest.stat().st_size)
+
+
+def _resolve_kokoro_files(kokoro_config: Dict[str, Any]) -> tuple[str, str]:
+    """Return (model_path, voices_path), fetching the release files on first use."""
+    models_dir = Path(kokoro_config.get("model_dir") or _get_kokoro_models_dir()).expanduser()
+    model_name = str(kokoro_config.get("model") or DEFAULT_KOKORO_MODEL).strip() or DEFAULT_KOKORO_MODEL
+
+    model_path = Path(model_name).expanduser()
+    if not model_path.is_absolute():
+        # bare filename: must be a known release asset, else fall back to the default
+        if model_name not in _KOKORO_MODEL_ASSETS:
+            logger.warning("[Kokoro] unknown model '%s'; using %s", model_name, DEFAULT_KOKORO_MODEL)
+            model_name = DEFAULT_KOKORO_MODEL
+        model_path = models_dir / model_name
+    if not model_path.is_file():
+        _download_kokoro_file(f"{_KOKORO_RELEASE_BASE}/{model_path.name}", model_path)
+
+    voices_path = models_dir / _KOKORO_VOICES_FILE
+    if not voices_path.is_file():
+        _download_kokoro_file(f"{_KOKORO_RELEASE_BASE}/{_KOKORO_VOICES_FILE}", voices_path)
+    return str(model_path), str(voices_path)
+
+
+def _kokoro_split_text(text: str, max_chars: int = 480) -> list:
+    """Split on sentence boundaries so each chunk stays under Kokoro's 510-token phoneme
+    cap; chunks are concatenated after synthesis into one continuous clip. An oversized
+    sentence (e.g. an unpunctuated run) is broken on word boundaries — never truncated."""
+    import re
+
+    text = (text or "").strip()
+    if not text:
+        return []
+
+    # 1) sentence split, then hard-break any still-oversized part on words (no content loss)
+    pieces: list = []
+    for part in re.split(r"(?<=[.!?])\s+", text):
+        part = part.strip()
+        if not part:
+            continue
+        if len(part) <= max_chars:
+            pieces.append(part)
+            continue
+        cur = ""
+        for word in part.split():
+            if len(cur) + len(word) + 1 <= max_chars:
+                cur = f"{cur} {word}".strip()
+            else:
+                if cur:
+                    pieces.append(cur)
+                cur = word
+        if cur:
+            pieces.append(cur)
+
+    # 2) merge small adjacent pieces back up toward max_chars to minimise chunk count
+    chunks: list = []
+    cur = ""
+    for p in pieces:
+        if len(cur) + len(p) + 1 <= max_chars:
+            cur = f"{cur} {p}".strip()
+        else:
+            if cur:
+                chunks.append(cur)
+            cur = p
+    if cur:
+        chunks.append(cur)
+    return chunks or [text]
+
+
+def _generate_kokoro_tts(text: str, output_path: str, tts_config: Dict[str, Any]) -> str:
+    """Generate speech with Kokoro-82M (local, offline) via kokoro-onnx.
+
+    Loads the ONNX model once per process (cached), synthesizes (chunking long text on
+    sentence boundaries for the 510-token cap), writes a 24kHz mono WAV via the stdlib
+    wave module (no soundfile dep), then converts to mp3/ogg via ffmpeg when the caller
+    asked for a non-WAV path — matching the Piper provider's contract.
+    """
+    Kokoro = _import_kokoro()
+    import wave
+
+    import numpy as np
+
+    kokoro_config = tts_config.get("kokoro", {}) if isinstance(tts_config, dict) else {}
+    if not isinstance(kokoro_config, dict):
+        kokoro_config = {}
+    voice = str(kokoro_config.get("voice") or DEFAULT_KOKORO_VOICE).strip() or DEFAULT_KOKORO_VOICE
+    speed = float(kokoro_config.get("speed", 1.0) or 1.0)
+    lang = str(kokoro_config.get("lang") or DEFAULT_KOKORO_LANG).strip() or DEFAULT_KOKORO_LANG
+
+    model_path, voices_path = _resolve_kokoro_files(kokoro_config)
+    cache_key = f"{model_path}::{voices_path}"
+    global _kokoro_model_cache
+    if cache_key not in _kokoro_model_cache:
+        logger.info("[Kokoro] loading model %s", model_path)
+        _kokoro_model_cache[cache_key] = Kokoro(model_path, voices_path)
+    kokoro = _kokoro_model_cache[cache_key]
+
+    sample_rate = KOKORO_SAMPLE_RATE
+    audio_parts = []
+    for chunk in _kokoro_split_text(text):
+        samples, sr = kokoro.create(chunk, voice=voice, speed=speed, lang=lang)
+        sample_rate = int(sr or KOKORO_SAMPLE_RATE)
+        audio_parts.append(np.asarray(samples, dtype=np.float32))
+    if not audio_parts:
+        return output_path
+    audio = np.concatenate(audio_parts) if len(audio_parts) > 1 else audio_parts[0]
+    # float32 [-1, 1] -> little-endian int16 PCM
+    pcm16 = (np.clip(audio, -1.0, 1.0) * 32767.0).astype("<i2")
+
+    wav_path = output_path if output_path.endswith(".wav") else output_path.rsplit(".", 1)[0] + ".wav"
+    with wave.open(wav_path, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(int(sample_rate))
+        wf.writeframes(pcm16.tobytes())
+
+    if wav_path != output_path:
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg:
+            subprocess.run([ffmpeg, "-i", wav_path, "-y", "-loglevel", "error", output_path], check=True, timeout=60)
+            try:
+                os.remove(wav_path)
+            except OSError:
+                pass
+        else:
+            os.rename(wav_path, output_path)
+    return output_path
+
+
+# ===========================================================================
 # Main tool function
 # ===========================================================================
 def text_to_speech_tool(
@@ -2028,6 +2208,18 @@ def text_to_speech_tool(
                 }, ensure_ascii=False)
             logger.info("Generating speech with Piper (local)...")
             _generate_piper_tts(text, file_str, tts_config)
+
+        elif provider == "kokoro":
+            if not _check_kokoro_available():
+                return json.dumps({
+                    "success": False,
+                    "error": "Kokoro provider selected but 'kokoro-onnx' is not installed. "
+                             "Install it (no torch, no system espeak-ng required): "
+                             "pip install kokoro-onnx. The ~120MB model + voices download "
+                             "automatically on first use.",
+                }, ensure_ascii=False)
+            logger.info("Generating speech with Kokoro-82M (local, offline)...")
+            _generate_kokoro_tts(text, file_str, tts_config)
 
         else:
             # Default: Edge TTS (free), with NeuTTS as local fallback
